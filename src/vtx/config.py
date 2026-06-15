@@ -157,6 +157,11 @@ class ConfigSchema(BaseModel):
     permissions: PermissionsConfig
     notifications: NotificationsConfig = NotificationsConfig()
     last_selected: LastSelectedConfig = LastSelectedConfig()
+    # User-configured extension paths (file or package). Auto-discovered
+    # directories (``.vtx/extensions/`` and ``~/.vtx/agent/extensions/``)
+    # are always loaded in addition to this list unless ``--no-extensions``
+    # is passed on the CLI.
+    extensions: list[str] = Field(default_factory=list)
 
 
 # =================================================================================================
@@ -258,6 +263,10 @@ class Config:
     @property
     def binaries(self) -> _BinariesConfig:
         return _BinariesConfig(AVAILABLE_BINARIES)
+
+    @property
+    def extensions(self) -> list[str]:
+        return self._parsed.extensions
 
 
 # =================================================================================================
@@ -423,6 +432,32 @@ def _migrate_v5_to_v6(data: dict[str, Any]) -> dict[str, Any]:
     return migrated
 
 
+def _migrate_v6_to_v7(data: dict[str, Any]) -> dict[str, Any]:
+    """Add the ``extensions:`` list. Pre-v7 users get an empty default.
+
+    The first attempt at this migration used ``{paths: [...]}`` (a dict).
+    We now use a flat list, so we coerce the old shape to its ``paths`` value
+    if present.
+    """
+    migrated = Config._apply_legacy_key_shims(data)
+    extensions = migrated.get("extensions")
+    if isinstance(extensions, dict):
+        # Legacy v7-with-dict shape: pull out the list.
+        if isinstance(extensions.get("paths"), list):
+            migrated["extensions"] = list(extensions["paths"])
+        else:
+            migrated["extensions"] = []
+    elif not isinstance(extensions, list):
+        migrated["extensions"] = []
+
+    meta = migrated.get("meta")
+    if not isinstance(meta, dict):
+        migrated["meta"] = {"config_version": 7}
+    else:
+        meta["config_version"] = 7
+    return migrated
+
+
 def _migrate_config_data(data: dict[str, Any]) -> tuple[dict[str, Any], int, int, bool]:
     original = deepcopy(data)
     current_version = _get_config_version(original)
@@ -452,6 +487,10 @@ def _migrate_config_data(data: dict[str, Any]) -> tuple[dict[str, Any], int, int
         if current_version == 5:
             migrated = _migrate_v5_to_v6(migrated)
             current_version = 6
+            continue
+        if current_version == 6:
+            migrated = _migrate_v6_to_v7(migrated)
+            current_version = 7
             continue
         break
 

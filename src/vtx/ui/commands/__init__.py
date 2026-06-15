@@ -82,7 +82,38 @@ class CommandsMixin(SettingsCommands, ModelCommands, SessionCommands, AuthComman
             self._handle_compact_command()
             return True
 
+        # Extension commands take a final swing at anything the built-ins
+        # did not handle. They can shadow built-in commands; this matches
+        # pi's behavior of letting extensions override the agent's UI.
+        ext_cmd = self._extension_command_lookup(cmd)
+        if ext_cmd is not None:
+            self._dispatch_extension_command(ext_cmd, args)
+            return True
+
         return False
+
+    def _extension_command_lookup(self, name: str):
+        """Return the registered extension command for ``name`` or ``None``."""
+        # Late import keeps commands/__init__.py importable without the
+        # extension bus being available (e.g. from tests that never load
+        # extensions).
+        loaded = getattr(self, "_loaded_extensions", None)
+        if loaded is None:
+            return None
+        return loaded.all_commands.get(name)
+
+    def _dispatch_extension_command(self, cmd, args: str) -> None:
+        try:
+            outcome = cmd.handler(args)
+        except Exception as exc:  # never crash on a buggy extension
+            chat = self.query_one("#chat-log", ChatLog)
+            chat.add_info_message(f"Extension command /{cmd.name} failed: {exc}", error=True)
+            return
+
+        if not outcome.output:
+            return
+        chat = self.query_one("#chat-log", ChatLog)
+        chat.add_info_message(f"/{cmd.name} (from {cmd.owner}): {outcome.output}")
 
     def _show_help(self) -> None:
         chat = self.query_one("#chat-log", ChatLog)

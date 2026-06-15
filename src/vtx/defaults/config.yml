@@ -1,5 +1,5 @@
 meta:
-  config_version: 6
+  config_version: 7
 
 llm:
   default_provider: "openai-codex"
@@ -44,6 +44,18 @@ permissions:
 notifications:
   enabled: false
   volume: 0.5
+
+# Extensions: Python files or packages that hook into vtx at startup.
+# Each entry is a path to a ``.py`` file or a package directory containing
+# ``__init__.py``. Auto-discovered paths (``.vtx/extensions/`` and
+# ``~/.vtx/agent/extensions/``) are always loaded unless ``--no-extensions``
+# is passed on the CLI; entries below are additive.
+#
+# Example:
+#   extensions:
+#     - ~/.vtx/extensions/permission_gate.py
+#     - ./tools/vtx-extensions/audit-logger/
+extensions: []
 
 # Example: DeepSeek provider
 # export DEEPSEEK_API_KEY="sk-your-api-key"

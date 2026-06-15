@@ -252,6 +252,20 @@ When true, the welcome panel on launch lists keyboard shortcuts. Set to `false` 
 
 List of models hidden from the `/model` picker. Use a provider name to hide all its models (`"github-copilot"`) or `"provider:model"` to hide a single model (`"github-copilot:gpt-5.5-copilot"`). Hidden models stay usable via config defaults or `--model` / session resume — they just don't show up in the picker.
 
+## `extensions`
+
+### `extensions` (list of paths)
+
+Paths to Python extension files or package directories. Each entry is loaded at startup in addition to the auto-discovered paths in `<cwd>/.vtx/extensions/` and `~/.vtx/agent/extensions/`.
+
+```yaml
+extensions:
+  - ~/.vtx/extensions/permission_gate.py
+  - ./tools/vtx-extensions/audit-logger/
+```
+
+Pass `--no-extensions` on the CLI to skip auto-discovery (the explicit list still loads). See [extensions.md](extensions.md) for the full extension API.
+
 ## `permissions`
 
 ### `permissions.mode`
@@ -334,6 +348,7 @@ Vtx auto-migrates your config when you upgrade. The current `config_version` is 
 | v3 → v4 | Added `llm.auth.openai_compat` and `llm.auth.anthropic_compat` (defaulted to `"auto"`). |
 | v4 → v5 | Added `notifications.volume` (defaulted to `0.5`). |
 | v5 → v6 | Promoted `llm.system_prompt` to a dict with `git_context` and `content`. The default `content` is now sourced from `vtx.prompts.identity` so users can override it via config. |
+| v6 → v7 | Added top-level `extensions:` (list of paths). Default is `[]`. Auto-discovered paths in `.vtx/extensions/` and `~/.vtx/agent/extensions/` still load unless `--no-extensions` is passed. |
 
 The earlier Vtx releases stored the config under `~/.vtx/`. v0.3.11 added a migration that moves `config.yml`, `sessions/`, `auth/` files, and `models/` into `~/.vtx/`. The old path is no longer read. See [`src/vtx/config.py`](../src/vtx/config.py) for the migration code.
 

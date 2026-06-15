@@ -90,8 +90,17 @@ def run_tui(args: argparse.Namespace) -> None:
         continue_recent=args.continue_recent,
         openai_compat_auth_mode=args.openai_compat_auth,
         anthropic_compat_auth_mode=args.anthropic_compat_auth,
+        extra_extension_paths=list(getattr(args, "extension_paths", None) or []),
+        auto_discover_extensions=not getattr(args, "no_extensions", False),
     )
     app.run()
+
+    # Fire session_end on the extension bus once the TUI is torn down.
+    # Sync emit so we don't have to spin up another event loop.
+    if app._loaded_extensions.bus.handler_count("session_end"):
+        app._loaded_extensions.bus.emit_sync(
+            "session_end", cwd=app._cwd, session_id=app._session.id if app._session else ""
+        )
 
     hints = list(app._exit_hints)
     session_id: str | None = None

@@ -10,6 +10,7 @@ from .context import Context
 from .core.compaction import generate_summary
 from .core.handoff import generate_handoff_prompt
 from .core.types import AssistantMessage, TextContent, UserMessage
+from .extensions import EventBus
 from .llm import (
     ApiType,
     BaseProvider,
@@ -105,6 +106,7 @@ class ConversationRuntime:
         tools: list[BaseTool],
         openai_compat_auth_mode: AuthMode = "auto",
         anthropic_compat_auth_mode: AuthMode = "auto",
+        extensions: EventBus | None = None,
     ) -> None:
         self.cwd = cwd
 
@@ -141,6 +143,7 @@ class ConversationRuntime:
         self.tools = tools
         self.openai_compat_auth_mode: AuthMode = openai_compat_auth_mode
         self.anthropic_compat_auth_mode: AuthMode = anthropic_compat_auth_mode
+        self.extensions = extensions
 
         self.provider: BaseProvider | None = None
         self.session: Session | None = None
@@ -201,6 +204,7 @@ class ConversationRuntime:
             cwd=self.cwd,
             context=context,
             system_prompt=self.resolve_system_prompt(session, context=context),
+            extensions=self.extensions,
         )
 
     def initialize(

@@ -1,5 +1,7 @@
 import argparse
 import asyncio
+import os
+import sys
 
 from vtx import config
 
@@ -50,6 +52,20 @@ def build_parser() -> argparse.ArgumentParser:
         dest="resume_session",
         help="Resume a specific session by ID (full or unique prefix)",
     )
+    parser.add_argument(
+        "--extension",
+        "-e",
+        action="append",
+        default=[],
+        dest="extension_paths",
+        metavar="PATH",
+        help="Load a Python extension file or package from PATH (repeatable)",
+    )
+    parser.add_argument(
+        "--no-extensions",
+        action="store_true",
+        help="Skip auto-discovered extensions in .vtx/extensions/ and ~/.vtx/agent/extensions/",
+    )
     parser.add_argument("--version", action="version", version=f"vtx {VERSION}")
     return parser
 
@@ -65,7 +81,14 @@ def main() -> None:
         config.llm.tls.insecure_skip_verify = True
 
     if args.prompt is not None:
+        from .extensions import load_for_runtime
         from .headless import run_headless
+
+        loaded = load_for_runtime(
+            cwd=os.getcwd(), extra_paths=args.extension_paths, auto_discover=not args.no_extensions
+        )
+        for err in loaded.errors:
+            print(f"extension error: {err}", file=sys.stderr)
 
         raise SystemExit(
             asyncio.run(
@@ -77,6 +100,7 @@ def main() -> None:
                     base_url=args.base_url,
                     openai_compat_auth_mode=args.openai_compat_auth,
                     anthropic_compat_auth_mode=args.anthropic_compat_auth,
+                    loaded_extensions=loaded,
                 )
             )
         )

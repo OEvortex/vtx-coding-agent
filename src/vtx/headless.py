@@ -8,10 +8,11 @@ from vtx.config import get_last_selected
 
 from .core.types import StopReason, TextContent
 from .events import AgentEndEvent, ErrorEvent, Event, ToolApprovalEvent, TurnEndEvent
+from .extensions import LoadedExtensions, load_for_runtime
 from .llm.base import AuthMode
 from .permissions import ApprovalResponse
 from .runtime import ConversationRuntime
-from .tools import DEFAULT_TOOLS, get_tools
+from .tools import DEFAULT_TOOLS, get_tools_with_extensions
 
 _EXIT_CODES = {StopReason.STOP: 0, StopReason.ERROR: 1, StopReason.LENGTH: 3}
 
@@ -65,6 +66,7 @@ async def run_headless(
     base_url: str | None,
     openai_compat_auth_mode: AuthMode | None,
     anthropic_compat_auth_mode: AuthMode | None,
+    loaded_extensions: LoadedExtensions | None = None,
 ) -> int:
     prompt = resolve_prompt(prompt_arg, stdin=sys.stdin)
     if not prompt:
@@ -93,7 +95,15 @@ async def run_headless(
         openai_auth = openai_compat_auth_mode or config.llm.auth.openai_compat
         anthropic_auth = anthropic_compat_auth_mode or config.llm.auth.anthropic_compat
 
-        tools = get_tools(DEFAULT_TOOLS)
+        tools = get_tools_with_extensions(DEFAULT_TOOLS)
+
+        loaded_extensions = load_for_runtime(cwd=os.getcwd(), auto_discover=True)
+        for err in loaded_extensions.errors:
+            print(f"extension error: {err}", file=sys.stderr)
+        if loaded_extensions.list_extension_tools():
+            tools = get_tools_with_extensions(
+                DEFAULT_TOOLS, loaded_extensions.list_extension_tools()
+            )
 
         runtime = ConversationRuntime(
             cwd=os.getcwd(),
@@ -105,6 +115,7 @@ async def run_headless(
             tools=tools,
             openai_compat_auth_mode=openai_auth,
             anthropic_compat_auth_mode=anthropic_auth,
+            extensions=loaded_extensions.bus,
         )
 
         try:
