@@ -9,6 +9,8 @@ from typing import Annotated
 import httpx
 from pydantic import BaseModel, Field
 
+from vtx.ui.tool_output import escape_tool_output_text, truncate_tool_output_text
+
 from ..core.types import ToolResult
 from .base import BaseTool
 
@@ -17,6 +19,16 @@ from .base import BaseTool
 # ---------------------------------------------------------------------------
 
 _FETCH_TIMEOUT = 25.0
+
+
+def _split_for_expand(text: str) -> tuple[str, str | None]:
+    """Split long text into collapsed + expanded form so ctrl+o can reveal it.
+
+    Mirrors the fallback in ``SessionUIMixin._format_tool_result_text`` so the
+    web tools get the same expand/collapse affordance as bash/edit.
+    """
+    collapsed, truncated = truncate_tool_output_text(text)
+    return collapsed, escape_tool_output_text(text) if truncated else None
 
 
 # ===========================================================================
@@ -91,12 +103,26 @@ class WebFetchTool(BaseTool):
                     continue
                 text = self._extract_text(data)
                 if text:
-                    return ToolResult(success=True, result=text, ui_summary="[dim]exa[/dim]")
+                    ui_details, ui_details_full = _split_for_expand(text)
+                    return ToolResult(
+                        success=True,
+                        result=text,
+                        ui_summary="[dim]exa[/dim]",
+                        ui_details=ui_details,
+                        ui_details_full=ui_details_full,
+                    )
 
             try:
                 text = self._extract_text(resp.json())
                 if text:
-                    return ToolResult(success=True, result=text, ui_summary="[dim]exa[/dim]")
+                    ui_details, ui_details_full = _split_for_expand(text)
+                    return ToolResult(
+                        success=True,
+                        result=text,
+                        ui_summary="[dim]exa[/dim]",
+                        ui_details=ui_details,
+                        ui_details_full=ui_details_full,
+                    )
             except Exception:
                 pass
 
@@ -200,16 +226,26 @@ class WebSearchTool(BaseTool):
                     continue
                 text = self._extract_text(data)
                 if text:
+                    ui_details, ui_details_full = _split_for_expand(text)
                     return ToolResult(
-                        success=True, result=text, ui_summary=f"[dim]exa: {params.query!r}[/dim]"
+                        success=True,
+                        result=text,
+                        ui_summary=f"[dim]exa: {params.query!r}[/dim]",
+                        ui_details=ui_details,
+                        ui_details_full=ui_details_full,
                     )
 
             # Fallback: parse whole body as JSON
             try:
                 text = self._extract_text(resp.json())
                 if text:
+                    ui_details, ui_details_full = _split_for_expand(text)
                     return ToolResult(
-                        success=True, result=text, ui_summary=f"[dim]exa: {params.query!r}[/dim]"
+                        success=True,
+                        result=text,
+                        ui_summary=f"[dim]exa: {params.query!r}[/dim]",
+                        ui_details=ui_details,
+                        ui_details_full=ui_details_full,
                     )
             except Exception:
                 pass
