@@ -278,3 +278,367 @@ providers:
     models_endpoint: /models
     model_parser:
       cooldown_minutes: 60
+
+  - slug: aihubmix
+    display_name: AIHubMix
+    description: AIHubMix multi-provider gateway.
+    family: openai_compat
+    base_url: https://aihubmix.com/v1
+    api_key_env: AIHUBMIX_API_KEY
+    headers:
+      APP-Code: TFUV4759
+    openmodelendpoint: true
+    fetch_models: true
+    models_endpoint: /models
+    model_parser:
+      cooldown_minutes: 10
+
+  - slug: apertis
+    display_name: Apertis AI
+    description: Apertis AI gateway.
+    family: openai_compat
+    base_url: https://api.apertis.ai/v1
+    api_key_env: APERTIS_API_KEY
+    fetch_models: true
+    models_endpoint: /models
+    model_parser:
+      cooldown_minutes: 10
+
+  - slug: baseten
+    display_name: Baseten
+    description: Baseten inference platform.
+    family: openai_compat
+    base_url: https://inference.baseten.co/v1
+    api_key_env: BASETEN_API_KEY
+    openmodelendpoint: false
+    fetch_models: true
+    models_endpoint: /models
+    model_parser:
+      cooldown_minutes: 10
+
+  - slug: berget
+    display_name: Berget AI
+    description: Berget AI gateway.
+    family: openai_compat
+    base_url: https://api.berget.ai/v1
+    api_key_env: BERGET_API_KEY
+    openmodelendpoint: true
+    fetch_models: true
+    models_endpoint: /models
+    model_parser:
+      cooldown_minutes: 10
+
+  - slug: blackbox
+    display_name: Blackbox AI
+    description: Blackbox AI gateway.
+    family: openai_compat
+    base_url: https://api.blackbox.ai/v1
+    api_key_env: BLACKBOX_API_KEY
+    fetch_models: true
+    models_endpoint: /models
+    model_parser:
+      cooldown_minutes: 10
+
+  - slug: cline
+    display_name: Cline
+    description: Cline AI assistant.
+    family: openai_compat
+    base_url: https://api.cline.bot/api/v1
+    api_key_env: CLINE_API_KEY
+    openmodelendpoint: true
+    fetch_models: true
+    models_endpoint: /ai/cline/models
+    model_parser:
+      cooldown_minutes: 10
+
+  - slug: chutes
+    display_name: Chutes AI
+    description: Chutes AI gateway.
+    family: openai_compat
+    base_url: https://llm.chutes.ai/v1
+    api_key_env: CHUTES_API_KEY
+    openmodelendpoint: true
+    fetch_models: true
+    models_endpoint: /models
+    model_parser:
+      cooldown_minutes: 10
+
+  - slug: cortecs
+    display_name: Cortecs
+    description: Cortecs AI gateway.
+    family: openai_compat
+    base_url: https://api.cortecs.ai/v1
+    api_key_env: CORTECS_API_KEY
+    openmodelendpoint: true
+    fetch_models: true
+    models_endpoint: /models
+    model_parser:
+      cooldown_minutes: 10
+
+  - slug: crof
+    display_name: Crof AI
+    description: Crof AI gateway.
+    family: openai_compat
+    base_url: https://crof.ai/v1
+    api_key_env: CROF_API_KEY
+    openmodelendpoint: false
+    fetch_models: true
+    models_endpoint: /models
+    model_parser:
+      cooldown_minutes: 10
+
+  - slug: dialagram
+    display_name: Dialagram
+    description: Dialagram router.
+    family: openai_compat
+    base_url: https://www.dialagram.me/router/v1
+    api_key_env: DIALAGRAM_API_KEY
+    openmodelendpoint: true
+    fetch_models: true
+    models_endpoint: /models
+    model_parser:
+      cooldown_minutes: 10
+
+  - slug: dinference
+    display_name: Dinference
+    description: Dinference inference platform.
+    family: openai_compat
+    base_url: https://api.dinference.com/v1
+    api_key_env: DINFERENCE_API_KEY
+    openmodelendpoint: false
+    fetch_models: true
+    models_endpoint: /models
+    model_parser:
+      cooldown_minutes: 10
+
+  - slug: fastrouter
+    display_name: FastRouter
+    description: FastRouter multi-provider gateway.
+    family: anthropic
+    base_url: https://api.fastrouter.ai/api/v1
+    api_key_env: FASTROUTER_API_KEY
+    fetch_models: true
+    models_endpoint: /models
+    model_parser:
+      cooldown_minutes: 10
+
+  - slug: friendli
+    display_name: Friendli
+    description: Friendli AI gateway.
+    family: openai_compat
+    base_url: https://api.friendli.ai/serverless/v1
+    api_key_env: FRIENDLI_API_KEY
+    openmodelendpoint: true
+    fetch_models: true
+    models_endpoint: /models
+    model_parser:
+      cooldown_minutes: 10
+
+  - slug: hicapai
+    display_name: HicapAI
+    description: HicapAI gateway.
+    family: openai_compat
+    base_url: https://api.hicap.ai/v1
+    api_key_env: HICAPAI_API_KEY
+    openmodelendpoint: false
+    fetch_models: true
+    models_endpoint: /models
+    model_parser:
+      cooldown_minutes: 10
+
+  - slug: jiekou
+    display_name: Jiekou AI
+    description: Jiekou AI gateway.
+    family: openai_compat
+    base_url: https://api.jiekou.ai/openai/
+    api_key_env: JIEKOU_API_KEY
+    fetch_models: true
+    models_endpoint: /models
+    model_parser:
+      cooldown_minutes: 10
+
+  - slug: knox
+    display_name: Knox
+    description: Knox AI gateway.
+    family: openai_compat
+    base_url: https://api.knox.chat/v1
+    api_key_env: KNOX_API_KEY
+    openmodelendpoint: true
+    fetch_models: true
+    models_endpoint: /models
+    model_parser:
+      cooldown_minutes: 10
+
+  - slug: lightningai
+    display_name: LightningAI
+    description: LightningAI inference platform.
+    family: openai_compat
+    base_url: https://lightning.ai/api/v1
+    api_key_env: LIGHTNINGAI_API_KEY
+    openmodelendpoint: true
+    fetch_models: true
+    models_endpoint: /models
+    model_parser:
+      cooldown_minutes: 10
+
+  - slug: llmgateway
+    display_name: LLMGateway
+    description: LLMGateway multi-provider.
+    family: openai_compat
+    base_url: https://api.llmgateway.io/v1
+    api_key_env: LLMGATEWAY_API_KEY
+    fetch_models: true
+    models_endpoint: /models
+    model_parser:
+      cooldown_minutes: 10
+
+  - slug: meganova
+    display_name: MegaNova
+    description: MegaNova inference.
+    family: openai_compat
+    base_url: https://inference.meganova.ai/v1
+    api_key_env: MEGANOVA_API_KEY
+    fetch_models: true
+    models_endpoint: /models
+    model_parser:
+      cooldown_minutes: 10
+
+  - slug: minimax
+    display_name: MiniMax
+    description: MiniMax models.
+    family: openai_compat
+    base_url: https://api.minimaxi.com/v1
+    api_key_env: MINIMAX_API_KEY
+    fetch_models: true
+    models_endpoint: /models
+    model_parser:
+      cooldown_minutes: 10
+
+  - slug: moark
+    display_name: Moark
+    description: Moark AI gateway.
+    family: openai_compat
+    base_url: https://api.moark.ai/v1
+    api_key_env: MOARK_API_KEY
+    fetch_models: true
+    models_endpoint: /models
+    model_parser:
+      cooldown_minutes: 10
+
+  - slug: modelscope
+    display_name: ModelScope
+    description: ModelScope inference.
+    family: openai_compat
+    base_url: https://api-inference.modelscope.ai/v1
+    api_key_env: MODELSCOPE_API_KEY
+    openmodelendpoint: true
+    fetch_models: true
+    models_endpoint: /models
+    model_parser:
+      cooldown_minutes: 10
+
+  - slug: moonshot
+    display_name: MoonshotAI
+    description: Moonshot AI models.
+    family: openai_compat
+    base_url: https://api.moonshot.ai/v1
+    api_key_env: MOONSHOT_API_KEY
+    fetch_models: true
+    models_endpoint: /models
+    model_parser:
+      cooldown_minutes: 10
+
+  - slug: nanogpt
+    display_name: NanoGPT
+    description: NanoGPT inference.
+    family: openai_compat
+    base_url: https://nano-gpt.com/api/v1
+    api_key_env: NANOGPT_API_KEY
+    openmodelendpoint: true
+    fetch_models: true
+    models_endpoint: /models
+    model_parser:
+      cooldown_minutes: 10
+
+  - slug: pollinations
+    display_name: Pollinations AI
+    description: Pollinations AI gateway.
+    family: openai_compat
+    base_url: https://gen.pollinations.ai/v1
+    api_key_env: POLLINATIONS_API_KEY
+    models_endpoint: /models
+    openmodelendpoint: true
+    fetch_models: true
+    model_parser:
+      cooldown_minutes: 10
+
+  - slug: routingrun
+    display_name: Routing.run
+    description: Routing.run gateway.
+    family: openai_compat
+    base_url: https://api.routing.run/v1
+    api_key_env: ROUTINGRUN_API_KEY
+    openmodelendpoint: true
+    fetch_models: true
+    models_endpoint: /models
+    model_parser:
+      cooldown_minutes: 10
+
+  - slug: seraphyn
+    display_name: Seraphyn
+    description: Seraphyn AI gateway.
+    family: openai_compat
+    base_url: https://seraphyn.ai/api/v1
+    api_key_env: SERAPHYN_API_KEY
+    openmodelendpoint: true
+    fetch_models: true
+    models_endpoint: /models
+    model_parser:
+      cooldown_minutes: 10
+
+  - slug: sherlock
+    display_name: Sherlock (CloudFerro)
+    description: CloudFerro Sherlock inference.
+    family: openai_compat
+    base_url: https://api-sherlock.cloudferro.com/openai/v1
+    api_key_env: SHERLOCK_API_KEY
+    openmodelendpoint: false
+    fetch_models: true
+    models_endpoint: /models
+    model_parser:
+      cooldown_minutes: 10
+
+  - slug: vercelai
+    display_name: Vercel AI
+    description: Vercel AI gateway.
+    family: openai_compat
+    base_url: https://ai-gateway.vercel.sh/v1
+    api_key_env: VERCELAI_API_KEY
+    openmodelendpoint: true
+    fetch_models: true
+    models_endpoint: /models
+    model_parser:
+      cooldown_minutes: 10
+
+  - slug: zenmux
+    display_name: Zenmux
+    description: Zenmux multi-provider gateway.
+    family: openai_compat
+    base_url: https://zenmux.ai/api/v1
+    api_key_env: ZENMUX_API_KEY
+    openmodelendpoint: true
+    fetch_models: true
+    models_endpoint: /models
+    model_parser:
+      cooldown_minutes: 10
+
+  - slug: clarifai
+    display_name: Clarifai
+    description: Clarifai AI models.
+    family: openai_compat
+    base_url: https://api.clarifai.com/v2/ext/openai/v1
+    api_key_env: CLARIFAI_API_KEY
+    fetch_models: true
+    models_endpoint: /models
+    model_parser:
+      cooldown_minutes: 10
