@@ -1,0 +1,53 @@
+meta:
+  config_version: 6
+
+llm:
+  default_provider: "openai-codex"
+  default_model: "gpt-5.5"
+  default_base_url: ""
+  default_thinking_level: "low"
+  tool_call_idle_timeout_seconds: 180
+  request_timeout_seconds: 600
+
+  auth:
+    openai_compat: "auto"
+    anthropic_compat: "auto"
+
+  tls:
+    insecure_skip_verify: false
+
+  system_prompt:
+    git_context: true
+    # Base identity + general rules. Defaults to vtx.prompts.identity.DEFAULT_VTX_BASE
+    # (sourced from Python). Set a custom string here to override the base prompt;
+    # extra sections (tool guidelines, AGENTS.md, skills, git, env) are still
+    # appended automatically.
+    content: ""
+
+compaction:
+  on_overflow: "continue"
+  buffer_tokens: 20000
+
+agent:
+  max_turns: 500
+  default_context_window: 200000
+
+ui:
+  theme: "gruvbox-dark"
+  collapse_thinking: true
+  show_welcome_shortcuts: true
+  hidden_models: []
+
+permissions:
+  mode: "prompt"
+
+notifications:
+  enabled: false
+  volume: 0.5
+
+# Example: DeepSeek provider
+# export DEEPSEEK_API_KEY="sk-your-api-key"
+#
+# Then set in [llm]:
+# default_provider = "deepseek"
+# default_model = "deepseek-v4-flash"

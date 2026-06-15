@@ -1,0 +1,423 @@
+"""
+Skills discovery and loading.
+
+Skills are directories containing a SKILL.md file with frontmatter.
+They provide specialized instructions that the model can read on-demand.
+
+Discovery locations:
+1. User: ~/.agents/skills/
+2. Project: <cwd-or-ancestor>/.agents/skills/
+"""
+
+import os
+import re
+from dataclasses import dataclass
+from importlib import resources
+from pathlib import Path
+from typing import Any
+
+from .. import get_agents_dir as get_config_dir
+from ._xml import escape_xml
+
+MAX_NAME_LENGTH = 64
+MAX_DESCRIPTION_LENGTH = 1024
+MAX_CMD_INFO_LENGTH = 32
+MAX_CATEGORY_LENGTH = 32
+DEFAULT_SKILL_CATEGORY = "general"
+
+
+def shorten_path(path: str) -> str:
+    home = os.path.expanduser("~")
+    if path.startswith(home):
+        path = "~" + path[len(home) :]
+    return path.replace(os.sep, "/")
+
+
+def _parse_bool(value: Any) -> bool:
+    if isinstance(value, bool):
+        return value
+    if value is None:
+        return False
+    if isinstance(value, str):
+        return value.strip().lower() in {"1", "true", "yes", "on"}
+    return False
+
+
+@dataclass
+class Skill:
+    path: str
+    name: str
+    description: str
+    register_cmd: bool = False
+    cmd_info: str = ""
+    include_in_prompt: bool = True
+    bundled: bool = False
+    category: str = DEFAULT_SKILL_CATEGORY
+
+
+@dataclass
+class SkillWarning:
+    path: str
+    message: str
+
+
+@dataclass
+class LoadSkillsResult:
+    skills: list[Skill]
+    warnings: list[SkillWarning]
+
+
+def _strip_inline_comment(value: str) -> str:
+    quote_char = ""
+    escaped = False
+    for i, char in enumerate(value):
+        if escaped:
+            escaped = False
+            continue
+        if char == "\\" and quote_char:
+            escaped = True
+            continue
+        if char in ('"', "'"):
+            if not quote_char:
+                quote_char = char
+            elif quote_char == char:
+                quote_char = ""
+            continue
+        if char == "#" and not quote_char and (i == 0 or value[i - 1].isspace()):
+            return value[:i].rstrip()
+    return value
+
+
+def _parse_frontmatter(content: str) -> dict[str, Any]:
+    if not content.startswith("---"):
+        return {}
+
+    end_match = re.search(r"\n---\s*\n", content[3:])
+    if not end_match:
+        return {}
+
+    frontmatter_text = content[3 : end_match.start() + 3]
+
+    result: dict[str, Any] = {}
+    for line in frontmatter_text.split("\n"):
+        line = line.strip()
+        if not line or line.startswith("#"):
+            continue
+        if ":" in line:
+            key, _, value = line.partition(":")
+            key = key.strip()
+            value = _strip_inline_comment(value.strip())
+            if value and value[0] in ('"', "'") and value[-1] == value[0]:
+                value = value[1:-1]
+            result[key] = value
+
+    return result
+
+
+def _validate_skill(
+    name: str,
+    description: str,
+    parent_dir_name: str,
+    file_path: str,
+    cmd_info: str = "",
+    category: str = DEFAULT_SKILL_CATEGORY,
+) -> list[SkillWarning]:
+    warnings: list[SkillWarning] = []
+
+    if name != parent_dir_name:
+        warnings.append(
+            SkillWarning(file_path, f'name "{name}" does not match directory "{parent_dir_name}"')
+        )
+
+    if len(name) > MAX_NAME_LENGTH:
+        warnings.append(SkillWarning(file_path, f"name exceeds {MAX_NAME_LENGTH} characters"))
+
+    if not re.match(r"^[a-z0-9-]+$", name):
+        warnings.append(SkillWarning(file_path, "name must be lowercase a-z, 0-9, hyphens only"))
+
+    if name.startswith("-") or name.endswith("-"):
+        warnings.append(SkillWarning(file_path, "name must not start or end with hyphen"))
+
+    if "--" in name:
+        warnings.append(SkillWarning(file_path, "name must not contain consecutive hyphens"))
+
+    if not description or not description.strip():
+        warnings.append(SkillWarning(file_path, "description is required"))
+
+    if len(description) > MAX_DESCRIPTION_LENGTH:
+        warnings.append(
+            SkillWarning(file_path, f"description exceeds {MAX_DESCRIPTION_LENGTH} characters")
+        )
+
+    if len(cmd_info) > MAX_CMD_INFO_LENGTH:
+        warnings.append(
+            SkillWarning(file_path, f"cmd_info exceeds {MAX_CMD_INFO_LENGTH} characters")
+        )
+
+    if len(category) > MAX_CATEGORY_LENGTH:
+        warnings.append(
+            SkillWarning(file_path, f"category exceeds {MAX_CATEGORY_LENGTH} characters")
+        )
+
+    return warnings
+
+
+def _load_skill_from_dir(skill_dir: Path) -> tuple[Skill | None, list[SkillWarning]]:
+    skill_file = skill_dir / "SKILL.md"
+    if not skill_file.is_file():
+        return None, []
+
+    warnings: list[SkillWarning] = []
+    file_path = str(skill_file)
+
+    try:
+        content = skill_file.read_text(encoding="utf-8")
+        frontmatter = _parse_frontmatter(content)
+
+        parent_dir_name = skill_dir.name
+        name = frontmatter.get("name") or parent_dir_name
+        description = frontmatter.get("description", "")
+        register_cmd_value = str(frontmatter.get("register_cmd", "")).strip().lower()
+        cmd_only = register_cmd_value == "only"
+        register_cmd = cmd_only or _parse_bool(frontmatter.get("register_cmd"))
+        cmd_info = str(frontmatter.get("cmd_info", "")).strip()
+        category_raw = str(frontmatter.get("category", "")).strip().lower()
+        category = category_raw or DEFAULT_SKILL_CATEGORY
+
+        warnings = _validate_skill(
+            name, description, parent_dir_name, file_path, cmd_info=cmd_info, category=category
+        )
+
+        if not description or not description.strip():
+            return None, warnings
+
+        skill = Skill(
+            name=name,
+            description=description,
+            path=file_path,
+            register_cmd=register_cmd,
+            cmd_info=cmd_info,
+            include_in_prompt=not cmd_only,
+            category=category,
+        )
+        return skill, warnings
+
+    except Exception as e:
+        return None, [SkillWarning(file_path, str(e))]
+
+
+def _load_skills_from_dir(
+    directory: Path, *, legacy_warning: str | None = None
+) -> LoadSkillsResult:
+    skills: list[Skill] = []
+    warnings: list[SkillWarning] = []
+
+    if not directory.exists():
+        return LoadSkillsResult(skills=skills, warnings=warnings)
+
+    if legacy_warning:
+        warnings.append(SkillWarning(str(directory), legacy_warning))
+
+    try:
+        for entry in directory.iterdir():
+            if entry.name.startswith("."):
+                continue
+            if not entry.is_dir():
+                continue
+
+            skill, skill_warnings = _load_skill_from_dir(entry)
+            warnings.extend(skill_warnings)
+            if skill:
+                skills.append(skill)
+
+    except Exception:
+        pass
+
+    return LoadSkillsResult(skills=skills, warnings=warnings)
+
+
+def _find_git_root(start: Path) -> Path | None:
+    current = start
+    while True:
+        if (current / ".git").is_dir():
+            return current
+        parent = current.parent
+        if parent == current:
+            return None
+        current = parent
+
+
+def _project_skill_dirs(cwd: Path) -> list[Path]:
+    git_root = _find_git_root(cwd)
+    stop_dir = git_root or cwd
+    dirs: list[Path] = []
+    current = cwd
+    while True:
+        dirs.append((current / ".agents" / "skills").resolve(strict=False))
+        if current == stop_dir:
+            break
+        current = current.parent
+    return dirs
+
+
+def load_skills(cwd: str | None = None) -> LoadSkillsResult:
+    """
+    Load skills from ~/.agents and project .agents locations.
+
+    Discovery:
+    1. <cwd-or-ancestor>/.agents/skills/ - each subdirectory with SKILL.md is a skill
+    2. ~/.agents/skills/ - each subdirectory with SKILL.md is a skill
+
+    Local skills take precedence over global skills with the same name.
+    """
+    resolved_cwd = Path(cwd) if cwd else Path.cwd()
+    resolved_cwd = resolved_cwd.resolve()
+
+    skill_map: dict[str, Skill] = {}
+    all_warnings: list[SkillWarning] = []
+
+    def add_skills(result: LoadSkillsResult) -> None:
+        all_warnings.extend(result.warnings)
+        for skill in result.skills:
+            if skill.name in skill_map:
+                all_warnings.append(
+                    SkillWarning(
+                        skill.path,
+                        f'name collision: "{skill.name}" already loaded '
+                        f"from {shorten_path(skill_map[skill.name].path)}",
+                    )
+                )
+            else:
+                skill_map[skill.name] = skill
+
+    project_skills_dirs = _project_skill_dirs(resolved_cwd)
+    for skills_dir in project_skills_dirs:
+        add_skills(_load_skills_from_dir(skills_dir))
+
+    user_skills_dir = (get_config_dir() / "skills").resolve(strict=False)
+    if user_skills_dir not in project_skills_dirs:
+        add_skills(_load_skills_from_dir(user_skills_dir))
+
+    return LoadSkillsResult(skills=list(skill_map.values()), warnings=all_warnings)
+
+
+def load_builtin_cmd_skills() -> LoadSkillsResult:
+    try:
+        builtin_resource = resources.files("vtx").joinpath("builtin_skills")
+        with resources.as_file(builtin_resource) as builtin_root:
+            result = _load_skills_from_dir(builtin_root)
+    except Exception:
+        return LoadSkillsResult(skills=[], warnings=[])
+    return LoadSkillsResult(
+        skills=[
+            Skill(
+                path=skill.path,
+                name=skill.name,
+                description=skill.description,
+                register_cmd=skill.register_cmd,
+                cmd_info=skill.cmd_info,
+                include_in_prompt=skill.include_in_prompt,
+                bundled=True,
+                category=skill.category,
+            )
+            for skill in result.skills
+        ],
+        warnings=result.warnings,
+    )
+
+
+def strip_frontmatter(content: str) -> str:
+    if not content.startswith("---"):
+        return content.strip()
+    end_match = re.search(r"\n---\s*\n", content[3:])
+    if not end_match:
+        return content.strip()
+    return content[end_match.end() + 3 :].strip()
+
+
+def render_skill_prompt(skill: Skill, query: str) -> str:
+    try:
+        content = Path(skill.path).read_text(encoding="utf-8")
+    except Exception:
+        return _build_fallback_skill_prompt(skill.description, query)
+    template = strip_frontmatter(content)
+    if "$ARGUMENTS" in template:
+        rendered = template.replace("$ARGUMENTS", query).strip()
+    else:
+        rendered = template.strip()
+        if query.strip():
+            rendered = f"{rendered}\n\n{query.strip()}"
+    skill_dir = str(Path(skill.path).parent)
+    return (
+        f'<skill name="{escape_xml(skill.name)}" location="{escape_xml(skill.path)}">\n'
+        f"References are relative to {skill_dir}.\n"
+        f"\n"
+        f"{rendered}\n"
+        f"</skill>"
+    )
+
+
+def _build_fallback_skill_prompt(description: str, query: str) -> str:
+    query = query.strip()
+    if not query:
+        return description
+    return f"{description}\n\n{query}"
+
+
+def merge_registered_skills(primary: list[Skill], secondary: list[Skill]) -> list[Skill]:
+    seen = {skill.name for skill in primary}
+    merged = list(primary)
+    for skill in secondary:
+        if skill.name in seen:
+            continue
+        merged.append(skill)
+        seen.add(skill.name)
+    return merged
+
+
+def formatted_skills(skills: list[Skill]) -> str:
+    skills = [skill for skill in skills if skill.include_in_prompt]
+    if not skills:
+        return ""
+
+    grouped: dict[str, list[Skill]] = {}
+    for skill in skills:
+        grouped.setdefault(skill.category or DEFAULT_SKILL_CATEGORY, []).append(skill)
+
+    index_lines: list[str] = []
+    for category in sorted(grouped):
+        index_lines.append(f"  {category}:")
+        for skill in sorted(grouped[category], key=lambda s: s.name):
+            if skill.description:
+                index_lines.append(f"    - {skill.name}: {skill.description}")
+            else:
+                index_lines.append(f"    - {skill.name}")
+
+    lines = [
+        "## Skills (mandatory)",
+        "",
+        "Before replying, scan the skills below. If a skill matches or is even partially relevant",
+        "to your task, you MUST load it with the read tool and follow its instructions. "
+        "Err on the side of loading — it is always better to have context you don't need",
+        "than to miss critical steps, pitfalls, or established workflows. "
+        "Skills contain specialized knowledge — repo conventions, commands, escape hatches, and",
+        "proven workflows that outperform general-purpose approaches. Load the skill even if you",
+        "think you could handle the task with basic tools. Skills also encode the user's",
+        "preferred approach, conventions, and quality standards for tasks like review, planning,",
+        "testing, and large refactors — load them even for tasks you already know how to do,",
+        "because the skill defines how it should be done here.",
+        "",
+        "When a skill file references a relative path, resolve it against the skill's directory",
+        "(the parent of its SKILL.md) and use that absolute path in tool calls, not a path",
+        "relative to the current working directory. If a skill is manually triggered via slash",
+        "command, its full content is already included in the user message, so you don't need",
+        "to read the skill file again.",
+        "",
+        "<available_skills>",
+        *index_lines,
+        "</available_skills>",
+        "",
+        "Only proceed without loading a skill if genuinely none are relevant to the task.",
+    ]
+
+    return "\n".join(lines)

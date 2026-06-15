@@ -1,0 +1,327 @@
+"""TUI styles for vtx."""
+
+from vtx import config
+
+
+def _blend_hex(base: str, overlay: str, overlay_weight: float) -> str:
+    """Blend two hex colors, biasing toward the base color."""
+    base_rgb = tuple(int(base[i : i + 2], 16) for i in (1, 3, 5))
+    overlay_rgb = tuple(int(overlay[i : i + 2], 16) for i in (1, 3, 5))
+    channels = tuple(
+        round((base_channel * (1 - overlay_weight)) + (overlay_channel * overlay_weight))
+        for base_channel, overlay_channel in zip(base_rgb, overlay_rgb, strict=True)
+    )
+    return f"#{channels[0]:02x}{channels[1]:02x}{channels[2]:02x}"
+
+
+def get_styles() -> str:
+    colors = config.ui.colors
+    approval_bg = _blend_hex(colors.bg, colors.accent, overlay_weight=0.05)
+    shell_bg = _blend_hex(colors.editor, colors.success, overlay_weight=0.15)
+    thinking_medium_bg = _blend_hex(colors.editor, colors.accent, overlay_weight=0.08)
+    thinking_high_bg = _blend_hex(colors.editor, colors.accent, overlay_weight=0.18)
+    thinking_xhigh_bg = _blend_hex(colors.editor, colors.badge.label, overlay_weight=0.18)
+
+    return f"""
+Screen {{
+    layout: grid;
+    grid-size: 1;
+    grid-rows: 1fr auto auto auto auto auto;
+    background: transparent;
+    color: {colors.fg};
+}}
+
+#chat-log {{
+    height: 100%;
+    padding: 0 0 1 0;
+    scrollbar-size: 0 0;
+    align-vertical: bottom;
+    background: transparent;
+    color: {colors.fg};
+}}
+
+/* Thinking block - dim italic */
+.thinking-block {{
+    color: {colors.dim};
+    text-style: italic;
+    padding: 0 1 0 1;
+    margin: 1 0 0 0;
+}}
+
+.thinking-block.-hidden {{
+    display: none;
+    height: 0;
+    margin: 0;
+    border: none;
+}}
+
+#thinking-content {{
+    color: {colors.dim};
+    text-style: italic;
+}}
+
+/* Content block */
+.content-block {{
+    padding: 0 1;
+    margin-top: 1;
+}}
+
+/* Ensure text wraps in all blocks */
+.thinking-block Label,
+.content-block Label,
+.user-block Label,
+.update-available-block Label,
+.launch-warnings-block Label,
+.tool-block Label,
+.handoff-link-block Label {{
+    width: 100%;
+}}
+
+/* User message */
+.user-block {{
+    padding: 1 1;
+    margin: 1 0 0 0;
+    background: {colors.editor};
+}}
+
+.user-block.skill-trigger-message {{
+    background: {colors.editor};
+}}
+
+/* Update available message */
+.update-available-block {{
+    padding: 0 1;
+    margin: 1 0 0 0;
+    border-top: solid {colors.notice};
+    border-bottom: solid {colors.notice};
+}}
+
+/* Launch warnings */
+.launch-warnings-block {{
+    padding: 0 1;
+    margin: 1 0 0 0;
+    border-top: solid {colors.notice};
+    border-bottom: solid {colors.notice};
+}}
+
+/* Session info */
+.session-info {{
+    padding: 1;
+}}
+
+/* Tool block */
+.tool-block {{
+    padding: 0 1;
+    margin-top: 1;
+    background: transparent;
+}}
+
+.tool-block.-compact {{
+    margin-top: 0;
+}}
+
+.tool-block.-pending,
+.tool-block.-success,
+.tool-block.-error {{
+    background: transparent;
+    color: {colors.dim};
+    border: none;
+}}
+
+.tool-block.-approval {{
+    background: {approval_bg};
+    color: {colors.dim};
+    border-left: outer {colors.accent};
+    margin: 1 0 1 1;
+    padding: 1 1;
+}}
+
+.tool-block.-approval #tool-output {{
+    padding: 1 0 0 0;
+}}
+
+#tool-header {{
+    text-style: none;
+}}
+
+#tool-output,
+.tool-output {{
+    color: {colors.dim};
+    padding: 0 0 0 2;
+}}
+
+#tool-output.-diff-output {{
+    text-wrap: nowrap;
+    text-overflow: clip;
+}}
+
+.tool-block.-with-details {{
+    padding: 0 1;
+}}
+
+#tool-output.-hidden {{
+    display: none;
+    height: 0;
+}}
+
+/* Compaction message */
+.compaction-message {{
+    background: {colors.panel};
+    padding: 1 1;
+    margin-top: 1;
+    width: 100%;
+}}
+
+/* Handoff link */
+.handoff-link-block {{
+    background: {colors.panel};
+    padding: 1 1;
+    margin: 1 0 0 0;
+    width: 100%;
+}}
+
+/* Aborted message */
+.aborted-message {{
+    padding: 0 1;
+    margin-top: 1;
+}}
+
+/* Info message */
+.info-message {{
+    padding: 0 1;
+    margin-top: 1;
+}}
+
+/* Loaded resources should not add extra top margin */
+.info-message.loaded-resources {{
+    margin-top: 0;
+}}
+
+/* Queue display - shown above status line when messages are queued */
+#queue-display {{
+    height: auto;
+    padding: 0 1 1 1;
+}}
+
+#queue-display.-hidden {{
+    display: none;
+}}
+
+#queue-content {{
+    color: {colors.dim};
+    width: 100%;
+}}
+
+/* Status line - vtx style with spinner */
+.status-line {{
+    height: auto;
+    min-height: 1;
+    padding: 0 1;
+    color: $warning;
+}}
+
+#status-text {{
+    color: {colors.dim};
+    width: 1fr;
+}}
+
+#exit-hint {{
+    color: {colors.dim};
+    width: auto;
+}}
+
+/* Input area */
+#input-box {{
+    background: {colors.editor};
+    border-top: solid {colors.editor};
+    border-bottom: solid {colors.editor};
+    border-title-color: {colors.dim};
+    border-subtitle-color: {colors.dim};
+}}
+
+#input-prefix {{
+    color: {colors.fg};
+    text-style: bold;
+}}
+
+#input-box.-thinking-none,
+#input-box.-thinking-minimal,
+#input-box.-thinking-low {{
+    background: {colors.editor};
+    border-top: solid {colors.editor};
+    border-bottom: solid {colors.editor};
+}}
+
+#input-box.-thinking-medium {{
+    background: {thinking_medium_bg};
+    border-top: solid {thinking_medium_bg};
+    border-bottom: solid {thinking_medium_bg};
+}}
+
+#input-box.-thinking-high {{
+    background: {thinking_high_bg};
+    border-top: solid {thinking_high_bg};
+    border-bottom: solid {thinking_high_bg};
+}}
+
+#input-box.-thinking-xhigh {{
+    background: {thinking_xhigh_bg};
+    border-top: solid {thinking_xhigh_bg};
+    border-bottom: solid {thinking_xhigh_bg};
+}}
+
+#input-box.-shell-command {{
+    background: {shell_bg};
+    border-top: solid {shell_bg};
+    border-bottom: solid {shell_bg};
+}}
+
+#input-box.-shell-command .input-textarea {{
+    color: {colors.success};
+}}
+
+/* Completion list - between input and info bar */
+#completion-list {{
+    height: auto;
+    padding: 0 1;
+}}
+
+/* Info bar - vtx style tmux-like bottom bar with two rows */
+.info-bar {{
+    height: 2;
+    color: {colors.dim};
+}}
+
+.info-bar.-completion-hidden {{
+    display: none;
+    height: 0;
+}}
+
+#info-row-1, #info-row-2 {{
+    height: 1;
+}}
+
+#info-cwd {{
+    width: 1fr;
+    padding: 0 1;
+}}
+
+#info-row2-left {{
+    width: 1fr;
+    padding: 0 1;
+}}
+
+#info-row1-right, #info-row2-right {{
+    width: auto;
+    padding: 0 1;
+    text-align: right;
+}}
+
+/* Notifications */
+Notification {{
+    layer: notification;
+}}
+"""
+
+
+STYLES = get_styles()

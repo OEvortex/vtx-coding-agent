@@ -1,0 +1,280 @@
+# LLM Provider Catalog
+# Add new providers here. Each entry defines how to connect to a provider.
+#
+# Fields:
+#   slug:                    Unique identifier
+#   display_name:            Human-readable name
+#   description:             One-line description
+#   family:                  API family - "openai_compat" or "anthropic"
+#   base_url:                API endpoint URL
+#   api_key_env:             Environment variable for API key (null for keyless)
+#   known_models:            Fallback list (used when fetch fails or fetch_models=false)
+#   supports_tools:          Tool calling support (default: true)
+#   supports_vision:         Image input support (default: false)
+#   api_key_optional:        Works without API key (default: false)
+#   is_local:                Local provider (default: false)
+#   max_tokens:              Default max output tokens (default: 8192)
+#   supports_thinking:       Reasoning/thinking support (default: false)
+#   headers:                 Extra request headers, e.g. {"X-Foo": "bar"} (default: {})
+#   openmodelendpoint:       Provider's /models catalog is public (no key needed for
+#                            model discovery). Inference still requires a real key
+#                            unless api_key_optional is also set. (default: false)
+#
+# Auto-fetch fields:
+#   fetch_models:            Fetch model list from /models endpoint (default: false)
+#   models_endpoint:         Path to append to base_url (default: "/models")
+#   model_parser:
+#     array_path:            JSON key containing model array (default: "data")
+#     id_field:              Field for model ID (default: "id")
+#     name_field:            Field for model name (default: "name")
+#     context_field:         Field for context length (default: "context_length")
+#     output_field:          Field for max output tokens (default: "max_completion_tokens")
+#     cooldown_minutes:      Cache TTL in minutes (default: 60)
+
+providers:
+  - slug: openai
+    display_name: OpenAI
+    description: "Official OpenAI API (gpt-4o, gpt-4o-mini, ...)."
+    family: openai_compat
+    base_url: https://api.openai.com/v1
+    api_key_env: OPENAI_API_KEY
+    known_models:
+      - gpt-4o
+      - gpt-4o-mini
+      - gpt-4-turbo
+    supports_vision: true
+    max_tokens: 16384
+    fetch_models: true
+    models_endpoint: /models
+    model_parser:
+      cooldown_minutes: 60
+
+  - slug: anthropic
+    display_name: Anthropic
+    description: Direct Anthropic API.
+    family: anthropic
+    base_url: https://api.anthropic.com
+    api_key_env: ANTHROPIC_API_KEY
+    known_models:
+      - claude-sonnet-4-20250514
+      - claude-3-5-sonnet-20241022
+      - claude-3-5-haiku-20241022
+    supports_vision: true
+    supports_thinking: true
+    max_tokens: 8192
+
+  - slug: deepseek
+    display_name: DeepSeek
+    description: DeepSeek Chat + Reasoner.
+    family: openai_compat
+    base_url: https://api.deepseek.com/v1
+    api_key_env: DEEPSEEK_API_KEY
+    known_models:
+      - deepseek-chat
+      - deepseek-reasoner
+    supports_thinking: true
+    fetch_models: true
+    models_endpoint: /models
+    model_parser:
+      cooldown_minutes: 60
+
+  - slug: zhipu
+    display_name: ZhiPu
+    description: ZhiPu GLM models.
+    family: openai_compat
+    base_url: https://api.z.ai/api/coding/paas/v4
+    api_key_env: ZAI_API_KEY
+    known_models:
+      - glm-5.1
+      - glm-5.2
+    supports_thinking: true
+    fetch_models: true
+    models_endpoint: /models
+    model_parser:
+      cooldown_minutes: 60
+
+  - slug: openrouter
+    display_name: OpenRouter
+    description: "200+ models from every provider, one key."
+    family: openai_compat
+    base_url: https://openrouter.ai/api/v1
+    api_key_env: OPENROUTER_API_KEY
+    known_models:
+      - anthropic/claude-3.5-sonnet
+      - openai/gpt-4o
+      - google/gemini-2.0-flash-exp:free
+    supports_vision: true
+    fetch_models: true
+    models_endpoint: /models
+    model_parser:
+      cooldown_minutes: 60
+
+  - slug: groq
+    display_name: Groq
+    description: Ultra-fast LPU inference.
+    family: openai_compat
+    base_url: https://api.groq.com/openai/v1
+    api_key_env: GROQ_API_KEY
+    known_models:
+      - llama-3.3-70b-versatile
+      - mixtral-8x7b-32768
+    fetch_models: true
+    models_endpoint: /models
+    model_parser:
+      cooldown_minutes: 60
+
+  - slug: together
+    display_name: Together AI
+    description: Open-source models hosted by Together.
+    family: openai_compat
+    base_url: https://api.together.xyz/v1
+    api_key_env: TOGETHER_API_KEY
+    known_models:
+      - meta-llama/Llama-3.3-70B-Instruct-Turbo
+    fetch_models: true
+    models_endpoint: /models
+    model_parser:
+      cooldown_minutes: 60
+
+  - slug: fireworks
+    display_name: Fireworks AI
+    description: Fast open-source inference.
+    family: openai_compat
+    base_url: https://api.fireworks.ai/inference/v1
+    api_key_env: FIREWORKS_API_KEY
+    known_models: []
+    fetch_models: true
+    models_endpoint: /models
+    model_parser:
+      cooldown_minutes: 60
+
+  - slug: mistral
+    display_name: Mistral AI
+    description: Mistral's OpenAI-compatible endpoint.
+    family: openai_compat
+    base_url: https://api.mistral.ai/v1
+    api_key_env: MISTRAL_API_KEY
+    known_models: []
+    fetch_models: true
+    models_endpoint: /models
+    model_parser:
+      cooldown_minutes: 60
+
+  - slug: nvidia
+    display_name: NVIDIA NIM
+    description: NVIDIA inference endpoints.
+    family: openai_compat
+    base_url: https://integrate.api.nvidia.com/v1
+    api_key_env: NVIDIA_API_KEY
+    known_models: []
+    fetch_models: true
+    models_endpoint: /models
+    model_parser:
+      cooldown_minutes: 60
+
+  - slug: deepinfra
+    display_name: DeepInfra
+    description: Serverless GPU inference.
+    family: openai_compat
+    base_url: https://api.deepinfra.com/v1/openai
+    api_key_env: DEEPINFRA_API_KEY
+    known_models: []
+    fetch_models: true
+    models_endpoint: /models
+    model_parser:
+      cooldown_minutes: 60
+
+  - slug: huggingface
+    display_name: Hugging Face
+    description: Hugging Face inference API.
+    family: openai_compat
+    base_url: https://router.huggingface.co/v1
+    api_key_env: HF_TOKEN
+    known_models: []
+    fetch_models: true
+    models_endpoint: /models
+    model_parser:
+      cooldown_minutes: 60
+
+  - slug: ollama
+    display_name: "Ollama (local)"
+    description: Local models served by Ollama.
+    family: openai_compat
+    base_url: http://localhost:11434/v1
+    api_key_env: null
+    known_models: []
+    api_key_optional: true
+    is_local: true
+    openmodelendpoint: true
+    fetch_models: true
+    models_endpoint: /models
+    model_parser:
+      cooldown_minutes: 5
+
+  - slug: aerolink
+    display_name: Aerolink
+    description: Aerolink Anthropic-compatible gateway with auto-fetched model catalog.
+    family: anthropic
+    base_url: https://capi.aerolink.lat
+    api_key_env: ANTHROPIC_API_KEY
+    known_models: []
+    supports_vision: true
+    supports_thinking: true
+    max_tokens: 8192
+    fetch_models: true
+    models_endpoint: /v1/models
+    model_parser:
+      cooldown_minutes: 60
+
+  - slug: airouter
+    display_name: Airouter
+    description: Airouter gateway (free tier + paid models).
+    family: openai_compat
+    base_url: https://api.airouter.in/v1
+    api_key_env: AIROUTER_API_KEY
+    known_models: []
+    fetch_models: true
+    models_endpoint: /models
+    model_parser:
+      cooldown_minutes: 60
+
+  - slug: opencode
+    display_name: OpenCode Zen
+    description: Curated models via OpenCode Zen.
+    family: openai_compat
+    base_url: https://opencode.ai/zen/v1
+    api_key_env: OPENCODE_API_KEY
+    known_models: []
+    openmodelendpoint: true
+    fetch_models: true
+    models_endpoint: /models
+    model_parser:
+      cooldown_minutes: 60
+
+  - slug: kilo
+    display_name: Kilo Gateway
+    description: Kilo AI gateway (free tier + paid models).
+    family: openai_compat
+    base_url: https://api.kilo.ai/api/gateway
+    api_key_env: KILO_API_KEY
+    known_models: []
+    headers:
+      X-KILOCODE-EDITORNAME: vtx
+      User-Agent: vtx
+    openmodelendpoint: true
+    fetch_models: true
+    models_endpoint: /models
+    model_parser:
+      cooldown_minutes: 60
+
+  - slug: tokenrouter
+    display_name: TokenRouter
+    description: TokenRouter gateway.
+    family: openai_compat
+    base_url: https://api.tokenrouter.com/v1
+    api_key_env: TOKENROUTER_API_KEY
+    known_models: []
+    fetch_models: true
+    models_endpoint: /models
+    model_parser:
+      cooldown_minutes: 60
