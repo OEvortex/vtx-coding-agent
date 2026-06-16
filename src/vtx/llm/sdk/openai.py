@@ -182,14 +182,26 @@ class OpenAISDK(BaseLLMSDK):
     _SLUGS_WITH_REASONING_EFFORT: frozenset[str] = frozenset(
         {"openai", "openai-codex", "openai-responses"}
     )
-    # Slugs that pass through to OpenRouter's unified `reasoning` object.
-    _SLUG_OPENROUTER: str = "openrouter"
+    # Slugs that speak the OpenRouter `reasoning: {effort: ...}` protocol.
+    # Per https://openrouter.ai/docs/api/reference/parameters and the
+    # analogous docs from each provider, the nested object form is the
+    # canonical one for these gateways. OpenRouter itself rejects requests
+    # that include both `reasoning` and `reasoning_effort` (HTTP 400), so
+    # we never emit the top-level form for these.
+    _SLUGS_WITH_REASONING_OBJECT: frozenset[str] = frozenset(
+        {
+            "openrouter",
+            "kilo",  # documented as OpenRouter-compatible
+            "airouter",
+            "opencode",
+            "ollama",  # accepts both forms; nested is the documented one
+            "tokenrouter",  # Responses API style
+        }
+    )
     # Slugs that need DeepSeek's `extra_body={"thinking": {...}}` toggle.
     _SLUG_DEEPSEEK: str = "deepseek"
     # Slugs that need Zhipu/GLM's `extra_body={"thinking": {...}}` toggle.
     _SLUG_ZHIPU: str = "zhipu"
-    # Slugs that use TokenRouter's Responses-style `reasoning: {effort: ...}`.
-    _SLUG_TOKENROUTER: str = "tokenrouter"
 
     def __init__(
         self,
@@ -285,8 +297,9 @@ class OpenAISDK(BaseLLMSDK):
                 kwargs["reasoning"] = {"effort": level}
             return
 
-        # --- OpenRouter ---
-        if slug == self._SLUG_OPENROUTER:
+        # --- OpenRouter-style gateways (openrouter, kilo, airouter,
+        # opencode, ollama, tokenrouter) ---
+        if slug in self._SLUGS_WITH_REASONING_OBJECT:
             if level == "none":
                 kwargs["reasoning"] = {"effort": "none", "exclude": True}
             elif level in ("minimal", "low", "medium", "high", "xhigh"):
@@ -311,21 +324,15 @@ class OpenAISDK(BaseLLMSDK):
             }
             return
 
-        # --- TokenRouter (Responses API reasoning.effort, low/medium/high) ---
-        if slug == self._SLUG_TOKENROUTER:
-            if level == "none":
-                return
-            mapped = {"minimal": "low"}.get(level, level)
-            if mapped in ("low", "medium", "high"):
-                kwargs["reasoning"] = {"effort": mapped}
-            return
-
-        # --- Generic OpenAI-compat gateway (airouter, kilo, opencode, ollama) ---
-        # Pass `reasoning_effort` when the level is set; providers that don't
-        # understand it will ignore or fail with 400 (which the user sees).
+        # --- Generic OpenAI-compat gateway fallback ---
+        # If a future slug is added that we don't explicitly know about,
+        # send the OpenRouter-style nested `reasoning` object. This is
+        # the broadest of the documented formats and is the safest
+        # default for any OpenAI-compatible gateway.
         if level == "none":
             return
-        kwargs["reasoning_effort"] = level
+        if level in ("minimal", "low", "medium", "high", "xhigh"):
+            kwargs["reasoning"] = {"effort": level}
 
     async def generate(
         self, messages: list[Message], config: GenerationConfig, stream: bool = False

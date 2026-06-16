@@ -6,15 +6,17 @@ into the specific request fields documented for each provider family:
 - OpenAI family (openai / openai-codex / openai-responses): ``reasoning_effort``
   for low/medium/high; structured ``reasoning: {effort: ...}`` for
   minimal/xhigh.
-- OpenRouter: ``reasoning: {effort: ..., exclude: True}`` for none.
+- OpenRouter-style gateways (openrouter / kilo / airouter / opencode /
+  ollama / tokenrouter): ``reasoning: {effort: ...}`` nested object.
+  OpenRouter itself rejects requests that include both `reasoning` and
+  `reasoning_effort` with HTTP 400, so the SDK never emits the top-level
+  form for these slugs.
 - DeepSeek: ``extra_body={"thinking": {"type": ...}}`` + ``reasoning_effort``
   mapped (low/medium -> high, xhigh -> max).
 - Zhipu / GLM: ``extra_body={"thinking": {"type": enabled|disabled}}``.
-- TokenRouter: ``reasoning: {effort: ...}`` (low/medium/high only).
-- Generic OpenAI-compat gateway (airouter, kilo, opencode, ollama):
-  ``reasoning_effort`` passed through.
 - Anthropic: ``thinking: {type: "enabled", budget_tokens: N}`` for
   non-none; omitted entirely for none.
+- Unknown future slug: best-effort OpenRouter-style ``reasoning: {effort: ...}``.
 """
 
 from __future__ import annotations
@@ -72,7 +74,7 @@ def test_openai_codex_uses_native_param() -> None:
     assert "reasoning_effort" not in _kwargs("openai-codex", "none")
 
 
-# --- OpenRouter --------------------------------------------------------------
+# --- OpenRouter-style gateways ----------------------------------------------
 
 
 def test_openrouter_none_sends_exclude() -> None:
@@ -84,6 +86,36 @@ def test_openrouter_none_sends_exclude() -> None:
 def test_openrouter_effort_levels(level: str) -> None:
     kwargs = _kwargs("openrouter", level)
     assert kwargs.get("reasoning") == {"effort": level}
+
+
+@pytest.mark.parametrize("slug", ["kilo", "airouter", "opencode", "ollama"])
+@pytest.mark.parametrize("level", ["minimal", "low", "medium", "high", "xhigh"])
+def test_openrouter_style_gateways_use_nested_object(slug: str, level: str) -> None:
+    """Kilo / ARouter / OpenCode / Ollama all accept the OpenRouter-style
+    `reasoning: {effort: ...}` nested form. They must not emit the bare
+    `reasoning_effort` top-level parameter, because OpenRouter itself
+    rejects requests that include both with HTTP 400."""
+    kwargs = _kwargs(slug, level)
+    assert "reasoning_effort" not in kwargs
+    assert kwargs.get("reasoning") == {"effort": level}
+
+
+@pytest.mark.parametrize("slug", ["kilo", "airouter", "opencode", "ollama"])
+def test_openrouter_style_gateways_none_sends_exclude(slug: str) -> None:
+    kwargs = _kwargs(slug, "none")
+    assert "reasoning_effort" not in kwargs
+    assert kwargs.get("reasoning") == {"effort": "none", "exclude": True}
+
+
+@pytest.mark.parametrize("level", ["low", "medium", "high"])
+def test_tokenrouter_effort_levels(level: str) -> None:
+    assert _kwargs("tokenrouter", level).get("reasoning") == {"effort": level}
+
+
+def test_tokenrouter_none_sends_exclude() -> None:
+    """TokenRouter uses the OpenRouter-style nested form too; ``none``
+    means ``reasoning.effort = "none" + exclude = true``."""
+    assert _kwargs("tokenrouter", "none").get("reasoning") == {"effort": "none", "exclude": True}
 
 
 # --- DeepSeek ----------------------------------------------------------------
@@ -122,31 +154,15 @@ def test_zhipu_enables_thinking_for_any_non_none_level(level: str) -> None:
     assert kwargs.get("extra_body") == {"thinking": {"type": "enabled"}}
 
 
-# --- TokenRouter -------------------------------------------------------------
+# --- Unknown slug (future gateway) ------------------------------------------
 
 
-def test_tokenrouter_none_omits_reasoning() -> None:
-    assert "reasoning" not in _kwargs("tokenrouter", "none")
-
-
-@pytest.mark.parametrize("level", ["low", "medium", "high"])
-def test_tokenrouter_effort_levels(level: str) -> None:
-    assert _kwargs("tokenrouter", level).get("reasoning") == {"effort": level}
-
-
-# --- Generic OpenAI-compat gateway ------------------------------------------
-
-
-def test_generic_gateway_passes_through() -> None:
-    assert _kwargs("kilo", "none").get("reasoning_effort") is None
-    assert _kwargs("kilo", "high").get("reasoning_effort") == "high"
-    assert _kwargs("airouter", "low").get("reasoning_effort") == "low"
-
-
-def test_unknown_slug_passes_through() -> None:
-    # No slug at all (the SDK's default path) - pass through.
-    assert "reasoning_effort" not in _kwargs(None, "none")
-    assert _kwargs(None, "low").get("reasoning_effort") == "low"
+def test_unknown_slug_uses_nested_object() -> None:
+    """A new slug we don't recognize should still get a best-effort
+    reasoning param via the broadest documented form."""
+    assert "reasoning" not in _kwargs(None, "none")
+    assert _kwargs(None, "low").get("reasoning") == {"effort": "low"}
+    assert _kwargs(None, "high").get("reasoning") == {"effort": "high"}
 
 
 # --- Anthropic ---------------------------------------------------------------
