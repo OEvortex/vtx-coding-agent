@@ -1,4 +1,5 @@
 import shlex
+from dataclasses import dataclass
 from enum import Enum
 
 from vtx import config
@@ -14,6 +15,52 @@ class PermissionDecision(Enum):
 class ApprovalResponse(Enum):
     APPROVE = "approve"
     DENY = "deny"
+
+
+@dataclass(frozen=True)
+class AskUserOption:
+    """A single option the user can pick when asked a question."""
+
+    label: str
+    description: str = ""
+
+
+@dataclass(frozen=True)
+class AskUserResponse:
+    """The user's answer to an ``ask_user`` tool call.
+
+    ``selections`` holds the labels of the options the user picked (in
+    order). When the user types free text instead, ``custom_text`` is
+    set and ``selections`` is empty. An empty response means the user
+    dismissed the prompt (e.g. pressed Escape) and the tool call should
+    be treated as cancelled.
+    """
+
+    selections: tuple[str, ...] = ()
+    custom_text: str | None = None
+
+    @property
+    def is_empty(self) -> bool:
+        return not self.selections and not (self.custom_text and self.custom_text.strip())
+
+    def format_for_llm(self, options: list[AskUserOption]) -> str:
+        """Render the response as plain text for the LLM tool result."""
+        if self.custom_text and self.custom_text.strip():
+            return f"User answered with custom text: {self.custom_text.strip()}"
+        if not self.selections:
+            return "User did not provide an answer."
+        return f"User selected: {', '.join(self.selections)}"
+
+    def ui_summary(self) -> str:
+        """Short summary for the tool block header (e.g. "(option A, option B)")."""
+        if self.custom_text and self.custom_text.strip():
+            text = self.custom_text.strip()
+            if len(text) > 40:
+                text = text[:37] + "..."
+            return f"[dim]→ {text}[/dim]"
+        if not self.selections:
+            return "[dim](no answer)[/dim]"
+        return f"[dim]→ {', '.join(self.selections)}[/dim]"
 
 
 SAFE_COMMANDS: frozenset[str] = frozenset(

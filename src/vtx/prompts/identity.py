@@ -96,7 +96,7 @@ EXECUTION_DISCIPLINE = """# Execution discipline
 
 - Use tools whenever they improve correctness, completeness, or grounding. Do not answer from memory when a tool can give a real answer.
 - If a tool returns empty or partial results, retry with a different query or strategy before giving up.
-- When a question has an obvious default interpretation, act on it immediately. Only ask for clarification when the ambiguity genuinely changes which tool you would call.
+- When a question has an obvious default interpretation, act on it immediately. Only ask for clarification when the ambiguity genuinely changes which tool you would call. If you do ask, use the ``ask_user`` tool — it surfaces a real picker to the user, not a text dump.
 - If required context is missing and is not retrievable with a tool, ask a clarifying question. Do not guess.
 - Before taking a side-effecting action (file write, command, API call), confirm scope. Before finalizing, verify the result actually satisfies the request.
 - After edits, re-read or re-search the changed region to confirm the change landed as intended and did not break surrounding code."""

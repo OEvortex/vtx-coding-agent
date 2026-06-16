@@ -13,7 +13,7 @@ from textual.app import ComposeResult
 from textual.binding import Binding
 from textual.containers import Horizontal, Vertical
 from textual.message import Message
-from textual.widgets import Label, TextArea
+from textual.widgets import Input, Label, TextArea
 from textual.widgets.text_area import TextAreaTheme
 
 from vtx import config
@@ -59,6 +59,22 @@ _SHELL_COMMAND_CLASS = "-shell-command"
 _TEXTAREA_THEME = "vtx-input"
 
 
+# Keys that belong to the ask_user picker and should be routed to the
+# app's on_key instead of being typed into the focused widget. Number
+# keys are matched separately (single digit) so we can accept "1" but
+# not multi-digit input.
+_ASK_USER_PICKER_KEYS: frozenset[str] = frozenset(
+    {"up", "down", "left", "right", "j", "k", "space", "enter", "escape"}
+)
+
+
+def _is_ask_user_picker_key(key: str) -> bool:
+    """True if ``key`` is a single digit 0-9 or a picker nav key."""
+    if key in _ASK_USER_PICKER_KEYS:
+        return True
+    return len(key) == 1 and key.isdigit()
+
+
 def _get_textarea_theme() -> TextAreaTheme:
     colors = config.ui.colors
     return TextAreaTheme(
@@ -80,6 +96,9 @@ class Vtx(TextArea):
         self._on_paste_transform = on_paste
 
     async def _on_key(self, event: events.Key) -> None:
+        # Approval keys: y/n always, and arrows/enter when the input is
+        # empty (so the user can approve/deny with the focus in the
+        # prompt).
         future = getattr(self.app, "_approval_future", None)
         approval_keys = ("y", "Y", "n", "N")
         if not self.text:
@@ -89,6 +108,19 @@ class Vtx(TextArea):
             if callable(app_on_key):
                 app_on_key(event)
                 return
+
+        # ask_user keys: when the picker is active, all picker keys must
+        # be routed to the app's on_key so the chat input doesn't
+        # consume them (otherwise pressing "1" would just add "1" to
+        # the text). The inline Other input has its own dedicated
+        # handler for the same set of keys (see AskUserInput below).
+        ask_future = getattr(self.app, "_ask_user_future", None)
+        if ask_future and not ask_future.done() and _is_ask_user_picker_key(event.key):
+            app_on_key = getattr(self.app, "on_key", None)
+            if callable(app_on_key):
+                app_on_key(event)
+                return
+
         await super()._on_key(event)
 
     async def _on_paste(self, event: events.Paste) -> None:
@@ -404,6 +436,16 @@ class InputBox(Vertical):
     # -------------------------------------------------------------------------
 
     def action_submit(self) -> None:
+        # ask_user takes priority over approval: the picker has more
+        # elaborate enter semantics (submit highlighted, or submit
+        # Other text). The existing approval shortcut is kept below
+        # for the empty-text + approval case.
+        ask_future = getattr(self.app, "_ask_user_future", None)
+        if ask_future and not ask_future.done():
+            app_on_key = getattr(self.app, "on_key", None)
+            if callable(app_on_key):
+                app_on_key(events.Key("enter", "enter"))
+                return
         future = getattr(self.app, "_approval_future", None)
         if future and not future.done() and not self.text:
             app_on_key = getattr(self.app, "on_key", None)
@@ -466,6 +508,14 @@ class InputBox(Vertical):
         self.query_one("#input-textarea", TextArea).insert("\n")
 
     def action_cancel(self) -> None:
+        # ask_user takes priority: if the picker is active, escape
+        # should cancel the question, not clear the input.
+        ask_future = getattr(self.app, "_ask_user_future", None)
+        if ask_future and not ask_future.done():
+            app_on_key = getattr(self.app, "on_key", None)
+            if callable(app_on_key):
+                app_on_key(events.Key("escape", "escape"))
+                return
         if self._is_completing:
             if getattr(self.app, "_selection_mode", None) == "tree":
                 selector: object = self.app.query_one("#tree-selector")
@@ -490,6 +540,15 @@ class InputBox(Vertical):
             self.clear()
 
     def action_cursor_up(self) -> None:
+        # ask_user takes priority over prompt history: when the picker
+        # is active, up/down should move the highlight, not browse
+        # history.
+        ask_future = getattr(self.app, "_ask_user_future", None)
+        if ask_future and not ask_future.done():
+            app_on_key = getattr(self.app, "on_key", None)
+            if callable(app_on_key):
+                app_on_key(events.Key("up", "up"))
+                return
         if self._is_completing:
             self.post_message(self.CompletionMove(-1))
             return
@@ -505,6 +564,12 @@ class InputBox(Vertical):
             textarea.action_cursor_line_start()
 
     def action_cursor_down(self) -> None:
+        ask_future = getattr(self.app, "_ask_user_future", None)
+        if ask_future and not ask_future.done():
+            app_on_key = getattr(self.app, "on_key", None)
+            if callable(app_on_key):
+                app_on_key(events.Key("down", "down"))
+                return
         if self._is_completing:
             self.post_message(self.CompletionMove(1))
             return
@@ -758,3 +823,27 @@ class InputBox(Vertical):
         def __init__(self, query: str) -> None:
             super().__init__()
             self.query = query
+
+
+class AskUserInput(Input):
+    """Inline Other input for the ask_user picker.
+
+    When the ask_user picker is active and this input has focus, picker
+    keys (digits, arrows, j/k, space, escape) should be routed to the
+    app's ``on_key`` instead of being typed. ``Enter`` is left alone so
+    Textual's ``Input.Submitted`` handler can submit the custom text.
+    """
+
+    async def _on_key(self, event: events.Key) -> None:
+        ask_future = getattr(self.app, "_ask_user_future", None)
+        if ask_future and not ask_future.done() and _is_ask_user_picker_key(event.key):
+            # Enter is handled by Input.Submitted — let the default
+            # Input behavior fire so the custom text gets submitted.
+            if event.key == "enter":
+                await super()._on_key(event)
+                return
+            app_on_key = getattr(self.app, "on_key", None)
+            if callable(app_on_key):
+                app_on_key(event)
+                return
+        await super()._on_key(event)

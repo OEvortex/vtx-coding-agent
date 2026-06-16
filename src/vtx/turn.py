@@ -54,6 +54,7 @@ from .core.types import (
     ToolResultMessage,
 )
 from .events import (
+    AskUserEvent,
     ErrorEvent,
     InterruptedEvent,
     RetryEvent,
@@ -76,8 +77,15 @@ from .events import (
 from .extensions import TOOL_CALL, TOOL_RESULT, EventBus
 from .llm import BaseProvider
 from .llm.base import LLMStream
-from .permissions import ApprovalResponse, PermissionDecision, check_permission
+from .permissions import (
+    ApprovalResponse,
+    AskUserOption,
+    AskUserResponse,
+    PermissionDecision,
+    check_permission,
+)
 from .tools import BaseTool, get_tool, get_tool_definitions
+from .tools.ask_user import AskUserParams
 
 _STREAM_EXHAUSTED = object()
 _TOOL_ARGS_TOKEN_DISPLAY_THRESHOLD = 20
@@ -254,6 +262,26 @@ async def _await_approval(
         return await await_or_cancel(future, cancel_event)
     except OperationCancelledError:
         return None
+
+
+async def _await_ask_user(
+    future: asyncio.Future[AskUserResponse], cancel_event: asyncio.Event | None
+) -> AskUserResponse | None:
+    try:
+        return await await_or_cancel(future, cancel_event)
+    except OperationCancelledError:
+        return None
+
+
+def _build_ask_user_result(
+    tool_call: ToolCall, response: AskUserResponse, options: list[AskUserOption]
+) -> ToolResultMessage:
+    return ToolResultMessage(
+        tool_call_id=tool_call.id,
+        tool_name=tool_call.name,
+        content=[TextContent(text=response.format_for_llm(options))],
+        ui_summary=response.ui_summary(),
+    )
 
 
 async def _sleep_or_cancel(delay: float, cancel_event: asyncio.Event | None) -> bool:
@@ -702,6 +730,10 @@ class _TurnRunner:
             result = _create_skipped_tool_result(pending.tool_call)
         elif pending.preflight_error is not None:
             result = _create_skipped_tool_result(pending.tool_call, reason=pending.preflight_error)
+        elif pending.tool is not None and pending.tool.name == "ask_user":
+            async for event in self._run_ask_user(pending):
+                yield event
+            return
         else:
             approved = True
             if self._needs_approval(pending):
@@ -801,6 +833,83 @@ class _TurnRunner:
             tool_name=pending.tool_call.name,
             result=result,
             file_changes=file_changes,
+        )
+
+    async def _run_ask_user(self, pending: PendingToolCall) -> AsyncIterator[StreamEvent]:
+        """Handle the ``ask_user`` tool: validate, prompt, await, emit result.
+
+        The turn runner intercepts ``ask_user`` before it would otherwise
+        call ``tool.execute()`` so the user can be prompted mid-turn.
+        Pydantic validation errors are surfaced as tool errors (not
+        crashes) so a malformed tool call doesn't abort the turn.
+        """
+        if self._is_cancelled():
+            result = _create_skipped_tool_result(pending.tool_call)
+            self._tool_results.append(result)
+            yield ToolResultEvent(
+                tool_call_id=pending.tool_call.id,
+                tool_name=pending.tool_call.name,
+                result=result,
+                file_changes=None,
+            )
+            return
+
+        # ``pending.tool`` is guaranteed non-None by the caller
+        assert pending.tool is not None
+        try:
+            params = AskUserParams(**pending.tool_call.arguments)
+        except Exception as exc:  # ValidationError or similar
+            result = ToolResultMessage(
+                tool_call_id=pending.tool_call.id,
+                tool_name=pending.tool_call.name,
+                content=[TextContent(text=f"Invalid ask_user arguments: {exc}")],
+                is_error=True,
+            )
+            self._tool_results.append(result)
+            yield ToolResultEvent(
+                tool_call_id=pending.tool_call.id,
+                tool_name=pending.tool_call.name,
+                result=result,
+                file_changes=None,
+            )
+            return
+
+        options = [
+            AskUserOption(label=o.label, description=o.description) for o in (params.options or [])
+        ]
+
+        loop = asyncio.get_running_loop()
+        future: asyncio.Future[AskUserResponse] = loop.create_future()
+
+        yield AskUserEvent(
+            tool_call_id=pending.tool_call.id,
+            question=params.question,
+            header=params.header or "",
+            options=options,
+            multi_select=params.multi_select,
+            future=future,
+        )
+
+        response = await _await_ask_user(future, self._cancel_event)
+
+        if response is None or response.is_empty:
+            result = _create_skipped_tool_result(
+                pending.tool_call,
+                reason=(
+                    "User did not answer the question. Ask them what they'd "
+                    "like you to do instead, or proceed with a reasonable "
+                    "default and call out the assumption."
+                ),
+            )
+        else:
+            result = _build_ask_user_result(pending.tool_call, response, options)
+
+        self._tool_results.append(result)
+        yield ToolResultEvent(
+            tool_call_id=pending.tool_call.id,
+            tool_name=pending.tool_call.name,
+            result=result,
+            file_changes=None,
         )
 
     @staticmethod

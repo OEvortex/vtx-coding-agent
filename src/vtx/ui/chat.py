@@ -25,6 +25,7 @@ from .blocks import (
     UserBlock,
     stylize_badge_markers,
 )
+from .input import AskUserInput
 
 MAX_CHILDREN = 300
 PRUNE_TO = 200
@@ -551,6 +552,46 @@ class ChatLog(VerticalScroll):
         if block:
             block.hide_approval()
             self._scroll_if_anchored(animate=False)
+
+    def show_ask_user(self, tool_id: str, options: list, multi_select: bool) -> None:
+        block = self._tool_blocks.get(tool_id)
+        if block:
+            block.show_ask_user(options=options, multi_select=multi_select)
+            self._scroll_if_anchored(animate=False)
+
+    def update_ask_user_selection(
+        self, tool_id: str, highlight: int, toggled: set[str] | None = None
+    ) -> None:
+        block = self._tool_blocks.get(tool_id)
+        if block:
+            block.update_ask_user_selection(highlight=highlight, toggled=toggled)
+
+    def hide_ask_user(self, tool_id: str) -> None:
+        block = self._tool_blocks.get(tool_id)
+        if block:
+            block.hide_ask_user()
+            self._scroll_if_anchored(animate=False)
+
+    def ask_user_input_value(self, tool_id: str) -> str:
+        """Return the current value of the inline Other-input for the block."""
+        block = self._tool_blocks.get(tool_id)
+        if not block:
+            return ""
+        try:
+            return block.query_one("#ask-user-input", AskUserInput).value
+        except Exception:
+            return ""
+
+    def focus_ask_user_input(self, tool_id: str) -> bool:
+        """Focus the inline Other-input; returns True if it was focused."""
+        block = self._tool_blocks.get(tool_id)
+        if not block:
+            return False
+        try:
+            block.query_one("#ask-user-input", AskUserInput).focus()
+            return True
+        except Exception:
+            return False
 
     def end_block(self) -> None:
         # Finalize content/thinking blocks to render markdown once

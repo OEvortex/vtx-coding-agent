@@ -1,4 +1,5 @@
 from ..core.types import ToolDefinition
+from .ask_user import AskUserTool
 from .base import BaseTool
 from .bash import BashTool
 from .edit import EditTool
@@ -10,6 +11,7 @@ from .write import WriteTool
 
 __all__ = [
     "DEFAULT_TOOLS",
+    "AskUserTool",
     "BaseTool",
     "BashTool",
     "EditTool",
@@ -35,6 +37,7 @@ all_tools: list[BaseTool] = [
     SkillTool(),
     WebFetchTool(),
     WebSearchTool(),
+    AskUserTool(),
 ]
 
 tools_by_name: dict[str, BaseTool] = {tool.name: tool for tool in all_tools}
@@ -47,6 +50,7 @@ DEFAULT_TOOLS: list[str] = [
     "skill",
     "fetch_webpage",
     "web_search",
+    "ask_user",
 ]
 
 

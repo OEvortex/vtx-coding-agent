@@ -5,11 +5,11 @@ import pytest
 
 from vtx import get_config
 from vtx.core.types import AssistantMessage, StopReason, TextContent
-from vtx.events import AgentEndEvent, ErrorEvent, ToolApprovalEvent, TurnEndEvent
+from vtx.events import AgentEndEvent, AskUserEvent, ErrorEvent, ToolApprovalEvent, TurnEndEvent
 from vtx.headless import _exit_code, render_run, resolve_prompt, run_headless
 from vtx.llm.providers.mock import MockProvider
 from vtx.loop import Agent
-from vtx.permissions import ApprovalResponse
+from vtx.permissions import ApprovalResponse, AskUserResponse
 from vtx.session import Session
 
 
@@ -184,6 +184,32 @@ async def test_render_run_denies_tool_approval():
     stop = await render_run(events, out=out, err=err)
     assert future.result() == ApprovalResponse.DENY
     assert "requires approval" in err.getvalue()
+    assert stop == StopReason.STOP
+
+
+@pytest.mark.asyncio
+async def test_render_run_records_unanswered_ask_user():
+    future = asyncio.get_running_loop().create_future()
+    out, err = StringIO(), StringIO()
+    events = _emit(
+        [
+            AskUserEvent(
+                tool_call_id="t1",
+                question="Pick a package manager",
+                options=[],
+                multi_select=False,
+                future=future,
+            ),
+            AgentEndEvent(stop_reason=StopReason.STOP),
+        ]
+    )
+    stop = await render_run(events, out=out, err=err)
+    # Future is resolved with an empty response, which the turn runner
+    # translates to a "no answer" tool result.
+    response = future.result()
+    assert isinstance(response, AskUserResponse)
+    assert response.is_empty
+    assert "asked a question" in err.getvalue()
     assert stop == StopReason.STOP
 
 

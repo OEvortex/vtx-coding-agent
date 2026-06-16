@@ -7,10 +7,10 @@ from vtx import config, get_config
 from vtx.config import get_last_selected
 
 from .core.types import StopReason, TextContent
-from .events import AgentEndEvent, ErrorEvent, Event, ToolApprovalEvent, TurnEndEvent
+from .events import AgentEndEvent, AskUserEvent, ErrorEvent, Event, ToolApprovalEvent, TurnEndEvent
 from .extensions import LoadedExtensions, load_for_runtime
 from .llm.base import AuthMode
-from .permissions import ApprovalResponse
+from .permissions import ApprovalResponse, AskUserResponse
 from .runtime import ConversationRuntime
 from .tools import DEFAULT_TOOLS, get_tools_with_extensions
 
@@ -49,6 +49,14 @@ async def render_run(
                 print(
                     f"error: {tool_name!r} requires approval, denied (non-interactive mode)",
                     file=err,
+                )
+            case AskUserEvent(question=question, future=future) if future is not None:
+                # Headless can't surface a prompt; treat the question as
+                # unanswered. The turn runner records a skipped tool
+                # result with a hint to the LLM.
+                future.set_result(AskUserResponse())
+                print(
+                    f"error: agent asked a question in non-interactive mode: {question}", file=err
                 )
             case _:
                 pass

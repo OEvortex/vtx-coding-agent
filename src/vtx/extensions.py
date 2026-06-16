@@ -717,10 +717,10 @@ def load_extension(
     except Exception as exc:
         raise ExtensionLoadError(f"Extension {path}: register(api) raised: {exc}") from exc
     if inspect.isawaitable(result):
-        # Async factories are out of scope for v0.1.2 but we surface a clear
+        # Async factories are out of scope for v0.1.3 but we surface a clear
         # error so users don't silently lose work.
         raise ExtensionLoadError(
-            f"Extension {path}: async register() is not supported in v0.1.2; use a sync function"
+            f"Extension {path}: async register() is not supported in v0.1.3; use a sync function"
         )
     return extension
 

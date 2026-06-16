@@ -20,6 +20,7 @@ from typing import ClassVar
 from textual import events, on
 from textual.app import App, ComposeResult
 from textual.binding import Binding
+from textual.widgets import Input
 
 from vtx import config, consume_config_warnings
 from vtx.config import get_last_selected
@@ -35,7 +36,7 @@ from ..context.skills import (
 from ..extensions import load_for_runtime
 from ..llm import BaseProvider
 from ..llm.base import AuthMode
-from ..permissions import ApprovalResponse
+from ..permissions import ApprovalResponse, AskUserOption, AskUserResponse
 from ..runtime import ConversationRuntime
 from ..session import Session
 from ..tools import DEFAULT_TOOLS, get_tools_with_extensions
@@ -160,6 +161,14 @@ class Vtx(
         self._approval_future: asyncio.Future[ApprovalResponse] | None = None
         self._approval_tool_id: str | None = None
         self._approval_selection: ApprovalResponse = ApprovalResponse.APPROVE
+        # ask_user state — mirrors the approval fields so the app's
+        # on_key can route keypresses to the right future.
+        self._ask_user_future: asyncio.Future[AskUserResponse] | None = None
+        self._ask_user_tool_id: str | None = None
+        self._ask_user_options: list[AskUserOption] = []
+        self._ask_user_multi: bool = False
+        self._ask_user_highlight: int = 0
+        self._ask_user_toggled: set[str] = set()
         self._hide_thinking = False
         self._fd_path: str | None = None
         self._selection_mode: SelectionMode | None = None
@@ -597,7 +606,172 @@ class Vtx(
             return True
         return False
 
+    def _handle_ask_user_key(self, event: events.Key) -> bool:
+        """Handle a keypress while an ask_user picker is active.
+
+        Returns True if the key was consumed (caller should stop
+        propagation). Mirrors the approval flow's on_key contract.
+        """
+        if self._ask_user_future is None or self._ask_user_future.done():
+            return False
+
+        key = event.key
+        max_index = len(self._ask_user_options)  # +1 for "Other"
+        total = max_index + 1
+
+        # Number keys 1..N: pick that option directly. 1-indexed for
+        # human readability; the last index is "Other".
+        if key.isdigit() and len(key) == 1:
+            n = int(key)
+            if 1 <= n <= total:
+                self._ask_user_pick(n - 1)
+                event.prevent_default()
+                event.stop()
+                return True
+            return False
+
+        if key in ("up", "k"):
+            self._ask_user_move(-1)
+            event.prevent_default()
+            event.stop()
+            return True
+        if key in ("down", "j"):
+            self._ask_user_move(1)
+            event.prevent_default()
+            event.stop()
+            return True
+        if key == " " and self._ask_user_multi:
+            self._ask_user_toggle_highlight()
+            event.prevent_default()
+            event.stop()
+            return True
+        if key == "enter":
+            self._ask_user_submit_highlighted()
+            event.prevent_default()
+            event.stop()
+            return True
+        if key == "escape":
+            self._ask_user_cancel()
+            event.prevent_default()
+            event.stop()
+            return True
+        return False
+
+    def _ask_user_move(self, delta: int) -> None:
+        total = len(self._ask_user_options) + 1
+        self._ask_user_highlight = (self._ask_user_highlight + delta) % total
+        self._refresh_ask_user_visual()
+
+    def _ask_user_toggle_highlight(self) -> None:
+        idx = self._ask_user_highlight
+        if idx >= len(self._ask_user_options):
+            # Toggling the "Other" row toggles the synthetic label; not
+            # useful on its own, so ignore.
+            return
+        label = self._ask_user_options[idx].label
+        if label in self._ask_user_toggled:
+            self._ask_user_toggled.discard(label)
+        else:
+            self._ask_user_toggled.add(label)
+        self._refresh_ask_user_visual()
+
+    def _ask_user_pick(self, index: int) -> None:
+        """Pick a specific row by 0-based index (user-options + 1 for Other)."""
+        if self._ask_user_multi:
+            # Multi-select: number toggles a single option and Enter
+            # submits. Single-click picks don't make sense here.
+            self._ask_user_highlight = index
+            label = (
+                self._ask_user_options[index].label
+                if index < len(self._ask_user_options)
+                else None
+            )
+            if label is not None:
+                if label in self._ask_user_toggled:
+                    self._ask_user_toggled.discard(label)
+                else:
+                    self._ask_user_toggled.add(label)
+            self._refresh_ask_user_visual()
+            return
+
+        # Single-select: 1..N submits immediately
+        self._ask_user_highlight = index
+        self._ask_user_submit_highlighted()
+
+    def _ask_user_submit_highlighted(self) -> None:
+        if self._ask_user_future is None or self._ask_user_future.done():
+            return
+
+        idx = self._ask_user_highlight
+        if idx >= len(self._ask_user_options):
+            # "Other" — submit the inline input value
+            chat = self.query_one("#chat-log", ChatLog)
+            text = chat.ask_user_input_value(self._ask_user_tool_id or "").strip()
+            if not text:
+                return  # empty custom answer: ignore
+            self._ask_user_future.set_result(AskUserResponse(custom_text=text))
+        elif self._ask_user_multi:
+            # If the user hasn't toggled anything, fall back to the
+            # highlighted option.
+            if not self._ask_user_toggled:
+                label = self._ask_user_options[idx].label
+                self._ask_user_future.set_result(AskUserResponse(selections=(label,)))
+            else:
+                self._ask_user_future.set_result(
+                    AskUserResponse(selections=tuple(sorted(self._ask_user_toggled)))
+                )
+        else:
+            label = self._ask_user_options[idx].label
+            self._ask_user_future.set_result(AskUserResponse(selections=(label,)))
+
+        self._clear_ask_user_state()
+
+    def _ask_user_cancel(self) -> None:
+        if self._ask_user_future and not self._ask_user_future.done():
+            self._ask_user_future.set_result(AskUserResponse())
+        self._clear_ask_user_state()
+
+    def _clear_ask_user_state(self) -> None:
+        if self._ask_user_tool_id is not None:
+            chat = self.query_one("#chat-log", ChatLog)
+            chat.hide_ask_user(self._ask_user_tool_id)
+        self._ask_user_future = None
+        self._ask_user_tool_id = None
+        self._ask_user_options = []
+        self._ask_user_toggled = set()
+        self._ask_user_highlight = 0
+
+    def _refresh_ask_user_visual(self) -> None:
+        if self._ask_user_tool_id is None:
+            return
+        chat = self.query_one("#chat-log", ChatLog)
+        chat.update_ask_user_selection(
+            self._ask_user_tool_id, self._ask_user_highlight, set(self._ask_user_toggled)
+        )
+
+    @on(Input.Submitted)
+    def on_ask_user_input_submitted(self, event: Input.Submitted) -> None:
+        """Submit the inline 'Other' input as a custom-text answer."""
+        if event.input.id != "ask-user-input":
+            return
+        if self._ask_user_future is None or self._ask_user_future.done():
+            return
+        text = event.value.strip()
+        if not text:
+            return
+        self._ask_user_future.set_result(AskUserResponse(custom_text=text))
+        self._clear_ask_user_state()
+        event.stop()
+
     def on_key(self, event: events.Key) -> None:
+        # ask_user takes priority over approval since its picker is
+        # more elaborate (number keys, arrows, space, etc.).
+        if (
+            self._ask_user_future is not None
+            and not self._ask_user_future.done()
+            and self._handle_ask_user_key(event)
+        ):
+            return
         if self._approval_future is None or self._approval_future.done():
             return
         # Direct y/n keys still work and submit immediately, matching prior

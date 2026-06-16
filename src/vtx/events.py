@@ -3,7 +3,7 @@ from dataclasses import dataclass, field
 from typing import Any, Literal
 
 from .core.types import AssistantMessage, FileChanges, StopReason, ToolResultMessage, Usage
-from .permissions import ApprovalResponse
+from .permissions import ApprovalResponse, AskUserOption, AskUserResponse
 
 # =================================================================================================
 # Agent Lifecycle Events
@@ -152,6 +152,26 @@ class ToolApprovalEvent:
     future: asyncio.Future[ApprovalResponse] | None = None
 
 
+@dataclass
+class AskUserEvent:
+    """Yielded when the agent invokes the ``ask_user`` tool.
+
+    The UI is expected to display the question to the user, collect an
+    answer, and set the future's result. The turn runner awaits the
+    future and feeds the response back to the agent as a normal tool
+    result. ``options`` is empty when the question is open-ended and
+    only free text is accepted.
+    """
+
+    type: Literal["ask_user"] = "ask_user"
+    tool_call_id: str = ""
+    question: str = ""
+    header: str = ""
+    options: list[AskUserOption] = field(default_factory=list)
+    multi_select: bool = False
+    future: asyncio.Future[AskUserResponse] | None = None
+
+
 # =================================================================================================
 # Compaction Events
 # =================================================================================================
@@ -220,6 +240,7 @@ StreamEvent = (
     | ToolEndEvent
     | ToolResultEvent
     | ToolApprovalEvent
+    | AskUserEvent
     | RetryEvent
     | TurnEndEvent
     | ErrorEvent

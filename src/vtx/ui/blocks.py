@@ -1,3 +1,4 @@
+import contextlib
 from collections.abc import Callable, Iterable
 from dataclasses import dataclass
 from typing import Literal
@@ -12,7 +13,7 @@ from textual.widgets import Label, Static
 from vtx import config
 from vtx.core.types import ImageContent
 from vtx.diff_display import DIFF_BG_PAD_MARKER
-from vtx.permissions import ApprovalResponse
+from vtx.permissions import ApprovalResponse, AskUserOption
 
 from .formatting import (
     find_stable_block_boundary,
@@ -22,8 +23,15 @@ from .formatting import (
     markdown_render_width,
     strip_markdown_for_collapsed_text,
 )
+from .input import AskUserInput
 
 _UPDATE_COMMAND = "uv tool upgrade vtx-coding-agent"
+
+# Sentinel label for the synthetic "Other" row in the ask_user picker.
+# Stored as a plain string so it round-trips through AskUserOption's
+# label type and never collides with a real option the LLM supplied.
+ASK_USER_OTHER_LABEL = "\u0000__vtx_ask_user_other__\u0000"
+ASK_USER_OTHER_DISPLAY = "Other (type your own answer)"
 
 
 @dataclass(frozen=True)
@@ -332,12 +340,26 @@ class ToolBlock(Static):
         self._awaiting_approval: bool = False
         self._approval_preview: str | None = None
         self._approval_selection: ApprovalResponse = ApprovalResponse.APPROVE
+        # ask_user state. ``_ask_user_options`` is the user-supplied
+        # options; the synthetic "Other" entry is implicit at index
+        # ``len(_ask_user_options)``. When ``_ask_user_highlight`` points
+        # at "Other" the inline input is shown and any non-empty text +
+        # Enter submits custom text.
+        self._ask_user_options: list[AskUserOption] = []
+        self._ask_user_multi: bool = False
+        self._ask_user_toggled: set[str] = set()
+        self._ask_user_highlight: int = 0
         self.add_class("tool-block")
         self._set_state(None)
 
     def compose(self) -> ComposeResult:
         yield Label(self._format_header(), id="tool-header")
         yield Label("", id="tool-output", classes="tool-output -hidden")
+        yield AskUserInput(
+            placeholder="Type a custom answer, then press Enter",
+            id="ask-user-input",
+            classes="-hidden",
+        )
 
     def _format_header(self, truncate: bool = True) -> Text:
         colors = config.ui.colors
@@ -524,6 +546,149 @@ class ToolBlock(Static):
         text.append("  ")
         text.append("(← → enter)", style=Style(color=colors.dim))
         return text
+
+    # -- ask_user rendering ---------------------------------------------------
+
+    @property
+    def is_awaiting_ask_user(self) -> bool:
+        return bool(self._ask_user_options) or self.has_class("-ask-user")
+
+    def show_ask_user(self, options: list[AskUserOption], multi_select: bool) -> None:
+        """Render the ask_user picker into the tool block body.
+
+        ``options`` is the LLM-supplied list; the synthetic "Other" row
+        is appended implicitly. The first row is highlighted by default.
+
+        Safe to call before the widget is mounted — the DOM updates
+        become no-ops, which keeps unit tests from needing a live app.
+        """
+        self._ask_user_options = list(options)
+        self._ask_user_multi = multi_select
+        self._ask_user_toggled = set()
+        self._ask_user_highlight = 0
+        self.add_class("-ask-user")
+        self._set_state(None)
+        self._safe_update(
+            lambda: self.query_one("#tool-header", Label).update(self._format_header())
+        )
+        self._safe_update(self._render_ask_user_output)
+        self._set_ask_user_input_visible(False)
+
+    def update_ask_user_selection(self, highlight: int, toggled: set[str] | None = None) -> None:
+        if not self.is_awaiting_ask_user:
+            return
+        max_idx = len(self._ask_user_options)  # +1 for "Other"
+        self._ask_user_highlight = max(0, min(highlight, max_idx))
+        if toggled is not None:
+            self._ask_user_toggled = set(toggled)
+        self._safe_update(self._render_ask_user_output)
+        # Reveal the inline input only when the user picked "Other".
+        self._set_ask_user_input_visible(self._highlight_is_other())
+
+    def hide_ask_user(self) -> None:
+        self._ask_user_options = []
+        self._ask_user_toggled = set()
+        self._ask_user_highlight = 0
+        self._ask_user_multi = False
+        self.remove_class("-ask-user")
+        self._set_ask_user_input_visible(False)
+        self._set_state(None)
+        self._safe_update(
+            lambda: self.query_one("#tool-header", Label).update(self._format_header())
+        )
+        self._safe_update(self._hide_ask_user_output)
+
+    def _hide_ask_user_output(self) -> None:
+        try:
+            output = self.query_one("#tool-output", Label)
+        except Exception:
+            return
+        self.remove_class("-with-details")
+        output.remove_class("-details")
+        output.add_class("-hidden")
+        output.update(Text(""))
+
+    def _safe_update(self, fn) -> None:
+        """Run ``fn`` and swallow DOM errors (e.g. widget not yet mounted)."""
+        with contextlib.suppress(Exception):
+            fn()
+
+    def _highlight_is_other(self) -> bool:
+        return self._ask_user_highlight == len(self._ask_user_options)
+
+    def _render_ask_user_output(self) -> None:
+        try:
+            output = self.query_one("#tool-output", Label)
+        except Exception:
+            return
+        self.remove_class("-with-details")
+        output.remove_class("-hidden")
+        output.remove_class("-details")
+        content = self._format_ask_user_options()
+        content.append("\n")
+        content.append_text(self._format_ask_user_hint())
+        output.update(content)
+
+    def _format_ask_user_options(self) -> Text:
+        text = Text()
+        for idx, opt in enumerate(self._ask_user_options):
+            text.append_text(self._format_ask_user_row(idx, opt.label, opt.description))
+            text.append("\n")
+        # Synthetic "Other" row
+        text.append_text(
+            self._format_ask_user_row(len(self._ask_user_options), ASK_USER_OTHER_DISPLAY, "")
+        )
+        return text
+
+    def _format_ask_user_row(self, idx: int, label: str, description: str) -> Text:
+        colors = config.ui.colors
+        is_highlight = idx == self._ask_user_highlight
+        is_toggled = label in self._ask_user_toggled
+
+        # Highlight style: match the approval pattern — selected row
+        # uses accent bg + bg fg, unselected uses panel_alt bg + dim fg.
+        if is_highlight:
+            chip_style = Style(bgcolor=colors.accent, color=colors.bg, bold=True)
+            body_style = Style(color=colors.bg, bold=True)
+            desc_style = Style(color=colors.bg)
+        else:
+            chip_style = Style(bgcolor=colors.panel_alt, color=colors.fg)
+            body_style = Style(color=colors.fg)
+            desc_style = Style(color=colors.dim)
+
+        text = Text()
+        prefix = " "
+        if self._ask_user_multi:
+            prefix = "✓ " if is_toggled else "○ "
+        if is_highlight:
+            prefix = "▶ " + (prefix[2:] if len(prefix) > 2 else prefix.lstrip())
+        # Number key
+        text.append(f"  [{idx + 1}]", style=chip_style)
+        text.append(" ")
+        # Label + description
+        text.append(prefix, style=body_style)
+        text.append(label, style=body_style)
+        if description:
+            text.append("  ")
+            text.append(description, style=desc_style)
+        return text
+
+    def _format_ask_user_hint(self) -> Text:
+        colors = config.ui.colors
+        text = Text()
+        if self._ask_user_multi:
+            text.append("  (1-", style=colors.dim)
+            text.append(str(len(self._ask_user_options) + 1), style=colors.dim)
+            text.append(" to toggle · space to confirm · esc cancel)", style=colors.dim)
+        else:
+            text.append("  (1-", style=colors.dim)
+            text.append(str(len(self._ask_user_options) + 1), style=colors.dim)
+            text.append(" to pick · ↑↓ to move · enter to submit · esc cancel)", style=colors.dim)
+        return text
+
+    def _set_ask_user_input_visible(self, visible: bool) -> None:
+        with contextlib.suppress(Exception):
+            self.query_one("#ask-user-input", AskUserInput).display = visible
 
     def update_call_msg(self, call_msg: str) -> None:
         self._call_msg = call_msg

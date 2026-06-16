@@ -140,6 +140,31 @@ Screen {{
     padding: 1 0 0 0;
 }}
 
+.tool-block.-ask-user {{
+    background: {approval_bg};
+    color: {colors.dim};
+    border-left: outer {colors.accent};
+    margin: 1 0 1 1;
+    padding: 1 1;
+}}
+
+.tool-block.-ask-user #tool-output {{
+    padding: 1 0 0 0;
+}}
+
+#ask-user-input {{
+    margin-top: 1;
+    background: {colors.panel};
+    color: {colors.fg};
+    border: tall {colors.accent};
+}}
+
+#ask-user-input.-hidden {{
+    display: none;
+    height: 0;
+    margin: 0;
+}}
+
 #tool-header {{
     text-style: none;
 }}

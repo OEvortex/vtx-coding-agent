@@ -13,6 +13,7 @@ from ..core.types import StopReason, ToolResultMessage
 from ..events import (
     AgentEndEvent,
     AgentStartEvent,
+    AskUserEvent,
     CompactionEndEvent,
     CompactionStartEvent,
     ErrorEvent,
@@ -34,7 +35,7 @@ from ..events import (
     WarningEvent,
 )
 from ..notify import NotificationEvent, notify
-from ..permissions import ApprovalResponse
+from ..permissions import ApprovalResponse, AskUserResponse
 from ..runtime import ConversationRuntime
 from ..tools import get_tool
 from ..tools.bash import BashParams, BashTool
@@ -60,11 +61,20 @@ class AgentRunnerMixin:
     _pending_queue: deque[tuple[str, str]]
     _steer_queue: deque[tuple[str, str]]
     _runtime: ConversationRuntime
+    # ask_user state (mirrors _approval_*). Lives here so agent_runner
+    # owns the data and the app's on_key can read/write it.
+    _ask_user_future: asyncio.Future[AskUserResponse] | None
+    _ask_user_tool_id: str | None
+    _ask_user_options: list
+    _ask_user_multi: bool
+    _ask_user_highlight: int
+    _ask_user_toggled: set[str]
 
     if TYPE_CHECKING:
         app: Any
         query_one: Any
         run_worker: Any
+        push_screen: Any
 
         def _update_queue_display(self) -> None: ...
         def _clear_approval_state(self) -> None: ...
@@ -239,6 +249,11 @@ class AgentRunnerMixin:
                 self._approval_future = f
                 self._approval_tool_id = id
 
+            case AskUserEvent(
+                tool_call_id=id, question=q, header=hdr, options=opts, multi_select=ms, future=f
+            ):
+                self._handle_ask_user(chat, id, q, hdr, opts, ms, f)
+
             case ToolResultEvent(tool_call_id=id, result=r, file_changes=fc):
                 self._approval_future = None
                 self._approval_tool_id = None
@@ -310,6 +325,39 @@ class AgentRunnerMixin:
                 self._current_block_type = None
 
         return was_interrupted
+
+    def _handle_ask_user(
+        self,
+        chat: ChatLog,
+        tool_call_id: str,
+        question: str,
+        header: str,
+        options: list,
+        multi_select: bool,
+        future: asyncio.Future[AskUserResponse] | None,
+    ) -> None:
+        """Show the inline ask_user picker and resolve ``future`` with the answer.
+
+        The picker is rendered inside the existing ``ask_user`` tool
+        block (matching the approval style), so the user sees the
+        question + options inline in the chat. Direct number keys,
+        arrows, space, enter, and escape are handled by the app's
+        ``on_key`` and routed back to the future.
+        """
+        if future is None:
+            return
+
+        # Render the picker into the tool block; the app's on_key will
+        # read/write the per-block state we stash on the chat.
+        chat.show_ask_user(tool_call_id, options=list(options), multi_select=multi_select)
+
+        self._ask_user_future = future
+        self._ask_user_tool_id = tool_call_id
+        self._ask_user_options = list(options)
+        self._ask_user_multi = multi_select
+        self._ask_user_highlight = 0
+        self._ask_user_toggled = set()
+        self.app.bell()
 
     def _handle_shell_command(self, display_text: str, original_text: str) -> None:
         """Handle shell commands prefixed with ! or !!"""

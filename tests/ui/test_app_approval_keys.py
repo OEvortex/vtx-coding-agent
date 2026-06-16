@@ -48,6 +48,10 @@ class FakeVtx:
         self._approval_future = future
         self._approval_selection = ApprovalResponse.APPROVE
         self._approval_tool_id = "tool-1"
+        # New on_key dispatches to ask_user first; both fields need to
+        # exist (set to inactive) so the dispatch falls through to the
+        # approval handler.
+        self._ask_user_future = None
         self.chat = FakeChat()
         self.cleared = False
 
