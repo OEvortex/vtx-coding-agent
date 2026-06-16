@@ -234,7 +234,48 @@ class AnthropicSDK(BaseLLMSDK):
                 payload["tool_choice"] = {"type": tc}
             elif isinstance(tc, dict):
                 payload["tool_choice"] = tc
+        self._apply_thinking_payload(payload, config)
         return payload
+
+    @staticmethod
+    def _apply_thinking_payload(payload: dict[str, Any], config: GenerationConfig) -> None:
+        """Translate ``config.thinking_level`` into the Anthropic-native
+        ``thinking`` block.
+
+        Uses manual ``type: "enabled" + budget_tokens`` for every
+        level, which is the documented form across current Claude
+        models (Sonnet 4.5 / Opus 4.5 / Sonnet 4.6 / Opus 4.6).
+        Older models that don't accept manual thinking will return
+        400, which the user sees normally.
+
+        Level -> budget_tokens (Anthropic minimum is 1024 and
+        budget_tokens must be strictly less than max_tokens):
+          - "minimal" -> 1024
+          - "low"     -> 2048
+          - "medium"  -> 4096
+          - "high"    -> 8192
+          - "xhigh"   -> 16384
+
+        Reference:
+          https://platform.claude.com/docs/en/build-with-claude/extended-thinking
+        """
+        level = config.thinking_level
+        if level is None or level == "none":
+            # Anthropic defaults to non-thinking when the field is
+            # omitted, so "none" is implemented as no field at all.
+            return
+
+        manual_budget: dict[str, int] = {
+            "minimal": 1024,
+            "low": 2048,
+            "medium": 4096,
+            "high": 8192,
+            "xhigh": 16384,
+        }
+        budget = manual_budget.get(level)
+        if budget is None:
+            return
+        payload["thinking"] = {"type": "enabled", "budget_tokens": budget}
 
     async def generate(
         self, messages: list[Message], config: GenerationConfig, stream: bool = False

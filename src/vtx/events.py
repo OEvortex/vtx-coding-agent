@@ -11,6 +11,20 @@ from .permissions import ApprovalResponse
 
 
 @dataclass
+class SessionStartEvent:
+    type: Literal["session_start"] = "session_start"
+    session_id: str = ""
+    cwd: str = ""
+
+
+@dataclass
+class SessionEndEvent:
+    type: Literal["session_end"] = "session_end"
+    session_id: str = ""
+    cwd: str = ""
+
+
+@dataclass
 class AgentStartEvent:
     type: Literal["agent_start"] = "agent_start"
 
@@ -215,7 +229,9 @@ StreamEvent = (
 
 # All events yielded by Agent.run() (loop.py)
 Event = (
-    AgentStartEvent
+    SessionStartEvent
+    | SessionEndEvent
+    | AgentStartEvent
     | AgentEndEvent
     | TurnStartEvent
     | CompactionStartEvent

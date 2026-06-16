@@ -32,12 +32,13 @@ from ..context.skills import (
     merge_registered_skills,
     render_skill_prompt,
 )
+from ..extensions import load_for_runtime
 from ..llm import BaseProvider
 from ..llm.base import AuthMode
 from ..permissions import ApprovalResponse
 from ..runtime import ConversationRuntime
 from ..session import Session
-from ..tools import DEFAULT_TOOLS, get_tools
+from ..tools import DEFAULT_TOOLS, get_tools_with_extensions
 from .agent_runner import AgentRunnerMixin
 from .autocomplete import DEFAULT_COMMANDS, SlashCommand
 from .blocks import HandoffLinkBlock, LaunchWarning
@@ -114,6 +115,8 @@ class Vtx(
         thinking_level: str | None = None,
         openai_compat_auth_mode: AuthMode | None = None,
         anthropic_compat_auth_mode: AuthMode | None = None,
+        extra_extension_paths: list[str] | None = None,
+        auto_discover_extensions: bool = True,
     ):
         super().__init__()
         self.theme = self._resolve_ansi_theme()
@@ -179,7 +182,23 @@ class Vtx(
         self._git_branch_refresh_inflight = False
         self._launch_warnings: list[LaunchWarning] = []
 
-        self._tools = get_tools(DEFAULT_TOOLS)
+        self._tools = get_tools_with_extensions(DEFAULT_TOOLS)
+
+        # Load extensions (project-local, global, config, plus anything the
+        # caller passed via ``extra_extension_paths``). Extension tools get
+        # merged with the built-ins and the agent loop has an EventBus to
+        # fire tool_call / tool_result / agent_* hooks through.
+        self._loaded_extensions = load_for_runtime(
+            cwd=self._cwd,
+            extra_paths=extra_extension_paths,
+            auto_discover=auto_discover_extensions,
+        )
+        for err in self._loaded_extensions.errors:
+            self._launch_warnings.append(LaunchWarning(f"extension: {err}"))
+
+        ext_tools = self._loaded_extensions.list_extension_tools()
+        if ext_tools:
+            self._tools = get_tools_with_extensions(DEFAULT_TOOLS, ext_tools)
 
         self._runtime = ConversationRuntime(
             cwd=self._cwd,
@@ -191,6 +210,7 @@ class Vtx(
             tools=self._tools,
             openai_compat_auth_mode=self._openai_compat_auth_mode,
             anthropic_compat_auth_mode=self._anthropic_compat_auth_mode,
+            extensions=self._loaded_extensions.bus,
         )
 
     def compose(self) -> ComposeResult:
@@ -294,6 +314,13 @@ class Vtx(
                 SlashCommand(name=skill.name, description=cmd_description, is_skill=True)
             )
 
+        # Extension commands get added last so they appear in the help
+        # / autocompletion list. The router in commands/__init__.py looks
+        # these up before the built-ins, so they can shadow built-ins if the
+        # user wants to.
+        for cmd in self._loaded_extensions.all_commands.values():
+            commands.append(SlashCommand(name=cmd.name, description=f"[ext] {cmd.description}"))
+
         input_box.set_commands(commands)
 
     @staticmethod
@@ -330,6 +357,12 @@ class Vtx(
         self.run_worker(self._ensure_binaries(), exclusive=False)
         self.run_worker(self._check_for_updates(), exclusive=False)
         self.run_worker(self._ensure_models_dev(), exclusive=False)
+
+        # Fire session_start on the extension bus. Sync-only emit because
+        # on_mount is itself a sync Textual method; async handlers are
+        # skipped with a warning logged by the bus.
+        if self._loaded_extensions.bus.handler_count("session_start"):
+            self._loaded_extensions.bus.emit_sync("session_start", cwd=self._cwd, session_id="")
 
         try:
             init_result = self._runtime.initialize(
@@ -527,12 +560,11 @@ class Vtx(
         if self._runtime.provider is None:
             return
 
-        levels = self._runtime.provider.thinking_levels
-        current_idx = (
-            levels.index(self._runtime.thinking_level)
-            if self._runtime.thinking_level in levels
-            else 0
-        )
+        levels = self._runtime.effective_thinking_levels
+        if not levels:
+            return
+        current = self._runtime.thinking_level or "none"
+        current_idx = levels.index(current) if current in levels else 0
         new_level = levels[(current_idx + 1) % len(levels)]
         self._select_thinking_level(new_level)
 

@@ -22,6 +22,7 @@ __all__ = [
     "get_tool",
     "get_tool_definitions",
     "get_tools",
+    "get_tools_with_extensions",
     "tools_by_name",
 ]
 
@@ -55,6 +56,36 @@ def get_tools(names: list[str]) -> list[BaseTool]:
 
 def get_tool(tool_name: str) -> BaseTool | None:
     return tools_by_name.get(tool_name)
+
+
+def get_tools_with_extensions(
+    default_names: list[str], extension_tools: list[BaseTool] | None = None
+) -> list[BaseTool]:
+    """Return the requested built-in tools plus any extension tools.
+
+    Extension tools with the same name as a built-in win (mirrors pi's
+    override behavior). Extension tools not in ``default_names`` are
+    included anyway so the LLM can see and call them. ``extension_tools``
+    is a no-op for backwards compatibility when no extensions are loaded.
+    """
+    ext_list = list(extension_tools or [])
+    result: list[BaseTool] = []
+    overrides: dict[str, BaseTool] = {t.name: t for t in ext_list}
+
+    for name in default_names:
+        if name in overrides:
+            result.append(overrides.pop(name))
+        else:
+            builtin = tools_by_name.get(name)
+            if builtin is not None:
+                result.append(builtin)
+
+    for tool in ext_list:
+        if tool.name in {t.name for t in result}:
+            continue
+        result.append(tool)
+
+    return result
 
 
 def get_tool_definitions(tools: list[BaseTool]) -> list[ToolDefinition]:

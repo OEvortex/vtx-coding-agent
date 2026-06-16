@@ -90,14 +90,19 @@ class SettingsCommands(CommandSupport):
             chat.add_info_message("Agent not initialized", error=True)
             return
 
+        valid_levels = self._runtime.effective_thinking_levels
+        if not valid_levels:
+            chat.add_info_message("Thinking not available for this model", error=True)
+            return
+
         requested = args.strip()
         if requested:
-            if requested in self._runtime.provider.thinking_levels:
+            if requested in valid_levels:
                 self._select_thinking_level(requested)
             else:
-                valid_levels = ", ".join(self._runtime.provider.thinking_levels)
                 chat.add_info_message(
-                    f"Invalid thinking level: {requested}. Use one of: {valid_levels}", error=True
+                    f"Invalid thinking level: {requested}. Use one of: {', '.join(valid_levels)}",
+                    error=True,
                 )
             return
 
@@ -105,7 +110,7 @@ class SettingsCommands(CommandSupport):
             ListItem(
                 value=level, label=f"{level} ✓" if level == self._runtime.thinking_level else level
             )
-            for level in self._runtime.provider.thinking_levels
+            for level in valid_levels
         ]
         self._show_selection_picker(items, SelectionMode.THINKING)
 

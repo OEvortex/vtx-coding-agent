@@ -38,6 +38,15 @@ from .events import (
     TurnEndEvent,
     TurnStartEvent,
 )
+from .extensions import (
+    AGENT_END,
+    AGENT_START,
+    COMPACTION_END,
+    COMPACTION_START,
+    TURN_END,
+    TURN_START,
+    EventBus,
+)
 from .llm import BaseProvider
 from .prompts import build_system_prompt
 from .session import MessageEntry, Session
@@ -64,6 +73,7 @@ class Agent:
         context: Context | None = None,
         system_prompt: str | None = None,
         config: AgentConfig | None = None,
+        extensions: EventBus | None = None,
     ):
         self.provider = provider
         self.tools = tools
@@ -74,6 +84,7 @@ class Agent:
         self._system_prompt = system_prompt or build_system_prompt(
             self._cwd, self._context, tools=tools
         )
+        self._extensions = extensions
         self._run_usage = Usage()
 
     @property
@@ -116,6 +127,9 @@ class Agent:
 
         self.session.append_message(user_message)
 
+        if self._extensions is not None:
+            await self._extensions.emit(AGENT_START, cancel_event=cancel_event)
+
         yield AgentStartEvent()
 
         turn = 0
@@ -140,6 +154,9 @@ class Agent:
                 turn += 1
                 yield TurnStartEvent(turn=turn)
 
+                if self._extensions is not None:
+                    await self._extensions.emit(TURN_START, cancel_event=cancel_event, turn=turn)
+
                 messages = self.session.messages
                 tool_results: list[ToolResultMessage] = []
                 async for event in run_single_turn(
@@ -149,6 +166,7 @@ class Agent:
                     system_prompt=system_prompt,
                     turn=turn,
                     cancel_event=cancel_event,
+                    extensions=self._extensions,
                 ):
                     yield event
 
@@ -162,6 +180,11 @@ class Agent:
                             self.session.append_message(result)
                     elif isinstance(event, InterruptedEvent):
                         was_interrupted = True
+
+                if self._extensions is not None:
+                    await self._extensions.emit(
+                        TURN_END, cancel_event=cancel_event, turn=turn, tool_results=tool_results
+                    )
 
                 if was_interrupted or stop_reason == StopReason.INTERRUPTED:
                     stop_reason = StopReason.INTERRUPTED
@@ -199,6 +222,15 @@ class Agent:
             stop_reason = StopReason.ERROR
 
         yield AgentEndEvent(stop_reason=stop_reason, total_turns=turn, total_usage=self._run_usage)
+
+        if self._extensions is not None:
+            await self._extensions.emit(
+                AGENT_END,
+                cancel_event=cancel_event,
+                stop_reason=stop_reason,
+                total_turns=turn,
+                total_usage=self._run_usage,
+            )
 
     async def _check_compaction(
         self, stop_reason: StopReason, system_prompt: str, cancel_event: asyncio.Event | None
@@ -240,6 +272,11 @@ class Agent:
         # Yield start event immediately so UI can show status
         yield CompactionStartEvent()
 
+        if self._extensions is not None:
+            await self._extensions.emit(
+                COMPACTION_START, cancel_event=cancel_event, tokens_before=tokens_before
+            )
+
         try:
             # Use all_messages (uncompacted) for summarization so LLM sees full history
             summary = await generate_summary(
@@ -266,7 +303,23 @@ class Agent:
 
             yield CompactionEndEvent(tokens_before=tokens_before)
 
+            if self._extensions is not None:
+                await self._extensions.emit(
+                    COMPACTION_END,
+                    cancel_event=cancel_event,
+                    tokens_before=tokens_before,
+                    aborted=False,
+                )
+
         except Exception as e:
             yield CompactionEndEvent(
                 tokens_before=tokens_before, aborted=True, reason=format_error(e)
             )
+            if self._extensions is not None:
+                await self._extensions.emit(
+                    COMPACTION_END,
+                    cancel_event=cancel_event,
+                    tokens_before=tokens_before,
+                    aborted=True,
+                    reason=format_error(e),
+                )

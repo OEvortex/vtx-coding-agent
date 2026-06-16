@@ -17,9 +17,9 @@
 
 **Vtx** is a minimalist, developer-first coding agent harness that delivers maximum capability with minimum overhead. 
 
-Unlike heavy agentic frameworks that load thousands of hidden tokens, Vtx operates on a default system prompt of **under 270 tokens**. Including full tool descriptions and parameter schemas, the entire runtime environment consumes only **~1,000 tokens**. 
+Unlike heavy agentic frameworks that load thousands of hidden tokens, Vtx is transparent about its footprint. The Vtx-authored base prompt is roughly **2,000 tokens**, and the full runtime (base + tool guidelines + env block) is around **~2,200 tokens**. Composed prompts in real projects typically land in the **2,000–3,500 token** range once `AGENTS.md` and skill descriptions are attached.
 
-By keeping the core prompt small, Vtx leaves the model's context window open for what matters most: **your code, your project files, and your task context**.
+By keeping the core prompt lean, Vtx leaves the model's context window open for what matters most: **your code, your project files, and your task context**.
 
 ---
 
@@ -31,6 +31,7 @@ By keeping the core prompt small, Vtx leaves the model's context window open for
 - **Flexible Model Support**: Compatible with Hosted APIs (OpenAI, Anthropic, Azure, DeepSeek, ZhiPu) as well as unauthenticated local endpoints (Ollama, llama-server).
 - **Collapsible Thinking Blocks**: TUI elegantly collapses finalized thinking chains to keep your workspace readable.
 - **Secure Sandboxed Control**: Supports both `prompt` (confirmation before mutating changes) and `auto` permission modes.
+- **Self-Extensible**: Drop a Python file in `~/.vtx/agent/extensions/` to add tools, intercept tool calls, register slash commands, and react to lifecycle events. See [docs/extensions.md](docs/extensions.md).
 
 ---
 
@@ -223,6 +224,7 @@ For deeper information, consult the topic-specific files in the [`docs/`](docs/)
 - [docs/permissions.md](docs/permissions.md) — Safe-command lists and user approval heuristics.
 - [docs/sessions.md](docs/sessions.md) — Session JSONL format, history files, handoff guides, and compaction.
 - [docs/skills.md](docs/skills.md) — Authoring custom Skills, argument parsing, and command mapping.
+- [docs/extensions.md](docs/extensions.md) — Python extension API: add tools, intercept tool calls, register slash commands.
 - [docs/theming.md](docs/theming.md) — Catalog of the 24+ built-in themes and color tokens.
 - [docs/headless.md](docs/headless.md) — Non-interactive execution, piped input streams, and exit codes.
 - [docs/storage-layout.md](docs/storage-layout.md) — Complete directory mapping of files on disk.

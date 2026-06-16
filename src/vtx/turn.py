@@ -73,6 +73,7 @@ from .events import (
     TurnEndEvent,
     WarningEvent,
 )
+from .extensions import TOOL_CALL, TOOL_RESULT, EventBus
 from .llm import BaseProvider
 from .llm.base import LLMStream
 from .permissions import ApprovalResponse, PermissionDecision, check_permission
@@ -290,6 +291,7 @@ class _TurnRunner:
         turn: int,
         cancel_event: asyncio.Event | None,
         retry_delays: list[int] | None,
+        extensions: EventBus | None = None,
     ):
         self._provider = provider
         self._messages = messages
@@ -298,6 +300,7 @@ class _TurnRunner:
         self._turn = turn
         self._cancel_event = cancel_event
         self._retry_delays = retry_delays if retry_delays is not None else [2, 4, 8]
+        self._extensions = extensions
 
         self._stream: LLMStream | None = None
 
@@ -714,17 +717,83 @@ class _TurnRunner:
                     await _await_approval(future, self._cancel_event) == ApprovalResponse.APPROVE
                 )
 
-            if approved:
-                result, file_changes = await _execute_tool(
-                    pending.tool_call, pending.tool, self._cancel_event
-                )
-            else:
+            if not approved:
                 result = _create_skipped_tool_result(
                     pending.tool_call,
                     reason=(
                         "Tool call denied by user. Ask them what they'd like you to do instead."
                     ),
                 )
+            else:
+                # Run the tool_call extension hook. Handlers can return
+                # ``{"block": True, "reason": "..."}`` to short-circuit, or
+                # ``{"args": {...}}`` to rewrite the arguments.
+                block_result: dict | None = None
+                if self._extensions is not None:
+                    block_result = await self._extensions.emit(
+                        TOOL_CALL,
+                        cancel_event=self._cancel_event,
+                        tool_name=pending.tool_call.name,
+                        tool_call_id=pending.tool_call.id,
+                        args=dict(pending.tool_call.arguments),
+                        tool=pending.tool,
+                    )
+                if block_result and block_result.get("block"):
+                    reason = block_result.get("reason") or "Blocked by extension"
+                    result = _create_skipped_tool_result(pending.tool_call, reason=reason)
+                else:
+                    new_args = block_result.get("args") if block_result else None
+                    if new_args is not None and new_args != pending.tool_call.arguments:
+                        pending.tool_call.arguments = dict(new_args)
+                        if pending.tool is not None:
+                            try:
+                                pending.tool_call.arguments = pending.tool.params(
+                                    **new_args
+                                ).model_dump(exclude_none=True)
+                                # Refresh display so the UI reflects the new args
+                                params_obj = pending.tool.params(**new_args)
+                                pending.display = pending.tool.format_call(params_obj)
+                            except (TypeError, KeyError, ValueError, ValidationError) as exc:
+                                result = _create_skipped_tool_result(
+                                    pending.tool_call,
+                                    reason=f"Extension provided invalid args: {exc}",
+                                )
+                                self._tool_results.append(result)
+                                yield ToolResultEvent(
+                                    tool_call_id=pending.tool_call.id,
+                                    tool_name=pending.tool_call.name,
+                                    result=result,
+                                    file_changes=None,
+                                )
+                                return
+
+                    result, file_changes = await _execute_tool(
+                        pending.tool_call, pending.tool, self._cancel_event
+                    )
+
+                    # Run the tool_result extension hook. Handlers can return
+                    # ``{"output": "..."}`` to rewrite what the LLM sees.
+                    if self._extensions is not None and result.content:
+                        hook_result = await self._extensions.emit(
+                            TOOL_RESULT,
+                            cancel_event=self._cancel_event,
+                            tool_name=pending.tool_call.name,
+                            tool_call_id=pending.tool_call.id,
+                            args=pending.tool_call.arguments,
+                            result=result,
+                        )
+                        if hook_result.get("output") is not None:
+                            new_output = hook_result["output"]
+                            result = ToolResultMessage(
+                                tool_call_id=result.tool_call_id,
+                                tool_name=result.tool_name,
+                                content=[TextContent(text=str(new_output))],
+                                ui_summary=result.ui_summary,
+                                ui_details=result.ui_details,
+                                ui_details_full=result.ui_details_full,
+                                is_error=result.is_error,
+                                file_changes=result.file_changes,
+                            )
 
         self._tool_results.append(result)
         yield ToolResultEvent(
@@ -775,6 +844,7 @@ async def run_single_turn(
     turn: int = 0,
     cancel_event: asyncio.Event | None = None,
     retry_delays: list[int] | None = None,
+    extensions: EventBus | None = None,
 ) -> AsyncIterator[StreamEvent]:
     runner = _TurnRunner(
         provider=provider,
@@ -784,6 +854,7 @@ async def run_single_turn(
         turn=turn,
         cancel_event=cancel_event,
         retry_delays=retry_delays,
+        extensions=extensions,
     )
     async for event in runner.run():
         yield event

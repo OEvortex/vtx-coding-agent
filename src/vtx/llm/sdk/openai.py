@@ -78,13 +78,17 @@ async def _openai_stream_chunks(
     tool_calls_acc: dict[int, dict[str, Any]] = {}
     phase_parser = ThinkingPhaseParser()
     think_emitted_len = 0
+    finish_reason: str | None = None
     try:
         async for chunk in stream:
             if chunk.usage:
                 yield {"type": "usage", "usage": chunk.usage.model_dump()}
             if not chunk.choices:
                 continue
-            delta = chunk.choices[0].delta
+            choice = chunk.choices[0]
+            if choice.finish_reason:
+                finish_reason = choice.finish_reason
+            delta = choice.delta
             reasoning_delta = getattr(delta, "reasoning_content", None) or getattr(
                 delta, "reasoning", None
             )
@@ -159,6 +163,8 @@ async def _openai_stream_chunks(
                     for v in sorted(tool_calls_acc.values(), key=lambda x: x["id"])
                 ],
             }
+        if finish_reason:
+            yield {"type": "finish_reason", "finish_reason": finish_reason}
     finally:
         if hasattr(stream, "close"):
             try:
@@ -169,14 +175,29 @@ async def _openai_stream_chunks(
                 pass
 
 
+# Openai family slugs that route to OpenAI's API and accept the standard
+# ``reasoning_effort`` parameter via Chat Completions. The thinking
+# dispatch is whitelisted to these slugs only — for every other
+# openai_compat provider the level is intentionally not sent to the
+# wire (the picker still works, but the model uses its own default).
+_THINKING_ENABLED_SLUGS: frozenset[str] = frozenset({"openai-codex", "openai-responses"})
+
+
 class OpenAISDK(BaseLLMSDK):
-    def __init__(self, api_key: str, base_url: str | None = None, rate_limit_hook=None):
+    def __init__(
+        self,
+        api_key: str,
+        base_url: str | None = None,
+        rate_limit_hook=None,
+        provider_slug: str | None = None,
+    ):
         resolved_url = base_url or "https://api.openai.com/v1"
         if resolved_url.startswith("http://"):
             resolved_url = "https://" + resolved_url[7:]
         super().__init__(api_key, resolved_url)
         self._async_client: AsyncOpenAI | None = None
         self._rate_limit_hook = rate_limit_hook
+        self._provider_slug = (provider_slug or "").lower() or None
 
     @property
     def client(self) -> AsyncOpenAI:
@@ -222,7 +243,47 @@ class OpenAISDK(BaseLLMSDK):
             ]
             if config.tool_choice is not None:
                 kwargs["tool_choice"] = config.tool_choice
+        self._apply_thinking_kwargs(kwargs, config)
         return kwargs
+
+    def _apply_thinking_kwargs(self, kwargs: dict[str, Any], config: GenerationConfig) -> None:
+        """Translate ``config.thinking_level`` into the wire parameter
+        for the current provider.
+
+        The dispatch is whitelisted by slug:
+
+        - **``openai-codex`` / ``openai-responses``**: emit bare
+          top-level ``reasoning_effort``. These are the openai family
+          slugs that route to OpenAI's API and accept the standard
+          Chat Completions parameter. The openai Python SDK's
+          ``client.chat.completions.create()`` only accepts
+          ``reasoning_effort``; the structured ``reasoning: {effort: ...}``
+          form is Responses-API-only and is rejected with
+          ``unexpected keyword argument 'reasoning'``. ``"none"`` is
+          implemented as omission (no documented Chat-Completions off
+          switch for o-series / gpt-5; the model picks its default).
+
+        - **Every other openai_compat provider**: emit nothing.
+          Gateways like openrouter / kilo / tokenrouter / deepseek /
+          zhipu etc. have provider-specific thinking controls that we
+          don't try to translate. The picker still works (the user can
+          still select a level) but the level is not sent to the wire
+          — the model uses its own default.
+
+        The Anthropic adapter has its own dispatch
+        (``AnthropicSDK._apply_thinking_payload``) and is unaffected.
+
+        Reference:
+          https://github.com/openai/openai-python/blob/main/src/openai/resources/chat/completions/completions.py
+          (the SDK signature: ``reasoning_effort: Optional[ReasoningEffort]``,
+          values ``none|minimal|low|medium|high|xhigh``)
+        """
+        level = config.thinking_level
+        if level is None or level == "none":
+            return
+        if self._provider_slug not in _THINKING_ENABLED_SLUGS:
+            return
+        kwargs["reasoning_effort"] = level
 
     async def generate(
         self, messages: list[Message], config: GenerationConfig, stream: bool = False
@@ -231,6 +292,7 @@ class OpenAISDK(BaseLLMSDK):
             kwargs = self._build_kwargs(messages, config)
             kwargs["stream"] = stream
             if stream:
+                kwargs["stream_options"] = {"include_usage": True}
                 raw_stream = await _retry_on_transient(
                     lambda: self.client.chat.completions.create(**kwargs)
                 )

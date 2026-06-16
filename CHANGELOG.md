@@ -4,6 +4,70 @@ All notable changes to Vtx are documented in this file. The format is based on
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project
 adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.1.2] - 2026-06-16 — Extension System
+
+Adds a first-class extension API that lets users add new LLM-callable tools,
+intercept and modify tool calls, react to lifecycle events, and register new
+slash commands — all without forking vtx. Modeled on the pi agent's extension
+hooks, but native to vtx's Python stack.
+
+### Added
+
+#### Extension system
+- `vtx.extensions` module: `ExtensionAPI`, `EventBus`, `ExtensionTool`,
+  `ExtensionCommand`, file/package loader, and discovery.
+- Auto-discovery from `<cwd>/.vtx/extensions/*.py` and
+  `~/.vtx/agent/extensions/*.py` (with package-style `__init__.py` support).
+  Project-local extensions take precedence over global ones.
+- New `extensions:` list in `config.yml` for user-configured extension paths.
+- New `--extension PATH` (repeatable) and `--no-extensions` CLI flags.
+- Events: `session_start`, `session_end`, `agent_start`, `agent_end`,
+  `turn_start`, `turn_end`, `tool_call`, `tool_result`, `compaction_start`,
+  `compaction_end`.
+- Blocking semantics: a `tool_call` handler can return `{"block": True,
+  "reason": "..."}` to deny the call, or `{"args": {...}}` to rewrite the
+  arguments before execution. A `tool_result` handler can return
+  `{"output": "..."}` to rewrite the text the LLM sees. Modifications are
+  chained across handlers.
+- Tool override: an extension that registers a tool with the same name as a
+  built-in (e.g. `read`, `bash`) replaces it. The extension version's
+  description and parameter schema are what the LLM sees.
+- Sync-only `session_start` / `session_end` emit so startup and shutdown can
+  fire handlers without spinning up an extra event loop.
+- Handler exceptions are caught and logged to stderr; they never crash the
+  agent loop.
+- Example extensions under `examples/extensions/`: `hello.py`,
+  `permission_gate.py`, `auto_commit.py`, `tool_override.py`,
+  `log_tool_calls.py`.
+- Full reference: [docs/extensions.md](docs/extensions.md).
+
+#### LLM providers
+- 31 new gateways in `src/vtx/llm/provider.yaml`, taking the catalog from 18
+  to 49 entries. All require authentication (`api_key_env` set on every
+  entry; ollama is the only key-less provider, via `api_key_optional: true`
+  for local use). All fetch their model list dynamically from the
+  provider's `/models` endpoint with a 10-minute parser cooldown.
+- OpenAI-compatible: AIHubMix (`AIHUBMIX_API_KEY`, custom `APP-Code` header),
+  Apertis, Baseten, Berget AI, Blackbox AI, Cline (custom `/ai/cline/models`
+  endpoint), Chutes AI, Cortecs, Crof, Dialagram, Dinference, Friendli,
+  HicapAI, Jiekou, Knox, LightningAI, LLMGateway, MegaNova, Moark,
+  ModelScope, MoonshotAI, NanoGPT, Pollinations AI, Routing.run, Seraphyn,
+  Sherlock (CloudFerro), Vercel AI, Zenmux, Clarifai.
+- Anthropic-compatible: FastRouter.
+- All entries appear automatically in `/login` and the model picker — no
+  other code changes needed because `provider.yaml` is the single source of
+  truth.
+
+#### Internal
+- Config schema bumped to v7 with a v6 → v7 migration that initializes
+  `extensions: []` and tolerates the first-pass dict form.
+- `Loop` and `_TurnRunner` now accept an optional `EventBus`; events are
+  fired at the right points without changing existing event payload shape.
+- `tools.get_tools_with_extensions(default_names, extension_tools)` merges
+  built-ins and extension tools with extension names winning.
+- `commands.__init__` routes `/<name>` to extension-registered commands after
+  built-ins get a chance to handle them.
+
 ## [0.1.1] - 2026-06-15 — Initial Public Release
 
 The first public release of Vtx, a minimalist, developer-first coding agent
