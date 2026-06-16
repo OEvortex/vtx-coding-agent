@@ -151,6 +151,7 @@ ui:
   colored_tool_badge: true
   show_welcome_shortcuts: true
   hidden_models: []
+  model_provider_filter: ""         # empty = all providers; set to one slug to scope /model to that provider
 
 permissions:
   mode: "prompt"                   # prompt (ask before modifying files/running bash) or auto (unrestricted)

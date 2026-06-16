@@ -252,6 +252,20 @@ When true, the welcome panel on launch lists keyboard shortcuts. Set to `false` 
 
 List of models hidden from the `/model` picker. Use a provider name to hide all its models (`"github-copilot"`) or `"provider:model"` to hide a single model (`"github-copilot:gpt-5.5-copilot"`). Hidden models stay usable via config defaults or `--model` / session resume — they just don't show up in the picker.
 
+### `ui.model_provider_filter`
+
+| | |
+| --- | --- |
+| Default | `""` |
+| Slash | `/provider` |
+
+Single provider slug that scopes the `/model` picker. Empty (default) shows every provider; a non-empty slug restricts the picker to that one provider. The slash command opens a single-select dropdown like `/login` and `/model`:
+
+- Pick a provider — `/model` will only show that provider's models.
+- Pick "All providers" (or run `/provider reset`) — clear the filter and show every provider again.
+
+Unknown slugs are dropped on write. The active model in the runtime is unaffected — the filter only narrows what `/model` displays.
+
 ## `extensions`
 
 ### `extensions` (list of paths)

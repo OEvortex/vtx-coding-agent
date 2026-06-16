@@ -12,6 +12,7 @@ class SelectionMode(StrEnum):
     THINKING_LINES = "thinking_lines"
     COLORED_TOOL_BADGE = "colored_tool_badge"
     NOTIFICATIONS = "notifications"
+    PROVIDER = "provider"
     SETTINGS = "settings"
     TREE = "tree"
     API_KEY = "api_key"

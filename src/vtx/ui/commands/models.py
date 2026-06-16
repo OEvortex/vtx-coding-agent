@@ -73,6 +73,10 @@ class ModelCommands(CommandSupport):
                 if not _is_model_hidden(m, hidden_providers, hidden_combos)
                 or (m.id == self._runtime.model and m.provider == self._runtime.model_provider)
             ]
+        # Apply the model_provider_filter. Empty string = show everything.
+        filter_slug = get_config().ui.model_provider_filter
+        if filter_slug:
+            models = [m for m in models if m.provider == filter_slug]
         if not models:
             self.notify("No models configured", title="Models", timeout=3, severity="warning")
             return
@@ -119,7 +123,13 @@ class ModelCommands(CommandSupport):
             )
             return
 
-        chat.add_info_message(f"Refreshing {provider if provider else 'all dynamic providers'}...")
+        if provider is None:
+            if not DYNAMIC_PROVIDERS:
+                chat.add_info_message("No providers to refresh", error=True)
+                return
+            chat.add_info_message(f"Refreshing all {len(DYNAMIC_PROVIDERS)} providers...")
+        else:
+            chat.add_info_message(f"Refreshing {provider}...")
 
         def _run() -> dict[str, int | str]:
             if provider is not None:
@@ -128,7 +138,7 @@ class ModelCommands(CommandSupport):
                 except Exception as exc:
                     return {provider: -1, "_error": str(exc)}
                 return {provider: count}
-            return dict[str, int | str](refresh_all_providers())
+            return dict(refresh_all_providers())
 
         try:
             result = await asyncio.to_thread(_run)
@@ -139,6 +149,9 @@ class ModelCommands(CommandSupport):
         error = result.pop("_error", None)
         if error:
             chat.add_info_message(f"Refresh failed: {error}", error=True)
+            return
+        if not result:
+            chat.add_info_message("Refresh complete (no providers returned models)")
             return
         lines = [f"  {name}: {count} models" for name, count in result.items()]
         chat.add_info_message("Refresh complete:\n" + "\n".join(lines))

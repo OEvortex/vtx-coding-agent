@@ -4,6 +4,7 @@
 - models.py   - /model
 - sessions.py - /clear, /new, /resume, /tree, /session, /handoff, /compact, /export, /copy
 - auth.py     - /login, /logout
+- providers.py - /provider
 
 CommandsMixin composes the domain mixins and owns the command router.
 """
@@ -14,11 +15,14 @@ from ..chat import ChatLog
 from .auth import AuthCommands
 from .base import CommandSupport
 from .models import ModelCommands
+from .providers import ProviderCommands
 from .sessions import SessionCommands
 from .settings import SettingsCommands, SettingsSelectionResult
 
 
-class CommandsMixin(SettingsCommands, ModelCommands, SessionCommands, AuthCommands):
+class CommandsMixin(
+    SettingsCommands, ModelCommands, SessionCommands, AuthCommands, ProviderCommands
+):
     def _handle_command(self, text: str) -> bool:
         parts = text[1:].split(maxsplit=1)
         cmd = parts[0] if parts else ""
@@ -35,6 +39,9 @@ class CommandsMixin(SettingsCommands, ModelCommands, SessionCommands, AuthComman
             return True
         if cmd == "model":
             self._handle_model_command(args)
+            return True
+        if cmd == "provider":
+            self._handle_provider_command(args)
             return True
         if cmd == "new":
             self._new_conversation()
@@ -125,6 +132,7 @@ __all__ = [
     "CommandSupport",
     "CommandsMixin",
     "ModelCommands",
+    "ProviderCommands",
     "SessionCommands",
     "SettingsCommands",
     "SettingsSelectionResult",

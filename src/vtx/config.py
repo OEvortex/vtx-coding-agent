@@ -84,6 +84,10 @@ class UIConfig(BaseModel):
     # to hide all its models, or "provider:model" to hide a specific model.
     # Hidden models remain usable via config defaults or session resume.
     hidden_models: list[str] = []
+    # Provider slug whose models appear in the /model picker. Empty (default)
+    # shows every provider; a non-empty slug restricts the picker to that one
+    # provider. Pick via the /provider dropdown (or set directly).
+    model_provider_filter: str = ""
 
     @field_validator("theme")
     @classmethod
@@ -458,6 +462,25 @@ def _migrate_v6_to_v7(data: dict[str, Any]) -> dict[str, Any]:
     return migrated
 
 
+def _migrate_v7_to_v8(data: dict[str, Any]) -> dict[str, Any]:
+    """Add the ``ui.model_provider_filter`` field. Pre-v8 users get an empty string."""
+    migrated = Config._apply_legacy_key_shims(data)
+    ui = migrated.get("ui")
+    if not isinstance(ui, dict):
+        ui = {}
+        migrated["ui"] = ui
+
+    if not isinstance(ui.get("model_provider_filter"), str):
+        ui["model_provider_filter"] = ""
+
+    meta = migrated.get("meta")
+    if not isinstance(meta, dict):
+        migrated["meta"] = {"config_version": 8}
+    else:
+        meta["config_version"] = 8
+    return migrated
+
+
 def _migrate_config_data(data: dict[str, Any]) -> tuple[dict[str, Any], int, int, bool]:
     original = deepcopy(data)
     current_version = _get_config_version(original)
@@ -491,6 +514,10 @@ def _migrate_config_data(data: dict[str, Any]) -> tuple[dict[str, Any], int, int
         if current_version == 6:
             migrated = _migrate_v6_to_v7(migrated)
             current_version = 7
+            continue
+        if current_version == 7:
+            migrated = _migrate_v7_to_v8(migrated)
+            current_version = 8
             continue
         break
 
@@ -732,6 +759,33 @@ def set_notifications_enabled(enabled: bool) -> Config:
         data["notifications"] = notifications
 
     notifications["enabled"] = enabled
+    _set_config_version(data)
+
+    _atomic_write_text(config_file, _serialize_config_yaml(data))
+    return reload_config()
+
+
+def set_model_provider_filter(provider: str) -> Config:
+    """Set the single provider slug shown in the /model picker.
+
+    Pass ``""`` to clear the filter (show every provider). Unknown slugs
+    are dropped so a typo never persists.
+    """
+    from .llm.provider_catalog import _load as _load_providers
+
+    cleaned = provider.strip()
+    if cleaned and cleaned not in _load_providers():
+        cleaned = ""
+
+    config_file = _ensure_config_file()
+    data = _read_config_data(config_file)
+
+    ui = data.get("ui")
+    if not isinstance(ui, dict):
+        ui = {}
+        data["ui"] = ui
+
+    ui["model_provider_filter"] = cleaned
     _set_config_version(data)
 
     _atomic_write_text(config_file, _serialize_config_yaml(data))

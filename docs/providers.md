@@ -158,7 +158,7 @@ Three ways, in priority order:
      default_model: "deepseek-v4-flash"
    ```
 
-3. **In-app picker** (`/model`): shows the merged static + dynamic catalog. Arrow keys to navigate, Enter to select. Hidden models (via `ui.hidden_models`) don't appear.
+3. **In-app picker** (`/model`): shows the merged static + dynamic catalog. Arrow keys to navigate, Enter to select. Hidden models (via `ui.hidden_models`) don't appear. To scope the picker to a single provider, use `/provider` or set `ui.model_provider_filter` directly.
 
 ## OAuth flows in detail
 

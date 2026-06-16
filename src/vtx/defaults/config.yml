@@ -1,5 +1,5 @@
 meta:
-  config_version: 7
+  config_version: 8
 
 llm:
   default_provider: "openai-codex"
@@ -37,6 +37,7 @@ ui:
   collapse_thinking: true
   show_welcome_shortcuts: true
   hidden_models: []
+  model_provider_filter: ""
 
 permissions:
   mode: "prompt"

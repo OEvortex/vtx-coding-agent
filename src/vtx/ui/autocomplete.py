@@ -426,6 +426,7 @@ DEFAULT_COMMANDS = [
     SlashCommand("quit", "quit the application", "ctrl+c,c"),
     SlashCommand("clear", "clear conversation history"),
     SlashCommand("model", "change model"),
+    SlashCommand("provider", "filter /model by provider"),
     SlashCommand("settings", "themes, permissions, thinking, notifications"),
     SlashCommand("new", "start new conversation"),
     SlashCommand("handoff", "start focused handoff in new session", submit_on_select=False),

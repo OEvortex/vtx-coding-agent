@@ -349,6 +349,7 @@ class ChatLog(VerticalScroll):
             ("/clear", "Clear conversation history"),
             ("/compact", "Compact current conversation now"),
             ("/model", "Change model (/model gpt-4o)"),
+            ("/provider", "Filter /model by provider"),
             ("/themes", "Change UI theme (/themes gruvbox-dark)"),
             ("/permissions", "Change permission mode (/permissions auto)"),
             ("/thinking", "Change thinking level (/thinking high)"),
