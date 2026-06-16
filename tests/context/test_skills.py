@@ -464,7 +464,7 @@ class TestBuiltinCommandSkills:
         assert skill.register_cmd is True
         assert skill.cmd_info == "guided AGENTS.md setup"
         assert skill.bundled is True
-        assert skill.path.replace("\\", "/").endswith("vtx/builtin_skills/init/SKILL.md")
+        assert skill.path.replace("\\", "/").endswith("vtx/builtin_skills/setup/init/SKILL.md")
         assert result.warnings == []
 
     def test_loads_builtin_review_skill(self):
@@ -475,7 +475,9 @@ class TestBuiltinCommandSkills:
         assert skill.register_cmd is True
         assert skill.cmd_info == "review code changes"
         assert skill.bundled is True
-        assert skill.path.replace("\\", "/").endswith("vtx/builtin_skills/review/SKILL.md")
+        assert skill.path.replace("\\", "/").endswith(
+            "vtx/builtin_skills/code-review/review/SKILL.md"
+        )
         assert result.warnings == []
 
     def test_loads_builtin_github_skill(self):
@@ -485,7 +487,7 @@ class TestBuiltinCommandSkills:
         assert skill is not None
         assert skill.register_cmd is True
         assert skill.bundled is True
-        assert skill.path.replace("\\", "/").endswith("vtx/builtin_skills/github/SKILL.md")
+        assert skill.path.replace("\\", "/").endswith("vtx/builtin_skills/general/github/SKILL.md")
         assert result.warnings == []
 
 

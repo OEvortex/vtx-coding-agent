@@ -236,6 +236,35 @@ def _load_skills_from_dir(
     return LoadSkillsResult(skills=skills, warnings=warnings)
 
 
+def _load_skills_recursive(directory: Path, *, max_depth: int = 2) -> LoadSkillsResult:
+    skills: list[Skill] = []
+    warnings: list[SkillWarning] = []
+
+    if not directory.exists():
+        return LoadSkillsResult(skills=skills, warnings=warnings)
+
+    def _walk(current: Path, depth: int) -> None:
+        if depth > max_depth:
+            return
+        try:
+            for entry in current.iterdir():
+                if entry.name.startswith("."):
+                    continue
+                if not entry.is_dir():
+                    continue
+                skill, skill_warnings = _load_skill_from_dir(entry)
+                warnings.extend(skill_warnings)
+                if skill:
+                    skills.append(skill)
+                else:
+                    _walk(entry, depth + 1)
+        except Exception:
+            pass
+
+    _walk(directory, 0)
+    return LoadSkillsResult(skills=skills, warnings=warnings)
+
+
 def _find_git_root(start: Path) -> Path | None:
     current = start
     while True:
@@ -305,7 +334,7 @@ def load_builtin_cmd_skills() -> LoadSkillsResult:
     try:
         builtin_resource = resources.files("vtx").joinpath("builtin_skills")
         with resources.as_file(builtin_resource) as builtin_root:
-            result = _load_skills_from_dir(builtin_root)
+            result = _load_skills_recursive(builtin_root)
     except Exception:
         return LoadSkillsResult(skills=[], warnings=[])
     return LoadSkillsResult(

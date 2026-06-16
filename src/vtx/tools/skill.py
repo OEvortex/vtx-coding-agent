@@ -129,15 +129,15 @@ class SkillTool(BaseTool):
             if (skill_dir / "SKILL.md").is_file():
                 return skill_dir, False
 
-            # 3. Builtin skills
+            # 3. Builtin skills (search recursively through category folders)
             from importlib import resources
 
             try:
                 builtin_resource = resources.files("vtx").joinpath("builtin_skills")
                 with resources.as_file(builtin_resource) as builtin_root:
-                    skill_dir = builtin_root / name
-                    if (skill_dir / "SKILL.md").is_file():
-                        return skill_dir, True
+                    for candidate in builtin_root.rglob(name):
+                        if candidate.is_dir() and (candidate / "SKILL.md").is_file():
+                            return candidate, True
             except Exception:
                 pass
 
