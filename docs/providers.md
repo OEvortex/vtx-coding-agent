@@ -221,7 +221,7 @@ vtx --provider openai --base-url http://localhost:5000/v1 \
     --openai-compat-auth none
 ```
 
-For local models, you typically also want to lower `compaction.buffer_tokens` so compaction fires well below the model's real context window. See [local-models.md](local-models.md) for a worked example.
+For local models, you typically also want to lower `compaction.threshold_percent` so compaction fires well below the model's real context window. See [local-models.md](local-models.md) for a worked example.
 
 ## Adding a provider (programmatic)
 

@@ -167,15 +167,15 @@ The HTML is self-contained — inline CSS, no external assets, no JS. It can be 
 
 ## Compaction
 
-When the running token total gets within `compaction.buffer_tokens` of the model's context window, Vtx triggers compaction.
+When the running token total reaches `compaction.threshold_percent`% of the model's context window, Vtx triggers compaction.
 
 ### Trigger formula
 
 ```text
-overflow = (input + output + cache_read + cache_write) >= (context_window - min(buffer_tokens, max_output_tokens))
+overflow = (input + output + cache_read + cache_write) >= (threshold_percent / 100) * context_window
 ```
 
-In words: we need enough headroom for the next model response. The headroom is the smaller of `buffer_tokens` and the model's `max_output_tokens`, so a model with a small `max_output_tokens` will fire compaction later.
+In words: once you've burned through `threshold_percent`% of the model's window, the running conversation is summarized and replaced with a compact summary so the next turn has room. The default threshold is 80%.
 
 ### What happens
 
@@ -197,7 +197,7 @@ In words: we need enough headroom for the next model response. The headroom is t
 
 ### Local models
 
-If you're running a model with a small context window (e.g. 32k), set `compaction.buffer_tokens` to a value just below `context_window - max_output_tokens - 5000` (5k safety margin). Worked example in [local-models.md](local-models.md).
+If you're running a model with a small context window (e.g. 32k), you may want to lower `compaction.threshold_percent` (for example `70`) so compaction fires well before the model's real context limit and the next response always has room. Worked example in [local-models.md](local-models.md).
 
 ## Tree navigation
 

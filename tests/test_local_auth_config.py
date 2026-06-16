@@ -41,7 +41,7 @@ ui:
 
 compaction:
   on_overflow: continue
-  buffer_tokens: 20000
+  threshold_percent: 80
 
 agent:
   max_turns: 500

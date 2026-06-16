@@ -81,8 +81,8 @@ llm:
     openai_compat: "none"  # or "auto"
 
 compaction:
-  # Set this close to your model's context size (e.g., 30000 for a 32k window)
-  buffer_tokens: 27768  # 32768 - 5000 (safety margin)
+  # Lower the threshold for small context windows so compaction fires earlier
+  threshold_percent: 70
 ```
 
 > **Note:** earlier Vtx versions stored config at `~/.vtx/config.yml`. If you have legacy files there, the v0.4.x release migrates them automatically into `~/.vtx/` on first run; the old path is no longer read.

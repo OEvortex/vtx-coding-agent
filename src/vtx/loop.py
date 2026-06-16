@@ -253,10 +253,9 @@ class Agent:
             return
 
         context_window = self.config.context_window or vtx_config.agent.default_context_window
-        max_output = self.config.max_output_tokens or self.provider.config.max_tokens or 0
-        buffer_tokens = vtx_config.compaction.buffer_tokens
+        threshold_percent = vtx_config.compaction.threshold_percent
 
-        if not is_overflow(last_usage, context_window, max_output, buffer_tokens):
+        if not is_overflow(last_usage, context_window, threshold_percent):
             return
 
         if cancel_event and cancel_event.is_set():

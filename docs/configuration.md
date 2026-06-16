@@ -34,7 +34,7 @@ llm:
 
 compaction:
   on_overflow: "continue"
-  buffer_tokens: 20000
+  threshold_percent: 80
 
 agent:
   max_turns: 500
@@ -174,13 +174,13 @@ See [`src/vtx/prompts/identity.py`](../src/vtx/prompts/identity.py) for the ship
 
 What Vtx does when the conversation overflows the model's context window. `"continue"` compacts and keeps going; `"pause"` compacts and stops the agent loop. You can also trigger compaction manually with `/compact` regardless of this setting.
 
-### `compaction.buffer_tokens`
+### `compaction.threshold_percent`
 
 | | |
 | --- | --- |
-| Default | `20000` |
+| Default | `80` |
 
-Tokens of headroom kept free near the context-window limit. Compaction triggers when the running total is within `buffer_tokens` of the model's `context_window`. For local models with smaller windows, see [local-models.md](local-models.md) for a worked example.
+Percentage of the model's `context_window` at which compaction fires. Compaction triggers when the running total (input + output + cache_read + cache_write) reaches `threshold_percent`% of `context_window`. Lower this if you want compaction to fire earlier; raise it to compact later. For local models with smaller windows, see [local-models.md](local-models.md) for a worked example.
 
 ## `agent`
 

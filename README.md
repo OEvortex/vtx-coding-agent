@@ -138,7 +138,7 @@ llm:
 
 compaction:
   on_overflow: "continue"          # continue (automatic compaction) or pause
-  buffer_tokens: 20000
+  threshold_percent: 80            # auto-compact at 80% of context window
 
 agent:
   max_turns: 500

@@ -1,13 +1,13 @@
 """
 Context compaction for long sessions.
 
-When token usage exceeds the usable context window, send the full conversation
-to the LLM with a summarization prompt, then store the summary as a
-CompactionEntry. The session.messages property filters to only show messages
-after the compaction point.
+When token usage exceeds a percentage of the context window, send the full
+conversation to the LLM with a summarization prompt, then store the summary
+as a CompactionEntry. The session.messages property filters to only show
+messages after the compaction point.
 
 Overflow formula:
-    total_tokens >= context_window - min(buffer_tokens, max_output_tokens)
+    total_tokens >= (threshold_percent / 100) * context_window
 """
 
 from ..core.types import Message, TextPart, Usage, UserMessage
@@ -50,18 +50,14 @@ in a directory are relevant, include the path to the directory.]
 ---"""
 
 
-def is_overflow(
-    usage: Usage, context_window: int, max_output_tokens: int, buffer_tokens: int
-) -> bool:
+def is_overflow(usage: Usage, context_window: int, threshold_percent: float) -> bool:
     count = (
         usage.input_tokens
         + usage.output_tokens
         + usage.cache_read_tokens
         + usage.cache_write_tokens
     )
-    reserved = min(buffer_tokens, max_output_tokens)
-    usable = context_window - reserved
-    return count >= usable
+    return count >= (threshold_percent / 100.0) * context_window
 
 
 def _calculate_context_tokens(usage: Usage) -> int:

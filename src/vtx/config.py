@@ -129,7 +129,7 @@ class LLMConfig(BaseModel):
 
 class CompactionConfig(BaseModel):
     on_overflow: OnOverflowMode = "continue"
-    buffer_tokens: int = 20000
+    threshold_percent: float = 80.0
 
 
 class AgentConfig(BaseModel):

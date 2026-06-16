@@ -27,69 +27,52 @@ from vtx.ui.commands import CommandsMixin
 
 class TestIsOverflow:
     def test_below_threshold(self):
+        # 50% of 200k -> no overflow at 80%
         usage = Usage(input_tokens=100_000, output_tokens=5_000)
-        assert not is_overflow(
-            usage, context_window=200_000, max_output_tokens=16_000, buffer_tokens=20_000
-        )
+        assert not is_overflow(usage, context_window=200_000, threshold_percent=80.0)
 
     def test_at_threshold(self):
-        # usable = 200_000 - min(20_000, 16_000) = 200_000 - 16_000 = 184_000
-        usage = Usage(input_tokens=180_000, output_tokens=4_000)
-        assert is_overflow(
-            usage, context_window=200_000, max_output_tokens=16_000, buffer_tokens=20_000
-        )
+        # 80% of 200k = 160k -> overflow at exactly 80%
+        usage = Usage(input_tokens=160_000)
+        assert is_overflow(usage, context_window=200_000, threshold_percent=80.0)
 
     def test_above_threshold(self):
+        # 97.5% of 200k -> overflow
         usage = Usage(input_tokens=190_000, output_tokens=5_000)
-        assert is_overflow(
-            usage, context_window=200_000, max_output_tokens=16_000, buffer_tokens=20_000
-        )
+        assert is_overflow(usage, context_window=200_000, threshold_percent=80.0)
 
     def test_cache_tokens_counted(self):
-        # total = 100k + 5k + 50k + 30k = 185k, usable = 184k -> overflow
+        # total = 100k + 5k + 50k + 30k = 185k = 92.5% of 200k -> overflow
         usage = Usage(
             input_tokens=100_000,
             output_tokens=5_000,
             cache_read_tokens=50_000,
             cache_write_tokens=30_000,
         )
-        assert is_overflow(
-            usage, context_window=200_000, max_output_tokens=16_000, buffer_tokens=20_000
-        )
+        assert is_overflow(usage, context_window=200_000, threshold_percent=80.0)
 
-    def test_buffer_smaller_than_max_output(self):
-        # reserved = min(10_000, 32_000) = 10_000, usable = 200_000 - 10_000 = 190_000
-        usage = Usage(input_tokens=185_000, output_tokens=5_000)
-        assert is_overflow(
-            usage, context_window=200_000, max_output_tokens=32_000, buffer_tokens=10_000
-        )
+    def test_custom_threshold_lower(self):
+        # 50% of 200k = 100k -> overflow at 50% threshold
+        usage = Usage(input_tokens=100_000)
+        assert is_overflow(usage, context_window=200_000, threshold_percent=50.0)
 
-    def test_buffer_larger_than_max_output(self):
-        # reserved = min(20_000, 8_000) = 8_000, usable = 128_000 - 8_000 = 120_000
-        usage = Usage(input_tokens=115_000, output_tokens=5_000)
-        assert is_overflow(
-            usage, context_window=128_000, max_output_tokens=8_000, buffer_tokens=20_000
-        )
+    def test_custom_threshold_higher(self):
+        # 90% of 200k = 180k -> 170k is not overflow
+        usage = Usage(input_tokens=170_000)
+        assert not is_overflow(usage, context_window=200_000, threshold_percent=90.0)
 
     def test_zero_usage_no_overflow(self):
         usage = Usage()
-        assert not is_overflow(
-            usage, context_window=200_000, max_output_tokens=16_000, buffer_tokens=20_000
-        )
+        assert not is_overflow(usage, context_window=200_000, threshold_percent=80.0)
 
     def test_exact_boundary(self):
-        # usable = 200_000 - min(20_000, 16_000) = 184_000
-        # exactly at boundary -> overflow
-        usage = Usage(input_tokens=184_000)
-        assert is_overflow(
-            usage, context_window=200_000, max_output_tokens=16_000, buffer_tokens=20_000
-        )
+        # 80% of 200k = 160k -> exactly at boundary -> overflow
+        usage = Usage(input_tokens=160_000)
+        assert is_overflow(usage, context_window=200_000, threshold_percent=80.0)
 
     def test_one_below_boundary(self):
-        usage = Usage(input_tokens=183_999)
-        assert not is_overflow(
-            usage, context_window=200_000, max_output_tokens=16_000, buffer_tokens=20_000
-        )
+        usage = Usage(input_tokens=159_999)
+        assert not is_overflow(usage, context_window=200_000, threshold_percent=80.0)
 
 
 # ---------------------------------------------------------------------------
@@ -462,13 +445,13 @@ class TestCompactionConfig:
     def test_default_config_values(self):
         cfg = Config({})
         assert cfg.compaction.on_overflow == "continue"
-        assert cfg.compaction.buffer_tokens == 20_000
+        assert cfg.compaction.threshold_percent == 80.0
         assert cfg.agent.default_context_window == 200_000
 
     def test_config_override(self):
-        cfg = Config({"compaction": {"on_overflow": "pause", "buffer_tokens": 10_000}})
+        cfg = Config({"compaction": {"on_overflow": "pause", "threshold_percent": 90.0}})
         assert cfg.compaction.on_overflow == "pause"
-        assert cfg.compaction.buffer_tokens == 10_000
+        assert cfg.compaction.threshold_percent == 90.0
         assert cfg.agent.default_context_window == 200_000
 
     def test_badge_colors_default(self):
