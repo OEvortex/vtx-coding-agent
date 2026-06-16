@@ -560,12 +560,11 @@ class Vtx(
         if self._runtime.provider is None:
             return
 
-        levels = self._runtime.provider.thinking_levels
-        current_idx = (
-            levels.index(self._runtime.thinking_level)
-            if self._runtime.thinking_level in levels
-            else 0
-        )
+        levels = self._runtime.effective_thinking_levels
+        if not levels:
+            return
+        current = self._runtime.thinking_level or "none"
+        current_idx = levels.index(current) if current in levels else 0
         new_level = levels[(current_idx + 1) % len(levels)]
         self._select_thinking_level(new_level)
 

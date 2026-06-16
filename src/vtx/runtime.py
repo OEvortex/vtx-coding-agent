@@ -397,6 +397,32 @@ class ConversationRuntime:
             self.session.set_thinking_level(level)
         set_last_selected(self.model, self.model_provider, self.thinking_level)
 
+    @property
+    def model_supports_thinking(self) -> bool:
+        """Whether the currently selected model advertises reasoning/thinking
+        support. Models without it should not show a multi-level picker; the
+        only meaningful level is ``"none"`` (i.e. just don't think).
+        """
+        info = get_model(self.model, self.model_provider)
+        if info is None:
+            # Unknown model: assume it might support thinking so the user
+            # can still attempt to set a level. Providers that don't
+            # accept the param will 400 and the user sees the error.
+            return True
+        return bool(info.supports_thinking)
+
+    @property
+    def effective_thinking_levels(self) -> list[str]:
+        """The set of levels the picker/cycle should offer for the current
+        model + provider. Non-thinking models collapse to ``["none"]``;
+        all other models expose the full OpenAI-style effort enum.
+        """
+        if self.provider is None:
+            return []
+        if not self.model_supports_thinking:
+            return ["none"]
+        return list(self.provider.thinking_levels)
+
     def load_session(self, session_path: str | Path) -> Session:
         session = Session.load(session_path)
         model = self.model

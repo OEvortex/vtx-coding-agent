@@ -24,6 +24,10 @@ class GenerationConfig:
     presence_penalty: float | None = None
     stop_sequences: list[str] | None = None
     tool_choice: str | dict | bool | None = None
+    # User-selected thinking level: "none" | "minimal" | "low" | "medium" | "high" | "xhigh".
+    # None means "provider default" (the model decides). The SDK layer is responsible
+    # for translating this into the right wire parameter per provider family.
+    thinking_level: str | None = None
 
 
 @dataclass

@@ -234,7 +234,44 @@ class AnthropicSDK(BaseLLMSDK):
                 payload["tool_choice"] = {"type": tc}
             elif isinstance(tc, dict):
                 payload["tool_choice"] = tc
+        self._apply_thinking_payload(payload, config)
         return payload
+
+    @staticmethod
+    def _apply_thinking_payload(payload: dict[str, Any], config: GenerationConfig) -> None:
+        """Translate ``config.thinking_level`` into the Anthropic-native
+        ``thinking`` block documented at
+        https://platform.claude.com/docs/en/build-with-claude/extended-thinking
+        and
+        https://platform.claude.com/docs/en/build-with-claude/adaptive-thinking.
+
+        Levels map as:
+          - "none"            -> omit ``thinking`` entirely; the model
+            does not think.
+          - "minimal".."xhigh" -> manual extended thinking with a
+            budget proportional to effort. Manual mode is supported on
+            Sonnet 4.5 / Opus 4.5 / Sonnet 4.6 / Opus 4.6. Opus 4.7+
+            and Fable/Mythos 5 reject manual ``type: "enabled"`` with
+            a 400 - users on those models should rely on the model
+            default and pick ``thinking_level = "none"`` to disable.
+        """
+        level = config.thinking_level
+        if level is None or level == "none":
+            return
+
+        # Effort -> manual budget_tokens. Anthropic's minimum is 1024
+        # and budget_tokens must be strictly less than max_tokens.
+        manual_budget: dict[str, int] = {
+            "minimal": 1024,
+            "low": 2048,
+            "medium": 4096,
+            "high": 8192,
+            "xhigh": 16384,
+        }
+        budget = manual_budget.get(level)
+        if budget is None:
+            return
+        payload["thinking"] = {"type": "enabled", "budget_tokens": budget}
 
     async def generate(
         self, messages: list[Message], config: GenerationConfig, stream: bool = False

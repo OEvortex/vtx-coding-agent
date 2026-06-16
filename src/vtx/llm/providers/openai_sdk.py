@@ -35,7 +35,9 @@ from .sanitize import sanitize_surrogates
 
 class OpenAISDKProvider(BaseProvider):
     name = "openai"
-    thinking_levels: ClassVar[list[str]] = ["none"]
+    # Full OpenAI-style effort enum. The picker filters by per-model
+    # capability (Model.supports_thinking) before showing these.
+    thinking_levels: ClassVar[list[str]] = ["none", "minimal", "low", "medium", "high", "xhigh"]
 
     def __init__(self, config: ProviderConfig):
         super().__init__(config)
@@ -60,7 +62,9 @@ class OpenAISDKProvider(BaseProvider):
                 'or configure llm.auth.openai_compat = "auto"/"none" for local endpoints.'
             )
 
-        self._sdk = OpenAISDK(api_key=api_key, base_url=config.base_url)
+        self._sdk = OpenAISDK(
+            api_key=api_key, base_url=config.base_url, provider_slug=config.provider
+        )
 
     @staticmethod
     def _resolve_dynamic_key_for(config: ProviderConfig) -> str | None:
@@ -187,7 +191,10 @@ class OpenAISDKProvider(BaseProvider):
         max_tok = max_tokens if max_tokens is not None else self.config.max_tokens
 
         config = GenerationConfig(
-            model=self.config.model, temperature=temp or 0.7, max_tokens=max_tok
+            model=self.config.model,
+            temperature=temp or 0.7,
+            max_tokens=max_tok,
+            thinking_level=self.config.thinking_level,
         )
 
         if sdk_tools:
@@ -230,11 +237,25 @@ class OpenAISDKProvider(BaseProvider):
                     for i, tc in enumerate(tool_calls):
                         yield ToolCallStart(id=tc.id, name=tc.name, index=i)
                         yield ToolCallDelta(index=i, arguments_delta=tc.arguments)
+                elif chunk_type == "finish_reason":
+                    stop_reason = self._map_finish_reason(chunk.get("finish_reason", ""))
 
             yield StreamDone(stop_reason=stop_reason)
 
         except Exception as e:
             yield StreamError(error=format_error(e))
+
+    @staticmethod
+    def _map_finish_reason(reason: str) -> StopReason:
+        match reason:
+            case "stop" | "null" | "":
+                return StopReason.STOP
+            case "length" | "max_tokens":
+                return StopReason.LENGTH
+            case "tool_calls":
+                return StopReason.TOOL_USE
+            case _:
+                return StopReason.STOP
 
     def should_retry_for_error(self, error: Exception) -> bool:
         if isinstance(error, RateLimitError):

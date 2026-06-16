@@ -78,13 +78,17 @@ async def _openai_stream_chunks(
     tool_calls_acc: dict[int, dict[str, Any]] = {}
     phase_parser = ThinkingPhaseParser()
     think_emitted_len = 0
+    finish_reason: str | None = None
     try:
         async for chunk in stream:
             if chunk.usage:
                 yield {"type": "usage", "usage": chunk.usage.model_dump()}
             if not chunk.choices:
                 continue
-            delta = chunk.choices[0].delta
+            choice = chunk.choices[0]
+            if choice.finish_reason:
+                finish_reason = choice.finish_reason
+            delta = choice.delta
             reasoning_delta = getattr(delta, "reasoning_content", None) or getattr(
                 delta, "reasoning", None
             )
@@ -159,6 +163,8 @@ async def _openai_stream_chunks(
                     for v in sorted(tool_calls_acc.values(), key=lambda x: x["id"])
                 ],
             }
+        if finish_reason:
+            yield {"type": "finish_reason", "finish_reason": finish_reason}
     finally:
         if hasattr(stream, "close"):
             try:
@@ -170,13 +176,35 @@ async def _openai_stream_chunks(
 
 
 class OpenAISDK(BaseLLMSDK):
-    def __init__(self, api_key: str, base_url: str | None = None, rate_limit_hook=None):
+    # Slugs that natively accept the OpenAI `reasoning_effort` top-level
+    # parameter (or its `reasoning: {effort: ...}` sibling on the Responses
+    # API). Both work via chat.completions for o-series / gpt-5 family.
+    _SLUGS_WITH_REASONING_EFFORT: frozenset[str] = frozenset(
+        {"openai", "openai-codex", "openai-responses"}
+    )
+    # Slugs that pass through to OpenRouter's unified `reasoning` object.
+    _SLUG_OPENROUTER: str = "openrouter"
+    # Slugs that need DeepSeek's `extra_body={"thinking": {...}}` toggle.
+    _SLUG_DEEPSEEK: str = "deepseek"
+    # Slugs that need Zhipu/GLM's `extra_body={"thinking": {...}}` toggle.
+    _SLUG_ZHIPU: str = "zhipu"
+    # Slugs that use TokenRouter's Responses-style `reasoning: {effort: ...}`.
+    _SLUG_TOKENROUTER: str = "tokenrouter"
+
+    def __init__(
+        self,
+        api_key: str,
+        base_url: str | None = None,
+        rate_limit_hook=None,
+        provider_slug: str | None = None,
+    ):
         resolved_url = base_url or "https://api.openai.com/v1"
         if resolved_url.startswith("http://"):
             resolved_url = "https://" + resolved_url[7:]
         super().__init__(api_key, resolved_url)
         self._async_client: AsyncOpenAI | None = None
         self._rate_limit_hook = rate_limit_hook
+        self._provider_slug = (provider_slug or "").lower() or None
 
     @property
     def client(self) -> AsyncOpenAI:
@@ -222,7 +250,82 @@ class OpenAISDK(BaseLLMSDK):
             ]
             if config.tool_choice is not None:
                 kwargs["tool_choice"] = config.tool_choice
+        self._apply_thinking_kwargs(kwargs, config)
         return kwargs
+
+    def _apply_thinking_kwargs(self, kwargs: dict[str, Any], config: GenerationConfig) -> None:
+        """Translate ``config.thinking_level`` into the provider-specific
+        wire parameters documented in the per-provider API references.
+
+        The level ``"none"`` always means "do not request reasoning" and
+        is implemented by emitting the provider's specific off-switch
+        (omitting params, ``reasoning.exclude``, or ``thinking.type:
+        "disabled"``). Models that have no off-switch at all (e.g. some
+        on/off-only reasoning models served through a gateway) still
+        get a best-effort disable request; if the model cannot honor it
+        the API will return an error which surfaces normally to the
+        user.
+        """
+        level = config.thinking_level
+        if level is None:
+            return
+        slug = self._provider_slug
+
+        # --- OpenAI family (native, openai-codex, openai-responses) ---
+        if slug in self._SLUGS_WITH_REASONING_EFFORT:
+            if level == "none":
+                return
+            # The OpenAI Python SDK accepts both top-level `reasoning_effort`
+            # and the structured `reasoning={effort: ...}` form. The latter
+            # is the future-proof form (also covers Responses API).
+            if level in ("low", "medium", "high"):
+                kwargs["reasoning_effort"] = level
+            else:
+                # "minimal" / "xhigh" - use the structured form
+                kwargs["reasoning"] = {"effort": level}
+            return
+
+        # --- OpenRouter ---
+        if slug == self._SLUG_OPENROUTER:
+            if level == "none":
+                kwargs["reasoning"] = {"effort": "none", "exclude": True}
+            elif level in ("minimal", "low", "medium", "high", "xhigh"):
+                kwargs["reasoning"] = {"effort": level}
+            return
+
+        # --- DeepSeek ---
+        if slug == self._SLUG_DEEPSEEK:
+            if level == "none":
+                kwargs["extra_body"] = {"thinking": {"type": "disabled"}}
+                return
+            # DeepSeek maps low/medium -> high and xhigh -> max.
+            effort = "max" if level == "xhigh" else "high"
+            kwargs["reasoning_effort"] = effort
+            kwargs["extra_body"] = {"thinking": {"type": "enabled"}}
+            return
+
+        # --- Zhipu / GLM (on/off only) ---
+        if slug == self._SLUG_ZHIPU:
+            kwargs["extra_body"] = {
+                "thinking": {"type": "disabled" if level == "none" else "enabled"}
+            }
+            return
+
+        # --- TokenRouter (Responses API reasoning.effort, low/medium/high) ---
+        if slug == self._SLUG_TOKENROUTER:
+            if level == "none":
+                return
+            mapped = {"minimal": "low"}.get(level, level)
+            if mapped in ("low", "medium", "high"):
+                kwargs["reasoning"] = {"effort": mapped}
+            return
+
+        # --- Generic OpenAI-compat gateway (airouter, kilo, opencode, ollama) ---
+        # Pass `reasoning_effort` when the level is set; providers that don't
+        # understand it will ignore or fail with 400 (which the user sees).
+        if level == "none":
+            return
+        kwargs["reasoning_effort"] = level
 
     async def generate(
         self, messages: list[Message], config: GenerationConfig, stream: bool = False
@@ -231,6 +334,7 @@ class OpenAISDK(BaseLLMSDK):
             kwargs = self._build_kwargs(messages, config)
             kwargs["stream"] = stream
             if stream:
+                kwargs["stream_options"] = {"include_usage": True}
                 raw_stream = await _retry_on_transient(
                     lambda: self.client.chat.completions.create(**kwargs)
                 )

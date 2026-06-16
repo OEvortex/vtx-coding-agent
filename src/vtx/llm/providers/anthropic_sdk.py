@@ -156,6 +156,7 @@ class AnthropicSDKProvider(BaseProvider):
             model=self.config.model,
             temperature=temp if temp is not None else 0.7,
             max_tokens=max_tok,
+            thinking_level=self.config.thinking_level,
         )
 
         response = await self._sdk.generate_with_tools(
