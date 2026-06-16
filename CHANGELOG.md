@@ -8,6 +8,15 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Added
 
+#### Built-in skills
+- `google-colab` — manage Google Colab sessions from the terminal: create/stop
+  sessions, run code on GPU/TPU (T4, L4, A100, H100, v5e1, v6e1), upload/download
+  files, install packages, mount Google Drive, and export session logs. Registered
+  as `/google-colab` slash command.
+- `modal` — run Python in the cloud with Modal serverless containers: GPU/TPU
+  execution, autoscaling, persistent volumes, secrets, web endpoints, scheduled
+  jobs, and batch processing. Registered as `/modal` slash command.
+
 #### Provider filter for `/model`
 - New `/provider` slash command opens a single-select dropdown (like `/login`)
   that scopes the `/model` picker to a single provider. The first row
@@ -19,6 +28,9 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   Managed by `/provider` or `set_model_provider_filter(...)`.
 
 ### Changed
+- Restructured `builtin_skills/` to use category folders (`cloud/`, `code-review/`,
+  `general/`, `meta/`, `setup/`). Skill discovery now recursively scans up to 2
+  levels deep for builtins, while project/user skills remain single-level.
 - `/model refresh` (no slug) now reports `Refreshing all N providers...` and
   handles the empty-provider-set case with a clear message. The per-provider
   count format is unchanged.
