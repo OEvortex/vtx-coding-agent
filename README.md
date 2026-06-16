@@ -232,6 +232,7 @@ For deeper information, consult the topic-specific files in the [`docs/`](docs/)
 - [docs/local-models.md](docs/local-models.md) — Running Vtx against local models (llama.cpp, Ollama).
 - [docs/architecture.md](docs/architecture.md) — Codebase architecture map, message structures, and runtime loop.
 - [docs/development.md](docs/development.md) — Building, testing, linting, and maintaining Vtx.
+- [docs/sdk/](docs/sdk/) — The VTX Agentic SDK: programmatic multi-agent interface built on Vtx's runtime.
 
 ---
 

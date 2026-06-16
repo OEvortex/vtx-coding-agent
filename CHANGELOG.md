@@ -8,6 +8,48 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Added
 
+#### VTX Agentic SDK (`vtx.sdk`)
+- New `vtx.sdk` package: a programmatic, multi-agent interface built
+  on top of Vtx's lean runtime. Lets users build agentic applications
+  using Vtx's tool registry, provider catalog, and session store
+  without the TUI.
+- Primitives: `Agent`, `Runner` (sync / async / streamed),
+  `function_tool` decorator, `Handoff` / `agent.as_tool()`,
+  `input_guardrail` / `output_guardrail` / `tool_input_guardrail` /
+  `tool_output_guardrail`, `Session` Protocol with `InMemorySession`
+  and `JSONLSession` backends, `Tracing` (Trace / Span / processors,
+  with `ConsoleTraceProcessor` and `JSONLTraceProcessor` built-ins),
+  `RunState` for resumable human-in-the-loop, `PermissionPolicy`
+  (AutoApprove / AllowlistApprove / PromptApprove), structured
+  `output_type` via Pydantic, and `load_vtx_skills()` for the
+  existing `.agents/skills/` format.
+- 8 runnable examples under `examples/sdk/` (quickstart, multi-agent
+  handoff, multi-agent manager, guardrails, sessions, approvals,
+  tracing, skills).
+- Full reference under `docs/sdk/`: README, agents, runner, tools,
+  multi_agent, sessions, guardrails, approvals, tracing, permissions,
+  skills.
+- 107 tests under `tests/sdk/`. Net new code: ~3,800 LoC. The TUI/CLI
+  surface is untouched.
+
+##### SDK provider refactor
+- The `Agent` constructor no longer takes separate `provider_name`,
+  `api_key`, `base_url`, or `thinking_level` fields. All provider
+  configuration flows through a single `provider` parameter that
+  accepts either a Vtx `BaseProvider` instance, a dict, or `None`.
+- The dict shape distinguishes **built-in** vs **custom** providers:
+  - **Built-in** providers (declared in Vtx's `provider.yaml`) need
+    only `{name, api_key}` plus optional `ProviderConfig` overrides.
+  - **Custom** / non-builtin providers require
+    `{name, sdk, base_url, api_key}` — `sdk` is the SDK transport
+    mode (`"openai"`, `"anthropic"`, …) and `base_url` is the
+    endpoint.
+- The user-facing import path is now consistently `from vtx.sdk
+  import ...` (the old `vtx_sdk` references in docs and the SDK
+  package's docstring have been corrected). 14 tests cover the new
+  field shape (built-in, custom, env fallback, clone round-trip,
+  BaseProvider instance).
+
 #### Built-in skills
 - `google-colab` — manage Google Colab sessions from the terminal: create/stop
   sessions, run code on GPU/TPU (T4, L4, A100, H100, v5e1, v6e1), upload/download
