@@ -8,7 +8,7 @@
 
 ## Testing
 
-- Use `uv run python -m pytest` for testing in general; after edits/writes
+- Use `uv run python -m pytest` for testing in general; after edits/writes (Use for when you do bracking changes or adding new features)
 - If the user asks for e2e tests then run the vtx-tmux e2e test if available
 - Never run full test suite unless the user explicitly asks for it. It can take a long time to run and is not always necessary. Run only the tests that are relevant to the changes made. Use `uv run python -m pytest path/to/test_file.py` to run specific tests.
 
@@ -36,10 +36,11 @@ Use this tool when you need to:
 - Locate code by describing what it does (not just exact strings)
 - Find examples of a pattern or API usage
 - Explore unfamiliar parts of the codebase
-
+- Identify relevant code for a task without knowing exact names or locations
+- Preferable than grep/rg/Glob for code search because it can understand the meaning and intent behind the query, rather than just matching exact strings. This allows for more flexible and powerful searching, especially in large and complex codebases.
 Advantages over text search: understands synonyms, paraphrases, and intent.
 Returns file paths, line ranges, relevance scores, and matching code.
 
-- For codebase Search use `uvx vortexa -q "you natural query here"` to get relevant code snippets from the codebase. This will help you understand the existing code and avoid duplicating functionality.
+- For codebase Search use `vortexa -q "you natural query here"` to get relevant code snippets from the codebase. This will help you understand the existing code and avoid duplicating functionality.
 
 - Instead of using grep use rg (ripgrep) for faster and more efficient searching. For example, `rg "def my_function"` to find all occurrences of a function definition.
