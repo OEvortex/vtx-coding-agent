@@ -357,15 +357,22 @@ class OpenAISDK(BaseLLMSDK):
         # --- OpenAI family (native, openai-codex, openai-responses) ---
         if slug in self._SLUGS_WITH_REASONING_EFFORT:
             if level == "none":
+                # The Chat Completions API has no documented "off" switch
+                # for o-series / gpt-5: omitting `reasoning_effort` lets
+                # the model pick its default (usually `medium` for older
+                # models, `none` for gpt-5.1+). This is the closest we
+                # can get to "don't think" via the wire.
                 return
-            # The OpenAI Python SDK accepts both top-level `reasoning_effort`
-            # and the structured `reasoning={effort: ...}` form. The latter
-            # is the future-proof form (also covers Responses API).
-            if level in ("low", "medium", "high"):
-                kwargs["reasoning_effort"] = level
-            else:
-                # "minimal" / "xhigh" - use the structured form
-                kwargs["reasoning"] = {"effort": level}
+            # The Chat Completions API only accepts the top-level
+            # `reasoning_effort` parameter. The structured
+            # `reasoning: {effort: ...}` form belongs to the Responses
+            # API and causes AsyncCompletions.create() to raise
+            # `unexpected keyword argument 'reasoning'` (RuntimeError).
+            # Pass through any of the documented values (low/medium/high
+            # for o-series; minimal/xhigh on gpt-5.1+); models that don't
+            # recognise a value will return 400, which the user sees
+            # normally.
+            kwargs["reasoning_effort"] = level
             return
 
         # --- OpenRouter-style gateways (auto-detected from provider.yaml) ---

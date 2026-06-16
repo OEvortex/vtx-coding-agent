@@ -3,14 +3,18 @@
 The OpenAI SDK and Anthropic SDK translate ``GenerationConfig.thinking_level``
 into the specific request fields documented for each provider family:
 
-- OpenAI family (openai / openai-codex / openai-responses): ``reasoning_effort``
-  for low/medium/high; structured ``reasoning: {effort: ...}`` for
-  minimal/xhigh.
+- OpenAI family (openai / openai-codex / openai-responses): bare
+  ``reasoning_effort`` top-level parameter on Chat Completions for every
+  level. The structured ``reasoning: {effort: ...}`` form belongs to
+  the Responses API and is rejected by ``client.chat.completions.create()``
+  with ``unexpected keyword argument 'reasoning'``. Models that don't
+  recognise a value return 400; vtx does not silently swallow that.
 - OpenRouter-style gateways (openrouter / kilo / airouter / opencode /
-  ollama / tokenrouter): ``reasoning: {effort: ...}`` nested object.
-  OpenRouter itself rejects requests that include both `reasoning` and
-  `reasoning_effort` with HTTP 400, so the SDK never emits the top-level
-  form for these slugs.
+  ollama / tokenrouter, and any openai_compat slug from provider.yaml
+  minus the custom-mapped ones): ``reasoning: {effort: ...}`` nested
+  object. OpenRouter itself rejects requests that include both
+  `reasoning` and `reasoning_effort` with HTTP 400, so the SDK never
+  emits the top-level form for these slugs.
 - DeepSeek: ``extra_body={"thinking": {"type": ...}}`` + ``reasoning_effort``
   mapped (low/medium -> high, xhigh -> max).
 - Zhipu / GLM: ``extra_body={"thinking": {"type": enabled|disabled}}``.
@@ -57,16 +61,21 @@ def test_openai_low_medium_high_uses_top_level_param() -> None:
         assert "reasoning" not in kwargs
 
 
-def test_openai_minimal_uses_structured_form() -> None:
+def test_openai_minimal_uses_top_level_param() -> None:
+    """`reasoning: {effort: ...}` is a Responses-API-only field. Chat
+    Completions (which vtx uses via client.chat.completions.create())
+    rejects it with `unexpected keyword argument 'reasoning'`. So even
+    values like 'minimal' that the Responses API supports must be sent
+    as the bare `reasoning_effort` top-level parameter."""
     kwargs = _kwargs("openai", "minimal")
-    assert "reasoning_effort" not in kwargs
-    assert kwargs.get("reasoning") == {"effort": "minimal"}
+    assert "reasoning" not in kwargs
+    assert kwargs.get("reasoning_effort") == "minimal"
 
 
-def test_openai_xhigh_uses_structured_form() -> None:
+def test_openai_xhigh_uses_top_level_param() -> None:
     kwargs = _kwargs("openai", "xhigh")
-    assert "reasoning_effort" not in kwargs
-    assert kwargs.get("reasoning") == {"effort": "xhigh"}
+    assert "reasoning" not in kwargs
+    assert kwargs.get("reasoning_effort") == "xhigh"
 
 
 def test_openai_codex_uses_native_param() -> None:
