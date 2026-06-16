@@ -240,27 +240,31 @@ class AnthropicSDK(BaseLLMSDK):
     @staticmethod
     def _apply_thinking_payload(payload: dict[str, Any], config: GenerationConfig) -> None:
         """Translate ``config.thinking_level`` into the Anthropic-native
-        ``thinking`` block documented at
-        https://platform.claude.com/docs/en/build-with-claude/extended-thinking
-        and
-        https://platform.claude.com/docs/en/build-with-claude/adaptive-thinking.
+        ``thinking`` block.
 
-        Levels map as:
-          - "none"            -> omit ``thinking`` entirely; the model
-            does not think.
-          - "minimal".."xhigh" -> manual extended thinking with a
-            budget proportional to effort. Manual mode is supported on
-            Sonnet 4.5 / Opus 4.5 / Sonnet 4.6 / Opus 4.6. Opus 4.7+
-            and Fable/Mythos 5 reject manual ``type: "enabled"`` with
-            a 400 - users on those models should rely on the model
-            default and pick ``thinking_level = "none"`` to disable.
+        Uses manual ``type: "enabled" + budget_tokens`` for every
+        level, which is the documented form across current Claude
+        models (Sonnet 4.5 / Opus 4.5 / Sonnet 4.6 / Opus 4.6).
+        Older models that don't accept manual thinking will return
+        400, which the user sees normally.
+
+        Level -> budget_tokens (Anthropic minimum is 1024 and
+        budget_tokens must be strictly less than max_tokens):
+          - "minimal" -> 1024
+          - "low"     -> 2048
+          - "medium"  -> 4096
+          - "high"    -> 8192
+          - "xhigh"   -> 16384
+
+        Reference:
+          https://platform.claude.com/docs/en/build-with-claude/extended-thinking
         """
         level = config.thinking_level
         if level is None or level == "none":
+            # Anthropic defaults to non-thinking when the field is
+            # omitted, so "none" is implemented as no field at all.
             return
 
-        # Effort -> manual budget_tokens. Anthropic's minimum is 1024
-        # and budget_tokens must be strictly less than max_tokens.
         manual_budget: dict[str, int] = {
             "minimal": 1024,
             "low": 2048,

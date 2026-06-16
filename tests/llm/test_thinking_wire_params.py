@@ -3,24 +3,25 @@
 The OpenAI SDK and Anthropic SDK translate ``GenerationConfig.thinking_level``
 into the specific request fields documented for each provider family:
 
-- OpenAI family (openai / openai-codex / openai-responses): bare
-  ``reasoning_effort`` top-level parameter on Chat Completions for every
-  level. The structured ``reasoning: {effort: ...}`` form belongs to
-  the Responses API and is rejected by ``client.chat.completions.create()``
-  with ``unexpected keyword argument 'reasoning'``. Models that don't
-  recognise a value return 400; vtx does not silently swallow that.
-- OpenRouter-style gateways (openrouter / kilo / airouter / opencode /
-  ollama / tokenrouter, and any openai_compat slug from provider.yaml
-  minus the custom-mapped ones): ``reasoning: {effort: ...}`` nested
-  object. OpenRouter itself rejects requests that include both
-  `reasoning` and `reasoning_effort` with HTTP 400, so the SDK never
-  emits the top-level form for these slugs.
-- DeepSeek: ``extra_body={"thinking": {"type": ...}}`` + ``reasoning_effort``
-  mapped (low/medium -> high, xhigh -> max).
-- Zhipu / GLM: ``extra_body={"thinking": {"type": enabled|disabled}}``.
-- Anthropic: ``thinking: {type: "enabled", budget_tokens: N}`` for
-  non-none; omitted entirely for none.
-- Unknown future slug: best-effort OpenRouter-style ``reasoning: {effort: ...}``.
+- **OpenRouter family** (openrouter / kilo / tokenrouter): nested
+  ``reasoning: {effort: ..., exclude: True}`` object. OpenRouter itself
+  rejects requests that include both ``reasoning`` and
+  ``reasoning_effort`` with HTTP 400.
+- **DeepSeek**: ``extra_body={"thinking": {"type": ...}}`` + mapped
+  ``reasoning_effort`` (low/medium -> high, xhigh -> max).
+- **Zhipu / GLM**: ``extra_body={"thinking": {"type": enabled|disabled}}``
+  on/off toggle.
+- **Every other openai_compat provider** (auto-detected from
+  provider.yaml, with a static baseline): bare ``reasoning_effort``
+  top-level parameter. This is the OpenAI Chat Completions wire format
+  that the openai Python SDK accepts.
+- **Anthropic**: ``thinking: {type: "enabled", budget_tokens: N}`` for
+  non-none levels; omitted entirely for none.
+
+Reference:
+  https://github.com/anomalyco/opencode/blob/dev/packages/opencode/src/provider/transform.ts
+  https://github.com/openai/openai-python/blob/main/src/openai/resources/chat/completions/completions.py
+  https://platform.claude.com/docs/en/build-with-claude/extended-thinking
 """
 
 from __future__ import annotations
@@ -46,88 +47,220 @@ def _payload(level: str | None) -> dict:
     return sdk._build_payload(msgs, cfg)
 
 
-# --- OpenAI family -----------------------------------------------------------
-
-
-def test_openai_none_omits_reasoning() -> None:
-    assert "reasoning_effort" not in _kwargs("openai", "none")
-    assert "reasoning" not in _kwargs("openai", "none")
-
-
-def test_openai_low_medium_high_uses_top_level_param() -> None:
-    for level in ("low", "medium", "high"):
-        kwargs = _kwargs("openai", level)
-        assert kwargs.get("reasoning_effort") == level
-        assert "reasoning" not in kwargs
-
-
-def test_openai_minimal_uses_top_level_param() -> None:
-    """`reasoning: {effort: ...}` is a Responses-API-only field. Chat
-    Completions (which vtx uses via client.chat.completions.create())
-    rejects it with `unexpected keyword argument 'reasoning'`. So even
-    values like 'minimal' that the Responses API supports must be sent
-    as the bare `reasoning_effort` top-level parameter."""
-    kwargs = _kwargs("openai", "minimal")
-    assert "reasoning" not in kwargs
-    assert kwargs.get("reasoning_effort") == "minimal"
-
-
-def test_openai_xhigh_uses_top_level_param() -> None:
-    kwargs = _kwargs("openai", "xhigh")
-    assert "reasoning" not in kwargs
-    assert kwargs.get("reasoning_effort") == "xhigh"
-
-
-def test_openai_codex_uses_native_param() -> None:
-    assert _kwargs("openai-codex", "high").get("reasoning_effort") == "high"
-    assert "reasoning_effort" not in _kwargs("openai-codex", "none")
-
-
-# --- OpenRouter-style gateways ----------------------------------------------
+# --- OpenRouter family (nested reasoning object) ---------------------------
 
 
 def test_openrouter_none_sends_exclude() -> None:
     kwargs = _kwargs("openrouter", "none")
     assert kwargs.get("reasoning") == {"effort": "none", "exclude": True}
+    assert "reasoning_effort" not in kwargs
 
 
 @pytest.mark.parametrize("level", ["minimal", "low", "medium", "high", "xhigh"])
 def test_openrouter_effort_levels(level: str) -> None:
     kwargs = _kwargs("openrouter", level)
     assert kwargs.get("reasoning") == {"effort": level}
+    assert "reasoning_effort" not in kwargs
 
 
-@pytest.mark.parametrize("slug", ["kilo", "airouter", "opencode", "ollama"])
 @pytest.mark.parametrize("level", ["minimal", "low", "medium", "high", "xhigh"])
-def test_openrouter_style_gateways_use_nested_object(slug: str, level: str) -> None:
-    """Kilo / ARouter / OpenCode / Ollama all accept the OpenRouter-style
-    `reasoning: {effort: ...}` nested form. They must not emit the bare
-    `reasoning_effort` top-level parameter, because OpenRouter itself
-    rejects requests that include both with HTTP 400."""
-    kwargs = _kwargs(slug, level)
+def test_kilo_uses_openrouter_style(level: str) -> None:
+    """Kilo is documented as OpenRouter-compatible."""
+    kwargs = _kwargs("kilo", level)
     assert "reasoning_effort" not in kwargs
     assert kwargs.get("reasoning") == {"effort": level}
 
 
-@pytest.mark.parametrize("slug", ["kilo", "airouter", "opencode", "ollama"])
-def test_openrouter_style_gateways_none_sends_exclude(slug: str) -> None:
-    kwargs = _kwargs(slug, "none")
-    assert "reasoning_effort" not in kwargs
+def test_kilo_none_sends_exclude() -> None:
+    kwargs = _kwargs("kilo", "none")
     assert kwargs.get("reasoning") == {"effort": "none", "exclude": True}
 
 
-@pytest.mark.parametrize("level", ["low", "medium", "high"])
-def test_tokenrouter_effort_levels(level: str) -> None:
-    assert _kwargs("tokenrouter", level).get("reasoning") == {"effort": level}
+@pytest.mark.parametrize("level", ["minimal", "low", "medium", "high", "xhigh"])
+def test_tokenrouter_uses_openrouter_style(level: str) -> None:
+    """TokenRouter uses the Responses API style nested object."""
+    kwargs = _kwargs("tokenrouter", level)
+    assert "reasoning_effort" not in kwargs
+    assert kwargs.get("reasoning") == {"effort": level}
 
 
 def test_tokenrouter_none_sends_exclude() -> None:
-    """TokenRouter uses the OpenRouter-style nested form too; ``none``
-    means ``reasoning.effort = "none" + exclude = true``."""
-    assert _kwargs("tokenrouter", "none").get("reasoning") == {"effort": "none", "exclude": True}
+    kwargs = _kwargs("tokenrouter", "none")
+    assert kwargs.get("reasoning") == {"effort": "none", "exclude": True}
 
 
-# --- DeepSeek ----------------------------------------------------------------
+# --- OpenAI Chat Completions (bare reasoning_effort) -------------------------
+
+
+@pytest.mark.parametrize("slug", ["openai", "openai-codex", "openai-responses"])
+def test_openai_family_uses_top_level_param(slug: str) -> None:
+    for level in ("low", "medium", "high"):
+        kwargs = _kwargs(slug, level)
+        assert kwargs.get("reasoning_effort") == level
+        assert "reasoning" not in kwargs
+
+
+@pytest.mark.parametrize("slug", ["openai", "openai-codex", "openai-responses"])
+def test_openai_family_minimal_xhigh_also_uses_top_level(slug: str) -> None:
+    """The Responses API structured form (reasoning: {effort: ...}) is
+    rejected by client.chat.completions.create(). Even minimal and
+    xhigh levels must use the bare top-level parameter."""
+    for level in ("minimal", "xhigh"):
+        kwargs = _kwargs(slug, level)
+        assert "reasoning" not in kwargs
+        assert kwargs.get("reasoning_effort") == level
+
+
+def test_openai_none_omits_reasoning() -> None:
+    """Chat Completions has no documented off switch for o-series /
+    gpt-5: omitting the parameter lets the model pick its default."""
+    for slug in ("openai", "openai-codex", "openai-responses"):
+        kwargs = _kwargs(slug, "none")
+        assert "reasoning_effort" not in kwargs
+        assert "reasoning" not in kwargs
+
+
+@pytest.mark.parametrize(
+    "slug",
+    [
+        # Native + gateway providers from the static baseline.
+        "groq",
+        "together",
+        "fireworks",
+        "mistral",
+        "nvidia",
+        "deepinfra",
+        "huggingface",
+        "airouter",
+        "opencode",
+        "ollama",
+    ],
+)
+@pytest.mark.parametrize("level", ["minimal", "low", "medium", "high", "xhigh"])
+def test_chat_completions_gateways_use_top_level_param(slug: str, level: str) -> None:
+    """Every native / openai_compat gateway in the static baseline
+    uses the bare ``reasoning_effort`` top-level parameter, matching
+    opencode's behavior for ``@ai-sdk/openai-compatible``."""
+    kwargs = _kwargs(slug, level)
+    assert "reasoning" not in kwargs
+    assert kwargs.get("reasoning_effort") == level
+
+
+@pytest.mark.parametrize(
+    "slug",
+    [
+        "groq",
+        "together",
+        "fireworks",
+        "mistral",
+        "nvidia",
+        "deepinfra",
+        "huggingface",
+        "airouter",
+        "opencode",
+        "ollama",
+    ],
+)
+def test_chat_completions_gateways_none_omits(slug: str) -> None:
+    kwargs = _kwargs(slug, "none")
+    assert "reasoning_effort" not in kwargs
+    assert "reasoning" not in kwargs
+
+
+# --- provider.yaml auto-detection (Chat Completions) ------------------------
+
+
+def test_dynamic_loader_includes_all_openai_compat_gateways() -> None:
+    """Every openai_compat slug in provider.yaml (other than the few
+    with custom mappings) must be in the dynamic Chat-Completions
+    set, so a new gateway added to provider.yaml is automatically
+    handled without code changes.
+    """
+    from vtx.llm.provider_catalog import list_providers
+    from vtx.llm.sdk.openai import (
+        _SLUGS_WITH_EXTRA_BODY_THINKING,
+        _SLUGS_WITH_REASONING_OBJECT,
+        _load_chat_completions_slugs,
+    )
+
+    chat_completions = _load_chat_completions_slugs()
+
+    for p in list_providers():
+        if p.family != "openai_compat":
+            continue
+        excluded = (
+            p.slug in _SLUGS_WITH_REASONING_OBJECT or p.slug in _SLUGS_WITH_EXTRA_BODY_THINKING
+        )
+        if excluded:
+            # Custom-mapped slugs (openrouter, kilo, tokenrouter,
+            # deepseek, zhipu) must NOT be in the Chat-Completions
+            # set.
+            assert p.slug not in chat_completions, (
+                f"{p.slug} has a custom mapping but was also added to the Chat-Completions set"
+            )
+        else:
+            # Every other openai_compat slug MUST be covered.
+            assert p.slug in chat_completions, (
+                f"{p.slug} is openai_compat in provider.yaml but missing "
+                f"from the Chat-Completions set"
+            )
+
+
+def test_dynamic_loader_caches_result() -> None:
+    from vtx.llm.sdk.openai import _load_chat_completions_slugs
+
+    a = _load_chat_completions_slugs()
+    b = _load_chat_completions_slugs()
+    assert a is b
+
+
+@pytest.mark.parametrize(
+    "slug",
+    [
+        "aihubmix",
+        "apertis",
+        "baseten",
+        "berget",
+        "blackbox",
+        "chutes",
+        "cortecs",
+        "crof",
+        "dialagram",
+        "dinference",
+        "friendli",
+        "hicapai",
+        "jiekou",
+        "knox",
+        "lightningai",
+        "llmgateway",
+        "meganova",
+        "moark",
+        "modelscope",
+        "moonshot",
+        "nanogpt",
+        "pollinations",
+        "routingrun",
+        "seraphyn",
+        "sherlock",
+        "vercelai",
+        "zenmux",
+        "clarifai",
+        "cline",
+    ],
+)
+@pytest.mark.parametrize("level", ["minimal", "low", "medium", "high", "xhigh"])
+def test_provider_yaml_gateways_use_bare_param(slug: str, level: str) -> None:
+    """Every openai_compat gateway declared in provider.yaml must
+    emit the bare ``reasoning_effort`` top-level parameter (the
+    OpenAI Chat Completions wire format), not the nested
+    ``reasoning: {effort: ...}`` form reserved for OpenRouter.
+    """
+    kwargs = _kwargs(slug, level)
+    assert "reasoning" not in kwargs
+    assert kwargs.get("reasoning_effort") == level
+
+
+# --- DeepSeek (extra_body + reasoning_effort) ------------------------------
 
 
 def test_deepseek_none_disables_thinking() -> None:
@@ -149,7 +282,7 @@ def test_deepseek_xhigh_maps_to_max() -> None:
     assert kwargs.get("extra_body") == {"thinking": {"type": "enabled"}}
 
 
-# --- Zhipu / GLM -------------------------------------------------------------
+# --- Zhipu / GLM (on/off toggle) -------------------------------------------
 
 
 def test_zhipu_none_disables_thinking() -> None:
@@ -163,101 +296,7 @@ def test_zhipu_enables_thinking_for_any_non_none_level(level: str) -> None:
     assert kwargs.get("extra_body") == {"thinking": {"type": "enabled"}}
 
 
-# --- Unknown slug (future gateway) ------------------------------------------
-
-
-def test_unknown_slug_uses_nested_object() -> None:
-    """A new slug we don't recognize should still get a best-effort
-    reasoning param via the broadest documented form."""
-    assert "reasoning" not in _kwargs(None, "none")
-    assert _kwargs(None, "low").get("reasoning") == {"effort": "low"}
-    assert _kwargs(None, "high").get("reasoning") == {"effort": "high"}
-
-
-# --- Auto-detection from provider.yaml -------------------------------------
-
-
-def test_dynamic_loader_includes_all_openai_compat_gateways() -> None:
-    """Every openai_compat slug in provider.yaml (other than the few with
-    custom mappings) must be in the dynamic OpenRouter-style set, so a
-    new gateway added to provider.yaml is automatically handled
-    without code changes here.
-    """
-    from vtx.llm.provider_catalog import list_providers
-    from vtx.llm.sdk.openai import _SLUGS_WITH_CUSTOM_REASONING, _load_openrouter_style_slugs
-
-    openrouter_style = _load_openrouter_style_slugs()
-
-    for p in list_providers():
-        if p.family != "openai_compat":
-            continue
-        if p.slug in _SLUGS_WITH_CUSTOM_REASONING:
-            # Custom-mapped slugs (openai, deepseek, zhipu, ...) must
-            # NOT be in the OpenRouter-style set.
-            assert p.slug not in openrouter_style, (
-                f"{p.slug} has a custom mapping but was also added to the OpenRouter-style set"
-            )
-        else:
-            # Every other openai_compat slug MUST be covered.
-            assert p.slug in openrouter_style, (
-                f"{p.slug} is openai_compat in provider.yaml but missing "
-                f"from the OpenRouter-style set"
-            )
-
-
-def test_dynamic_loader_caches_result() -> None:
-    """Calling the loader twice must return the same frozenset (cached
-    so the catalog is read at most once per process)."""
-    from vtx.llm.sdk.openai import _load_openrouter_style_slugs
-
-    a = _load_openrouter_style_slugs()
-    b = _load_openrouter_style_slugs()
-    assert a is b
-
-
-@pytest.mark.parametrize(
-    "slug",
-    [
-        "groq",  # native provider serving Llama, also OpenAI-compat
-        "together",  # open-source gateway
-        "fireworks",
-        "mistral",
-        "nvidia",
-        "deepinfra",
-        "huggingface",
-        "aihubmix",  # multi-provider gateway
-        "apertis",
-        "baseten",
-        "chutes",
-        "cortecs",
-        "friendli",
-        "knox",
-        "llmgateway",
-        "modelscope",
-        "moonshot",
-        "nanogpt",
-        "pollinations",
-        "routingrun",
-        "sherlock",
-        "vercelai",
-        "zenmux",
-        "clarifai",
-        "cline",
-    ],
-)
-@pytest.mark.parametrize("level", ["minimal", "low", "medium", "high", "xhigh"])
-def test_provider_yaml_gateways_use_nested_object(slug: str, level: str) -> None:
-    """Every openai_compat gateway declared in provider.yaml must emit
-    the OpenRouter-style nested `reasoning: {effort: ...}` form for
-    non-none levels, and the bare `reasoning_effort` top-level field
-    must never appear for them.
-    """
-    kwargs = _kwargs(slug, level)
-    assert "reasoning_effort" not in kwargs
-    assert kwargs.get("reasoning") == {"effort": level}
-
-
-# --- Anthropic ---------------------------------------------------------------
+# --- Anthropic --------------------------------------------------------------
 
 
 def test_anthropic_none_omits_thinking() -> None:

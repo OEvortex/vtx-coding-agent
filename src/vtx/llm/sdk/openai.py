@@ -175,97 +175,116 @@ async def _openai_stream_chunks(
                 pass
 
 
-# Slugs that have a *custom* reasoning wire format. All other
-# openai_compat slugs (read dynamically from provider.yaml) are treated
-# as OpenRouter-style and emit ``reasoning: {effort: ...}``.
-_SLUGS_WITH_CUSTOM_REASONING: frozenset[str] = frozenset(
+# Slugs that speak the OpenRouter ``reasoning: {effort: ...}`` nested
+# protocol (per https://openrouter.ai/docs/api/reference/parameters).
+# Every other openai_compat slug uses the bare OpenAI Chat Completions
+# wire format: top-level ``reasoning_effort``.
+#
+# This mirrors opencode's transform.ts: the nested form is reserved
+# for the @openrouter/ai-sdk-provider and gateways that document
+# themselves as OpenRouter-compatible. Everything else (cerebras,
+# togetherai, xai, deepinfra, venice, @ai-sdk/openai-compatible, …)
+# uses the bare top-level parameter, because vtx talks to them
+# through ``client.chat.completions.create()`` which only accepts
+# ``reasoning_effort`` and rejects the structured form with
+# ``unexpected keyword argument 'reasoning'``.
+#
+# Reference:
+#   https://github.com/anomalyco/opencode/blob/dev/packages/opencode/src/provider/transform.ts
+#   https://github.com/openai/openai-python/blob/main/src/openai/resources/chat/completions/completions.py
+#   (the SDK signature: ``reasoning_effort: Optional[ReasoningEffort]``,
+#   values ``none|minimal|low|medium|high|xhigh``)
+_SLUGS_WITH_REASONING_OBJECT: frozenset[str] = frozenset(
     {
-        # OpenAI native family: top-level reasoning_effort for
-        # low/medium/high, structured reasoning: {effort: ...} for
-        # minimal/xhigh.
-        "openai",
-        "openai-codex",
-        "openai-responses",
-        # DeepSeek: extra_body={"thinking": {"type": ...}} + mapped
-        # reasoning_effort.
+        "openrouter",  # @openrouter/ai-sdk-provider
+        "kilo",  # documented as OpenRouter-compatible
+        "tokenrouter",  # Responses API style (nested object)
+    }
+)
+
+# Slugs that toggle thinking via ``extra_body={"thinking": {"type": ...}}``
+# and don't accept a top-level reasoning_effort. DeepSeek maps
+# low/medium -> high and xhigh -> max; Zhipu is on/off only.
+_SLUGS_WITH_EXTRA_BODY_THINKING: frozenset[str] = frozenset(
+    {
         "deepseek",
-        # Zhipu / GLM: on/off via extra_body={"thinking": {"type": ...}}.
-        "zhipu",
+        "zhipu",  # GLM
     }
 )
 
 
-def _load_openrouter_style_slugs() -> frozenset[str]:
+def _load_chat_completions_slugs() -> frozenset[str]:
     """Return every openai_compat slug from ``provider.yaml`` that is
-    not in :data:`_SLUGS_WITH_CUSTOM_REASONING`. These slugs all speak
-    the OpenRouter ``reasoning: {effort: ...}`` protocol (per
-    https://openrouter.ai/docs/api/reference/parameters and the
-    analogous docs from each gateway).
+    not in :data:`_SLUGS_WITH_REASONING_OBJECT` or
+    :data:`_SLUGS_WITH_EXTRA_BODY_THINKING`. These slugs all use the
+    OpenAI Chat Completions wire format: bare ``reasoning_effort``
+    top-level parameter.
 
     Loading is lazy and cached so the SDK can be imported without the
     catalog file being available. The set is read from
     ``vtx/llm/provider.yaml`` so a new provider added there
-    automatically gets the OpenRouter-style treatment without any code
-    change here.
+    automatically gets the right treatment without any code change
+    here.
     """
-    global _openrouter_style_cache
-    if _openrouter_style_cache is not None:
-        return _openrouter_style_cache
+    global _chat_completions_cache
+    if _chat_completions_cache is not None:
+        return _chat_completions_cache
+
+    excluded = _SLUGS_WITH_REASONING_OBJECT | _SLUGS_WITH_EXTRA_BODY_THINKING
 
     try:
         from ..provider_catalog import list_providers
     except Exception:
-        # If the catalog is unimportable (e.g. during a partial install)
-        # fall back to the static baseline below.
-        _openrouter_style_cache = _STATIC_OPENROUTER_STYLE_SLUGS
-        return _openrouter_style_cache
+        # If the catalog is unimportable (e.g. during a partial
+        # install) fall back to the static baseline below.
+        _chat_completions_cache = _STATIC_CHAT_COMPLETIONS_SLUGS
+        return _chat_completions_cache
 
     slugs: set[str] = set()
     for p in list_providers():
         if p.family != "openai_compat":
             continue
-        if p.slug in _SLUGS_WITH_CUSTOM_REASONING:
+        if p.slug in excluded:
             continue
         slugs.add(p.slug)
-    # Always include the well-known gateways as a baseline so the
-    # behavior is correct even if the catalog is stale or missing.
-    slugs.update(_STATIC_OPENROUTER_STYLE_SLUGS)
-    _openrouter_style_cache = frozenset(slugs)
-    return _openrouter_style_cache
+    # Always include the well-known Chat-Completions gateways as a
+    # baseline so the behavior is correct even if the catalog is
+    # stale or missing.
+    slugs.update(_STATIC_CHAT_COMPLETIONS_SLUGS)
+    _chat_completions_cache = frozenset(slugs)
+    return _chat_completions_cache
 
 
-# Module-level cache for ``_load_openrouter_style_slugs`` so the
+# Module-level cache for ``_load_chat_completions_slugs`` so the
 # provider catalog is read at most once per process.
-_openrouter_style_cache: frozenset[str] | None = None
+_chat_completions_cache: frozenset[str] | None = None
 
 
 # Static fallback used if the provider catalog cannot be loaded at
 # runtime. These are the gateways we explicitly verified to accept the
-# OpenRouter-style ``reasoning: {effort: ...}`` nested form.
-_STATIC_OPENROUTER_STYLE_SLUGS: frozenset[str] = frozenset(
+# bare ``reasoning_effort`` top-level parameter via Chat Completions.
+_STATIC_CHAT_COMPLETIONS_SLUGS: frozenset[str] = frozenset(
     {
-        "openrouter",
-        "kilo",  # documented as OpenRouter-compatible
-        "airouter",
-        "opencode",
-        "ollama",  # accepts both forms; nested is the documented one
-        "tokenrouter",  # Responses API style
+        # OpenAI native family.
+        "openai",
+        "openai-codex",
+        "openai-responses",
+        # Native API providers (OpenAI-compatible endpoints).
+        "groq",
+        "together",
+        "fireworks",
+        "mistral",
+        "nvidia",
+        "deepinfra",
+        "huggingface",
+        "airouter",  # docs.arouter.com: uses bare reasoning_effort
+        "opencode",  # @ai-sdk/openai-compatible (Chat Completions)
+        "ollama",  # accepts both; bare reasoning_effort is documented
     }
 )
 
 
 class OpenAISDK(BaseLLMSDK):
-    # Slugs that natively accept the OpenAI `reasoning_effort` top-level
-    # parameter (or its `reasoning: {effort: ...}` sibling on the Responses
-    # API). Both work via chat.completions for o-series / gpt-5 family.
-    _SLUGS_WITH_REASONING_EFFORT: frozenset[str] = frozenset(
-        {"openai", "openai-codex", "openai-responses"}
-    )
-    # Slugs that need DeepSeek's `extra_body={"thinking": {...}}` toggle.
-    _SLUG_DEEPSEEK: str = "deepseek"
-    # Slugs that need Zhipu/GLM's `extra_body={"thinking": {...}}` toggle.
-    _SLUG_ZHIPU: str = "zhipu"
-
     def __init__(
         self,
         api_key: str,
@@ -328,55 +347,47 @@ class OpenAISDK(BaseLLMSDK):
         self._apply_thinking_kwargs(kwargs, config)
         return kwargs
 
-    def _openrouter_style_slugs(self) -> frozenset[str]:
-        """OpenRouter-style slug set, loaded dynamically from the
+    def _chat_completions_slugs(self) -> frozenset[str]:
+        """Chat-Completions slug set, loaded dynamically from the
         provider catalog (cached at module level). Every openai_compat
-        slug in provider.yaml (other than the explicitly custom-mapped
-        ones) is included automatically.
+        slug in provider.yaml (other than the custom-mapped ones) is
+        included automatically.
         """
-        return _load_openrouter_style_slugs()
+        return _load_chat_completions_slugs()
 
     def _apply_thinking_kwargs(self, kwargs: dict[str, Any], config: GenerationConfig) -> None:
-        """Translate ``config.thinking_level`` into the provider-specific
-        wire parameters documented in the per-provider API references.
+        """Translate ``config.thinking_level`` into the wire parameter
+        for the current provider slug.
 
-        The level ``"none"`` always means "do not request reasoning" and
-        is implemented by emitting the provider's specific off-switch
-        (omitting params, ``reasoning.exclude``, or ``thinking.type:
-        "disabled"``). Models that have no off-switch at all (e.g. some
-        on/off-only reasoning models served through a gateway) still
-        get a best-effort disable request; if the model cannot honor it
-        the API will return an error which surfaces normally to the
-        user.
+        The dispatch is intentionally tiny:
+
+        - **OpenRouter family** (openrouter / kilo / tokenrouter):
+          nested ``reasoning: {effort: ..., exclude: true}`` object.
+          Per https://openrouter.ai/docs/api/reference/parameters
+          OpenRouter itself rejects requests that include both
+          ``reasoning`` and ``reasoning_effort`` with HTTP 400, so we
+          never emit the top-level form for these.
+
+        - **DeepSeek / Zhipu (GLM)**: on/off toggle via
+          ``extra_body={"thinking": {"type": enabled|disabled}}``.
+          DeepSeek additionally accepts ``reasoning_effort`` mapped
+          (low/medium -> high, xhigh -> max).
+
+        - **Every other openai_compat slug** (auto-detected from
+          provider.yaml, with a static baseline fallback): bare
+          top-level ``reasoning_effort`` parameter. This is the
+          OpenAI Chat Completions wire format that the openai Python
+          SDK accepts. The structured ``reasoning: {effort: ...}``
+          form is Responses-API-only and is rejected with
+          ``unexpected keyword argument 'reasoning'``.
         """
         level = config.thinking_level
         if level is None:
             return
         slug = self._provider_slug
 
-        # --- OpenAI family (native, openai-codex, openai-responses) ---
-        if slug in self._SLUGS_WITH_REASONING_EFFORT:
-            if level == "none":
-                # The Chat Completions API has no documented "off" switch
-                # for o-series / gpt-5: omitting `reasoning_effort` lets
-                # the model pick its default (usually `medium` for older
-                # models, `none` for gpt-5.1+). This is the closest we
-                # can get to "don't think" via the wire.
-                return
-            # The Chat Completions API only accepts the top-level
-            # `reasoning_effort` parameter. The structured
-            # `reasoning: {effort: ...}` form belongs to the Responses
-            # API and causes AsyncCompletions.create() to raise
-            # `unexpected keyword argument 'reasoning'` (RuntimeError).
-            # Pass through any of the documented values (low/medium/high
-            # for o-series; minimal/xhigh on gpt-5.1+); models that don't
-            # recognise a value will return 400, which the user sees
-            # normally.
-            kwargs["reasoning_effort"] = level
-            return
-
-        # --- OpenRouter-style gateways (auto-detected from provider.yaml) ---
-        if slug in self._openrouter_style_slugs():
+        # --- OpenRouter family (openrouter, kilo, tokenrouter) ---
+        if slug in _SLUGS_WITH_REASONING_OBJECT:
             if level == "none":
                 kwargs["reasoning"] = {"effort": "none", "exclude": True}
             elif level in ("minimal", "low", "medium", "high", "xhigh"):
@@ -384,32 +395,38 @@ class OpenAISDK(BaseLLMSDK):
             return
 
         # --- DeepSeek ---
-        if slug == self._SLUG_DEEPSEEK:
+        if slug == "deepseek":
             if level == "none":
                 kwargs["extra_body"] = {"thinking": {"type": "disabled"}}
                 return
-            # DeepSeek maps low/medium -> high and xhigh -> max.
             effort = "max" if level == "xhigh" else "high"
             kwargs["reasoning_effort"] = effort
             kwargs["extra_body"] = {"thinking": {"type": "enabled"}}
             return
 
         # --- Zhipu / GLM (on/off only) ---
-        if slug == self._SLUG_ZHIPU:
+        if slug == "zhipu":
             kwargs["extra_body"] = {
                 "thinking": {"type": "disabled" if level == "none" else "enabled"}
             }
             return
 
-        # --- Generic OpenAI-compat gateway fallback ---
-        # If a future slug is added that we don't explicitly know about,
-        # send the OpenRouter-style nested `reasoning` object. This is
-        # the broadest of the documented formats and is the safest
-        # default for any OpenAI-compatible gateway.
-        if level == "none":
+        # --- OpenAI Chat Completions (everything else openai_compat) ---
+        if slug in self._chat_completions_slugs():
+            if level == "none":
+                # Chat Completions has no documented "off" switch for
+                # o-series / gpt-5: omitting the parameter lets the
+                # model pick its default (medium for older, none for
+                # gpt-5.1+). This is the closest we can get to "don't
+                # think" via the wire for these families.
+                return
+            kwargs["reasoning_effort"] = level
             return
-        if level in ("minimal", "low", "medium", "high", "xhigh"):
-            kwargs["reasoning"] = {"effort": level}
+
+        # Unknown slug (not in catalog, not a known family): skip
+        # rather than guess. A stale ``last_selected.thinking_level``
+        # from a prior model could surface here; dropping silently
+        # is safer than emitting a wire param that 400s.
 
     async def generate(
         self, messages: list[Message], config: GenerationConfig, stream: bool = False
