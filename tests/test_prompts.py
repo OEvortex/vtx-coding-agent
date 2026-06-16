@@ -183,3 +183,15 @@ def test_build_system_prompt_includes_mandatory_skills_block(tmp_path):
     assert "  workflows:" in prompt
     assert "- demo: demo description" in prompt
     assert "</available_skills>" in prompt
+
+
+def test_build_system_prompt_includes_bundled_skills(tmp_path):
+    # No project or user skills — bundled skills must still be advertised
+    # to the model in the <available_skills> block.
+    ctx = Context.load(str(tmp_path))
+
+    prompt = build_system_prompt(str(tmp_path), context=ctx, tools=all_tools)
+
+    assert "- init:" in prompt
+    assert "- review:" in prompt
+    assert "- skill-builder:" in prompt

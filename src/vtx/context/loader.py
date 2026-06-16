@@ -10,7 +10,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 
 from .agent_mds import ContextFile, load_agent_mds
-from .skills import Skill, load_skills
+from .skills import Skill, load_builtin_cmd_skills, load_skills, merge_registered_skills
 
 
 @dataclass
@@ -24,18 +24,20 @@ class Context:
     def load(cls, cwd: str) -> Context:
         agents_files = load_agent_mds(cwd)
         skills_result = load_skills(cwd)
+        builtin_result = load_builtin_cmd_skills()
 
-        return cls(
-            cwd=cwd,
-            agents_files=agents_files,
-            skills=skills_result.skills,
-            skill_warnings=[(w.path, w.message) for w in skills_result.warnings],
-        )
+        skills = merge_registered_skills(skills_result.skills, builtin_result.skills)
+        warnings = [(w.path, w.message) for w in skills_result.warnings]
+        warnings.extend((w.path, w.message) for w in builtin_result.warnings)
+
+        return cls(cwd=cwd, agents_files=agents_files, skills=skills, skill_warnings=warnings)
 
     def reload(self) -> None:
         agents_files = load_agent_mds(self.cwd)
         skills_result = load_skills(self.cwd)
+        builtin_result = load_builtin_cmd_skills()
 
         self.agents_files = agents_files
-        self.skills = skills_result.skills
+        self.skills = merge_registered_skills(skills_result.skills, builtin_result.skills)
         self.skill_warnings = [(w.path, w.message) for w in skills_result.warnings]
+        self.skill_warnings.extend((w.path, w.message) for w in builtin_result.warnings)
