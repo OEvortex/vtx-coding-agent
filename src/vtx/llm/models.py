@@ -66,7 +66,23 @@ def get_all_models() -> list[Model]:
 
     merged: list[Model] = get_all_catalog_models()
     merged.extend(get_dynamic_models())
-    return merged
+    # The catalog already includes cached dynamic models via
+    # ``get_fetched_models``, and ``get_dynamic_models`` returns the same cache,
+    # so every dynamic entry appears twice without dedup.
+    return dedupe_models(merged)
+
+
+def dedupe_models(models: list[Model]) -> list[Model]:
+    """Return ``models`` with the first occurrence of each (provider, id) kept."""
+    seen: set[tuple[str, str]] = set()
+    deduped: list[Model] = []
+    for m in models:
+        key = (m.provider, m.id)
+        if key in seen:
+            continue
+        seen.add(key)
+        deduped.append(m)
+    return deduped
 
 
 def get_models_by_provider(provider: str) -> list[Model]:

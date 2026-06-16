@@ -705,11 +705,12 @@ def get_dynamic_model_ids(force_refresh: bool = False) -> dict[str, list[str]]:
 
 def get_all_models_with_dynamic(force_refresh: bool = False) -> list[Model]:
     """Return the catalog merged with freshly-fetched dynamic models."""
+    from .models import dedupe_models
     from .provider_catalog import get_all_catalog_models
 
     merged: list[Model] = get_all_catalog_models()
     merged.extend(get_dynamic_models(force_refresh=force_refresh))
-    return merged
+    return dedupe_models(merged)
 
 
 __all__ = [

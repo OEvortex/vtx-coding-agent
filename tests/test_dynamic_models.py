@@ -470,3 +470,81 @@ def test_get_dynamic_models_returns_static_shape(monkeypatch: pytest.MonkeyPatch
     assert kilo_models[0].id == "gpt-5"
     assert kilo_models[0].context_window == 100_000
     assert kilo_models[0].supports_images is True
+
+
+def test_get_all_models_dedupes_dynamic_overlap(monkeypatch: pytest.MonkeyPatch, tmp_path: Path):
+    """``get_all_models`` must not return a dynamic model twice.
+
+    ``get_all_catalog_models`` already includes cached dynamic entries via
+    ``get_fetched_models``, and ``get_dynamic_models`` returns the same
+    cache. The merged result used to contain every dynamic model twice,
+    which made the /model picker show each model with a duplicate row.
+    """
+    from vtx.llm import get_all_models
+
+    monkeypatch.setenv("VTX_MODELS_CACHE_DIR", str(tmp_path))
+    monkeypatch.setattr("vtx.llm.dynamic_models._read_models_dev_sync", lambda: {})
+    _write_cache(
+        CachedCatalog(
+            provider="kilo",
+            fetched_at=99999999999.0,
+            models=[
+                DynamicModelEntry(
+                    id="gpt-5",
+                    name="GPT-5",
+                    context_window=100_000,
+                    max_tokens=8192,
+                    supports_images=True,
+                    supports_thinking=True,
+                ),
+                DynamicModelEntry(
+                    id="claude-fable-5",
+                    name="Claude",
+                    context_window=200_000,
+                    max_tokens=8192,
+                    supports_images=True,
+                    supports_thinking=False,
+                ),
+            ],
+        )
+    )
+
+    models = get_all_models()
+    keys = [(m.provider, m.id) for m in models]
+    assert len(keys) == len(set(keys)), f"duplicate models in picker: {keys}"
+    kilo = [m for m in models if m.provider == "kilo"]
+    assert sorted(m.id for m in kilo) == ["claude-fable-5", "gpt-5"]
+
+
+def test_dedupe_models_preserves_first_occurrence():
+    from vtx.llm.models import ApiType, dedupe_models
+
+    a = Model(
+        id="a",
+        provider="p",
+        api=ApiType(ApiType.OPENAI_SDK),
+        base_url="",
+        max_tokens=1,
+        supports_images=False,
+        supports_thinking=False,
+    )
+    b = Model(
+        id="b",
+        provider="p",
+        api=ApiType(ApiType.OPENAI_SDK),
+        base_url="",
+        max_tokens=2,
+        supports_images=False,
+        supports_thinking=False,
+    )
+    a_dup = Model(
+        id="a",
+        provider="p",
+        api=ApiType(ApiType.OPENAI_SDK),
+        base_url="",
+        max_tokens=999,
+        supports_images=False,
+        supports_thinking=False,
+    )
+    deduped = dedupe_models([a, b, a_dup])
+    assert deduped == [a, b]
