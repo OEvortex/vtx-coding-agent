@@ -4,6 +4,33 @@ All notable changes to Vtx are documented in this file. The format is based on
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project
 adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Added
+
+#### Provider filter for `/model`
+- New `/provider` slash command opens a single-select dropdown (like `/login`)
+  that scopes the `/model` picker to a single provider. The first row
+  "All providers" clears the filter. `/provider reset` is a shortcut for the
+  same clear-filter action.
+- New `ui.model_provider_filter: str` config field (config version bumped 7→8
+  with a migration that backfills `""`). Empty = show every provider; a slug
+  restricts `/model` to that one provider. Unknown slugs are dropped on write.
+  Managed by `/provider` or `set_model_provider_filter(...)`.
+
+### Changed
+- `/model refresh` (no slug) now reports `Refreshing all N providers...` and
+  handles the empty-provider-set case with a clear message. The per-provider
+  count format is unchanged.
+
+### Fixed
+- `get_all_models()` and `get_all_models_with_dynamic()` no longer return
+  every dynamic model twice. The catalog and dynamic lists shared the same
+  cache via `get_fetched_models` + `get_dynamic_models`; a new
+  `dedupe_models()` helper keeps the first occurrence of each
+  `(provider, id)` pair. Fixes the duplicate rows in the `/model` picker
+  (2286 duplicates eliminated with a populated cache).
+
 ## [0.1.2] - 2026-06-16 — Extension System
 
 Adds a first-class extension API that lets users add new LLM-callable tools,
