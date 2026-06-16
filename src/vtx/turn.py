@@ -185,7 +185,13 @@ def _finalize_tool_call_data(tool_call_data: dict, tools: list[BaseTool]) -> Pen
 
     tool_call = ToolCall(id=tool_call_data["id"], name=tool_call_data["name"], arguments=arguments)
 
-    tool = get_tool(tool_call.name)
+    # Look up the tool from the agent's tool list first, then fall back
+    # to the global built-in registry. The runner passes agent-specific
+    # tools (e.g. ``@tool``-decorated functions) via ``self._tools``; the
+    # global registry only knows about the built-in tools. Without the
+    # primary lookup, every @tool call would surface as "Unknown tool".
+    _by_name = {t.name: t for t in tools}
+    tool = _by_name.get(tool_call.name) or get_tool(tool_call.name)
     display = ""
     approval_preview = ""
     if tool and preflight_error is None:
