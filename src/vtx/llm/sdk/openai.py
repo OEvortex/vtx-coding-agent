@@ -175,28 +175,91 @@ async def _openai_stream_chunks(
                 pass
 
 
+# Slugs that have a *custom* reasoning wire format. All other
+# openai_compat slugs (read dynamically from provider.yaml) are treated
+# as OpenRouter-style and emit ``reasoning: {effort: ...}``.
+_SLUGS_WITH_CUSTOM_REASONING: frozenset[str] = frozenset(
+    {
+        # OpenAI native family: top-level reasoning_effort for
+        # low/medium/high, structured reasoning: {effort: ...} for
+        # minimal/xhigh.
+        "openai",
+        "openai-codex",
+        "openai-responses",
+        # DeepSeek: extra_body={"thinking": {"type": ...}} + mapped
+        # reasoning_effort.
+        "deepseek",
+        # Zhipu / GLM: on/off via extra_body={"thinking": {"type": ...}}.
+        "zhipu",
+    }
+)
+
+
+def _load_openrouter_style_slugs() -> frozenset[str]:
+    """Return every openai_compat slug from ``provider.yaml`` that is
+    not in :data:`_SLUGS_WITH_CUSTOM_REASONING`. These slugs all speak
+    the OpenRouter ``reasoning: {effort: ...}`` protocol (per
+    https://openrouter.ai/docs/api/reference/parameters and the
+    analogous docs from each gateway).
+
+    Loading is lazy and cached so the SDK can be imported without the
+    catalog file being available. The set is read from
+    ``vtx/llm/provider.yaml`` so a new provider added there
+    automatically gets the OpenRouter-style treatment without any code
+    change here.
+    """
+    global _openrouter_style_cache
+    if _openrouter_style_cache is not None:
+        return _openrouter_style_cache
+
+    try:
+        from ..provider_catalog import list_providers
+    except Exception:
+        # If the catalog is unimportable (e.g. during a partial install)
+        # fall back to the static baseline below.
+        _openrouter_style_cache = _STATIC_OPENROUTER_STYLE_SLUGS
+        return _openrouter_style_cache
+
+    slugs: set[str] = set()
+    for p in list_providers():
+        if p.family != "openai_compat":
+            continue
+        if p.slug in _SLUGS_WITH_CUSTOM_REASONING:
+            continue
+        slugs.add(p.slug)
+    # Always include the well-known gateways as a baseline so the
+    # behavior is correct even if the catalog is stale or missing.
+    slugs.update(_STATIC_OPENROUTER_STYLE_SLUGS)
+    _openrouter_style_cache = frozenset(slugs)
+    return _openrouter_style_cache
+
+
+# Module-level cache for ``_load_openrouter_style_slugs`` so the
+# provider catalog is read at most once per process.
+_openrouter_style_cache: frozenset[str] | None = None
+
+
+# Static fallback used if the provider catalog cannot be loaded at
+# runtime. These are the gateways we explicitly verified to accept the
+# OpenRouter-style ``reasoning: {effort: ...}`` nested form.
+_STATIC_OPENROUTER_STYLE_SLUGS: frozenset[str] = frozenset(
+    {
+        "openrouter",
+        "kilo",  # documented as OpenRouter-compatible
+        "airouter",
+        "opencode",
+        "ollama",  # accepts both forms; nested is the documented one
+        "tokenrouter",  # Responses API style
+    }
+)
+
+
 class OpenAISDK(BaseLLMSDK):
     # Slugs that natively accept the OpenAI `reasoning_effort` top-level
     # parameter (or its `reasoning: {effort: ...}` sibling on the Responses
     # API). Both work via chat.completions for o-series / gpt-5 family.
     _SLUGS_WITH_REASONING_EFFORT: frozenset[str] = frozenset(
         {"openai", "openai-codex", "openai-responses"}
-    )
-    # Slugs that speak the OpenRouter `reasoning: {effort: ...}` protocol.
-    # Per https://openrouter.ai/docs/api/reference/parameters and the
-    # analogous docs from each provider, the nested object form is the
-    # canonical one for these gateways. OpenRouter itself rejects requests
-    # that include both `reasoning` and `reasoning_effort` (HTTP 400), so
-    # we never emit the top-level form for these.
-    _SLUGS_WITH_REASONING_OBJECT: frozenset[str] = frozenset(
-        {
-            "openrouter",
-            "kilo",  # documented as OpenRouter-compatible
-            "airouter",
-            "opencode",
-            "ollama",  # accepts both forms; nested is the documented one
-            "tokenrouter",  # Responses API style
-        }
     )
     # Slugs that need DeepSeek's `extra_body={"thinking": {...}}` toggle.
     _SLUG_DEEPSEEK: str = "deepseek"
@@ -265,6 +328,14 @@ class OpenAISDK(BaseLLMSDK):
         self._apply_thinking_kwargs(kwargs, config)
         return kwargs
 
+    def _openrouter_style_slugs(self) -> frozenset[str]:
+        """OpenRouter-style slug set, loaded dynamically from the
+        provider catalog (cached at module level). Every openai_compat
+        slug in provider.yaml (other than the explicitly custom-mapped
+        ones) is included automatically.
+        """
+        return _load_openrouter_style_slugs()
+
     def _apply_thinking_kwargs(self, kwargs: dict[str, Any], config: GenerationConfig) -> None:
         """Translate ``config.thinking_level`` into the provider-specific
         wire parameters documented in the per-provider API references.
@@ -297,9 +368,8 @@ class OpenAISDK(BaseLLMSDK):
                 kwargs["reasoning"] = {"effort": level}
             return
 
-        # --- OpenRouter-style gateways (openrouter, kilo, airouter,
-        # opencode, ollama, tokenrouter) ---
-        if slug in self._SLUGS_WITH_REASONING_OBJECT:
+        # --- OpenRouter-style gateways (auto-detected from provider.yaml) ---
+        if slug in self._openrouter_style_slugs():
             if level == "none":
                 kwargs["reasoning"] = {"effort": "none", "exclude": True}
             elif level in ("minimal", "low", "medium", "high", "xhigh"):

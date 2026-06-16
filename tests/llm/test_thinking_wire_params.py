@@ -165,6 +165,89 @@ def test_unknown_slug_uses_nested_object() -> None:
     assert _kwargs(None, "high").get("reasoning") == {"effort": "high"}
 
 
+# --- Auto-detection from provider.yaml -------------------------------------
+
+
+def test_dynamic_loader_includes_all_openai_compat_gateways() -> None:
+    """Every openai_compat slug in provider.yaml (other than the few with
+    custom mappings) must be in the dynamic OpenRouter-style set, so a
+    new gateway added to provider.yaml is automatically handled
+    without code changes here.
+    """
+    from vtx.llm.provider_catalog import list_providers
+    from vtx.llm.sdk.openai import _SLUGS_WITH_CUSTOM_REASONING, _load_openrouter_style_slugs
+
+    openrouter_style = _load_openrouter_style_slugs()
+
+    for p in list_providers():
+        if p.family != "openai_compat":
+            continue
+        if p.slug in _SLUGS_WITH_CUSTOM_REASONING:
+            # Custom-mapped slugs (openai, deepseek, zhipu, ...) must
+            # NOT be in the OpenRouter-style set.
+            assert p.slug not in openrouter_style, (
+                f"{p.slug} has a custom mapping but was also added to the OpenRouter-style set"
+            )
+        else:
+            # Every other openai_compat slug MUST be covered.
+            assert p.slug in openrouter_style, (
+                f"{p.slug} is openai_compat in provider.yaml but missing "
+                f"from the OpenRouter-style set"
+            )
+
+
+def test_dynamic_loader_caches_result() -> None:
+    """Calling the loader twice must return the same frozenset (cached
+    so the catalog is read at most once per process)."""
+    from vtx.llm.sdk.openai import _load_openrouter_style_slugs
+
+    a = _load_openrouter_style_slugs()
+    b = _load_openrouter_style_slugs()
+    assert a is b
+
+
+@pytest.mark.parametrize(
+    "slug",
+    [
+        "groq",  # native provider serving Llama, also OpenAI-compat
+        "together",  # open-source gateway
+        "fireworks",
+        "mistral",
+        "nvidia",
+        "deepinfra",
+        "huggingface",
+        "aihubmix",  # multi-provider gateway
+        "apertis",
+        "baseten",
+        "chutes",
+        "cortecs",
+        "friendli",
+        "knox",
+        "llmgateway",
+        "modelscope",
+        "moonshot",
+        "nanogpt",
+        "pollinations",
+        "routingrun",
+        "sherlock",
+        "vercelai",
+        "zenmux",
+        "clarifai",
+        "cline",
+    ],
+)
+@pytest.mark.parametrize("level", ["minimal", "low", "medium", "high", "xhigh"])
+def test_provider_yaml_gateways_use_nested_object(slug: str, level: str) -> None:
+    """Every openai_compat gateway declared in provider.yaml must emit
+    the OpenRouter-style nested `reasoning: {effort: ...}` form for
+    non-none levels, and the bare `reasoning_effort` top-level field
+    must never appear for them.
+    """
+    kwargs = _kwargs(slug, level)
+    assert "reasoning_effort" not in kwargs
+    assert kwargs.get("reasoning") == {"effort": level}
+
+
 # --- Anthropic ---------------------------------------------------------------
 
 
