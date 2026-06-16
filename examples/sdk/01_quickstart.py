@@ -11,10 +11,10 @@ from __future__ import annotations
 import asyncio
 
 from vtx.llm.providers.mock import MockProvider
-from vtx.sdk import Agent, Runner, function_tool
+from vtx.sdk import Agent, Runner, tool
 
 
-@function_tool
+@tool
 def get_weather(city: str) -> str:
     """Return the current weather for a city."""
     return f"Sunny in {city}"

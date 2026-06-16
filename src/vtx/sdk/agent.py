@@ -152,7 +152,7 @@ class Agent[TContext]:
           variables (using ``self.model`` for the model name).
     tools:
         LLM-callable tools. Each may be a :class:`BaseTool`, a
-        :class:`FunctionTool` (from ``@function_tool``), a callable
+        :class:`FunctionTool` (from ``@tool``), a callable
         (auto-wrapped), or an :class:`Agent` (exposed as a tool).
     handoffs:
         Agents this agent can delegate to. Each may be an :class:`Agent`
@@ -201,7 +201,7 @@ class Agent[TContext]:
 
         Resolves every item in :attr:`tools` to a ``BaseTool``: ``Agent``
         items are exposed as tools (manager pattern); raw callables are
-        wrapped via :func:`function_tool`; ``BaseTool`` and
+        wrapped via :func:`tool`; ``BaseTool`` and
         ``FunctionTool`` pass through.
         """
         out: list[BaseTool] = []
@@ -221,9 +221,9 @@ class Agent[TContext]:
             return [item]
         # Raw callable - wrap.
         if callable(item):
-            from .tools import function_tool
+            from .tools import tool
 
-            return [function_tool(item)]
+            return [tool(item)]
         raise TypeError(
             f"Agent tool items must be BaseTool, FunctionTool, Agent, or callable, "
             f"got {type(item).__name__}"

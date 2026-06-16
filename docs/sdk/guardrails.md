@@ -60,7 +60,7 @@ Attach a tool guardrail directly to a function tool:
 
 ```python
 from vtx.sdk import (
-    function_tool,
+    tool,
     tool_input_guardrail,
     tool_output_guardrail,
     ToolGuardrailFunctionOutput,
@@ -79,10 +79,10 @@ def redact_pii(data):
         return ToolGuardrailFunctionOutput.reject_content("redacted: email found")
     return ToolGuardrailFunctionOutput.allow()
 
-@function_tool(input_guardrails=[reject_secrets], output_guardrails=[redact_pii])
+@tool(input_guardrails=[reject_secrets], output_guardrails=[redact_pii])
 def fetch_user(user_id: str) -> str:
     return ...
 ```
 
-Tool guardrails only apply to `function_tool` calls. They do not run
+Tool guardrails only apply to `tool` calls. They do not run
 on handoffs, hosted tools, or `Agent.as_tool()` wrappers.

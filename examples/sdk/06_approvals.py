@@ -11,10 +11,10 @@ from __future__ import annotations
 import asyncio
 
 from vtx.llm.providers.mock import MockProvider
-from vtx.sdk import Agent, Runner, function_tool
+from vtx.sdk import Agent, Runner, tool
 
 
-@function_tool(needs_approval=True)
+@tool(needs_approval=True)
 def send_email(to: str, subject: str, body: str) -> str:
     """Send an email. Requires approval before execution."""
     return f"sent to {to}: {subject}"

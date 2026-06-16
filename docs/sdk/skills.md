@@ -49,7 +49,7 @@ Or expose a skill as a tool directly:
 from vtx.sdk import load_vtx_skills
 
 def make_skill_tool(skill):
-    @function_tool(name=f"load_{skill.name}")
+    @tool(name=f"load_{skill.name}")
     def loader() -> str:
         """Load the skill's instructions into the context."""
         from pathlib import Path

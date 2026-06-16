@@ -14,7 +14,7 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   using Vtx's tool registry, provider catalog, and session store
   without the TUI.
 - Primitives: `Agent`, `Runner` (sync / async / streamed),
-  `function_tool` decorator, `Handoff` / `agent.as_tool()`,
+  `tool` decorator, `Handoff` / `agent.as_tool()`,
   `input_guardrail` / `output_guardrail` / `tool_input_guardrail` /
   `tool_output_guardrail`, `Session` Protocol with `InMemorySession`
   and `JSONLSession` backends, `Tracing` (Trace / Span / processors,

@@ -5,21 +5,14 @@ from __future__ import annotations
 import pytest
 from pydantic import BaseModel
 
-from vtx.sdk import (
-    Agent,
-    GuardrailFunctionOutput,
-    JSONLSession,
-    Runner,
-    function_tool,
-    input_guardrail,
-)
+from vtx.sdk import Agent, GuardrailFunctionOutput, JSONLSession, Runner, input_guardrail, tool
 
 
 @pytest.mark.asyncio
 async def test_quickstart_pattern(text_provider) -> None:
     """The exact code from the README quickstart section."""
 
-    @function_tool
+    @tool
     def get_weather(city: str) -> str:
         """Return the weather for a city."""
         return f"Sunny in {city}"

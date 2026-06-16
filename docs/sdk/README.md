@@ -8,9 +8,9 @@ build agentic applications on top of.
 ## Quick start
 
 ```python
-from vtx.sdk import Agent, Runner, function_tool
+from vtx.sdk import Agent, Runner, tool
 
-@function_tool
+@tool
 def get_weather(city: str) -> str:
     """Return the current weather for a city."""
     return f"Sunny in {city}"
@@ -44,7 +44,7 @@ A runnable, fully-offline version (using a mock provider) lives at
 |---|---|---|
 | `Agent` | LLM + instructions + tools + (optional) handoffs | [`agents.md`](agents.md) |
 | `Runner` | The single entry point for running an agent | [`runner.md`](runner.md) |
-| `function_tool` | Decorator that turns a Python function into a tool | [`tools.md`](tools.md) |
+| `tool` | Decorator that turns a Python function into a tool | [`tools.md`](tools.md) |
 | `handoff` / `Agent.as_tool` | Multi-agent delegation primitives | [`multi_agent.md`](multi_agent.md) |
 | `Session` | Pluggable memory backends (InMemory, JSONL) | [`sessions.md`](sessions.md) |
 | `Guardrails` | Input / output / tool-level checks | [`guardrails.md`](guardrails.md) |

@@ -19,7 +19,7 @@ class BaseTool[T: BaseModel](ABC):
     tool_icon: str = "→"
     prompt_guidelines: tuple[str, ...] = ()
     needs_approval: bool = False
-    """Set by SDK users via ``@function_tool(needs_approval=True)``.
+    """Set by SDK users via ``@tool(needs_approval=True)``.
     The SDK runner pauses the run for human approval when this is True."""
 
     @abstractmethod

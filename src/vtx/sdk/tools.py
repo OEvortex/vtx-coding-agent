@@ -1,5 +1,5 @@
 """
-function_tool — decorator that turns a Python function into a Vtx ``BaseTool``.
+tool — decorator that turns a Python function into a Vtx ``BaseTool``.
 
 The decorator is the SDK's user-facing tool surface. It:
 
@@ -130,7 +130,7 @@ class _FunctionToolSpec:
 
 
 class FunctionTool(BaseTool):
-    """A :class:`BaseTool` built from a Python function via ``@function_tool``."""
+    """A :class:`BaseTool` built from a Python function via ``@tool``."""
 
     _spec: _FunctionToolSpec
     wrapped_function: Callable[..., Any]
@@ -256,7 +256,7 @@ def _coerce_params_for_function(func: Callable[..., Any], params: BaseModel) -> 
     return out
 
 
-def function_tool[F: Callable[..., Any]](
+def tool[F: Callable[..., Any]](
     func: F | None = None,
     *,
     name: str | None = None,
@@ -271,7 +271,7 @@ def function_tool[F: Callable[..., Any]](
 
     Usage::
 
-        @function_tool
+        @tool
         def get_weather(city: str) -> str:
             \"\"\"Return the current weather for a city.\"\"\"
             return f\"Sunny in {city}\"
@@ -380,10 +380,4 @@ class _AgentAsTool(BaseTool):
             return ToolResult(success=False, result=f"Agent-as-tool failed: {exc}")
 
 
-__all__ = [
-    "FunctionTool",
-    "ToolApprovalItem",
-    "_AgentAsTool",
-    "_format_call_from_dict",
-    "function_tool",
-]
+__all__ = ["FunctionTool", "ToolApprovalItem", "_AgentAsTool", "_format_call_from_dict", "tool"]

@@ -1,13 +1,13 @@
 # Tools
 
-## `function_tool` decorator
+## `tool` decorator
 
 The primary way to give an agent capabilities:
 
 ```python
-from vtx.sdk import function_tool
+from vtx.sdk import tool
 
-@function_tool
+@tool
 def get_weather(city: str) -> str:
     """Return the current weather for a city."""
     return f"Sunny in {city}"
@@ -20,7 +20,7 @@ Vtx `BaseTool` subclass.
 ### Override knobs
 
 ```python
-@function_tool(
+@tool(
     name="custom_name",
     description="Custom description",
     needs_approval=True,        # human-in-the-loop
@@ -35,10 +35,10 @@ def my_tool(...) -> ...:
 
 ### Async functions
 
-`@function_tool` works on `async def` functions too:
+`@tool` works on `async def` functions too:
 
 ```python
-@function_tool
+@tool
 async def fetch(url: str) -> str:
     async with aiohttp.ClientSession() as s:
         async with s.get(url) as r:
@@ -53,7 +53,7 @@ Tools can return a `vtx.core.types.ToolResult` directly to control
 ```python
 from vtx.core.types import ToolResult
 
-@function_tool
+@tool
 def risky() -> ToolResult:
     return ToolResult(
         success=True,

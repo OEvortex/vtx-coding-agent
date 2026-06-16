@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from vtx.sdk.permissions import AllowlistApprove, AutoApprove, PermissionDecision, PromptApprove
-from vtx.sdk.tools import function_tool
+from vtx.sdk.tools import tool
 
 
 def test_auto_approve_allows_everything() -> None:
@@ -14,11 +14,11 @@ def test_auto_approve_allows_everything() -> None:
 def test_allowlist_approve_allows_listed() -> None:
     p = AllowlistApprove(["web_search"])
 
-    @function_tool(mutating=True)
+    @tool(mutating=True)
     def web_search(query: str) -> str:
         return ""
 
-    @function_tool(mutating=True)
+    @tool(mutating=True)
     def rm(path: str) -> str:
         return ""
 
@@ -29,11 +29,11 @@ def test_allowlist_approve_allows_listed() -> None:
 def test_prompt_approve_allows_readonly() -> None:
     p = PromptApprove()
 
-    @function_tool(mutating=False)
+    @tool(mutating=False)
     def read(path: str) -> str:
         return ""
 
-    @function_tool
+    @tool
     def write(path: str, content: str) -> str:
         return ""
 
@@ -44,11 +44,11 @@ def test_prompt_approve_allows_readonly() -> None:
 def test_prompt_approve_allows_safe_bash() -> None:
     p = PromptApprove()
 
-    @function_tool
+    @tool
     def bash(command: str) -> str:
         return ""
 
-    @function_tool
+    @tool
     def dangerous_bash(command: str) -> str:
         return ""
 

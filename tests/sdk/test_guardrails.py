@@ -12,9 +12,9 @@ from vtx.sdk import (
     InputGuardrailTripwireTriggered,
     OutputGuardrailTripwireTriggered,
     Runner,
-    function_tool,
     input_guardrail,
     output_guardrail,
+    tool,
     tool_input_guardrail,
     tool_output_guardrail,
 )
@@ -137,12 +137,12 @@ async def test_run_output_guardrails_no_guardrails() -> None:
 
 
 @pytest.mark.asyncio
-async def test_function_tool_with_input_guardrail_blocks() -> None:
+async def test_tool_with_input_guardrail_blocks() -> None:
     @tool_input_guardrail
     def block(data):
         return ToolGuardrailFunctionOutput.reject_content("blocked by guardrail")
 
-    @function_tool(input_guardrails=[block])
+    @tool(input_guardrails=[block])
     def my_tool(x: int) -> int:
         return x * 2
 

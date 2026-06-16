@@ -8,9 +8,9 @@ populated; you inspect the pending calls, decide, and resume with a
 ## Marking a tool
 
 ```python
-from vtx.sdk import function_tool
+from vtx.sdk import tool
 
-@function_tool(needs_approval=True)
+@tool(needs_approval=True)
 def send_email(to: str, subject: str, body: str) -> str:
     """Send an email on the user's behalf."""
     return f"sent to {to}"

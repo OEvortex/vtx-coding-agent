@@ -1,4 +1,4 @@
-"""Tests for ``@function_tool`` and the ``FunctionTool`` class."""
+"""Tests for ``@tool`` and the ``FunctionTool`` class."""
 
 from __future__ import annotations
 
@@ -8,12 +8,12 @@ import pytest
 from pydantic import BaseModel
 
 from vtx.core.types import ToolResult
-from vtx.sdk import function_tool
+from vtx.sdk import tool
 from vtx.sdk.tools import FunctionTool, _format_call_from_dict
 
 
-def test_function_tool_decorator_basic() -> None:
-    @function_tool
+def test_tool_decorator_basic() -> None:
+    @tool
     def get_weather(city: str) -> str:
         """Return weather for a city."""
         return f"Sunny in {city}"
@@ -24,8 +24,8 @@ def test_function_tool_decorator_basic() -> None:
     assert get_weather.mutating is True
 
 
-def test_function_tool_with_overrides() -> None:
-    @function_tool(name="renamed", description="Custom", mutating=False, tool_icon="*")
+def test_tool_with_overrides() -> None:
+    @tool(name="renamed", description="Custom", mutating=False, tool_icon="*")
     def f(x: int) -> int:
         return x * 2
 
@@ -35,8 +35,8 @@ def test_function_tool_with_overrides() -> None:
     assert f.tool_icon == "*"
 
 
-def test_function_tool_pydantic_params_generation() -> None:
-    @function_tool
+def test_tool_pydantic_params_generation() -> None:
+    @tool
     def search(query: str, limit: int = 10) -> str:
         """Search something."""
         return f"{query} {limit}"
@@ -49,8 +49,8 @@ def test_function_tool_pydantic_params_generation() -> None:
     assert "limit" not in schema.get("required", [])
 
 
-def test_function_tool_optional_param() -> None:
-    @function_tool
+def test_tool_optional_param() -> None:
+    @tool
     def f(x: str | None = None) -> str:
         return x or "default"
 
@@ -59,8 +59,8 @@ def test_function_tool_optional_param() -> None:
 
 
 @pytest.mark.asyncio
-async def test_function_tool_execute_sync() -> None:
-    @function_tool
+async def test_tool_execute_sync() -> None:
+    @tool
     def add(a: int, b: int) -> int:
         return a + b
 
@@ -71,8 +71,8 @@ async def test_function_tool_execute_sync() -> None:
 
 
 @pytest.mark.asyncio
-async def test_function_tool_execute_async() -> None:
-    @function_tool
+async def test_tool_execute_async() -> None:
+    @tool
     async def slow_add(a: int, b: int) -> int:
         await asyncio.sleep(0.001)
         return a + b
@@ -84,8 +84,8 @@ async def test_function_tool_execute_async() -> None:
 
 
 @pytest.mark.asyncio
-async def test_function_tool_execute_exception() -> None:
-    @function_tool
+async def test_tool_execute_exception() -> None:
+    @tool
     def boom(x: int) -> int:
         raise ValueError("nope")
 
@@ -96,8 +96,8 @@ async def test_function_tool_execute_exception() -> None:
 
 
 @pytest.mark.asyncio
-async def test_function_tool_execute_tool_result_passthrough() -> None:
-    @function_tool
+async def test_tool_execute_tool_result_passthrough() -> None:
+    @tool
     def make_result() -> ToolResult:
         return ToolResult(success=True, result="hi", ui_summary="hello")
 
@@ -108,8 +108,8 @@ async def test_function_tool_execute_tool_result_passthrough() -> None:
     assert result.ui_summary == "hello"
 
 
-def test_function_tool_format_call() -> None:
-    @function_tool
+def test_tool_format_call() -> None:
+    @tool
     def f(x: int, y: str = "default") -> str:
         return ""
 
@@ -119,8 +119,8 @@ def test_function_tool_format_call() -> None:
     assert "y=hello" in text
 
 
-def test_function_tool_no_args() -> None:
-    @function_tool
+def test_tool_no_args() -> None:
+    @tool
     def noop() -> str:
         """A no-op tool."""
         return "ok"
@@ -130,8 +130,8 @@ def test_function_tool_no_args() -> None:
     assert result.result == "ok"
 
 
-def test_function_tool_docstring_arg_descriptions() -> None:
-    @function_tool
+def test_tool_docstring_arg_descriptions() -> None:
+    @tool
     def search(query: str, limit: int = 10) -> str:
         """Search the index.
 
@@ -149,20 +149,20 @@ def test_function_tool_docstring_arg_descriptions() -> None:
     assert "maximum" in schema["properties"]["limit"]["description"].lower()
 
 
-def test_function_tool_needs_approval() -> None:
-    @function_tool(needs_approval=True)
+def test_tool_needs_approval() -> None:
+    @tool(needs_approval=True)
     def dangerous() -> str:
         return "rm -rf /"
 
     assert dangerous.needs_approval is True
 
 
-def test_function_tool_pydantic_model_arg() -> None:
+def test_tool_pydantic_model_arg() -> None:
     class Nested(BaseModel):
         x: int
         y: str
 
-    @function_tool
+    @tool
     def consume(n: Nested) -> str:
         return f"{n.x} {n.y}"
 

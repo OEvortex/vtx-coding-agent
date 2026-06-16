@@ -7,9 +7,9 @@ Pydantic-typed tool system.
 
 Quick start::
 
-    from vtx.sdk import Agent, Runner, function_tool
+    from vtx.sdk import Agent, Runner, tool
 
-    @function_tool
+    @tool
     def get_weather(city: str) -> str:
         \"\"\"Look up the current weather for a city.\"\"\"
         return f\"Sunny in {city}\"
@@ -66,7 +66,7 @@ from .results import RunResult, Usage
 from .run_config import RunConfig
 from .runner import Runner, RunStreamed
 from .sessions import InMemorySession, JSONLSession, Session, SessionSettings
-from .tools import FunctionTool, function_tool
+from .tools import FunctionTool, tool
 from .tracing import Span, Trace, add_trace_processor, disable_tracing, enable_tracing, span, trace
 from .tracing.exporters import ConsoleTraceProcessor, JSONLTraceProcessor
 from .tracing.processor import TraceProcessor
@@ -119,11 +119,11 @@ __all__ = [
     "add_trace_processor",
     "disable_tracing",
     "enable_tracing",
-    "function_tool",
     "handoff",
     "input_guardrail",
     "output_guardrail",
     "span",
+    "tool",
     "tool_input_guardrail",
     "tool_output_guardrail",
     "trace",

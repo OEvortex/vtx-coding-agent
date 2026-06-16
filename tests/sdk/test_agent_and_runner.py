@@ -8,7 +8,7 @@ from typing import Any
 import pytest
 from pydantic import BaseModel
 
-from vtx.sdk import Agent, Runner, function_tool
+from vtx.sdk import Agent, Runner, tool
 from vtx.sdk.run_config import RunConfig
 from vtx.sdk.sessions import InMemorySession
 
@@ -27,7 +27,7 @@ def test_agent_post_init_validates_tool_use_behavior() -> None:
 
 
 def test_agent_compiled_tools_passthrough() -> None:
-    @function_tool
+    @tool
     def f(x: int) -> int:
         """noop"""
         return x
@@ -155,7 +155,7 @@ async def test_runner_to_input_list_round_trip(text_provider) -> None:
 
 @pytest.mark.asyncio
 async def test_runner_tool_call_scenario(tool_provider) -> None:
-    @function_tool
+    @tool
     def noop_tool() -> str:
         return "done"
 
