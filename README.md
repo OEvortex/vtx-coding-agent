@@ -32,6 +32,7 @@ By keeping the core prompt lean, Vtx leaves the model's context window open for 
 - **Collapsible Thinking Blocks**: TUI elegantly collapses finalized thinking chains to keep your workspace readable.
 - **Secure Sandboxed Control**: Supports both `prompt` (confirmation before mutating changes) and `auto` permission modes.
 - **Self-Extensible**: Drop a Python file in `~/.vtx/agent/extensions/` to add tools, intercept tool calls, register slash commands, and react to lifecycle events. See [docs/extensions.md](docs/extensions.md).
+- **Switchable Handoff Agents**: Define named, switchable profiles (read-only review, security audit, fast implementation) in `.vtx/agent/<name>.py`. Press `Shift+Tab` in the TUI to cycle between them. See [docs/agents.md](docs/agents.md).
 
 ---
 
