@@ -280,6 +280,62 @@ extensions:
 
 Pass `--no-extensions` on the CLI to skip auto-discovery (the explicit list still loads). See [extensions.md](extensions.md) for the full extension API.
 
+## `agents`
+
+Switchable handoff agents loaded from `.vtx/agent/<name>.py` (project) and
+`~/.vtx/agent/<name>.py` (global). See [agents.md](agents.md) for the full
+authoring guide.
+
+### `agents.default`
+
+| | |
+| --- | --- |
+| Default | `""` (no agent active) |
+| Slash | `/agent <name>` to set; `last_selected.agent` is also written |
+| CLI | `--agent NAME` |
+
+The name of the agent to activate at session start when no `VTX_AGENT` env
+var is set and no `--agent` flag is passed. Empty string means "no
+agent active". An unknown name is dropped with a launch warning.
+
+### `agents.switch_mode`
+
+| | |
+| --- | --- |
+| Default | `"lock"` |
+| Allowed values | `"lock"`, `"hot"` |
+
+How `Shift+Tab` and `/agent <name>` behave:
+
+* `"lock"` (default): the active agent is set at session start; switching
+  starts a new session JSONL, preserving the session-tree lineage.
+  Cheap and predictable.
+* `"hot"`: switching re-renders the system prompt and tool list in place
+  on the next turn. The model's view of the tool surface can change
+  mid-conversation. Experimental.
+
+### `agents.files`
+
+| | |
+| --- | --- |
+| Default | `[]` |
+| CLI | `--agent-file PATH` (repeatable) |
+
+Extra agent-file paths (project-local or global). Files in
+`<cwd>/.vtx/agent/` and `~/.vtx/agent/` are always auto-discovered;
+entries here are additive.
+
+Example:
+
+```yaml
+agents:
+  default: code-review
+  switch_mode: lock
+  files:
+    - ./team_agents/security_audit.py
+    - ~/.vtx/agent/data-eng.py
+```
+
 ## `permissions`
 
 ### `permissions.mode`
@@ -363,6 +419,8 @@ Vtx auto-migrates your config when you upgrade. The current `config_version` is 
 | v4 → v5 | Added `notifications.volume` (defaulted to `0.5`). |
 | v5 → v6 | Promoted `llm.system_prompt` to a dict with `git_context` and `content`. The default `content` is now sourced from `vtx.prompts.identity` so users can override it via config. |
 | v6 → v7 | Added top-level `extensions:` (list of paths). Default is `[]`. Auto-discovered paths in `.vtx/extensions/` and `~/.vtx/agent/extensions/` still load unless `--no-extensions` is passed. |
+| v7 → v8 | Added `ui.model_provider_filter` (defaulted to `""`) for the `/provider` filter that scopes the `/model` picker. |
+| v8 → v9 | Added the `agents:` block (`default`, `switch_mode`, `files`) and `last_selected.agent`. Backfills all four with their defaults; no user data is moved or removed. See [agents.md](agents.md). |
 
 The earlier Vtx releases stored the config under `~/.vtx/`. v0.3.11 added a migration that moves `config.yml`, `sessions/`, `auth/` files, and `models/` into `~/.vtx/`. The old path is no longer read. See [`src/vtx/config.py`](../src/vtx/config.py) for the migration code.
 

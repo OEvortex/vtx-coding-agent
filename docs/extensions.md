@@ -35,6 +35,7 @@ file, no separate package format.
 |---------------------------------|--------|
 | `api.on(event, handler)`        | Subscribe to a lifecycle event |
 | `api.register_tool(name, ...)`  | Add (or override) an LLM-callable tool |
+| `api.register_local_tool(agent, name, ...)` | Add a tool scoped to a specific handoff agent — see [agents.md](agents.md) |
 | `api.register_command(name, ...)` | Add a `/name` slash command |
 | `api.notify(message, level)`    | Print a line to stderr / chat log |
 | `api.cwd`, `api.session_file`, `api.config_dir` | Read-only session context |
@@ -69,10 +70,17 @@ The full event surface:
 | `tool_result`     | Right after a tool returns             | **yes**   |
 | `compaction_start`| Conversation overflow triggered       | no |
 | `compaction_end`  | Overflow summary written               | no |
+| `agent_activated` | A handoff agent became active          | no |
+| `agent_changed`   | The active handoff agent changed       | no |
 
 `session_start` and `session_end` are emitted synchronously because
 they fire before / after the asyncio loop. Use a sync handler for
 those events; for everything else, async handlers are preferred.
+
+The `agent_activated` and `agent_changed` events are part of the
+[agents system](agents.md). They fire when the user picks a different
+agent via `Shift+Tab`, `/agent <name>`, or the CLI `--agent` flag. See
+[agents.md](agents.md#events) for the payload shape.
 
 ## Blocking / modifying tool calls
 

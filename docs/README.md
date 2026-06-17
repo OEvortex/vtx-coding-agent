@@ -12,6 +12,7 @@ This folder is the reference companion to the top-level [README](../README.md). 
 | [permissions.md](permissions.md) | The `prompt`/`auto` modes, the safe-command allowlist, and the decision algorithm |
 | [sessions.md](sessions.md) | JSONL session format, resume, handoff, `/export`, compaction, and tree navigation |
 | [skills.md](skills.md) | Authoring skills — frontmatter, `$ARGUMENTS`, `register_cmd`, discovery paths |
+| [agents.md](agents.md) | Switchable handoff agents — `.vtx/agent/<name>.py`, `AgentAPI`, `Shift+Tab` cycling |
 | [theming.md](theming.md) | The full theme catalog and palette tokens |
 | [headless.md](headless.md) | The `-p`/`--prompt` non-interactive flow, exit codes, stdin handling |
 | [local-models.md](local-models.md) | Tested local models, llama-server setup, model-specific config tuning |
@@ -31,6 +32,7 @@ This folder is the reference companion to the top-level [README](../README.md). 
 - **Adding a provider:** [providers.md](providers.md) and [configuration.md](configuration.md) (the `llm` section).
 - **Adding a tool:** [tools.md](tools.md) and [architecture.md](architecture.md) (the `tools/` layer).
 - **Adding a skill:** [skills.md](skills.md).
+- **Adding a handoff agent:** [agents.md](agents.md).
 - **Debugging sessions or compaction:** [sessions.md](sessions.md).
 - **Tuning for a local model:** [local-models.md](local-models.md) and [configuration.md](configuration.md) (the `compaction` section).
 - **Working on Vtx itself:** [development.md](development.md), then [architecture.md](architecture.md).

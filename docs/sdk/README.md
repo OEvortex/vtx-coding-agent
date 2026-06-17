@@ -53,6 +53,23 @@ A runnable, fully-offline version (using a mock provider) lives at
 | `Permissions` | Pluggable tool-call permission policy | [`permissions.md`](permissions.md) |
 | `Skills` | Load Vtx `.agents/skills/` into your agent | [`skills.md`](skills.md) |
 
+## Related: handoff agents
+
+The SDK's `Agent` and the runtime's **handoff agents**
+(`.vtx/agent/<name>.py`, switchable via `Shift+Tab` in the TUI) are
+related but distinct concepts:
+
+* The SDK's `Agent` is a **first-class multi-agent primitive** — `Runner`
+  orchestrates one or more `Agent` instances into a run, with explicit
+  `handoff` and `as_tool` delegation.
+* Handoff agents are **switchable TUI profiles** that bundle instructions,
+  tool allow/deny, optional model overrides, and agent-scoped tools. They
+  are described in the user doc: [../agents.md](../agents.md).
+
+If you're building an agentic application on top of the SDK, you'll
+mostly use the `Agent` / `Runner` primitives. If you're customizing the
+TUI workflow with reusable profiles, use handoff agents.
+
 ## Why a separate SDK?
 
 Vtx's TUI is opinionated: it's built for the coding-agent loop, and

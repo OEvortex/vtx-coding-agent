@@ -43,10 +43,18 @@ The TUI consumes `AgentEvents` to render. The headless runner consumes the same 
 
 ```text
 src/vtx/
-├── cli.py                 # argparse: --model, --provider, --prompt, --resume, etc.
+├── cli.py                 # argparse: --model, --provider, --prompt, --resume, --agent, etc.
 ├── headless.py            # non-interactive runner; reads --prompt, prints to stdout
 ├── version.py             # __version__ (semver, used by update_check and the build)
 ├── update_check.py        # PyPI version probe for the in-app update notice
+│
+├── agents/                # switchable handoff agents (``.vtx/agent/<name>.py``)
+│   ├── schema.py          # Pydantic model: AgentDef, PermissionGate
+│   ├── discovery.py       # project + global discovery
+│   ├── loader.py          # import + AGENT validation + register(api) call
+│   ├── api.py             # AgentAPI: local_tool, local_command, permission_gate, on
+│   ├── registry.py        # AgentRegistry: active agent state + cycle
+│   └── activate.py        # compose_active_tools, compose_active_commands
 │
 ├── config.py              # Pydantic config schema, migration, getters/setters
 ├── themes.py              # built-in theme registry + ColorsConfig
@@ -313,6 +321,7 @@ A few design choices that aren't obvious from the code:
 - **Adding a tool:** read `tools/base.py` and `tools/read.py` (the simplest one), then add your tool to `tools/__init__.py`.
 - **Adding a provider:** read `llm/providers/openai_completions.py` (the smallest one) and `llm/dynamic_models.py` (for the catalog-fetch path). Register in `llm/providers/__init__.py`.
 - **Adding a slash command:** pick the right mixin in `ui/commands/`, follow the pattern in `settings.py` (the cleanest one).
+- **Adding a handoff agent:** read [docs/agents.md](agents.md), then `src/vtx/agents/schema.py` and `src/vtx/agents/loader.py`. The loader is small (under 150 lines) and mirrors `extensions.py`.
 - **Tuning the system prompt:** edit `prompts/identity.py`. Add a new named section and reference it in `prompts/builder.py`.
 - **Changing the schema:** bump `config_version` in `defaults/config.yml`, add a `_migrate_vN_to_vN+1` in `config.py`, register it in `_migrate_config_data`.
 
