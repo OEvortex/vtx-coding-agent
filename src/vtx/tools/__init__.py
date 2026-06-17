@@ -6,8 +6,14 @@ from .edit import EditTool
 from .find import FindTool
 from .read import ReadTool
 from .skill import SkillTool
+from .task import TaskTool
 from .web import WebFetchTool, WebSearchTool
 from .write import WriteTool
+
+# Note: Sub-agent dispatching is shipped as a default tool in vtx.
+# The generic dispatcher context (provider, model, cwd, …) that
+# the tool reads lives in :mod:`vtx.dispatcher`; the runtime
+# populates it on every state change.
 
 __all__ = [
     "DEFAULT_TOOLS",
@@ -18,6 +24,7 @@ __all__ = [
     "FindTool",
     "ReadTool",
     "SkillTool",
+    "TaskTool",
     "WebFetchTool",
     "WebSearchTool",
     "WriteTool",
@@ -38,6 +45,7 @@ all_tools: list[BaseTool] = [
     WebFetchTool(),
     WebSearchTool(),
     AskUserTool(),
+    TaskTool(),
 ]
 
 tools_by_name: dict[str, BaseTool] = {tool.name: tool for tool in all_tools}
@@ -51,6 +59,7 @@ DEFAULT_TOOLS: list[str] = [
     "fetch_webpage",
     "web_search",
     "ask_user",
+    "task",
 ]
 
 
