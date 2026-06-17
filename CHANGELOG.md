@@ -8,6 +8,18 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Added
 
+### Changed
+
+### Fixed
+
+## [0.1.3] - 2026-06-17 — VTX Agentic SDK
+
+Introduces `vtx.sdk`, a programmatic, multi-agent interface built on top of
+Vtx's lean runtime, plus cloud-backed built-in skills for Colab and Modal and
+a `/provider` filter that scopes the `/model` picker to one gateway.
+
+### Added
+
 #### VTX Agentic SDK (`vtx.sdk`)
 - New `vtx.sdk` package: a programmatic, multi-agent interface built
   on top of Vtx's lean runtime. Lets users build agentic applications
@@ -69,6 +81,11 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   restricts `/model` to that one provider. Unknown slugs are dropped on write.
   Managed by `/provider` or `set_model_provider_filter(...)`.
 
+#### Internal
+- New `ask_user` tool for interactive single/multi-select prompts (also
+  available from the SDK via the `tool` decorator). Surfaces in the TUI as
+  an `AskUserView` with arrow-key / number-key selection and Enter to confirm.
+
 ### Changed
 - Restructured `builtin_skills/` to use category folders (`cloud/`, `code-review/`,
   `general/`, `meta/`, `setup/`). Skill discovery now recursively scans up to 2
@@ -76,6 +93,15 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - `/model refresh` (no slug) now reports `Refreshing all N providers...` and
   handles the empty-provider-set case with a clear message. The per-provider
   count format is unchanged.
+- Renamed the SDK's internal `function_tool` decorator to `tool` to match the
+  public SDK surface. The `tool` name now consistently identifies the
+  decorator across the SDK and the runtime.
+- Auto-compaction now triggers on a **percentage** of the model's context
+  window (default 75%) instead of a fixed token buffer. This keeps compaction
+  cadence consistent across providers with very different context windows.
+- AGENTS.md now instructs agents to look up a tool in the **agent's tool
+  list** before the global registry, so extension tool overrides are honored
+  on every turn.
 
 ### Fixed
 - `get_all_models()` and `get_all_models_with_dynamic()` no longer return
@@ -84,6 +110,8 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   `dedupe_models()` helper keeps the first occurrence of each
   `(provider, id)` pair. Fixes the duplicate rows in the `/model` picker
   (2286 duplicates eliminated with a populated cache).
+- Bundled skills are now included in the system prompt, so the model can
+  discover and call them without an extra load step.
 
 ## [0.1.2] - 2026-06-16 — Extension System
 
