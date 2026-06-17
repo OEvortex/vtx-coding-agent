@@ -1,0 +1,196 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+    <meta name="color-scheme" content="dark" />
+    <meta name="format-detection" content="telephone=no" />
+    <meta name="theme-color" content="#0A0A0B" media="(prefers-color-scheme: dark)" />
+    <meta name="theme-color" content="#0A0A0B" media="(prefers-color-scheme: light)" />
+
+    <!-- Primary Meta Tags -->
+    <title>Documentation - Vtx</title>
+    <meta name="title" content="Vtx - Agentic coding harness" />
+    <meta name="description" content="Official Vtx documentation: setup, extension system, custom tools, agents, memory, hooks, RPC, ACP, sandbox, skills, and architecture reference." />
+    <meta
+      name="keywords"
+      content="Vtx, AI coding agent, agentic harness, LLM, OpenAI, Anthropic, GitHub Copilot, DeepSeek, TUI, terminal UI, headless CLI, coding assistant, open source, Python"
+    />
+    <meta name="author" content="OEvortex" />
+    <meta name="robots" content="index, follow, max-image-preview:large, max-snippet:-1, max-video-preview:-1" />
+    <meta name="googlebot" content="index, follow" />
+    <meta name="rating" content="general" />
+    <meta name="distribution" content="global" />
+    <meta name="revisit-after" content="7 days" />
+    <meta name="language" content="English" />
+    <meta name="application-name" content="Vtx" />
+    <meta name="apple-mobile-web-app-title" content="Vtx" />
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+    <meta name="mobile-web-app-capable" content="yes" />
+    <meta name="msapplication-TileColor" content="#0A0A0B" />
+    <meta name="msapplication-config" content="/browserconfig.xml" />
+
+    <!-- Favicons -->
+    <link rel="icon" type="image/x-icon" href="/favicon.ico" />
+    <link rel="icon" type="image/png" sizes="16x16" href="/favicon-16x16.png" />
+    <link rel="icon" type="image/png" sizes="32x32" href="/favicon-32x32.png" />
+    <link rel="icon" type="image/png" sizes="48x48" href="/favicon-48x48.png" />
+    <link rel="icon" type="image/png" sizes="96x96" href="/favicon-96x96.png" />
+    <link rel="apple-touch-icon" sizes="180x180" href="/apple-touch-icon.png" />
+    <link rel="manifest" href="/manifest.json" />
+
+    <!-- Canonical & Sitemap -->
+    <link rel="canonical" href="https://agentjarvis-v2.netlify.app/docs/" />
+    <link rel="sitemap" type="application/xml" href="/sitemap.xml" />
+
+    <!-- Preconnect / DNS prefetch for performance -->
+    <link rel="dns-prefetch" href="https://api.netlify.com" />
+    <link rel="preconnect" href="https://api.netlify.com" crossorigin />
+
+    <!-- Open Graph / Facebook -->
+    <meta property="og:type" content="website" />
+    <meta property="og:site_name" content="Vtx" />
+    <meta property="og:title" content="Vtx: Documentation" />
+    <meta property="og:description" content="Setup, extension system, custom tools, memory, hooks, RPC, ACP, sandbox - every Vtx subsystem documented." />
+    <meta property="og:url" content="https://agentjarvis-v2.netlify.app/docs/" />
+    <meta property="og:image" content="https://agentjarvis-v2.netlify.app/og-image.jpg" />
+    <meta property="og:image:secure_url" content="https://agentjarvis-v2.netlify.app/og-image.jpg" />
+    <meta property="og:image:type" content="image/jpeg" />
+    <meta property="og:image:width" content="1200" />
+    <meta property="og:image:height" content="630" />
+    <meta property="og:image:alt" content="Vtx: Agentic coding harness with 5 core tools, 11+ providers, TUI and headless CLI" />
+    <meta property="og:locale" content="en_US" />
+    <meta property="og:determiner" content="" />
+
+    <!-- Twitter Card -->
+    <meta name="twitter:card" content="summary_large_image" />
+    <meta name="twitter:title" content="Vtx: Documentation" />
+    <meta name="twitter:description" content="Setup, extension system, custom tools, memory, hooks, RPC, ACP, sandbox - every Vtx subsystem documented." />
+    <meta name="twitter:image" content="https://agentjarvis-v2.netlify.app/twitter-card.jpg" />
+    <meta name="twitter:image:alt" content="Vtx: Agentic coding harness" />
+
+    <!-- Structured Data: SoftwareApplication -->
+    <script type="application/ld+json">
+      {
+        "@context": "https://schema.org",
+        "@type": "SoftwareApplication",
+        "name": "Vtx",
+        "version": "0.4.2",
+        "applicationCategory": "DeveloperApplication",
+        "applicationSubCategory": "AI Coding Assistant",
+        "operatingSystem": "Linux, macOS, Windows",
+        "description": "Vtx is an open-source agentic coding harness with 5 core tools, 11+ LLM providers, TUI, headless CLI, session persistence, compaction, skills, and extensions.",
+        "url": "https://agentjarvis-v2.netlify.app/",
+        "image": "https://agentjarvis-v2.netlify.app/og-image.png",
+        "downloadUrl": "https://github.com/OEvortex/vtx-coding-agent",
+        "softwareVersion": "0.4.2",
+        "datePublished": "2024-01-01",
+        "dateModified": "2026-06-12",
+        "license": "https://opensource.org/licenses/MIT",
+        "isAccessibleForFree": true,
+        "offers": {
+          "@type": "Offer",
+          "price": "0",
+          "priceCurrency": "USD",
+          "availability": "https://schema.org/InStock"
+        },
+        "featureList": [
+          "5 core tools (read, edit, write, bash, find)",
+          "11+ LLM providers (OpenAI, Anthropic, Copilot, DeepSeek, Azure, dynamic catalogs)",
+          "Textual TUI with 25 built-in themes",
+          "Headless CLI mode for scripts and CI",
+          "Session persistence with JSONL format",
+          "Context compaction for long conversations",
+          "Skills system with auto-discovery",
+          "Extension system with event hooks",
+          "Permission system (prompt/auto modes)",
+          "OAuth flows for OpenAI Codex and GitHub Copilot",
+          "Local model support via llama-server"
+        ],
+        "author": {
+          "@type": "Organization",
+          "name": "OEvortex",
+          "url": "https://oetech.in"
+        },
+        "publisher": {
+          "@type": "Organization",
+          "name": "OEvortex"
+        },
+        "aggregateRating": {
+          "@type": "AggregateRating",
+          "ratingValue": "5.0",
+          "ratingCount": "1"
+        }
+      }
+    </script>
+
+    <!-- Structured Data: Organization -->
+    <script type="application/ld+json">
+      {
+        "@context": "https://schema.org",
+        "@type": "Organization",
+        "name": "OEvortex",
+        "url": "https://oetech.in",
+        "logo": "https://agentjarvis-v2.netlify.app/favicon-512x512.png",
+        "sameAs": [
+          "https://t.me/jarvis_remastered"
+        ]
+      }
+    </script>
+
+    <!-- Structured Data: WebSite (for sitelinks search box) -->
+    <script type="application/ld+json">
+      {
+        "@context": "https://schema.org",
+        "@type": "WebSite",
+        "name": "Vtx",
+        "url": "https://agentjarvis-v2.netlify.app/",
+        "description": "Open-source agentic coding harness for developers.",
+        "publisher": {
+          "@type": "Organization",
+          "name": "OEvortex"
+        }
+      }
+    </script>
+    <script type="module" crossorigin src="/assets/index-MWM8mEFW.js"></script>
+    <link rel="stylesheet" crossorigin href="/assets/index-DO93yW3H.css">
+      <script type="application/ld+json" data-route="prerender">
+{
+  "@context": "https://schema.org",
+  "@type": "TechArticle",
+  "headline": "Vtx Documentation",
+  "name": "Vtx Documentation",
+  "description": "Official documentation for Vtx - the open-source agentic coding harness with 120+ tools, MCP, ACP, hybrid memory, and sandboxed execution.",
+  "proficiencyLevel": "Expert",
+  "author": {
+    "@type": "Organization",
+    "name": "OEvortex"
+  },
+  "publisher": {
+    "@type": "Organization",
+    "name": "OEvortex",
+    "logo": {
+      "@type": "ImageObject",
+      "url": "https://agentjarvis-v2.netlify.app/favicon-512x512.png"
+    }
+  },
+  "url": "https://agentjarvis-v2.netlify.app/docs/"
+}
+</script>
+  </head>
+  <body>
+    <div id="root"></div>
+    <noscript>
+      <div style="padding:2rem;font-family:system-ui,sans-serif;max-width:40rem;margin:0 auto;color:#FAFAF9;background:#0A0A0B;">
+        <h1>Vtx</h1>
+        <p>Vtx is an open-source agentic coding harness. This page requires JavaScript to render the interactive features and documentation.</p>
+        <p>Install with: <code>uv tool install vtx-coding-agent</code> or visit <a href="https://github.com/OEvortex/vtx-coding-agent">GitHub</a>.</p>
+        <ul>
+          <li><a href="/features/">Features</a></li>
+          <li><a href="/docs/">Documentation</a></li>
+        </ul>
+      </div>
+    </noscript>
+  </body>
+</html>
