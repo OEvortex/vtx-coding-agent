@@ -8,9 +8,82 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Added
 
+#### Switchable handoff agents (`.vtx/agent/<name>.py`)
+- New `vtx.agents` package — a "profile" type that bundles instructions,
+  optional model/provider/thinking overrides, a tool allow/deny list, and
+  agent-scoped local tools, slash commands, and permission gates. Drop a
+  Python file at `<project>/.vtx/agent/<name>.py` (or
+  `~/.vtx/agent/<name>.py` for global) to make it discoverable. Project
+  wins on name collision.
+- Agent file format: module-level `AGENT = AgentDef(...)` constant for
+  the static profile, plus an optional `register(api)` for imperative
+  side effects. `AGENT.name` must match the file stem.
+- `AgentAPI` mirrors `ExtensionAPI`: `local_tool(...)`,
+  `local_command(...)`, `permission_gate(...)`, `on(event, handler)`,
+  `on_agent_change(...)`. `local_tool` and `local_command` support both
+  function-call and decorator forms.
+- `AgentAPI.permission_gate(...)` accepts a small expression mini-language
+  (`<path> matches '<literal>'`, `<path> == '<literal>'`) **or** a Python
+  predicate, layered on top of the AgentDef's declarative
+  `permission_gates`.
+- TUI: `Shift+Tab` cycles through the discovered agents (`[None, *names]`,
+  alphabetical). Active agent is shown in the info bar as `@ <name>`.
+  Permission-mode cycling moved from `Shift+Tab` to `Alt+Ctrl+P` to
+  make room. `Ctrl+Shift+P` is intentionally left free for a future
+  command palette.
+- New `/agent` slash command: `list`, `current`, `reload`, `off`,
+  `<name>`, or no args to open the picker. Registered in the slash
+  command palette.
+- New events on the extensions bus: `agent_activated` (when an agent
+  becomes active) and `agent_changed` (on switch). Both are in
+  `ALL_EVENTS` and any extension can subscribe.
+- `ExtensionAPI.register_local_tool(agent=..., name=..., ...)` — for
+  extensions that aren't themselves agent files but want to contribute
+  a tool scoped to a specific agent. The runtime merges these into the
+  same per-agent bucket used by `AgentAPI.local_tool`.
+- New config: `agents: { default, switch_mode, files }` and
+  `last_selected.agent`. Config version bumped 8 → 9 with a no-op
+  migration. Empty defaults; pre-v9 users get an empty `agents` block.
+- New CLI flags: `--agent NAME`, `--agent-file PATH` (repeatable),
+  `--no-agents`, `--list-agents`. Env var `VTX_AGENT=NAME` mirrors
+  `--agent`.
+- Active agent is persisted to `last_selected.agent` and rehydrated on
+  next launch (when no `--agent` flag is passed).
+- 49 new tests under `tests/test_agent_profiles*.py`. The `pytest` suite
+  now runs 1145 tests, all green.
+- 4 runnable examples under `examples/agents/`: `code-review.py`,
+  `yolo.py`, `security-audit.py` (pulls in an agent-scoped extension),
+  `security_extensions.py` (cross-agent `register_local_tool`).
+- A working demo at `.vtx/agent/code-review.py` in this repo (real
+  `git diff --stat`, review checklist, two permission gates, an
+  `agent_activated` lifecycle hook).
+- New doc: [docs/agents.md](docs/agents.md) covers authoring, the
+  `AgentAPI` surface, discovery, the active tool-set formula, activation
+  modes, CLI, TUI, events, configuration, and the cross-agent extension
+  pattern.
+
 ### Changed
 
+- `Shift+Tab` now cycles handoff agents. Permission-mode cycling moved
+  to `Alt+Ctrl+P` (single chord, leaves `Ctrl+Shift+P` free for a
+  future command palette). The previous 0.1.3 changelog mention of
+  `Shift+Tab` cycling permissions is stale and refers to the pre-agents
+  behavior.
+- `build_system_prompt(...)` gained `extra_instructions` and
+  `extra_instructions_mode` arguments used by the active agent. The
+  base identity and AGENTS.md / skills / git / env sections are still
+  composed in the same order; the agent's instructions slot in
+  immediately after the base.
+- `LoadedExtensions` gained a `local_tools_for(agent_name)` helper for
+  merging cross-agent contributions from session extensions.
+
 ### Fixed
+
+- `compose_active_tools` now correctly exempts an agent's own local
+  tools from its `tools_allow` / `tools_deny` filters. Previously a
+  restrictive `tools_allow` could strip the agent's own contributions
+  (e.g. `pr_summary` was dropped from the active tool list when the
+  `code-review` agent's `tools_allow` didn't include it).
 
 ## [0.1.3] - 2026-06-17 — VTX Agentic SDK
 
@@ -246,8 +319,7 @@ to keep the model's context window free for what matters.
   needed", "key required", "key stored", or "<ENV> set").
 - `/model` — pick the active model from the merged static + dynamic catalog;
   `/model refresh [provider]` to force-fetch a fresh catalog.
-- `/permissions` — toggle `prompt` / `auto`; `Shift+Tab` cycles modes in the
-  TUI.
+- `/permissions` — toggle `prompt` / `auto`.
 - `/thinking` — set the model's reasoning effort.
 - `/themes` — switch between built-in themes.
 - `/notifications` — configure update / launch notifications.
