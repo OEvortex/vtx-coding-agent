@@ -349,6 +349,12 @@ class ToolBlock(Static):
         self._ask_user_multi: bool = False
         self._ask_user_toggled: set[str] = set()
         self._ask_user_highlight: int = 0
+        # Tracks whether the inline Other input is currently displayed.
+        # Used to move focus to the input on show and back to the chat
+        # input box on hide, since the picker keys would otherwise be
+        # forwarded from the chat input and the user could never type
+        # into the Other field.
+        self._ask_user_input_visible: bool = False
         self.add_class("tool-block")
         self._set_state(None)
 
@@ -689,6 +695,26 @@ class ToolBlock(Static):
     def _set_ask_user_input_visible(self, visible: bool) -> None:
         with contextlib.suppress(Exception):
             self.query_one("#ask-user-input", AskUserInput).display = visible
+        if visible == self._ask_user_input_visible:
+            return
+        self._ask_user_input_visible = visible
+        # Move focus when the inline input is shown or hidden so the
+        # user can actually type into it. Picker keys (digits, arrows,
+        # j/k, space, enter) would otherwise be forwarded from the
+        # chat input and the user could never reach the Other field.
+        # Use call_after_refresh so the DOM has caught up with the
+        # visibility change before we steal focus.
+        self.call_after_refresh(self._sync_ask_user_focus)
+
+    def _sync_ask_user_focus(self) -> None:
+        with contextlib.suppress(Exception):
+            if self._ask_user_input_visible:
+                self.query_one("#ask-user-input", AskUserInput).focus()
+            else:
+                # Return focus to the chat input box so picker keys
+                # (digits/arrows) keep working after the user navigates
+                # away from the Other row.
+                self.app.query_one("#input-box").focus()
 
     def update_call_msg(self, call_msg: str) -> None:
         self._call_msg = call_msg

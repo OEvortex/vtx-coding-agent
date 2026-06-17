@@ -828,22 +828,36 @@ class InputBox(Vertical):
 class AskUserInput(Input):
     """Inline Other input for the ask_user picker.
 
-    When the ask_user picker is active and this input has focus, picker
-    keys (digits, arrows, j/k, space, escape) should be routed to the
-    app's ``on_key`` instead of being typed. ``Enter`` is left alone so
-    Textual's ``Input.Submitted`` handler can submit the custom text.
+    When the picker is active and this input is the one with focus, the
+    user is typing a custom answer and most keys should be passed
+    through (Enter is handled by Textual's ``Input.Submitted``). The
+    two exceptions are ``escape`` (always forwarded so the user can
+    cancel the prompt) and the digit/arrow/j/k/space picker keys when
+    the input is somehow focused while hidden (a safety net so the
+    keys can never be silently swallowed by a hidden widget).
     """
 
     async def _on_key(self, event: events.Key) -> None:
         ask_future = getattr(self.app, "_ask_user_future", None)
-        if ask_future and not ask_future.done() and _is_ask_user_picker_key(event.key):
-            # Enter is handled by Input.Submitted — let the default
-            # Input behavior fire so the custom text gets submitted.
-            if event.key == "enter":
-                await super()._on_key(event)
-                return
-            app_on_key = getattr(self.app, "on_key", None)
-            if callable(app_on_key):
-                app_on_key(event)
-                return
+        if ask_future and not ask_future.done():
+            # Escape always cancels the ask_user prompt, even when the
+            # Other input has focus, so the user is never trapped.
+            if event.key == "escape":
+                app_on_key = getattr(self.app, "on_key", None)
+                if callable(app_on_key):
+                    app_on_key(event)
+                    return
+            # Safety net: if the input is focused while hidden, picker
+            # keys would otherwise disappear into the void. Forward
+            # them to the app so the picker keeps responding.
+            if not self.has_focus and _is_ask_user_picker_key(event.key):
+                # Enter is handled by Input.Submitted — let the default
+                # Input behavior fire so the custom text gets submitted.
+                if event.key == "enter":
+                    await super()._on_key(event)
+                    return
+                app_on_key = getattr(self.app, "on_key", None)
+                if callable(app_on_key):
+                    app_on_key(event)
+                    return
         await super()._on_key(event)

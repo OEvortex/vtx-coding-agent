@@ -6,8 +6,14 @@ that the agent runner calls. The end-to-end flow is covered by the
 turn-runner tests in ``tests/tools/test_ask_user_turn.py``.
 """
 
+import pytest
+from textual.app import App, ComposeResult
+
 from vtx.permissions import AskUserOption
 from vtx.ui.blocks import ASK_USER_OTHER_DISPLAY, ASK_USER_OTHER_LABEL, ToolBlock
+from vtx.ui.chat import ChatLog
+from vtx.ui.input import AskUserInput
+from vtx.ui.styles import get_styles
 
 
 def _options(n: int = 2) -> list[AskUserOption]:
@@ -189,3 +195,85 @@ class TestToolBlockAskUserRendering:
         hint = block._format_ask_user_hint()
         assert "↑↓" in hint.plain
         assert "enter" in hint.plain
+
+
+class _AskUserFocusApp(App):
+    """Minimal app that hosts a ChatLog with one tool block and an
+    input-box, so we can verify focus moves between them when the
+    inline Other input is shown/hidden.
+    """
+
+    CSS = get_styles()
+
+    def compose(self) -> ComposeResult:
+        yield ChatLog(id="chat-log")
+        from vtx.ui.input import InputBox
+
+        yield InputBox(id="input-box")
+
+
+@pytest.mark.asyncio
+async def test_inline_input_is_focused_when_other_is_highlighted():
+    async with _AskUserFocusApp().run_test() as pilot:
+        chat = pilot.app.query_one("#chat-log", ChatLog)
+        block = chat.start_tool("ask_user", "tool-1")
+        block.show_ask_user(
+            options=[AskUserOption(label="yes"), AskUserOption(label="no")], multi_select=False
+        )
+        # Focus the chat input textarea so we can verify focus moves
+        # between the chat input and the inline Other input.
+        chat_textarea = pilot.app.query_one("#input-box").query_one("#input-textarea")
+        chat_textarea.focus()
+        await pilot.pause()
+
+        other_input = block.query_one("#ask-user-input", AskUserInput)
+
+        # Default highlight is 0 (first option). The Other input is
+        # hidden and focus is on the chat input.
+        assert other_input.display is False
+        assert not other_input.has_focus
+        assert chat_textarea.has_focus
+
+        # Move highlight to "Other" (index 2 for 2 options + Other).
+        chat.update_ask_user_selection("tool-1", highlight=2)
+        await pilot.pause()
+
+        # The Other input is now visible and should have focus so the
+        # user can actually type into it.
+        assert other_input.display is True
+        assert other_input.has_focus
+        assert not chat_textarea.has_focus
+
+        # Navigate back to a real option.
+        chat.update_ask_user_selection("tool-1", highlight=0)
+        await pilot.pause()
+
+        # The Other input is hidden again and focus is back on the
+        # chat input so the picker keys (digits, arrows) keep working.
+        assert other_input.display is False
+        assert not other_input.has_focus
+        assert chat_textarea.has_focus
+
+
+@pytest.mark.asyncio
+async def test_inline_input_loses_focus_on_hide_ask_user():
+    async with _AskUserFocusApp().run_test() as pilot:
+        chat = pilot.app.query_one("#chat-log", ChatLog)
+        block = chat.start_tool("ask_user", "tool-1")
+        block.show_ask_user(options=[AskUserOption(label="yes")], multi_select=False)
+        chat_textarea = pilot.app.query_one("#input-box").query_one("#input-textarea")
+        chat_textarea.focus()
+        await pilot.pause()
+
+        chat.update_ask_user_selection("tool-1", highlight=1)  # Other
+        await pilot.pause()
+
+        other_input = block.query_one("#ask-user-input", AskUserInput)
+        assert other_input.has_focus
+
+        chat.hide_ask_user("tool-1")
+        await pilot.pause()
+
+        assert other_input.display is False
+        assert not other_input.has_focus
+        assert chat_textarea.has_focus

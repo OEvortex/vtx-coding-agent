@@ -112,6 +112,14 @@ a `/provider` filter that scopes the `/model` picker to one gateway.
   (2286 duplicates eliminated with a populated cache).
 - Bundled skills are now included in the system prompt, so the model can
   discover and call them without an extra load step.
+- The `ask_user` "Other" input is now actually focusable. Previously the
+  inline `Input` was shown but the chat input kept focus, so typing went
+  into the chat buffer and the user could never type a custom answer.
+  The `ToolBlock` now moves focus to the inline input when the user
+  navigates to the "Other" row and returns it to the chat input when
+  they navigate away. The `AskUserInput` only forwards picker keys
+  while it is hidden, and `escape` is always forwarded so the user can
+  still cancel the prompt.
 
 ## [0.1.2] - 2026-06-16 — Extension System
 
