@@ -1,16 +1,19 @@
 from __future__ import annotations
 
+import asyncio
+import logging
 import os
 from dataclasses import dataclass
 from pathlib import Path
 
 from . import config as vtx_config
+from .agents import AgentRegistry, LoadedAgent, compose_active_commands, compose_active_tools
 from .config import get_last_selected, set_last_selected
 from .context import Context
 from .core.compaction import generate_summary
 from .core.handoff import generate_handoff_prompt
 from .core.types import AssistantMessage, TextContent, UserMessage
-from .extensions import EventBus
+from .extensions import EventBus, LoadedExtensions
 from .llm import (
     ApiType,
     BaseProvider,
@@ -26,7 +29,9 @@ from .llm.dynamic_models import find_dynamic_model, get_dynamic_provider_headers
 from .loop import Agent
 from .prompts import build_system_prompt
 from .session import CustomMessageEntry, MessageEntry, Session
-from .tools import BaseTool
+from .tools import BaseTool, tools_by_name
+
+log = logging.getLogger("vtx.runtime")
 
 
 def default_base_url_for_api(api_type: ApiType) -> str | None:
@@ -107,8 +112,18 @@ class ConversationRuntime:
         openai_compat_auth_mode: AuthMode = "auto",
         anthropic_compat_auth_mode: AuthMode = "auto",
         extensions: EventBus | None = None,
+        agent_registry: AgentRegistry | None = None,
+        active_agent: LoadedAgent | None = None,
+        agent_extensions: list | None = None,
     ) -> None:
         self.cwd = cwd
+
+        # Resolve the initial agent (CLI > env > config > none). The CLI and
+        # the launch path may pass an explicit ``active_agent``; otherwise we
+        # use the registry's default.
+        self.agent_registry = agent_registry or AgentRegistry()
+        if active_agent is not None:
+            self.agent_registry.set_active(active_agent.definition.name)
 
         # Use last selected settings if not explicitly provided
         if model is None or model_provider is None or thinking_level is None:
@@ -145,16 +160,195 @@ class ConversationRuntime:
         self.anthropic_compat_auth_mode: AuthMode = anthropic_compat_auth_mode
         self.extensions = extensions
 
+        # Per-session extension list (the ones contributed to the active
+        # agent, if any). The launch path is responsible for passing the
+        # right list — usually ``agent_extensions`` is the list of loaded
+        # Extension objects that should participate in event firing.
+        self._agent_extensions = list(agent_extensions or [])
+
         self.provider: BaseProvider | None = None
         self.session: Session | None = None
         self.agent: Agent | None = None
         self.context: Context | None = None
 
+    # ---- agent lifecycle ------------------------------------------------
+
+    @property
+    def active_agent(self) -> LoadedAgent | None:
+        return self.agent_registry.active
+
+    def set_active_agent(self, name: str | None) -> LoadedAgent | None:
+        """Switch the active agent. Returns the new active agent (or None)."""
+        previous = self.agent_registry.active
+        resolved = self.agent_registry.set_active(name)
+        if resolved is None and name is not None:
+            return None
+        # Persist last-selected.
+        set_last_selected(
+            self.model,
+            self.model_provider,
+            self.thinking_level,
+            agent=resolved.definition.name if resolved else None,
+        )
+        # Wire the agent's event handlers into the extensions bus (if any).
+        if resolved is not None and self.extensions is not None:
+            resolved.wire_handlers(self.extensions)
+        # Rebuild the tool/command set and re-render the system prompt.
+        self._apply_active_agent_to_runtime()
+        # Fire AGENT_ACTIVATED for the first activation, AGENT_CHANGED for
+        # subsequent switches. Done in fire-and-forget style so the UI
+        # event loop is not blocked.
+        if self.extensions is not None:
+            try:
+                loop = asyncio.get_event_loop()
+                if loop.is_running():
+                    tasks: list[asyncio.Task] = []
+                    if resolved is not None:
+                        tasks.append(
+                            loop.create_task(
+                                self.extensions.emit(
+                                    "agent_activated", agent=resolved.definition.name
+                                )
+                            )
+                        )
+                    if previous is not resolved:
+                        tasks.append(
+                            loop.create_task(
+                                self.extensions.emit(
+                                    "agent_changed",
+                                    previous=previous.definition.name if previous else None,
+                                    current=resolved.definition.name if resolved else None,
+                                )
+                            )
+                        )
+                    # Keep references so the tasks aren't GC'd before they run.
+                    self._pending_agent_event_tasks = tasks
+            except RuntimeError:
+                # No running loop (tests, headless pre-init); skip.
+                pass
+        return resolved
+
+    def cycle_active_agent(self) -> LoadedAgent | None:
+        """Cycle to the next agent (Shift+Tab). Returns the new active one."""
+        new = self.agent_registry.cycle()
+        set_last_selected(
+            self.model,
+            self.model_provider,
+            self.thinking_level,
+            agent=new.definition.name if new else None,
+        )
+        if new is not None and self.extensions is not None:
+            new.wire_handlers(self.extensions)
+        self._apply_active_agent_to_runtime()
+        if self.extensions is not None and new is not None:
+            try:
+                loop = asyncio.get_event_loop()
+                if loop.is_running():
+                    self._pending_agent_event_tasks = [
+                        loop.create_task(
+                            self.extensions.emit("agent_activated", agent=new.definition.name)
+                        )
+                    ]
+            except RuntimeError:
+                pass
+        return new
+
+    def _apply_active_agent_to_runtime(self) -> None:
+        """Recompute the active tool set + system prompt for the new agent."""
+        active = self.active_agent
+        base_pool: dict[str, BaseTool] = dict(tools_by_name)
+        base_names: list[str] = [t.name for t in self.tools]
+
+        # Build the extension-tools list: session-global + per-agent local.
+        ext_tools: list[BaseTool] = []
+        for ext in self._agent_extensions:
+            ext_tools.extend(ext.tools.values())
+        if active is not None and self.extensions is not None:
+            # ``extensions`` is the EventBus, not LoadedExtensions here.
+            # Pull per-agent local tools from the agent itself.
+            ext_tools.extend(active.local_tools.values())
+        # Also include session extensions' per-agent local tools if the
+        # caller passed them through ``agent_extensions``.
+        for ext in self._agent_extensions:
+            if active is not None:
+                bucket = ext.local_tools.get(active.definition.name)
+                if bucket:
+                    ext_tools.extend(bucket.values())
+
+        new_tools = compose_active_tools(
+            base_tool_names=base_names,
+            base_tool_pool=base_pool,
+            extension_tools=ext_tools,
+            active_agent=active,
+        )
+        self.tools = new_tools
+
+        # Apply the agent's model/provider/thinking overrides.
+        if active is not None:
+            d = active.definition
+            if d.model is not None:
+                self.model = d.model
+            if d.provider is not None:
+                self.model_provider = d.provider
+            if d.thinking_level is not None:
+                self.thinking_level = d.thinking_level
+
+        # Recompute the system prompt (if the agent is initialized).
+        if self.agent is not None and self.context is not None:
+            self._rebuild_system_prompt()
+
+    def _rebuild_system_prompt(self) -> None:
+        """Re-render the system prompt against the active agent.
+
+        Called after a tool/model change that should be visible to the
+        model on the next turn.
+        """
+        active = self.active_agent
+        extra = active.definition.instructions if active is not None else None
+        mode = active.definition.instructions_mode if active is not None else "append"
+        new_prompt = build_system_prompt(
+            self.cwd,
+            context=self.context,
+            tools=self.tools,
+            extra_instructions=extra,
+            extra_instructions_mode=mode,
+        )
+        # Agent._system_prompt is intentionally a private attribute we
+        # rebuild on activation; the type checker doesn't know that.
+        if self.agent is not None:
+            self.agent._system_prompt = new_prompt  # type: ignore[attr-defined]
+
+    def active_commands(self) -> dict:
+        """The current slash-command dict (session + agent-local).
+
+        Used by the TUI to route ``/foo`` invocations.
+        """
+        from .extensions import ExtensionCommand
+
+        if not hasattr(self, "_cached_extensions") or self._cached_extensions is None:
+            # No extension bus; just return agent-local commands.
+            return compose_active_commands(base_commands={}, active_agent=self.active_agent)
+        ext: LoadedExtensions = self._cached_extensions
+        base: dict[str, ExtensionCommand] = ext.all_commands
+        return compose_active_commands(base_commands=base, active_agent=self.active_agent)
+
+    def set_loaded_extensions(self, loaded: LoadedExtensions) -> None:
+        """Stash the LoadedExtensions for command routing and re-apply."""
+        self._cached_extensions = loaded
+        self._agent_extensions = list(loaded.extensions)
+
     def resolve_system_prompt(
         self, session: Session | None = None, context: Context | None = None
     ) -> str:
+        active = self.active_agent
+        extra = active.definition.instructions if active is not None else None
+        mode = active.definition.instructions_mode if active is not None else "append"
         return (session.system_prompt if session else None) or build_system_prompt(
-            self.cwd, context=context, tools=self.tools
+            self.cwd,
+            context=context,
+            tools=self.tools,
+            extra_instructions=extra,
+            extra_instructions_mode=mode,
         )
 
     def _provider_config(
@@ -294,7 +488,12 @@ class ConversationRuntime:
         self.agent = self._new_agent(provider, session, context) if provider and session else None
         self._sync_provider_session_id()
 
-        set_last_selected(self.model, self.model_provider, self.thinking_level)
+        set_last_selected(
+            self.model,
+            self.model_provider,
+            self.thinking_level,
+            agent=self.active_agent.definition.name if self.active_agent else None,
+        )
 
         return RuntimeInitResult(provider_error=provider_error)
 
@@ -386,7 +585,12 @@ class ConversationRuntime:
         if self.agent and self.provider:
             self.agent.provider = self.provider
 
-        set_last_selected(self.model, self.model_provider, self.thinking_level)
+        set_last_selected(
+            self.model,
+            self.model_provider,
+            self.thinking_level,
+            agent=self.active_agent.definition.name if self.active_agent else None,
+        )
 
     def set_thinking_level(self, level: str) -> None:
         if self.provider is None:
@@ -395,7 +599,12 @@ class ConversationRuntime:
         self.thinking_level = level
         if self.session:
             self.session.set_thinking_level(level)
-        set_last_selected(self.model, self.model_provider, self.thinking_level)
+        set_last_selected(
+            self.model,
+            self.model_provider,
+            self.thinking_level,
+            agent=self.active_agent.definition.name if self.active_agent else None,
+        )
 
     @property
     def model_supports_thinking(self) -> bool:
@@ -488,7 +697,12 @@ class ConversationRuntime:
         elif self.agent is not None:
             self.agent.session = session
 
-        set_last_selected(self.model, self.model_provider, self.thinking_level)
+        set_last_selected(
+            self.model,
+            self.model_provider,
+            self.thinking_level,
+            agent=self.active_agent.definition.name if self.active_agent else None,
+        )
 
         return session
 

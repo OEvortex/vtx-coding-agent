@@ -150,6 +150,31 @@ class LastSelectedConfig(BaseModel):
     model_id: str | None = None
     provider: str | None = None
     thinking_level: str | None = None
+    agent: str | None = None
+
+
+class AgentsConfig(BaseModel):
+    """Switchable handoff agents configuration.
+
+    ``default`` is the name of the agent to activate at session start when
+    no ``--agent`` flag is passed and ``VTX_AGENT`` is unset. Empty string
+    (default) means "no agent active".
+
+    ``switch_mode`` controls how Shift+Tab / ``/agent <name>`` behaves:
+
+    * ``"lock"`` (default): the active agent is set at session start;
+      switching via the TUI/CLI starts a new session JSONL preserving
+      lineage. Cheap and predictable.
+    * ``"hot"``: switching re-renders the system prompt + tools in place
+      on the next turn. Experimental; the model may see a discontinuity.
+    """
+
+    default: str = ""
+    switch_mode: str = "lock"  # "lock" | "hot"
+    # Extra agent-file paths (project-local or global). Mirrors
+    # ``extensions:`` for the extension system. Files in
+    # ``<cwd>/.vtx/agent/`` and ``~/.vtx/agent/`` are always discovered.
+    files: list[str] = Field(default_factory=list)
 
 
 class ConfigSchema(BaseModel):
@@ -166,6 +191,8 @@ class ConfigSchema(BaseModel):
     # are always loaded in addition to this list unless ``--no-extensions``
     # is passed on the CLI.
     extensions: list[str] = Field(default_factory=list)
+    # Switchable handoff agents (``.vtx/agent/<name>.py``).
+    agents: AgentsConfig = AgentsConfig()
 
 
 # =================================================================================================
@@ -271,6 +298,10 @@ class Config:
     @property
     def extensions(self) -> list[str]:
         return self._parsed.extensions
+
+    @property
+    def agents(self) -> AgentsConfig:
+        return self._parsed.agents
 
 
 # =================================================================================================
@@ -481,6 +512,39 @@ def _migrate_v7_to_v8(data: dict[str, Any]) -> dict[str, Any]:
     return migrated
 
 
+def _migrate_v8_to_v9(data: dict[str, Any]) -> dict[str, Any]:
+    """Add the ``agents:`` block and ``last_selected.agent``.
+
+    Pre-v9 users get an empty default (no agent active at session start).
+    """
+    migrated = Config._apply_legacy_key_shims(data)
+
+    # Top-level agents block.
+    agents = migrated.get("agents")
+    if not isinstance(agents, dict):
+        agents = {}
+        migrated["agents"] = agents
+    agents.setdefault("default", "")
+    agents.setdefault("switch_mode", "lock")
+    if not isinstance(agents.get("files"), list):
+        agents["files"] = []
+
+    # last_selected.agent (per-session agent name).
+    last_selected = migrated.get("last_selected")
+    if not isinstance(last_selected, dict):
+        last_selected = {}
+        migrated["last_selected"] = last_selected
+    if "agent" not in last_selected:
+        last_selected["agent"] = None
+
+    meta = migrated.get("meta")
+    if not isinstance(meta, dict):
+        migrated["meta"] = {"config_version": 9}
+    else:
+        meta["config_version"] = 9
+    return migrated
+
+
 def _migrate_config_data(data: dict[str, Any]) -> tuple[dict[str, Any], int, int, bool]:
     original = deepcopy(data)
     current_version = _get_config_version(original)
@@ -518,6 +582,10 @@ def _migrate_config_data(data: dict[str, Any]) -> tuple[dict[str, Any], int, int
         if current_version == 7:
             migrated = _migrate_v7_to_v8(migrated)
             current_version = 8
+            continue
+        if current_version == 8:
+            migrated = _migrate_v8_to_v9(migrated)
+            current_version = 9
             continue
         break
 
@@ -799,9 +867,12 @@ def reset_config() -> None:
 
 
 def set_last_selected(
-    model_id: str | None, provider: str | None, thinking_level: str | None
+    model_id: str | None,
+    provider: str | None,
+    thinking_level: str | None,
+    agent: str | None = None,
 ) -> None:
-    """Save the last selected model, provider, and thinking level."""
+    """Save the last selected model, provider, thinking level, and agent."""
     config_file = _ensure_config_file()
     data = _read_config_data(config_file)
 
@@ -812,6 +883,7 @@ def set_last_selected(
     last_selected["model_id"] = model_id
     last_selected["provider"] = provider
     last_selected["thinking_level"] = thinking_level
+    last_selected["agent"] = agent
 
     data["last_selected"] = last_selected
     _set_config_version(data)
@@ -819,7 +891,7 @@ def set_last_selected(
 
 
 def get_last_selected() -> LastSelectedConfig:
-    """Get the last selected model, provider, and thinking level."""
+    """Get the last selected model, provider, thinking level, and agent."""
     config_file = _ensure_config_file()
     data = _read_config_data(config_file)
 
@@ -831,4 +903,5 @@ def get_last_selected() -> LastSelectedConfig:
         model_id=last_selected.get("model_id"),
         provider=last_selected.get("provider"),
         thinking_level=last_selected.get("thinking_level"),
+        agent=last_selected.get("agent"),
     )

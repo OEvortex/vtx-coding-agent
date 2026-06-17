@@ -1,5 +1,5 @@
 meta:
-  config_version: 8
+  config_version: 9
 
 llm:
   default_provider: "openai-codex"
@@ -57,6 +57,25 @@ notifications:
 #     - ~/.vtx/extensions/permission_gate.py
 #     - ./tools/vtx-extensions/audit-logger/
 extensions: []
+
+# Switchable handoff agents (``.vtx/agent/<name>.py``). Auto-discovered
+# paths (``<cwd>/.vtx/agent/`` walked to the git root, and
+# ``~/.vtx/agent/``) are always loaded; entries below are additive.
+#
+# ``default`` is the agent activated at session start when ``--agent`` /
+# ``VTX_AGENT`` is not set. Empty string = no agent active.
+# ``switch_mode`` controls how Shift+Tab / ``/agent <name>`` behaves.
+#
+# Example:
+#   agents:
+#     default: code-review
+#     switch_mode: lock
+#     files:
+#       - ./team_agents/security_audit.py
+agents:
+  default: ""
+  switch_mode: "lock"
+  files: []
 
 # Example: DeepSeek provider
 # export DEEPSEEK_API_KEY="sk-your-api-key"

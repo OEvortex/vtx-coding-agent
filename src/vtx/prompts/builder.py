@@ -45,6 +45,8 @@ def build_system_prompt(
     *,
     base_content: str | None = None,
     include_git_context: bool | None = None,
+    extra_instructions: str | None = None,
+    extra_instructions_mode: str = "append",
 ) -> str:
     """Compose the final system prompt for the agent.
 
@@ -57,11 +59,25 @@ def build_system_prompt(
             and finally :data:`vtx.prompts.identity.DEFAULT_VTX_BASE`.
         include_git_context: Force the git section on/off. When ``None``
             the value is read from config.
+        extra_instructions: Optional extra instructions appended to (or
+            replacing) the base identity block. Used by switchable agents
+            to inject their per-agent profile. ``None`` or empty string
+            means "no extra section".
+        extra_instructions_mode: ``"append"`` (default) inserts the extra
+            block after the base identity; ``"replace"`` swaps the base
+            identity out entirely. Ignored when ``extra_instructions`` is
+            empty.
     """
     if context is None:
         context = Context.load(cwd)
 
-    sections: list[str] = [_resolve_base(base_content)]
+    base = _resolve_base(base_content)
+    if extra_instructions and extra_instructions_mode == "replace":
+        base = extra_instructions
+    sections: list[str] = [base]
+
+    if extra_instructions and extra_instructions_mode == "append":
+        sections.append(extra_instructions)
 
     tool_section = build_tool_guidelines_section(tools)
     if tool_section:

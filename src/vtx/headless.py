@@ -8,7 +8,7 @@ from vtx.config import get_last_selected
 
 from .core.types import StopReason, TextContent
 from .events import AgentEndEvent, AskUserEvent, ErrorEvent, Event, ToolApprovalEvent, TurnEndEvent
-from .extensions import LoadedExtensions, load_for_runtime
+from .extensions import LoadedExtensions
 from .llm.base import AuthMode
 from .permissions import ApprovalResponse, AskUserResponse
 from .runtime import ConversationRuntime
@@ -75,6 +75,9 @@ async def run_headless(
     openai_compat_auth_mode: AuthMode | None,
     anthropic_compat_auth_mode: AuthMode | None,
     loaded_extensions: LoadedExtensions | None = None,
+    active_agent_name: str | None = None,
+    agent_files: list[str] | None = None,
+    auto_discover_agents: bool = True,
 ) -> int:
     prompt = resolve_prompt(prompt_arg, stdin=sys.stdin)
     if not prompt:
@@ -103,15 +106,51 @@ async def run_headless(
         openai_auth = openai_compat_auth_mode or config.llm.auth.openai_compat
         anthropic_auth = anthropic_compat_auth_mode or config.llm.auth.anthropic_compat
 
+        # Load agents first so the active agent's tool surface is applied.
+        from .agents import AgentRegistry, load_all_agents
+        from .extensions import load_for_runtime
+
+        agent_registry = AgentRegistry()
+        if auto_discover_agents or agent_files:
+            loaded_agents, agent_errors = load_all_agents(cwd=os.getcwd(), configured=agent_files)
+            for err in agent_errors:
+                print(f"agent error: {err}", file=sys.stderr)
+            agent_registry.agents = loaded_agents
+            agent_registry.errors = agent_errors
+
+        # Resolve the initial active agent: CLI > env > last_selected > config > none
+        import os as _os
+
+        from .config import get_last_selected as _get_last_selected
+
+        ls = _get_last_selected()
+        env_agent = _os.environ.get("VTX_AGENT")
+        desired = (
+            active_agent_name or env_agent or (ls.agent or None) or (cfg.agents.default or None)
+        )
+        if desired:
+            resolved = agent_registry.set_active(desired)
+            if resolved is None:
+                print(
+                    f"warning: agent {desired!r} not found; running without an active agent",
+                    file=sys.stderr,
+                )
+
         tools = get_tools_with_extensions(DEFAULT_TOOLS)
 
         loaded_extensions = load_for_runtime(cwd=os.getcwd(), auto_discover=True)
         for err in loaded_extensions.errors:
             print(f"extension error: {err}", file=sys.stderr)
-        if loaded_extensions.list_extension_tools():
-            tools = get_tools_with_extensions(
-                DEFAULT_TOOLS, loaded_extensions.list_extension_tools()
+
+        ext_tools = list(loaded_extensions.list_extension_tools())
+        if active_agent_name and agent_registry.active is not None:
+            ext_tools.extend(agent_registry.active.local_tools.values())
+            ext_tools.extend(
+                loaded_extensions.local_tools_for(agent_registry.active.definition.name)
             )
+
+        if ext_tools:
+            tools = get_tools_with_extensions(DEFAULT_TOOLS, ext_tools)
 
         runtime = ConversationRuntime(
             cwd=os.getcwd(),
@@ -124,7 +163,11 @@ async def run_headless(
             openai_compat_auth_mode=openai_auth,
             anthropic_compat_auth_mode=anthropic_auth,
             extensions=loaded_extensions.bus,
+            agent_registry=agent_registry,
+            active_agent=agent_registry.active,
+            agent_extensions=list(loaded_extensions.extensions),
         )
+        runtime.set_loaded_extensions(loaded_extensions)
 
         try:
             init = runtime.initialize()
