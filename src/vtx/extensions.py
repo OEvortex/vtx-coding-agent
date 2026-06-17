@@ -69,6 +69,11 @@ TOOL_CALL = "tool_call"
 TOOL_RESULT = "tool_result"
 COMPACTION_START = "compaction_start"
 COMPACTION_END = "compaction_end"
+# Agent lifecycle events (re-exported from vtx.agents for convenience).
+# The constants live in vtx.agents; importing them here avoids a cycle
+# at the call sites that import from vtx.extensions.
+AGENT_ACTIVATED = "agent_activated"
+AGENT_CHANGED = "agent_changed"
 
 ALL_EVENTS: tuple[str, ...] = (
     SESSION_START,
@@ -81,6 +86,8 @@ ALL_EVENTS: tuple[str, ...] = (
     TOOL_RESULT,
     COMPACTION_START,
     COMPACTION_END,
+    AGENT_ACTIVATED,
+    AGENT_CHANGED,
 )
 
 # Handler return-value keys
@@ -111,6 +118,10 @@ class Extension:
     # Commands registered via ``api.register_command``. Key is the slash name
     # without the leading ``/``.
     commands: dict[str, ExtensionCommand] = field(default_factory=dict)
+    # Per-agent local tools registered via ``api.register_local_tool(agent=...)``.
+    # Outer key is the agent name; inner key is the tool name. These are only
+    # surfaced in the active tool set when their named agent is the active one.
+    local_tools: dict[str, dict[str, BaseTool]] = field(default_factory=dict)
     # Handler name -> call count, populated as handlers fire (debug only).
     handler_calls: dict[str, int] = field(default_factory=dict)
 
@@ -398,6 +409,46 @@ class ExtensionAPI:
             label=label or name,
         )
         self._extension.tools[name] = tool
+        return tool
+
+    def register_local_tool(
+        self,
+        agent: str,
+        name: str,
+        description: str,
+        parameters: dict[str, Any],
+        *,
+        execute: Callable[[dict[str, Any], dict[str, Any] | None], Any],
+        mutating: bool = True,
+        label: str | None = None,
+    ) -> BaseTool:
+        """Register a tool that only exists when ``agent`` is the active agent.
+
+        This is the cross-agent variant of :meth:`register_tool` — for
+        extensions (not agent files) that want to contribute a tool to a
+        specific agent. The runtime surfaces the tool only when the named
+        agent is the currently-active one.
+
+        ``agent`` is the agent's ``name`` (must match the file stem or
+        package directory name of a ``.vtx/agent/<name>.py`` file).
+        """
+        if not agent or not isinstance(agent, str):
+            raise ValueError("Agent name must be a non-empty string")
+        if not name or not isinstance(name, str):
+            raise ValueError("Tool name must be a non-empty string")
+        params_model = _json_schema_to_pydantic(name, parameters)
+        tool = ExtensionTool(
+            name=name,
+            description=description,
+            parameters=parameters,
+            params_model=params_model,
+            execute_fn=execute,
+            owner=f"{self._extension.name}→{agent}",
+            mutating=mutating,
+            label=label or name,
+        )
+        bucket = self._extension.local_tools.setdefault(agent, {})
+        bucket[name] = tool
         return tool
 
     # ---- command registration -------------------------------------------
@@ -812,6 +863,24 @@ class LoadedExtensions:
                     )
                 tools.append(tool)
         return tools
+
+    def local_tools_for(self, agent_name: str) -> list[BaseTool]:
+        """Per-agent local tools contributed by session extensions.
+
+        Aggregates ``api.register_local_tool(agent=...)`` registrations
+        across all extensions for the given agent name. Returns an empty
+        list if no extension contributed to that agent.
+        """
+        out: list[BaseTool] = []
+        for ext in self.extensions:
+            bucket = ext.local_tools.get(agent_name)
+            if not bucket:
+                continue
+            for name, tool in bucket.items():
+                if any(t.name == name for t in out):
+                    continue
+                out.append(tool)
+        return out
 
     def describe(self) -> list[dict[str, Any]]:
         """For ``/extensions`` (TUI) and the headless ``--list-extensions`` flag."""
