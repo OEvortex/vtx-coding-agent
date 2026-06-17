@@ -14,7 +14,9 @@ Same formula for commands.
 
 from __future__ import annotations
 
-from ..extensions import ExtensionCommand
+# ``ExtensionCommand`` is imported lazily in :func:`compose_active_commands`
+# to avoid a circular import at module load (extensions -> tools -> agents
+# -> activate -> extensions).
 from ..tools import BaseTool
 from .api import LoadedAgent
 from .registry import AgentRegistry
@@ -97,14 +99,18 @@ def compose_active_tools(
     return _filter(base_tool_names, base_tool_pool, extra, allow, deny, always_keep=always_keep)
 
 
-def compose_active_commands(
-    *, base_commands: dict[str, ExtensionCommand], active_agent: LoadedAgent | None
-) -> dict[str, ExtensionCommand]:
+def compose_active_commands(*, base_commands: dict, active_agent: LoadedAgent | None) -> dict:
     """Compute the active slash-command dict for the runtime.
 
     Local commands are wrapped in an :class:`ExtensionCommand` so the
     TUI can show the owner consistently with session commands.
+
+    ``ExtensionCommand`` is imported lazily here to break the
+    ``vtx.tools`` -> ``vtx.agents`` -> ``vtx.agents.activate`` ->
+    ``vtx.extensions`` -> ``vtx.tools`` cycle at module load.
     """
+    from ..extensions import ExtensionCommand
+
     if active_agent is None:
         return dict(base_commands)
     merged = dict(base_commands)

@@ -384,6 +384,8 @@ class ExtensionAPI:
         execute: Callable[[dict[str, Any], dict[str, Any] | None], Any],
         mutating: bool = True,
         label: str | None = None,
+        ui_block: type | None = None,
+        tool_icon: str | None = None,
     ) -> BaseTool:
         """Register a new LLM-callable tool, or override a built-in.
 
@@ -394,6 +396,17 @@ class ExtensionAPI:
         ``execute`` is called with ``(args_dict, ctx_dict)`` and may be sync
         or async. It must return a :class:`ToolResult`-like object (a dict
         with the same keys also works).
+
+        ``ui_block`` is an optional Textual widget class (a subclass of
+        :class:`vtx.ui.blocks.ToolBlock`) that the TUI instantiates instead
+        of the default block. Use it to ship a custom header, approval
+        prompt, or result rendering for a domain-specific tool. The chat
+        log sets ``block.tool`` to this tool after construction so the
+        custom block can introspect it.
+
+        ``tool_icon`` overrides the default ``"↪"`` extension icon. Useful
+        when shipping a built-in-feeling tool (e.g. the bundled ``task``
+        extension uses ``"⊕"``) without forking ``ExtensionTool``.
         """
         if not name or not isinstance(name, str):
             raise ValueError("Tool name must be a non-empty string")
@@ -407,7 +420,10 @@ class ExtensionAPI:
             owner=self._extension.name,
             mutating=mutating,
             label=label or name,
+            ui_block=ui_block,
         )
+        if tool_icon is not None:
+            tool.tool_icon = tool_icon
         self._extension.tools[name] = tool
         return tool
 
@@ -421,6 +437,7 @@ class ExtensionAPI:
         execute: Callable[[dict[str, Any], dict[str, Any] | None], Any],
         mutating: bool = True,
         label: str | None = None,
+        ui_block: type | None = None,
     ) -> BaseTool:
         """Register a tool that only exists when ``agent`` is the active agent.
 
@@ -446,6 +463,7 @@ class ExtensionAPI:
             owner=f"{self._extension.name}→{agent}",
             mutating=mutating,
             label=label or name,
+            ui_block=ui_block,
         )
         bucket = self._extension.local_tools.setdefault(agent, {})
         bucket[name] = tool
@@ -521,6 +539,7 @@ class ExtensionTool(BaseTool):
         owner: str,
         mutating: bool,
         label: str,
+        ui_block: type | None = None,
     ) -> None:
         self.name = name
         self.description = description
@@ -531,6 +550,7 @@ class ExtensionTool(BaseTool):
         self.mutating = mutating
         self.tool_icon = "↪"  # mark extension tools in the UI
         self.label = label
+        self.ui_block = ui_block
 
     async def execute(self, params: BaseModel, cancel_event: Any | None = None) -> ToolResult:
         import asyncio
@@ -911,6 +931,12 @@ def load_for_runtime(
     auto-discovered directories. ``auto_discover=False`` skips the
     ``.vtx/extensions`` and ``~/.vtx/agent/extensions`` directories; the
     user-supplied paths still load.
+
+    vtx ships NO bundled extensions of its own — every extension is
+    third-party-style. If you want the ``Task`` sub-agent dispatcher,
+    copy ``examples/extensions/task_tool.py`` into your
+    ``~/.vtx/agent/extensions/`` directory (or your project's
+    ``.vtx/extensions/``).
     """
     configured: list[str] = []
     if auto_discover:
@@ -923,7 +949,7 @@ def load_for_runtime(
             cwd=cwd, configured=configured, session_file=session_file
         )
     else:
-        # Only honor explicit paths when discovery is off
+        # Only honor explicit paths when discovery is off.
         bus = EventBus()
         exts, errors = [], []
         for path_str in configured:

@@ -157,6 +157,44 @@ description and your parameter schema instead. Use this for
 auditing, sandboxing, or wrapping a built-in with a different
 backend.
 
+### Custom TUI rendering
+
+Pass `ui_block=YourBlock` to `register_tool` / `register_local_tool`
+to ship a custom :class:`vtx.ui.blocks.ToolBlock` subclass for the
+tool. The chat log instantiates your class instead of the default
+block; the bound `BaseTool` is exposed as `self.tool` so the block
+can call back into the tool (e.g. `self.tool.format_call(params)`).
+
+```python
+from vtx.ui.blocks import ToolBlock
+
+class CounterToolBlock(ToolBlock):
+    """A block that shows a live counter alongside the default header."""
+
+    def compose(self):
+        # Inherit the default header/output/ask_user widgets…
+        yield from super().compose()
+        # …and add a custom widget underneath.
+        yield Label("0", id="counter")
+
+    def on_counter_tick(self, n: int) -> None:
+        self.query_one("#counter", Label).update(str(n))
+
+def register(api):
+    api.register_tool(
+        name="counter",
+        description="Counts up to N",
+        parameters={"type": "object", "properties": {"n": {"type": "integer"}}, "required": ["n"]},
+        execute=lambda args, ctx: {"success": True, "result": str(args["n"])},
+        mutating=False,
+        ui_block=CounterToolBlock,
+    )
+```
+
+See `examples/extensions/custom_tool_block.py` for a richer example
+that renders a Rich `Table` inside the block. The same `ui_block`
+kwarg is available on `api.local_tool(...)` for agent-scoped tools.
+
 ## Registering a custom slash command
 
 ```python

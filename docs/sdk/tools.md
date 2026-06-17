@@ -80,6 +80,11 @@ class MyTool(BaseTool):
     params = MyParams
     mutating = True
     tool_icon = "→"
+    # Optional: ship a custom TUI block for this tool. The block must
+    # be a subclass of ``vtx.ui.blocks.ToolBlock``; the chat log
+    # instantiates it instead of the default block when the LLM
+    # invokes the tool. See ``docs/extensions.md#custom-tui-rendering``.
+    ui_block = None
 
     async def execute(self, params, cancel_event=None) -> ToolResult:
         return ToolResult(success=True, result=...)
@@ -98,3 +103,11 @@ parent = Agent(name="Manager", tools=[sub.as_tool()])
 
 See [`agents.md`](agents.md) and [`multi_agent.md`](multi_agent.md) for
 the difference between **agents-as-tools** and **handoffs**.
+
+## The `Task` tool (TUI subagents)
+
+The TUI ships a built-in `Task` tool that mirrors Claude Code's
+`Task`. It dispatches an isolated sub-agent in its own session and
+returns the sub-agent's final output as the tool result. See
+[`multi_agent.md`](multi_agent.md#tui-the-task-tool) for the full
+contract and the built-in `subagent_type` presets.

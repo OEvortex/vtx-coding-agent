@@ -177,6 +177,40 @@ class AgentsConfig(BaseModel):
     files: list[str] = Field(default_factory=list)
 
 
+class SubagentPreset(BaseModel):
+    """A built-in preset for the ``Task`` tool's ``subagent_type`` parameter.
+
+    Mirrors the user-facing subset of :class:`~vtx.agents.AgentDef`: enough
+    to constrain the sub-agent's tool surface, system-prompt instructions,
+    and run budget without requiring a full ``.vtx/agent/<name>.py`` file.
+    """
+
+    name: str
+    description: str
+    instructions: str | None = None
+    instructions_mode: str = "append"  # "append" | "replace"
+    tools_allow: list[str] | None = None
+    tools_deny: list[str] = Field(default_factory=list)
+    model: str | None = None
+    thinking_level: Literal["none", "minimal", "low", "medium", "high", "xhigh"] | None = None
+    max_turns: int | None = Field(default=None, gt=0)
+
+
+class TaskConfig(BaseModel):
+    """Built-in sub-agent presets surfaced via the ``Task`` tool.
+
+    The ``Task`` tool delegates work to a fresh sub-agent. ``subagent_type``
+    is matched against, in order:
+
+    1. A user-defined agent from ``.vtx/agent/<name>.py`` (the
+       ``AgentRegistry``'s current contents).
+    2. One of the named ``subagent_presets`` below.
+    3. ``"general-purpose"`` as the final fallback.
+    """
+
+    subagent_presets: list[SubagentPreset] = Field(default_factory=list)
+
+
 class ConfigSchema(BaseModel):
     meta: MetaConfig
     llm: LLMConfig
@@ -193,6 +227,8 @@ class ConfigSchema(BaseModel):
     extensions: list[str] = Field(default_factory=list)
     # Switchable handoff agents (``.vtx/agent/<name>.py``).
     agents: AgentsConfig = AgentsConfig()
+    # Built-in sub-agent presets for the ``Task`` tool.
+    task: TaskConfig = TaskConfig()
 
 
 # =================================================================================================
@@ -302,6 +338,10 @@ class Config:
     @property
     def agents(self) -> AgentsConfig:
         return self._parsed.agents
+
+    @property
+    def task(self) -> TaskConfig:
+        return self._parsed.task
 
 
 # =================================================================================================
@@ -545,6 +585,27 @@ def _migrate_v8_to_v9(data: dict[str, Any]) -> dict[str, Any]:
     return migrated
 
 
+def _migrate_v9_to_v10(data: dict[str, Any]) -> dict[str, Any]:
+    """Add the ``task.subagent_presets`` block. Pre-v10 users get the
+    built-in defaults (general-purpose / Explore / Plan).
+    """
+    migrated = Config._apply_legacy_key_shims(data)
+
+    task = migrated.get("task")
+    if not isinstance(task, dict):
+        task = {}
+        migrated["task"] = task
+    if not isinstance(task.get("subagent_presets"), list):
+        task["subagent_presets"] = list(_DEFAULT_CONFIG_DATA["task"]["subagent_presets"])
+
+    meta = migrated.get("meta")
+    if not isinstance(meta, dict):
+        migrated["meta"] = {"config_version": 10}
+    else:
+        meta["config_version"] = 10
+    return migrated
+
+
 def _migrate_config_data(data: dict[str, Any]) -> tuple[dict[str, Any], int, int, bool]:
     original = deepcopy(data)
     current_version = _get_config_version(original)
@@ -586,6 +647,10 @@ def _migrate_config_data(data: dict[str, Any]) -> tuple[dict[str, Any], int, int
         if current_version == 8:
             migrated = _migrate_v8_to_v9(migrated)
             current_version = 9
+            continue
+        if current_version == 9:
+            migrated = _migrate_v9_to_v10(migrated)
+            current_version = 10
             continue
         break
 

@@ -293,6 +293,13 @@ class ConversationRuntime:
             if d.thinking_level is not None:
                 self.thinking_level = d.thinking_level
 
+        # Keep the Task tool's parent context in sync with the active
+        # tool/agent/model state so sub-agents dispatched via ``Task``
+        # see fresh data. (TUI also installs its own progress_callback
+        # in ConversationRuntime; this call only refreshes the static
+        # fields and is safe to repeat.)
+        self._refresh_dispatcher_context()
+
         # Recompute the system prompt (if the agent is initialized).
         if self.agent is not None and self.context is not None:
             self._rebuild_system_prompt()
@@ -317,6 +324,35 @@ class ConversationRuntime:
         # rebuild on activation; the type checker doesn't know that.
         if self.agent is not None:
             self.agent._system_prompt = new_prompt  # type: ignore[attr-defined]
+
+    def _refresh_dispatcher_context(self) -> None:
+        """Re-install the dispatcher context used by sub-agent tools.
+
+        Generic vtx infrastructure: any tool that wants to dispatch a
+        sub-agent (e.g. the example ``Task`` tool shipped in
+        ``examples/extensions/``) reads from this slot. Idempotent —
+        keeps the existing ``progress_callback`` if one was installed
+        (typically by the TUI). Called on initialize, agent change,
+        model change, and thinking-level change.
+        """
+        from .dispatcher import DispatcherContext, get_context, set_context
+
+        if self.provider is None or self.agent is None:
+            return
+        existing = get_context()
+        set_context(
+            DispatcherContext(
+                provider=self.provider,
+                model=self.model,
+                model_provider=self.model_provider,
+                base_url=self.base_url,
+                thinking_level=self.thinking_level,
+                agent_registry=self.agent_registry,
+                cwd=self.cwd,
+                system_prompt=self.agent._system_prompt,  # type: ignore[attr-defined]
+                progress_callback=existing.progress_callback if existing else None,
+            )
+        )
 
     def active_commands(self) -> dict:
         """The current slash-command dict (session + agent-local).
@@ -488,6 +524,11 @@ class ConversationRuntime:
         self.agent = self._new_agent(provider, session, context) if provider and session else None
         self._sync_provider_session_id()
 
+        # Install the parent context used by the Task tool. The TUI
+        # later overwrites ``progress_callback`` with its chat-log
+        # forwarder.
+        self._refresh_dispatcher_context()
+
         set_last_selected(
             self.model,
             self.model_provider,
@@ -585,6 +626,10 @@ class ConversationRuntime:
         if self.agent and self.provider:
             self.agent.provider = self.provider
 
+        # The Task tool's parent context needs a fresh snapshot whenever
+        # the model changes.
+        self._refresh_dispatcher_context()
+
         set_last_selected(
             self.model,
             self.model_provider,
@@ -599,6 +644,11 @@ class ConversationRuntime:
         self.thinking_level = level
         if self.session:
             self.session.set_thinking_level(level)
+
+        # Refresh the Task tool's parent context so sub-agents inherit
+        # the new thinking level on the next dispatch.
+        self._refresh_dispatcher_context()
+
         set_last_selected(
             self.model,
             self.model_provider,

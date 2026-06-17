@@ -16,8 +16,12 @@ replaces the runtime defaults when the runtime is set up.
 
 from __future__ import annotations
 
-# Public surface.
-from ..extensions import AGENT_ACTIVATED, AGENT_CHANGED
+# Public surface. Note: ``AGENT_ACTIVATED`` and ``AGENT_CHANGED`` are
+# exposed lazily below to avoid a circular import — importing
+# ``vtx.agents`` from anywhere that loads early (e.g. an
+# extension's ``register(api)``) would otherwise try to pull
+# ``vtx.extensions`` mid-init, which itself imports back into
+# ``vtx.tools``.
 from .activate import (
     active_permission_gates,
     active_permission_mode,
@@ -50,3 +54,18 @@ __all__ = [
     "load_agent",
     "load_all_agents",
 ]
+
+
+def __getattr__(name: str) -> str:
+    # Re-export the agent event-name constants from ``vtx.extensions``
+    # lazily so importing this module doesn't trigger
+    # ``vtx.extensions`` -> ``vtx.tools`` -> ``vtx.tools.task`` ->
+    # ``vtx.agents`` -> back to ``vtx.extensions`` (partially
+    # initialized) at module load.
+    if name in ("AGENT_ACTIVATED", "AGENT_CHANGED"):
+        from .. import extensions as _extensions
+
+        value = getattr(_extensions, name)
+        globals()[name] = value
+        return value
+    raise AttributeError(f"module 'vtx.agents' has no attribute {name!r}")

@@ -14,6 +14,7 @@ from vtx import config
 from vtx.core.types import ImageContent
 from vtx.diff_display import DIFF_BG_PAD_MARKER
 from vtx.permissions import ApprovalResponse, AskUserOption
+from vtx.tools.base import BaseTool
 
 from .formatting import (
     find_stable_block_boundary,
@@ -324,12 +325,19 @@ class ToolBlock(Static):
         call_msg: str | None = None,
         icon: str = "→",
         expanded: bool = False,
+        tool: BaseTool | None = None,
         **kwargs,
     ) -> None:
         super().__init__(**kwargs)
         self._name = name
         self._icon = icon
         self._call_msg = call_msg
+        # ``tool`` is set by ``ChatLog.start_tool`` after construction. It
+        # is the bound :class:`vtx.tools.base.BaseTool` instance the
+        # block is rendering. Custom subclasses can use it to call
+        # ``self.tool.format_call(params)`` or ``self.tool.format_preview``
+        # instead of accepting pre-formatted strings from the runner.
+        self.tool: BaseTool | None = tool
         self._ui_summary: str | None = None
         self._ui_details: str | None = None
         self._ui_details_full: str | None = None
@@ -355,6 +363,11 @@ class ToolBlock(Static):
         # forwarded from the chat input and the user could never type
         # into the Other field.
         self._ask_user_input_visible: bool = False
+        # Task-tool live tail. When set, the block renders a compact
+        # transcript of in-flight sub-agent activity. Cleared by
+        # ``set_result`` so the final transcript wins.
+        self._task_live_lines: list[str] | None = None
+        self._task_header: str | None = None
         self.add_class("tool-block")
         self._set_state(None)
 
@@ -736,9 +749,31 @@ class ToolBlock(Static):
         self._result_markup = markup
         self._success = success
         self._awaiting_approval = False
+        # The Task tool's live tail is now done — drop the in-progress
+        # events so the final result wins.
+        self._task_live_lines = None
         self._set_state(success)
         self._render_result_output()
         self.query_one("#tool-header", Label).update(self._format_header())
+
+    # -- Task tool live progress ------------------------------------------
+
+    def set_task_progress(
+        self, subagent_name: str, live_lines: list[str], header: str | None = None
+    ) -> None:
+        """Render the Task tool's live sub-agent progress tail.
+
+        ``live_lines`` is a compact transcript built by the chat log
+        (sub-agent name, recent tool calls, last text delta). Called
+        repeatedly while the sub-agent runs. ``set_result`` clears
+        the live tail and renders the final transcript instead.
+        """
+        self._task_live_lines = list(live_lines)
+        self._task_header = header or f"sub-agent: {subagent_name}"
+        # Force a re-render against the live data.
+        if not self._ui_details:
+            self._render_result_output()
+            self.query_one("#tool-header", Label).update(self._format_header())
 
     def set_expanded(self, expanded: bool) -> None:
         if self._expanded == expanded:
@@ -756,6 +791,23 @@ class ToolBlock(Static):
         ui_details = (
             self._ui_details_full if self._expanded and self._ui_details_full else self._ui_details
         )
+
+        # Live Task tool tail: shown when the sub-agent is still
+        # running and the final details haven't been set yet. The
+        # tail is cleared by ``set_result``.
+        if ui_details is None and self._task_live_lines is not None:
+            lines: list[str] = []
+            if self._task_header:
+                lines.append(self._task_header)
+            lines.extend(self._task_live_lines[-12:])
+            rendered = Text("\n".join(lines))
+            self.remove_class("-compact")
+            self.add_class("-with-details")
+            output.remove_class("-hidden")
+            output.remove_class("-details")
+            output.update(rendered)
+            return
+
         if ui_details:
             rendered = (
                 self._render_markup_safe(ui_details) if self._result_markup else Text(ui_details)

@@ -12,11 +12,21 @@ import traceback
 from collections.abc import Callable
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any, Literal
+from typing import TYPE_CHECKING, Any, Literal
 
-from ..extensions import CommandOutcome, ExtensionTool, _json_schema_to_pydantic
 from ..tools.base import BaseTool
 from .schema import AgentDef, PermissionAction, PermissionGate
+
+# ``CommandOutcome``, ``ExtensionTool``, and ``_json_schema_to_pydantic``
+# come from :mod:`vtx.extensions`, but importing them at module load
+# creates a cycle (extensions -> tools -> agents -> extensions). They
+# are imported lazily inside the methods that need them, and used as
+# string annotations everywhere else (under ``from __future__ import
+# annotations``). The dataclass field below is annotated as a string so
+# the type-checker still sees it, but it isn't evaluated at class
+# construction.
+if TYPE_CHECKING:
+    from ..extensions import CommandOutcome
 
 NotifyLevel = Literal["info", "warning", "error"]
 
@@ -160,6 +170,7 @@ class AgentAPI:
         execute: Callable[[dict[str, Any], dict[str, Any] | None], Any] | None = None,
         mutating: bool = True,
         label: str | None = None,
+        ui_block: type | None = None,
     ) -> Any:
         """Register a tool that exists only when this agent is active.
 
@@ -186,6 +197,11 @@ class AgentAPI:
         Same semantics as ``ExtensionAPI.register_tool``, but stored on
         :class:`LoadedAgent` and surfaced only when this agent is the
         active one in the runtime.
+
+        ``ui_block`` is an optional Textual widget class (a subclass of
+        :class:`vtx.ui.blocks.ToolBlock`) that the TUI instantiates
+        instead of the default block. Use it to ship a custom header,
+        approval prompt, or result rendering for an agent-specific tool.
         """
         if not name or not isinstance(name, str):
             raise ValueError("Tool name must be a non-empty string")
@@ -195,6 +211,7 @@ class AgentAPI:
         # by the absence of an explicit ``execute=`` argument; everything
         # else is taken from the decorator.
         if execute is None and description is not None and parameters is not None:
+            from ..extensions import ExtensionTool, _json_schema_to_pydantic
 
             def _decorator(fn: Callable[..., Any]) -> BaseTool:
                 params_model = _json_schema_to_pydantic(name, parameters)
@@ -207,6 +224,7 @@ class AgentAPI:
                     owner=self._loaded.definition.name,
                     mutating=mutating,
                     label=label or name,
+                    ui_block=ui_block,
                 )
                 self._loaded.local_tools[name] = tool
                 return tool
@@ -219,6 +237,8 @@ class AgentAPI:
                 "(or use the @api.local_tool(...) decorator form)"
             )
 
+        from ..extensions import ExtensionTool, _json_schema_to_pydantic
+
         params_model = _json_schema_to_pydantic(name, parameters)
         tool = ExtensionTool(
             name=name,
@@ -229,6 +249,7 @@ class AgentAPI:
             owner=self._loaded.definition.name,
             mutating=mutating,
             label=label or name,
+            ui_block=ui_block,
         )
         self._loaded.local_tools[name] = tool
         return tool
@@ -270,6 +291,8 @@ class AgentAPI:
         def _wrap(
             fn: Callable[[str], CommandOutcome | str | None],
         ) -> Callable[[str], CommandOutcome]:
+            from ..extensions import CommandOutcome
+
             def _wrapper(args: str) -> CommandOutcome:
                 try:
                     result = fn(args)

@@ -16,6 +16,7 @@ from vtx import config
 from vtx.config import PermissionMode
 from vtx.git_branch import resolve_git_branch
 
+from .chat import WITTY_ROTATE_EVERY_TICKS, WITTY_STATUS_LINES, _pick_witty_line
 from .formatting import format_tokens
 
 
@@ -457,6 +458,12 @@ class StatusLine(Horizontal):
         self._streaming_token_count = 0
         self._status_label: Label | None = None
         self._hint_label: Label | None = None
+        # Mirrors ChatLog's witty-line rotation so the bottom status
+        # line shows the same flavor of random working messages as the
+        # chat-area spinner. Pick a fresh line on each run-start so the
+        # first tick is already non-"Working...".
+        self._witty_ticks: int = 0
+        self._witty_line: str = _pick_witty_line() if WITTY_STATUS_LINES else "Working..."
         self.add_class("status-line")
 
     def compose(self) -> ComposeResult:
@@ -484,7 +491,7 @@ class StatusLine(Horizontal):
             result.append(str(spinner_text), style=spinner_color)
         else:
             result.append(str(spinner_text), style=spinner_color)
-        result.append(" Working...", style=config.ui.colors.muted)
+        result.append(f" {self._witty_line}...", style=config.ui.colors.muted)
         result.append(" (esc to interrupt)", style=dim_color)
         if self._streaming_token_count > 20:
             result.append(f" ↓{self._streaming_token_count!s}", style=dim_color)
@@ -515,6 +522,10 @@ class StatusLine(Horizontal):
 
     def _update_spinner(self) -> None:
         if self._status != "idle":
+            self._witty_ticks += 1
+            if self._witty_ticks >= WITTY_ROTATE_EVERY_TICKS and WITTY_STATUS_LINES:
+                self._witty_ticks = 0
+                self._witty_line = _pick_witty_line(exclude=self._witty_line)
             self._status_text.update(self._render_spinner(), layout=False)
 
     def set_status(self, status: str) -> None:
@@ -533,6 +544,11 @@ class StatusLine(Horizontal):
                 self._start_time = time.time()
                 self._tool_calls = 0
                 self._streaming_token_count = 0
+                # Fresh run: pick a new witty line so consecutive runs
+                # don't always start on the same message.
+                self._witty_ticks = 0
+                if WITTY_STATUS_LINES:
+                    self._witty_line = _pick_witty_line(exclude=self._witty_line)
             self._start_spinner_timer()
             self._status_text.update(self._render_spinner(), layout=False)
 

@@ -229,7 +229,7 @@ class AgentRunnerMixin:
                     chat.end_block()
                 tool = get_tool(name)
                 icon = tool.tool_icon if tool else "→"
-                chat.start_tool(name, id, "", icon=icon)
+                chat.start_tool(name, id, "", icon=icon, tool=tool)
                 self._current_block_type = "tool_call"
                 status.increment_tool_calls()
                 status.set_streaming_tokens(0)  # Reset token count for new tool

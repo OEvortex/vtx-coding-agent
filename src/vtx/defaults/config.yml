@@ -1,5 +1,5 @@
 meta:
-  config_version: 9
+  config_version: 10
 
 llm:
   default_provider: "openai-codex"
@@ -76,6 +76,50 @@ agents:
   default: ""
   switch_mode: "lock"
   files: []
+
+# Built-in sub-agent presets for the ``Task`` tool (``subagent_type``
+# parameter). The ``Task`` tool delegates work to a fresh sub-agent; the
+# LLM picks a preset by name. A user-defined agent from
+# ``.vtx/agent/<name>.py`` always wins over a preset of the same name.
+#
+# Each preset accepts the user-facing subset of an AgentDef:
+#   - description: shown to the LLM in the tool's docs
+#   - instructions: prepended/appended to the sub-agent's system prompt
+#   - instructions_mode: "append" (default) or "replace"
+#   - tools_allow / tools_deny: tool surface filter (allow intersects, deny
+#       subtracts; if allow is empty/None, all built-in tools are eligible)
+#   - model: optional model override for the sub-agent
+#   - thinking_level: optional thinking level override
+#   - max_turns: optional turn budget
+task:
+  subagent_presets:
+    - name: general-purpose
+      description: Balanced sub-agent for delegating well-scoped tasks. Has
+        the full built-in tool set and the same default instructions as the
+        parent agent. Use when no specialised preset fits.
+      tools_allow: []
+      max_turns: 200
+    - name: Explore
+      description: Read-only repository exploration agent. Searches files
+        and code; never modifies anything. Use for investigating
+        unfamiliar code, mapping a codebase, or gathering context.
+      instructions: |
+        You are an exploration agent. You cannot modify the filesystem —
+        only read and search. Be thorough but concise. When you have found
+        what was asked, stop and report back.
+      tools_allow: [read, find, skill, fetch_webpage, web_search]
+      max_turns: 100
+    - name: Plan
+      description: Read-only planning agent. Investigates the codebase and
+        produces a concrete plan; never writes code or makes changes.
+      instructions: |
+        You are a planning agent. Investigate the codebase, then produce a
+        concrete step-by-step plan. Do not modify any files. Prefer
+        existing code paths over new abstractions. The plan should be
+        detailed enough that another agent can execute it without further
+        questions.
+      tools_allow: [read, find, skill, fetch_webpage, web_search]
+      max_turns: 100
 
 # Example: DeepSeek provider
 # export DEEPSEEK_API_KEY="sk-your-api-key"

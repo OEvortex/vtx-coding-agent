@@ -281,6 +281,12 @@ class Vtx(
         )
         self._runtime.set_loaded_extensions(self._loaded_extensions)
 
+        # Install a Task tool progress forwarder that streams sub-agent
+        # events into the chat log. The TUI mounts the chat log later
+        # (in ``compose``), so we capture a reference via a callback
+        # closure that re-resolves the ChatLog at call time.
+        self._install_task_progress_callback()
+
     def compose(self) -> ComposeResult:
         yield ChatLog(id="chat-log")
         yield QueueDisplay(id="queue-display")
@@ -406,6 +412,41 @@ class Vtx(
         if query.strip():
             parts.extend(["", "[query]", query.strip()])
         return "\n".join(parts)
+
+    def _install_task_progress_callback(self) -> None:
+        """Wire the Task tool's parent context to the chat log.
+
+        The TUI captures sub-agent events (text deltas, tool starts,
+        sub-agent end) and renders them into the parent tool block
+        after it mounts.
+        """
+        from ..dispatcher import get_context, set_context
+        from .chat import ChatLog
+
+        def _callback(tool_call_id: str, event: dict) -> None:
+            try:
+                chat = self.query_one("#chat-log", ChatLog)
+            except Exception:
+                # Chat log not mounted yet (early turn) — drop the event.
+                return
+            chat.apply_task_progress(tool_call_id, event)
+
+        existing = get_context()
+        if existing is None:
+            return
+        set_context(
+            existing.__class__(
+                provider=existing.provider,
+                model=existing.model,
+                model_provider=existing.model_provider,
+                base_url=existing.base_url,
+                thinking_level=existing.thinking_level,
+                agent_registry=existing.agent_registry,
+                cwd=existing.cwd,
+                system_prompt=existing.system_prompt,
+                progress_callback=_callback,
+            )
+        )
 
     def _sync_runtime_state(self) -> None:
         # Compatibility hook for mixin/unit-test fakes. Runtime is the source of truth.

@@ -1,3 +1,4 @@
+import random
 import time
 from pathlib import Path
 from typing import Literal
@@ -29,6 +30,60 @@ from .input import AskUserInput
 
 MAX_CHILDREN = 300
 PRUNE_TO = 200
+
+WITTY_STATUS_LINES: tuple[str, ...] = (
+    "Thinking really hard...",
+    "Consulting the oracle...",
+    "Untangling the spaghetti...",
+    "Brewing fresh pixels...",
+    "Polishing the bits...",
+    "Whispering to the electrons...",
+    "Defrosting the GPU...",
+    "Convincing the LLM...",
+    "Reading the tea leaves...",
+    "Spinning up the hamster wheel...",
+    "Tickling the transistors...",
+    "Sharpening the pencils...",
+    "Pondering the imponderables...",
+    "Crunching the numbers...",
+    "Herding the cats...",
+    "Brewing a fresh pot of logic...",
+    "Asking the magic 8-ball...",
+    "Bending the spoon...",
+    "Calibrating the flux capacitor...",
+    "Reticulating splines...",
+    "Summoning the bit gnomes...",
+    "Charging the warp drive...",
+    "Aligning the planets...",
+    "Stirring the primordial soup...",
+    "Crossing the streams...",
+    "Tuning the antennae...",
+    "Decoding the matrix...",
+    "Feeding the hamsters...",
+    "Polishing the crystal ball...",
+    "Bribing the compiler...",
+    "Sacrificing a rubber duck...",
+    "Reading the source code of reality...",
+    "Brewing a storm of ideas...",
+    "Tickling the algorithm...",
+    "Pinning the tail on the donkey...",
+    "Counting to infinity... twice...",
+)
+
+# How many spinner ticks (0.15s each) before rotating to a new witty line.
+WITTY_ROTATE_EVERY_TICKS = 12
+
+
+def _pick_witty_line(exclude: str | None = None) -> str:
+    """Pick a random witty spinner line, avoiding ``exclude`` if possible."""
+    if len(WITTY_STATUS_LINES) <= 1:
+        return WITTY_STATUS_LINES[0]
+    choice = random.choice(WITTY_STATUS_LINES)
+    if exclude is None or choice != exclude:
+        return choice
+    # Avoid an immediate repeat when the pool is small enough that
+    # random.choice may have landed on the excluded line.
+    return random.choice(WITTY_STATUS_LINES)
 
 
 def _format_skill_label(skill: Skill) -> str:
@@ -73,7 +128,14 @@ class ChatLog(VerticalScroll):
         self._spinner_label: Label | None = None
         self._spinner: Spinner | None = None
         self._spinner_timer: Timer | None = None
+        self._spinner_ticks: int = 0
+        self._spinner_line: str = ""
         self._scroll_pending: bool = False
+        # Task tool live state: per-tool-call transcript + last text
+        # delta, updated by ``apply_task_progress``. Keyed by tool call
+        # id; the block for that id must already exist (mounted when
+        # the parent turn streamed the tool call).
+        self._task_live: dict[str, dict] = {}
 
     def on_mount(self) -> None:
         self.anchor()
@@ -163,24 +225,31 @@ class ChatLog(VerticalScroll):
     def show_spinner_status(self, message: str) -> None:
         self._stop_spinner()
         self._spinner = Spinner("dots")
-        self._spinner_label = Label(self._render_spinner_text(message))
+        self._spinner_ticks = 0
+        self._spinner_line = _pick_witty_line()
+        self._spinner_label = Label(self._render_spinner_text(self._spinner_line))
         self._spinner_label.add_class("info-message")
         self.mount(self._spinner_label)
         self._last_status_label = self._spinner_label
-        self._spinner_timer = self.set_interval(0.15, lambda: self._tick_spinner(message))
+        self._spinner_timer = self.set_interval(0.15, self._tick_spinner)
         self._scroll_if_anchored(animate=False)
 
-    def _render_spinner_text(self, message: str) -> Text:
+    def _render_spinner_text(self, line: str) -> Text:
         info_color = config.ui.colors.info
         spinner_text = self._spinner.render(time.time()) if self._spinner else ""
         result = Text()
         result.append(str(spinner_text), style=info_color)
-        result.append(f" {message}", style=info_color)
+        result.append(f" {line}", style=info_color)
         return result
 
-    def _tick_spinner(self, message: str) -> None:
-        if self._spinner_label is not None and self._spinner is not None:
-            self._spinner_label.update(self._render_spinner_text(message))
+    def _tick_spinner(self) -> None:
+        if self._spinner_label is None or self._spinner is None:
+            return
+        self._spinner_ticks += 1
+        if self._spinner_ticks >= WITTY_ROTATE_EVERY_TICKS:
+            self._spinner_ticks = 0
+            self._spinner_line = _pick_witty_line(exclude=self._spinner_line)
+        self._spinner_label.update(self._render_spinner_text(self._spinner_line))
 
     def _stop_spinner(self) -> None:
         if self._spinner_timer is not None:
@@ -483,10 +552,28 @@ class ChatLog(VerticalScroll):
         return block
 
     def start_tool(
-        self, name: str, tool_id: str, call_msg: str | None = None, icon: str = "→"
-    ) -> ToolBlock:
-        block = ToolBlock(
-            name=name, call_msg=call_msg, icon=icon, expanded=self._tool_output_expanded
+        self,
+        name: str,
+        tool_id: str,
+        call_msg: str | None = None,
+        icon: str = "→",
+        tool: BaseTool | None = None,
+    ) -> "ToolBlock":
+        """Mount a new tool block in the chat log.
+
+        If ``tool`` is given and ``tool.ui_block`` is set, the chat log
+        instantiates that class instead of the default
+        :class:`ToolBlock`. Custom blocks can subclass ``ToolBlock`` to
+        inherit the default rendering, then override ``compose``,
+        ``set_result``, ``show_approval``, etc. as needed.
+
+        ``block.tool`` is always set to ``tool`` after construction so
+        custom blocks can introspect the bound :class:`BaseTool` (e.g.
+        to call ``self.tool.format_call(params)``).
+        """
+        block_cls = tool.ui_block if (tool is not None and tool.ui_block) else ToolBlock
+        block = block_cls(
+            name=name, call_msg=call_msg, icon=icon, expanded=self._tool_output_expanded, tool=tool
         )
 
         # Consecutive tool calls without detail output render compactly (no
@@ -627,6 +714,50 @@ class ChatLog(VerticalScroll):
             return True
         except Exception:
             return False
+
+    def apply_task_progress(self, tool_call_id: str, event: dict) -> None:
+        """Render a Task-tool sub-agent event into the parent tool block.
+
+        Called from the Task tool's progress callback. ``event`` is the
+        small dict shape produced by ``TaskTool``:
+
+        * ``kind == "subagent_start"``: opens the live tail
+        * ``kind == "text_delta"``: appends a snippet of the tail text
+        * ``kind == "tool_start"``: appends a ``→ tool`` line
+        * ``kind == "tool_result"``: marks the prior tool line as done
+        * ``kind == "subagent_end" / "error" / "interrupted" / "cancelled"``:
+          closes the tail; ``set_result`` will overwrite it with the
+          final transcript when the parent turn streams it back
+        """
+        block = self._tool_blocks.get(tool_call_id)
+        if block is None:
+            return
+
+        kind = event.get("kind")
+        state = self._task_live.setdefault(
+            tool_call_id,
+            {"subagent": event.get("subagent", "subagent"), "lines": [], "last_text": ""},
+        )
+        if kind == "subagent_start":
+            state["lines"] = ["  (starting)"]
+        elif kind == "text_delta":
+            delta = event.get("delta", "")
+            state["last_text"] = (state["last_text"] + delta)[-200:]
+            tail = f"  {state['last_text'][-60:]}" if state["last_text"] else ""
+            state["lines"][-1:] = [tail]
+        elif kind == "tool_start":
+            tool_name = event.get("tool_name", "")
+            state["lines"].append(f"  → {tool_name}")
+        elif kind == "tool_result":
+            pass
+        elif kind in ("subagent_end", "error", "interrupted", "cancelled"):
+            stop = event.get("stop_reason", kind)
+            state["lines"].append(f"  ({stop})")
+
+        # Keep the last 12 lines and re-render.
+        live_lines = list(state["lines"])[-12:]
+        block.set_task_progress(state["subagent"], live_lines)
+        self._scroll_if_anchored(animate=False)
 
     def end_block(self) -> None:
         # Finalize content/thinking blocks to render markdown once

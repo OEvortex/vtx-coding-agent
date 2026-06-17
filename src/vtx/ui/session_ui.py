@@ -98,14 +98,14 @@ class SessionUIMixin:
                             call_msg = self._format_tool_call(part)
                             tool = get_tool(part.name)
                             icon = tool.tool_icon if tool else "→"
-                            chat.start_tool(part.name, part.id, call_msg, icon=icon)
+                            chat.start_tool(part.name, part.id, call_msg, icon=icon, tool=tool)
                             started_tools.add(part.id)
                 elif isinstance(message, ToolResultMessage):
                     tool_id = message.tool_call_id
                     if tool_id not in started_tools:
                         tool = get_tool(message.tool_name)
                         icon = tool.tool_icon if tool else "→"
-                        chat.start_tool(message.tool_name, tool_id, "", icon=icon)
+                        chat.start_tool(message.tool_name, tool_id, "", icon=icon, tool=tool)
                         started_tools.add(tool_id)
 
                     markup = True

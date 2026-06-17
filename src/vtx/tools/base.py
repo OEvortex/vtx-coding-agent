@@ -21,6 +21,14 @@ class BaseTool[T: BaseModel](ABC):
     needs_approval: bool = False
     """Set by SDK users via ``@tool(needs_approval=True)``.
     The SDK runner pauses the run for human approval when this is True."""
+    ui_block: type | None = None
+    """Optional Textual widget class the TUI instantiates instead of the
+    default :class:`vtx.ui.blocks.ToolBlock` for this tool. Subclasses
+    must accept the same ``__init__`` kwargs as ``ToolBlock`` plus the
+    optional ``tool`` kwarg (the bound :class:`BaseTool` instance, for
+    introspection). The chat log sets ``block.tool`` after construction
+    so custom blocks can call back into the tool (``self.tool.format_call``,
+    ``self.tool.format_preview``, etc.)."""
 
     @abstractmethod
     async def execute(
