@@ -325,8 +325,9 @@ def test_load_all_agents_collects_errors(tmp_path: Path):
     loaded, errors = load_all_agents(
         cwd=str(tmp_path), configured=[str(tmp_path)], agent_dir=tmp_path / "agent"
     )
-    assert len(loaded) == 1
-    assert loaded[0].definition.name == "good"
+    names = {a.definition.name for a in loaded}
+    assert "good" in names
+    assert "plan" in names
     assert len(errors) == 1
 
 
@@ -615,3 +616,20 @@ def test_agent_events_in_all_events():
 
     assert AGENT_ACTIVATED in ALL_EVENTS
     assert AGENT_CHANGED in ALL_EVENTS
+
+
+def test_compose_active_tools_allows_non_base_builtins():
+    pool = _builtin_pool()
+    # "grep" is in pool, but not in base
+    base = ["read", "write"]
+    agent = LoadedAgent(
+        definition=AgentDef(name="review", description="x", tools_allow=["read", "grep"]),
+        path=Path("/x.py"),
+    )
+    out = compose_active_tools(
+        base_tool_names=base, base_tool_pool=pool, extension_tools=[], active_agent=agent
+    )
+    names = {t.name for t in out}
+    assert "grep" in names
+    assert "read" in names
+    assert "write" not in names

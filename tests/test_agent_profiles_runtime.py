@@ -36,7 +36,9 @@ def test_load_all_agents_with_cwd(monkeypatch, tmp_path: Path):
         ).strip()
     )
     loaded, errors = load_all_agents(cwd=str(tmp_path))
-    assert [a.definition.name for a in loaded] == ["review"]
+    names = {a.definition.name for a in loaded}
+    assert "review" in names
+    assert "plan" in names
     assert errors == []
 
 
@@ -49,7 +51,9 @@ def test_load_all_agents_user_writes_global_only(tmp_path: Path):
     cwd = tmp_path / "project"
     cwd.mkdir()
     loaded, errors = load_all_agents(cwd=str(cwd), agent_dir=global_dir)
-    assert [a.definition.name for a in loaded] == ["yolo"]
+    names = {a.definition.name for a in loaded}
+    assert "yolo" in names
+    assert "plan" in names
     assert errors == []
 
 
@@ -212,7 +216,7 @@ def test_cli_list_agents_empty(monkeypatch, tmp_path: Path, capsys):
         cli.main()
     assert e.value.code == 0
     out = capsys.readouterr().out
-    assert "No agents found" in out
+    assert "plan" in out
 
 
 # =============================================================================
@@ -247,3 +251,49 @@ def test_loaded_agent_wire_handlers():
 
     asyncio.run(bus.emit(AGENT_START))
     assert len(seen) == 1
+
+
+def test_runtime_set_active_agent_updates_agent_tools(monkeypatch, tmp_path: Path):
+    from vtx.agents import AgentRegistry
+    from vtx.extensions import EventBus
+    from vtx.runtime import ConversationRuntime
+
+    registry = AgentRegistry()
+    registry.agents = [
+        _make_agent("review", tools_allow=["read"]),
+        _make_agent("plan", tools_allow=["read", "grep"]),
+    ]
+
+    runtime = ConversationRuntime(
+        cwd=str(tmp_path),
+        model="gpt-test",
+        tools=[],
+        extensions=EventBus(),
+        agent_registry=registry,
+    )
+
+    class DummyAgent:
+        def __init__(self):
+            self.tools = []
+
+        def reload_context(self):
+            pass
+
+    from typing import Any, cast
+
+    runtime.agent = cast(Any, DummyAgent())
+
+    # Activate review
+    runtime.set_active_agent("review")
+    agent = runtime.agent
+    assert agent.tools is not None
+    tool_names = {t.name for t in agent.tools}
+    assert "read" in tool_names
+    assert "grep" not in tool_names
+
+    # Switch to plan
+    runtime.set_active_agent("plan")
+    agent = runtime.agent
+    tool_names = {t.name for t in agent.tools}
+    assert "read" in tool_names
+    assert "grep" in tool_names

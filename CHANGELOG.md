@@ -8,6 +8,14 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Added
 
+#### Built-in `plan` Agent Profile and `grep` Tool
+- Added a built-in `plan` agent profile configured for read-only plan formulation and investigation using a detailed system prompt, high-thinking level, and search/read tools.
+- Created a built-in `grep` tool which utilizes `ripgrep (rg)` to perform efficient regex and pattern searching across files.
+- Enhanced tool composition to allow any agent profile's `tools_allow` to dynamically pull in registered tools (like `grep`) that are not present in the default session toolset.
+- Updated agent switching/cycling order to prioritize built-in profiles first, followed by user-defined profiles sorted alphabetically.
+- Suppressed info messages in the TUI log when switching or cycling agent profiles to provide a quieter and cleaner user experience.
+
+
 #### Custom TUI blocks for tools
 - Extensions and agents can now ship a custom Textual block for any
   tool they register. Pass `ui_block=YourBlock` to

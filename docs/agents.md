@@ -258,6 +258,10 @@ filters — they were explicitly contributed by the agent, not pulled from
 the base pool. This lets a profile ship a local tool alongside a
 restrictive allow list.
 
+> [!NOTE]
+> `tools_allow` can also pull in built-in tools that are registered in the codebase but are *not* part of the default session toolset (such as the `grep` tool). If a tool name is specified in `tools_allow` and it exists in the codebase's built-in tool pool, it will be loaded dynamically for the active agent profile.
+
+
 The same formula applies to slash commands (session + agent-local
 commands are merged into the runtime's command dict; agent-local
 commands show the agent's name as the owner).

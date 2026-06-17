@@ -113,16 +113,67 @@ def load_all_agents(
     from ..config import get_config_dir
     from .discovery import find_agent_paths
 
+    builtins = [
+        LoadedAgent(
+            definition=AgentDef(
+                name="plan",
+                description="Read-only plan formulation and investigation profile.",
+                icon="📋",
+                thinking_level="high",
+                tools_allow=[
+                    "read",
+                    "find",
+                    "grep",
+                    "skill",
+                    "fetch_webpage",
+                    "web_search",
+                    "ask_user",
+                ],
+                tools_deny=["bash", "write", "edit"],
+                instructions=(
+                    "You are Vtx in Plan mode. Your sole objective is to formulate a "
+                    "comprehensive, step-by-step execution plan to address the user's "
+                    "request. You are strictly in a read-only mode.\n"
+                    "\n"
+                    "## Operational Constraints\n"
+                    "- Do not write or edit any files, do not run bash commands, and do "
+                    "not execute code.\n"
+                    "- You are allowed to use read-only tools to gather context: `read`, `find`, "
+                    "`grep`, `skill`, `fetch_webpage`, `web_search`, and `ask_user`.\n"
+                    "- Avoid conversational filler. Start directly with progress or the plan.\n"
+                    "\n"
+                    "## Planning Guidelines\n"
+                    "1. **Investigate first:** Search the codebase to locate files, symbols, "
+                    "and conventions relevant to the task.\n"
+                    "2. **Draft the Plan:** Formulate a structured plan covering:\n"
+                    "   - **Objectives:** What needs to be achieved.\n"
+                    "   - **Proposed Changes:** Specific files to edit, add, or delete, "
+                    "referencing absolute paths and line numbers (e.g., `src/vtx/cli.py:42`).\n"
+                    "   - **Verification Steps:** How the changes should be tested (tests to run, "
+                    "syntax checks).\n"
+                    "   - **Risks & Edge Cases:** Potential side effects, dependencies, or "
+                    "architectural gotchas.\n"
+                    "3. **Refine:** Ensure the plan is detailed, precise, and immediately "
+                    "actionable for a developer or implementation agent."
+                ),
+                instructions_mode="replace",
+            ),
+            path=Path("<builtin>"),
+        )
+    ]
+
+    loaded_by_name: dict[str, LoadedAgent] = {a.definition.name: a for a in builtins}
+
     paths = find_agent_paths(cwd=cwd, configured=configured, agent_dir=agent_dir)
-    loaded: list[LoadedAgent] = []
     errors: list[str] = []
     cfg_dir = config_dir or get_config_dir()
     for path in paths:
         try:
-            loaded.append(load_agent(path, cwd=cwd, config_dir=cfg_dir, on_event=on_event))
+            agent = load_agent(path, cwd=cwd, config_dir=cfg_dir, on_event=on_event)
+            loaded_by_name[agent.definition.name] = agent
         except AgentLoadError as exc:
             errors.append(str(exc))
-    return loaded, errors
+    return list(loaded_by_name.values()), errors
 
 
 class AgentLoadError(RuntimeError):

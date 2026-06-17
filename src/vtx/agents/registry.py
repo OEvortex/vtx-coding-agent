@@ -38,7 +38,9 @@ class AgentRegistry:
 
     @property
     def names(self) -> list[str]:
-        return sorted(a.definition.name for a in self.agents)
+        builtins = sorted(a.definition.name for a in self.agents if str(a.path) == "<builtin>")
+        users = sorted(a.definition.name for a in self.agents if str(a.path) != "<builtin>")
+        return builtins + users
 
     @property
     def active(self) -> LoadedAgent | None:
@@ -91,7 +93,10 @@ class AgentRegistry:
     def describe(self) -> list[dict]:
         """For ``/agent list`` and headless ``--list-agents``."""
         rows: list[dict] = []
-        for a in self.agents:
+        for name in self.names:
+            a = self.by_name(name)
+            if a is None:
+                continue
             rows.append(
                 {
                     "name": a.definition.name,

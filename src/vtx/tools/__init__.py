@@ -4,6 +4,7 @@ from .base import BaseTool
 from .bash import BashTool
 from .edit import EditTool
 from .find import FindTool
+from .grep import GrepTool
 from .read import ReadTool
 from .skill import SkillTool
 from .task import TaskTool
@@ -22,6 +23,7 @@ __all__ = [
     "BashTool",
     "EditTool",
     "FindTool",
+    "GrepTool",
     "ReadTool",
     "SkillTool",
     "TaskTool",
@@ -41,6 +43,7 @@ all_tools: list[BaseTool] = [
     WriteTool(),
     BashTool(),
     FindTool(),
+    GrepTool(),
     SkillTool(),
     WebFetchTool(),
     WebSearchTool(),

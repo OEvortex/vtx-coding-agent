@@ -74,12 +74,6 @@ class AgentCommands(CommandSupport):
         self._sync_runtime_state()
         info_bar = self.query_one("#info-bar", InfoBar)
         info_bar.set_agent(new.definition.name if new else "")
-        if new is not None:
-            chat.add_info_message(
-                f"Active agent: {new.definition.name} — {new.definition.description}"
-            )
-        else:
-            chat.add_info_message("Deactivated agent (back to default session profile).")
 
     def _pick_agent(self) -> None:
         """Open the agent picker (floating list)."""
@@ -124,10 +118,6 @@ class AgentCommands(CommandSupport):
         self._sync_runtime_state()
         info_bar = self.query_one("#info-bar", InfoBar)
         info_bar.set_agent(new.definition.name if new else "")
-        if new is not None:
-            chat.add_info_message(f"Active agent: {new.definition.name}")
-        else:
-            chat.add_info_message("Deactivated agent.")
 
     def action_cycle_agent(self) -> None:
         """Shift+Tab handler. Cycles to the next agent (or none)."""
@@ -138,14 +128,6 @@ class AgentCommands(CommandSupport):
             info_bar.set_agent(new.definition.name if new else "")
         except Exception:
             pass
-        chat = self.query_one("#chat-log", ChatLog)
-        if new is not None:
-            chat.add_info_message(
-                f"→ agent: {new.definition.icon or '◆'} {new.definition.name} "
-                f"— {new.definition.description}"
-            )
-        else:
-            chat.add_info_message("→ agent: (none — default session profile)")
 
     def _handle_agent_command(self, args: str) -> None:
         """``/agent [list|current|reload|off|<name>]`` — no args opens the picker."""
