@@ -82,7 +82,11 @@ class Vtx(
         ("ctrl+t", "cycle_thinking_level", "Cycle thinking level"),
         Binding("ctrl+o", "toggle_tool_output", "Toggle tool output", priority=True),
         Binding("ctrl+shift+t", "toggle_thinking", "Toggle thinking", priority=True),
-        Binding("shift+tab", "cycle_permission_mode", "Cycle permission mode", priority=True),
+        # Shift+Tab cycles handoff agents (was: cycle_permission_mode).
+        # Permission-mode cycling moved to alt+ctrl+p — single chord, leaves
+        # ctrl+shift+p free for a future command palette.
+        Binding("alt+ctrl+p", "cycle_permission_mode", "Cycle permission mode", priority=True),
+        Binding("shift+tab", "cycle_agent", "Cycle handoff agent", priority=True),
     ]
 
     # Textual registers @on handlers through a metaclass that only scans this
@@ -118,6 +122,9 @@ class Vtx(
         anthropic_compat_auth_mode: AuthMode | None = None,
         extra_extension_paths: list[str] | None = None,
         auto_discover_extensions: bool = True,
+        active_agent: str | None = None,
+        extra_agent_paths: list[str] | None = None,
+        auto_discover_agents: bool = True,
     ):
         super().__init__()
         self.theme = self._resolve_ansi_theme()
@@ -205,9 +212,57 @@ class Vtx(
         for err in self._loaded_extensions.errors:
             self._launch_warnings.append(LaunchWarning(f"extension: {err}"))
 
-        ext_tools = self._loaded_extensions.list_extension_tools()
+        # Load handoff agents (project-local, global, plus the caller's
+        # extra paths). Agent-scoped local tools + commands are merged
+        # into the active tool set when an agent is active.
+        from ..agents import AgentRegistry, load_all_agents
+
+        self._agent_registry = AgentRegistry()
+        if auto_discover_agents or extra_agent_paths:
+            configured_agents: list[str] = list(extra_agent_paths or [])
+            configured_agents.extend(config.agents.files)
+            agent_loaded, agent_errors = load_all_agents(
+                cwd=self._cwd,
+                configured=configured_agents,
+                on_event=lambda event, handler: (
+                    self._loaded_extensions.bus.on(event, handler)
+                    if self._loaded_extensions.bus is not None
+                    else None
+                ),
+            )
+            self._agent_registry.agents = agent_loaded
+            self._agent_registry.errors = agent_errors
+            for err in agent_errors:
+                self._launch_warnings.append(LaunchWarning(f"agent: {err}"))
+
+        # Resolve the initial active agent: CLI > env > last-selected > config.
+        import os as _os
+
+        ls = get_last_selected()
+        env_agent = _os.environ.get("VTX_AGENT")
+        desired = (
+            active_agent or env_agent or (ls.agent or None) or (config.agents.default or None)
+        )
+        if desired:
+            resolved = self._agent_registry.set_active(desired)
+            if resolved is None:
+                self._launch_warnings.append(
+                    LaunchWarning(f"agent {desired!r} not found; running without an active agent")
+                )
+
+        # Build the active tool set: built-ins + session extension tools +
+        # active agent's local tools + active agent's local_tools from
+        # extensions + per-agent extensions.
+        ext_tools = list(self._loaded_extensions.list_extension_tools())
+        active = self._agent_registry.active
+        if active is not None:
+            ext_tools.extend(active.local_tools.values())
+            ext_tools.extend(self._loaded_extensions.local_tools_for(active.definition.name))
+
         if ext_tools:
             self._tools = get_tools_with_extensions(DEFAULT_TOOLS, ext_tools)
+        else:
+            self._tools = get_tools_with_extensions(DEFAULT_TOOLS)
 
         self._runtime = ConversationRuntime(
             cwd=self._cwd,
@@ -220,7 +275,11 @@ class Vtx(
             openai_compat_auth_mode=self._openai_compat_auth_mode,
             anthropic_compat_auth_mode=self._anthropic_compat_auth_mode,
             extensions=self._loaded_extensions.bus,
+            agent_registry=self._agent_registry,
+            active_agent=self._agent_registry.active,
+            agent_extensions=list(self._loaded_extensions.extensions),
         )
+        self._runtime.set_loaded_extensions(self._loaded_extensions)
 
     def compose(self) -> ComposeResult:
         yield ChatLog(id="chat-log")
@@ -229,13 +288,18 @@ class Vtx(
         yield InputBox(cwd=self._cwd, id="input-box")
         yield FloatingList(window_size=10, label_width=6, id="completion-list")
         yield TreeSelector(id="tree-selector")
-        yield InfoBar(
+        active_name = (
+            self._runtime.active_agent.definition.name if self._runtime.active_agent else ""
+        )
+        info_bar = InfoBar(
             cwd=self._cwd,
             model=self._runtime.model,
             thinking_level=self._runtime.thinking_level,
             hide_thinking=self._hide_thinking,
             id="info-bar",
         )
+        info_bar._active_agent = active_name
+        yield info_bar
 
     @staticmethod
     def _thinking_level_class(level: str) -> str:

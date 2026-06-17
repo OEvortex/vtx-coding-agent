@@ -157,6 +157,7 @@ class InfoBar(Vertical):
         self._file_changes: dict[str, tuple[int, int]] = {}  # path -> (added, removed)
         self._permission_mode = config.permissions.mode
         self._file_changes_text_start: int | None = None
+        self._active_agent: str = ""
         self._row1_right: Label | None = None
         self._row2_left: Label | None = None
         self._row2_right: Label | None = None
@@ -248,10 +249,14 @@ class InfoBar(Vertical):
         return result
 
     def _format_row2_right(self) -> Text:
+        result = Text()
+        if self._active_agent:
+            result.append(f"@ {self._active_agent}", style=config.ui.colors.accent)
+            result.append(" • ")
         model_text = self._model
         if self._model_provider:
             model_text = f"({self._model_provider}) {self._model}"
-        result = Text(model_text)
+        result.append(model_text)
         result.append(f" • {self._thinking_level}")
         return result
 
@@ -321,6 +326,16 @@ class InfoBar(Vertical):
     def set_permission_mode(self, mode: PermissionMode) -> None:
         self._permission_mode = mode
         self._label_row2_left.update(self._format_row2_left(), layout=False)
+
+    def set_agent(self, agent: str) -> None:
+        """Display the active handoff agent in the right info row.
+
+        Pass an empty string to clear.
+        """
+        if self._active_agent == agent:
+            return
+        self._active_agent = agent
+        self._label_row2_right.update(self._format_row2_right(), layout=False)
 
     def update_file_changes(self, path: str, added: int, removed: int) -> None:
         prev_added, prev_removed = self._file_changes.get(path, (0, 0))

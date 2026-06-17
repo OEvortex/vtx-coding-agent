@@ -285,6 +285,41 @@ class ChatLog(VerticalScroll):
         label.add_class("loaded-resources")
         self.mount(label)
 
+    def add_agent_details(self, *, rows: list[dict], active: str | None) -> None:
+        """Render the ``/agent list`` table."""
+        from rich.text import Text
+
+        notice_color = config.ui.colors.notice
+        dim_color = config.ui.colors.dim
+        muted_color = config.ui.colors.muted
+        accent = config.ui.colors.accent
+        text = Text()
+        text.append("[Handoff agents]\n", style=notice_color)
+        if not rows:
+            text.append("  (none loaded)\n", style=dim_color)
+        else:
+            for r in rows:
+                marker = "● " if r["name"] == active else "  "
+                text.append(marker, style=accent if r["name"] == active else "")
+                text.append(r["name"], style=accent if r["name"] == active else "")
+                if r.get("icon"):
+                    text.append(f"  {r['icon']}", style=dim_color)
+                text.append("\n")
+                text.append(f"    {r.get('description') or ''}\n", style=muted_color)
+                meta_bits = []
+                if r.get("tools"):
+                    meta_bits.append(f"tools: {', '.join(r['tools'])}")
+                if r.get("commands"):
+                    meta_bits.append(f"commands: {', '.join(r['commands'])}")
+                if r.get("extensions"):
+                    meta_bits.append(f"extensions: {', '.join(r['extensions'])}")
+                if meta_bits:
+                    text.append(f"    {' • '.join(meta_bits)}\n", style=dim_color)
+                text.append(f"    {r.get('path', '')}\n", style=dim_color)
+        label = Label(text)
+        label.add_class("agent-details")
+        self.mount(label)
+
     def add_session_details(
         self,
         *,

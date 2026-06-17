@@ -92,6 +92,9 @@ def run_tui(args: argparse.Namespace) -> None:
         anthropic_compat_auth_mode=args.anthropic_compat_auth,
         extra_extension_paths=list(getattr(args, "extension_paths", None) or []),
         auto_discover_extensions=not getattr(args, "no_extensions", False),
+        active_agent=getattr(args, "agent", None),
+        extra_agent_paths=list(getattr(args, "agent_files", None) or []),
+        auto_discover_agents=not getattr(args, "no_agents", False),
     )
     app.run()
 
