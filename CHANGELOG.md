@@ -8,6 +8,79 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Added
 
+#### Custom TUI blocks for tools
+- Extensions and agents can now ship a custom Textual block for any
+  tool they register. Pass `ui_block=YourBlock` to
+  `api.register_tool(...)`, `api.register_local_tool(...)`, or
+  `api.local_tool(...)`, and the chat log instantiates `YourBlock`
+  instead of the default `vtx.ui.blocks.ToolBlock` when the LLM
+  invokes the tool.
+- The bound `BaseTool` is exposed as `self.tool` on the custom block
+  after construction, so the block can call back into the tool
+  (`self.tool.format_call(params)`, `self.tool.format_preview(params)`,
+  etc.). All existing `ToolBlock` hooks (`set_result`, `show_approval`,
+  `hide_approval`, `update_call_msg`, `set_task_progress`) are
+  inherited — override only what you need.
+- New example: `examples/extensions/custom_tool_block.py` registers
+  a `my_table` tool whose result renders as a Rich `Table` inside
+  the chat log.
+- New docs section: `docs/extensions.md#custom-tui-rendering`.
+- New tests: `tests/ui/test_custom_tool_blocks.py` covers the
+  registration APIs, the `BaseTool.ui_block` attribute, the chat-log
+  routing, and end-to-end `set_result` dispatch.
+
+#### `Task` tool: Claude Code-style subagents in the TUI
+- The ``Task`` tool is now a default built-in tool in vtx. The LLM has
+  a `task` tool available out of the box to delegate well-scoped tasks
+  to isolated sub-agents.
+- Tool surface (mirrors Claude Code's ``Task``): ``description``
+  (3-5 word label), ``prompt`` (the instructions),
+  ``subagent_type`` (e.g. ``general-purpose``, ``Explore``,
+  ``Plan``, or any name from ``.vtx/agent/``), and an optional
+  ``model`` override. v1 is synchronous: the parent blocks until
+  the sub-agent finishes and receives its final output as the
+  tool result.
+- **New vtx platform feature — :mod:`vtx.dispatcher`.** Generic
+  in-process dispatcher context that the runtime populates on
+  every state change (init, agent change, model change,
+  thinking-level change). Any extension that wants to dispatch
+  sub-agents reads ``vtx.dispatcher.get_context()`` to find the
+  parent's provider, model, cwd, agent-registry, etc. The
+  built-in ``Task`` tool is the first consumer; other
+  dispatching tools can use the same slot.
+- **Sub-agent → main agent contract**: the ``Task`` tool returns
+  ONLY the sub-agent's final text to the parent LLM. No
+  preamble, no transcript of tool calls, no "sub-agent made N
+  tool calls" framing, no truncation markers. The sub-agent's
+  system prompt is augmented with a directive that tells it to
+  give a focused, self-contained answer. The full transcript
+  (turns, tool calls, tokens, session id) is preserved in
+  `ui_details` for the TUI only — the LLM never sees it. If
+  you need to debug a sub-agent after the fact, its full
+  session is at `~/.vtx/tasks/<safe_cwd>/<id>.jsonl`.
+- Built-in `subagent_type` presets: `general-purpose` (balanced), `Explore`
+  (read-only repo navigation), `Plan` (read-only, plan-focused). User-
+  defined agents from `.vtx/agent/<name>.py` are also accepted by name.
+- Sub-agent sessions are persisted under
+  `~/.vtx/tasks/<safe_cwd>/<timestamp>_<id>.jsonl`, isolated from the
+  parent. Sub-agent instructions, tool allow/deny, model, provider, and
+  thinking level are all inherited from the chosen profile.
+- Live progress: the sub-agent's text and tool-call deltas stream into
+  a nested progress label under the parent `Task` tool block. The
+  parent `Task` block also gets a `ui_details` transcript (collapsible)
+  with the full sub-agent run: turns, tool calls, and final text.
+- Cancellation: the sub-agent's `cancel_event` is the same as the
+  parent's. ESC in the TUI cancels the whole stack.
+- New config section `task: { subagent_presets: [ ... ] }` (config
+  version 9 → 10). Users can override the three built-in presets or
+  add their own by name.
+- New example: `examples/agents/explorer.py` — a read-only sub-agent
+  profile that pairs naturally with the `Explore` preset.
+- New tests: `tests/tools/test_task.py` covers params validation,
+  preset fallback, sub-agent construction, the parent-context
+  handoff, the final-answer system-prompt directive, and the
+  no-metadata-leak guarantee on the LLM-facing tool result.
+
 #### Switchable handoff agents (`.vtx/agent/<name>.py`)
 - New `vtx.agents` package — a "profile" type that bundles instructions,
   optional model/provider/thinking overrides, a tool allow/deny list, and

@@ -93,3 +93,52 @@ handoff(
 
 You can also combine them. A triage agent can hand off to a
 specialist, and the specialist can in turn call other agents as tools.
+
+## TUI: the `Task` tool
+
+The `Task` tool is a default built-in tool in `vtx` that lets the LLM delegate well-scoped work to an isolated sub-agent (similar to Claude Code's `Task` tool). The LLM will have a `task` tool available with the surface below.
+
+It reads the generic [`vtx.dispatcher`](../README.md) slot to get the parent's runtime context (provider, model, cwd, agent-registry). The dispatcher slot is a vtx platform feature.
+
+```python
+Task(
+    description="Find the auth bug",     # 3-5 word label
+    prompt="...",                        # the actual instructions
+    subagent_type="Explore",             # optional: preset or .vtx/agent/ name
+    model="...",                         # optional override
+)
+```
+
+Built-in `subagent_type` presets:
+
+- `general-purpose` — balanced, all read-only tools plus the
+  full default toolset.
+- `Explore` — read-only repo navigation (`read`, `find`,
+  `web_search`, `fetch_webpage`).
+- `Plan` — read-only, instructions tuned for producing a plan.
+
+User-defined agents from `.vtx/agent/<name>.py` are also accepted by
+name. Sub-agent sessions are persisted under
+`~/.vtx/tasks/<safe_cwd>/`, isolated from the parent's session.
+
+### The sub-agent → main agent contract
+
+The `Task` tool returns **only the sub-agent's final text** to the
+main agent — no preamble, no transcript of tool calls, no
+"sub-agent made N tool calls" framing, no truncation markers. The
+sub-agent's system prompt is augmented with a directive that tells
+it to give a focused, self-contained answer.
+
+The full transcript (turns, tool calls, token usage, session id,
+model name) is preserved in `ui_details` for the TUI only — the
+LLM never sees it. If you need to debug a sub-agent after the fact,
+its full session is at `~/.vtx/tasks/<safe_cwd>/<id>.jsonl`.
+
+Live progress (text + tool calls) streams into a nested label under
+the parent `Task` block in the TUI; the final text is returned as
+the tool result. v1 is synchronous; background/parallel sub-agents
+are on the roadmap.
+
+For the SDK-level patterns above, see the rest of this document.
+For the TUI tool specifically, see [the changangelog](../../CHANGELOG.md)
+or the `TaskTool` source in `src/vtx/tools/task.py`.
