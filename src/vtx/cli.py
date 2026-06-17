@@ -66,6 +66,29 @@ def build_parser() -> argparse.ArgumentParser:
         action="store_true",
         help="Skip auto-discovered extensions in .vtx/extensions/ and ~/.vtx/agent/extensions/",
     )
+    parser.add_argument(
+        "--agent",
+        "-a",
+        default=None,
+        metavar="NAME",
+        help="Activate a handoff agent at session start (name of a .vtx/agent/<name>.py)",
+    )
+    parser.add_argument(
+        "--agent-file",
+        action="append",
+        default=[],
+        dest="agent_files",
+        metavar="PATH",
+        help="Load an additional agent file or package from PATH (repeatable)",
+    )
+    parser.add_argument(
+        "--no-agents",
+        action="store_true",
+        help="Skip auto-discovered agents in .vtx/agent/ and ~/.vtx/agent/",
+    )
+    parser.add_argument(
+        "--list-agents", action="store_true", help="List all available agents and exit"
+    )
     parser.add_argument("--version", action="version", version=f"vtx {VERSION}")
     return parser
 
@@ -79,6 +102,19 @@ def main() -> None:
 
     if args.insecure_skip_verify:
         config.llm.tls.insecure_skip_verify = True
+
+    if args.list_agents:
+        from .agents import load_all_agents
+
+        loaded, errors = load_all_agents(cwd=os.getcwd(), configured=args.agent_files)
+        if not loaded and not errors:
+            print("No agents found.")
+        else:
+            for a in loaded:
+                print(f"{a.definition.name}\t{a.definition.description}\t{a.path}")
+        for err in errors:
+            print(f"agent error: {err}", file=sys.stderr)
+        raise SystemExit(0)
 
     if args.prompt is not None:
         from .extensions import load_for_runtime
@@ -101,6 +137,9 @@ def main() -> None:
                     openai_compat_auth_mode=args.openai_compat_auth,
                     anthropic_compat_auth_mode=args.anthropic_compat_auth,
                     loaded_extensions=loaded,
+                    active_agent_name=args.agent,
+                    agent_files=args.agent_files,
+                    auto_discover_agents=not args.no_agents,
                 )
             )
         )
