@@ -282,6 +282,8 @@ class ConversationRuntime:
             active_agent=active,
         )
         self.tools = new_tools
+        if self.agent is not None:
+            self.agent.tools = self.tools
 
         # Apply the agent's model/provider/thinking overrides.
         if active is not None:

@@ -35,8 +35,14 @@ def _filter(
     result: list[BaseTool] = []
     always_keep = always_keep or set()
 
-    # 1. Built-in tools named in base_names
-    for n in base_names:
+    # 1. Built-in tools named in base_names (or in allow)
+    to_load = list(base_names)
+    if allow:
+        for n in allow:
+            if n in base_pool and n not in to_load:
+                to_load.append(n)
+
+    for n in to_load:
         if n in seen:
             continue
         tool = base_pool.get(n)
