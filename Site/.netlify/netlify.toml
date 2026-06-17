@@ -1,0 +1,147 @@
+headersOrigin = "config"
+plugins = []
+functionsDirectory = "/home/vortex/Desktop/CODEBASE/Projects/OEvortex/JARVIS/Site/netlify/functions"
+functionsDirectoryOrigin = "config-v1"
+
+[functions]
+
+[functions."*"]
+
+[build]
+publish = "/home/vortex/Desktop/CODEBASE/Projects/OEvortex/JARVIS/Site/dist"
+publishOrigin = "config"
+commandOrigin = "config"
+base = "/home/vortex/Desktop/CODEBASE/Projects/OEvortex/JARVIS/Site"
+command = "npm run build"
+functions = "/home/vortex/Desktop/CODEBASE/Projects/OEvortex/JARVIS/Site/netlify/functions"
+
+[build.environment]
+
+[build.processing]
+
+[build.processing.css]
+
+[build.processing.html]
+
+[build.processing.images]
+
+[build.processing.js]
+
+[build.services]
+
+[[headers]]
+for = "/*"
+
+[headers.values]
+X-Frame-Options = "DENY"
+X-Content-Type-Options = "nosniff"
+Referrer-Policy = "strict-origin-when-cross-origin"
+Permissions-Policy = "geolocation=(), microphone=(), camera=(), payment=(), usb=()"
+X-XSS-Protection = "0"
+Strict-Transport-Security = "max-age=31536000; includeSubDomains; preload"
+Cross-Origin-Opener-Policy = "same-origin"
+Content-Security-Policy = "default-src 'self'; script-src 'self' 'unsafe-inline' 'unsafe-eval' https://api.netlify.com; style-src 'self' 'unsafe-inline'; img-src 'self' data: https:; font-src 'self' data:; connect-src 'self' https://api.netlify.com; frame-ancestors 'none'; base-uri 'self'; form-action 'self'"
+
+[[headers]]
+for = "/assets/*"
+
+[headers.values]
+Cache-Control = "public, max-age=31536000, immutable"
+
+[[headers]]
+for = "/features/*"
+
+[headers.values]
+Cache-Control = "public, max-age=3600"
+
+[[headers]]
+for = "/docs/*"
+
+[headers.values]
+Cache-Control = "public, max-age=3600"
+
+[[headers]]
+for = "/sitemap.xml"
+
+[headers.values]
+Content-Type = "application/xml; charset=utf-8"
+Cache-Control = "public, max-age=3600"
+
+[[headers]]
+for = "/robots.txt"
+
+[headers.values]
+Content-Type = "text/plain; charset=utf-8"
+Cache-Control = "public, max-age=86400"
+
+[[redirects]]
+from = "/features"
+to = "/features/"
+status = 301.0
+force = false
+
+[redirects.query]
+
+[redirects.conditions]
+
+[redirects.headers]
+
+[[redirects]]
+from = "/Features"
+to = "/features/"
+status = 301.0
+force = false
+
+[redirects.query]
+
+[redirects.conditions]
+
+[redirects.headers]
+
+[[redirects]]
+from = "/docs"
+to = "/docs/"
+status = 301.0
+force = false
+
+[redirects.query]
+
+[redirects.conditions]
+
+[redirects.headers]
+
+[[redirects]]
+from = "/Docs"
+to = "/docs/"
+status = 301.0
+force = false
+
+[redirects.query]
+
+[redirects.conditions]
+
+[redirects.headers]
+
+[[redirects]]
+from = "/api/*"
+to = "/.netlify/functions/:splat"
+status = 200.0
+force = false
+
+[redirects.query]
+
+[redirects.conditions]
+
+[redirects.headers]
+
+[[redirects]]
+from = "/*"
+to = "/index.html"
+status = 200.0
+force = false
+
+[redirects.query]
+
+[redirects.conditions]
+
+[redirects.headers]

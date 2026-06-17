@@ -1,0 +1,760 @@
+/* =================================================================
+   VTX - DESIGN TOKENS & GLOBAL STYLES
+   Dark-first developer tool aesthetic.
+   One accent: acid lime. Off-black ground. Off-white text.
+   Mono for display + data. Sans for body.
+   ================================================================= */
+
+@import url("https://fonts.googleapis.com/css2?family=Geist:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500;600;700&family=Geist+Mono:wght@400;500;600&display=swap");
+@import "tailwindcss";
+
+@theme {
+  --font-sans: "Geist", ui-sans-serif, system-ui, sans-serif;
+  --font-display: "Geist", ui-sans-serif, system-ui, sans-serif;
+  --font-mono: "JetBrains Mono", ui-monospace, SFMono-Regular, monospace;
+
+  /* Single accent system. Acid lime, not emerald, not AI purple. */
+  --color-accent: #A3E635;
+  --color-accent-bright: #BEF264;
+  --color-accent-dim: #65A30D;
+  --color-accent-ink: #1A2E05;
+}
+
+/* =================================================================
+   BASE - dark canvas, off-white ink
+   ================================================================= */
+html {
+  scroll-behavior: smooth;
+  background-color: #0A0A0B;
+  color: #FAFAF9;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  text-rendering: optimizeLegibility;
+}
+
+body {
+  background-color: #0A0A0B;
+  color: #FAFAF9;
+  font-family: "Geist", ui-sans-serif, system-ui, sans-serif;
+  font-feature-settings: "ss01", "cv11";
+}
+
+/* Subtle film grain as fixed pseudo, never on scroll container. */
+.film-grain {
+  position: fixed;
+  inset: 0;
+  z-index: 1;
+  pointer-events: none;
+  opacity: 0.025;
+  background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 200 200' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='2' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
+  background-size: 200px 200px;
+}
+
+/* =================================================================
+   SCROLLBAR
+   ================================================================= */
+::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+::-webkit-scrollbar-track {
+  background: #0A0A0B;
+}
+::-webkit-scrollbar-thumb {
+  background: #1F1F23;
+  border: 2px solid #0A0A0B;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: #2A2A2F;
+}
+* {
+  scrollbar-width: thin;
+  scrollbar-color: #1F1F23 #0A0A0B;
+}
+
+/* =================================================================
+   FOCUS - visible for keyboard users, polite otherwise
+   ================================================================= */
+:focus-visible {
+  outline: 1px solid var(--color-accent);
+  outline-offset: 2px;
+  border-radius: 2px;
+}
+
+/* =================================================================
+   SELECTION
+   ================================================================= */
+::selection {
+  background: var(--color-accent);
+  color: var(--color-accent-ink);
+}
+
+/* =================================================================
+   TEXT UTILITIES
+   ================================================================= */
+.text-display {
+  font-family: "Geist", ui-sans-serif, system-ui, sans-serif;
+  font-feature-settings: "ss01", "cv11";
+  letter-spacing: -0.04em;
+  line-height: 0.92;
+  text-wrap: balance;
+}
+
+.text-ink {
+  color: #FAFAF9;
+}
+.text-ink-muted {
+  color: #A1A1AA;
+}
+.text-ink-dim {
+  color: #71717A;
+}
+.text-ink-faint {
+  color: #52525B;
+}
+
+.text-accent {
+  color: var(--color-accent);
+}
+
+.bg-canvas {
+  background-color: #0A0A0B;
+}
+.bg-surface {
+  background-color: #111114;
+}
+.bg-surface-2 {
+  background-color: #16161A;
+}
+.bg-surface-3 {
+  background-color: #1C1C21;
+}
+
+.border-hairline {
+  border-color: rgba(250, 250, 249, 0.08);
+}
+.border-hairline-strong {
+  border-color: rgba(250, 250, 249, 0.14);
+}
+
+/* =================================================================
+   COMPONENT PRIMITIVES
+   ================================================================= */
+
+/* Mono caption: small, uppercase, wide tracking, dim color. */
+.mono-caption {
+  font-family: "JetBrains Mono", ui-monospace, monospace;
+  font-size: 10px;
+  font-weight: 500;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  color: #71717A;
+}
+
+.mono-caption-bright {
+  font-family: "JetBrains Mono", ui-monospace, monospace;
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  color: #A1A1AA;
+}
+
+/* Numeric display: large mono numbers for stats. */
+.numeric {
+  font-family: "JetBrains Mono", ui-monospace, monospace;
+  font-variant-numeric: tabular-nums;
+  font-feature-settings: "tnum", "zero";
+  letter-spacing: -0.04em;
+  line-height: 0.9;
+}
+
+/* Hairline rule with terminal cursor. */
+.hairline {
+  height: 1px;
+  background: rgba(250, 250, 249, 0.08);
+  border: none;
+}
+
+/* Tag pill: tiny mono label, no uppercase, just a dim chip. */
+.chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-family: "JetBrains Mono", ui-monospace, monospace;
+  font-size: 10.5px;
+  font-weight: 500;
+  letter-spacing: 0.02em;
+  color: #A1A1AA;
+  background: rgba(250, 250, 249, 0.04);
+  border: 1px solid rgba(250, 250, 249, 0.08);
+  padding: 4px 10px;
+  border-radius: 6px;
+  white-space: nowrap;
+}
+
+.chip-accent {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-family: "JetBrains Mono", ui-monospace, monospace;
+  font-size: 10.5px;
+  font-weight: 500;
+  letter-spacing: 0.02em;
+  color: var(--color-accent);
+  background: rgba(163, 230, 53, 0.08);
+  border: 1px solid rgba(163, 230, 53, 0.2);
+  padding: 4px 10px;
+  border-radius: 6px;
+  white-space: nowrap;
+}
+
+.dot-pulse {
+  display: inline-block;
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--color-accent);
+  box-shadow: 0 0 8px var(--color-accent);
+  animation: dot-pulse 2.4s ease-in-out infinite;
+}
+
+@keyframes dot-pulse {
+  0%, 100% { opacity: 0.4; }
+  50% { opacity: 1; }
+}
+
+@keyframes cursor-blink {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0; }
+}
+
+.cursor-blink {
+  animation: cursor-blink 1s step-end infinite;
+}
+
+@keyframes scan {
+  0% { transform: translateY(-100%); }
+  100% { transform: translateY(100%); }
+}
+
+.scan-line {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  overflow: hidden;
+  border-radius: inherit;
+}
+.scan-line::after {
+  content: "";
+  position: absolute;
+  left: 0;
+  right: 0;
+  height: 1px;
+  background: linear-gradient(90deg, transparent, rgba(163, 230, 53, 0.4), transparent);
+  animation: scan 4s linear infinite;
+}
+
+/* =================================================================
+    CTA BUTTONS - Cursor/Devin inspired polish
+    ================================================================= */
+.btn-primary {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  background: var(--color-accent);
+  color: var(--color-accent-ink);
+  font-family: "Geist", sans-serif;
+  font-weight: 600;
+  font-size: 13px;
+  letter-spacing: -0.01em;
+  padding: 11px 20px;
+  border-radius: 8px;
+  border: 1px solid var(--color-accent);
+  transition: transform 0.15s cubic-bezier(0.16, 1, 0.3, 1), background 0.2s ease, box-shadow 0.2s ease;
+  white-space: nowrap;
+  position: relative;
+  overflow: hidden;
+}
+.btn-primary::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(135deg, rgba(255,255,255,0.15) 0%, transparent 50%);
+  opacity: 0;
+  transition: opacity 0.2s ease;
+}
+.btn-primary:hover {
+  background: var(--color-accent-bright);
+  box-shadow: 0 0 0 4px rgba(163, 230, 53, 0.15), 0 4px 16px rgba(163, 230, 53, 0.2);
+  transform: translateY(-1px);
+}
+.btn-primary:hover::before {
+  opacity: 1;
+}
+.btn-primary:active {
+  transform: translateY(0) scale(0.98);
+}
+
+.btn-secondary {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  background: rgba(250, 250, 249, 0.03);
+  color: #FAFAF9;
+  font-family: "Geist", sans-serif;
+  font-weight: 500;
+  font-size: 13px;
+  letter-spacing: -0.01em;
+  padding: 11px 20px;
+  border-radius: 8px;
+  border: 1px solid rgba(250, 250, 249, 0.12);
+  transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1);
+  white-space: nowrap;
+}
+.btn-secondary:hover {
+  border-color: rgba(250, 250, 249, 0.24);
+  background: rgba(250, 250, 249, 0.06);
+  transform: translateY(-1px);
+}
+
+.btn-ghost {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  background: transparent;
+  color: #A1A1AA;
+  font-family: "JetBrains Mono", monospace;
+  font-size: 11.5px;
+  font-weight: 500;
+  letter-spacing: 0;
+  padding: 6px 10px;
+  border-radius: 6px;
+  transition: color 0.2s ease, background 0.2s ease;
+}
+.btn-ghost:hover {
+  color: #FAFAF9;
+  background: rgba(250, 250, 249, 0.06);
+}
+
+/* =================================================================
+   CODE BLOCKS - dark terminal aesthetic
+   ================================================================= */
+pre,
+code {
+  font-family: "JetBrains Mono", ui-monospace, monospace;
+}
+
+pre code {
+  background: transparent !important;
+  color: inherit !important;
+  padding: 0 !important;
+  border: none !important;
+}
+
+.hljs {
+  color: #D4D4D8;
+  background: transparent;
+}
+
+.hljs-keyword,
+.hljs-selector-tag,
+.hljs-built_in,
+.hljs-name {
+  color: #A3E635;
+}
+
+.hljs-string,
+.hljs-attr,
+.hljs-template-variable {
+  color: #FBBF24;
+}
+
+.hljs-number,
+.hljs-literal,
+.hljs-variable,
+.hljs-params {
+  color: #F472B6;
+}
+
+.hljs-comment,
+.hljs-quote {
+  color: #52525B;
+  font-style: italic;
+}
+
+.hljs-function,
+.hljs-title {
+  color: #67E8F9;
+}
+
+.hljs-type,
+.hljs-class .hljs-title {
+  color: #FBBF24;
+}
+
+.hljs-meta,
+.hljs-tag {
+  color: #A3E635;
+}
+
+.hljs-symbol,
+.hljs-bullet {
+  color: #FBBF24;
+}
+
+/* =================================================================
+   MARKDOWN CONTENT
+   ================================================================= */
+.doc-markdown,
+.blog-content {
+  color: #D4D4D8;
+  font-size: 15px;
+  line-height: 1.7;
+}
+
+.doc-markdown h1,
+.blog-content h1 {
+  font-family: "Geist", sans-serif;
+  font-size: 2rem;
+  font-weight: 700;
+  letter-spacing: -0.03em;
+  color: #FAFAF9;
+  margin-top: 2.5rem;
+  margin-bottom: 1rem;
+}
+
+.doc-markdown h2,
+.blog-content h2 {
+  font-family: "Geist", sans-serif;
+  font-size: 1.5rem;
+  font-weight: 600;
+  letter-spacing: -0.02em;
+  color: #FAFAF9;
+  margin-top: 2rem;
+  margin-bottom: 0.75rem;
+  padding-bottom: 0.5rem;
+  border-bottom: 1px solid rgba(250, 250, 249, 0.08);
+}
+
+.doc-markdown h3,
+.blog-content h3 {
+  font-family: "Geist", sans-serif;
+  font-size: 1.2rem;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+  color: #FAFAF9;
+  margin-top: 1.5rem;
+  margin-bottom: 0.5rem;
+}
+
+.doc-markdown p,
+.blog-content p {
+  margin-bottom: 1rem;
+  max-width: 65ch;
+}
+
+.doc-markdown a,
+.blog-content a {
+  color: var(--color-accent);
+  text-decoration: underline;
+  text-decoration-color: rgba(163, 230, 53, 0.3);
+  text-underline-offset: 3px;
+}
+.doc-markdown a:hover,
+.blog-content a:hover {
+  text-decoration-color: var(--color-accent);
+}
+
+.doc-markdown ul,
+.blog-content ul {
+  list-style: disc;
+  padding-left: 1.5rem;
+  margin-bottom: 1rem;
+}
+.doc-markdown ol,
+.blog-content ol {
+  list-style: decimal;
+  padding-left: 1.5rem;
+  margin-bottom: 1rem;
+}
+.doc-markdown li,
+.blog-content li {
+  margin-bottom: 0.4rem;
+}
+
+.doc-markdown pre,
+.blog-content pre {
+  background: #111114;
+  border: 1px solid rgba(250, 250, 249, 0.08);
+  padding: 1rem 1.25rem;
+  overflow-x: auto;
+  margin: 1.25rem 0;
+  border-radius: 6px;
+  font-size: 13px;
+  line-height: 1.65;
+}
+
+.doc-markdown code,
+.blog-content code {
+  background: rgba(250, 250, 249, 0.06);
+  border: 1px solid rgba(250, 250, 249, 0.08);
+  padding: 1px 5px;
+  border-radius: 3px;
+  font-size: 0.875em;
+  color: #FAFAF9;
+}
+
+.doc-markdown pre code,
+.blog-content pre code {
+  background: transparent;
+  border: none;
+  padding: 0;
+  color: inherit;
+}
+
+.doc-markdown blockquote,
+.blog-content blockquote {
+  border-left: 2px solid var(--color-accent);
+  padding-left: 1rem;
+  color: #A1A1AA;
+  font-style: italic;
+  margin: 1rem 0;
+}
+
+.doc-markdown table,
+.blog-content table {
+  width: 100%;
+  border-collapse: collapse;
+  margin: 1rem 0;
+  font-size: 14px;
+}
+.doc-markdown th,
+.blog-content th {
+  text-align: left;
+  padding: 0.5rem 0.75rem;
+  background: #16161A;
+  border-bottom: 1px solid rgba(250, 250, 249, 0.14);
+  font-weight: 600;
+  color: #FAFAF9;
+}
+.doc-markdown td,
+.blog-content td {
+  padding: 0.5rem 0.75rem;
+  border-bottom: 1px solid rgba(250, 250, 249, 0.06);
+  color: #D4D4D8;
+}
+
+.doc-markdown img,
+.blog-content img {
+  max-width: 100%;
+  border-radius: 6px;
+  border: 1px solid rgba(250, 250, 249, 0.08);
+  margin: 1.25rem 0;
+}
+
+/* =================================================================
+    SPOTLIGHT CARD - interactive border that follows cursor
+    ================================================================= */
+.spotlight-card {
+  position: relative;
+  overflow: hidden;
+}
+.spotlight-card::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  padding: 1px;
+  background: radial-gradient(
+    600px circle at var(--mouse-x, 50%) var(--mouse-y, 50%),
+    rgba(163, 230, 53, 0.15),
+    transparent 40%
+  );
+  -webkit-mask: linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0);
+  -webkit-mask-composite: xor;
+  mask-composite: exclude;
+  pointer-events: none;
+  opacity: 0;
+  transition: opacity 0.3s ease;
+}
+.spotlight-card:hover::before {
+  opacity: 1;
+}
+
+/* =================================================================
+    HOVER LIFT - subtle translate + glow on interactive elements
+    ================================================================= */
+.hover-lift {
+  transition: transform 0.25s cubic-bezier(0.16, 1, 0.3, 1), box-shadow 0.25s ease;
+}
+.hover-lift:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.3), 0 0 0 1px rgba(250, 250, 249, 0.08);
+}
+
+/* =================================================================
+    HUD PANELS - small floating panels inside the codebase graph
+    ================================================================= */
+.hud-panel {
+  background: rgba(17, 17, 20, 0.85);
+  border: 1px solid rgba(250, 250, 249, 0.08);
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+  border-radius: 6px;
+}
+
+.hud-scanline {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 1px;
+  background: linear-gradient(
+    90deg,
+    transparent 0%,
+    rgba(163, 230, 53, 0.5) 50%,
+    transparent 100%
+  );
+  pointer-events: none;
+  animation: scan 6s linear infinite;
+  z-index: 20;
+}
+
+@keyframes scan {
+  0% { transform: translateY(0); }
+  100% { transform: translateY(720px); }
+}
+@keyframes marquee {
+  0% { transform: translateX(0); }
+  100% { transform: translateX(-50%); }
+}
+
+.marquee-track {
+  display: flex;
+  width: max-content;
+  animation: marquee 38s linear infinite;
+}
+
+.marquee-track:hover {
+  animation-play-state: paused;
+}
+
+/* =================================================================
+    SKELETON LOADER - animated placeholder for loading states
+    ================================================================= */
+.skeleton {
+  background: linear-gradient(
+    90deg,
+    #16161A 0%,
+    #1C1C21 40%,
+    #16161A 80%
+  );
+  background-size: 200% 100%;
+  animation: skeleton-shimmer 1.5s ease-in-out infinite;
+  border-radius: 4px;
+}
+
+@keyframes skeleton-shimmer {
+  0% { background-position: 200% 0; }
+  100% { background-position: -200% 0; }
+}
+
+/* =================================================================
+    GRADIENT MESH - ambient background texture for sections
+    ================================================================= */
+.mesh-gradient {
+  background:
+    radial-gradient(ellipse at 20% 50%, rgba(163, 230, 53, 0.04) 0%, transparent 50%),
+    radial-gradient(ellipse at 80% 20%, rgba(96, 165, 250, 0.03) 0%, transparent 50%),
+    radial-gradient(ellipse at 50% 80%, rgba(244, 114, 182, 0.02) 0%, transparent 50%);
+}
+
+/* =================================================================
+    CURSOR/DEVIN INSPIRED UTILITIES
+    ================================================================= */
+
+/* Gradient text for headlines */
+.gradient-text {
+  background: linear-gradient(135deg, #FAFAF9 0%, #A1A1AA 100%);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+}
+
+/* Glass card effect */
+.glass-card {
+  background: rgba(17, 17, 20, 0.6);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  border: 1px solid rgba(250, 250, 249, 0.08);
+  border-radius: 12px;
+}
+
+/* Subtle glow on hover */
+.glow-on-hover {
+  transition: box-shadow 0.3s ease;
+}
+.glow-on-hover:hover {
+  box-shadow: 0 0 40px rgba(163, 230, 53, 0.08);
+}
+
+/* Smooth scale on press */
+.press-scale {
+  transition: transform 0.15s cubic-bezier(0.16, 1, 0.3, 1);
+}
+.press-scale:active {
+  transform: scale(0.98);
+}
+
+/* Animated gradient border */
+@keyframes gradient-rotate {
+  0% { --angle: 0deg; }
+  100% { --angle: 360deg; }
+}
+
+/* Subtle border glow */
+.border-glow {
+  position: relative;
+}
+.border-glow::after {
+  content: "";
+  position: absolute;
+  inset: -1px;
+  border-radius: inherit;
+  background: linear-gradient(135deg, rgba(163, 230, 53, 0.2), transparent, rgba(163, 230, 53, 0.1));
+  z-index: -1;
+  opacity: 0;
+  transition: opacity 0.3s ease;
+}
+.border-glow:hover::after {
+  opacity: 1;
+}
+
+/* Cursor blink animation */
+@keyframes cursor-blink {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0; }
+}
+
+/* Pulse animation */
+@keyframes pulse-glow {
+  0%, 100% { box-shadow: 0 0 0 0 rgba(163, 230, 53, 0.4); }
+  50% { box-shadow: 0 0 0 8px rgba(163, 230, 53, 0); }
+}
+
+.pulse-glow {
+  animation: pulse-glow 2s ease-in-out infinite;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .marquee-track {
+    animation: none;
+  }
+  .skeleton {
+    animation: none;
+  }
+  .pulse-glow {
+    animation: none;
+  }
+}
