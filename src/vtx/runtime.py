@@ -381,6 +381,14 @@ class ConversationRuntime:
         active = self.active_agent
         extra = active.definition.instructions if active is not None else None
         mode = active.definition.instructions_mode if active is not None else "append"
+        if active is not None:
+            return build_system_prompt(
+                self.cwd,
+                context=context,
+                tools=self.tools,
+                extra_instructions=extra,
+                extra_instructions_mode=mode,
+            )
         return (session.system_prompt if session else None) or build_system_prompt(
             self.cwd,
             context=context,

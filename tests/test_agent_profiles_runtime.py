@@ -297,3 +297,47 @@ def test_runtime_set_active_agent_updates_agent_tools(monkeypatch, tmp_path: Pat
     tool_names = {t.name for t in agent.tools}
     assert "read" in tool_names
     assert "grep" in tool_names
+
+
+def test_runtime_set_active_agent_updates_system_prompt(monkeypatch, tmp_path: Path):
+    from typing import Any, cast
+
+    from vtx.agents import AgentRegistry
+    from vtx.context import Context
+    from vtx.extensions import EventBus
+    from vtx.runtime import ConversationRuntime
+
+    registry = AgentRegistry()
+    registry.agents = [
+        _make_agent("review", instructions="Review instructions"),
+        _make_agent("plan", instructions="Plan instructions"),
+    ]
+
+    runtime = ConversationRuntime(
+        cwd=str(tmp_path),
+        model="gpt-test",
+        tools=[],
+        extensions=EventBus(),
+        agent_registry=registry,
+    )
+
+    class DummyAgent:
+        def __init__(self):
+            self.tools = []
+            self._system_prompt = ""
+
+        def reload_context(self):
+            pass
+
+    runtime.agent = cast(Any, DummyAgent())
+    runtime.context = Context.load(str(tmp_path))
+
+    # Activate review
+    runtime.set_active_agent("review")
+    agent = runtime.agent
+    assert "Review instructions" in agent._system_prompt
+
+    # Switch to plan
+    runtime.set_active_agent("plan")
+    agent = runtime.agent
+    assert "Plan instructions" in agent._system_prompt
