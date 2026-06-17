@@ -22,3 +22,4 @@ vtx-session-*
 .ruff_cache/
 # One-off screenshots
 image.png
+site/node_modules/

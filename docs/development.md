@@ -12,8 +12,8 @@ This doc covers building, testing, linting, typechecking, and releasing Vtx itse
 ## Clone and set up
 
 ```bash
-git clone https://github.com/kuutsav/vtx
-cd vtx
+git clone https://github.com/OEvortex/vtx-coding-agent
+cd vtx-coding-agent
 uv sync --dev
 ```
 
