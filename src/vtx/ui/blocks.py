@@ -976,3 +976,74 @@ class LaunchWarningsBlock(Static):
             text.append(warning.message, style=style)
 
         yield Label(text)
+
+
+class TaskToolBlock(ToolBlock):
+    """Custom block rendering Task tool with compact live tail and collapsed results."""
+
+    def _render_result_output(self) -> None:
+        output = self.query_one("#tool-output", Label)
+        ui_details = (
+            self._ui_details_full if self._expanded and self._ui_details_full else self._ui_details
+        )
+
+        # 1. Live Task tool tail: shown when the sub-agent is still running
+        if ui_details is None and self._task_live_lines is not None:
+            status = "working"
+            current_tool = None
+            text_snippet = None
+
+            for line in self._task_live_lines:
+                line_str = line.strip()
+                if not line_str:
+                    continue
+                if line_str.startswith("→"):
+                    current_tool = line_str.replace("→", "").strip()
+                elif line_str.startswith("(") and line_str.endswith(")"):
+                    status = line_str[1:-1]
+                else:
+                    text_snippet = line_str
+
+            parts = []
+            if self._task_header:
+                sa_name = self._task_header.replace("sub-agent:", "").strip()
+                parts.append(f"[{sa_name}]")
+
+            if current_tool:
+                parts.append(f"Running {current_tool}...")
+            elif text_snippet:
+                parts.append(f"Streaming: {text_snippet[:50]}")
+            else:
+                parts.append(f"{status}...")
+
+            rendered = Text("  " + " ".join(parts), style=config.ui.colors.running)
+            self.add_class("-compact")
+            self.remove_class("-with-details")
+            output.remove_class("-hidden")
+            output.remove_class("-details")
+            output.update(rendered)
+            return
+
+        # 2. Finished state with details (expanded)
+        if ui_details:
+            rendered = (
+                self._render_markup_safe(ui_details) if self._result_markup else Text(ui_details)
+            )
+            is_diff_output = DIFF_BG_PAD_MARKER in rendered.plain
+            rendered = self._pad_diff_backgrounds(rendered, output.size.width or self.size.width)
+            self.remove_class("-compact")
+            self.add_class("-with-details")
+            output.remove_class("-hidden")
+            output.remove_class("-details")
+            if is_diff_output:
+                output.add_class("-diff-output")
+            else:
+                output.remove_class("-diff-output")
+            output.update(rendered)
+        # 3. Finished state without details (collapsed by default)
+        else:
+            output.update(Text(""))
+            self.remove_class("-with-details")
+            output.remove_class("-details")
+            output.remove_class("-diff-output")
+            output.add_class("-hidden")

@@ -237,7 +237,7 @@ class TestTaskToolExecute:
         result = asyncio.run(tool.execute(TaskParams(description="x", prompt="y")))
         assert result.success is False
         assert "upstream 500" in (result.result or "")
-        assert "→ bash" in (result.ui_details or "")
+        assert "→ bash" in (result.ui_details_full or "")
 
     def test_execute_returns_final_text(self, monkeypatch):
         from vtx.core.types import StopReason, Usage
@@ -262,8 +262,8 @@ class TestTaskToolExecute:
         assert result.success is True
         assert result.result == "Here is the answer."
         assert "3 turns" in (result.ui_summary or "")
-        assert "Explore" in (result.ui_details or "")
-        assert "abc12345" in (result.ui_details or "")
+        assert "Explore" in (result.ui_details_full or "")
+        assert "abc12345" in (result.ui_details_full or "")
 
     def test_execute_truncates_long_text_silently(self, monkeypatch):
         """A sub-agent that returns >MAX_RESULT_CHARS gets silently

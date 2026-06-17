@@ -394,6 +394,12 @@ class TaskTool(BaseTool[TaskParams]):
     tool_icon = "⊕"
     mutating = False
 
+    @property
+    def ui_block(self) -> type | None:
+        from ..ui.blocks import TaskToolBlock
+
+        return TaskToolBlock
+
     description = (
         "Dispatch a fresh sub-agent to handle a self-contained task. The "
         "sub-agent has its own tool surface, runs in its own session, and "
@@ -460,7 +466,8 @@ class TaskTool(BaseTool[TaskParams]):
                 success=False,
                 result=f"Sub-agent '{spec.name}' failed: {sub_result.error}",
                 ui_summary=f"error: {sub_result.error[:60]}",
-                ui_details=_format_transcript(sub_result.transcript),
+                ui_details=None,
+                ui_details_full=_format_transcript(sub_result.transcript),
             )
 
         text = sub_result.final_text or "(sub-agent returned no text)"
@@ -490,7 +497,8 @@ class TaskTool(BaseTool[TaskParams]):
             success=sub_result.error is None,
             result=text,
             ui_summary=ui_summary,
-            ui_details=ui_details,
+            ui_details=None,
+            ui_details_full=ui_details,
         )
 
 
