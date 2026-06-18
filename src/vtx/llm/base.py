@@ -194,7 +194,10 @@ class BaseProvider(ABC):
         temperature: float | None = None,
         max_tokens: int | None = None,
     ) -> LLMStream:
-        return await self._stream_impl(
+        from .rate_limit import rate_limit_manager
+
+        return await rate_limit_manager.retry_stream(
+            self,
             messages,
             system_prompt=system_prompt,
             tools=tools,

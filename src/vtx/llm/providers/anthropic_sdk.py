@@ -3,7 +3,7 @@
 from collections.abc import AsyncIterator
 from typing import Any, ClassVar
 
-from anthropic import APIConnectionError, APIStatusError, RateLimitError
+from anthropic import APIConnectionError, APIStatusError
 
 from ...core.errors import format_error
 from ...core.types import (
@@ -248,8 +248,10 @@ class AnthropicSDKProvider(BaseProvider):
                 return StopReason.STOP
 
     def should_retry_for_error(self, error: Exception) -> bool:
-        if isinstance(error, RateLimitError):
-            return True
+        from ..rate_limit import is_rate_limit_error
+
+        if is_rate_limit_error(error):
+            return False
         if isinstance(error, APIConnectionError):
             return True
         if isinstance(error, APIStatusError):

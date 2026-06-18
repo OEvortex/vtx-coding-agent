@@ -3,7 +3,7 @@
 from collections.abc import AsyncIterator
 from typing import Any, ClassVar
 
-from openai import APIConnectionError, APIStatusError, RateLimitError
+from openai import APIConnectionError, APIError, APIStatusError
 
 from ...core.errors import format_error
 from ...core.types import (
@@ -258,10 +258,15 @@ class OpenAISDKProvider(BaseProvider):
                 return StopReason.STOP
 
     def should_retry_for_error(self, error: Exception) -> bool:
-        if isinstance(error, RateLimitError):
-            return True
+        from ..rate_limit import is_rate_limit_error
+
+        if is_rate_limit_error(error):
+            return False
         if isinstance(error, APIConnectionError):
             return True
         if isinstance(error, APIStatusError):
             return error.status_code >= 500
+        if isinstance(error, APIError):
+            msg = str(error).lower()
+            return any(s in msg for s in ("provider returned error", "overloaded", "capacity"))
         return False

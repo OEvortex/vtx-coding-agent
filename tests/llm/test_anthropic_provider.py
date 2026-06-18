@@ -77,11 +77,11 @@ def _make_mock_response(status_code: int) -> httpx.Response:
     return httpx.Response(status_code, request=httpx.Request("GET", "https://example.com"))
 
 
-def test_should_retry_for_rate_limit(anthropic_provider):
+def test_should_not_retry_rate_limit_internally_handled(anthropic_provider):
     from anthropic import RateLimitError
 
     error = RateLimitError(message="rate limited", response=_make_mock_response(429), body=None)
-    assert anthropic_provider.should_retry_for_error(error) is True
+    assert anthropic_provider.should_retry_for_error(error) is False
 
 
 def test_should_retry_for_server_error(anthropic_provider):

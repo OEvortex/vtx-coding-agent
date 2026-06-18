@@ -396,16 +396,12 @@ async def test_run_single_turn_retries_scenario(sample_messages, tools):
     ):
         events.append(event)
 
-    # Should have 2 retry events
+    # Rate limit retries are now handled internally by the rate limit manager
+    # at the provider level, so turn-level retry events should not appear.
     retry_events = [e for e in events if isinstance(e, RetryEvent)]
-    assert len(retry_events) == 2
-    assert retry_events[0].attempt == 1
-    assert retry_events[0].total_attempts == 3
-    assert "Rate limit" in retry_events[0].error
-    assert retry_events[1].attempt == 2
-    assert retry_events[1].total_attempts == 3
+    assert len(retry_events) == 0
 
-    # Eventually succeed with default scenario content
+    # Should still succeed — rate limit manager retried internally
     thinking_start = next(e for e in events if isinstance(e, ThinkingStartEvent))
     assert thinking_start is not None
 

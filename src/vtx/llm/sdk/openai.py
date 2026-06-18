@@ -35,6 +35,9 @@ def _is_transient_error(e: Exception) -> bool:
             "bad gateway",
             "gateway timeout",
             "service unavailable",
+            "provider returned error",
+            "overloaded",
+            "capacity",
         ]
     )
 
