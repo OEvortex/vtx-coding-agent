@@ -6,7 +6,44 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
-- No changes yet.
+### Fixed
+
+#### Kilo "Provider returned error" now retried automatically
+- The OpenAI SDK raises `APIError("Provider returned error")` when an upstream
+  gateway like Kilo fails transiently. This was previously uncaught by any retry
+  path and surfaced directly to the user. Now retried at three layers:
+  SDK-level `_is_transient_error`, provider-level `should_retry_for_error`,
+  and the rate limit manager's `is_rate_limit_error`.
+- Also catches "overloaded" and "capacity" transient errors from gateways.
+
+#### Skill tool `file_path="None"` string normalization
+- Added a Pydantic `model_validator` to `SkillParams` that converts the literal
+  string `"None"` to Python `None` for nullable fields (`name`, `content`,
+  `old_string`, `new_string`, `file_path`). Previously the LLM could pass
+  `"file_path": "None"` which evaluated as truthy, causing the tool to construct
+  paths like `.../review/None` instead of falling back to `"SKILL.md"`.
+
+### Changed
+
+#### Internal rate-limit manager with automatic retries
+- Added `RateLimitManager` (`src/vtx/llm/rate_limit.py`) that intercepts
+  429 / rate-limit errors at the provider stream layer and retries with
+  exponential backoff + jitter, transparently to the caller.
+- `BaseProvider.stream()` now delegates to `rate_limit_manager.retry_stream()`,
+  which re-calls `_stream_impl` on rate-limit errors up to 5 times by default.
+- Respects `Retry-After` headers from the server when present.
+- Removed `RateLimitError` from `should_retry_for_error()` in OpenAI and
+  Anthropic providers since rate limits are now handled internally.
+
+#### Built-in skills synced to `~/.vtx/skills/` for reliable filesystem access
+- Built-in skills are now auto-copied from the package to `~/.vtx/skills/` on
+  every `Context.load()` and `Context.reload()`, so they live on the real
+  filesystem and are readable by any tool.
+- `load_skills()` now scans `~/.vtx/skills/` as a third discovery location
+  (after project and user-global dirs), marking synced skills as `bundled=True`.
+- `find_skill_dir()` in the skill tool searches `~/.vtx/skills/` between the
+  user-global and package built-in locations, ensuring the model's `view`
+  action resolves to the synced copy on disk.
 
 ## [0.1.4] - 2026-06-18 — Handoff Agents, Background Tasks & Subagents
 
