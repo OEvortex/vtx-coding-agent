@@ -201,7 +201,8 @@ class RateLimitManager:
                 await asyncio.sleep(delay)
 
         # Should not reach here, but safety net
-        raise last_error  # type: ignore[misc]
+        assert last_error is not None
+        raise last_error
 
 
 # Module-level singleton
