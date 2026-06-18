@@ -62,6 +62,15 @@ class TestTaskParamsValidation:
         p = TaskParams(description="x", prompt="y")
         assert p.subagent_type == "general-purpose"
 
+    def test_background_defaults_to_false(self):
+        # The default must keep existing callers on the blocking path.
+        p = TaskParams(description="x", prompt="y")
+        assert p.background is False
+
+    def test_background_can_be_enabled(self):
+        p = TaskParams(description="x", prompt="y", background=True)
+        assert p.background is True
+
 
 # ---------------------------------------------------------------------------
 # Sub-agent resolution

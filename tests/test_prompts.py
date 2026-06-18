@@ -10,6 +10,7 @@ from __future__ import annotations
 from vtx import Config, reset_config, set_config
 from vtx.context import Context
 from vtx.prompts import (
+    BACKGROUND_TASKS,
     CONTEXT_AWARENESS,
     DEFAULT_VTX_BASE,
     EDITING_CONSTRAINTS,
@@ -48,6 +49,7 @@ def test_default_base_includes_all_sections_in_order():
         ERROR_RECOVERY,
         SAFETY,
         PROGRESS_UPDATES,
+        BACKGROUND_TASKS,
         VTX_GENERAL_RULES,
     ]
     expected = "\n\n".join(sections)
