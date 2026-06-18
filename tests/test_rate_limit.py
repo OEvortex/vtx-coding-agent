@@ -3,6 +3,24 @@ import pytest
 from vtx.llm.rate_limit import RateLimitManager, is_rate_limit_error, parse_retry_after
 
 
+class _StatusError(Exception):
+    def __init__(self, msg: str, status_code: int) -> None:
+        super().__init__(msg)
+        self.status_code = status_code
+
+
+class _HeaderError(Exception):
+    def __init__(self, msg: str, headers: dict[str, str]) -> None:
+        super().__init__(msg)
+        self.headers = headers
+
+
+class _ResponseError(Exception):
+    def __init__(self, msg: str, response: object) -> None:
+        super().__init__(msg)
+        self.response = response
+
+
 class TestIsRateLimitError:
     def test_rate_limit_keyword(self):
         assert is_rate_limit_error(RuntimeError("Rate limit exceeded"))
@@ -18,9 +36,7 @@ class TestIsRateLimitError:
         assert is_rate_limit_error(exc)
 
     def test_status_code_429(self):
-        exc = Exception("err")
-        exc.status_code = 429  # type: ignore[attr-defined]
-        assert is_rate_limit_error(exc)
+        assert is_rate_limit_error(_StatusError("err", 429))
 
     def test_non_rate_limit_error(self):
         assert not is_rate_limit_error(RuntimeError("Connection reset"))
@@ -35,30 +51,22 @@ class TestIsRateLimitError:
         assert is_rate_limit_error(RuntimeError("At capacity, try again later"))
 
     def test_status_code_500(self):
-        exc = Exception("err")
-        exc.status_code = 500  # type: ignore[attr-defined]
-        assert not is_rate_limit_error(exc)
+        assert not is_rate_limit_error(_StatusError("err", 500))
 
 
 class TestParseRetryAfter:
     def test_from_headers_dict(self):
-        exc = Exception("err")
-        exc.headers = {"Retry-After": "5"}
-        assert parse_retry_after(exc) == 5.0
+        assert parse_retry_after(_HeaderError("err", {"Retry-After": "5"})) == 5.0
 
     def test_from_response_headers(self):
         resp = type("Resp", (), {"headers": {"retry-after": "10"}})()
-        exc = Exception("err")
-        exc.response = resp
-        assert parse_retry_after(exc) == 10.0
+        assert parse_retry_after(_ResponseError("err", resp)) == 10.0
 
     def test_no_headers(self):
         assert parse_retry_after(Exception("err")) is None
 
     def test_non_numeric_retry_after(self):
-        exc = Exception("err")
-        exc.headers = {"Retry-After": "bad"}
-        assert parse_retry_after(exc) is None
+        assert parse_retry_after(_HeaderError("err", {"Retry-After": "bad"})) is None
 
 
 class TestRateLimitManager:
@@ -93,16 +101,14 @@ class TestRateLimitManager:
         d1 = mgr.wait_delay("test", err)
         d2 = mgr.wait_delay("test", err)
         d3 = mgr.wait_delay("test", err)
-        # With jitter, just check rough ordering
         assert d1 < d2 + 1.0
         assert d2 < d3 + 1.0
 
     def test_delay_respects_retry_after(self):
         mgr = RateLimitManager(max_retries=3)
-        err = RuntimeError("Rate limit exceeded")
-        err.headers = {"Retry-After": "2"}
+        err = _HeaderError("Rate limit exceeded", {"Retry-After": "2"})
         delay = mgr.wait_delay("test", err)
-        assert delay >= 1.0  # 2s ± jitter, minimum 0.1
+        assert delay >= 1.0
         assert delay <= 3.0
 
     def test_delay_capped_at_max(self):
@@ -111,7 +117,7 @@ class TestRateLimitManager:
         for _ in range(8):
             mgr.wait_delay("test", err)
         delay = mgr.wait_delay("test", err)
-        assert delay <= 5.0 * 1.5 + 0.1  # max_delay + max jitter + margin
+        assert delay <= 5.0 * 1.5 + 0.1
 
 
 class TestRateLimitManagerRetryStream:
@@ -156,7 +162,7 @@ class TestRateLimitManagerRetryStream:
 
         with pytest.raises(RuntimeError, match="Rate limit exceeded"):
             await mgr.retry_stream(provider, [])
-        assert provider._stream_impl.call_count == 3  # 1 initial + 2 retries
+        assert provider._stream_impl.call_count == 3
 
     @pytest.mark.asyncio
     async def test_non_rate_limit_error_raises_immediately(self):
