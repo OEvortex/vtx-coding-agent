@@ -9,6 +9,7 @@ the orchestrator in :mod:`vtx.prompts.builder`.
 from .builder import build_system_prompt
 from .env import ENV_HEADER, build_env_section
 from .identity import (
+    BACKGROUND_TASKS,
     CONTEXT_AWARENESS,
     DEFAULT_VTX_BASE,
     EDITING_CONSTRAINTS,
@@ -25,6 +26,7 @@ from .identity import (
 from .tooling import TOOL_USAGE_HEADER, build_tool_guidelines_section
 
 __all__ = [
+    "BACKGROUND_TASKS",
     "CONTEXT_AWARENESS",
     "DEFAULT_VTX_BASE",
     "EDITING_CONSTRAINTS",

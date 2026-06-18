@@ -20,13 +20,24 @@ sub-agents don't collide) and receives a small event dict shape::
     {"kind": "subagent_start" | "text_delta" | "tool_start" |
      "tool_result" | "subagent_end" | "error" | ...,
      "subagent": "<name>", ...}
+
+Background sub-agents (``Task(..., background=True)``) read
+``background_manager`` from this slot to schedule an in-process
+:class:`~vtx.tools.background.BackgroundTaskManager` and return
+immediately with a ``task_id``. The manager is process-local and is
+also reachable via :func:`vtx.tools.background.get_manager` (a
+contextvar) so background sub-agents that run on the asyncio loop can
+find it without an explicit reference.
 """
 
 from __future__ import annotations
 
 from collections.abc import Callable
 from dataclasses import dataclass
-from typing import Any
+from typing import TYPE_CHECKING, Any
+
+if TYPE_CHECKING:
+    from vtx.tools.background import BackgroundTaskManager
 
 
 @dataclass
@@ -53,6 +64,10 @@ class DispatcherContext:
     # events into the parent tool block. Signature:
     #   progress_callback(tool_call_id, event_dict) -> None
     progress_callback: Callable[[str, dict], None] | None = None
+    # Manager for background sub-agents. ``None`` means background
+    # dispatch is unavailable (e.g. headless test harness without a
+    # ConversationRuntime).
+    background_manager: BackgroundTaskManager | None = None
 
 
 _context: DispatcherContext | None = None

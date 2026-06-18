@@ -59,6 +59,16 @@ class TaskParams(BaseModel):
         default=None,
         description=("Optional model override for the sub-agent. Defaults to the parent's model."),
     )
+    background: bool = Field(
+        default=False,
+        description=(
+            "Run the sub-agent concurrently and return immediately with a "
+            "task_id. The parent turn is not blocked. Use the TaskOutput "
+            "tool to retrieve the result. Notifications for completed "
+            "background tasks arrive between turns. The model must NOT "
+            "poll or sleep — TaskOutput is the only retrieval path."
+        ),
+    )
 
 
 @dataclass
@@ -410,8 +420,11 @@ class TaskTool(BaseTool[TaskParams]):
         "Provide a clear ``prompt`` with all necessary context, pick a "
         "``subagent_type`` (``general-purpose``, ``Explore``, ``Plan``, or "
         "a user-defined agent name from .vtx/agent/), and an optional "
-        "``model`` override. Use this for parallelisable, well-scoped "
-        "work; do not use it for trivial single-tool calls."
+        "``model`` override. Set ``background: true`` to run the sub-agent "
+        "concurrently and return immediately with a ``task_id`` — use the "
+        "TaskOutput tool to retrieve the result later. Do not poll. Use "
+        "this for parallelisable, well-scoped work; do not use it for "
+        "trivial single-tool calls."
     )
 
     prompt_guidelines = (
@@ -425,7 +438,13 @@ class TaskTool(BaseTool[TaskParams]):
         "plan, general-purpose for everything else) over a custom agent. "
         "Never use Task for trivial single-tool work — call the tool "
         "directly. The sub-agent cannot see this conversation; include "
-        "all context the sub-agent needs in the prompt.",
+        "all context the sub-agent needs in the prompt. "
+        "For background tasks (``background: true``): the tool returns a "
+        "task_id immediately. The sub-agent runs concurrently and the "
+        "parent turn is NOT blocked. Do NOT poll, sleep, or busy-wait — "
+        "use TaskOutput to retrieve the result. Completion notifications "
+        "arrive between turns; treat them as system events, not as user "
+        "messages.",
     )
 
     def format_call(self, params: TaskParams) -> str:
@@ -445,6 +464,9 @@ class TaskTool(BaseTool[TaskParams]):
                     "report it as a bug."
                 ),
             )
+
+        if params.background:
+            return await self._execute_background(params, parent_ctx)
 
         tool_call_id = f"task_{uuid.uuid4().hex[:12]}"
 
@@ -499,6 +521,89 @@ class TaskTool(BaseTool[TaskParams]):
             ui_summary=ui_summary,
             ui_details=None,
             ui_details_full=ui_details,
+        )
+
+    async def _execute_background(self, params: TaskParams, parent_ctx: Any) -> ToolResult:
+        """Dispatch a sub-agent and return immediately with a ``task_id``.
+
+        The sub-agent runs concurrently on the asyncio loop; the
+        parent turn is unblocked. Completion is reported via a
+        :class:`~vtx.events.BackgroundTaskCompletedEvent` yielded
+        between parent turns by :meth:`vtx.loop.Agent.run`. The
+        model retrieves the final text via the TaskOutput tool —
+        it must NOT poll.
+
+        Cancellation contract: a background task is not cancelled
+        when the parent's ``cancel_event`` fires (the call has
+        already returned). It is only cancelled by an explicit
+        stop or by :meth:`vtx.runtime.ConversationRuntime.close`.
+        """
+        from .background import get_manager
+
+        manager = parent_ctx.background_manager or get_manager()
+        if manager is None:
+            return ToolResult(
+                success=False,
+                result=(
+                    "Background Task requested but no BackgroundTaskManager "
+                    "is installed. The headless/runtime must call "
+                    "ConversationRuntime.ensure_background_manager() "
+                    "before dispatching background sub-agents."
+                ),
+            )
+
+        spec = _resolve_subagent_spec(params.subagent_type, parent_ctx.agent_registry)
+        tool_call_id = f"task_{uuid.uuid4().hex[:12]}"
+        progress_cb = parent_ctx.progress_callback
+        parent_session_id = getattr(parent_ctx, "session_id", None)
+        if parent_session_id is None and getattr(parent_ctx, "session", None) is not None:
+            parent_session_id = parent_ctx.session.id
+
+        async def _factory() -> Any:
+            # Background sub-agents run with no cancellation signal
+            # from the parent — they survive Esc and only stop on
+            # explicit /tasks stop or runtime close.
+            return await _run_subagent(
+                parent_ctx=parent_ctx,
+                spec=spec,
+                prompt=params.prompt,
+                cancel_event=None,
+                model_override=params.model,
+                progress_callback=progress_cb,
+                tool_call_id=tool_call_id,
+            )
+
+        record = await manager.register(
+            description=params.description,
+            prompt=params.prompt,
+            subagent_type=spec.name,
+            model=params.model or spec.model or parent_ctx.model,
+            parent_session_id=parent_session_id,
+            run_coro_factory=_factory,
+        )
+
+        text = (
+            f"Background task launched.\n"
+            f"  task_id: {record.task_id}\n"
+            f"  description: {record.description}\n"
+            f"  subagent_type: {spec.name}\n"
+            f"Use TaskOutput(task_id='{record.task_id}', block=true) to "
+            f"wait for the result, or TaskOutput(..., block=false) to "
+            f"poll status. The notification will also arrive between turns."
+        )
+
+        return ToolResult(
+            success=True,
+            result=text,
+            ui_summary=f"launched background task {record.short_id()}",
+            ui_details=None,
+            ui_details_full=(
+                f"task_id: {record.task_id}\n"
+                f"description: {record.description}\n"
+                f"subagent_type: {spec.name}\n"
+                f"model: {params.model or spec.model or parent_ctx.model}\n"
+                f"record: {manager._store_dir}/{record.task_id}.json"
+            ),
         )
 
 

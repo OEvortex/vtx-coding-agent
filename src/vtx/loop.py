@@ -9,9 +9,11 @@ The loop ends on stop/error/interruption, compaction pause mode, or max turns.
 """
 
 import asyncio
+import logging
 import os
 from collections.abc import AsyncIterator
 from dataclasses import dataclass
+from typing import Any
 
 from . import config as vtx_config
 from .context import Context
@@ -30,6 +32,7 @@ from .core.types import (
 from .events import (
     AgentEndEvent,
     AgentStartEvent,
+    BackgroundTaskCompletedEvent,
     CompactionEndEvent,
     CompactionStartEvent,
     ErrorEvent,
@@ -56,6 +59,8 @@ from .turn import run_single_turn
 # Re-exported so existing callers (runtime, tests) keep working.
 __all__ = ["Agent", "AgentConfig", "build_system_prompt"]
 
+log = logging.getLogger("vtx.loop")
+
 
 @dataclass
 class AgentConfig:
@@ -74,6 +79,7 @@ class Agent:
         system_prompt: str | None = None,
         config: AgentConfig | None = None,
         extensions: EventBus | None = None,
+        background_manager: Any = None,
     ):
         self.provider = provider
         self.tools = tools
@@ -86,6 +92,7 @@ class Agent:
         )
         self._extensions = extensions
         self._run_usage = Usage()
+        self._background_manager = background_manager
 
     @property
     def context(self) -> Context:
@@ -186,6 +193,15 @@ class Agent:
                         TURN_END, cancel_event=cancel_event, turn=turn, tool_results=tool_results
                     )
 
+                # Drain background-task completions and inject a synthetic
+                # message into the next turn so the model sees the
+                # notification. Done between turns (not mid-turn) so we
+                # never interrupt an in-flight stream. ``drain_completed``
+                # flips each record's ``notified`` flag, so each task is
+                # delivered at most once.
+                for evt in self._drain_background_notifications():
+                    yield evt
+
                 if was_interrupted or stop_reason == StopReason.INTERRUPTED:
                     stop_reason = StopReason.INTERRUPTED
                     break
@@ -223,6 +239,12 @@ class Agent:
 
         yield AgentEndEvent(stop_reason=stop_reason, total_turns=turn, total_usage=self._run_usage)
 
+        # Final drain in case a background task completed during the very
+        # last turn. We yield both the structured event and the synthetic
+        # message; the renderer is responsible for surface rendering.
+        for evt in self._drain_background_notifications():
+            yield evt
+
         if self._extensions is not None:
             await self._extensions.emit(
                 AGENT_END,
@@ -231,6 +253,78 @@ class Agent:
                 total_turns=turn,
                 total_usage=self._run_usage,
             )
+
+    def _drain_background_notifications(self) -> list[Event]:
+        """Pull finished background tasks from the manager.
+
+        Returns a list containing, for each newly-finished task:
+        - one :class:`BackgroundTaskCompletedEvent` for the UI, and
+        - one synthetic :class:`UserMessage` already appended to the
+          session so the model sees it on the next turn.
+
+        The synthetic message is wrapped in a marker tag
+        (``vtx:background-task-completion``) and the system prompt
+        instructs the model to treat it as a system event, not a user
+        instruction (anthropics/claude-code#35610).
+
+        ``drain_completed`` flips ``notified=True`` on each record
+        before returning, so this list contains each task exactly
+        once even if the parent does nothing in response
+        (anthropics/claude-code#20679).
+        """
+        from .tools.background import BACKGROUND_NOTIFICATION_TAG
+
+        if self._background_manager is None:
+            return []
+
+        out: list[Event] = []
+        try:
+            drained = self._background_manager.drain_completed()
+        except Exception:
+            log.exception("BackgroundTaskManager.drain_completed failed")
+            return []
+
+        for record in drained:
+            summary = self._format_bg_summary(record)
+            out.append(
+                BackgroundTaskCompletedEvent(
+                    task_id=record.task_id,
+                    description=record.description,
+                    subagent_type=record.subagent_type,
+                    status=record.status,  # type: ignore[arg-type]
+                    summary=summary,
+                    turns=record.turns,
+                    total_tokens=record.total_tokens,
+                    notification_tag=BACKGROUND_NOTIFICATION_TAG,
+                )
+            )
+            synthetic = UserMessage(
+                content=(
+                    f"<{BACKGROUND_NOTIFICATION_TAG}> "
+                    f"Background task '{record.description}' "
+                    f"({record.subagent_type}) finished with status "
+                    f"{record.status} in {record.turns} turn(s). "
+                    f"task_id={record.task_id}. "
+                    f"Use TaskOutput(task_id={record.task_id!r}, "
+                    f"block=true) to retrieve the final answer."
+                    f"</{BACKGROUND_NOTIFICATION_TAG}>"
+                )
+            )
+            self.session.append_message(synthetic)
+        return out
+
+    @staticmethod
+    def _format_bg_summary(record: Any) -> str:
+        head = record.result_text or ""
+        head = head.strip().splitlines()
+        if head:
+            first = head[0].strip()
+            if len(first) > 160:
+                first = first[:157] + "..."
+            return first
+        if record.error:
+            return f"error: {record.error}"
+        return "(no result)"
 
     async def _check_compaction(
         self, stop_reason: StopReason, system_prompt: str, cancel_event: asyncio.Event | None

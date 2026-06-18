@@ -1,5 +1,6 @@
 from ..core.types import ToolDefinition
 from .ask_user import AskUserTool
+from .background import BackgroundTaskManager, BackgroundTaskRecord, get_manager, set_manager
 from .base import BaseTool
 from .bash import BashTool
 from .edit import EditTool
@@ -8,17 +9,22 @@ from .grep import GrepTool
 from .read import ReadTool
 from .skill import SkillTool
 from .task import TaskTool
+from .task_output import TaskOutputTool
 from .web import WebFetchTool, WebSearchTool
 from .write import WriteTool
 
 # Note: Sub-agent dispatching is shipped as a default tool in vtx.
 # The generic dispatcher context (provider, model, cwd, …) that
 # the tool reads lives in :mod:`vtx.dispatcher`; the runtime
-# populates it on every state change.
+# populates it on every state change. Background sub-agents are
+# managed by :mod:`vtx.tools.background`, and their results are
+# retrieved via the TaskOutput tool (:mod:`vtx.tools.task_output`).
 
 __all__ = [
     "DEFAULT_TOOLS",
     "AskUserTool",
+    "BackgroundTaskManager",
+    "BackgroundTaskRecord",
     "BaseTool",
     "BashTool",
     "EditTool",
@@ -26,14 +32,17 @@ __all__ = [
     "GrepTool",
     "ReadTool",
     "SkillTool",
+    "TaskOutputTool",
     "TaskTool",
     "WebFetchTool",
     "WebSearchTool",
     "WriteTool",
+    "get_manager",
     "get_tool",
     "get_tool_definitions",
     "get_tools",
     "get_tools_with_extensions",
+    "set_manager",
     "tools_by_name",
 ]
 
@@ -49,6 +58,7 @@ all_tools: list[BaseTool] = [
     WebSearchTool(),
     AskUserTool(),
     TaskTool(),
+    TaskOutputTool(),
 ]
 
 tools_by_name: dict[str, BaseTool] = {tool.name: tool for tool in all_tools}
@@ -63,6 +73,7 @@ DEFAULT_TOOLS: list[str] = [
     "web_search",
     "ask_user",
     "task",
+    "task_output",
 ]
 
 

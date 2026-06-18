@@ -184,6 +184,9 @@ async def run_headless(
             print("error: agent initialization failed", file=sys.stderr)
             return 2
 
-        return _exit_code(await render_run(agent.run(prompt)))
+        try:
+            return _exit_code(await render_run(agent.run(prompt)))
+        finally:
+            await runtime.close()
     finally:
         cfg.permissions.mode = previous_permission_mode

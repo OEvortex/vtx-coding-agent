@@ -544,6 +544,18 @@ class Vtx(
 
         gc.freeze()
 
+    async def on_unmount(self) -> None:
+        """Tear down background sub-agents when the TUI exits.
+
+        Called by Textual as the app is being torn down. Cancels any
+        still-running background sub-agents so they do not outlive
+        the parent session.
+        """
+        import contextlib
+
+        with contextlib.suppress(Exception):
+            await self._runtime.close()
+
     # -------------------------------------------------------------------------
     # Key bindings
     # -------------------------------------------------------------------------

@@ -5,6 +5,7 @@ import logging
 import os
 from dataclasses import dataclass
 from pathlib import Path
+from typing import Any
 
 from . import config as vtx_config
 from .agents import AgentRegistry, LoadedAgent, compose_active_commands, compose_active_tools
@@ -117,6 +118,8 @@ class ConversationRuntime:
         agent_extensions: list | None = None,
     ) -> None:
         self.cwd = cwd
+        self._background_manager = None  # installed via ensure_background_manager
+        self._background_manager_token = None
 
         # Resolve the initial agent (CLI > env > config > none). The CLI and
         # the launch path may pass an explicit ``active_agent``; otherwise we
@@ -353,8 +356,54 @@ class ConversationRuntime:
                 cwd=self.cwd,
                 system_prompt=self.agent._system_prompt,  # type: ignore[attr-defined]
                 progress_callback=existing.progress_callback if existing else None,
+                background_manager=self._background_manager,
             )
         )
+
+    def ensure_background_manager(self) -> Any:
+        """Lazily construct the :class:`BackgroundTaskManager`.
+
+        Idempotent: a second call returns the same instance. Installs
+        the manager into the dispatcher context (via the contextvar)
+        so the :class:`TaskTool` can schedule background sub-agents
+        and the :class:`TaskOutputTool` can wait for them.
+        """
+        if self._background_manager is None:
+            from .tools.background import BackgroundTaskManager, set_manager
+
+            self._background_manager = BackgroundTaskManager()
+            self._background_manager_token = set_manager(self._background_manager)
+            # Refresh the dispatcher context so the new manager is
+            # visible to tools dispatched in this process.
+            self._refresh_dispatcher_context()
+            if self.agent is not None:
+                self.agent._background_manager = self._background_manager
+        return self._background_manager
+
+    async def close(self) -> None:
+        """Tear down the runtime, cancelling any background sub-agents.
+
+        Called by both the TUI's ``on_unmount`` and the headless
+        ``finally`` to ensure no background tasks outlive the parent
+        session. Restores the previous dispatcher-contextvar value
+        so a second runtime in the same process starts clean.
+        """
+        if self._background_manager is not None:
+            try:
+                await self._background_manager.close()
+            except Exception:
+                log.exception("BackgroundTaskManager.close failed")
+            self._background_manager = None
+            if self.agent is not None:
+                self.agent._background_manager = None
+        if self._background_manager_token is not None:
+            from .tools.background import reset_manager
+
+            try:
+                reset_manager(self._background_manager_token)
+            except Exception:
+                log.exception("Failed to reset background manager contextvar")
+            self._background_manager_token = None
 
     def active_commands(self) -> dict:
         """The current slash-command dict (session + agent-local).
@@ -534,9 +583,11 @@ class ConversationRuntime:
         self.agent = self._new_agent(provider, session, context) if provider and session else None
         self._sync_provider_session_id()
 
-        # Install the parent context used by the Task tool. The TUI
-        # later overwrites ``progress_callback`` with its chat-log
-        # forwarder.
+        # Install the background-task manager before the dispatcher
+        # context so the Task tool sees it. The TUI later overwrites
+        # ``progress_callback`` with its chat-log forwarder.
+        if provider and session:
+            self.ensure_background_manager()
         self._refresh_dispatcher_context()
 
         set_last_selected(

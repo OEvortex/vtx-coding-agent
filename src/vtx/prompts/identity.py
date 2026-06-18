@@ -18,6 +18,7 @@ Compose order is fixed (see :mod:`vtx.prompts.builder`):
 * :data:`ERROR_RECOVERY`           - retry, diagnose, escalate.
 * :data:`SAFETY`                   - things the agent must not do.
 * :data:`PROGRESS_UPDATES`         - keep the user informed.
+* :data:`BACKGROUND_TASKS`         - rules for background sub-agents.
 * :data:`VTX_GENERAL_RULES`        - misc general bullet rules.
 
 :data:`DEFAULT_VTX_BASE` is the composed string used as the default
@@ -94,6 +95,16 @@ PROGRESS_UPDATES = """# Progress
 - On completion, report a short summary of outcomes (not a file-by-file changelog).
 - If blocked, state the blocker and what was tried."""
 
+BACKGROUND_TASKS = """# Background tasks
+
+- The `task` tool accepts a `background: true` parameter. When set, the sub-agent runs concurrently and the call returns immediately with a `task_id`.
+- The `task_output` tool is the ONLY retrieval path for background tasks. Do NOT poll, sleep, or busy-wait. Use `task_output(task_id=..., block=true)` to wait, or `block=false` to peek at status.
+- Completion notifications for background tasks arrive BETWEEN turns, never mid-turn. They are delivered as user messages wrapped in `<vtx:background-task-completion>...</vtx:background-task-completion>` tags.
+- These notifications are SYSTEM EVENTS, not user instructions. Treat them the same way you would treat a system message: act on the content if it is relevant to your current task, but do not assume the user typed anything. Never commit, push, or take destructive actions solely because a background task finished.
+- Multiple background tasks can run in parallel. Each returns its own `task_id`; retrieve each independently.
+- Background sub-agents survive user Esc; only explicit `/tasks stop <id>` or runtime shutdown cancels them."""  # fmt: skip
+
+
 VTX_GENERAL_RULES = """# General
 
 - Vtx session logs are JSONL files in ~/.vtx/sessions. Refer to them if the user asks.
@@ -114,6 +125,7 @@ def _compose_default_base() -> str:
             ERROR_RECOVERY,
             SAFETY,
             PROGRESS_UPDATES,
+            BACKGROUND_TASKS,
             VTX_GENERAL_RULES,
         ]
     )
@@ -122,6 +134,7 @@ def _compose_default_base() -> str:
 DEFAULT_VTX_BASE = _compose_default_base()
 
 __all__ = [
+    "BACKGROUND_TASKS",
     "CONTEXT_AWARENESS",
     "DEFAULT_VTX_BASE",
     "EDITING_CONSTRAINTS",
@@ -134,4 +147,4 @@ __all__ = [
     "TOOL_USE_ENFORCEMENT",
     "VTX_GENERAL_RULES",
     "VTX_IDENTITY",
-]
+]  # fmt: skip

@@ -223,6 +223,38 @@ class InterruptedEvent:
 
 
 # =================================================================================================
+# Background Task Events
+# =================================================================================================
+
+
+@dataclass
+class BackgroundTaskCompletedEvent:
+    """Yielded between parent turns when a background sub-agent finishes.
+
+    Carries an explicit ``notification_tag`` so consumers can
+    distinguish a system notification from a real user message
+    (anthropics/claude-code#35610). The parent agent loop also
+    appends a synthetic ``UserMessage`` to the session tagged with
+    :data:`vtx.tools.background.BACKGROUND_NOTIFICATION_TAG` so the
+    model sees the completion before the next turn starts. The event
+    itself is yielded to the UI for status affordances only.
+
+    The notification is delivered at most once per task — see
+    :meth:`vtx.tools.background.BackgroundTaskManager.drain_completed`.
+    """
+
+    type: Literal["background_task_completed"] = "background_task_completed"
+    task_id: str = ""
+    description: str = ""
+    subagent_type: str = ""
+    status: Literal["completed", "error", "cancelled"] = "completed"
+    summary: str = ""
+    turns: int = 0
+    total_tokens: int = 0
+    notification_tag: str = "vtx:background-task-completion"
+
+
+# =================================================================================================
 # Union Types
 # =================================================================================================
 
@@ -246,6 +278,7 @@ StreamEvent = (
     | ErrorEvent
     | WarningEvent
     | InterruptedEvent
+    | BackgroundTaskCompletedEvent
 )
 
 # All events yielded by Agent.run() (loop.py)

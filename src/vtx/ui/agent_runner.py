@@ -14,6 +14,7 @@ from ..events import (
     AgentEndEvent,
     AgentStartEvent,
     AskUserEvent,
+    BackgroundTaskCompletedEvent,
     CompactionEndEvent,
     CompactionStartEvent,
     ErrorEvent,
@@ -42,7 +43,7 @@ from ..tools.bash import BashParams, BashTool
 from .chat import ChatLog
 from .widgets import InfoBar, StatusLine
 
-_NOTIFY_EVENTS = (AgentEndEvent, ToolApprovalEvent)
+_NOTIFY_EVENTS = (AgentEndEvent, ToolApprovalEvent, BackgroundTaskCompletedEvent)
 
 
 class AgentRunnerMixin:
@@ -100,6 +101,12 @@ class AgentRunnerMixin:
             return "completion"
         if isinstance(event, ToolApprovalEvent):
             return "permission"
+        if isinstance(event, BackgroundTaskCompletedEvent):
+            if event.status == "completed":
+                return "completion"
+            if event.status == "error":
+                return "error"
+            return None
         return None
 
     async def _run_agent(self, prompt: str) -> None:
@@ -316,6 +323,15 @@ class AgentRunnerMixin:
 
             case WarningEvent(warning=w):
                 chat.add_info_message(str(w), warning=True)
+
+            case BackgroundTaskCompletedEvent(
+                task_id=tid, description=desc, status=st, summary=summary
+            ):
+                chat.add_info_message(
+                    f"Background task '{desc}' ({st}) — task_id={tid}\n"
+                    f"  Use TaskOutput to retrieve the final answer.\n"
+                    f"  {summary}"
+                )
 
             case AgentEndEvent(stop_reason=reason):
                 if reason == StopReason.INTERRUPTED:
