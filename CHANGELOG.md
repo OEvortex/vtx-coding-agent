@@ -6,6 +6,48 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+- No changes yet.
+
+## [0.1.5] - 2026-06-18 — Rate Limit Manager, Safe Max-Output & Gateway Fixes
+
+Internal rate-limit manager with exponential backoff, safe max-output token limits by context window tier, Kilo transient error retries, and built-in skill filesystem syncing.
+
+### Added
+
+#### Internal rate-limit manager with automatic retries
+- Added `RateLimitManager` (`src/vtx/llm/rate_limit.py`) that intercepts
+  429 / rate-limit errors at the provider stream layer and retries with
+  exponential backoff + jitter, transparently to the caller.
+- `BaseProvider.stream()` now delegates to `rate_limit_manager.retry_stream()`,
+  which re-calls `_stream_impl` on rate-limit errors up to 5 times by default.
+- Respects `Retry-After` headers from the server when present.
+
+#### Safe max-output token limits by context window tier
+- Replaced the ad-hoc safety cap in `dynamic_models.py` with a centralized
+  `safe_max_output_tokens()` function that tiers max output tokens by context
+  window size: 128k → 8k, 256k → 16k, >256k → 32k, 1M → 64k.
+- Auto-compaction now triggers at `context_window - max_output_tokens` instead
+  of a fixed percentage, ensuring the model always has enough room for its
+  max output regardless of window size.
+
+#### Built-in skills synced to `~/.vtx/skills/` for reliable filesystem access
+- Built-in skills are now auto-copied from the package to `~/.vtx/skills/` on
+  every `Context.load()` and `Context.reload()`, so they live on the real
+  filesystem and are readable by any tool.
+- `load_skills()` now scans `~/.vtx/skills/` as a third discovery location
+  (after project and user-global dirs), marking synced skills as `bundled=True`.
+- `find_skill_dir()` in the skill tool searches `~/.vtx/skills/` between the
+  user-global and package built-in locations, ensuring the model's `view`
+  action resolves to the synced copy on disk.
+
+### Changed
+
+- Removed `RateLimitError` from `should_retry_for_error()` in OpenAI and
+  Anthropic providers since rate limits are now handled internally by the
+  rate limit manager.
+- `is_overflow()` in `compaction.py` now accepts `max_output_tokens` instead
+  of `threshold_percent`.
+
 ### Fixed
 
 #### Kilo "Provider returned error" now retried automatically
@@ -22,28 +64,6 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   `old_string`, `new_string`, `file_path`). Previously the LLM could pass
   `"file_path": "None"` which evaluated as truthy, causing the tool to construct
   paths like `.../review/None` instead of falling back to `"SKILL.md"`.
-
-### Changed
-
-#### Internal rate-limit manager with automatic retries
-- Added `RateLimitManager` (`src/vtx/llm/rate_limit.py`) that intercepts
-  429 / rate-limit errors at the provider stream layer and retries with
-  exponential backoff + jitter, transparently to the caller.
-- `BaseProvider.stream()` now delegates to `rate_limit_manager.retry_stream()`,
-  which re-calls `_stream_impl` on rate-limit errors up to 5 times by default.
-- Respects `Retry-After` headers from the server when present.
-- Removed `RateLimitError` from `should_retry_for_error()` in OpenAI and
-  Anthropic providers since rate limits are now handled internally.
-
-#### Built-in skills synced to `~/.vtx/skills/` for reliable filesystem access
-- Built-in skills are now auto-copied from the package to `~/.vtx/skills/` on
-  every `Context.load()` and `Context.reload()`, so they live on the real
-  filesystem and are readable by any tool.
-- `load_skills()` now scans `~/.vtx/skills/` as a third discovery location
-  (after project and user-global dirs), marking synced skills as `bundled=True`.
-- `find_skill_dir()` in the skill tool searches `~/.vtx/skills/` between the
-  user-global and package built-in locations, ensuring the model's `view`
-  action resolves to the synced copy on disk.
 
 ## [0.1.4] - 2026-06-18 — Handoff Agents, Background Tasks & Subagents
 
