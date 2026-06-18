@@ -6,6 +6,17 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Fixed
+
+#### Context-length safety cap for gateway providers (Kilo, OpenRouter, etc.)
+- Added a safety cap in `dynamic_models.py`'s `_parse_models()` and `_to_static_model()`
+  that prevents `max_tokens` from equaling or exceeding `context_window`. Gateway
+  providers like Kilo often return `max_completion_tokens == context_length` for free
+  models (both 262144). With no input-token buffer, the API call would fail with a
+  `400 context_length_exceeded` error when input tokens consumed part of the window.
+  The cap reserves 8K for large context windows (>= 32K) and 4K for smaller ones,
+  with a floor of `context_window // 2`.
+
 ### Added
 
 #### Built-in `plan` Agent Profile and `grep` Tool

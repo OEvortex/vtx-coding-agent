@@ -395,6 +395,15 @@ def _parse_models(
         else:
             max_tokens = int(max_tokens)
 
+        # Safety: ensure max_tokens leaves room for input tokens within the
+        # context window. If max_tokens >= context_window, the API call will
+        # fail when input tokens consume part of the window (common on Kilo,
+        # OpenRouter, and other gateways where max_completion_tokens equals
+        # context_length). Reserve a buffer proportional to the window size.
+        _buffer = 4096 if context_window and context_window < 32768 else 8192
+        if context_window and max_tokens >= context_window:
+            max_tokens = max(context_window - _buffer, context_window // 2)
+
         # 3. Supports thinking/reasoning
         supports_thinking = None
         if spec and "reasoning" in spec:
@@ -643,6 +652,13 @@ def _to_static_model(provider: str, entry: DynamicModelEntry) -> Model:
     else:
         supports_tools = True
         supports_audio = False
+
+    # Safety cap: ensure max_tokens leaves room for input tokens within the
+    # context window (parallel to the same cap in _parse_models). This covers
+    # the case where models.dev overrides push max_tokens up to context_window.
+    _buffer = 4096 if context_window and context_window < 32768 else 8192
+    if context_window and max_tokens >= context_window:
+        max_tokens = max(context_window - _buffer, context_window // 2)
 
     return Model(
         id=entry.id,
