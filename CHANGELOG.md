@@ -6,6 +6,12 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+- No changes yet.
+
+## [0.1.4] - 2026-06-18 — Handoff Agents, Background Tasks & Subagents
+
+Switchable handoff agents, a built-in `Task` tool for Claude Code-style subagents, background concurrent task execution, a `grep` tool, custom TUI blocks for extension tools, and a context-length safety cap for gateway providers.
+
 ### Fixed
 
 #### Context-length safety cap for gateway providers (Kilo, OpenRouter, etc.)
@@ -455,4 +461,7 @@ to keep the model's context window free for what matters.
   via `uv tool install vtx-coding-agent`.
 - Licensed under **Apache License 2.0**.
 
+[0.1.4]: https://github.com/OEvortex/vtx-coding-agent/compare/v0.1.3...v0.1.4
+[0.1.3]: https://github.com/OEvortex/vtx-coding-agent/compare/v0.1.2...v0.1.3
+[0.1.2]: https://github.com/OEvortex/vtx-coding-agent/compare/v0.1.1...v0.1.2
 [0.1.1]: https://github.com/OEvortex/vtx-coding-agent/releases/tag/v0.1.1
