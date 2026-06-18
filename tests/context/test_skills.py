@@ -342,7 +342,7 @@ description: Global skill
 ---
 """)
 
-        monkeypatch.setattr("vtx.context.skills.get_config_dir", lambda: global_dir)
+        monkeypatch.setattr("vtx.context.skills.get_user_skills_dir", lambda: global_dir)
 
         result = load_skills(str(repo))
 
@@ -368,7 +368,7 @@ description: Global version
 ---
 """)
 
-        monkeypatch.setattr("vtx.context.skills.get_config_dir", lambda: global_dir)
+        monkeypatch.setattr("vtx.context.skills.get_user_skills_dir", lambda: global_dir)
         if sys.platform == "win32":
             monkeypatch.setenv("USERPROFILE", str(tmp_path))
         else:
@@ -396,7 +396,7 @@ description: Planning-only mode
 ---
 """)
 
-        monkeypatch.setattr("vtx.context.skills.get_config_dir", lambda: home_dir / ".agents")
+        monkeypatch.setattr("vtx.context.skills.get_user_skills_dir", lambda: home_dir / ".agents")
         monkeypatch.setenv("HOME", str(home_dir))
 
         result = load_skills(str(home_dir))
@@ -411,7 +411,7 @@ description: Planning-only mode
         repo.mkdir()
         global_dir = tmp_path / "global"
 
-        monkeypatch.setattr("vtx.context.skills.get_config_dir", lambda: global_dir)
+        monkeypatch.setattr("vtx.context.skills.get_user_skills_dir", lambda: global_dir)
 
         result = load_skills(str(repo))
 
@@ -429,7 +429,7 @@ name: invalid-skill
 """)
 
         global_dir = tmp_path / "global"
-        monkeypatch.setattr("vtx.context.skills.get_config_dir", lambda: global_dir)
+        monkeypatch.setattr("vtx.context.skills.get_user_skills_dir", lambda: global_dir)
 
         result = load_skills(str(repo))
 
@@ -446,7 +446,7 @@ description: Uses directory fallback
 """)
 
         global_dir = tmp_path / "global"
-        monkeypatch.setattr("vtx.context.skills.get_config_dir", lambda: global_dir)
+        monkeypatch.setattr("vtx.context.skills.get_user_skills_dir", lambda: global_dir)
 
         result = load_skills(str(repo))
 

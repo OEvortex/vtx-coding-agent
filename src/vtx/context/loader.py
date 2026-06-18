@@ -10,7 +10,13 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 
 from .agent_mds import ContextFile, load_agent_mds
-from .skills import Skill, load_builtin_cmd_skills, load_skills, merge_registered_skills
+from .skills import (
+    Skill,
+    load_builtin_cmd_skills,
+    load_skills,
+    merge_registered_skills,
+    sync_builtin_skills,
+)
 
 
 @dataclass
@@ -22,6 +28,7 @@ class Context:
 
     @classmethod
     def load(cls, cwd: str) -> Context:
+        sync_builtin_skills()
         agents_files = load_agent_mds(cwd)
         skills_result = load_skills(cwd)
         builtin_result = load_builtin_cmd_skills()
@@ -33,6 +40,7 @@ class Context:
         return cls(cwd=cwd, agents_files=agents_files, skills=skills, skill_warnings=warnings)
 
     def reload(self) -> None:
+        sync_builtin_skills()
         agents_files = load_agent_mds(self.cwd)
         skills_result = load_skills(self.cwd)
         builtin_result = load_builtin_cmd_skills()

@@ -4,10 +4,10 @@ import shutil
 from pathlib import Path
 from typing import Literal
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, model_validator
 
 from ..context.skills import (
-    get_config_dir,
+    get_user_skills_dir,
     load_builtin_cmd_skills,
     load_skills,
     merge_registered_skills,
@@ -16,6 +16,14 @@ from .base import BaseTool, ToolResult
 
 
 class SkillParams(BaseModel):
+    @model_validator(mode="before")
+    @classmethod
+    def _normalize_none_strings(cls, data: dict) -> dict:
+        for key in ("name", "content", "old_string", "new_string", "file_path"):
+            if isinstance(data.get(key), str) and data[key].strip().lower() == "none":
+                data[key] = None
+        return data
+
     action: Literal["list", "view", "create", "patch", "edit", "delete"] = Field(
         description=(
             "The action to perform: list (shows all loaded skills), "
@@ -124,12 +132,20 @@ class SkillTool(BaseTool):
                         return skill_dir, False
 
             # 2. User global skills
-            user_skills_dir = (get_config_dir() / "skills").resolve(strict=False)
+            user_skills_dir = (get_user_skills_dir() / "skills").resolve(strict=False)
             skill_dir = user_skills_dir / name
             if (skill_dir / "SKILL.md").is_file():
                 return skill_dir, False
 
-            # 3. Builtin skills (search recursively through category folders)
+            # 3. Vtx config skills (~/.vtx/skills/ - synced builtins)
+            from ..config import get_config_dir as get_vtx_config_dir
+
+            vtx_skills_dir = (get_vtx_config_dir() / "skills").resolve(strict=False)
+            skill_dir = vtx_skills_dir / name
+            if (skill_dir / "SKILL.md").is_file():
+                return skill_dir, True
+
+            # 4. Builtin skills (search recursively through category folders)
             from importlib import resources
 
             try:
@@ -182,7 +198,7 @@ class SkillTool(BaseTool):
 
             # Resolve target path based on scope
             if params.scope == "global":
-                target_skills_dir = (get_config_dir() / "skills").resolve(strict=False)
+                target_skills_dir = (get_user_skills_dir() / "skills").resolve(strict=False)
             else:
                 target_skills_dir = Path(cwd) / ".agents" / "skills"
 

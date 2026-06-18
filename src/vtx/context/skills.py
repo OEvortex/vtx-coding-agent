@@ -11,12 +11,14 @@ Discovery locations:
 
 import os
 import re
+import shutil
 from dataclasses import dataclass
 from importlib import resources
 from pathlib import Path
 from typing import Any
 
-from .. import get_agents_dir as get_config_dir
+from .. import get_agents_dir as get_user_skills_dir
+from ..config import get_config_dir as get_vtx_config_dir
 from ._xml import escape_xml
 
 MAX_NAME_LENGTH = 64
@@ -289,13 +291,39 @@ def _project_skill_dirs(cwd: Path) -> list[Path]:
     return dirs
 
 
+def sync_builtin_skills() -> None:
+    """Copy built-in skills from the package to ~/.vtx/skills/ for filesystem access."""
+    dst_root = (get_vtx_config_dir() / "skills").resolve(strict=False)
+    try:
+        builtin_resource = resources.files("vtx").joinpath("builtin_skills")
+        with resources.as_file(builtin_resource) as src_root:
+            if not src_root.is_dir():
+                return
+            dst_root.mkdir(parents=True, exist_ok=True)
+            for entry in src_root.iterdir():
+                if not entry.is_dir():
+                    continue
+                for skill_dir in entry.iterdir():
+                    if not skill_dir.is_dir() or skill_dir.name.startswith("."):
+                        continue
+                    if not (skill_dir / "SKILL.md").is_file():
+                        continue
+                    dst = dst_root / skill_dir.name
+                    if dst.exists():
+                        shutil.rmtree(dst)
+                    shutil.copytree(skill_dir, dst)
+    except Exception:
+        pass
+
+
 def load_skills(cwd: str | None = None) -> LoadSkillsResult:
     """
-    Load skills from ~/.agents and project .agents locations.
+    Load skills from ~/.vtx, ~/.agents and project .agents locations.
 
     Discovery:
     1. <cwd-or-ancestor>/.agents/skills/ - each subdirectory with SKILL.md is a skill
     2. ~/.agents/skills/ - each subdirectory with SKILL.md is a skill
+    3. ~/.vtx/skills/ - synced built-in skills (lowest priority)
 
     Local skills take precedence over global skills with the same name.
     """
@@ -323,9 +351,16 @@ def load_skills(cwd: str | None = None) -> LoadSkillsResult:
     for skills_dir in project_skills_dirs:
         add_skills(_load_skills_from_dir(skills_dir))
 
-    user_skills_dir = (get_config_dir() / "skills").resolve(strict=False)
+    user_skills_dir = (get_user_skills_dir() / "skills").resolve(strict=False)
     if user_skills_dir not in project_skills_dirs:
         add_skills(_load_skills_from_dir(user_skills_dir))
+
+    vtx_skills_dir = (get_vtx_config_dir() / "skills").resolve(strict=False)
+    if vtx_skills_dir not in project_skills_dirs and vtx_skills_dir != user_skills_dir:
+        result = _load_skills_from_dir(vtx_skills_dir)
+        for skill in result.skills:
+            skill.bundled = True
+        add_skills(result)
 
     return LoadSkillsResult(skills=list(skill_map.values()), warnings=all_warnings)
 
