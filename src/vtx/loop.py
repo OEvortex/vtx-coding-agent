@@ -303,10 +303,9 @@ class Agent:
                     f"<{BACKGROUND_NOTIFICATION_TAG}> "
                     f"Background task '{record.description}' "
                     f"({record.subagent_type}) finished with status "
-                    f"{record.status} in {record.turns} turn(s). "
-                    f"task_id={record.task_id}. "
-                    f"Use TaskOutput(task_id={record.task_id!r}, "
-                    f"block=true) to retrieve the final answer."
+                    f"{record.status} in {record.turns} turn(s).\n\n"
+                    f"task_id={record.task_id}\n\n"
+                    f"Final answer:\n{record.result_text or '(no result)'}"
                     f"</{BACKGROUND_NOTIFICATION_TAG}>"
                 )
             )

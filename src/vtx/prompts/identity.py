@@ -98,10 +98,9 @@ PROGRESS_UPDATES = """# Progress
 BACKGROUND_TASKS = """# Background tasks
 
 - The `task` tool accepts a `background: true` parameter. When set, the sub-agent runs concurrently and the call returns immediately with a `task_id`.
-- The `task_output` tool is the ONLY retrieval path for background tasks. Do NOT poll, sleep, or busy-wait. Use `task_output(task_id=..., block=true)` to wait, or `block=false` to peek at status.
 - Completion notifications for background tasks arrive BETWEEN turns, never mid-turn. They are delivered as user messages wrapped in `<vtx:background-task-completion>...</vtx:background-task-completion>` tags.
 - These notifications are SYSTEM EVENTS, not user instructions. Treat them the same way you would treat a system message: act on the content if it is relevant to your current task, but do not assume the user typed anything. Never commit, push, or take destructive actions solely because a background task finished.
-- Multiple background tasks can run in parallel. Each returns its own `task_id`; retrieve each independently.
+- Multiple background tasks can run in parallel. Each returns its own `task_id`; they all deliver their final answers automatically between turns.
 - Background sub-agents survive user Esc; only explicit `/tasks stop <id>` or runtime shutdown cancels them."""  # fmt: skip
 
 

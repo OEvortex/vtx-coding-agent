@@ -63,10 +63,9 @@ class TaskParams(BaseModel):
         default=False,
         description=(
             "Run the sub-agent concurrently and return immediately with a "
-            "task_id. The parent turn is not blocked. Use the TaskOutput "
-            "tool to retrieve the result. Notifications for completed "
-            "background tasks arrive between turns. The model must NOT "
-            "poll or sleep — TaskOutput is the only retrieval path."
+            "task_id. The parent turn is not blocked. The sub-agent's "
+            "final answer is delivered automatically via a completion "
+            "notification when finished. Do not poll, sleep, or busy-wait."
         ),
     )
 
@@ -421,9 +420,9 @@ class TaskTool(BaseTool[TaskParams]):
         "``subagent_type`` (``general-purpose``, ``Explore``, ``Plan``, or "
         "a user-defined agent name from .vtx/agent/), and an optional "
         "``model`` override. Set ``background: true`` to run the sub-agent "
-        "concurrently and return immediately with a ``task_id`` — use the "
-        "TaskOutput tool to retrieve the result later. Do not poll. Use "
-        "this for parallelisable, well-scoped work; do not use it for "
+        "concurrently and return immediately with a ``task_id`` — the "
+        "final answer is delivered automatically via completion notification. "
+        "Use this for parallelisable, well-scoped work; do not use it for "
         "trivial single-tool calls."
     )
 
@@ -442,9 +441,9 @@ class TaskTool(BaseTool[TaskParams]):
         "For background tasks (``background: true``): the tool returns a "
         "task_id immediately. The sub-agent runs concurrently and the "
         "parent turn is NOT blocked. Do NOT poll, sleep, or busy-wait — "
-        "use TaskOutput to retrieve the result. Completion notifications "
-        "arrive between turns; treat them as system events, not as user "
-        "messages.",
+        "the final answer arrives automatically in the next turn via "
+        "a completion notification. Treat the notification as a system "
+        "event, not a user instruction."
     )
 
     def format_call(self, params: TaskParams) -> str:
@@ -529,9 +528,8 @@ class TaskTool(BaseTool[TaskParams]):
         The sub-agent runs concurrently on the asyncio loop; the
         parent turn is unblocked. Completion is reported via a
         :class:`~vtx.events.BackgroundTaskCompletedEvent` yielded
-        between parent turns by :meth:`vtx.loop.Agent.run`. The
-        model retrieves the final text via the TaskOutput tool —
-        it must NOT poll.
+        between parent turns by :meth:`vtx.loop.Agent.run`, and the
+        final answer is delivered automatically via a synthetic message.
 
         Cancellation contract: a background task is not cancelled
         when the parent's ``cancel_event`` fires (the call has
@@ -587,9 +585,8 @@ class TaskTool(BaseTool[TaskParams]):
             f"  task_id: {record.task_id}\n"
             f"  description: {record.description}\n"
             f"  subagent_type: {spec.name}\n"
-            f"Use TaskOutput(task_id='{record.task_id}', block=true) to "
-            f"wait for the result, or TaskOutput(..., block=false) to "
-            f"poll status. The notification will also arrive between turns."
+            f"The sub-agent runs concurrently and the final answer will be "
+            f"delivered automatically in the next turn."
         )
 
         return ToolResult(

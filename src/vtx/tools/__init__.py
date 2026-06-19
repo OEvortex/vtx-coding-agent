@@ -9,7 +9,6 @@ from .grep import GrepTool
 from .read import ReadTool
 from .skill import SkillTool
 from .task import TaskTool
-from .task_output import TaskOutputTool
 from .web import WebFetchTool, WebSearchTool
 from .write import WriteTool
 
@@ -18,7 +17,7 @@ from .write import WriteTool
 # the tool reads lives in :mod:`vtx.dispatcher`; the runtime
 # populates it on every state change. Background sub-agents are
 # managed by :mod:`vtx.tools.background`, and their results are
-# retrieved via the TaskOutput tool (:mod:`vtx.tools.task_output`).
+# delivered automatically via completion notifications.
 
 __all__ = [
     "DEFAULT_TOOLS",
@@ -32,7 +31,6 @@ __all__ = [
     "GrepTool",
     "ReadTool",
     "SkillTool",
-    "TaskOutputTool",
     "TaskTool",
     "WebFetchTool",
     "WebSearchTool",
@@ -58,7 +56,6 @@ all_tools: list[BaseTool] = [
     WebSearchTool(),
     AskUserTool(),
     TaskTool(),
-    TaskOutputTool(),
 ]
 
 tools_by_name: dict[str, BaseTool] = {tool.name: tool for tool in all_tools}
@@ -73,7 +70,6 @@ DEFAULT_TOOLS: list[str] = [
     "web_search",
     "ask_user",
     "task",
-    "task_output",
 ]
 
 

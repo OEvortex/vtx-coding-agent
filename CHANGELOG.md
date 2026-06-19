@@ -6,7 +6,15 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
-- No changes yet.
+### Changed
+
+#### Background tasks now deliver results automatically
+- Removed the `task_output` tool. Background sub-agents launched with `Task(background=True)`
+  now deliver their final answer automatically via the completion notification that arrives
+  between turns.
+- The completion notification now includes the full final answer text instead of instructing
+  the user to retrieve it via the removed tool.
+- Background tasks are marked as notified in the disk record to prevent duplicate delivery.
 
 ## [0.1.5] - 2026-06-18 — Rate Limit Manager, Safe Max-Output & Gateway Fixes
 

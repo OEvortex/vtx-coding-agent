@@ -1,8 +1,8 @@
 """Tests for the background-sub-agent infrastructure.
 
 Covers ``BackgroundTaskManager`` lifecycle, persistence, ack-on-consume
-drain semantics, and cancellation contract. The companion TaskOutput
-tool has its own tests in ``test_task_output.py``.
+drain semantics, and cancellation contract. The ``wait`` method is
+tested alongside the main registration tests.
 """
 
 from __future__ import annotations

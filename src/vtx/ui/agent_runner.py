@@ -324,14 +324,8 @@ class AgentRunnerMixin:
             case WarningEvent(warning=w):
                 chat.add_info_message(str(w), warning=True)
 
-            case BackgroundTaskCompletedEvent(
-                task_id=tid, description=desc, status=st, summary=summary
-            ):
-                chat.add_info_message(
-                    f"Background task '{desc}' ({st}) — task_id={tid}\n"
-                    f"  Use TaskOutput to retrieve the final answer.\n"
-                    f"  {summary}"
-                )
+            case BackgroundTaskCompletedEvent(task_id=tid, description=desc, status=st):
+                chat.add_info_message(f"Background task '{desc}' ({st}) — task_id={tid}")
 
             case AgentEndEvent(stop_reason=reason):
                 if reason == StopReason.INTERRUPTED:

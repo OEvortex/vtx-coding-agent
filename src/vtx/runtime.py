@@ -365,8 +365,7 @@ class ConversationRuntime:
 
         Idempotent: a second call returns the same instance. Installs
         the manager into the dispatcher context (via the contextvar)
-        so the :class:`TaskTool` can schedule background sub-agents
-        and the :class:`TaskOutputTool` can wait for them.
+        so the :class:`TaskTool` can schedule background sub-agents.
         """
         if self._background_manager is None:
             from .tools.background import BackgroundTaskManager, set_manager
