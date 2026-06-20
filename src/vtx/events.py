@@ -35,6 +35,10 @@ class AgentEndEvent:
     stop_reason: StopReason = StopReason.STOP
     total_turns: int = 0
     total_usage: Usage | None = None
+    # Goal bookkeeping for headless / status rendering. Populated by
+    # the loop when a goal was active during the run; None otherwise.
+    goal_status: str | None = None
+    goal_reason: str | None = None
 
 
 # =================================================================================================
@@ -255,6 +259,83 @@ class BackgroundTaskCompletedEvent:
 
 
 # =================================================================================================
+# Goal Events
+# =================================================================================================
+
+
+@dataclass
+class GoalStartEvent:
+    """Yielded once when a new goal is set (and a turn begins)."""
+
+    type: Literal["goal_start"] = "goal_start"
+    objective: str = ""
+    max_turns_override: int | None = None
+
+
+@dataclass
+class GoalEvaluatingEvent:
+    """Yielded between turns while the evaluator decides."""
+
+    type: Literal["goal_evaluating"] = "goal_evaluating"
+    turns_evaluated: int = 0
+
+
+@dataclass
+class GoalContinueEvent:
+    """Yielded when the evaluator says the goal is not yet met.
+
+    The agent loop injects a synthetic user message containing ``reason``
+    so the next turn starts with that guidance.
+    """
+
+    type: Literal["goal_continue"] = "goal_continue"
+    reason: str = ""
+    turns_evaluated: int = 0
+
+
+@dataclass
+class GoalAchievedEvent:
+    """Yielded when the evaluator says the goal is met; the loop ends."""
+
+    type: Literal["goal_achieved"] = "goal_achieved"
+    reason: str = ""
+    turns_evaluated: int = 0
+    tokens_used: int = 0
+
+
+@dataclass
+class GoalBudgetLimitedEvent:
+    """Yielded when the run hits the goal's turn cap; the loop ends."""
+
+    type: Literal["goal_budget_limited"] = "goal_budget_limited"
+    turns_evaluated: int = 0
+    tokens_used: int = 0
+    max_turns: int = 0
+
+
+@dataclass
+class GoalClearedEvent:
+    """Yielded when the user explicitly clears or replaces a goal."""
+
+    type: Literal["goal_cleared"] = "goal_cleared"
+    reason: str = ""
+
+
+@dataclass
+class GoalPausedEvent:
+    """Yielded when the user pauses an active goal (e.g. interrupt)."""
+
+    type: Literal["goal_paused"] = "goal_paused"
+
+
+@dataclass
+class GoalResumedEvent:
+    """Yielded when the user resumes a paused goal."""
+
+    type: Literal["goal_resumed"] = "goal_resumed"
+
+
+# =================================================================================================
 # Union Types
 # =================================================================================================
 
@@ -291,4 +372,12 @@ Event = (
     | CompactionStartEvent
     | CompactionEndEvent
     | StreamEvent
+    | GoalStartEvent
+    | GoalEvaluatingEvent
+    | GoalContinueEvent
+    | GoalAchievedEvent
+    | GoalBudgetLimitedEvent
+    | GoalClearedEvent
+    | GoalPausedEvent
+    | GoalResumedEvent
 )
