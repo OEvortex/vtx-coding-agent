@@ -159,6 +159,9 @@ class InfoBar(Vertical):
         self._permission_mode = config.permissions.mode
         self._file_changes_text_start: int | None = None
         self._active_agent: str = ""
+        self._goal_status: str = ""
+        self._goal_started_at: float | None = None
+        self._goal_timer: Timer | None = None
         self._row1_right: Label | None = None
         self._row2_left: Label | None = None
         self._row2_right: Label | None = None
@@ -337,6 +340,55 @@ class InfoBar(Vertical):
             return
         self._active_agent = agent
         self._label_row2_right.update(self._format_row2_right(), layout=False)
+
+    def set_goal(self, status: str, *, started_at: float | None = None) -> None:
+        """Show a small badge for the active goal in the right info row.
+
+        ``status`` is one of ``""`` (clear), ``"active"``, ``"paused"``.
+        When set, the row also tracks elapsed wall-clock since
+        ``started_at``. The renderer pulls a fresh elapsed value on
+        each refresh interval via :meth:`_refresh_goal_elapsed`.
+        """
+        self._goal_status = status or ""
+        self._goal_started_at = started_at if status else None
+        self._goal_timer = None
+        if status and started_at is not None:
+            # Refresh every 5s so the elapsed counter ticks without
+            # blocking the UI thread on every layout pass.
+            self._goal_timer = self.set_interval(5.0, self._refresh_goal_elapsed)
+        self._refresh_goal_label()
+
+    def _refresh_goal_elapsed(self) -> None:
+        if not self._goal_status:
+            return
+        self._refresh_goal_label()
+
+    def _refresh_goal_label(self) -> None:
+        # Render directly into the row-2 right label so the goal badge
+        # sits next to the model name. The timer keeps the elapsed
+        # counter fresh.
+        label = self._label_row2_right
+        text = Text()
+        if self._active_agent:
+            text.append(f"@ {self._active_agent}", style=config.ui.colors.accent)
+            text.append(" • ")
+        if self._goal_status and self._goal_started_at is not None:
+            elapsed = max(0, int(time.time() - self._goal_started_at))
+            if elapsed < 60:
+                elapsed_str = f"{elapsed}s"
+            elif elapsed < 3600:
+                elapsed_str = f"{elapsed // 60}m"
+            else:
+                elapsed_str = f"{elapsed // 3600}h"
+            goal_text = f"◎ /goal {self._goal_status} · {elapsed_str}"
+            text.append(goal_text, style=config.ui.colors.accent)
+            text.append(" • ")
+        model_text = self._model
+        if self._model_provider:
+            model_text = f"({self._model_provider}) {self._model}"
+        text.append(model_text)
+        text.append(f" • {self._thinking_level}")
+        label.update(text, layout=False)
 
     def update_file_changes(self, path: str, added: int, removed: int) -> None:
         prev_added, prev_removed = self._file_changes.get(path, (0, 0))

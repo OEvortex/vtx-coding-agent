@@ -95,6 +95,7 @@ def run_tui(args: argparse.Namespace) -> None:
         active_agent=getattr(args, "agent", None),
         extra_agent_paths=list(getattr(args, "agent_files", None) or []),
         auto_discover_agents=not getattr(args, "no_agents", False),
+        initial_goal=getattr(args, "goal", None),
     )
     app.run()
 

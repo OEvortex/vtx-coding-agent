@@ -439,4 +439,5 @@ DEFAULT_COMMANDS = [
     SlashCommand("copy", "copy last agent response text"),
     SlashCommand("compact", "compact current conversation now"),
     SlashCommand("agent", "list/switch handoff agents (Shift+Tab to cycle)"),
+    SlashCommand("goal", "set/clear/check a completion goal", submit_on_select=False),
 ]

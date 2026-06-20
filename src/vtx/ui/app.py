@@ -125,6 +125,7 @@ class Vtx(
         active_agent: str | None = None,
         extra_agent_paths: list[str] | None = None,
         auto_discover_agents: bool = True,
+        initial_goal: str | None = None,
     ):
         super().__init__()
         self.theme = self._resolve_ansi_theme()
@@ -280,6 +281,7 @@ class Vtx(
             agent_extensions=list(self._loaded_extensions.extensions),
         )
         self._runtime.set_loaded_extensions(self._loaded_extensions)
+        self._initial_goal = initial_goal
 
         # Install a Task tool progress forwarder that streams sub-agent
         # events into the chat log. The TUI mounts the chat log later
@@ -510,9 +512,24 @@ class Vtx(
         for warning in consume_config_warnings():
             self._add_launch_warning(warning)
 
+        # Apply the --goal CLI flag once the runtime + session are ready.
+        # We do this after init_result so any restored goal from
+        # --resume wins (matching the "resume takes priority over --goal"
+        # convention used by the rest of the CLI flags).
+        info_bar = self.query_one("#info-bar", InfoBar)
+        restored_goal = self._runtime.goal_manager.goal
+        if restored_goal is not None and restored_goal.status == "pursuing":
+            info_bar.set_goal("active", started_at=time.time())
+        elif self._initial_goal and config.goal.enabled and self._runtime.session is not None:
+            try:
+                self._runtime.set_goal(self._initial_goal)
+                info_bar.set_goal("active", started_at=time.time())
+                chat.add_info_message(f"Goal set: {self._initial_goal[:200]}")
+            except (RuntimeError, ValueError) as exc:
+                self._add_launch_warning(f"goal: {exc}", severity="warning")
+
         self._flush_launch_warnings(chat)
 
-        info_bar = self.query_one("#info-bar", InfoBar)
         info_bar.set_model(self._runtime.model, self._runtime.model_provider)
         info_bar.set_thinking_level(self._runtime.thinking_level)
         self._apply_thinking_level_style(self._runtime.thinking_level)
