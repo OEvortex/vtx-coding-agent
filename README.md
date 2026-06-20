@@ -180,6 +180,7 @@ Type `/` at the start of the input box to access core commands:
 - `/themes` — Switch between 24+ built-in color schemes (e.g., `dracula`, `tokyo-night`, `catppuccin`).
 - `/permissions` — Toggle permission mode (`prompt` vs `auto`).
 - `/export` — Export the current chat transcript to a beautiful standalone HTML file.
+- `/goal <condition>` — Keep working across turns until a separate evaluator judges the completion condition met. See [docs/goal.md](docs/goal.md).
 
 ### Direct Shell Execution
 Run terminal commands directly from the input box:
