@@ -60,15 +60,24 @@ class AuthCommands(CommandSupport):
         ]
 
         # Every provider in provider.yaml gets a key-based entry.
+        # Providers that also have an OAuth entry above get a suffixed value
+        # so both flows are reachable from the picker.
+        oauth_slugs = {pid for pid, _, _, kind in providers if kind == "oauth"}
         for p in list_providers():
-            providers.append((p.slug, p.display_name, False, "key"))
+            value = f"{p.slug}-key" if p.slug in oauth_slugs else p.slug
+            providers.append((value, p.display_name, False, "key"))
 
         items: list[ListItem] = []
         for provider_id, name, has_oauth, kind in providers:
             if kind == "oauth":
                 description = "saved credentials" if has_oauth else "oauth login"
             else:
-                description = _status_label(provider_id)
+                slug = (
+                    provider_id.removesuffix("-key")
+                    if provider_id.endswith("-key")
+                    else provider_id
+                )
+                description = _status_label(slug)
             items.append(ListItem(value=provider_id, label=name, description=description))
 
         self._show_selection_picker(items, SelectionMode.LOGIN)
@@ -81,6 +90,12 @@ class AuthCommands(CommandSupport):
         if provider_id == "openai":
             self.run_worker(self._openai_login_flow(), exclusive=False)
             return
+
+        # Key-based entries for OAuth-capable providers are suffixed (e.g.
+        # "openai-key") so both flows are reachable. Strip the suffix to get
+        # the real provider slug.
+        if provider_id.endswith("-key"):
+            provider_id = provider_id.removesuffix("-key")
 
         if get_provider_info(provider_id) is not None:
             self._prompt_for_api_key(provider_id)
@@ -187,11 +202,48 @@ class AuthCommands(CommandSupport):
             chat.add_info_message(str(exc), error=True)
             return
 
-        chat.add_info_message(
-            f"Saved API key for {provider_id} to ~/.vtx/dynamic_auth.json. "
-            f"Run `/model refresh {provider_id}` to fetch its model list, "
-            "then `/model` to pick one."
-        )
+        chat.add_info_message(f"Saved API key for {provider_id}")
+        self.run_worker(self._refresh_after_api_key(provider_id), exclusive=False)
+
+    async def _refresh_after_api_key(self, provider_id: str) -> None:
+        """Refresh the model catalog for a provider after its API key was saved."""
+        import asyncio
+
+        from ...llm import DYNAMIC_PROVIDERS, refresh_provider
+
+        chat = self.query_one("#chat-log", ChatLog)
+
+        if provider_id not in DYNAMIC_PROVIDERS:
+            chat.add_info_message("Use /model to pick a model for this provider.", error=False)
+            return
+
+        chat.add_info_message(f"Fetching models for {provider_id}...")
+
+        def _run() -> int | str:
+            try:
+                return refresh_provider(provider_id)
+            except Exception as exc:
+                return str(exc)
+
+        try:
+            result = await asyncio.to_thread(_run)
+        except Exception as exc:
+            chat.add_info_message(f"Model refresh failed: {exc}", error=True)
+            return
+
+        if isinstance(result, str):
+            chat.add_info_message(f"Model refresh failed: {result}", error=True)
+            return
+
+        if result == 0:
+            chat.add_info_message(
+                f"Fetched models for {provider_id} (none returned). "
+                "Use /model to check available models."
+            )
+        else:
+            chat.add_info_message(
+                f"Fetched {result} models for {provider_id}. Use /model to pick one."
+            )
 
     async def _copilot_login_flow(self) -> None:
         import webbrowser

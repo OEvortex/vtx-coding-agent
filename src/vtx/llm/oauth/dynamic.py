@@ -103,11 +103,6 @@ def _read_all() -> dict[str, str]:
     # Only keep str→str entries; ignore anything weird.
     return {k: v for k, v in data.items() if isinstance(k, str) and isinstance(v, str)}
 
-    if not isinstance(data, dict):
-        return {}
-    # Only keep str→str entries; ignore anything weird.
-    return {k: v for k, v in data.items() if isinstance(k, str) and isinstance(v, str)}
-
 
 def _write_all(keys: dict[str, str]) -> None:
     path = get_dynamic_auth_path()

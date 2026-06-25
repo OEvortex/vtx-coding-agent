@@ -5,7 +5,12 @@ Each turn runs `run_single_turn()`, forwards turn/tool events immediately, persi
 messages to the session, and decides whether to continue. After every turn, overflow compaction
 may run and emit its own start/end events so the UI can reflect that state in real time.
 
-The loop ends on stop/error/interruption, compaction pause mode, or max turns.
+When a :class:`~vtx.goal.Goal` is active, the loop invokes an evaluator between turns to
+decide whether the completion condition is met; "yes" ends the run, "no" injects a synthetic
+guidance message and starts another turn.
+
+The loop ends on stop/error/interruption, compaction pause mode, max turns, or goal-resolution
+(achieved / budget-limited).
 """
 
 import asyncio
@@ -37,6 +42,11 @@ from .events import (
     CompactionStartEvent,
     ErrorEvent,
     Event,
+    GoalAchievedEvent,
+    GoalBudgetLimitedEvent,
+    GoalContinueEvent,
+    GoalEvaluatingEvent,
+    GoalStartEvent,
     InterruptedEvent,
     TurnEndEvent,
     TurnStartEvent,
@@ -46,10 +56,13 @@ from .extensions import (
     AGENT_START,
     COMPACTION_END,
     COMPACTION_START,
+    GOAL_END,
+    GOAL_START,
     TURN_END,
     TURN_START,
     EventBus,
 )
+from .goal import GOAL_TAG, GoalManager
 from .llm import BaseProvider
 from .prompts import build_system_prompt
 from .session import MessageEntry, Session
@@ -57,7 +70,7 @@ from .tools import BaseTool
 from .turn import run_single_turn
 
 # Re-exported so existing callers (runtime, tests) keep working.
-__all__ = ["Agent", "AgentConfig", "build_system_prompt"]
+__all__ = ["Agent", "AgentConfig", "GoalManager", "build_system_prompt"]
 
 log = logging.getLogger("vtx.loop")
 
@@ -80,6 +93,7 @@ class Agent:
         config: AgentConfig | None = None,
         extensions: EventBus | None = None,
         background_manager: Any = None,
+        goal_manager: GoalManager | None = None,
     ):
         self.provider = provider
         self.tools = tools
@@ -93,6 +107,10 @@ class Agent:
         self._extensions = extensions
         self._run_usage = Usage()
         self._background_manager = background_manager
+        self._goal_manager = goal_manager or GoalManager(
+            max_objective_chars=vtx_config.goal.max_objective_chars,
+            max_turns_default=vtx_config.goal.max_turns,
+        )
 
     @property
     def context(self) -> Context:
@@ -142,11 +160,25 @@ class Agent:
         turn = 0
         stop_reason = StopReason.STOP
         was_interrupted = False
+        goal_status_at_end: str | None = None
+        goal_reason_at_end: str | None = None
+
+        # Emit a GoalStartEvent up front so the UI can show the badge
+        # immediately rather than waiting for the first evaluator call.
+        if self._goal_manager.goal is not None and self._goal_manager.goal.status == "pursuing":
+            yield GoalStartEvent(
+                objective=self._goal_manager.goal.objective,
+                max_turns_override=self._goal_manager.goal.max_turns_override,
+            )
+            if self._extensions is not None:
+                await self._extensions.emit(
+                    GOAL_START, objective=self._goal_manager.goal.objective
+                )
 
         system_prompt = self._system_prompt
+        max_turns = self._effective_max_turns()
 
         try:
-            max_turns = vtx_config.agent.max_turns
             while turn < max_turns:
                 if cancel_event and cancel_event.is_set():
                     was_interrupted = True
@@ -180,6 +212,9 @@ class Agent:
                     if isinstance(event, TurnEndEvent):
                         if event.assistant_message:
                             self._add_usage(event.assistant_message.usage)
+                            self._goal_manager.record_turn_tokens(
+                                self._extract_tokens(event.assistant_message.usage)
+                            )
                             self.session.append_message(event.assistant_message)
                         tool_results = event.tool_results
                         stop_reason = event.stop_reason
@@ -210,6 +245,31 @@ class Agent:
                     stop_reason = StopReason.STEER
                     break
 
+                # Goal-mode evaluation happens after compaction and before
+                # the regular "did the agent finish?" check. The evaluator
+                # decides whether to inject a synthetic guidance user
+                # message (and start another turn) or end the run. The
+                # check must run even when ``stop_reason != TOOL_USE`` so
+                # the agent gets one more chance to satisfy the goal.
+                if (
+                    self._goal_manager.goal is not None
+                    and self._goal_manager.goal.status == "pursuing"
+                ):
+                    async for evt in self._evaluate_goal():
+                        yield evt
+                    goal = self._goal_manager.goal
+                    if goal.status == "achieved":
+                        goal_status_at_end = "achieved"
+                        goal_reason_at_end = goal.last_reason
+                        stop_reason = StopReason.STOP
+                        break
+                    if goal.status == "budget_limited":
+                        goal_status_at_end = "budget_limited"
+                        goal_reason_at_end = goal.last_reason
+                        stop_reason = StopReason.LENGTH
+                        break
+                    # otherwise "pursuing" → loop continues with synthetic message
+
                 # Check for context overflow after each turn.
                 # We iterate events instead of awaiting a single compaction result so
                 # CompactionStartEvent can be forwarded immediately and the UI can
@@ -227,17 +287,58 @@ class Agent:
                     # Continue mode: synthetic user message was injected, continue loop
                     continue
 
+                # If a goal is still active, the loop should keep going
+                # even when the agent's last turn had no tool calls. The
+                # evaluator (above) has just had its say; without the
+                # override below, a goal with ``stop_reason == STOP``
+                # would exit silently.
+                if (
+                    self._goal_manager.goal is not None
+                    and self._goal_manager.goal.status == "pursuing"
+                ):
+                    continue
+
                 if stop_reason != StopReason.TOOL_USE:
                     break
 
-            if turn >= max_turns and not was_interrupted and stop_reason == StopReason.TOOL_USE:
-                stop_reason = StopReason.LENGTH
+            if turn >= max_turns and not was_interrupted:
+                # Ran out of turns. If a goal is still active, prefer to
+                # mark it budget_limited so the transcript clearly says
+                # the goal didn't finish.
+                if (
+                    self._goal_manager.goal is not None
+                    and self._goal_manager.goal.status == "pursuing"
+                ):
+                    self._goal_manager.mark_budget_limited()
+                    goal_status_at_end = "budget_limited"
+                    goal_reason_at_end = "turn cap reached"
+                    yield GoalBudgetLimitedEvent(
+                        turns_evaluated=self._goal_manager.goal.turns_evaluated,
+                        tokens_used=self._goal_manager.goal.tokens_used,
+                        max_turns=max_turns,
+                    )
+                stop_reason = (
+                    StopReason.LENGTH if stop_reason == StopReason.TOOL_USE else stop_reason
+                )
 
         except Exception as e:  # intentionally broad — top-level boundary; crash = broken TUI
             yield ErrorEvent(error=format_error(e))
             stop_reason = StopReason.ERROR
 
-        yield AgentEndEvent(stop_reason=stop_reason, total_turns=turn, total_usage=self._run_usage)
+        # Persist the final goal snapshot so resume sees the right state.
+        if self._goal_manager.goal is not None and self.session is not None:
+            try:
+                self.session.append_goal_state(self._goal_manager.to_entry_dict())
+            except Exception:
+                log.exception("failed to persist goal state")
+
+        yield AgentEndEvent(
+            stop_reason=stop_reason,
+            total_turns=turn,
+            total_usage=self._run_usage,
+            goal_status=goal_status_at_end,
+            goal_reason=goal_reason_at_end,
+        )
 
         # Final drain in case a background task completed during the very
         # last turn. We yield both the structured event and the synthetic
@@ -252,7 +353,81 @@ class Agent:
                 stop_reason=stop_reason,
                 total_turns=turn,
                 total_usage=self._run_usage,
+                goal_status=goal_status_at_end,
+                goal_reason=goal_reason_at_end,
             )
+
+        if self._extensions is not None and goal_status_at_end in {"achieved", "budget_limited"}:
+            await self._extensions.emit(GOAL_END, status=goal_status_at_end)
+
+    def _effective_max_turns(self) -> int:
+        """Combine global ``agent.max_turns`` with any goal override.
+
+        Goal override is informational (the loop always terminates at
+        ``agent.max_turns`` as a hard ceiling). When a goal is active
+        we additionally bound the run by ``goal.max_turns``.
+        """
+        global_max = vtx_config.agent.max_turns
+        if self._goal_manager.goal is None:
+            return global_max
+        override = self._goal_manager.goal.max_turns_override
+        if override:
+            return min(global_max, override)
+        return min(global_max, self._goal_manager._max_turns_default)
+
+    @staticmethod
+    def _extract_tokens(usage: Usage | None) -> int:
+        if usage is None:
+            return 0
+        return (
+            (usage.input_tokens or 0)
+            + (usage.output_tokens or 0)
+            + (usage.cache_read_tokens or 0)
+            + (usage.cache_write_tokens or 0)
+        )
+
+    async def _evaluate_goal(self) -> AsyncIterator[Event]:
+        """Drive one evaluator decision and inject guidance on "no".
+
+        Yields ``GoalEvaluatingEvent`` while the call is in flight,
+        then either ``GoalAchievedEvent`` (loop ends) or
+        ``GoalContinueEvent`` + a synthetic user message in the session.
+        """
+        if self._goal_manager.goal is None:
+            return
+        yield GoalEvaluatingEvent(turns_evaluated=self._goal_manager.goal.turns_evaluated)
+        outcome = await self._goal_manager.evaluate(
+            self.session.messages, provider=self.provider, model=self._resolve_evaluator_model()
+        )
+        goal = self._goal_manager.goal
+        if outcome.achieved:
+            yield GoalAchievedEvent(
+                reason=outcome.reason,
+                turns_evaluated=goal.turns_evaluated,
+                tokens_used=goal.tokens_used,
+            )
+            return
+        yield GoalContinueEvent(reason=outcome.reason, turns_evaluated=goal.turns_evaluated)
+        guidance = (
+            f"<{GOAL_TAG}>evaluator verdict: NOT YET — {outcome.reason}. "
+            "Continue working toward the goal; do not declare completion. "
+            "When the condition is genuinely satisfied, surface concrete evidence "
+            "(test output, file paths, command exit codes) in your next turn.</"
+            f"{GOAL_TAG}>"
+        )
+        self.session.append_message(UserMessage(content=guidance))
+
+    def _resolve_evaluator_model(self) -> str:
+        """Pick the model the evaluator call should use.
+
+        Empty config means "use the active default"; non-empty overrides
+        route the call to a different model. The provider's config is
+        swapped briefly inside :meth:`GoalManager.evaluate` and restored.
+        """
+        cfg_model = vtx_config.goal.evaluator_model.strip()
+        if cfg_model:
+            return cfg_model
+        return self.provider.config.model
 
     def _drain_background_notifications(self) -> list[Event]:
         """Pull finished background tasks from the manager.

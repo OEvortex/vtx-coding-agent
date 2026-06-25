@@ -6,6 +6,7 @@
 - auth.py     - /login, /logout
 - providers.py - /provider
 - agents.py   - /agent
+- goal.py     - /goal
 
 CommandsMixin composes the domain mixins and owns the command router.
 """
@@ -16,6 +17,7 @@ from ..chat import ChatLog
 from .agents import AgentCommands
 from .auth import AuthCommands
 from .base import CommandSupport
+from .goal import GoalCommands
 from .models import ModelCommands
 from .providers import ProviderCommands
 from .sessions import SessionCommands
@@ -23,7 +25,13 @@ from .settings import SettingsCommands, SettingsSelectionResult
 
 
 class CommandsMixin(
-    SettingsCommands, ModelCommands, SessionCommands, AuthCommands, ProviderCommands, AgentCommands
+    SettingsCommands,
+    ModelCommands,
+    SessionCommands,
+    AuthCommands,
+    ProviderCommands,
+    AgentCommands,
+    GoalCommands,
 ):
     def _handle_command(self, text: str) -> bool:
         parts = text[1:].split(maxsplit=1)
@@ -92,6 +100,9 @@ class CommandsMixin(
             return True
         if cmd == "agent":
             self._handle_agent_command(args)
+            return True
+        if cmd == "goal":
+            self._handle_goal_command(args)
             return True
 
         # Extension commands take a final swing at anything the built-ins

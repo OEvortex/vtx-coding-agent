@@ -56,6 +56,9 @@ src/vtx/
 │   ├── registry.py        # AgentRegistry: active agent state + cycle
 │   └── activate.py        # compose_active_tools, compose_active_commands
 │
+├── goal.py                # /goal command: Goal, GoalManager, evaluator prompt,
+│                           # budget-clause parsing, persistence helpers
+│
 ├── config.py              # Pydantic config schema, migration, getters/setters
 ├── themes.py              # built-in theme registry + ColorsConfig
 ├── session.py             # JSONL session class, list/load/save, info/totals

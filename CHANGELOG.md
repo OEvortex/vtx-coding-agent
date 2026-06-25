@@ -6,6 +6,28 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Added
+
+#### `/goal` slash command — autonomous multi-turn objectives
+- New `/goal <condition>` slash command sets a completion condition; the agent keeps
+  working across turns until a separate evaluator (the small fast model by default,
+  falls back to the active model) judges the condition met against the transcript.
+- Subcommands: `/goal` (status), `/goal pause`, `/goal resume`, `/goal clear`
+  (aliases: `stop`, `off`, `reset`, `none`, `cancel`).
+- Lifecycle states mirror Claude Code / Codex: `pursuing`, `paused`, `achieved`,
+  `unmet`, `budget_limited`. The InfoBar shows `◎ /goal active · 5m` while running;
+  the chat renders a one-line badge (`✓ Goal achieved`, `⏱ Budget exhausted`,
+  `↻ Continuing`) on every state change.
+- New `goal:` config block (`goal.enabled`, `goal.max_turns=100`, `goal.max_objective_chars=4000`,
+  `goal.evaluator_provider`, `goal.evaluator_model`).
+- Inline budget clause: append `or stop after N turns` / `or stop after N minutes`
+  to the objective to cap the run.
+- Goal state persists as a `GoalEntry` in the session JSONL; `vtx --resume` restores
+  the active pursuing goal automatically.
+- `--goal "<objective>"` CLI flag works in both TUI and headless modes; headless
+  prints status transitions to stderr so scripts can still pipe stdout.
+- See [docs/goal.md](docs/goal.md).
+
 ### Changed
 
 #### Background tasks now deliver results automatically
