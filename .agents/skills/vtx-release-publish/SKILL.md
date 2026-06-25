@@ -1,6 +1,7 @@
 ---
 name: vtx-release-publish
 description: Tag, publish to PyPI, and create GitHub release for Vtx with validation and rollback-safe steps
+register_cmd: true
 ---
 
 # Vtx Release + PyPI Publish
@@ -71,13 +72,13 @@ Use this skill when the user asks to cut a new Vtx version, tag it, publish to P
      - `https://pypi.org/pypi/vtx-coding-agent/json` reports latest version
 
 10. **Create GitHub release**
-   - If token exists at `~/.github-token`, call Releases API:
-   - `POST /repos/<owner>/<repo>/releases` with:
-     - `tag_name: v<version>`
-     - `target_commitish: main`
-     - `name: v<version>`
-     - `generate_release_notes: true`
-   - If 403 occurs, report missing token scopes/permissions (`contents:write` required)
+    - If token exists at `~/.github-token`, call Releases API:
+    - `POST /repos/<owner>/<repo>/releases` with:
+      - `tag_name: v<version>`
+      - `target_commitish: main`
+      - `name: v<version>`
+      - `generate_release_notes: true`
+    - If 403 occurs, report missing token scopes/permissions (`contents:write` required)
 
 ## Important notes
 
