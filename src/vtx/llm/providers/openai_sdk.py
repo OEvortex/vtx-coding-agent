@@ -26,7 +26,7 @@ from ...core.types import (
     Usage,
     UserMessage,
 )
-from ..base import BaseProvider, LLMStream, ProviderConfig, resolve_api_key
+from ..base import BaseProvider, LLMStream, ProviderConfig, ENV_API_KEY_MAP, resolve_api_key
 from ..sdk.base import GenerationConfig
 from ..sdk.base import Message as SDKMessage
 from ..sdk.openai import OpenAISDK
@@ -42,23 +42,21 @@ class OpenAISDKProvider(BaseProvider):
     def __init__(self, config: ProviderConfig):
         super().__init__(config)
 
+        provider = (config.provider or "").lower()
+        provider_env_var = ENV_API_KEY_MAP.get(provider, "OPENAI_API_KEY")
+
         api_key = resolve_api_key(
             config.api_key,
-            env_vars=("OPENAI_API_KEY",),
+            env_vars=(provider_env_var,),
             base_url=config.base_url,
             auth_mode=config.openai_compat_auth_mode,
         )
-        if not api_key and (config.provider or "").lower() in {
-            "airouter",
-            "opencode",
-            "kilo",
-            "tokenrouter",
-        }:
+        if not api_key and config.base_url:
             api_key = self._resolve_dynamic_key_for(config)
         if not api_key:
             raise ValueError(
                 f"No API key found for {self.name}. "
-                "Set OPENAI_API_KEY environment variable or pass api_key in config, "
+                f"Set {provider_env_var} environment variable or pass api_key in config, "
                 'or configure llm.auth.openai_compat = "auto"/"none" for local endpoints.'
             )
 

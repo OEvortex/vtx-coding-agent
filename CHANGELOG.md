@@ -4,6 +4,14 @@ All notable changes to Vtx are documented in this file. The format is based on
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project
 adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.1.8] - 2026-06-26 — Provider API Key Resolution Fix
+
+### Fixed
+
+#### Provider-specific API key resolution
+- Fixed `OpenAISDKProvider` always checking `OPENAI_API_KEY` instead of the correct env var for each provider (e.g. `ZYLOO_API_KEY` for Zyloo).
+- Stored API keys from `/login` now work for all dynamic providers with a `base_url`, not just a hardcoded subset (airouter, opencode, kilo, tokenrouter).
+
 ## [0.1.7] - 2026-06-26 — Zyloo OpenAI Compatible Provider
 
 Add Zyloo OpenAI compatible provider:
