@@ -642,3 +642,14 @@ providers:
     models_endpoint: /models
     model_parser:
       cooldown_minutes: 10
+
+  - slug: zyloo
+    display_name: Zyloo
+    description: Zyloo AI gateway.
+    family: openai_compat
+    base_url: https://api.zyloo.io/v1
+    api_key_env: ZYLOO_API_KEY
+    fetch_models: true
+    models_endpoint: /models
+    model_parser:
+      cooldown_minutes: 10

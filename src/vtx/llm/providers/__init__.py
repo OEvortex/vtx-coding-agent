@@ -13,6 +13,7 @@ PROVIDER_API_BY_NAME: dict[str, ApiType] = {
     "openrouter": ApiType(ApiType.OPENAI_SDK),
     "ollama": ApiType(ApiType.OPENAI_SDK),
     "aerolink": ApiType(ApiType.ANTHROPIC),
+    "zyloo": ApiType(ApiType.OPENAI_SDK),
 }
 
 
