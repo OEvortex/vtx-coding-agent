@@ -19,4 +19,4 @@ PACKAGE_NAME = _get_package_name()
 try:
     VERSION = version(PACKAGE_NAME)
 except PackageNotFoundError:
-    VERSION = "0.1.6"  # Fallback version if package metadata is not available
+    VERSION = "0.1.7"  # Fallback version if package metadata is not available
