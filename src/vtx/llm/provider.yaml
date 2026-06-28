@@ -660,3 +660,14 @@ providers:
     models_endpoint: /models
     model_parser:
       cooldown_minutes: 10
+
+  - slug: kimchi
+    display_name: Kimchi
+    description: Kimchi AI gateway.
+    family: openai_compat
+    base_url: https://llm.kimchi.dev/openai/v1
+    api_key_env: KIMCHI_API_KEY
+    fetch_models: true
+    models_endpoint: /models
+    model_parser:
+      cooldown_minutes: 10

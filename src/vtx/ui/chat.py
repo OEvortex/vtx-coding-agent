@@ -766,7 +766,7 @@ class ChatLog(VerticalScroll):
             self._current_block.finalize()
         self._current_block = None
 
-    def add_compaction_message(self, tokens_before: int) -> None:
+    def add_compaction_message(self, tokens_before: int, tokens_after: int = 0) -> None:
         self._stop_spinner()
         # Remove the "Auto-compacting..." status if it's still showing
         if self._is_last_child_status() and self._last_status_label is not None:
@@ -775,8 +775,12 @@ class ChatLog(VerticalScroll):
 
         dim_color = config.ui.colors.dim
         token_str = f"{tokens_before:,}"
+        after_str = f"{tokens_after:,}" if tokens_after else "?"
 
-        text = Text(f"[compaction] Compacted from {token_str} tokens", style=dim_color)
+        text = Text(
+            f"[compaction] Compacted from {token_str} tokens >> {after_str} tokens",
+            style=dim_color,
+        )
         stylize_badge_markers(text, ("[compaction]",))
 
         label = Label(text)

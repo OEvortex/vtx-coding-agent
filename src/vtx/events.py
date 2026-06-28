@@ -190,6 +190,7 @@ class CompactionStartEvent:
 class CompactionEndEvent:
     type: Literal["compaction_end"] = "compaction_end"
     tokens_before: int = 0
+    tokens_after: int = 0
     aborted: bool = False
     reason: str = ""  # why compaction aborted, empty on success
 

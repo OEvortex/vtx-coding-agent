@@ -87,6 +87,7 @@ class RuntimeInitResult:
 @dataclass
 class CompactionResult:
     tokens_before: int
+    tokens_after: int = 0
 
 
 @dataclass
@@ -951,7 +952,8 @@ class ConversationRuntime:
             first_kept_entry_id=self.session.leaf_id or "",
             tokens_before=tokens_before,
         )
-        return CompactionResult(tokens_before=tokens_before)
+        tokens_after = self.session.token_totals().context_tokens
+        return CompactionResult(tokens_before=tokens_before, tokens_after=tokens_after)
 
     async def create_handoff(self, query: str) -> HandoffResult:
         if self.provider is None or self.session is None or self.agent is None:

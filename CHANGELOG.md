@@ -37,6 +37,16 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 #### Guard against zero context window in compaction
 - `is_overflow()` in `compaction.py` returns `False` when `context_window <= 0`, preventing nonsensical overflow checks when the window is unresolved.
 
+#### Show token count after compaction in TUI
+- Updated the compaction TUI indicator to show the post-compaction token count (`[compaction] Compacted from X tokens >> Y tokens`) rather than a static string. Added `tokens_after` field to `CompactionEndEvent` and `CompactionEntry` tracking.
+
+### Added
+
+#### Kimchi OpenAI compatible provider support
+- Registered Kimchi as a new OpenAI compatible provider with base URL `https://llm.kimchi.dev/openai/v1`.
+- Added initial known model `openai/gpt-4o` and auto-fetch configuration for the provider's `/models` endpoint.
+- Added mapping to resolve `KIMCHI_API_KEY` from environment variables.
+
 ## [0.1.8] - 2026-06-26 — Provider API Key Resolution Fix
 
 ### Fixed

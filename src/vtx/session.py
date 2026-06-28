@@ -84,6 +84,7 @@ class CompactionEntry(EntryBase):
     summary: str
     first_kept_entry_id: str  # Retained for compaction metadata; messages use entry order.
     tokens_before: int
+    tokens_after: int | None = None
     details: dict[str, Any] | None = None
 
 
@@ -367,6 +368,7 @@ class Session:
         summary: str,
         first_kept_entry_id: str,
         tokens_before: int,
+        tokens_after: int | None = None,
         details: dict[str, Any] | None = None,
     ) -> str:
         entry = CompactionEntry(
@@ -376,6 +378,7 @@ class Session:
             summary=summary,
             first_kept_entry_id=first_kept_entry_id,
             tokens_before=tokens_before,
+            tokens_after=tokens_after,
             details=details,
         )
         self._append_entry(entry)
