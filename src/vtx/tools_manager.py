@@ -1,4 +1,5 @@
 import asyncio
+import logging
 import platform
 import re
 import shutil
@@ -18,6 +19,8 @@ from .config import get_config_dir
 ToolName = Literal["fd", "rg"]
 
 _BIN_DIR = get_config_dir() / "bin"
+
+log = logging.getLogger("vtx.tools_manager")
 
 
 @dataclass
@@ -194,16 +197,16 @@ async def ensure_tool(tool: ToolName, silent: bool = False) -> str | None:
         return None
 
     if not silent:
-        print(f"{config.name} not found. Downloading...", file=sys.stderr)
+        log.info(f"{config.name} not found. Downloading...")
 
     try:
         path = await _download_tool(tool)
         if not silent:
-            print(f"{config.name} installed to {path}", file=sys.stderr)
+            log.info(f"{config.name} installed to {path}")
         return path
     except Exception as e:
         if not silent:
-            print(f"Failed to download {config.name}: {e}", file=sys.stderr)
+            log.error(f"Failed to download {config.name}: {e}")
         return None
 
 

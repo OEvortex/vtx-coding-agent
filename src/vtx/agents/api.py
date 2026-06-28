@@ -7,6 +7,7 @@ are only visible when this agent is the active one.
 
 from __future__ import annotations
 
+import logging
 import sys
 import traceback
 from collections.abc import Callable
@@ -29,6 +30,8 @@ if TYPE_CHECKING:
     from ..extensions import CommandOutcome
 
 NotifyLevel = Literal["info", "warning", "error"]
+
+log = logging.getLogger("vtx.agents")
 
 
 @dataclass
@@ -399,10 +402,15 @@ class AgentAPI:
 
         Prints to stderr (the chat log surfaces stderr lines).
         """
-        prefix = {"info": "[agent]", "warning": "[agent:warn]", "error": "[agent:error]"}.get(
-            level, "[agent]"
-        )
-        print(f"{prefix} {self._loaded.definition.name}: {message}", file=sys.stderr)
+        match level:
+            case "info":
+                log.info(f"{self._loaded.definition.name}: {message}")
+            case "warning":
+                log.warning(f"{self._loaded.definition.name}: {message}")
+            case "error":
+                log.error(f"{self._loaded.definition.name}: {message}")
+            case _:
+                log.info(f"{self._loaded.definition.name}: {message}")
 
 
 __all__ = ["AgentAPI", "LoadedAgent"]

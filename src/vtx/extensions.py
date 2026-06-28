@@ -518,12 +518,15 @@ class ExtensionAPI:
         In TUI mode this prints to stderr (the chat log surfaces stderr
         lines). In headless mode it goes to stderr only.
         """
-        prefix = {
-            "info": "[extension]",
-            "warning": "[extension:warn]",
-            "error": "[extension:error]",
-        }.get(level, "[extension]")
-        print(f"{prefix} {self._extension.name}: {message}", file=sys.stderr)
+        match level:
+            case "info":
+                log.info(f"{self._extension.name}: {message}")
+            case "warning":
+                log.warning(f"{self._extension.name}: {message}")
+            case "error":
+                log.error(f"{self._extension.name}: {message}")
+            case _:
+                log.info(f"{self._extension.name}: {message}")
 
 
 # =============================================================================

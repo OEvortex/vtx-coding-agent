@@ -28,6 +28,15 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 #### Improved fuzzy model matching
 - `context_length_manager.get_limits()` now normalizes hyphens when doing substring matching, so `step-3.7-flash` matches `stepfun/step-3.7-flash` reliably.
 
+#### Replace print() with logging in hot paths
+- `extensions.py`: `ExtensionRuntime.notify()` now uses `log.info()`/`log.warning()`/`log.error()` instead of `print(..., file=sys.stderr)`.
+- `agents/api.py`: `AgentAPI.notify()` migrated to module logger with the same level mapping.
+- `tools_manager.py`: `_ensure_tool()` download progress messages now go through `log.info()`/`log.error()`.
+- `config.py`: `_record_config_warning()` now uses `log.warning()`; the message is still retained in `_config_warnings` for `consume_config_warnings()`.
+
+#### Guard against zero context window in compaction
+- `is_overflow()` in `compaction.py` returns `False` when `context_window <= 0`, preventing nonsensical overflow checks when the window is unresolved.
+
 ## [0.1.8] - 2026-06-26 — Provider API Key Resolution Fix
 
 ### Fixed

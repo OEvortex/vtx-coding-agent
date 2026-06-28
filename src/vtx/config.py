@@ -1,7 +1,7 @@
 import contextlib
+import logging
 import os
 import shutil
-import sys
 import tempfile
 from contextvars import ContextVar
 from copy import deepcopy
@@ -58,6 +58,8 @@ def _resolve_default_system_prompt() -> str:
 
 _config_var: ContextVar["Config | None"] = ContextVar("vtx_config", default=None)
 _config_warnings: list[str] = []
+
+log = logging.getLogger("vtx.config")
 
 
 class MetaConfig(BaseModel):
@@ -408,7 +410,7 @@ def _ensure_config_file() -> Path:
 
 def _record_config_warning(message: str) -> None:
     _config_warnings.append(message)
-    print(message, file=sys.stderr)
+    log.warning(message)
 
 
 def consume_config_warnings() -> list[str]:
