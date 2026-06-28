@@ -40,12 +40,31 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 #### Show token count after compaction in TUI
 - Updated the compaction TUI indicator to show the post-compaction token count (`[compaction] Compacted from X tokens >> Y tokens`) rather than a static string. Added `tokens_after` field to `CompactionEndEvent` and `CompactionEntry` tracking.
 
+#### Grep tool crash when using ripgrep or system grep fallback
+- Fixed `GrepTool.execute()` using sync `subprocess.Popen` with `communicate_or_cancel`, which expects an async `asyncio.subprocess.Process`. This caused a `TypeError: a coroutine was expected` on every rg/grep invocation, silently dropping the error and falling through to the Python fallback (or crashing entirely).
+- Replaced `subprocess.Popen` with `asyncio.create_subprocess_exec` in both the ripgrep and system grep paths, matching the pattern used by `FindTool`.
+
+#### Agent tool list leaking across profile switches
+- Fixed `_apply_active_agent_to_runtime()` using `self.tools` (already filtered by the previous agent's `tools_allow`) as the baseline for recomputing the new agent's tools. This caused tools from a restrictive profile (e.g. plan's `grep`, `find`) to leak into subsequent agents that shouldn't have them.
+- Changed the baseline to `DEFAULT_TOOLS`, so every agent switch starts from the full default tool set and applies its own `tools_allow`/`tools_deny` cleanly.
+
 ### Added
 
 #### Kimchi OpenAI compatible provider support
 - Registered Kimchi as a new OpenAI compatible provider with base URL `https://llm.kimchi.dev/openai/v1`.
 - Added initial known model `openai/gpt-4o` and auto-fetch configuration for the provider's `/models` endpoint.
 - Added mapping to resolve `KIMCHI_API_KEY` from environment variables.
+
+#### Augmented handoff agent profiles with SDK-bridge fields
+- Added `tools` field on `AgentDef`: raw SDK tools (`@tool` callables, `BaseTool` instances, or SDK `Agent` instances) are now auto-wrapped and merged into the profile's local tool set at load time. No `register(api)` required for simple tool contributions.
+- Added `tool_groups` and `active_tool_group` fields on `AgentDef`: profiles can declare named tool-surface presets (e.g. `"read-only"` vs `"full"`) and cycle through them at runtime.
+- Added `skills` field on `AgentDef`: per-profile skill auto-loading, filtering matching skill descriptions into the system prompt when the agent is active.
+- Added `Alt+Ctrl+G` binding to cycle tool groups within the active profile. Shift+Tab still cycles full profiles.
+- Added `tool_group_changed` event to the extension bus, carrying `agent` and `group` payloads.
+- Added `_coerce_raw_tools()` in `agents/loader.py` for callable/BaseTool/Agent coercion logic.
+- Added `cycle_tool_group()` to `AgentRegistry` and `cycle_active_tool_group()` to `ConversationRuntime`.
+- Updated `_apply_active_agent_to_runtime()` to respect `tool_groups` (group allow list overrides `tools_allow`) and `_rebuild_system_prompt()` to filter skills per profile.
+- Added example `examples/agents/data-engineer.py` demonstrating the new fields.
 
 ## [0.1.8] - 2026-06-26 — Provider API Key Resolution Fix
 

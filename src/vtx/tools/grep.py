@@ -1,6 +1,5 @@
 import asyncio
 import os
-import subprocess
 
 from pydantic import BaseModel, Field
 
@@ -76,10 +75,11 @@ class GrepTool(BaseTool[GrepParams]):
                 cmd.extend(["-g", params.glob])
 
             try:
-                proc = subprocess.Popen(
-                    cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, bufsize=1
+                proc = await asyncio.create_subprocess_exec(
+                    *cmd, stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE
                 )
-                stdout, _ = await communicate_or_cancel(proc, cancel_event)  # ty:ignore[invalid-argument-type]
+                raw_stdout, _ = await communicate_or_cancel(proc, cancel_event)
+                stdout = raw_stdout.decode("utf-8", errors="replace")
                 if proc.returncode not in (0, 1):
                     rg_path = None
             except (OSError, ToolCancelledError) as e:
@@ -110,10 +110,11 @@ class GrepTool(BaseTool[GrepParams]):
                 cmd.extend([params.pattern, search_path])
 
                 try:
-                    proc = subprocess.Popen(
-                        cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, bufsize=1
+                    proc = await asyncio.create_subprocess_exec(
+                        *cmd, stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE
                     )
-                    stdout, _ = await communicate_or_cancel(proc, cancel_event)  # ty:ignore[invalid-argument-type]
+                    raw_stdout, _ = await communicate_or_cancel(proc, cancel_event)
+                    stdout = raw_stdout.decode("utf-8", errors="replace")
                 except ToolCancelledError:
                     return ToolResult(
                         success=False, result="Cancelled", ui_summary="[yellow]Cancelled[/yellow]"
@@ -208,8 +209,6 @@ class GrepTool(BaseTool[GrepParams]):
         if not stdout and not used_fallback:
             return ToolResult(success=True, result="No matches found.", ui_summary="No matches")
 
-        if isinstance(stdout, bytes):
-            stdout = stdout.decode("utf-8", errors="ignore")
         lines = stdout.splitlines()
         n_matches = len(lines)
         if n_matches > MAX_RESULTS:

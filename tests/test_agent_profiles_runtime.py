@@ -299,6 +299,56 @@ def test_runtime_set_active_agent_updates_agent_tools(monkeypatch, tmp_path: Pat
     assert "grep" in tool_names
 
 
+def test_agent_tool_list_does_not_leak_across_switches(monkeypatch, tmp_path: Path):
+    """Switching FROM a restrictive agent (plan) TO a default agent must not
+    carry over tools that only the restrictive agent should have."""
+    from vtx.agents import AgentRegistry
+    from vtx.extensions import EventBus
+    from vtx.runtime import ConversationRuntime
+    from vtx.tools import DEFAULT_TOOLS
+
+    registry = AgentRegistry()
+    registry.agents = [_make_agent("plan", tools_allow=["read", "find", "grep", "skill"])]
+
+    runtime = ConversationRuntime(
+        cwd=str(tmp_path),
+        model="gpt-test",
+        tools=[],
+        extensions=EventBus(),
+        agent_registry=registry,
+    )
+
+    class DummyAgent:
+        def __init__(self):
+            self.tools = []
+
+        def reload_context(self):
+            pass
+
+    from typing import Any, cast
+
+    runtime.agent = cast(Any, DummyAgent())
+
+    # Activate plan (restrictive)
+    runtime.set_active_agent("plan")
+    plan_tools = {t.name for t in runtime.agent.tools}
+    assert plan_tools == {"read", "find", "grep", "skill"}
+    assert "edit" not in plan_tools
+    assert "write" not in plan_tools
+    assert "bash" not in plan_tools
+
+    # Deactivate plan (back to no agent = default)
+    runtime.set_active_agent(None)
+    default_tools = {t.name for t in runtime.agent.tools}
+
+    # Must have the full default set, not plan's restricted set
+    for name in DEFAULT_TOOLS:
+        assert name in default_tools, f"{name} missing from default tools after switching off plan"
+
+    # Must NOT have plan-only tools leaking in
+    assert "grep" not in default_tools
+
+
 def test_runtime_set_active_agent_updates_system_prompt(monkeypatch, tmp_path: Path):
     from typing import Any, cast
 
