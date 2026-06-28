@@ -51,6 +51,8 @@ in a directory are relevant, include the path to the directory.]
 
 
 def is_overflow(usage: Usage, context_window: int, threshold_percent: float) -> bool:
+    if context_window <= 0:
+        return False
     count = (
         usage.input_tokens
         + usage.output_tokens
