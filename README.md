@@ -243,7 +243,8 @@ For deeper information, consult the topic-specific files in the [`docs/`](docs/)
 - [docs/permissions.md](docs/permissions.md) — Safe-command lists and user approval heuristics.
 - [docs/sessions.md](docs/sessions.md) — Session JSONL format, history files, handoff guides, and compaction.
 - [docs/skills.md](docs/skills.md) — Authoring custom Skills, argument parsing, and command mapping.
-- [docs/extensions.md](docs/extensions.md) — Python extension API: add tools, intercept tool calls, register slash commands.
+- [docs/extensions.md](docs/extensions.md) — Python extension API: add tools, intercept tool calls, register slash commands, and customize the TUI.
+- [docs/ui.md](docs/ui.md) — `vtx.ui` public API: embed, customize, or build on top of the Textual interface.
 - [docs/theming.md](docs/theming.md) — Catalog of the 24+ built-in themes and color tokens.
 - [docs/headless.md](docs/headless.md) — Non-interactive execution, piped input streams, and exit codes.
 - [docs/storage-layout.md](docs/storage-layout.md) — Complete directory mapping of files on disk.

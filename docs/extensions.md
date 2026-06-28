@@ -1,10 +1,11 @@
 # Extensions
 
 Vtx ships with a built-in extension system so you can add new tools,
-intercept tool calls, react to lifecycle events, and register new
-slash commands without forking the codebase. This page is a quick
-start; see the module docstring in `vtx/extensions.py` for the full
-API.
+intercept tool calls, react to lifecycle events, register new
+slash commands, and customize TUI rendering without forking the codebase.
+
+This page covers the full extension API. For an overview of the TUI
+surface you can embed or extend, see [ui.md](ui.md).
 
 ## Quick start
 

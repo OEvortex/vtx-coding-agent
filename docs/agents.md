@@ -207,7 +207,7 @@ AGENT = AgentDef(
 
 | Method | Purpose |
 |---|---|
-| `api.local_tool(name, description, parameters, *, execute=..., mutating=True, label=None, ui_block=None)` | Register a tool scoped to this agent. Supports both function-call and decorator forms. The decorator form (no `execute=`) treats the function below the decorator as the execute callback. Pass `ui_block=` to ship a custom `:class:vtx.ui.blocks.ToolBlock` subclass for the TUI. |
+| `api.local_tool(name, description, parameters, *, execute=..., mutating=True, label=None, ui_block=None)` | Register a tool scoped to this agent. Supports both function-call and decorator forms. The decorator form (no `execute=`) treats the function below the decorator as the execute callback. Pass `ui_block=` to ship a custom `:class:vtx.ui.blocks.ToolBlock` subclass for the TUI. See [ui.md](ui.md#building-a-custom-block) for how to write one. |
 | `api.local_command(name, description, handler=...)` | Register a slash command scoped to this agent. Same decorator / function-call split as `local_tool`. |
 | `api.permission_gate(tool, *, when=..., action="allow"\|"deny"\|"prompt", reason=None)` | Layer a permission rule on top of the AgentDef's declarative `permission_gates`. `when` may be a small expression string or a Python predicate. |
 | `api.on(event, handler)` | Subscribe to a lifecycle event. The handler is wired into the runtime's event bus when the agent is activated. |

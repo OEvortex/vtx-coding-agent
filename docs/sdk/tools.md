@@ -83,7 +83,7 @@ class MyTool(BaseTool):
     # Optional: ship a custom TUI block for this tool. The block must
     # be a subclass of ``vtx.ui.blocks.ToolBlock``; the chat log
     # instantiates it instead of the default block when the LLM
-    # invokes the tool. See ``docs/extensions.md#custom-tui-rendering``.
+    # invokes the tool. See ``docs/ui.md#building-a-custom-block``.
     ui_block = None
 
     async def execute(self, params, cancel_event=None) -> ToolResult:
