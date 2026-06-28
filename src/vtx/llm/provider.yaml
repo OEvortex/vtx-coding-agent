@@ -422,6 +422,17 @@ providers:
     model_parser:
       cooldown_minutes: 10
 
+  - slug: freemodel
+    display_name: FreeModel
+    description: FreeModel AI gateway.
+    family: openai_compat
+    base_url: https://api.freemodel.dev
+    api_key_env: FREEMODEL_API_KEY
+    fetch_models: true
+    models_endpoint: /models
+    model_parser:
+      cooldown_minutes: 10
+
   - slug: friendli
     display_name: Friendli
     description: Friendli AI gateway.
