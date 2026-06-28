@@ -74,6 +74,7 @@ COMPACTION_END = "compaction_end"
 # at the call sites that import from vtx.extensions.
 AGENT_ACTIVATED = "agent_activated"
 AGENT_CHANGED = "agent_changed"
+TOOL_GROUP_CHANGED = "tool_group_changed"
 # Goal-mode events. The authoritative constants live in vtx.goal; we
 # expose them here so extension handlers can subscribe via the same
 # EventBus without importing the goal module directly.
@@ -95,6 +96,7 @@ ALL_EVENTS: tuple[str, ...] = (
     COMPACTION_END,
     AGENT_ACTIVATED,
     AGENT_CHANGED,
+    TOOL_GROUP_CHANGED,
     GOAL_START,
     GOAL_END,
     GOAL_PAUSED,

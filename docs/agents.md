@@ -104,6 +104,10 @@ An `AgentDef` is the static profile:
 | `handoffs` | `list[str]` | other agent names this agent can route to |
 | `handoff_back` | `bool` | default `True`; whether `transfer_to_default` is exposed |
 | `extensions` | `list[str]` | agent-scoped extension paths loaded only when active |
+| `skills` | `list[str]` | skill names or paths to auto-load when this agent is active; matching descriptions are injected into the system prompt |
+| `tools` | `list[Any]` | raw tools (callables, `BaseTool` instances, or SDK `Agent` instances) — wrapped and added to the agent's local tool set at load time |
+| `tool_groups` | `dict[str, list[str]]` | named tool groups for intra-profile cycling (e.g. `{"read-only": ["read", "find"], "full": [...]}`) |
+| `active_tool_group` | `str \| None` | the currently selected group inside `tool_groups`; `None` = no group (use `tools_allow`/`tools_deny` instead) |
 | `metadata` | `dict[str, Any]` | free-form; surfaced in traces |
 
 The full Pydantic model lives in `src/vtx/agents/schema.py`.
@@ -135,6 +139,67 @@ at startup, not at runtime.
 
 `register(api)` is sync. Async factories are not supported in v0.1.x and
 raise `AgentLoadError("async register() is not supported")`.
+
+## Raw tools (`tools` field)
+
+For simple tools that don't need the full `register(api)` ceremony, drop
+callables into the `tools` list:
+
+```python
+from vtx.agents import AgentDef
+
+def _file_stats(path: str) -> str:
+    """Return a quick summary of a file."""
+    return f"(stub) summary for {path!r}"
+
+AGENT = AgentDef(
+    name="quick",
+    description="x",
+    tools=[_file_stats],
+)
+```
+
+Accepted entry types:
+
+* **Callable** — wrapped automatically using the SDK's ``@vtx.sdk.tools.tool`` decorator. The docstring becomes the description and Pydantic parameter models are derived from type hints.
+* **`BaseTool` instance** — passed through as-is.
+* **SDK `Agent` instance** — converted to a manager-pattern tool via ``.as_tool()``.
+
+## Tool groups (`tool_groups`)
+
+Profiles with multiple tool surfaces (e.g. "read-only" vs "full") can
+declare named groups and cycle between them at runtime:
+
+```python
+AGENT = AgentDef(
+    name="reviewer",
+    description="x",
+    tool_groups={
+        "read-only": ["read", "find", "grep", "skill"],
+        "with-edit": ["read", "find", "grep", "skill", "edit"],
+    },
+)
+```
+
+The default group is ``None`` (no group; the profile's ``tools_allow`` /
+``tools_deny`` rules apply instead). Once a group is selected, its allow
+list overrides ``tools_allow``.
+
+Cycle inside an active profile with **Alt+Ctrl+G**.
+
+## Per-profile skills (`skills`)
+
+List skill names or paths a profile wants visible. Matching skill
+descriptions are filtered into the system prompt when the agent is
+active:
+
+```python
+AGENT = AgentDef(
+    name="security-audit",
+    description="x",
+    skills=["security-audit", "secrets-scan"],
+)
+```
 
 ## `AgentAPI` — the imperative surface
 
@@ -308,6 +373,17 @@ the model and thinking level). Permission-mode cycling moved from
 Shift+Tab to `Alt+Ctrl+P` to make room for agent cycling. `Ctrl+Shift+P`
 is intentionally left free for a future command palette.
 
+| Action | Effect |
+|---|---|
+| **Shift+Tab** | Cycle to the next agent (alphabetical). Shows a `→ agent: <name>` toast. |
+| **Alt+Ctrl+G** | Cycle the active **tool group** for the current agent (no-op if the agent has no groups). |
+| `/agent` | Open the agent picker. |
+| `/agent list` | Render the agent table. |
+| `/agent current` | Print the active agent's name and description. |
+| `/agent <name>` | Switch to the named agent. |
+| `/agent off` | Deactivate (back to the default session profile). |
+| `/agent reload` | Re-read the agent files from disk. |
+
 ## Events
 
 The agent system adds two new events to the extension bus:
@@ -316,6 +392,7 @@ The agent system adds two new events to the extension bus:
 |---|---|---|
 | `agent_activated` | An agent becomes active (session start, `/agent <name>`, Shift+Tab) | `agent: str` |
 | `agent_changed` | The active agent changes | `previous: str \| None`, `current: str \| None` |
+| `tool_group_changed` | The active tool group for an agent changes (Alt+Ctrl+G) | `agent: str \| None`, `group: str \| None` |
 
 Both are in `ALL_EVENTS` and any extension can subscribe. The constants
 live in `vtx.agents` (re-exported from `vtx.extensions`):

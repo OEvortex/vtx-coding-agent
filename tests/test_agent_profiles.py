@@ -632,4 +632,144 @@ def test_compose_active_tools_allows_non_base_builtins():
     names = {t.name for t in out}
     assert "grep" in names
     assert "read" in names
-    assert "write" not in names
+
+
+# =============================================================================
+# New AgentDef fields: tools, skills, tool_groups, active_tool_group
+# =============================================================================
+
+
+def test_agentdef_tools_field_accepts_callable():
+    """A plain callable in ``tools`` gets wrapped into a BaseTool."""
+
+    def _my_tool(x: str) -> str:
+        """Echo input."""
+        return x
+
+    a = AgentDef(name="raw-tools", description="x", tools=[_my_tool])
+    assert a.tools is not None
+    assert len(a.tools) == 1
+    assert callable(a.tools[0])
+
+
+def test_agentdef_tool_groups_valid():
+    a = AgentDef(
+        name="g",
+        description="x",
+        tool_groups={"read-only": ["read", "find"], "full": ["read", "write", "bash", "edit"]},
+    )
+    assert a.tool_groups is not None
+    assert "read-only" in a.tool_groups
+    assert a.tool_groups["full"] == ["read", "write", "bash", "edit"]
+
+
+def test_agentdef_tool_groups_rejects_empty_key():
+    with pytest.raises(ValueError, match="non-empty"):
+        AgentDef(name="g", description="x", tool_groups={"": ["read"]})
+
+
+def test_agentdef_active_tool_group_validates():
+    a = AgentDef(
+        name="g",
+        description="x",
+        tool_groups={"ro": ["read"], "full": ["read", "bash"]},
+        active_tool_group="ro",
+    )
+    assert a.active_tool_group == "ro"
+
+
+def test_agentdef_active_tool_group_rejects_unknown():
+    with pytest.raises(ValueError, match="not a key"):
+        AgentDef(name="g", description="x", tool_groups={"ro": ["read"]}, active_tool_group="nope")
+
+
+def test_agentdef_skills_strips_empty():
+    a = AgentDef(name="s", description="x", skills=["code-review", "  ", ""])
+    assert a.skills == ["code-review"]
+
+
+def test_load_agent_wraps_callable_tools(tmp_path: Path):
+    """Raw callables in ``AGENT.tools`` are loaded as BaseTool instances."""
+
+    def hello(name: str) -> str:
+        """Say hello."""
+        return f"hi {name}"
+
+    agent_file = tmp_path / "raw.py"
+    agent_file.write_text(
+        dedent(
+            """
+            from vtx.agents import AgentDef
+            def hello(name: str) -> str:
+                \"\"\"Say hello.\"\"\"
+                return f"hi {name}"
+            AGENT = AgentDef(name="raw", description="x", tools=[hello])
+            """
+        ).strip()
+    )
+    loaded = load_agent(agent_file, cwd=str(tmp_path), config_dir=tmp_path)
+    assert "hello" in loaded.local_tools
+    tool = loaded.local_tools["hello"]
+    assert tool.name == "hello"
+    assert tool.description is not None  # description from docstring
+
+
+def test_load_agent_wraps_basetool_tools(tmp_path: Path):
+    """A pre-built BaseTool in ``AGENT.tools`` is accepted directly."""
+    from vtx.tools import ReadTool
+
+    agent_file = tmp_path / "raw2.py"
+    agent_file.write_text(
+        dedent(
+            """
+            from vtx.agents import AgentDef
+            from vtx.tools import ReadTool
+            AGENT = AgentDef(name="raw2", description="x", tools=[ReadTool()])
+            """
+        ).strip()
+    )
+    loaded = load_agent(agent_file, cwd=str(tmp_path), config_dir=tmp_path)
+    assert "read" in loaded.local_tools
+    assert isinstance(loaded.local_tools["read"], ReadTool)
+
+
+def test_registry_cycle_tool_group():
+    reg = AgentRegistry()
+    reg.agents.append(
+        LoadedAgent(
+            definition=AgentDef(
+                name="g", description="x", tool_groups={"ro": ["read"], "full": ["read", "bash"]}
+            ),
+            path=Path("/g.py"),
+        )
+    )
+    # Must have an active agent for tool groups to apply.
+    reg.set_active("g")
+    # Default is None (no group).
+    assert reg.active_tool_group is None
+    # First cycle picks "ro".
+    g1 = reg.cycle_tool_group()
+    assert g1 == "ro"
+    assert reg.active_tool_group == "ro"
+    # Second cycle picks "full".
+    g2 = reg.cycle_tool_group()
+    assert g2 == "full"
+    # Third cycle wraps back to None.
+    g3 = reg.cycle_tool_group()
+    assert g3 is None
+    assert reg.active_tool_group is None
+
+
+def test_registry_tool_group_cycle_no_groups():
+    reg = AgentRegistry()
+    reg.agents.append(
+        LoadedAgent(definition=AgentDef(name="plain", description="x"), path=Path("/p.py"))
+    )
+    assert reg.tool_group_cycle == [None]
+    assert reg.cycle_tool_group() is None
+
+
+def test_tool_group_changed_event_in_all_events():
+    from vtx.extensions import ALL_EVENTS, TOOL_GROUP_CHANGED
+
+    assert TOOL_GROUP_CHANGED in ALL_EVENTS

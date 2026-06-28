@@ -87,6 +87,7 @@ class Vtx(
         # ctrl+shift+p free for a future command palette.
         Binding("alt+ctrl+p", "cycle_permission_mode", "Cycle permission mode", priority=True),
         Binding("shift+tab", "cycle_agent", "Cycle handoff agent", priority=True),
+        Binding("alt+ctrl+g", "cycle_tool_group", "Cycle tool group", priority=True),
     ]
 
     # Textual registers @on handlers through a metaclass that only scans this

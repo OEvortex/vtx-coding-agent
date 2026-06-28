@@ -482,7 +482,9 @@ class ChatLog(VerticalScroll):
             ("enter on queue", "Edit selected queued message"),
             ("ctrl+d on queue", "Delete selected queued message"),
             ("ctrl+shift+t", "Toggle thinking visibility"),
-            ("shift+tab", "Cycle permission mode"),
+            ("shift+tab", "Cycle handoff agent / active profile"),
+            ("alt+ctrl+g", "Cycle tool group (within profile)"),
+            ("alt+ctrl+p", "Cycle permission mode"),
         ]
         _append_aligned_section(text, "Keybindings", keybindings, **colors)
 

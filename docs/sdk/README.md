@@ -57,7 +57,7 @@ A runnable, fully-offline version (using a mock provider) lives at
 
 The SDK's `Agent` and the runtime's **handoff agents**
 (`.vtx/agent/<name>.py`, switchable via `Shift+Tab` in the TUI) are
-related but distinct concepts:
+related but now partially overlapping concepts:
 
 * The SDK's `Agent` is a **first-class multi-agent primitive** — `Runner`
   orchestrates one or more `Agent` instances into a run, with explicit
@@ -65,6 +65,12 @@ related but distinct concepts:
 * Handoff agents are **switchable TUI profiles** that bundle instructions,
   tool allow/deny, optional model overrides, and agent-scoped tools. They
   are described in the user doc: [../agents.md](../agents.md).
+
+The bridge between them is the `tools` field on `AgentDef`: a handoff
+profile can embed raw SDK tools (`@tool` callables or `BaseTool` instances)
+or even full SDK `Agent` instances (exposed as manager-pattern tools) without
+writing a `register(api)` function. See [../agents.md](../agents.md) for the
+`tools`, `tool_groups`, and `skills` fields.
 
 If you're building an agentic application on top of the SDK, you'll
 mostly use the `Agent` / `Runner` primitives. If you're customizing the

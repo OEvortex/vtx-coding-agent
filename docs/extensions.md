@@ -72,14 +72,16 @@ The full event surface:
 | `compaction_end`  | Overflow summary written               | no |
 | `agent_activated` | A handoff agent became active          | no |
 | `agent_changed`   | The active handoff agent changed       | no |
+| `tool_group_changed` | The active tool group for an agent changed (Alt+Ctrl+G) | no |
 
 `session_start` and `session_end` are emitted synchronously because
 they fire before / after the asyncio loop. Use a sync handler for
 those events; for everything else, async handlers are preferred.
 
-The `agent_activated` and `agent_changed` events are part of the
-[agents system](agents.md). They fire when the user picks a different
-agent via `Shift+Tab`, `/agent <name>`, or the CLI `--agent` flag. See
+The `agent_activated`, `agent_changed`, and `tool_group_changed` events are part of the
+[agents system](agents.md). `agent_activated` and `agent_changed` fire when the user picks a different
+agent via `Shift+Tab`, `/agent <name>`, or the CLI `--agent` flag. `tool_group_changed` fires when
+the user cycles the tool group via `Alt+Ctrl+G`. See
 [agents.md](agents.md#events) for the payload shape.
 
 ## Blocking / modifying tool calls

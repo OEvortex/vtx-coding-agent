@@ -86,6 +86,40 @@ class AgentDef(BaseModel):
     output_type: str | None = None
     metadata: dict[str, Any] = Field(default_factory=dict)
 
+    # SDK-bridge: raw tools (callables, BaseTool, or Agent instances are
+    # accepted and wrapped into the agent's local tool set at load time).
+    # Useful when a profile wants to ship tools via the ``@tool``-style
+    # pattern without writing a full ``register(api)``.
+    tools: list[Any] | None = None
+
+    # Per-profile skill auto-loading. Each entry is a skill name or path
+    # that will be loaded when this agent becomes active.
+    skills: list[str] | None = None
+
+    # Named tool groups for intra-profile cycling. Each key is a group
+    # name (e.g. "read-only", "full") and each value is a list of built-in
+    # tool names present in the allow list for that group. The user can
+    # cycle through groups while staying in the same agent.
+    tool_groups: dict[str, list[str]] | None = None
+    active_tool_group: str | None = None
+
+    # SDK-bridge: raw tools (callables, BaseTool, or Agent instances are
+    # accepted and wrapped into the agent's local tool set at load time).
+    # Useful when a profile wants to ship tools via the ``@tool``-style
+    # pattern without writing a full ``register(api)``.
+    tools: list[Any] | None = None
+
+    # Per-profile skill auto-loading. Each entry is a skill name or path
+    # that will be loaded when this agent becomes active.
+    skills: list[str] | None = None
+
+    # Named tool groups for intra-profile cycling. Each key is a group
+    # name (e.g. "read-only", "full") and each value is a list of built-in
+    # tool names present in the allow list for that group. The user can
+    # cycle through groups while staying in the same agent.
+    tool_groups: dict[str, list[str]] | None = None
+    active_tool_group: str | None = None
+
     @field_validator("name")
     @classmethod
     def _validate_name(cls, value: str) -> str:
@@ -101,6 +135,47 @@ class AgentDef(BaseModel):
         if value is None:
             return None
         return [v for v in (s.strip() for s in value) if v]
+
+    @field_validator("tool_groups")
+    @classmethod
+    def _validate_tool_groups(
+        cls, value: dict[str, list[str]] | None
+    ) -> dict[str, list[str]] | None:
+        if value is None:
+            return None
+        out: dict[str, list[str]] = {}
+        for k, v in value.items():
+            if not k or not isinstance(k, str):
+                raise ValueError(f"tool group name must be a non-empty string, got {k!r}")
+            if not AGENT_NAME_RE.match(k):
+                raise ValueError(
+                    f"invalid tool group name {k!r}: must match {AGENT_NAME_RE.pattern}"
+                )
+            cleaned = [s.strip() for s in v if s and str(s).strip()]
+            if not cleaned:
+                raise ValueError(f"tool group {k!r} must contain at least one tool name")
+            out[k] = cleaned
+        return out
+
+    @field_validator("skills")
+    @classmethod
+    def _strip_skill_empty(cls, value: list[str] | None) -> list[str] | None:
+        if value is None:
+            return None
+        return [v for v in (s.strip() for s in value) if v]
+
+    @field_validator("active_tool_group")
+    @classmethod
+    def _validate_active_group(cls, value: str | None, info: Any) -> str | None:
+        if value is None:
+            return None
+        groups = info.data.get("tool_groups") or {}
+        if value not in groups:
+            raise ValueError(
+                f"active_tool_group={value!r} is not a key in tool_groups "
+                f"(available: {sorted(groups)})"
+            )
+        return value
 
 
 __all__ = [
