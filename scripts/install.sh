@@ -108,15 +108,47 @@ if [ "$TERMUX_MODE" = true ]; then
 fi
 
 # Ensure pip is available
-if ! "$PYTHON_PATH" -m pip --version >/dev/null 2>&1; then
-    log_info "pip not found, bootstrapping..."
-    if ! "$PYTHON_PATH" -m ensurepip --upgrade >/dev/null 2>&1; then
-        if [ "$TERMUX_MODE" = true ]; then
-            log_warn "ensurepip failed. Try: pkg install python-pip"
-        else
-            log_warn "ensurepip failed. Install pip manually."
-        fi
+PIP_CMD=""
+if command -v pip >/dev/null 2>&1; then
+    PIP_CMD="pip"
+elif "$PYTHON_PATH" -m pip --version >/dev/null 2>&1; then
+    PIP_CMD="$PYTHON_PATH -m pip"
+elif command -v uv >/dev/null 2>&1; then
+    PIP_CMD="uv pip"
+fi
+
+if [ -z "$PIP_CMD" ]; then
+    log_error "No package installer found. Install pip or uv and retry."
+    if [ "$TERMUX_MODE" = true ]; then
+        log_info "Try: pkg install python-pip"
     fi
+    exit 1
+fi
+
+log_info "Using package installer: $PIP_CMD"
+
+run_pip() {
+    if [[ "$PIP_CMD" == uv\ pip ]]; then
+        if [ -n "${VIRTUAL_ENV:-}" ] && [ -x "$VIRTUAL_ENV/bin/python" ]; then
+            $PIP_CMD install --python "$VIRTUAL_ENV/bin/python" "$@"
+        elif [ "$INSTALL_TARGET" = "managed" ] && [ -x "$MANAGED_VENV/bin/python" ]; then
+            $PIP_CMD install --python "$MANAGED_VENV/bin/python" "$@"
+        else
+            $PIP_CMD install "$@"
+        fi
+    else
+        # pip or python -m pip
+        $PIP_CMD install "$@"
+    fi
+}
+
+# Upgrade pip tooling
+if [[ "$PIP_CMD" == uv\ pip ]]; then
+    log_info "Upgrading pip tooling..."
+    run_pip --upgrade pip setuptools wheel >/dev/null 2>&1 || true
+else
+    log_info "Upgrading pip..."
+    run_pip --upgrade pip >/dev/null
 fi
 
 # Detect active virtual environment
@@ -140,13 +172,11 @@ esac
 
 # Step 2: Choose installation target
 INSTALL_TARGET=""
-PIP_PYTHON="$PYTHON_PATH"
 MANAGED_VENV="$HOME/.vtx/venv"
 
 if [ -n "$ACTIVE_VENV" ]; then
     log_info "Active virtual environment detected: $ACTIVE_VENV"
     INSTALL_TARGET="active_venv"
-    PIP_PYTHON="$ACTIVE_VENV/bin/python"
 else
     echo ""
     echo -e "${CYAN}${BOLD}Choose installation target:${NC}"
@@ -171,12 +201,7 @@ if [ "$INSTALL_TARGET" = "managed" ]; then
         "$PYTHON_PATH" -m venv "$MANAGED_VENV"
         log_success "Virtual environment created"
     fi
-    PIP_PYTHON="$MANAGED_VENV/bin/python"
 fi
-
-# Upgrade pip
-log_info "Upgrading pip..."
-"$PIP_PYTHON" -m pip install --upgrade pip >/dev/null
 
 # Step 3: Install the package
 if [ "$INSTALL_SOURCE" = "github" ]; then
@@ -188,10 +213,10 @@ if [ "$INSTALL_SOURCE" = "github" ]; then
         fi
     fi
     log_info "Installing latest from GitHub (main branch)..."
-    "$PIP_PYTHON" -m pip install --upgrade "git+https://github.com/OEvortex/vtx-coding-agent.git@main"
+    run_pip --upgrade "git+https://github.com/OEvortex/vtx-coding-agent.git@main"
 else
     log_info "Installing stable version from PyPI..."
-    "$PIP_PYTHON" -m pip install --upgrade vtx-coding-agent
+    run_pip --upgrade vtx-coding-agent
 fi
 
 # Step 4: Post-install linking

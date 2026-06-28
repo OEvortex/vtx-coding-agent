@@ -77,9 +77,41 @@ if ($InstallTarget -eq "managed") {
     $PipPython = "$VenvDir\Scripts\python.exe"
 }
 
-# Upgrade pip
+# Resolve package installer (pip / python -m pip / uv pip)
+$PipCmd = $null
+if (Get-Command pip -ErrorAction SilentlyContinue) {
+    $PipCmd = "pip"
+} elseif (& $PipPython -m pip --version 2>$null) {
+    $PipCmd = "$($PipPython) -m pip"
+} elseif (Get-Command uv -ErrorAction SilentlyContinue) {
+    $PipCmd = "uv pip"
+}
+
+if (-not $PipCmd) {
+    Write-Err "No package installer found. Install pip or uv and retry."
+    exit 1
+}
+
+Write-Info "Using package installer: $PipCmd"
+
+function Invoke-Pip {
+    param([string[]]$Args)
+    if ($PipCmd -eq "uv pip") {
+        $uvArgs = @("pip") + $Args
+        if ($InstallTarget -eq "managed" -and (Test-Path "$VenvDir\Scripts\python.exe")) {
+            $uvArgs += @("--python", "$VenvDir\Scripts\python.exe")
+        } elseif ($env:VIRTUAL_ENV -and (Test-Path "$env:VIRTUAL_ENV\Scripts\python.exe")) {
+            $uvArgs += @("--python", "$env:VIRTUAL_ENV\Scripts\python.exe")
+        }
+        & uv @uvArgs
+    } else {
+        & $PipPython -m pip @Args
+    }
+}
+
+# Upgrade pip tooling
 Write-Info "Upgrading pip..."
-& $PipPython -m pip install --upgrade pip | Out-Null
+Invoke-Pip @("install", "--upgrade", "pip") | Out-Null
 
 # Choose source
 Write-Host ""
@@ -97,7 +129,7 @@ if ($NonInteractive) {
 switch ($SourceChoice) {
     "1" {
         Write-Info "Installing stable version from PyPI..."
-        & $PipPython -m pip install --upgrade vtx-coding-agent
+        Invoke-Pip @("install", "--upgrade", "vtx-coding-agent")
     }
     "2" {
         if (-not (Get-Command git -ErrorAction SilentlyContinue)) {
@@ -105,7 +137,7 @@ switch ($SourceChoice) {
             Write-Info "Install git first, or switch to the PyPI option."
         }
         Write-Info "Installing latest from GitHub..."
-        & $PipPython -m pip install --upgrade "git+https://github.com/OEvortex/vtx-coding-agent.git@main"
+        Invoke-Pip @("install", "--upgrade", "git+https://github.com/OEvortex/vtx-coding-agent.git@main")
     }
     default {
         Write-Err "Invalid choice. Exiting."
