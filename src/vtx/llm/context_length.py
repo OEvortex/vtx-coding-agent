@@ -19,8 +19,6 @@ logger = logging.getLogger(__name__)
 
 MODELS_DEV_API_URL = "https://models.dev/api.json"
 CACHE_FILE = "models_dev_limits.json"
-DEFAULT_CONTEXT_LENGTH = 128 * 1024  # 131072
-DEFAULT_OUTPUT_TOKENS = 16 * 1024  # 16384
 CACHE_TTL_SECONDS = 24 * 60 * 60  # 24 hours
 
 
@@ -89,8 +87,10 @@ class ContextLengthManager:
                 if not limit:
                     continue
                 context = limit.get("context", 0)
-                output = limit.get("output", DEFAULT_OUTPUT_TOKENS)
+                output = limit.get("output", 0)
                 if context > 0:
+                    if context - output <= 8192:
+                        output = min(16384, context)
                     modalities = model_info.get("modalities", {})
                     input_mods = modalities.get("input", [])
                     output_mods = modalities.get("output", [])
@@ -116,20 +116,21 @@ class ContextLengthManager:
     def get_limits(self, model: str) -> TokenLimits:
         self.ensure_loaded()
 
+        # 1) exact match populated by register() or loaded from the models.dev cache
         if model in self._limits:
             return self._limits[model]
 
+        # 2) fuzzy fallback: normalize hyphens and match substrings
         model_lower = model.lower()
         for model_id, limits in self._limits.items():
-            if model_lower in model_id.lower() or model_id.lower() in model_lower:
+            mid = model_id.lower().replace("-", "")
+            if model_lower.replace("-", "") in mid or mid in model_lower.replace("-", ""):
                 return limits
 
-        return TokenLimits(context=DEFAULT_CONTEXT_LENGTH, output=DEFAULT_OUTPUT_TOKENS)
+        return TokenLimits(context=0, output=0)
 
     def register(self, model: str, context: int, output: int | None = None, **kwargs: Any) -> None:
-        self._limits[model] = TokenLimits(
-            context=context, output=output or DEFAULT_OUTPUT_TOKENS, **kwargs
-        )
+        self._limits[model] = TokenLimits(context=context, output=output or 0, **kwargs)
 
     def get_context_length(self, model: str) -> int:
         return self.get_limits(model).context

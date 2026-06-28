@@ -95,7 +95,7 @@ class ProviderConfig:
     api_key: str | None = None
     base_url: str | None = None
     model: str = ""
-    max_tokens: int = 8192
+    max_tokens: int | None = None
     temperature: float | None = None
     thinking_level: str = "high"
     provider: str | None = None

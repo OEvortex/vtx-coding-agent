@@ -162,7 +162,7 @@ def test_parse_models_does_not_hardcode_minimax_or_deepseek_r1() -> None:
     assert {m.id for m in parsed} == {"MiniMax-M3", "deepseek-r1-distill", "qwq-32b-preview"}
     for entry in parsed:
         assert entry.supports_thinking is False
-        assert entry.context_window == 128_000  # DEFAULT_CONTEXT_WINDOW
+        assert entry.context_window is None
 
 
 def test_parse_models_uses_models_dev_for_minimax_m3() -> None:

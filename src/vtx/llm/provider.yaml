@@ -13,7 +13,6 @@
 #   supports_vision:         Image input support (default: false)
 #   api_key_optional:        Works without API key (default: false)
 #   is_local:                Local provider (default: false)
-#   max_tokens:              Default max output tokens (default: 8192)
 #   supports_thinking:       Reasoning/thinking support (default: false)
 #   headers:                 Extra request headers, e.g. {"X-Foo": "bar"} (default: {})
 #   openmodelendpoint:       Provider's /models catalog is public (no key needed for
@@ -43,7 +42,6 @@ providers:
       - gpt-4o-mini
       - gpt-4-turbo
     supports_vision: true
-    max_tokens: 16384
     fetch_models: true
     models_endpoint: /models
     model_parser:
@@ -61,7 +59,6 @@ providers:
       - claude-3-5-haiku-20241022
     supports_vision: true
     supports_thinking: true
-    max_tokens: 8192
 
   - slug: deepseek
     display_name: DeepSeek
@@ -220,7 +217,6 @@ providers:
     known_models: []
     supports_vision: true
     supports_thinking: true
-    max_tokens: 8192
     fetch_models: true
     models_endpoint: /v1/models
     model_parser:

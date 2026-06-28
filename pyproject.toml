@@ -14,7 +14,7 @@ default = true
 
 [project]
 name = "vtx-coding-agent"
-version = "0.1.8"
+version = "0.1.9"
 description = "Minimalist coding agent harness with a Textual TUI and headless CLI. <1k-token system prompt, 18+ LLM providers, AGENTS.md + skills context, session tree, prompt/auto permissions."
 readme = "README.md"
 requires-python = ">=3.12"

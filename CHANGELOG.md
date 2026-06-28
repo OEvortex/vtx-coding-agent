@@ -4,6 +4,29 @@ All notable changes to Vtx are documented in this file. The format is based on
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project
 adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.1.9] - 2026-06-28 — Fix Context Length Overflow & Remove Hardcoded Token Defaults
+
+### Fixed
+
+#### Context length overflow for models with inflated max_tokens
+- When models.dev reports `max_tokens` close to the context window (e.g., 247808 for a 256k model), the API call now caps output to `min(16384, context)` instead of blindly using the inflated value.
+- Added check: if `context_window - max_tokens <= 8192`, the provider is clearly reporting output as near-full-context, which causes overflow when combined with real input tokens.
+
+#### Removed hardcoded token defaults across the codebase
+- Removed `DEFAULT_CONTEXT_LENGTH` (131072), `DEFAULT_OUTPUT_TOKENS` (16384), `DEFAULT_CONTEXT_WINDOW` (128000), and `DEFAULT_MAX_TOKENS` (16384) magic constants.
+- `ProviderConfig.max_tokens` changed from `int = 8192` to `int | None = None` — no more phantom limits when the model catalog provides accurate values.
+- `Model.max_tokens` changed from `int` to `int | None` throughout the model resolution chain.
+- `ProviderInfo.max_tokens` default changed from `8192` to `None`.
+- SDK agent fallbacks changed from hardcoded `8192` to `None`, letting the catalog drive limits.
+- Anthropic SDK removed `_MAX_TOKENS_DEFAULT = 4096` fallback; now sends `config.max_tokens` directly.
+- Removed hardcoded `max_tokens` from provider.yaml entries for OpenAI, Anthropic, and Kilo.
+
+#### default_context_window set to 0
+- Changed `default_context_window` from `200000` to `0` to prevent an arbitrary hardcoded window that doesn't match any real model. Context window is now always resolved from the model catalog or models.dev.
+
+#### Improved fuzzy model matching
+- `context_length_manager.get_limits()` now normalizes hyphens when doing substring matching, so `step-3.7-flash` matches `stepfun/step-3.7-flash` reliably.
+
 ## [0.1.8] - 2026-06-26 — Provider API Key Resolution Fix
 
 ### Fixed

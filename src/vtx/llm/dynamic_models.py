@@ -52,8 +52,6 @@ logger = logging.getLogger(__name__)
 CACHE_DIR_NAME = "models"
 CACHE_TTL_SECONDS = 60 * 60 * 6  # 6h; matches pi-free-models default behaviour
 FETCH_TIMEOUT_SECONDS = 10.0
-DEFAULT_CONTEXT_WINDOW = 128_000
-DEFAULT_MAX_TOKENS = 16_384
 
 
 @dataclass(frozen=True)
@@ -135,8 +133,8 @@ class DynamicModelEntry:
 
     id: str
     name: str
-    context_window: int = DEFAULT_CONTEXT_WINDOW
-    max_tokens: int = DEFAULT_MAX_TOKENS
+    context_window: int | None = None
+    max_tokens: int | None = None
     supports_images: bool = False
     supports_thinking: bool = False
     is_free: bool = False
@@ -377,7 +375,8 @@ def _parse_models(
         if spec:
             context_window = spec.get("limit", {}).get("context")
         if context_window is None:
-            context_window = int(raw.get("context_length") or DEFAULT_CONTEXT_WINDOW)
+            raw_ctx = raw.get("context_length")
+            context_window = int(raw_ctx) if raw_ctx else None
         else:
             context_window = int(context_window)
 
@@ -386,23 +385,17 @@ def _parse_models(
         if spec:
             max_tokens = spec.get("limit", {}).get("output")
         if max_tokens is None:
-            max_tokens = int(
+            raw_max = (
                 raw.get("max_completion_tokens")
                 or (raw.get("top_provider") or {}).get("max_completion_tokens")
                 or raw.get("max_tokens")
-                or DEFAULT_MAX_TOKENS
             )
+            max_tokens = int(raw_max) if raw_max else None
         else:
             max_tokens = int(max_tokens)
 
-        # Safety: ensure max_tokens leaves room for input tokens within the
-        # context window. If max_tokens >= context_window, the API call will
-        # fail when input tokens consume part of the window (common on Kilo,
-        # OpenRouter, and other gateways where max_completion_tokens equals
-        # context_length). Reserve a buffer proportional to the window size.
-        _buffer = 4096 if context_window and context_window < 32768 else 8192
-        if context_window and max_tokens >= context_window:
-            max_tokens = max(context_window - _buffer, context_window // 2)
+        if context_window and max_tokens and context_window - max_tokens <= 8192:
+            max_tokens = min(16384, context_window)
 
         # 3. Supports thinking/reasoning
         supports_thinking = None
@@ -639,26 +632,24 @@ def _to_static_model(provider: str, entry: DynamicModelEntry) -> Model:
     )
 
     if is_matched:
-        if context_window == DEFAULT_CONTEXT_WINDOW or context_window is None:
+        if context_window is None or context_window == 0:
             context_window = limits.context
-        if max_tokens == DEFAULT_MAX_TOKENS or max_tokens == 0:
+        if max_tokens is None or max_tokens == 0:
             max_tokens = limits.output
         if not supports_thinking:
             supports_thinking = limits.supports_reasoning
         if not supports_images:
             supports_images = limits.supports_vision
+        if context_window and max_tokens and context_window - max_tokens <= 8192:
+            max_tokens = min(16384, context_window)
+
         supports_tools = limits.supports_tools
         supports_audio = limits.supports_audio
     else:
+        if context_window and max_tokens and context_window - max_tokens <= 8192:
+            max_tokens = min(16384, context_window)
         supports_tools = True
         supports_audio = False
-
-    # Safety cap: ensure max_tokens leaves room for input tokens within the
-    # context window (parallel to the same cap in _parse_models). This covers
-    # the case where models.dev overrides push max_tokens up to context_window.
-    _buffer = 4096 if context_window and context_window < 32768 else 8192
-    if context_window and max_tokens >= context_window:
-        max_tokens = max(context_window - _buffer, context_window // 2)
 
     return Model(
         id=entry.id,
