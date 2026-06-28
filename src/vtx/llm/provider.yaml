@@ -422,7 +422,7 @@ providers:
     display_name: FreeModel
     description: FreeModel AI gateway.
     family: openai_compat
-    base_url: https://api.freemodel.dev
+    base_url: https://api.freemodel.dev/v1
     api_key_env: FREEMODEL_API_KEY
     fetch_models: true
     models_endpoint: /models
