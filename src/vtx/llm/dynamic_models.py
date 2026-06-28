@@ -41,6 +41,7 @@ from typing import Any
 
 import httpx
 
+from .context_length import safe_max_output_tokens
 from .models import ApiType, Model
 
 logger = logging.getLogger(__name__)
@@ -395,7 +396,7 @@ def _parse_models(
             max_tokens = int(max_tokens)
 
         if context_window and max_tokens and context_window - max_tokens <= 8192:
-            max_tokens = min(16384, context_window)
+            max_tokens = safe_max_output_tokens(context_window)
 
         # 3. Supports thinking/reasoning
         supports_thinking = None
@@ -641,13 +642,13 @@ def _to_static_model(provider: str, entry: DynamicModelEntry) -> Model:
         if not supports_images:
             supports_images = limits.supports_vision
         if context_window and max_tokens and context_window - max_tokens <= 8192:
-            max_tokens = min(16384, context_window)
+            max_tokens = safe_max_output_tokens(context_window)
 
         supports_tools = limits.supports_tools
         supports_audio = limits.supports_audio
     else:
         if context_window and max_tokens and context_window - max_tokens <= 8192:
-            max_tokens = min(16384, context_window)
+            max_tokens = safe_max_output_tokens(context_window)
         supports_tools = True
         supports_audio = False
 

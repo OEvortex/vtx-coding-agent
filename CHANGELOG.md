@@ -9,8 +9,9 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 ### Fixed
 
 #### Context length overflow for models with inflated max_tokens
-- When models.dev reports `max_tokens` close to the context window (e.g., 247808 for a 256k model), the API call now caps output to `min(16384, context)` instead of blindly using the inflated value.
-- Added check: if `context_window - max_tokens <= 8192`, the provider is clearly reporting output as near-full-context, which causes overflow when combined with real input tokens.
+- When models.dev reports `max_tokens` close to the context window (e.g., 247808 for a 256k model), the API call now caps output to the tiered safe limit instead of blindly using the inflated value.
+- Tiered `safe_max_output_tokens()` by context window: ≤128k → 8k, ≤256k → 16k, >256k → 32k.
+- Applied in `context_length.py`, `_parse_models()`, and `_to_static_model()` — covers all model resolution paths.
 
 #### Removed hardcoded token defaults across the codebase
 - Removed `DEFAULT_CONTEXT_LENGTH` (131072), `DEFAULT_OUTPUT_TOKENS` (16384), `DEFAULT_CONTEXT_WINDOW` (128000), and `DEFAULT_MAX_TOKENS` (16384) magic constants.

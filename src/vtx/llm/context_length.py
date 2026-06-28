@@ -22,6 +22,14 @@ CACHE_FILE = "models_dev_limits.json"
 CACHE_TTL_SECONDS = 24 * 60 * 60  # 24 hours
 
 
+def safe_max_output_tokens(context: int) -> int:
+    if context <= 128 * 1024:
+        return 8192
+    if context <= 256 * 1024:
+        return 16384
+    return 32768
+
+
 @dataclass
 class TokenLimits:
     context: int
@@ -90,7 +98,7 @@ class ContextLengthManager:
                 output = limit.get("output", 0)
                 if context > 0:
                     if context - output <= 8192:
-                        output = min(16384, context)
+                        output = safe_max_output_tokens(context)
                     modalities = model_info.get("modalities", {})
                     input_mods = modalities.get("input", [])
                     output_mods = modalities.get("output", [])
