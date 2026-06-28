@@ -96,12 +96,28 @@ def build_parser() -> argparse.ArgumentParser:
         help="Set a completion goal before the run (see /goal command).",
     )
     parser.add_argument("--version", action="version", version=f"vtx {VERSION}")
+    parser.add_argument(
+        "--update",
+        action="store_true",
+        help="Self-update vtx to the latest stable PyPI release and exit",
+    )
     return parser
 
 
 def main() -> None:
     parser = build_parser()
     args = parser.parse_args()
+
+    if args.update:
+        from .self_update import self_update
+
+        ok, message = self_update()
+        if ok:
+            print(f"vtx update: {message}")
+        else:
+            print(f"vtx update failed: {message}", file=sys.stderr)
+            raise SystemExit(1)
+        raise SystemExit(0)
 
     if args.prompt is not None and (args.continue_recent or args.resume_session):
         parser.error("-c/--continue and -r/--resume are not supported with -p/--prompt")
