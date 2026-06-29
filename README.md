@@ -40,7 +40,22 @@ By keeping the core prompt lean, Vtx leaves the model's context window open for 
 ## 🚀 Quick Start
 
 ### Install
-Installs Vtx as a global CLI tool using `uv`:
+**Option A — One-liner (Linux/macOS):**
+```bash
+curl -fsSL https://raw.githubusercontent.com/OEvortex/vtx-coding-agent/main/scripts/install.sh | bash
+```
+
+**Option B — One-liner (Windows PowerShell):**
+```powershell
+irm https://raw.githubusercontent.com/OEvortex/vtx-coding-agent/main/scripts/install.ps1 | iex
+```
+
+Both scripts detect Python 3.12+ on PATH, upgrade pip, and guide you through an interactive flow:
+1. Choose source: **Stable PyPI** or **Latest GitHub** (`main` branch).
+2. Choose target: **Active venv** (auto-detected), **Managed venv** (`~/.vtx/venv` / `%LOCALAPPDATA%\vtx\venv`), or **Global** user install.
+3. On Termux (Android), the script detects the environment and uses `$PREFIX/bin` for command linking.
+
+Alternatively, install directly with `uv`:
 ```bash
 uv tool install vtx-coding-agent
 ```
@@ -228,7 +243,8 @@ For deeper information, consult the topic-specific files in the [`docs/`](docs/)
 - [docs/permissions.md](docs/permissions.md) — Safe-command lists and user approval heuristics.
 - [docs/sessions.md](docs/sessions.md) — Session JSONL format, history files, handoff guides, and compaction.
 - [docs/skills.md](docs/skills.md) — Authoring custom Skills, argument parsing, and command mapping.
-- [docs/extensions.md](docs/extensions.md) — Python extension API: add tools, intercept tool calls, register slash commands.
+- [docs/extensions.md](docs/extensions.md) — Python extension API: add tools, intercept tool calls, register slash commands, and customize the TUI.
+- [docs/ui.md](docs/ui.md) — `vtx.ui` public API: embed, customize, or build on top of the Textual interface.
 - [docs/theming.md](docs/theming.md) — Catalog of the 24+ built-in themes and color tokens.
 - [docs/headless.md](docs/headless.md) — Non-interactive execution, piped input streams, and exit codes.
 - [docs/storage-layout.md](docs/storage-layout.md) — Complete directory mapping of files on disk.

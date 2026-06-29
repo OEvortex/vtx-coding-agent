@@ -46,6 +46,24 @@ class AgentRegistry:
     def active(self) -> LoadedAgent | None:
         return self._active
 
+    @property
+    def tool_group_cycle(self) -> list[str | None]:
+        """Return the cycle of tool-group keys for the active agent.
+
+        ``[None, *group_keys]`` so callers can cycle the same way agent
+        cycling works.
+        """
+        if self._active is None or not self._active.definition.tool_groups:
+            return [None]
+        return [None, *self._active.definition.tool_groups.keys()]
+
+    @property
+    def active_tool_group(self) -> str | None:
+        """The currently selected ``active_tool_group`` for the active agent."""
+        if self._active is None:
+            return None
+        return self._active.definition.active_tool_group
+
     def set_on_change(self, callback) -> None:
         """Register a callable fired with the new active agent (or None)."""
         self._on_change.append(callback)
@@ -89,6 +107,25 @@ class AgentRegistry:
             with contextlib.suppress(Exception):
                 cb(new)
         return new
+
+    def cycle_tool_group(self) -> str | None:
+        """Cycle through ``tool_group_cycle`` for the active agent.
+
+        Writes the new group key back to ``active_tool_group`` on the
+        agent's :class:`AgentDef`. Returns the new value (or ``None``).
+        """
+        cycle = self.tool_group_cycle
+        if not cycle:
+            return None
+        current = self.active_tool_group
+        try:
+            idx = cycle.index(current)
+        except ValueError:
+            idx = -1
+        new_key = cycle[(idx + 1) % len(cycle)]
+        if self._active is not None:
+            self._active.definition.active_tool_group = new_key
+        return new_key
 
     def describe(self) -> list[dict]:
         """For ``/agent list`` and headless ``--list-agents``."""

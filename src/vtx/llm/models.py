@@ -7,8 +7,6 @@ and models.dev API. Only the type definitions live here.
 
 from dataclasses import dataclass
 
-DEFAULT_MAX_TOKENS = 16384
-
 
 class ApiType:
     OPENAI_COMPLETIONS = "openai-completions"
@@ -42,7 +40,7 @@ class Model:
     provider: str
     api: ApiType
     base_url: str
-    max_tokens: int
+    max_tokens: int | None
     supports_images: bool
     supports_thinking: bool
     context_window: int | None = None
@@ -89,6 +87,6 @@ def get_models_by_provider(provider: str) -> list[Model]:
     return [m for m in get_all_models() if m.provider == provider]
 
 
-def get_max_tokens(model_id: str) -> int:
+def get_max_tokens(model_id: str) -> int | None:
     model = get_model(model_id)
-    return model.max_tokens if model else DEFAULT_MAX_TOKENS
+    return model.max_tokens if model else None

@@ -129,6 +129,17 @@ class AgentCommands(CommandSupport):
         except Exception:
             pass
 
+    def action_cycle_tool_group(self) -> None:
+        """Alt+Ctrl+G handler. Cycles to the next tool group for the active agent."""
+        new_group = self._runtime.cycle_active_tool_group()
+        self._sync_runtime_state()
+        if new_group is None:
+            return
+        chat = self.query_one("#chat-log", ChatLog)
+        active = self._runtime.active_agent
+        agent_name = active.definition.name if active else ""
+        chat.add_info_message(f"Tool group: {new_group}  ({agent_name})")
+
     def _handle_agent_command(self, args: str) -> None:
         """``/agent [list|current|reload|off|<name>]`` — no args opens the picker."""
         sub = args.strip()

@@ -310,14 +310,14 @@ class AgentRunnerMixin:
                     self._current_block_type = None
                 chat.show_spinner_status("Auto-compacting...")
 
-            case CompactionEndEvent(tokens_before=tb, aborted=ab, reason=why):
+            case CompactionEndEvent(tokens_before=tb, tokens_after=ta, aborted=ab, reason=why):
                 if ab:
                     msg = "Compaction failed"
                     if why:
                         msg += f": {why}"
                     chat.show_status(msg)
                 else:
-                    chat.add_compaction_message(tb)
+                    chat.add_compaction_message(tb, ta)
 
             case RetryEvent(attempt=a, total_attempts=t, delay=d, error=e):
                 msg = f"Request failed (attempt {a}/{t}), retrying in {d}s; Error: {e}"

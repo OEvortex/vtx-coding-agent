@@ -48,7 +48,7 @@ goal:
 
 agent:
   max_turns: 500
-  default_context_window: 200000
+  default_context_window: 0
 
 ui:
   theme: "gruvbox-dark"

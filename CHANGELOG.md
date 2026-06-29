@@ -4,6 +4,68 @@ All notable changes to Vtx are documented in this file. The format is based on
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project
 adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.1.9] - 2026-06-29 — Fix Context Length Overflow & Remove Hardcoded Token Defaults
+
+### Fixed
+
+#### Context length overflow for models with inflated max_tokens
+- When models.dev reports `max_tokens` close to the context window (e.g., 247808 for a 256k model), the API call now caps output to the tiered safe limit instead of blindly using the inflated value.
+- Tiered `safe_max_output_tokens()` by context window: ≤128k → 8k, ≤256k → 16k, >256k → 32k.
+- Applied in `context_length.py`, `_parse_models()`, and `_to_static_model()` — covers all model resolution paths.
+
+#### Removed hardcoded token defaults across the codebase
+- Removed `DEFAULT_CONTEXT_LENGTH` (131072), `DEFAULT_OUTPUT_TOKENS` (16384), `DEFAULT_CONTEXT_WINDOW` (128000), and `DEFAULT_MAX_TOKENS` (16384) magic constants.
+- `ProviderConfig.max_tokens` changed from `int = 8192` to `int | None = None` — no more phantom limits when the model catalog provides accurate values.
+- `Model.max_tokens` changed from `int` to `int | None` throughout the model resolution chain.
+- `ProviderInfo.max_tokens` default changed from `8192` to `None`.
+- SDK agent fallbacks changed from hardcoded `8192` to `None`, letting the catalog drive limits.
+- Anthropic SDK removed `_MAX_TOKENS_DEFAULT = 4096` fallback; now sends `config.max_tokens` directly.
+- Removed hardcoded `max_tokens` from provider.yaml entries for OpenAI, Anthropic, and Kilo.
+
+#### default_context_window set to 0
+- Changed `default_context_window` from `200000` to `0` to prevent an arbitrary hardcoded window that doesn't match any real model. Context window is now always resolved from the model catalog or models.dev.
+
+#### Improved fuzzy model matching
+- `context_length_manager.get_limits()` now normalizes hyphens when doing substring matching, so `step-3.7-flash` matches `stepfun/step-3.7-flash` reliably.
+
+#### Replace print() with logging in hot paths
+- `extensions.py`: `ExtensionRuntime.notify()` now uses `log.info()`/`log.warning()`/`log.error()` instead of `print(..., file=sys.stderr)`.
+- `agents/api.py`: `AgentAPI.notify()` migrated to module logger with the same level mapping.
+- `tools_manager.py`: `_ensure_tool()` download progress messages now go through `log.info()`/`log.error()`.
+- `config.py`: `_record_config_warning()` now uses `log.warning()`; the message is still retained in `_config_warnings` for `consume_config_warnings()`.
+
+#### Guard against zero context window in compaction
+- `is_overflow()` in `compaction.py` returns `False` when `context_window <= 0`, preventing nonsensical overflow checks when the window is unresolved.
+
+#### Show token count after compaction in TUI
+- Updated the compaction TUI indicator to show the post-compaction token count (`[compaction] Compacted from X tokens >> Y tokens`) rather than a static string. Added `tokens_after` field to `CompactionEndEvent` and `CompactionEntry` tracking.
+
+#### Grep tool crash when using ripgrep or system grep fallback
+- Fixed `GrepTool.execute()` using sync `subprocess.Popen` with `communicate_or_cancel`, which expects an async `asyncio.subprocess.Process`. This caused a `TypeError: a coroutine was expected` on every rg/grep invocation, silently dropping the error and falling through to the Python fallback (or crashing entirely).
+- Replaced `subprocess.Popen` with `asyncio.create_subprocess_exec` in both the ripgrep and system grep paths, matching the pattern used by `FindTool`.
+
+#### Agent tool list leaking across profile switches
+- Fixed `_apply_active_agent_to_runtime()` using `self.tools` (already filtered by the previous agent's `tools_allow`) as the baseline for recomputing the new agent's tools. This caused tools from a restrictive profile (e.g. plan's `grep`, `find`) to leak into subsequent agents that shouldn't have them.
+- Changed the baseline to `DEFAULT_TOOLS`, so every agent switch starts from the full default tool set and applies its own `tools_allow`/`tools_deny` cleanly.
+
+### Added
+
+#### Kimchi OpenAI compatible provider support
+- Registered Kimchi as a new OpenAI compatible provider with base URL `https://llm.kimchi.dev/openai/v1`.
+- Added initial known model `openai/gpt-4o` and auto-fetch configuration for the provider's `/models` endpoint.
+- Added mapping to resolve `KIMCHI_API_KEY` from environment variables.
+
+#### Augmented handoff agent profiles with SDK-bridge fields
+- Added `tools` field on `AgentDef`: raw SDK tools (`@tool` callables, `BaseTool` instances, or SDK `Agent` instances) are now auto-wrapped and merged into the profile's local tool set at load time. No `register(api)` required for simple tool contributions.
+- Added `tool_groups` and `active_tool_group` fields on `AgentDef`: profiles can declare named tool-surface presets (e.g. `"read-only"` vs `"full"`) and cycle through them at runtime.
+- Added `skills` field on `AgentDef`: per-profile skill auto-loading, filtering matching skill descriptions into the system prompt when the agent is active.
+- Added `Alt+Ctrl+G` binding to cycle tool groups within the active profile. Shift+Tab still cycles full profiles.
+- Added `tool_group_changed` event to the extension bus, carrying `agent` and `group` payloads.
+- Added `_coerce_raw_tools()` in `agents/loader.py` for callable/BaseTool/Agent coercion logic.
+- Added `cycle_tool_group()` to `AgentRegistry` and `cycle_active_tool_group()` to `ConversationRuntime`.
+- Updated `_apply_active_agent_to_runtime()` to respect `tool_groups` (group allow list overrides `tools_allow`) and `_rebuild_system_prompt()` to filter skills per profile.
+- Added example `examples/agents/data-engineer.py` demonstrating the new fields.
+
 ## [0.1.8] - 2026-06-26 — Provider API Key Resolution Fix
 
 ### Fixed

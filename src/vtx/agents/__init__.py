@@ -39,6 +39,7 @@ __all__ = [
     "AGENT_CHANGED",
     "AGENT_NAME_RE",
     "MAX_AGENT_NAME_LEN",
+    "TOOL_GROUP_CHANGED",
     "AgentAPI",
     "AgentDef",
     "AgentLoadError",
@@ -62,7 +63,7 @@ def __getattr__(name: str) -> str:
     # ``vtx.extensions`` -> ``vtx.tools`` -> ``vtx.tools.task`` ->
     # ``vtx.agents`` -> back to ``vtx.extensions`` (partially
     # initialized) at module load.
-    if name in ("AGENT_ACTIVATED", "AGENT_CHANGED"):
+    if name in ("AGENT_ACTIVATED", "AGENT_CHANGED", "TOOL_GROUP_CHANGED"):
         from .. import extensions as _extensions
 
         value = getattr(_extensions, name)

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import logging
 import os
 from dataclasses import dataclass
@@ -9,7 +10,9 @@ from pathlib import Path
 from typing import Any
 
 from . import config as vtx_config
-from .agents import AgentRegistry, LoadedAgent, compose_active_commands, compose_active_tools
+from .agents import AgentRegistry, LoadedAgent
+from .agents.activate import _filter as _agent_tool_filter
+from .agents.activate import compose_active_commands
 from .config import get_last_selected, set_last_selected
 from .context import Context
 from .core.compaction import generate_summary
@@ -32,7 +35,7 @@ from .llm.dynamic_models import find_dynamic_model, get_dynamic_provider_headers
 from .loop import Agent
 from .prompts import build_system_prompt
 from .session import CustomMessageEntry, MessageEntry, Session
-from .tools import BaseTool, tools_by_name
+from .tools import DEFAULT_TOOLS, BaseTool, tools_by_name
 
 log = logging.getLogger("vtx.runtime")
 
@@ -87,6 +90,7 @@ class RuntimeInitResult:
 @dataclass
 class CompactionResult:
     tokens_before: int
+    tokens_after: int = 0
 
 
 @dataclass
@@ -266,11 +270,34 @@ class ConversationRuntime:
                 pass
         return new
 
+    def cycle_active_tool_group(self) -> str | None:
+        """Cycle to the next tool group for the active agent. Returns the new group."""
+        group = self.agent_registry.cycle_tool_group()
+        self._apply_active_agent_to_runtime()
+        if self.extensions is not None and group is not None:
+            with contextlib.suppress(Exception):
+                loop = asyncio.get_event_loop()
+                if loop.is_running():
+                    self._pending_agent_event_tasks = [
+                        loop.create_task(
+                            self.extensions.emit(
+                                "tool_group_changed",
+                                agent=(
+                                    self.agent_registry.active.definition.name
+                                    if self.agent_registry.active
+                                    else None
+                                ),
+                                group=group,
+                            )
+                        )
+                    ]
+        return group
+
     def _apply_active_agent_to_runtime(self) -> None:
         """Recompute the active tool set + system prompt for the new agent."""
         active = self.active_agent
         base_pool: dict[str, BaseTool] = dict(tools_by_name)
-        base_names: list[str] = [t.name for t in self.tools]
+        base_names: list[str] = list(DEFAULT_TOOLS)
 
         # Build the extension-tools list: session-global + per-agent local.
         ext_tools: list[BaseTool] = []
@@ -288,11 +315,31 @@ class ConversationRuntime:
                 if bucket:
                     ext_tools.extend(bucket.values())
 
-        new_tools = compose_active_tools(
-            base_tool_names=base_names,
-            base_tool_pool=base_pool,
-            extension_tools=ext_tools,
-            active_agent=active,
+        # Determine the effective allow list: profile-level tool groups win
+        # over ``tools_allow``.
+        allow = None
+        if active is not None:
+            group = active.definition.active_tool_group
+            if group and active.definition.tool_groups:
+                group_tools = active.definition.tool_groups.get(group)
+                if group_tools:
+                    allow = list(group_tools)
+            if allow is None and active.definition.tools_allow:
+                allow = list(active.definition.tools_allow)
+        deny = active.definition.tools_deny if active else []
+        # The agent's own local tools are exempt from its allow/deny filters:
+        # they were explicitly contributed by the agent, not pulled from the
+        # base pool. This lets a profile ship local tools while still
+        # restricting the built-in set.
+        always_keep = set(active.local_tools.keys()) if active else set()
+
+        new_tools = _agent_tool_filter(
+            base_names,
+            base_pool,
+            {t.name: t for t in ext_tools},
+            allow,
+            deny,
+            always_keep=always_keep,
         )
         self.tools = new_tools
         if self.agent is not None:
@@ -328,12 +375,18 @@ class ConversationRuntime:
         active = self.active_agent
         extra = active.definition.instructions if active is not None else None
         mode = active.definition.instructions_mode if active is not None else "append"
+        # Filter skills to the ones explicitly listed by the active agent, if any.
+        agent_skills: list[Any] | None = None
+        if active is not None and active.definition.skills and self.context is not None:
+            names = set(active.definition.skills)
+            agent_skills = [s for s in self.context.skills if s.name in names or s.path in names]
         new_prompt = build_system_prompt(
             self.cwd,
             context=self.context,
             tools=self.tools,
             extra_instructions=extra,
             extra_instructions_mode=mode,
+            skills=agent_skills,
         )
         # Agent._system_prompt is intentionally a private attribute we
         # rebuild on activation; the type checker doesn't know that.
@@ -951,7 +1004,8 @@ class ConversationRuntime:
             first_kept_entry_id=self.session.leaf_id or "",
             tokens_before=tokens_before,
         )
-        return CompactionResult(tokens_before=tokens_before)
+        tokens_after = self.session.token_totals().context_tokens
+        return CompactionResult(tokens_before=tokens_before, tokens_after=tokens_after)
 
     async def create_handoff(self, query: str) -> HandoffResult:
         if self.provider is None or self.session is None or self.agent is None:

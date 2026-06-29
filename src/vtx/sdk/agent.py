@@ -444,7 +444,7 @@ class Agent[TContext]:
                 max_tokens=(
                     max_tokens_override
                     if max_tokens_override is not None
-                    else (info.max_tokens if info else 8192)
+                    else (info.max_tokens if info else None)
                 ),
                 temperature=temperature,
                 thinking_level=thinking_level,
@@ -481,7 +481,7 @@ class Agent[TContext]:
                 api_key=api_key_resolved,
                 base_url=base_url,
                 model=model,
-                max_tokens=max_tokens_override if max_tokens_override is not None else 8192,
+                max_tokens=max_tokens_override,
                 temperature=temperature,
                 thinking_level=thinking_level,
                 provider=name or sdk,
@@ -512,7 +512,7 @@ class Agent[TContext]:
             max_tokens=(
                 max_tokens_override
                 if max_tokens_override is not None
-                else (info.max_tokens if info else 8192)
+                else (info.max_tokens if info else None)
             ),
             temperature=temperature,
             thinking_level=thinking_level,

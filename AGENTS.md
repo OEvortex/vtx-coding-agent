@@ -8,9 +8,9 @@
 
 ## Testing
 
-- Use `uv run python -m pytest` for testing in general; after edits/writes (Use for when you do bracking changes or adding new features)
+- After making changes, run only the tests relevant to those changes using `uv run python -m pytest path/to/test_file.py`
 - If the user asks for e2e tests then run the vtx-tmux e2e test if available
-- Never run full test suite unless the user explicitly asks for it. It can take a long time to run and is not always necessary. Run only the tests that are relevant to the changes made. Use `uv run python -m pytest path/to/test_file.py` to run specific tests.
+- Never run the full test suite unless the user explicitly asks for it. It can take a long time to run and is not always necessary.
 
 ## Skills
 

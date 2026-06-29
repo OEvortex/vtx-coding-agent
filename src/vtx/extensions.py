@@ -74,6 +74,7 @@ COMPACTION_END = "compaction_end"
 # at the call sites that import from vtx.extensions.
 AGENT_ACTIVATED = "agent_activated"
 AGENT_CHANGED = "agent_changed"
+TOOL_GROUP_CHANGED = "tool_group_changed"
 # Goal-mode events. The authoritative constants live in vtx.goal; we
 # expose them here so extension handlers can subscribe via the same
 # EventBus without importing the goal module directly.
@@ -95,6 +96,7 @@ ALL_EVENTS: tuple[str, ...] = (
     COMPACTION_END,
     AGENT_ACTIVATED,
     AGENT_CHANGED,
+    TOOL_GROUP_CHANGED,
     GOAL_START,
     GOAL_END,
     GOAL_PAUSED,
@@ -518,12 +520,15 @@ class ExtensionAPI:
         In TUI mode this prints to stderr (the chat log surfaces stderr
         lines). In headless mode it goes to stderr only.
         """
-        prefix = {
-            "info": "[extension]",
-            "warning": "[extension:warn]",
-            "error": "[extension:error]",
-        }.get(level, "[extension]")
-        print(f"{prefix} {self._extension.name}: {message}", file=sys.stderr)
+        match level:
+            case "info":
+                log.info(f"{self._extension.name}: {message}")
+            case "warning":
+                log.warning(f"{self._extension.name}: {message}")
+            case "error":
+                log.error(f"{self._extension.name}: {message}")
+            case _:
+                log.info(f"{self._extension.name}: {message}")
 
 
 # =============================================================================

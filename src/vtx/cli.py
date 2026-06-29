@@ -11,6 +11,10 @@ from .version import VERSION
 
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description="Vtx")
+    subparsers = parser.add_subparsers(dest="command")
+    subparsers.add_parser(
+        "update", help="Self-update vtx to the latest stable PyPI release and exit"
+    )
     parser.add_argument("--model", "-m", help="Model to use")
     parser.add_argument("--provider", choices=sorted(PROVIDER_API_BY_NAME), help="Provider to use")
     parser.add_argument(
@@ -102,6 +106,17 @@ def build_parser() -> argparse.ArgumentParser:
 def main() -> None:
     parser = build_parser()
     args = parser.parse_args()
+
+    if args.command == "update":
+        from .self_update import self_update
+
+        ok, message = self_update()
+        if ok:
+            print(f"vtx update: {message}")
+        else:
+            print(f"vtx update failed: {message}", file=sys.stderr)
+            raise SystemExit(1)
+        raise SystemExit(0)
 
     if args.prompt is not None and (args.continue_recent or args.resume_session):
         parser.error("-c/--continue and -r/--resume are not supported with -p/--prompt")

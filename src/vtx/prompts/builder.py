@@ -16,6 +16,8 @@ is the single entry point used by :mod:`vtx.loop` and the runtime.
 
 from __future__ import annotations
 
+from typing import Any
+
 from .. import config as vtx_config
 from ..context import Context, formatted_agent_mds, formatted_git_context, formatted_skills
 from ..tools import BaseTool
@@ -47,6 +49,7 @@ def build_system_prompt(
     include_git_context: bool | None = None,
     extra_instructions: str | None = None,
     extra_instructions_mode: str = "append",
+    skills: list[Any] | None = None,
 ) -> str:
     """Compose the final system prompt for the agent.
 
@@ -86,8 +89,9 @@ def build_system_prompt(
     if context.agents_files:
         sections.append(formatted_agent_mds(context.agents_files))
 
-    if context.skills:
-        sections.append(formatted_skills(context.skills))
+    effective_skills = skills if skills is not None else context.skills
+    if effective_skills:
+        sections.append(formatted_skills(effective_skills))
 
     if _resolve_git_flag(include_git_context):
         git_section = formatted_git_context(cwd)

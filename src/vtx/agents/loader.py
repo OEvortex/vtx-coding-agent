@@ -10,10 +10,12 @@ import importlib.util
 import inspect
 import logging
 import sys
+from collections.abc import Callable
 from pathlib import Path
 from typing import Any
 
 from ..extensions import AGENT_CHANGED
+from ..tools.base import BaseTool
 from .api import AgentAPI, LoadedAgent
 from .schema import AgentDef
 
@@ -29,6 +31,51 @@ def _expected_stem(path: Path) -> str:
     if path.is_dir() or path.name == "__init__.py":
         return path.parent.name if path.name == "__init__.py" else path.name
     return path.stem
+
+
+def _wrap_callable_as_tool(fn: Callable[..., Any], fallback_name: str) -> BaseTool:
+    """Use the SDK ``@tool`` machinery to wrap a plain callable."""
+    from ..sdk.tools import tool as sdk_tool
+    from ..tools.base import BaseTool
+
+    raw = sdk_tool(fn, name=getattr(fn, "__name__", None) or fallback_name)
+    assert isinstance(raw, BaseTool)
+    return raw
+
+
+def _coerce_raw_tools(raw: list[Any] | None) -> dict[str, BaseTool]:
+    """Convert ``AgentDef.tools`` entries into ``BaseTool`` instances.
+
+    Accepted entry types:
+
+    * ``BaseTool`` instance — passed through.
+    * Callable — wrapped via ``vtx.sdk.tools.tool``.
+    * SDK ``Agent`` instance (duck-typed via ``as_tool()``) — converted to
+      a manager-pattern tool.
+    * Anything else raises :class:`AgentLoadError`.
+    """
+    from ..tools.base import BaseTool
+
+    if not raw:
+        return {}
+    out: dict[str, BaseTool] = {}
+    for idx, item in enumerate(raw):
+        if item is None:
+            continue
+        if isinstance(item, BaseTool):
+            tool = item
+        elif callable(item):
+            tool = _wrap_callable_as_tool(item, fallback_name=f"profile-tool-{idx}")
+        elif hasattr(item, "as_tool") and callable(item.as_tool):
+            tool = item.as_tool()
+        else:
+            raise AgentLoadError(
+                f"tools[{idx}]: unsupported type {type(item).__name__} "
+                f"(expected BaseTool, callable, or Agent)"
+            )
+        key = tool.name or f"tool-{idx}"
+        out[key] = tool
+    return out
 
 
 def load_agent(path: Path, *, cwd: str, config_dir: Path, on_event: Any = None) -> LoadedAgent:
@@ -93,6 +140,17 @@ def load_agent(path: Path, *, cwd: str, config_dir: Path, on_event: Any = None) 
             raise AgentLoadError(
                 f"Agent {path}: async register() is not supported; use a sync function"
             )
+
+    # Convert ``AgentDef.tools`` (raw callables / BaseTool / Agent) into
+    # ``LoadedAgent.local_tools``. These participate in the same allow/deny
+    # pipeline as ``register(api)`` tools.
+    try:
+        raw_tools = _coerce_raw_tools(agent_obj.tools)
+    except AgentLoadError:
+        raise
+    except Exception as exc:
+        raise AgentLoadError(f"Agent {path}: tools[] coercion failed: {exc}") from exc
+    loaded.local_tools.update(raw_tools)
 
     return loaded
 

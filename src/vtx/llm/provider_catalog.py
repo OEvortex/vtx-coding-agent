@@ -34,7 +34,7 @@ class ProviderInfo:
     supports_vision: bool = False
     api_key_optional: bool = False
     is_local: bool = False
-    max_tokens: int = 8192
+    max_tokens: int | None = None
     supports_thinking: bool = False
     fetch_models: bool = False
     models_endpoint: str = "/models"
@@ -79,7 +79,7 @@ def _load() -> dict[str, ProviderInfo]:
             supports_vision=entry.get("supports_vision", False),
             api_key_optional=entry.get("api_key_optional", False),
             is_local=entry.get("is_local", False),
-            max_tokens=entry.get("max_tokens", 8192),
+            max_tokens=entry.get("max_tokens"),
             supports_thinking=entry.get("supports_thinking", False),
             fetch_models=entry.get("fetch_models", False),
             models_endpoint=entry.get("models_endpoint", "/models"),

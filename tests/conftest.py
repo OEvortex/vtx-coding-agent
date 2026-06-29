@@ -21,7 +21,7 @@ class FakeChat:
         self.versions: list[str] = []
         self.changelog_urls: list[str | None] = []
 
-    def add_compaction_message(self, tokens_before: int) -> None:
+    def add_compaction_message(self, tokens_before: int, tokens_after: int = 0) -> None:
         self.compaction_tokens = tokens_before
 
     def add_info_message(self, message: str, error: bool = False, warning: bool = False) -> None:

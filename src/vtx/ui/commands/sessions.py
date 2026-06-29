@@ -358,7 +358,7 @@ class SessionCommands(CommandSupport):
 
         try:
             result = await self._runtime.compact_now()
-            chat.add_compaction_message(result.tokens_before)
+            chat.add_compaction_message(result.tokens_before, result.tokens_after)
         except Exception as e:
             chat.show_status("Compaction failed")
             chat.add_info_message(f"Compaction failed: {e}", error=True)

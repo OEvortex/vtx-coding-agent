@@ -17,7 +17,6 @@ logger = logging.getLogger(__name__)
 
 ANTHROPIC_API_ROOT = "https://api.anthropic.com"
 ANTHROPIC_VERSION = "2023-06-01"
-_MAX_TOKENS_DEFAULT = 4096
 _RETRY_BASE_DELAY = 1.0
 _MAX_RETRIES = 3
 
@@ -215,7 +214,7 @@ class AnthropicSDK(BaseLLMSDK):
         model = self._resolve_model(config)
         payload: dict[str, Any] = {
             "model": model,
-            "max_tokens": config.max_tokens or _MAX_TOKENS_DEFAULT,
+            "max_tokens": config.max_tokens,
             "messages": converted,
         }
         if system:

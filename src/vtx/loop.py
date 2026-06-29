@@ -553,8 +553,12 @@ class Agent:
             # Everything before is summarized, nothing "kept"
             first_kept_id = self.session.leaf_id or ""
 
+            tokens_after = self.session.token_totals().context_tokens
             self.session.append_compaction(
-                summary=summary, first_kept_entry_id=first_kept_id, tokens_before=tokens_before
+                summary=summary,
+                first_kept_entry_id=first_kept_id,
+                tokens_before=tokens_before,
+                tokens_after=tokens_after,
             )
 
             # In continue mode, inject synthetic continue message
@@ -568,13 +572,14 @@ class Agent:
                 )
                 self.session.append_message(continue_msg)
 
-            yield CompactionEndEvent(tokens_before=tokens_before)
+            yield CompactionEndEvent(tokens_before=tokens_before, tokens_after=tokens_after)
 
             if self._extensions is not None:
                 await self._extensions.emit(
                     COMPACTION_END,
                     cancel_event=cancel_event,
                     tokens_before=tokens_before,
+                    tokens_after=tokens_after,
                     aborted=False,
                 )
 
