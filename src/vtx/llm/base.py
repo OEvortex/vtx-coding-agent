@@ -27,6 +27,7 @@ ENV_API_KEY_MAP: dict[str, str] = {
     "tokenrouter": "TOKENROUTER_API_KEY",
     "openrouter": "OPENROUTER_API_KEY",
     "zyloo": "ZYLOO_API_KEY",
+    "opengateway": "OPENGATEWAY_API_KEY",
 }
 
 

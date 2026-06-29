@@ -25,4 +25,6 @@ class RetryPolicy:
                 wait = self.delay * (2**attempt) + (time.time() % self.jitter)
                 logger.warning("Attempt %d failed: %s; retrying in %.2fs", attempt, exc, wait)
                 await asyncio.sleep(wait)
-        raise last
+        if last is not None:
+            raise last
+        raise ValueError("RetryPolicy: tries must be greater than 0")

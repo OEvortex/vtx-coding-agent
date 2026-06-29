@@ -1,6 +1,7 @@
 import os
 import sys
 from collections.abc import AsyncIterator
+from pathlib import Path
 from typing import TextIO
 
 from vtx import config, get_config
@@ -199,6 +200,16 @@ async def run_headless(
         )
         runtime.set_loaded_extensions(loaded_extensions)
 
+        # Hook system: bridge YAML hook configs onto the extension EventBus.
+        from .hooks.bridge import HookBridge
+
+        hook_bridge = HookBridge(
+            bus=loaded_extensions.bus,
+            project_path=Path.cwd() / ".vtx" / "hooks.yml",
+            global_path=Path.home() / ".vtx" / "hooks.yml",
+        )
+        await hook_bridge.load()
+
         try:
             init = runtime.initialize()
             if init.provider_error:
@@ -233,6 +244,7 @@ async def run_headless(
         try:
             return _exit_code(await render_run(agent.run(prompt)))
         finally:
+            await hook_bridge.unload()
             await runtime.close()
     finally:
         cfg.permissions.mode = previous_permission_mode

@@ -8,6 +8,9 @@ packages = ["src/vtx"]
 [tool.uv]
 package = true
 
+[tool.uv.workspace]
+members = ["src/vtx_claw"]
+
 [[tool.uv.index]]
 url = "https://pypi.org/simple"
 default = true
@@ -24,11 +27,13 @@ dependencies = [
     "anthropic>=0.79.0",
     "curl-cffi>=0.15.0",
     "ddgs>=9.0.0",
+    "hammett>=0.10.0",
     "html-to-markdown>=3.3.0,<3.4.0",
     "lxml-html-clean>=0.4.3",
     "openai>=2.21.0",
     "pillow>=12.1.1",
     "pydantic>=2.12.5",
+    "pytest-xdist>=3.8.0",
     "pyyaml>=6.0.3",
     "readability-lxml>=0.8.4",
     "rich>=14.3.2",
@@ -81,6 +86,7 @@ indent-style = "space"
 skip-magic-trailing-comma = true
 
 [tool.pytest.ini_options]
+addopts = "--import-mode=importlib"
 testpaths = ["tests"]
 python_files = ["test_*.py"]
 python_functions = ["test_*"]

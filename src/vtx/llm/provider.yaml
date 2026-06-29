@@ -106,6 +106,27 @@ providers:
     model_parser:
       cooldown_minutes: 60
 
+  - slug: opengateway
+    display_name: Gitlawb Opengateway
+    description: Smart gateway routing Xiaomi MiMo and partner models.
+    family: openai_compat
+    base_url: https://opengateway.gitlawb.com/v1
+    api_key_env: OPENGATEWAY_API_KEY
+    known_models:
+      - auto
+      - mimo-v2.5-pro
+      - mimo-v2.5
+      - mimo-v2-flash
+      - google/gemini-3.1-flash-lite
+      - minimax/minimax-m3
+      - qwen/qwen3.7-max
+      - z-ai/glm-5.2
+      - nvidia/nemotron-3-ultra-550b-a55b:free
+    fetch_models: true
+    models_endpoint: /models
+    model_parser:
+      cooldown_minutes: 60
+
   - slug: groq
     display_name: Groq
     description: Ultra-fast LPU inference.

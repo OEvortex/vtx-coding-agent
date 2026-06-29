@@ -15,6 +15,7 @@ import asyncio
 import os
 import time
 from collections import deque
+from pathlib import Path
 from typing import ClassVar
 
 from textual import events, on
@@ -284,6 +285,15 @@ class Vtx(
         self._runtime.set_loaded_extensions(self._loaded_extensions)
         self._initial_goal = initial_goal
 
+        # Hook system: bridge YAML hook configs onto the extension EventBus.
+        from ..hooks.bridge import HookBridge
+
+        self._hook_bridge = HookBridge(
+            bus=self._loaded_extensions.bus,
+            project_path=Path(self._cwd) / ".vtx" / "hooks.yml",
+            global_path=Path.home() / ".vtx" / "hooks.yml",
+        )
+
         # Install a Task tool progress forwarder that streams sub-agent
         # events into the chat log. The TUI mounts the chat log later
         # (in ``compose``), so we capture a reference via a callback
@@ -481,6 +491,13 @@ class Vtx(
         if self._loaded_extensions.bus.handler_count("session_start"):
             self._loaded_extensions.bus.emit_sync("session_start", cwd=self._cwd, session_id="")
 
+        # Load YAML hook configs onto the EventBus so hook handlers fire
+        # alongside extension event handlers.  Done after session_start
+        # because load is async; tool_call / tool_result hooks (the
+        # important ones) all fire during agent runs, well after this
+        # worker completes.
+        self.run_worker(self._hook_bridge.load(), exclusive=False)
+
         try:
             init_result = self._runtime.initialize(
                 resume_session=self._resume_session, continue_recent=self._continue_recent
@@ -571,6 +588,8 @@ class Vtx(
         """
         import contextlib
 
+        with contextlib.suppress(Exception):
+            await self._hook_bridge.unload()
         with contextlib.suppress(Exception):
             await self._runtime.close()
 

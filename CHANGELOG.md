@@ -4,6 +4,48 @@ All notable changes to Vtx are documented in this file. The format is based on
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project
 adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+
+## [0.2.0] - 2026-06-29 — Hook System & Gitlawb Opengateway Provider
+
+### Added
+
+#### Hook system — YAML-driven lifecycle hooks
+- New `vtx.hooks` package with `HookRegistry`, `HookRuntime`, `HookConfigManager`,
+  and `HookBridge` for reacting to session, tool, and lifecycle events.
+- YAML configuration via `.vtx/hooks.yml` (project-local) or
+  `~/.vtx/hooks.yml` (global). Category keys organize entries; the `event`
+  field inside each entry determines when the hook fires.
+- `HookBridge` connects YAML hook configs to the extension `EventBus` so they
+  fire alongside extension handlers. Maps `session_start` → `SessionStart`,
+  `tool_call` → `PreToolUse`, `tool_result` → `PostToolUse`,
+  `compaction_start` → `PreCompact`, and more.
+- **Blocking hooks**: `PreToolUse` and `PostToolUse` hooks can deny tool
+  execution or suppress tool results by exiting non-zero (stderr becomes the
+  denial reason shown to the agent).
+- **Matcher patterns**: `bash*` (prefix), `*edit` (suffix), `read` (exact),
+  or omit for all tools.
+- **Once-only hooks**: `once: true` fires the hook on the first matching
+  event only, then removes it.
+- **Shell command execution**: `type: command` hooks run as async subprocesses
+  with configurable timeouts (default 30s).
+- Wired into both the TUI (`ui/app.py`) and headless mode (`headless.py`)
+  automatically at startup.
+- Added `TurnStart` and `TurnEnd` to the hook event catalog.
+- Full reference: [docs/hooks.md](docs/hooks.md).
+
+#### Gitlawb Opengateway provider support
+- Registered Gitlawb Opengateway as a new OpenAI-compatible provider with base URL `https://opengateway.gitlawb.com/v1`.
+- Added mapping to resolve `OPENGATEWAY_API_KEY` from environment variables.
+- Configured auto-fetching of model lists from the gateway's `/models` endpoint.
+- Known model fallbacks include MiMo V2.5/V2.5 Pro/V2 Flash, Gemini 3.1 Flash Lite, MiniMax M3, Qwen 3.7 Max, GLM 5.2, and Nemotron 3 Ultra Free.
+
+### Fixed
+
+#### Provider authentication error handling
+- Improved error messages when provider API keys are invalid or rejected.
+- The `/models` fetch now surfaces the provider's actual error detail (e.g. `invalid api key (2049)`) instead of a generic `Authentication required` message, so users can distinguish between a missing key and a rejected key.
+- Added robust parsing for varied auth error payload shapes: handles both `{"error": {"message": "..."}}` and `{"error": "Unauthorized: ..."}` formats from providers like MiniMax and Cline.
+
 ## [0.1.9] - 2026-06-29 — Fix Context Length Overflow & Remove Hardcoded Token Defaults
 
 ### Fixed

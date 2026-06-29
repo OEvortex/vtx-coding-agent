@@ -90,7 +90,8 @@ def _cmd_start(args: argparse.Namespace) -> None:
     if args.daemon:
         p = multiprocessing.Process(target=_run_gateway, args=(config, pid_manager))
         p.start()
-        pid_manager.write(p.pid)
+        if p.pid is not None:
+            pid_manager.write(p.pid)
     else:
         _run_gateway(config, pid_manager)
 

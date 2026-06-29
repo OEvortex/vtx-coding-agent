@@ -20,7 +20,9 @@ def test_skill_registry_returns_names(tmp_path: Path):
     (skill_dir / "SKILL.md").write_text("---\nname: demo\ndescription: demo skill\n---\n# Demo\n")
     reg = SkillRegistry(tmp_path / "skills")
     assert "demo" in reg.list_names()
-    assert reg.get("demo").description == "demo skill"
+    demo_skill = reg.get("demo")
+    assert demo_skill is not None
+    assert demo_skill.description == "demo skill"
 
 
 def test_skill_search_filters(tmp_path: Path):
