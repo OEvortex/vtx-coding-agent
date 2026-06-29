@@ -15,25 +15,23 @@ from __future__ import annotations
 import logging
 import os
 from collections.abc import AsyncIterator
-from typing import Any
+from typing import Any, cast
 
+import vtx.runtime
 from vtx import config as vtx_config
 from vtx.config import get_last_selected
 from vtx.core.types import TextContent
 from vtx.events import AgentEndEvent, ErrorEvent, TextDeltaEvent, TurnEndEvent
 from vtx.extensions import LoadedExtensions
 from vtx.llm import get_model
-from typing import Any, cast
-
 from vtx.runtime import ConversationRuntime
-# Monkeypatch set_last_selected to be a no-op inside claw daemon
-import vtx.runtime
-cast(Any, vtx.runtime).set_last_selected = lambda *args, **kwargs: None
-
 from vtx.tools import DEFAULT_TOOLS, get_tools_with_extensions
 
 from vtx_claw.concurrency import SessionLock
 from vtx_claw.events import InboundEvent
+
+# Monkeypatch set_last_selected to be a no-op inside claw daemon
+cast(Any, vtx.runtime).set_last_selected = lambda *args, **kwargs: None
 
 logger = logging.getLogger(__name__)
 

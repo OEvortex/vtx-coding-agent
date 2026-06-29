@@ -1,352 +1,191 @@
-"""Dedicated TUI for vtx-claw — status dashboard, gateway controls, and chat client."""
+"""Programmatically extend Vtx TUI for vtx-claw features and slash commands."""
 
 from __future__ import annotations
 
-import asyncio
-import logging
-import os
-import subprocess
+import argparse
 import time
-from typing import Any
+from typing import Any, cast
 
-import aiohttp
-from textual.app import App, ComposeResult
-from textual.containers import Horizontal, Vertical
-from textual.widgets import Button, Footer, Header, Input, RichLog, Static
+from vtx.ui.app import Vtx
+from vtx.ui.autocomplete import DEFAULT_COMMANDS, SlashCommand
+from vtx.ui.chat import ChatLog
+from vtx.ui.floating_list import ListItem
+from vtx.ui.input import InputBox
+from vtx.ui.launch import _print_exit_message
 
-from vtx_claw.agent import AgentHandler
-from vtx_claw.config.schema import CHANNEL_FIELD_NAMES, load_claw_config
-from vtx_claw.daemon import PIDManager
-from vtx_claw.events import InboundEvent
+CLAW_ACTIONS = ["status", "start", "stop", "onboard", "help"]
 
-logger = logging.getLogger("vtx_claw.ui")
+CLAW_DESCRIPTIONS = {
+    "status": "Check gateway daemon status and configured channels",
+    "start": "Start the background gateway daemon",
+    "stop": "Stop the background gateway daemon",
+    "onboard": "Perform interactive first-time setup for vtx-claw",
+    "help": "Show help on the claw command suite",
+}
 
 
-class ClawDashboard(App[None]):
-    TITLE = "Vtx-Claw Gateway Manager"
-    SUB_TITLE = "Dashboard & Client"
+class ClawVtx(Vtx):
+    def _handle_command(self, text: str) -> bool:
+        parts = text[1:].split(maxsplit=1)
+        cmd = parts[0] if parts else ""
+        args = parts[1] if len(parts) > 1 else ""
 
-    CSS = """
-    Screen {
-        background: #11111b;
-    }
+        if cmd == "claw":
+            self._handle_claw_command(args)
+            return True
 
-    #sidebar {
-        width: 32;
-        background: #1e1e2e;
-        border-right: tall #313244;
-        padding: 1 2;
-    }
+        return super()._handle_command(text)
 
-    #chat-container {
-        background: #11111b;
-        padding: 1 2;
-    }
-
-    .title {
-        text-align: center;
-        text-style: bold;
-        color: #89b4fa;
-        margin-bottom: 1;
-    }
-
-    .section-title {
-        text-style: bold;
-        color: #cdd6f4;
-        margin-top: 1;
-        margin-bottom: 0;
-    }
-
-    .status-text {
-        color: #a6adc8;
-        margin-bottom: 1;
-    }
-
-    .btn {
-        width: 100%;
-        margin-bottom: 1;
-        background: #313244;
-        color: #cdd6f4;
-    }
-
-    #btn-start {
-        background: #a6e3a1;
-        color: #11111b;
-    }
-
-    #btn-stop {
-        background: #f38ba8;
-        color: #11111b;
-    }
-
-    #chat-log {
-        height: 1fr;
-        background: #181825;
-        border: tall #313244;
-        margin-bottom: 1;
-    }
-
-    #chat-input {
-        background: #1e1e2e;
-        border: tall #313244;
-        color: #cdd6f4;
-    }
-    """
-
-    def __init__(self, **kwargs: Any) -> None:
-        super().__init__(**kwargs)
-        self.config = load_claw_config()
-        self.pid_manager = PIDManager()
-        self.ws_session: aiohttp.ClientSession | None = None
-        self.ws_conn: aiohttp.ClientWebSocketResponse | None = None
-        self.ws_task: asyncio.Task | None = None
-        self.local_agent: AgentHandler | None = None
-        self.msg_id = 0
-        self.pending_responses: dict[int, asyncio.Future[Any]] = {}
-
-    def compose(self) -> ComposeResult:
-        yield Header()
-        with Horizontal():
-            with Vertical(id="sidebar"):
-                yield Static("VTX-CLAW", classes="title")
-                yield Static("GATEWAY STATUS", classes="section-title")
-                yield Static("Checking...", id="gateway-status", classes="status-text")
-                yield Button("Start Gateway", id="btn-start", classes="btn")
-                yield Button("Stop Gateway", id="btn-stop", classes="btn")
-                yield Button("Onboard Setup", id="btn-onboard", classes="btn")
-
-                yield Static("CHANNELS", classes="section-title")
-                yield Static("Loading channels...", id="channels-list", classes="status-text")
-
-                yield Static("CONFIG", classes="section-title")
-                yield Static("Loading config...", id="config-info", classes="status-text")
-
-            with Vertical(id="chat-container"):
-                yield RichLog(id="chat-log", wrap=True, highlight=True, markup=True)
-                yield Input(placeholder="Type message or /command...", id="chat-input")
-        yield Footer()
-
-    async def on_mount(self) -> None:
-        chat_log = self.query_one("#chat-log", RichLog)
-        chat_log.write("[bold cyan]Welcome to the Vtx-Claw Dashboard![/bold cyan]")
-        chat_log.write("Use the input box to chat with the agent or run commands.")
-        chat_log.write(
-            "Available commands: [bold]/start[/bold], [bold]/stop[/bold], "
-            "[bold]/status[/bold], [bold]/clear[/bold], [bold]/exit[/bold]"
-        )
-        chat_log.write("-" * 40)
-
-        # Periodically refresh status
-        self.set_interval(2.0, self.refresh_status)
-        await self.refresh_status()
-
-        # Connect to WebSocket in background
-        self.run_worker(self.connect_websocket())
-
-    async def refresh_status(self) -> None:
-        # Check process
-        pid = self.pid_manager.read()
-        is_running = False
-        if pid:
-            try:
-                os.kill(pid, 0)
-                is_running = True
-            except OSError:
-                pass
-
-        # Update TUI sidebar status
-        status_widget = self.query_one("#gateway-status", Static)
-        start_btn = self.query_one("#btn-start", Button)
-        stop_btn = self.query_one("#btn-stop", Button)
-
-        if is_running:
-            status_widget.update(
-                f"[bold green]Running[/bold green]\nPID: {pid}\n"
-                f"http://{self.config.gateway.host}:{self.config.gateway.port}"
-            )
-            start_btn.disabled = True
-            stop_btn.disabled = False
-        else:
-            status_widget.update("[bold red]Stopped[/bold red]")
-            start_btn.disabled = False
-            stop_btn.disabled = True
-
-        # Channels info
-        channels_widget = self.query_one("#channels-list", Static)
-        enabled_channels = []
-        for field_name in CHANNEL_FIELD_NAMES:
-            if getattr(self.config.channels, field_name).enabled:
-                enabled_channels.append(f"• {field_name}")
-        channels_widget.update(
-            "\n".join(enabled_channels) if enabled_channels else "No channels enabled"
-        )
-
-        # Config info
-        config_widget = self.query_one("#config-info", Static)
-        sandbox_str = "Enabled" if self.config.sandbox.enabled else "Disabled"
-        cron_str = "Enabled" if self.config.cron.enabled else "Disabled"
-        config_widget.update(
-            f"Auth: {self.config.auth.default_policy}\n"
-            f"Sandbox: {sandbox_str}\n"
-            f"Cron: {cron_str}\n"
-            f"Model: {self.config.llm.default_model or 'default'}"
-        )
-
-    async def connect_websocket(self) -> None:
-        # Clean up any existing connection
-        await self.disconnect_websocket()
-
-        url = f"http://{self.config.gateway.host}:{self.config.gateway.port}/ws"
-        chat_log = self.query_one("#chat-log", RichLog)
-
-        try:
-            self.ws_session = aiohttp.ClientSession()
-            self.ws_conn = await self.ws_session.ws_connect(url)
-            chat_log.write("[green]✓ Connected to background gateway WebSocket.[/green]")
-
-            # Send connect protocol handshake
-            self.msg_id += 1
-            await self.ws_conn.send_json({"method": "connect", "id": self.msg_id, "params": {}})
-
-            # Read messages
-            async for msg in self.ws_conn:
-                if msg.type == aiohttp.WSMsgType.TEXT:
-                    data = msg.json()
-                    await self.handle_ws_incoming(data)
-        except Exception:
-            chat_log.write(
-                "[yellow]⚠ Gateway WebSocket not connected. "
-                "Messaging will run via in-process local fallback.[/yellow]"
-            )
-            await self.disconnect_websocket()
-
-    async def disconnect_websocket(self) -> None:
-        if self.ws_conn:
-            await self.ws_conn.close()
-            self.ws_conn = None
-        if self.ws_session:
-            await self.ws_session.close()
-            self.ws_session = None
-
-    async def handle_ws_incoming(self, data: dict[str, Any]) -> None:
-        chat_log = self.query_one("#chat-log", RichLog)
-        msg_type = data.get("type")
-
-        if msg_type == "res":
-            ok = data.get("ok", False)
-            if not ok:
-                err = data.get("error", {})
-                chat_log.write(f"[red]Error ({err.get('code')}): {err.get('message')}[/red]")
-        elif msg_type == "event":
-            event_name = data.get("event")
-            event_data = data.get("data", {})
-            if event_name == "agent":
-                agent_data = event_data.get("data", {})
-                text = agent_data.get("text")
-                phase = agent_data.get("phase")
-                if text and phase == "end":
-                    chat_log.write(f"[bold magenta]Claw:[/bold magenta] {text}")
-
-    async def on_button_pressed(self, event: Button.Pressed) -> None:
-        btn_id = event.button.id
-        chat_log = self.query_one("#chat-log", RichLog)
-
-        if btn_id == "btn-start":
-            chat_log.write("Starting gateway daemon...")
-            subprocess.Popen(["vtx-claw", "start", "--daemon"])
-            await asyncio.sleep(1.0)
-            self.run_worker(self.connect_websocket())
-        elif btn_id == "btn-stop":
-            chat_log.write("Stopping gateway daemon...")
-            subprocess.Popen(["vtx-claw", "stop"])
-            await self.disconnect_websocket()
-        elif btn_id == "btn-onboard":
-            chat_log.write(
-                "To run onboard, exit dashboard TUI and run: [bold]vtx-claw onboard[/bold]"
-            )
-
-        await self.refresh_status()
-
-    async def on_input_submitted(self, event: Input.Submitted) -> None:
-        text = event.value.strip()
-        if not text:
+    def _apply_selection_mode_choice(
+        self, item: ListItem, input_box: InputBox, was_at_bottom: bool
+    ) -> None:
+        if self._selection_mode == "claw":
+            self._execute_claw_action(item.value)
+            self._restore_chat_scroll_after_refresh(was_at_bottom)
             return
+        super()._apply_selection_mode_choice(item, input_box, was_at_bottom)
 
-        input_widget = self.query_one("#chat-input", Input)
-        input_widget.value = ""
-
-        chat_log = self.query_one("#chat-log", RichLog)
-
-        # Handle commands
-        if text.startswith("/"):
-            cmd = text[1:].strip().lower()
-            if cmd in ("exit", "quit"):
-                self.exit()
-            elif cmd == "clear":
-                chat_log.clear()
-            elif cmd == "status":
-                await self.refresh_status()
-                chat_log.write("Status refreshed.")
-            elif cmd == "start":
-                chat_log.write("Starting gateway daemon...")
-                subprocess.Popen(["vtx-claw", "start", "--daemon"])
-                await asyncio.sleep(1.0)
-                self.run_worker(self.connect_websocket())
-            elif cmd == "stop":
-                chat_log.write("Stopping gateway daemon...")
-                subprocess.Popen(["vtx-claw", "stop"])
-                await self.disconnect_websocket()
+    def _handle_claw_command(self, args: str) -> None:
+        chat = self.query_one("#chat-log", ChatLog)
+        requested = args.strip().lower()
+        if requested:
+            if requested in CLAW_ACTIONS:
+                self._execute_claw_action(requested)
             else:
-                chat_log.write(f"[red]Unknown command: /{cmd}[/red]")
+                valid = ", ".join(CLAW_ACTIONS)
+                chat.add_info_message(
+                    f"Invalid claw action: {requested}. Use one of: {valid}", error=True
+                )
             return
 
-        chat_log.write(f"[bold green]You:[/bold green] {text}")
+        items = [
+            ListItem(value=action, label=action, description=CLAW_DESCRIPTIONS[action])
+            for action in CLAW_ACTIONS
+        ]
+        self._selection_mode = cast(Any, "claw")
+        self._show_selection_picker(items, cast(Any, "claw"))
 
-        # Send via WebSocket if connected
-        if self.ws_conn and not self.ws_conn.closed:
-            self.msg_id += 1
-            await self.ws_conn.send_json(
-                {
-                    "method": "chat",
-                    "id": self.msg_id,
-                    "params": {"text": text, "session_id": "claw-tui-session"},
-                }
-            )
-        else:
-            # Fallback to local in-process execution
-            chat_log.write("[dim](Running local fallback agent session...)[/dim]")
-            self.run_worker(self.run_local_agent_turn(text))
+    def _execute_claw_action(self, action: str) -> None:
+        chat = self.query_one("#chat-log", ChatLog)
 
-    async def run_local_agent_turn(self, text: str) -> None:
-        chat_log = self.query_one("#chat-log", RichLog)
-        agent = self.local_agent
-        if not agent:
+        if action == "status":
             try:
-                agent = AgentHandler(self.config)
-                self.local_agent = agent
-            except Exception as e:
-                chat_log.write(f"[red]Failed to initialize local fallback agent: {e}[/red]")
+                from vtx_claw.config.schema import CHANNEL_FIELD_NAMES, load_claw_config
+                from vtx_claw.daemon import PIDManager
+            except ImportError:
+                chat.add_info_message("vtx-claw is not installed or available.", error=True)
                 return
 
-        try:
-            event = InboundEvent(
-                type="inbound",
-                session_id="tui-local",
-                channel="tui",
-                user_id="user",
-                text=text,
-                timestamp=time.time(),
+            pid = PIDManager().read()
+            status_str = f"Running (PID: {pid})" if pid else "Stopped"
+
+            lines = []
+            lines.append(f"Gateway Status: [bold]{status_str}[/bold]")
+
+            try:
+                claw_cfg = load_claw_config()
+                lines.append(f"Host/Port: {claw_cfg.gateway.host}:{claw_cfg.gateway.port}")
+                lines.append(f"Auth Policy: {claw_cfg.auth.default_policy}")
+                sb_status = (
+                    "[green]Enabled[/green]" if claw_cfg.sandbox.enabled else "[red]Disabled[/red]"
+                )
+                lines.append(f"Sandbox: {sb_status}")
+
+                cron_status = (
+                    "[green]Enabled[/green]" if claw_cfg.cron.enabled else "[red]Disabled[/red]"
+                )
+                lines.append(f"Cron Scheduler: {cron_status}")
+
+                channels = []
+                for field_name in CHANNEL_FIELD_NAMES:
+                    if getattr(claw_cfg.channels, field_name).enabled:
+                        channels.append(field_name)
+                lines.append(f"Enabled Channels: {', '.join(channels) if channels else 'None'}")
+
+                if claw_cfg.persona:
+                    lines.append(f"Active Persona: {claw_cfg.persona.active}")
+            except Exception as e:
+                lines.append(f"Config load error: {e}")
+
+            chat.add_info_message("\n".join(lines))
+
+        elif action == "start":
+            import subprocess
+
+            try:
+                subprocess.Popen(["vtx-claw", "start", "--daemon"])
+                chat.add_info_message("Starting vtx-claw gateway in background...", warning=True)
+            except Exception as e:
+                chat.add_info_message(f"Failed to start vtx-claw gateway: {e}", error=True)
+
+        elif action == "stop":
+            import subprocess
+
+            try:
+                subprocess.Popen(["vtx-claw", "stop"])
+                chat.add_info_message("Stopping vtx-claw gateway...", warning=True)
+            except Exception as e:
+                chat.add_info_message(f"Failed to stop vtx-claw gateway: {e}", error=True)
+
+        elif action == "onboard":
+            chat.add_info_message(
+                "To run interactive onboarding, exit the TUI and run:\n"
+                "[bold]vtx-claw onboard[/bold]"
             )
-            response = await agent.handle(event)
-            chat_log.write(f"[bold magenta]Claw:[/bold magenta] {response}")
-        except Exception as e:
-            chat_log.write(f"[red]Local agent execution error: {e}[/red]")
 
-    async def action_exit(self) -> None:
-        await self.disconnect_websocket()
-        self.exit()
+        elif action == "help":
+            help_text = (
+                "[bold]Claw Commands Help[/bold]\n"
+                "/claw status  - Show gateway status and configured channels\n"
+                "/claw start   - Start the background gateway daemon\n"
+                "/claw stop    - Stop the background gateway daemon\n"
+                "/claw onboard - Show onboarding instructions\n"
+                "/claw help    - Show this help message"
+            )
+            chat.add_info_message(help_text)
 
 
-def run_tui(args: Any = None) -> None:
-    app = ClawDashboard()
+def run_tui(args: argparse.Namespace) -> None:
+    # Programmatically register autocomplete suggestions
+    if not any(c.name == "claw" for c in DEFAULT_COMMANDS):
+        DEFAULT_COMMANDS.append(
+            SlashCommand("claw", "vtx-claw gateway daemon management & status")
+        )
+
+    app = ClawVtx(
+        model=args.model,
+        provider=args.provider,
+        api_key=args.api_key,
+        base_url=args.base_url,
+        resume_session=args.resume_session,
+        continue_recent=args.continue_recent,
+        openai_compat_auth_mode=args.openai_compat_auth,
+        anthropic_compat_auth_mode=args.anthropic_compat_auth,
+        extra_extension_paths=list(getattr(args, "extension_paths", None) or []),
+        auto_discover_extensions=not getattr(args, "no_extensions", False),
+        active_agent=getattr(args, "agent", None),
+        extra_agent_paths=list(getattr(args, "agent_files", None) or []),
+        auto_discover_agents=not getattr(args, "no_agents", False),
+        initial_goal=getattr(args, "goal", None),
+    )
     app.run()
+
+    # Fire session_end on the extension bus once the TUI is torn down.
+    if app._loaded_extensions.bus.handler_count("session_end"):
+        app._loaded_extensions.bus.emit_sync(
+            "session_end", cwd=app._cwd, session_id=app._session.id if app._session else ""
+        )
+
+    hints = list(app._exit_hints)
+    session_id: str | None = None
+    duration: float | None = None
+    file_changes: dict[str, tuple[int, int]] | None = None
+
+    if app._session:
+        session_id = app._session.id
+        file_changes = app._session.file_changes_summary() or None
+    if app._session_start_time is not None:
+        duration = time.time() - app._session_start_time
+
+    if hints or session_id:
+        _print_exit_message(hints, session_id, duration, file_changes)
