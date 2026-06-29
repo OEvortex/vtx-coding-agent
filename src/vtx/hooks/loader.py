@@ -6,10 +6,10 @@ import copy
 import logging
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any, cast
+from typing import Any
 
 from .registry import HookRegistry
-from .types import HOOK_EVENTS, HookConfig, HookEvent, HookSnapshot, HookSource
+from .types import HOOK_EVENTS, HookConfig, HookSnapshot, HookSource
 
 log = logging.getLogger("vtx.hooks")
 
@@ -101,11 +101,10 @@ async def load_hooks(
 ) -> HookSnapshot:
     await registry.clear()
     sources: list[_LoadedSource] = []
-    sources_to_load: list[tuple[str, Path | None, HookSource]] = [
+    for label, path, source in [
         ("project", project_path, "project"),
         ("local", local_path, "local"),
-    ]
-    for label, path, source in sources_to_load:
+    ]:
         if path and path.exists():
             try:
                 sources.append(_normalize_source(_read_hooks_yaml(path), source, path=path))
@@ -122,7 +121,7 @@ async def load_hooks(
             for hook in entries:
                 parsed.append(
                     HookConfig(
-                        event=cast(HookEvent, event),
+                        event=event,
                         matcher=getattr(hook, "matcher", None),
                         type=getattr(hook, "type", "command") or "command",
                         command=getattr(hook, "command", "") or "",
