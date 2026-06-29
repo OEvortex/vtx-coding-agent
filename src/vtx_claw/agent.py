@@ -23,7 +23,13 @@ from vtx.core.types import TextContent
 from vtx.events import AgentEndEvent, ErrorEvent, TextDeltaEvent, TurnEndEvent
 from vtx.extensions import LoadedExtensions
 from vtx.llm import get_model
+from typing import Any, cast
+
 from vtx.runtime import ConversationRuntime
+# Monkeypatch set_last_selected to be a no-op inside claw daemon
+import vtx.runtime
+cast(Any, vtx.runtime).set_last_selected = lambda *args, **kwargs: None
+
 from vtx.tools import DEFAULT_TOOLS, get_tools_with_extensions
 
 from vtx_claw.concurrency import SessionLock
@@ -183,7 +189,6 @@ class AgentHandler:
             extensions=self._loaded_extensions.bus,
             openai_compat_auth_mode=openai_auth,
             anthropic_compat_auth_mode=anthropic_auth,
-            persist_last_selected=False,
         )
         self._runtime.set_loaded_extensions(self._loaded_extensions)
 

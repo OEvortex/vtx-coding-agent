@@ -123,8 +123,8 @@ def _add_tui_only_args(parser: argparse.ArgumentParser) -> None:
 
 
 def _cmd_tui(args: argparse.Namespace) -> None:
-    """Launch vtx's Textual TUI — the same UI the ``vtx`` command uses."""
-    from vtx.ui.launch import run_tui
+    """Launch the dedicated vtx-claw Textual TUI."""
+    from vtx_claw.ui import run_tui
 
     run_tui(args)
 
