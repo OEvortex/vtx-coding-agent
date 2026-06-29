@@ -11,6 +11,7 @@ import argparse
 import asyncio
 import logging
 import multiprocessing
+import os
 import signal
 import sys
 
@@ -130,6 +131,7 @@ def _cmd_tui(args: argparse.Namespace) -> None:
 
 
 def _run_gateway(config, pid_manager):
+    os.environ["VTX_CLAW_DAEMON"] = "1"
     loop = asyncio.new_event_loop()
     asyncio.set_event_loop(loop)
 

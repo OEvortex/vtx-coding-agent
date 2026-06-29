@@ -30,8 +30,17 @@ from vtx.tools import DEFAULT_TOOLS, get_tools_with_extensions
 from vtx_claw.concurrency import SessionLock
 from vtx_claw.events import InboundEvent
 
-# Monkeypatch set_last_selected to be a no-op inside claw daemon
-cast(Any, vtx.runtime).set_last_selected = lambda *args, **kwargs: None
+# Monkeypatch set_last_selected to be a no-op inside claw daemon process
+_original_set_last_selected = vtx.runtime.set_last_selected
+
+
+def _custom_set_last_selected(*args: Any, **kwargs: Any) -> None:
+    if os.environ.get("VTX_CLAW_DAEMON") == "1":
+        return
+    _original_set_last_selected(*args, **kwargs)
+
+
+cast(Any, vtx.runtime).set_last_selected = _custom_set_last_selected
 
 logger = logging.getLogger(__name__)
 
