@@ -3,7 +3,6 @@ from __future__ import annotations
 import pytest
 
 from vtx_claw.cli import main
-from vtx_claw.config.schema import load_claw_config
 from vtx_claw.daemon import PIDManager
 
 
@@ -21,7 +20,10 @@ def test_cli_stop_no_pid(tmp_path, monkeypatch):
 
 def test_cli_status_no_config(tmp_path, monkeypatch):
     import vtx_claw.cli as cli_mod
-    monkeypatch.setattr(cli_mod, "load_claw_config", lambda: (_ for _ in ()).throw(FileNotFoundError("no config")))
+
+    monkeypatch.setattr(
+        cli_mod, "load_claw_config", lambda: (_ for _ in ()).throw(FileNotFoundError("no config"))
+    )
     main(["status"])
 
 

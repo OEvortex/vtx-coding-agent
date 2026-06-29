@@ -1,7 +1,8 @@
 from __future__ import annotations
 
 import pytest
-from vtx_claw.config.schema import ClawConfig, LLMConfig
+
+from vtx_claw.config.schema import ClawConfig
 
 
 @pytest.fixture()
@@ -20,8 +21,8 @@ def test_default_llm_config_values(cfg: ClawConfig):
 
 
 def test_llm_api_keys_roundtrip(tmp_path):
-    import yaml
-    from vtx_claw.config.schema import save_claw_config, load_claw_config
+    from vtx_claw.config.schema import load_claw_config, save_claw_config
+
     cfg = ClawConfig()
     cfg.llm.deepseek["api_key"] = "sk-deepseek-test"
     cfg.llm.gemini["api_key"] = "sk-gemini-test"

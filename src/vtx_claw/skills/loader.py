@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import json
 import logging
 from pathlib import Path
 from typing import Any
@@ -9,7 +8,7 @@ logger = logging.getLogger(__name__)
 
 
 class CategoryMetadata:
-    __slots__ = ("name", "description", "emoji")
+    __slots__ = ("description", "emoji", "name")
 
     def __init__(self, name: str, description: str, emoji: str = "") -> None:
         self.name = name
@@ -17,11 +16,7 @@ class CategoryMetadata:
         self.emoji = emoji
 
     def to_dict(self) -> dict[str, str]:
-        return {
-            "name": self.name,
-            "description": self.description,
-            "emoji": self.emoji,
-        }
+        return {"name": self.name, "description": self.description, "emoji": self.emoji}
 
 
 class SkillLoader:
@@ -50,14 +45,7 @@ class SkillLoader:
 
 
 class SkillMetadata:
-    __slots__ = (
-        "name",
-        "description",
-        "path",
-        "category",
-        "emoji",
-        "dependencies",
-    )
+    __slots__ = ("category", "dependencies", "description", "emoji", "name", "path")
 
     def __init__(
         self,
@@ -100,8 +88,4 @@ def _parse_skill_md(path: Path) -> SkillMetadata:
                     name = stripped.split(":", 1)[1].strip()
                 elif stripped.startswith("description:"):
                     description = stripped.split(":", 1)[1].strip().strip("\"'")
-    return SkillMetadata(
-        name=name,
-        description=description,
-        path=path,
-    )
+    return SkillMetadata(name=name, description=description, path=path)

@@ -22,7 +22,7 @@ class RetryPolicy:
                 return await fn(*args, **kwargs)
             except Exception as exc:
                 last = exc
-                wait = self.delay * (2 ** attempt) + (time.time() % self.jitter)
+                wait = self.delay * (2**attempt) + (time.time() % self.jitter)
                 logger.warning("Attempt %d failed: %s; retrying in %.2fs", attempt, exc, wait)
                 await asyncio.sleep(wait)
         raise last

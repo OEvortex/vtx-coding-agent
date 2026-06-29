@@ -19,9 +19,7 @@ class AgentHandler:
         self._provider = None
         self._tools = []
         self._locks = SessionLock()
-        self._persona = PersonaManager(
-            getattr(config, "persona", None) if config else None
-        )
+        self._persona = PersonaManager(getattr(config, "persona", None) if config else None)
 
     async def handle(self, event: InboundEvent) -> str | None:
         user_id = self._effective_user_id(event)
@@ -38,9 +36,7 @@ class AgentHandler:
 
             return response
 
-    async def handle_streaming(
-        self, event: InboundEvent
-    ) -> AsyncIterator[dict[str, str]]:
+    async def handle_streaming(self, event: InboundEvent) -> AsyncIterator[dict[str, str]]:
         user_id = self._effective_user_id(event)
         async with self._locks.lock(f"{event.channel}:{user_id}"):
             session = self.session_manager.get_or_create(event.channel, user_id)
@@ -58,9 +54,12 @@ class AgentHandler:
             yield {"type": "done", "data": full_response}
 
     def _effective_user_id(self, event: InboundEvent) -> str:
-        if self.config and getattr(self.config, "isolation", None):
-            if getattr(self.config.isolation, "per_group", False):
-                return f"grp:{event.session_id}"
+        if (
+            self.config
+            and getattr(self.config, "isolation", None)
+            and getattr(self.config.isolation, "per_group", False)
+        ):
+            return f"grp:{event.session_id}"
         return event.user_id
 
     def get_system_prompt(self) -> str:
@@ -79,12 +78,7 @@ class AgentHandler:
                 return "Model not configured. Set llm.default_model in config."
 
             provider_cls = get_provider_class(model.api)
-            provider = provider_cls(
-                ProviderConfig(
-                    model=model,
-                    api_key="",
-                )
-            )
+            provider = provider_cls(ProviderConfig(model=model, api_key=""))
 
             from vtx.core.types import UserMessage
 
@@ -99,9 +93,7 @@ class AgentHandler:
             logger.exception("LLM call failed")
             return "Error: failed to get response from LLM."
 
-    async def _stream_llm(
-        self, history: list[dict[str, str]]
-    ) -> AsyncIterator[str]:
+    async def _stream_llm(self, history: list[dict[str, str]]) -> AsyncIterator[str]:
         try:
             from vtx.llm import ProviderConfig, get_model, get_provider_class
 
@@ -115,9 +107,7 @@ class AgentHandler:
                 return
 
             provider_cls = get_provider_class(model.api)
-            provider = provider_cls(
-                ProviderConfig(model=model, api_key="")
-            )
+            provider = provider_cls(ProviderConfig(model=model, api_key=""))
 
             from vtx.core.types import UserMessage
 

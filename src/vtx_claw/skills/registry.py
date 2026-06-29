@@ -8,7 +8,7 @@ logger = logging.getLogger(__name__)
 
 
 class SkillMetadata:
-    __slots__ = ("name", "description", "path", "category", "emoji", "dependencies")
+    __slots__ = ("category", "dependencies", "description", "emoji", "name", "path")
 
     def __init__(
         self,
@@ -96,8 +96,4 @@ def _parse_skill_md(path: Path) -> SkillMetadata:
                     name = line.split(":", 1)[1].strip()
                 elif line.startswith("description:"):
                     description = line.split(":", 1)[1].strip().strip("\"'")
-    return SkillMetadata(
-        name=name,
-        description=description,
-        path=path,
-    )
+    return SkillMetadata(name=name, description=description, path=path)

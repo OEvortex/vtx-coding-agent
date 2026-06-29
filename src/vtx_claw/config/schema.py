@@ -22,13 +22,23 @@ class LLMConfig(BaseModel):
     default_model: str = "gpt-4o"
     provider: str = "openai"
     openai: dict[str, Any] = Field(default_factory=lambda: {"api_key": "", "model": "gpt-4o"})
-    anthropic: dict[str, Any] = Field(default_factory=lambda: {"api_key": "", "model": "claude-sonnet-4-20250514"})
-    deepseek: dict[str, Any] = Field(default_factory=lambda: {"api_key": "", "model": "deepseek-chat"})
-    gemini: dict[str, Any] = Field(default_factory=lambda: {"api_key": "", "model": "gemini-2.0-flash"})
+    anthropic: dict[str, Any] = Field(
+        default_factory=lambda: {"api_key": "", "model": "claude-sonnet-4-20250514"}
+    )
+    deepseek: dict[str, Any] = Field(
+        default_factory=lambda: {"api_key": "", "model": "deepseek-chat"}
+    )
+    gemini: dict[str, Any] = Field(
+        default_factory=lambda: {"api_key": "", "model": "gemini-2.0-flash"}
+    )
     grok: dict[str, Any] = Field(default_factory=lambda: {"api_key": "", "model": "grok-3"})
-    kimi: dict[str, Any] = Field(default_factory=lambda: {"api_key": "", "model": "moonshot-v1-128k"})
+    kimi: dict[str, Any] = Field(
+        default_factory=lambda: {"api_key": "", "model": "moonshot-v1-128k"}
+    )
     glm: dict[str, Any] = Field(default_factory=lambda: {"api_key": "", "model": "glm-4-flash"})
-    custom: dict[str, Any] = Field(default_factory=lambda: {"base_url": "", "api_key": "", "model": ""})
+    custom: dict[str, Any] = Field(
+        default_factory=lambda: {"base_url": "", "api_key": "", "model": ""}
+    )
 
 
 class MemoryConfig(BaseModel):
@@ -147,13 +157,7 @@ class ClawConfig(BaseModel):
     tools: ToolsConfig = Field(default_factory=ToolsConfig)
 
 
-CHANNEL_FIELD_NAMES: list[str] = [
-    "telegram",
-    "feishu",
-    "discord",
-    "slack",
-    "signal",
-]
+CHANNEL_FIELD_NAMES: list[str] = ["telegram", "feishu", "discord", "slack", "signal"]
 
 
 def _get_config_path() -> Path:

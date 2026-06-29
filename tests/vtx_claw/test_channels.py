@@ -2,8 +2,8 @@ from __future__ import annotations
 
 import pytest
 
-from vtx_claw.channels.slack import SlackAdapter
 from vtx_claw.channels.signal_irc import IRCAdapter
+from vtx_claw.channels.slack import SlackAdapter
 
 
 def test_slack_adapter_creation():

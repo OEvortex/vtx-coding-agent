@@ -1,18 +1,15 @@
 from __future__ import annotations
 
 from pathlib import Path
-import pytest
 
-from vtx_claw.skills.registry import SkillRegistry
 from vtx_claw.skills.loader import SkillLoader
+from vtx_claw.skills.registry import SkillRegistry
 
 
 def test_skill_loader_discovers_skill(tmp_path: Path):
     skill_dir = tmp_path / "skills" / "demo"
     skill_dir.mkdir(parents=True)
-    (skill_dir / "SKILL.md").write_text(
-        "---\nname: demo\ndescription: demo skill\n---\n# Demo\n"
-    )
+    (skill_dir / "SKILL.md").write_text("---\nname: demo\ndescription: demo skill\n---\n# Demo\n")
     loader = SkillLoader(tmp_path / "skills")
     assert any(s["name"] == "demo" for s in loader.list_metadata())
 
@@ -20,9 +17,7 @@ def test_skill_loader_discovers_skill(tmp_path: Path):
 def test_skill_registry_returns_names(tmp_path: Path):
     skill_dir = tmp_path / "skills" / "demo"
     skill_dir.mkdir(parents=True)
-    (skill_dir / "SKILL.md").write_text(
-        "---\nname: demo\ndescription: demo skill\n---\n# Demo\n"
-    )
+    (skill_dir / "SKILL.md").write_text("---\nname: demo\ndescription: demo skill\n---\n# Demo\n")
     reg = SkillRegistry(tmp_path / "skills")
     assert "demo" in reg.list_names()
     assert reg.get("demo").description == "demo skill"
@@ -31,9 +26,7 @@ def test_skill_registry_returns_names(tmp_path: Path):
 def test_skill_search_filters(tmp_path: Path):
     skill_dir = tmp_path / "skills" / "wave"
     skill_dir.mkdir(parents=True)
-    (skill_dir / "SKILL.md").write_text(
-        "---\nname: wave\ndescription: audio wave skill\n---\n"
-    )
+    (skill_dir / "SKILL.md").write_text("---\nname: wave\ndescription: audio wave skill\n---\n")
     reg = SkillRegistry(tmp_path / "skills")
     hits = reg.search("audio")
     assert len(hits) == 1

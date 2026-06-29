@@ -2,8 +2,8 @@ from __future__ import annotations
 
 import pytest
 
+from vtx_claw.auth.policies import apply_preset
 from vtx_claw.config.schema import SecurityConfig
-from vtx_claw.auth.policies import apply_preset, PRESETS
 
 
 @pytest.mark.parametrize("preset", ["relaxed", "trusted", "standard", "strict"])

@@ -2,8 +2,8 @@ from __future__ import annotations
 
 import asyncio
 import logging
-import time
 from collections.abc import Callable
+from contextlib import suppress
 
 logger = logging.getLogger(__name__)
 
@@ -23,10 +23,8 @@ class HeartbeatRunner:
         self._running = False
         if self._task:
             self._task.cancel()
-            try:
+            with suppress(asyncio.CancelledError):
                 await self._task
-            except asyncio.CancelledError:
-                pass
 
     async def _loop(self, fn: Callable[[], None] | None) -> None:
         while self._running:

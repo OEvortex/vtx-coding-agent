@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import logging
 from pathlib import Path
-from typing import Any
 
 logger = logging.getLogger(__name__)
 
@@ -17,6 +16,7 @@ class ApprovalManager:
         if self._file.exists():
             try:
                 import json
+
                 self._allowed = json.loads(self._file.read_text())
             except Exception:
                 logger.exception("Failed to load exec allowlist")
@@ -34,5 +34,6 @@ class ApprovalManager:
 
     def _persist(self) -> None:
         import json
+
         self._file.parent.mkdir(parents=True, exist_ok=True)
         self._file.write_text(json.dumps(self._allowed, indent=2))

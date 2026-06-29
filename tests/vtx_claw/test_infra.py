@@ -1,12 +1,13 @@
 from __future__ import annotations
 
 import asyncio
+
 import pytest
 
-from vtx_claw.infra.retry import RetryPolicy
 from vtx_claw.infra.dedup import Deduper
 from vtx_claw.infra.delivery_queue import DeliveryQueue
 from vtx_claw.infra.heartbeat import HeartbeatRunner
+from vtx_claw.infra.retry import RetryPolicy
 
 
 @pytest.mark.asyncio
@@ -45,7 +46,6 @@ def test_dedup_filters_duplicates():
 
 
 def test_dedup_allows_after_ttl(monkeypatch: pytest.MonkeyPatch):
-    import time as _t
 
     times = [0.0, 0.0, 1.0]
 

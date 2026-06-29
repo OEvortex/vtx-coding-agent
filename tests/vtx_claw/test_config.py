@@ -1,23 +1,22 @@
 from __future__ import annotations
 
-import yaml
 from pathlib import Path
-import pytest
+
+import yaml
 
 from vtx_claw.config.schema import (
+    CHANNEL_FIELD_NAMES,
     ClawConfig,
+    IsolationConfig,
     LLMConfig,
     MemoryConfig,
-    ChannelsConfig,
+    PersonaConfig,
     SecurityConfig,
     SkillsConfig,
-    IsolationConfig,
-    PersonaConfig,
-    VoiceConfig,
     ToolsConfig,
+    VoiceConfig,
     load_claw_config,
     save_claw_config,
-    CHANNEL_FIELD_NAMES,
 )
 
 
@@ -71,11 +70,13 @@ def test_config_roundtrip(tmp_path: Path):
 def test_config_loaded_from_yaml(tmp_path: Path):
     p = tmp_path / "claw.yml"
     p.write_text(
-        yaml.dump({
-            "gateway": {"port": 9999},
-            "llm": {"provider": "deepseek", "deepseek": {"api_key": "sk-test"}},
-            "channels": {"slack": {"enabled": True, "bot_token": "xoxb-test"}},
-        })
+        yaml.dump(
+            {
+                "gateway": {"port": 9999},
+                "llm": {"provider": "deepseek", "deepseek": {"api_key": "sk-test"}},
+                "channels": {"slack": {"enabled": True, "bot_token": "xoxb-test"}},
+            }
+        )
     )
     cfg = load_claw_config(p)
     assert cfg.gateway.port == 9999

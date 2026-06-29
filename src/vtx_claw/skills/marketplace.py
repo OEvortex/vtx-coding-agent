@@ -20,8 +20,7 @@ class MarketplaceClient:
         return [
             s
             for s in catalog
-            if q in s.get("name", "").lower()
-            or q in s.get("description", "").lower()
+            if q in s.get("name", "").lower() or q in s.get("description", "").lower()
         ]
 
     def install(self, skill_id: str) -> dict[str, Any]:

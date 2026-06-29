@@ -1,9 +1,10 @@
 from __future__ import annotations
 
 import asyncio
+
 import pytest
 
-from vtx_claw.concurrency import SessionLock, GlobalSemaphore, compact_messages
+from vtx_claw.concurrency import GlobalSemaphore, SessionLock, compact_messages
 
 
 @pytest.mark.asyncio

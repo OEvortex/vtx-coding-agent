@@ -3,7 +3,6 @@ from __future__ import annotations
 import json
 import logging
 import time
-from collections.abc import AsyncIterator
 from datetime import date
 from pathlib import Path
 from typing import Any
@@ -12,11 +11,7 @@ logger = logging.getLogger(__name__)
 
 
 class MemoryManager:
-    def __init__(
-        self,
-        store_dir: Path | None = None,
-        daily_logs: bool = True,
-    ) -> None:
+    def __init__(self, store_dir: Path | None = None, daily_logs: bool = True) -> None:
         self._store_dir = store_dir or Path.home() / ".vtx" / "claw" / "memory"
         self._store_dir.mkdir(parents=True, exist_ok=True)
         self._daily_logs = daily_logs
@@ -52,9 +47,7 @@ class MemoryManager:
             return entries
         q = query.lower()
         return [
-            e
-            for e in entries
-            if q in e.get("key", "").lower() or q in e.get("value", "").lower()
+            e for e in entries if q in e.get("key", "").lower() or q in e.get("value", "").lower()
         ]
 
     def get_all(self, user_id: str) -> list[dict[str, Any]]:
@@ -83,16 +76,12 @@ class MemoryManager:
         return ""
 
     def _persist(self) -> None:
-        self._json_path.write_text(
-            json.dumps({"entries": self._entries}, indent=2)
-        )
+        self._json_path.write_text(json.dumps({"entries": self._entries}, indent=2))
 
     def _append_daily_log(self, user_id: str, entry: dict[str, Any]) -> None:
         today = date.today().isoformat()
         log = self._store_dir / f"{today}.md"
-        line = (
-            f"- [{entry['ts']:.0f}] [{user_id}] **{entry['key']}**: {entry['value']}\n"
-        )
+        line = f"- [{entry['ts']:.0f}] [{user_id}] **{entry['key']}**: {entry['value']}\n"
         try:
             with log.open("a") as f:
                 f.write(line)

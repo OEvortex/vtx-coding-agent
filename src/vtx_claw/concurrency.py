@@ -2,8 +2,6 @@ from __future__ import annotations
 
 import asyncio
 import logging
-import time
-from collections.abc import Coroutine
 from typing import Any
 
 logger = logging.getLogger(__name__)
@@ -19,7 +17,6 @@ class SessionLock:
         return self._locks[key]
 
     def prune(self, max_age: float = 3600) -> None:
-        cutoff = time.time() - max_age
         stale = [k for k, v in self._locks.items() if not v.locked()]
         for k in stale:
             self._locks.pop(k, None)
@@ -35,9 +32,7 @@ class GlobalSemaphore:
 
 
 def compact_messages(
-    messages: list[dict[str, Any]],
-    token_budget: int = 4096,
-    chars_per_token: float = 3.5,
+    messages: list[dict[str, Any]], token_budget: int = 4096, chars_per_token: float = 3.5
 ) -> list[dict[str, Any]]:
     budget = int(token_budget * chars_per_token)
     trimmed: list[dict[str, Any]] = []

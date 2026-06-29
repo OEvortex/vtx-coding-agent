@@ -17,10 +17,7 @@ logger = logging.getLogger("vtx_claw")
 
 
 def main(argv: list[str] | None = None) -> None:
-    parser = argparse.ArgumentParser(
-        prog="vtx-claw",
-        description="VTX messaging gateway",
-    )
+    parser = argparse.ArgumentParser(prog="vtx-claw", description="VTX messaging gateway")
     sub = parser.add_subparsers(dest="command")
 
     start_p = sub.add_parser("start", help="Start the gateway")
@@ -61,11 +58,12 @@ def _run_gateway(config, pid_manager):
     for field_name in CHANNEL_FIELD_NAMES:
         channel_cfg = getattr(config.channels, field_name)
         if channel_cfg.enabled and field_name in CHANNEL_REGISTRY:
-            plugin_cls = CHANNEL_REGEGISTRY[field_name]
+            plugin_cls = CHANNEL_REGISTRY[field_name]
             server.channel_manager.register(field_name, plugin_cls())
             server.channel_manager.configure(field_name, channel_cfg.model_dump())
 
     from vtx_claw.channels.web import WebChannel
+
     server.channel_manager.register("web", WebChannel())
     server.channel_manager.configure("web", {"enabled": True})
 
@@ -79,10 +77,7 @@ def _run_gateway(config, pid_manager):
 
 def _cmd_start(args: argparse.Namespace) -> None:
     level = logging.DEBUG if args.verbose else logging.INFO
-    logging.basicConfig(
-        level=level,
-        format="%(asctime)s %(name)s %(levelname)s %(message)s",
-    )
+    logging.basicConfig(level=level, format="%(asctime)s %(name)s %(levelname)s %(message)s")
 
     config = load_claw_config()
     if args.port:
@@ -105,6 +100,7 @@ def _cmd_stop() -> None:
     if pid:
         print(f"vtx-claw: stopping PID {pid}")
         import os
+
         os.kill(pid, signal.SIGTERM)
         PIDManager().clear()
     else:

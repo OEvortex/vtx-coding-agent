@@ -1,9 +1,8 @@
 from __future__ import annotations
 
 from pathlib import Path
-import pytest
 
-from vtx_claw.knowledge import HybridRetriever, BM25Store, VectorStore, reciprocal_rank_fusion
+from vtx_claw.knowledge import BM25Store, HybridRetriever, VectorStore, reciprocal_rank_fusion
 
 
 def test_hybrid_retrieval(tmp_path: Path):

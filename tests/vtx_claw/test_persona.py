@@ -1,11 +1,11 @@
 from __future__ import annotations
 
-import asyncio
 from pathlib import Path
+
 import pytest
 
-from vtx_claw.persona import PersonaManager
 from vtx_claw.config.schema import PersonaConfig
+from vtx_claw.persona import PersonaManager
 
 
 def test_default_soul_loaded(tmp_path: Path):
@@ -24,10 +24,7 @@ def test_persona_switch(tmp_path: Path):
     default.write_text("Default persona.")
     coder = persona_dir / "coder.md"
     coder.write_text("You are a coder.")
-    cfg = PersonaConfig(
-        soul_file=str(tmp_path / "soul.md"),
-        persona_file=str(coder),
-    )
+    cfg = PersonaConfig(soul_file=str(tmp_path / "soul.md"), persona_file=str(coder))
     pm = PersonaManager(cfg)
     pm.set_active("default")
     assert "Default persona." in pm.get_system_prompt()
