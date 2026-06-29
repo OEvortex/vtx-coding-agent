@@ -122,8 +122,10 @@ class ConversationRuntime:
         agent_registry: AgentRegistry | None = None,
         active_agent: LoadedAgent | None = None,
         agent_extensions: list | None = None,
+        persist_last_selected: bool = True,
     ) -> None:
         self.cwd = cwd
+        self.persist_last_selected = persist_last_selected
         self._background_manager = None  # installed via ensure_background_manager
         self._background_manager_token = None
 
@@ -201,12 +203,13 @@ class ConversationRuntime:
         if resolved is None and name is not None:
             return None
         # Persist last-selected.
-        set_last_selected(
-            self.model,
-            self.model_provider,
-            self.thinking_level,
-            agent=resolved.definition.name if resolved else None,
-        )
+        if self.persist_last_selected:
+            set_last_selected(
+                self.model,
+                self.model_provider,
+                self.thinking_level,
+                agent=resolved.definition.name if resolved else None,
+            )
         # Wire the agent's event handlers into the extensions bus (if any).
         if resolved is not None and self.extensions is not None:
             resolved.wire_handlers(self.extensions)
@@ -248,12 +251,13 @@ class ConversationRuntime:
     def cycle_active_agent(self) -> LoadedAgent | None:
         """Cycle to the next agent (Shift+Tab). Returns the new active one."""
         new = self.agent_registry.cycle()
-        set_last_selected(
-            self.model,
-            self.model_provider,
-            self.thinking_level,
-            agent=new.definition.name if new else None,
-        )
+        if self.persist_last_selected:
+            set_last_selected(
+                self.model,
+                self.model_provider,
+                self.thinking_level,
+                agent=new.definition.name if new else None,
+            )
         if new is not None and self.extensions is not None:
             new.wire_handlers(self.extensions)
         self._apply_active_agent_to_runtime()
@@ -653,12 +657,13 @@ class ConversationRuntime:
             self.ensure_background_manager()
         self._refresh_dispatcher_context()
 
-        set_last_selected(
-            self.model,
-            self.model_provider,
-            self.thinking_level,
-            agent=self.active_agent.definition.name if self.active_agent else None,
-        )
+        if self.persist_last_selected:
+            set_last_selected(
+                self.model,
+                self.model_provider,
+                self.thinking_level,
+                agent=self.active_agent.definition.name if self.active_agent else None,
+            )
 
         # Restore the active goal from the session (if any). A ``pursuing``
         # goal stays pursuing; terminal goals (achieved / budget_limited /
@@ -760,12 +765,13 @@ class ConversationRuntime:
         # the model changes.
         self._refresh_dispatcher_context()
 
-        set_last_selected(
-            self.model,
-            self.model_provider,
-            self.thinking_level,
-            agent=self.active_agent.definition.name if self.active_agent else None,
-        )
+        if self.persist_last_selected:
+            set_last_selected(
+                self.model,
+                self.model_provider,
+                self.thinking_level,
+                agent=self.active_agent.definition.name if self.active_agent else None,
+            )
 
     def set_thinking_level(self, level: str) -> None:
         if self.provider is None:
@@ -779,12 +785,13 @@ class ConversationRuntime:
         # the new thinking level on the next dispatch.
         self._refresh_dispatcher_context()
 
-        set_last_selected(
-            self.model,
-            self.model_provider,
-            self.thinking_level,
-            agent=self.active_agent.definition.name if self.active_agent else None,
-        )
+        if self.persist_last_selected:
+            set_last_selected(
+                self.model,
+                self.model_provider,
+                self.thinking_level,
+                agent=self.active_agent.definition.name if self.active_agent else None,
+            )
 
     @property
     def model_supports_thinking(self) -> bool:
@@ -877,12 +884,13 @@ class ConversationRuntime:
         elif self.agent is not None:
             self.agent.session = session
 
-        set_last_selected(
-            self.model,
-            self.model_provider,
-            self.thinking_level,
-            agent=self.active_agent.definition.name if self.active_agent else None,
-        )
+        if self.persist_last_selected:
+            set_last_selected(
+                self.model,
+                self.model_provider,
+                self.thinking_level,
+                agent=self.active_agent.definition.name if self.active_agent else None,
+            )
 
         return session
 

@@ -44,9 +44,9 @@ class TelegramAdapter(ChannelPlugin):
                     await update.message.reply_text("Queue control: /stop to abort current run.")
 
             async def handle_message(update: Update, context: Any) -> None:
-                if not update.message or not update.message.text:
-                    return
                 msg = update.message
+                if msg is None or msg.text is None:
+                    return
                 user = msg.from_user
                 inbound = InboundMessage(
                     channel="telegram",
@@ -70,7 +70,8 @@ class TelegramAdapter(ChannelPlugin):
             await self._app.initialize()
             self._bot = self._app.bot
             await self._app.start()
-            await self._app.updater.start_polling(drop_pending_updates=True)
+            if self._app.updater is not None:
+                await self._app.updater.start_polling(drop_pending_updates=True)
             logger.info("Telegram bot started (polling)")
         except ImportError:
             logger.error("python-telegram-bot not installed")
@@ -79,7 +80,8 @@ class TelegramAdapter(ChannelPlugin):
     async def on_stop(self) -> None:
         if self._app:
             try:
-                await self._app.updater.stop()
+                if self._app.updater is not None:
+                    await self._app.updater.stop()
                 await self._app.stop()
                 await self._app.shutdown()
             except Exception:

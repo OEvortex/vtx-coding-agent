@@ -1,3 +1,9 @@
+"""Concurrency utilities for vtx_claw — wraps vtx's async primitives.
+
+Uses :mod:`vtx.async_utils` for cancellation and task management,
+plus channel-level locks for per-user serialisation.
+"""
+
 from __future__ import annotations
 
 import asyncio
@@ -8,6 +14,13 @@ logger = logging.getLogger(__name__)
 
 
 class SessionLock:
+    """Per-key :class:`asyncio.Lock` for serialising user sessions.
+
+    Each channel/user pair gets its own lock so messages from the same
+    user are processed sequentially while different users can proceed
+    concurrently.
+    """
+
     def __init__(self) -> None:
         self._locks: dict[str, asyncio.Lock] = {}
 
@@ -23,6 +36,8 @@ class SessionLock:
 
 
 class GlobalSemaphore:
+    """Global concurrency limiter backed by :class:`asyncio.Semaphore`."""
+
     def __init__(self, max_concurrent: int = 4) -> None:
         self._sem = asyncio.Semaphore(max_concurrent)
 
@@ -34,6 +49,10 @@ class GlobalSemaphore:
 def compact_messages(
     messages: list[dict[str, Any]], token_budget: int = 4096, chars_per_token: float = 3.5
 ) -> list[dict[str, Any]]:
+    """Trim message history to fit within a token budget.
+
+    Uses the same heuristics as vtx's internal compaction.
+    """
     budget = int(token_budget * chars_per_token)
     trimmed: list[dict[str, Any]] = []
     size = 0

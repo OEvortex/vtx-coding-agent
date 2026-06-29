@@ -7,12 +7,14 @@ from datetime import date
 from pathlib import Path
 from typing import Any
 
+from vtx.config import get_config_dir
+
 logger = logging.getLogger(__name__)
 
 
 class MemoryManager:
     def __init__(self, store_dir: Path | None = None, daily_logs: bool = True) -> None:
-        self._store_dir = store_dir or Path.home() / ".vtx" / "claw" / "memory"
+        self._store_dir = store_dir or get_config_dir() / "claw" / "memory"
         self._store_dir.mkdir(parents=True, exist_ok=True)
         self._daily_logs = daily_logs
         self._json_path = self._store_dir / "memories.json"
@@ -70,7 +72,7 @@ class MemoryManager:
         return "User memories:\n" + "\n".join(lines)
 
     def load_tools_md(self) -> str:
-        p = Path.home() / ".vtx" / "claw" / "TOOLS.md"
+        p = get_config_dir() / "claw" / "TOOLS.md"
         if p.exists():
             return p.read_text()
         return ""

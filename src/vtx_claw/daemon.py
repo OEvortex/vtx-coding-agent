@@ -3,12 +3,14 @@ from __future__ import annotations
 import logging
 from pathlib import Path
 
+from vtx_claw.config.schema import get_claw_pid_path
+
 logger = logging.getLogger(__name__)
 
 
 class PIDManager:
     def __init__(self, pid_file: Path | None = None) -> None:
-        self._pid_file = pid_file or Path.home() / ".vtx" / "claw.pid"
+        self._pid_file = pid_file or get_claw_pid_path()
         self._pid_file.parent.mkdir(parents=True, exist_ok=True)
 
     def write(self, pid: int) -> None:

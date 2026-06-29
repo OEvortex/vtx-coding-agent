@@ -1,3 +1,14 @@
+"""Claw configuration schema — stored inside vtx's ``~/.vtx/config.yml``.
+
+The claw config lives under a ``claw:`` top-level key in the same YAML
+file that vtx uses.  vtx's own schema silently ignores the extra key
+(Pydantic v2 ``extra='ignore'`` by default), so both tools share the
+same config file without conflict.
+
+All file paths resolve through :func:`vtx.config.get_config_dir` (default
+``~/.vtx``) so there is a single storage root.
+"""
+
 from __future__ import annotations
 
 from pathlib import Path
@@ -5,12 +16,12 @@ from typing import Any
 
 import yaml
 from pydantic import BaseModel, Field
+from vtx.config import get_config_dir
 
 
 class GatewayConfig(BaseModel):
     host: str = "0.0.0.0"
     port: int = 18789
-    web_ui: bool = True
 
 
 class ProviderSecrets(BaseModel):
@@ -40,9 +51,16 @@ class LLMConfig(BaseModel):
         default_factory=lambda: {"base_url": "", "api_key": "", "model": ""}
     )
 
+    def resolve_api_key(self) -> str:
+        """Return the first non-empty API key across all provider blocks."""
+        for prov_key in ("openai", "anthropic", "deepseek", "gemini", "grok", "kimi", "glm"):
+            prov = getattr(self, prov_key, None) or {}
+            if isinstance(prov, dict) and prov.get("api_key"):
+                return prov["api_key"]
+        return ""
+
 
 class MemoryConfig(BaseModel):
-    markdown_dir: str = str(Path.home() / ".vtx" / "claw" / "memory")
     daily_logs: bool = True
 
 
@@ -57,7 +75,6 @@ class PersonaConfig(BaseModel):
 
 
 class SkillsConfig(BaseModel):
-    dir: str = str(Path.home() / ".vtx" / "claw" / "skills")
     catalog_refresh_seconds: int = 3600
 
 
@@ -79,10 +96,6 @@ class AuthConfig(SecurityConfig):
 class VoiceConfig(BaseModel):
     enabled: bool = False
     deepgram_api_key: str = ""
-
-
-class ToolsConfig(BaseModel):
-    tools_md: str = str(Path.home() / ".vtx" / "claw" / "TOOLS.md")
 
 
 class TelegramConfig(BaseModel):
@@ -141,7 +154,18 @@ class SandboxConfig(BaseModel):
     timeout_seconds: int = 300
 
 
+class ToolsConfig(BaseModel):
+    tools_md: str = str(Path.home() / ".vtx" / "claw" / "TOOLS.md")
+
+
 class ClawConfig(BaseModel):
+    """vtx_claw configuration — embedded in vtx's ``~/.vtx/config.yml``.
+
+    The ``llm`` section feeds into :class:`~vtx.runtime.ConversationRuntime`
+    via :class:`~vtx_claw.agent.AgentHandler`, which also reads
+    :mod:`vtx.config` for defaults (model, provider, API keys).
+    """
+
     gateway: GatewayConfig = Field(default_factory=GatewayConfig)
     channels: ChannelsConfig = Field(default_factory=ChannelsConfig)
     auth: AuthConfig = Field(default_factory=AuthConfig)
@@ -160,21 +184,62 @@ class ClawConfig(BaseModel):
 CHANNEL_FIELD_NAMES: list[str] = ["telegram", "feishu", "discord", "slack", "signal"]
 
 
+# ── Data directory (shared with vtx) ─────────────────────────────────────
+
+
+def get_claw_dir() -> Path:
+    """Return ``~/.vtx/claw/`` — the claw's storage root under vtx's config dir."""
+    return get_config_dir() / "claw"
+
+
+def get_claw_pid_path() -> Path:
+    """Return ``~/.vtx/claw.pid`` — the PID file path."""
+    return get_config_dir() / "claw.pid"
+
+
+# ── Config file (shared with vtx) ────────────────────────────────────────
+
+
 def _get_config_path() -> Path:
-    return Path.home() / ".vtx" / "claw.yml"
+    """Return the shared config file path (same as vtx's)."""
+    return get_config_dir() / "config.yml"
 
 
 def load_claw_config(path: Path | None = None) -> ClawConfig:
+    """Load claw config from the ``claw:`` key in vtx's ``config.yml``.
+
+    If the key is absent (fresh install) the built-in defaults are used.
+    """
     config_path = path or _get_config_path()
     if config_path.exists():
         raw: dict[str, Any] = yaml.safe_load(config_path.read_text()) or {}
-        return ClawConfig(**raw)
+        if "claw" in raw:
+            claw_raw = raw["claw"]
+        elif any(
+            k in raw for k in ("gateway", "channels", "auth", "cron", "sandbox", "llm", "memory")
+        ):
+            claw_raw = raw
+        else:
+            claw_raw = {}
+        if isinstance(claw_raw, dict):
+            return ClawConfig(**claw_raw)
     return ClawConfig()
 
 
 def save_claw_config(config: ClawConfig, path: Path | None = None) -> None:
+    """Write the claw config into the ``claw:`` key of vtx's ``config.yml``.
+
+    Other sections of the file are preserved as-is.
+    """
     config_path = path or _get_config_path()
     config_path.parent.mkdir(parents=True, exist_ok=True)
+
+    raw: dict[str, Any] = {}
+    if config_path.exists():
+        raw = yaml.safe_load(config_path.read_text()) or {}
+
+    raw["claw"] = config.model_dump(mode="python")
+
     config_path.write_text(
-        yaml.dump(config.model_dump(mode="python"), default_flow_style=False, sort_keys=False)
+        yaml.dump(raw, default_flow_style=False, sort_keys=False, allow_unicode=True)
     )

@@ -17,9 +17,63 @@ def run_onboard() -> None:
         config.gateway.port = int(port)
 
     print("\n2. LLM Provider")
-    print("   Supported: openai, anthropic, deepseek, ollama, custom")
-    input("   Provider [openai]: ").strip() or "openai"
-    input("   Model [gpt-4o]: ").strip() or "gpt-4o"
+    print("   Supported: openai, anthropic, deepseek, gemini, grok, ollama, custom")
+    current_provider = config.llm.provider or "openai"
+    provider = input(f"   Provider [{current_provider}]: ").strip() or current_provider
+    config.llm.provider = provider
+
+    # Select default model based on provider
+    default_model = "gpt-4o"
+    if provider == "anthropic":
+        default_model = "claude-sonnet-4-20250514"
+    elif provider == "deepseek":
+        default_model = "deepseek-chat"
+    elif provider == "gemini":
+        default_model = "gemini-2.0-flash"
+    elif provider == "grok":
+        default_model = "grok-3"
+    elif provider == "ollama":
+        default_model = "llama3"
+
+    current_model = config.llm.default_model or default_model
+    model = input(f"   Model [{current_model}]: ").strip() or current_model
+    config.llm.default_model = model
+
+    # Save selection to vtx's last selected settings
+    from vtx.config import set_last_selected
+
+    set_last_selected(model_id=model, provider=provider, thinking_level="high")
+
+    # Handle API keys
+    from vtx.llm.oauth.dynamic import get_dynamic_api_key, save_api_key
+
+    if provider not in ("ollama", "custom"):
+        existing_key = get_dynamic_api_key(provider)
+        key_prompt = "   API Key"
+        if existing_key:
+            key_prompt += " [already set, press Enter to keep]"
+        key_prompt += ": "
+
+        api_key = input(key_prompt).strip()
+        if api_key:
+            save_api_key(provider, api_key)
+            # Also store it in claw config for local backup
+            prov_block = getattr(config.llm, provider, None)
+            if isinstance(prov_block, dict):
+                prov_block["api_key"] = api_key
+        elif not existing_key:
+            print(f"   [Warning] No API key set for {provider}. You may need to set one later.")
+    elif provider == "custom":
+        base_url = input("   Base URL for custom provider: ").strip()
+        if base_url:
+            config.llm.custom["base_url"] = base_url
+        custom_model = input("   Model name for custom provider: ").strip()
+        if custom_model:
+            config.llm.custom["model"] = custom_model
+            config.llm.default_model = custom_model
+        api_key = input("   API Key for custom provider: ").strip()
+        if api_key:
+            config.llm.custom["api_key"] = api_key
 
     print("\n3. Channel Setup")
     print("   Available: telegram, feishu, discord, whatsapp")

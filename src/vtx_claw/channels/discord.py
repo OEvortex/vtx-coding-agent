@@ -29,15 +29,16 @@ class DiscordAdapter(ChannelPlugin):
             intents.message_content = True
             intents.dm_messages = True
 
-            self._client = commands.Bot(command_prefix="!", intents=intents)
+            client = commands.Bot(command_prefix="!", intents=intents)
+            self._client = client
 
-            @self._client.event
+            @client.event
             async def on_ready() -> None:
-                logger.info("Discord bot logged in as %s", self._client.user)
+                logger.info("Discord bot logged in as %s", client.user)
 
-            @self._client.event
+            @client.event
             async def on_message(message: discord.Message) -> None:
-                if message.author == self._client.user:
+                if message.author == client.user:
                     return
                 if not message.content:
                     return
@@ -76,7 +77,9 @@ class DiscordAdapter(ChannelPlugin):
             if not channel:
                 channel = await self._client.fetch_channel(int(target))
 
-            msg = await channel.send(text)
+            from typing import Any, cast
+
+            msg = await cast(Any, channel).send(text)
             return str(msg.id)
         except Exception:
             logger.exception("Discord send failed")
