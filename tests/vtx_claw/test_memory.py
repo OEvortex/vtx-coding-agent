@@ -52,7 +52,9 @@ def test_delete_entry(tmp_path: Path):
 def test_daily_log_file_created(tmp_path: Path):
     mgr = MemoryManager(tmp_path)
     mgr.remember("u5", "k", "v")
-    today = "2026-06-29"
+    from datetime import date
+
+    today = date.today().isoformat()
     log = tmp_path / f"{today}.md"
     assert log.exists()
     content = log.read_text()

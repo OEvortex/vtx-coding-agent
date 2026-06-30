@@ -12,7 +12,6 @@ from vtx_claw.config.schema import (
     MemoryConfig,
     PersonaConfig,
     SecurityConfig,
-    SkillsConfig,
     ToolsConfig,
     VoiceConfig,
     load_claw_config,
@@ -24,7 +23,6 @@ def test_default_config_has_new_fields():
     cfg = ClawConfig()
     assert isinstance(cfg.llm, LLMConfig)
     assert isinstance(cfg.memory, MemoryConfig)
-    assert isinstance(cfg.skills, SkillsConfig)
     assert isinstance(cfg.isolation, IsolationConfig)
     assert isinstance(cfg.persona, PersonaConfig)
     assert isinstance(cfg.voice, VoiceConfig)

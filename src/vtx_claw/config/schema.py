@@ -74,10 +74,6 @@ class PersonaConfig(BaseModel):
     active: str = "default"
 
 
-class SkillsConfig(BaseModel):
-    catalog_refresh_seconds: int = 3600
-
-
 class SecurityConfig(BaseModel):
     default_policy: str = "pairing"
     default_preset: str = "standard"
@@ -173,7 +169,6 @@ class ClawConfig(BaseModel):
     sandbox: SandboxConfig = Field(default_factory=SandboxConfig)
     llm: LLMConfig = Field(default_factory=LLMConfig)
     memory: MemoryConfig = Field(default_factory=MemoryConfig)
-    skills: SkillsConfig = Field(default_factory=SkillsConfig)
     isolation: IsolationConfig = Field(default_factory=IsolationConfig)
     persona: PersonaConfig = Field(default_factory=PersonaConfig)
     voice: VoiceConfig = Field(default_factory=VoiceConfig)
