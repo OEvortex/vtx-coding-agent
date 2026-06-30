@@ -1,5 +1,5 @@
 meta:
-  config_version: 11
+  config_version: 12
 
 llm:
   default_provider: "openai-codex"

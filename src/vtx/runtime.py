@@ -13,7 +13,7 @@ from . import config as vtx_config
 from .agents import AgentRegistry, LoadedAgent
 from .agents.activate import _filter as _agent_tool_filter
 from .agents.activate import compose_active_commands
-from .config import get_last_selected, set_last_selected
+from .config import add_recent_model, get_last_selected, set_last_selected
 from .context import Context
 from .core.compaction import generate_summary
 from .core.handoff import generate_handoff_prompt
@@ -659,6 +659,8 @@ class ConversationRuntime:
             self.thinking_level,
             agent=self.active_agent.definition.name if self.active_agent else None,
         )
+        if self.model_provider and self.model:
+            add_recent_model(self.model_provider, self.model)
 
         # Restore the active goal from the session (if any). A ``pursuing``
         # goal stays pursuing; terminal goals (achieved / budget_limited /
@@ -766,6 +768,7 @@ class ConversationRuntime:
             self.thinking_level,
             agent=self.active_agent.definition.name if self.active_agent else None,
         )
+        add_recent_model(model.provider, model.id)
 
     def set_thinking_level(self, level: str) -> None:
         if self.provider is None:

@@ -185,6 +185,15 @@ class LastSelectedConfig(BaseModel):
     agent: str | None = None
 
 
+class RecentModelsEntry(BaseModel):
+    provider: str
+    model_id: str
+
+
+class RecentModelsConfig(BaseModel):
+    entries: list[RecentModelsEntry] = Field(default_factory=list)
+
+
 class AgentsConfig(BaseModel):
     """Switchable handoff agents configuration.
 
@@ -253,6 +262,7 @@ class ConfigSchema(BaseModel):
     notifications: NotificationsConfig = NotificationsConfig()
     goal: GoalConfig = GoalConfig()
     last_selected: LastSelectedConfig = LastSelectedConfig()
+    recent_models: RecentModelsConfig = RecentModelsConfig()
     # User-configured extension paths (file or package). Auto-discovered
     # directories (``.vtx/extensions/`` and ``~/.vtx/agent/extensions/``)
     # are always loaded in addition to this list unless ``--no-extensions``
@@ -672,6 +682,25 @@ def _migrate_v10_to_v11(data: dict[str, Any]) -> dict[str, Any]:
     return migrated
 
 
+def _migrate_v11_to_v12(data: dict[str, Any]) -> dict[str, Any]:
+    """Add the ``recent_models`` block. Pre-v12 users get an empty list."""
+    migrated = Config._apply_legacy_key_shims(data)
+
+    recent = migrated.get("recent_models")
+    if not isinstance(recent, dict):
+        recent = {}
+        migrated["recent_models"] = recent
+    if not isinstance(recent.get("entries"), list):
+        recent["entries"] = []
+
+    meta = migrated.get("meta")
+    if not isinstance(meta, dict):
+        migrated["meta"] = {"config_version": 12}
+    else:
+        meta["config_version"] = 12
+    return migrated
+
+
 def _migrate_config_data(data: dict[str, Any]) -> tuple[dict[str, Any], int, int, bool]:
     original = deepcopy(data)
     current_version = _get_config_version(original)
@@ -721,6 +750,10 @@ def _migrate_config_data(data: dict[str, Any]) -> tuple[dict[str, Any], int, int
         if current_version == 10:
             migrated = _migrate_v10_to_v11(migrated)
             current_version = 11
+            continue
+        if current_version == 11:
+            migrated = _migrate_v11_to_v12(migrated)
+            current_version = 12
             continue
         break
 
@@ -1040,3 +1073,56 @@ def get_last_selected() -> LastSelectedConfig:
         thinking_level=last_selected.get("thinking_level"),
         agent=last_selected.get("agent"),
     )
+
+
+def add_recent_model(provider: str, model_id: str) -> None:
+    """Record a model as recently selected (deduped, at front, max 10 entries)."""
+    config_file = _ensure_config_file()
+    data = _read_config_data(config_file)
+
+    # Read existing recent_models entries
+    recent = data.get("recent_models", {})
+    if not isinstance(recent, dict):
+        recent = {}
+    entries = recent.get("entries", [])
+    if not isinstance(entries, list):
+        entries = []
+
+    # Remove any existing entry for this model
+    entries = [
+        e
+        for e in entries
+        if not (
+            isinstance(e, dict) and e.get("provider") == provider and e.get("model_id") == model_id
+        )
+    ]
+
+    # Insert at front
+    entries.insert(0, {"provider": provider, "model_id": model_id})
+
+    # Trim to 10
+    entries = entries[:10]
+
+    recent["entries"] = entries
+    data["recent_models"] = recent
+    _set_config_version(data)
+    _atomic_write_text(config_file, _serialize_config_yaml(data))
+
+
+def get_recent_models() -> list[tuple[str, str]]:
+    """Return the list of recently selected (provider, model_id) pairs, most recent first."""
+    config_file = _ensure_config_file()
+    data = _read_config_data(config_file)
+
+    recent = data.get("recent_models", {})
+    if not isinstance(recent, dict):
+        return []
+    entries = recent.get("entries", [])
+    if not isinstance(entries, list):
+        return []
+
+    return [
+        (e["provider"], e["model_id"])
+        for e in entries
+        if isinstance(e, dict) and "provider" in e and "model_id" in e
+    ]
