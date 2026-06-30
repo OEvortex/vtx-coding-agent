@@ -641,9 +641,7 @@ class CronService:
     def _append_action(self, action: Literal["add", "del", "update"], params: dict):
         self.store_path.parent.mkdir(parents=True, exist_ok=True)
         with self._lock, open(self._action_path, "a", encoding="utf-8") as f:
-            f.write(
-                json.dumps({"action": action, "params": params}, ensure_ascii=False) + "\n"
-            )
+            f.write(json.dumps({"action": action, "params": params}, ensure_ascii=False) + "\n")
 
     # ========== Public API ==========
 

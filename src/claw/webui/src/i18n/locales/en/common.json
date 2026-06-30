@@ -1046,7 +1046,7 @@
     "dialog": {
       "defaultProject": "Default workspace",
       "manual": "Paste path",
-      "manualPlaceholder": "/Users/name/project",
+      "manualPlaceholder": "/home/user/project",
       "usePath": "Use Path",
       "absolutePathRequired": "Enter an absolute folder path on this machine."
     }

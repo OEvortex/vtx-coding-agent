@@ -650,7 +650,9 @@ class DiscordChannel(BaseChannel):
             channel_ids = self._channel_allow_keys(message.channel)
             if channel_ids.isdisjoint(allow_channels):
                 return False
-        return not (message.guild is not None and not self._should_respond_in_group(message, content))
+        return not (
+            message.guild is not None and not self._should_respond_in_group(message, content)
+        )
 
     async def _download_attachments(
         self, attachments: list[discord.Attachment]

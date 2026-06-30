@@ -618,12 +618,57 @@ class GatewayHTTPHandler:
             return self._handle_webui_sidebar_state(request)
         if got == "/api/webui/sidebar-state/update":
             return self._handle_webui_sidebar_state_update(request)
+        if got == "/api/fs/browse":
+            return self._handle_fs_browse(request)
         return None
 
     def _handle_commands(self, request: WsRequest) -> Response:
         if not self.check_api_token(request):
             return _http_error(401, "Unauthorized")
         return _http_json_response({"commands": builtin_command_palette()})
+
+    def _handle_fs_browse(self, request: WsRequest) -> Response:
+        if not self.check_api_token(request):
+            return _http_error(401, "Unauthorized")
+        import os
+
+        query = _parse_query(request.path)
+        raw_path = (_query_first(query, "path") or "").strip()
+        target = Path(raw_path).expanduser() if raw_path else Path.home()
+        try:
+            target = target.resolve(strict=False)
+            if not target.is_dir():
+                # If path is a file, use its parent
+                target = target.parent
+            entries = []
+            try:
+                for entry in sorted(target.iterdir(), key=lambda e: e.name.lower()):
+                    if entry.is_dir() and not entry.name.startswith("."):
+                        entries.append({"name": entry.name, "path": str(entry)})
+            except PermissionError:
+                pass
+            # Also include hidden dirs if query param show_hidden=1
+            show_hidden = (_query_first(query, "show_hidden") or "") in {"1", "true", "yes"}
+            if show_hidden:
+                entries = []
+                try:
+                    for entry in sorted(target.iterdir(), key=lambda e: e.name.lower()):
+                        if entry.is_dir():
+                            entries.append({"name": entry.name, "path": str(entry)})
+                except PermissionError:
+                    pass
+            parent = str(target.parent) if target != target.parent else None
+            return _http_json_response(
+                {
+                    "path": str(target),
+                    "parent": parent,
+                    "entries": entries,
+                    "home": str(Path.home()),
+                    "separator": os.sep,
+                }
+            )
+        except Exception as exc:
+            return _http_error(400, str(exc))
 
     def _handle_workspaces(self, connection: Any, request: WsRequest) -> Response:
         if not self.check_api_token(request):

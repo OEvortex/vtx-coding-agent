@@ -804,7 +804,9 @@ class TestConsumeSdkStream:
             for e in [ev1, ev2, ev3, ev4, ev5]:
                 yield e
 
-        content, tool_calls, _finish_reason, _usage, _reasoning = await consume_sdk_stream(stream())
+        content, tool_calls, _finish_reason, _usage, _reasoning = await consume_sdk_stream(
+            stream()
+        )
         assert content == ""
         assert len(tool_calls) == 1
         assert tool_calls[0].name == "get_weather"

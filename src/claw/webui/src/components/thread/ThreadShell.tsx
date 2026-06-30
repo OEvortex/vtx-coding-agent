@@ -454,7 +454,7 @@ export function ThreadShell({
     // whatever the history endpoint currently knows about. Once a fresh
     // canonical replay arrives (e.g. after ``session_updated`` refresh), prefer it
     // so rendering converges to the same shape as a manual refresh.
-    setMessages((prev) => {
+    setMessages((prev: UIMessage[]) => {
       const normalizedHistory = projectWebuiThreadMessages(historical);
       const keepLiveMessages = (messagesToKeep: UIMessage[]) => {
         const projected = projectWebuiThreadMessages(messagesToKeep);

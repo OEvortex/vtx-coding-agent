@@ -1046,7 +1046,7 @@
     "dialog": {
       "defaultProject": "預設工作區",
       "manual": "貼上路徑",
-      "manualPlaceholder": "/Users/name/project",
+      "manualPlaceholder": "/home/user/project",
       "usePath": "使用路徑",
       "absolutePathRequired": "請輸入這台機器上的絕對資料夾路徑。"
     }

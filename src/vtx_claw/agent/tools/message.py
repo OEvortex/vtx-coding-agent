@@ -190,10 +190,13 @@ class MessageTool(Tool, ContextAware):
 
         content = strip_think(content)
 
-        if buttons is not None and (not isinstance(buttons, list) or any(
-            not isinstance(row, list) or any(not isinstance(label, str) for label in row)
-            for row in buttons
-        )):
+        if buttons is not None and (
+            not isinstance(buttons, list)
+            or any(
+                not isinstance(row, list) or any(not isinstance(label, str) for label in row)
+                for row in buttons
+            )
+        ):
             return "Error: buttons must be a list of list of strings"
         default_channel = self._default_channel.get()
         default_chat_id = self._default_chat_id.get()

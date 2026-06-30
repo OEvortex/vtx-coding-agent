@@ -552,7 +552,9 @@ class GrepTool(_SearchTool):
                 notes.append("(output truncated due to size)")
             elif truncated and output_mode in {"count", "files_with_matches"}:
                 notes.append(f"(pagination: limit={limit}, offset={offset})")
-            elif (output_mode in {"count", "files_with_matches"} and offset > 0) or (output_mode == "content" and offset > 0 and blocks):
+            elif (output_mode in {"count", "files_with_matches"} and offset > 0) or (
+                output_mode == "content" and offset > 0 and blocks
+            ):
                 notes.append(f"(pagination: offset={offset})")
             if skipped_binary:
                 notes.append(f"(skipped {skipped_binary} binary/unreadable files)")

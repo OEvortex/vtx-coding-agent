@@ -1979,7 +1979,9 @@ class FeishuChannel(BaseChannel):
             reply_message_id: str | None = None
             _msg_id = msg.metadata.get("message_id")
             has_thread_id = msg.metadata.get("thread_id")
-            if (self.config.reply_to_message and not msg.metadata.get("_progress", False)) or has_thread_id:
+            if (
+                self.config.reply_to_message and not msg.metadata.get("_progress", False)
+            ) or has_thread_id:
                 reply_message_id = _msg_id
 
             first_send = True  # tracks whether the reply has already been used

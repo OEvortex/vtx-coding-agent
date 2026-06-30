@@ -57,7 +57,8 @@ async function request<T>(
     timeoutMs,
   );
   if (!res.ok) {
-    const text = typeof res.text === "function" ? (await res.text()).trim() : "";
+    const text =
+      typeof res.text === "function" ? (await res.text()).trim() : "";
     throw new ApiError(res.status, text || `HTTP ${res.status}`);
   }
   const contentType = res.headers?.get?.("content-type") ?? "";
@@ -74,7 +75,9 @@ async function request<T>(
   return (await res.json()) as T;
 }
 
-function mcpValuesHeader(values: Record<string, unknown>): HeadersInit | undefined {
+function mcpValuesHeader(
+  values: Record<string, unknown>,
+): HeadersInit | undefined {
   const payload: Record<string, unknown> = {};
   Object.entries(values).forEach(([key, value]) => {
     if (value === null || value === undefined) return;
@@ -90,7 +93,9 @@ function mcpValuesHeader(values: Record<string, unknown>): HeadersInit | undefin
 }
 
 function automationValuesHeader(values: AutomationUpdatePayload): HeadersInit {
-  return { "X-VtxClaw-Automation-Values": encodeURIComponent(JSON.stringify(values)) };
+  return {
+    "X-VtxClaw-Automation-Values": encodeURIComponent(JSON.stringify(values)),
+  };
 }
 
 function splitKey(key: string): { channel: string; chatId: string } {
@@ -334,6 +339,29 @@ export async function fetchWorkspaces(
   );
 }
 
+export interface FsBrowseResult {
+  path: string;
+  parent: string | null;
+  entries: { name: string; path: string }[];
+  home: string;
+  separator: string;
+}
+
+export async function browseFolders(
+  token: string,
+  path?: string,
+  base: string = "",
+): Promise<FsBrowseResult> {
+  const query = new URLSearchParams();
+  if (path) query.set("path", path);
+  return request<FsBrowseResult>(
+    `${base}/api/fs/browse?${query}`,
+    token,
+    undefined,
+    10_000,
+  );
+}
+
 export async function fetchCliApps(
   token: string,
   base: string = "",
@@ -366,7 +394,10 @@ export async function runCliAppAction(
 ): Promise<CliAppsPayload> {
   const query = new URLSearchParams();
   query.set("name", name);
-  return request<CliAppsPayload>(`${base}/api/settings/cli-apps/${action}?${query}`, token);
+  return request<CliAppsPayload>(
+    `${base}/api/settings/cli-apps/${action}?${query}`,
+    token,
+  );
 }
 
 export async function fetchMcpPresets(
@@ -522,7 +553,10 @@ export async function updateSettings(
   if (update.toolHintMaxLength !== undefined) {
     query.set("tool_hint_max_length", String(update.toolHintMaxLength));
   }
-  return request<SettingsPayload>(`${base}/api/settings/update?${query}`, token);
+  return request<SettingsPayload>(
+    `${base}/api/settings/update?${query}`,
+    token,
+  );
 }
 
 export async function createModelConfiguration(
@@ -548,11 +582,17 @@ export async function updateModelConfiguration(
 ): Promise<SettingsPayload> {
   const query = new URLSearchParams();
   query.set("name", configuration.name);
-  if (configuration.label !== undefined) query.set("label", configuration.label);
-  if (configuration.provider !== undefined) query.set("provider", configuration.provider);
-  if (configuration.model !== undefined) query.set("model", configuration.model);
+  if (configuration.label !== undefined)
+    query.set("label", configuration.label);
+  if (configuration.provider !== undefined)
+    query.set("provider", configuration.provider);
+  if (configuration.model !== undefined)
+    query.set("model", configuration.model);
   if (configuration.contextWindowTokens !== undefined) {
-    query.set("context_window_tokens", String(configuration.contextWindowTokens));
+    query.set(
+      "context_window_tokens",
+      String(configuration.contextWindowTokens),
+    );
   }
   return request<SettingsPayload>(
     `${base}/api/settings/model-configurations/update?${query}`,
@@ -611,8 +651,10 @@ export async function updateWebSearchSettings(
   query.set("provider", update.provider);
   if (update.apiKey !== undefined) query.set("api_key", update.apiKey);
   if (update.baseUrl !== undefined) query.set("base_url", update.baseUrl);
-  if (update.maxResults !== undefined) query.set("max_results", String(update.maxResults));
-  if (update.timeout !== undefined) query.set("timeout", String(update.timeout));
+  if (update.maxResults !== undefined)
+    query.set("max_results", String(update.maxResults));
+  if (update.timeout !== undefined)
+    query.set("timeout", String(update.timeout));
   if (update.useJinaReader !== undefined) {
     query.set("use_jina_reader", String(update.useJinaReader));
   }
@@ -628,7 +670,10 @@ export async function updateNetworkSafetySettings(
   base: string = "",
 ): Promise<SettingsPayload> {
   const query = new URLSearchParams();
-  query.set("webui_allow_local_service_access", String(update.webuiAllowLocalServiceAccess));
+  query.set(
+    "webui_allow_local_service_access",
+    String(update.webuiAllowLocalServiceAccess),
+  );
   query.set("webui_default_access_mode", update.webuiDefaultAccessMode);
   return request<SettingsPayload>(
     `${base}/api/settings/network-safety/update?${query}`,

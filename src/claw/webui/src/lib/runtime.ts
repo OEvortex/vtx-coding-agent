@@ -58,13 +58,13 @@ const HOST_WS_CLOSED = 3;
 
 declare global {
   interface Window {
-    vtx-clawHost?: VtxClawHostApi;
+    "vtx-clawHost"?: VtxClawHostApi;
   }
 }
 
 export function getHostApi(): VtxClawHostApi | null {
   if (typeof window === "undefined") return null;
-  return window.vtx-clawHost ?? null;
+  return window["vtx-clawHost"] ?? null;
 }
 
 export function toRuntimeSurface(surface: string | null | undefined): RuntimeSurface {

@@ -1046,7 +1046,7 @@
     "dialog": {
       "defaultProject": "默认工作区",
       "manual": "粘贴路径",
-      "manualPlaceholder": "/Users/name/project",
+      "manualPlaceholder": "/home/user/project",
       "usePath": "使用路径",
       "absolutePathRequired": "请输入这台机器上的绝对文件夹路径。"
     }
