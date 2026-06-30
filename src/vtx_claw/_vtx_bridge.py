@@ -656,7 +656,13 @@ def _already_configured(config: Any) -> bool:
 
 
 def _set_provider(
-    config: Any, slug: str, *, api_key: str, api_base: str | None, model: str | None
+    config: Any,
+    slug: str,
+    *,
+    api_key: str,
+    api_base: str | None,
+    model: str | None,
+    set_active: bool = False,
 ) -> Any:
     """Set a provider on vtx_claw's Config using the vtx slug as field name.
 
@@ -688,7 +694,7 @@ def _set_provider(
     # _match_provider finds them via the forced-provider path (step 1).
     # This matches vtx's behaviour where last_selected is the single
     # source of truth for the active provider/model.
-    if hasattr(config, "agents"):
+    if set_active and hasattr(config, "agents"):
         defaults = getattr(config.agents, "defaults", None)
         if defaults is not None:
             if model:
@@ -718,8 +724,15 @@ def merge_vtx_config(config: Any) -> Any:
 
     # --- 1. last_selected — the user's actual active pick in vtx -------------
     last_sel = _vtx_get_last_selected()
-    preferred_slug = last_sel.provider
-    preferred_model = last_sel.model_id
+    if last_sel and last_sel.provider:
+        # Use last_selected
+        preferred_slug = last_sel.provider
+        preferred_model = last_sel.model_id or ""
+    else:
+        preferred_slug = ""
+        preferred_model = ""
+
+    from vtx.llm import provider_catalog as _vtx_providers
 
     # --- 2. claw.llm fallback (backward compat) -----------------------------
     if not preferred_slug:
@@ -754,6 +767,7 @@ def merge_vtx_config(config: Any) -> Any:
                     api_key=api_key,
                     api_base=p_info.base_url,
                     model=preferred_model,
+                    set_active=True,
                 )
                 has_preferred = True
 
@@ -772,6 +786,7 @@ def merge_vtx_config(config: Any) -> Any:
                     api_key=api_key,
                     api_base=p_info.base_url,
                     model=model_to_set,
+                    set_active=model_to_set is not None,
                 )
                 if model_to_set:
                     has_preferred = True
@@ -781,7 +796,12 @@ def merge_vtx_config(config: Any) -> Any:
         if p_info.is_local and p_info.api_key_optional:
             model_to_set = preferred_model if not has_preferred else None
             config = _set_provider(
-                config, p_info.slug, api_key="", api_base=p_info.base_url, model=model_to_set
+                config,
+                p_info.slug,
+                api_key="",
+                api_base=p_info.base_url,
+                model=model_to_set,
+                set_active=model_to_set is not None,
             )
             if model_to_set:
                 has_preferred = True

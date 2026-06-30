@@ -600,22 +600,18 @@ def provider_models_payload(query: QueryParams) -> dict[str, Any]:
                     {
                         "id": m.id,
                         "name": m.id,
+                        "label": m.id,
+                        "owned_by": m.provider,
                         "max_tokens": m.max_tokens or 4096,
                         "context_window": m.context_window or 128000,
                         "supports_images": getattr(m, "supports_images", False),
                         "supports_thinking": getattr(m, "supports_thinking", False),
                     }
                 )
-            return {
-                **base_payload,
-                "status": "success",
-                "models": models_payload,
-                "model_count": len(models_payload),
-            }
+            return {**base_payload, "models": models_payload, "model_count": len(models_payload)}
         else:
             return {
                 **base_payload,
-                "status": "success",
                 "models": [],
                 "model_count": 0,
                 "message": "Model list is being loaded in the background. Please try again in a moment.",
