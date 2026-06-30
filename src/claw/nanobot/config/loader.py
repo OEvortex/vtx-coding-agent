@@ -89,6 +89,16 @@ def save_config(config: Config, config_path: Path | None = None) -> None:
 
     data = config.model_dump(mode="json", by_alias=True)
 
+    # Strip empty provider entries (no api_key) — the vtx bridge manages
+    # these at runtime from ~/.vtx/config.yml. Keeps the config file lean.
+    providers = data.get("providers")
+    if isinstance(providers, dict):
+        data["providers"] = {
+            k: v
+            for k, v in providers.items()
+            if v.get("apiKey") is not None or v.get("api_key") is not None
+        }
+
     with open(path, "w", encoding="utf-8") as f:
         json.dump(data, f, indent=2, ensure_ascii=False)
 

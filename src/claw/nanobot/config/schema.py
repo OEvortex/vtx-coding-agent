@@ -232,79 +232,14 @@ class BedrockProviderConfig(ProviderConfig):
 class ProvidersConfig(Base):
     """Configuration for LLM providers.
 
-    Supports custom providers via extra fields — any additional field
-    becomes an OpenAI-compatible custom provider.
+    Providers are resolved at runtime from vtx's provider catalog via the
+    vtx bridge (``merge_vtx_config``).  No hardcoded provider fields here
+    — any additional field becomes an OpenAI-compatible custom provider.
     """
 
     model_config = ConfigDict(extra="allow")
 
     custom: ProviderConfig = Field(default_factory=ProviderConfig)  # Any OpenAI-compatible endpoint
-    azure_openai: ProviderConfig = Field(
-        default_factory=ProviderConfig
-    )  # Azure OpenAI (model = deployment name)
-    bedrock: BedrockProviderConfig = Field(
-        default_factory=BedrockProviderConfig
-    )  # AWS Bedrock Converse
-    anthropic: ProviderConfig = Field(default_factory=ProviderConfig)
-    openai: ProviderConfig = Field(default_factory=ProviderConfig)
-    openrouter: ProviderConfig = Field(default_factory=ProviderConfig)
-    assemblyai: ProviderConfig = Field(
-        default_factory=ProviderConfig
-    )  # AssemblyAI voice transcription
-    huggingface: ProviderConfig = Field(default_factory=ProviderConfig)
-    skywork: ProviderConfig = Field(default_factory=ProviderConfig)  # Skywork / APIFree API gateway
-    deepseek: ProviderConfig = Field(default_factory=ProviderConfig)
-    groq: ProviderConfig = Field(default_factory=ProviderConfig)
-    zhipu: ProviderConfig = Field(default_factory=ProviderConfig)
-    dashscope: ProviderConfig = Field(default_factory=ProviderConfig)
-    vllm: ProviderConfig = Field(default_factory=ProviderConfig)
-    ollama: ProviderConfig = Field(default_factory=ProviderConfig)  # Ollama local models
-    lm_studio: ProviderConfig = Field(default_factory=ProviderConfig)  # LM Studio local models
-    atomic_chat: ProviderConfig = Field(default_factory=ProviderConfig)  # Atomic Chat local models
-    ovms: ProviderConfig = Field(default_factory=ProviderConfig)  # OpenVINO Model Server (OVMS)
-    gemini: ProviderConfig = Field(default_factory=ProviderConfig)
-    moonshot: ProviderConfig = Field(default_factory=ProviderConfig)
-    kimi_coding: ProviderConfig = Field(
-        default_factory=ProviderConfig
-    )  # Kimi Coding Plan (Anthropic Messages API)
-    minimax: ProviderConfig = Field(default_factory=ProviderConfig)
-    minimax_anthropic: ProviderConfig = Field(
-        default_factory=ProviderConfig
-    )  # MiniMax Anthropic endpoint (thinking)
-    mistral: ProviderConfig = Field(default_factory=ProviderConfig)
-    stepfun: ProviderConfig = Field(
-        default_factory=ProviderConfig
-    )  # Step Fun (阶跃星辰) — LLM + ASR (set apiBase to Plan URL for ASR)
-    xiaomi_mimo: ProviderConfig = Field(default_factory=ProviderConfig)  # Xiaomi MIMO (小米)
-    longcat: ProviderConfig = Field(default_factory=ProviderConfig)  # LongCat
-    ant_ling: ProviderConfig = Field(default_factory=ProviderConfig)  # Ant Ling
-    aihubmix: ProviderConfig = Field(default_factory=ProviderConfig)  # AiHubMix API gateway
-    siliconflow: ProviderConfig = Field(default_factory=ProviderConfig)  # SiliconFlow (硅基流动)
-    novita: ProviderConfig = Field(default_factory=ProviderConfig)  # Novita AI
-    volcengine: ProviderConfig = Field(default_factory=ProviderConfig)  # VolcEngine (火山引擎)
-    volcengine_coding_plan: ProviderConfig = Field(
-        default_factory=ProviderConfig
-    )  # VolcEngine Coding Plan
-    byteplus: ProviderConfig = Field(
-        default_factory=ProviderConfig
-    )  # BytePlus (VolcEngine international)
-    byteplus_coding_plan: ProviderConfig = Field(
-        default_factory=ProviderConfig
-    )  # BytePlus Coding Plan
-    openai_codex: ProviderConfig = Field(
-        default_factory=ProviderConfig, exclude=True
-    )  # OpenAI Codex (OAuth)
-    github_copilot: ProviderConfig = Field(
-        default_factory=ProviderConfig, exclude=True
-    )  # Github Copilot (OAuth)
-    qianfan: ProviderConfig = Field(default_factory=ProviderConfig)  # Qianfan (百度千帆)
-    nvidia: ProviderConfig = Field(default_factory=ProviderConfig)  # NVIDIA NIM (nvapi- keys)
-    opencode_zen: ProviderConfig = Field(
-        default_factory=ProviderConfig
-    )  # OpenCode Zen (curated coding models)
-    opencode_go: ProviderConfig = Field(
-        default_factory=ProviderConfig
-    )  # OpenCode Go (low-cost coding models)
 
     @model_validator(mode="after")
     def convert_extra_providers(self):
@@ -494,11 +429,14 @@ class Config(BaseSettings):
         *,
         preset: ModelPresetConfig | None = None,
     ) -> tuple["ProviderConfig | None", str | None]:
-        """Match provider config and its registry name. Returns (config, spec_name)."""
-        from nanobot.providers.registry import (
-            PROVIDERS,
-            find_by_name,
-        )
+        """Match provider config and its registry name. Returns (config, spec_name).
+
+        Provider metadata comes from vtx's provider catalog (not a local
+        ``PROVIDERS`` list).  The vtx bridge sets ``agents.defaults.provider``
+        to the exact vtx slug, so the forced-provider path (step 1) is the
+        primary resolution path.
+        """
+        from nanobot.providers.registry import find_by_name
 
         resolved = preset or self.resolve_preset()
         forced = resolved.provider
@@ -512,80 +450,62 @@ class Config(BaseSettings):
                     return provider, attr_name
             return None
 
+        def _get_provider_config(name: str) -> ProviderConfig | None:
+            """Get a ProviderConfig from either a named field or model_extra."""
+            p = getattr(self.providers, name, None)
+            if p is not None:
+                return p
+            extra = (self.providers.model_extra or {}).get(name)
+            return extra if isinstance(extra, ProviderConfig) else None
+
         if forced != "auto":
             spec = find_by_name(forced)
             if spec:
-                p = getattr(self.providers, spec.name, None)
+                p = _get_provider_config(spec.name)
                 return (p, spec.name) if p else (None, None)
             custom = _custom_provider_by_name(forced)
             if custom is not None:
                 return custom
             return None, None
 
+        # When provider is "auto", match by model name prefix from vtx catalog.
         model_lower = (model or resolved.model).lower()
         model_normalized = model_lower.replace("-", "_")
         model_prefix = model_lower.split("/", 1)[0] if "/" in model_lower else ""
         normalized_prefix = model_prefix.replace("-", "_")
 
-        def _kw_matches(kw: str) -> bool:
-            kw = kw.lower()
-            return kw in model_lower or kw.replace("-", "_") in model_normalized
-
-        # Explicit provider prefix wins — prevents `github-copilot/...codex` matching openai_codex.
-        for spec in PROVIDERS:
-            if spec.is_transcription_only:
-                continue
-            p = getattr(self.providers, spec.name, None)
-            if p and model_prefix and normalized_prefix == spec.name:
-                if spec.is_oauth or spec.is_local or spec.is_direct or p.api_key:
-                    return p, spec.name
-
-        # Check for custom provider by prefix (e.g., "companyProxy/gpt-4").
-        # Return the matching provider even when apiBase is missing, so a
-        # malformed explicit prefix fails instead of falling through to a
-        # different custom provider.
+        # Check model_extra (custom) providers by prefix first
         if model_prefix:
             custom = _custom_provider_by_name(normalized_prefix)
             if custom is not None:
                 return custom
 
-        # Match by keyword (order follows PROVIDERS registry)
-        for spec in PROVIDERS:
-            if spec.is_transcription_only:
+        # Iterate vtx catalog for prefix/keyword matching
+        from nanobot.providers.registry import list_providers
+
+        for spec in list_providers():
+            p = _get_provider_config(spec.name)
+            if not p:
                 continue
-            p = getattr(self.providers, spec.name, None)
-            if p and any(_kw_matches(kw) for kw in spec.keywords):
+            # Prefix match
+            if model_prefix and normalized_prefix == spec.name:
+                if spec.is_oauth or spec.is_local or spec.is_direct or p.api_key:
+                    return p, spec.name
+            # Keyword match
+            if any(
+                kw in model_lower or kw.replace("-", "_") in model_normalized
+                for kw in spec.keywords
+            ):
                 if spec.is_oauth or spec.is_local or spec.is_direct or p.api_key:
                     return p, spec.name
 
-        # Fallback: configured local providers can route models without
-        # provider-specific keywords (for example plain "llama3.2" on Ollama).
-        # Prefer providers whose detect_by_base_keyword matches the configured api_base
-        # (e.g. Ollama's "11434" in "http://localhost:11434") over plain registry order.
-        local_fallback: tuple[ProviderConfig, str] | None = None
-        for spec in PROVIDERS:
-            if not spec.is_local:
-                continue
-            p = getattr(self.providers, spec.name, None)
-            if not (p and p.api_base):
-                continue
-            if spec.detect_by_base_keyword and spec.detect_by_base_keyword in p.api_base:
-                return p, spec.name
-            if local_fallback is None:
-                local_fallback = (p, spec.name)
-        if local_fallback:
-            return local_fallback
-
-        # Fallback: gateways first, then others (follows registry order)
-        # OAuth providers are NOT valid fallbacks — they require explicit model selection
-        for spec in PROVIDERS:
-            if spec.is_oauth or spec.is_transcription_only:
-                continue
-            p = getattr(self.providers, spec.name, None)
+        # Fallback: any configured provider with an API key
+        for spec in list_providers():
+            p = _get_provider_config(spec.name)
             if p and p.api_key:
                 return p, spec.name
 
-        # Final fallback: check for any configured custom provider
+        # Final fallback: custom providers with api_base
         for attr_name, p in (self.providers.model_extra or {}).items():
             if isinstance(p, ProviderConfig) and p.api_base:
                 return p, attr_name
