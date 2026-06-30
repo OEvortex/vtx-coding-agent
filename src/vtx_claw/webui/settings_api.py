@@ -608,10 +608,16 @@ def provider_models_payload(query: QueryParams) -> dict[str, Any]:
                         "supports_thinking": getattr(m, "supports_thinking", False),
                     }
                 )
-            return {**base_payload, "models": models_payload, "model_count": len(models_payload)}
+            return {
+                **base_payload,
+                "status": "available",
+                "models": models_payload,
+                "model_count": len(models_payload),
+            }
         else:
             return {
                 **base_payload,
+                "status": "available",
                 "models": [],
                 "model_count": 0,
                 "message": "Model list is being loaded in the background. Please try again in a moment.",
