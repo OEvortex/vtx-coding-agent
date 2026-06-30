@@ -47,21 +47,9 @@ class LLMResponse:
     def should_execute_tools(self) -> bool:
         return bool(self.tool_calls) and self.finish_reason == "tool_calls"
 
-    def __init__(
-        self,
-        content: str | None = None,
-        tool_calls: list[ToolCallRequest] | None = None,
-        finish_reason: str = "stop",
-        error_kind: str | None = None,
-        reasoning_content: str | None = None,
-        usage: dict[str, int] | None = None,
-    ) -> None:
-        self.content = content
-        self.tool_calls = tool_calls
-        self.finish_reason = finish_reason
-        self.error_kind = error_kind
-        self.reasoning_content = reasoning_content
-        self.usage = usage
+    @property
+    def has_tool_calls(self) -> bool:
+        return bool(self.tool_calls)
 
 
 @dataclass(slots=True)
