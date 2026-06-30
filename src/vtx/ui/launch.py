@@ -35,6 +35,7 @@ def _print_exit_message(
     session_id: str | None = None,
     duration_seconds: float | None = None,
     file_changes: dict[str, tuple[int, int]] | None = None,
+    program_name: str = "vtx",
 ) -> None:
     colors = config.ui.colors
     console = Console(highlight=False)
@@ -64,7 +65,7 @@ def _print_exit_message(
     if session_id:
         info_lines.append(
             f"[{colors.muted}]To resume:[/{colors.muted}] "
-            f"[{colors.accent}]vtx -r {session_id}[/{colors.accent}]"
+            f"[{colors.accent}]{program_name} -r {session_id}[/{colors.accent}]"
         )
 
     if not info_lines:
