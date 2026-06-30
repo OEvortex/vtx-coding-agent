@@ -479,6 +479,21 @@ def provider_models_payload(query: QueryParams) -> dict[str, Any]:
         from vtx.llm.models import get_models_by_provider
 
         vtx_models = get_models_by_provider(provider_key)
+        if not vtx_models:
+            from vtx.llm import provider_catalog as _vtx_providers
+            from vtx.llm.model_fetcher import refresh_provider_models
+
+            p_info = _vtx_providers.get(provider_key)
+            api_key = _resolve_env_placeholders(provider_config.api_key)
+            if p_info and p_info.api_key_env and api_key:
+                os.environ[p_info.api_key_env] = api_key
+            try:
+                count = refresh_provider_models(provider_key)
+                if count > 0:
+                    vtx_models = get_models_by_provider(provider_key)
+            except Exception as inner_e:
+                logger.error("Failed to refresh provider models from VTX catalog: {}", inner_e)
+
         if vtx_models:
             models_payload = []
             for m in vtx_models:
