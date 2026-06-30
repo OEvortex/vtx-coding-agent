@@ -15,12 +15,12 @@ from typing import Any, Callable
 from loguru import logger
 
 # vtx-backed types for stop_reason and usage consistency
-from vtx.core.types import StopReason as VtxStopReason, Usage as VtxUsage
+from vtx.core.types import StopReason as VtxStopReason
+from vtx.core.types import Usage as VtxUsage
 
 from nanobot._vtx_bridge import (
     vtx_stop_reason_to_claw,
 )
-
 from nanobot.agent.context_governance import (
     ContextGovernanceConfig,
     ContextGovernor,
@@ -729,14 +729,21 @@ class AgentRunner:
                 final_content = self._max_iterations_fallback(spec)
             self._append_final_message(messages, final_content)
 
-        total = max(0, usage.get("total_tokens", 0)
-                    or (usage.get("prompt_tokens", 0) + usage.get("completion_tokens", 0)))
-        usage_result = VtxUsage(
-            input_tokens=usage.get("prompt_tokens", 0) or usage.get("input_tokens", 0),
-            output_tokens=usage.get("completion_tokens", 0) or usage.get("output_tokens", 0),
-            cache_read_tokens=usage.get("cache_read_tokens", 0),
-            cache_write_tokens=usage.get("cache_write_tokens", 0),
-        ) if total > 0 else None
+        total = max(
+            0,
+            usage.get("total_tokens", 0)
+            or (usage.get("prompt_tokens", 0) + usage.get("completion_tokens", 0)),
+        )
+        usage_result = (
+            VtxUsage(
+                input_tokens=usage.get("prompt_tokens", 0) or usage.get("input_tokens", 0),
+                output_tokens=usage.get("completion_tokens", 0) or usage.get("output_tokens", 0),
+                cache_read_tokens=usage.get("cache_read_tokens", 0),
+                cache_write_tokens=usage.get("cache_write_tokens", 0),
+            )
+            if total > 0
+            else None
+        )
 
         return AgentRunResult(
             final_content=final_content,
@@ -822,7 +829,6 @@ class AgentRunner:
         )
 
         # Create bridge adapter and stream (no tool execution — just LLM call)
-        from nanobot._vtx_bridge import create_bridge_stream
         from vtx.core.types import (
             StreamDone,
             TextPart,
@@ -830,6 +836,8 @@ class AgentRunner:
             ToolCallDelta,
             ToolCallStart,
         )
+
+        from nanobot._vtx_bridge import create_bridge_stream
 
         # Set up stream-recover callback for streaming mode
         _stream_recover_cb: Any = None

@@ -10,8 +10,11 @@ from __future__ import annotations
 
 import asyncio
 import json
+from pathlib import Path
 from typing import Any
 
+from vtx import get_config as _vtx_get_config
+from vtx.config import get_last_selected as _vtx_get_last_selected
 from vtx.core.types import (
     AssistantMessage,
     ImageContent,
@@ -24,6 +27,8 @@ from vtx.core.types import (
     Usage,
     UserMessage,
 )
+from vtx.llm import provider_catalog as _vtx_providers
+from vtx.llm.oauth.dynamic import get_dynamic_api_key as _get_dynamic_api_key
 
 # ═══════════════════════════════════════════════════════════════════════
 # Dict ↔ vtx Message conversion
@@ -644,3 +649,166 @@ async def create_bridge_stream(
     )
 
     return adapter, stream
+
+
+# ═══════════════════════════════════════════════════════════════════════
+# Vtx config bridge — read ~/.vtx/config.yml and merge into nanobot Config
+# ═══════════════════════════════════════════════════════════════════════
+# Uses vtx's own provider catalog and config modules directly
+# (vtx.llm.provider_catalog, vtx.config) — no reimplementation of the
+# YAML parsing or env-var resolution logic.
+# Every provider slug comes straight from vtx's source of truth.
+
+
+def _already_configured(config: Any) -> bool:
+    """Return True if any nanobot provider already has an API key set."""
+    providers = getattr(config, "providers", None)
+    if providers is None:
+        return False
+    for p_info in _vtx_providers.list_providers():
+        field_name = p_info.slug.replace("-", "_").lower()
+        p = getattr(providers, field_name, None)
+        if p and getattr(p, "api_key", None):
+            return True
+        extra = (providers.model_extra or {}).get(field_name)
+        if extra and getattr(extra, "api_key", None):
+            return True
+    return False
+
+
+def _set_provider(
+    config: Any,
+    slug: str,
+    *,
+    api_key: str,
+    api_base: str | None,
+    model: str | None,
+) -> Any:
+    """Set a provider on nanobot's Config using the vtx slug as field name.
+
+    If the slug matches a predefined field on ProvidersConfig (e.g.
+    ``openai``, ``anthropic``) it lands there; otherwise it's stored as
+    an extra (custom) provider.  No mapping table — the slug is the name.
+
+    Also sets ``agents.defaults.provider`` and ``agents.defaults.model``
+    so nanobot's ``_match_provider`` resolves via the **forced-provider**
+    path (step 1), mirroring vtx's use of ``last_selected`` as the
+    authoritative provider choice.
+    """
+    from nanobot.config.schema import ProviderConfig
+
+    providers = getattr(config, "providers", None)
+    if providers is None:
+        return config
+
+    field_name = slug.replace("-", "_").lower()
+
+    provider_cfg = ProviderConfig(
+        api_key=api_key,
+        api_base=api_base or "",
+    )
+
+    if hasattr(providers, field_name):
+        setattr(providers, field_name, provider_cfg)
+    else:
+        providers.model_extra[field_name] = provider_cfg
+
+    # Set the active provider and model on agent defaults so nanobot's
+    # _match_provider finds them via the forced-provider path (step 1).
+    # This matches vtx's behaviour where last_selected is the single
+    # source of truth for the active provider/model.
+    if hasattr(config, "agents"):
+        defaults = getattr(config.agents, "defaults", None)
+        if defaults is not None:
+            if model:
+                defaults.model = model
+            defaults.provider = slug
+
+    return config
+
+
+def merge_vtx_config(config: Any) -> Any:
+    """Merge settings from vtx config into a nanobot Config.
+
+    Uses vtx's own resolution order, importing from vtx's modules
+    instead of reimplementing YAML parsing or env-var logic:
+
+    1. ``last_selected`` provider + model (the user's active vtx pick).
+    2. ``claw.llm`` section (backward-compat legacy fallback).
+    3. Env-var scan in vtx's provider order (same as
+       ``detect_provider_from_env``).
+    4. Local keyless providers.
+
+    No slug mapping — vtx's own provider catalog is the source of truth
+    for provider metadata (env-var name, base URL, family).
+    """
+    if _already_configured(config):
+        return config
+
+    # --- 1. last_selected — the user's actual active pick in vtx -------------
+    last_sel = _vtx_get_last_selected()
+    preferred_slug = last_sel.provider
+    preferred_model = last_sel.model_id
+
+    # --- 2. claw.llm fallback (backward compat) -----------------------------
+    if not preferred_slug:
+        try:
+            import yaml
+
+            raw = yaml.safe_load((Path.home() / ".vtx" / "config.yml").read_text(encoding="utf-8"))
+            if isinstance(raw, dict):
+                llm_cfg = (raw.get("claw", {}) or {}).get("llm", {}) or {}
+                preferred_slug = llm_cfg.get("provider") or preferred_slug
+                preferred_model = preferred_model or llm_cfg.get("default_model")
+        except Exception:
+            pass
+
+    # --- 3. vtx llm defaults for model (when last_selected has no model_id) --
+    if not preferred_model:
+        try:
+            preferred_model = _vtx_get_config().llm.default_model or ""
+        except Exception:
+            pass
+
+    # --- Step A: try the preferred provider ---------------------------------
+    if preferred_slug:
+        p_info = _vtx_providers.get(preferred_slug)
+        if p_info and p_info.api_key_env:
+            api_key = _get_dynamic_api_key(p_info.slug)
+            if api_key:
+                return _set_provider(
+                    config,
+                    p_info.slug,
+                    api_key=api_key,
+                    api_base=p_info.base_url,
+                    model=preferred_model,
+                )
+
+    # --- Step B: API-key scan (vtx's own resolution order, checking env vars
+    #              and dynamic_auth.json) ---------------------------------------
+    for p_info in _vtx_providers.list_providers():
+        if p_info.is_local:
+            continue
+        if p_info.api_key_env:
+            api_key = _get_dynamic_api_key(p_info.slug)
+            if api_key:
+                return _set_provider(
+                    config,
+                    p_info.slug,
+                    api_key=api_key,
+                    api_base=p_info.base_url,
+                    model=preferred_model,
+                )
+
+    # --- Step C: keyless local providers ------------------------------------
+    for p_info in _vtx_providers.list_providers():
+        if p_info.is_local and p_info.api_key_optional:
+            return _set_provider(
+                config,
+                p_info.slug,
+                api_key="",
+                api_base=p_info.base_url,
+                model=preferred_model,
+            )
+
+    return config

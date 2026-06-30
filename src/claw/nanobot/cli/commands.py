@@ -715,6 +715,15 @@ def _load_runtime_config(config: str | None = None, workspace: str | None = None
     _warn_deprecated_config_keys(config_path)
     if workspace:
         loaded.agents.defaults.workspace = workspace
+
+    # Merge provider/model from vtx config (~/.vtx/config.yml) when
+    # the nanobot config has no API keys configured.
+    config_path_provided = config_path is not None and config is not None
+    if not config_path_provided:
+        from nanobot._vtx_bridge import merge_vtx_config
+
+        loaded = merge_vtx_config(loaded)
+
     return loaded
 
 
