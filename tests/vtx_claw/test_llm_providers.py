@@ -92,7 +92,7 @@ def test_ensure_runtime_resolves_from_vtx(monkeypatch):
 
             return InitResult()
 
-    monkeypatch.setattr("vtx_claw.agent.ConversationRuntime", MockRuntime)
+    monkeypatch.setattr("vtx_claw.agent.ClawConversationRuntime", MockRuntime)
     monkeypatch.setattr("vtx_claw.agent.get_model", lambda m, p: None)
 
     import asyncio

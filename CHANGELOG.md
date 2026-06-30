@@ -5,6 +5,32 @@ All notable changes to Vtx are documented in this file. The format is based on
 adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 
+## [0.2.1] - 2026-06-30 — VTX Claw System Prompt & Tool Configuration
+
+### Added
+
+#### VTX Claw dedicated system prompt
+- New `vtx_claw/prompts/` package with custom system prompt for messaging gateway usage.
+- `identity.py` defines Claw-specific sections: identity, messaging context, tool usage, memory guidance, skills guidance, output format, safety, error recovery, and task completion.
+- `builder.py` assembles the system prompt following OSINT-AGENT's pattern (base → tooling → project context → skills → env).
+- `ClawConversationRuntime` subclass overrides `_rebuild_system_prompt()` to use Claw's custom builder instead of VTX's default.
+
+#### VTX Claw restricted tool set
+- New `vtx_claw/tools.py` with `CLAW_TOOL_NAMES` list defining approved tools for the messaging gateway.
+- `get_claw_tools()` returns only: `read`, `write`, `edit`, `bash`, `fetch_webpage`, `web_search`, `skill`, and `mcp`.
+- MCP proxy tool is added separately with its registry for server discovery and tool calling.
+
+#### MCP integration for VTX Claw
+- MCP subsystem initialized in `AgentHandler.ensure_runtime()` with lazy connection by default.
+- MCP proxy tool added to tool list when servers are configured.
+- MCP registry shutdown in `AgentHandler.close()` for clean teardown.
+- Configuration via `~/.vtx/claw/mcp.yml` or `./.mcp.json`.
+
+### Changed
+- `AgentHandler` now uses `ClawConversationRuntime` instead of base `ConversationRuntime`.
+- System prompt is now messaging-platform-aware with concise formatting guidance.
+- Tool surface restricted to claw-approved subset (removed `find`, `grep`, `ask_user`, `task`, `background` from default tools).
+
 ## [0.2.0] - 2026-06-30 — Hook System & Gitlawb Opengateway Provider
 
 ### Added

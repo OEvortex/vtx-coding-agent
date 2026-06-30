@@ -24,11 +24,13 @@ from vtx.core.types import TextContent
 from vtx.events import AgentEndEvent, ErrorEvent, TextDeltaEvent, TurnEndEvent
 from vtx.extensions import LoadedExtensions
 from vtx.llm import get_model
-from vtx.runtime import ConversationRuntime
-from vtx.tools import DEFAULT_TOOLS, get_tools_with_extensions
+from vtx.tools import get_tools_with_extensions
 
 from vtx_claw.concurrency import SessionLock
+from vtx_claw.tools import get_claw_tools
+from vtx_claw.tools.mcp import MCPProxyTool, MCPRegistry, create_mcp_registry
 from vtx_claw.events import InboundEvent
+from vtx_claw.runtime import ClawConversationRuntime
 
 # Monkeypatch set_last_selected to be a no-op inside claw daemon process
 _original_set_last_selected = vtx.runtime.set_last_selected
@@ -61,6 +63,8 @@ class AgentHandler:
         self._loaded_extensions: LoadedExtensions | None = None
         self._locks = SessionLock()
         self._initialised = False
+        self._mcp_registry: MCPRegistry | None = None
+        self._mcp_proxy_tool: MCPProxyTool | None = None
 
     # ------------------------------------------------------------------
     # Initialisation (lazy — first message triggers it)
@@ -182,10 +186,26 @@ class AgentHandler:
             logger.warning("Extension load error: %s", err)
 
         ext_tools = list(self._loaded_extensions.list_extension_tools())
-        tools = get_tools_with_extensions(DEFAULT_TOOLS, ext_tools)
+        tools = get_tools_with_extensions(get_claw_tools(), ext_tools)
+
+        # ── Initialise MCP registry ─────────────────────────────────────────
+        # MCP servers are configured in ~/.vtx/claw/mcp.yml or ./.mcp.json.
+        # The registry is lazily connected by default, so no live connections
+        # happen here unless the server lifecycle is "eager" or "keep-alive".
+        self._mcp_registry = await create_mcp_registry()
+        if self._mcp_registry.total_tools > 0:
+            self._mcp_proxy_tool = MCPProxyTool(self._mcp_registry)
+            tools.append(self._mcp_proxy_tool)
+            logger.info(
+                "MCP subsystem initialised with %d servers, %d cached tools",
+                len(self._mcp_registry.list_servers()),
+                self._mcp_registry.total_tools,
+            )
+        else:
+            logger.info("MCP not configured — proxy tool not registered")
 
         # ── Build runtime ─────────────────────────────────────────────────
-        self._runtime = ConversationRuntime(
+        self._runtime = ClawConversationRuntime(
             cwd=os.getcwd(),
             model=model,
             model_provider=model_info.provider if model_info else provider,
@@ -330,7 +350,15 @@ class AgentHandler:
         return "VTX Claw gateway agent"
 
     async def close(self) -> None:
-        """Tear down the runtime (cancels background tasks, persists session)."""
+        """Tear down the runtime and MCP subsystem."""
+        if self._mcp_registry is not None:
+            try:
+                await self._mcp_registry.disconnect_all()
+                logger.info("MCP registry shut down")
+            except Exception as e:
+                logger.warning("MCP registry shutdown error: %s", e)
+            self._mcp_registry = None
+            self._mcp_proxy_tool = None
         if self._runtime is not None:
             await self._runtime.close()
             self._initialised = False
