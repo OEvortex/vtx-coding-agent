@@ -43,7 +43,7 @@ def test_session_token_totals_file_changes_and_message_counts() -> None:
     assert totals.output_tokens == 80
     assert totals.cache_read_tokens == 10
     assert totals.cache_write_tokens == 7
-    assert totals.context_tokens == 52
+    assert totals.context_tokens == 165  # peak across all assistant messages
     assert totals.total_tokens == 217
 
     assert session.file_changes_summary() == {"a.txt": (3, 1)}

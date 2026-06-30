@@ -5,7 +5,36 @@ All notable changes to Vtx are documented in this file. The format is based on
 adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 
-## [0.2.0] - 2026-06-29 — Hook System & Gitlawb Opengateway Provider
+## [0.2.0] - 2026-06-30 — Hook System & Gitlawb Opengateway Provider
+
+### Added
+
+#### vtx-claw: dedicated TUI with branded splash and daemon status badge
+- New `ClawVtx(Vtx)` app subclass with its own compose method that injects
+  `ClawInfoBar` instead of the default `InfoBar`. The `ClawInfoBar` displays
+  a 🦞 daemon status badge (green = running, red = stopped) on the info bar's
+  second row.
+- Monkey-patched exit-message logo (`vtx.ui.launch._LOGO`) so the TUI exit
+  summary shows a "vtx-claw" ASCII art instead of the default "VTX" logo.
+- Monkey-patched `ChatLog.add_session_info` so the in-TUI splash renders a
+  6-line "CLAW" logo matching the exit-message style, with `v{VERSION}` label.
+- Refactored `/claw` action dispatch from a monolithic if/elif chain to a
+  dict-based method dispatch table, making each action a focused method
+  (`_action_status`, `_action_start`, `_action_stop`, etc.).
+- Daemon status now syncs automatically at startup via `on_mount` and
+  after every `/claw status` / `/claw start` / `/claw stop` action.
+
+#### Fixed
+- **Critical**: `ClawVtx.on_mount()` now calls `super().on_mount()` so that
+  `Vtx.on_mount()` startup logic (runtime initialization, session resume,
+  hook loading, binary tools setup, splash rendering) actually runs. The
+  previous comment incorrectly claimed Textual dispatches `on_mount` to all
+  MRO handlers — overriding without `super()` silently skipped all startup.
+- Splash now displays the correct vtx-claw version number instead of vtx's
+  version.
+- Removed `cfg.memory.markdown_dir` reference that doesn't exist on
+  `MemoryConfig` (broken `/claw memory` command).
+- Removed unused `pathlib.Path` import.
 
 ### Added
 
@@ -40,6 +69,13 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - Known model fallbacks include MiMo V2.5/V2.5 Pro/V2 Flash, Gemini 3.1 Flash Lite, MiniMax M3, Qwen 3.7 Max, GLM 5.2, and Nemotron 3 Ultra Free.
 
 ### Fixed
+
+#### Compaction context preservation
+- Rewrote the post-compaction `continue` message to reinforce active task execution instead of offering an exit ramp. The old message ("stop and ask for clarification if unsure, summarise and be done") actively encouraged the model to quit.
+- Changed the compacted view framing from a fake Q&A ("What did we do so far?") to a system status restoration message. The model no longer sees a question it never asked, which caused it to shift from active-task mode to retrospective mode.
+- `GoalEntry` state is now injected into the compaction summary, so the model retains knowledge of the active `/goal` objective after context reset. Previously goal state was silently dropped.
+- Fixed `token_totals().context_tokens` to use `max()` across all assistant messages instead of overwriting with the last message's count. The "tokens after" value now correctly reflects peak context size.
+- Tightened the summarization prompt to enforce structured output (Goal / Instructions / Discoveries / Accomplished / Files) with requirements for exact identifiers, verbatim instruction preservation, and explicit "what was happening RIGHT BEFORE compaction" tracking.
 
 #### Provider authentication error handling
 - Improved error messages when provider API keys are invalid or rejected.

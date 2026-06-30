@@ -117,7 +117,8 @@ class TestSessionCompactedMessages:
         # Should be: synthetic user + synthetic assistant (summary) + new user + new assistant
         assert len(messages) == 4
         assert messages[0].role == "user"
-        assert messages[0].content == "What did we do so far?"
+        assert messages[0].role == "user"
+        assert "Context compacted" in messages[0].content
         assert messages[1].role == "assistant"
         assistant = messages[1]
         assert isinstance(assistant, AssistantMessage)
@@ -158,7 +159,7 @@ class TestSessionCompactedMessages:
 
         # Only synthetic user + assistant summary, no messages after compaction
         assert len(messages) == 2
-        assert messages[0].content == "What did we do so far?"
+        assert "Context compacted" in messages[0].content
         assistant = messages[1]
         assert isinstance(assistant, AssistantMessage)
         content = assistant.content[0]
@@ -192,7 +193,7 @@ class TestSessionCompactedMessages:
 
         # Should use second compaction's summary
         assert len(messages) == 3
-        assert messages[0].content == "What did we do so far?"
+        assert "Context compacted" in messages[0].content
         assistant = messages[1]
         assert isinstance(assistant, AssistantMessage)
         content = assistant.content[0]
@@ -288,7 +289,7 @@ class TestCompactionPersistence:
         # messages should be compacted view
         messages = loaded.messages
         assert len(messages) == 4
-        assert messages[0].content == "What did we do so far?"
+        assert "Context compacted" in messages[0].content
         assistant = messages[1]
         assert isinstance(assistant, AssistantMessage)
         content = assistant.content[0]

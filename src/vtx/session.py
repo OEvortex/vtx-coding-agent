@@ -492,13 +492,30 @@ class Session:
             return [e.message for e in self.active_entries if isinstance(e, MessageEntry)]
 
         # Build compacted message list:
-        # 1. Synthetic user message asking "what did we do so far?"
+        # 1. Synthetic user message framing this as a state restoration
         # 2. Assistant message with the compaction summary
         # 3. All MessageEntry entries after the compaction entry
+        #
+        # Find the latest GoalEntry before the compaction so the model
+        # retains knowledge of the active task after context reset.
+        active_goal_text = ""
+        for entry in self.active_entries:
+            if isinstance(entry, GoalEntry) and entry.goal.get("objective"):
+                active_goal_text = entry.goal["objective"]
+
+        summary_text = last_compaction.summary
+        if active_goal_text:
+            summary_text += f"\n\n[Active goal: {active_goal_text}]"
+
         result: builtins.list[Message] = [
-            UserMessage(content="What did we do so far?"),
+            UserMessage(
+                content=(
+                    "[Context compacted — conversation history summarized above."
+                    " Continue working on the task.]"
+                )
+            ),
             AssistantMessage(
-                content=[TextContent(text=last_compaction.summary)], stop_reason=StopReason.STOP
+                content=[TextContent(text=summary_text)], stop_reason=StopReason.STOP
             ),
         ]
 
@@ -548,11 +565,14 @@ class Session:
                 output_tokens += usage.output_tokens
                 cache_read_tokens += usage.cache_read_tokens
                 cache_write_tokens += usage.cache_write_tokens
-                context_tokens = (
-                    usage.input_tokens
-                    + usage.output_tokens
-                    + usage.cache_read_tokens
-                    + usage.cache_write_tokens
+                context_tokens = max(
+                    context_tokens,
+                    (
+                        usage.input_tokens
+                        + usage.output_tokens
+                        + usage.cache_read_tokens
+                        + usage.cache_write_tokens
+                    ),
                 )
 
         return SessionTokenTotals(

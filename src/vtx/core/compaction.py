@@ -13,40 +13,31 @@ Overflow formula:
 from ..core.types import Message, TextPart, Usage, UserMessage
 from ..llm.base import BaseProvider
 
-SUMMARIZATION_PROMPT = """Provide a detailed prompt for continuing our \
-conversation above. Focus on information that would be helpful for \
-continuing the conversation, including what we did, what we're doing, \
-which files we're working on, and what we're going to do next. \
-The summary that you construct will be used so that another agent \
-can read it and continue the work.
+SUMMARIZATION_PROMPT = """You are summarizing a coding conversation so that \
+another agent can pick up exactly where the previous one left off. \
+Output MUST follow this exact structure — no preamble, no extra sections:
 
-When constructing the summary, try to stick to this template:
----
 ## Goal
-
-[What goal(s) is the user trying to accomplish?]
+[One or two sentences: the user's objective. Be specific, not generic.]
 
 ## Instructions
-
-- [What important instructions did the user give you that are relevant]
-- [If there is a plan or spec, include information about it
-  so next agent can continue using it]
+- [List EVERY concrete instruction, constraint, or preference the user stated.]
+- [Include partial decisions made mid-conversation.]
+- [Copy verbatim any plan, spec, or checklist the user provided.]
 
 ## Discoveries
-
-[What notable things were learned during this conversation that would
-be useful for the next agent to know when continuing the work]
+- [Bugs found and their root causes.]
+- [File paths, function names, class names — use exact identifiers.]
+- [Configuration values, environment details, version numbers.]
 
 ## Accomplished
+- [Bullet list of completed work.]
+- [Current work in progress — what was happening RIGHT BEFORE compaction.]
+- [Remaining steps, in order.]
 
-[What work has been completed, what work is still in progress,
-and what work is left?]
-
-## Relevant files / directories
-
-[Construct a structured list of relevant files that have been read,
-edited, or created that pertain to the task at hand. If all the files
-in a directory are relevant, include the path to the directory.]
+## Relevant files
+[Exact paths to files read, edited, or created. Group by directory if \
+multiple files in the same dir are relevant.]
 ---"""
 
 

@@ -561,13 +561,16 @@ class Agent:
                 tokens_after=tokens_after,
             )
 
-            # In continue mode, inject synthetic continue message
+            # In continue mode, inject synthetic continue message that
+            # reinforces the active task rather than offering an exit.
             if vtx_config.compaction.on_overflow == "continue":
                 continue_msg = UserMessage(
                     content=(
-                        "Continue if you have next steps, or stop and ask for clarification if you"
-                        " are unsure how to proceed. If there is nothing to do don't add a large"
-                        " preamble, just summarise everything so far in 2-3 lines and be done."
+                        "[context compacted — summary above preserves conversation state]\n"
+                        "Pick up exactly where you left off. Do not re-read or"
+                        " re-explore files you already have context for from the"
+                        " summary above. Continue executing the next step of the"
+                        " task described in the summary."
                     )
                 )
                 self.session.append_message(continue_msg)
