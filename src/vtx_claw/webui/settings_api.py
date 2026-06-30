@@ -306,7 +306,7 @@ def _dynamic_provider_items(config: Any) -> list[tuple[str, ProviderConfig]]:
     return [
         (name, provider_config)
         for name, provider_config in (config.providers.model_extra or {}).items()
-        if isinstance(provider_config, ProviderConfig)
+        if isinstance(provider_config, ProviderConfig) and find_by_name(name) is None
     ]
 
 
@@ -316,9 +316,17 @@ def _resolve_settings_provider(
     spec = find_by_name(provider_name)
     if spec is not None:
         provider_config = getattr(config.providers, spec.name, None)
-        if isinstance(provider_config, ProviderConfig):
-            return spec, spec.name, provider_config
-        return None
+        if provider_config is None:
+            provider_config = (config.providers.model_extra or {}).get(spec.name)
+        if provider_config is None:
+            from vtx_claw.config.schema import ProviderConfig
+
+            provider_config = ProviderConfig()
+            if hasattr(config.providers, spec.name):
+                setattr(config.providers, spec.name, provider_config)
+            else:
+                config.providers.model_extra[spec.name] = provider_config
+        return spec, spec.name, provider_config
 
     normalized = provider_name.replace("-", "_")
     for extra_name, provider_config in _dynamic_provider_items(config):
@@ -467,6 +475,32 @@ def provider_models_payload(query: QueryParams) -> dict[str, Any]:
         "message": None,
         "fetched_at": time.time(),
     }
+    try:
+        from vtx.llm.models import get_models_by_provider
+
+        vtx_models = get_models_by_provider(provider_key)
+        if vtx_models:
+            models_payload = []
+            for m in vtx_models:
+                models_payload.append(
+                    {
+                        "id": m.id,
+                        "name": m.id,
+                        "max_tokens": m.max_tokens or 4096,
+                        "context_window": m.context_window or 128000,
+                        "supports_images": getattr(m, "supports_images", False),
+                        "supports_thinking": getattr(m, "supports_thinking", False),
+                    }
+                )
+            return {
+                **base_payload,
+                "status": "success",
+                "models": models_payload,
+                "model_count": len(models_payload),
+            }
+    except Exception as e:
+        logger.error("Failed to load models from VTX catalog: {}", e)
+
     if (
         spec.is_transcription_only
         or spec.backend in _MODEL_LIST_UNSUPPORTED_BACKENDS
@@ -684,7 +718,9 @@ def settings_payload(
             # Also check model_extra (bridge-populated providers)
             provider_config = (config.providers.model_extra or {}).get(spec.name)
         if provider_config is None:
-            continue
+            from vtx_claw.config.schema import ProviderConfig
+
+            provider_config = ProviderConfig()
         providers.append(_provider_settings_row(spec.name, spec, provider_config))
     for provider_key, provider_config in _dynamic_provider_items(config):
         providers.append(

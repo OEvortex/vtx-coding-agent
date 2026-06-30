@@ -108,6 +108,21 @@ def save_config(config: Config, config_path: Path | None = None) -> None:
             if v.get("apiKey") is not None or v.get("api_key") is not None
         }
 
+    if config_path is None:
+        try:
+            from vtx.config import get_last_selected, set_last_selected
+
+            last_sel = get_last_selected()
+            effective_preset = config.resolve_preset()
+            set_last_selected(
+                model_id=effective_preset.model,
+                provider=effective_preset.provider,
+                thinking_level=last_sel.thinking_level,
+                agent=last_sel.agent,
+            )
+        except Exception as e:
+            logger.error("Failed to sync selection to VTX: {}", e)
+
     with open(path, "w", encoding="utf-8") as f:
         json.dump(data, f, indent=2, ensure_ascii=False)
 
