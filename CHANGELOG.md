@@ -39,6 +39,12 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - Configured auto-fetching of model lists from the gateway's `/models` endpoint.
 - Known model fallbacks include MiMo V2.5/V2.5 Pro/V2 Flash, Gemini 3.1 Flash Lite, MiniMax M3, Qwen 3.7 Max, GLM 5.2, and Nemotron 3 Ultra Free.
 
+#### Conduit OpenAI-compatible provider support
+- Registered Conduit as a new OpenAI-compatible provider with base URL `https://conduit.ozdoev.net/api/v1`.
+- Added mapping to resolve `CONDUIT_API_KEY` from environment variables.
+- Configured auto-fetching of model lists from the `/models` endpoint with a 60-minute cache TTL.
+- Marked as `openmodelendpoint: true` — model discovery works without an API key.
+
 #### Dedicated system prompt
 - Prompts package with custom system prompt for gateway usage.
 - `identity.py` defines platform-specific sections: identity, messaging context, tool usage, memory guidance, skills guidance, output format, safety, error recovery, and task completion.

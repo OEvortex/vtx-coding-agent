@@ -692,3 +692,15 @@ providers:
     models_endpoint: /models
     model_parser:
       cooldown_minutes: 10
+
+  - slug: conduit
+    display_name: Conduit
+    description: "Conduit multi-model gateway at conduit.ozdoev.net."
+    family: openai_compat
+    base_url: https://conduit.ozdoev.net/api/v1
+    api_key_env: CONDUIT_API_KEY
+    openmodelendpoint: true
+    fetch_models: true
+    models_endpoint: /models
+    model_parser:
+      cooldown_minutes: 60
