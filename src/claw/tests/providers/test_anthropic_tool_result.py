@@ -12,7 +12,7 @@ blocks, fixing Anthropic "content.0.type: Field required" rejections (#3993).
 
 from types import SimpleNamespace
 
-from nanobot.providers.anthropic_provider import AnthropicProvider
+from vtx_claw.providers.anthropic_provider import AnthropicProvider
 
 
 def test_tool_result_block_converts_image_url_in_list_content():
@@ -38,11 +38,7 @@ def test_tool_result_block_converts_image_url_in_list_content():
     assert isinstance(content, list)
     assert content[0] == {
         "type": "image",
-        "source": {
-            "type": "base64",
-            "media_type": "image/png",
-            "data": "AAAA",
-        },
+        "source": {"type": "base64", "media_type": "image/png", "data": "AAAA"},
     }
     assert content[1] == {"type": "text", "text": "(Image file: /tmp/x.png)"}
 
@@ -50,11 +46,7 @@ def test_tool_result_block_converts_image_url_in_list_content():
 def test_tool_result_block_preserves_string_content():
     """String content must be passed through unchanged; the image-conversion
     path for lists must not affect the string path."""
-    msg = {
-        "role": "tool",
-        "tool_call_id": "call_2",
-        "content": "plain tool output",
-    }
+    msg = {"role": "tool", "tool_call_id": "call_2", "content": "plain tool output"}
     block = AnthropicProvider._tool_result_block(msg)
 
     assert block["type"] == "tool_result"
@@ -67,10 +59,7 @@ def test_convert_user_content_coerces_typeless_dict():
     Regression for #3993: tools returning plain dicts caused Anthropic to
     reject the request with "content.0.type: Field required"."""
     result = AnthropicProvider._convert_user_content(
-        [
-            {"foo": "bar"},
-            {"type": "text", "text": "ok"},
-        ]
+        [{"foo": "bar"}, {"type": "text", "text": "ok"}]
     )
     assert result[0] == {"type": "text", "text": '{"foo": "bar"}'}
     assert result[1] == {"type": "text", "text": "ok"}
@@ -78,22 +67,14 @@ def test_convert_user_content_coerces_typeless_dict():
 
 def test_convert_user_content_coerces_mixed_typeless():
     """Multiple typeless items and non-dict items are all handled."""
-    result = AnthropicProvider._convert_user_content(
-        [
-            42,
-            {"key": "val"},
-        ]
-    )
+    result = AnthropicProvider._convert_user_content([42, {"key": "val"}])
     assert result[0] == {"type": "text", "text": "42"}
     assert result[1] == {"type": "text", "text": '{"key": "val"}'}
 
 
 def test_assistant_blocks_coerce_typeless_dict_to_json_text():
     blocks = AnthropicProvider._assistant_blocks(
-        {
-            "role": "assistant",
-            "content": [{"answer": "ok", "count": 2}],
-        }
+        {"role": "assistant", "content": [{"answer": "ok", "count": 2}]}
     )
 
     assert blocks == [{"type": "text", "text": '{"answer": "ok", "count": 2}'}]
@@ -124,19 +105,12 @@ def test_anthropic_sanitizes_invalid_tool_ids_consistently():
             "role": "assistant",
             "content": None,
             "tool_calls": [
-                {
-                    "id": "call_abc|rs.same",
-                    "function": {"name": "read_file", "arguments": "{}"},
-                }
+                {"id": "call_abc|rs.same", "function": {"name": "read_file", "arguments": "{}"}}
             ],
         }
     )
     result = AnthropicProvider._tool_result_block(
-        {
-            "role": "tool",
-            "tool_call_id": "call_abc|rs.same",
-            "content": "ok",
-        }
+        {"role": "tool", "tool_call_id": "call_abc|rs.same", "content": "ok"}
     )
 
     tool_id = blocks[0]["id"]
@@ -215,16 +189,10 @@ def test_anthropic_parse_response_remaps_duplicate_tool_use_ids():
     response = SimpleNamespace(
         content=[
             SimpleNamespace(
-                type="tool_use",
-                id="toolu_same",
-                name="read_file",
-                input={"path": "a.txt"},
+                type="tool_use", id="toolu_same", name="read_file", input={"path": "a.txt"}
             ),
             SimpleNamespace(
-                type="tool_use",
-                id="toolu_same",
-                name="read_file",
-                input={"path": "b.txt"},
+                type="tool_use", id="toolu_same", name="read_file", input={"path": "b.txt"}
             ),
         ],
         stop_reason="tool_use",

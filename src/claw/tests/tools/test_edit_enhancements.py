@@ -3,9 +3,8 @@ notebook JSON editing, and create-file semantics."""
 
 import pytest
 
-from nanobot.agent.tools.filesystem import EditFileTool, ReadFileTool, WriteFileTool
-from nanobot.agent.tools import file_state
-
+from vtx_claw.agent.tools import file_state
+from vtx_claw.agent.tools.filesystem import EditFileTool, ReadFileTool
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -153,9 +152,7 @@ class TestEditPathSuggestion:
         f.write_text("x = 1", encoding="utf-8")
         # Typo: conifg.py
         result = await tool.execute(
-            path=str(tmp_path / "conifg.py"),
-            old_text="x = 1",
-            new_text="x = 2",
+            path=str(tmp_path / "conifg.py"), old_text="x = 1", new_text="x = 2"
         )
         assert "Error" in result
         assert "config.py" in result
@@ -163,8 +160,6 @@ class TestEditPathSuggestion:
     @pytest.mark.asyncio
     async def test_shows_cwd_in_error(self, tool, tmp_path):
         result = await tool.execute(
-            path=str(tmp_path / "nonexistent.py"),
-            old_text="a",
-            new_text="b",
+            path=str(tmp_path / "nonexistent.py"), old_text="a", new_text="b"
         )
         assert "Error" in result

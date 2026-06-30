@@ -1,15 +1,12 @@
 import json
 
-from nanobot.channels.feishu import _extract_share_card_content
+from vtx_claw.channels.feishu import _extract_share_card_content
 
 
 def test_extract_interactive_card_reads_user_dsl_body_elements() -> None:
     content = {
         "user_dsl": json.dumps(
-            {
-                "schema": "2.0",
-                "body": {"elements": [{"tag": "markdown", "content": "**hello**"}]},
-            }
+            {"schema": "2.0", "body": {"elements": [{"tag": "markdown", "content": "**hello**"}]}}
         )
     }
 

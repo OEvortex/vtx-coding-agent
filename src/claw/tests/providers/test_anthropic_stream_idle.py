@@ -7,7 +7,7 @@ from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
-from nanobot.providers.anthropic_provider import AnthropicProvider
+from vtx_claw.providers.anthropic_provider import AnthropicProvider
 
 
 def _final_message_stub(text: str = "Hi") -> SimpleNamespace:
@@ -60,8 +60,7 @@ async def test_chat_stream_calls_on_content_delta_only_for_text_delta() -> None:
             delta=SimpleNamespace(type="thinking_delta", thinking="think"),
         ),
         SimpleNamespace(
-            type="content_block_delta",
-            delta=SimpleNamespace(type="text_delta", text="Hi"),
+            type="content_block_delta", delta=SimpleNamespace(type="text_delta", text="Hi")
         ),
     ]
     fake = _FakeAsyncStream(chunks)
@@ -92,16 +91,13 @@ async def test_chat_stream_invokes_on_thinking_delta_for_thinking_delta() -> Non
 
     chunks = [
         SimpleNamespace(
-            type="content_block_delta",
-            delta=SimpleNamespace(type="thinking_delta", thinking="a"),
+            type="content_block_delta", delta=SimpleNamespace(type="thinking_delta", thinking="a")
         ),
         SimpleNamespace(
-            type="content_block_delta",
-            delta=SimpleNamespace(type="thinking_delta", thinking="b"),
+            type="content_block_delta", delta=SimpleNamespace(type="thinking_delta", thinking="b")
         ),
         SimpleNamespace(
-            type="content_block_delta",
-            delta=SimpleNamespace(type="text_delta", text="X"),
+            type="content_block_delta", delta=SimpleNamespace(type="text_delta", text="X")
         ),
     ]
     fake = _FakeAsyncStream(chunks)
@@ -138,18 +134,13 @@ async def test_chat_stream_invokes_tool_call_delta_for_input_json_delta() -> Non
         SimpleNamespace(
             type="content_block_start",
             index=1,
-            content_block=SimpleNamespace(
-                type="tool_use",
-                id="toolu_1",
-                name="write_file",
-            ),
+            content_block=SimpleNamespace(type="tool_use", id="toolu_1", name="write_file"),
         ),
         SimpleNamespace(
             type="content_block_delta",
             index=1,
             delta=SimpleNamespace(
-                type="input_json_delta",
-                partial_json='{"path":"notes.md","content":"',
+                type="input_json_delta", partial_json='{"path":"notes.md","content":"'
             ),
         ),
         SimpleNamespace(
@@ -170,29 +161,18 @@ async def test_chat_stream_invokes_tool_call_delta_for_input_json_delta() -> Non
         deltas.append(delta)
 
     await provider.chat_stream(
-        messages=[{"role": "user", "content": "write"}],
-        on_tool_call_delta=on_tool_delta,
+        messages=[{"role": "user", "content": "write"}], on_tool_call_delta=on_tool_delta
     )
 
     assert deltas == [
-        {
-            "index": 1,
-            "call_id": "toolu_1",
-            "name": "write_file",
-            "arguments_delta": "",
-        },
+        {"index": 1, "call_id": "toolu_1", "name": "write_file", "arguments_delta": ""},
         {
             "index": 1,
             "call_id": "toolu_1",
             "name": "write_file",
             "arguments_delta": '{"path":"notes.md","content":"',
         },
-        {
-            "index": 1,
-            "call_id": "toolu_1",
-            "name": "write_file",
-            "arguments_delta": "line\\n",
-        },
+        {"index": 1, "call_id": "toolu_1", "name": "write_file", "arguments_delta": "line\\n"},
     ]
     fake.get_final_message.assert_awaited_once()
 
@@ -210,8 +190,7 @@ async def test_chat_stream_without_callback_still_finalizes() -> None:
     provider._client.messages.stream = MagicMock(return_value=stream_cm)
 
     res = await provider.chat_stream(
-        messages=[{"role": "user", "content": "hello"}],
-        on_content_delta=None,
+        messages=[{"role": "user", "content": "hello"}], on_content_delta=None
     )
     assert res.content == "ok"
     fake.get_final_message.assert_awaited_once()

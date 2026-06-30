@@ -4,13 +4,13 @@ import asyncio
 
 import pytest
 
-from nanobot.agent.loop import AgentLoop
-from nanobot.agent.tools.context import RequestContext
-from nanobot.agent.tools.cron import CronTool
-from nanobot.agent.tools.message import MessageTool
-from nanobot.agent.tools.spawn import SpawnTool
-from nanobot.cron.service import CronService
-from nanobot.session.keys import UNIFIED_SESSION_KEY
+from vtx_claw.agent.loop import AgentLoop
+from vtx_claw.agent.tools.context import RequestContext
+from vtx_claw.agent.tools.cron import CronTool
+from vtx_claw.agent.tools.message import MessageTool
+from vtx_claw.agent.tools.spawn import SpawnTool
+from vtx_claw.cron.service import CronService
+from vtx_claw.session.keys import UNIFIED_SESSION_KEY
 
 
 @pytest.mark.asyncio
@@ -157,9 +157,7 @@ async def test_message_tool_default_values_without_set_context() -> None:
         seen.append((msg.channel, msg.chat_id, msg.content))
 
     tool = MessageTool(
-        send_callback=send_callback,
-        default_channel="discord",
-        default_chat_id="general",
+        send_callback=send_callback, default_channel="discord", default_chat_id="general"
     )
 
     result = await tool.execute(content="hi")
@@ -266,10 +264,7 @@ async def test_webui_cron_tool_uses_origin_session_when_unified_enabled(tmp_path
     loop._unified_session = True
     loop.tools = _Tools()
     loop._set_tool_context(
-        "websocket",
-        "chat-123",
-        metadata={"webui": True},
-        session_key=UNIFIED_SESSION_KEY,
+        "websocket", "chat-123", metadata={"webui": True}, session_key=UNIFIED_SESSION_KEY
     )
 
     result = await tool.execute(action="add", message="standup", every_seconds=300)

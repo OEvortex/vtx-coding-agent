@@ -1,6 +1,6 @@
 # Check optional Feishu dependencies before running tests
 try:
-    from nanobot.channels import feishu
+    from vtx_claw.channels import feishu
 
     FEISHU_AVAILABLE = getattr(feishu, "FEISHU_AVAILABLE", False)
 except ImportError:
@@ -11,7 +11,7 @@ if not FEISHU_AVAILABLE:
 
     pytest.skip("Feishu dependencies not installed (lark-oapi)", allow_module_level=True)
 
-from nanobot.channels.feishu import FeishuChannel
+from vtx_claw.channels.feishu import FeishuChannel
 
 
 def test_parse_md_table_strips_markdown_formatting_in_headers_and_cells() -> None:
@@ -39,13 +39,7 @@ def test_split_headings_strips_embedded_markdown_before_bolding() -> None:
     elements = channel._split_headings("# **Important** *status* ~~update~~")
 
     assert elements == [
-        {
-            "tag": "div",
-            "text": {
-                "tag": "lark_md",
-                "content": "**Important status update**",
-            },
-        }
+        {"tag": "div", "text": {"tag": "lark_md", "content": "**Important status update**"}}
     ]
 
 
@@ -56,13 +50,7 @@ def test_split_headings_keeps_markdown_body_and_code_blocks_intact() -> None:
         "# **Heading**\n\nBody with **bold** text.\n\n```python\nprint('hi')\n```"
     )
 
-    assert elements[0] == {
-        "tag": "div",
-        "text": {
-            "tag": "lark_md",
-            "content": "**Heading**",
-        },
-    }
+    assert elements[0] == {"tag": "div", "text": {"tag": "lark_md", "content": "**Heading**"}}
     assert elements[1]["tag"] == "markdown"
     assert "Body with **bold** text." in elements[1]["content"]
     assert "```python\nprint('hi')\n```" in elements[1]["content"]

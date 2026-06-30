@@ -7,9 +7,9 @@ from types import SimpleNamespace
 
 import pytest
 
-from nanobot.bus.events import InboundMessage
-from nanobot.session.goal_state import GOAL_STATE_KEY
-from nanobot.session.turn_continuation import (
+from vtx_claw.bus.events import InboundMessage
+from vtx_claw.session.goal_state import GOAL_STATE_KEY
+from vtx_claw.session.turn_continuation import (
     INTERNAL_CONTINUATION_KIND_META,
     INTERNAL_CONTINUATION_META,
     INTERNAL_CONTINUATION_PENDING_META,
@@ -30,7 +30,7 @@ async def test_maybe_continue_turn_queues_internal_message():
             "status": "active",
             "objective": "Finish the migration.",
             "ui_summary": "migration",
-        },
+        }
     }
     messages = [
         {"role": "system", "content": "system"},
@@ -107,9 +107,7 @@ async def test_internal_continuation_respects_round_limit():
     )
 
     assert should_stream_budget_response(
-        stop_reason="max_iterations",
-        pending_queue_available=True,
-        session_metadata=meta,
+        stop_reason="max_iterations", pending_queue_available=True, session_metadata=meta
     )
     assert await maybe_continue_turn(ctx) is False
 
@@ -118,27 +116,16 @@ def test_internal_continuation_requires_budget_boundary_and_queue():
     meta = {GOAL_STATE_KEY: {"status": "active", "objective": "x"}}
 
     assert should_stream_budget_response(
-        stop_reason="completed",
-        pending_queue_available=True,
-        session_metadata=meta,
+        stop_reason="completed", pending_queue_available=True, session_metadata=meta
     )
     assert should_stream_budget_response(
-        stop_reason="max_iterations",
-        pending_queue_available=False,
-        session_metadata=meta,
+        stop_reason="max_iterations", pending_queue_available=False, session_metadata=meta
     )
     assert not should_finalize_on_max_iterations(
-        pending_queue_available=True,
-        session_metadata=meta,
+        pending_queue_available=True, session_metadata=meta
     )
-    assert should_finalize_on_max_iterations(
-        pending_queue_available=False,
-        session_metadata=meta,
-    )
-    assert should_finalize_on_max_iterations(
-        pending_queue_available=True,
-        session_metadata={},
-    )
+    assert should_finalize_on_max_iterations(pending_queue_available=False, session_metadata=meta)
+    assert should_finalize_on_max_iterations(pending_queue_available=True, session_metadata={})
 
 
 def test_save_skip_matches_prefix_when_current_message_merged():

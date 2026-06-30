@@ -2,7 +2,7 @@
 
 import pytest
 
-from nanobot.agent.tools.filesystem import (
+from vtx_claw.agent.tools.filesystem import (
     EditFileTool,
     ListDirTool,
     ReadFileTool,
@@ -130,11 +130,11 @@ class TestFindMatch:
     def test_line_trim_multiple_candidates(self):
         content = "  a\n  b\n  a\n  b\n"
         old_text = "a\nb"
-        match, count = _find_match(content, old_text)
+        _match, count = _find_match(content, old_text)
         assert count == 2
 
     def test_empty_old_text(self):
-        match, count = _find_match("hello", "")
+        match, _count = _find_match("hello", "")
         # Empty string is always "in" any string via exact match
         assert match == ""
 
@@ -161,11 +161,7 @@ class TestEditFileTool:
     async def test_crlf_normalisation(self, tool, tmp_path):
         f = tmp_path / "crlf.py"
         f.write_bytes(b"line1\r\nline2\r\nline3")
-        result = await tool.execute(
-            path=str(f),
-            old_text="line1\nline2",
-            new_text="LINE1\nLINE2",
-        )
+        result = await tool.execute(path=str(f), old_text="line1\nline2", new_text="LINE1\nLINE2")
         assert "Successfully" in result
         raw = f.read_bytes()
         assert b"LINE1" in raw
@@ -177,9 +173,7 @@ class TestEditFileTool:
         f = tmp_path / "indent.py"
         f.write_text("    def foo():\n        pass\n", encoding="utf-8")
         result = await tool.execute(
-            path=str(f),
-            old_text="def foo():\n    pass",
-            new_text="def bar():\n    return 1",
+            path=str(f), old_text="def foo():\n    pass", new_text="def bar():\n    return 1"
         )
         assert "Successfully" in result
         assert "bar" in f.read_text()
@@ -195,12 +189,7 @@ class TestEditFileTool:
     async def test_replace_all(self, tool, tmp_path):
         f = tmp_path / "multi.py"
         f.write_text("foo bar foo bar foo", encoding="utf-8")
-        result = await tool.execute(
-            path=str(f),
-            old_text="foo",
-            new_text="baz",
-            replace_all=True,
-        )
+        result = await tool.execute(path=str(f), old_text="foo", new_text="baz", replace_all=True)
         assert "Successfully" in result
         assert f.read_text() == "baz bar baz bar baz"
 
@@ -321,9 +310,7 @@ class TestWorkspaceRestriction:
         skill_file.write_text("# Test Skill\nDo something.")
 
         tool = ReadFileTool(
-            workspace=workspace,
-            allowed_dir=workspace,
-            extra_read_allowed_dirs=[skills_dir],
+            workspace=workspace, allowed_dir=workspace, extra_read_allowed_dirs=[skills_dir]
         )
         result = await tool.execute(path=str(skill_file))
         assert "Test Skill" in result
@@ -338,7 +325,7 @@ class TestWorkspaceRestriction:
         media_file = media_dir / "photo.txt"
         media_file.write_text("shared media", encoding="utf-8")
 
-        monkeypatch.setattr("nanobot.agent.tools.path_utils.get_media_dir", lambda: media_dir)
+        monkeypatch.setattr("vtx_claw.agent.tools.path_utils.get_media_dir", lambda: media_dir)
 
         tool = ReadFileTool(workspace=workspace, allowed_dir=workspace)
         result = await tool.execute(path=str(media_file))
@@ -352,7 +339,7 @@ class TestWorkspaceRestriction:
         media_dir = tmp_path / "media"
         media_dir.mkdir()
 
-        monkeypatch.setattr("nanobot.agent.tools.path_utils.get_media_dir", lambda: media_dir)
+        monkeypatch.setattr("vtx_claw.agent.tools.path_utils.get_media_dir", lambda: media_dir)
 
         tool = WriteFileTool(workspace=workspace, allowed_dir=workspace)
         result = await tool.execute(path=str(media_dir / "hack.txt"), content="pwned")
@@ -368,9 +355,7 @@ class TestWorkspaceRestriction:
         skills_dir.mkdir()
 
         tool = WriteFileTool(
-            workspace=workspace,
-            allowed_dir=workspace,
-            extra_allowed_dirs=[skills_dir],
+            workspace=workspace, allowed_dir=workspace, extra_allowed_dirs=[skills_dir]
         )
         result = await tool.execute(path=str(skills_dir / "hack.txt"), content="pwned")
         assert "Error" in result
@@ -385,9 +370,7 @@ class TestWorkspaceRestriction:
         writable.mkdir()
 
         tool = WriteFileTool(
-            workspace=workspace,
-            allowed_dir=workspace,
-            extra_write_allowed_dirs=[writable],
+            workspace=workspace, allowed_dir=workspace, extra_write_allowed_dirs=[writable]
         )
         result = await tool.execute(path=str(writable / "ok.txt"), content="allowed")
         assert "Successfully wrote" in result
@@ -403,9 +386,7 @@ class TestWorkspaceRestriction:
         child_path = allowed_file / "child.txt"
 
         tool = WriteFileTool(
-            workspace=workspace,
-            allowed_dir=workspace,
-            extra_write_allowed_files=[allowed_file],
+            workspace=workspace, allowed_dir=workspace, extra_write_allowed_files=[allowed_file]
         )
 
         exact = await tool.execute(path=str(allowed_file), content="allowed")
@@ -429,9 +410,7 @@ class TestWorkspaceRestriction:
         secret.write_text("nope")
 
         tool = ReadFileTool(
-            workspace=workspace,
-            allowed_dir=workspace,
-            extra_allowed_dirs=[skills_dir],
+            workspace=workspace, allowed_dir=workspace, extra_allowed_dirs=[skills_dir]
         )
         result = await tool.execute(path=str(secret))
         assert "Error" in result
@@ -448,9 +427,7 @@ class TestWorkspaceRestriction:
         skills_dir.mkdir()
 
         tool = ReadFileTool(
-            workspace=workspace,
-            allowed_dir=workspace,
-            extra_allowed_dirs=[skills_dir],
+            workspace=workspace, allowed_dir=workspace, extra_allowed_dirs=[skills_dir]
         )
         result = await tool.execute(path=str(ws_file))
         assert "hello from workspace" in result
@@ -468,14 +445,10 @@ class TestWorkspaceRestriction:
         skill_file.write_text("# Weather\nOriginal content.")
 
         tool = EditFileTool(
-            workspace=workspace,
-            allowed_dir=workspace,
-            extra_allowed_dirs=[skills_dir],
+            workspace=workspace, allowed_dir=workspace, extra_allowed_dirs=[skills_dir]
         )
         result = await tool.execute(
-            path=str(skill_file),
-            old_text="Original content.",
-            new_text="Hacked content.",
+            path=str(skill_file), old_text="Original content.", new_text="Hacked content."
         )
         assert "Error" in result
         assert "outside" in result.lower()
@@ -491,14 +464,8 @@ class TestWorkspaceRestriction:
         target.write_text("before\n", encoding="utf-8")
 
         tool = EditFileTool(
-            workspace=workspace,
-            allowed_dir=workspace,
-            extra_write_allowed_dirs=[writable],
+            workspace=workspace, allowed_dir=workspace, extra_write_allowed_dirs=[writable]
         )
-        result = await tool.execute(
-            path=str(target),
-            old_text="before",
-            new_text="after",
-        )
+        result = await tool.execute(path=str(target), old_text="before", new_text="after")
         assert "Successfully edited" in result
         assert target.read_text(encoding="utf-8") == "after\n"

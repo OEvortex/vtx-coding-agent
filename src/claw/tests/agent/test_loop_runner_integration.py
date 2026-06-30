@@ -7,24 +7,24 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-from nanobot.config.schema import AgentDefaults
-from nanobot.providers.base import LLMResponse, ToolCallRequest
+from vtx_claw.config.schema import AgentDefaults
+from vtx_claw.providers.base import LLMResponse, ToolCallRequest
 
 _MAX_TOOL_RESULT_CHARS = AgentDefaults().max_tool_result_chars
 
 
 def _make_loop(tmp_path):
-    from nanobot.agent.loop import AgentLoop
-    from nanobot.bus.queue import MessageBus
+    from vtx_claw.agent.loop import AgentLoop
+    from vtx_claw.bus.queue import MessageBus
 
     bus = MessageBus()
     provider = MagicMock()
     provider.get_default_model.return_value = "test-model"
 
     with (
-        patch("nanobot.agent.loop.ContextBuilder"),
-        patch("nanobot.agent.loop.SessionManager"),
-        patch("nanobot.agent.loop.SubagentManager") as MockSubMgr,
+        patch("vtx_claw.agent.loop.ContextBuilder"),
+        patch("vtx_claw.agent.loop.SessionManager"),
+        patch("vtx_claw.agent.loop.SubagentManager") as MockSubMgr,
     ):
         MockSubMgr.return_value.cancel_by_session = AsyncMock(return_value=0)
         loop = AgentLoop(bus=bus, provider=provider, workspace=tmp_path)
@@ -66,8 +66,7 @@ async def test_loop_goal_turn_uses_standard_iteration_budget(tmp_path):
     loop.max_iterations = 2
 
     final_content, _, _, stop_reason, _ = await loop._run_agent_loop(
-        [],
-        metadata={"original_command": "/goal"},
+        [], metadata={"original_command": "/goal"}
     )
 
     assert stop_reason == "max_iterations"
@@ -99,9 +98,7 @@ async def test_loop_stream_filter_handles_think_only_prefix_without_crashing(tmp
         endings.append(resuming)
 
     final_content, _, _, _, _ = await loop._run_agent_loop(
-        [],
-        on_stream=on_stream,
-        on_stream_end=on_stream_end,
+        [], on_stream=on_stream, on_stream_end=on_stream_end
     )
 
     assert final_content == "Hello"
@@ -174,35 +171,23 @@ async def test_loop_retries_think_only_final_response(tmp_path):
 async def test_streamed_flag_not_set_on_llm_error(tmp_path):
     """When LLM errors during a streaming-capable channel interaction,
     _streamed must NOT be set so ChannelManager delivers the error."""
-    from nanobot.agent.loop import AgentLoop
-    from nanobot.bus.events import InboundMessage
-    from nanobot.bus.queue import MessageBus
+    from vtx_claw.agent.loop import AgentLoop
+    from vtx_claw.bus.events import InboundMessage
+    from vtx_claw.bus.queue import MessageBus
 
     bus = MessageBus()
     provider = MagicMock()
     provider.get_default_model.return_value = "test-model"
     loop = AgentLoop(bus=bus, provider=provider, workspace=tmp_path, model="test-model")
     error_resp = LLMResponse(
-        content="503 service unavailable",
-        finish_reason="error",
-        tool_calls=[],
-        usage={},
+        content="503 service unavailable", finish_reason="error", tool_calls=[], usage={}
     )
     loop.provider.chat_with_retry = AsyncMock(return_value=error_resp)
     loop.provider.chat_stream_with_retry = AsyncMock(return_value=error_resp)
     loop.tools.get_definitions = MagicMock(return_value=[])
 
-    msg = InboundMessage(
-        channel="feishu",
-        sender_id="u1",
-        chat_id="c1",
-        content="hi",
-    )
-    result = await loop._process_message(
-        msg,
-        on_stream=AsyncMock(),
-        on_stream_end=AsyncMock(),
-    )
+    msg = InboundMessage(channel="feishu", sender_id="u1", chat_id="c1", content="hi")
+    result = await loop._process_message(msg, on_stream=AsyncMock(), on_stream_end=AsyncMock())
 
     assert result is not None
     assert "503" in result.content
@@ -213,9 +198,9 @@ async def test_streamed_flag_not_set_on_llm_error(tmp_path):
 
 @pytest.mark.asyncio
 async def test_ssrf_soft_block_can_finalize_after_streamed_tool_call(tmp_path):
-    from nanobot.agent.loop import AgentLoop
-    from nanobot.bus.events import InboundMessage
-    from nanobot.bus.queue import MessageBus
+    from vtx_claw.agent.loop import AgentLoop
+    from vtx_claw.bus.events import InboundMessage
+    from vtx_claw.bus.queue import MessageBus
 
     bus = MessageBus()
     provider = MagicMock()
@@ -262,10 +247,10 @@ async def test_ssrf_soft_block_can_finalize_after_streamed_tool_call(tmp_path):
 
 @pytest.mark.asyncio
 async def test_next_turn_after_llm_error_keeps_turn_boundary(tmp_path):
-    from nanobot.agent.loop import AgentLoop
-    from nanobot.agent.runner import _PERSISTED_MODEL_ERROR_PLACEHOLDER
-    from nanobot.bus.events import InboundMessage
-    from nanobot.bus.queue import MessageBus
+    from vtx_claw.agent.loop import AgentLoop
+    from vtx_claw.agent.runner import _PERSISTED_MODEL_ERROR_PLACEHOLDER
+    from vtx_claw.bus.events import InboundMessage
+    from vtx_claw.bus.queue import MessageBus
 
     provider = MagicMock()
     provider.get_default_model.return_value = "test-model"
@@ -315,8 +300,8 @@ async def test_next_turn_after_llm_error_keeps_turn_boundary(tmp_path):
 
 @pytest.mark.asyncio
 async def test_subagent_max_iterations_announces_existing_fallback(tmp_path, monkeypatch):
-    from nanobot.agent.subagent import SubagentManager, SubagentStatus
-    from nanobot.bus.queue import MessageBus
+    from vtx_claw.agent.subagent import SubagentManager, SubagentStatus
+    from vtx_claw.bus.queue import MessageBus
 
     bus = MessageBus()
     provider = MagicMock()
@@ -338,7 +323,7 @@ async def test_subagent_max_iterations_announces_existing_fallback(tmp_path, mon
     async def fake_execute(self, **kwargs):
         return "tool result"
 
-    monkeypatch.setattr("nanobot.agent.tools.filesystem.ListDirTool.execute", fake_execute)
+    monkeypatch.setattr("vtx_claw.agent.tools.filesystem.ListDirTool.execute", fake_execute)
 
     status = SubagentStatus(
         task_id="sub-1", label="label", task_description="do task", started_at=time.monotonic()

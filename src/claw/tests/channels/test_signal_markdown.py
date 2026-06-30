@@ -1,7 +1,7 @@
 """Unit tests for the Signal markdown → plain text + textStyle converter."""
 
-from nanobot.channels.signal import _markdown_to_signal, _partition_styles
-from nanobot.utils.helpers import split_message
+from vtx_claw.channels.signal import _markdown_to_signal, _partition_styles
+from vtx_claw.utils.helpers import split_message
 
 
 def _utf16_len(s: str) -> int:
@@ -154,17 +154,17 @@ def test_blockquote_strips_marker():
 
 
 def test_bullet_dash():
-    plain, styles = _markdown_to_signal("- item one")
+    plain, _styles = _markdown_to_signal("- item one")
     assert plain == "• item one"
 
 
 def test_bullet_star():
-    plain, styles = _markdown_to_signal("* item two")
+    plain, _styles = _markdown_to_signal("* item two")
     assert plain == "• item two"
 
 
 def test_numbered_list():
-    plain, styles = _markdown_to_signal("1. first\n2. second")
+    plain, _styles = _markdown_to_signal("1. first\n2. second")
     assert "1. first" in plain
     assert "2. second" in plain
 
@@ -187,7 +187,7 @@ def test_link_text_equals_url():
 
 
 def test_link_text_equals_url_without_scheme():
-    plain, styles = _markdown_to_signal("[example.com](https://example.com)")
+    plain, _styles = _markdown_to_signal("[example.com](https://example.com)")
     assert plain == "https://example.com"
 
 

@@ -4,20 +4,16 @@ from __future__ import annotations
 
 from unittest.mock import patch
 
-from nanobot.config.schema import ProvidersConfig
-from nanobot.providers.openai_compat_provider import OpenAICompatProvider
-from nanobot.providers.registry import PROVIDERS, find_by_name
+from vtx_claw.config.schema import ProvidersConfig
+from vtx_claw.providers.openai_compat_provider import OpenAICompatProvider
+from vtx_claw.providers.registry import PROVIDERS, find_by_name
 
 
 def _mistral_provider(default_model: str = "mistral-medium-3-5") -> OpenAICompatProvider:
     spec = find_by_name("mistral")
     assert spec is not None
-    with patch("nanobot.providers.openai_compat_provider.AsyncOpenAI"):
-        return OpenAICompatProvider(
-            api_key="test-key",
-            default_model=default_model,
-            spec=spec,
-        )
+    with patch("vtx_claw.providers.openai_compat_provider.AsyncOpenAI"):
+        return OpenAICompatProvider(api_key="test-key", default_model=default_model, spec=spec)
 
 
 def test_mistral_config_field_exists() -> None:
@@ -38,7 +34,7 @@ def test_mistral_provider_in_registry() -> None:
 
 def test_mistral_keyword_match_covers_model_families() -> None:
     """Codestral, Devstral, Ministral, Magistral models route to the Mistral spec."""
-    from nanobot.config.schema import Config
+    from vtx_claw.config.schema import Config
 
     for model in (
         "mistral-large-latest",
@@ -170,10 +166,7 @@ def test_extract_thinking_content_with_tool_calls() -> None:
                         {
                             "id": "abc123def",
                             "type": "function",
-                            "function": {
-                                "name": "get_weather",
-                                "arguments": '{"city": "Paris"}',
-                            },
+                            "function": {"name": "get_weather", "arguments": '{"city": "Paris"}'},
                         }
                     ],
                     "content": [
@@ -184,7 +177,7 @@ def test_extract_thinking_content_with_tool_calls() -> None:
                     ],
                 },
             }
-        ],
+        ]
     }
     parsed = p._parse(response)
     assert parsed.content in (None, "")
@@ -198,12 +191,8 @@ def test_thinking_content_only_for_mistral_spec() -> None:
     """Providers without extract_thinking_blocks should not lift thinking text."""
     other_spec = find_by_name("openai")
     assert other_spec is not None
-    with patch("nanobot.providers.openai_compat_provider.AsyncOpenAI"):
-        p = OpenAICompatProvider(
-            api_key="test-key",
-            default_model="gpt-4o",
-            spec=other_spec,
-        )
+    with patch("vtx_claw.providers.openai_compat_provider.AsyncOpenAI"):
+        p = OpenAICompatProvider(api_key="test-key", default_model="gpt-4o", spec=other_spec)
 
     response = {
         "choices": [
@@ -212,15 +201,12 @@ def test_thinking_content_only_for_mistral_spec() -> None:
                 "message": {
                     "role": "assistant",
                     "content": [
-                        {
-                            "type": "thinking",
-                            "thinking": [{"type": "text", "text": "secret"}],
-                        },
+                        {"type": "thinking", "thinking": [{"type": "text", "text": "secret"}]},
                         {"type": "text", "text": "hi"},
                     ],
                 },
             }
-        ],
+        ]
     }
     parsed = p._parse(response)
     assert parsed.content == "hi"
@@ -235,10 +221,7 @@ def test_streaming_thinking_chunks_become_reasoning() -> None:
                 {
                     "delta": {
                         "content": [
-                            {
-                                "type": "thinking",
-                                "thinking": [{"type": "text", "text": "step 1 "}],
-                            }
+                            {"type": "thinking", "thinking": [{"type": "text", "text": "step 1 "}]}
                         ]
                     },
                     "finish_reason": None,
@@ -250,24 +233,14 @@ def test_streaming_thinking_chunks_become_reasoning() -> None:
                 {
                     "delta": {
                         "content": [
-                            {
-                                "type": "thinking",
-                                "thinking": [{"type": "text", "text": "step 2"}],
-                            }
+                            {"type": "thinking", "thinking": [{"type": "text", "text": "step 2"}]}
                         ]
                     },
                     "finish_reason": None,
                 }
             ]
         },
-        {
-            "choices": [
-                {
-                    "delta": {"content": "final"},
-                    "finish_reason": "stop",
-                }
-            ]
-        },
+        {"choices": [{"delta": {"content": "final"}, "finish_reason": "stop"}]},
     ]
     parsed = OpenAICompatProvider._parse_chunks(chunks)
     assert parsed.content == "final"
@@ -312,11 +285,7 @@ def test_mistral_strips_reasoning_content_from_history() -> None:
     p = _mistral_provider()
     messages = [
         {"role": "user", "content": "hi"},
-        {
-            "role": "assistant",
-            "content": "Hello!",
-            "reasoning_content": "internal thoughts",
-        },
+        {"role": "assistant", "content": "Hello!", "reasoning_content": "internal thoughts"},
         {"role": "user", "content": "follow up"},
     ]
     sanitized = p._sanitize_messages(messages)
@@ -339,11 +308,7 @@ def test_mistral_tool_call_ids_get_normalized() -> None:
                 }
             ],
         },
-        {
-            "role": "tool",
-            "tool_call_id": "call_abc_xyz_too_long_for_mistral",
-            "content": "ok",
-        },
+        {"role": "tool", "tool_call_id": "call_abc_xyz_too_long_for_mistral", "content": "ok"},
     ]
     sanitized = p._sanitize_messages(messages)
     assistant_id = sanitized[1]["tool_calls"][0]["id"]

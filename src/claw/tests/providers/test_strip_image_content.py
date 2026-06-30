@@ -6,7 +6,7 @@ or produce text that makes the model hallucinate about unseen images.
 
 from __future__ import annotations
 
-from nanobot.providers.base import LLMProvider
+from vtx_claw.providers.base import LLMProvider
 
 # ---------------------------------------------------------------------------
 # _strip_image_content (returns new list)
@@ -81,10 +81,7 @@ class TestStripImageContent:
             {
                 "role": "user",
                 "content": [
-                    {
-                        "type": "image_url",
-                        "image_url": {"url": "data:image/png;base64,abc"},
-                    },
+                    {"type": "image_url", "image_url": {"url": "data:image/png;base64,abc"}}
                 ],
             }
         ]

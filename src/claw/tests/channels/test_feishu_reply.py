@@ -10,7 +10,7 @@ import pytest
 
 # Check optional Feishu dependencies before running tests
 try:
-    from nanobot.channels import feishu
+    from vtx_claw.channels import feishu
 
     FEISHU_AVAILABLE = getattr(feishu, "FEISHU_AVAILABLE", False)
 except ImportError:
@@ -19,9 +19,9 @@ except ImportError:
 if not FEISHU_AVAILABLE:
     pytest.skip("Feishu dependencies not installed (lark-oapi)", allow_module_level=True)
 
-from nanobot.bus.events import OutboundMessage
-from nanobot.bus.queue import MessageBus
-from nanobot.channels.feishu import FeishuChannel, FeishuConfig
+from vtx_claw.bus.events import OutboundMessage
+from vtx_claw.bus.queue import MessageBus
+from vtx_claw.channels.feishu import FeishuChannel, FeishuConfig
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -29,9 +29,7 @@ from nanobot.channels.feishu import FeishuChannel, FeishuConfig
 
 
 def _make_feishu_channel(
-    reply_to_message: bool = False,
-    group_policy: str = "mention",
-    topic_isolation: bool = True,
+    reply_to_message: bool = False, group_policy: str = "mention", topic_isolation: bool = True
 ) -> FeishuChannel:
     config = FeishuConfig(
         enabled=True,
@@ -71,10 +69,7 @@ def _make_feishu_event(
         root_id=root_id,
         mentions=mentions or [],
     )
-    sender = SimpleNamespace(
-        sender_type="user",
-        sender_id=SimpleNamespace(open_id=sender_open_id),
-    )
+    sender = SimpleNamespace(sender_type="user", sender_id=SimpleNamespace(open_id=sender_open_id))
     return SimpleNamespace(event=SimpleNamespace(message=message, sender=sender))
 
 
@@ -226,11 +221,7 @@ def test_reply_message_sync_returns_false_on_exception() -> None:
 @pytest.mark.asyncio
 @pytest.mark.parametrize(
     ("filename", "expected_msg_type"),
-    [
-        ("voice.opus", "audio"),
-        ("clip.mp4", "media"),
-        ("report.pdf", "file"),
-    ],
+    [("voice.opus", "audio"), ("clip.mp4", "media"), ("report.pdf", "file")],
 )
 async def test_send_uses_expected_feishu_msg_type_for_uploaded_files(
     tmp_path: Path, filename: str, expected_msg_type: str
@@ -281,10 +272,7 @@ async def test_send_uses_reply_api_when_configured() -> None:
 
     await channel.send(
         OutboundMessage(
-            channel="feishu",
-            chat_id="oc_abc",
-            content="hello",
-            metadata={"message_id": "om_001"},
+            channel="feishu", chat_id="oc_abc", content="hello", metadata={"message_id": "om_001"}
         )
     )
 
@@ -302,10 +290,7 @@ async def test_send_uses_create_api_when_reply_disabled() -> None:
 
     await channel.send(
         OutboundMessage(
-            channel="feishu",
-            chat_id="oc_abc",
-            content="hello",
-            metadata={"message_id": "om_001"},
+            channel="feishu", chat_id="oc_abc", content="hello", metadata={"message_id": "om_001"}
         )
     )
 
@@ -322,12 +307,7 @@ async def test_send_uses_create_api_when_no_message_id() -> None:
     channel._client.im.v1.message.create.return_value = create_resp
 
     await channel.send(
-        OutboundMessage(
-            channel="feishu",
-            chat_id="oc_abc",
-            content="hello",
-            metadata={},
-        )
+        OutboundMessage(channel="feishu", chat_id="oc_abc", content="hello", metadata={})
     )
 
     channel._client.im.v1.message.create.assert_called_once()
@@ -372,10 +352,7 @@ async def test_send_fallback_to_create_when_reply_fails() -> None:
 
     await channel.send(
         OutboundMessage(
-            channel="feishu",
-            chat_id="oc_abc",
-            content="hello",
-            metadata={"message_id": "om_001"},
+            channel="feishu", chat_id="oc_abc", content="hello", metadata={"message_id": "om_001"}
         )
     )
 
@@ -417,11 +394,7 @@ async def test_send_multiple_messages_all_use_reply_when_in_topic(tmp_path: Path
                 chat_id="oc_abc",
                 content="hello",
                 media=[str(file1), str(file2)],
-                metadata={
-                    "message_id": "om_001",
-                    "thread_id": "om_thread",
-                    "chat_type": "group",
-                },
+                metadata={"message_id": "om_001", "thread_id": "om_thread", "chat_type": "group"},
             )
         )
 
@@ -465,10 +438,7 @@ async def test_send_multiple_messages_only_first_uses_reply_when_reply_to_messag
                 chat_id="oc_abc",
                 content="hello",
                 media=[str(file1), str(file2)],
-                metadata={
-                    "message_id": "om_001",
-                    "chat_type": "group",
-                },
+                metadata={"message_id": "om_001", "chat_type": "group"},
             )
         )
 
@@ -496,12 +466,7 @@ async def test_on_message_captures_parent_and_root_id_in_metadata() -> None:
     channel._handle_message = _capture
 
     with patch.object(channel, "_add_reaction", return_value=None):
-        await channel._on_message(
-            _make_feishu_event(
-                parent_id="om_parent",
-                root_id="om_root",
-            )
-        )
+        await channel._on_message(_make_feishu_event(parent_id="om_parent", root_id="om_root"))
 
     assert len(captured) == 1
     meta = captured[0]["metadata"]
@@ -535,7 +500,9 @@ async def test_on_message_parent_and_root_id_none_when_absent() -> None:
 async def test_on_message_prepends_reply_context_when_parent_id_present() -> None:
     channel = _make_feishu_channel()
     channel._processed_message_ids.clear()
-    channel._client.im.v1.message.get.return_value = _make_get_message_response("original question")
+    channel._client.im.v1.message.get.return_value = _make_get_message_response(
+        "original question"
+    )
 
     captured = []
 
@@ -546,10 +513,7 @@ async def test_on_message_prepends_reply_context_when_parent_id_present() -> Non
 
     with patch.object(channel, "_add_reaction", return_value=None):
         await channel._on_message(
-            _make_feishu_event(
-                content='{"text": "my answer"}',
-                parent_id="om_parent",
-            )
+            _make_feishu_event(content='{"text": "my answer"}', parent_id="om_parent")
         )
 
     assert len(captured) == 1
@@ -589,9 +553,7 @@ async def test_on_message_strips_required_leading_bot_mention_for_commands() -> 
 
     channel._handle_message = _capture
     mention = SimpleNamespace(
-        key="@_user_1",
-        name="nanobot",
-        id=SimpleNamespace(open_id="ou_bot", user_id=None),
+        key="@_user_1", name="vtx-claw", id=SimpleNamespace(open_id="ou_bot", user_id=None)
     )
 
     with patch.object(channel, "_add_reaction", return_value=None):
@@ -619,14 +581,10 @@ async def test_on_message_keeps_longer_mention_key_that_shares_bot_prefix() -> N
 
     channel._handle_message = _capture
     bot_mention = SimpleNamespace(
-        key="@_user_1",
-        name="nanobot",
-        id=SimpleNamespace(open_id="ou_bot", user_id=None),
+        key="@_user_1", name="vtx-claw", id=SimpleNamespace(open_id="ou_bot", user_id=None)
     )
     user_mention = SimpleNamespace(
-        key="@_user_10",
-        name="Alice",
-        id=SimpleNamespace(open_id="ou_alice", user_id=None),
+        key="@_user_10", name="Alice", id=SimpleNamespace(open_id="ou_alice", user_id=None)
     )
 
     with patch.object(channel, "_add_reaction", return_value=None):
@@ -639,7 +597,7 @@ async def test_on_message_keeps_longer_mention_key_that_shares_bot_prefix() -> N
         )
 
     assert len(captured) == 1
-    assert captured[0]["content"] == "@Alice (ou_alice) /new @nanobot (ou_bot)"
+    assert captured[0]["content"] == "@Alice (ou_alice) /new @vtx_claw (ou_bot)"
 
 
 # ---------------------------------------------------------------------------
@@ -658,7 +616,10 @@ async def test_on_message_audio_publishes_downloaded_path_and_transcription() ->
 
     channel.bus.publish_inbound = capture
     channel._download_and_save_media = AsyncMock(
-        return_value=(r"C:\\Users\\dodre\\.nanobot\\media\\feishu\\voice.ogg", "[audio: voice.ogg]")
+        return_value=(
+            r"C:\\Users\\dodre\\.vtx_claw\\media\\feishu\\voice.ogg",
+            "[audio: voice.ogg]",
+        )
     )
     channel.transcribe_audio = AsyncMock(return_value="hello from voice")
     channel._add_reaction = AsyncMock(return_value=None)
@@ -674,10 +635,10 @@ async def test_on_message_audio_publishes_downloaded_path_and_transcription() ->
         "audio", {"file_key": "audio_key", "duration": 1000}, "om_audio"
     )
     channel.transcribe_audio.assert_awaited_once_with(
-        r"C:\\Users\\dodre\\.nanobot\\media\\feishu\\voice.ogg"
+        r"C:\\Users\\dodre\\.vtx_claw\\media\\feishu\\voice.ogg"
     )
     assert len(captured) == 1
-    assert captured[0].media == [r"C:\\Users\\dodre\\.nanobot\\media\\feishu\\voice.ogg"]
+    assert captured[0].media == [r"C:\\Users\\dodre\\.vtx_claw\\media\\feishu\\voice.ogg"]
     assert captured[0].content == "[transcription: hello from voice]"
 
 
@@ -748,10 +709,7 @@ async def test_session_key_group_no_root_id_uses_message_id() -> None:
     channel._add_reaction = AsyncMock(return_value=None)
 
     event = _make_feishu_event(
-        chat_type="group",
-        content='{"text": "hello"}',
-        root_id=None,
-        message_id="om_001",
+        chat_type="group", content='{"text": "hello"}', root_id=None, message_id="om_001"
     )
     await channel._on_message(event)
 
@@ -776,10 +734,7 @@ async def test_session_key_private_chat_no_override() -> None:
     channel._add_reaction = AsyncMock(return_value=None)
 
     event = _make_feishu_event(
-        chat_type="p2p",
-        content='{"text": "hello"}',
-        root_id=None,
-        message_id="om_001",
+        chat_type="p2p", content='{"text": "hello"}', root_id=None, message_id="om_001"
     )
     await channel._on_message(event)
 
@@ -803,10 +758,7 @@ async def test_reply_uses_reply_in_thread_when_enabled() -> None:
 
     await channel.send(
         OutboundMessage(
-            channel="feishu",
-            chat_id="oc_abc",
-            content="hello",
-            metadata={"message_id": "om_001"},
+            channel="feishu", chat_id="oc_abc", content="hello", metadata={"message_id": "om_001"}
         )
     )
 
@@ -825,13 +777,7 @@ async def test_reply_without_reply_in_thread_when_disabled() -> None:
     create_resp.success.return_value = True
     channel._client.im.v1.message.create.return_value = create_resp
 
-    await channel.send(
-        OutboundMessage(
-            channel="feishu",
-            chat_id="oc_abc",
-            content="hello",
-        )
-    )
+    await channel.send(OutboundMessage(channel="feishu", chat_id="oc_abc", content="hello"))
 
     # No message_id in metadata → no reply attempt, direct create
     channel._client.im.v1.message.create.assert_called_once()
@@ -882,10 +828,7 @@ async def test_reply_keeps_fallback_when_reply_fails() -> None:
 
     await channel.send(
         OutboundMessage(
-            channel="feishu",
-            chat_id="oc_abc",
-            content="hello",
-            metadata={"message_id": "om_001"},
+            channel="feishu", chat_id="oc_abc", content="hello", metadata={"message_id": "om_001"}
         )
     )
 
@@ -958,11 +901,7 @@ async def test_reply_targets_message_id_when_in_topic() -> None:
             channel="feishu",
             chat_id="oc_abc",
             content="hello",
-            metadata={
-                "message_id": "om_child456",
-                "chat_type": "group",
-                "root_id": "om_root123",
-            },
+            metadata={"message_id": "om_child456", "chat_type": "group", "root_id": "om_root123"},
         )
     )
 
@@ -1035,9 +974,7 @@ async def test_on_message_unauthorized_dm_sends_pairing_code_without_side_effect
     channel._handle_message = AsyncMock()
 
     event = _make_feishu_event(
-        msg_type="audio",
-        content='{"file_key": "file_1"}',
-        sender_open_id="ou_blocked",
+        msg_type="audio", content='{"file_key": "file_1"}', sender_open_id="ou_blocked"
     )
 
     await channel._on_message(event)
@@ -1101,10 +1038,7 @@ async def test_session_key_with_topic_isolation_true_uses_thread_scoped() -> Non
 
     # Test without root_id
     event2 = _make_feishu_event(
-        chat_type="group",
-        content='{"text": "another"}',
-        root_id=None,
-        message_id="om_001",
+        chat_type="group", content='{"text": "another"}', root_id=None, message_id="om_001"
     )
     await channel._on_message(event2)
 
@@ -1140,19 +1074,13 @@ async def test_session_key_with_topic_isolation_false_uses_group_scoped() -> Non
 
     # Test without root_id
     event2 = _make_feishu_event(
-        chat_type="group",
-        content='{"text": "another"}',
-        root_id=None,
-        message_id="om_001",
+        chat_type="group", content='{"text": "another"}', root_id=None, message_id="om_001"
     )
     await channel._on_message(event2)
 
     # Private chat still works
     event3 = _make_feishu_event(
-        chat_type="p2p",
-        content='{"text": "private"}',
-        root_id=None,
-        message_id="om_private",
+        chat_type="p2p", content='{"text": "private"}', root_id=None, message_id="om_private"
     )
     await channel._on_message(event3)
 

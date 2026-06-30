@@ -4,7 +4,7 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from nanobot.channels.websocket import WebSocketChannel
+from vtx_claw.channels.websocket import WebSocketChannel
 
 
 @pytest.mark.asyncio
@@ -26,7 +26,7 @@ async def test_hydrate_after_subscribe_is_quiet_when_no_turn_active():
     channel.send_goal_state = mock_send_goal_state
     channel.send_goal_status = mock_send_goal_status
 
-    with patch("nanobot.channels.websocket.websocket_turn_wall_started_at", return_value=None):
+    with patch("vtx_claw.channels.websocket.websocket_turn_wall_started_at", return_value=None):
         await channel._hydrate_after_subscribe("test-chat")
 
     assert sent_events == []
@@ -52,7 +52,7 @@ async def test_hydrate_after_subscribe_pushes_running_when_turn_active():
     channel.send_goal_status = mock_send_goal_status
 
     with patch(
-        "nanobot.channels.websocket.websocket_turn_wall_started_at", return_value=1234567890.0
+        "vtx_claw.channels.websocket.websocket_turn_wall_started_at", return_value=1234567890.0
     ):
         await channel._hydrate_after_subscribe("test-chat")
 

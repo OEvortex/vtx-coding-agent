@@ -3,7 +3,7 @@ from __future__ import annotations
 import asyncio
 from typing import Any
 
-from nanobot.webui import cli_apps_api
+from vtx_claw.webui import cli_apps_api
 
 
 class _FakeManager:
@@ -62,9 +62,7 @@ def test_cli_apps_payload_uses_cache_and_marks_refresh_pending(monkeypatch) -> N
     refreshes = []
     monkeypatch.setattr(cli_apps_api, "_manager", lambda: manager)
     monkeypatch.setattr(
-        cli_apps_api,
-        "_start_catalog_refresh",
-        lambda _manager: refreshes.append(True) or True,
+        cli_apps_api, "_start_catalog_refresh", lambda _manager: refreshes.append(True) or True
     )
 
     payload = asyncio.run(cli_apps_api.cli_apps_payload())
@@ -101,9 +99,7 @@ def test_cli_apps_payload_skips_refresh_when_cache_is_fresh(monkeypatch) -> None
     refreshes = []
     monkeypatch.setattr(cli_apps_api, "_manager", lambda: manager)
     monkeypatch.setattr(
-        cli_apps_api,
-        "_start_catalog_refresh",
-        lambda _manager: refreshes.append(True) or True,
+        cli_apps_api, "_start_catalog_refresh", lambda _manager: refreshes.append(True) or True
     )
 
     payload = asyncio.run(cli_apps_api.cli_apps_payload())
@@ -141,9 +137,7 @@ def test_cli_apps_payload_refreshes_when_optional_cache_is_stale(monkeypatch) ->
     refreshes = []
     monkeypatch.setattr(cli_apps_api, "_manager", lambda: manager)
     monkeypatch.setattr(
-        cli_apps_api,
-        "_start_catalog_refresh",
-        lambda _manager: refreshes.append(True) or True,
+        cli_apps_api, "_start_catalog_refresh", lambda _manager: refreshes.append(True) or True
     )
 
     payload = asyncio.run(cli_apps_api.cli_apps_payload())

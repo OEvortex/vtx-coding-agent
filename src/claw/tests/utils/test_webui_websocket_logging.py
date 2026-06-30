@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import logging
 
-from nanobot.webui.websocket_logging import (
+from vtx_claw.webui.websocket_logging import (
     OPENING_HANDSHAKE_FAILED_MESSAGE,
     WebSocketHandshakeNoiseFilter,
 )

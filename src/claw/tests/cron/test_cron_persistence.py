@@ -1,4 +1,4 @@
-"""Persistence tests for ``nanobot.cron.service.CronService``.
+"""Persistence tests for ``vtx_claw.cron.service.CronService``.
 
 These tests target the specific failure mode where a corrupt or partially
 written ``jobs.json`` would silently turn into an empty job list on the next
@@ -9,13 +9,13 @@ jobs.json + don't silently overwrite corrupt store``.
 from __future__ import annotations
 
 import json
+from collections.abc import Callable
 from pathlib import Path
-from typing import Callable
 
 import pytest
 
-from nanobot.cron.service import CronService
-from nanobot.cron.types import CronJob, CronPayload, CronSchedule
+from vtx_claw.cron.service import CronService
+from vtx_claw.cron.types import CronJob, CronPayload, CronSchedule
 
 
 def _seeded_store(tmp_path: Path) -> tuple[CronService, Path]:
@@ -107,9 +107,7 @@ def test_save_store_failure_does_not_corrupt_existing_file(
     assert store_path.read_bytes() == original
 
 
-def test_load_jobs_preserves_corrupt_store_and_returns_none(
-    tmp_path: Path,
-) -> None:
+def test_load_jobs_preserves_corrupt_store_and_returns_none(tmp_path: Path) -> None:
     """A corrupt ``jobs.json`` must not be silently treated as an empty
     list.  The loader returns ``None`` and the corrupt file is moved aside
     with a ``.corrupt-<ts>`` suffix so an operator can recover it."""
@@ -150,9 +148,7 @@ def test_start_refuses_to_overwrite_corrupt_store(tmp_path: Path) -> None:
     assert len(backups) == 1
 
 
-def test_load_store_falls_back_to_in_memory_on_corruption_after_start(
-    tmp_path: Path,
-) -> None:
+def test_load_store_falls_back_to_in_memory_on_corruption_after_start(tmp_path: Path) -> None:
     """If the store file becomes corrupt *after* a successful start (e.g. a
     rclone-mounted Drive returns a partial read), the service must keep
     using its existing in-memory snapshot instead of dropping every job."""
@@ -185,9 +181,7 @@ def test_load_store_falls_back_to_in_memory_on_corruption_after_start(
     ],
 )
 def test_public_apis_raise_clear_error_for_unavailable_corrupt_store(
-    tmp_path: Path,
-    api_name: str,
-    call: Callable[[CronService], object],
+    tmp_path: Path, api_name: str, call: Callable[[CronService], object]
 ) -> None:
     """Public APIs should report the corrupt store explicitly instead of
     leaking ``AttributeError`` when the first load cannot produce a store."""
@@ -232,9 +226,7 @@ async def test_run_job_preserves_running_state_when_corrupt_store_unavailable(
     service.stop()
 
 
-def test_running_add_job_raises_clear_error_for_unavailable_corrupt_store(
-    tmp_path: Path,
-) -> None:
+def test_running_add_job_raises_clear_error_for_unavailable_corrupt_store(tmp_path: Path) -> None:
     store_path = _corrupt_store(tmp_path)
     service = CronService(store_path)
     service._running = True
@@ -278,9 +270,7 @@ def test_stopped_add_job_still_appends_action_without_loading_corrupt_store(
     assert json.loads(actions[0])["action"] == "add"
 
 
-def test_public_api_uses_in_memory_snapshot_when_disk_becomes_corrupt(
-    tmp_path: Path,
-) -> None:
+def test_public_api_uses_in_memory_snapshot_when_disk_becomes_corrupt(tmp_path: Path) -> None:
     service, store_path = _seeded_store(tmp_path)
     service._load_store()
     assert service._store is not None

@@ -6,8 +6,8 @@ from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
-from nanobot.command.builtin import register_builtin_commands
-from nanobot.command.router import CommandContext, CommandRouter
+from vtx_claw.command.builtin import register_builtin_commands
+from vtx_claw.command.router import CommandContext, CommandRouter
 
 
 class TestIsDispatchableCommand:
@@ -77,11 +77,7 @@ class TestMidTurnCommandDispatchedDirectly:
         loop = MagicMock()
         loop.sessions = MagicMock()
         loop.sessions.get_or_create = MagicMock(
-            return_value=MagicMock(
-                messages=[],
-                last_consolidated=0,
-                clear=MagicMock(),
-            )
+            return_value=MagicMock(messages=[], last_consolidated=0, clear=MagicMock())
         )
         loop.sessions.save = MagicMock()
         loop.sessions.invalidate = MagicMock()
@@ -100,18 +96,11 @@ class TestMidTurnCommandDispatchedDirectly:
 
     @pytest.mark.asyncio
     async def test_new_dispatched_with_session_none(
-        self,
-        router: CommandRouter,
-        fake_loop: MagicMock,
-        fake_msg: MagicMock,
+        self, router: CommandRouter, fake_loop: MagicMock, fake_msg: MagicMock
     ) -> None:
         """cmd_new works when session=None (mid-turn dispatch path)."""
         ctx = CommandContext(
-            msg=fake_msg,
-            session=None,
-            key="test:chat1",
-            raw="/new",
-            loop=fake_loop,
+            msg=fake_msg, session=None, key="test:chat1", raw="/new", loop=fake_loop
         )
         result = await router.dispatch(ctx)
         assert result is not None
@@ -120,17 +109,10 @@ class TestMidTurnCommandDispatchedDirectly:
 
     @pytest.mark.asyncio
     async def test_help_dispatched_with_session_none(
-        self,
-        router: CommandRouter,
-        fake_loop: MagicMock,
-        fake_msg: MagicMock,
+        self, router: CommandRouter, fake_loop: MagicMock, fake_msg: MagicMock
     ) -> None:
         ctx = CommandContext(
-            msg=fake_msg,
-            session=None,
-            key="test:chat1",
-            raw="/help",
-            loop=fake_loop,
+            msg=fake_msg, session=None, key="test:chat1", raw="/help", loop=fake_loop
         )
         result = await router.dispatch(ctx)
         assert result is not None
@@ -165,18 +147,11 @@ class TestMidTurnCommandDispatchedDirectly:
 
     @pytest.mark.asyncio
     async def test_non_command_returns_none(
-        self,
-        router: CommandRouter,
-        fake_loop: MagicMock,
-        fake_msg: MagicMock,
+        self, router: CommandRouter, fake_loop: MagicMock, fake_msg: MagicMock
     ) -> None:
         """Regular text returns None from dispatch (not a command)."""
         ctx = CommandContext(
-            msg=fake_msg,
-            session=None,
-            key="test:chat1",
-            raw="hello world",
-            loop=fake_loop,
+            msg=fake_msg, session=None, key="test:chat1", raw="hello world", loop=fake_loop
         )
         result = await router.dispatch(ctx)
         assert result is None
@@ -202,13 +177,10 @@ class TestPairingCommandDispatch:
 
     @pytest.mark.asyncio
     async def test_pairing_list_dispatched(
-        self,
-        router: CommandRouter,
-        fake_msg: MagicMock,
-        monkeypatch,
+        self, router: CommandRouter, fake_msg: MagicMock, monkeypatch
     ) -> None:
         monkeypatch.setattr(
-            "nanobot.pairing.store.list_pending",
+            "vtx_claw.pairing.store.list_pending",
             lambda: [
                 {
                     "code": "ABCD-EFGH",
@@ -233,13 +205,10 @@ class TestPairingCommandDispatch:
 
     @pytest.mark.asyncio
     async def test_pairing_approve_dispatched(
-        self,
-        router: CommandRouter,
-        fake_msg: MagicMock,
-        monkeypatch,
+        self, router: CommandRouter, fake_msg: MagicMock, monkeypatch
     ) -> None:
         monkeypatch.setattr(
-            "nanobot.pairing.store.approve_code",
+            "vtx_claw.pairing.store.approve_code",
             lambda code: ("telegram", "123") if code == "ABCD-EFGH" else None,
         )
         fake_msg.content = "/pairing approve ABCD-EFGH"
@@ -254,20 +223,16 @@ class TestPairingCommandDispatch:
         result = await router.dispatch(ctx)
         assert result is not None
         assert "Approved" in result.content
-        assert result.content == ("Approved pairing code `ABCD-EFGH` — 123 can now access telegram")
+        assert result.content == (
+            "Approved pairing code `ABCD-EFGH` — 123 can now access telegram"
+        )
         assert result.metadata.get("_pairing_command") is True
 
     @pytest.mark.asyncio
     async def test_pairing_revoke_dispatched(
-        self,
-        router: CommandRouter,
-        fake_msg: MagicMock,
-        monkeypatch,
+        self, router: CommandRouter, fake_msg: MagicMock, monkeypatch
     ) -> None:
-        monkeypatch.setattr(
-            "nanobot.pairing.store.revoke",
-            lambda ch, sid: sid == "123",
-        )
+        monkeypatch.setattr("vtx_claw.pairing.store.revoke", lambda ch, sid: sid == "123")
         fake_msg.content = "/pairing revoke 123"
         ctx = CommandContext(
             msg=fake_msg,

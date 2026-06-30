@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import asyncio
 
-from nanobot.agent.tools.filesystem import EditFileTool, ReadFileTool
+from vtx_claw.agent.tools.filesystem import EditFileTool, ReadFileTool
 
 
 def test_read_file_force_bypasses_dedup(tmp_path):
@@ -26,12 +26,7 @@ def test_edit_file_can_select_occurrence(tmp_path):
     tool = EditFileTool(workspace=tmp_path)
 
     result = asyncio.run(
-        tool.execute(
-            path=str(target),
-            old_text="same",
-            new_text="changed",
-            occurrence=2,
-        )
+        tool.execute(path=str(target), old_text="same", new_text="changed", occurrence=2)
     )
 
     assert "Successfully edited" in result
@@ -82,12 +77,7 @@ def test_edit_file_can_select_nearest_line_hint(tmp_path):
     tool = EditFileTool(workspace=tmp_path)
 
     result = asyncio.run(
-        tool.execute(
-            path=str(target),
-            old_text="same",
-            new_text="changed",
-            line_hint=4,
-        )
+        tool.execute(path=str(target), old_text="same", new_text="changed", line_hint=4)
     )
 
     assert "Successfully edited" in result
@@ -116,13 +106,7 @@ def test_edit_file_multiple_match_hint_mentions_occurrence(tmp_path):
     target.write_text("same\nsame\n")
     tool = EditFileTool(workspace=tmp_path)
 
-    result = asyncio.run(
-        tool.execute(
-            path=str(target),
-            old_text="same",
-            new_text="changed",
-        )
-    )
+    result = asyncio.run(tool.execute(path=str(target), old_text="same", new_text="changed"))
 
     assert "old_text appears 2 times" in result
     assert "occurrence" in result
@@ -135,12 +119,7 @@ def test_edit_file_rejects_ambiguous_line_hint(tmp_path):
     tool = EditFileTool(workspace=tmp_path)
 
     result = asyncio.run(
-        tool.execute(
-            path=str(target),
-            old_text="same",
-            new_text="changed",
-            line_hint=2,
-        )
+        tool.execute(path=str(target), old_text="same", new_text="changed", line_hint=2)
     )
 
     assert "line_hint 2 is ambiguous" in result
@@ -154,11 +133,7 @@ def test_edit_file_rejects_occurrence_with_replace_all(tmp_path):
 
     result = asyncio.run(
         tool.execute(
-            path=str(target),
-            old_text="same",
-            new_text="changed",
-            occurrence=1,
-            replace_all=True,
+            path=str(target), old_text="same", new_text="changed", occurrence=1, replace_all=True
         )
     )
 
@@ -173,11 +148,7 @@ def test_edit_file_rejects_line_hint_with_replace_all(tmp_path):
 
     result = asyncio.run(
         tool.execute(
-            path=str(target),
-            old_text="same",
-            new_text="changed",
-            line_hint=1,
-            replace_all=True,
+            path=str(target), old_text="same", new_text="changed", line_hint=1, replace_all=True
         )
     )
 
@@ -192,11 +163,7 @@ def test_edit_file_rejects_line_hint_with_occurrence(tmp_path):
 
     result = asyncio.run(
         tool.execute(
-            path=str(target),
-            old_text="same",
-            new_text="changed",
-            occurrence=1,
-            line_hint=1,
+            path=str(target), old_text="same", new_text="changed", occurrence=1, line_hint=1
         )
     )
 
@@ -210,12 +177,7 @@ def test_edit_file_rejects_zero_occurrence(tmp_path):
     tool = EditFileTool(workspace=tmp_path)
 
     result = asyncio.run(
-        tool.execute(
-            path=str(target),
-            old_text="same",
-            new_text="changed",
-            occurrence=0,
-        )
+        tool.execute(path=str(target), old_text="same", new_text="changed", occurrence=0)
     )
 
     assert "occurrence must be >= 1" in result
@@ -228,12 +190,7 @@ def test_edit_file_rejects_zero_line_hint(tmp_path):
     tool = EditFileTool(workspace=tmp_path)
 
     result = asyncio.run(
-        tool.execute(
-            path=str(target),
-            old_text="same",
-            new_text="changed",
-            line_hint=0,
-        )
+        tool.execute(path=str(target), old_text="same", new_text="changed", line_hint=0)
     )
 
     assert "line_hint must be >= 1" in result

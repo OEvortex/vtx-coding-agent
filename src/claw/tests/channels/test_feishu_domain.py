@@ -2,19 +2,13 @@
 
 from unittest.mock import MagicMock
 
-import pytest
-
-from nanobot.bus.queue import MessageBus
-from nanobot.channels.feishu import FeishuChannel, FeishuConfig
+from vtx_claw.bus.queue import MessageBus
+from vtx_claw.channels.feishu import FeishuChannel, FeishuConfig
 
 
 def _make_channel(domain: str = "feishu") -> FeishuChannel:
     config = FeishuConfig(
-        enabled=True,
-        app_id="cli_test",
-        app_secret="secret",
-        allow_from=["*"],
-        domain=domain,
+        enabled=True, app_id="cli_test", app_secret="secret", allow_from=["*"], domain=domain
     )
     ch = FeishuChannel(config, MessageBus())
     ch._client = MagicMock()

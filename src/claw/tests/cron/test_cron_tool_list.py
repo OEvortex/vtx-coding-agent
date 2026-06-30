@@ -1,13 +1,13 @@
 """Tests for CronTool._list_jobs() output formatting."""
 
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 import pytest
 
-from nanobot.agent.tools.context import RequestContext
-from nanobot.agent.tools.cron import CronTool
-from nanobot.cron.service import CronService
-from nanobot.cron.types import CronJob, CronJobState, CronPayload, CronSchedule
+from vtx_claw.agent.tools.context import RequestContext
+from vtx_claw.agent.tools.cron import CronTool
+from vtx_claw.cron.service import CronService
+from vtx_claw.cron.types import CronJob, CronJobState, CronPayload, CronSchedule
 
 
 def _make_tool(tmp_path) -> CronTool:
@@ -347,7 +347,7 @@ def test_add_at_job_uses_default_timezone_for_naive_datetime(tmp_path) -> None:
 
     assert result.startswith("Created job")
     job = tool._cron.list_jobs()[0]
-    expected = int(datetime(2026, 3, 25, 0, 0, 0, tzinfo=timezone.utc).timestamp() * 1000)
+    expected = int(datetime(2026, 3, 25, 0, 0, 0, tzinfo=UTC).timestamp() * 1000)
     assert job.schedule.at_ms == expected
 
 

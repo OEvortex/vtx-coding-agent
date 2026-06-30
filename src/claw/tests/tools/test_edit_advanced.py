@@ -12,8 +12,8 @@ import os
 
 import pytest
 
-from nanobot.agent.tools import file_state
-from nanobot.agent.tools.filesystem import EditFileTool, ReadFileTool, _find_match
+from vtx_claw.agent.tools import file_state
+from vtx_claw.agent.tools.filesystem import EditFileTool, ReadFileTool, _find_match
 
 
 @pytest.fixture(autouse=True)
@@ -115,9 +115,7 @@ class TestQuoteStylePreservation:
         f = tmp_path / "quotes.txt"
         f.write_text("message = “hello”\n", encoding="utf-8")
         result = await tool.execute(
-            path=str(f),
-            old_text='message = "hello"',
-            new_text='message = "goodbye"',
+            path=str(f), old_text='message = "hello"', new_text='message = "goodbye"'
         )
         assert "Successfully" in result
         assert f.read_text(encoding="utf-8") == "message = “goodbye”\n"
@@ -126,11 +124,7 @@ class TestQuoteStylePreservation:
     async def test_replacement_preserves_curly_apostrophe(self, tool, tmp_path):
         f = tmp_path / "apostrophe.txt"
         f.write_text("it’s fine\n", encoding="utf-8")
-        result = await tool.execute(
-            path=str(f),
-            old_text="it's fine",
-            new_text="it's better",
-        )
+        result = await tool.execute(path=str(f), old_text="it's fine", new_text="it's better")
         assert "Successfully" in result
         assert f.read_text(encoding="utf-8") == "it’s better\n"
 
@@ -150,14 +144,9 @@ class TestIndentationPreservation:
     @pytest.mark.asyncio
     async def test_trim_fallback_preserves_outer_indentation(self, tool, tmp_path):
         f = tmp_path / "indent.py"
-        f.write_text(
-            "if True:\n    def foo():\n        pass\n",
-            encoding="utf-8",
-        )
+        f.write_text("if True:\n    def foo():\n        pass\n", encoding="utf-8")
         result = await tool.execute(
-            path=str(f),
-            old_text="def foo():\n    pass",
-            new_text="def bar():\n    return 1",
+            path=str(f), old_text="def foo():\n    pass", new_text="def bar():\n    return 1"
         )
         assert "Successfully" in result
         assert f.read_text(encoding="utf-8") == ("if True:\n    def bar():\n        return 1\n")
@@ -242,9 +231,7 @@ class TestAdvancedReplaceAll:
         f = tmp_path / "quote_indent.py"
         f.write_text("    message = “hello”\n", encoding="utf-8")
         result = await tool.execute(
-            path=str(f),
-            old_text='message = "hello"',
-            new_text='message = "goodbye"',
+            path=str(f), old_text='message = "hello"', new_text='message = "goodbye"'
         )
         assert "Successfully" in result
         assert f.read_text(encoding="utf-8") == "    message = “goodbye”\n"
@@ -266,14 +253,10 @@ class TestTrailingWhitespaceStrip:
     async def test_strips_trailing_whitespace_from_new_text(self, tool, tmp_path):
         f = tmp_path / "a.py"
         f.write_text("x = 1\n", encoding="utf-8")
-        result = await tool.execute(
-            path=str(f),
-            old_text="x = 1",
-            new_text="x = 2   \ny = 3  ",
-        )
+        result = await tool.execute(path=str(f), old_text="x = 1", new_text="x = 2   \ny = 3  ")
         assert "Successfully" in result
         content = f.read_text()
-        assert "x = 2\ny = 3\n" == content
+        assert content == "x = 2\ny = 3\n"
 
     @pytest.mark.asyncio
     async def test_preserves_trailing_whitespace_in_markdown(self, tool, tmp_path):
@@ -281,9 +264,7 @@ class TestTrailingWhitespaceStrip:
         f.write_text("# Title\n", encoding="utf-8")
         # Markdown uses trailing double-space for line breaks
         result = await tool.execute(
-            path=str(f),
-            old_text="# Title",
-            new_text="# Title  \nSubtitle  ",
+            path=str(f), old_text="# Title", new_text="# Title  \nSubtitle  "
         )
         assert "Successfully" in result
         content = f.read_text()

@@ -14,17 +14,13 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-from nanobot.providers.openai_compat_provider import OpenAICompatProvider
-from nanobot.providers.registry import find_by_name
+from vtx_claw.providers.openai_compat_provider import OpenAICompatProvider
+from vtx_claw.providers.registry import find_by_name
 
 
 def _fake_chat_response(content: str = "ok") -> SimpleNamespace:
     """Build a minimal OpenAI chat completion response."""
-    message = SimpleNamespace(
-        content=content,
-        tool_calls=None,
-        reasoning_content=None,
-    )
+    message = SimpleNamespace(content=content, tool_calls=None, reasoning_content=None)
     choice = SimpleNamespace(message=message, finish_reason="stop")
     usage = SimpleNamespace(prompt_tokens=10, completion_tokens=5, total_tokens=15)
     return SimpleNamespace(choices=[choice], usage=usage)
@@ -33,9 +29,7 @@ def _fake_chat_response(content: str = "ok") -> SimpleNamespace:
 def _fake_tool_call_response() -> SimpleNamespace:
     """Build a minimal chat response that includes Gemini-style extra_content."""
     function = SimpleNamespace(
-        name="exec",
-        arguments='{"cmd":"ls"}',
-        provider_specific_fields={"inner": "value"},
+        name="exec", arguments='{"cmd":"ls"}', provider_specific_fields={"inner": "value"}
     )
     tool_call = SimpleNamespace(
         id="call_123",
@@ -44,11 +38,7 @@ def _fake_tool_call_response() -> SimpleNamespace:
         function=function,
         extra_content={"google": {"thought_signature": "signed-token"}},
     )
-    message = SimpleNamespace(
-        content=None,
-        tool_calls=[tool_call],
-        reasoning_content=None,
-    )
+    message = SimpleNamespace(content=None, tool_calls=[tool_call], reasoning_content=None)
     choice = SimpleNamespace(message=message, finish_reason="tool_calls")
     usage = SimpleNamespace(prompt_tokens=10, completion_tokens=5, total_tokens=15)
     return SimpleNamespace(choices=[choice], usage=usage)
@@ -128,12 +118,9 @@ def _fake_chat_stream_reasoning_chunks():
                 SimpleNamespace(
                     finish_reason=None,
                     delta=SimpleNamespace(
-                        content=None,
-                        reasoning_content="step1",
-                        reasoning=None,
-                        tool_calls=None,
+                        content=None, reasoning_content="step1", reasoning=None, tool_calls=None
                     ),
-                ),
+                )
             ],
             usage=None,
         )
@@ -142,12 +129,9 @@ def _fake_chat_stream_reasoning_chunks():
                 SimpleNamespace(
                     finish_reason=None,
                     delta=SimpleNamespace(
-                        content=None,
-                        reasoning_content="step2",
-                        reasoning=None,
-                        tool_calls=None,
+                        content=None, reasoning_content="step2", reasoning=None, tool_calls=None
                     ),
-                ),
+                )
             ],
             usage=None,
         )
@@ -156,11 +140,9 @@ def _fake_chat_stream_reasoning_chunks():
                 SimpleNamespace(
                     finish_reason=None,
                     delta=SimpleNamespace(
-                        content="answer",
-                        reasoning_content=None,
-                        tool_calls=None,
+                        content="answer", reasoning_content=None, tool_calls=None
                     ),
-                ),
+                )
             ],
             usage=None,
         )
@@ -168,18 +150,10 @@ def _fake_chat_stream_reasoning_chunks():
             choices=[
                 SimpleNamespace(
                     finish_reason="stop",
-                    delta=SimpleNamespace(
-                        content=None,
-                        reasoning_content=None,
-                        tool_calls=None,
-                    ),
-                ),
+                    delta=SimpleNamespace(content=None, reasoning_content=None, tool_calls=None),
+                )
             ],
-            usage=SimpleNamespace(
-                prompt_tokens=10,
-                completion_tokens=5,
-                total_tokens=15,
-            ),
+            usage=SimpleNamespace(prompt_tokens=10, completion_tokens=5, total_tokens=15),
         )
 
     return _stream()
@@ -202,13 +176,12 @@ def _fake_chat_stream_tool_call_chunks():
                                 index=0,
                                 id="call_write",
                                 function=SimpleNamespace(
-                                    name="write_file",
-                                    arguments='{"path":"notes.md","content":"',
+                                    name="write_file", arguments='{"path":"notes.md","content":"'
                                 ),
                             )
                         ],
                     ),
-                ),
+                )
             ],
             usage=None,
         )
@@ -228,7 +201,7 @@ def _fake_chat_stream_tool_call_chunks():
                             )
                         ],
                     ),
-                ),
+                )
             ],
             usage=None,
         )
@@ -237,12 +210,9 @@ def _fake_chat_stream_tool_call_chunks():
                 SimpleNamespace(
                     finish_reason="tool_calls",
                     delta=SimpleNamespace(
-                        content=None,
-                        reasoning_content=None,
-                        reasoning=None,
-                        tool_calls=None,
+                        content=None, reasoning_content=None, reasoning=None, tool_calls=None
                     ),
-                ),
+                )
             ],
             usage=SimpleNamespace(prompt_tokens=10, completion_tokens=5, total_tokens=15),
         )
@@ -264,11 +234,10 @@ def _fake_chat_stream_legacy_function_call_chunks():
                         reasoning=None,
                         tool_calls=None,
                         function_call=SimpleNamespace(
-                            name="write_file",
-                            arguments='{"path":"notes.md","content":"',
+                            name="write_file", arguments='{"path":"notes.md","content":"'
                         ),
                     ),
-                ),
+                )
             ],
             usage=None,
         )
@@ -281,12 +250,9 @@ def _fake_chat_stream_legacy_function_call_chunks():
                         reasoning_content=None,
                         reasoning=None,
                         tool_calls=None,
-                        function_call=SimpleNamespace(
-                            name=None,
-                            arguments='line\\n"}',
-                        ),
+                        function_call=SimpleNamespace(name=None, arguments='line\\n"}'),
                     ),
-                ),
+                )
             ],
             usage=None,
         )
@@ -301,7 +267,7 @@ def _fake_chat_stream_legacy_function_call_chunks():
                         tool_calls=None,
                         function_call=None,
                     ),
-                ),
+                )
             ],
             usage=SimpleNamespace(prompt_tokens=10, completion_tokens=5, total_tokens=15),
         )
@@ -323,14 +289,12 @@ async def test_openai_compat_stream_forwards_reasoning_deltas_deepseek_style() -
     async def on_content(d: str) -> None:
         content.append(d)
 
-    with patch("nanobot.providers.openai_compat_provider.AsyncOpenAI") as mock_openai:
+    with patch("vtx_claw.providers.openai_compat_provider.AsyncOpenAI") as mock_openai:
         client_instance = mock_openai.return_value
         client_instance.chat.completions.create = mock_chat
 
         provider = OpenAICompatProvider(
-            api_key="sk-test",
-            default_model="deepseek-v4-pro",
-            spec=spec,
+            api_key="sk-test", default_model="deepseek-v4-pro", spec=spec
         )
         result = await provider.chat_stream(
             messages=[{"role": "user", "content": "hi"}],
@@ -358,8 +322,7 @@ async def test_openai_compat_stream_forwards_reasoning_deltas_deepseek_style() -
     ],
 )
 async def test_openai_compat_stream_forwards_tool_call_argument_deltas(
-    provider_name: str,
-    model: str,
+    provider_name: str, model: str
 ) -> None:
     mock_chat = AsyncMock(return_value=_fake_chat_stream_tool_call_chunks())
     spec = find_by_name(provider_name)
@@ -368,15 +331,11 @@ async def test_openai_compat_stream_forwards_tool_call_argument_deltas(
     async def on_tool_delta(delta: dict) -> None:
         deltas.append(delta)
 
-    with patch("nanobot.providers.openai_compat_provider.AsyncOpenAI") as mock_openai:
+    with patch("vtx_claw.providers.openai_compat_provider.AsyncOpenAI") as mock_openai:
         client_instance = mock_openai.return_value
         client_instance.chat.completions.create = mock_chat
 
-        provider = OpenAICompatProvider(
-            api_key="sk-test",
-            default_model=model,
-            spec=spec,
-        )
+        provider = OpenAICompatProvider(api_key="sk-test", default_model=model, spec=spec)
         result = await provider.chat_stream(
             messages=[{"role": "user", "content": "write"}],
             tools=[{"type": "function", "function": {"name": "write_file"}}],
@@ -410,14 +369,12 @@ async def test_openai_compat_stream_forwards_legacy_function_call_argument_delta
     async def on_tool_delta(delta: dict) -> None:
         deltas.append(delta)
 
-    with patch("nanobot.providers.openai_compat_provider.AsyncOpenAI") as mock_openai:
+    with patch("vtx_claw.providers.openai_compat_provider.AsyncOpenAI") as mock_openai:
         client_instance = mock_openai.return_value
         client_instance.chat.completions.create = mock_chat
 
         provider = OpenAICompatProvider(
-            api_key="sk-test",
-            default_model="deepseek-chat",
-            spec=find_by_name("deepseek"),
+            api_key="sk-test", default_model="deepseek-chat", spec=find_by_name("deepseek")
         )
         result = await provider.chat_stream(
             messages=[{"role": "user", "content": "write"}],
@@ -487,7 +444,7 @@ def test_gemini_spec_keeps_openai_compat_base() -> None:
 
 async def test_openrouter_sets_default_attribution_headers() -> None:
     spec = find_by_name("openrouter")
-    with patch("nanobot.providers.openai_compat_provider.AsyncOpenAI") as mock_client_cls:
+    with patch("vtx_claw.providers.openai_compat_provider.AsyncOpenAI") as mock_client_cls:
         provider = OpenAICompatProvider(
             api_key="sk-or-test-key",
             api_base="https://openrouter.ai/api/v1",
@@ -497,22 +454,22 @@ async def test_openrouter_sets_default_attribution_headers() -> None:
         await provider._ensure_client()
 
     headers = mock_client_cls.call_args.kwargs["default_headers"]
-    assert headers["HTTP-Referer"] == "https://github.com/HKUDS/nanobot"
-    assert headers["X-OpenRouter-Title"] == "nanobot"
+    assert headers["HTTP-Referer"] == "https://github.com/HKUDS/vtx_claw"
+    assert headers["X-OpenRouter-Title"] == "vtx_claw"
     assert headers["X-OpenRouter-Categories"] == "cli-agent,personal-agent"
     assert "x-session-affinity" in headers
 
 
 async def test_openrouter_user_headers_override_default_attribution() -> None:
     spec = find_by_name("openrouter")
-    with patch("nanobot.providers.openai_compat_provider.AsyncOpenAI") as mock_client_cls:
+    with patch("vtx_claw.providers.openai_compat_provider.AsyncOpenAI") as mock_client_cls:
         provider = OpenAICompatProvider(
             api_key="sk-or-test-key",
             api_base="https://openrouter.ai/api/v1",
             default_model="anthropic/claude-sonnet-4-5",
             extra_headers={
-                "HTTP-Referer": "https://nanobot.ai",
-                "X-OpenRouter-Title": "Nanobot Pro",
+                "HTTP-Referer": "https://vtx_claw.ai",
+                "X-OpenRouter-Title": "VtxClaw Pro",
                 "X-Custom-App": "enabled",
             },
             spec=spec,
@@ -520,8 +477,8 @@ async def test_openrouter_user_headers_override_default_attribution() -> None:
         await provider._ensure_client()
 
     headers = mock_client_cls.call_args.kwargs["default_headers"]
-    assert headers["HTTP-Referer"] == "https://nanobot.ai"
-    assert headers["X-OpenRouter-Title"] == "Nanobot Pro"
+    assert headers["HTTP-Referer"] == "https://vtx_claw.ai"
+    assert headers["X-OpenRouter-Title"] == "VtxClaw Pro"
     assert headers["X-OpenRouter-Categories"] == "cli-agent,personal-agent"
     assert headers["X-Custom-App"] == "enabled"
 
@@ -532,7 +489,7 @@ async def test_openrouter_keeps_model_name_intact() -> None:
     mock_create = AsyncMock(return_value=_fake_chat_response())
     spec = find_by_name("openrouter")
 
-    with patch("nanobot.providers.openai_compat_provider.AsyncOpenAI") as MockClient:
+    with patch("vtx_claw.providers.openai_compat_provider.AsyncOpenAI") as MockClient:
         client_instance = MockClient.return_value
         client_instance.chat.completions.create = mock_create
 
@@ -543,8 +500,7 @@ async def test_openrouter_keeps_model_name_intact() -> None:
             spec=spec,
         )
         await provider.chat(
-            messages=[{"role": "user", "content": "hello"}],
-            model="anthropic/claude-sonnet-4-5",
+            messages=[{"role": "user", "content": "hello"}], model="anthropic/claude-sonnet-4-5"
         )
 
     call_kwargs = mock_create.call_args.kwargs
@@ -557,7 +513,7 @@ async def test_aihubmix_strips_model_prefix() -> None:
     mock_create = AsyncMock(return_value=_fake_chat_response())
     spec = find_by_name("aihubmix")
 
-    with patch("nanobot.providers.openai_compat_provider.AsyncOpenAI") as MockClient:
+    with patch("vtx_claw.providers.openai_compat_provider.AsyncOpenAI") as MockClient:
         client_instance = MockClient.return_value
         client_instance.chat.completions.create = mock_create
 
@@ -568,8 +524,7 @@ async def test_aihubmix_strips_model_prefix() -> None:
             spec=spec,
         )
         await provider.chat(
-            messages=[{"role": "user", "content": "hello"}],
-            model="anthropic/claude-sonnet-4-5",
+            messages=[{"role": "user", "content": "hello"}], model="anthropic/claude-sonnet-4-5"
         )
 
     call_kwargs = mock_create.call_args.kwargs
@@ -582,19 +537,14 @@ async def test_standard_provider_passes_model_through() -> None:
     mock_create = AsyncMock(return_value=_fake_chat_response())
     spec = find_by_name("deepseek")
 
-    with patch("nanobot.providers.openai_compat_provider.AsyncOpenAI") as MockClient:
+    with patch("vtx_claw.providers.openai_compat_provider.AsyncOpenAI") as MockClient:
         client_instance = MockClient.return_value
         client_instance.chat.completions.create = mock_create
 
         provider = OpenAICompatProvider(
-            api_key="sk-deepseek-test-key",
-            default_model="deepseek-chat",
-            spec=spec,
+            api_key="sk-deepseek-test-key", default_model="deepseek-chat", spec=spec
         )
-        await provider.chat(
-            messages=[{"role": "user", "content": "hello"}],
-            model="deepseek-chat",
-        )
+        await provider.chat(messages=[{"role": "user", "content": "hello"}], model="deepseek-chat")
 
     call_kwargs = mock_create.call_args.kwargs
     assert call_kwargs["model"] == "deepseek-chat"
@@ -606,7 +556,7 @@ async def test_openai_compat_preserves_extra_content_on_tool_calls() -> None:
     mock_create = AsyncMock(return_value=_fake_tool_call_response())
     spec = find_by_name("gemini")
 
-    with patch("nanobot.providers.openai_compat_provider.AsyncOpenAI") as MockClient:
+    with patch("vtx_claw.providers.openai_compat_provider.AsyncOpenAI") as MockClient:
         client_instance = MockClient.return_value
         client_instance.chat.completions.create = mock_create
 
@@ -633,7 +583,7 @@ async def test_openai_compat_preserves_extra_content_on_tool_calls() -> None:
 
 
 def test_openai_compat_parse_preserves_malformed_tool_arguments() -> None:
-    with patch("nanobot.providers.openai_compat_provider.AsyncOpenAI"):
+    with patch("vtx_claw.providers.openai_compat_provider.AsyncOpenAI"):
         provider = OpenAICompatProvider()
 
     result = provider._parse(_fake_tool_call_response_with_arguments('{path:"foo.txt"}'))
@@ -642,7 +592,7 @@ def test_openai_compat_parse_preserves_malformed_tool_arguments() -> None:
 
 
 def test_openai_compat_parse_preserves_array_tool_arguments() -> None:
-    with patch("nanobot.providers.openai_compat_provider.AsyncOpenAI"):
+    with patch("vtx_claw.providers.openai_compat_provider.AsyncOpenAI"):
         provider = OpenAICompatProvider()
 
     result = provider._parse(_fake_tool_call_response_with_arguments('["foo.txt"]'))
@@ -653,12 +603,8 @@ def test_openai_compat_parse_preserves_array_tool_arguments() -> None:
 def test_openai_model_passthrough() -> None:
     """OpenAI models pass through unchanged."""
     spec = find_by_name("openai")
-    with patch("nanobot.providers.openai_compat_provider.AsyncOpenAI"):
-        provider = OpenAICompatProvider(
-            api_key="sk-test-key",
-            default_model="gpt-4o",
-            spec=spec,
-        )
+    with patch("vtx_claw.providers.openai_compat_provider.AsyncOpenAI"):
+        provider = OpenAICompatProvider(api_key="sk-test-key", default_model="gpt-4o", spec=spec)
     assert provider.get_default_model() == "gpt-4o"
 
 
@@ -668,19 +614,16 @@ async def test_direct_openai_gpt5_uses_responses_api() -> None:
     mock_responses = AsyncMock(return_value=_fake_responses_response("from responses"))
     spec = find_by_name("openai")
 
-    with patch("nanobot.providers.openai_compat_provider.AsyncOpenAI") as MockClient:
+    with patch("vtx_claw.providers.openai_compat_provider.AsyncOpenAI") as MockClient:
         client_instance = MockClient.return_value
         client_instance.chat.completions.create = mock_chat
         client_instance.responses.create = mock_responses
 
         provider = OpenAICompatProvider(
-            api_key="sk-test-key",
-            default_model="gpt-5-chat",
-            spec=spec,
+            api_key="sk-test-key", default_model="gpt-5-chat", spec=spec
         )
         result = await provider.chat(
-            messages=[{"role": "user", "content": "hello"}],
-            model="gpt-5-chat",
+            messages=[{"role": "user", "content": "hello"}], model="gpt-5-chat"
         )
 
     assert result.content == "from responses"
@@ -699,16 +642,12 @@ async def test_direct_openai_reasoning_prefers_responses_api() -> None:
     mock_responses = AsyncMock(return_value=_fake_responses_response("reasoned"))
     spec = find_by_name("openai")
 
-    with patch("nanobot.providers.openai_compat_provider.AsyncOpenAI") as MockClient:
+    with patch("vtx_claw.providers.openai_compat_provider.AsyncOpenAI") as MockClient:
         client_instance = MockClient.return_value
         client_instance.chat.completions.create = mock_chat
         client_instance.responses.create = mock_responses
 
-        provider = OpenAICompatProvider(
-            api_key="sk-test-key",
-            default_model="gpt-4o",
-            spec=spec,
-        )
+        provider = OpenAICompatProvider(api_key="sk-test-key", default_model="gpt-4o", spec=spec)
         await provider.chat(
             messages=[{"role": "user", "content": "hello"}],
             model="gpt-4o",
@@ -728,20 +667,13 @@ async def test_direct_openai_gpt4o_stays_on_chat_completions() -> None:
     mock_responses = AsyncMock(return_value=_fake_responses_response())
     spec = find_by_name("openai")
 
-    with patch("nanobot.providers.openai_compat_provider.AsyncOpenAI") as MockClient:
+    with patch("vtx_claw.providers.openai_compat_provider.AsyncOpenAI") as MockClient:
         client_instance = MockClient.return_value
         client_instance.chat.completions.create = mock_chat
         client_instance.responses.create = mock_responses
 
-        provider = OpenAICompatProvider(
-            api_key="sk-test-key",
-            default_model="gpt-4o",
-            spec=spec,
-        )
-        await provider.chat(
-            messages=[{"role": "user", "content": "hello"}],
-            model="gpt-4o",
-        )
+        provider = OpenAICompatProvider(api_key="sk-test-key", default_model="gpt-4o", spec=spec)
+        await provider.chat(messages=[{"role": "user", "content": "hello"}], model="gpt-4o")
 
     mock_chat.assert_awaited_once()
     mock_responses.assert_not_awaited()
@@ -753,7 +685,7 @@ async def test_openrouter_gpt5_stays_on_chat_completions() -> None:
     mock_responses = AsyncMock(return_value=_fake_responses_response())
     spec = find_by_name("openrouter")
 
-    with patch("nanobot.providers.openai_compat_provider.AsyncOpenAI") as MockClient:
+    with patch("vtx_claw.providers.openai_compat_provider.AsyncOpenAI") as MockClient:
         client_instance = MockClient.return_value
         client_instance.chat.completions.create = mock_chat
         client_instance.responses.create = mock_responses
@@ -764,10 +696,7 @@ async def test_openrouter_gpt5_stays_on_chat_completions() -> None:
             default_model="openai/gpt-5",
             spec=spec,
         )
-        await provider.chat(
-            messages=[{"role": "user", "content": "hello"}],
-            model="openai/gpt-5",
-        )
+        await provider.chat(messages=[{"role": "user", "content": "hello"}], model="openai/gpt-5")
 
     mock_chat.assert_awaited_once()
     mock_responses.assert_not_awaited()
@@ -779,19 +708,16 @@ async def test_direct_openai_streaming_gpt5_uses_responses_api() -> None:
     mock_responses = AsyncMock(return_value=_fake_responses_stream("hi"))
     spec = find_by_name("openai")
 
-    with patch("nanobot.providers.openai_compat_provider.AsyncOpenAI") as MockClient:
+    with patch("vtx_claw.providers.openai_compat_provider.AsyncOpenAI") as MockClient:
         client_instance = MockClient.return_value
         client_instance.chat.completions.create = mock_chat
         client_instance.responses.create = mock_responses
 
         provider = OpenAICompatProvider(
-            api_key="sk-test-key",
-            default_model="gpt-5-chat",
-            spec=spec,
+            api_key="sk-test-key", default_model="gpt-5-chat", spec=spec
         )
         result = await provider.chat_stream(
-            messages=[{"role": "user", "content": "hello"}],
-            model="gpt-5-chat",
+            messages=[{"role": "user", "content": "hello"}], model="gpt-5-chat"
         )
 
     assert result.content == "hi"
@@ -808,19 +734,16 @@ async def test_direct_openai_responses_404_falls_back_to_chat_completions() -> N
     )
     spec = find_by_name("openai")
 
-    with patch("nanobot.providers.openai_compat_provider.AsyncOpenAI") as MockClient:
+    with patch("vtx_claw.providers.openai_compat_provider.AsyncOpenAI") as MockClient:
         client_instance = MockClient.return_value
         client_instance.chat.completions.create = mock_chat
         client_instance.responses.create = mock_responses
 
         provider = OpenAICompatProvider(
-            api_key="sk-test-key",
-            default_model="gpt-5-chat",
-            spec=spec,
+            api_key="sk-test-key", default_model="gpt-5-chat", spec=spec
         )
         result = await provider.chat(
-            messages=[{"role": "user", "content": "hello"}],
-            model="gpt-5-chat",
+            messages=[{"role": "user", "content": "hello"}], model="gpt-5-chat"
         )
 
     assert result.content == "from chat"
@@ -834,22 +757,19 @@ async def test_direct_openai_open_circuit_skips_responses_api() -> None:
     mock_responses = AsyncMock(return_value=_fake_responses_response("from responses"))
     spec = find_by_name("openai")
 
-    with patch("nanobot.providers.openai_compat_provider.AsyncOpenAI") as MockClient:
+    with patch("vtx_claw.providers.openai_compat_provider.AsyncOpenAI") as MockClient:
         client_instance = MockClient.return_value
         client_instance.chat.completions.create = mock_chat
         client_instance.responses.create = mock_responses
 
         provider = OpenAICompatProvider(
-            api_key="sk-test-key",
-            default_model="gpt-5-chat",
-            spec=spec,
+            api_key="sk-test-key", default_model="gpt-5-chat", spec=spec
         )
         for _ in range(3):
             provider._record_responses_failure("gpt-5-chat", None)
 
         result = await provider.chat(
-            messages=[{"role": "user", "content": "hello"}],
-            model="gpt-5-chat",
+            messages=[{"role": "user", "content": "hello"}], model="gpt-5-chat"
         )
 
     assert result.content == "from chat"
@@ -867,19 +787,16 @@ async def test_direct_openai_stream_responses_unsupported_param_falls_back() -> 
     )
     spec = find_by_name("openai")
 
-    with patch("nanobot.providers.openai_compat_provider.AsyncOpenAI") as MockClient:
+    with patch("vtx_claw.providers.openai_compat_provider.AsyncOpenAI") as MockClient:
         client_instance = MockClient.return_value
         client_instance.chat.completions.create = mock_chat
         client_instance.responses.create = mock_responses
 
         provider = OpenAICompatProvider(
-            api_key="sk-test-key",
-            default_model="gpt-5-chat",
-            spec=spec,
+            api_key="sk-test-key", default_model="gpt-5-chat", spec=spec
         )
         result = await provider.chat_stream(
-            messages=[{"role": "user", "content": "hello"}],
-            model="gpt-5-chat",
+            messages=[{"role": "user", "content": "hello"}], model="gpt-5-chat"
         )
 
     assert result.content == "fallback stream"
@@ -893,19 +810,16 @@ async def test_direct_openai_responses_rate_limit_does_not_fallback() -> None:
     mock_responses = AsyncMock(side_effect=_FakeResponsesError(429, "rate limit"))
     spec = find_by_name("openai")
 
-    with patch("nanobot.providers.openai_compat_provider.AsyncOpenAI") as MockClient:
+    with patch("vtx_claw.providers.openai_compat_provider.AsyncOpenAI") as MockClient:
         client_instance = MockClient.return_value
         client_instance.chat.completions.create = mock_chat
         client_instance.responses.create = mock_responses
 
         provider = OpenAICompatProvider(
-            api_key="sk-test-key",
-            default_model="gpt-5-chat",
-            spec=spec,
+            api_key="sk-test-key", default_model="gpt-5-chat", spec=spec
         )
         result = await provider.chat(
-            messages=[{"role": "user", "content": "hello"}],
-            model="gpt-5-chat",
+            messages=[{"role": "user", "content": "hello"}], model="gpt-5-chat"
         )
 
     assert result.finish_reason == "error"
@@ -922,11 +836,9 @@ def test_openai_compat_supports_temperature_matches_reasoning_model_rules() -> N
 
 def test_openai_compat_build_kwargs_uses_gpt5_safe_parameters() -> None:
     spec = find_by_name("openai")
-    with patch("nanobot.providers.openai_compat_provider.AsyncOpenAI"):
+    with patch("vtx_claw.providers.openai_compat_provider.AsyncOpenAI"):
         provider = OpenAICompatProvider(
-            api_key="sk-test-key",
-            default_model="gpt-5-chat",
-            spec=spec,
+            api_key="sk-test-key", default_model="gpt-5-chat", spec=spec
         )
 
     kwargs = provider._build_kwargs(
@@ -958,16 +870,11 @@ def test_openai_compat_build_kwargs_uses_gpt5_safe_parameters() -> None:
     ],
 )
 def test_openai_compat_build_kwargs_max_completion_tokens_by_model_name(
-    model_name: str,
-    expected_key: str,
+    model_name: str, expected_key: str
 ) -> None:
     spec = find_by_name("custom")
-    with patch("nanobot.providers.openai_compat_provider.AsyncOpenAI"):
-        provider = OpenAICompatProvider(
-            api_key="sk-test-key",
-            default_model=model_name,
-            spec=spec,
-        )
+    with patch("vtx_claw.providers.openai_compat_provider.AsyncOpenAI"):
+        provider = OpenAICompatProvider(api_key="sk-test-key", default_model=model_name, spec=spec)
 
     kwargs = provider._build_kwargs(
         messages=[{"role": "user", "content": "hello"}],
@@ -979,13 +886,15 @@ def test_openai_compat_build_kwargs_max_completion_tokens_by_model_name(
         tool_choice=None,
     )
 
-    other_key = "max_tokens" if expected_key == "max_completion_tokens" else "max_completion_tokens"
+    other_key = (
+        "max_tokens" if expected_key == "max_completion_tokens" else "max_completion_tokens"
+    )
     assert kwargs[expected_key] == 2048
     assert other_key not in kwargs
 
 
 def test_openai_compat_preserves_message_level_reasoning_fields() -> None:
-    with patch("nanobot.providers.openai_compat_provider.AsyncOpenAI"):
+    with patch("vtx_claw.providers.openai_compat_provider.AsyncOpenAI"):
         provider = OpenAICompatProvider()
 
     sanitized = provider._sanitize_messages(
@@ -1018,11 +927,9 @@ def test_openai_compat_preserves_message_level_reasoning_fields() -> None:
 
 
 def _deepseek_kwargs(messages: list[dict]) -> dict:
-    with patch("nanobot.providers.openai_compat_provider.AsyncOpenAI"):
+    with patch("vtx_claw.providers.openai_compat_provider.AsyncOpenAI"):
         provider = OpenAICompatProvider(
-            api_key="sk-test",
-            default_model="deepseek-v4-flash",
-            spec=find_by_name("deepseek"),
+            api_key="sk-test", default_model="deepseek-v4-flash", spec=find_by_name("deepseek")
         )
 
     return provider._build_kwargs(
@@ -1037,11 +944,7 @@ def _deepseek_kwargs(messages: list[dict]) -> dict:
 
 
 def _tool_call(call_id: str) -> dict:
-    return {
-        "id": call_id,
-        "type": "function",
-        "function": {"name": "my", "arguments": "{}"},
-    }
+    return {"id": call_id, "type": "function", "function": {"name": "my", "arguments": "{}"}}
 
 
 def test_deepseek_thinking_backfills_missing_reasoning_content_on_tool_history() -> None:
@@ -1090,7 +993,7 @@ def test_deepseek_thinking_keeps_tool_history_with_reasoning_content() -> None:
 
 
 def test_openai_compat_preserves_tool_call_ids_after_consecutive_assistant_messages() -> None:
-    with patch("nanobot.providers.openai_compat_provider.AsyncOpenAI"):
+    with patch("vtx_claw.providers.openai_compat_provider.AsyncOpenAI"):
         provider = OpenAICompatProvider()
 
     sanitized = provider._sanitize_messages(
@@ -1125,7 +1028,7 @@ def test_openai_compat_preserves_tool_call_ids_after_consecutive_assistant_messa
 
 
 def test_mistral_normalizes_tool_call_ids_after_consecutive_assistant_messages() -> None:
-    with patch("nanobot.providers.openai_compat_provider.AsyncOpenAI"):
+    with patch("vtx_claw.providers.openai_compat_provider.AsyncOpenAI"):
         provider = OpenAICompatProvider(spec=find_by_name("mistral"))
 
     sanitized = provider._sanitize_messages(
@@ -1160,7 +1063,7 @@ def test_mistral_normalizes_tool_call_ids_after_consecutive_assistant_messages()
 
 
 def test_openai_compat_deduplicates_duplicate_tool_call_ids_in_history() -> None:
-    with patch("nanobot.providers.openai_compat_provider.AsyncOpenAI"):
+    with patch("vtx_claw.providers.openai_compat_provider.AsyncOpenAI"):
         provider = OpenAICompatProvider()
 
     sanitized = provider._sanitize_messages(
@@ -1197,7 +1100,7 @@ def test_openai_compat_deduplicates_duplicate_tool_call_ids_in_history() -> None
 
 
 def test_openai_compat_stringifies_dict_tool_arguments() -> None:
-    with patch("nanobot.providers.openai_compat_provider.AsyncOpenAI"):
+    with patch("vtx_claw.providers.openai_compat_provider.AsyncOpenAI"):
         provider = OpenAICompatProvider()
 
     sanitized = provider._sanitize_messages(
@@ -1223,7 +1126,7 @@ def test_openai_compat_stringifies_dict_tool_arguments() -> None:
 
 
 def test_openai_compat_repairs_object_like_history_tool_arguments_string() -> None:
-    with patch("nanobot.providers.openai_compat_provider.AsyncOpenAI"):
+    with patch("vtx_claw.providers.openai_compat_provider.AsyncOpenAI"):
         provider = OpenAICompatProvider()
 
     sanitized = provider._sanitize_messages(
@@ -1249,7 +1152,7 @@ def test_openai_compat_repairs_object_like_history_tool_arguments_string() -> No
 
 
 def test_openai_compat_defaults_missing_tool_arguments_to_empty_object() -> None:
-    with patch("nanobot.providers.openai_compat_provider.AsyncOpenAI"):
+    with patch("vtx_claw.providers.openai_compat_provider.AsyncOpenAI"):
         provider = OpenAICompatProvider()
 
     sanitized = provider._sanitize_messages(
@@ -1258,13 +1161,7 @@ def test_openai_compat_defaults_missing_tool_arguments_to_empty_object() -> None
             {
                 "role": "assistant",
                 "content": "",
-                "tool_calls": [
-                    {
-                        "id": "call_1",
-                        "type": "function",
-                        "function": {"name": "exec"},
-                    }
-                ],
+                "tool_calls": [{"id": "call_1", "type": "function", "function": {"name": "exec"}}],
             },
             {"role": "tool", "tool_call_id": "call_1", "name": "exec", "content": "ok"},
             {"role": "user", "content": "done"},
@@ -1276,22 +1173,17 @@ def test_openai_compat_defaults_missing_tool_arguments_to_empty_object() -> None
 
 @pytest.mark.asyncio
 async def test_openai_compat_stream_watchdog_returns_error_on_stall(monkeypatch) -> None:
-    monkeypatch.setenv("NANOBOT_STREAM_IDLE_TIMEOUT_S", "0.01")
+    monkeypatch.setenv("VTX_CLAW_STREAM_IDLE_TIMEOUT_S", "0.01")
     mock_create = AsyncMock(return_value=_StalledStream())
     spec = find_by_name("openai")
 
-    with patch("nanobot.providers.openai_compat_provider.AsyncOpenAI") as MockClient:
+    with patch("vtx_claw.providers.openai_compat_provider.AsyncOpenAI") as MockClient:
         client_instance = MockClient.return_value
         client_instance.chat.completions.create = mock_create
 
-        provider = OpenAICompatProvider(
-            api_key="sk-test-key",
-            default_model="gpt-4o",
-            spec=spec,
-        )
+        provider = OpenAICompatProvider(api_key="sk-test-key", default_model="gpt-4o", spec=spec)
         result = await provider.chat_stream(
-            messages=[{"role": "user", "content": "hello"}],
-            model="gpt-4o",
+            messages=[{"role": "user", "content": "hello"}], model="gpt-4o"
         )
 
     assert result.finish_reason == "error"
@@ -1306,7 +1198,7 @@ async def test_openai_compat_stream_watchdog_returns_error_on_stall(monkeypatch)
 
 def _build_kwargs_for(provider_name: str, model: str, reasoning_effort=None):
     spec = find_by_name(provider_name)
-    with patch("nanobot.providers.openai_compat_provider.AsyncOpenAI"):
+    with patch("vtx_claw.providers.openai_compat_provider.AsyncOpenAI"):
         p = OpenAICompatProvider(api_key="k", default_model=model, spec=spec)
     return p._build_kwargs(
         messages=[{"role": "user", "content": "hi"}],
@@ -1414,7 +1306,7 @@ def test_deepseek_backfills_reasoning_content_on_legacy_tool_call_messages() -> 
     messages with tool_calls but no reasoning_content. DeepSeek V4 rejects these
     with 400. _build_kwargs must backfill reasoning_content='' on them."""
     spec = find_by_name("deepseek")
-    with patch("nanobot.providers.openai_compat_provider.AsyncOpenAI"):
+    with patch("vtx_claw.providers.openai_compat_provider.AsyncOpenAI"):
         p = OpenAICompatProvider(api_key="k", default_model="deepseek-v4-pro", spec=spec)
     messages = [
         {"role": "user", "content": "search for news"},
@@ -1451,7 +1343,7 @@ def test_deepseek_backfills_reasoning_content_on_legacy_tool_call_messages() -> 
 def test_backfill_does_not_touch_messages_when_thinking_explicitly_off() -> None:
     """When thinking is explicitly disabled, legacy messages must NOT be altered."""
     spec = find_by_name("deepseek")
-    with patch("nanobot.providers.openai_compat_provider.AsyncOpenAI"):
+    with patch("vtx_claw.providers.openai_compat_provider.AsyncOpenAI"):
         p = OpenAICompatProvider(api_key="k", default_model="deepseek-v4-pro", spec=spec)
     messages = [
         {"role": "user", "content": "hi"},
@@ -1487,7 +1379,7 @@ def test_backfill_does_not_touch_messages_when_thinking_explicitly_off() -> None
 def test_deepseek_v4_backfills_incomplete_reasoning_history_when_effort_implicit() -> None:
     """DeepSeek-V4 reasons natively: backfill even without explicit reasoning_effort."""
     spec = find_by_name("deepseek")
-    with patch("nanobot.providers.openai_compat_provider.AsyncOpenAI"):
+    with patch("vtx_claw.providers.openai_compat_provider.AsyncOpenAI"):
         p = OpenAICompatProvider(api_key="k", default_model="deepseek-v4-pro", spec=spec)
     messages = [
         {"role": "system", "content": "system"},
@@ -1532,7 +1424,7 @@ def test_deepseek_chat_keeps_tool_history_when_effort_implicit() -> None:
     """Non-thinking deepseek-chat must keep history untouched and must NOT
     receive backfilled reasoning_content (#3554, #3584)."""
     spec = find_by_name("deepseek")
-    with patch("nanobot.providers.openai_compat_provider.AsyncOpenAI"):
+    with patch("vtx_claw.providers.openai_compat_provider.AsyncOpenAI"):
         p = OpenAICompatProvider(api_key="k", default_model="deepseek-chat", spec=spec)
     messages = [
         {"role": "user", "content": "hi"},
@@ -1570,17 +1462,14 @@ def test_deepseek_chat_keeps_tool_history_when_effort_implicit() -> None:
 def test_deepseek_coerces_list_content_to_string() -> None:
     """DeepSeek chat endpoint expects message.content to be a string."""
     spec = find_by_name("deepseek")
-    with patch("nanobot.providers.openai_compat_provider.AsyncOpenAI"):
+    with patch("vtx_claw.providers.openai_compat_provider.AsyncOpenAI"):
         p = OpenAICompatProvider(api_key="k", default_model="deepseek-chat", spec=spec)
 
     kw = p._build_kwargs(
         messages=[
             {
                 "role": "user",
-                "content": [
-                    {"type": "text", "text": "hello "},
-                    {"type": "text", "text": "world"},
-                ],
+                "content": [{"type": "text", "text": "hello "}, {"type": "text", "text": "world"}],
             }
         ],
         tools=None,
@@ -1599,18 +1488,11 @@ def test_deepseek_coerces_list_content_to_string() -> None:
 def test_non_deepseek_keeps_list_content() -> None:
     """Only DeepSeek should force string content; OpenAI-compatible providers keep blocks."""
     spec = find_by_name("openai")
-    with patch("nanobot.providers.openai_compat_provider.AsyncOpenAI"):
+    with patch("vtx_claw.providers.openai_compat_provider.AsyncOpenAI"):
         p = OpenAICompatProvider(api_key="k", default_model="gpt-4o", spec=spec)
 
     kw = p._build_kwargs(
-        messages=[
-            {
-                "role": "user",
-                "content": [
-                    {"type": "text", "text": "hello"},
-                ],
-            }
-        ],
+        messages=[{"role": "user", "content": [{"type": "text", "text": "hello"}]}],
         tools=None,
         model="gpt-4o",
         max_tokens=1024,
@@ -1779,7 +1661,7 @@ def test_dashscope_thinking_disabled_for_none_string() -> None:
 def test_deepseek_no_backfill_when_reasoning_effort_none_string() -> None:
     """reasoning_effort='none' must NOT trigger reasoning_content backfill (thinking inactive)."""
     spec = find_by_name("deepseek")
-    with patch("nanobot.providers.openai_compat_provider.AsyncOpenAI"):
+    with patch("vtx_claw.providers.openai_compat_provider.AsyncOpenAI"):
         p = OpenAICompatProvider(api_key="k", default_model="deepseek-v4-pro", spec=spec)
     messages = [
         {"role": "user", "content": "hi"},

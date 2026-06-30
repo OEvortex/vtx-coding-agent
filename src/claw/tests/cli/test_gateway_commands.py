@@ -4,10 +4,10 @@ import typer
 from rich.console import Console
 from typer.testing import CliRunner
 
-from nanobot.cli.gateway import create_gateway_app
-from nanobot.config.schema import Config
-from nanobot.gateway import GatewayStartOptions, GatewayStatus, RuntimeResult
-from nanobot.gateway.service import GatewayServiceOptions, GatewayServiceResult
+from vtx_claw.cli.gateway import create_gateway_app
+from vtx_claw.config.schema import Config
+from vtx_claw.gateway import GatewayStartOptions, GatewayStatus, RuntimeResult
+from vtx_claw.gateway.service import GatewayServiceOptions, GatewayServiceResult
 
 runner = CliRunner()
 
@@ -67,9 +67,9 @@ class FakeServiceInstaller:
             True,
             "service_install_dry_run" if dry_run else "service_installed",
             "systemd",
-            self.tmp_path / "nanobot-gateway.service",
+            self.tmp_path / "vtx_claw-gateway.service",
             (("systemctl", "--user", "daemon-reload"),),
-            "[Unit]\nDescription=Nanobot Gateway\n",
+            "[Unit]\nDescription=VtxClaw Gateway\n",
         )
 
     def uninstall(self, *, name: str, manager: str, dry_run: bool) -> GatewayServiceResult:
@@ -79,8 +79,8 @@ class FakeServiceInstaller:
             True,
             "service_uninstall_dry_run" if dry_run else "service_uninstalled",
             "systemd",
-            self.tmp_path / "nanobot-gateway.service",
-            (("systemctl", "--user", "disable", "--now", "nanobot-gateway.service"),),
+            self.tmp_path / "vtx_claw-gateway.service",
+            (("systemctl", "--user", "disable", "--now", "vtx_claw-gateway.service"),),
         )
 
 
@@ -194,7 +194,9 @@ def test_gateway_install_service_uses_service_installer(tmp_path):
     config.gateway.port = 18794
     app, _runtime, service, _calls = _test_app(tmp_path, config=config)
 
-    result = runner.invoke(app, ["gateway", "install-service", "--dry-run", "--manager", "systemd"])
+    result = runner.invoke(
+        app, ["gateway", "install-service", "--dry-run", "--manager", "systemd"]
+    )
 
     assert result.exit_code == 0
     assert "Gateway service dry run" in result.stdout

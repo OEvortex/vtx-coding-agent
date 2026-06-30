@@ -1,7 +1,7 @@
-# nanobot WebUI Source
+# vtx-claw WebUI Source
 
-This directory contains the React/TypeScript source for the nanobot WebUI. If
-you installed `nanobot-ai` from PyPI and only want to use the bundled browser UI,
+This directory contains the React/TypeScript source for the vtx-claw WebUI. If
+you installed `vtx-claw` from PyPI and only want to use the bundled browser UI,
 read the user guide in [`docs/webui.md`](../docs/webui.md). You do not need
 Node.js, Bun, Vite, or anything in this directory unless you are changing the
 frontend.
@@ -25,12 +25,12 @@ reads session metadata from the embedded REST surface on the same port.
 
 ```text
 webui/                 source tree (this directory)
-nanobot/web/dist/      build output served by the gateway
+vtx-claw/web/dist/      build output served by the gateway
 ```
 
 ## Develop the WebUI (Vite HMR)
 
-### 1. Install nanobot from source
+### 1. Install vtx-claw from source
 
 From the repository root:
 
@@ -42,7 +42,7 @@ python -m pip install -e .
 
 ### 2. Enable the WebSocket channel
 
-In `~/.nanobot/config.json`, merge:
+In `~/.vtx-claw/config.json`, merge:
 
 ```json
 { "channels": { "websocket": { "enabled": true } } }
@@ -53,7 +53,7 @@ In `~/.nanobot/config.json`, merge:
 In one terminal:
 
 ```bash
-nanobot gateway
+vtx-claw gateway
 ```
 
 ### 4. Start the WebUI dev server
@@ -73,7 +73,7 @@ By default the dev server proxies `/api`, `/webui`, `/auth`, and WebSocket traff
 If your gateway listens on a non-default port, point the dev server at it:
 
 ```bash
-NANOBOT_API_URL=http://127.0.0.1:9000 bun run dev
+VTX_CLAW_API_URL=http://127.0.0.1:9000 bun run dev
 ```
 
 ## Build for packaged runtime
@@ -84,7 +84,7 @@ If you want to preview the production bundle locally without rebuilding the whee
 
 ```bash
 cd webui
-bun run build          # writes to ../nanobot/web/dist
+bun run build          # writes to ../vtx-claw/web/dist
 ```
 
 The gateway picks up the new bundle on the next restart.

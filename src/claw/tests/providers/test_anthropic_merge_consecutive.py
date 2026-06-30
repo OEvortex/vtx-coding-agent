@@ -1,6 +1,6 @@
 """Tests for AnthropicProvider._merge_consecutive."""
 
-from nanobot.providers.anthropic_provider import AnthropicProvider
+from vtx_claw.providers.anthropic_provider import AnthropicProvider
 
 
 class TestMergeConsecutive:
@@ -29,10 +29,7 @@ class TestMergeConsecutive:
 
     def test_trailing_assistant_stripped(self):
         """Anthropic rejects prefill — trailing assistant must be removed."""
-        msgs = [
-            {"role": "user", "content": "hello"},
-            {"role": "assistant", "content": "hi"},
-        ]
+        msgs = [{"role": "user", "content": "hello"}, {"role": "assistant", "content": "hi"}]
         result = AnthropicProvider._merge_consecutive(msgs)
         assert len(result) == 1
         assert result[0]["role"] == "user"
@@ -72,10 +69,7 @@ class TestMergeConsecutive:
     def test_all_assistants_collapse_then_rerouted(self):
         """Consecutive trailing assistants merge into one, which is then
         rerouted as a user turn carrying the merged content."""
-        msgs = [
-            {"role": "assistant", "content": "a"},
-            {"role": "assistant", "content": "b"},
-        ]
+        msgs = [{"role": "assistant", "content": "a"}, {"role": "assistant", "content": "b"}]
         result = AnthropicProvider._merge_consecutive(msgs)
         assert len(result) == 1
         assert result[0]["role"] == "user"
@@ -124,15 +118,11 @@ class TestMergeConsecutive:
         msgs = [
             {
                 "role": "assistant",
-                "content": [
-                    {"type": "tool_use", "id": "t1", "name": "search", "input": {}},
-                ],
+                "content": [{"type": "tool_use", "id": "t1", "name": "search", "input": {}}],
             },
             {
                 "role": "user",
-                "content": [
-                    {"type": "tool_result", "tool_use_id": "t1", "content": "ok"},
-                ],
+                "content": [{"type": "tool_result", "tool_use_id": "t1", "content": "ok"}],
             },
         ]
         result = AnthropicProvider._merge_consecutive(msgs)

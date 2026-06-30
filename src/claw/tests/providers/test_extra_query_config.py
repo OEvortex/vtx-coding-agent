@@ -4,9 +4,9 @@ from __future__ import annotations
 
 from unittest.mock import MagicMock, patch
 
-from nanobot.config.schema import Config, ProviderConfig
-from nanobot.providers.factory import provider_signature
-from nanobot.providers.openai_compat_provider import OpenAICompatProvider
+from vtx_claw.config.schema import Config, ProviderConfig
+from vtx_claw.providers.factory import provider_signature
+from vtx_claw.providers.openai_compat_provider import OpenAICompatProvider
 
 
 class TestExtraQuerySchema:
@@ -44,13 +44,9 @@ class TestExtraQueryBuildClient:
     def test_build_client_passes_default_query(self) -> None:
         mock_client = MagicMock()
         with patch(
-            "nanobot.providers.openai_compat_provider.AsyncOpenAI",
-            return_value=mock_client,
+            "vtx_claw.providers.openai_compat_provider.AsyncOpenAI", return_value=mock_client
         ) as mock_async_openai:
-            provider = OpenAICompatProvider(
-                api_key="test",
-                extra_query={"api-version": "v1"},
-            )
+            provider = OpenAICompatProvider(api_key="test", extra_query={"api-version": "v1"})
             provider._build_client()
 
         assert provider._client is mock_client
@@ -59,8 +55,7 @@ class TestExtraQueryBuildClient:
     def test_build_client_passes_no_default_query_when_empty(self) -> None:
         mock_client = MagicMock()
         with patch(
-            "nanobot.providers.openai_compat_provider.AsyncOpenAI",
-            return_value=mock_client,
+            "vtx_claw.providers.openai_compat_provider.AsyncOpenAI", return_value=mock_client
         ) as mock_async_openai:
             provider = OpenAICompatProvider(api_key="test")
             provider._build_client()
@@ -76,24 +71,12 @@ class TestProviderSignatureIncludesExtraQuery:
     def test_provider_signature_tracks_extra_query(self) -> None:
         base = {
             "agents": {"defaults": {"modelPreset": "fast"}},
-            "modelPresets": {
-                "fast": {"model": "custom/test-model", "provider": "custom"},
-            },
-            "providers": {
-                "custom": {
-                    "apiKey": "test-key",
-                    "extra_query": None,
-                },
-            },
+            "modelPresets": {"fast": {"model": "custom/test-model", "provider": "custom"}},
+            "providers": {"custom": {"apiKey": "test-key", "extra_query": None}},
         }
         changed_query = {
             **base,
-            "providers": {
-                "custom": {
-                    "apiKey": "test-key",
-                    "extra_query": {"api-version": "v1"},
-                },
-            },
+            "providers": {"custom": {"apiKey": "test-key", "extra_query": {"api-version": "v1"}}},
         }
 
         signature = provider_signature(Config.model_validate(base))

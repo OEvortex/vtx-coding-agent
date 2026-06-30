@@ -5,11 +5,8 @@ from __future__ import annotations
 from typing import Any
 from unittest.mock import MagicMock
 
-from nanobot.providers.openai_compat_provider import (
-    OpenAICompatProvider,
-    _deep_merge,
-)
-from nanobot.providers.registry import find_by_name
+from vtx_claw.providers.openai_compat_provider import OpenAICompatProvider, _deep_merge
+from vtx_claw.providers.registry import find_by_name
 
 # ---------------------------------------------------------------------------
 # _deep_merge unit tests
@@ -84,9 +81,7 @@ class TestExtraBodyInit:
 
 def _make_provider(extra_body: dict[str, Any] | None = None) -> OpenAICompatProvider:
     return OpenAICompatProvider(
-        api_key="test-key",
-        default_model="test-model",
-        extra_body=extra_body,
+        api_key="test-key", default_model="test-model", extra_body=extra_body
     )
 
 
@@ -121,13 +116,11 @@ class TestBuildKwargsExtraBody:
             reasoning_effort=None,
             tool_choice=None,
         )
-        assert kwargs["extra_body"] == {
-            "chat_template_kwargs": {"enable_thinking": False},
-        }
+        assert kwargs["extra_body"] == {"chat_template_kwargs": {"enable_thinking": False}}
 
     def test_extra_body_merges_with_thinking(self) -> None:
         """Config extra_body should merge with (and override) thinking params."""
-        from nanobot.providers.registry import ProviderSpec
+        from vtx_claw.providers.registry import ProviderSpec
 
         spec = MagicMock(spec=ProviderSpec)
         spec.thinking_style = "deepseek"
@@ -162,11 +155,7 @@ class TestBuildKwargsExtraBody:
 
     def test_nested_extra_body_does_not_clobber_siblings(self) -> None:
         """Nested dict merge should preserve sibling keys."""
-        provider = _make_provider(
-            {
-                "chat_template_kwargs": {"enable_thinking": False},
-            }
-        )
+        provider = _make_provider({"chat_template_kwargs": {"enable_thinking": False}})
         # Simulate internal code having set a sibling key
         # by manually calling _build_kwargs — the internal logic
         # doesn't set chat_template_kwargs, so we test the merge path
@@ -220,10 +209,7 @@ class TestBuildResponsesBodyExtraBody:
             api_key="test-key",
             default_model="gpt-5",
             spec=find_by_name("openai"),
-            extra_body={
-                "metadata": {"source": "test"},
-                "parallel_tool_calls": False,
-            },
+            extra_body={"metadata": {"source": "test"}, "parallel_tool_calls": False},
         )
 
         body = provider._build_responses_body(
@@ -282,10 +268,7 @@ class TestBuildResponsesBodyExtraBody:
             default_model="gpt-5",
             spec=find_by_name("openai"),
             extra_body={
-                "include": [
-                    "reasoning.encrypted_content",
-                    "web_search_call.action.sources",
-                ],
+                "include": ["reasoning.encrypted_content", "web_search_call.action.sources"]
             },
         )
 
@@ -299,10 +282,7 @@ class TestBuildResponsesBodyExtraBody:
             tool_choice=None,
         )
 
-        assert body["include"] == [
-            "reasoning.encrypted_content",
-            "web_search_call.action.sources",
-        ]
+        assert body["include"] == ["reasoning.encrypted_content", "web_search_call.action.sources"]
 
 
 # ---------------------------------------------------------------------------
@@ -314,19 +294,19 @@ class TestSchemaConfig:
     """Verify ProviderConfig accepts extra_body."""
 
     def test_default_is_none(self) -> None:
-        from nanobot.config.schema import ProviderConfig
+        from vtx_claw.config.schema import ProviderConfig
 
         config = ProviderConfig()
         assert config.extra_body is None
 
     def test_accepts_dict(self) -> None:
-        from nanobot.config.schema import ProviderConfig
+        from vtx_claw.config.schema import ProviderConfig
 
         config = ProviderConfig(extra_body={"guided_json": {"type": "object"}})
         assert config.extra_body == {"guided_json": {"type": "object"}}
 
     def test_nested_dict(self) -> None:
-        from nanobot.config.schema import ProviderConfig
+        from vtx_claw.config.schema import ProviderConfig
 
         config = ProviderConfig(extra_body={"chat_template_kwargs": {"enable_thinking": False}})
         assert config.extra_body["chat_template_kwargs"]["enable_thinking"] is False

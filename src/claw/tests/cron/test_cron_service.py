@@ -4,8 +4,8 @@ import time
 
 import pytest
 
-from nanobot.cron.service import CronJobSkippedError, CronService
-from nanobot.cron.types import CronJob, CronPayload, CronSchedule
+from vtx_claw.cron.service import CronJobSkippedError, CronService
+from vtx_claw.cron.types import CronJob, CronPayload, CronSchedule
 
 
 async def _wait_until(predicate, *, timeout: float = 1.0, interval: float = 0.01) -> None:
@@ -59,14 +59,9 @@ async def test_unbound_agent_jobs_are_disabled_on_add(tmp_path) -> None:
     async def on_job(job):
         called.append(job.id)
 
-    service = CronService(
-        tmp_path / "cron" / "jobs.json",
-        on_job=on_job,
-    )
+    service = CronService(tmp_path / "cron" / "jobs.json", on_job=on_job)
     job = service.add_job(
-        name="unbound",
-        schedule=CronSchedule(kind="every", every_ms=60_000),
-        message="hello",
+        name="unbound", schedule=CronSchedule(kind="every", every_ms=60_000), message="hello"
     )
 
     assert job.enabled is False
@@ -90,10 +85,7 @@ def test_unbound_agent_jobs_are_disabled_on_load(tmp_path) -> None:
                         "name": "Unbound reminder",
                         "enabled": True,
                         "schedule": {"kind": "every", "everyMs": 60_000},
-                        "payload": {
-                            "kind": "agent_turn",
-                            "message": "check status",
-                        },
+                        "payload": {"kind": "agent_turn", "message": "check status"},
                         "state": {"nextRunAtMs": 1},
                         "createdAtMs": 1,
                         "updatedAtMs": 1,
@@ -786,8 +778,7 @@ def test_update_job_changes_cron_expression(tmp_path) -> None:
         **_bound_chat(),
     )
     result = service.update_job(
-        job.id,
-        schedule=CronSchedule(kind="cron", expr="0 18 * * *", tz="UTC"),
+        job.id, schedule=CronSchedule(kind="cron", expr="0 18 * * *", tz="UTC")
     )
     assert isinstance(result, CronJob)
     assert result.schedule.expr == "0 18 * * *"
@@ -825,8 +816,7 @@ def test_update_job_validates_schedule(tmp_path) -> None:
     )
     with pytest.raises(ValueError, match="unknown timezone"):
         service.update_job(
-            job.id,
-            schedule=CronSchedule(kind="cron", expr="0 9 * * *", tz="Bad/Zone"),
+            job.id, schedule=CronSchedule(kind="cron", expr="0 9 * * *", tz="Bad/Zone")
         )
 
 
@@ -871,9 +861,7 @@ def test_update_job_offline_writes_action(tmp_path) -> None:
 def test_update_job_migrates_legacy_delivery_target(tmp_path) -> None:
     service = CronService(tmp_path / "cron" / "jobs.json")
     job = service.add_job(
-        name="sentinel",
-        schedule=CronSchedule(kind="every", every_ms=60_000),
-        message="hello",
+        name="sentinel", schedule=CronSchedule(kind="every", every_ms=60_000), message="hello"
     )
 
     result = service.update_job(job.id, channel="telegram", to="user123")

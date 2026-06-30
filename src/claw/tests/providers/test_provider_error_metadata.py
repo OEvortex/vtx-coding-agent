@@ -2,22 +2,15 @@ from types import SimpleNamespace
 
 import pytest
 
-from nanobot.providers.anthropic_provider import AnthropicProvider
-from nanobot.providers.base import LLMProvider, LLMResponse
-from nanobot.providers.openai_compat_provider import OpenAICompatProvider
+from vtx_claw.providers.anthropic_provider import AnthropicProvider
+from vtx_claw.providers.base import LLMProvider, LLMResponse
+from vtx_claw.providers.openai_compat_provider import OpenAICompatProvider
 
 
 def _fake_response(
-    *,
-    status_code: int,
-    headers: dict[str, str] | None = None,
-    text: str = "",
+    *, status_code: int, headers: dict[str, str] | None = None, text: str = ""
 ) -> SimpleNamespace:
-    return SimpleNamespace(
-        status_code=status_code,
-        headers=headers or {},
-        text=text,
-    )
+    return SimpleNamespace(status_code=status_code, headers=headers or {}, text=text)
 
 
 def test_openai_handle_error_extracts_structured_metadata() -> None:
@@ -60,8 +53,7 @@ def test_anthropic_handle_error_extracts_structured_metadata() -> None:
     err = FakeStatusError("boom")
     err.status_code = 408
     err.response = _fake_response(
-        status_code=408,
-        headers={"retry-after": "1.5", "x-should-retry": "true"},
+        status_code=408, headers={"retry-after": "1.5", "x-should-retry": "true"}
     )
     err.body = {"type": "error", "error": {"type": "rate_limit_error"}}
 

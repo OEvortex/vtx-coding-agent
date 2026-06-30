@@ -7,9 +7,9 @@ from pathlib import Path
 from typing import Any
 from unittest.mock import MagicMock
 
-from nanobot.agent.tools.base import Tool
-from nanobot.agent.tools.context import ToolContext
-from nanobot.agent.tools.loader import _SKIP_MODULES, ToolLoader
+from vtx_claw.agent.tools.base import Tool
+from vtx_claw.agent.tools.context import ToolContext
+from vtx_claw.agent.tools.loader import _SKIP_MODULES, ToolLoader
 
 
 class _MinimalTool(Tool):
@@ -133,17 +133,14 @@ def test_loader_registers_exec_with_real_tools_config(tmp_path):
     """Real config objects catch bad ctx.config attribute paths that mocks hide."""
     from types import SimpleNamespace
 
-    from nanobot.agent.tools.registry import ToolRegistry
-    from nanobot.config.schema import ToolsConfig
+    from vtx_claw.agent.tools.registry import ToolRegistry
+    from vtx_claw.config.schema import ToolsConfig
 
     ctx = ToolContext(
         config=ToolsConfig(),
         workspace=str(tmp_path),
         bus=None,
-        subagent_manager=SimpleNamespace(
-            get_running_count=lambda: 0,
-            max_concurrent_subagents=4,
-        ),
+        subagent_manager=SimpleNamespace(get_running_count=lambda: 0, max_concurrent_subagents=4),
         cron_service=None,
         timezone="UTC",
     )
@@ -158,7 +155,7 @@ def test_loader_registers_exec_with_real_tools_config(tmp_path):
 
 
 def test_fs_tool_create_builds_from_context():
-    from nanobot.agent.tools.filesystem import ReadFileTool
+    from vtx_claw.agent.tools.filesystem import ReadFileTool
 
     mock_config = MagicMock()
     mock_config.restrict_to_workspace = False
@@ -170,7 +167,7 @@ def test_fs_tool_create_builds_from_context():
 
 
 def test_fs_tool_create_respects_restrict_to_workspace():
-    from nanobot.agent.tools.filesystem import ReadFileTool
+    from vtx_claw.agent.tools.filesystem import ReadFileTool
 
     mock_config = MagicMock()
     mock_config.restrict_to_workspace = True
@@ -181,7 +178,7 @@ def test_fs_tool_create_respects_restrict_to_workspace():
 
 
 def test_fs_tool_create_respects_sandbox():
-    from nanobot.agent.tools.filesystem import ReadFileTool
+    from vtx_claw.agent.tools.filesystem import ReadFileTool
 
     mock_config = MagicMock()
     mock_config.restrict_to_workspace = False
@@ -195,7 +192,7 @@ def test_fs_tool_create_respects_sandbox():
 
 
 async def test_message_tool_create():
-    from nanobot.agent.tools.message import MessageTool
+    from vtx_claw.agent.tools.message import MessageTool
 
     mock_bus = MagicMock()
     mock_config = MagicMock()
@@ -205,7 +202,7 @@ async def test_message_tool_create():
 
 
 def test_spawn_tool_create():
-    from nanobot.agent.tools.spawn import SpawnTool
+    from vtx_claw.agent.tools.spawn import SpawnTool
 
     mock_mgr = MagicMock()
     mock_config = MagicMock()
@@ -215,7 +212,7 @@ def test_spawn_tool_create():
 
 
 def test_cron_tool_enabled_without_service():
-    from nanobot.agent.tools.cron import CronTool
+    from vtx_claw.agent.tools.cron import CronTool
 
     mock_config = MagicMock()
     ctx = ToolContext(config=mock_config, workspace="/tmp", cron_service=None)
@@ -223,7 +220,7 @@ def test_cron_tool_enabled_without_service():
 
 
 def test_cron_tool_enabled_with_service():
-    from nanobot.agent.tools.cron import CronTool
+    from vtx_claw.agent.tools.cron import CronTool
 
     mock_service = MagicMock()
     mock_config = MagicMock()
@@ -232,15 +229,12 @@ def test_cron_tool_enabled_with_service():
 
 
 def test_cron_tool_create():
-    from nanobot.agent.tools.cron import CronTool
+    from vtx_claw.agent.tools.cron import CronTool
 
     mock_service = MagicMock()
     mock_config = MagicMock()
     ctx = ToolContext(
-        config=mock_config,
-        workspace="/tmp",
-        cron_service=mock_service,
-        timezone="Asia/Shanghai",
+        config=mock_config, workspace="/tmp", cron_service=mock_service, timezone="Asia/Shanghai"
     )
     tool = CronTool.create(ctx)
     assert isinstance(tool, CronTool)
@@ -250,14 +244,14 @@ def test_cron_tool_create():
 
 
 def test_exec_tool_config_cls():
-    from nanobot.agent.tools.shell import ExecTool, ExecToolConfig
+    from vtx_claw.agent.tools.shell import ExecTool, ExecToolConfig
 
     assert ExecTool.config_cls() is ExecToolConfig
     assert ExecTool.config_key == "exec"
 
 
 def test_exec_tool_enabled():
-    from nanobot.agent.tools.shell import ExecTool
+    from vtx_claw.agent.tools.shell import ExecTool
 
     mock_config = MagicMock()
     mock_config.exec.enable = True
@@ -268,7 +262,7 @@ def test_exec_tool_enabled():
 
 
 def test_exec_tool_create():
-    from nanobot.agent.tools.shell import ExecTool
+    from vtx_claw.agent.tools.shell import ExecTool
 
     mock_config = MagicMock()
     mock_config.exec.enable = True
@@ -287,7 +281,7 @@ def test_exec_tool_create():
 
 
 def test_web_tools_config_cls():
-    from nanobot.agent.tools.web import WebFetchTool, WebSearchTool, WebToolsConfig
+    from vtx_claw.agent.tools.web import WebFetchTool, WebSearchTool, WebToolsConfig
 
     assert WebSearchTool.config_key == "web"
     assert WebSearchTool.config_cls() is WebToolsConfig
@@ -296,7 +290,7 @@ def test_web_tools_config_cls():
 
 
 def test_web_tools_enabled():
-    from nanobot.agent.tools.web import WebSearchTool
+    from vtx_claw.agent.tools.web import WebSearchTool
 
     mock_config = MagicMock()
     mock_config.web.enable = True
@@ -307,7 +301,7 @@ def test_web_tools_enabled():
 
 
 def test_web_search_tool_create():
-    from nanobot.agent.tools.web import WebSearchTool
+    from vtx_claw.agent.tools.web import WebSearchTool
 
     mock_config = MagicMock()
     mock_config.web.enable = True
@@ -320,7 +314,7 @@ def test_web_search_tool_create():
 
 
 def test_web_fetch_tool_create():
-    from nanobot.agent.tools.web import WebFetchTool
+    from vtx_claw.agent.tools.web import WebFetchTool
 
     mock_config = MagicMock()
     mock_config.web.enable = True
@@ -333,14 +327,17 @@ def test_web_fetch_tool_create():
 
 
 def test_image_gen_tool_config_cls():
-    from nanobot.agent.tools.image_generation import ImageGenerationTool, ImageGenerationToolConfig
+    from vtx_claw.agent.tools.image_generation import (
+        ImageGenerationTool,
+        ImageGenerationToolConfig,
+    )
 
     assert ImageGenerationTool.config_key == "image_generation"
     assert ImageGenerationTool.config_cls() is ImageGenerationToolConfig
 
 
 def test_image_gen_tool_enabled():
-    from nanobot.agent.tools.image_generation import ImageGenerationTool
+    from vtx_claw.agent.tools.image_generation import ImageGenerationTool
 
     mock_config = MagicMock()
     mock_config.image_generation.enabled = True
@@ -351,7 +348,7 @@ def test_image_gen_tool_enabled():
 
 
 def test_image_gen_tool_create():
-    from nanobot.agent.tools.image_generation import ImageGenerationTool
+    from vtx_claw.agent.tools.image_generation import ImageGenerationTool
 
     mock_config = MagicMock()
     mock_config.image_generation = MagicMock()
@@ -368,14 +365,14 @@ def test_image_gen_tool_create():
 
 
 def test_my_tool_config_cls():
-    from nanobot.agent.tools.self import MyTool, MyToolConfig
+    from vtx_claw.agent.tools.self import MyTool, MyToolConfig
 
     assert MyTool.config_key == "my"
     assert MyTool.config_cls() is MyToolConfig
 
 
 def test_my_tool_enabled():
-    from nanobot.agent.tools.self import MyTool
+    from vtx_claw.agent.tools.self import MyTool
 
     mock_config = MagicMock()
     mock_config.my.enable = True
@@ -386,7 +383,7 @@ def test_my_tool_enabled():
 
 
 def test_mcp_wrappers_not_discoverable():
-    from nanobot.agent.tools.mcp import MCPPromptWrapper, MCPResourceWrapper, MCPToolWrapper
+    from vtx_claw.agent.tools.mcp import MCPPromptWrapper, MCPResourceWrapper, MCPToolWrapper
 
     assert MCPToolWrapper._plugin_discoverable is False
     assert MCPResourceWrapper._plugin_discoverable is False
@@ -398,8 +395,8 @@ def test_mcp_wrappers_not_discoverable():
 
 def test_loader_registers_same_tools_as_old_hardcoded():
     """Verify the loader produces the same tool set as the old _register_default_tools."""
-    from nanobot.agent.tools.loader import ToolLoader
-    from nanobot.agent.tools.registry import ToolRegistry
+    from vtx_claw.agent.tools.loader import ToolLoader
+    from vtx_claw.agent.tools.registry import ToolRegistry
 
     mock_config = MagicMock()
     mock_config.exec.enable = True

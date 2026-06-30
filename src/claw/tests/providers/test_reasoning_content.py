@@ -7,24 +7,21 @@ providers that return a reasoning_content field (e.g. MiMo, DeepSeek-R1).
 from types import SimpleNamespace
 from unittest.mock import patch
 
-from nanobot.providers.openai_compat_provider import OpenAICompatProvider
-from nanobot.utils.helpers import build_assistant_message
+from vtx_claw.providers.openai_compat_provider import OpenAICompatProvider
+from vtx_claw.utils.helpers import build_assistant_message
 
 # ── _parse: non-streaming ─────────────────────────────────────────────────
 
 
 def test_parse_dict_extracts_reasoning_content() -> None:
     """reasoning_content at message level is surfaced in LLMResponse."""
-    with patch("nanobot.providers.openai_compat_provider.AsyncOpenAI"):
+    with patch("vtx_claw.providers.openai_compat_provider.AsyncOpenAI"):
         provider = OpenAICompatProvider()
 
     response = {
         "choices": [
             {
-                "message": {
-                    "content": "42",
-                    "reasoning_content": "Let me think step by step…",
-                },
+                "message": {"content": "42", "reasoning_content": "Let me think step by step…"},
                 "finish_reason": "stop",
             }
         ],
@@ -39,17 +36,10 @@ def test_parse_dict_extracts_reasoning_content() -> None:
 
 def test_parse_dict_reasoning_content_none_when_absent() -> None:
     """reasoning_content is None when the response doesn't include it."""
-    with patch("nanobot.providers.openai_compat_provider.AsyncOpenAI"):
+    with patch("vtx_claw.providers.openai_compat_provider.AsyncOpenAI"):
         provider = OpenAICompatProvider()
 
-    response = {
-        "choices": [
-            {
-                "message": {"content": "hello"},
-                "finish_reason": "stop",
-            }
-        ],
-    }
+    response = {"choices": [{"message": {"content": "hello"}, "finish_reason": "stop"}]}
 
     result = provider._parse(response)
 
@@ -63,18 +53,12 @@ def test_parse_dict_reasoning_content_empty_string_preserved() -> None:
     be present in subsequent requests even when empty.  Coercing \"\" to
     None drops the key downstream and causes API errors.
     """
-    with patch("nanobot.providers.openai_compat_provider.AsyncOpenAI"):
+    with patch("vtx_claw.providers.openai_compat_provider.AsyncOpenAI"):
         provider = OpenAICompatProvider()
 
     response = {
         "choices": [
-            {
-                "message": {
-                    "content": "answer",
-                    "reasoning_content": "",
-                },
-                "finish_reason": "stop",
-            }
+            {"message": {"content": "answer", "reasoning_content": ""}, "finish_reason": "stop"}
         ],
         "usage": {"prompt_tokens": 5, "completion_tokens": 3, "total_tokens": 8},
     }
@@ -86,7 +70,7 @@ def test_parse_dict_reasoning_content_empty_string_preserved() -> None:
 
 def test_parse_sdk_reasoning_content_empty_string_preserved() -> None:
     """SDK response objects preserve reasoning_content=\"\"."""
-    with patch("nanobot.providers.openai_compat_provider.AsyncOpenAI"):
+    with patch("vtx_claw.providers.openai_compat_provider.AsyncOpenAI"):
         provider = OpenAICompatProvider()
 
     message = SimpleNamespace(content="answer", reasoning_content="", tool_calls=None)
@@ -101,7 +85,7 @@ def test_parse_sdk_reasoning_content_empty_string_preserved() -> None:
 
 def test_tool_call_history_preserves_empty_reasoning_content_after_sanitize() -> None:
     """Empty reasoning_content survives the tool-call history round trip."""
-    with patch("nanobot.providers.openai_compat_provider.AsyncOpenAI"):
+    with patch("vtx_claw.providers.openai_compat_provider.AsyncOpenAI"):
         provider = OpenAICompatProvider()
 
     response = {
@@ -120,7 +104,7 @@ def test_tool_call_history_preserves_empty_reasoning_content_after_sanitize() ->
                 },
                 "finish_reason": "tool_calls",
             }
-        ],
+        ]
     }
 
     result = provider._parse(response)
@@ -152,24 +136,14 @@ def test_parse_chunks_dict_accumulates_reasoning_content() -> None:
                     "finish_reason": None,
                     "delta": {"content": None, "reasoning_content": "Step 1. "},
                 }
-            ],
+            ]
         },
         {
             "choices": [
-                {
-                    "finish_reason": None,
-                    "delta": {"content": None, "reasoning_content": "Step 2."},
-                }
-            ],
+                {"finish_reason": None, "delta": {"content": None, "reasoning_content": "Step 2."}}
+            ]
         },
-        {
-            "choices": [
-                {
-                    "finish_reason": "stop",
-                    "delta": {"content": "answer"},
-                }
-            ],
-        },
+        {"choices": [{"finish_reason": "stop", "delta": {"content": "answer"}}]},
     ]
 
     result = OpenAICompatProvider._parse_chunks(chunks)
@@ -180,9 +154,7 @@ def test_parse_chunks_dict_accumulates_reasoning_content() -> None:
 
 def test_parse_chunks_dict_reasoning_content_none_when_absent() -> None:
     """reasoning_content is None when no chunk contains it."""
-    chunks = [
-        {"choices": [{"finish_reason": "stop", "delta": {"content": "hi"}}]},
-    ]
+    chunks = [{"choices": [{"finish_reason": "stop", "delta": {"content": "hi"}}]}]
 
     result = OpenAICompatProvider._parse_chunks(chunks)
 

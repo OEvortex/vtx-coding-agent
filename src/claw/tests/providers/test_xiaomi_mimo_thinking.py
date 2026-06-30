@@ -12,7 +12,7 @@ Default thinking behavior per Xiaomi docs:
   - mimo-v2-flash: disabled
   - mimo-v2.5-pro, mimo-v2.5, mimo-v2-pro, mimo-v2-omni: enabled
 
-Without an explicit reasoning_effort, nanobot must not send the
+Without an explicit reasoning_effort, vtx_claw must not send the
 thinking field so the provider default is preserved (issue #3585).
 """
 
@@ -20,9 +20,9 @@ from __future__ import annotations
 
 from typing import Any
 
-from nanobot.config.schema import ProvidersConfig
-from nanobot.providers.openai_compat_provider import OpenAICompatProvider
-from nanobot.providers.registry import PROVIDERS
+from vtx_claw.config.schema import ProvidersConfig
+from vtx_claw.providers.openai_compat_provider import OpenAICompatProvider
+from vtx_claw.providers.registry import PROVIDERS
 
 
 def _mimo_spec():
@@ -39,18 +39,14 @@ def _openrouter_spec():
 
 def _mimo_provider() -> OpenAICompatProvider:
     return OpenAICompatProvider(
-        api_key="test-key",
-        default_model="mimo-v2.5-pro",
-        spec=_mimo_spec(),
+        api_key="test-key", default_model="mimo-v2.5-pro", spec=_mimo_spec()
     )
 
 
 def _openrouter_provider(default_model: str) -> OpenAICompatProvider:
     """Provider configured as OpenRouter (gateway, no thinking_style on spec)."""
     return OpenAICompatProvider(
-        api_key="sk-or-test",
-        default_model=default_model,
-        spec=_openrouter_spec(),
+        api_key="sk-or-test", default_model=default_model, spec=_openrouter_spec()
     )
 
 

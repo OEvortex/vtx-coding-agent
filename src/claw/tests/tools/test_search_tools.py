@@ -10,12 +10,12 @@ from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
-from nanobot.agent.loop import AgentLoop
-from nanobot.agent.subagent import SubagentManager, SubagentStatus
-from nanobot.agent.tools.search import FindFilesTool, GrepTool
-from nanobot.agent.tools.web import WebSearchTool
-from nanobot.bus.queue import MessageBus
-from nanobot.config.schema import WebSearchConfig
+from vtx_claw.agent.loop import AgentLoop
+from vtx_claw.agent.subagent import SubagentManager, SubagentStatus
+from vtx_claw.agent.tools.search import FindFilesTool, GrepTool
+from vtx_claw.agent.tools.web import WebSearchTool
+from vtx_claw.bus.queue import MessageBus
+from vtx_claw.config.schema import WebSearchConfig
 
 
 @pytest.mark.asyncio
@@ -30,7 +30,7 @@ async def test_web_search_tool_refreshes_dynamic_config_loader(monkeypatch) -> N
 
     monkeypatch.setattr(WebSearchTool, "_search_duckduckgo", fake_duckduckgo)
 
-    assert await tool.execute("nanobot") == "duckduckgo:nanobot:3"
+    assert await tool.execute("vtx_claw") == "duckduckgo:vtx_claw:3"
 
 
 @pytest.mark.asyncio
@@ -41,12 +41,7 @@ async def test_find_files_filters_by_query_glob_and_type(tmp_path: Path) -> None
     (tmp_path / "README.md").write_text("settings\n", encoding="utf-8")
 
     tool = FindFilesTool(workspace=tmp_path, allowed_dir=tmp_path)
-    result = await tool.execute(
-        path=".",
-        query="settings",
-        glob="src/**",
-        type="ts",
-    )
+    result = await tool.execute(path=".", query="settings", glob="src/**", type="ts")
 
     assert result.splitlines() == ["src/settings_view.tsx"]
 
@@ -72,13 +67,7 @@ async def test_find_files_supports_modified_sort_and_pagination(tmp_path: Path) 
         os.utime(file_path, (idx, idx))
 
     tool = FindFilesTool(workspace=tmp_path, allowed_dir=tmp_path)
-    result = await tool.execute(
-        path="src",
-        type="py",
-        sort="modified",
-        head_limit=1,
-        offset=1,
-    )
+    result = await tool.execute(path="src", type="py", sort="modified", head_limit=1, offset=1)
 
     assert result.splitlines()[0] == "src/b.py"
     assert "pagination: limit=1, offset=1" in result
@@ -98,10 +87,7 @@ async def test_find_files_rejects_paths_outside_workspace(tmp_path: Path) -> Non
 @pytest.mark.asyncio
 async def test_grep_respects_glob_filter_and_context(tmp_path: Path) -> None:
     (tmp_path / "src").mkdir()
-    (tmp_path / "src" / "main.py").write_text(
-        "alpha\nbeta\nmatch_here\ngamma\n",
-        encoding="utf-8",
-    )
+    (tmp_path / "src" / "main.py").write_text("alpha\nbeta\nmatch_here\ngamma\n", encoding="utf-8")
     (tmp_path / "README.md").write_text("match_here\n", encoding="utf-8")
 
     tool = GrepTool(workspace=tmp_path, allowed_dir=tmp_path)
@@ -127,10 +113,7 @@ async def test_grep_defaults_to_files_with_matches(tmp_path: Path) -> None:
     (tmp_path / "src" / "main.py").write_text("match_here\n", encoding="utf-8")
 
     tool = GrepTool(workspace=tmp_path, allowed_dir=tmp_path)
-    result = await tool.execute(
-        pattern="match_here",
-        path="src",
-    )
+    result = await tool.execute(pattern="match_here", path="src")
 
     assert result.splitlines() == ["src/main.py"]
     assert "1|" not in result
@@ -140,16 +123,12 @@ async def test_grep_defaults_to_files_with_matches(tmp_path: Path) -> None:
 async def test_grep_supports_case_insensitive_search(tmp_path: Path) -> None:
     (tmp_path / "memory").mkdir()
     (tmp_path / "memory" / "HISTORY.md").write_text(
-        "[2026-04-02 10:00] OAuth token rotated\n",
-        encoding="utf-8",
+        "[2026-04-02 10:00] OAuth token rotated\n", encoding="utf-8"
     )
 
     tool = GrepTool(workspace=tmp_path, allowed_dir=tmp_path)
     result = await tool.execute(
-        pattern="oauth",
-        path="memory/HISTORY.md",
-        case_insensitive=True,
-        output_mode="content",
+        pattern="oauth", path="memory/HISTORY.md", case_insensitive=True, output_mode="content"
     )
 
     assert "memory/HISTORY.md:1" in result
@@ -163,11 +142,7 @@ async def test_grep_type_filter_limits_files(tmp_path: Path) -> None:
     (tmp_path / "src" / "b.md").write_text("needle\n", encoding="utf-8")
 
     tool = GrepTool(workspace=tmp_path, allowed_dir=tmp_path)
-    result = await tool.execute(
-        pattern="needle",
-        path="src",
-        type="py",
-    )
+    result = await tool.execute(pattern="needle", path="src", type="py")
 
     assert result.splitlines() == ["src/a.py"]
 
@@ -176,8 +151,7 @@ async def test_grep_type_filter_limits_files(tmp_path: Path) -> None:
 async def test_grep_fixed_strings_treats_regex_chars_literally(tmp_path: Path) -> None:
     (tmp_path / "memory").mkdir()
     (tmp_path / "memory" / "HISTORY.md").write_text(
-        "[2026-04-02 10:00] OAuth token rotated\n",
-        encoding="utf-8",
+        "[2026-04-02 10:00] OAuth token rotated\n", encoding="utf-8"
     )
 
     tool = GrepTool(workspace=tmp_path, allowed_dir=tmp_path)
@@ -203,11 +177,7 @@ async def test_grep_files_with_matches_mode_returns_unique_paths(tmp_path: Path)
     os.utime(b, (2, 2))
 
     tool = GrepTool(workspace=tmp_path, allowed_dir=tmp_path)
-    result = await tool.execute(
-        pattern="needle",
-        path="src",
-        output_mode="files_with_matches",
-    )
+    result = await tool.execute(pattern="needle", path="src", output_mode="files_with_matches")
 
     assert result.splitlines() == ["src/b.py", "src/a.py"]
 
@@ -219,12 +189,7 @@ async def test_grep_files_with_matches_supports_head_limit_and_offset(tmp_path: 
         (tmp_path / "src" / name).write_text("needle\n", encoding="utf-8")
 
     tool = GrepTool(workspace=tmp_path, allowed_dir=tmp_path)
-    result = await tool.execute(
-        pattern="needle",
-        path="src",
-        head_limit=1,
-        offset=1,
-    )
+    result = await tool.execute(pattern="needle", path="src", head_limit=1, offset=1)
 
     # Filesystem order is not deterministic across platforms, so just verify:
     # 1. Only one file path is returned (head_limit=1 after offset=1)
@@ -242,11 +207,7 @@ async def test_grep_count_mode_reports_counts_per_file(tmp_path: Path) -> None:
     (tmp_path / "logs" / "two.log").write_text("warn\n", encoding="utf-8")
 
     tool = GrepTool(workspace=tmp_path, allowed_dir=tmp_path)
-    result = await tool.execute(
-        pattern="warn",
-        path="logs",
-        output_mode="count",
-    )
+    result = await tool.execute(pattern="warn", path="logs", output_mode="count")
 
     assert "logs/one.log: 2" in result
     assert "logs/two.log: 1" in result
@@ -265,10 +226,7 @@ async def test_grep_files_with_matches_mode_respects_max_results(tmp_path: Path)
 
     tool = GrepTool(workspace=tmp_path, allowed_dir=tmp_path)
     result = await tool.execute(
-        pattern="needle",
-        path="src",
-        output_mode="files_with_matches",
-        max_results=2,
+        pattern="needle", path="src", output_mode="files_with_matches", max_results=2
     )
 
     assert result.splitlines()[:2] == ["src/c.py", "src/b.py"]
@@ -277,8 +235,7 @@ async def test_grep_files_with_matches_mode_respects_max_results(tmp_path: Path)
 
 @pytest.mark.asyncio
 async def test_grep_reports_skipped_binary_and_large_files(
-    tmp_path: Path,
-    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     (tmp_path / "binary.bin").write_bytes(b"\x00\x01\x02")
     (tmp_path / "large.txt").write_text("x" * 20, encoding="utf-8")
@@ -321,21 +278,13 @@ async def test_subagent_registers_grep(tmp_path: Path) -> None:
     provider = MagicMock()
     provider.get_default_model.return_value = "test-model"
     mgr = SubagentManager(
-        provider=provider,
-        workspace=tmp_path,
-        bus=bus,
-        max_tool_result_chars=4096,
+        provider=provider, workspace=tmp_path, bus=bus, max_tool_result_chars=4096
     )
     captured: dict[str, list[str]] = {}
 
     async def fake_run(spec):
         captured["tool_names"] = spec.tools.tool_names
-        return SimpleNamespace(
-            stop_reason="ok",
-            final_content="done",
-            tool_events=[],
-            error=None,
-        )
+        return SimpleNamespace(stop_reason="ok", final_content="done", tool_events=[], error=None)
 
     mgr.runner.run = fake_run
     mgr._announce_result = AsyncMock()

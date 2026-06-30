@@ -7,15 +7,15 @@ from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
-from nanobot.config.schema import AgentDefaults
-from nanobot.providers.base import LLMProvider, LLMResponse, ToolCallRequest
+from vtx_claw.config.schema import AgentDefaults
+from vtx_claw.providers.base import LLMProvider, LLMResponse, ToolCallRequest
 
 _MAX_TOOL_RESULT_CHARS = AgentDefaults().max_tool_result_chars
 
 
 @pytest.mark.asyncio
 async def test_runner_returns_structured_tool_error():
-    from nanobot.agent.runner import AgentRunSpec, AgentRunner
+    from vtx_claw.agent.runner import AgentRunner, AgentRunSpec
 
     provider = MagicMock(spec=LLMProvider)
     provider.chat_with_retry = AsyncMock(
@@ -50,19 +50,12 @@ async def test_runner_returns_structured_tool_error():
 async def test_llm_error_not_appended_to_session_messages():
     """When LLM returns finish_reason='error', the error content must NOT be
     appended to the messages list (prevents polluting session history)."""
-    from nanobot.agent.runner import (
-        AgentRunSpec,
-        AgentRunner,
-        _PERSISTED_MODEL_ERROR_PLACEHOLDER,
-    )
+    from vtx_claw.agent.runner import _PERSISTED_MODEL_ERROR_PLACEHOLDER, AgentRunner, AgentRunSpec
 
     provider = MagicMock(spec=LLMProvider)
     provider.chat_with_retry = AsyncMock(
         return_value=LLMResponse(
-            content="429 rate limit exceeded",
-            finish_reason="error",
-            tool_calls=[],
-            usage={},
+            content="429 rate limit exceeded", finish_reason="error", tool_calls=[], usage={}
         )
     )
     tools = MagicMock()
@@ -91,14 +84,12 @@ async def test_llm_error_not_appended_to_session_messages():
 @pytest.mark.asyncio
 async def test_llm_arrearage_error_surfaces_clear_message():
     """Arrearage errors yield a clear user-facing message, not a raw dump (#3006)."""
-    from nanobot.agent.runner import AgentRunSpec, AgentRunner, _ARREARAGE_ERROR_MESSAGE
+    from vtx_claw.agent.runner import _ARREARAGE_ERROR_MESSAGE, AgentRunner, AgentRunSpec
 
     provider = MagicMock(spec=LLMProvider)
     provider.chat_with_retry = AsyncMock(
         return_value=LLMResponse(
-            content="HTTP 402 insufficient_quota",
-            finish_reason="error",
-            error_status_code=402,
+            content="HTTP 402 insufficient_quota", finish_reason="error", error_status_code=402
         )
     )
     tools = MagicMock()
@@ -121,7 +112,7 @@ async def test_llm_arrearage_error_surfaces_clear_message():
 
 @pytest.mark.asyncio
 async def test_runner_tool_error_sets_final_content():
-    from nanobot.agent.runner import AgentRunSpec, AgentRunner
+    from vtx_claw.agent.runner import AgentRunner, AgentRunSpec
 
     provider = MagicMock(spec=LLMProvider)
 
@@ -157,7 +148,7 @@ async def test_runner_tool_error_sets_final_content():
 async def test_runner_tool_error_preserves_tool_results_in_messages():
     """When a tool raises a fatal error, its results must still be appended
     to messages so the session never contains orphan tool_calls (#2943)."""
-    from nanobot.agent.runner import AgentRunSpec, AgentRunner
+    from vtx_claw.agent.runner import AgentRunner, AgentRunSpec
 
     provider = MagicMock(spec=LLMProvider)
 

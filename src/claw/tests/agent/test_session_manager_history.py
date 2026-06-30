@@ -1,4 +1,4 @@
-from nanobot.session.manager import Session, SessionManager
+from vtx_claw.session.manager import Session, SessionManager
 
 
 def _assert_no_orphans(history: list[dict]) -> None:
@@ -282,11 +282,7 @@ def test_get_history_preserves_reasoning_content():
             "content": "done",
             "reasoning_content": "hidden chain of thought",
             "thinking_blocks": [
-                {
-                    "type": "thinking",
-                    "thinking": "hidden chain of thought",
-                    "signature": "sig",
-                }
+                {"type": "thinking", "thinking": "hidden chain of thought", "signature": "sig"}
             ],
         },
     ]
@@ -296,18 +292,10 @@ def test_get_history_does_not_inject_persisted_timestamps_into_replay_content():
     """Persisted timestamps are session metadata, not prompt content."""
     session = Session(key="test:timestamps")
     session.messages.append(
-        {
-            "role": "user",
-            "content": "10 点提醒是昨天发生的",
-            "timestamp": "2026-04-26T22:00:00",
-        }
+        {"role": "user", "content": "10 点提醒是昨天发生的", "timestamp": "2026-04-26T22:00:00"}
     )
     session.messages.append(
-        {
-            "role": "assistant",
-            "content": "记下来了",
-            "timestamp": "2026-04-26T22:00:05",
-        }
+        {"role": "assistant", "content": "记下来了", "timestamp": "2026-04-26T22:00:05"}
     )
 
     history = session.get_history(max_messages=500)
@@ -315,14 +303,8 @@ def test_get_history_does_not_inject_persisted_timestamps_into_replay_content():
     assert session.messages[0]["timestamp"] == "2026-04-26T22:00:00"
     assert session.messages[1]["timestamp"] == "2026-04-26T22:00:05"
     assert history == [
-        {
-            "role": "user",
-            "content": "10 点提醒是昨天发生的",
-        },
-        {
-            "role": "assistant",
-            "content": "记下来了",
-        },
+        {"role": "user", "content": "10 点提醒是昨天发生的"},
+        {"role": "assistant", "content": "记下来了"},
     ]
 
 
@@ -337,27 +319,15 @@ def test_get_history_keeps_proactive_delivery_timestamps_out_of_replay_content()
             "_channel_delivery": True,
         }
     )
-    session.messages.append(
-        {
-            "role": "user",
-            "content": "好",
-            "timestamp": "2026-04-26T18:00:00",
-        }
-    )
+    session.messages.append({"role": "user", "content": "好", "timestamp": "2026-04-26T18:00:00"})
 
     history = session.get_history(max_messages=500)
 
     assert session.messages[0]["timestamp"] == "2026-04-26T15:00:00"
     assert session.messages[1]["timestamp"] == "2026-04-26T18:00:00"
     assert history == [
-        {
-            "role": "assistant",
-            "content": "记得喝水",
-        },
-        {
-            "role": "user",
-            "content": "好",
-        },
+        {"role": "assistant", "content": "记得喝水"},
+        {"role": "user", "content": "好"},
     ]
 
 
@@ -386,8 +356,16 @@ def test_window_cuts_mid_tool_group():
             "role": "assistant",
             "content": None,
             "tool_calls": [
-                {"id": "split_a", "type": "function", "function": {"name": "x", "arguments": "{}"}},
-                {"id": "split_b", "type": "function", "function": {"name": "y", "arguments": "{}"}},
+                {
+                    "id": "split_a",
+                    "type": "function",
+                    "function": {"name": "x", "arguments": "{}"},
+                },
+                {
+                    "id": "split_b",
+                    "type": "function",
+                    "function": {"name": "y", "arguments": "{}"},
+                },
             ],
         }
     )
@@ -446,12 +424,7 @@ def test_get_history_synthesizes_cli_app_attachment_breadcrumb():
         {
             "role": "user",
             "content": "please use @drawio",
-            "cli_apps": [
-                {
-                    "name": "drawio",
-                    "entry_point": "cli-anything-drawio",
-                }
-            ],
+            "cli_apps": [{"name": "drawio", "entry_point": "cli-anything-drawio"}],
         }
     )
 
@@ -482,11 +455,7 @@ def test_fork_session_before_user_index_copies_only_prefix(tmp_path):
     source.add_message("user", "round3 must not appear")
     manager.save(source)
 
-    forked = manager.fork_session_before_user_index(
-        "websocket:source",
-        "websocket:fork",
-        1,
-    )
+    forked = manager.fork_session_before_user_index("websocket:source", "websocket:fork", 1)
 
     assert forked is not None
     assert [m["content"] for m in forked.messages] == ["round1", "answer1"]
@@ -515,11 +484,7 @@ def test_fork_session_allows_index_equal_to_user_count(tmp_path):
     source.add_message("assistant", "answer1")
     manager.save(source)
 
-    forked = manager.fork_session_before_user_index(
-        "websocket:source",
-        "websocket:fork",
-        1,
-    )
+    forked = manager.fork_session_before_user_index("websocket:source", "websocket:fork", 1)
 
     assert forked is not None
     assert [m["content"] for m in forked.messages] == ["round1", "answer1"]
@@ -538,11 +503,7 @@ def test_fork_session_drops_summary_when_fork_point_is_inside_consolidated_prefi
     source.metadata["_last_summary"] = {"text": "round2 fork me and answer2"}
     manager.save(source)
 
-    forked = manager.fork_session_before_user_index(
-        "websocket:source",
-        "websocket:fork",
-        1,
-    )
+    forked = manager.fork_session_before_user_index("websocket:source", "websocket:fork", 1)
 
     assert forked is not None
     assert [m["content"] for m in forked.messages] == ["round1", "answer1"]
@@ -574,7 +535,7 @@ def test_get_history_does_not_paste_assistant_media_paths_into_replay():
         {
             "role": "assistant",
             "content": "来了 🎨",
-            "media": ["/home/user/.nanobot/media/generated/img_abc.png"],
+            "media": ["/home/user/.vtx_claw/media/generated/img_abc.png"],
         }
     )
 
@@ -591,7 +552,7 @@ def test_get_history_sanitizes_existing_assistant_replay_artifacts():
             "content": (
                 "[Message Time: 2026-05-09 00:33:48]\n"
                 "来了 🎨\n"
-                "[image: /home/user/.nanobot/media/generated/img_old.png]\n\n"
+                "[image: /home/user/.vtx_claw/media/generated/img_old.png]\n\n"
                 'generate_image("16:9")\n'
                 'message("来了 🎨")'
             ),
@@ -618,7 +579,7 @@ def test_get_history_respects_max_tokens(monkeypatch):
 
     token_map = {"u1": 50, "a1": 50, "u2": 50, "a2": 50, "u3": 50, "a3": 50}
     monkeypatch.setattr(
-        "nanobot.session.manager.estimate_message_tokens",
+        "vtx_claw.session.manager.estimate_message_tokens",
         lambda message: token_map.get(message.get("content"), 0),
     )
 
@@ -638,7 +599,7 @@ def test_get_history_recovers_user_when_token_slice_would_be_assistant_only(monk
     )
     token_map = {"u1": 100, "a1": 100, "u2": 100, "a2": 100}
     monkeypatch.setattr(
-        "nanobot.session.manager.estimate_message_tokens",
+        "vtx_claw.session.manager.estimate_message_tokens",
         lambda message: token_map.get(message.get("content"), 0),
     )
 

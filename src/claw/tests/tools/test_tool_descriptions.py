@@ -1,8 +1,8 @@
-from nanobot.agent.tools.apply_patch import ApplyPatchTool
-from nanobot.agent.tools.exec_session import ListExecSessionsTool, WriteStdinTool
-from nanobot.agent.tools.filesystem import EditFileTool, ReadFileTool, WriteFileTool
-from nanobot.agent.tools.search import FindFilesTool, GrepTool
-from nanobot.agent.tools.shell import ExecTool
+from vtx_claw.agent.tools.apply_patch import ApplyPatchTool
+from vtx_claw.agent.tools.exec_session import ListExecSessionsTool, WriteStdinTool
+from vtx_claw.agent.tools.filesystem import EditFileTool, ReadFileTool, WriteFileTool
+from vtx_claw.agent.tools.search import FindFilesTool, GrepTool
+from vtx_claw.agent.tools.shell import ExecTool
 
 
 def test_coding_tool_descriptions_steer_editing_priority() -> None:

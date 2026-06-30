@@ -5,9 +5,9 @@ from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
-from nanobot.agent.runner import AgentRunResult
-from nanobot.agent.subagent import SubagentManager, SubagentStatus
-from nanobot.bus.queue import MessageBus
+from vtx_claw.agent.runner import AgentRunResult
+from vtx_claw.agent.subagent import SubagentManager, SubagentStatus
+from vtx_claw.bus.queue import MessageBus
 
 
 @pytest.mark.asyncio
@@ -27,12 +27,7 @@ async def test_subagent_forwards_resolver_to_agent_run_spec(tmp_path: Path) -> N
     )
     mgr._announce_result = AsyncMock()
 
-    status = SubagentStatus(
-        task_id="t1",
-        label="lbl",
-        task_description="task",
-        started_at=0.0,
-    )
+    status = SubagentStatus(task_id="t1", label="lbl", task_description="task", started_at=0.0)
     await mgr._run_subagent(
         "t1",
         "task",

@@ -4,14 +4,13 @@ import os
 from datetime import datetime
 from pathlib import Path
 
-import nanobot.webui.session_list_index as session_list_index
-from nanobot.cron.session_turns import CRON_HISTORY_META
-from nanobot.session.manager import SessionManager
+import vtx_claw.webui.session_list_index as session_list_index
+from vtx_claw.cron.session_turns import CRON_HISTORY_META
+from vtx_claw.session.manager import SessionManager
 
 
 def test_webui_session_list_reuses_valid_index_without_scanning_files(
-    tmp_path: Path,
-    monkeypatch,
+    tmp_path: Path, monkeypatch
 ) -> None:
     manager = SessionManager(tmp_path)
     session = manager.get_or_create("websocket:indexed")
@@ -89,8 +88,7 @@ def test_webui_session_list_skips_cron_internal_user_preview(tmp_path: Path) -> 
 
 
 def test_webui_session_list_uses_webui_transcript_activity_for_sort(
-    tmp_path: Path,
-    monkeypatch,
+    tmp_path: Path, monkeypatch
 ) -> None:
     webui_dir = tmp_path / "webui"
     webui_dir.mkdir()
@@ -112,26 +110,17 @@ def test_webui_session_list_uses_webui_transcript_activity_for_sort(
     manager.save(newer_metadata)
 
     transcript = webui_dir / "websocket_old-metadata.jsonl"
-    transcript.write_text(
-        '{"event":"turn_end","chat_id":"old-metadata"}\n',
-        encoding="utf-8",
-    )
+    transcript.write_text('{"event":"turn_end","chat_id":"old-metadata"}\n', encoding="utf-8")
     activity_ns = int(datetime(2026, 6, 15, 12, 0, 0).timestamp() * 1_000_000_000)
     os.utime(transcript, ns=(activity_ns, activity_ns))
 
     rows = list_webui_sessions(manager)
 
-    assert [row["key"] for row in rows] == [
-        "websocket:old-metadata",
-        "websocket:newer-metadata",
-    ]
+    assert [row["key"] for row in rows] == ["websocket:old-metadata", "websocket:newer-metadata"]
     assert rows[0]["updated_at"].startswith("2026-06-15T12:00:00")
 
 
-def test_webui_session_list_rescans_when_transcript_changes(
-    tmp_path: Path,
-    monkeypatch,
-) -> None:
+def test_webui_session_list_rescans_when_transcript_changes(tmp_path: Path, monkeypatch) -> None:
     webui_dir = tmp_path / "webui"
     webui_dir.mkdir()
     monkeypatch.setattr(session_list_index, "get_webui_dir", lambda: webui_dir)
@@ -147,10 +136,7 @@ def test_webui_session_list_rescans_when_transcript_changes(
     assert list_webui_sessions(manager)[0]["preview"] == "preview"
 
     transcript = webui_dir / "websocket_transcript-change.jsonl"
-    transcript.write_text(
-        '{"event":"turn_end","chat_id":"transcript-change"}\n',
-        encoding="utf-8",
-    )
+    transcript.write_text('{"event":"turn_end","chat_id":"transcript-change"}\n', encoding="utf-8")
     activity_ns = int(datetime(2026, 6, 15, 12, 30, 0).timestamp() * 1_000_000_000)
     os.utime(transcript, ns=(activity_ns, activity_ns))
 

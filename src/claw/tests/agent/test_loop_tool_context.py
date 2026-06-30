@@ -3,10 +3,10 @@ from unittest.mock import MagicMock
 
 import pytest
 
-from nanobot.agent.loop import AgentLoop
-from nanobot.bus.queue import MessageBus
-from nanobot.providers.base import LLMResponse, ToolCallRequest
-from nanobot.agent.tools.context import RequestContext
+from vtx_claw.agent.loop import AgentLoop
+from vtx_claw.agent.tools.context import RequestContext
+from vtx_claw.bus.queue import MessageBus
+from vtx_claw.providers.base import LLMResponse, ToolCallRequest
 
 
 class _ContextRecordingTool:
@@ -58,29 +58,22 @@ async def test_loop_hook_preserves_metadata_when_resetting_tool_context(tmp_path
         if calls["n"] == 1:
             return LLMResponse(
                 content=None,
-                tool_calls=[ToolCallRequest(id="call_1", name="cron", arguments={"action": "add"})],
+                tool_calls=[
+                    ToolCallRequest(id="call_1", name="cron", arguments={"action": "add"})
+                ],
             )
         return LLMResponse(content="done", tool_calls=[])
 
     provider.chat_with_retry = chat_with_retry
     provider.get_default_model.return_value = "test-model"
 
-    loop = AgentLoop(
-        bus=MessageBus(),
-        provider=provider,
-        workspace=tmp_path,
-        model="test-model",
-    )
+    loop = AgentLoop(bus=MessageBus(), provider=provider, workspace=tmp_path, model="test-model")
     cron = _ContextRecordingTool()
     loop.tools = _Tools(cron)
 
     metadata = {"slack": {"thread_ts": "111.222", "channel_type": "channel"}}
     await loop._run_agent_loop(
-        [],
-        channel="slack",
-        chat_id="C123",
-        metadata=metadata,
-        session_key="slack:C123:111.222",
+        [], channel="slack", chat_id="C123", metadata=metadata, session_key="slack:C123:111.222"
     )
 
     assert cron.contexts[-1] == {

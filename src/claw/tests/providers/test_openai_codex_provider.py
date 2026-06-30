@@ -8,8 +8,8 @@ import httpx
 import pytest
 from loguru import logger
 
-import nanobot.providers.base as provider_base
-from nanobot.providers.openai_codex_provider import (
+import vtx_claw.providers.base as provider_base
+from vtx_claw.providers.openai_codex_provider import (
     OpenAICodexProvider,
     _build_reasoning_options,
     _codex_error_response,
@@ -22,7 +22,7 @@ from nanobot.providers.openai_codex_provider import (
 
 def _mock_codex_token(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(
-        "nanobot.providers.openai_codex_provider.get_codex_token",
+        "vtx_claw.providers.openai_codex_provider.get_codex_token",
         lambda: SimpleNamespace(account_id="acct", access="token"),
     )
 
@@ -40,7 +40,7 @@ class _WarningCaptureLogger:
 
 def _capture_codex_warnings(monkeypatch: pytest.MonkeyPatch) -> _WarningCaptureLogger:
     capture = _WarningCaptureLogger()
-    monkeypatch.setattr("nanobot.providers.openai_codex_provider.logger", capture)
+    monkeypatch.setattr("vtx_claw.providers.openai_codex_provider.logger", capture)
     return capture
 
 
@@ -82,7 +82,7 @@ async def test_codex_request_non_200_populates_http_metadata(monkeypatch) -> Non
         assert verify is True
         return original_client(transport=httpx.MockTransport(handler), timeout=timeout)
 
-    monkeypatch.setattr("nanobot.providers.openai_codex_provider.httpx.AsyncClient", fake_client)
+    monkeypatch.setattr("vtx_claw.providers.openai_codex_provider.httpx.AsyncClient", fake_client)
 
     with pytest.raises(_CodexHTTPError) as caught:
         await _request_codex("https://codex.example/responses", {}, {"input": []}, verify=True)
@@ -101,8 +101,8 @@ async def test_codex_request_non_200_populates_http_metadata(monkeypatch) -> Non
 
 @pytest.mark.asyncio
 async def test_codex_request_honors_stream_idle_timeout_env(monkeypatch) -> None:
-    """NANOBOT_STREAM_IDLE_TIMEOUT_S overrides the default Codex stream timeout."""
-    monkeypatch.setenv("NANOBOT_STREAM_IDLE_TIMEOUT_S", "5")
+    """VTX_CLAW_STREAM_IDLE_TIMEOUT_S overrides the default Codex stream timeout."""
+    monkeypatch.setenv("VTX_CLAW_STREAM_IDLE_TIMEOUT_S", "5")
     original_client = httpx.AsyncClient
     seen: dict[str, int] = {}
 
@@ -113,7 +113,7 @@ async def test_codex_request_honors_stream_idle_timeout_env(monkeypatch) -> None
         seen["timeout"] = timeout
         return original_client(transport=httpx.MockTransport(handler), timeout=timeout)
 
-    monkeypatch.setattr("nanobot.providers.openai_codex_provider.httpx.AsyncClient", fake_client)
+    monkeypatch.setattr("vtx_claw.providers.openai_codex_provider.httpx.AsyncClient", fake_client)
 
     await _request_codex("https://codex.example/responses", {}, {"input": []}, verify=True)
 
@@ -139,30 +139,30 @@ async def test_codex_prompt_cache_key_uses_stable_conversation_prefix(monkeypatc
         bodies.append(body)
         return "ok", [], "stop", {}, None
 
-    monkeypatch.setattr("nanobot.providers.openai_codex_provider._request_codex", fake_request)
+    monkeypatch.setattr("vtx_claw.providers.openai_codex_provider._request_codex", fake_request)
 
     provider = OpenAICodexProvider()
     await provider.chat(
         [
-            {"role": "system", "content": "You are nanobot."},
+            {"role": "system", "content": "You are vtx_claw."},
             {"role": "user", "content": "first request"},
             {"role": "assistant", "content": "first answer"},
-        ],
+        ]
     )
     await provider.chat(
         [
-            {"role": "system", "content": "You are nanobot."},
+            {"role": "system", "content": "You are vtx_claw."},
             {"role": "user", "content": "first request"},
             {"role": "assistant", "content": "first answer"},
             {"role": "user", "content": "follow up"},
-        ],
+        ]
     )
     await provider.chat(
         [
-            {"role": "system", "content": "You are nanobot."},
+            {"role": "system", "content": "You are vtx_claw."},
             {"role": "user", "content": "different request"},
             {"role": "assistant", "content": "first answer"},
-        ],
+        ]
     )
 
     assert bodies[0]["prompt_cache_key"] == bodies[1]["prompt_cache_key"]
@@ -176,13 +176,15 @@ async def test_codex_timeout_error_is_typed_and_retryable(monkeypatch) -> None:
     async def fake_request(*args, **kwargs):
         raise httpx.ReadTimeout("")
 
-    monkeypatch.setattr("nanobot.providers.openai_codex_provider._request_codex", fake_request)
+    monkeypatch.setattr("vtx_claw.providers.openai_codex_provider._request_codex", fake_request)
 
     provider = OpenAICodexProvider()
     response = await provider.chat([{"role": "user", "content": "hello"}])
 
     assert response.finish_reason == "error"
-    assert response.content == ("Error calling Codex (ReadTimeout): timed out waiting for response")
+    assert response.content == (
+        "Error calling Codex (ReadTimeout): timed out waiting for response"
+    )
     assert response.error_kind == "timeout"
     assert response.error_should_retry is True
 
@@ -195,26 +197,19 @@ async def test_codex_timeout_error_writes_diagnostic_log(monkeypatch) -> None:
     async def fake_request(*args: Any, **kwargs: Any):
         raise httpx.ReadTimeout("")
 
-    monkeypatch.setattr("nanobot.providers.openai_codex_provider._request_codex", fake_request)
+    monkeypatch.setattr("vtx_claw.providers.openai_codex_provider._request_codex", fake_request)
 
     provider = OpenAICodexProvider()
     response = await provider.chat([{"role": "user", "content": "hello"}])
 
-    assert response.content == ("Error calling Codex (ReadTimeout): timed out waiting for response")
+    assert response.content == (
+        "Error calling Codex (ReadTimeout): timed out waiting for response"
+    )
     assert log_capture.calls == [
         (
             "Codex API request failed: type={} kind={} retryable={} status={} "
             "error_type={} error_code={} retry_after={} summary={}",
-            (
-                "ReadTimeout",
-                "timeout",
-                True,
-                None,
-                None,
-                None,
-                None,
-                "ReadTimeout timeout",
-            ),
+            ("ReadTimeout", "timeout", True, None, None, None, None, "ReadTimeout timeout"),
         )
     ]
 
@@ -222,7 +217,7 @@ async def test_codex_timeout_error_writes_diagnostic_log(monkeypatch) -> None:
 @pytest.mark.asyncio
 async def test_codex_diagnostic_log_omits_prompt_content(monkeypatch) -> None:
     sink = io.StringIO()
-    logger.enable("nanobot")
+    logger.enable("vtx_claw")
     handler_id = logger.add(sink, format="{message}", backtrace=True, diagnose=True)
     try:
         _mock_codex_token(monkeypatch)
@@ -230,7 +225,9 @@ async def test_codex_diagnostic_log_omits_prompt_content(monkeypatch) -> None:
         async def fake_request(*args: Any, **kwargs: Any):
             raise httpx.ReadTimeout("")
 
-        monkeypatch.setattr("nanobot.providers.openai_codex_provider._request_codex", fake_request)
+        monkeypatch.setattr(
+            "vtx_claw.providers.openai_codex_provider._request_codex", fake_request
+        )
 
         provider = OpenAICodexProvider()
         response = await provider.chat(
@@ -263,7 +260,7 @@ async def test_codex_retry_uses_structured_timeout_metadata(monkeypatch) -> None
     async def fake_sleep(delay: float) -> None:
         delays.append(delay)
 
-    monkeypatch.setattr("nanobot.providers.openai_codex_provider._request_codex", fake_request)
+    monkeypatch.setattr("vtx_claw.providers.openai_codex_provider._request_codex", fake_request)
     monkeypatch.setattr(provider_base.asyncio, "sleep", fake_sleep)
 
     provider = OpenAICodexProvider()
@@ -287,13 +284,15 @@ async def test_codex_http_error_preserves_status_and_retry_after(monkeypatch) ->
             error_code="overloaded",
         )
 
-    monkeypatch.setattr("nanobot.providers.openai_codex_provider._request_codex", fake_request)
+    monkeypatch.setattr("vtx_claw.providers.openai_codex_provider._request_codex", fake_request)
 
     provider = OpenAICodexProvider()
     response = await provider.chat([{"role": "user", "content": "hello"}])
 
     assert response.finish_reason == "error"
-    assert response.content == "Error calling Codex (CodexHTTPError): HTTP 503: backend unavailable"
+    assert (
+        response.content == "Error calling Codex (CodexHTTPError): HTTP 503: backend unavailable"
+    )
     assert response.error_status_code == 503
     assert response.error_kind == "http"
     assert response.error_type == "server_error"
@@ -315,7 +314,7 @@ async def test_codex_http_diagnostic_log_omits_raw_body(monkeypatch) -> None:
             error_code="overloaded",
         )
 
-    monkeypatch.setattr("nanobot.providers.openai_codex_provider._request_codex", fake_request)
+    monkeypatch.setattr("vtx_claw.providers.openai_codex_provider._request_codex", fake_request)
 
     provider = OpenAICodexProvider()
     response = await provider.chat([{"role": "user", "content": "hello"}])
@@ -351,10 +350,7 @@ async def test_codex_http_diagnostic_log_omits_raw_body(monkeypatch) -> None:
     ],
 )
 async def test_codex_429_preserves_retry_semantics(
-    monkeypatch,
-    error_type: str,
-    error_code: str,
-    expected_retry: bool,
+    monkeypatch, error_type: str, error_code: str, expected_retry: bool
 ) -> None:
     _mock_codex_token(monkeypatch)
 
@@ -367,7 +363,7 @@ async def test_codex_429_preserves_retry_semantics(
             should_retry=expected_retry,
         )
 
-    monkeypatch.setattr("nanobot.providers.openai_codex_provider._request_codex", fake_request)
+    monkeypatch.setattr("vtx_claw.providers.openai_codex_provider._request_codex", fake_request)
 
     provider = OpenAICodexProvider()
     response = await provider.chat([{"role": "user", "content": "hello"}])
@@ -392,10 +388,7 @@ def test_codex_429_friendly_message_fallback_does_not_override_unknown_retry() -
         ('{"error":{"type":"insufficient_quota","code":"insufficient_quota"}}', False),
     ],
 )
-def test_codex_429_classification_uses_raw_error_semantics(
-    raw: str,
-    expected_retry: bool,
-) -> None:
+def test_codex_429_classification_uses_raw_error_semantics(raw: str, expected_retry: bool) -> None:
     error_type, error_code = provider_base.LLMProvider._extract_error_type_code(raw)
 
     assert _should_retry_status(429, error_type, error_code, raw) is expected_retry
@@ -410,7 +403,7 @@ def test_codex_reasoning_options_request_summary_without_forcing_effort() -> Non
 @pytest.mark.asyncio
 async def test_codex_stream_surfaces_reasoning_summary(monkeypatch) -> None:
     monkeypatch.setattr(
-        "nanobot.providers.openai_codex_provider.get_codex_token",
+        "vtx_claw.providers.openai_codex_provider.get_codex_token",
         lambda: SimpleNamespace(account_id="acct", access="token"),
     )
 
@@ -431,7 +424,7 @@ async def test_codex_stream_surfaces_reasoning_summary(monkeypatch) -> None:
             await on_thinking_delta("summary")
         return "answer", [], "stop", {"prompt_tokens": 10, "completion_tokens": 5}, "summary"
 
-    monkeypatch.setattr("nanobot.providers.openai_codex_provider._request_codex", fake_request)
+    monkeypatch.setattr("vtx_claw.providers.openai_codex_provider._request_codex", fake_request)
 
     provider = OpenAICodexProvider()
     content_deltas: list[str] = []

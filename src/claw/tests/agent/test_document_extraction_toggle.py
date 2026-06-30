@@ -5,12 +5,12 @@ from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
-from nanobot.agent.loop import AgentLoop, TurnContext, TurnState
-from nanobot.bus.events import InboundMessage
-from nanobot.bus.queue import MessageBus
-from nanobot.config.schema import ChannelsConfig
-from nanobot.providers.base import LLMResponse
-from nanobot.utils.document import reference_non_image_attachments
+from vtx_claw.agent.loop import AgentLoop, TurnContext, TurnState
+from vtx_claw.bus.events import InboundMessage
+from vtx_claw.bus.queue import MessageBus
+from vtx_claw.config.schema import ChannelsConfig
+from vtx_claw.providers.base import LLMResponse
+from vtx_claw.utils.document import reference_non_image_attachments
 
 
 def _make_loop(tmp_path: Path, channels_config: ChannelsConfig | None = None) -> AgentLoop:
@@ -28,8 +28,7 @@ def _make_loop(tmp_path: Path, channels_config: ChannelsConfig | None = None) ->
 
 @pytest.mark.asyncio
 async def test_state_restore_extracts_documents_by_default(
-    tmp_path: Path,
-    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     loop = _make_loop(tmp_path)
     doc_path = tmp_path / "report.txt"
@@ -40,15 +39,11 @@ async def test_state_restore_extracts_documents_by_default(
         calls.append((content, media))
         return f"{content}\n\n[File: report.txt]\nQuarterly revenue is $5M", []
 
-    monkeypatch.setattr("nanobot.agent.loop.extract_documents", fake_extract_documents)
+    monkeypatch.setattr("vtx_claw.agent.loop.extract_documents", fake_extract_documents)
 
     ctx = TurnContext(
         msg=InboundMessage(
-            channel="cli",
-            sender_id="u",
-            chat_id="c",
-            content="summarize",
-            media=[str(doc_path)],
+            channel="cli", sender_id="u", chat_id="c", content="summarize", media=[str(doc_path)]
         ),
         session_key="cli:c",
         state=TurnState.RESTORE,
@@ -64,8 +59,7 @@ async def test_state_restore_extracts_documents_by_default(
 
 @pytest.mark.asyncio
 async def test_state_restore_references_documents_when_extraction_disabled(
-    tmp_path: Path,
-    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     loop = _make_loop(tmp_path, ChannelsConfig(extract_document_text=False))
     doc_path = tmp_path / "report.txt"
@@ -74,15 +68,11 @@ async def test_state_restore_references_documents_when_extraction_disabled(
     def fail_extract_documents(content: str, media: list[str]) -> tuple[str, list[str]]:
         raise AssertionError("document extraction should be disabled")
 
-    monkeypatch.setattr("nanobot.agent.loop.extract_documents", fail_extract_documents)
+    monkeypatch.setattr("vtx_claw.agent.loop.extract_documents", fail_extract_documents)
 
     ctx = TurnContext(
         msg=InboundMessage(
-            channel="cli",
-            sender_id="u",
-            chat_id="c",
-            content="summarize",
-            media=[str(doc_path)],
+            channel="cli", sender_id="u", chat_id="c", content="summarize", media=[str(doc_path)]
         ),
         session_key="cli:c",
         state=TurnState.RESTORE,
@@ -98,8 +88,7 @@ async def test_state_restore_references_documents_when_extraction_disabled(
 
 @pytest.mark.asyncio
 async def test_pending_followup_references_documents_when_extraction_disabled(
-    tmp_path: Path,
-    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     doc_path = tmp_path / "followup.txt"
     doc_path.write_text("Do not inject this file body", encoding="utf-8")
@@ -118,16 +107,12 @@ async def test_pending_followup_references_documents_when_extraction_disabled(
     def fail_extract_documents(content: str, media: list[str]) -> tuple[str, list[str]]:
         raise AssertionError("document extraction should be disabled")
 
-    monkeypatch.setattr("nanobot.agent.loop.extract_documents", fail_extract_documents)
+    monkeypatch.setattr("vtx_claw.agent.loop.extract_documents", fail_extract_documents)
 
     pending_queue: asyncio.Queue[InboundMessage] = asyncio.Queue()
     await pending_queue.put(
         InboundMessage(
-            channel="cli",
-            sender_id="u",
-            chat_id="c",
-            content="check this",
-            media=[str(doc_path)],
+            channel="cli", sender_id="u", chat_id="c", content="check this", media=[str(doc_path)]
         )
     )
 
@@ -161,8 +146,7 @@ def test_document_extraction_disabled_still_preserves_images(tmp_path: Path) -> 
     doc_path.write_text("manual extraction target", encoding="utf-8")
 
     content, media = reference_non_image_attachments(
-        "review these",
-        [str(image_path), str(doc_path)],
+        "review these", [str(image_path), str(doc_path)]
     )
 
     assert media == [str(image_path)]

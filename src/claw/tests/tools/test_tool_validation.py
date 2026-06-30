@@ -6,7 +6,7 @@ from typing import Any
 import pytest
 from pydantic import ValidationError
 
-from nanobot.agent.tools import (
+from vtx_claw.agent.tools import (
     ArraySchema,
     IntegerSchema,
     ObjectSchema,
@@ -15,10 +15,10 @@ from nanobot.agent.tools import (
     tool_parameters,
     tool_parameters_schema,
 )
-from nanobot.agent.tools.base import Tool
-from nanobot.agent.tools.registry import ToolRegistry
-from nanobot.agent.tools.shell import ExecTool, ExecToolConfig
-from nanobot.security.network import configure_ssrf_whitelist
+from vtx_claw.agent.tools.base import Tool
+from vtx_claw.agent.tools.registry import ToolRegistry
+from vtx_claw.agent.tools.shell import ExecTool, ExecToolConfig
+from vtx_claw.security.network import configure_ssrf_whitelist
 
 
 class SampleTool(Tool):
@@ -42,10 +42,7 @@ class SampleTool(Tool):
                     "type": "object",
                     "properties": {
                         "tag": {"type": "string"},
-                        "flags": {
-                            "type": "array",
-                            "items": {"type": "string"},
-                        },
+                        "flags": {"type": "array", "items": {"type": "string"}},
                     },
                     "required": ["tag"],
                 },
@@ -120,9 +117,7 @@ def test_schema_classes_equivalent_to_sample_tool_parameters() -> None:
         count=IntegerSchema(2, minimum=1, maximum=10),
         mode=StringSchema("", enum=["fast", "full"]),
         meta=ObjectSchema(
-            tag=StringSchema(""),
-            flags=ArraySchema(StringSchema("")),
-            required=["tag"],
+            tag=StringSchema(""), flags=ArraySchema(StringSchema("")), required=["tag"]
         ),
         required=["query", "count"],
         additional_properties=None,
@@ -179,13 +174,7 @@ def test_validate_params_enum_and_min_length() -> None:
 
 def test_validate_params_nested_object_and_array() -> None:
     tool = SampleTool()
-    errors = tool.validate_params(
-        {
-            "query": "hi",
-            "count": 2,
-            "meta": {"flags": [1, "ok"]},
-        }
-    )
+    errors = tool.validate_params({"query": "hi", "count": 2, "meta": {"flags": [1, "ok"]}})
     assert any("missing required meta.tag" in e for e in errors)
     assert any("meta.flags[0] should be string" in e for e in errors)
 
@@ -203,11 +192,7 @@ def test_tool_parameters_schema_rejects_unknown_fields_by_default() -> None:
 
 
 def test_validate_params_validates_typed_additional_properties() -> None:
-    schema = {
-        "type": "object",
-        "properties": {},
-        "additionalProperties": {"type": "integer"},
-    }
+    schema = {"type": "object", "properties": {}, "additionalProperties": {"type": "integer"}}
     tool = CastTestTool(schema)
 
     errors = tool.validate_params({"extra": "2"})
@@ -267,8 +252,7 @@ def test_exec_guard_allows_whitelisted_internal_urls(tmp_path) -> None:
     try:
         tool = ExecTool(restrict_to_workspace=True)
         error = tool._guard_command(
-            'curl -s -H "Authorization: Bearer ..." http://10.10.10.3:8123/api/',
-            str(tmp_path),
+            'curl -s -H "Authorization: Bearer ..." http://10.10.10.3:8123/api/', str(tmp_path)
         )
         assert error is None
     finally:
@@ -283,22 +267,22 @@ def test_exec_extract_absolute_paths_captures_posix_absolute_paths() -> None:
 
 
 def test_exec_extract_absolute_paths_captures_home_paths() -> None:
-    cmd = "cat ~/.nanobot/config.json > ~/out.txt"
+    cmd = "cat ~/.vtx_claw/config.json > ~/out.txt"
     paths = ExecTool._extract_absolute_paths(cmd)
-    assert "~/.nanobot/config.json" in paths
+    assert "~/.vtx_claw/config.json" in paths
     assert "~/out.txt" in paths
 
 
 def test_exec_extract_absolute_paths_captures_quoted_paths() -> None:
-    cmd = 'cat "/tmp/data.txt" "~/.nanobot/config.json"'
+    cmd = 'cat "/tmp/data.txt" "~/.vtx_claw/config.json"'
     paths = ExecTool._extract_absolute_paths(cmd)
     assert "/tmp/data.txt" in paths
-    assert "~/.nanobot/config.json" in paths
+    assert "~/.vtx_claw/config.json" in paths
 
 
 def test_exec_guard_blocks_home_path_outside_workspace(tmp_path) -> None:
     tool = ExecTool(restrict_to_workspace=True)
-    error = tool._guard_command("cat ~/.nanobot/config.json", str(tmp_path))
+    error = tool._guard_command("cat ~/.vtx_claw/config.json", str(tmp_path))
     assert error is not None
     assert error.startswith("Error: Command blocked by safety guard (path outside working dir)")
     assert "hard policy boundary" in error
@@ -306,7 +290,7 @@ def test_exec_guard_blocks_home_path_outside_workspace(tmp_path) -> None:
 
 def test_exec_guard_blocks_quoted_home_path_outside_workspace(tmp_path) -> None:
     tool = ExecTool(restrict_to_workspace=True)
-    error = tool._guard_command('cat "~/.nanobot/config.json"', str(tmp_path))
+    error = tool._guard_command('cat "~/.vtx_claw/config.json"', str(tmp_path))
     assert error is not None
     assert error.startswith("Error: Command blocked by safety guard (path outside working dir)")
     assert "hard policy boundary" in error
@@ -318,7 +302,7 @@ def test_exec_guard_allows_media_path_outside_workspace(tmp_path, monkeypatch) -
     media_file = media_dir / "photo.jpg"
     media_file.write_text("ok", encoding="utf-8")
 
-    monkeypatch.setattr("nanobot.agent.tools.shell.get_media_dir", lambda: media_dir)
+    monkeypatch.setattr("vtx_claw.agent.tools.shell.get_media_dir", lambda: media_dir)
 
     tool = ExecTool(restrict_to_workspace=True)
     error = tool._guard_command(f'cat "{media_file}"', str(tmp_path / "workspace"))
@@ -326,7 +310,7 @@ def test_exec_guard_allows_media_path_outside_workspace(tmp_path, monkeypatch) -
 
 
 def test_exec_guard_blocks_windows_drive_root_outside_workspace(monkeypatch) -> None:
-    import nanobot.agent.tools.shell as shell_mod
+    import vtx_claw.agent.tools.shell as shell_mod
 
     class FakeWindowsPath:
         def __init__(self, raw: str) -> None:
@@ -420,36 +404,21 @@ class CastTestTool(Tool):
 
 
 def test_cast_params_string_to_int() -> None:
-    tool = CastTestTool(
-        {
-            "type": "object",
-            "properties": {"count": {"type": "integer"}},
-        }
-    )
+    tool = CastTestTool({"type": "object", "properties": {"count": {"type": "integer"}}})
     result = tool.cast_params({"count": "42"})
     assert result["count"] == 42
     assert isinstance(result["count"], int)
 
 
 def test_cast_params_string_to_number() -> None:
-    tool = CastTestTool(
-        {
-            "type": "object",
-            "properties": {"rate": {"type": "number"}},
-        }
-    )
+    tool = CastTestTool({"type": "object", "properties": {"rate": {"type": "number"}}})
     result = tool.cast_params({"rate": "3.14"})
     assert result["rate"] == 3.14
     assert isinstance(result["rate"], float)
 
 
 def test_cast_params_string_to_bool() -> None:
-    tool = CastTestTool(
-        {
-            "type": "object",
-            "properties": {"enabled": {"type": "boolean"}},
-        }
-    )
+    tool = CastTestTool({"type": "object", "properties": {"enabled": {"type": "boolean"}}})
     assert tool.cast_params({"enabled": "true"})["enabled"] is True
     assert tool.cast_params({"enabled": "false"})["enabled"] is False
     assert tool.cast_params({"enabled": "1"})["enabled"] is True
@@ -457,12 +426,7 @@ def test_cast_params_string_to_bool() -> None:
 
 def test_cast_params_array_items() -> None:
     tool = CastTestTool(
-        {
-            "type": "object",
-            "properties": {
-                "nums": {"type": "array", "items": {"type": "integer"}},
-            },
-        }
+        {"type": "object", "properties": {"nums": {"type": "array", "items": {"type": "integer"}}}}
     )
     result = tool.cast_params({"nums": ["1", "2", "3"]})
     assert result["nums"] == [1, 2, 3]
@@ -475,11 +439,8 @@ def test_cast_params_nested_object() -> None:
             "properties": {
                 "config": {
                     "type": "object",
-                    "properties": {
-                        "port": {"type": "integer"},
-                        "debug": {"type": "boolean"},
-                    },
-                },
+                    "properties": {"port": {"type": "integer"}, "debug": {"type": "boolean"}},
+                }
             },
         }
     )
@@ -490,12 +451,7 @@ def test_cast_params_nested_object() -> None:
 
 def test_cast_params_bool_not_cast_to_int() -> None:
     """Booleans should not be silently cast to integers."""
-    tool = CastTestTool(
-        {
-            "type": "object",
-            "properties": {"count": {"type": "integer"}},
-        }
-    )
+    tool = CastTestTool({"type": "object", "properties": {"count": {"type": "integer"}}})
     result = tool.cast_params({"count": True})
     assert result["count"] is True
     errors = tool.validate_params(result)
@@ -504,24 +460,14 @@ def test_cast_params_bool_not_cast_to_int() -> None:
 
 def test_cast_params_preserves_empty_string() -> None:
     """Empty strings should be preserved for string type."""
-    tool = CastTestTool(
-        {
-            "type": "object",
-            "properties": {"name": {"type": "string"}},
-        }
-    )
+    tool = CastTestTool({"type": "object", "properties": {"name": {"type": "string"}}})
     result = tool.cast_params({"name": ""})
     assert result["name"] == ""
 
 
 def test_cast_params_bool_string_false() -> None:
     """Test that 'false', '0', 'no' strings convert to False."""
-    tool = CastTestTool(
-        {
-            "type": "object",
-            "properties": {"flag": {"type": "boolean"}},
-        }
-    )
+    tool = CastTestTool({"type": "object", "properties": {"flag": {"type": "boolean"}}})
     assert tool.cast_params({"flag": "false"})["flag"] is False
     assert tool.cast_params({"flag": "False"})["flag"] is False
     assert tool.cast_params({"flag": "0"})["flag"] is False
@@ -531,12 +477,7 @@ def test_cast_params_bool_string_false() -> None:
 
 def test_cast_params_bool_string_invalid() -> None:
     """Invalid boolean strings should not be cast."""
-    tool = CastTestTool(
-        {
-            "type": "object",
-            "properties": {"flag": {"type": "boolean"}},
-        }
-    )
+    tool = CastTestTool({"type": "object", "properties": {"flag": {"type": "boolean"}}})
     # Invalid strings should be preserved (validation will catch them)
     result = tool.cast_params({"flag": "random"})
     assert result["flag"] == "random"
@@ -546,12 +487,7 @@ def test_cast_params_bool_string_invalid() -> None:
 
 def test_cast_params_invalid_string_to_int() -> None:
     """Invalid strings should not be cast to integer."""
-    tool = CastTestTool(
-        {
-            "type": "object",
-            "properties": {"count": {"type": "integer"}},
-        }
-    )
+    tool = CastTestTool({"type": "object", "properties": {"count": {"type": "integer"}}})
     result = tool.cast_params({"count": "abc"})
     assert result["count"] == "abc"  # Original value preserved
     result = tool.cast_params({"count": "12.5.7"})
@@ -560,24 +496,14 @@ def test_cast_params_invalid_string_to_int() -> None:
 
 def test_cast_params_invalid_string_to_number() -> None:
     """Invalid strings should not be cast to number."""
-    tool = CastTestTool(
-        {
-            "type": "object",
-            "properties": {"rate": {"type": "number"}},
-        }
-    )
+    tool = CastTestTool({"type": "object", "properties": {"rate": {"type": "number"}}})
     result = tool.cast_params({"rate": "not_a_number"})
     assert result["rate"] == "not_a_number"
 
 
 def test_validate_params_bool_not_accepted_as_number() -> None:
     """Booleans should not pass number validation."""
-    tool = CastTestTool(
-        {
-            "type": "object",
-            "properties": {"rate": {"type": "number"}},
-        }
-    )
+    tool = CastTestTool({"type": "object", "properties": {"rate": {"type": "number"}}})
     errors = tool.validate_params({"rate": False})
     assert any("rate should be number" in e for e in errors)
 
@@ -595,14 +521,7 @@ def test_cast_params_none_values() -> None:
             },
         }
     )
-    result = tool.cast_params(
-        {
-            "name": None,
-            "count": None,
-            "items": None,
-            "config": None,
-        }
-    )
+    result = tool.cast_params({"name": None, "count": None, "items": None, "config": None})
     # None should be preserved for all types
     assert result["name"] is None
     assert result["count"] is None
@@ -612,12 +531,7 @@ def test_cast_params_none_values() -> None:
 
 def test_cast_params_single_value_not_auto_wrapped_to_array() -> None:
     """Single values should NOT be automatically wrapped into arrays."""
-    tool = CastTestTool(
-        {
-            "type": "object",
-            "properties": {"items": {"type": "array"}},
-        }
-    )
+    tool = CastTestTool({"type": "object", "properties": {"items": {"type": "array"}}})
     # Non-array values should be preserved (validation will catch them)
     result = tool.cast_params({"items": 5})
     assert result["items"] == 5  # Not wrapped to [5]
@@ -723,24 +637,14 @@ def test_resolve_type_none_input() -> None:
 
 def test_validate_nullable_param_accepts_string() -> None:
     """Nullable string param should accept a string value."""
-    tool = CastTestTool(
-        {
-            "type": "object",
-            "properties": {"name": {"type": ["string", "null"]}},
-        }
-    )
+    tool = CastTestTool({"type": "object", "properties": {"name": {"type": ["string", "null"]}}})
     errors = tool.validate_params({"name": "hello"})
     assert errors == []
 
 
 def test_validate_nullable_param_accepts_none() -> None:
     """Nullable string param should accept None."""
-    tool = CastTestTool(
-        {
-            "type": "object",
-            "properties": {"name": {"type": ["string", "null"]}},
-        }
-    )
+    tool = CastTestTool({"type": "object", "properties": {"name": {"type": ["string", "null"]}}})
     errors = tool.validate_params({"name": None})
     assert errors == []
 
@@ -748,10 +652,7 @@ def test_validate_nullable_param_accepts_none() -> None:
 def test_validate_nullable_flag_accepts_none() -> None:
     """OpenAI-normalized nullable params should still accept None locally."""
     tool = CastTestTool(
-        {
-            "type": "object",
-            "properties": {"name": {"type": "string", "nullable": True}},
-        }
+        {"type": "object", "properties": {"name": {"type": "string", "nullable": True}}}
     )
     errors = tool.validate_params({"name": None})
     assert errors == []
@@ -759,12 +660,7 @@ def test_validate_nullable_flag_accepts_none() -> None:
 
 def test_cast_nullable_param_no_crash() -> None:
     """cast_params should not crash on nullable type (the original bug)."""
-    tool = CastTestTool(
-        {
-            "type": "object",
-            "properties": {"name": {"type": ["string", "null"]}},
-        }
-    )
+    tool = CastTestTool({"type": "object", "properties": {"name": {"type": ["string", "null"]}}})
     result = tool.cast_params({"name": "hello"})
     assert result["name"] == "hello"
     result = tool.cast_params({"name": None})

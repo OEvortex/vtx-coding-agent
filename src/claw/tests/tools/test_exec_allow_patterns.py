@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from nanobot.agent.tools.shell import ExecTool
+from vtx_claw.agent.tools.shell import ExecTool
 
 
 def test_deny_patterns_block_rm_rf():
@@ -39,10 +39,7 @@ def test_extra_deny_patterns_from_config():
 
 def test_allow_patterns_bypass_extra_deny():
     """allow_patterns also bypasses user-supplied deny patterns."""
-    tool = ExecTool(
-        deny_patterns=[r"\bping\b"],
-        allow_patterns=[r"\bping\s+example\.com\b"],
-    )
+    tool = ExecTool(deny_patterns=[r"\bping\b"], allow_patterns=[r"\bping\s+example\.com\b"])
     result = tool._guard_command("ping example.com", "/tmp")
     assert result is None
 

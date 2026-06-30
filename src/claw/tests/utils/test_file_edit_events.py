@@ -4,7 +4,7 @@ import asyncio
 from pathlib import Path
 from types import SimpleNamespace
 
-from nanobot.utils.file_edit_events import (
+from vtx_claw.utils.file_edit_events import (
     StreamingFileEditTracker,
     build_file_edit_end_event,
     build_file_edit_start_event,
@@ -33,11 +33,7 @@ def test_write_file_start_predicts_and_end_calibrates_exact_diff(tmp_path: Path)
     target.write_text("old\nkeep\n", encoding="utf-8")
     params = {"path": "notes.txt", "content": "new\nkeep\nextra\n"}
     tracker = prepare_file_edit_tracker(
-        call_id="call-write",
-        tool_name="write_file",
-        tool=None,
-        workspace=tmp_path,
-        params=params,
+        call_id="call-write", tool_name="write_file", tool=None, workspace=tmp_path, params=params
     )
 
     assert tracker is not None
@@ -100,10 +96,7 @@ def test_apply_patch_prepares_trackers_for_each_touched_file(tmp_path: Path) -> 
         params={"edits": edits},
     )
 
-    assert [tracker.display_path for tracker in trackers] == [
-        "src/new.py",
-        "src/existing.py",
-    ]
+    assert [tracker.display_path for tracker in trackers] == ["src/new.py", "src/existing.py"]
 
     (tmp_path / "src" / "new.py").write_text("fresh\n", encoding="utf-8")
     existing.write_text("new\nkeep\n", encoding="utf-8")
@@ -137,11 +130,7 @@ def test_oversized_write_file_end_uses_known_content_for_exact_count(tmp_path: P
     target = tmp_path / "large.txt"
     params = {"path": "large.txt", "content": "x" * (2 * 1024 * 1024 + 1)}
     tracker = prepare_file_edit_tracker(
-        call_id="call-large",
-        tool_name="write_file",
-        tool=None,
-        workspace=tmp_path,
-        params=params,
+        call_id="call-large", tool_name="write_file", tool=None, workspace=tmp_path, params=params
     )
 
     assert tracker is not None
@@ -168,12 +157,7 @@ def test_streaming_write_file_tracker_emits_live_line_counts(tmp_path: Path) -> 
                 "arguments_delta": '{"path":"notes.md","content":"',
             }
         )
-        await tracker.update(
-            {
-                "index": 0,
-                "arguments_delta": "line\\n" * 24,
-            }
-        )
+        await tracker.update({"index": 0, "arguments_delta": "line\\n" * 24})
 
     asyncio.run(run())
 
@@ -268,12 +252,7 @@ def test_streaming_write_file_tracker_emits_pending_before_path(tmp_path: Path) 
                 "arguments_delta": '{"content":"line\\n',
             }
         )
-        await tracker.update(
-            {
-                "index": 0,
-                "arguments_delta": 'more\\n","path":"late.md"',
-            }
-        )
+        await tracker.update({"index": 0, "arguments_delta": 'more\\n","path":"late.md"'})
 
     asyncio.run(run())
 
@@ -382,12 +361,7 @@ def test_streaming_edit_file_tracker_emits_live_line_counts(tmp_path: Path) -> N
                 "arguments_delta": '{"path":"notes.md","old_text":"old\\nkeep","new_text":"',
             }
         )
-        await tracker.update(
-            {
-                "index": 0,
-                "arguments_delta": "new\\nkeep\\nextra\\n" * 8,
-            }
-        )
+        await tracker.update({"index": 0, "arguments_delta": "new\\nkeep\\nextra\\n" * 8})
 
     asyncio.run(run())
 
@@ -461,14 +435,10 @@ def test_streaming_tracker_does_not_restore_duplicate_canonical_ids(tmp_path: Pa
             }
         )
         final_a = SimpleNamespace(
-            id="call_dup",
-            name="write_file",
-            arguments={"path": "a.md", "content": "one\n"},
+            id="call_dup", name="write_file", arguments={"path": "a.md", "content": "one\n"}
         )
         final_b = SimpleNamespace(
-            id="call_unique",
-            name="write_file",
-            arguments={"path": "b.md", "content": "two\n"},
+            id="call_unique", name="write_file", arguments={"path": "b.md", "content": "two\n"}
         )
         tracker.apply_final_call_ids([final_a, final_b])
         assert final_a.id == "call_dup"

@@ -4,8 +4,8 @@ from pathlib import Path
 
 import pytest
 
-from nanobot.agent.context import ContextBuilder
-from nanobot.session.goal_state import GOAL_STATE_KEY
+from vtx_claw.agent.context import ContextBuilder
+from vtx_claw.session.goal_state import GOAL_STATE_KEY
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -166,7 +166,7 @@ class TestIsTemplateContent:
     def test_content_matching_template(self):
         from importlib.resources import files as pkg_files
 
-        tpl = pkg_files("nanobot") / "templates" / "memory" / "MEMORY.md"
+        tpl = pkg_files("vtx_claw") / "templates" / "memory" / "MEMORY.md"
         if not tpl.is_file():
             pytest.skip("MEMORY.md template not bundled")
         original = tpl.read_text(encoding="utf-8")
@@ -175,10 +175,12 @@ class TestIsTemplateContent:
     def test_modified_content_returns_false(self):
         from importlib.resources import files as pkg_files
 
-        tpl = pkg_files("nanobot") / "templates" / "memory" / "MEMORY.md"
+        tpl = pkg_files("vtx_claw") / "templates" / "memory" / "MEMORY.md"
         if not tpl.is_file():
             pytest.skip("MEMORY.md template not bundled")
-        assert ContextBuilder._is_template_content("totally different", "memory/MEMORY.md") is False
+        assert (
+            ContextBuilder._is_template_content("totally different", "memory/MEMORY.md") is False
+        )
 
 
 # ---------------------------------------------------------------------------
@@ -190,7 +192,7 @@ class TestBundledToolContract:
     def test_tool_contract_balances_general_and_coding_workflows(self):
         from importlib.resources import files as pkg_files
 
-        tpl = pkg_files("nanobot") / "templates" / "agent" / "tool_contract.md"
+        tpl = pkg_files("vtx_claw") / "templates" / "agent" / "tool_contract.md"
         content = tpl.read_text(encoding="utf-8")
 
         assert "## General Tool Contract" in content
@@ -326,15 +328,9 @@ class TestBuildMessages:
 
     def test_session_metadata_injects_active_goal_state(self, tmp_path):
         builder = _builder(tmp_path)
-        meta = {
-            GOAL_STATE_KEY: {"status": "active", "objective": "Finish docs migration."},
-        }
+        meta = {GOAL_STATE_KEY: {"status": "active", "objective": "Finish docs migration."}}
         messages = builder.build_messages(
-            [],
-            "hi",
-            channel="cli",
-            chat_id="x",
-            session_metadata=meta,
+            [], "hi", channel="cli", chat_id="x", session_metadata=meta
         )
         user_msg = str(messages[-1]["content"])
         assert "Goal (active):" in user_msg
@@ -343,22 +339,14 @@ class TestBuildMessages:
     def test_goal_state_does_not_leak_without_session_metadata(self, tmp_path):
         builder = _builder(tmp_path)
         other_session_meta = {
-            GOAL_STATE_KEY: {"status": "active", "objective": "Other chat goal."},
+            GOAL_STATE_KEY: {"status": "active", "objective": "Other chat goal."}
         }
 
         with_goal = builder.build_messages(
-            [],
-            "hi",
-            channel="websocket",
-            chat_id="chat-a",
-            session_metadata=other_session_meta,
+            [], "hi", channel="websocket", chat_id="chat-a", session_metadata=other_session_meta
         )
         without_goal = builder.build_messages(
-            [],
-            "hi",
-            channel="websocket",
-            chat_id="chat-b",
-            session_metadata={},
+            [], "hi", channel="websocket", chat_id="chat-b", session_metadata={}
         )
 
         assert "Other chat goal." in str(with_goal[-1]["content"])
@@ -371,7 +359,7 @@ class TestBuildMessages:
             [],
             "please use @zoom tonight",
             current_runtime_lines=[
-                "CLI App Attachment: @zoom (installed; tool=run_cli_app; entry_point=cli-anything-zoom).",
+                "CLI App Attachment: @zoom (installed; tool=run_cli_app; entry_point=cli-anything-zoom)."
             ],
         )
         user_msg = str(messages[-1]["content"])

@@ -1,6 +1,6 @@
 # Check optional Feishu dependencies before running tests
 try:
-    from nanobot.channels import feishu
+    from vtx_claw.channels import feishu
 
     FEISHU_AVAILABLE = getattr(feishu, "FEISHU_AVAILABLE", False)
 except ImportError:
@@ -11,7 +11,7 @@ if not FEISHU_AVAILABLE:
 
     pytest.skip("Feishu dependencies not installed (lark-oapi)", allow_module_level=True)
 
-from nanobot.channels.feishu import FeishuChannel, _extract_post_content
+from vtx_claw.channels.feishu import FeishuChannel, _extract_post_content
 
 
 def test_extract_post_content_supports_post_wrapper_shape() -> None:
@@ -20,10 +20,7 @@ def test_extract_post_content_supports_post_wrapper_shape() -> None:
             "zh_cn": {
                 "title": "日报",
                 "content": [
-                    [
-                        {"tag": "text", "text": "完成"},
-                        {"tag": "img", "image_key": "img_1"},
-                    ]
+                    [{"tag": "text", "text": "完成"}, {"tag": "img", "image_key": "img_1"}]
                 ],
             }
         }

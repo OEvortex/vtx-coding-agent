@@ -4,14 +4,13 @@ import json
 from datetime import datetime
 from pathlib import Path
 
-from nanobot.session.manager import Session, SessionManager
-from nanobot.utils.helpers import safe_filename
+from vtx_claw.session.manager import Session, SessionManager
+from vtx_claw.utils.helpers import safe_filename
 
 
 def _manager(tmp_path: Path, monkeypatch) -> SessionManager:
     monkeypatch.setattr(
-        "nanobot.session.manager.get_legacy_sessions_dir",
-        lambda: tmp_path / "legacy_sessions",
+        "vtx_claw.session.manager.get_legacy_sessions_dir", lambda: tmp_path / "legacy_sessions"
     )
     return SessionManager(tmp_path / "workspace")
 
@@ -27,10 +26,7 @@ def _write_session_file(path: Path, key: str, content: str) -> None:
         "last_consolidated": 0,
     }
     message = {"role": "user", "content": content}
-    path.write_text(
-        json.dumps(metadata) + "\n" + json.dumps(message) + "\n",
-        encoding="utf-8",
-    )
+    path.write_text(json.dumps(metadata) + "\n" + json.dumps(message) + "\n", encoding="utf-8")
 
 
 def test_distinct_keys_have_distinct_filenames(tmp_path: Path, monkeypatch) -> None:
@@ -94,8 +90,7 @@ def test_load_migrates_lossy_to_new_path(tmp_path: Path, monkeypatch) -> None:
 
 
 def test_load_does_not_migrate_lossy_path_for_different_stored_key(
-    tmp_path: Path,
-    monkeypatch,
+    tmp_path: Path, monkeypatch
 ) -> None:
     sm = _manager(tmp_path, monkeypatch)
     first_key = "telegram:a_b"
@@ -144,8 +139,7 @@ def test_lossy_path_helper_returns_expected_path(tmp_path: Path, monkeypatch) ->
 
 
 def test_storage_paths_are_distinct_when_keys_collide_under_safe_key(
-    tmp_path: Path,
-    monkeypatch,
+    tmp_path: Path, monkeypatch
 ) -> None:
     sm = _manager(tmp_path, monkeypatch)
     first = Session(key="telegram:a_b")

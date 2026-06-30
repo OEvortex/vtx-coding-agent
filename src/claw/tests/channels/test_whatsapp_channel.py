@@ -6,9 +6,9 @@ from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
-from nanobot.bus.events import OutboundMessage
-from nanobot.channels import whatsapp as whatsapp_module
-from nanobot.channels.whatsapp import WhatsAppChannel, _legacy_bridge_config_fields, _NeonizeAPI
+from vtx_claw.bus.events import OutboundMessage
+from vtx_claw.channels import whatsapp as whatsapp_module
+from vtx_claw.channels.whatsapp import WhatsAppChannel, _legacy_bridge_config_fields, _NeonizeAPI
 
 
 class _Proto:
@@ -57,8 +57,7 @@ def _event(
         IsFromMe=is_from_me,
     )
     return _Proto(
-        Info=_Proto(ID=message_id, Timestamp=timestamp, MessageSource=source),
-        Message=message,
+        Info=_Proto(ID=message_id, Timestamp=timestamp, MessageSource=source), Message=message
     )
 
 
@@ -165,7 +164,9 @@ async def test_send_text_uses_neonize_send_message(monkeypatch) -> None:
     ch._client = client
     ch._connected = True
 
-    await ch.send(OutboundMessage(channel="whatsapp", chat_id="12345@s.whatsapp.net", content="hi"))
+    await ch.send(
+        OutboundMessage(channel="whatsapp", chat_id="12345@s.whatsapp.net", content="hi")
+    )
 
     client.send_message.assert_awaited_once_with(("12345", "s.whatsapp.net"), "hi")
 
@@ -198,10 +199,7 @@ async def test_send_media_dispatches_by_mimetype(monkeypatch) -> None:
     client.send_video.assert_awaited_once_with(jid, "clip.mp4")
     client.send_audio.assert_awaited_once_with(jid, "voice.ogg")
     client.send_document.assert_awaited_once_with(
-        jid,
-        "report.pdf",
-        filename="report.pdf",
-        mimetype="application/pdf",
+        jid, "report.pdf", filename="report.pdf", mimetype="application/pdf"
     )
 
 
@@ -331,8 +329,7 @@ async def test_lid_to_phone_cache_resolves_lid_only_messages() -> None:
 
 def test_lid_mappings_from_config() -> None:
     ch = WhatsAppChannel(
-        {"enabled": True, "lidMappings": {"123456789012345": "15551234567"}},
-        MagicMock(),
+        {"enabled": True, "lidMappings": {"123456789012345": "15551234567"}}, MagicMock()
     )
 
     assert ch._lid_to_phone == {"123456789012345": "15551234567"}
@@ -344,16 +341,10 @@ async def test_image_media_is_downloaded_and_forwarded(monkeypatch, tmp_path) ->
     ch = _make_channel()
     ch._handle_message = AsyncMock()
     client = SimpleNamespace(download_any=AsyncMock())
-    message = _Proto(
-        imageMessage=_Proto(
-            caption="look",
-            mimetype="image/jpeg",
-        )
-    )
+    message = _Proto(imageMessage=_Proto(caption="look", mimetype="image/jpeg"))
 
     await ch._handle_neonize_message(
-        client,
-        _event(message=message, sender_alt=_jid("15551234567", "s.whatsapp.net")),
+        client, _event(message=message, sender_alt=_jid("15551234567", "s.whatsapp.net"))
     )
 
     client.download_any.assert_awaited_once()
@@ -375,8 +366,7 @@ async def test_voice_message_transcribes_and_drops_media_when_successful(
     message = _Proto(audioMessage=_Proto(mimetype="audio/ogg", PTT=True))
 
     await ch._handle_neonize_message(
-        client,
-        _event(message=message, sender_alt=_jid("15551234567", "s.whatsapp.net")),
+        client, _event(message=message, sender_alt=_jid("15551234567", "s.whatsapp.net"))
     )
 
     ch.transcribe_audio.assert_awaited_once()
@@ -418,8 +408,8 @@ async def test_unauthorized_voice_message_does_not_download_or_transcribe(
 @pytest.mark.asyncio
 async def test_unauthorized_dm_uses_base_pairing_flow(monkeypatch) -> None:
     _patch_neonize_api(monkeypatch)
-    monkeypatch.setattr("nanobot.channels.base.generate_code", lambda _ch, _sid: "ABCD-EFGH")
-    monkeypatch.setattr("nanobot.channels.base.is_approved", lambda _ch, _sid: False)
+    monkeypatch.setattr("vtx_claw.channels.base.generate_code", lambda _ch, _sid: "ABCD-EFGH")
+    monkeypatch.setattr("vtx_claw.channels.base.is_approved", lambda _ch, _sid: False)
     client = SimpleNamespace(send_message=AsyncMock(), download_any=AsyncMock())
     ch = WhatsAppChannel({"enabled": True, "allowFrom": []}, MagicMock())
     ch._client = client

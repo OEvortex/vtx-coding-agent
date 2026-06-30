@@ -6,13 +6,13 @@ from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
-from nanobot.agent.loop import AgentLoop
-from nanobot.bus.events import InboundMessage
-from nanobot.bus.queue import MessageBus
-from nanobot.config.loader import set_config_path
-from nanobot.config.schema import ImageGenerationToolConfig, ProviderConfig, ToolsConfig
-from nanobot.providers.base import LLMResponse, ToolCallRequest
-from nanobot.providers.image_generation import GeneratedImageResponse
+from vtx_claw.agent.loop import AgentLoop
+from vtx_claw.bus.events import InboundMessage
+from vtx_claw.bus.queue import MessageBus
+from vtx_claw.config.loader import set_config_path
+from vtx_claw.config.schema import ImageGenerationToolConfig, ProviderConfig, ToolsConfig
+from vtx_claw.providers.base import LLMResponse, ToolCallRequest
+from vtx_claw.providers.image_generation import GeneratedImageResponse
 
 PNG_DATA_URL = (
     "data:image/png;base64,"
@@ -30,13 +30,12 @@ class FakeImageClient:
 
 @pytest.mark.asyncio
 async def test_outbound_no_longer_carries_generated_media(
-    tmp_path: Path,
-    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """Media delivery is now the LLM's responsibility via the message tool."""
     set_config_path(tmp_path / "config.json")
     monkeypatch.setattr(
-        "nanobot.agent.tools.image_generation.get_image_gen_provider",
+        "vtx_claw.agent.tools.image_generation.get_image_gen_provider",
         lambda name: FakeImageClient if name == "openrouter" else None,
     )
     provider = MagicMock()
@@ -64,19 +63,14 @@ async def test_outbound_no_longer_carries_generated_media(
         provider=provider,
         workspace=tmp_path,
         model="test-model",
-        tools_config=ToolsConfig(
-            image_generation=ImageGenerationToolConfig(enabled=True),
-        ),
+        tools_config=ToolsConfig(image_generation=ImageGenerationToolConfig(enabled=True)),
         image_generation_provider_config=ProviderConfig(api_key="sk-or-test"),
     )
     loop.consolidator.maybe_consolidate_by_tokens = AsyncMock(return_value=False)  # type: ignore[method-assign]
 
     result = await loop._process_message(
         InboundMessage(
-            channel="websocket",
-            sender_id="user",
-            chat_id="chat-image",
-            content="draw an icon",
+            channel="websocket", sender_id="user", chat_id="chat-image", content="draw an icon"
         )
     )
 

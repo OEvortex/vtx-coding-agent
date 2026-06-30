@@ -7,8 +7,8 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from nanobot.agent.tools.mcp import _probe_http_url, connect_mcp_servers
-from nanobot.agent.tools.registry import ToolRegistry
+from vtx_claw.agent.tools.mcp import _probe_http_url, connect_mcp_servers
+from vtx_claw.agent.tools.registry import ToolRegistry
 
 # ---------------------------------------------------------------------------
 # _probe_http_url unit tests
@@ -71,7 +71,7 @@ async def test_connect_skips_unreachable_streamable_http():
 
     registry = ToolRegistry()
     servers = {"dead": _make_http_cfg("http://93.184.216.34:19999/mcp")}
-    with patch("nanobot.agent.tools.mcp._probe_http_url", _unreachable):
+    with patch("vtx_claw.agent.tools.mcp._probe_http_url", _unreachable):
         stacks = await connect_mcp_servers(servers, registry)
     assert stacks == {}
     assert len(registry._tools) == 0
@@ -86,7 +86,7 @@ async def test_connect_skips_unreachable_sse():
 
     registry = ToolRegistry()
     servers = {"dead": _make_http_cfg("http://93.184.216.34:19999/sse", transport="sse")}
-    with patch("nanobot.agent.tools.mcp._probe_http_url", _unreachable):
+    with patch("vtx_claw.agent.tools.mcp._probe_http_url", _unreachable):
         stacks = await connect_mcp_servers(servers, registry)
     assert stacks == {}
     assert len(registry._tools) == 0
@@ -103,7 +103,7 @@ async def test_probe_not_called_for_stdio():
         called = True
         return await original_probe(url, **kw)
 
-    with patch("nanobot.agent.tools.mcp._probe_http_url", _spy_probe):
+    with patch("vtx_claw.agent.tools.mcp._probe_http_url", _spy_probe):
         cfg = MagicMock()
         cfg.type = "stdio"
         cfg.url = None

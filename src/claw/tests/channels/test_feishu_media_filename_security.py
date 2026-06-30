@@ -3,8 +3,8 @@ from types import SimpleNamespace
 
 import pytest
 
-from nanobot.channels import feishu as feishu_module
-from nanobot.channels.feishu import FeishuChannel
+from vtx_claw.channels import feishu as feishu_module
+from vtx_claw.channels.feishu import FeishuChannel
 
 
 @pytest.mark.asyncio
@@ -17,8 +17,7 @@ async def test_feishu_downloaded_media_filename_cannot_escape_media_dir(monkeypa
 
     channel = FeishuChannel.__new__(FeishuChannel)
     channel.logger = SimpleNamespace(
-        debug=lambda *args, **kwargs: None,
-        warning=lambda *args, **kwargs: None,
+        debug=lambda *args, **kwargs: None, warning=lambda *args, **kwargs: None
     )
 
     def fake_download(_message_id, _file_key, _resource_type):

@@ -5,12 +5,12 @@ from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
-from nanobot.agent.runner import AgentRunResult
-from nanobot.agent.subagent import SubagentManager, SubagentStatus
-from nanobot.agent.tools.filesystem import FileToolsConfig
-from nanobot.bus.queue import MessageBus
-from nanobot.config.schema import ToolsConfig
-from nanobot.providers.base import LLMProvider
+from vtx_claw.agent.runner import AgentRunResult
+from vtx_claw.agent.subagent import SubagentManager, SubagentStatus
+from vtx_claw.agent.tools.filesystem import FileToolsConfig
+from vtx_claw.bus.queue import MessageBus
+from vtx_claw.config.schema import ToolsConfig
+from vtx_claw.providers.base import LLMProvider
 
 
 @pytest.mark.asyncio
@@ -99,12 +99,7 @@ async def test_subagent_forwards_fail_on_tool_error_to_runner(tmp_path):
     )
     sm._announce_result = AsyncMock()
 
-    status = SubagentStatus(
-        task_id="t1",
-        label="label",
-        task_description="task",
-        started_at=0.0,
-    )
+    status = SubagentStatus(task_id="t1", label="label", task_description="task", started_at=0.0)
 
     await sm._run_subagent("t1", "task", "label", {"channel": "cli", "chat_id": "direct"}, status)
 

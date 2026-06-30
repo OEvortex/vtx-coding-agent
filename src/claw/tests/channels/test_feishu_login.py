@@ -3,10 +3,10 @@ import json
 import httpx
 import pytest
 
-from nanobot.channels import feishu as feishu_module
-from nanobot.channels.feishu import FeishuChannel
-from nanobot.config import loader
-from nanobot.config.schema import Config
+from vtx_claw.channels import feishu as feishu_module
+from vtx_claw.channels.feishu import FeishuChannel
+from vtx_claw.config import loader
+from vtx_claw.config.schema import Config
 
 
 @pytest.mark.asyncio
@@ -38,9 +38,7 @@ async def test_feishu_login_writes_credentials_to_active_config(monkeypatch, tmp
 
 def test_begin_registration_requires_login_url(monkeypatch):
     monkeypatch.setattr(
-        feishu_module,
-        "_post_registration",
-        lambda _base_url, _body: {"device_code": "device"},
+        feishu_module, "_post_registration", lambda _base_url, _body: {"device_code": "device"}
     )
 
     with pytest.raises(RuntimeError, match="login URL"):
@@ -52,10 +50,7 @@ def test_begin_registration_preserves_login_url(monkeypatch):
     monkeypatch.setattr(
         feishu_module,
         "_post_registration",
-        lambda _base_url, _body: {
-            "device_code": "device",
-            "verification_uri_complete": login_url,
-        },
+        lambda _base_url, _body: {"device_code": "device", "verification_uri_complete": login_url},
     )
 
     assert feishu_module._begin_registration()["qr_url"] == login_url

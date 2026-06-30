@@ -4,14 +4,10 @@ from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
-from nanobot.agent.memory import (
-    _ARCHIVE_SUMMARY_MAX_CHARS,
-    Consolidator,
-    MemoryStore,
-)
-from nanobot.providers.base import LLMResponse
-from nanobot.session.manager import Session
-from nanobot.utils.prompt_templates import render_template
+from vtx_claw.agent.memory import _ARCHIVE_SUMMARY_MAX_CHARS, Consolidator, MemoryStore
+from vtx_claw.providers.base import LLMResponse
+from vtx_claw.session.manager import Session
+from vtx_claw.utils.prompt_templates import render_template
 
 
 @pytest.fixture
@@ -34,7 +30,9 @@ def consolidator(store, mock_provider):
     # get_or_create(session.key), it should get back the same object the test
     # passed in.  Store sessions by key so the lookup is transparent.
     _session_cache: dict[str, MagicMock] = {}
-    sessions.get_or_create = MagicMock(side_effect=lambda key: _session_cache.get(key, MagicMock()))
+    sessions.get_or_create = MagicMock(
+        side_effect=lambda key: _session_cache.get(key, MagicMock())
+    )
     sessions._session_cache = _session_cache
     return Consolidator(
         store=store,
@@ -77,14 +75,10 @@ class TestConsolidatorSummarize:
         assert len(entries) == 1
 
     async def test_summarize_appends_session_key_to_history(
-        self,
-        consolidator,
-        mock_provider,
-        store,
+        self, consolidator, mock_provider, store
     ):
         mock_provider.chat_with_retry.return_value = MagicMock(
-            content="User fixed a bug in the auth module.",
-            finish_reason="stop",
+            content="User fixed a bug in the auth module.", finish_reason="stop"
         )
         messages = [{"role": "user", "content": "fix the auth bug"}]
 
@@ -103,12 +97,7 @@ class TestConsolidatorSummarize:
         assert len(entries) == 1
         assert "[RAW]" in entries[0]["content"]
 
-    async def test_raw_dump_fallback_appends_session_key(
-        self,
-        consolidator,
-        mock_provider,
-        store,
-    ):
+    async def test_raw_dump_fallback_appends_session_key(self, consolidator, mock_provider, store):
         mock_provider.chat_with_retry.side_effect = Exception("API error")
         messages = [{"role": "user", "content": "hello"}]
 
@@ -136,7 +125,7 @@ class TestConsolidatorPromptContract:
 class TestConsolidatorArchiveErrorHandling:
     """archive() must fall back to raw_archive when the LLM returns an error
     response (finish_reason == 'error'), e.g. overloaded / quota exceeded.
-    See https://github.com/HKUDS/nanobot/issues/3244
+    See https://github.com/HKUDS/vtx_claw/issues/3244
     """
 
     async def test_archive_falls_back_on_error_finish_reason(
@@ -161,8 +150,7 @@ class TestConsolidatorArchiveErrorHandling:
     async def test_archive_preserves_summary_on_success(self, consolidator, mock_provider, store):
         """Normal LLM response should still produce a proper summary entry."""
         mock_provider.chat_with_retry.return_value = MagicMock(
-            content="User fixed a bug in the auth module.",
-            finish_reason="stop",
+            content="User fixed a bug in the auth module.", finish_reason="stop"
         )
         messages = [
             {"role": "user", "content": "fix the auth bug"},
@@ -207,10 +195,7 @@ class TestConsolidatorTokenBudget:
         assert len(captured["history"]) == 160
         assert captured["history"][0]["content"].endswith("msg-0")
 
-    async def test_replay_window_overflow_is_archived_even_under_token_budget(
-        self,
-        consolidator,
-    ):
+    async def test_replay_window_overflow_is_archived_even_under_token_budget(self, consolidator):
         """Old messages that cannot be replayed should be materialized first."""
         consolidator._SAFETY_BUFFER = 0
         session = Session(key="test:replay-overflow")
@@ -222,10 +207,7 @@ class TestConsolidatorTokenBudget:
         consolidator.estimate_session_prompt_tokens = MagicMock(return_value=(100, "tiktoken"))
         consolidator.archive = AsyncMock(return_value="old conversation summary")
 
-        await consolidator.maybe_consolidate_by_tokens(
-            session,
-            replay_max_messages=6,
-        )
+        await consolidator.maybe_consolidate_by_tokens(session, replay_max_messages=6)
 
         archived_chunk = consolidator.archive.await_args.args[0]
         assert archived_chunk[0]["content"] == "u0"
@@ -234,10 +216,7 @@ class TestConsolidatorTokenBudget:
         assert session.metadata["_last_summary"]["text"] == "old conversation summary"
         consolidator.sessions.save.assert_called()
 
-    async def test_replay_window_overflow_extends_to_long_recent_user_turn(
-        self,
-        consolidator,
-    ):
+    async def test_replay_window_overflow_extends_to_long_recent_user_turn(self, consolidator):
         """Replay-window consolidation must not cut into the latest user turn."""
         session = Session(key="test:replay-tool-boundary")
         session.add_message("user", "old")
@@ -251,10 +230,7 @@ class TestConsolidatorTokenBudget:
         consolidator.estimate_session_prompt_tokens = MagicMock(return_value=(100, "tiktoken"))
         consolidator.archive = AsyncMock(return_value="tool turn summary")
 
-        await consolidator.maybe_consolidate_by_tokens(
-            session,
-            replay_max_messages=4,
-        )
+        await consolidator.maybe_consolidate_by_tokens(session, replay_max_messages=4)
 
         archived_chunk = consolidator.archive.await_args.args[0]
         assert [m["content"] for m in archived_chunk] == ["old", "old answer"]
@@ -265,10 +241,7 @@ class TestConsolidatorTokenBudget:
         assert history[0]["content"] == "record this"
         assert history[-1]["content"] == "final answer"
 
-    async def test_replay_window_overflow_uses_newer_user_inside_window(
-        self,
-        consolidator,
-    ):
+    async def test_replay_window_overflow_uses_newer_user_inside_window(self, consolidator):
         """Do not extend to an older long turn when the hard window has a newer user."""
         session = Session(key="test:replay-newer-user")
         session.add_message("user", "old")
@@ -284,10 +257,7 @@ class TestConsolidatorTokenBudget:
         consolidator.estimate_session_prompt_tokens = MagicMock(return_value=(100, "tiktoken"))
         consolidator.archive = AsyncMock(return_value="older turn summary")
 
-        await consolidator.maybe_consolidate_by_tokens(
-            session,
-            replay_max_messages=6,
-        )
+        await consolidator.maybe_consolidate_by_tokens(session, replay_max_messages=6)
 
         archived_chunk = consolidator.archive.await_args.args[0]
         assert archived_chunk[2]["content"] == "long older turn"
@@ -304,10 +274,7 @@ class TestConsolidatorTokenBudget:
         session.last_consolidated = 0
         session.key = "test:key"
         session.messages = [
-            {
-                "role": "user" if i in {0, 50, 61} else "assistant",
-                "content": f"m{i}",
-            }
+            {"role": "user" if i in {0, 50, 61} else "assistant", "content": f"m{i}"}
             for i in range(70)
         ]
         consolidator.sessions._session_cache[session.key] = session
@@ -335,7 +302,8 @@ class TestConsolidatorTokenBudget:
         session.last_consolidated = 0
         session.key = "test:key"
         session.messages = [
-            {"role": "user" if i in {0, 50} else "assistant", "content": f"m{i}"} for i in range(70)
+            {"role": "user" if i in {0, 50} else "assistant", "content": f"m{i}"}
+            for i in range(70)
         ]
         session.metadata = {}
         consolidator.sessions._session_cache[session.key] = session
@@ -381,10 +349,7 @@ class TestConsolidatorTokenBudget:
         session.last_consolidated = 0
         session.key = "test:key"
         session.messages = [
-            {
-                "role": "user" if i in {0, 61} else "assistant",
-                "content": f"m{i}",
-            }
+            {"role": "user" if i in {0, 61} else "assistant", "content": f"m{i}"}
             for i in range(70)
         ]
         consolidator.sessions._session_cache[session.key] = session
@@ -406,7 +371,7 @@ class TestCompactIdleSession:
     @pytest.fixture
     def real_consolidator(self, store, mock_provider):
         """Create a Consolidator with a real SessionManager (not a mock)."""
-        from nanobot.session.manager import SessionManager
+        from vtx_claw.session.manager import SessionManager
 
         sessions = SessionManager(store.workspace)
         return Consolidator(
@@ -497,10 +462,7 @@ class TestCompactIdleSession:
 
     @pytest.mark.asyncio
     async def test_idle_compact_writes_session_key_to_history(
-        self,
-        real_consolidator,
-        mock_provider,
-        store,
+        self, real_consolidator, mock_provider, store
     ):
         mock_provider.chat_with_retry.return_value = MagicMock(
             content="Summary of old conversation.", finish_reason="stop"
@@ -601,9 +563,7 @@ class TestCompactIdleSession:
 
     @pytest.mark.asyncio
     async def test_non_contiguous_suffix_archives_actual_dropped_messages(
-        self,
-        real_consolidator,
-        mock_provider,
+        self, real_consolidator, mock_provider
     ):
         """Assistant-only tails extend back to the latest user turn, so archive
         the actual dropped messages rather than a computed prefix."""
@@ -687,8 +647,8 @@ class TestConsolidatorSessionRefresh:
     @pytest.mark.asyncio
     async def test_reloads_before_empty_session_guard(self, tmp_path):
         """A stale empty reference must not skip a non-empty cached session."""
-        from nanobot.agent.memory import Consolidator, MemoryStore
-        from nanobot.session.manager import Session, SessionManager
+        from vtx_claw.agent.memory import Consolidator, MemoryStore
+        from vtx_claw.session.manager import Session, SessionManager
 
         store = MemoryStore(tmp_path)
         provider = MagicMock()
@@ -730,8 +690,8 @@ class TestConsolidatorSessionRefresh:
         """After compact_idle_session replaces the session, a concurrent
         maybe_consolidate_by_tokens with the old reference should use the
         fresh session from cache instead of overwriting."""
-        from nanobot.agent.memory import Consolidator, MemoryStore
-        from nanobot.session.manager import SessionManager
+        from vtx_claw.agent.memory import Consolidator, MemoryStore
+        from vtx_claw.session.manager import SessionManager
 
         store = MemoryStore(tmp_path)
         provider = MagicMock()
@@ -811,7 +771,9 @@ class TestRawArchiveTruncation:
 class TestArchiveTruncation:
     """archive() must truncate formatted text before sending to consolidation LLM."""
 
-    async def test_archive_truncates_large_formatted_text(self, consolidator, mock_provider, store):
+    async def test_archive_truncates_large_formatted_text(
+        self, consolidator, mock_provider, store
+    ):
         """Large formatted text should be truncated to token budget before LLM call."""
         # context_window_tokens=1000, max_completion_tokens=100, _SAFETY_BUFFER=1024
         # budget = 1000 - 100 - 1024 = -124 → fallback via truncate_text(budget*4)
@@ -850,8 +812,7 @@ class TestArchiveTruncation:
         history.jsonl — that would re-open the #3412 bloat vector from the
         *success* path instead of the fallback path."""
         mock_provider.chat_with_retry.return_value = MagicMock(
-            content="S" * (_ARCHIVE_SUMMARY_MAX_CHARS * 10),
-            finish_reason="stop",
+            content="S" * (_ARCHIVE_SUMMARY_MAX_CHARS * 10), finish_reason="stop"
         )
         await consolidator.archive([{"role": "user", "content": "hi"}])
 

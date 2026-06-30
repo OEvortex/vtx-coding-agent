@@ -13,8 +13,8 @@ from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
-from nanobot.providers.anthropic_provider import AnthropicProvider
-from nanobot.providers.base import LLMResponse
+from vtx_claw.providers.anthropic_provider import AnthropicProvider
+from vtx_claw.providers.base import LLMResponse
 
 _LONG_REQUEST_MESSAGE = (
     "Streaming is required for operations that may take longer than 10 minutes. "
@@ -29,7 +29,9 @@ def _make_provider() -> AnthropicProvider:
 
 
 def test_is_streaming_required_error_matches_value_error() -> None:
-    assert AnthropicProvider._is_streaming_required_error(ValueError(_LONG_REQUEST_MESSAGE)) is True
+    assert (
+        AnthropicProvider._is_streaming_required_error(ValueError(_LONG_REQUEST_MESSAGE)) is True
+    )
 
 
 def test_is_streaming_required_error_ignores_other_value_errors() -> None:
@@ -41,7 +43,8 @@ def test_is_streaming_required_error_ignores_other_value_errors() -> None:
 
 def test_is_streaming_required_error_ignores_other_exception_types() -> None:
     assert (
-        AnthropicProvider._is_streaming_required_error(RuntimeError(_LONG_REQUEST_MESSAGE)) is False
+        AnthropicProvider._is_streaming_required_error(RuntimeError(_LONG_REQUEST_MESSAGE))
+        is False
     )
 
 

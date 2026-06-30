@@ -3,7 +3,7 @@
 import json
 from pathlib import Path
 
-from nanobot.session.manager import Session, SessionManager
+from vtx_claw.session.manager import Session, SessionManager
 
 
 def _session(count: int, last_consolidated: object) -> Session:
@@ -22,12 +22,7 @@ def test_non_integer_offset_is_reset():
 
 
 def test_loaded_corrupt_offset_keeps_messages(tmp_path: Path):
-    offsets = {
-        "string": "999",
-        "null": None,
-        "float": 0.5,
-        "bool": True,
-    }
+    offsets = {"string": "999", "null": None, "float": 0.5, "bool": True}
 
     for name, offset in offsets.items():
         manager = SessionManager(tmp_path / name)

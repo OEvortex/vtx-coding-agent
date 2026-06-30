@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from types import SimpleNamespace
 
-from nanobot.webui import mcp_presets_runtime
+from vtx_claw.webui import mcp_presets_runtime
 
 
 def test_mcp_preset_runtime_lines_describe_tool_prefix() -> None:
@@ -15,14 +15,12 @@ def test_mcp_preset_runtime_lines_describe_tool_prefix() -> None:
                     "display_name": "Browserbase",
                     "transport": "streamableHttp",
                 }
-            ],
+            ]
         },
     )
 
     lines = mcp_presets_runtime.runtime_lines(
-        msg,
-        configured_server_names={"browserbase"},
-        connected_server_names={"browserbase"},
+        msg, configured_server_names={"browserbase"}, connected_server_names={"browserbase"}
     )
 
     assert lines
@@ -41,14 +39,12 @@ def test_mcp_preset_runtime_lines_warn_when_restart_needed() -> None:
                     "display_name": "Browserbase",
                     "transport": "streamableHttp",
                 }
-            ],
+            ]
         },
     )
 
     lines = mcp_presets_runtime.runtime_lines(
-        msg,
-        configured_server_names=set(),
-        connected_server_names=set(),
+        msg, configured_server_names=set(), connected_server_names=set()
     )
 
     assert lines
@@ -65,14 +61,12 @@ def test_mcp_preset_runtime_lines_warn_when_connection_not_live() -> None:
                     "display_name": "Browserbase",
                     "transport": "streamableHttp",
                 }
-            ],
+            ]
         },
     )
 
     lines = mcp_presets_runtime.runtime_lines(
-        msg,
-        configured_server_names={"browserbase"},
-        connected_server_names=set(),
+        msg, configured_server_names={"browserbase"}, connected_server_names=set()
     )
 
     assert lines
@@ -81,8 +75,6 @@ def test_mcp_preset_runtime_lines_warn_when_connection_not_live() -> None:
 
 def test_mcp_preset_session_extra_only_persists_structured_mentions() -> None:
     assert mcp_presets_runtime.session_extra({}) == {}
-    assert mcp_presets_runtime.session_extra(
-        {
-            "mcp_presets": [{"name": "browserbase"}],
-        }
-    ) == {"mcp_presets": [{"name": "browserbase"}]}
+    assert mcp_presets_runtime.session_extra({"mcp_presets": [{"name": "browserbase"}]}) == {
+        "mcp_presets": [{"name": "browserbase"}]
+    }

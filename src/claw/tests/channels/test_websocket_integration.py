@@ -15,9 +15,9 @@ import pytest
 import websockets
 from ws_test_client import WsTestClient, issue_token, issue_token_ok
 
-from nanobot.bus.events import OutboundMessage
-from nanobot.channels.websocket import WebSocketChannel, WebSocketConfig
-from nanobot.webui.gateway_services import build_gateway_services
+from vtx_claw.bus.events import OutboundMessage
+from vtx_claw.channels.websocket import WebSocketChannel, WebSocketConfig
+from vtx_claw.webui.gateway_services import build_gateway_services
 
 
 def _ch(bus: Any, port: int, **kw: Any) -> WebSocketChannel:
@@ -202,11 +202,7 @@ async def test_server_send_message(bus: MagicMock) -> None:
         async with WsTestClient("ws://127.0.0.1:29909/", client_id="r") as c:
             ready = await c.recv_ready()
             await ch.send(
-                OutboundMessage(
-                    channel="websocket",
-                    chat_id=ready.chat_id,
-                    content="reply",
-                )
+                OutboundMessage(channel="websocket", chat_id=ready.chat_id, content="reply")
             )
             msg = await c.recv_message()
             assert msg.text == "reply"
@@ -227,11 +223,7 @@ async def test_server_send_tags_tool_hint_with_kind(bus: MagicMock) -> None:
             ready = await c.recv_ready()
             # Plain reply: no "kind" field.
             await ch.send(
-                OutboundMessage(
-                    channel="websocket",
-                    chat_id=ready.chat_id,
-                    content="hi",
-                )
+                OutboundMessage(channel="websocket", chat_id=ready.chat_id, content="hi")
             )
             plain = await c.recv_message()
             assert plain.raw.get("kind") is None
@@ -354,19 +346,11 @@ async def test_independent_sessions(bus: MagicMock) -> None:
             async with WsTestClient("ws://127.0.0.1:29913/", client_id="u2") as c2:
                 r1, r2 = await c1.recv_ready(), await c2.recv_ready()
                 await ch.send(
-                    OutboundMessage(
-                        channel="websocket",
-                        chat_id=r1.chat_id,
-                        content="for-u1",
-                    )
+                    OutboundMessage(channel="websocket", chat_id=r1.chat_id, content="for-u1")
                 )
                 assert (await c1.recv_message()).text == "for-u1"
                 await ch.send(
-                    OutboundMessage(
-                        channel="websocket",
-                        chat_id=r2.chat_id,
-                        content="for-u2",
-                    )
+                    OutboundMessage(channel="websocket", chat_id=r2.chat_id, content="for-u2")
                 )
                 assert (await c2.recv_message()).text == "for-u2"
     finally:
@@ -384,13 +368,7 @@ async def test_disconnected_client_cleanup(bus: MagicMock) -> None:
             chat_id = (await c.recv_ready()).chat_id
         # disconnected
         await asyncio.sleep(0.1)
-        await ch.send(
-            OutboundMessage(
-                channel="websocket",
-                chat_id=chat_id,
-                content="orphan",
-            )
-        )
+        await ch.send(OutboundMessage(channel="websocket", chat_id=chat_id, content="orphan"))
         assert chat_id not in ch._subs
     finally:
         await ch.stop()
@@ -545,11 +523,7 @@ async def test_unicode_roundtrip(bus: MagicMock) -> None:
             await asyncio.sleep(0.1)
             assert bus.publish_inbound.call_args[0][0].content == text
             await ch.send(
-                OutboundMessage(
-                    channel="websocket",
-                    chat_id=ready.chat_id,
-                    content=text,
-                )
+                OutboundMessage(channel="websocket", chat_id=ready.chat_id, content=text)
             )
             assert (await c.recv_message()).text == text
     finally:
@@ -571,11 +545,7 @@ async def test_rapid_fire(bus: MagicMock) -> None:
             assert bus.publish_inbound.await_count == 50
             for i in range(50):
                 await ch.send(
-                    OutboundMessage(
-                        channel="websocket",
-                        chat_id=ready.chat_id,
-                        content=f"out-{i}",
-                    )
+                    OutboundMessage(channel="websocket", chat_id=ready.chat_id, content=f"out-{i}")
                 )
             received = [(await c.recv_message()).text for _ in range(50)]
             assert received == [f"out-{i}" for i in range(50)]

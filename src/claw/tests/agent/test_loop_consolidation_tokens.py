@@ -2,14 +2,14 @@ from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
-import nanobot.agent.memory as memory_module
-from nanobot.agent.loop import AgentLoop
-from nanobot.bus.queue import MessageBus
-from nanobot.providers.base import LLMResponse
+import vtx_claw.agent.memory as memory_module
+from vtx_claw.agent.loop import AgentLoop
+from vtx_claw.bus.queue import MessageBus
+from vtx_claw.providers.base import LLMResponse
 
 
 def _make_loop(tmp_path, *, estimated_tokens: int, context_window_tokens: int) -> AgentLoop:
-    from nanobot.providers.base import GenerationSettings
+    from vtx_claw.providers.base import GenerationSettings
 
     provider = MagicMock()
     provider.get_default_model.return_value = "test-model"
@@ -217,8 +217,7 @@ async def test_preflight_consolidation_receives_pending_summary(tmp_path) -> Non
     await loop.process_direct("hello", session_key="cli:test")
 
     loop.consolidator.maybe_consolidate_by_tokens.assert_any_await(
-        session,
-        replay_max_messages=loop._max_messages,
+        session, replay_max_messages=loop._max_messages
     )
 
 

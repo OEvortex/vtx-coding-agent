@@ -9,20 +9,20 @@ import pytest
 pytest.importorskip("discord")
 import discord
 
-from nanobot.bus.events import OutboundMessage
-from nanobot.bus.queue import MessageBus
-from nanobot.channels.discord import (
+from vtx_claw.bus.events import OutboundMessage
+from vtx_claw.bus.queue import MessageBus
+from vtx_claw.channels.discord import (
     MAX_MESSAGE_LEN,
     DiscordBotClient,
     DiscordChannel,
     DiscordConfig,
 )
-from nanobot.command.builtin import build_help_text
+from vtx_claw.command.builtin import build_help_text
 
 
 # Minimal Discord client test double used to control startup/readiness behavior.
 class _FakeDiscordClient:
-    instances: list["_FakeDiscordClient"] = []
+    instances: list[_FakeDiscordClient] = []
     start_error: Exception | None = None
 
     def __init__(self, owner, *, intents, proxy=None, proxy_auth=None) -> None:
@@ -98,10 +98,7 @@ class _FakeSentMessage:
 class _FakeChannel:
     # Channel double that records outbound payloads and typing activity.
     def __init__(
-        self,
-        channel_id: int = 123,
-        parent_id: int | None = None,
-        parent: object | None = None,
+        self, channel_id: int = 123, parent_id: int | None = None, parent: object | None = None
     ) -> None:
         self.id = channel_id
         self.parent_id = parent_id
@@ -226,10 +223,9 @@ async def test_start_returns_when_token_missing() -> None:
 @pytest.mark.asyncio
 async def test_start_returns_when_discord_dependency_missing(monkeypatch) -> None:
     channel = DiscordChannel(
-        DiscordConfig(enabled=True, token="token", allow_from=["*"]),
-        MessageBus(),
+        DiscordConfig(enabled=True, token="token", allow_from=["*"]), MessageBus()
     )
-    monkeypatch.setattr("nanobot.channels.discord.DISCORD_AVAILABLE", False)
+    monkeypatch.setattr("vtx_claw.channels.discord.DISCORD_AVAILABLE", False)
 
     await channel.start()
 
@@ -241,14 +237,13 @@ async def test_start_returns_when_discord_dependency_missing(monkeypatch) -> Non
 async def test_start_handles_client_construction_failure(monkeypatch) -> None:
     # Construction errors from the Discord client should be swallowed and keep state clean.
     channel = DiscordChannel(
-        DiscordConfig(enabled=True, token="token", allow_from=["*"]),
-        MessageBus(),
+        DiscordConfig(enabled=True, token="token", allow_from=["*"]), MessageBus()
     )
 
     def _boom(owner, *, intents, proxy=None, proxy_auth=None):
         raise RuntimeError("bad client")
 
-    monkeypatch.setattr("nanobot.channels.discord.DiscordBotClient", _boom)
+    monkeypatch.setattr("vtx_claw.channels.discord.DiscordBotClient", _boom)
 
     await channel.start()
 
@@ -260,13 +255,12 @@ async def test_start_handles_client_construction_failure(monkeypatch) -> None:
 async def test_start_handles_client_start_failure(monkeypatch) -> None:
     # If client.start fails, the partially created client should be closed and detached.
     channel = DiscordChannel(
-        DiscordConfig(enabled=True, token="token", allow_from=["*"]),
-        MessageBus(),
+        DiscordConfig(enabled=True, token="token", allow_from=["*"]), MessageBus()
     )
 
     _FakeDiscordClient.instances.clear()
     _FakeDiscordClient.start_error = RuntimeError("connect failed")
-    monkeypatch.setattr("nanobot.channels.discord.DiscordBotClient", _FakeDiscordClient)
+    monkeypatch.setattr("vtx_claw.channels.discord.DiscordBotClient", _FakeDiscordClient)
 
     await channel.start()
 
@@ -282,8 +276,7 @@ async def test_start_handles_client_start_failure(monkeypatch) -> None:
 async def test_stop_is_safe_after_partial_start(monkeypatch) -> None:
     # stop() should close/discard the client even when startup was only partially completed.
     channel = DiscordChannel(
-        DiscordConfig(enabled=True, token="token", allow_from=["*"]),
-        MessageBus(),
+        DiscordConfig(enabled=True, token="token", allow_from=["*"]), MessageBus()
     )
     client = _FakeDiscordClient(channel, intents=None)
     channel._client = client
@@ -365,8 +358,7 @@ async def test_on_message_accepts_allowlisted_dm() -> None:
 async def test_on_message_accepts_when_channel_in_allow_channels() -> None:
     # When allow_channels is set, messages from listed channels should be forwarded.
     channel = DiscordChannel(
-        DiscordConfig(enabled=True, allow_from=["*"], allow_channels=["456"]),
-        MessageBus(),
+        DiscordConfig(enabled=True, allow_from=["*"], allow_channels=["456"]), MessageBus()
     )
     handled: list[dict] = []
 
@@ -387,10 +379,7 @@ async def test_on_message_accepts_thread_when_parent_channel_in_allow_channels()
     # from their parent channel.
     channel = DiscordChannel(
         DiscordConfig(
-            enabled=True,
-            allow_from=["*"],
-            allow_channels=["456"],
-            group_policy="mention",
+            enabled=True, allow_from=["*"], allow_channels=["456"], group_policy="mention"
         ),
         MessageBus(),
     )
@@ -404,10 +393,7 @@ async def test_on_message_accepts_thread_when_parent_channel_in_allow_channels()
 
     await channel._on_message(
         _make_message(
-            channel_id=777,
-            parent_channel_id=456,
-            guild_id=1,
-            mentions=[SimpleNamespace(id=999)],
+            channel_id=777, parent_channel_id=456, guild_id=1, mentions=[SimpleNamespace(id=999)]
         )
     )
 
@@ -422,10 +408,7 @@ async def test_on_message_accepts_thread_when_parent_channel_in_allow_channels()
 async def test_on_message_accepts_thread_reply_to_bot_under_allowed_parent() -> None:
     channel = DiscordChannel(
         DiscordConfig(
-            enabled=True,
-            allow_from=["*"],
-            allow_channels=["456"],
-            group_policy="mention",
+            enabled=True, allow_from=["*"], allow_channels=["456"], group_policy="mention"
         ),
         MessageBus(),
     )
@@ -458,12 +441,7 @@ async def test_on_message_accepts_thread_reply_to_bot_under_allowed_parent() -> 
 @pytest.mark.asyncio
 async def test_on_message_ignores_thread_lifecycle_messages() -> None:
     channel = DiscordChannel(
-        DiscordConfig(
-            enabled=True,
-            allow_from=["*"],
-            allow_channels=["456"],
-            group_policy="open",
-        ),
+        DiscordConfig(enabled=True, allow_from=["*"], allow_channels=["456"], group_policy="open"),
         MessageBus(),
     )
     handled: list[dict] = []
@@ -507,8 +485,7 @@ async def test_on_message_ignores_thread_lifecycle_messages() -> None:
 @pytest.mark.asyncio
 async def test_on_message_drops_thread_when_neither_thread_nor_parent_allowed() -> None:
     channel = DiscordChannel(
-        DiscordConfig(enabled=True, allow_from=["*"], allow_channels=["999"]),
-        MessageBus(),
+        DiscordConfig(enabled=True, allow_from=["*"], allow_channels=["999"]), MessageBus()
     )
     handled: list[dict] = []
 
@@ -526,8 +503,7 @@ async def test_on_message_drops_thread_when_neither_thread_nor_parent_allowed() 
 async def test_on_message_drops_when_channel_not_in_allow_channels() -> None:
     # When allow_channels is set and incoming channel is not listed, drop silently.
     channel = DiscordChannel(
-        DiscordConfig(enabled=True, allow_from=["*"], allow_channels=["999"]),
-        MessageBus(),
+        DiscordConfig(enabled=True, allow_from=["*"], allow_channels=["999"]), MessageBus()
     )
     handled: list[dict] = []
 
@@ -545,8 +521,7 @@ async def test_on_message_drops_when_channel_not_in_allow_channels() -> None:
 async def test_on_message_ignores_unmentioned_guild_message() -> None:
     # With mention-only group policy, guild messages without a bot mention are dropped.
     channel = DiscordChannel(
-        DiscordConfig(enabled=True, allow_from=["*"], group_policy="mention"),
-        MessageBus(),
+        DiscordConfig(enabled=True, allow_from=["*"], group_policy="mention"), MessageBus()
     )
     channel._bot_user_id = "999"
     handled: list[dict] = []
@@ -565,8 +540,7 @@ async def test_on_message_ignores_unmentioned_guild_message() -> None:
 async def test_on_message_accepts_mentioned_guild_message() -> None:
     # Mentioned guild messages should be accepted and preserve reply threading metadata.
     channel = DiscordChannel(
-        DiscordConfig(enabled=True, allow_from=["*"], group_policy="mention"),
-        MessageBus(),
+        DiscordConfig(enabled=True, allow_from=["*"], group_policy="mention"), MessageBus()
     )
     channel._bot_user_id = "999"
     handled: list[dict] = []
@@ -578,10 +552,7 @@ async def test_on_message_accepts_mentioned_guild_message() -> None:
 
     await channel._on_message(
         _make_message(
-            guild_id=1,
-            content="<@999> hello",
-            mentions=[SimpleNamespace(id=999)],
-            reply_to=321,
+            guild_id=1, content="<@999> hello", mentions=[SimpleNamespace(id=999)], reply_to=321
         )
     )
 
@@ -599,13 +570,10 @@ async def test_on_message_downloads_attachments(tmp_path, monkeypatch) -> None:
         handled.append(kwargs)
 
     channel._handle_message = capture_handle  # type: ignore[method-assign]
-    monkeypatch.setattr("nanobot.channels.discord.get_media_dir", lambda _name: tmp_path)
+    monkeypatch.setattr("vtx_claw.channels.discord.get_media_dir", lambda _name: tmp_path)
 
     await channel._on_message(
-        _make_message(
-            attachments=[_FakeAttachment(12, "photo.png")],
-            content="see file",
-        )
+        _make_message(attachments=[_FakeAttachment(12, "photo.png")], content="see file")
     )
 
     assert len(handled) == 1
@@ -623,13 +591,10 @@ async def test_on_message_marks_failed_attachment_download(tmp_path, monkeypatch
         handled.append(kwargs)
 
     channel._handle_message = capture_handle  # type: ignore[method-assign]
-    monkeypatch.setattr("nanobot.channels.discord.get_media_dir", lambda _name: tmp_path)
+    monkeypatch.setattr("vtx_claw.channels.discord.get_media_dir", lambda _name: tmp_path)
 
     await channel._on_message(
-        _make_message(
-            attachments=[_FakeAttachment(12, "photo.png", fail=True)],
-            content="",
-        )
+        _make_message(attachments=[_FakeAttachment(12, "photo.png", fail=True)], content="")
     )
 
     assert len(handled) == 1
@@ -716,7 +681,7 @@ async def test_send_delta_streams_by_editing_message(monkeypatch) -> None:
     client.channels[123] = target
 
     times = iter([1.0, 3.0, 5.0])
-    monkeypatch.setattr("nanobot.channels.discord.time.monotonic", lambda: next(times, 5.0))
+    monkeypatch.setattr("vtx_claw.channels.discord.time.monotonic", lambda: next(times, 5.0))
 
     await owner.send_delta("123", "hel", {"_stream_delta": True, "_stream_id": "s1"})
     await owner.send_delta("123", "lo", {"_stream_delta": True, "_stream_id": "s1"})
@@ -743,7 +708,7 @@ async def test_send_delta_stream_end_splits_oversized_reply(monkeypatch) -> None
     assert len(chunks) == 2
 
     times = iter([1.0, 3.0])
-    monkeypatch.setattr("nanobot.channels.discord.time.monotonic", lambda: next(times, 3.0))
+    monkeypatch.setattr("vtx_claw.channels.discord.time.monotonic", lambda: next(times, 3.0))
 
     await owner.send_delta("123", prefix, {"_stream_delta": True, "_stream_id": "s1"})
     await owner.send_delta("123", suffix, {"_stream_delta": True, "_stream_id": "s1"})
@@ -782,8 +747,7 @@ async def test_slash_new_forwards_when_user_is_allowlisted() -> None:
 @pytest.mark.asyncio
 async def test_slash_new_accepts_thread_when_parent_channel_in_allow_channels() -> None:
     channel = DiscordChannel(
-        DiscordConfig(enabled=True, allow_from=["*"], allow_channels=["456"]),
-        MessageBus(),
+        DiscordConfig(enabled=True, allow_from=["*"], allow_channels=["456"]), MessageBus()
     )
     handled: list[dict] = []
 
@@ -794,11 +758,7 @@ async def test_slash_new_accepts_thread_when_parent_channel_in_allow_channels() 
     client = DiscordBotClient(channel, intents=discord.Intents.none())
     thread = _FakeChannel(channel_id=777, parent_id=456)
     interaction = _make_interaction(
-        user_id=123,
-        channel_id=777,
-        channel=thread,
-        guild_id=1,
-        interaction_id=321,
+        user_id=123, channel_id=777, channel=thread, guild_id=1, interaction_id=321
     )
 
     new_cmd = client.tree.get_command("new")
@@ -817,8 +777,7 @@ async def test_slash_new_accepts_thread_when_parent_channel_in_allow_channels() 
 @pytest.mark.asyncio
 async def test_slash_new_blocks_channel_not_in_allow_channels() -> None:
     channel = DiscordChannel(
-        DiscordConfig(enabled=True, allow_from=["*"], allow_channels=["999"]),
-        MessageBus(),
+        DiscordConfig(enabled=True, allow_from=["*"], allow_channels=["999"]), MessageBus()
     )
     handled: list[dict] = []
 
@@ -941,14 +900,11 @@ async def test_slash_help_returns_ephemeral_help_text() -> None:
 @pytest.mark.asyncio
 async def test_slash_help_respects_allow_channels() -> None:
     channel = DiscordChannel(
-        DiscordConfig(enabled=True, allow_from=["*"], allow_channels=["999"]),
-        MessageBus(),
+        DiscordConfig(enabled=True, allow_from=["*"], allow_channels=["999"]), MessageBus()
     )
     client = DiscordBotClient(channel, intents=discord.Intents.none())
     interaction = _make_interaction(
-        channel_id=777,
-        channel=_FakeChannel(channel_id=777, parent_id=456),
-        guild_id=1,
+        channel_id=777, channel=_FakeChannel(channel_id=777, parent_id=456), guild_id=1
     )
     interaction.command.qualified_name = "help"
 
@@ -1016,12 +972,7 @@ async def test_client_send_outbound_reports_failed_attachments_when_no_text(tmp_
     missing_file = tmp_path / "missing.txt"
 
     await client.send_outbound(
-        OutboundMessage(
-            channel="discord",
-            chat_id="123",
-            content="",
-            media=[str(missing_file)],
-        )
+        OutboundMessage(channel="discord", chat_id="123", content="", media=[str(missing_file)])
     )
 
     assert target.sent_payloads == [{"content": "[attachment: missing.txt - send failed]"}]
@@ -1070,10 +1021,7 @@ async def test_send_stops_typing_after_send() -> None:
 
     await channel.send(
         OutboundMessage(
-            channel="discord",
-            chat_id="123",
-            content="progress",
-            metadata={"_progress": True},
+            channel="discord", chat_id="123", content="progress", metadata={"_progress": True}
         )
     )
 
@@ -1156,14 +1104,11 @@ async def test_start_passes_proxy_to_client(monkeypatch) -> None:
     _FakeDiscordClient.instances.clear()
     channel = DiscordChannel(
         DiscordConfig(
-            enabled=True,
-            token="token",
-            allow_from=["*"],
-            proxy="http://127.0.0.1:7890",
+            enabled=True, token="token", allow_from=["*"], proxy="http://127.0.0.1:7890"
         ),
         MessageBus(),
     )
-    monkeypatch.setattr("nanobot.channels.discord.DiscordBotClient", _FakeDiscordClient)
+    monkeypatch.setattr("vtx_claw.channels.discord.DiscordBotClient", _FakeDiscordClient)
 
     await channel.start()
 
@@ -1188,7 +1133,7 @@ async def test_start_passes_proxy_auth_when_credentials_provided(monkeypatch) ->
         ),
         MessageBus(),
     )
-    monkeypatch.setattr("nanobot.channels.discord.DiscordBotClient", _FakeDiscordClient)
+    monkeypatch.setattr("vtx_claw.channels.discord.DiscordBotClient", _FakeDiscordClient)
 
     await channel.start()
 
@@ -1214,7 +1159,7 @@ async def test_start_no_proxy_auth_when_only_username(monkeypatch) -> None:
         ),
         MessageBus(),
     )
-    monkeypatch.setattr("nanobot.channels.discord.DiscordBotClient", _FakeDiscordClient)
+    monkeypatch.setattr("vtx_claw.channels.discord.DiscordBotClient", _FakeDiscordClient)
 
     await channel.start()
 
@@ -1235,7 +1180,7 @@ async def test_start_no_proxy_auth_when_only_password(monkeypatch) -> None:
         ),
         MessageBus(),
     )
-    monkeypatch.setattr("nanobot.channels.discord.DiscordBotClient", _FakeDiscordClient)
+    monkeypatch.setattr("vtx_claw.channels.discord.DiscordBotClient", _FakeDiscordClient)
 
     await channel.start()
 

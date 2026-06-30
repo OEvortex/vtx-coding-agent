@@ -6,11 +6,11 @@ from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
-from nanobot.agent.loop import AgentLoop
-from nanobot.agent.tools.message import MessageTool
-from nanobot.bus.events import InboundMessage, OutboundMessage
-from nanobot.bus.queue import MessageBus
-from nanobot.providers.base import LLMResponse, ToolCallRequest
+from vtx_claw.agent.loop import AgentLoop
+from vtx_claw.agent.tools.message import MessageTool
+from vtx_claw.bus.events import InboundMessage, OutboundMessage
+from vtx_claw.bus.queue import MessageBus
+from vtx_claw.providers.base import LLMResponse, ToolCallRequest
 
 
 def _make_loop(tmp_path: Path) -> AgentLoop:
@@ -45,7 +45,9 @@ class TestMessageToolSuppressLogic:
         if isinstance(mt, MessageTool):
             mt.set_send_callback(AsyncMock(side_effect=lambda m: sent.append(m)))
 
-        msg = InboundMessage(channel="feishu", sender_id="user1", chat_id="chat123", content="Send")
+        msg = InboundMessage(
+            channel="feishu", sender_id="user1", chat_id="chat123", content="Send"
+        )
         result = await loop._process_message(msg)
 
         assert len(sent) == 1
@@ -170,16 +172,13 @@ class TestMessageToolSuppressLogic:
         final_content, _, _, _, _ = await loop._run_agent_loop([], on_progress=on_progress)
 
         assert final_content == "Done"
-        assert progress == [
-            ("Visible", False),
-            ("read foo.txt", True),
-        ]
+        assert progress == [("Visible", False), ("read foo.txt", True)]
 
 
 class TestMessageToolTurnTracking:
     def test_sent_in_turn_tracks_same_target(self) -> None:
         tool = MessageTool()
-        from nanobot.agent.tools.context import RequestContext
+        from vtx_claw.agent.tools.context import RequestContext
 
         tool.set_context(RequestContext(channel="feishu", chat_id="chat1"))
         assert not tool._sent_in_turn

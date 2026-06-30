@@ -5,10 +5,10 @@ from types import SimpleNamespace
 
 import pytest
 
-from nanobot.bus.events import InboundMessage, OutboundMessage
-from nanobot.command.builtin import cmd_dream, cmd_dream_log, cmd_dream_restore
-from nanobot.command.router import CommandContext
-from nanobot.utils.gitstore import CommitInfo
+from vtx_claw.bus.events import InboundMessage, OutboundMessage
+from vtx_claw.command.builtin import cmd_dream, cmd_dream_log, cmd_dream_restore
+from vtx_claw.command.router import CommandContext
+from vtx_claw.utils.gitstore import CommitInfo
 
 
 class _FakeStore:
@@ -78,7 +78,9 @@ def _make_ctx(
     msg = InboundMessage(channel="cli", sender_id="u1", chat_id="direct", content=raw)
     store = _FakeStore(git, last_dream_cursor=last_dream_cursor)
     loop = SimpleNamespace(consolidator=SimpleNamespace(store=store))
-    return CommandContext(msg=msg, session=None, key=msg.session_key, raw=raw, args=args, loop=loop)
+    return CommandContext(
+        msg=msg, session=None, key=msg.session_key, raw=raw, args=args, loop=loop
+    )
 
 
 def _make_dream_ctx(tmp_path) -> tuple[CommandContext, _FakeBus]:
@@ -125,10 +127,7 @@ async def test_dream_internal_run_silences_progress(tmp_path) -> None:
     async def process_direct(*args, **kwargs):
         calls.append((args, kwargs))
         return OutboundMessage(
-            channel="cli",
-            chat_id="direct",
-            content="done",
-            metadata={"_stop_reason": "completed"},
+            channel="cli", chat_id="direct", content="done", metadata={"_stop_reason": "completed"}
         )
 
     sessions_dir = tmp_path / "sessions"
@@ -155,7 +154,9 @@ async def test_dream_log_latest_is_more_user_friendly() -> None:
     commit = CommitInfo(
         sha="abcd1234", message="dream: 2026-04-04, 2 change(s)", timestamp="2026-04-04 12:00"
     )
-    diff = "diff --git a/SOUL.md b/SOUL.md\n--- a/SOUL.md\n+++ b/SOUL.md\n@@ -1 +1 @@\n-old\n+new\n"
+    diff = (
+        "diff --git a/SOUL.md b/SOUL.md\n--- a/SOUL.md\n+++ b/SOUL.md\n@@ -1 +1 @@\n-old\n+new\n"
+    )
     git = _FakeGit(commits=[commit], diff_map={commit.sha: (commit, diff)})
 
     out = await cmd_dream_log(_make_ctx("/dream-log", git))
@@ -222,10 +223,7 @@ async def test_dream_restore_success_mentions_files_and_followup() -> None:
         "-old\n"
         "+new\n"
     )
-    git = _FakeGit(
-        diff_map={commit.sha: (commit, diff)},
-        revert_result="eeee9999",
-    )
+    git = _FakeGit(diff_map={commit.sha: (commit, diff)}, revert_result="eeee9999")
 
     out = await cmd_dream_restore(_make_ctx("/dream-restore abcd1234", git, args="abcd1234"))
 

@@ -5,8 +5,8 @@ from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
-from nanobot.agent.autocompact import AutoCompact
-from nanobot.session.manager import Session, SessionManager
+from vtx_claw.agent.autocompact import AutoCompact
+from vtx_claw.session.manager import Session, SessionManager
 
 
 def _make_session(
@@ -29,9 +29,7 @@ def _make_session(
 
 
 def _make_autocompact(
-    ttl: int = 15,
-    sessions: SessionManager | None = None,
-    consolidator: MagicMock | None = None,
+    ttl: int = 15, sessions: SessionManager | None = None, consolidator: MagicMock | None = None
 ) -> AutoCompact:
     """Create an AutoCompact with mock dependencies."""
     if sessions is None:
@@ -39,11 +37,7 @@ def _make_autocompact(
     if consolidator is None:
         consolidator = MagicMock()
         consolidator.compact_idle_session = AsyncMock(return_value="Summary.")
-    return AutoCompact(
-        sessions=sessions,
-        consolidator=consolidator,
-        session_ttl_minutes=ttl,
-    )
+    return AutoCompact(sessions=sessions, consolidator=consolidator, session_ttl_minutes=ttl)
 
 
 def _add_turns(session: Session, turns: int, *, prefix: str = "msg") -> None:
@@ -263,7 +257,7 @@ class TestCheckExpired:
         mock_sm = MagicMock(spec=SessionManager)
         old_ts = (datetime.now() - timedelta(minutes=20)).isoformat()
         mock_sm.list_sessions.return_value = [
-            {"key": "dream:20260602-155256", "updated_at": old_ts},
+            {"key": "dream:20260602-155256", "updated_at": old_ts}
         ]
         ac.sessions = mock_sm
         scheduler = MagicMock()
@@ -292,8 +286,7 @@ class TestArchiveDelegates:
         await ac._archive("cli:test")
 
         ac.consolidator.compact_idle_session.assert_awaited_once_with(
-            "cli:test",
-            ac._RECENT_SUFFIX_MESSAGES,
+            "cli:test", ac._RECENT_SUFFIX_MESSAGES
         )
 
     @pytest.mark.asyncio
@@ -377,7 +370,7 @@ class TestPrepareSession:
         ac._archiving.add("cli:test")
 
         original_session = _make_session()
-        result_session, summary = ac.prepare_session(original_session, "cli:test")
+        result_session, _summary = ac.prepare_session(original_session, "cli:test")
 
         mock_sm.get_or_create.assert_called_once_with("cli:test")
         assert result_session is reloaded
@@ -391,7 +384,7 @@ class TestPrepareSession:
         ac.sessions = mock_sm
 
         old_session = _make_session(updated_at=datetime.now() - timedelta(minutes=20))
-        result_session, summary = ac.prepare_session(old_session, "cli:test")
+        result_session, _summary = ac.prepare_session(old_session, "cli:test")
 
         mock_sm.get_or_create.assert_called_once_with("cli:test")
         assert result_session is reloaded
@@ -429,10 +422,7 @@ class TestPrepareSession:
         last_active = datetime(2026, 5, 13, 14, 0, 0)
         session = _make_session(
             metadata={
-                "_last_summary": {
-                    "text": "Cold summary.",
-                    "last_active": last_active.isoformat(),
-                },
+                "_last_summary": {"text": "Cold summary.", "last_active": last_active.isoformat()}
             }
         )
 
@@ -464,10 +454,7 @@ class TestPrepareSession:
             key=key,
             updated_at=datetime.now() - timedelta(minutes=20),
             metadata={
-                "_last_summary": {
-                    "text": "Cold summary.",
-                    "last_active": "2026-06-02T15:52:56",
-                },
+                "_last_summary": {"text": "Cold summary.", "last_active": "2026-06-02T15:52:56"}
             },
         )
 
@@ -497,7 +484,7 @@ class TestPrepareSession:
                 "_last_summary": {
                     "text": "Cold summary.",
                     "last_active": datetime(2026, 1, 1).isoformat(),
-                },
+                }
             }
         )
         last_active = datetime(2026, 5, 13, 14, 0, 0)

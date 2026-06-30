@@ -9,15 +9,12 @@ from types import SimpleNamespace
 
 import pytest
 
-from nanobot.apps.cli.service import CliAppError, CliAppManager, CliAppsRuntimeConfig
+from vtx_claw.apps.cli.service import CliAppError, CliAppManager, CliAppsRuntimeConfig
 
 
 def _write_cache(path: Path, registry: dict) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(
-        json.dumps({"_cached_at": time.time(), "data": registry}),
-        encoding="utf-8",
-    )
+    path.write_text(json.dumps({"_cached_at": time.time(), "data": registry}), encoding="utf-8")
 
 
 def _manager(tmp_path: Path) -> CliAppManager:
@@ -50,11 +47,7 @@ def _seed_catalog(manager: CliAppManager) -> None:
     public = {
         "meta": {"updated": "2026-04-18"},
         "clis": [
-            {
-                "name": "gimp",
-                "display_name": "GIMP",
-                "description": "Public duplicate entry",
-            },
+            {"name": "gimp", "display_name": "GIMP", "description": "Public duplicate entry"},
             {
                 "name": "jimeng",
                 "display_name": "Jimeng",
@@ -197,7 +190,7 @@ def test_payload_uses_anygen_official_domain_for_logo(tmp_path: Path) -> None:
     assert app["logo_url"] == "https://www.google.com/s2/favicons?domain=anygen.io&sz=64"
 
 
-def test_payload_includes_nanobot_extension_registry(tmp_path: Path) -> None:
+def test_payload_includes_vtx_claw_extension_registry(tmp_path: Path) -> None:
     manager = _manager(tmp_path)
     _write_cache(manager._cache_path("harness"), {"meta": {"updated": "2026-04-16"}, "clis": []})
     _write_cache(manager._cache_path("public"), {"meta": {"updated": "2026-04-18"}, "clis": []})
@@ -236,13 +229,12 @@ def test_payload_includes_nanobot_extension_registry(tmp_path: Path) -> None:
     )
     assert app["brand_color"] == "#111827"
     assert app["install_supported"] is True
-    assert app["manifest"]["source"] == "nanobot-extension"
-    assert app["manifest"]["trust"]["registry"] == "nanobot-extension"
+    assert app["manifest"]["source"] == "vtx_claw-extension"
+    assert app["manifest"]["trust"]["registry"] == "vtx_claw-extension"
 
 
 def test_optional_extension_registry_failure_does_not_break_payload(
-    tmp_path: Path,
-    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     manager = _manager(tmp_path)
     _write_cache(
@@ -265,7 +257,7 @@ def test_optional_extension_registry_failure_does_not_break_payload(
     def fail_get(*args, **kwargs):
         raise RuntimeError("network unavailable")
 
-    monkeypatch.setattr("nanobot.apps.cli.service.httpx.get", fail_get)
+    monkeypatch.setattr("vtx_claw.apps.cli.service.httpx.get", fail_get)
 
     payload = manager.payload()
 
@@ -282,7 +274,7 @@ def test_payload_cache_only_does_not_fetch_catalog(
     def fail_get(*args, **kwargs):
         raise AssertionError("network should not be used")
 
-    monkeypatch.setattr("nanobot.apps.cli.service.httpx.get", fail_get)
+    monkeypatch.setattr("vtx_claw.apps.cli.service.httpx.get", fail_get)
 
     payload = manager.payload(cache_only=True)
 
@@ -293,14 +285,8 @@ def test_payload_cache_only_does_not_fetch_catalog(
 
 def test_catalog_cache_fresh_can_include_optional_sources(tmp_path: Path) -> None:
     manager = _manager(tmp_path)
-    _write_cache(
-        manager._cache_path("harness"),
-        {"meta": {"updated": "2026-04-16"}, "clis": []},
-    )
-    _write_cache(
-        manager._cache_path("public"),
-        {"meta": {"updated": "2026-04-18"}, "clis": []},
-    )
+    _write_cache(manager._cache_path("harness"), {"meta": {"updated": "2026-04-16"}, "clis": []})
+    _write_cache(manager._cache_path("public"), {"meta": {"updated": "2026-04-18"}, "clis": []})
 
     assert manager.catalog_cache_fresh() is True
     assert manager.catalog_cache_fresh(include_optional=True) is False
@@ -314,7 +300,7 @@ def test_payload_cache_only_without_cache_returns_empty(
     def fail_get(*args, **kwargs):
         raise AssertionError("network should not be used")
 
-    monkeypatch.setattr("nanobot.apps.cli.service.httpx.get", fail_get)
+    monkeypatch.setattr("vtx_claw.apps.cli.service.httpx.get", fail_get)
 
     payload = manager.payload(cache_only=True)
 
@@ -323,8 +309,7 @@ def test_payload_cache_only_without_cache_returns_empty(
 
 
 def test_install_dispatches_safe_pip_and_installs_skill(
-    tmp_path: Path,
-    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     manager = _manager(tmp_path)
     _seed_catalog(manager)
@@ -356,8 +341,7 @@ def test_install_dispatches_safe_pip_and_installs_skill(
 
 
 def test_install_records_available_cli_without_reinstalling(
-    tmp_path: Path,
-    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     manager = _manager(tmp_path)
     _seed_catalog(manager)
@@ -370,7 +354,7 @@ def test_install_records_available_cli_without_reinstalling(
 
     monkeypatch.setattr(manager, "_run_argv", fail_run)
     monkeypatch.setattr(
-        "nanobot.apps.cli.service.shutil.which",
+        "vtx_claw.apps.cli.service.shutil.which",
         lambda command: str(resolved) if command == "lark-cli" else None,
     )
 
@@ -387,8 +371,7 @@ def test_install_records_available_cli_without_reinstalling(
 
 
 def test_install_recovers_stale_npm_global_directory(
-    tmp_path: Path,
-    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     manager = _manager(tmp_path)
     _write_cache(manager._cache_path("harness"), {"meta": {"updated": "2026-04-16"}, "clis": []})
@@ -426,18 +409,14 @@ def test_install_recovers_stale_npm_global_directory(
             install_attempts += 1
             if install_attempts == 1:
                 return subprocess.CompletedProcess(
-                    argv,
-                    1,
-                    stdout="",
-                    stderr="npm error ENOTEMPTY\nnpm error syscall rename",
+                    argv, 1, stdout="", stderr="npm error ENOTEMPTY\nnpm error syscall rename"
                 )
             return subprocess.CompletedProcess(argv, 0, stdout="ok", stderr="")
         raise AssertionError(f"unexpected command: {argv}")
 
     monkeypatch.setattr(manager, "_run_argv", fake_run)
     monkeypatch.setattr(
-        "nanobot.apps.cli.service.shutil.which",
-        lambda command: npm if command == "npm" else None,
+        "vtx_claw.apps.cli.service.shutil.which", lambda command: npm if command == "npm" else None
     )
 
     payload = manager.install("hyperframes")
@@ -451,8 +430,7 @@ def test_install_recovers_stale_npm_global_directory(
 
 
 def test_install_records_entry_point_path_and_pip_distribution(
-    tmp_path: Path,
-    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     manager = _manager(tmp_path)
     _seed_catalog(manager)
@@ -471,16 +449,14 @@ def test_install_records_entry_point_path_and_pip_distribution(
         lambda app: "---\nname: cli-anything-gimp\ndescription: GIMP\n---\n# GIMP\n",
     )
     monkeypatch.setattr(
-        "nanobot.apps.cli.service.shutil.which",
+        "vtx_claw.apps.cli.service.shutil.which",
         lambda command: str(resolved) if command == "cli-anything-gimp" else None,
     )
     monkeypatch.setattr(
-        "nanobot.apps.cli.service.importlib_metadata.distributions",
+        "vtx_claw.apps.cli.service.importlib_metadata.distributions",
         lambda: [
             SimpleNamespace(
-                entry_points=[
-                    SimpleNamespace(group="console_scripts", name="cli-anything-gimp"),
-                ],
+                entry_points=[SimpleNamespace(group="console_scripts", name="cli-anything-gimp")],
                 metadata={"Name": "cli-anything-gimp"},
             )
         ],
@@ -505,39 +481,27 @@ def test_installed_state_writes_atomically_without_temp_leftovers(tmp_path: Path
 
 
 def test_fetch_skill_content_rejects_untrusted_urls(
-    tmp_path: Path,
-    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     manager = _manager(tmp_path)
 
     def fail_get(*args, **kwargs):
         raise AssertionError("untrusted skill URL should not be fetched")
 
-    monkeypatch.setattr("nanobot.apps.cli.service.httpx.get", fail_get)
+    monkeypatch.setattr("vtx_claw.apps.cli.service.httpx.get", fail_get)
 
     assert (
-        manager._fetch_skill_content(
-            {
-                "name": "evil",
-                "skill_md": "https://example.com/SKILL.md",
-            }
-        )
+        manager._fetch_skill_content({"name": "evil", "skill_md": "https://example.com/SKILL.md"})
         is None
     )
     assert (
-        manager._fetch_skill_content(
-            {
-                "name": "evil",
-                "skill_md": "skills/../evil/SKILL.md",
-            }
-        )
+        manager._fetch_skill_content({"name": "evil", "skill_md": "skills/../evil/SKILL.md"})
         is None
     )
 
 
 def test_fetch_skill_content_allows_cli_anything_raw_skill_url(
-    tmp_path: Path,
-    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     manager = _manager(tmp_path)
     seen: list[str] = []
@@ -553,7 +517,7 @@ def test_fetch_skill_content_allows_cli_anything_raw_skill_url(
         seen.append(url)
         return Response()
 
-    monkeypatch.setattr("nanobot.apps.cli.service.httpx.get", fake_get)
+    monkeypatch.setattr("vtx_claw.apps.cli.service.httpx.get", fake_get)
 
     content = manager._fetch_skill_content(
         {
@@ -569,8 +533,7 @@ def test_fetch_skill_content_allows_cli_anything_raw_skill_url(
 
 
 def test_fetch_skill_content_uses_extension_raw_base_for_relative_skills(
-    tmp_path: Path,
-    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     manager = _manager(tmp_path)
     seen: list[str] = []
@@ -586,25 +549,24 @@ def test_fetch_skill_content_uses_extension_raw_base_for_relative_skills(
         seen.append(url)
         return Response()
 
-    monkeypatch.setattr("nanobot.apps.cli.service.httpx.get", fake_get)
+    monkeypatch.setattr("vtx_claw.apps.cli.service.httpx.get", fake_get)
 
     content = manager._fetch_skill_content(
         {
             "name": "hyperframes",
             "skill_md": "skills/hyperframes/SKILL.md",
-            "_raw_base": "https://raw.githubusercontent.com/Re-bin/nanobot-extension/main",
+            "_raw_base": "https://raw.githubusercontent.com/Re-bin/vtx_claw-extension/main",
         }
     )
 
     assert content and "# HyperFrames" in content
     assert seen == [
-        "https://raw.githubusercontent.com/Re-bin/nanobot-extension/main/skills/hyperframes/SKILL.md"
+        "https://raw.githubusercontent.com/Re-bin/vtx_claw-extension/main/skills/hyperframes/SKILL.md"
     ]
 
 
 def test_uninstall_removes_installed_state_and_generated_skill(
-    tmp_path: Path,
-    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     manager = _manager(tmp_path)
     _seed_catalog(manager)
@@ -626,8 +588,7 @@ def test_uninstall_removes_installed_state_and_generated_skill(
 
 
 def test_uninstall_uses_safe_python_m_pip_uninstall_command(
-    tmp_path: Path,
-    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     manager = _manager(tmp_path)
     _seed_catalog(manager)
@@ -648,8 +609,7 @@ def test_uninstall_uses_safe_python_m_pip_uninstall_command(
 
 
 def test_uninstall_uses_recorded_pip_distribution(
-    tmp_path: Path,
-    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     manager = _manager(tmp_path)
     _seed_catalog(manager)
@@ -681,8 +641,7 @@ def test_uninstall_uses_recorded_pip_distribution(
 
 
 def test_uninstall_keeps_state_when_entry_point_still_available(
-    tmp_path: Path,
-    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     manager = _manager(tmp_path)
     _seed_catalog(manager)
@@ -694,7 +653,7 @@ def test_uninstall_keeps_state_when_entry_point_still_available(
     )
     monkeypatch.setattr(manager, "_pip_available", staticmethod(lambda: True))
     monkeypatch.setattr(
-        "nanobot.apps.cli.service.shutil.which",
+        "vtx_claw.apps.cli.service.shutil.which",
         lambda command: (
             "/usr/local/bin/cli-anything-gimp" if command == "cli-anything-gimp" else None
         ),
@@ -711,8 +670,7 @@ def test_uninstall_keeps_state_when_entry_point_still_available(
 
 
 def test_uninstall_keeps_state_when_recorded_entry_point_still_exists(
-    tmp_path: Path,
-    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     manager = _manager(tmp_path)
     _seed_catalog(manager)
@@ -720,12 +678,7 @@ def test_uninstall_keeps_state_when_recorded_entry_point_still_exists(
     resolved.parent.mkdir()
     resolved.write_text("#!/bin/sh\n", encoding="utf-8")
     manager._save_installed(
-        {
-            "gimp": {
-                "entry_point": "cli-anything-gimp",
-                "entry_point_path": str(resolved),
-            }
-        }
+        {"gimp": {"entry_point": "cli-anything-gimp", "entry_point_path": str(resolved)}}
     )
     monkeypatch.setattr(
         manager,
@@ -781,27 +734,21 @@ def test_install_rejects_unknown_and_script_strategy(tmp_path: Path) -> None:
 
 
 def test_run_installed_cli_uses_argv_without_shell(
-    tmp_path: Path,
-    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     manager = _manager(tmp_path)
     _seed_catalog(manager)
     resolved = str(tmp_path / "bin" / "cli-anything-gimp")
     monkeypatch.setattr(
-        "nanobot.apps.cli.service.shutil.which",
+        "vtx_claw.apps.cli.service.shutil.which",
         lambda entry: resolved if entry == "cli-anything-gimp" else None,
     )
 
     def fake_run(argv: list[str], **kwargs: object) -> subprocess.CompletedProcess[str]:
         assert "shell" not in kwargs or kwargs["shell"] is False
-        return subprocess.CompletedProcess(
-            argv,
-            0,
-            stdout="ARGS=" + repr(argv[1:]),
-            stderr="",
-        )
+        return subprocess.CompletedProcess(argv, 0, stdout="ARGS=" + repr(argv[1:]), stderr="")
 
-    monkeypatch.setattr("nanobot.apps.cli.service.subprocess.run", fake_run)
+    monkeypatch.setattr("vtx_claw.apps.cli.service.subprocess.run", fake_run)
     manager._save_installed(
         {
             "gimp": {
@@ -819,15 +766,12 @@ def test_run_installed_cli_uses_argv_without_shell(
     assert "['--json', 'project', 'list']" in result
 
 
-def test_run_reports_created_artifacts(
-    tmp_path: Path,
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
+def test_run_reports_created_artifacts(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     manager = _manager(tmp_path)
     _seed_catalog(manager)
     resolved = str(tmp_path / "bin" / "cli-anything-gimp")
     monkeypatch.setattr(
-        "nanobot.apps.cli.service.shutil.which",
+        "vtx_claw.apps.cli.service.shutil.which",
         lambda entry: resolved if entry == "cli-anything-gimp" else None,
     )
 
@@ -836,7 +780,7 @@ def test_run_reports_created_artifacts(
         (cwd / "diagram.png").write_bytes(b"\x89PNG\r\n\x1a\nimage")
         return subprocess.CompletedProcess(argv, 0, stdout="done", stderr="")
 
-    monkeypatch.setattr("nanobot.apps.cli.service.subprocess.run", fake_run)
+    monkeypatch.setattr("vtx_claw.apps.cli.service.subprocess.run", fake_run)
     manager._save_installed({"gimp": {"entry_point": "cli-anything-gimp"}})
 
     result = manager.run("gimp", ["render"])
@@ -856,8 +800,7 @@ def test_run_blocks_working_dir_outside_workspace(tmp_path: Path) -> None:
 
 
 def test_install_uses_uv_pip_when_pip_unavailable(
-    tmp_path: Path,
-    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     manager = _manager(tmp_path)
     _seed_catalog(manager)
@@ -869,7 +812,7 @@ def test_install_uses_uv_pip_when_pip_unavailable(
 
     monkeypatch.setattr(CliAppManager, "_pip_available", staticmethod(lambda: False))
     monkeypatch.setattr(
-        "nanobot.apps.cli.service.shutil.which",
+        "vtx_claw.apps.cli.service.shutil.which",
         lambda command: "/usr/bin/uv" if command == "uv" else None,
     )
     monkeypatch.setattr(manager, "_run_argv", fake_run)
@@ -888,19 +831,17 @@ def test_install_uses_uv_pip_when_pip_unavailable(
 
 
 def test_update_uses_uv_pip_reinstall_when_pip_unavailable(
-    tmp_path: Path,
-    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     manager = _manager(tmp_path)
     monkeypatch.setattr(CliAppManager, "_pip_available", staticmethod(lambda: False))
     monkeypatch.setattr(
-        "nanobot.apps.cli.service.shutil.which",
+        "vtx_claw.apps.cli.service.shutil.which",
         lambda command: "/usr/bin/uv" if command == "uv" else None,
     )
 
     argv = manager._pip_install_argv(
-        {"name": "gimp", "install_cmd": "pip install cli-anything-gimp"},
-        update=True,
+        {"name": "gimp", "install_cmd": "pip install cli-anything-gimp"}, update=True
     )
 
     assert argv == [
@@ -916,8 +857,7 @@ def test_update_uses_uv_pip_reinstall_when_pip_unavailable(
 
 
 def test_uninstall_uses_uv_pip_when_pip_unavailable(
-    tmp_path: Path,
-    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     manager = _manager(tmp_path)
     _seed_catalog(manager)
@@ -930,18 +870,11 @@ def test_uninstall_uses_uv_pip_when_pip_unavailable(
 
     monkeypatch.setattr(CliAppManager, "_pip_available", staticmethod(lambda: False))
     monkeypatch.setattr(
-        "nanobot.apps.cli.service.shutil.which",
+        "vtx_claw.apps.cli.service.shutil.which",
         lambda command: "/usr/bin/uv" if command == "uv" else None,
     )
     monkeypatch.setattr(manager, "_run_argv", fake_run)
 
     manager.uninstall("suno")
 
-    assert calls[0] == [
-        "uv",
-        "pip",
-        "uninstall",
-        "--python",
-        sys.executable,
-        "suno-cli",
-    ]
+    assert calls[0] == ["uv", "pip", "uninstall", "--python", sys.executable, "suno-cli"]

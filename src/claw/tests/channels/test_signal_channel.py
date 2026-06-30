@@ -9,14 +9,9 @@ from unittest.mock import MagicMock
 
 import pytest
 
-from nanobot.bus.events import InboundMessage, OutboundMessage
-from nanobot.bus.queue import MessageBus
-from nanobot.channels.signal import (
-    SignalChannel,
-    SignalConfig,
-    SignalDMConfig,
-    SignalGroupConfig,
-)
+from vtx_claw.bus.events import InboundMessage, OutboundMessage
+from vtx_claw.bus.queue import MessageBus
+from vtx_claw.channels.signal import SignalChannel, SignalConfig, SignalDMConfig, SignalGroupConfig
 
 # ---------------------------------------------------------------------------
 # Fake HTTP client
@@ -96,11 +91,7 @@ def _make_channel(
     config = SignalConfig(
         enabled=True,
         phone_number=phone_number,
-        dm=SignalDMConfig(
-            enabled=dm_enabled,
-            policy=dm_policy,
-            allow_from=dm_allow_from or [],
-        ),
+        dm=SignalDMConfig(enabled=dm_enabled, policy=dm_policy, allow_from=dm_allow_from or []),
         group=SignalGroupConfig(
             enabled=group_enabled,
             policy=group_policy,
@@ -352,9 +343,7 @@ class TestAccountIdAliases:
 class TestShouldRespondInGroup:
     def _make_group_channel(self, require_mention: bool = True) -> SignalChannel:
         return _make_channel(
-            phone_number="+10000000000",
-            group_enabled=True,
-            require_mention=require_mention,
+            phone_number="+10000000000", group_enabled=True, require_mention=require_mention
         )
 
     def test_no_require_mention_always_responds(self):
@@ -513,10 +502,7 @@ class TestIsAllowed:
 
     def test_allows_composite_sender_against_split_allowlist(self):
         """Composite sender_id, single-id allow_from — must match either part."""
-        ch = _make_channel(
-            dm_policy="allowlist",
-            dm_allow_from=["+19995550001"],
-        )
+        ch = _make_channel(dm_policy="allowlist", dm_allow_from=["+19995550001"])
         assert ch.is_allowed("+19995550001|1872ba20-uuid") is True
 
     def test_allows_composite_sender_against_composite_allowlist_entry(self):
@@ -536,9 +522,7 @@ class TestIsAllowed:
     def test_allowlist_union_includes_group_ids(self):
         """allow_from is the union of dm.allow_from and group.allow_from."""
         ch = _make_channel(
-            group_enabled=True,
-            group_policy="allowlist",
-            group_allow_from=["group-id-base64=="],
+            group_enabled=True, group_policy="allowlist", group_allow_from=["group-id-base64=="]
         )
         assert "group-id-base64==" in ch.config.allow_from
 
@@ -634,11 +618,7 @@ class TestEndToEndDMRouting:
     @pytest.mark.asyncio
     async def test_open_group_policy_publishes_to_bus(self):
         """Open group: group message from unknown sender publishes to bus."""
-        ch = _make_channel(
-            group_enabled=True,
-            group_policy="open",
-            require_mention=False,
-        )
+        ch = _make_channel(group_enabled=True, group_policy="open", require_mention=False)
 
         async def noop_typing(chat_id):
             pass
@@ -730,7 +710,9 @@ class TestCheckInboundPolicy:
 
     def test_group_open_without_mention_blocks(self):
         ch = _make_channel(group_enabled=True, group_policy="open", require_mention=True)
-        allowed, _ = self._call(ch, is_group_message=True, group_id="g1", message_text="plain talk")
+        allowed, _ = self._call(
+            ch, is_group_message=True, group_id="g1", message_text="plain talk"
+        )
         assert allowed is False
 
     def test_group_command_bypasses_mention_requirement(self):
@@ -810,7 +792,7 @@ class TestHandleDataMessageDM:
         # subsequent message — otherwise the pairing reply loops forever.
         approved = {"+19995550002"}
         monkeypatch.setattr(
-            "nanobot.channels.signal.is_approved",
+            "vtx_claw.channels.signal.is_approved",
             lambda channel, sender_id: sender_id in approved,
         )
         ch = _make_channel(dm_enabled=True, dm_policy="allowlist", dm_allow_from=[])
@@ -858,8 +840,7 @@ class TestHandleDataMessageDM:
         composite = "+19995550001|1872ba20-f52a-4bad-b434-bf7f808c8b22"
         ch, handled = self._make_dm_channel(policy="allowlist", allow_from=[composite])
         params = _dm_envelope(
-            source_number="+19995550001",
-            source_uuid="1872ba20-f52a-4bad-b434-bf7f808c8b22",
+            source_number="+19995550001", source_uuid="1872ba20-f52a-4bad-b434-bf7f808c8b22"
         )
         await ch._handle_receive_notification(params)
         assert len(handled) == 1
@@ -900,10 +881,7 @@ class TestHandleDataMessageDM:
     async def test_receipt_message_ignored(self):
         ch, handled = self._make_dm_channel()
         notification = {
-            "envelope": {
-                "sourceNumber": "+19995550001",
-                "receiptMessage": {"when": 1234},
-            }
+            "envelope": {"sourceNumber": "+19995550001", "receiptMessage": {"when": 1234}}
         }
         await ch._handle_receive_notification(notification)
         assert handled == []
@@ -912,10 +890,7 @@ class TestHandleDataMessageDM:
     async def test_typing_indicator_ignored(self):
         ch, handled = self._make_dm_channel()
         notification = {
-            "envelope": {
-                "sourceNumber": "+19995550001",
-                "typingMessage": {"action": "STARTED"},
-            }
+            "envelope": {"sourceNumber": "+19995550001", "typingMessage": {"action": "STARTED"}}
         }
         await ch._handle_receive_notification(notification)
         assert handled == []
@@ -979,10 +954,7 @@ class TestHandleDataMessageDM:
 
 class TestHandleDataMessageGroup:
     def _make_group_channel(
-        self,
-        policy="open",
-        allow_from=None,
-        require_mention=True,
+        self, policy="open", allow_from=None, require_mention=True
     ) -> tuple[SignalChannel, list]:
         return _make_channel_with_capture(
             group_enabled=True,
@@ -1266,9 +1238,7 @@ class TestSend:
         ch, client = self._make_send_channel()
         ch._MAX_MESSAGE_LEN = 12  # type: ignore[attr-defined]
         msg = OutboundMessage(
-            channel="signal",
-            chat_id="+19995550001",
-            content="**head** middle and **tail**",
+            channel="signal", chat_id="+19995550001", content="**head** middle and **tail**"
         )
         await ch.send(msg)
         assert len(client.posts) >= 2
@@ -1330,7 +1300,7 @@ class TestSend:
 
     @pytest.mark.asyncio
     async def test_send_progress_message_does_not_stop_typing(self):
-        ch, client = self._make_send_channel()
+        ch, _client = self._make_send_channel()
         stopped: list[str] = []
 
         async def record_stop(chat_id, **kwargs):
@@ -1349,7 +1319,7 @@ class TestSend:
 
     @pytest.mark.asyncio
     async def test_send_final_message_stops_typing(self):
-        ch, client = self._make_send_channel()
+        ch, _client = self._make_send_channel()
         stopped: list[str] = []
 
         async def record_stop(chat_id, send_stop=True):
@@ -1462,10 +1432,7 @@ async def test_handle_notification_sync_message_does_not_forward() -> None:
         "envelope": {
             "sourceNumber": "+19995550001",
             "syncMessage": {
-                "sentMessage": {
-                    "destination": "+19990000000",
-                    "message": "sent from other device",
-                }
+                "sentMessage": {"destination": "+19990000000", "message": "sent from other device"}
             },
         }
     }

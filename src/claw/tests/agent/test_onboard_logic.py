@@ -10,9 +10,9 @@ from typing import Any, cast
 
 from pydantic import BaseModel, Field
 
-from nanobot.cli import onboard as onboard_wizard
-from nanobot.cli.commands import _merge_missing_defaults
-from nanobot.cli.onboard import (
+from vtx_claw.cli import onboard as onboard_wizard
+from vtx_claw.cli.commands import _merge_missing_defaults
+from vtx_claw.cli.onboard import (
     _BACK_PRESSED,
     _configure_pydantic_model,
     _format_value,
@@ -22,8 +22,8 @@ from nanobot.cli.onboard import (
     _input_text,
     run_onboard,
 )
-from nanobot.config.schema import Config, ModelPresetConfig
-from nanobot.utils.helpers import sync_workspace_templates
+from vtx_claw.config.schema import Config, ModelPresetConfig
+from vtx_claw.utils.helpers import sync_workspace_templates
 
 
 class TestMergeMissingDefaults:
@@ -46,33 +46,15 @@ class TestMergeMissingDefaults:
         assert result == {"a": "custom_value"}
 
     def test_merges_nested_dicts_recursively(self):
-        existing = {
-            "level1": {
-                "level2": {
-                    "existing": "kept",
-                }
-            }
-        }
+        existing = {"level1": {"level2": {"existing": "kept"}}}
         defaults = {
-            "level1": {
-                "level2": {
-                    "existing": "replaced",
-                    "added": "new",
-                },
-                "level2b": "also_new",
-            }
+            "level1": {"level2": {"existing": "replaced", "added": "new"}, "level2b": "also_new"}
         }
 
         result = _merge_missing_defaults(existing, defaults)
 
         assert result == {
-            "level1": {
-                "level2": {
-                    "existing": "kept",
-                    "added": "new",
-                },
-                "level2b": "also_new",
-            }
+            "level1": {"level2": {"existing": "kept", "added": "new"}, "level2b": "also_new"}
         }
 
     def test_returns_existing_if_not_dict(self):
@@ -92,11 +74,7 @@ class TestMergeMissingDefaults:
 
     def test_backfills_channel_config(self):
         """Real-world scenario: backfill missing channel fields."""
-        existing_channel = {
-            "enabled": False,
-            "appId": "",
-            "secret": "",
-        }
+        existing_channel = {"enabled": False, "appId": "", "secret": ""}
         default_channel = {
             "enabled": False,
             "appId": "",
@@ -219,7 +197,7 @@ class TestGetFieldTypeInfo:
 
     def test_real_provider_retry_mode_field(self):
         """Validate against actual AgentDefaults.provider_retry_mode field."""
-        from nanobot.config.schema import AgentDefaults
+        from vtx_claw.config.schema import AgentDefaults
 
         type_name, inner = _get_field_type_info(AgentDefaults.model_fields["provider_retry_mode"])
         assert type_name == "literal"
@@ -392,7 +370,7 @@ class TestProviderChannelInfo:
     """Tests for provider and channel info retrieval."""
 
     def test_get_provider_names_returns_dict(self):
-        from nanobot.cli.onboard import _get_provider_names
+        from vtx_claw.cli.onboard import _get_provider_names
 
         names = _get_provider_names()
         assert isinstance(names, dict)
@@ -403,7 +381,7 @@ class TestProviderChannelInfo:
         assert "github_copilot" not in names
 
     def test_get_channel_names_returns_dict(self):
-        from nanobot.cli.onboard import _get_channel_names
+        from vtx_claw.cli.onboard import _get_channel_names
 
         names = _get_channel_names()
         assert isinstance(names, dict)
@@ -411,12 +389,12 @@ class TestProviderChannelInfo:
         assert len(names) >= 0
 
     def test_get_provider_info_returns_valid_structure(self):
-        from nanobot.cli.onboard import _get_provider_info
+        from vtx_claw.cli.onboard import _get_provider_info
 
         info = _get_provider_info()
         assert isinstance(info, dict)
         # Each value should be a tuple with expected structure
-        for provider_name, value in info.items():
+        for _provider_name, value in info.items():
             assert isinstance(value, tuple)
             assert len(value) == 4  # (display_name, needs_api_key, needs_api_base, env_var)
 
@@ -554,7 +532,7 @@ class TestValidateFieldConstraint:
             name: str = "hello"
 
         field_info = M.model_fields["name"]
-        from nanobot.cli.onboard import _validate_field_constraint
+        from vtx_claw.cli.onboard import _validate_field_constraint
 
         assert _validate_field_constraint("anything", field_info) is None
 
@@ -566,7 +544,7 @@ class TestValidateFieldConstraint:
             count: int = Field(default=3, ge=0)
 
         field_info = M.model_fields["count"]
-        from nanobot.cli.onboard import _validate_field_constraint
+        from vtx_claw.cli.onboard import _validate_field_constraint
 
         result = _validate_field_constraint(-1, field_info)
         assert result is not None
@@ -580,7 +558,7 @@ class TestValidateFieldConstraint:
             count: int = Field(default=3, ge=0)
 
         field_info = M.model_fields["count"]
-        from nanobot.cli.onboard import _validate_field_constraint
+        from vtx_claw.cli.onboard import _validate_field_constraint
 
         assert _validate_field_constraint(0, field_info) is None
 
@@ -592,7 +570,7 @@ class TestValidateFieldConstraint:
             retries: int = Field(default=3, le=10)
 
         field_info = M.model_fields["retries"]
-        from nanobot.cli.onboard import _validate_field_constraint
+        from vtx_claw.cli.onboard import _validate_field_constraint
 
         result = _validate_field_constraint(11, field_info)
         assert result is not None
@@ -606,7 +584,7 @@ class TestValidateFieldConstraint:
             retries: int = Field(default=3, le=10)
 
         field_info = M.model_fields["retries"]
-        from nanobot.cli.onboard import _validate_field_constraint
+        from vtx_claw.cli.onboard import _validate_field_constraint
 
         assert _validate_field_constraint(10, field_info) is None
 
@@ -618,7 +596,7 @@ class TestValidateFieldConstraint:
             retries: int = Field(default=3, ge=0, le=10)
 
         field_info = M.model_fields["retries"]
-        from nanobot.cli.onboard import _validate_field_constraint
+        from vtx_claw.cli.onboard import _validate_field_constraint
 
         assert _validate_field_constraint(5, field_info) is None
         assert _validate_field_constraint(-1, field_info) is not None
@@ -632,7 +610,7 @@ class TestValidateFieldConstraint:
             ratio: float = Field(default=0.5, gt=0.0, lt=1.0)
 
         field_info = M.model_fields["ratio"]
-        from nanobot.cli.onboard import _validate_field_constraint
+        from vtx_claw.cli.onboard import _validate_field_constraint
 
         assert _validate_field_constraint(0.5, field_info) is None
         assert _validate_field_constraint(0.0, field_info) is not None
@@ -646,7 +624,7 @@ class TestValidateFieldConstraint:
             name: str = Field(default="x", min_length=1)
 
         field_info = M.model_fields["name"]
-        from nanobot.cli.onboard import _validate_field_constraint
+        from vtx_claw.cli.onboard import _validate_field_constraint
 
         assert _validate_field_constraint("a", field_info) is None
         assert _validate_field_constraint("", field_info) is not None
@@ -659,15 +637,15 @@ class TestValidateFieldConstraint:
             tag: str = Field(default="x", max_length=5)
 
         field_info = M.model_fields["tag"]
-        from nanobot.cli.onboard import _validate_field_constraint
+        from vtx_claw.cli.onboard import _validate_field_constraint
 
         assert _validate_field_constraint("abc", field_info) is None
         assert _validate_field_constraint("abcdef", field_info) is not None
 
     def test_real_send_max_retries_field(self):
         """Validate against the actual ChannelsConfig.send_max_retries field."""
-        from nanobot.cli.onboard import _validate_field_constraint
-        from nanobot.config.schema import ChannelsConfig
+        from vtx_claw.cli.onboard import _validate_field_constraint
+        from vtx_claw.config.schema import ChannelsConfig
 
         field_info = ChannelsConfig.model_fields["send_max_retries"]
         assert _validate_field_constraint(3, field_info) is None
@@ -734,7 +712,7 @@ class TestGetConstraintHint:
 
     def test_real_send_max_retries_hint(self):
         """Actual ChannelsConfig.send_max_retries should show a 0-10 suffix."""
-        from nanobot.config.schema import ChannelsConfig
+        from vtx_claw.config.schema import ChannelsConfig
 
         field_info = ChannelsConfig.model_fields["send_max_retries"]
         hint = _get_constraint_hint(field_info)
@@ -798,13 +776,13 @@ class TestChannelCommonRegistration:
 
     def test_channel_common_in_settings_sections(self):
         """Channel Common should be registered in _SETTINGS_SECTIONS."""
-        from nanobot.cli.onboard import _SETTINGS_SECTIONS
+        from vtx_claw.cli.onboard import _SETTINGS_SECTIONS
 
         assert "Channel Common" in _SETTINGS_SECTIONS
 
     def test_channel_common_getter_returns_channels(self):
         """Channel Common getter should return config.channels."""
-        from nanobot.cli.onboard import _SETTINGS_GETTER
+        from vtx_claw.cli.onboard import _SETTINGS_GETTER
 
         config = Config()
         result = _SETTINGS_GETTER["Channel Common"](config)
@@ -812,7 +790,7 @@ class TestChannelCommonRegistration:
 
     def test_channel_common_setter_writes_channels(self):
         """Channel Common setter should update config.channels."""
-        from nanobot.cli.onboard import _SETTINGS_SETTER
+        from vtx_claw.cli.onboard import _SETTINGS_SETTER
 
         config = Config()
         original = config.channels
@@ -837,13 +815,13 @@ class TestApiServerRegistration:
 
     def test_api_server_in_settings_sections(self):
         """API Server should be registered in _SETTINGS_SECTIONS."""
-        from nanobot.cli.onboard import _SETTINGS_SECTIONS
+        from vtx_claw.cli.onboard import _SETTINGS_SECTIONS
 
         assert "API Server" in _SETTINGS_SECTIONS
 
     def test_api_server_getter_returns_api(self):
         """API Server getter should return config.api."""
-        from nanobot.cli.onboard import _SETTINGS_GETTER
+        from vtx_claw.cli.onboard import _SETTINGS_GETTER
 
         config = Config()
         result = _SETTINGS_GETTER["API Server"](config)
@@ -851,10 +829,10 @@ class TestApiServerRegistration:
 
     def test_api_server_setter_writes_api(self):
         """API Server setter should update config.api."""
-        from nanobot.cli.onboard import _SETTINGS_SETTER
+        from vtx_claw.cli.onboard import _SETTINGS_SETTER
 
         config = Config()
-        from nanobot.config.schema import ApiConfig
+        from vtx_claw.config.schema import ApiConfig
 
         new_api = ApiConfig(host="0.0.0.0", port=9999)
         _SETTINGS_SETTER["API Server"](config, new_api)
@@ -882,20 +860,19 @@ class TestMainMenuUpdate:
 
     def test_choice_viewport_handles_tiny_terminals(self):
         """A one-row menu is still usable instead of failing as window-too-small."""
-        assert onboard_wizard._choice_viewport(selected_index=3, total=5, visible_count=0) == (3, 4)
+        assert onboard_wizard._choice_viewport(selected_index=3, total=5, visible_count=0) == (
+            3,
+            4,
+        )
 
     def test_main_menu_hides_save_actions_until_needed(self):
         """The first screen should not show save or summary actions before edits."""
-        from nanobot.cli.onboard import _get_main_menu_choices
+        from vtx_claw.cli.onboard import _get_main_menu_choices
 
         clean_choices = _get_main_menu_choices(False)
         dirty_choices = _get_main_menu_choices(True)
 
-        assert clean_choices == [
-            "[Q] Quick Start",
-            "[A] Advanced Settings",
-            "[X] Exit",
-        ]
+        assert clean_choices == ["[Q] Quick Start", "[A] Advanced Settings", "[X] Exit"]
         assert "[S] Save and Exit" not in clean_choices
         assert "[V] View Configuration Summary" not in clean_choices
         assert "[S] Save and Exit" in dirty_choices
@@ -905,11 +882,7 @@ class TestMainMenuUpdate:
         """run_onboard should route [Q] to Quick Start."""
         initial_config = Config()
 
-        responses = iter(
-            [
-                "[Q] Quick Start",
-            ]
-        )
+        responses = iter(["[Q] Quick Start"])
 
         def fake_select_with_back(*_args, **_kwargs):
             return next(responses)
@@ -930,13 +903,7 @@ class TestMainMenuUpdate:
     def test_main_menu_default_resets_after_returning_from_advanced(self, monkeypatch):
         """Returning from Advanced should not leave its item visually selected."""
         initial_config = Config()
-        responses = iter(
-            [
-                "[A] Advanced Settings",
-                "<- Back",
-                "[X] Exit",
-            ]
-        )
+        responses = iter(["[A] Advanced Settings", "<- Back", "[X] Exit"])
         main_defaults: list[str | None] = []
 
         def fake_select_with_back(prompt, _choices, default=None):
@@ -971,7 +938,7 @@ class TestMainMenuUpdate:
 
     def test_quick_start_provider_choices_include_all_chat_providers(self):
         """Quick Start should be driven by the provider registry, not a short allowlist."""
-        from nanobot.providers.registry import PROVIDERS
+        from vtx_claw.providers.registry import PROVIDERS
 
         choices = onboard_wizard._get_quick_start_provider_choices()
         selected_provider_names = set(choices.values())
@@ -1007,9 +974,7 @@ class TestMainMenuUpdate:
         monkeypatch.setattr(onboard_wizard, "_select_with_back", lambda *a, **kw: "DeepSeek")
         monkeypatch.setattr(onboard_wizard, "_input_text", lambda *a, **kw: "sk-ds-test")
         monkeypatch.setattr(
-            onboard_wizard,
-            "_input_model_with_autocomplete",
-            lambda *a, **kw: "deepseek-v4-flash",
+            onboard_wizard, "_input_model_with_autocomplete", lambda *a, **kw: "deepseek-v4-flash"
         )
         monkeypatch.setattr(
             onboard_wizard,
@@ -1033,7 +998,7 @@ class TestMainMenuUpdate:
         assert config.agents.defaults.model_preset == "primary"
         assert config.model_presets["primary"].provider == "deepseek"
         assert config.model_presets["primary"].model == "deepseek-v4-flash"
-        websocket = getattr(config.channels, "websocket")
+        websocket = config.channels.websocket
         assert websocket["enabled"] is True
         assert websocket["websocketRequiresToken"] is True
         assert websocket["tokenIssueSecret"] == "webui-secret"
@@ -1044,9 +1009,7 @@ class TestMainMenuUpdate:
 
         monkeypatch.setattr(onboard_wizard, "_show_quick_start_progress", lambda *_args: None)
         monkeypatch.setattr(
-            onboard_wizard,
-            "_select_with_back",
-            lambda *a, **kw: onboard_wizard._BACK_PRESSED,
+            onboard_wizard, "_select_with_back", lambda *a, **kw: onboard_wizard._BACK_PRESSED
         )
 
         assert (
@@ -1070,9 +1033,7 @@ class TestMainMenuUpdate:
             lambda *_args: onboard_wizard._BACK_PRESSED,
         )
         monkeypatch.setattr(
-            onboard_wizard,
-            "_enable_quick_start_websocket_defaults",
-            fail_websocket_defaults,
+            onboard_wizard, "_enable_quick_start_websocket_defaults", fail_websocket_defaults
         )
         monkeypatch.setattr(
             onboard_wizard, "_pause", lambda message="": pause_messages.append(message)
@@ -1100,9 +1061,7 @@ class TestMainMenuUpdate:
         monkeypatch.setattr(onboard_wizard, "_select_with_back", lambda *a, **kw: "DeepSeek")
         monkeypatch.setattr(onboard_wizard, "_input_text", lambda *a, **kw: "sk-ds-test")
         monkeypatch.setattr(
-            onboard_wizard,
-            "_input_model_with_autocomplete",
-            lambda *a, **kw: "deepseek-v4-flash",
+            onboard_wizard, "_input_model_with_autocomplete", lambda *a, **kw: "deepseek-v4-flash"
         )
         monkeypatch.setattr(
             onboard_wizard,
@@ -1151,9 +1110,7 @@ class TestMainMenuUpdate:
 
         monkeypatch.setattr(onboard_wizard, "_input_text", fail_text_input)
         monkeypatch.setattr(
-            onboard_wizard,
-            "_input_model_with_autocomplete",
-            lambda *a, **kw: "llama3.2",
+            onboard_wizard, "_input_model_with_autocomplete", lambda *a, **kw: "llama3.2"
         )
 
         assert onboard_wizard._configure_quick_start_provider(config) is True
@@ -1171,9 +1128,7 @@ class TestMainMenuUpdate:
         monkeypatch.setattr(onboard_wizard, "_select_with_back", lambda *a, **kw: "OpenAI")
         monkeypatch.setattr(onboard_wizard, "_input_text", lambda *a, **kw: "sk-openai-test")
         monkeypatch.setattr(
-            onboard_wizard,
-            "_input_model_with_autocomplete",
-            lambda *a, **kw: "gpt-4o-mini",
+            onboard_wizard, "_input_model_with_autocomplete", lambda *a, **kw: "gpt-4o-mini"
         )
 
         assert onboard_wizard._configure_quick_start_provider(config) is True
@@ -1199,9 +1154,7 @@ class TestMainMenuUpdate:
         monkeypatch.setattr(onboard_wizard, "_select_with_back", fake_select)
         monkeypatch.setattr(onboard_wizard, "_input_text", lambda *a, **kw: next(api_key_answers))
         monkeypatch.setattr(
-            onboard_wizard,
-            "_input_model_with_autocomplete",
-            lambda *a, **kw: "gpt-4o-mini",
+            onboard_wizard, "_input_model_with_autocomplete", lambda *a, **kw: "gpt-4o-mini"
         )
 
         assert onboard_wizard._configure_quick_start_provider(config) is True
@@ -1220,9 +1173,7 @@ class TestMainMenuUpdate:
         monkeypatch.setattr(onboard_wizard, "_select_with_back", lambda *a, **kw: next(choices))
         monkeypatch.setattr(onboard_wizard, "_input_text", lambda *a, **kw: "zhipu-key")
         monkeypatch.setattr(
-            onboard_wizard,
-            "_input_model_with_autocomplete",
-            lambda *a, **kw: "glm-4.6",
+            onboard_wizard, "_input_model_with_autocomplete", lambda *a, **kw: "glm-4.6"
         )
 
         assert onboard_wizard._configure_quick_start_provider(config) is True
@@ -1241,9 +1192,7 @@ class TestMainMenuUpdate:
         monkeypatch.setattr(onboard_wizard, "_select_with_back", lambda *a, **kw: next(choices))
         monkeypatch.setattr(onboard_wizard, "_input_text", lambda *a, **kw: "minimax-key")
         monkeypatch.setattr(
-            onboard_wizard,
-            "_input_model_with_autocomplete",
-            lambda *a, **kw: "MiniMax-M2",
+            onboard_wizard, "_input_model_with_autocomplete", lambda *a, **kw: "MiniMax-M2"
         )
 
         assert onboard_wizard._configure_quick_start_provider(config) is True
@@ -1262,9 +1211,7 @@ class TestMainMenuUpdate:
         monkeypatch.setattr(onboard_wizard, "_select_with_back", lambda *a, **kw: next(choices))
         monkeypatch.setattr(onboard_wizard, "_input_text", lambda *a, **kw: "stepfun-key")
         monkeypatch.setattr(
-            onboard_wizard,
-            "_input_model_with_autocomplete",
-            lambda *a, **kw: "step-3.5-flash",
+            onboard_wizard, "_input_model_with_autocomplete", lambda *a, **kw: "step-3.5-flash"
         )
 
         assert onboard_wizard._configure_quick_start_provider(config) is True
@@ -1283,9 +1230,7 @@ class TestMainMenuUpdate:
         monkeypatch.setattr(onboard_wizard, "_select_with_back", lambda *a, **kw: next(choices))
         monkeypatch.setattr(onboard_wizard, "_input_text", lambda *a, **kw: "mimo-key")
         monkeypatch.setattr(
-            onboard_wizard,
-            "_input_model_with_autocomplete",
-            lambda *a, **kw: "mimo-v2.5-pro",
+            onboard_wizard, "_input_model_with_autocomplete", lambda *a, **kw: "mimo-v2.5-pro"
         )
 
         assert onboard_wizard._configure_quick_start_provider(config) is True
@@ -1308,9 +1253,7 @@ class TestMainMenuUpdate:
         )
         monkeypatch.setattr(onboard_wizard, "_input_text", lambda *a, **kw: next(text_answers))
         monkeypatch.setattr(
-            onboard_wizard,
-            "_input_model_with_autocomplete",
-            lambda *a, **kw: "custom-model",
+            onboard_wizard, "_input_model_with_autocomplete", lambda *a, **kw: "custom-model"
         )
 
         assert onboard_wizard._configure_quick_start_provider(config) is True
@@ -1329,9 +1272,7 @@ class TestMainMenuUpdate:
         monkeypatch.setattr(onboard_wizard, "_select_with_back", lambda *a, **kw: "Azure OpenAI")
         monkeypatch.setattr(onboard_wizard, "_input_text", lambda *a, **kw: next(text_answers))
         monkeypatch.setattr(
-            onboard_wizard,
-            "_input_model_with_autocomplete",
-            lambda *a, **kw: "deployment-name",
+            onboard_wizard, "_input_model_with_autocomplete", lambda *a, **kw: "deployment-name"
         )
 
         assert onboard_wizard._configure_quick_start_provider(config) is True
@@ -1372,7 +1313,7 @@ class TestMainMenuUpdate:
 
         assert any("WebSocket channel" in message for message in messages)
         assert any("http://127.0.0.1:8765" in message for message in messages)
-        websocket = getattr(config.channels, "websocket")
+        websocket = config.channels.websocket
         assert websocket["enabled"] is True
         assert websocket["websocketRequiresToken"] is True
         assert websocket["tokenIssueSecret"] == "webui-secret"
@@ -1416,8 +1357,7 @@ class TestMainMenuUpdate:
             onboard_wizard,
             "questionary",
             SimpleNamespace(
-                confirm=lambda *a, **kw: FakePrompt(True),
-                password=lambda *a, **kw: FakePrompt(""),
+                confirm=lambda *a, **kw: FakePrompt(True), password=lambda *a, **kw: FakePrompt("")
             ),
         )
 
@@ -1459,8 +1399,7 @@ class TestMainMenuUpdate:
         """Quick Start summary should not tell users to run gateway before adding a key."""
         config = Config()
         config.model_presets["primary"] = ModelPresetConfig(
-            model="deepseek-v4-flash",
-            provider="deepseek",
+            model="deepseek-v4-flash", provider="deepseek"
         )
 
         captured: dict[str, list[tuple[str, str]]] = {}
@@ -1478,7 +1417,7 @@ class TestMainMenuUpdate:
         rows = dict(captured["rows"])
         assert rows["Status"] == "DeepSeek API key missing"
         assert "API key" in rows["Next"]
-        assert "nanobot gateway" in rows["Next"]
+        assert "vtx-claw gateway" in rows["Next"]
         assert "agent -m" not in rows["Next"]
         assert labels.index("Next") < labels.index("Open")
         assert "Model" not in rows
@@ -1488,7 +1427,7 @@ class TestMainMenuUpdate:
 
     def test_configure_login_channel_defaults_to_login(self, monkeypatch):
         """The channel wizard should start login before exposing advanced fields."""
-        from nanobot.channels.base import BaseChannel
+        from vtx_claw.channels.base import BaseChannel
 
         config = Config()
         calls: dict[str, Any] = {}
@@ -1538,7 +1477,7 @@ class TestMainMenuUpdate:
 
         onboard_wizard._configure_channel(config, "loginchat")
 
-        loginchat = getattr(config.channels, "loginchat")
+        loginchat = config.channels.loginchat
         assert loginchat["enabled"] is True
         assert calls == {"force": False}
 
@@ -1548,7 +1487,7 @@ class TestMainMenuUpdate:
         # We verify by checking the dispatch table is set up correctly
         # The menu items are defined inline in run_onboard, so we test
         # that _configure_general_settings handles the new sections.
-        from nanobot.cli.onboard import _SETTINGS_GETTER, _SETTINGS_SECTIONS, _SETTINGS_SETTER
+        from vtx_claw.cli.onboard import _SETTINGS_GETTER, _SETTINGS_SECTIONS, _SETTINGS_SETTER
 
         assert "Channel Common" in _SETTINGS_SECTIONS
         assert "Channel Common" in _SETTINGS_GETTER
@@ -1556,7 +1495,7 @@ class TestMainMenuUpdate:
 
     def test_main_menu_dispatch_includes_api_server(self):
         """Advanced menu dispatch should route [I] to API Server."""
-        from nanobot.cli.onboard import _SETTINGS_GETTER, _SETTINGS_SECTIONS, _SETTINGS_SETTER
+        from vtx_claw.cli.onboard import _SETTINGS_GETTER, _SETTINGS_SECTIONS, _SETTINGS_SETTER
 
         assert "API Server" in _SETTINGS_SECTIONS
         assert "API Server" in _SETTINGS_GETTER
@@ -1601,12 +1540,7 @@ class TestMainMenuUpdate:
         initial_config = Config()
 
         responses = iter(
-            [
-                "[A] Advanced Settings",
-                "[I] API Server",
-                KeyboardInterrupt(),
-                "[S] Save and Exit",
-            ]
+            ["[A] Advanced Settings", "[I] API Server", KeyboardInterrupt(), "[S] Save and Exit"]
         )
 
         def fake_select_with_back(*_args, **_kwargs):
@@ -1711,24 +1645,24 @@ class TestIsStrOrNone:
     """Tests for _is_str_or_none helper."""
 
     def test_str_or_none_true(self):
-        from nanobot.cli.onboard import _is_str_or_none
+        from vtx_claw.cli.onboard import _is_str_or_none
 
         assert _is_str_or_none(str | None) is True
 
     def test_optional_str_true(self):
         from typing import Optional
 
-        from nanobot.cli.onboard import _is_str_or_none
+        from vtx_claw.cli.onboard import _is_str_or_none
 
         assert _is_str_or_none(Optional[str]) is True
 
     def test_str_only_false(self):
-        from nanobot.cli.onboard import _is_str_or_none
+        from vtx_claw.cli.onboard import _is_str_or_none
 
         assert _is_str_or_none(str) is False
 
     def test_int_or_none_false(self):
-        from nanobot.cli.onboard import _is_str_or_none
+        from vtx_claw.cli.onboard import _is_str_or_none
 
         assert _is_str_or_none(int | None) is False
 
@@ -1800,31 +1734,25 @@ class TestModelPresetWizard:
 
     def test_sync_preset_cache(self):
         """_sync_preset_cache should populate the module-level cache."""
-        from nanobot.cli.onboard import _MODEL_PRESET_CACHE, _sync_preset_cache
-        from nanobot.config.schema import ModelPresetConfig
+        from vtx_claw.cli.onboard import _MODEL_PRESET_CACHE, _sync_preset_cache
+        from vtx_claw.config.schema import ModelPresetConfig
 
         config = Config()
         config.model_presets["fast"] = ModelPresetConfig(model="gpt-4.1-mini")
         config.model_presets["power"] = ModelPresetConfig(model="gpt-4.1")
         _sync_preset_cache(config)
-        assert _MODEL_PRESET_CACHE == {"fast", "power"}
+        assert {"fast", "power"} == _MODEL_PRESET_CACHE
         _MODEL_PRESET_CACHE.clear()
 
     def test_model_preset_add(self, monkeypatch):
         """_configure_model_presets should add a new preset."""
-        from nanobot.cli.onboard import _MODEL_PRESET_CACHE, _configure_model_presets
-        from nanobot.config.schema import ModelPresetConfig
+        from vtx_claw.cli.onboard import _MODEL_PRESET_CACHE, _configure_model_presets
+        from vtx_claw.config.schema import ModelPresetConfig
 
         config = Config()
         _MODEL_PRESET_CACHE.clear()
 
-        responses = iter(
-            [
-                "[+] Add new preset",
-                "my-preset",
-                "<- Back",
-            ]
-        )
+        responses = iter(["[+] Add new preset", "my-preset", "<- Back"])
 
         class FakePrompt:
             def __init__(self, response):
@@ -1857,22 +1785,15 @@ class TestModelPresetWizard:
 
     def test_model_preset_delete(self, monkeypatch):
         """_configure_model_presets should delete an existing preset."""
-        from nanobot.cli.onboard import _MODEL_PRESET_CACHE, _configure_model_presets
-        from nanobot.config.schema import ModelPresetConfig
+        from vtx_claw.cli.onboard import _MODEL_PRESET_CACHE, _configure_model_presets
+        from vtx_claw.config.schema import ModelPresetConfig
 
         config = Config()
         config.model_presets["old - preset"] = ModelPresetConfig(model="x")
         _MODEL_PRESET_CACHE.clear()
         _MODEL_PRESET_CACHE.update({"old - preset", "default"})
 
-        responses = iter(
-            [
-                "old - preset - x",
-                "Delete",
-                True,
-                "<- Back",
-            ]
-        )
+        responses = iter(["old - preset - x", "Delete", True, "<- Back"])
 
         class FakePrompt:
             def __init__(self, response):
@@ -1894,7 +1815,9 @@ class TestModelPresetWizard:
 
         monkeypatch.setattr(onboard_wizard, "_select_with_back", fake_select_with_back)
         monkeypatch.setattr(
-            onboard_wizard, "questionary", SimpleNamespace(select=fake_select, confirm=fake_confirm)
+            onboard_wizard,
+            "questionary",
+            SimpleNamespace(select=fake_select, confirm=fake_confirm),
         )
         monkeypatch.setattr(onboard_wizard, "_show_section_header", lambda *a, **kw: None)
         monkeypatch.setattr(onboard_wizard, "console", SimpleNamespace(clear=lambda: None))
@@ -1907,8 +1830,8 @@ class TestModelPresetWizard:
 
     def test_model_preset_field_handler(self, monkeypatch):
         """_handle_model_preset_field should set a preset name from choices."""
-        from nanobot.cli.onboard import _MODEL_PRESET_CACHE, _handle_model_preset_field
-        from nanobot.config.schema import AgentDefaults
+        from vtx_claw.cli.onboard import _MODEL_PRESET_CACHE, _handle_model_preset_field
+        from vtx_claw.config.schema import AgentDefaults
 
         _MODEL_PRESET_CACHE.clear()
         _MODEL_PRESET_CACHE.update({"fast", "power", "default"})
@@ -1922,12 +1845,12 @@ class TestModelPresetWizard:
 
     def test_model_preset_field_handler_clear(self, monkeypatch):
         """_handle_model_preset_field should clear preset when Clear value is chosen."""
-        from nanobot.cli.onboard import (
+        from vtx_claw.cli.onboard import (
             _CLEAR_CHOICE,
             _MODEL_PRESET_CACHE,
             _handle_model_preset_field,
         )
-        from nanobot.config.schema import AgentDefaults
+        from vtx_claw.config.schema import AgentDefaults
 
         _MODEL_PRESET_CACHE.clear()
         _MODEL_PRESET_CACHE.add("fast")
@@ -1941,13 +1864,13 @@ class TestModelPresetWizard:
 
     def test_main_menu_dispatch_includes_model_presets(self):
         """_configure_model_presets should be importable and callable."""
-        from nanobot.cli.onboard import _configure_model_presets
+        from vtx_claw.cli.onboard import _configure_model_presets
 
         assert callable(_configure_model_presets)
 
     def test_run_onboard_model_presets_edit(self, monkeypatch):
         """run_onboard should handle [M] Model Presets through Advanced Settings."""
-        from nanobot.config.schema import ModelPresetConfig
+        from vtx_claw.config.schema import ModelPresetConfig
 
         initial_config = Config()
 
@@ -1987,8 +1910,8 @@ class TestModelPresetWizard:
 
     def test_fallback_models_field_add(self, monkeypatch):
         """_handle_fallback_models_field should add a preset name."""
-        from nanobot.cli.onboard import _MODEL_PRESET_CACHE, _handle_fallback_models_field
-        from nanobot.config.schema import AgentDefaults
+        from vtx_claw.cli.onboard import _MODEL_PRESET_CACHE, _handle_fallback_models_field
+        from vtx_claw.config.schema import AgentDefaults
 
         _MODEL_PRESET_CACHE.clear()
         _MODEL_PRESET_CACHE.update({"fast", "default"})
@@ -2032,8 +1955,8 @@ class TestModelPresetWizard:
 
     def test_provider_field_handler(self, monkeypatch):
         """_handle_provider_field should set provider from choices."""
-        from nanobot.cli.onboard import _handle_provider_field
-        from nanobot.config.schema import AgentDefaults
+        from vtx_claw.cli.onboard import _handle_provider_field
+        from vtx_claw.config.schema import AgentDefaults
 
         monkeypatch.setattr(onboard_wizard, "_select_with_back", lambda *a, **kw: "anthropic")
 
@@ -2043,8 +1966,8 @@ class TestModelPresetWizard:
 
     def test_search_provider_field_handler(self, monkeypatch):
         """_handle_search_provider_field should set the search engine from choices."""
-        from nanobot.agent.tools.web import WebSearchConfig
-        from nanobot.cli.onboard import _handle_search_provider_field
+        from vtx_claw.agent.tools.web import WebSearchConfig
+        from vtx_claw.cli.onboard import _handle_search_provider_field
 
         monkeypatch.setattr(onboard_wizard, "_select_with_back", lambda *a, **kw: "keenable")
 
@@ -2054,13 +1977,13 @@ class TestModelPresetWizard:
 
     def test_provider_field_dispatch_is_model_type_aware(self):
         """WebSearchConfig.provider must not be hijacked by the LLM provider handler."""
-        from nanobot.agent.tools.web import WebSearchConfig
-        from nanobot.cli.onboard import (
+        from vtx_claw.agent.tools.web import WebSearchConfig
+        from vtx_claw.cli.onboard import (
             _handle_provider_field,
             _handle_search_provider_field,
             _resolve_field_handler,
         )
-        from nanobot.config.schema import AgentDefaults
+        from vtx_claw.config.schema import AgentDefaults
 
         assert (
             _resolve_field_handler(WebSearchConfig(), "provider") is _handle_search_provider_field

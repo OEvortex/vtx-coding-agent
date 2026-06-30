@@ -5,7 +5,7 @@ from datetime import datetime
 
 import pytest
 
-from nanobot.agent.memory import _HISTORY_ENTRY_HARD_CAP, MemoryStore
+from vtx_claw.agent.memory import _HISTORY_ENTRY_HARD_CAP, MemoryStore
 
 
 @pytest.fixture
@@ -118,8 +118,7 @@ class TestHistoryWithCursor:
         store.append_history("slack entry", session_key="slack:chat-2")
 
         entries = store.read_recent_history_for_prompt(
-            since_cursor=0,
-            session_key="telegram:chat-1",
+            since_cursor=0, session_key="telegram:chat-1"
         )
 
         assert [e["content"] for e in entries] == ["telegram entry"]
@@ -136,9 +135,7 @@ class TestHistoryWithCursor:
         store.append_history("cron internal entry", session_key="cron:job-1")
 
         entries = store.read_recent_history_for_prompt(
-            since_cursor=0,
-            session_key="unified:default",
-            unified_session=True,
+            since_cursor=0, session_key="unified:default", unified_session=True
         )
 
         assert [e["content"] for e in entries] == [
@@ -153,9 +150,7 @@ class TestHistoryWithCursor:
         store.append_history("own cron entry", session_key="cron:job-1")
 
         entries = store.read_recent_history_for_prompt(
-            since_cursor=0,
-            session_key="cron:job-1",
-            unified_session=True,
+            since_cursor=0, session_key="cron:job-1", unified_session=True
         )
 
         assert [e["content"] for e in entries] == ["unified entry", "own cron entry"]
@@ -191,8 +186,7 @@ class TestHistoryWithCursor:
     def test_next_cursor_falls_back_when_last_entry_has_no_cursor(self, store):
         """Regression: _next_cursor should not KeyError on entries without cursor."""
         store.history_file.write_text(
-            '{"timestamp": "2026-04-01 10:01", "content": "no cursor"}\n',
-            encoding="utf-8",
+            '{"timestamp": "2026-04-01 10:01", "content": "no cursor"}\n', encoding="utf-8"
         )
         # Delete .cursor file so _next_cursor falls back to reading JSONL
         store._cursor_file.unlink(missing_ok=True)
@@ -408,7 +402,7 @@ class TestLegacyHistoryMigration:
 
         store = MemoryStore(tmp_path)
         fallback_timestamp = datetime.fromtimestamp(
-            (memory_dir / "HISTORY.md.bak").stat().st_mtime,
+            (memory_dir / "HISTORY.md.bak").stat().st_mtime
         ).strftime("%Y-%m-%d %H:%M")
 
         entries = store.read_unprocessed_history(since_cursor=0)
@@ -477,7 +471,7 @@ class TestLegacyHistoryMigration:
 
         store = MemoryStore(tmp_path)
         fallback_timestamp = datetime.fromtimestamp(
-            (memory_dir / "HISTORY.md.bak").stat().st_mtime,
+            (memory_dir / "HISTORY.md.bak").stat().st_mtime
         ).strftime("%Y-%m-%d %H:%M")
 
         entries = store.read_unprocessed_history(since_cursor=0)

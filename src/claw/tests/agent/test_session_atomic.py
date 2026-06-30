@@ -1,10 +1,11 @@
 """Tests for atomic session save and corrupt-file repair."""
 
+import contextlib
 import json
 from datetime import datetime
 from pathlib import Path
 
-from nanobot.session.manager import Session, SessionManager
+from vtx_claw.session.manager import Session, SessionManager
 
 
 class TestAtomicSave:
@@ -64,11 +65,9 @@ class TestAtomicSave:
 
         import unittest.mock
 
-        with unittest.mock.patch("nanobot.session.manager.json.dumps", side_effect=failing_dumps):
-            try:
+        with unittest.mock.patch("vtx_claw.session.manager.json.dumps", side_effect=failing_dumps):
+            with contextlib.suppress(OSError):
                 mgr.save(session)
-            except OSError:
-                pass
 
         assert not tmp_path_file.exists()
 
@@ -125,12 +124,7 @@ class TestRepairCorruptFile:
         valid_msg = json.dumps({"role": "user", "content": "hello"})
 
         self._write_corrupt_jsonl(
-            path,
-            [
-                valid_meta,
-                valid_msg,
-                '{"role": "assistant", "content": "partial...',
-            ],
+            path, [valid_meta, valid_msg, '{"role": "assistant", "content": "partial...']
         )
 
         session = mgr._load("test:trunc")
@@ -143,11 +137,7 @@ class TestRepairCorruptFile:
         path = mgr._get_session_path("test:badmeta")
 
         self._write_corrupt_jsonl(
-            path,
-            [
-                "NOT VALID JSON!!!",
-                '{"role": "user", "content": "survived"}',
-            ],
+            path, ["NOT VALID JSON!!!", '{"role": "user", "content": "survived"}']
         )
 
         session = mgr._load("test:badmeta")
@@ -159,14 +149,7 @@ class TestRepairCorruptFile:
         mgr = SessionManager(tmp_path)
         path = mgr._get_session_path("test:allbad")
 
-        self._write_corrupt_jsonl(
-            path,
-            [
-                "garbage line 1",
-                "garbage line 2",
-                "{{invalid json",
-            ],
-        )
+        self._write_corrupt_jsonl(path, ["garbage line 1", "garbage line 2", "{{invalid json"])
 
         session = mgr._load("test:allbad")
         assert session is None

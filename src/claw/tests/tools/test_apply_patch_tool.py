@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import asyncio
 
-from nanobot.agent.tools.apply_patch import ApplyPatchTool
+from vtx_claw.agent.tools.apply_patch import ApplyPatchTool
 
 
 def test_apply_patch_edits_replace(tmp_path):
@@ -31,15 +31,7 @@ def test_apply_patch_edits_add_new_file(tmp_path):
     tool = ApplyPatchTool(workspace=tmp_path)
 
     result = asyncio.run(
-        tool.execute(
-            edits=[
-                {
-                    "path": "config.py",
-                    "action": "add",
-                    "new_text": "DEBUG = True",
-                }
-            ]
-        )
+        tool.execute(edits=[{"path": "config.py", "action": "add", "new_text": "DEBUG = True"}])
     )
 
     assert "add config.py" in result
@@ -50,15 +42,7 @@ def test_apply_patch_edits_preserves_new_file_trailing_blank_lines(tmp_path):
     tool = ApplyPatchTool(workspace=tmp_path)
 
     result = asyncio.run(
-        tool.execute(
-            edits=[
-                {
-                    "path": "notes.txt",
-                    "action": "add",
-                    "new_text": "one\n\n",
-                }
-            ]
-        )
+        tool.execute(edits=[{"path": "notes.txt", "action": "add", "new_text": "one\n\n"}])
     )
 
     assert "add notes.txt" in result
@@ -95,15 +79,7 @@ def test_apply_patch_edits_add_to_existing_file_without_final_newline(tmp_path):
     tool = ApplyPatchTool(workspace=tmp_path)
 
     result = asyncio.run(
-        tool.execute(
-            edits=[
-                {
-                    "path": "notes.txt",
-                    "action": "add",
-                    "new_text": "beta",
-                }
-            ]
-        )
+        tool.execute(edits=[{"path": "notes.txt", "action": "add", "new_text": "beta"}])
     )
 
     assert "update notes.txt" in result
@@ -116,15 +92,7 @@ def test_apply_patch_edits_add_to_existing_crlf_file_without_final_newline(tmp_p
     tool = ApplyPatchTool(workspace=tmp_path)
 
     result = asyncio.run(
-        tool.execute(
-            edits=[
-                {
-                    "path": "notes.txt",
-                    "action": "add",
-                    "new_text": "charlie",
-                }
-            ]
-        )
+        tool.execute(edits=[{"path": "notes.txt", "action": "add", "new_text": "charlie"}])
     )
 
     assert "update notes.txt" in result
@@ -137,15 +105,7 @@ def test_apply_patch_edits_add_to_existing_file_respects_leading_newline(tmp_pat
     tool = ApplyPatchTool(workspace=tmp_path)
 
     result = asyncio.run(
-        tool.execute(
-            edits=[
-                {
-                    "path": "notes.txt",
-                    "action": "add",
-                    "new_text": "\nbeta",
-                }
-            ]
-        )
+        tool.execute(edits=[{"path": "notes.txt", "action": "add", "new_text": "\nbeta"}])
     )
 
     assert "update notes.txt" in result
@@ -160,11 +120,7 @@ def test_apply_patch_rejects_delete_action(tmp_path):
     result = asyncio.run(
         tool.execute(
             edits=[
-                {
-                    "path": "utils.py",
-                    "action": "delete",
-                    "old_text": "def unused():\n    pass\n",
-                }
+                {"path": "utils.py", "action": "delete", "old_text": "def unused():\n    pass\n"}
             ]
         )
     )
@@ -183,12 +139,7 @@ def test_apply_patch_edits_batch_multiple_files(tmp_path):
     result = asyncio.run(
         tool.execute(
             edits=[
-                {
-                    "path": "a.py",
-                    "action": "replace",
-                    "old_text": "X = 1",
-                    "new_text": "Y = 1",
-                },
+                {"path": "a.py", "action": "replace", "old_text": "X = 1", "new_text": "Y = 1"},
                 {
                     "path": "b.py",
                     "action": "replace",
@@ -241,11 +192,7 @@ def test_apply_patch_edits_dry_run_validates_without_writing(tmp_path):
                     "old_text": "before",
                     "new_text": "after",
                 },
-                {
-                    "path": "added.txt",
-                    "action": "add",
-                    "new_text": "new",
-                },
+                {"path": "added.txt", "action": "add", "new_text": "new"},
             ],
             dry_run=True,
         )
@@ -267,24 +214,12 @@ def test_apply_patch_edits_allows_absolute_and_parent_paths_when_unrestricted(tm
 
     absolute = asyncio.run(
         tool.execute(
-            edits=[
-                {
-                    "path": str(absolute_target),
-                    "action": "add",
-                    "new_text": "absolute",
-                }
-            ]
+            edits=[{"path": str(absolute_target), "action": "add", "new_text": "absolute"}]
         )
     )
     parent = asyncio.run(
         tool.execute(
-            edits=[
-                {
-                    "path": "../outside/parent.txt",
-                    "action": "add",
-                    "new_text": "parent",
-                }
-            ]
+            edits=[{"path": "../outside/parent.txt", "action": "add", "new_text": "parent"}]
         )
     )
 
@@ -303,24 +238,12 @@ def test_apply_patch_edits_rejects_outside_paths_when_restricted(tmp_path):
 
     absolute = asyncio.run(
         tool.execute(
-            edits=[
-                {
-                    "path": str(outside / "absolute.txt"),
-                    "action": "add",
-                    "new_text": "nope",
-                }
-            ]
+            edits=[{"path": str(outside / "absolute.txt"), "action": "add", "new_text": "nope"}]
         )
     )
     parent = asyncio.run(
         tool.execute(
-            edits=[
-                {
-                    "path": "../outside/parent.txt",
-                    "action": "add",
-                    "new_text": "nope",
-                }
-            ]
+            edits=[{"path": "../outside/parent.txt", "action": "add", "new_text": "nope"}]
         )
     )
 
@@ -337,11 +260,7 @@ def test_apply_patch_legacy_extra_allowed_dirs_are_read_only(tmp_path):
     skills.mkdir()
     target = skills / "demo.md"
     target.write_text("before\n", encoding="utf-8")
-    tool = ApplyPatchTool(
-        workspace=workspace,
-        allowed_dir=workspace,
-        extra_allowed_dirs=[skills],
-    )
+    tool = ApplyPatchTool(workspace=workspace, allowed_dir=workspace, extra_allowed_dirs=[skills])
 
     result = asyncio.run(
         tool.execute(
@@ -367,7 +286,7 @@ def test_apply_patch_media_dir_is_read_only_by_default(tmp_path, monkeypatch):
     media.mkdir()
     target = media / "demo.md"
     target.write_text("before\n", encoding="utf-8")
-    monkeypatch.setattr("nanobot.agent.tools.path_utils.get_media_dir", lambda: media)
+    monkeypatch.setattr("vtx_claw.agent.tools.path_utils.get_media_dir", lambda: media)
     tool = ApplyPatchTool(workspace=workspace, allowed_dir=workspace)
 
     result = asyncio.run(
@@ -394,21 +313,11 @@ def test_apply_patch_allows_explicit_extra_write_allowed_dirs_when_restricted(tm
     writable.mkdir()
     target = writable / "allowed.txt"
     tool = ApplyPatchTool(
-        workspace=workspace,
-        allowed_dir=workspace,
-        extra_write_allowed_dirs=[writable],
+        workspace=workspace, allowed_dir=workspace, extra_write_allowed_dirs=[writable]
     )
 
     result = asyncio.run(
-        tool.execute(
-            edits=[
-                {
-                    "path": str(target),
-                    "action": "add",
-                    "new_text": "allowed",
-                }
-            ]
-        )
+        tool.execute(edits=[{"path": str(target), "action": "add", "new_text": "allowed"}])
     )
 
     assert "Patch applied" in result

@@ -10,18 +10,18 @@ from unittest.mock import AsyncMock, patch
 import httpx
 import pytest
 
-from nanobot.audio.transcription import (
+from vtx_claw.audio.transcription import (
     EffectiveTranscriptionConfig,
     resolve_transcription_config,
     transcribe_audio_file,
 )
-from nanobot.audio.transcription_registry import (
+from vtx_claw.audio.transcription_registry import (
     get_transcription_provider,
     resolve_transcription_provider,
     transcription_provider_names,
 )
-from nanobot.config.schema import Config
-from nanobot.providers.transcription import (
+from vtx_claw.config.schema import Config
+from vtx_claw.providers.transcription import (
     AssemblyAITranscriptionProvider,
     GroqTranscriptionProvider,
     OpenAITranscriptionProvider,
@@ -191,7 +191,7 @@ def test_resolver_accepts_legacy_xiaomi_transcription_alias() -> None:
 def test_transcription_registry_lists_providers_and_aliases() -> None:
     siliconflow = get_transcription_provider("siliconflow")
     assert siliconflow is not None
-    assert siliconflow.adapter == "nanobot.providers.transcription:OpenAITranscriptionProvider"
+    assert siliconflow.adapter == "vtx_claw.providers.transcription:OpenAITranscriptionProvider"
     assert siliconflow.load_adapter() is OpenAITranscriptionProvider
     assert siliconflow.default_model == "FunAudioLLM/SenseVoiceSmall"
     assert resolve_transcription_provider("silicon").name == "siliconflow"
@@ -241,7 +241,7 @@ async def test_transcribe_audio_file_routes_openrouter_provider(audio_file: Path
         max_upload_mb=25,
     )
 
-    with patch("nanobot.providers.transcription.OpenRouterTranscriptionProvider", StubOpenRouter):
+    with patch("vtx_claw.providers.transcription.OpenRouterTranscriptionProvider", StubOpenRouter):
         result = await transcribe_audio_file(audio_file, config)
 
     assert result == "openrouter ok"
@@ -277,7 +277,7 @@ async def test_transcribe_audio_file_routes_xiaomi_mimo_provider(audio_file: Pat
         max_upload_mb=25,
     )
 
-    with patch("nanobot.providers.transcription.XiaomiMiMoTranscriptionProvider", StubXiaomiMiMo):
+    with patch("vtx_claw.providers.transcription.XiaomiMiMoTranscriptionProvider", StubXiaomiMiMo):
         result = await transcribe_audio_file(audio_file, config)
 
     assert result == "mimo ok"
@@ -313,7 +313,7 @@ async def test_transcribe_audio_file_routes_assemblyai_provider(audio_file: Path
         max_upload_mb=25,
     )
 
-    with patch("nanobot.providers.transcription.AssemblyAITranscriptionProvider", StubAssemblyAI):
+    with patch("vtx_claw.providers.transcription.AssemblyAITranscriptionProvider", StubAssemblyAI):
         result = await transcribe_audio_file(audio_file, config)
 
     assert result == "assembly ok"
@@ -708,9 +708,7 @@ def test_xiaomi_mimo_defaults_and_base_normalization() -> None:
     assert provider.model == "mimo-v2.5-asr"
 
     custom = XiaomiMiMoTranscriptionProvider(
-        api_key="k",
-        api_base="https://token-plan-sgp.xiaomimimo.com/v1",
-        model="custom-asr",
+        api_key="k", api_base="https://token-plan-sgp.xiaomimimo.com/v1", model="custom-asr"
     )
     assert custom.api_url == "https://token-plan-sgp.xiaomimimo.com/v1/chat/completions"
     assert custom.model == "custom-asr"
@@ -719,12 +717,7 @@ def test_xiaomi_mimo_defaults_and_base_normalization() -> None:
 @pytest.mark.asyncio
 async def test_xiaomi_mimo_sends_chat_completion_audio_payload(audio_file: Path) -> None:
     provider = XiaomiMiMoTranscriptionProvider(api_key="k", language="zh")
-    post = AsyncMock(
-        return_value=_response(
-            200,
-            {"choices": [{"message": {"content": "你好"}}]},
-        )
-    )
+    post = AsyncMock(return_value=_response(200, {"choices": [{"message": {"content": "你好"}}]}))
 
     with patch("httpx.AsyncClient.post", post), patch("asyncio.sleep", AsyncMock()):
         assert await provider.transcribe(audio_file) == "你好"
@@ -743,10 +736,7 @@ async def test_xiaomi_mimo_sends_chat_completion_audio_payload(audio_file: Path)
 async def test_xiaomi_mimo_shares_retry_contract(audio_file: Path) -> None:
     provider = XiaomiMiMoTranscriptionProvider(api_key="k")
     post = AsyncMock(
-        side_effect=[
-            _response(503),
-            _response(200, {"choices": [{"message": {"content": "ok"}}]}),
-        ]
+        side_effect=[_response(503), _response(200, {"choices": [{"message": {"content": "ok"}}]})]
     )
 
     with patch("httpx.AsyncClient.post", post), patch("asyncio.sleep", AsyncMock()):
@@ -762,9 +752,7 @@ def test_assemblyai_defaults_and_base_normalization() -> None:
     assert provider.model == "universal-3-pro,universal-2"
 
     custom = AssemblyAITranscriptionProvider(
-        api_key="aai-test",
-        api_base="https://assembly.example/v2",
-        model="universal-3-pro",
+        api_key="aai-test", api_base="https://assembly.example/v2", model="universal-3-pro"
     )
     assert custom.upload_url == "https://assembly.example/v2/upload"
     assert custom.transcript_url == "https://assembly.example/v2/transcript"
@@ -862,11 +850,7 @@ async def test_assemblyai_returns_empty_on_failed_transcript(audio_file: Path) -
         ]
     )
     get = AsyncMock(
-        return_value=_json_response(
-            200,
-            {"status": "error", "error": "bad audio"},
-            method="GET",
-        )
+        return_value=_json_response(200, {"status": "error", "error": "bad audio"}, method="GET")
     )
 
     with (

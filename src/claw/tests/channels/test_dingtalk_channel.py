@@ -8,7 +8,7 @@ import pytest
 
 # Check optional dingtalk dependencies before running tests
 try:
-    from nanobot.channels import dingtalk
+    from vtx_claw.channels import dingtalk
 
     DINGTALK_AVAILABLE = getattr(dingtalk, "DINGTALK_AVAILABLE", False)
 except ImportError:
@@ -17,9 +17,9 @@ except ImportError:
 if not DINGTALK_AVAILABLE:
     pytest.skip("DingTalk dependencies not installed (dingtalk-stream)", allow_module_level=True)
 
-import nanobot.channels.dingtalk as dingtalk_module
-from nanobot.bus.queue import MessageBus
-from nanobot.channels.dingtalk import DingTalkChannel, DingTalkConfig, NanobotDingTalkHandler
+import vtx_claw.channels.dingtalk as dingtalk_module
+from vtx_claw.bus.queue import MessageBus
+from vtx_claw.channels.dingtalk import DingTalkChannel, DingTalkConfig, VtxClawDingTalkHandler
 
 
 class _FakeResponse:
@@ -155,10 +155,7 @@ async def test_group_send_uses_group_messages_api() -> None:
     channel._http = _FakeHttp()
 
     ok = await channel._send_batch_message(
-        "token",
-        "group:conv123",
-        "sampleMarkdown",
-        {"text": "hello", "title": "Nanobot Reply"},
+        "token", "group:conv123", "sampleMarkdown", {"text": "hello", "title": "VtxClaw Reply"}
     )
 
     assert ok is True
@@ -172,10 +169,9 @@ async def test_group_send_uses_group_messages_api() -> None:
 async def test_handler_uses_voice_recognition_text_when_text_is_empty(monkeypatch) -> None:
     bus = MessageBus()
     channel = DingTalkChannel(
-        DingTalkConfig(client_id="app", client_secret="secret", allow_from=["user1"]),
-        bus,
+        DingTalkConfig(client_id="app", client_secret="secret", allow_from=["user1"]), bus
     )
-    handler = NanobotDingTalkHandler(channel)
+    handler = VtxClawDingTalkHandler(channel)
 
     class _FakeChatbotMessage:
         text = None
@@ -194,11 +190,7 @@ async def test_handler_uses_voice_recognition_text_when_text_is_empty(monkeypatc
 
     status, body = await handler.process(
         SimpleNamespace(
-            data={
-                "conversationType": "2",
-                "conversationId": "conv123",
-                "text": {"content": ""},
-            }
+            data={"conversationType": "2", "conversationId": "conv123", "text": {"content": ""}}
         )
     )
 
@@ -216,10 +208,9 @@ async def test_handler_processes_file_message(monkeypatch) -> None:
     """Test that file messages are handled and forwarded with downloaded path."""
     bus = MessageBus()
     channel = DingTalkChannel(
-        DingTalkConfig(client_id="app", client_secret="secret", allow_from=["user1"]),
-        bus,
+        DingTalkConfig(client_id="app", client_secret="secret", allow_from=["user1"]), bus
     )
-    handler = NanobotDingTalkHandler(channel)
+    handler = VtxClawDingTalkHandler(channel)
 
     class _FakeFileChatbotMessage:
         text = None
@@ -236,7 +227,7 @@ async def test_handler_processes_file_message(monkeypatch) -> None:
             return _FakeFileChatbotMessage()
 
     async def fake_download(download_code, filename, sender_id):
-        return f"/tmp/nanobot_dingtalk/{sender_id}/{filename}"
+        return f"/tmp/vtx_claw_dingtalk/{sender_id}/{filename}"
 
     monkeypatch.setattr(dingtalk_module, "ChatbotMessage", _FakeFileChatbotMessage)
     monkeypatch.setattr(dingtalk_module, "AckMessage", SimpleNamespace(STATUS_OK="OK"))
@@ -257,7 +248,7 @@ async def test_handler_processes_file_message(monkeypatch) -> None:
 
     assert (status, body) == ("OK", "OK")
     assert "[File]" in msg.content
-    assert "/tmp/nanobot_dingtalk/user1/report.xlsx" in msg.content
+    assert "/tmp/vtx_claw_dingtalk/user1/report.xlsx" in msg.content
 
 
 def _rich_text_message(rich_text_list):
@@ -284,10 +275,9 @@ async def test_handler_richtext_keeps_formatted_segments(monkeypatch) -> None:
     and mapped to Markdown, not dropped (issue #4497)."""
     bus = MessageBus()
     channel = DingTalkChannel(
-        DingTalkConfig(client_id="app", client_secret="secret", allow_from=["user1"]),
-        bus,
+        DingTalkConfig(client_id="app", client_secret="secret", allow_from=["user1"]), bus
     )
-    handler = NanobotDingTalkHandler(channel)
+    handler = VtxClawDingTalkHandler(channel)
 
     fake_msg = _rich_text_message(
         [
@@ -316,10 +306,9 @@ async def test_handler_richtext_all_formatted_not_dropped(monkeypatch) -> None:
     content and fall through to the 'unsupported message type' path (issue #4497)."""
     bus = MessageBus()
     channel = DingTalkChannel(
-        DingTalkConfig(client_id="app", client_secret="secret", allow_from=["user1"]),
-        bus,
+        DingTalkConfig(client_id="app", client_secret="secret", allow_from=["user1"]), bus
     )
-    handler = NanobotDingTalkHandler(channel)
+    handler = VtxClawDingTalkHandler(channel)
 
     fake_msg = _rich_text_message([{"type": "bold", "text": "Important"}])
     monkeypatch.setattr(dingtalk_module, "ChatbotMessage", fake_msg)
@@ -342,19 +331,16 @@ async def test_handler_richtext_item_with_text_and_download(monkeypatch) -> None
     text and the downloaded file, not drop the attachment (issue #4497)."""
     bus = MessageBus()
     channel = DingTalkChannel(
-        DingTalkConfig(client_id="app", client_secret="secret", allow_from=["user1"]),
-        bus,
+        DingTalkConfig(client_id="app", client_secret="secret", allow_from=["user1"]), bus
     )
-    handler = NanobotDingTalkHandler(channel)
+    handler = VtxClawDingTalkHandler(channel)
 
     fake_msg = _rich_text_message(
-        [
-            {"text": "see attached", "downloadCode": "abc123", "fileName": "report.xlsx"},
-        ]
+        [{"text": "see attached", "downloadCode": "abc123", "fileName": "report.xlsx"}]
     )
 
     async def fake_download(download_code, filename, sender_id):
-        return f"/tmp/nanobot_dingtalk/{sender_id}/{filename}"
+        return f"/tmp/vtx_claw_dingtalk/{sender_id}/{filename}"
 
     monkeypatch.setattr(dingtalk_module, "ChatbotMessage", fake_msg)
     monkeypatch.setattr(dingtalk_module, "AckMessage", SimpleNamespace(STATUS_OK="OK"))
@@ -368,7 +354,7 @@ async def test_handler_richtext_item_with_text_and_download(monkeypatch) -> None
 
     assert (status, body) == ("OK", "OK")
     assert "see attached" in msg.content
-    assert "/tmp/nanobot_dingtalk/user1/report.xlsx" in msg.content
+    assert "/tmp/vtx_claw_dingtalk/user1/report.xlsx" in msg.content
 
 
 @pytest.mark.asyncio
@@ -376,8 +362,7 @@ async def test_start_configures_http_timeout(monkeypatch) -> None:
     """The shared httpx client must be created with an explicit timeout so file/image
     downloads don't hit httpx's 5s default and ConnectTimeout (issue #4497)."""
     channel = DingTalkChannel(
-        DingTalkConfig(client_id="app", client_secret="secret", allow_from=["*"]),
-        MessageBus(),
+        DingTalkConfig(client_id="app", client_secret="secret", allow_from=["*"]), MessageBus()
     )
 
     class _FakeStreamClient:
@@ -412,8 +397,7 @@ async def test_start_configures_http_timeout(monkeypatch) -> None:
 async def test_download_dingtalk_file(tmp_path, monkeypatch) -> None:
     """Test the two-step file download flow (get URL then download content)."""
     channel = DingTalkChannel(
-        DingTalkConfig(client_id="app", client_secret="secret", allow_from=["*"]),
-        MessageBus(),
+        DingTalkConfig(client_id="app", client_secret="secret", allow_from=["*"]), MessageBus()
     )
 
     # Mock access token
@@ -434,7 +418,7 @@ async def test_download_dingtalk_file(tmp_path, monkeypatch) -> None:
 
     # Redirect media dir to tmp_path
     monkeypatch.setattr(
-        "nanobot.config.paths.get_media_dir",
+        "vtx_claw.config.paths.get_media_dir",
         lambda channel_name=None: tmp_path / channel_name if channel_name else tmp_path,
     )
 
@@ -455,8 +439,7 @@ async def test_download_dingtalk_file(tmp_path, monkeypatch) -> None:
 async def test_read_media_bytes_rejects_private_http_target_before_fetch() -> None:
     """Remote media fetches must not reach loopback/private addresses."""
     channel = DingTalkChannel(
-        DingTalkConfig(client_id="app", client_secret="secret", allow_from=["*"]),
-        MessageBus(),
+        DingTalkConfig(client_id="app", client_secret="secret", allow_from=["*"]), MessageBus()
     )
     channel._http = _FakeHttp(
         responses=[
@@ -479,8 +462,7 @@ async def test_read_media_bytes_rejects_private_http_target_before_fetch() -> No
 async def test_read_media_bytes_rejects_private_redirect_result() -> None:
     """A public-looking media URL must not be accepted after redirecting private."""
     channel = DingTalkChannel(
-        DingTalkConfig(client_id="app", client_secret="secret", allow_from=["*"]),
-        MessageBus(),
+        DingTalkConfig(client_id="app", client_secret="secret", allow_from=["*"]), MessageBus()
     )
     channel._http = _FakeHttp(
         responses=[
@@ -504,8 +486,7 @@ async def test_read_media_bytes_rejects_oversized_remote_response(monkeypatch) -
     """DingTalk media downloads should enforce a byte cap before upload."""
     monkeypatch.setattr(dingtalk_module, "DINGTALK_MAX_REMOTE_MEDIA_BYTES", 8, raising=False)
     channel = DingTalkChannel(
-        DingTalkConfig(client_id="app", client_secret="secret", allow_from=["*"]),
-        MessageBus(),
+        DingTalkConfig(client_id="app", client_secret="secret", allow_from=["*"]), MessageBus()
     )
     channel._http = _FakeHttp(
         responses=[
@@ -527,8 +508,7 @@ async def test_read_media_bytes_rejects_oversized_remote_response(monkeypatch) -
 async def test_read_media_bytes_does_not_follow_remote_redirects_by_default() -> None:
     """Redirects are refused by default instead of followed into internal networks."""
     channel = DingTalkChannel(
-        DingTalkConfig(client_id="app", client_secret="secret", allow_from=["*"]),
-        MessageBus(),
+        DingTalkConfig(client_id="app", client_secret="secret", allow_from=["*"]), MessageBus()
     )
     channel._http = _FakeHttp(
         responses=[
@@ -702,14 +682,11 @@ async def test_read_media_bytes_blocks_private_redirect_even_when_redirects_enab
 
 def test_normalize_upload_payload_zips_html_attachment() -> None:
     channel = DingTalkChannel(
-        DingTalkConfig(client_id="app", client_secret="secret", allow_from=["*"]),
-        MessageBus(),
+        DingTalkConfig(client_id="app", client_secret="secret", allow_from=["*"]), MessageBus()
     )
 
     data, filename, content_type = channel._normalize_upload_payload(
-        "report.html",
-        b"<html><body>Hello</body></html>",
-        "text/html",
+        "report.html", b"<html><body>Hello</body></html>", "text/html"
     )
 
     assert filename == "report.zip"
@@ -723,8 +700,7 @@ def test_normalize_upload_payload_zips_html_attachment() -> None:
 @pytest.mark.asyncio
 async def test_send_media_ref_zips_html_before_upload(tmp_path, monkeypatch) -> None:
     channel = DingTalkChannel(
-        DingTalkConfig(client_id="app", client_secret="secret", allow_from=["*"]),
-        MessageBus(),
+        DingTalkConfig(client_id="app", client_secret="secret", allow_from=["*"]), MessageBus()
     )
 
     html_path = tmp_path / "report.html"
@@ -746,12 +722,7 @@ async def test_send_media_ref_zips_html_before_upload(tmp_path, monkeypatch) -> 
 
     async def fake_send_batch_message(token, chat_id, msg_key, msg_param):
         captured.update(
-            {
-                "sent_token": token,
-                "chat_id": chat_id,
-                "msg_key": msg_key,
-                "msg_param": msg_param,
-            }
+            {"sent_token": token, "chat_id": chat_id, "msg_key": msg_key, "msg_param": msg_param}
         )
         return True
 
@@ -787,10 +758,7 @@ async def test_send_batch_message_propagates_transport_error() -> None:
 
     with pytest.raises(httpx.ConnectError, match="Connection refused"):
         await channel._send_batch_message(
-            "token",
-            "user123",
-            "sampleMarkdown",
-            {"text": "hello", "title": "Nanobot Reply"},
+            "token", "user123", "sampleMarkdown", {"text": "hello", "title": "VtxClaw Reply"}
         )
 
     # The POST was attempted exactly once

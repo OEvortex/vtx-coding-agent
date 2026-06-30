@@ -6,10 +6,10 @@ from typing import Any
 
 import pytest
 
-from nanobot.agent.tools.image_generation import ImageGenerationTool
-from nanobot.config.loader import set_config_path
-from nanobot.config.schema import ImageGenerationToolConfig, ProviderConfig
-from nanobot.providers.image_generation import GeneratedImageResponse
+from vtx_claw.agent.tools.image_generation import ImageGenerationTool
+from vtx_claw.config.loader import set_config_path
+from vtx_claw.config.schema import ImageGenerationToolConfig, ProviderConfig
+from vtx_claw.providers.image_generation import GeneratedImageResponse
 
 PNG_BYTES = (
     b"\x89PNG\r\n\x1a\n\x00\x00\x00\rIHDR\x00\x00\x00\x01"
@@ -24,7 +24,7 @@ PNG_DATA_URL = (
 
 
 class FakeImageClient:
-    instances: list["FakeImageClient"] = []
+    instances: list[FakeImageClient] = []
 
     def __init__(self, **kwargs: Any) -> None:
         self.kwargs = kwargs
@@ -38,13 +38,12 @@ class FakeImageClient:
 
 @pytest.mark.asyncio
 async def test_generate_image_tool_stores_artifact_and_source_images(
-    tmp_path: Path,
-    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     set_config_path(tmp_path / "config.json")
     FakeImageClient.instances = []
     monkeypatch.setattr(
-        "nanobot.agent.tools.image_generation.get_image_gen_provider",
+        "vtx_claw.agent.tools.image_generation.get_image_gen_provider",
         lambda name: FakeImageClient if name == "openrouter" else None,
     )
     ref = tmp_path / "ref.png"
@@ -92,21 +91,18 @@ async def test_generate_image_tool_reports_missing_key(tmp_path: Path) -> None:
 
 @pytest.mark.asyncio
 async def test_generate_image_tool_selects_aihubmix_provider(
-    tmp_path: Path,
-    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     set_config_path(tmp_path / "config.json")
     FakeImageClient.instances = []
     monkeypatch.setattr(
-        "nanobot.agent.tools.image_generation.get_image_gen_provider",
+        "vtx_claw.agent.tools.image_generation.get_image_gen_provider",
         lambda name: FakeImageClient if name == "aihubmix" else None,
     )
     tool = ImageGenerationTool(
         workspace=tmp_path,
         config=ImageGenerationToolConfig(
-            enabled=True,
-            provider="aihubmix",
-            model="gpt-image-2-free",
+            enabled=True, provider="aihubmix", model="gpt-image-2-free"
         ),
         provider_configs={
             "openrouter": ProviderConfig(api_key="sk-or-test"),
@@ -140,22 +136,17 @@ async def test_generate_image_tool_reports_missing_aihubmix_key(tmp_path: Path) 
 
 @pytest.mark.asyncio
 async def test_generate_image_tool_allows_ollama_without_api_key(
-    tmp_path: Path,
-    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     set_config_path(tmp_path / "config.json")
     FakeImageClient.instances = []
     monkeypatch.setattr(
-        "nanobot.agent.tools.image_generation.get_image_gen_provider",
+        "vtx_claw.agent.tools.image_generation.get_image_gen_provider",
         lambda name: FakeImageClient if name == "ollama" else None,
     )
     tool = ImageGenerationTool(
         workspace=tmp_path,
-        config=ImageGenerationToolConfig(
-            enabled=True,
-            provider="ollama",
-            model="x/z-image-turbo",
-        ),
+        config=ImageGenerationToolConfig(enabled=True, provider="ollama", model="x/z-image-turbo"),
         provider_configs={"ollama": ProviderConfig(api_base="http://localhost:11434/v1")},
     )
 
@@ -175,12 +166,10 @@ async def test_generate_image_tool_allows_ollama_without_api_key(
 async def test_generate_image_tool_reports_missing_zhipu_key(tmp_path: Path) -> None:
     tool = ImageGenerationTool(
         workspace=tmp_path,
-        config=ImageGenerationToolConfig(
-            enabled=True,
-            provider="zhipu",
-            model="glm-image",
-        ),
-        provider_configs={"zhipu": ProviderConfig(api_base="https://open.bigmodel.cn/api/paas/v4")},
+        config=ImageGenerationToolConfig(enabled=True, provider="zhipu", model="glm-image"),
+        provider_configs={
+            "zhipu": ProviderConfig(api_base="https://open.bigmodel.cn/api/paas/v4")
+        },
     )
 
     result = await tool.execute(prompt="draw a cat")

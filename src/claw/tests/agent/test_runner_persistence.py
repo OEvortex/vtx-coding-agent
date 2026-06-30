@@ -6,14 +6,14 @@ import os
 import time
 from unittest.mock import AsyncMock, MagicMock, patch
 
-from nanobot.config.schema import AgentDefaults
-from nanobot.providers.base import LLMResponse, ToolCallRequest
+from vtx_claw.config.schema import AgentDefaults
+from vtx_claw.providers.base import LLMResponse, ToolCallRequest
 
 _MAX_TOOL_RESULT_CHARS = AgentDefaults().max_tool_result_chars
 
 
 async def test_runner_persists_large_tool_results_for_follow_up_calls(tmp_path):
-    from nanobot.agent.runner import AgentRunner, AgentRunSpec
+    from vtx_claw.agent.runner import AgentRunner, AgentRunSpec
 
     provider = MagicMock()
     captured_second_call: list[dict] = []
@@ -54,13 +54,13 @@ async def test_runner_persists_large_tool_results_for_follow_up_calls(tmp_path):
     tool_message = next(msg for msg in captured_second_call if msg.get("role") == "tool")
     assert "[tool output persisted]" in tool_message["content"]
     assert "tool-results" in tool_message["content"]
-    assert (tmp_path / ".nanobot" / "tool-results" / "test_runner" / "call_big.txt").exists()
+    assert (tmp_path / ".vtx_claw" / "tool-results" / "test_runner" / "call_big.txt").exists()
 
 
 def test_persist_tool_result_prunes_old_session_buckets(tmp_path):
-    from nanobot.utils.helpers import maybe_persist_tool_result
+    from vtx_claw.utils.helpers import maybe_persist_tool_result
 
-    root = tmp_path / ".nanobot" / "tool-results"
+    root = tmp_path / ".vtx_claw" / "tool-results"
     old_bucket = root / "old_session"
     recent_bucket = root / "recent_session"
     old_bucket.mkdir(parents=True)
@@ -73,11 +73,7 @@ def test_persist_tool_result_prunes_old_session_buckets(tmp_path):
     os.utime(old_bucket / "old.txt", (stale, stale))
 
     persisted = maybe_persist_tool_result(
-        tmp_path,
-        "current:session",
-        "call_big",
-        "x" * 5000,
-        max_chars=64,
+        tmp_path, "current:session", "call_big", "x" * 5000, max_chars=64
     )
 
     assert "[tool output persisted]" in persisted
@@ -87,41 +83,31 @@ def test_persist_tool_result_prunes_old_session_buckets(tmp_path):
 
 
 def test_persist_tool_result_leaves_no_temp_files(tmp_path):
-    from nanobot.utils.helpers import maybe_persist_tool_result
+    from vtx_claw.utils.helpers import maybe_persist_tool_result
 
-    root = tmp_path / ".nanobot" / "tool-results"
-    maybe_persist_tool_result(
-        tmp_path,
-        "current:session",
-        "call_big",
-        "x" * 5000,
-        max_chars=64,
-    )
+    root = tmp_path / ".vtx_claw" / "tool-results"
+    maybe_persist_tool_result(tmp_path, "current:session", "call_big", "x" * 5000, max_chars=64)
 
     assert (root / "current_session" / "call_big.txt").exists()
     assert list((root / "current_session").glob("*.tmp")) == []
 
 
 def test_persist_tool_result_logs_cleanup_failures(monkeypatch, tmp_path):
-    from nanobot.utils.helpers import maybe_persist_tool_result
+    from vtx_claw.utils.helpers import maybe_persist_tool_result
 
     warnings: list[str] = []
 
     monkeypatch.setattr(
-        "nanobot.utils.helpers._cleanup_tool_result_buckets",
+        "vtx_claw.utils.helpers._cleanup_tool_result_buckets",
         lambda *_args, **_kwargs: (_ for _ in ()).throw(OSError("busy")),
     )
     monkeypatch.setattr(
-        "nanobot.utils.helpers.logger.exception",
+        "vtx_claw.utils.helpers.logger.exception",
         lambda message, *args: warnings.append(message.format(*args)),
     )
 
     persisted = maybe_persist_tool_result(
-        tmp_path,
-        "current:session",
-        "call_big",
-        "x" * 5000,
-        max_chars=64,
+        tmp_path, "current:session", "call_big", "x" * 5000, max_chars=64
     )
 
     assert "[tool output persisted]" in persisted
@@ -130,7 +116,7 @@ def test_persist_tool_result_logs_cleanup_failures(monkeypatch, tmp_path):
 
 async def test_read_file_result_is_not_offloaded(tmp_path):
     """read_file must not trigger generic offloading (prevents persist->read->persist loops)."""
-    from nanobot.agent.runner import AgentRunner, AgentRunSpec
+    from vtx_claw.agent.runner import AgentRunner, AgentRunSpec
 
     provider = MagicMock()
     captured_second_call: list[dict] = []
@@ -174,12 +160,12 @@ async def test_read_file_result_is_not_offloaded(tmp_path):
     # read_file manages its own size; generic truncation must NOT apply
     assert len(tool_message["content"]) == 20_000
     # no file should have been written for this read_file call
-    offload_dir = tmp_path / ".nanobot" / "tool-results"
+    offload_dir = tmp_path / ".vtx_claw" / "tool-results"
     assert not any(offload_dir.rglob("call_rf.txt")) if offload_dir.exists() else True
 
 
 async def test_runner_keeps_going_when_tool_result_persistence_fails():
-    from nanobot.agent.runner import AgentRunner, AgentRunSpec
+    from vtx_claw.agent.runner import AgentRunner, AgentRunSpec
 
     provider = MagicMock()
     captured_second_call: list[dict] = []
@@ -190,7 +176,9 @@ async def test_runner_keeps_going_when_tool_result_persistence_fails():
         if call_count["n"] == 1:
             return LLMResponse(
                 content="working",
-                tool_calls=[ToolCallRequest(id="call_1", name="list_dir", arguments={"path": "."})],
+                tool_calls=[
+                    ToolCallRequest(id="call_1", name="list_dir", arguments={"path": "."})
+                ],
                 usage={"prompt_tokens": 5, "completion_tokens": 3},
             )
         captured_second_call[:] = messages
@@ -203,7 +191,7 @@ async def test_runner_keeps_going_when_tool_result_persistence_fails():
 
     runner = AgentRunner(provider)
     with patch(
-        "nanobot.agent.context_governance.maybe_persist_tool_result",
+        "vtx_claw.agent.context_governance.maybe_persist_tool_result",
         side_effect=RuntimeError("disk full"),
     ):
         result = await runner.run(

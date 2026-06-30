@@ -1,4 +1,4 @@
-"""Tests for nanobot.agent.skills.SkillsLoader."""
+"""Tests for vtx_claw.agent.skills.SkillsLoader."""
 
 from __future__ import annotations
 
@@ -7,22 +7,18 @@ from pathlib import Path
 
 import pytest
 
-from nanobot.agent.skills import SkillsLoader
+from vtx_claw.agent.skills import SkillsLoader
 
 
 def _write_skill(
-    base: Path,
-    name: str,
-    *,
-    metadata_json: dict | None = None,
-    body: str = "# Skill\n",
+    base: Path, name: str, *, metadata_json: dict | None = None, body: str = "# Skill\n"
 ) -> Path:
-    """Create ``base / name / SKILL.md`` with optional nanobot metadata JSON."""
+    """Create ``base / name / SKILL.md`` with optional vtx_claw metadata JSON."""
     skill_dir = base / name
     skill_dir.mkdir(parents=True)
     lines = ["---"]
     if metadata_json is not None:
-        payload = json.dumps({"nanobot": metadata_json}, separators=(",", ":"))
+        payload = json.dumps({"vtx_claw": metadata_json}, separators=(",", ":"))
         lines.append(f"metadata: {payload}")
     lines.extend(["---", "", body])
     path = skill_dir / "SKILL.md"
@@ -58,9 +54,7 @@ def test_list_skills_workspace_entry_shape_and_source(tmp_path: Path) -> None:
 
     loader = SkillsLoader(workspace, builtin_skills_dir=builtin)
     entries = loader.list_skills(filter_unavailable=False)
-    assert entries == [
-        {"name": "alpha", "path": str(skill_path), "source": "workspace"},
-    ]
+    assert entries == [{"name": "alpha", "path": str(skill_path), "source": "workspace"}]
 
 
 def test_list_skills_skips_non_directories_and_missing_skill_md(tmp_path: Path) -> None:
@@ -133,17 +127,17 @@ def test_list_skills_filter_unavailable_excludes_unmet_bin_requirement(
     _write_skill(
         skills_root,
         "needs_bin",
-        metadata_json={"requires": {"bins": ["nanobot_test_fake_binary"]}},
+        metadata_json={"requires": {"bins": ["vtx_claw_test_fake_binary"]}},
     )
     builtin = tmp_path / "builtin"
     builtin.mkdir()
 
     def fake_which(cmd: str) -> str | None:
-        if cmd == "nanobot_test_fake_binary":
+        if cmd == "vtx_claw_test_fake_binary":
             return None
         return "/usr/bin/true"
 
-    monkeypatch.setattr("nanobot.agent.skills.shutil.which", fake_which)
+    monkeypatch.setattr("vtx_claw.agent.skills.shutil.which", fake_which)
 
     loader = SkillsLoader(workspace, builtin_skills_dir=builtin)
     assert loader.list_skills(filter_unavailable=True) == []
@@ -156,25 +150,21 @@ def test_list_skills_filter_unavailable_includes_when_bin_requirement_met(
     skills_root = workspace / "skills"
     skills_root.mkdir(parents=True)
     skill_path = _write_skill(
-        skills_root,
-        "has_bin",
-        metadata_json={"requires": {"bins": ["nanobot_test_fake_binary"]}},
+        skills_root, "has_bin", metadata_json={"requires": {"bins": ["vtx_claw_test_fake_binary"]}}
     )
     builtin = tmp_path / "builtin"
     builtin.mkdir()
 
     def fake_which(cmd: str) -> str | None:
-        if cmd == "nanobot_test_fake_binary":
-            return "/fake/nanobot_test_fake_binary"
+        if cmd == "vtx_claw_test_fake_binary":
+            return "/fake/vtx_claw_test_fake_binary"
         return None
 
-    monkeypatch.setattr("nanobot.agent.skills.shutil.which", fake_which)
+    monkeypatch.setattr("vtx_claw.agent.skills.shutil.which", fake_which)
 
     loader = SkillsLoader(workspace, builtin_skills_dir=builtin)
     entries = loader.list_skills(filter_unavailable=True)
-    assert entries == [
-        {"name": "has_bin", "path": str(skill_path), "source": "workspace"},
-    ]
+    assert entries == [{"name": "has_bin", "path": str(skill_path), "source": "workspace"}]
 
 
 def test_list_skills_filter_unavailable_false_keeps_unmet_requirements(
@@ -184,20 +174,16 @@ def test_list_skills_filter_unavailable_false_keeps_unmet_requirements(
     skills_root = workspace / "skills"
     skills_root.mkdir(parents=True)
     skill_path = _write_skill(
-        skills_root,
-        "blocked",
-        metadata_json={"requires": {"bins": ["nanobot_test_fake_binary"]}},
+        skills_root, "blocked", metadata_json={"requires": {"bins": ["vtx_claw_test_fake_binary"]}}
     )
     builtin = tmp_path / "builtin"
     builtin.mkdir()
 
-    monkeypatch.setattr("nanobot.agent.skills.shutil.which", lambda _cmd: None)
+    monkeypatch.setattr("vtx_claw.agent.skills.shutil.which", lambda _cmd: None)
 
     loader = SkillsLoader(workspace, builtin_skills_dir=builtin)
     entries = loader.list_skills(filter_unavailable=False)
-    assert entries == [
-        {"name": "blocked", "path": str(skill_path), "source": "workspace"},
-    ]
+    assert entries == [{"name": "blocked", "path": str(skill_path), "source": "workspace"}]
 
 
 def test_list_skills_filter_unavailable_excludes_unmet_env_requirement(
@@ -209,12 +195,12 @@ def test_list_skills_filter_unavailable_excludes_unmet_env_requirement(
     _write_skill(
         skills_root,
         "needs_env",
-        metadata_json={"requires": {"env": ["NANOBOT_SKILLS_TEST_ENV_VAR"]}},
+        metadata_json={"requires": {"env": ["VTX_CLAW_SKILLS_TEST_ENV_VAR"]}},
     )
     builtin = tmp_path / "builtin"
     builtin.mkdir()
 
-    monkeypatch.delenv("NANOBOT_SKILLS_TEST_ENV_VAR", raising=False)
+    monkeypatch.delenv("VTX_CLAW_SKILLS_TEST_ENV_VAR", raising=False)
 
     loader = SkillsLoader(workspace, builtin_skills_dir=builtin)
     assert loader.list_skills(filter_unavailable=True) == []
@@ -230,28 +216,25 @@ def test_list_skills_openclaw_metadata_parsed_for_requirements(
     skill_dir.mkdir(parents=True)
     skill_path = skill_dir / "SKILL.md"
     oc_payload = json.dumps(
-        {"openclaw": {"requires": {"bins": ["nanobot_oc_bin"]}}}, separators=(",", ":")
+        {"openclaw": {"requires": {"bins": ["vtx_claw_oc_bin"]}}}, separators=(",", ":")
     )
     skill_path.write_text(
-        "\n".join(["---", f"metadata: {oc_payload}", "---", "", "# OC"]),
-        encoding="utf-8",
+        "\n".join(["---", f"metadata: {oc_payload}", "---", "", "# OC"]), encoding="utf-8"
     )
     builtin = tmp_path / "builtin"
     builtin.mkdir()
 
-    monkeypatch.setattr("nanobot.agent.skills.shutil.which", lambda _cmd: None)
+    monkeypatch.setattr("vtx_claw.agent.skills.shutil.which", lambda _cmd: None)
 
     loader = SkillsLoader(workspace, builtin_skills_dir=builtin)
     assert loader.list_skills(filter_unavailable=True) == []
 
     monkeypatch.setattr(
-        "nanobot.agent.skills.shutil.which",
-        lambda cmd: "/x" if cmd == "nanobot_oc_bin" else None,
+        "vtx_claw.agent.skills.shutil.which",
+        lambda cmd: "/x" if cmd == "vtx_claw_oc_bin" else None,
     )
     entries = loader.list_skills(filter_unavailable=True)
-    assert entries == [
-        {"name": "openclaw_skill", "path": str(skill_path), "source": "workspace"},
-    ]
+    assert entries == [{"name": "openclaw_skill", "path": str(skill_path), "source": "workspace"}]
 
 
 def test_disabled_skills_excluded_from_list(tmp_path: Path) -> None:
@@ -380,12 +363,11 @@ def test_get_skill_metadata_handles_yaml_types(tmp_path: Path) -> None:
     skill_dir = ws_skills / "typed"
     skill_dir.mkdir(parents=True)
     payload = json.dumps(
-        {"nanobot": {"requires": {"bins": ["gh"]}, "always": True}}, separators=(",", ":")
+        {"vtx_claw": {"requires": {"bins": ["gh"]}, "always": True}}, separators=(",", ":")
     )
     skill_path = skill_dir / "SKILL.md"
     skill_path.write_text(
-        f"---\nname: typed\nmetadata: {payload}\nalways: true\n---\n\n# Typed\n",
-        encoding="utf-8",
+        f"---\nname: typed\nmetadata: {payload}\nalways: true\n---\n\n# Typed\n", encoding="utf-8"
     )
     builtin = tmp_path / "builtin"
     builtin.mkdir()

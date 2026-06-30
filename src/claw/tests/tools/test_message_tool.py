@@ -2,9 +2,9 @@ import os
 
 import pytest
 
-from nanobot.agent.tools.message import MessageTool
-from nanobot.bus.events import OutboundMessage
-from nanobot.config.paths import get_workspace_path
+from vtx_claw.agent.tools.message import MessageTool
+from vtx_claw.bus.events import OutboundMessage
+from vtx_claw.config.paths import get_workspace_path
 
 
 @pytest.mark.asyncio
@@ -15,26 +15,13 @@ async def test_message_tool_returns_error_when_no_target_context() -> None:
 
 
 @pytest.mark.asyncio
-@pytest.mark.parametrize(
-    "bad",
-    [
-        "not a list",
-        [["ok"], "row-not-a-list"],
-        [["ok", 42]],
-        [[None]],
-    ],
-)
+@pytest.mark.parametrize("bad", ["not a list", [["ok"], "row-not-a-list"], [["ok", 42]], [[None]]])
 async def test_message_tool_rejects_malformed_buttons(bad) -> None:
     """``buttons`` must be ``list[list[str]]``; the tool validates the shape
     up front so a malformed LLM payload errors visibly instead of slipping
     into the channel layer where Telegram would silently reject the frame."""
     tool = MessageTool()
-    result = await tool.execute(
-        content="hi",
-        channel="telegram",
-        chat_id="1",
-        buttons=bad,
-    )
+    result = await tool.execute(content="hi", channel="telegram", chat_id="1", buttons=bad)
     assert result == "Error: buttons must be a list of list of strings"
 
 
@@ -90,10 +77,7 @@ async def test_message_tool_records_media_deliveries() -> None:
     tool = MessageTool(send_callback=_send)
 
     await tool.execute(
-        content="image",
-        channel="websocket",
-        chat_id="chat-1",
-        media=["/tmp/generated.png"],
+        content="image", channel="websocket", chat_id="chat-1", media=["/tmp/generated.png"]
     )
 
     assert sent[0].metadata == {"_record_channel_delivery": True}
@@ -108,7 +92,7 @@ async def test_message_tool_inherits_metadata_for_same_target() -> None:
 
     tool = MessageTool(send_callback=_send)
     slack_meta = {"slack": {"thread_ts": "111.222", "channel_type": "channel"}}
-    from nanobot.agent.tools.context import RequestContext
+    from vtx_claw.agent.tools.context import RequestContext
 
     tool.set_context(RequestContext(channel="slack", chat_id="C123", metadata=slack_meta))
 
@@ -125,14 +109,14 @@ async def test_message_tool_clears_metadata_when_context_has_none() -> None:
         sent.append(msg)
 
     tool = MessageTool(send_callback=_send)
-    from nanobot.agent.tools.context import RequestContext
+    from vtx_claw.agent.tools.context import RequestContext
 
     tool.set_context(
         RequestContext(
             channel="slack",
             chat_id="C123",
             metadata={"slack": {"thread_ts": "111.222", "channel_type": "channel"}},
-        ),
+        )
     )
     tool.set_context(RequestContext(channel="slack", chat_id="C123", metadata={}))
 
@@ -149,14 +133,14 @@ async def test_message_tool_does_not_inherit_metadata_for_cross_target() -> None
         sent.append(msg)
 
     tool = MessageTool(send_callback=_send)
-    from nanobot.agent.tools.context import RequestContext
+    from vtx_claw.agent.tools.context import RequestContext
 
     tool.set_context(
         RequestContext(
             channel="slack",
             chat_id="C123",
             metadata={"slack": {"thread_ts": "111.222", "channel_type": "channel"}},
-        ),
+        )
     )
 
     await tool.execute(content="channel reply", channel="slack", chat_id="C999")
@@ -174,10 +158,7 @@ async def test_message_tool_resolves_relative_media_paths() -> None:
     tool = MessageTool(send_callback=_send)
 
     await tool.execute(
-        content="see attached",
-        channel="telegram",
-        chat_id="1",
-        media=["output/image.png"],
+        content="see attached", channel="telegram", chat_id="1", media=["output/image.png"]
     )
 
     expected = str(get_workspace_path() / "output/image.png")
@@ -195,10 +176,7 @@ async def test_message_tool_resolves_relative_media_paths_from_active_workspace(
     tool = MessageTool(send_callback=_send, workspace=workspace)
 
     await tool.execute(
-        content="see attached",
-        channel="telegram",
-        chat_id="1",
-        media=["output/image.png"],
+        content="see attached", channel="telegram", chat_id="1", media=["output/image.png"]
     )
 
     assert sent[0].media == [str(workspace / "output/image.png")]
@@ -220,10 +198,7 @@ async def test_message_tool_rejects_outside_workspace_absolute_media_when_restri
     tool = MessageTool(send_callback=_send, workspace=workspace, restrict_to_workspace=True)
 
     result = await tool.execute(
-        content="see attached",
-        channel="telegram",
-        chat_id="1",
-        media=[str(outside)],
+        content="see attached", channel="telegram", chat_id="1", media=[str(outside)]
     )
 
     assert result.startswith("Error: media path is not allowed:")
@@ -245,10 +220,7 @@ async def test_message_tool_allows_workspace_absolute_media_when_restricted(tmp_
     tool = MessageTool(send_callback=_send, workspace=workspace, restrict_to_workspace=True)
 
     result = await tool.execute(
-        content="see attached",
-        channel="telegram",
-        chat_id="1",
-        media=[str(image)],
+        content="see attached", channel="telegram", chat_id="1", media=[str(image)]
     )
 
     assert result == "Message sent to telegram:1 with 1 attachments"
@@ -266,12 +238,7 @@ async def test_message_tool_passes_through_absolute_media_paths() -> None:
 
     abs_path = os.path.abspath(os.path.join(os.sep, "tmp", "abs_image.png"))
 
-    await tool.execute(
-        content="see attached",
-        channel="telegram",
-        chat_id="1",
-        media=[abs_path],
-    )
+    await tool.execute(content="see attached", channel="telegram", chat_id="1", media=[abs_path])
 
     assert sent[0].media == [abs_path]
 
@@ -287,12 +254,7 @@ async def test_message_tool_passes_through_url_media_paths() -> None:
 
     url = "https://example.com/image.png"
 
-    await tool.execute(
-        content="see attached",
-        channel="telegram",
-        chat_id="1",
-        media=[url],
-    )
+    await tool.execute(content="see attached", channel="telegram", chat_id="1", media=[url])
 
     assert sent[0].media == [url]
 
@@ -337,7 +299,7 @@ async def test_message_tool_tracks_turn_media_for_same_target(tmp_path) -> None:
         sent.append(msg)
 
     tool = MessageTool(send_callback=_send)
-    from nanobot.agent.tools.context import RequestContext
+    from vtx_claw.agent.tools.context import RequestContext
 
     tool.set_context(RequestContext(channel="websocket", chat_id="chat-1", metadata={}))
     tool.start_turn()
@@ -354,7 +316,7 @@ async def test_message_tool_start_turn_clears_tracked_media(tmp_path) -> None:
         pass
 
     tool = MessageTool(send_callback=_send)
-    from nanobot.agent.tools.context import RequestContext
+    from vtx_claw.agent.tools.context import RequestContext
 
     tool.set_context(RequestContext(channel="websocket", chat_id="chat-1", metadata={}))
     tool.start_turn()
@@ -371,17 +333,12 @@ async def test_message_tool_cross_target_does_not_track_turn_media(tmp_path) -> 
         pass
 
     tool = MessageTool(send_callback=_send)
-    from nanobot.agent.tools.context import RequestContext
+    from vtx_claw.agent.tools.context import RequestContext
 
     tool.set_context(RequestContext(channel="websocket", chat_id="chat-1", metadata={}))
     f = tmp_path / "doc.md"
     f.write_text("hello", encoding="utf-8")
-    await tool.execute(
-        content="see file",
-        channel="telegram",
-        chat_id="tg-other",
-        media=[str(f)],
-    )
+    await tool.execute(content="see file", channel="telegram", chat_id="tg-other", media=[str(f)])
     assert tool.turn_delivered_media_paths() == []
 
 
@@ -393,17 +350,14 @@ async def test_message_tool_rejects_wrong_explicit_ws_chat_id(tmp_path) -> None:
         sent.append(msg)
 
     tool = MessageTool(send_callback=_send)
-    from nanobot.agent.tools.context import RequestContext
+    from vtx_claw.agent.tools.context import RequestContext
 
     conv = "550e8400-e29b-41d4-a716-446655440000"
     tool.set_context(RequestContext(channel="websocket", chat_id=conv, metadata={}))
     f = tmp_path / "doc.md"
     f.write_text("hello", encoding="utf-8")
     result = await tool.execute(
-        content="see file",
-        channel="websocket",
-        chat_id="anon-deadbeefcafe",
-        media=[str(f)],
+        content="see file", channel="websocket", chat_id="anon-deadbeefcafe", media=[str(f)]
     )
     assert result.startswith("Error: chat_id does not match")
     assert sent == []
@@ -417,17 +371,14 @@ async def test_message_tool_allows_ws_explicit_when_matches_context(tmp_path) ->
         sent.append(msg)
 
     tool = MessageTool(send_callback=_send)
-    from nanobot.agent.tools.context import RequestContext
+    from vtx_claw.agent.tools.context import RequestContext
 
     conv = "550e8400-e29b-41d4-a716-446655440000"
     tool.set_context(RequestContext(channel="websocket", chat_id=conv, metadata={}))
     f = tmp_path / "doc.md"
     f.write_text("hello", encoding="utf-8")
     result = await tool.execute(
-        content="see file",
-        channel="websocket",
-        chat_id=conv,
-        media=[str(f)],
+        content="see file", channel="websocket", chat_id=conv, media=[str(f)]
     )
     assert result.startswith("Message sent")
     assert sent[0].chat_id == conv
@@ -442,17 +393,14 @@ async def test_message_tool_cli_context_may_target_other_ws_chat(tmp_path) -> No
         sent.append(msg)
 
     tool = MessageTool(send_callback=_send)
-    from nanobot.agent.tools.context import RequestContext
+    from vtx_claw.agent.tools.context import RequestContext
 
     target = "550e8400-e29b-41d4-a716-446655440000"
     tool.set_context(RequestContext(channel="cli", chat_id="direct", metadata={}))
     f = tmp_path / "doc.md"
     f.write_text("hello", encoding="utf-8")
     result = await tool.execute(
-        content="ping",
-        channel="websocket",
-        chat_id=target,
-        media=[str(f)],
+        content="ping", channel="websocket", chat_id=target, media=[str(f)]
     )
     assert result.startswith("Message sent")
     assert sent[0].channel == "websocket"

@@ -3,20 +3,21 @@
 from __future__ import annotations
 
 import asyncio
+import contextlib
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, patch
 
 import pytest
 
-from nanobot.bus.events import OutboundMessage
-from nanobot.bus.queue import MessageBus
-from nanobot.channels.base import BaseChannel
-from nanobot.channels.manager import ChannelManager
-from nanobot.config.loader import save_config
-from nanobot.config.schema import ChannelsConfig, Config
-from nanobot.providers.transcription import GroqTranscriptionProvider as _GroqProvider
-from nanobot.providers.transcription import OpenAITranscriptionProvider as _OpenAIProvider
-from nanobot.utils.restart import RestartNotice
+from vtx_claw.bus.events import OutboundMessage
+from vtx_claw.bus.queue import MessageBus
+from vtx_claw.channels.base import BaseChannel
+from vtx_claw.channels.manager import ChannelManager
+from vtx_claw.config.loader import save_config
+from vtx_claw.config.schema import ChannelsConfig, Config
+from vtx_claw.providers.transcription import GroqTranscriptionProvider as _GroqProvider
+from vtx_claw.providers.transcription import OpenAITranscriptionProvider as _OpenAIProvider
+from vtx_claw.utils.restart import RestartNotice
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -73,11 +74,7 @@ def _make_entry_point(name: str, cls: type):
 
 
 def test_channels_config_accepts_unknown_keys():
-    cfg = ChannelsConfig.model_validate(
-        {
-            "myplugin": {"enabled": True, "token": "abc"},
-        }
-    )
+    cfg = ChannelsConfig.model_validate({"myplugin": {"enabled": True, "token": "abc"}})
     extra = cfg.model_extra
     assert extra is not None
     assert extra["myplugin"]["enabled"] is True
@@ -114,7 +111,7 @@ _EP_TARGET = "importlib.metadata.entry_points"
 
 
 def test_discover_plugins_loads_entry_points():
-    from nanobot.channels.registry import discover_plugins
+    from vtx_claw.channels.registry import discover_plugins
 
     ep = _make_entry_point("line", _FakePlugin)
     with patch(_EP_TARGET, return_value=[ep]):
@@ -125,7 +122,7 @@ def test_discover_plugins_loads_entry_points():
 
 
 def test_discover_plugins_skips_names_outside_enabled_set():
-    from nanobot.channels.registry import discover_plugins
+    from vtx_claw.channels.registry import discover_plugins
 
     loaded: list[str] = []
 
@@ -142,7 +139,7 @@ def test_discover_plugins_skips_names_outside_enabled_set():
 
 
 def test_discover_plugins_handles_load_error():
-    from nanobot.channels.registry import discover_plugins
+    from vtx_claw.channels.registry import discover_plugins
 
     def _boom():
         raise RuntimeError("broken")
@@ -160,7 +157,7 @@ def test_discover_plugins_handles_load_error():
 
 
 def test_discover_all_includes_builtins():
-    from nanobot.channels.registry import discover_all, discover_channel_names
+    from vtx_claw.channels.registry import discover_all, discover_channel_names
 
     with patch(_EP_TARGET, return_value=[]):
         result = discover_all()
@@ -173,7 +170,7 @@ def test_discover_all_includes_builtins():
 
 
 def test_discover_all_includes_external_plugin():
-    from nanobot.channels.registry import discover_all
+    from vtx_claw.channels.registry import discover_all
 
     ep = _make_entry_point("line", _FakePlugin)
     with patch(_EP_TARGET, return_value=[ep]):
@@ -184,7 +181,7 @@ def test_discover_all_includes_external_plugin():
 
 
 def test_discover_enabled_imports_only_enabled_builtins():
-    from nanobot.channels.registry import discover_enabled
+    from vtx_claw.channels.registry import discover_enabled
 
     loaded: list[str] = []
 
@@ -193,7 +190,7 @@ def test_discover_enabled_imports_only_enabled_builtins():
         return _FakePlugin
 
     with (
-        patch("nanobot.channels.registry.load_channel_class", side_effect=_load_channel),
+        patch("vtx_claw.channels.registry.load_channel_class", side_effect=_load_channel),
         patch(_EP_TARGET, return_value=[]),
     ):
         result = discover_enabled({"enabled"}, _names=["enabled", "disabled"])
@@ -203,7 +200,7 @@ def test_discover_enabled_imports_only_enabled_builtins():
 
 
 def test_discover_all_builtin_shadows_plugin():
-    from nanobot.channels.registry import discover_all
+    from vtx_claw.channels.registry import discover_all
 
     ep = _make_entry_point("telegram", _FakeTelegram)
     with patch(_EP_TARGET, return_value=[ep]):
@@ -221,20 +218,17 @@ def test_discover_all_builtin_shadows_plugin():
 @pytest.mark.asyncio
 async def test_manager_loads_plugin_from_dict_config():
     """ChannelManager should instantiate a plugin channel from a raw dict config."""
-    from nanobot.channels.manager import ChannelManager
+    from vtx_claw.channels.manager import ChannelManager
 
     fake_config = SimpleNamespace(
         channels=ChannelsConfig.model_validate(
-            {
-                "fakeplugin": {"enabled": True, "allowFrom": ["*"]},
-            }
+            {"fakeplugin": {"enabled": True, "allowFrom": ["*"]}}
         ),
         providers=SimpleNamespace(groq=SimpleNamespace(api_key="", api_base="")),
     )
 
     with patch(
-        "nanobot.channels.registry.discover_enabled",
-        return_value={"fakeplugin": _FakePlugin},
+        "vtx_claw.channels.registry.discover_enabled", return_value={"fakeplugin": _FakePlugin}
     ):
         mgr = ChannelManager.__new__(ChannelManager)
         mgr.config = fake_config
@@ -249,11 +243,10 @@ async def test_manager_loads_plugin_from_dict_config():
 
 @pytest.mark.asyncio
 async def test_base_channel_reads_current_transcription_config_each_call(
-    tmp_path,
-    monkeypatch: pytest.MonkeyPatch,
+    tmp_path, monkeypatch: pytest.MonkeyPatch
 ):
     """BaseChannel.transcribe_audio resolves config at call time, not manager init time."""
-    from nanobot.providers import transcription as transcription_mod
+    from vtx_claw.providers import transcription as transcription_mod
 
     config_path = tmp_path / "config.json"
     config = Config()
@@ -263,7 +256,7 @@ async def test_base_channel_reads_current_transcription_config_each_call(
     config.providers.openai.api_key = "openai-key"
     config.providers.openai.api_base = "http://openai.local/v1/audio/transcriptions"
     save_config(config, config_path)
-    monkeypatch.setattr("nanobot.config.loader._current_config_path", config_path)
+    monkeypatch.setattr("vtx_claw.config.loader._current_config_path", config_path)
 
     channel = _FakePlugin({"enabled": True, "allowFrom": ["*"]}, MessageBus())
 
@@ -334,25 +327,24 @@ async def test_base_channel_reads_current_transcription_config_each_call(
 
 @pytest.mark.asyncio
 async def test_base_channel_respects_disabled_transcription_config(
-    tmp_path,
-    monkeypatch: pytest.MonkeyPatch,
+    tmp_path, monkeypatch: pytest.MonkeyPatch
 ):
     config_path = tmp_path / "config.json"
     config = Config()
     config.transcription.enabled = False
     config.providers.groq.api_key = "groq-key"
     save_config(config, config_path)
-    monkeypatch.setattr("nanobot.config.loader._current_config_path", config_path)
+    monkeypatch.setattr("vtx_claw.config.loader._current_config_path", config_path)
 
     channel = _FakePlugin({"enabled": True, "allowFrom": ["*"]}, MessageBus())
 
-    with patch("nanobot.providers.transcription.GroqTranscriptionProvider") as provider:
+    with patch("vtx_claw.providers.transcription.GroqTranscriptionProvider") as provider:
         assert await channel.transcribe_audio("/tmp/does-not-matter.wav") == ""
     provider.assert_not_called()
 
 
 def test_openai_transcription_provider_honors_api_base_argument():
-    from nanobot.providers.transcription import OpenAITranscriptionProvider
+    from vtx_claw.providers.transcription import OpenAITranscriptionProvider
 
     default = OpenAITranscriptionProvider(api_key="k")
     assert default.api_url == "https://api.openai.com/v1/audio/transcriptions"
@@ -408,7 +400,7 @@ async def test_transcription_provider_includes_language(tmp_path, provider_cls, 
     captured: dict[str, object] = {}
 
     with patch(
-        "nanobot.providers.transcription.httpx.AsyncClient",
+        "vtx_claw.providers.transcription.httpx.AsyncClient",
         return_value=_stub_async_client(captured),
     ):
         provider = provider_cls(api_key="k", language=language)
@@ -418,11 +410,7 @@ async def test_transcription_provider_includes_language(tmp_path, provider_cls, 
     assert captured["files"]["language"] == (None, language)
 
 
-@pytest.mark.parametrize(
-    "provider_cls",
-    [_GroqProvider, _OpenAIProvider],
-    ids=["groq", "openai"],
-)
+@pytest.mark.parametrize("provider_cls", [_GroqProvider, _OpenAIProvider], ids=["groq", "openai"])
 @pytest.mark.asyncio
 async def test_transcription_provider_omits_language_when_none(tmp_path, provider_cls):
     """When language is not set, the 'language' key must be absent from the multipart body."""
@@ -431,7 +419,7 @@ async def test_transcription_provider_omits_language_when_none(tmp_path, provide
     captured: dict[str, object] = {}
 
     with patch(
-        "nanobot.providers.transcription.httpx.AsyncClient",
+        "vtx_claw.providers.transcription.httpx.AsyncClient",
         return_value=_stub_async_client(captured),
     ):
         provider = provider_cls(api_key="k")
@@ -444,8 +432,8 @@ async def test_transcription_provider_omits_language_when_none(tmp_path, provide
 def test_channels_login_uses_discovered_plugin_class(monkeypatch):
     from typer.testing import CliRunner
 
-    from nanobot.cli.commands import app
-    from nanobot.config.schema import Config
+    from vtx_claw.cli.commands import app
+    from vtx_claw.config.schema import Config
 
     runner = CliRunner()
     seen: dict[str, object] = {}
@@ -458,10 +446,9 @@ def test_channels_login_uses_discovered_plugin_class(monkeypatch):
             seen["config"] = self.config
             return True
 
-    monkeypatch.setattr("nanobot.config.loader.load_config", lambda config_path=None: Config())
+    monkeypatch.setattr("vtx_claw.config.loader.load_config", lambda config_path=None: Config())
     monkeypatch.setattr(
-        "nanobot.channels.registry.discover_all",
-        lambda: {"fakeplugin": _LoginPlugin},
+        "vtx_claw.channels.registry.discover_all", lambda: {"fakeplugin": _LoginPlugin}
     )
 
     result = runner.invoke(app, ["channels", "login", "fakeplugin", "--force"])
@@ -473,8 +460,8 @@ def test_channels_login_uses_discovered_plugin_class(monkeypatch):
 def test_channels_login_sets_custom_config_path(monkeypatch, tmp_path):
     from typer.testing import CliRunner
 
-    from nanobot.cli.commands import app
-    from nanobot.config.schema import Config
+    from vtx_claw.cli.commands import app
+    from vtx_claw.config.schema import Config
 
     runner = CliRunner()
     seen: dict[str, object] = {}
@@ -484,14 +471,13 @@ def test_channels_login_sets_custom_config_path(monkeypatch, tmp_path):
         async def login(self, force: bool = False) -> bool:
             return True
 
-    monkeypatch.setattr("nanobot.config.loader.load_config", lambda config_path=None: Config())
+    monkeypatch.setattr("vtx_claw.config.loader.load_config", lambda config_path=None: Config())
     monkeypatch.setattr(
-        "nanobot.config.loader.set_config_path",
+        "vtx_claw.config.loader.set_config_path",
         lambda path: seen.__setitem__("config_path", path),
     )
     monkeypatch.setattr(
-        "nanobot.channels.registry.discover_all",
-        lambda: {"fakeplugin": _LoginPlugin},
+        "vtx_claw.channels.registry.discover_all", lambda: {"fakeplugin": _LoginPlugin}
     )
 
     result = runner.invoke(app, ["channels", "login", "fakeplugin", "--config", str(config_path)])
@@ -503,19 +489,19 @@ def test_channels_login_sets_custom_config_path(monkeypatch, tmp_path):
 def test_channels_status_sets_custom_config_path(monkeypatch, tmp_path):
     from typer.testing import CliRunner
 
-    from nanobot.cli.commands import app
-    from nanobot.config.schema import Config
+    from vtx_claw.cli.commands import app
+    from vtx_claw.config.schema import Config
 
     runner = CliRunner()
     seen: dict[str, object] = {}
     config_path = tmp_path / "custom-config.json"
 
-    monkeypatch.setattr("nanobot.config.loader.load_config", lambda config_path=None: Config())
+    monkeypatch.setattr("vtx_claw.config.loader.load_config", lambda config_path=None: Config())
     monkeypatch.setattr(
-        "nanobot.config.loader.set_config_path",
+        "vtx_claw.config.loader.set_config_path",
         lambda path: seen.__setitem__("config_path", path),
     )
-    monkeypatch.setattr("nanobot.channels.registry.discover_all", lambda: {})
+    monkeypatch.setattr("vtx_claw.channels.registry.discover_all", lambda: {})
 
     result = runner.invoke(app, ["channels", "status", "--config", str(config_path)])
 
@@ -526,11 +512,7 @@ def test_channels_status_sets_custom_config_path(monkeypatch, tmp_path):
 @pytest.mark.asyncio
 async def test_manager_skips_disabled_plugin():
     fake_config = SimpleNamespace(
-        channels=ChannelsConfig.model_validate(
-            {
-                "fakeplugin": {"enabled": False},
-            }
-        ),
+        channels=ChannelsConfig.model_validate({"fakeplugin": {"enabled": False}}),
         providers=SimpleNamespace(groq=SimpleNamespace(api_key="")),
     )
 
@@ -553,7 +535,7 @@ async def test_manager_skips_disabled_plugin():
 
 def test_builtin_channel_default_config():
     """Built-in channels expose default_config() returning a dict with 'enabled': False."""
-    from nanobot.channels.telegram import TelegramChannel
+    from vtx_claw.channels.telegram import TelegramChannel
 
     cfg = TelegramChannel.default_config()
     assert isinstance(cfg, dict)
@@ -563,7 +545,7 @@ def test_builtin_channel_default_config():
 
 def test_builtin_channel_init_from_dict():
     """Built-in channels accept a raw dict and convert to Pydantic internally."""
-    from nanobot.channels.telegram import TelegramChannel
+    from vtx_claw.channels.telegram import TelegramChannel
 
     bus = MessageBus()
     ch = TelegramChannel({"enabled": False, "token": "test-tok", "allowFrom": ["*"]}, bus)
@@ -696,7 +678,7 @@ async def test_send_with_retry_retries_on_failure():
     msg = OutboundMessage(channel="failing", chat_id="123", content="test")
 
     # Patch asyncio.sleep to avoid actual delays
-    with patch("nanobot.channels.manager.asyncio.sleep", new_callable=AsyncMock) as mock_sleep:
+    with patch("vtx_claw.channels.manager.asyncio.sleep", new_callable=AsyncMock) as mock_sleep:
         await mgr._send_with_retry(mgr.channels["failing"], msg)
 
     assert call_count == 3  # 3 total attempts (initial + 2 retries)
@@ -736,7 +718,7 @@ async def test_send_with_retry_no_retry_when_max_is_zero():
 
     msg = OutboundMessage(channel="failing", chat_id="123", content="test")
 
-    with patch("nanobot.channels.manager.asyncio.sleep", new_callable=AsyncMock):
+    with patch("vtx_claw.channels.manager.asyncio.sleep", new_callable=AsyncMock):
         await mgr._send_with_retry(mgr.channels["failing"], msg)
 
     assert call_count == 1  # Called once but no retry (max(0, 1) = 1)
@@ -842,10 +824,7 @@ def test_outbound_duplicate_suppression_is_scoped_to_origin_message() -> None:
     mgr._origin_reply_fingerprints = {}
 
     first = OutboundMessage(
-        channel="feishu",
-        chat_id="chat123",
-        content="Done",
-        metadata={"message_id": "msg-1"},
+        channel="feishu", chat_id="chat123", content="Done", metadata={"message_id": "msg-1"}
     )
     duplicate = OutboundMessage(
         channel="feishu",
@@ -854,10 +833,7 @@ def test_outbound_duplicate_suppression_is_scoped_to_origin_message() -> None:
         metadata={"origin_message_id": "msg-1"},
     )
     separate_turn = OutboundMessage(
-        channel="feishu",
-        chat_id="chat123",
-        content="Done",
-        metadata={"message_id": "msg-2"},
+        channel="feishu", chat_id="chat123", content="Done", metadata={"message_id": "msg-2"}
     )
     new_origin_content = OutboundMessage(
         channel="feishu",
@@ -943,7 +919,7 @@ async def test_send_with_retry_propagates_cancelled_error_during_sleep():
     async def cancel_during_sleep(_):
         raise asyncio.CancelledError("cancelled during sleep")
 
-    with patch("nanobot.channels.manager.asyncio.sleep", side_effect=cancel_during_sleep):
+    with patch("vtx_claw.channels.manager.asyncio.sleep", side_effect=cancel_during_sleep):
         with pytest.raises(asyncio.CancelledError):
             await mgr._send_with_retry(mgr.channels["failing"], msg)
 
@@ -1004,8 +980,7 @@ class _StartableChannel(BaseChannel):
 async def test_validate_allow_from_allows_empty_list():
     """Empty allow_from is valid now — pairing store handles unapproved senders."""
     fake_config = SimpleNamespace(
-        channels=ChannelsConfig(),
-        providers=SimpleNamespace(groq=SimpleNamespace(api_key="")),
+        channels=ChannelsConfig(), providers=SimpleNamespace(groq=SimpleNamespace(api_key=""))
     )
 
     mgr = ChannelManager.__new__(ChannelManager)
@@ -1023,8 +998,7 @@ async def test_validate_allow_from_allows_empty_list():
 async def test_validate_allow_from_passes_with_asterisk():
     """_validate_allow_from should not raise when allow_from contains '*'."""
     fake_config = SimpleNamespace(
-        channels=ChannelsConfig(),
-        providers=SimpleNamespace(groq=SimpleNamespace(api_key="")),
+        channels=ChannelsConfig(), providers=SimpleNamespace(groq=SimpleNamespace(api_key=""))
     )
 
     mgr = ChannelManager.__new__(ChannelManager)
@@ -1042,8 +1016,7 @@ async def test_validate_allow_from_passes_with_asterisk():
 async def test_validate_allow_from_allows_empty_dict_allow_from():
     """Empty dict-backed allow_from is valid — pairing store handles approval."""
     fake_config = SimpleNamespace(
-        channels=ChannelsConfig(),
-        providers=SimpleNamespace(groq=SimpleNamespace(api_key="")),
+        channels=ChannelsConfig(), providers=SimpleNamespace(groq=SimpleNamespace(api_key=""))
     )
 
     mgr = ChannelManager.__new__(ChannelManager)
@@ -1060,8 +1033,7 @@ async def test_validate_allow_from_allows_empty_dict_allow_from():
 async def test_validate_allow_from_allows_missing_allow_from():
     """Omitted allowFrom is valid — channel operates in pairing-only mode."""
     fake_config = SimpleNamespace(
-        channels=ChannelsConfig(),
-        providers=SimpleNamespace(groq=SimpleNamespace(api_key="")),
+        channels=ChannelsConfig(), providers=SimpleNamespace(groq=SimpleNamespace(api_key=""))
     )
 
     class _NoAllowFromChannel(BaseChannel):
@@ -1092,8 +1064,7 @@ async def test_validate_allow_from_allows_missing_allow_from():
 async def test_get_channel_returns_channel_if_exists():
     """get_channel should return the channel if it exists."""
     fake_config = SimpleNamespace(
-        channels=ChannelsConfig(),
-        providers=SimpleNamespace(groq=SimpleNamespace(api_key="")),
+        channels=ChannelsConfig(), providers=SimpleNamespace(groq=SimpleNamespace(api_key=""))
     )
 
     mgr = ChannelManager.__new__(ChannelManager)
@@ -1110,8 +1081,7 @@ async def test_get_channel_returns_channel_if_exists():
 async def test_get_status_returns_running_state():
     """get_status should return enabled and running state for each channel."""
     fake_config = SimpleNamespace(
-        channels=ChannelsConfig(),
-        providers=SimpleNamespace(groq=SimpleNamespace(api_key="")),
+        channels=ChannelsConfig(), providers=SimpleNamespace(groq=SimpleNamespace(api_key=""))
     )
 
     mgr = ChannelManager.__new__(ChannelManager)
@@ -1131,8 +1101,7 @@ async def test_get_status_returns_running_state():
 async def test_enabled_channels_returns_channel_names():
     """enabled_channels should return list of enabled channel names."""
     fake_config = SimpleNamespace(
-        channels=ChannelsConfig(),
-        providers=SimpleNamespace(groq=SimpleNamespace(api_key="")),
+        channels=ChannelsConfig(), providers=SimpleNamespace(groq=SimpleNamespace(api_key=""))
     )
 
     mgr = ChannelManager.__new__(ChannelManager)
@@ -1155,8 +1124,7 @@ async def test_enabled_channels_returns_channel_names():
 async def test_stop_all_cancels_dispatcher_and_stops_channels():
     """stop_all should cancel the dispatch task and stop all channels."""
     fake_config = SimpleNamespace(
-        channels=ChannelsConfig(),
-        providers=SimpleNamespace(groq=SimpleNamespace(api_key="")),
+        channels=ChannelsConfig(), providers=SimpleNamespace(groq=SimpleNamespace(api_key=""))
     )
 
     mgr = ChannelManager.__new__(ChannelManager)
@@ -1200,8 +1168,7 @@ async def test_start_channel_logs_error_on_failure():
             pass
 
     fake_config = SimpleNamespace(
-        channels=ChannelsConfig(),
-        providers=SimpleNamespace(groq=SimpleNamespace(api_key="")),
+        channels=ChannelsConfig(), providers=SimpleNamespace(groq=SimpleNamespace(api_key=""))
     )
 
     mgr = ChannelManager.__new__(ChannelManager)
@@ -1236,8 +1203,7 @@ async def test_stop_all_handles_channel_exception():
             pass
 
     fake_config = SimpleNamespace(
-        channels=ChannelsConfig(),
-        providers=SimpleNamespace(groq=SimpleNamespace(api_key="")),
+        channels=ChannelsConfig(), providers=SimpleNamespace(groq=SimpleNamespace(api_key=""))
     )
 
     mgr = ChannelManager.__new__(ChannelManager)
@@ -1270,8 +1236,7 @@ async def test_stop_all_handles_channel_stop_cancelled_task():
             pass
 
     fake_config = SimpleNamespace(
-        channels=ChannelsConfig(),
-        providers=SimpleNamespace(groq=SimpleNamespace(api_key="")),
+        channels=ChannelsConfig(), providers=SimpleNamespace(groq=SimpleNamespace(api_key=""))
     )
 
     mgr = ChannelManager.__new__(ChannelManager)
@@ -1293,8 +1258,7 @@ async def test_stop_all_handles_channel_stop_cancelled_task():
 async def test_start_all_no_channels_logs_warning():
     """start_all should log warning when no channels are enabled."""
     fake_config = SimpleNamespace(
-        channels=ChannelsConfig(),
-        providers=SimpleNamespace(groq=SimpleNamespace(api_key="")),
+        channels=ChannelsConfig(), providers=SimpleNamespace(groq=SimpleNamespace(api_key=""))
     )
 
     mgr = ChannelManager.__new__(ChannelManager)
@@ -1313,8 +1277,7 @@ async def test_start_all_no_channels_logs_warning():
 async def test_start_all_creates_dispatch_task():
     """start_all should create the dispatch task when channels exist."""
     fake_config = SimpleNamespace(
-        channels=ChannelsConfig(),
-        providers=SimpleNamespace(groq=SimpleNamespace(api_key="")),
+        channels=ChannelsConfig(), providers=SimpleNamespace(groq=SimpleNamespace(api_key=""))
     )
 
     mgr = ChannelManager.__new__(ChannelManager)
@@ -1339,10 +1302,8 @@ async def test_start_all_creates_dispatch_task():
         pass
     finally:
         cancel_task.cancel()
-        try:
+        with contextlib.suppress(asyncio.CancelledError):
             await cancel_task
-        except asyncio.CancelledError:
-            pass
 
     # Dispatch task should have been created
     assert mgr._dispatch_task is not None
@@ -1352,8 +1313,7 @@ async def test_start_all_creates_dispatch_task():
 async def test_notify_restart_done_enqueues_outbound_message():
     """Restart notice should schedule send_with_retry for target channel."""
     fake_config = SimpleNamespace(
-        channels=ChannelsConfig(),
-        providers=SimpleNamespace(groq=SimpleNamespace(api_key="")),
+        channels=ChannelsConfig(), providers=SimpleNamespace(groq=SimpleNamespace(api_key=""))
     )
 
     mgr = ChannelManager.__new__(ChannelManager)
@@ -1364,7 +1324,7 @@ async def test_notify_restart_done_enqueues_outbound_message():
     mgr._send_with_retry = AsyncMock()
 
     notice = RestartNotice(channel="feishu", chat_id="oc_123", started_at_raw="100.0")
-    with patch("nanobot.channels.manager.consume_restart_notice_from_env", return_value=notice):
+    with patch("vtx_claw.channels.manager.consume_restart_notice_from_env", return_value=notice):
         mgr._notify_restart_done_if_needed()
 
     await asyncio.sleep(0)

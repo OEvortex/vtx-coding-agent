@@ -4,8 +4,8 @@ import asyncio
 
 import pytest
 
-from nanobot.config.loader import load_config
-from nanobot.webui.mcp_presets_api import (
+from vtx_claw.config.loader import load_config
+from vtx_claw.webui.mcp_presets_api import (
     McpPresetError,
     custom_mcp_action,
     mcp_presets_action,
@@ -16,7 +16,7 @@ from nanobot.webui.mcp_presets_api import (
 
 
 def _use_config(tmp_path, monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setattr("nanobot.config.loader._current_config_path", tmp_path / "config.json")
+    monkeypatch.setattr("vtx_claw.config.loader._current_config_path", tmp_path / "config.json")
 
 
 def test_mcp_presets_payload_lists_supported_cards(
@@ -57,17 +57,12 @@ def test_mcp_presets_payload_lists_supported_cards(
 
 
 def test_enable_browserbase_writes_scrubbed_config_payload(
-    tmp_path,
-    monkeypatch: pytest.MonkeyPatch,
+    tmp_path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     _use_config(tmp_path, monkeypatch)
 
     payload = mcp_presets_action(
-        "enable",
-        {
-            "name": ["browserbase"],
-            "browserbase_api_key": ["bb_live_secret"],
-        },
+        "enable", {"name": ["browserbase"], "browserbase_api_key": ["bb_live_secret"]}
     )
 
     assert payload["requires_restart"] is True
@@ -93,17 +88,12 @@ def test_enable_requires_missing_secret(tmp_path, monkeypatch: pytest.MonkeyPatc
 
 
 def test_enable_context7_optional_api_key_appends_arg(
-    tmp_path,
-    monkeypatch: pytest.MonkeyPatch,
+    tmp_path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     _use_config(tmp_path, monkeypatch)
 
     payload = mcp_presets_action(
-        "enable",
-        {
-            "name": ["context7"],
-            "context7_api_key": ["ctx7_secret"],
-        },
+        "enable", {"name": ["context7"], "context7_api_key": ["ctx7_secret"]}
     )
 
     assert "ctx7_secret" not in str(payload)
@@ -119,8 +109,7 @@ def test_enable_context7_optional_api_key_appends_arg(
 
 
 def test_enable_stdio_preset_uses_config_scoped_cwd(
-    tmp_path,
-    monkeypatch: pytest.MonkeyPatch,
+    tmp_path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     _use_config(tmp_path, monkeypatch)
 
@@ -132,7 +121,9 @@ def test_enable_stdio_preset_uses_config_scoped_cwd(
     assert (tmp_path / "mcp" / "playwright").is_dir()
 
 
-def test_enable_no_auth_remote_presets_write_url(tmp_path, monkeypatch: pytest.MonkeyPatch) -> None:
+def test_enable_no_auth_remote_presets_write_url(
+    tmp_path, monkeypatch: pytest.MonkeyPatch
+) -> None:
     _use_config(tmp_path, monkeypatch)
 
     mcp_presets_action("enable", {"name": ["microsoft-learn"]})
@@ -205,12 +196,11 @@ def test_remove_custom_mcp_server_preserves_user_cwd(
 
 
 def test_test_mcp_preset_reports_missing_dependency(
-    tmp_path,
-    monkeypatch: pytest.MonkeyPatch,
+    tmp_path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     _use_config(tmp_path, monkeypatch)
     mcp_presets_action("enable", {"name": ["playwright"]})
-    monkeypatch.setattr("nanobot.webui.mcp_presets_api.shutil.which", lambda _command: None)
+    monkeypatch.setattr("vtx_claw.webui.mcp_presets_api.shutil.which", lambda _command: None)
 
     payload = asyncio.run(mcp_presets_test_action({"name": ["playwright"]}))
 
@@ -219,8 +209,7 @@ def test_test_mcp_preset_reports_missing_dependency(
 
 
 def test_test_mcp_preset_connects_and_reports_tools(
-    tmp_path,
-    monkeypatch: pytest.MonkeyPatch,
+    tmp_path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     _use_config(tmp_path, monkeypatch)
     mcp_presets_action("enable", {"name": ["playwright"]})
@@ -241,7 +230,7 @@ def test_test_mcp_preset_connects_and_reports_tools(
         registry.register(FakeTool())
         return {"playwright": FakeStack()}
 
-    monkeypatch.setattr("nanobot.agent.tools.mcp.connect_mcp_servers", fake_connect)
+    monkeypatch.setattr("vtx_claw.agent.tools.mcp.connect_mcp_servers", fake_connect)
 
     payload = asyncio.run(mcp_presets_test_action({"name": ["playwright"]}))
 
@@ -251,16 +240,11 @@ def test_test_mcp_preset_connects_and_reports_tools(
 
 
 def test_test_mcp_preset_scrubs_connection_errors(
-    tmp_path,
-    monkeypatch: pytest.MonkeyPatch,
+    tmp_path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     _use_config(tmp_path, monkeypatch)
     mcp_presets_action(
-        "enable",
-        {
-            "name": ["browserbase"],
-            "browserbase_api_key": ["bb_live_secret"],
-        },
+        "enable", {"name": ["browserbase"], "browserbase_api_key": ["bb_live_secret"]}
     )
 
     async def fake_connect(_servers, _registry):
@@ -268,7 +252,7 @@ def test_test_mcp_preset_scrubs_connection_errors(
             "failed https://mcp.browserbase.com/mcp?browserbaseApiKey=bb_live_secret"
         )
 
-    monkeypatch.setattr("nanobot.agent.tools.mcp.connect_mcp_servers", fake_connect)
+    monkeypatch.setattr("vtx_claw.agent.tools.mcp.connect_mcp_servers", fake_connect)
 
     payload = asyncio.run(mcp_presets_test_action({"name": ["browserbase"]}))
 
@@ -315,8 +299,7 @@ def test_normalize_mcp_preset_mentions_keeps_known_presets_only() -> None:
 
 
 def test_custom_mcp_server_writes_config_and_catalog_row(
-    tmp_path,
-    monkeypatch: pytest.MonkeyPatch,
+    tmp_path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     _use_config(tmp_path, monkeypatch)
 
@@ -347,10 +330,7 @@ def test_custom_mcp_server_writes_config_and_catalog_row(
     assert config.tools.mcp_servers["internal-docs"].env["DOCS_TOKEN"] == "docs-secret-value"
 
 
-def test_import_mcp_config_and_tool_allowlist(
-    tmp_path,
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
+def test_import_mcp_config_and_tool_allowlist(tmp_path, monkeypatch: pytest.MonkeyPatch) -> None:
     _use_config(tmp_path, monkeypatch)
 
     payload = custom_mcp_action(
@@ -363,7 +343,7 @@ def test_import_mcp_config_and_tool_allowlist(
                     '"remote-docs":{"transport":"sse","url":"https://example.com/sse"}'
                     "}}"
                 )
-            ],
+            ]
         },
     )
 
@@ -377,24 +357,14 @@ def test_import_mcp_config_and_tool_allowlist(
     assert "config-secret-value" not in str(payload)
 
     payload = custom_mcp_action(
-        "tools",
-        {
-            "name": ["docs"],
-            "enabled_tools": ['["mcp_docs_search"]'],
-        },
+        "tools", {"name": ["docs"], "enabled_tools": ['["mcp_docs_search"]']}
     )
 
     row = next(item for item in payload["presets"] if item["name"] == "docs")
     assert row["enabled_tools"] == ["mcp_docs_search"]
     assert load_config().tools.mcp_servers["docs"].enabled_tools == ["mcp_docs_search"]
 
-    payload = custom_mcp_action(
-        "tools",
-        {
-            "name": ["docs"],
-            "enabled_tools": ["[]"],
-        },
-    )
+    payload = custom_mcp_action("tools", {"name": ["docs"], "enabled_tools": ["[]"]})
 
     row = next(item for item in payload["presets"] if item["name"] == "docs")
     assert row["enabled_tools"] == []
@@ -402,23 +372,16 @@ def test_import_mcp_config_and_tool_allowlist(
 
 
 def test_normalize_mcp_preset_mentions_accepts_configured_custom_server(
-    tmp_path,
-    monkeypatch: pytest.MonkeyPatch,
+    tmp_path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     _use_config(tmp_path, monkeypatch)
     custom_mcp_action(
         "custom",
-        {
-            "name": ["docs"],
-            "transport": ["streamableHttp"],
-            "url": ["https://example.com/mcp"],
-        },
+        {"name": ["docs"], "transport": ["streamableHttp"], "url": ["https://example.com/mcp"]},
     )
 
     payload = normalize_mcp_preset_mentions(
-        [
-            {"name": "docs", "display_name": "Docs", "transport": "streamableHttp"},
-        ]
+        [{"name": "docs", "display_name": "Docs", "transport": "streamableHttp"}]
     )
 
     assert payload == [{"name": "docs", "display_name": "Docs", "transport": "streamableHttp"}]

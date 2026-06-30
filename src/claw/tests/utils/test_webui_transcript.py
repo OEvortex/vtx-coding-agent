@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from nanobot.webui.transcript import (
+from vtx_claw.webui.transcript import (
     WEBUI_TRANSCRIPT_SCHEMA_VERSION,
     append_fork_marker,
     append_transcript_object,
@@ -16,7 +16,7 @@ from nanobot.webui.transcript import (
 
 
 def test_append_and_read_roundtrip(tmp_path, monkeypatch) -> None:
-    monkeypatch.setattr("nanobot.config.paths.get_data_dir", lambda: tmp_path)
+    monkeypatch.setattr("vtx_claw.config.paths.get_data_dir", lambda: tmp_path)
     key = "websocket:t1"
     append_transcript_object(key, {"event": "user", "chat_id": "t1", "text": "hello"})
     lines = read_transcript_lines(key)
@@ -25,24 +25,22 @@ def test_append_and_read_roundtrip(tmp_path, monkeypatch) -> None:
 
 
 def _force_small_transcript_budget(monkeypatch, *, limit: int = 520, target: int = 260) -> None:
-    monkeypatch.setattr("nanobot.webui.transcript._MAX_TRANSCRIPT_FILE_BYTES", limit)
-    monkeypatch.setattr("nanobot.webui.transcript._TARGET_ACTIVE_TRANSCRIPT_BYTES", target)
+    monkeypatch.setattr("vtx_claw.webui.transcript._MAX_TRANSCRIPT_FILE_BYTES", limit)
+    monkeypatch.setattr("vtx_claw.webui.transcript._TARGET_ACTIVE_TRANSCRIPT_BYTES", target)
 
 
 def _append_numbered_turn(key: str, chat_id: str, idx: int) -> None:
     append_transcript_object(
-        key,
-        {"event": "user", "chat_id": chat_id, "text": f"question {idx} " + ("x" * 24)},
+        key, {"event": "user", "chat_id": chat_id, "text": f"question {idx} " + ("x" * 24)}
     )
     append_transcript_object(
-        key,
-        {"event": "message", "chat_id": chat_id, "text": f"answer {idx} " + ("y" * 24)},
+        key, {"event": "message", "chat_id": chat_id, "text": f"answer {idx} " + ("y" * 24)}
     )
     append_transcript_object(key, {"event": "turn_end", "chat_id": chat_id})
 
 
 def _write_segmented_turns(tmp_path, monkeypatch, key: str, chat_id: str, count: int) -> None:
-    monkeypatch.setattr("nanobot.config.paths.get_data_dir", lambda: tmp_path)
+    monkeypatch.setattr("vtx_claw.config.paths.get_data_dir", lambda: tmp_path)
     _force_small_transcript_budget(monkeypatch)
     for idx in range(1, count + 1):
         _append_numbered_turn(key, chat_id, idx)
@@ -76,8 +74,7 @@ def test_segmented_transcript_rotation_preserves_full_history(tmp_path, monkeypa
 
 
 def test_segmented_transcript_paginates_latest_and_older_without_overlap(
-    tmp_path,
-    monkeypatch,
+    tmp_path, monkeypatch
 ) -> None:
     key = "websocket:paged"
     _write_segmented_turns(tmp_path, monkeypatch, key, "paged", 6)
@@ -88,20 +85,13 @@ def test_segmented_transcript_paginates_latest_and_older_without_overlap(
     assert latest["page"]["user_message_offset"] == 4
     assert _message_contents(latest) == _numbered_turn_texts(5, 6)
 
-    older = build_webui_thread_response(
-        key,
-        limit=4,
-        before=latest["page"]["before_cursor"],
-    )
+    older = build_webui_thread_response(key, limit=4, before=latest["page"]["before_cursor"])
     assert older is not None
     assert older["page"]["user_message_offset"] == 2
     assert _message_contents(older) == _numbered_turn_texts(3, 4)
 
 
-def test_page_cursor_survives_active_rotation_after_latest_page(
-    tmp_path,
-    monkeypatch,
-) -> None:
+def test_page_cursor_survives_active_rotation_after_latest_page(tmp_path, monkeypatch) -> None:
     key = "websocket:stable-cursor"
     _write_segmented_turns(tmp_path, monkeypatch, key, "stable-cursor", 7)
 
@@ -134,8 +124,8 @@ def test_segment_manifest_can_be_rebuilt_when_missing_or_corrupt(tmp_path, monke
 
 
 def test_delete_webui_transcript_removes_segments(tmp_path, monkeypatch) -> None:
-    from nanobot.webui.thread_disk import webui_thread_file_path
-    from nanobot.webui.transcript import delete_webui_transcript, webui_transcript_path
+    from vtx_claw.webui.thread_disk import webui_thread_file_path
+    from vtx_claw.webui.transcript import delete_webui_transcript, webui_transcript_path
 
     key = "websocket:delete-segments"
     _write_segmented_turns(tmp_path, monkeypatch, key, "delete-segments", 4)
@@ -163,7 +153,7 @@ def test_fork_transcript_reads_across_segments(tmp_path, monkeypatch) -> None:
 
 
 def test_fork_transcript_before_user_index_copies_only_prefix(tmp_path, monkeypatch) -> None:
-    monkeypatch.setattr("nanobot.config.paths.get_data_dir", lambda: tmp_path)
+    monkeypatch.setattr("vtx_claw.config.paths.get_data_dir", lambda: tmp_path)
     source = "websocket:source"
     for ev in (
         {"event": "user", "chat_id": "source", "text": "round1"},
@@ -186,7 +176,7 @@ def test_fork_transcript_before_user_index_copies_only_prefix(tmp_path, monkeypa
 
 
 def test_fork_transcript_rejects_out_of_range_user_index(tmp_path, monkeypatch) -> None:
-    monkeypatch.setattr("nanobot.config.paths.get_data_dir", lambda: tmp_path)
+    monkeypatch.setattr("vtx_claw.config.paths.get_data_dir", lambda: tmp_path)
     source = "websocket:source"
     append_transcript_object(source, {"event": "user", "chat_id": "source", "text": "round1"})
 
@@ -195,7 +185,7 @@ def test_fork_transcript_rejects_out_of_range_user_index(tmp_path, monkeypatch) 
 
 
 def test_build_response_reports_fork_boundary_from_marker(tmp_path, monkeypatch) -> None:
-    monkeypatch.setattr("nanobot.config.paths.get_data_dir", lambda: tmp_path)
+    monkeypatch.setattr("vtx_claw.config.paths.get_data_dir", lambda: tmp_path)
     key = "websocket:fork"
     for ev in (
         {"event": "user", "chat_id": "fork", "text": "round1"},
@@ -213,7 +203,7 @@ def test_build_response_reports_fork_boundary_from_marker(tmp_path, monkeypatch)
 
 
 def test_nested_fork_drops_inherited_fork_marker(tmp_path, monkeypatch) -> None:
-    monkeypatch.setattr("nanobot.config.paths.get_data_dir", lambda: tmp_path)
+    monkeypatch.setattr("vtx_claw.config.paths.get_data_dir", lambda: tmp_path)
     source = "websocket:source"
     for ev in (
         {"event": "user", "chat_id": "source", "text": "round1"},
@@ -247,17 +237,13 @@ def test_nested_fork_drops_inherited_fork_marker(tmp_path, monkeypatch) -> None:
 
 
 def test_write_session_messages_as_transcript_builds_canonical_prefix(
-    tmp_path,
-    monkeypatch,
+    tmp_path, monkeypatch
 ) -> None:
-    monkeypatch.setattr("nanobot.config.paths.get_data_dir", lambda: tmp_path)
+    monkeypatch.setattr("vtx_claw.config.paths.get_data_dir", lambda: tmp_path)
 
     write_session_messages_as_transcript(
         "websocket:fork",
-        [
-            {"role": "user", "content": "round1"},
-            {"role": "assistant", "content": "answer1"},
-        ],
+        [{"role": "user", "content": "round1"}, {"role": "assistant", "content": "answer1"}],
     )
 
     lines = read_transcript_lines("websocket:fork")
@@ -270,7 +256,7 @@ def test_write_session_messages_as_transcript_builds_canonical_prefix(
 
 
 def test_replay_delta_and_turn_end(tmp_path, monkeypatch) -> None:
-    monkeypatch.setattr("nanobot.config.paths.get_data_dir", lambda: tmp_path)
+    monkeypatch.setattr("vtx_claw.config.paths.get_data_dir", lambda: tmp_path)
     key = "websocket:t2"
     for ev in (
         {"event": "user", "chat_id": "t2", "text": "q"},
@@ -293,10 +279,9 @@ def test_replay_delta_and_turn_end(tmp_path, monkeypatch) -> None:
 
 
 def test_thread_response_does_not_mark_completed_message_tool_tail_pending(
-    tmp_path,
-    monkeypatch,
+    tmp_path, monkeypatch
 ) -> None:
-    monkeypatch.setattr("nanobot.config.paths.get_data_dir", lambda: tmp_path)
+    monkeypatch.setattr("vtx_claw.config.paths.get_data_dir", lambda: tmp_path)
     key = "websocket:cron-tail"
     turn_id = "cron:job:run"
     for ev in (
@@ -363,7 +348,7 @@ def test_thread_response_does_not_mark_completed_message_tool_tail_pending(
 
 
 def test_thread_response_marks_unfinished_tool_tail_pending(tmp_path, monkeypatch) -> None:
-    monkeypatch.setattr("nanobot.config.paths.get_data_dir", lambda: tmp_path)
+    monkeypatch.setattr("vtx_claw.config.paths.get_data_dir", lambda: tmp_path)
     key = "websocket:active-tail"
     append_transcript_object(
         key,
@@ -382,7 +367,7 @@ def test_thread_response_marks_unfinished_tool_tail_pending(tmp_path, monkeypatc
 
 
 def test_replay_preserves_turn_metadata(tmp_path, monkeypatch) -> None:
-    monkeypatch.setattr("nanobot.config.paths.get_data_dir", lambda: tmp_path)
+    monkeypatch.setattr("vtx_claw.config.paths.get_data_dir", lambda: tmp_path)
     key = "websocket:t-turn"
     for ev in (
         {
@@ -431,7 +416,7 @@ def test_replay_preserves_turn_metadata(tmp_path, monkeypatch) -> None:
 
 
 def test_replay_reused_turn_id_after_turn_end_starts_new_turn(tmp_path, monkeypatch) -> None:
-    monkeypatch.setattr("nanobot.config.paths.get_data_dir", lambda: tmp_path)
+    monkeypatch.setattr("vtx_claw.config.paths.get_data_dir", lambda: tmp_path)
     key = "websocket:t-reused-turn"
 
     def event(
@@ -483,19 +468,16 @@ def test_replay_reused_turn_id_after_turn_end_starts_new_turn(tmp_path, monkeypa
 
 
 def test_build_response_restores_session_users_for_legacy_transcript(
-    tmp_path,
-    monkeypatch,
+    tmp_path, monkeypatch
 ) -> None:
-    monkeypatch.setattr("nanobot.config.paths.get_data_dir", lambda: tmp_path)
+    monkeypatch.setattr("vtx_claw.config.paths.get_data_dir", lambda: tmp_path)
     key = "websocket:legacy-users"
     append_transcript_object(
-        key,
-        {"event": "message", "chat_id": "legacy-users", "text": "assistant one"},
+        key, {"event": "message", "chat_id": "legacy-users", "text": "assistant one"}
     )
     append_transcript_object(key, {"event": "turn_end", "chat_id": "legacy-users"})
     append_transcript_object(
-        key,
-        {"event": "message", "chat_id": "legacy-users", "text": "assistant two"},
+        key, {"event": "message", "chat_id": "legacy-users", "text": "assistant two"}
     )
     append_transcript_object(key, {"event": "turn_end", "chat_id": "legacy-users"})
 
@@ -519,20 +501,19 @@ def test_build_response_restores_session_users_for_legacy_transcript(
 
 
 def test_build_response_restores_session_users_without_duplicating_new_transcript_users(
-    tmp_path,
-    monkeypatch,
+    tmp_path, monkeypatch
 ) -> None:
-    monkeypatch.setattr("nanobot.config.paths.get_data_dir", lambda: tmp_path)
+    monkeypatch.setattr("vtx_claw.config.paths.get_data_dir", lambda: tmp_path)
     key = "websocket:mixed-users"
     append_transcript_object(
-        key,
-        {"event": "message", "chat_id": "mixed-users", "text": "old assistant"},
+        key, {"event": "message", "chat_id": "mixed-users", "text": "old assistant"}
     )
     append_transcript_object(key, {"event": "turn_end", "chat_id": "mixed-users"})
-    append_transcript_object(key, {"event": "user", "chat_id": "mixed-users", "text": "new prompt"})
     append_transcript_object(
-        key,
-        {"event": "message", "chat_id": "mixed-users", "text": "new assistant"},
+        key, {"event": "user", "chat_id": "mixed-users", "text": "new prompt"}
+    )
+    append_transcript_object(
+        key, {"event": "message", "chat_id": "mixed-users", "text": "new assistant"}
     )
     append_transcript_object(key, {"event": "turn_end", "chat_id": "mixed-users"})
 
@@ -577,14 +558,14 @@ def test_replay_uses_stream_end_final_text() -> None:
                 "chat_id": "t-img",
                 "text": "![Diagram](/api/media/sig/payload)",
             },
-        ],
+        ]
     )
 
     assert msgs[1]["content"] == "![Diagram](/api/media/sig/payload)"
 
 
 def test_build_response_backfills_legacy_sse_only_transcripts(tmp_path, monkeypatch) -> None:
-    monkeypatch.setattr("nanobot.config.paths.get_data_dir", lambda: tmp_path)
+    monkeypatch.setattr("vtx_claw.config.paths.get_data_dir", lambda: tmp_path)
     key = "websocket:t-legacy"
     for ev in (
         {"event": "delta", "chat_id": "t-legacy", "text": "first answer"},
@@ -621,7 +602,7 @@ def test_build_response_backfills_legacy_sse_only_transcripts(tmp_path, monkeypa
 
 
 def test_backfill_does_not_duplicate_existing_user_transcript(tmp_path, monkeypatch) -> None:
-    monkeypatch.setattr("nanobot.config.paths.get_data_dir", lambda: tmp_path)
+    monkeypatch.setattr("vtx_claw.config.paths.get_data_dir", lambda: tmp_path)
     key = "websocket:t-current"
     for ev in (
         {"event": "user", "chat_id": "t-current", "text": "already stored"},
@@ -631,8 +612,7 @@ def test_backfill_does_not_duplicate_existing_user_transcript(tmp_path, monkeypa
         append_transcript_object(key, ev)
 
     out = build_webui_thread_response(
-        key,
-        session_messages=[{"role": "user", "content": "already stored"}],
+        key, session_messages=[{"role": "user", "content": "already stored"}]
     )
 
     assert out is not None
@@ -641,10 +621,9 @@ def test_backfill_does_not_duplicate_existing_user_transcript(tmp_path, monkeypa
 
 
 def test_backfill_does_not_misalign_when_session_only_has_transcript_tail(
-    tmp_path,
-    monkeypatch,
+    tmp_path, monkeypatch
 ) -> None:
-    monkeypatch.setattr("nanobot.config.paths.get_data_dir", lambda: tmp_path)
+    monkeypatch.setattr("vtx_claw.config.paths.get_data_dir", lambda: tmp_path)
     key = "websocket:t-tail"
     for ev in (
         {"event": "message", "chat_id": "t-tail", "text": "old answer"},
@@ -663,11 +642,7 @@ def test_backfill_does_not_misalign_when_session_only_has_transcript_tail(
     )
 
     assert out is not None
-    assert [message["role"] for message in out["messages"]] == [
-        "assistant",
-        "user",
-        "assistant",
-    ]
+    assert [message["role"] for message in out["messages"]] == ["assistant", "user", "assistant"]
     assert [message["content"] for message in out["messages"]] == [
         "old answer",
         "tail question",
@@ -685,11 +660,11 @@ def test_replay_infers_video_media_from_attachment_name() -> None:
                 "text": "video ready",
                 "media_urls": [{"url": "/api/media/sig/payload", "name": "intro.mp4"}],
             },
-        ],
+        ]
     )
 
     assert msgs[1]["media"] == [
-        {"kind": "video", "url": "/api/media/sig/payload", "name": "intro.mp4"},
+        {"kind": "video", "url": "/api/media/sig/payload", "name": "intro.mp4"}
     ]
 
 
@@ -710,12 +685,12 @@ def test_replay_resigns_assistant_media_paths_before_stale_urls() -> None:
                 "kind": "video",
                 "url": f"/api/media/new-sig/{paths[0].split('/')[-1]}",
                 "name": "intro.mp4",
-            },
+            }
         ],
     )
 
     assert msgs[1]["media"] == [
-        {"kind": "video", "url": "/api/media/new-sig/intro.mp4", "name": "intro.mp4"},
+        {"kind": "video", "url": "/api/media/new-sig/intro.mp4", "name": "intro.mp4"}
     ]
 
 
@@ -729,11 +704,11 @@ def test_replay_infers_svg_media_from_attachment_name() -> None:
                 "text": "chart ready",
                 "media_urls": [{"url": "/api/media/sig/payload", "name": "chart.svg"}],
             },
-        ],
+        ]
     )
 
     assert msgs[1]["media"] == [
-        {"kind": "image", "url": "/api/media/sig/payload", "name": "chart.svg"},
+        {"kind": "image", "url": "/api/media/sig/payload", "name": "chart.svg"}
     ]
 
 
@@ -747,16 +722,16 @@ def test_replay_infers_file_media_from_attachment_name() -> None:
                 "text": "file ready",
                 "media_urls": [{"url": "/api/media/sig/payload", "name": "index.html"}],
             },
-        ],
+        ]
     )
 
     assert msgs[1]["media"] == [
-        {"kind": "file", "url": "/api/media/sig/payload", "name": "index.html"},
+        {"kind": "file", "url": "/api/media/sig/payload", "name": "index.html"}
     ]
 
 
 def test_replay_file_edit_event_creates_file_activity(tmp_path, monkeypatch) -> None:
-    monkeypatch.setattr("nanobot.config.paths.get_data_dir", lambda: tmp_path)
+    monkeypatch.setattr("vtx_claw.config.paths.get_data_dir", lambda: tmp_path)
     key = "websocket:t-file"
     for ev in (
         {"event": "user", "chat_id": "t-file", "text": "edit"},
@@ -780,7 +755,7 @@ def test_replay_file_edit_event_creates_file_activity(tmp_path, monkeypatch) -> 
                     "deleted": 1,
                     "approximate": False,
                     "status": "done",
-                },
+                }
             ],
         },
     ):
@@ -805,7 +780,7 @@ def test_replay_file_edit_event_creates_file_activity(tmp_path, monkeypatch) -> 
             "deleted": 1,
             "approximate": False,
             "status": "done",
-        },
+        }
     ]
     assert msgs[2]["activitySegmentId"]
     assert msgs[2]["activitySegmentId"] != msgs[1]["activitySegmentId"]
@@ -825,7 +800,7 @@ def test_replay_file_edit_absorbs_matching_write_tool_event() -> None:
                         "call_id": "call-write",
                         "name": "write_file",
                         "arguments": {"path": "foo.txt", "content": "hello\n"},
-                    },
+                    }
                 ],
             },
             {
@@ -842,7 +817,7 @@ def test_replay_file_edit_absorbs_matching_write_tool_event() -> None:
                         "deleted": 0,
                         "approximate": True,
                         "status": "editing",
-                    },
+                    }
                 ],
             },
             {
@@ -857,7 +832,7 @@ def test_replay_file_edit_absorbs_matching_write_tool_event() -> None:
                         "name": "write_file",
                         "arguments": {"path": "foo.txt", "content": "hello\n"},
                         "result": "ok",
-                    },
+                    }
                 ],
             },
         ]
@@ -878,7 +853,7 @@ def test_replay_file_edit_absorbs_matching_write_tool_event() -> None:
             "deleted": 0,
             "approximate": True,
             "status": "editing",
-        },
+        }
     ]
 
 
@@ -896,7 +871,7 @@ def test_replay_keeps_every_file_from_one_apply_patch_call() -> None:
                         "call_id": "call-patch",
                         "name": "apply_patch",
                         "arguments": {"edits": []},
-                    },
+                    }
                 ],
             },
             {
@@ -980,7 +955,7 @@ def test_replay_tool_events_dedupes_finish_after_start() -> None:
                         "call_id": "call-exec",
                         "name": "exec",
                         "arguments": {"cmd": "ls"},
-                    },
+                    }
                 ],
             },
             {
@@ -1009,10 +984,7 @@ def test_replay_tool_events_dedupes_finish_after_start() -> None:
     )
 
     assert len(msgs) == 1
-    assert msgs[0]["traces"] == [
-        'exec({"cmd": "ls"})',
-        'read_file({"path": "notes.md"})',
-    ]
+    assert msgs[0]["traces"] == ['exec({"cmd": "ls"})', 'read_file({"path": "notes.md"})']
     assert msgs[0]["toolEvents"][0]["phase"] == "end"
     assert msgs[0]["toolEvents"][0]["call_id"] == "call-exec"
 
@@ -1032,7 +1004,7 @@ def test_replay_tool_events_keeps_phase_update_when_trace_is_deduped() -> None:
                         "call_id": "call-cli",
                         "name": "run_cli_app",
                         "arguments": args,
-                    },
+                    }
                 ],
             },
             {
@@ -1047,7 +1019,7 @@ def test_replay_tool_events_keeps_phase_update_when_trace_is_deduped() -> None:
                         "name": "run_cli_app",
                         "arguments": args,
                         "error": "Error: CLI app 'github' not found",
-                    },
+                    }
                 ],
             },
         ]
@@ -1055,14 +1027,16 @@ def test_replay_tool_events_keeps_phase_update_when_trace_is_deduped() -> None:
 
     assert len(msgs) == 1
     assert msgs[0]["traces"] == [
-        'run_cli_app({"name": "github", "args": ["repo", "view"], "json": "true"})',
+        'run_cli_app({"name": "github", "args": ["repo", "view"], "json": "true"})'
     ]
     assert msgs[0]["toolEvents"][0]["phase"] == "error"
     assert msgs[0]["toolEvents"][0]["error"] == "Error: CLI app 'github' not found"
 
 
-def test_replay_file_edit_progress_merges_after_interleaved_activity(tmp_path, monkeypatch) -> None:
-    monkeypatch.setattr("nanobot.config.paths.get_data_dir", lambda: tmp_path)
+def test_replay_file_edit_progress_merges_after_interleaved_activity(
+    tmp_path, monkeypatch
+) -> None:
+    monkeypatch.setattr("vtx_claw.config.paths.get_data_dir", lambda: tmp_path)
     key = "websocket:t-file-progress"
     for ev in (
         {"event": "user", "chat_id": "t-file-progress", "text": "edit"},
@@ -1086,7 +1060,7 @@ def test_replay_file_edit_progress_merges_after_interleaved_activity(tmp_path, m
                     "deleted": 0,
                     "approximate": True,
                     "status": "editing",
-                },
+                }
             ],
         },
         {
@@ -1109,7 +1083,7 @@ def test_replay_file_edit_progress_merges_after_interleaved_activity(tmp_path, m
                     "deleted": 0,
                     "approximate": False,
                     "status": "done",
-                },
+                }
             ],
         },
     ):
@@ -1130,12 +1104,12 @@ def test_replay_file_edit_progress_merges_after_interleaved_activity(tmp_path, m
             "deleted": 0,
             "approximate": False,
             "status": "done",
-        },
+        }
     ]
 
 
 def test_replay_file_edit_pending_placeholder_upgrades_to_path(tmp_path, monkeypatch) -> None:
-    monkeypatch.setattr("nanobot.config.paths.get_data_dir", lambda: tmp_path)
+    monkeypatch.setattr("vtx_claw.config.paths.get_data_dir", lambda: tmp_path)
     key = "websocket:t-file-pending"
     for ev in (
         {"event": "user", "chat_id": "t-file-pending", "text": "write"},
@@ -1154,7 +1128,7 @@ def test_replay_file_edit_pending_placeholder_upgrades_to_path(tmp_path, monkeyp
                     "approximate": True,
                     "status": "editing",
                     "pending": True,
-                },
+                }
             ],
         },
         {
@@ -1171,7 +1145,7 @@ def test_replay_file_edit_pending_placeholder_upgrades_to_path(tmp_path, monkeyp
                     "deleted": 0,
                     "approximate": True,
                     "status": "editing",
-                },
+                }
             ],
         },
     ):
@@ -1192,12 +1166,12 @@ def test_replay_file_edit_pending_placeholder_upgrades_to_path(tmp_path, monkeyp
             "deleted": 0,
             "approximate": True,
             "status": "editing",
-        },
+        }
     ]
 
 
 def test_replay_keeps_new_file_edit_after_reasoning_in_order(tmp_path, monkeypatch) -> None:
-    monkeypatch.setattr("nanobot.config.paths.get_data_dir", lambda: tmp_path)
+    monkeypatch.setattr("vtx_claw.config.paths.get_data_dir", lambda: tmp_path)
     key = "websocket:t-file-order"
     for ev in (
         {"event": "user", "chat_id": "t-file-order", "text": "edit"},
@@ -1215,7 +1189,7 @@ def test_replay_keeps_new_file_edit_after_reasoning_in_order(tmp_path, monkeypat
                     "deleted": 0,
                     "approximate": True,
                     "status": "editing",
-                },
+                }
             ],
         },
         {"event": "reasoning_delta", "chat_id": "t-file-order", "text": "Check next."},
@@ -1234,7 +1208,7 @@ def test_replay_keeps_new_file_edit_after_reasoning_in_order(tmp_path, monkeypat
                     "deleted": 0,
                     "approximate": True,
                     "status": "editing",
-                },
+                }
             ],
         },
     ):
@@ -1245,18 +1219,14 @@ def test_replay_keeps_new_file_edit_after_reasoning_in_order(tmp_path, monkeypat
     assert [
         msg.get("fileEdits", [{}])[0].get("path") if msg.get("fileEdits") else msg.get("reasoning")
         for msg in msgs[1:]
-    ] == [
-        "one.txt",
-        "Check next.",
-        "two.txt",
-    ]
+    ] == ["one.txt", "Check next.", "two.txt"]
     file_edit_segments = [msg.get("activitySegmentId") for msg in msgs if msg.get("fileEdits")]
     assert len(file_edit_segments) == 2
     assert file_edit_segments[0] != file_edit_segments[1]
 
 
 def test_build_response_schema(monkeypatch, tmp_path) -> None:
-    monkeypatch.setattr("nanobot.config.paths.get_data_dir", lambda: tmp_path)
+    monkeypatch.setattr("vtx_claw.config.paths.get_data_dir", lambda: tmp_path)
     key = "websocket:t3"
     append_transcript_object(key, {"event": "user", "chat_id": "t3", "text": "x"})
     out = build_webui_thread_response(key, augment_user_media=None)

@@ -1,7 +1,7 @@
 import json
 
-from nanobot.utils import helpers
-from nanobot.utils.helpers import estimate_prompt_tokens, estimate_prompt_tokens_chain
+from vtx_claw.utils import helpers
+from vtx_claw.utils.helpers import estimate_prompt_tokens, estimate_prompt_tokens_chain
 
 
 class _NoCounterProvider:
@@ -15,9 +15,7 @@ class _BrokenCounterProvider:
 
 def test_estimate_prompt_tokens_chain_falls_back_without_provider_counter() -> None:
     tokens, source = estimate_prompt_tokens_chain(
-        _NoCounterProvider(),
-        "test-model",
-        [{"role": "user", "content": "hello"}],
+        _NoCounterProvider(), "test-model", [{"role": "user", "content": "hello"}]
     )
 
     assert tokens > 0
@@ -26,9 +24,7 @@ def test_estimate_prompt_tokens_chain_falls_back_without_provider_counter() -> N
 
 def test_estimate_prompt_tokens_chain_falls_back_when_provider_counter_fails() -> None:
     tokens, source = estimate_prompt_tokens_chain(
-        _BrokenCounterProvider(),
-        "test-model",
-        [{"role": "user", "content": "hello"}],
+        _BrokenCounterProvider(), "test-model", [{"role": "user", "content": "hello"}]
     )
 
     assert tokens > 0

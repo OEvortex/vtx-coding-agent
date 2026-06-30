@@ -1,7 +1,6 @@
 """Tests for FeishuChannel tool hint formatting."""
 
 import json
-from types import SimpleNamespace
 from unittest.mock import MagicMock, patch
 
 import pytest
@@ -9,7 +8,7 @@ from pytest import mark
 
 # Check optional Feishu dependencies before running tests
 try:
-    from nanobot.channels import feishu
+    from vtx_claw.channels import feishu
 
     FEISHU_AVAILABLE = getattr(feishu, "FEISHU_AVAILABLE", False)
 except ImportError:
@@ -18,8 +17,8 @@ except ImportError:
 if not FEISHU_AVAILABLE:
     pytest.skip("Feishu dependencies not installed (lark-oapi)", allow_module_level=True)
 
-from nanobot.bus.events import OutboundMessage
-from nanobot.channels.feishu import FeishuChannel
+from vtx_claw.bus.events import OutboundMessage
+from vtx_claw.channels.feishu import FeishuChannel
 
 
 @pytest.fixture

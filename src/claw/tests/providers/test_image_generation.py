@@ -7,7 +7,7 @@ from typing import Any
 import httpx
 import pytest
 
-from nanobot.providers.image_generation import (
+from vtx_claw.providers.image_generation import (
     AIHubMixImageGenerationClient,
     CodexImageGenerationClient,
     CustomImageGenerationClient,
@@ -180,10 +180,7 @@ async def test_ollama_image_generation_payload_and_response() -> None:
     )
 
     response = await client.generate(
-        prompt="a sunset",
-        model="x/z-image-turbo",
-        aspect_ratio="16:9",
-        image_size="1K",
+        prompt="a sunset", model="x/z-image-turbo", aspect_ratio="16:9", image_size="1K"
     )
 
     assert response.images == [PNG_DATA_URL]
@@ -209,9 +206,7 @@ async def test_ollama_image_generation_rejects_reference_images() -> None:
 
     with pytest.raises(ImageGenerationError, match="reference images"):
         await client.generate(
-            prompt="edit this",
-            model="x/z-image-turbo",
-            reference_images=["ref.png"],
+            prompt="edit this", model="x/z-image-turbo", reference_images=["ref.png"]
         )
 
 
@@ -222,30 +217,22 @@ async def test_aihubmix_image_generation_payload_and_response() -> None:
     client = AIHubMixImageGenerationClient(
         api_key="sk-ahm-test",
         api_base="https://aihubmix.com/v1/",
-        extra_headers={"APP-Code": "nanobot"},
+        extra_headers={"APP-Code": "vtx_claw"},
         extra_body={"quality": "low"},
         client=fake,  # type: ignore[arg-type]
     )
 
     response = await client.generate(
-        prompt="draw a logo",
-        model="gpt-image-2-free",
-        aspect_ratio="16:9",
-        image_size="1K",
+        prompt="draw a logo", model="gpt-image-2-free", aspect_ratio="16:9", image_size="1K"
     )
 
     assert response.images == [PNG_DATA_URL]
     call = fake.calls[0]
     assert call["url"] == "https://aihubmix.com/v1/models/openai/gpt-image-2-free/predictions"
     assert call["headers"]["Authorization"] == "Bearer sk-ahm-test"
-    assert call["headers"]["APP-Code"] == "nanobot"
+    assert call["headers"]["APP-Code"] == "vtx_claw"
     assert call["json"] == {
-        "input": {
-            "prompt": "draw a logo",
-            "n": 1,
-            "size": "1536x1024",
-            "quality": "low",
-        }
+        "input": {"prompt": "draw a logo", "n": 1, "size": "1536x1024", "quality": "low"}
     }
 
 
@@ -320,9 +307,7 @@ async def test_gemini_imagen_payload_and_response() -> None:
     )
 
     response = await client.generate(
-        prompt="a sunset",
-        model="imagen-4.0-generate-001",
-        aspect_ratio="16:9",
+        prompt="a sunset", model="imagen-4.0-generate-001", aspect_ratio="16:9"
     )
 
     assert response.images == [PNG_DATA_URL]
@@ -375,8 +360,7 @@ async def test_gemini_flash_payload_and_response() -> None:
     )
 
     response = await client.generate(
-        prompt="draw a cat",
-        model="gemini-2.0-flash-preview-image-generation",
+        prompt="draw a cat", model="gemini-2.0-flash-preview-image-generation"
     )
 
     assert response.images == [PNG_DATA_URL]
@@ -504,9 +488,7 @@ async def test_stepfun_payload_and_response_with_aspect_ratio() -> None:
     )
 
     response = await client.generate(
-        prompt="a cat on the moon",
-        model="step-image-edit-2",
-        aspect_ratio="16:9",
+        prompt="a cat on the moon", model="step-image-edit-2", aspect_ratio="16:9"
     )
 
     assert response.images == [PNG_DATA_URL]
@@ -546,11 +528,7 @@ async def test_stepfun_uses_explicit_image_size() -> None:
         client=fake,  # type: ignore[arg-type]
     )
 
-    await client.generate(
-        prompt="a bird",
-        model="step-image-edit-2",
-        image_size="1024x1024",
-    )
+    await client.generate(prompt="a bird", model="step-image-edit-2", image_size="1024x1024")
 
     body = fake.calls[0]["json"]
     assert body["size"] == "1024x1024"
@@ -569,9 +547,7 @@ async def test_stepfun_style_reference_on_1x_model(tmp_path: Path) -> None:
     )
 
     await client.generate(
-        prompt="in this style",
-        model="step-1x-medium",
-        reference_images=[str(ref)],
+        prompt="in this style", model="step-1x-medium", reference_images=[str(ref)]
     )
 
     body = fake.calls[0]["json"]
@@ -590,9 +566,7 @@ async def test_stepfun_no_style_reference_on_non_1x_model() -> None:
     )
 
     await client.generate(
-        prompt="a flower",
-        model="step-image-edit-2",
-        reference_images=["/tmp/ref.png"],
+        prompt="a flower", model="step-image-edit-2", reference_images=["/tmp/ref.png"]
     )
 
     body = fake.calls[0]["json"]
@@ -632,9 +606,7 @@ async def test_openai_payload_and_response() -> None:
     )
 
     response = await client.generate(
-        prompt="a cat on the moon",
-        model="dall-e-3",
-        aspect_ratio="16:9",
+        prompt="a cat on the moon", model="dall-e-3", aspect_ratio="16:9"
     )
 
     assert response.images == [PNG_DATA_URL]
@@ -655,11 +627,7 @@ async def test_openai_extra_body_null_drops_default_params_only() -> None:
     fake = FakeClient(FakeResponse({"data": [{"b64_json": RAW_B64}]}))
     client = OpenAIImageGenerationClient(
         api_key="sk-openai-test",
-        extra_body={
-            "response_format": None,
-            "seed": 0,
-            "safety_checker": False,
-        },
+        extra_body={"response_format": None, "seed": 0, "safety_checker": False},
         client=fake,  # type: ignore[arg-type]
     )
 
@@ -703,16 +671,7 @@ async def test_openai_url_download_fallback() -> None:
 
 @pytest.mark.asyncio
 async def test_openai_multiple_images() -> None:
-    fake = FakeClient(
-        FakeResponse(
-            {
-                "data": [
-                    {"b64_json": RAW_B64},
-                    {"b64_json": RAW_B64},
-                ]
-            }
-        )
-    )
+    fake = FakeClient(FakeResponse({"data": [{"b64_json": RAW_B64}, {"b64_json": RAW_B64}]}))
     client = OpenAIImageGenerationClient(
         api_key="sk-openai-test",
         client=fake,  # type: ignore[arg-type]
@@ -830,8 +789,7 @@ async def test_openai_reference_images_use_edits_endpoint(tmp_path: Path) -> Non
 
 @pytest.mark.asyncio
 async def test_openai_reference_images_expand_user_paths(
-    tmp_path: Path,
-    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     ref = tmp_path / "ref.png"
     ref.write_bytes(PNG_BYTES)
@@ -844,9 +802,7 @@ async def test_openai_reference_images_expand_user_paths(
     )
 
     await client.generate(
-        prompt="use a home-relative reference",
-        model="gpt-image-1",
-        reference_images=["~/ref.png"],
+        prompt="use a home-relative reference", model="gpt-image-1", reference_images=["~/ref.png"]
     )
 
     call = fake.calls[0]
@@ -858,9 +814,7 @@ async def test_openai_reference_images_expand_user_paths(
 
 
 @pytest.mark.asyncio
-async def test_openai_reference_images_send_multiple_multipart_files(
-    tmp_path: Path,
-) -> None:
+async def test_openai_reference_images_send_multiple_multipart_files(tmp_path: Path) -> None:
     first = tmp_path / "first.png"
     second = tmp_path / "second.png"
     first.write_bytes(PNG_BYTES)
@@ -925,11 +879,7 @@ async def test_openai_dalle_reference_images_raise_clear_error(tmp_path: Path) -
     client = OpenAIImageGenerationClient(api_key="sk-openai-test")
 
     with pytest.raises(ImageGenerationError, match="does not support reference images"):
-        await client.generate(
-            prompt="edit this",
-            model="dall-e-3",
-            reference_images=[str(ref)],
-        )
+        await client.generate(prompt="edit this", model="dall-e-3", reference_images=[str(ref)])
 
 
 @pytest.mark.asyncio
@@ -955,10 +905,7 @@ async def test_openai_ignores_explicit_size_unsupported_by_model_family() -> Non
     )
 
     await client.generate(
-        prompt="draw",
-        model="dall-e-3",
-        aspect_ratio="16:9",
-        image_size="1536x1024",
+        prompt="draw", model="dall-e-3", aspect_ratio="16:9", image_size="1536x1024"
     )
 
     body = fake.calls[0]["json"]
@@ -974,10 +921,7 @@ async def test_openai_uses_explicit_image_size() -> None:
     )
 
     await client.generate(
-        prompt="draw",
-        model="dall-e-3",
-        aspect_ratio="16:9",
-        image_size="1024x1024",
+        prompt="draw", model="dall-e-3", aspect_ratio="16:9", image_size="1024x1024"
     )
 
     body = fake.calls[0]["json"]
@@ -1008,9 +952,7 @@ async def test_custom_generate_success() -> None:
     )
 
     response = await client.generate(
-        prompt="a cat on the moon",
-        model="custom-image-model",
-        aspect_ratio="16:9",
+        prompt="a cat on the moon", model="custom-image-model", aspect_ratio="16:9"
     )
 
     assert isinstance(response, GeneratedImageResponse)
@@ -1037,11 +979,7 @@ async def test_custom_generate_preserves_provider_size_hint() -> None:
         client=fake,  # type: ignore[arg-type]
     )
 
-    await client.generate(
-        prompt="a cat on the moon",
-        model="custom-image-model",
-        image_size="2K",
-    )
+    await client.generate(prompt="a cat on the moon", model="custom-image-model", image_size="2K")
 
     assert fake.calls[0]["json"]["size"] == "2K"
 
@@ -1055,11 +993,7 @@ async def test_custom_generate_maps_one_k_to_openai_dimension() -> None:
         client=fake,  # type: ignore[arg-type]
     )
 
-    await client.generate(
-        prompt="a cat on the moon",
-        model="custom-image-model",
-        image_size="1K",
-    )
+    await client.generate(prompt="a cat on the moon", model="custom-image-model", image_size="1K")
 
     assert fake.calls[0]["json"]["size"] == "1024x1024"
 
@@ -1076,9 +1010,7 @@ async def test_custom_generate_extra_body_can_override_defaults() -> None:
     )
 
     response = await client.generate(
-        prompt="a cat on the moon",
-        model="custom-image-model",
-        image_size="1K",
+        prompt="a cat on the moon", model="custom-image-model", image_size="1K"
     )
 
     expected_data_url = f"data:image/png;base64,{base64.b64encode(PNG_BYTES).decode('ascii')}"
@@ -1164,10 +1096,7 @@ async def test_codex_payload_and_response(monkeypatch) -> None:
         client=fake,  # type: ignore[arg-type]
     )
 
-    response = await client.generate(
-        prompt="draw a cat",
-        model="gpt-5.4",
-    )
+    response = await client.generate(prompt="draw a cat", model="gpt-5.4")
 
     assert response.images == [PNG_DATA_URL]
     assert response.content == ""
@@ -1421,10 +1350,7 @@ async def test_zhipu_image_generation_payload_and_response() -> None:
     )
 
     response = await client.generate(
-        prompt="a sunset over the ocean",
-        model="glm-image",
-        aspect_ratio="16:9",
-        image_size="2K",
+        prompt="a sunset over the ocean", model="glm-image", aspect_ratio="16:9", image_size="2K"
     )
 
     assert response.images[0].startswith("data:image/png;base64,")
@@ -1448,11 +1374,7 @@ async def test_zhipu_image_generation_with_explicit_size() -> None:
         client=fake,  # type: ignore[arg-type]
     )
 
-    await client.generate(
-        prompt="a cat",
-        model="cogview-4",
-        image_size="1024x1024",
-    )
+    await client.generate(prompt="a cat", model="cogview-4", image_size="1024x1024")
 
     body = fake.calls[0]["json"]
     assert body["size"] == "1024x1024"
@@ -1495,8 +1417,4 @@ async def test_zhipu_image_generation_rejects_reference_images() -> None:
     client = ZhipuImageGenerationClient(api_key="sk-zhipu-test")
 
     with pytest.raises(ImageGenerationError, match="reference images"):
-        await client.generate(
-            prompt="edit this",
-            model="glm-image",
-            reference_images=["ref.png"],
-        )
+        await client.generate(prompt="edit this", model="glm-image", reference_images=["ref.png"])

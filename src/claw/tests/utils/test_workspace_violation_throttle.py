@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from nanobot.utils.runtime import (
+from vtx_claw.utils.runtime import (
     repeated_workspace_violation_error,
     workspace_violation_signature,
 )
@@ -23,8 +23,7 @@ def test_signature_for_filesystem_tools_uses_path_argument():
 
 def test_signature_for_exec_extracts_first_absolute_path_in_command():
     sig = workspace_violation_signature(
-        "exec",
-        {"command": "cat /Users/x/Downloads/01.md && echo done"},
+        "exec", {"command": "cat /Users/x/Downloads/01.md && echo done"}
     )
     assert sig is not None
     assert "/users/x/downloads/01.md" in sig
@@ -39,10 +38,7 @@ def test_signature_collides_across_filesystem_and_exec_for_same_target():
 
 
 def test_signature_falls_back_to_working_dir_when_no_absolute_in_command():
-    sig = workspace_violation_signature(
-        "exec",
-        {"command": "ls -la", "working_dir": "/etc"},
-    )
+    sig = workspace_violation_signature("exec", {"command": "ls -la", "working_dir": "/etc"})
     assert sig is not None
     assert "/etc" in sig
 
@@ -78,22 +74,12 @@ def test_repeated_workspace_violation_independent_per_target():
     """Different outside paths must each get their own retry budget."""
     counts: dict[str, int] = {}
 
-    repeated_workspace_violation_error(
-        "read_file",
-        {"path": "/Users/x/Downloads/01.md"},
-        counts,
-    )
-    repeated_workspace_violation_error(
-        "read_file",
-        {"path": "/Users/x/Downloads/01.md"},
-        counts,
-    )
+    repeated_workspace_violation_error("read_file", {"path": "/Users/x/Downloads/01.md"}, counts)
+    repeated_workspace_violation_error("read_file", {"path": "/Users/x/Downloads/01.md"}, counts)
     # Different target, fresh budget.
     assert (
         repeated_workspace_violation_error(
-            "read_file",
-            {"path": "/Users/x/Documents/notes.md"},
-            counts,
+            "read_file", {"path": "/Users/x/Documents/notes.md"}, counts
         )
         is None
     )
@@ -104,20 +90,10 @@ def test_repeated_workspace_violation_collapses_tool_switching():
     against the same path; the throttle must escalate on the third attempt."""
     counts: dict[str, int] = {}
 
-    repeated_workspace_violation_error(
-        "read_file",
-        {"path": "/Users/x/Downloads/01.md"},
-        counts,
-    )
-    repeated_workspace_violation_error(
-        "exec",
-        {"command": "cat /Users/x/Downloads/01.md"},
-        counts,
-    )
+    repeated_workspace_violation_error("read_file", {"path": "/Users/x/Downloads/01.md"}, counts)
+    repeated_workspace_violation_error("exec", {"command": "cat /Users/x/Downloads/01.md"}, counts)
     third = repeated_workspace_violation_error(
-        "exec",
-        {"command": "python3 -c \"open('/Users/x/Downloads/01.md').read()\""},
-        counts,
+        "exec", {"command": "python3 -c \"open('/Users/x/Downloads/01.md').read()\""}, counts
     )
     assert third is not None
     assert "refusing repeated workspace-bypass" in third

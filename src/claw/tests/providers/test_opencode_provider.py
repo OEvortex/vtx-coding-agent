@@ -1,8 +1,8 @@
 """Tests for the OpenCode Zen and OpenCode Go provider registrations."""
 
-from nanobot.config.schema import Config, ProvidersConfig
-from nanobot.providers.openai_compat_provider import OpenAICompatProvider
-from nanobot.providers.registry import PROVIDERS, find_by_name
+from vtx_claw.config.schema import Config, ProvidersConfig
+from vtx_claw.providers.openai_compat_provider import OpenAICompatProvider
+from vtx_claw.providers.registry import PROVIDERS, find_by_name
 
 
 def test_opencode_config_fields_exist() -> None:
@@ -70,9 +70,7 @@ def test_opencode_forced_providers_use_default_api_base() -> None:
 
 def test_opencode_prefixes_are_stripped_before_request() -> None:
     zen_provider = OpenAICompatProvider(
-        api_key=None,
-        default_model="opencode/o3",
-        spec=find_by_name("opencode_zen"),
+        api_key=None, default_model="opencode/o3", spec=find_by_name("opencode_zen")
     )
     zen_kwargs = zen_provider._build_kwargs(
         messages=[{"role": "user", "content": "hi"}],
@@ -86,9 +84,7 @@ def test_opencode_prefixes_are_stripped_before_request() -> None:
     assert zen_kwargs["model"] == "o3"
 
     go_provider = OpenAICompatProvider(
-        api_key=None,
-        default_model="opencode-go/o3",
-        spec=find_by_name("opencode_go"),
+        api_key=None, default_model="opencode-go/o3", spec=find_by_name("opencode_go")
     )
     go_kwargs = go_provider._build_kwargs(
         messages=[{"role": "user", "content": "hi"}],

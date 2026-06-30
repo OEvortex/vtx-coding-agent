@@ -9,10 +9,10 @@ pytest.importorskip("nh3")
 pytest.importorskip("mistune")
 from nio import RoomSendResponse, SyncError
 
-import nanobot.channels.matrix as matrix_module
-from nanobot.bus.events import OutboundMessage
-from nanobot.bus.queue import MessageBus
-from nanobot.channels.matrix import (
+import vtx_claw.channels.matrix as matrix_module
+from vtx_claw.bus.events import OutboundMessage
+from vtx_claw.bus.queue import MessageBus
+from vtx_claw.channels.matrix import (
     MATRIX_HTML_FORMAT,
     TYPING_NOTICE_TIMEOUT_MS,
     MatrixChannel,
@@ -76,7 +76,9 @@ class _FakeAsyncClient:
         self.raise_on_send = False
         self.raise_on_typing = False
         self.raise_on_upload = False
-        self.room_send_response: RoomSendResponse | None = RoomSendResponse(event_id="", room_id="")
+        self.room_send_response: RoomSendResponse | None = RoomSendResponse(
+            event_id="", room_id=""
+        )
 
     def add_event_callback(self, callback, event_type) -> None:
         self.callbacks.append((callback, event_type))
@@ -136,10 +138,7 @@ class _FakeAsyncClient:
         return self.room_send_response
 
     async def room_typing(
-        self,
-        room_id: str,
-        typing_state: bool = True,
-        timeout: int = 30_000,
+        self, room_id: str, typing_state: bool = True, timeout: int = 30_000
     ) -> None:
         self.typing_calls.append((room_id, typing_state, timeout))
         if self.raise_on_typing:
@@ -229,23 +228,13 @@ class _FakeKeyVerificationStart:
 
 
 class _FakeKeyVerificationKey:
-    def __init__(
-        self,
-        *,
-        sender: str = "@alice:matrix.org",
-        transaction_id: str = "tx1",
-    ) -> None:
+    def __init__(self, *, sender: str = "@alice:matrix.org", transaction_id: str = "tx1") -> None:
         self.sender = sender
         self.transaction_id = transaction_id
 
 
 class _FakeKeyVerificationMac:
-    def __init__(
-        self,
-        *,
-        sender: str = "@alice:matrix.org",
-        transaction_id: str = "tx1",
-    ) -> None:
+    def __init__(self, *, sender: str = "@alice:matrix.org", transaction_id: str = "tx1") -> None:
         self.sender = sender
         self.transaction_id = transaction_id
 
@@ -280,13 +269,12 @@ async def test_start_skips_load_store_when_device_id_missing(monkeypatch, tmp_pa
         coro.close()
         return _DummyTask()
 
-    monkeypatch.setattr("nanobot.channels.matrix.get_data_dir", lambda: tmp_path)
+    monkeypatch.setattr("vtx_claw.channels.matrix.get_data_dir", lambda: tmp_path)
     monkeypatch.setattr(
-        "nanobot.channels.matrix.AsyncClientConfig",
-        lambda **kwargs: SimpleNamespace(**kwargs),
+        "vtx_claw.channels.matrix.AsyncClientConfig", lambda **kwargs: SimpleNamespace(**kwargs)
     )
-    monkeypatch.setattr("nanobot.channels.matrix.AsyncClient", _fake_client)
-    monkeypatch.setattr("nanobot.channels.matrix.asyncio.create_task", _fake_create_task)
+    monkeypatch.setattr("vtx_claw.channels.matrix.AsyncClient", _fake_client)
+    monkeypatch.setattr("vtx_claw.channels.matrix.asyncio.create_task", _fake_create_task)
 
     channel = MatrixChannel(_make_config(device_id=""), MessageBus())
     await channel.start()
@@ -327,10 +315,7 @@ def test_register_to_device_callbacks_when_sas_verification_enabled() -> None:
 
 
 def test_register_to_device_callbacks_skips_when_e2ee_disabled() -> None:
-    channel = MatrixChannel(
-        _make_config(e2ee_enabled=False, sas_verification=True),
-        MessageBus(),
-    )
+    channel = MatrixChannel(_make_config(e2ee_enabled=False, sas_verification=True), MessageBus())
     client = _FakeAsyncClient("", "", "", None)
     channel.client = client
 
@@ -343,8 +328,7 @@ def test_register_to_device_callbacks_skips_when_e2ee_disabled() -> None:
 async def test_sas_verification_start_accepts_allowed_sender(monkeypatch) -> None:
     _patch_key_verification_events(monkeypatch)
     channel = MatrixChannel(
-        _make_config(allow_from=["@alice:matrix.org"], sas_verification=True),
-        MessageBus(),
+        _make_config(allow_from=["@alice:matrix.org"], sas_verification=True), MessageBus()
     )
     client = _FakeAsyncClient("", "", "", None)
     sas = _FakeSas()
@@ -362,8 +346,7 @@ async def test_sas_verification_start_accepts_allowed_sender(monkeypatch) -> Non
 async def test_sas_verification_ignores_denied_sender(monkeypatch) -> None:
     _patch_key_verification_events(monkeypatch)
     channel = MatrixChannel(
-        _make_config(allow_from=["@alice:matrix.org"], sas_verification=True),
-        MessageBus(),
+        _make_config(allow_from=["@alice:matrix.org"], sas_verification=True), MessageBus()
     )
     client = _FakeAsyncClient("", "", "", None)
     client.key_verifications["tx1"] = _FakeSas()
@@ -381,8 +364,7 @@ async def test_sas_verification_ignores_denied_sender(monkeypatch) -> None:
 async def test_sas_verification_ignores_when_disabled(monkeypatch) -> None:
     _patch_key_verification_events(monkeypatch)
     channel = MatrixChannel(
-        _make_config(allow_from=["@alice:matrix.org"], sas_verification=False),
-        MessageBus(),
+        _make_config(allow_from=["@alice:matrix.org"], sas_verification=False), MessageBus()
     )
     client = _FakeAsyncClient("", "", "", None)
     client.key_verifications["tx1"] = _FakeSas()
@@ -398,8 +380,7 @@ async def test_sas_verification_ignores_when_disabled(monkeypatch) -> None:
 async def test_sas_verification_key_confirms_allowed_sender(monkeypatch) -> None:
     _patch_key_verification_events(monkeypatch)
     channel = MatrixChannel(
-        _make_config(allow_from=["@alice:matrix.org"], sas_verification=True),
-        MessageBus(),
+        _make_config(allow_from=["@alice:matrix.org"], sas_verification=True), MessageBus()
     )
     client = _FakeAsyncClient("", "", "", None)
     channel.client = client
@@ -415,8 +396,7 @@ async def test_sas_verification_key_confirms_allowed_sender(monkeypatch) -> None
 async def test_sas_verification_mac_does_not_resend_mac(monkeypatch) -> None:
     _patch_key_verification_events(monkeypatch)
     channel = MatrixChannel(
-        _make_config(allow_from=["@alice:matrix.org"], sas_verification=True),
-        MessageBus(),
+        _make_config(allow_from=["@alice:matrix.org"], sas_verification=True), MessageBus()
     )
     client = _FakeAsyncClient("", "", "", None)
     sas = _FakeSas(verified=True)
@@ -446,13 +426,12 @@ async def test_start_disables_e2ee_when_configured(monkeypatch, tmp_path) -> Non
         coro.close()
         return _DummyTask()
 
-    monkeypatch.setattr("nanobot.channels.matrix.get_data_dir", lambda: tmp_path)
+    monkeypatch.setattr("vtx_claw.channels.matrix.get_data_dir", lambda: tmp_path)
     monkeypatch.setattr(
-        "nanobot.channels.matrix.AsyncClientConfig",
-        lambda **kwargs: SimpleNamespace(**kwargs),
+        "vtx_claw.channels.matrix.AsyncClientConfig", lambda **kwargs: SimpleNamespace(**kwargs)
     )
-    monkeypatch.setattr("nanobot.channels.matrix.AsyncClient", _fake_client)
-    monkeypatch.setattr("nanobot.channels.matrix.asyncio.create_task", _fake_create_task)
+    monkeypatch.setattr("vtx_claw.channels.matrix.AsyncClient", _fake_client)
+    monkeypatch.setattr("vtx_claw.channels.matrix.asyncio.create_task", _fake_create_task)
 
     channel = MatrixChannel(_make_config(device_id="", e2ee_enabled=False), MessageBus())
     await channel.start()
@@ -596,9 +575,7 @@ async def test_on_message_sets_typing_for_allowed_sender() -> None:
     await channel._on_message(room, event)
 
     assert handled == ["@alice:matrix.org"]
-    assert client.typing_calls == [
-        ("!room:matrix.org", True, TYPING_NOTICE_TIMEOUT_MS),
-    ]
+    assert client.typing_calls == [("!room:matrix.org", True, TYPING_NOTICE_TIMEOUT_MS)]
 
 
 @pytest.mark.asyncio
@@ -659,9 +636,7 @@ async def test_on_message_skips_pre_startup_event() -> None:
     await channel._on_message(room, fresh_event)
 
     assert handled == ["@alice:matrix.org"]
-    assert client.typing_calls == [
-        ("!room:matrix.org", True, TYPING_NOTICE_TIMEOUT_MS),
-    ]
+    assert client.typing_calls == [("!room:matrix.org", True, TYPING_NOTICE_TIMEOUT_MS)]
 
 
 @pytest.mark.asyncio
@@ -804,9 +779,7 @@ async def test_on_message_allowlist_policy_requires_room_id() -> None:
     await channel._on_message(denied_room, event)
 
     allowed_room = SimpleNamespace(
-        room_id="!allowed:matrix.org",
-        display_name="Allowed",
-        member_count=3,
+        room_id="!allowed:matrix.org", display_name="Allowed", member_count=3
     )
     await channel._on_message(allowed_room, event)
 
@@ -863,14 +836,7 @@ async def test_on_message_sets_thread_metadata_when_threaded_event() -> None:
         sender="@alice:matrix.org",
         body="Hello",
         event_id="$reply1",
-        source={
-            "content": {
-                "m.relates_to": {
-                    "rel_type": "m.thread",
-                    "event_id": "$root1",
-                }
-            }
-        },
+        source={"content": {"m.relates_to": {"rel_type": "m.thread", "event_id": "$root1"}}},
     )
 
     await channel._on_message(room, event)
@@ -886,7 +852,7 @@ async def test_on_message_sets_thread_metadata_when_threaded_event() -> None:
 async def test_on_media_message_downloads_attachment_and_sets_metadata(
     monkeypatch, tmp_path
 ) -> None:
-    monkeypatch.setattr("nanobot.channels.matrix.get_data_dir", lambda: tmp_path)
+    monkeypatch.setattr("vtx_claw.channels.matrix.get_data_dir", lambda: tmp_path)
 
     channel = MatrixChannel(_make_config(), MessageBus())
     client = _FakeAsyncClient("", "", "", None)
@@ -913,12 +879,7 @@ async def test_on_media_message_downloads_attachment_and_sets_metadata(
         body="photo.png",
         url="mxc://example.org/mediaid",
         event_id="$event1",
-        source={
-            "content": {
-                "msgtype": "m.image",
-                "info": {"mimetype": "image/png", "size": 5},
-            }
-        },
+        source={"content": {"msgtype": "m.image", "info": {"mimetype": "image/png", "size": 5}}},
     )
 
     await channel._on_media_message(room, event)
@@ -946,7 +907,7 @@ async def test_on_media_message_downloads_attachment_and_sets_metadata(
 async def test_on_media_message_sets_thread_metadata_when_threaded_event(
     monkeypatch, tmp_path
 ) -> None:
-    monkeypatch.setattr("nanobot.channels.matrix.get_data_dir", lambda: tmp_path)
+    monkeypatch.setattr("vtx_claw.channels.matrix.get_data_dir", lambda: tmp_path)
 
     channel = MatrixChannel(_make_config(), MessageBus())
     client = _FakeAsyncClient("", "", "", None)
@@ -970,10 +931,7 @@ async def test_on_media_message_sets_thread_metadata_when_threaded_event(
             "content": {
                 "msgtype": "m.image",
                 "info": {"mimetype": "image/png", "size": 5},
-                "m.relates_to": {
-                    "rel_type": "m.thread",
-                    "event_id": "$root1",
-                },
+                "m.relates_to": {"rel_type": "m.thread", "event_id": "$root1"},
             }
         },
     )
@@ -989,7 +947,7 @@ async def test_on_media_message_sets_thread_metadata_when_threaded_event(
 
 @pytest.mark.asyncio
 async def test_on_media_message_respects_declared_size_limit(monkeypatch, tmp_path) -> None:
-    monkeypatch.setattr("nanobot.channels.matrix.get_data_dir", lambda: tmp_path)
+    monkeypatch.setattr("vtx_claw.channels.matrix.get_data_dir", lambda: tmp_path)
 
     channel = MatrixChannel(_make_config(max_media_bytes=3), MessageBus())
     client = _FakeAsyncClient("", "", "", None)
@@ -1024,7 +982,7 @@ async def test_on_media_message_respects_declared_size_limit(monkeypatch, tmp_pa
 async def test_on_media_message_uses_server_limit_when_smaller_than_local_limit(
     monkeypatch, tmp_path
 ) -> None:
-    monkeypatch.setattr("nanobot.channels.matrix.get_data_dir", lambda: tmp_path)
+    monkeypatch.setattr("vtx_claw.channels.matrix.get_data_dir", lambda: tmp_path)
 
     channel = MatrixChannel(_make_config(max_media_bytes=10), MessageBus())
     client = _FakeAsyncClient("", "", "", None)
@@ -1058,7 +1016,7 @@ async def test_on_media_message_uses_server_limit_when_smaller_than_local_limit(
 
 @pytest.mark.asyncio
 async def test_on_media_message_handles_download_error(monkeypatch, tmp_path) -> None:
-    monkeypatch.setattr("nanobot.channels.matrix.get_data_dir", lambda: tmp_path)
+    monkeypatch.setattr("vtx_claw.channels.matrix.get_data_dir", lambda: tmp_path)
 
     channel = MatrixChannel(_make_config(), MessageBus())
     client = _FakeAsyncClient("", "", "", None)
@@ -1097,11 +1055,9 @@ async def test_on_media_message_handles_download_error(monkeypatch, tmp_path) ->
 
 @pytest.mark.asyncio
 async def test_on_media_message_decrypts_encrypted_media(monkeypatch, tmp_path) -> None:
-    monkeypatch.setattr("nanobot.channels.matrix.get_data_dir", lambda: tmp_path)
+    monkeypatch.setattr("vtx_claw.channels.matrix.get_data_dir", lambda: tmp_path)
     monkeypatch.setattr(
-        matrix_module,
-        "decrypt_attachment",
-        lambda ciphertext, key, sha256, iv: b"plain",
+        matrix_module, "decrypt_attachment", lambda ciphertext, key, sha256, iv: b"plain"
     )
 
     channel = MatrixChannel(_make_config(), MessageBus())
@@ -1147,7 +1103,7 @@ async def test_on_media_message_decrypts_encrypted_media(monkeypatch, tmp_path) 
 
 @pytest.mark.asyncio
 async def test_on_media_message_handles_decrypt_error(monkeypatch, tmp_path) -> None:
-    monkeypatch.setattr("nanobot.channels.matrix.get_data_dir", lambda: tmp_path)
+    monkeypatch.setattr("vtx_claw.channels.matrix.get_data_dir", lambda: tmp_path)
 
     def _raise(*args, **kwargs):
         raise matrix_module.EncryptionError("boom")
@@ -1246,16 +1202,10 @@ async def test_send_adds_thread_relates_to_for_thread_metadata() -> None:
     client = _FakeAsyncClient("", "", "", None)
     channel.client = client
 
-    metadata = {
-        "thread_root_event_id": "$root1",
-        "thread_reply_to_event_id": "$reply1",
-    }
+    metadata = {"thread_root_event_id": "$root1", "thread_reply_to_event_id": "$reply1"}
     await channel.send(
         OutboundMessage(
-            channel="matrix",
-            chat_id="!room:matrix.org",
-            content="Hi",
-            metadata=metadata,
+            channel="matrix", chat_id="!room:matrix.org", content="Hi", metadata=metadata
         )
     )
 
@@ -1280,10 +1230,7 @@ async def test_send_uses_encrypted_media_payload_in_encrypted_room(tmp_path) -> 
 
     await channel.send(
         OutboundMessage(
-            channel="matrix",
-            chat_id="!encrypted:matrix.org",
-            content="",
-            media=[str(file_path)],
+            channel="matrix", chat_id="!encrypted:matrix.org", content="", media=[str(file_path)]
         )
     )
 
@@ -1307,9 +1254,7 @@ async def test_send_does_not_parse_attachment_marker_without_media(tmp_path) -> 
     missing_path = tmp_path / "missing.txt"
     await channel.send(
         OutboundMessage(
-            channel="matrix",
-            chat_id="!room:matrix.org",
-            content=f"[attachment: {missing_path}]",
+            channel="matrix", chat_id="!room:matrix.org", content=f"[attachment: {missing_path}]"
         )
     )
 
@@ -1329,21 +1274,14 @@ async def test_send_passes_thread_relates_to_to_attachment_upload(monkeypatch) -
     captured: dict[str, object] = {}
 
     async def _fake_upload_and_send_attachment(
-        *,
-        room_id: str,
-        path: Path,
-        limit_bytes: int,
-        relates_to: dict[str, object] | None = None,
+        *, room_id: str, path: Path, limit_bytes: int, relates_to: dict[str, object] | None = None
     ) -> str | None:
         captured["relates_to"] = relates_to
         return None
 
     monkeypatch.setattr(channel, "_upload_and_send_attachment", _fake_upload_and_send_attachment)
 
-    metadata = {
-        "thread_root_event_id": "$root1",
-        "thread_reply_to_event_id": "$reply1",
-    }
+    metadata = {"thread_root_event_id": "$root1", "thread_reply_to_event_id": "$reply1"}
     await channel.send(
         OutboundMessage(
             channel="matrix",
@@ -1370,27 +1308,22 @@ async def test_send_workspace_restriction_blocks_external_attachment(tmp_path) -
     file_path.write_text("outside", encoding="utf-8")
 
     channel = MatrixChannel(
-        _make_config(),
-        MessageBus(),
-        restrict_to_workspace=True,
-        workspace=workspace,
+        _make_config(), MessageBus(), restrict_to_workspace=True, workspace=workspace
     )
     client = _FakeAsyncClient("", "", "", None)
     channel.client = client
 
     await channel.send(
         OutboundMessage(
-            channel="matrix",
-            chat_id="!room:matrix.org",
-            content="",
-            media=[str(file_path)],
+            channel="matrix", chat_id="!room:matrix.org", content="", media=[str(file_path)]
         )
     )
 
     assert client.upload_calls == []
     assert len(client.room_send_calls) == 1
     assert (
-        client.room_send_calls[0]["content"]["body"] == "[attachment: external.txt - upload failed]"
+        client.room_send_calls[0]["content"]["body"]
+        == "[attachment: external.txt - upload failed]"
     )
 
 
@@ -1433,10 +1366,7 @@ async def test_send_uses_server_upload_limit_when_smaller_than_local_limit(tmp_p
 
     await channel.send(
         OutboundMessage(
-            channel="matrix",
-            chat_id="!room:matrix.org",
-            content="",
-            media=[str(file_path)],
+            channel="matrix", chat_id="!room:matrix.org", content="", media=[str(file_path)]
         )
     )
 
@@ -1456,10 +1386,7 @@ async def test_send_blocks_all_outbound_media_when_limit_is_zero(tmp_path) -> No
 
     await channel.send(
         OutboundMessage(
-            channel="matrix",
-            chat_id="!room:matrix.org",
-            content="",
-            media=[str(file_path)],
+            channel="matrix", chat_id="!room:matrix.org", content="", media=[str(file_path)]
         )
     )
 
@@ -1530,10 +1457,7 @@ async def test_send_empty_content_does_not_call_room_send() -> None:
 
     await channel.send(
         OutboundMessage(
-            channel="matrix",
-            chat_id="!room:matrix.org",
-            content="",
-            metadata={"_progress": True},
+            channel="matrix", chat_id="!room:matrix.org", content="", metadata={"_progress": True}
         )
     )
 
@@ -1738,10 +1662,7 @@ def test_build_matrix_text_content_with_event_id_preserves_thread_relation() -> 
     }
     result = _build_matrix_text_content("Updated message", "event-1", relates_to)
 
-    assert result["m.relates_to"] == {
-        "rel_type": "m.replace",
-        "event_id": "event-1",
-    }
+    assert result["m.relates_to"] == {"rel_type": "m.replace", "event_id": "event-1"}
     assert result["m.new_content"]["m.relates_to"] == relates_to
 
 
@@ -1861,9 +1782,7 @@ async def test_send_delta_stream_end_replaces_existing_message() -> None:
     channel.client = client
 
     channel._stream_bufs["!room:matrix.org"] = matrix_module._StreamBuf(
-        text="Final text",
-        event_id="event-1",
-        last_edit=100.0,
+        text="Final text", event_id="event-1", last_edit=100.0
     )
 
     await channel.send_delta("!room:matrix.org", "", {"_stream_end": True})
@@ -1885,10 +1804,7 @@ async def test_send_delta_starts_threaded_stream_inside_thread() -> None:
     channel.client = client
     client.room_send_response.event_id = "event-1"
 
-    metadata = {
-        "thread_root_event_id": "$root1",
-        "thread_reply_to_event_id": "$reply1",
-    }
+    metadata = {"thread_root_event_id": "$root1", "thread_reply_to_event_id": "$reply1"}
     await channel.send_delta("!room:matrix.org", "Hello", metadata)
 
     assert client.room_send_calls[0]["content"]["m.relates_to"] == {
@@ -1910,10 +1826,7 @@ async def test_send_delta_threaded_edit_keeps_replace_and_thread_relation(monkey
     times.reverse()
     monkeypatch.setattr(channel, "monotonic_time", lambda: times and times.pop())
 
-    metadata = {
-        "thread_root_event_id": "$root1",
-        "thread_reply_to_event_id": "$reply1",
-    }
+    metadata = {"thread_root_event_id": "$root1", "thread_reply_to_event_id": "$reply1"}
     await channel.send_delta("!room:matrix.org", "Hello", metadata)
     await channel.send_delta("!room:matrix.org", " world", metadata)
     await channel.send_delta("!room:matrix.org", "", {"_stream_end": True, **metadata})
@@ -1921,20 +1834,14 @@ async def test_send_delta_threaded_edit_keeps_replace_and_thread_relation(monkey
     edit_content = client.room_send_calls[1]["content"]
     final_content = client.room_send_calls[2]["content"]
 
-    assert edit_content["m.relates_to"] == {
-        "rel_type": "m.replace",
-        "event_id": "event-1",
-    }
+    assert edit_content["m.relates_to"] == {"rel_type": "m.replace", "event_id": "event-1"}
     assert edit_content["m.new_content"]["m.relates_to"] == {
         "rel_type": "m.thread",
         "event_id": "$root1",
         "m.in_reply_to": {"event_id": "$reply1"},
         "is_falling_back": True,
     }
-    assert final_content["m.relates_to"] == {
-        "rel_type": "m.replace",
-        "event_id": "event-1",
-    }
+    assert final_content["m.relates_to"] == {"rel_type": "m.replace", "event_id": "event-1"}
     assert final_content["m.new_content"]["m.relates_to"] == {
         "rel_type": "m.thread",
         "event_id": "$root1",
@@ -1994,7 +1901,7 @@ async def test_fetch_media_rejects_missing_declared_size(monkeypatch, tmp_path) 
     channel = MatrixChannel(_make_config(max_media_bytes=8), MessageBus())
     client = _FakeAsyncClient("https://matrix.org", "", "", None)
     channel.client = client
-    monkeypatch.setattr("nanobot.channels.matrix.get_media_dir", lambda _name: tmp_path)
+    monkeypatch.setattr("vtx_claw.channels.matrix.get_media_dir", lambda _name: tmp_path)
 
     async def _download_should_not_run(*_args, **_kwargs):
         raise AssertionError("download should be rejected before fetching bytes")
@@ -2009,8 +1916,7 @@ async def test_fetch_media_rejects_missing_declared_size(monkeypatch, tmp_path) 
     )
 
     attachment, marker = await channel._fetch_media_attachment(
-        SimpleNamespace(room_id="!room:matrix.org"),
-        event,
+        SimpleNamespace(room_id="!room:matrix.org"), event
     )
 
     assert attachment is None
@@ -2022,7 +1928,7 @@ async def test_fetch_media_rejects_bool_declared_size(monkeypatch, tmp_path) -> 
     channel = MatrixChannel(_make_config(max_media_bytes=8), MessageBus())
     client = _FakeAsyncClient("https://matrix.org", "", "", None)
     channel.client = client
-    monkeypatch.setattr("nanobot.channels.matrix.get_media_dir", lambda _name: tmp_path)
+    monkeypatch.setattr("vtx_claw.channels.matrix.get_media_dir", lambda _name: tmp_path)
 
     async def _download_should_not_run(*_args, **_kwargs):
         raise AssertionError("bool size should be rejected before fetching bytes")
@@ -2037,8 +1943,7 @@ async def test_fetch_media_rejects_bool_declared_size(monkeypatch, tmp_path) -> 
     )
 
     attachment, marker = await channel._fetch_media_attachment(
-        SimpleNamespace(room_id="!room:matrix.org"),
-        event,
+        SimpleNamespace(room_id="!room:matrix.org"), event
     )
 
     assert attachment is None
@@ -2052,7 +1957,7 @@ async def test_fetch_media_rejects_declared_oversized_before_download(
     channel = MatrixChannel(_make_config(max_media_bytes=8), MessageBus())
     client = _FakeAsyncClient("https://matrix.org", "", "", None)
     channel.client = client
-    monkeypatch.setattr("nanobot.channels.matrix.get_media_dir", lambda _name: tmp_path)
+    monkeypatch.setattr("vtx_claw.channels.matrix.get_media_dir", lambda _name: tmp_path)
 
     async def _download_should_not_run(*_args, **_kwargs):
         raise AssertionError("download should be rejected before fetching bytes")
@@ -2067,8 +1972,7 @@ async def test_fetch_media_rejects_declared_oversized_before_download(
     )
 
     attachment, marker = await channel._fetch_media_attachment(
-        SimpleNamespace(room_id="!room:matrix.org"),
-        event,
+        SimpleNamespace(room_id="!room:matrix.org"), event
     )
 
     assert attachment is None
@@ -2080,7 +1984,7 @@ async def test_fetch_media_maps_streaming_cap_to_too_large(monkeypatch, tmp_path
     channel = MatrixChannel(_make_config(max_media_bytes=8), MessageBus())
     client = _FakeAsyncClient("https://matrix.org", "", "", None)
     channel.client = client
-    monkeypatch.setattr("nanobot.channels.matrix.get_media_dir", lambda _name: tmp_path)
+    monkeypatch.setattr("vtx_claw.channels.matrix.get_media_dir", lambda _name: tmp_path)
 
     async def _download_too_large(_mxc_url: str, _limit_bytes: int):
         raise matrix_module._MediaTooLargeError
@@ -2095,8 +1999,7 @@ async def test_fetch_media_maps_streaming_cap_to_too_large(monkeypatch, tmp_path
     )
 
     attachment, marker = await channel._fetch_media_attachment(
-        SimpleNamespace(room_id="!room:matrix.org"),
-        event,
+        SimpleNamespace(room_id="!room:matrix.org"), event
     )
 
     assert attachment is None

@@ -4,9 +4,9 @@ from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
-from nanobot.agent.runner import AgentRunner, AgentRunSpec
-from nanobot.config.schema import AgentDefaults
-from nanobot.providers.base import LLMResponse, ToolCallRequest
+from vtx_claw.agent.runner import AgentRunner, AgentRunSpec
+from vtx_claw.config.schema import AgentDefaults
+from vtx_claw.providers.base import LLMResponse, ToolCallRequest
 
 _MAX_TOOL_RESULT_CHARS = AgentDefaults().max_tool_result_chars
 
@@ -207,12 +207,7 @@ async def test_runner_streams_live_edit_file_activity_from_tool_argument_deltas(
                     ),
                 }
             )
-            await on_tool_call_delta(
-                {
-                    "index": 0,
-                    "arguments_delta": "new\\nkeep\\nextra\\n",
-                }
-            )
+            await on_tool_call_delta({"index": 0, "arguments_delta": "new\\nkeep\\nextra\\n"})
             await on_tool_call_delta({"index": 0, "arguments_delta": '"}'})
             return LLMResponse(
                 content=None,

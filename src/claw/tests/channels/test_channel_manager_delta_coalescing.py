@@ -1,15 +1,16 @@
 """Tests for ChannelManager delta coalescing to reduce streaming latency."""
 
 import asyncio
+import contextlib
 from unittest.mock import AsyncMock
 
 import pytest
 
-from nanobot.bus.events import OutboundMessage
-from nanobot.bus.queue import MessageBus
-from nanobot.channels.base import BaseChannel
-from nanobot.channels.manager import ChannelManager
-from nanobot.config.schema import Config
+from vtx_claw.bus.events import OutboundMessage
+from vtx_claw.bus.queue import MessageBus
+from vtx_claw.channels.base import BaseChannel
+from vtx_claw.channels.manager import ChannelManager
+from vtx_claw.config.schema import Config
 
 
 class MockChannel(BaseChannel):
@@ -65,10 +66,7 @@ class TestDeltaCoalescing:
     async def test_single_delta_not_coalesced(self, manager, bus):
         """A single delta should be sent as-is."""
         msg = OutboundMessage(
-            channel="mock",
-            chat_id="chat1",
-            content="Hello",
-            metadata={"_stream_delta": True},
+            channel="mock", chat_id="chat1", content="Hello", metadata={"_stream_delta": True}
         )
         await bus.publish_outbound(msg)
 
@@ -84,7 +82,7 @@ class TestDeltaCoalescing:
                 channel = manager.channels.get(m.channel)
                 if channel:
                     await channel.send_delta(m.chat_id, m.content, m.metadata)
-            except asyncio.TimeoutError:
+            except TimeoutError:
                 pass
 
         await process_one()
@@ -100,10 +98,7 @@ class TestDeltaCoalescing:
         for text in ["Hello", " ", "world", "!"]:
             await bus.publish_outbound(
                 OutboundMessage(
-                    channel="mock",
-                    chat_id="chat1",
-                    content=text,
-                    metadata={"_stream_delta": True},
+                    channel="mock", chat_id="chat1", content=text, metadata={"_stream_delta": True}
                 )
             )
 
@@ -123,18 +118,12 @@ class TestDeltaCoalescing:
         # Put deltas for different chats
         await bus.publish_outbound(
             OutboundMessage(
-                channel="mock",
-                chat_id="chat1",
-                content="Hello",
-                metadata={"_stream_delta": True},
+                channel="mock", chat_id="chat1", content="Hello", metadata={"_stream_delta": True}
             )
         )
         await bus.publish_outbound(
             OutboundMessage(
-                channel="mock",
-                chat_id="chat2",
-                content="World",
-                metadata={"_stream_delta": True},
+                channel="mock", chat_id="chat2", content="World", metadata={"_stream_delta": True}
             )
         )
 
@@ -184,10 +173,7 @@ class TestDeltaCoalescing:
         # Put deltas with stream_end at the end
         await bus.publish_outbound(
             OutboundMessage(
-                channel="mock",
-                chat_id="chat1",
-                content="Hello",
-                metadata={"_stream_delta": True},
+                channel="mock", chat_id="chat1", content="Hello", metadata={"_stream_delta": True}
             )
         )
         await bus.publish_outbound(
@@ -256,10 +242,7 @@ class TestDeltaCoalescing:
         """Non-delta messages should be preserved in pending list."""
         await bus.publish_outbound(
             OutboundMessage(
-                channel="mock",
-                chat_id="chat1",
-                content="Delta",
-                metadata={"_stream_delta": True},
+                channel="mock", chat_id="chat1", content="Delta", metadata={"_stream_delta": True}
             )
         )
         await bus.publish_outbound(
@@ -307,18 +290,12 @@ class TestDispatchOutboundWithCoalescing:
         # Put multiple deltas followed by a regular message
         await bus.publish_outbound(
             OutboundMessage(
-                channel="mock",
-                chat_id="chat1",
-                content="A",
-                metadata={"_stream_delta": True},
+                channel="mock", chat_id="chat1", content="A", metadata={"_stream_delta": True}
             )
         )
         await bus.publish_outbound(
             OutboundMessage(
-                channel="mock",
-                chat_id="chat1",
-                content="B",
-                metadata={"_stream_delta": True},
+                channel="mock", chat_id="chat1", content="B", metadata={"_stream_delta": True}
             )
         )
         await bus.publish_outbound(
@@ -377,7 +354,8 @@ class TestProgressFiltering:
     def test_resolve_bool_override_dict(self, manager):
         assert manager._resolve_bool_override({}, "send_progress", True) is True
         assert (
-            manager._resolve_bool_override({"send_progress": False}, "send_progress", True) is False
+            manager._resolve_bool_override({"send_progress": False}, "send_progress", True)
+            is False
         )
         assert (
             manager._resolve_bool_override({"sendProgress": False}, "send_progress", True) is False
@@ -402,19 +380,11 @@ class TestProgressFiltering:
         manager.channels["mock"].send_progress = False
         await bus.publish_outbound(
             OutboundMessage(
-                channel="mock",
-                chat_id="chat1",
-                content="thinking",
-                metadata={"_progress": True},
+                channel="mock", chat_id="chat1", content="thinking", metadata={"_progress": True}
             )
         )
         await bus.publish_outbound(
-            OutboundMessage(
-                channel="mock",
-                chat_id="chat1",
-                content="final answer",
-                metadata={},
-            )
+            OutboundMessage(channel="mock", chat_id="chat1", content="final answer", metadata={})
         )
 
         task = asyncio.create_task(manager._dispatch_outbound())
@@ -425,10 +395,8 @@ class TestProgressFiltering:
                 await asyncio.sleep(0.05)
         finally:
             task.cancel()
-            try:
+            with contextlib.suppress(asyncio.CancelledError):
                 await task
-            except asyncio.CancelledError:
-                pass
 
         send_mock = manager.channels["mock"]._send_mock
         assert send_mock.await_count == 1
@@ -454,10 +422,8 @@ class TestProgressFiltering:
                 await asyncio.sleep(0.05)
         finally:
             task.cancel()
-            try:
+            with contextlib.suppress(asyncio.CancelledError):
                 await task
-            except asyncio.CancelledError:
-                pass
 
         send_mock = manager.channels["mock"]._send_mock
         assert send_mock.await_count == 1
@@ -483,10 +449,7 @@ class TestRetryWaitFiltering:
             metadata={"_retry_wait": True},
         )
         real_msg = OutboundMessage(
-            channel="mock",
-            chat_id="chat1",
-            content="final answer",
-            metadata={},
+            channel="mock", chat_id="chat1", content="final answer", metadata={}
         )
         await bus.publish_outbound(retry_msg)
         await bus.publish_outbound(real_msg)
@@ -499,10 +462,8 @@ class TestRetryWaitFiltering:
                 await asyncio.sleep(0.05)
         finally:
             task.cancel()
-            try:
+            with contextlib.suppress(asyncio.CancelledError):
                 await task
-            except asyncio.CancelledError:
-                pass
 
         send_mock = manager.channels["mock"]._send_mock
         assert send_mock.await_count == 1

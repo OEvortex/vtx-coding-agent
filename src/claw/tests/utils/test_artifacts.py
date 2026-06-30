@@ -1,13 +1,13 @@
 from __future__ import annotations
 
 import json
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 
 import pytest
 
-from nanobot.config.loader import set_config_path
-from nanobot.utils.artifacts import (
+from vtx_claw.config.loader import set_config_path
+from vtx_claw.utils.artifacts import (
     ArtifactError,
     decode_image_data_url,
     store_generated_image_artifact,
@@ -31,7 +31,7 @@ def test_decode_image_data_url_validates_image_payload() -> None:
 
 def test_store_generated_image_artifact_writes_image_and_sidecar(tmp_path: Path) -> None:
     set_config_path(tmp_path / "config.json")
-    created_at = datetime(2026, 5, 8, 12, 0, tzinfo=timezone.utc)
+    created_at = datetime(2026, 5, 8, 12, 0, tzinfo=UTC)
 
     artifact = store_generated_image_artifact(
         PNG_DATA_URL,
@@ -58,9 +58,4 @@ def test_store_generated_image_artifact_rejects_unsafe_save_dir(tmp_path: Path) 
     set_config_path(tmp_path / "config.json")
 
     with pytest.raises(ArtifactError):
-        store_generated_image_artifact(
-            PNG_DATA_URL,
-            prompt="x",
-            model="m",
-            save_dir="../outside",
-        )
+        store_generated_image_artifact(PNG_DATA_URL, prompt="x", model="m", save_dir="../outside")

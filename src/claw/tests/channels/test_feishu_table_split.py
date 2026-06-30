@@ -3,12 +3,12 @@
 Feishu cards reject messages that contain more than one table element
 (API error 11310: card table number over limit).  The helper splits a flat
 list of card elements into groups so that each group contains at most one
-table, allowing nanobot to send multiple cards instead of failing.
+table, allowing vtx_claw to send multiple cards instead of failing.
 """
 
 # Check optional Feishu dependencies before running tests
 try:
-    from nanobot.channels import feishu
+    from vtx_claw.channels import feishu
 
     FEISHU_AVAILABLE = getattr(feishu, "FEISHU_AVAILABLE", False)
 except ImportError:
@@ -19,7 +19,7 @@ if not FEISHU_AVAILABLE:
 
     pytest.skip("Feishu dependencies not installed (lark-oapi)", allow_module_level=True)
 
-from nanobot.channels.feishu import FeishuChannel
+from vtx_claw.channels.feishu import FeishuChannel
 
 
 def _md(text: str) -> dict:
@@ -82,7 +82,8 @@ def test_two_tables_split_into_two_groups() -> None:
 
 def test_three_tables_split_into_three_groups() -> None:
     tables = [
-        {"tag": "table", "columns": [], "rows": [{"c0": f"t{i}"}], "page_size": 1} for i in range(3)
+        {"tag": "table", "columns": [], "rows": [{"c0": f"t{i}"}], "page_size": 1}
+        for i in range(3)
     ]
     els = tables[:]
     result = split(els)

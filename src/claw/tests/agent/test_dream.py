@@ -2,14 +2,14 @@
 
 import pytest
 
-from nanobot.agent.memory import MemoryStore
-from nanobot.providers.base import LLMResponse
-from nanobot.security.workspace_access import (
+from vtx_claw.agent.memory import MemoryStore
+from vtx_claw.providers.base import LLMResponse
+from vtx_claw.security.workspace_access import (
     bind_workspace_scope,
     default_workspace_scope,
     reset_workspace_scope,
 )
-from nanobot.utils.prompt_templates import render_template
+from vtx_claw.utils.prompt_templates import render_template
 
 
 @pytest.fixture
@@ -109,9 +109,7 @@ class TestBuildDreamPrompt:
 
     def test_dream_prompt_consumes_consolidator_attribute_tags(self):
         prompt = render_template(
-            "agent/dream.md",
-            strip=True,
-            skill_creator_path="skills/skill-creator/SKILL.md",
+            "agent/dream.md", strip=True, skill_creator_path="skills/skill-creator/SKILL.md"
         )
 
         assert "History attribute tags" in prompt
@@ -124,12 +122,7 @@ class TestDreamTools:
     def test_dream_tools_are_restricted_to_file_edits(self, store):
         tools = store.build_dream_tools()
 
-        assert set(tools.tool_names) == {
-            "apply_patch",
-            "edit_file",
-            "read_file",
-            "write_file",
-        }
+        assert set(tools.tool_names) == {"apply_patch", "edit_file", "read_file", "write_file"}
 
     @pytest.mark.asyncio
     async def test_dream_can_edit_canonical_memory_files(self, store):
@@ -149,12 +142,7 @@ class TestDreamTools:
             },
         )
         soul_result = await tools.execute(
-            "edit_file",
-            {
-                "path": "SOUL.md",
-                "old_text": "Helpful",
-                "new_text": "Precise",
-            },
+            "edit_file", {"path": "SOUL.md", "old_text": "Helpful", "new_text": "Precise"}
         )
 
         assert "Patch applied" in memory_result
@@ -190,8 +178,7 @@ class TestDreamTools:
         token = bind_workspace_scope(scope)
         try:
             outside_result = await tools.execute(
-                "write_file",
-                {"path": str(outside_target), "content": "owned"},
+                "write_file", {"path": str(outside_target), "content": "owned"}
             )
             skill_result = await tools.execute(
                 "apply_patch",
@@ -233,12 +220,7 @@ class TestDreamTools:
             },
         )
         cursor_result = await tools.execute(
-            "edit_file",
-            {
-                "path": "memory/.dream_cursor",
-                "old_text": "1",
-                "new_text": "2",
-            },
+            "edit_file", {"path": "memory/.dream_cursor", "old_text": "1", "new_text": "2"}
         )
 
         assert "outside allowed directory" in history_result
@@ -256,21 +238,12 @@ class TestDreamTools:
             "apply_patch",
             {
                 "edits": [
-                    {
-                        "path": "memory/MEMORY.md/evil.txt",
-                        "action": "add",
-                        "new_text": "owned",
-                    }
+                    {"path": "memory/MEMORY.md/evil.txt", "action": "add", "new_text": "owned"}
                 ]
             },
         )
         user_result = await tools.execute(
-            "edit_file",
-            {
-                "path": "USER.md/evil.txt",
-                "old_text": "",
-                "new_text": "owned",
-            },
+            "edit_file", {"path": "USER.md/evil.txt", "old_text": "", "new_text": "owned"}
         )
 
         assert "outside allowed directory" in memory_result
@@ -287,9 +260,9 @@ class TestEphemeralDirect:
         """Factory fixture that builds a minimal AgentLoop with mocked deps."""
         from unittest.mock import AsyncMock, MagicMock, patch
 
-        from nanobot.agent.loop import AgentLoop
-        from nanobot.agent.memory import MemoryStore
-        from nanobot.bus.queue import MessageBus
+        from vtx_claw.agent.loop import AgentLoop
+        from vtx_claw.agent.memory import MemoryStore
+        from vtx_claw.bus.queue import MessageBus
 
         store = MemoryStore(tmp_path)
         store.write_soul("# Soul")
@@ -305,17 +278,14 @@ class TestEphemeralDirect:
         )
 
         with (
-            patch("nanobot.agent.loop.SessionManager"),
-            patch("nanobot.agent.loop.SubagentManager") as mock_sub,
-            patch("nanobot.agent.loop.Consolidator") as mock_consolidator_cls,
+            patch("vtx_claw.agent.loop.SessionManager"),
+            patch("vtx_claw.agent.loop.SubagentManager") as mock_sub,
+            patch("vtx_claw.agent.loop.Consolidator") as mock_consolidator_cls,
         ):
             mock_sub.return_value.cancel_by_session = AsyncMock(return_value=0)
             mock_consolidator_cls.return_value.maybe_consolidate_by_tokens = AsyncMock()
             loop = AgentLoop(
-                bus=bus,
-                provider=provider,
-                workspace=tmp_path,
-                context_window_tokens=8000,
+                bus=bus, provider=provider, workspace=tmp_path, context_window_tokens=8000
             )
 
         return loop, store
@@ -324,19 +294,15 @@ class TestEphemeralDirect:
         """When ephemeral=True, raw_archive must not be called."""
         from unittest.mock import patch
 
-        loop, store = _make_loop
+        loop, _store = _make_loop
 
         with patch.object(loop.context.memory, "raw_archive") as mock_archive:
-            await loop.process_direct(
-                "test",
-                session_key="dream:test",
-                ephemeral=True,
-            )
+            await loop.process_direct("test", session_key="dream:test", ephemeral=True)
             mock_archive.assert_not_called()
 
     async def test_non_ephemeral_runs_normally(self, tmp_path, _make_loop):
         """Without ephemeral, the normal path returns the model response."""
-        loop, store = _make_loop
+        loop, _store = _make_loop
         response = await loop.process_direct("test", session_key="cli:normal")
 
         assert response is not None
@@ -347,7 +313,7 @@ class TestEphemeralDirect:
         """Verify that ephemeral=True is forwarded to TurnContext."""
         from unittest.mock import patch
 
-        loop, store = _make_loop
+        loop, _store = _make_loop
 
         captured = {}
 
@@ -358,11 +324,7 @@ class TestEphemeralDirect:
             return await original_save(ctx)
 
         with patch.object(loop, "_state_save", side_effect=patched_save):
-            await loop.process_direct(
-                "test",
-                session_key="dream:check",
-                ephemeral=True,
-            )
+            await loop.process_direct("test", session_key="dream:check", ephemeral=True)
 
         assert captured.get("ephemeral") is True
 
@@ -370,7 +332,7 @@ class TestEphemeralDirect:
         """By default ephemeral is False in TurnContext."""
         from unittest.mock import patch
 
-        loop, store = _make_loop
+        loop, _store = _make_loop
 
         captured = {}
 
@@ -389,31 +351,19 @@ class TestEphemeralDirect:
         """When ephemeral=True, consolidator.maybe_consolidate_by_tokens is not called."""
         from unittest.mock import patch
 
-        loop, store = _make_loop
+        loop, _store = _make_loop
 
-        with patch.object(
-            loop.consolidator,
-            "maybe_consolidate_by_tokens",
-        ) as mock_consolidate:
-            await loop.process_direct(
-                "test",
-                session_key="dream:consolidate-test",
-                ephemeral=True,
-            )
+        with patch.object(loop.consolidator, "maybe_consolidate_by_tokens") as mock_consolidate:
+            await loop.process_direct("test", session_key="dream:consolidate-test", ephemeral=True)
             mock_consolidate.assert_not_called()
 
     async def test_ephemeral_response_reports_stop_reason(self, tmp_path, _make_loop):
-        loop, store = _make_loop
+        loop, _store = _make_loop
         loop.provider.chat_with_retry.return_value = LLMResponse(
-            content="provider error",
-            finish_reason="error",
+            content="provider error", finish_reason="error"
         )
 
-        resp = await loop.process_direct(
-            "test",
-            session_key="dream:error",
-            ephemeral=True,
-        )
+        resp = await loop.process_direct("test", session_key="dream:error", ephemeral=True)
 
         assert resp is not None
         assert resp.metadata["_stop_reason"] == "error"
@@ -423,8 +373,8 @@ class TestEphemeralDirect:
         """Dream must only see the batch selected by build_dream_prompt."""
         from unittest.mock import MagicMock
 
-        from nanobot.agent.loop import AgentLoop
-        from nanobot.bus.queue import MessageBus
+        from vtx_claw.agent.loop import AgentLoop
+        from vtx_claw.bus.queue import MessageBus
 
         store = MemoryStore(tmp_path)
         for i in range(60):
@@ -447,17 +397,11 @@ class TestEphemeralDirect:
 
         provider.chat_with_retry = chat_with_retry
         loop = AgentLoop(
-            bus=MessageBus(),
-            provider=provider,
-            workspace=tmp_path,
-            context_window_tokens=8000,
+            bus=MessageBus(), provider=provider, workspace=tmp_path, context_window_tokens=8000
         )
 
         await loop.process_direct(
-            prompt,
-            session_key="dream:test",
-            ephemeral=True,
-            tools=store.build_dream_tools(),
+            prompt, session_key="dream:test", ephemeral=True, tools=store.build_dream_tools()
         )
 
         messages = captured["messages"]
@@ -478,9 +422,9 @@ class TestEphemeralHooks:
         """Build an AgentLoop with a spy hook to verify hook firing behavior."""
         from unittest.mock import AsyncMock, MagicMock, patch
 
-        from nanobot.agent.hook import AgentHook
-        from nanobot.agent.loop import AgentLoop
-        from nanobot.bus.queue import MessageBus
+        from vtx_claw.agent.hook import AgentHook
+        from vtx_claw.agent.loop import AgentLoop
+        from vtx_claw.bus.queue import MessageBus
 
         bus = MessageBus()
         provider = MagicMock()
@@ -488,12 +432,7 @@ class TestEphemeralHooks:
         provider.supports_tools = True
         provider.generation = MagicMock(max_tokens=4096)
         provider.chat_with_retry = AsyncMock(
-            return_value=MagicMock(
-                content="done",
-                finish_reason="stop",
-                tool_calls=[],
-                usage={},
-            )
+            return_value=MagicMock(content="done", finish_reason="stop", tool_calls=[], usage={})
         )
 
         spy = MagicMock(spec=AgentHook)
@@ -502,9 +441,9 @@ class TestEphemeralHooks:
         spy.after_iteration = AsyncMock()
 
         with (
-            patch("nanobot.agent.loop.SessionManager"),
-            patch("nanobot.agent.loop.SubagentManager") as mock_sub,
-            patch("nanobot.agent.loop.Consolidator") as mock_consolidator_cls,
+            patch("vtx_claw.agent.loop.SessionManager"),
+            patch("vtx_claw.agent.loop.SubagentManager") as mock_sub,
+            patch("vtx_claw.agent.loop.Consolidator") as mock_consolidator_cls,
         ):
             mock_sub.return_value.cancel_by_session = AsyncMock(return_value=0)
             mock_consolidator_cls.return_value.maybe_consolidate_by_tokens = AsyncMock()
@@ -522,11 +461,7 @@ class TestEphemeralHooks:
         """When ephemeral=True, extra hooks must not fire."""
         loop, spy = _make_loop_with_spy
 
-        await loop.process_direct(
-            "test",
-            session_key="dream:hook-test",
-            ephemeral=True,
-        )
+        await loop.process_direct("test", session_key="dream:hook-test", ephemeral=True)
         spy.before_iteration.assert_not_called()
         spy.after_iteration.assert_not_called()
 
@@ -544,7 +479,7 @@ class TestDreamCommitMessage:
         import subprocess
         from unittest.mock import AsyncMock, MagicMock
 
-        from nanobot.agent.memory import MemoryStore
+        from vtx_claw.agent.memory import MemoryStore
 
         store = MemoryStore(tmp_path)
         store.write_soul("# Soul")
@@ -571,10 +506,7 @@ class TestDreamCommitMessage:
         # build the commit message via the actual function, then commit.
         resp_content = "Identified 2 new facts about project goals"
         resp = MagicMock(content=resp_content)
-        msg = MemoryStore.build_dream_commit_message(
-            "dream: periodic memory consolidation",
-            resp,
-        )
+        msg = MemoryStore.build_dream_commit_message("dream: periodic memory consolidation", resp)
 
         # Write a change so auto_commit has something to commit
         store.write_memory("# Memory\n- Updated by Dream")
@@ -582,9 +514,7 @@ class TestDreamCommitMessage:
         assert sha is not None
 
         log = subprocess.check_output(
-            ["git", "log", "-1", "--format=%B"],
-            cwd=str(tmp_path),
-            text=True,
+            ["git", "log", "-1", "--format=%B"], cwd=str(tmp_path), text=True
         ).strip()
         assert "dream: periodic memory consolidation" in log
         assert "Identified 2 new facts" in log

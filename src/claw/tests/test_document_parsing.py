@@ -2,11 +2,7 @@
 
 from pathlib import Path
 
-from nanobot.utils.document import (
-    SUPPORTED_EXTENSIONS,
-    _is_text_extension,
-    extract_text,
-)
+from vtx_claw.utils.document import SUPPORTED_EXTENSIONS, _is_text_extension, extract_text
 
 
 class TestSupportedExtensions:

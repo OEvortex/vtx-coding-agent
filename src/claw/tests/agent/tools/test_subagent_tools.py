@@ -1,13 +1,14 @@
 """Tests for subagent tool registration and wiring."""
 
 import asyncio
+import contextlib
 import time
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-from nanobot.config.schema import AgentDefaults
+from vtx_claw.config.schema import AgentDefaults
 
 _MAX_TOOL_RESULT_CHARS = AgentDefaults().max_tool_result_chars
 
@@ -15,10 +16,10 @@ _MAX_TOOL_RESULT_CHARS = AgentDefaults().max_tool_result_chars
 @pytest.mark.asyncio
 async def test_subagent_exec_tool_receives_allowed_env_keys(tmp_path):
     """allowed_env_keys from ExecToolConfig must be forwarded to the subagent's ExecTool."""
-    from nanobot.agent.subagent import SubagentManager, SubagentStatus
-    from nanobot.agent.tools.shell import ExecToolConfig
-    from nanobot.bus.queue import MessageBus
-    from nanobot.config.schema import ToolsConfig
+    from vtx_claw.agent.subagent import SubagentManager, SubagentStatus
+    from vtx_claw.agent.tools.shell import ExecToolConfig
+    from vtx_claw.bus.queue import MessageBus
+    from vtx_claw.config.schema import ToolsConfig
 
     bus = MessageBus()
     provider = MagicMock()
@@ -37,10 +38,7 @@ async def test_subagent_exec_tool_receives_allowed_env_keys(tmp_path):
         assert exec_tool is not None
         assert exec_tool.allowed_env_keys == ["GOPATH", "JAVA_HOME"]
         return SimpleNamespace(
-            stop_reason="done",
-            final_content="done",
-            error=None,
-            tool_events=[],
+            stop_reason="done", final_content="done", error=None, tool_events=[]
         )
 
     mgr.runner.run = AsyncMock(side_effect=fake_run)
@@ -58,8 +56,8 @@ async def test_subagent_exec_tool_receives_allowed_env_keys(tmp_path):
 @pytest.mark.asyncio
 async def test_subagent_uses_configured_max_iterations(tmp_path):
     """Subagents should honor the configured tool-iteration limit."""
-    from nanobot.agent.subagent import SubagentManager, SubagentStatus
-    from nanobot.bus.queue import MessageBus
+    from vtx_claw.agent.subagent import SubagentManager, SubagentStatus
+    from vtx_claw.bus.queue import MessageBus
 
     bus = MessageBus()
     provider = MagicMock()
@@ -76,10 +74,7 @@ async def test_subagent_uses_configured_max_iterations(tmp_path):
     async def fake_run(spec):
         assert spec.max_iterations == 37
         return SimpleNamespace(
-            stop_reason="done",
-            final_content="done",
-            error=None,
-            tool_events=[],
+            stop_reason="done", final_content="done", error=None, tool_events=[]
         )
 
     mgr.runner.run = AsyncMock(side_effect=fake_run)
@@ -97,8 +92,8 @@ async def test_subagent_uses_configured_max_iterations(tmp_path):
 @pytest.mark.asyncio
 async def test_spawn_forwards_temperature_to_run_spec(tmp_path):
     """A temperature passed to spawn() should reach the AgentRunSpec."""
-    from nanobot.agent.subagent import SubagentManager
-    from nanobot.bus.queue import MessageBus
+    from vtx_claw.agent.subagent import SubagentManager
+    from vtx_claw.bus.queue import MessageBus
 
     bus = MessageBus()
     provider = MagicMock()
@@ -116,10 +111,7 @@ async def test_spawn_forwards_temperature_to_run_spec(tmp_path):
     async def fake_run(spec):
         seen["temperature"] = spec.temperature
         return SimpleNamespace(
-            stop_reason="done",
-            final_content="done",
-            error=None,
-            tool_events=[],
+            stop_reason="done", final_content="done", error=None, tool_events=[]
         )
 
     mgr.runner.run = AsyncMock(side_effect=fake_run)
@@ -133,9 +125,9 @@ async def test_spawn_forwards_temperature_to_run_spec(tmp_path):
 @pytest.mark.asyncio
 async def test_spawn_tool_rejects_when_at_concurrency_limit(tmp_path):
     """SpawnTool should return an error string when the concurrency limit is reached."""
-    from nanobot.agent.subagent import SubagentManager
-    from nanobot.agent.tools.spawn import SpawnTool
-    from nanobot.bus.queue import MessageBus
+    from vtx_claw.agent.subagent import SubagentManager
+    from vtx_claw.agent.tools.spawn import SpawnTool
+    from vtx_claw.bus.queue import MessageBus
 
     bus = MessageBus()
     provider = MagicMock()
@@ -154,15 +146,12 @@ async def test_spawn_tool_rejects_when_at_concurrency_limit(tmp_path):
     async def fake_run(spec):
         await release.wait()
         return SimpleNamespace(
-            stop_reason="done",
-            final_content="done",
-            error=None,
-            tool_events=[],
+            stop_reason="done", final_content="done", error=None, tool_events=[]
         )
 
     mgr.runner.run = AsyncMock(side_effect=fake_run)
 
-    from nanobot.agent.tools.context import RequestContext
+    from vtx_claw.agent.tools.context import RequestContext
 
     tool = SpawnTool(mgr)
     tool.set_context(RequestContext(channel="test", chat_id="c1", session_key="test:c1"))
@@ -184,8 +173,8 @@ async def test_spawn_tool_rejects_when_at_concurrency_limit(tmp_path):
 
 def test_subagent_default_max_concurrent_matches_agent_defaults(tmp_path):
     """Direct SubagentManager construction should use the agent default concurrency limit."""
-    from nanobot.agent.subagent import SubagentManager
-    from nanobot.bus.queue import MessageBus
+    from vtx_claw.agent.subagent import SubagentManager
+    from vtx_claw.bus.queue import MessageBus
 
     bus = MessageBus()
     provider = MagicMock()
@@ -203,8 +192,8 @@ def test_subagent_default_max_concurrent_matches_agent_defaults(tmp_path):
 
 def test_subagent_default_max_iterations_matches_agent_defaults(tmp_path):
     """Direct SubagentManager construction should use the agent default limit."""
-    from nanobot.agent.subagent import SubagentManager
-    from nanobot.bus.queue import MessageBus
+    from vtx_claw.agent.subagent import SubagentManager
+    from vtx_claw.bus.queue import MessageBus
 
     bus = MessageBus()
     provider = MagicMock()
@@ -222,19 +211,15 @@ def test_subagent_default_max_iterations_matches_agent_defaults(tmp_path):
 
 def test_agent_loop_passes_max_iterations_to_subagents(tmp_path):
     """AgentLoop's configured limit should be shared with spawned subagents."""
-    from nanobot.agent.loop import AgentLoop
-    from nanobot.bus.queue import MessageBus
+    from vtx_claw.agent.loop import AgentLoop
+    from vtx_claw.bus.queue import MessageBus
 
     bus = MessageBus()
     provider = MagicMock()
     provider.get_default_model.return_value = "test-model"
 
     loop = AgentLoop(
-        bus=bus,
-        provider=provider,
-        workspace=tmp_path,
-        model="test-model",
-        max_iterations=42,
+        bus=bus, provider=provider, workspace=tmp_path, model="test-model", max_iterations=42
     )
 
     assert loop.subagents.max_iterations == 42
@@ -243,19 +228,15 @@ def test_agent_loop_passes_max_iterations_to_subagents(tmp_path):
 @pytest.mark.asyncio
 async def test_agent_loop_syncs_updated_max_iterations_before_run(tmp_path):
     """Runtime max_iterations changes should be reflected before tool execution."""
-    from nanobot.agent.loop import AgentLoop
-    from nanobot.bus.queue import MessageBus
+    from vtx_claw.agent.loop import AgentLoop
+    from vtx_claw.bus.queue import MessageBus
 
     bus = MessageBus()
     provider = MagicMock()
     provider.get_default_model.return_value = "test-model"
 
     loop = AgentLoop(
-        bus=bus,
-        provider=provider,
-        workspace=tmp_path,
-        model="test-model",
-        max_iterations=42,
+        bus=bus, provider=provider, workspace=tmp_path, model="test-model", max_iterations=42
     )
     loop.tools.get_definitions = MagicMock(return_value=[])
 
@@ -284,10 +265,10 @@ async def test_agent_loop_syncs_updated_max_iterations_before_run(tmp_path):
 @pytest.mark.asyncio
 async def test_drain_pending_blocks_while_subagents_running(tmp_path):
     """_drain_pending should block when no messages are available but sub-agents are still running."""
-    from nanobot.agent.loop import AgentLoop
-    from nanobot.bus.events import InboundMessage
-    from nanobot.bus.queue import MessageBus
-    from nanobot.session.manager import Session
+    from vtx_claw.agent.loop import AgentLoop
+    from vtx_claw.bus.events import InboundMessage
+    from vtx_claw.bus.queue import MessageBus
+    from vtx_claw.session.manager import Session
 
     bus = MessageBus()
     provider = MagicMock()
@@ -369,17 +350,15 @@ async def test_drain_pending_blocks_while_subagents_running(tmp_path):
 
     # Cleanup
     hang_task.cancel()
-    try:
+    with contextlib.suppress(asyncio.CancelledError):
         await hang_task
-    except asyncio.CancelledError:
-        pass
 
 
 @pytest.mark.asyncio
 async def test_drain_pending_no_block_when_no_subagents(tmp_path):
     """_drain_pending should not block when no sub-agents are running."""
-    from nanobot.agent.loop import AgentLoop
-    from nanobot.bus.queue import MessageBus
+    from vtx_claw.agent.loop import AgentLoop
+    from vtx_claw.bus.queue import MessageBus
 
     bus = MessageBus()
     provider = MagicMock()
@@ -424,9 +403,9 @@ async def test_drain_pending_no_block_when_no_subagents(tmp_path):
 @pytest.mark.asyncio
 async def test_drain_pending_timeout(tmp_path):
     """_drain_pending should return empty after timeout when sub-agents hang."""
-    from nanobot.agent.loop import AgentLoop
-    from nanobot.bus.queue import MessageBus
-    from nanobot.session.manager import Session
+    from vtx_claw.agent.loop import AgentLoop
+    from vtx_claw.bus.queue import MessageBus
+    from vtx_claw.session.manager import Session
 
     bus = MessageBus()
     provider = MagicMock()
@@ -475,15 +454,13 @@ async def test_drain_pending_timeout(tmp_path):
     # Patch the timeout path without leaking the queue.get() coroutine.
     async def _timeout(awaitable, timeout):
         awaitable.close()
-        raise asyncio.TimeoutError
+        raise TimeoutError
 
-    with patch("nanobot.agent.loop.asyncio.wait_for", side_effect=_timeout):
+    with patch("vtx_claw.agent.loop.asyncio.wait_for", side_effect=_timeout):
         results = await injection_callback()
         assert results == []
 
     # Cleanup
     hang_task.cancel()
-    try:
+    with contextlib.suppress(asyncio.CancelledError):
         await hang_task
-    except asyncio.CancelledError:
-        pass

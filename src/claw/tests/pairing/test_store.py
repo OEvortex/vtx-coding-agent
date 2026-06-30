@@ -1,12 +1,12 @@
 import pytest
 
-from nanobot.pairing import __all__ as pairing_all
-from nanobot.pairing import store
+from vtx_claw.pairing import __all__ as pairing_all
+from vtx_claw.pairing import store
 
 
 def test_all_exports_are_importable():
-    """Every name in __all__ must actually be importable from nanobot.pairing."""
-    import nanobot.pairing as pkg
+    """Every name in __all__ must actually be importable from vtx_claw.pairing."""
+    import vtx_claw.pairing as pkg
 
     for name in pairing_all:
         assert hasattr(pkg, name), f"{name} is in __all__ but not exported"
@@ -198,8 +198,7 @@ class TestNonStringSenderId:
 
     def test_numeric_id_in_hand_edited_store(self) -> None:
         store._store_path().write_text(
-            '{"approved": {"telegram": [12345]}, "pending": {}}',
-            encoding="utf-8",
+            '{"approved": {"telegram": [12345]}, "pending": {}}', encoding="utf-8"
         )
         assert store.is_approved("telegram", "12345") is True
         assert store.is_approved("telegram", 12345) is True

@@ -1,8 +1,8 @@
 import os
 import plistlib
 
-from nanobot.gateway import GatewayStartOptions
-from nanobot.gateway.service import GatewayServiceInstaller, GatewayServiceOptions
+from vtx_claw.gateway import GatewayStartOptions
+from vtx_claw.gateway.service import GatewayServiceInstaller, GatewayServiceOptions
 
 
 def _expected_launchd_domain() -> str:
@@ -20,8 +20,8 @@ def test_systemd_install_dry_run_renders_user_unit(tmp_path):
             start=GatewayStartOptions(
                 port=18790,
                 verbose=True,
-                workspace="/tmp/nanobot workspace",
-                config_path="/tmp/nanobot/config.json",
+                workspace="/tmp/vtx_claw workspace",
+                config_path="/tmp/vtx_claw/config.json",
             ),
             python_executable="/venv/bin/python",
         ),
@@ -30,18 +30,19 @@ def test_systemd_install_dry_run_renders_user_unit(tmp_path):
 
     assert result.ok is True
     assert result.manager == "systemd"
-    assert result.path == tmp_path / ".config/systemd/user/nanobot-gateway.service"
+    assert result.path == tmp_path / ".config/systemd/user/vtx_claw-gateway.service"
     assert ("systemctl", "--user", "daemon-reload") in result.commands
-    assert ("systemctl", "--user", "enable", "nanobot-gateway.service") in result.commands
-    assert ("systemctl", "--user", "restart", "nanobot-gateway.service") in result.commands
+    assert ("systemctl", "--user", "enable", "vtx_claw-gateway.service") in result.commands
+    assert ("systemctl", "--user", "restart", "vtx_claw-gateway.service") in result.commands
     assert result.content is not None
-    assert 'WorkingDirectory="/tmp/nanobot workspace"' in result.content
+    assert 'WorkingDirectory="/tmp/vtx_claw workspace"' in result.content
     assert (
-        "ExecStart=/venv/bin/python -m nanobot gateway --foreground --port 18790 --verbose"
+        "ExecStart=/venv/bin/python -m vtx-claw gateway --foreground --port 18790 --verbose"
         in result.content
     )
     assert (
-        '--workspace "/tmp/nanobot workspace" --config /tmp/nanobot/config.json' in result.content
+        '--workspace "/tmp/vtx_claw workspace" --config /tmp/vtx_claw/config.json'
+        in result.content
     )
 
 
@@ -69,7 +70,7 @@ def test_systemd_install_writes_unit_and_runs_commands(tmp_path):
     assert workspace.exists()
     assert commands == [
         ["systemctl", "--user", "daemon-reload"],
-        ["systemctl", "--user", "restart", "nanobot-gateway.service"],
+        ["systemctl", "--user", "restart", "vtx_claw-gateway.service"],
     ]
 
 
@@ -80,8 +81,8 @@ def test_launchd_install_dry_run_renders_plist(tmp_path):
         GatewayServiceOptions(
             start=GatewayStartOptions(
                 port=18791,
-                workspace="/Users/test/.nanobot/workspace",
-                config_path="/Users/test/.nanobot/config.json",
+                workspace="/Users/test/.vtx_claw/workspace",
+                config_path="/Users/test/.vtx_claw/config.json",
             ),
             python_executable="/opt/homebrew/bin/python3",
         ),
@@ -90,22 +91,22 @@ def test_launchd_install_dry_run_renders_plist(tmp_path):
 
     assert result.ok is True
     assert result.manager == "launchd"
-    assert result.path == tmp_path / "Library/LaunchAgents/ai.nanobot.gateway.plist"
+    assert result.path == tmp_path / "Library/LaunchAgents/ai.vtx_claw.gateway.plist"
     assert result.content is not None
     payload = plistlib.loads(result.content.encode("utf-8"))
-    assert payload["Label"] == "ai.nanobot.gateway"
+    assert payload["Label"] == "ai.vtx_claw.gateway"
     assert payload["ProgramArguments"] == [
         "/opt/homebrew/bin/python3",
         "-m",
-        "nanobot",
+        "vtx_claw",
         "gateway",
         "--foreground",
         "--port",
         "18791",
         "--workspace",
-        "/Users/test/.nanobot/workspace",
+        "/Users/test/.vtx_claw/workspace",
         "--config",
-        "/Users/test/.nanobot/config.json",
+        "/Users/test/.vtx_claw/config.json",
     ]
     assert payload["KeepAlive"] == {"SuccessfulExit": False}
     assert payload["RunAtLoad"] is True
@@ -121,11 +122,7 @@ def test_launchd_no_enable_start_still_bootstraps(tmp_path):
     installer = GatewayServiceInstaller(platform_name="Darwin", home=tmp_path)
 
     result = installer.install(
-        GatewayServiceOptions(
-            start=GatewayStartOptions(port=18790),
-            enable=False,
-            start_now=True,
-        ),
+        GatewayServiceOptions(start=GatewayStartOptions(port=18790), enable=False, start_now=True),
         dry_run=True,
     )
 
@@ -141,11 +138,7 @@ def test_launchd_enable_without_start_sets_run_at_load_without_bootstrap(tmp_pat
     installer = GatewayServiceInstaller(platform_name="Darwin", home=tmp_path)
 
     result = installer.install(
-        GatewayServiceOptions(
-            start=GatewayStartOptions(port=18790),
-            enable=True,
-            start_now=False,
-        ),
+        GatewayServiceOptions(start=GatewayStartOptions(port=18790), enable=True, start_now=False),
         dry_run=True,
     )
 
@@ -166,11 +159,7 @@ def test_launchd_no_enable_start_reinstall_boots_out_existing_label(tmp_path):
     )
 
     result = installer.install(
-        GatewayServiceOptions(
-            start=GatewayStartOptions(port=18790),
-            enable=False,
-            start_now=True,
-        )
+        GatewayServiceOptions(start=GatewayStartOptions(port=18790), enable=False, start_now=True)
     )
 
     assert result.ok is True
@@ -183,8 +172,7 @@ def test_launchd_dry_run_does_not_require_posix_getuid(tmp_path, monkeypatch):
     installer = GatewayServiceInstaller(platform_name="Darwin", home=tmp_path)
 
     result = installer.install(
-        GatewayServiceOptions(start=GatewayStartOptions(port=18790)),
-        dry_run=True,
+        GatewayServiceOptions(start=GatewayStartOptions(port=18790)), dry_run=True
     )
 
     assert result.ok is True
@@ -198,7 +186,7 @@ def test_uninstall_systemd_removes_unit_and_reloads(tmp_path):
         home=tmp_path,
         subprocess_run=lambda command, **_kwargs: commands.append(command),
     )
-    unit = tmp_path / ".config/systemd/user/nanobot-gateway.service"
+    unit = tmp_path / ".config/systemd/user/vtx_claw-gateway.service"
     unit.parent.mkdir(parents=True)
     unit.write_text("[Unit]\n", encoding="utf-8")
 
@@ -207,7 +195,7 @@ def test_uninstall_systemd_removes_unit_and_reloads(tmp_path):
     assert result.ok is True
     assert not unit.exists()
     assert commands == [
-        ["systemctl", "--user", "disable", "--now", "nanobot-gateway.service"],
+        ["systemctl", "--user", "disable", "--now", "vtx_claw-gateway.service"],
         ["systemctl", "--user", "daemon-reload"],
     ]
 
@@ -216,8 +204,7 @@ def test_auto_manager_rejects_windows_services(tmp_path):
     installer = GatewayServiceInstaller(platform_name="Windows", home=tmp_path)
 
     result = installer.install(
-        GatewayServiceOptions(start=GatewayStartOptions(port=18790)),
-        dry_run=True,
+        GatewayServiceOptions(start=GatewayStartOptions(port=18790)), dry_run=True
     )
 
     assert result.ok is False

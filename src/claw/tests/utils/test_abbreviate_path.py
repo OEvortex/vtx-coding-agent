@@ -1,7 +1,8 @@
 """Tests for abbreviate_path utility."""
 
 import os
-from nanobot.utils.path import abbreviate_path
+
+from vtx_claw.utils.path import abbreviate_path
 
 
 class TestAbbreviatePathShort:
@@ -9,7 +10,6 @@ class TestAbbreviatePathShort:
         assert abbreviate_path("/home/user/file.py") == "/home/user/file.py"
 
     def test_exact_max_len_unchanged(self):
-        path = "/a/b/c"  # 7 chars
         assert abbreviate_path("/a/b/c", max_len=7) == "/a/b/c"
 
     def test_basename_only(self):
@@ -54,14 +54,14 @@ class TestAbbreviatePathLong:
 
 class TestAbbreviatePathWindows:
     def test_windows_drive_path(self):
-        path = "D:\\Documents\\GitHub\\nanobot\\src\\utils\\helpers.py"
+        path = "D:\\Documents\\GitHub\\vtx_claw\\src\\utils\\helpers.py"
         result = abbreviate_path(path, max_len=40)
         assert result.endswith("helpers.py")
-        assert "nanobot" in result
+        assert "vtx_claw" in result
 
     def test_windows_home(self):
         home = os.path.expanduser("~")
-        path = os.path.join(home, ".nanobot", "workspace", "log.txt")
+        path = os.path.join(home, ".vtx_claw", "workspace", "log.txt")
         result = abbreviate_path(path)
         assert result.startswith("~/")
         assert "log.txt" in result

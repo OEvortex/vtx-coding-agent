@@ -2,8 +2,8 @@
 
 from __future__ import annotations
 
-from nanobot.config.schema import ProviderConfig, ProvidersConfig
-from nanobot.providers.registry import create_dynamic_spec
+from vtx_claw.config.schema import ProviderConfig, ProvidersConfig
+from vtx_claw.providers.registry import create_dynamic_spec
 
 
 class TestCustomProviderThinkingStyle:

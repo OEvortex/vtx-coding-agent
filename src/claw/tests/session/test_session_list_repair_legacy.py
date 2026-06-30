@@ -4,13 +4,12 @@ import json
 from datetime import datetime
 from pathlib import Path
 
-from nanobot.session.manager import SessionManager
+from vtx_claw.session.manager import SessionManager
 
 
 def test_list_sessions_repairs_corrupt_legacy_stem(tmp_path: Path, monkeypatch) -> None:
     monkeypatch.setattr(
-        "nanobot.session.manager.get_legacy_sessions_dir",
-        lambda: tmp_path / "legacy_sessions",
+        "vtx_claw.session.manager.get_legacy_sessions_dir", lambda: tmp_path / "legacy_sessions"
     )
     manager = SessionManager(tmp_path / "workspace")
 

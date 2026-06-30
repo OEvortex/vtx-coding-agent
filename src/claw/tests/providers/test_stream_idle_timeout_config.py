@@ -7,15 +7,15 @@ from unittest.mock import AsyncMock, MagicMock
 import httpx
 import pytest
 
-import nanobot.providers.openai_codex_provider as codex_provider
-from nanobot.providers.anthropic_provider import AnthropicProvider
-from nanobot.providers.base import (
+import vtx_claw.providers.openai_codex_provider as codex_provider
+from vtx_claw.providers.anthropic_provider import AnthropicProvider
+from vtx_claw.providers.base import (
     DEFAULT_STREAM_IDLE_TIMEOUT_S,
     MAX_STREAM_IDLE_TIMEOUT_S,
     resolve_stream_idle_timeout_s,
 )
-from nanobot.providers.bedrock_provider import BedrockProvider
-from nanobot.providers.openai_compat_provider import OpenAICompatProvider
+from vtx_claw.providers.bedrock_provider import BedrockProvider
+from vtx_claw.providers.openai_compat_provider import OpenAICompatProvider
 
 
 class _AsyncStream:
@@ -77,7 +77,7 @@ def test_stream_idle_timeout_parser_accepts_and_clamps_numeric_values() -> None:
 
 @pytest.mark.asyncio
 async def test_openai_compat_stream_ignores_invalid_idle_timeout_env(monkeypatch) -> None:
-    monkeypatch.setenv("NANOBOT_STREAM_IDLE_TIMEOUT_S", "abc")
+    monkeypatch.setenv("VTX_CLAW_STREAM_IDLE_TIMEOUT_S", "abc")
     provider = OpenAICompatProvider(api_key="sk-test", api_base="https://example.com/v1")
 
     chunk = SimpleNamespace(
@@ -97,10 +97,8 @@ async def test_openai_compat_stream_ignores_invalid_idle_timeout_env(monkeypatch
     )
     provider._client = SimpleNamespace(
         chat=SimpleNamespace(
-            completions=SimpleNamespace(
-                create=AsyncMock(return_value=_AsyncStream([chunk])),
-            )
-        ),
+            completions=SimpleNamespace(create=AsyncMock(return_value=_AsyncStream([chunk])))
+        )
     )
 
     result = await provider.chat_stream(messages=[{"role": "user", "content": "hi"}])
@@ -110,7 +108,7 @@ async def test_openai_compat_stream_ignores_invalid_idle_timeout_env(monkeypatch
 
 @pytest.mark.asyncio
 async def test_anthropic_stream_ignores_invalid_idle_timeout_env(monkeypatch) -> None:
-    monkeypatch.setenv("NANOBOT_STREAM_IDLE_TIMEOUT_S", "abc")
+    monkeypatch.setenv("VTX_CLAW_STREAM_IDLE_TIMEOUT_S", "abc")
     provider = AnthropicProvider(api_key="sk-test")
     provider._client = MagicMock()
     provider._client.messages.stream = MagicMock(return_value=_AnthropicStream([]))
@@ -122,7 +120,7 @@ async def test_anthropic_stream_ignores_invalid_idle_timeout_env(monkeypatch) ->
 
 @pytest.mark.asyncio
 async def test_bedrock_stream_ignores_invalid_idle_timeout_env(monkeypatch) -> None:
-    monkeypatch.setenv("NANOBOT_STREAM_IDLE_TIMEOUT_S", "abc")
+    monkeypatch.setenv("VTX_CLAW_STREAM_IDLE_TIMEOUT_S", "abc")
     provider = BedrockProvider(region="us-east-1", client=_BedrockClient())
 
     result = await provider.chat_stream(messages=[{"role": "user", "content": "hi"}])
@@ -132,7 +130,7 @@ async def test_bedrock_stream_ignores_invalid_idle_timeout_env(monkeypatch) -> N
 
 @pytest.mark.asyncio
 async def test_codex_stream_ignores_invalid_idle_timeout_env(monkeypatch) -> None:
-    monkeypatch.setenv("NANOBOT_STREAM_IDLE_TIMEOUT_S", "abc")
+    monkeypatch.setenv("VTX_CLAW_STREAM_IDLE_TIMEOUT_S", "abc")
     original_client = httpx.AsyncClient
     seen: dict[str, float] = {}
 
@@ -146,10 +144,7 @@ async def test_codex_stream_ignores_invalid_idle_timeout_env(monkeypatch) -> Non
     monkeypatch.setattr(codex_provider.httpx, "AsyncClient", fake_client)
 
     await codex_provider._request_codex(
-        "https://codex.example/responses",
-        {},
-        {"input": []},
-        verify=True,
+        "https://codex.example/responses", {}, {"input": []}, verify=True
     )
 
     assert seen["timeout"] == DEFAULT_STREAM_IDLE_TIMEOUT_S

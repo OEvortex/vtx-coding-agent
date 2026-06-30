@@ -8,25 +8,20 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-from nanobot.agent.loop import AgentLoop
-from nanobot.bus.queue import MessageBus
-from nanobot.providers.base import LLMProvider
+from vtx_claw.agent.loop import AgentLoop
+from vtx_claw.bus.queue import MessageBus
+from vtx_claw.providers.base import LLMProvider
 
 
 def make_provider(
-    default_model: str = "test-model",
-    *,
-    max_tokens: int = 4096,
-    spec: bool = True,
+    default_model: str = "test-model", *, max_tokens: int = 4096, spec: bool = True
 ) -> MagicMock:
     """Create a spec-limited LLM provider mock."""
     mock_type = MagicMock(spec=LLMProvider) if spec else MagicMock()
     provider = mock_type
     provider.get_default_model.return_value = default_model
     provider.generation = SimpleNamespace(
-        max_tokens=max_tokens,
-        temperature=0.1,
-        reasoning_effort=None,
+        max_tokens=max_tokens, temperature=0.1, reasoning_effort=None
     )
     provider.estimate_prompt_tokens.return_value = (10_000, "test")
     return provider
@@ -76,9 +71,9 @@ def make_loop(
 
     if patch_deps:
         with (
-            patch("nanobot.agent.loop.ContextBuilder"),
-            patch("nanobot.agent.loop.SessionManager"),
-            patch("nanobot.agent.loop.SubagentManager") as mock_sub_mgr,
+            patch("vtx_claw.agent.loop.ContextBuilder"),
+            patch("vtx_claw.agent.loop.SessionManager"),
+            patch("vtx_claw.agent.loop.SubagentManager") as mock_sub_mgr,
         ):
             mock_sub_mgr.return_value.cancel_by_session = AsyncMock(return_value=0)
             return AgentLoop(**kwargs)

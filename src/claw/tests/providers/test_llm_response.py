@@ -11,7 +11,7 @@ from __future__ import annotations
 
 import pytest
 
-from nanobot.providers.base import LLMResponse, ToolCallRequest
+from vtx_claw.providers.base import LLMResponse, ToolCallRequest
 
 
 def _response(finish_reason: str, *, with_tool_call: bool = True) -> LLMResponse:
@@ -51,8 +51,7 @@ class TestShouldExecuteTools:
         assert resp.should_execute_tools is True
 
     @pytest.mark.parametrize(
-        "anomalous_reason",
-        ["refusal", "content_filter", "error", "length", ""],
+        "anomalous_reason", ["refusal", "content_filter", "error", "length", ""]
     )
     def test_tool_calls_under_anomalous_reason_blocked(self, anomalous_reason: str) -> None:
         # This is the #3220 bug: gateways injecting tool_calls under any of these

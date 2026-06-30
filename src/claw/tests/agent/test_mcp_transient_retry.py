@@ -9,7 +9,7 @@ from mcp import types as mcp_types
 from mcp.shared.exceptions import McpError
 from mcp.types import ErrorData
 
-from nanobot.agent.tools.mcp import (
+from vtx_claw.agent.tools.mcp import (
     MCPPromptWrapper,
     MCPResourceWrapper,
     MCPToolWrapper,
@@ -91,9 +91,7 @@ def test_is_session_terminated_recognizes_connection_closed_mcp_error():
 
 def _make_tool_def(name="test_tool"):
     return SimpleNamespace(
-        name=name,
-        description="A test tool",
-        inputSchema={"type": "object", "properties": {}},
+        name=name, description="A test tool", inputSchema={"type": "object", "properties": {}}
     )
 
 
@@ -112,7 +110,7 @@ async def test_tool_retries_on_transient_error():
 
     wrapper = MCPToolWrapper(session, "test_server", _make_tool_def(), tool_timeout=5)
 
-    with patch("nanobot.agent.tools.mcp.asyncio.sleep", new_callable=AsyncMock):
+    with patch("vtx_claw.agent.tools.mcp.asyncio.sleep", new_callable=AsyncMock):
         output = await wrapper.execute(foo="bar")
 
     assert output == "ok"
@@ -129,7 +127,7 @@ async def test_tool_fails_after_retry_exhausted():
 
     wrapper = MCPToolWrapper(session, "test_server", _make_tool_def(), tool_timeout=5)
 
-    with patch("nanobot.agent.tools.mcp.asyncio.sleep", new_callable=AsyncMock):
+    with patch("vtx_claw.agent.tools.mcp.asyncio.sleep", new_callable=AsyncMock):
         output = await wrapper.execute()
 
     assert "failed after retry" in output
@@ -155,7 +153,7 @@ async def test_tool_no_retry_on_non_transient_error():
 async def test_tool_no_retry_on_timeout():
     """Timeouts should not trigger retry (they have their own handling)."""
     session = AsyncMock()
-    session.call_tool = AsyncMock(side_effect=asyncio.TimeoutError())
+    session.call_tool = AsyncMock(side_effect=TimeoutError())
 
     wrapper = MCPToolWrapper(session, "test_server", _make_tool_def(), tool_timeout=5)
     output = await wrapper.execute()
@@ -194,7 +192,7 @@ async def test_tool_does_not_retry_on_cancelled_error():
 
     wrapper = MCPToolWrapper(session, "test_server", _make_tool_def(), tool_timeout=5)
 
-    with patch("nanobot.agent.tools.mcp.asyncio.sleep", new_callable=AsyncMock) as mock_sleep:
+    with patch("vtx_claw.agent.tools.mcp.asyncio.sleep", new_callable=AsyncMock) as mock_sleep:
         output = await wrapper.execute()
 
     assert "cancelled" in output
@@ -211,7 +209,7 @@ async def test_tool_retry_on_connection_reset():
 
     wrapper = MCPToolWrapper(session, "test_server", _make_tool_def(), tool_timeout=5)
 
-    with patch("nanobot.agent.tools.mcp.asyncio.sleep", new_callable=AsyncMock):
+    with patch("vtx_claw.agent.tools.mcp.asyncio.sleep", new_callable=AsyncMock):
         output = await wrapper.execute()
 
     assert output == "recovered"
@@ -227,7 +225,7 @@ async def test_tool_retry_on_end_of_stream():
 
     wrapper = MCPToolWrapper(session, "test_server", _make_tool_def(), tool_timeout=5)
 
-    with patch("nanobot.agent.tools.mcp.asyncio.sleep", new_callable=AsyncMock):
+    with patch("vtx_claw.agent.tools.mcp.asyncio.sleep", new_callable=AsyncMock):
         output = await wrapper.execute()
 
     assert output == "back"
@@ -255,7 +253,7 @@ async def test_tool_reconnects_when_transient_retry_reveals_terminated_session()
 
     wrapper.set_reconnect_handler(reconnect)
 
-    with patch("nanobot.agent.tools.mcp.asyncio.sleep", new_callable=AsyncMock):
+    with patch("vtx_claw.agent.tools.mcp.asyncio.sleep", new_callable=AsyncMock):
         output = await wrapper.execute(foo="bar")
 
     assert output == "fresh"
@@ -269,15 +267,13 @@ async def test_tool_reconnects_when_transient_retry_reveals_terminated_session()
 
 
 def _make_resource_def(name="test_resource"):
-    return SimpleNamespace(
-        name=name,
-        uri="file:///test",
-        description="A test resource",
-    )
+    return SimpleNamespace(name=name, uri="file:///test", description="A test resource")
 
 
 def _make_resource_result(text):
-    return SimpleNamespace(contents=[mcp_types.TextResourceContents(uri="file:///test", text=text)])
+    return SimpleNamespace(
+        contents=[mcp_types.TextResourceContents(uri="file:///test", text=text)]
+    )
 
 
 @pytest.mark.asyncio
@@ -290,7 +286,7 @@ async def test_resource_retries_on_transient_error():
 
     wrapper = MCPResourceWrapper(session, "test_server", _make_resource_def())
 
-    with patch("nanobot.agent.tools.mcp.asyncio.sleep", new_callable=AsyncMock):
+    with patch("vtx_claw.agent.tools.mcp.asyncio.sleep", new_callable=AsyncMock):
         output = await wrapper.execute()
 
     assert output == "data"
@@ -306,7 +302,7 @@ async def test_resource_fails_after_retry_exhausted():
 
     wrapper = MCPResourceWrapper(session, "test_server", _make_resource_def())
 
-    with patch("nanobot.agent.tools.mcp.asyncio.sleep", new_callable=AsyncMock):
+    with patch("vtx_claw.agent.tools.mcp.asyncio.sleep", new_callable=AsyncMock):
         output = await wrapper.execute()
 
     assert "failed after retry" in output
@@ -358,20 +354,12 @@ async def test_resource_reconnects_on_session_terminated():
 
 
 def _make_prompt_def(name="test_prompt"):
-    return SimpleNamespace(
-        name=name,
-        description="A test prompt",
-        arguments=[],
-    )
+    return SimpleNamespace(name=name, description="A test prompt", arguments=[])
 
 
 def _make_prompt_result(text):
     return SimpleNamespace(
-        messages=[
-            SimpleNamespace(
-                content=mcp_types.TextContent(type="text", text=text),
-            )
-        ]
+        messages=[SimpleNamespace(content=mcp_types.TextContent(type="text", text=text))]
     )
 
 
@@ -385,7 +373,7 @@ async def test_prompt_retries_on_transient_error():
 
     wrapper = MCPPromptWrapper(session, "test_server", _make_prompt_def())
 
-    with patch("nanobot.agent.tools.mcp.asyncio.sleep", new_callable=AsyncMock):
+    with patch("vtx_claw.agent.tools.mcp.asyncio.sleep", new_callable=AsyncMock):
         output = await wrapper.execute()
 
     assert output == "prompt text"
@@ -401,7 +389,7 @@ async def test_prompt_fails_after_retry_exhausted():
 
     wrapper = MCPPromptWrapper(session, "test_server", _make_prompt_def())
 
-    with patch("nanobot.agent.tools.mcp.asyncio.sleep", new_callable=AsyncMock):
+    with patch("vtx_claw.agent.tools.mcp.asyncio.sleep", new_callable=AsyncMock):
         output = await wrapper.execute()
 
     assert "failed after retry" in output

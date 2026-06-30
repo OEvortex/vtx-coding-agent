@@ -3,12 +3,13 @@
 from __future__ import annotations
 
 import datetime as datetime_module
+import itertools
 import re
 from datetime import datetime as real_datetime
 from importlib.resources import files as pkg_files
 from pathlib import Path
 
-from nanobot.agent.context import ContextBuilder
+from vtx_claw.agent.context import ContextBuilder
 
 
 class _FakeDatetime(real_datetime):
@@ -26,7 +27,7 @@ def _make_workspace(tmp_path: Path) -> Path:
 
 
 def test_bootstrap_files_are_backed_by_templates() -> None:
-    template_dir = pkg_files("nanobot") / "templates"
+    template_dir = pkg_files("vtx_claw") / "templates"
 
     for filename in ContextBuilder.BOOTSTRAP_FILES:
         assert (template_dir / filename).is_file(), f"missing bootstrap template: {filename}"
@@ -67,10 +68,7 @@ def test_runtime_context_is_separate_untrusted_user_message(tmp_path) -> None:
     builder = ContextBuilder(workspace)
 
     messages = builder.build_messages(
-        history=[],
-        current_message="Return exactly: OK",
-        channel="cli",
-        chat_id="direct",
+        history=[], current_message="Return exactly: OK", channel="cli", chat_id="direct"
     )
 
     assert messages[0]["role"] == "system"
@@ -93,10 +91,7 @@ def test_runtime_context_appended_after_user_content(tmp_path) -> None:
     builder = ContextBuilder(workspace)
 
     messages = builder.build_messages(
-        history=[],
-        current_message="hello world",
-        channel="cli",
-        chat_id="direct",
+        history=[], current_message="hello world", channel="cli", chat_id="direct"
     )
 
     content = messages[-1]["content"]
@@ -180,10 +175,7 @@ def test_recent_history_injection_unified_excludes_cron_internals(tmp_path) -> N
     builder.memory.append_history("channel user history", session_key="telegram:chat-1")
     builder.memory.append_history("cron internal history", session_key="cron:job-1")
 
-    prompt = builder.build_system_prompt(
-        session_key="unified:default",
-        unified_session=True,
-    )
+    prompt = builder.build_system_prompt(session_key="unified:default", unified_session=True)
 
     assert "unified user history" in prompt
     assert "channel user history" in prompt
@@ -198,10 +190,7 @@ def test_cron_recent_history_can_see_own_history_and_unified_context(tmp_path) -
     builder.memory.append_history("own cron history", session_key="cron:job-1")
     builder.memory.append_history("other cron history", session_key="cron:job-2")
 
-    prompt = builder.build_system_prompt(
-        session_key="cron:job-1",
-        unified_session=True,
-    )
+    prompt = builder.build_system_prompt(session_key="cron:job-1", unified_session=True)
 
     assert "unified user history" in prompt
     assert "own cron history" in prompt
@@ -274,7 +263,7 @@ def test_partial_dream_processing_shows_only_remainder(tmp_path) -> None:
 
 def test_execution_rules_in_system_prompt(tmp_path) -> None:
     """Execution rules should appear in the system prompt via default SOUL.md."""
-    from nanobot.utils.helpers import sync_workspace_templates
+    from vtx_claw.utils.helpers import sync_workspace_templates
 
     workspace = _make_workspace(tmp_path)
     sync_workspace_templates(workspace, silent=True)
@@ -293,7 +282,7 @@ def test_identity_has_no_behavioral_instructions(tmp_path) -> None:
     builder = ContextBuilder(workspace)
 
     identity = builder._get_identity(channel=None)
-    assert "You are nanobot" not in identity
+    assert "You are vtx_claw" not in identity
     assert "Act, don't narrate" not in identity
     assert "Execution Rules" not in identity
 
@@ -311,7 +300,7 @@ def test_system_prompt_does_not_warn_about_message_time_markers(tmp_path) -> Non
 
 def test_default_soul_template_contains_execution_rules() -> None:
     """Default SOUL.md template must contain execution rules with act/plan layering."""
-    soul = (pkg_files("nanobot") / "templates" / "SOUL.md").read_text(encoding="utf-8")
+    soul = (pkg_files("vtx_claw") / "templates" / "SOUL.md").read_text(encoding="utf-8")
     assert "## Execution Rules" in soul
     assert "single-step tasks" in soul
     assert "multi-step tasks" in soul
@@ -355,10 +344,7 @@ def test_build_messages_passes_channel_to_system_prompt(tmp_path) -> None:
     builder = ContextBuilder(workspace)
 
     messages = builder.build_messages(
-        history=[],
-        current_message="hi",
-        channel="telegram",
-        chat_id="123",
+        history=[], current_message="hi", channel="telegram", chat_id="123"
     )
     system = messages[0]["content"]
     assert "Format Hint" in system
@@ -389,7 +375,7 @@ def test_subagent_result_does_not_create_consecutive_assistant_messages(tmp_path
         current_role="assistant",
     )
 
-    for left, right in zip(messages, messages[1:]):
+    for left, right in itertools.pairwise(messages):
         assert not (left.get("role") == right.get("role") == "assistant")
 
 
@@ -414,7 +400,7 @@ def test_always_skills_excluded_from_skills_index(tmp_path) -> None:
 def test_template_memory_md_is_skipped(tmp_path) -> None:
     """MEMORY.md matching the bundled template should not inject the Memory section."""
     workspace = _make_workspace(tmp_path)
-    from nanobot.utils.helpers import sync_workspace_templates
+    from vtx_claw.utils.helpers import sync_workspace_templates
 
     sync_workspace_templates(workspace, silent=True)
 
@@ -426,13 +412,13 @@ def test_template_memory_md_is_skipped(tmp_path) -> None:
     # also contains "# Memory" but is followed by "## Structure", not
     # "## Long-term Memory".
     assert "# Memory\n\n## Long-term Memory" not in prompt
-    assert "This file is automatically updated by nanobot" not in prompt
+    assert "This file is automatically updated by vtx_claw" not in prompt
 
 
 def test_customized_memory_md_is_injected(tmp_path) -> None:
     """A Dream-populated MEMORY.md should be injected normally."""
     workspace = _make_workspace(tmp_path)
-    from nanobot.utils.helpers import sync_workspace_templates
+    from vtx_claw.utils.helpers import sync_workspace_templates
 
     sync_workspace_templates(workspace, silent=True)
 

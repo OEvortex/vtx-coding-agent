@@ -17,9 +17,9 @@ except ImportError:
 if not WECOM_AVAILABLE:
     pytest.skip("WeCom dependencies not installed (wecom_aibot_sdk)", allow_module_level=True)
 
-from nanobot.bus.events import OutboundMessage
-from nanobot.bus.queue import MessageBus
-from nanobot.channels.wecom import (
+from vtx_claw.bus.events import OutboundMessage
+from vtx_claw.bus.queue import MessageBus
+from vtx_claw.channels.wecom import (
     WecomChannel,
     WecomConfig,
     _guess_wecom_media_type,
@@ -133,7 +133,7 @@ async def test_download_and_save_success() -> None:
     fake_data = b"\x89PNG\r\nfake image"
     client.download_file.return_value = (fake_data, "raw_photo.png")
 
-    with patch("nanobot.channels.wecom.get_media_dir", return_value=Path(tempfile.gettempdir())):
+    with patch("vtx_claw.channels.wecom.get_media_dir", return_value=Path(tempfile.gettempdir())):
         path = await channel._download_and_save_media(
             "https://example.com/img.png", "aes_key", "image", "photo.png"
         )
@@ -155,7 +155,7 @@ async def test_download_and_save_oversized_rejected() -> None:
     big_data = b"\x00" * (200 * 1024 * 1024 + 1)  # 200MB + 1 byte
     client.download_file.return_value = (big_data, "big.bin")
 
-    with patch("nanobot.channels.wecom.get_media_dir", return_value=Path(tempfile.gettempdir())):
+    with patch("vtx_claw.channels.wecom.get_media_dir", return_value=Path(tempfile.gettempdir())):
         result = await channel._download_and_save_media(
             "https://example.com/big.bin", "key", "file", "big.bin"
         )
@@ -172,7 +172,7 @@ async def test_download_and_save_failure() -> None:
 
     client.download_file.return_value = (None, None)
 
-    with patch("nanobot.channels.wecom.get_media_dir", return_value=Path(tempfile.gettempdir())):
+    with patch("vtx_claw.channels.wecom.get_media_dir", return_value=Path(tempfile.gettempdir())):
         result = await channel._download_and_save_media(
             "https://example.com/fail.png", "key", "image"
         )
@@ -234,9 +234,7 @@ async def test_upload_media_ws_init_failure() -> None:
         tmp = f.name
 
     try:
-        responses = [
-            _FakeResponse(errcode=50001, errmsg="invalid"),
-        ]
+        responses = [_FakeResponse(errcode=50001, errmsg="invalid")]
 
         client = _FakeWeComClient(responses)
         channel = WecomChannel(WecomConfig(bot_id="b", secret="s", allow_from=["*"]), MessageBus())
@@ -516,7 +514,7 @@ async def test_process_image_message() -> None:
 
     try:
         with patch(
-            "nanobot.channels.wecom.get_media_dir", return_value=Path(os.path.dirname(saved))
+            "vtx_claw.channels.wecom.get_media_dir", return_value=Path(os.path.dirname(saved))
         ):
             frame = _FakeFrame(
                 body={
@@ -556,7 +554,7 @@ async def test_process_file_message() -> None:
 
     try:
         with patch(
-            "nanobot.channels.wecom.get_media_dir", return_value=Path(os.path.dirname(saved))
+            "vtx_claw.channels.wecom.get_media_dir", return_value=Path(os.path.dirname(saved))
         ):
             frame = _FakeFrame(
                 body={
@@ -590,7 +588,7 @@ async def test_process_file_message_uses_sdk_filename_when_name_missing(tmp_path
     client.download_file.return_value = (b"%PDF-1.4 fake", "real_name.pdf")
     channel._client = client
 
-    with patch("nanobot.channels.wecom.get_media_dir", return_value=tmp_path):
+    with patch("vtx_claw.channels.wecom.get_media_dir", return_value=tmp_path):
         frame = _FakeFrame(
             body={
                 "msgid": "msg_file_2",
@@ -644,7 +642,7 @@ async def test_process_mixed_message() -> None:
 
     try:
         with patch(
-            "nanobot.channels.wecom.get_media_dir", return_value=Path(os.path.dirname(saved))
+            "vtx_claw.channels.wecom.get_media_dir", return_value=Path(os.path.dirname(saved))
         ):
             frame = _FakeFrame(
                 body={
@@ -657,7 +655,10 @@ async def test_process_mixed_message() -> None:
                             {"msgtype": "text", "text": {"content": "hello wecom"}},
                             {
                                 "msgtype": "image",
-                                "image": {"url": "https://example.com/img.png", "aeskey": "key123"},
+                                "image": {
+                                    "url": "https://example.com/img.png",
+                                    "aeskey": "key123",
+                                },
                             },
                         ]
                     },

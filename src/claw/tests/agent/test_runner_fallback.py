@@ -8,9 +8,9 @@ from unittest.mock import MagicMock, patch
 import pytest
 from loguru import logger
 
-from nanobot.config.schema import ModelPresetConfig
-from nanobot.providers.base import LLMProvider, LLMResponse
-from nanobot.providers.fallback_provider import FallbackProvider
+from vtx_claw.config.schema import ModelPresetConfig
+from vtx_claw.providers.base import LLMProvider, LLMResponse
+from vtx_claw.providers.fallback_provider import FallbackProvider
 
 
 def _make_response(
@@ -86,7 +86,7 @@ class _FakeProvider(LLMProvider):
 
 
 def test_fallback_models_default_empty() -> None:
-    from nanobot.config.schema import AgentDefaults
+    from vtx_claw.config.schema import AgentDefaults
 
     defaults = AgentDefaults()
 
@@ -94,7 +94,7 @@ def test_fallback_models_default_empty() -> None:
 
 
 def test_fallback_models_accept_preset_refs_and_inline_configs() -> None:
-    from nanobot.config.schema import Config, InlineFallbackConfig
+    from vtx_claw.config.schema import Config, InlineFallbackConfig
 
     config = Config.model_validate(
         {
@@ -102,11 +102,7 @@ def test_fallback_models_accept_preset_refs_and_inline_configs() -> None:
                 "defaults": {
                     "fallbackModels": [
                         "deep",
-                        {
-                            "provider": "openai",
-                            "model": "gpt-4.1",
-                            "maxTokens": 4096,
-                        },
+                        {"provider": "openai", "model": "gpt-4.1", "maxTokens": 4096},
                     ]
                 }
             },
@@ -116,35 +112,25 @@ def test_fallback_models_accept_preset_refs_and_inline_configs() -> None:
 
     assert config.agents.defaults.fallback_models[0] == "deep"
     assert config.agents.defaults.fallback_models[1] == InlineFallbackConfig(
-        provider="openai",
-        model="gpt-4.1",
-        max_tokens=4096,
+        provider="openai", model="gpt-4.1", max_tokens=4096
     )
 
 
 def test_fallback_model_preset_ref_must_exist() -> None:
-    from nanobot.config.schema import Config
+    from vtx_claw.config.schema import Config
 
     with pytest.raises(ValueError, match="fallback_models.*not found"):
         Config.model_validate(
-            {
-                "agents": {"defaults": {"fallbackModels": ["missing"]}},
-                "modelPresets": {},
-            }
+            {"agents": {"defaults": {"fallbackModels": ["missing"]}}, "modelPresets": {}}
         )
 
 
 def test_provider_signature_tracks_fallback_presets_and_provider_config() -> None:
-    from nanobot.config.schema import Config
-    from nanobot.providers.factory import provider_signature
+    from vtx_claw.config.schema import Config
+    from vtx_claw.providers.factory import provider_signature
 
     base = {
-        "agents": {
-            "defaults": {
-                "modelPreset": "fast",
-                "fallbackModels": ["deep"],
-            }
-        },
+        "agents": {"defaults": {"modelPreset": "fast", "fallbackModels": ["deep"]}},
         "modelPresets": {
             "fast": {"model": "openai/gpt-4.1", "provider": "openai"},
             "deep": {"model": "anthropic/claude-sonnet-4-6", "provider": "anthropic"},
@@ -161,10 +147,7 @@ def test_provider_signature_tracks_fallback_presets_and_provider_config() -> Non
             **base["modelPresets"],
             "backup": {"model": "deepseek/deepseek-chat", "provider": "deepseek"},
         },
-        "providers": {
-            **base["providers"],
-            "deepseek": {"apiKey": "deepseek-key"},
-        },
+        "providers": {**base["providers"], "deepseek": {"apiKey": "deepseek-key"}},
     }
     changed_key = {
         **base,
@@ -181,17 +164,12 @@ def test_provider_signature_tracks_fallback_presets_and_provider_config() -> Non
 
 
 def test_provider_snapshot_uses_smallest_fallback_context_window() -> None:
-    from nanobot.config.schema import Config
-    from nanobot.providers.factory import build_provider_snapshot
+    from vtx_claw.config.schema import Config
+    from vtx_claw.providers.factory import build_provider_snapshot
 
     config = Config.model_validate(
         {
-            "agents": {
-                "defaults": {
-                    "modelPreset": "fast",
-                    "fallbackModels": ["deep"],
-                }
-            },
+            "agents": {"defaults": {"modelPreset": "fast", "fallbackModels": ["deep"]}},
             "modelPresets": {
                 "fast": {
                     "model": "openai/gpt-4.1",
@@ -211,15 +189,15 @@ def test_provider_snapshot_uses_smallest_fallback_context_window() -> None:
         }
     )
 
-    with patch("nanobot.providers.openai_compat_provider.AsyncOpenAI"):
+    with patch("vtx_claw.providers.openai_compat_provider.AsyncOpenAI"):
         snapshot = build_provider_snapshot(config)
 
     assert snapshot.context_window_tokens == 64000
 
 
 def test_inline_fallback_reasoning_effort_does_not_inherit_primary() -> None:
-    from nanobot.config.schema import Config
-    from nanobot.providers.factory import provider_signature
+    from vtx_claw.config.schema import Config
+    from vtx_claw.providers.factory import provider_signature
 
     config = Config.model_validate(
         {
@@ -258,9 +236,7 @@ class TestNoFallbackWhenPrimarySucceeds:
         primary = _FakeProvider("primary", _make_response("primary ok"))
         factory = MagicMock()
         fb = FallbackProvider(
-            primary=primary,
-            fallback_presets=[_fallback("fallback-a")],
-            provider_factory=factory,
+            primary=primary, fallback_presets=[_fallback("fallback-a")], provider_factory=factory
         )
 
         result = await fb.chat(messages=[{"role": "user", "content": "hi"}])
@@ -277,9 +253,7 @@ class TestFallbackOnPrimaryError:
         factory = MagicMock(return_value=fallback)
 
         fb = FallbackProvider(
-            primary=primary,
-            fallback_presets=[_fallback("fallback-a")],
-            provider_factory=factory,
+            primary=primary, fallback_presets=[_fallback("fallback-a")], provider_factory=factory
         )
 
         result = await fb.chat(messages=[{"role": "user", "content": "hi"}], model="primary-model")
@@ -320,17 +294,14 @@ class TestNoFallbackWhenContentStreamed:
         primary = _FakeProvider("primary", _error_response())
         factory = MagicMock()
         fb = FallbackProvider(
-            primary=primary,
-            fallback_presets=[_fallback("fallback-a")],
-            provider_factory=factory,
+            primary=primary, fallback_presets=[_fallback("fallback-a")], provider_factory=factory
         )
 
         async def _delta(text: str) -> None:
             pass
 
         result = await fb.chat_stream(
-            messages=[{"role": "user", "content": "hi"}],
-            on_content_delta=_delta,
+            messages=[{"role": "user", "content": "hi"}], on_content_delta=_delta
         )
         assert result.finish_reason == "error"
         factory.assert_not_called()
@@ -346,9 +317,7 @@ class TestFallbackOnStreamStalledAfterContent:
         fallback = _FakeProvider("fallback", _make_response("fallback ok"))
         factory = MagicMock(return_value=fallback)
         fb = FallbackProvider(
-            primary=primary,
-            fallback_presets=[_fallback("fallback-a")],
-            provider_factory=factory,
+            primary=primary, fallback_presets=[_fallback("fallback-a")], provider_factory=factory
         )
 
         streamed: list[str] = []
@@ -378,12 +347,10 @@ class TestFailoverOnEmptyChoices:
     @pytest.mark.asyncio
     async def test_empty_choices_text_fallback(self) -> None:
         """_should_fallback should return True for 'API returned empty choices'."""
-        from nanobot.providers.fallback_provider import FallbackProvider
+        from vtx_claw.providers.fallback_provider import FallbackProvider
 
         response = _make_response(
-            "Error: API returned empty choices.",
-            finish_reason="error",
-            error_kind="empty",
+            "Error: API returned empty choices.", finish_reason="error", error_kind="empty"
         )
         # error_kind="empty" matches _FALLBACK_ERROR_KINDS via kind check
         assert FallbackProvider._should_fallback(response)
@@ -391,7 +358,7 @@ class TestFailoverOnEmptyChoices:
     @pytest.mark.asyncio
     async def test_empty_choices_no_error_kind_text_fallback(self) -> None:
         """_should_fallback should also match via text token when error_kind is None."""
-        from nanobot.providers.fallback_provider import FallbackProvider
+        from vtx_claw.providers.fallback_provider import FallbackProvider
 
         response = _make_response(
             "Error: API returned empty choices.",
@@ -405,15 +372,12 @@ class TestFailoverOnEmptyChoices:
     async def test_empty_choices_triggers_failover(self) -> None:
         """End-to-end: empty choices on primary triggers fallback."""
         primary = _FakeProvider(
-            "primary",
-            _make_response("Error: API returned empty choices.", finish_reason="error"),
+            "primary", _make_response("Error: API returned empty choices.", finish_reason="error")
         )
         fallback = _FakeProvider("fallback", _make_response("fallback ok"))
         factory = MagicMock(return_value=fallback)
         fb = FallbackProvider(
-            primary=primary,
-            fallback_presets=[_fallback("fallback-a")],
-            provider_factory=factory,
+            primary=primary, fallback_presets=[_fallback("fallback-a")], provider_factory=factory
         )
 
         result = await fb.chat(messages=[{"role": "user", "content": "hi"}])
@@ -429,9 +393,7 @@ class TestFailoverOnTransientError:
         fallback = _FakeProvider("fallback", _make_response("fallback ok"))
         factory = MagicMock(return_value=fallback)
         fb = FallbackProvider(
-            primary=primary,
-            fallback_presets=[_fallback("fallback-a")],
-            provider_factory=factory,
+            primary=primary, fallback_presets=[_fallback("fallback-a")], provider_factory=factory
         )
 
         result = await fb.chat(messages=[{"role": "user", "content": "hi"}])
@@ -454,9 +416,7 @@ class TestNoFallbackOnNonRetryableError:
         )
         factory = MagicMock()
         fb = FallbackProvider(
-            primary=primary,
-            fallback_presets=[_fallback("fallback-a")],
-            provider_factory=factory,
+            primary=primary, fallback_presets=[_fallback("fallback-a")], provider_factory=factory
         )
 
         result = await fb.chat(messages=[{"role": "user", "content": "hi"}])
@@ -477,9 +437,7 @@ class TestNoFallbackOnNonRetryableError:
         )
         factory = MagicMock()
         fb = FallbackProvider(
-            primary=primary,
-            fallback_presets=[_fallback("fallback-a")],
-            provider_factory=factory,
+            primary=primary, fallback_presets=[_fallback("fallback-a")], provider_factory=factory
         )
 
         result = await fb.chat(messages=[{"role": "user", "content": "hi"}])
@@ -490,15 +448,12 @@ class TestNoFallbackOnNonRetryableError:
     @pytest.mark.asyncio
     async def test_timeout(self) -> None:
         primary = _FakeProvider(
-            "primary",
-            _make_response("timed out", finish_reason="error", error_kind="timeout"),
+            "primary", _make_response("timed out", finish_reason="error", error_kind="timeout")
         )
         fallback = _FakeProvider("fallback", _make_response("fallback ok"))
         factory = MagicMock(return_value=fallback)
         fb = FallbackProvider(
-            primary=primary,
-            fallback_presets=[_fallback("fallback-a")],
-            provider_factory=factory,
+            primary=primary, fallback_presets=[_fallback("fallback-a")], provider_factory=factory
         )
 
         result = await fb.chat(messages=[{"role": "user", "content": "hi"}])
@@ -536,9 +491,7 @@ class TestAllFallbacksFail:
         factory = MagicMock(return_value=fallback)
 
         fb = FallbackProvider(
-            primary=primary,
-            fallback_presets=[_fallback("fallback-a")],
-            provider_factory=factory,
+            primary=primary, fallback_presets=[_fallback("fallback-a")], provider_factory=factory
         )
 
         result = await fb.chat(messages=[{"role": "user", "content": "hi"}])
@@ -589,10 +542,7 @@ class TestFallbackModelParameter:
             primary=primary,
             fallback_presets=[
                 _fallback(
-                    "fallback-model",
-                    max_tokens=1234,
-                    temperature=0.4,
-                    reasoning_effort=None,
+                    "fallback-model", max_tokens=1234, temperature=0.4, reasoning_effort=None
                 )
             ],
             provider_factory=MagicMock(return_value=fallback),
@@ -618,11 +568,7 @@ class TestNoFallbackWhenEmptyList:
         primary = _FakeProvider("primary", _error_response())
         factory = MagicMock()
 
-        fb = FallbackProvider(
-            primary=primary,
-            fallback_presets=[],
-            provider_factory=factory,
-        )
+        fb = FallbackProvider(primary=primary, fallback_presets=[], provider_factory=factory)
 
         result = await fb.chat(messages=[{"role": "user", "content": "hi"}])
         assert result.finish_reason == "error"
@@ -638,9 +584,7 @@ class TestChatStreamFailover:
         factory = MagicMock(return_value=fallback)
 
         fb = FallbackProvider(
-            primary=primary,
-            fallback_presets=[_fallback("fallback-a")],
-            provider_factory=factory,
+            primary=primary, fallback_presets=[_fallback("fallback-a")], provider_factory=factory
         )
 
         result = await fb.chat_stream(messages=[{"role": "user", "content": "hi"}])
@@ -652,9 +596,7 @@ class TestGetDefaultModel:
     def test(self) -> None:
         primary = _FakeProvider("primary")
         fb = FallbackProvider(
-            primary=primary,
-            fallback_presets=[_fallback("a")],
-            provider_factory=MagicMock(),
+            primary=primary, fallback_presets=[_fallback("a")], provider_factory=MagicMock()
         )
         assert fb.get_default_model() == "primary/model"
 
@@ -666,9 +608,7 @@ class TestCircuitBreaker:
         fallback = _FakeProvider("fallback", _make_response("fallback ok"))
         factory = MagicMock(return_value=fallback)
         fb = FallbackProvider(
-            primary=primary,
-            fallback_presets=[_fallback("fallback-a")],
-            provider_factory=factory,
+            primary=primary, fallback_presets=[_fallback("fallback-a")], provider_factory=factory
         )
 
         # 3 failures — primary should still be called each time
@@ -690,9 +630,7 @@ class TestCircuitBreaker:
         fallback = _FakeProvider("fallback", _make_response("fallback ok"))
         factory = MagicMock(return_value=fallback)
         fb = FallbackProvider(
-            primary=primary,
-            fallback_presets=[_fallback("fallback-a")],
-            provider_factory=factory,
+            primary=primary, fallback_presets=[_fallback("fallback-a")], provider_factory=factory
         )
 
         # 2 failures
@@ -714,14 +652,12 @@ class TestCircuitBreaker:
 
 class TestGenerationForwarded:
     def test(self) -> None:
-        from nanobot.providers.base import GenerationSettings
+        from vtx_claw.providers.base import GenerationSettings
 
         primary = _FakeProvider("primary")
         primary.generation = GenerationSettings(temperature=0.5, max_tokens=1024)
         fb = FallbackProvider(
-            primary=primary,
-            fallback_presets=[_fallback("a")],
-            provider_factory=MagicMock(),
+            primary=primary, fallback_presets=[_fallback("a")], provider_factory=MagicMock()
         )
         assert fb.generation.temperature == 0.5
         assert fb.generation.max_tokens == 1024

@@ -3,11 +3,11 @@ from unittest.mock import MagicMock
 
 import pytest
 
-from nanobot.agent.loop import AgentLoop
-from nanobot.agent.tools.self import MyTool
-from nanobot.bus.queue import MessageBus
-from nanobot.config.schema import ModelPresetConfig
-from nanobot.providers.factory import ProviderSnapshot
+from vtx_claw.agent.loop import AgentLoop
+from vtx_claw.agent.tools.self import MyTool
+from vtx_claw.bus.queue import MessageBus
+from vtx_claw.config.schema import ModelPresetConfig
+from vtx_claw.providers.factory import ProviderSnapshot
 
 
 def _provider(default_model: str, max_tokens: int = 123) -> MagicMock:
@@ -226,9 +226,7 @@ def test_model_preset_setter_raises_on_empty_string(tmp_path) -> None:
 
 
 def test_self_tool_inspect_shows_model_preset(tmp_path) -> None:
-    presets = {
-        "fast": ModelPresetConfig(model="openai/gpt-4.1"),
-    }
+    presets = {"fast": ModelPresetConfig(model="openai/gpt-4.1")}
     loop = _make_loop(tmp_path, presets=presets, active_preset="fast")
     tool = MyTool(runtime_state=loop, modify_allowed=True)
     output = tool._inspect_all()
@@ -236,9 +234,7 @@ def test_self_tool_inspect_shows_model_preset(tmp_path) -> None:
 
 
 def test_self_tool_set_model_preset_via_modify(tmp_path) -> None:
-    presets = {
-        "fast": ModelPresetConfig(model="openai/gpt-4.1"),
-    }
+    presets = {"fast": ModelPresetConfig(model="openai/gpt-4.1")}
     loop = _make_loop(tmp_path, presets=presets)
     tool = MyTool(runtime_state=loop, modify_allowed=True)
     result = tool._modify("model_preset", "fast")
@@ -280,9 +276,7 @@ def test_self_tool_set_model_preset_unknown_lists_available(tmp_path) -> None:
 
 
 def test_self_tool_set_model_clears_active_preset(tmp_path) -> None:
-    presets = {
-        "fast": ModelPresetConfig(model="openai/gpt-4.1"),
-    }
+    presets = {"fast": ModelPresetConfig(model="openai/gpt-4.1")}
     loop = _make_loop(tmp_path, presets=presets, active_preset="fast")
     tool = MyTool(runtime_state=loop, modify_allowed=True)
     result = tool._modify("model", "anthropic/claude-opus-4-5")
@@ -294,15 +288,13 @@ def test_self_tool_set_model_clears_active_preset(tmp_path) -> None:
 def test_from_config_injects_default_preset(tmp_path) -> None:
     from unittest.mock import patch
 
-    from nanobot.config.schema import Config
+    from vtx_claw.config.schema import Config
 
     config = Config.model_validate(
-        {
-            "agents": {"defaults": {"model": "openai/gpt-4.1", "workspace": str(tmp_path)}},
-        }
+        {"agents": {"defaults": {"model": "openai/gpt-4.1", "workspace": str(tmp_path)}}}
     )
     fake_provider = _provider("openai/gpt-4.1")
-    with patch("nanobot.providers.factory.make_provider", return_value=fake_provider):
+    with patch("vtx_claw.providers.factory.make_provider", return_value=fake_provider):
         loop = AgentLoop.from_config(config)
     assert loop.model == "openai/gpt-4.1"
     assert loop.model_preset is None
@@ -313,7 +305,7 @@ def test_from_config_injects_default_preset(tmp_path) -> None:
 def test_from_config_static_preset_loader_does_not_enable_hot_reload(tmp_path) -> None:
     from unittest.mock import patch
 
-    from nanobot.config.schema import Config
+    from vtx_claw.config.schema import Config
 
     config = Config.model_validate(
         {
@@ -322,7 +314,7 @@ def test_from_config_static_preset_loader_does_not_enable_hot_reload(tmp_path) -
         }
     )
     fake_provider = _provider("openai/gpt-4.1")
-    with patch("nanobot.providers.factory.make_provider", return_value=fake_provider):
+    with patch("vtx_claw.providers.factory.make_provider", return_value=fake_provider):
         loop = AgentLoop.from_config(config)
     assert loop._provider_snapshot_loader is None
     assert loop._preset_snapshot_loader is not None

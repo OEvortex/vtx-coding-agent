@@ -1,4 +1,4 @@
-export const LOCALE_STORAGE_KEY = "nanobot.locale";
+export const LOCALE_STORAGE_KEY = "vtx-claw.locale";
 
 export const supportedLocales = [
   { code: "en", label: "English", nativeLabel: "English" },

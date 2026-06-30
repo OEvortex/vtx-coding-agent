@@ -3,11 +3,11 @@ from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
-from nanobot.agent.loop import AgentLoop
-from nanobot.bus.events import OutboundMessage
-from nanobot.bus.queue import MessageBus
-from nanobot.providers.base import GenerationSettings, LLMResponse
-from nanobot.session.webui_turns import WebuiTurnCoordinator
+from vtx_claw.agent.loop import AgentLoop
+from vtx_claw.bus.events import OutboundMessage
+from vtx_claw.bus.queue import MessageBus
+from vtx_claw.providers.base import GenerationSettings, LLMResponse
+from vtx_claw.session.webui_turns import WebuiTurnCoordinator
 
 
 def _make_loop(tmp_path):
@@ -20,12 +20,7 @@ def _make_loop(tmp_path):
     provider.chat_with_retry = AsyncMock(return_value=response)
     provider.chat_stream_with_retry = AsyncMock(return_value=response)
 
-    loop = AgentLoop(
-        bus=bus,
-        provider=provider,
-        workspace=tmp_path,
-        model="test-model",
-    )
+    loop = AgentLoop(bus=bus, provider=provider, workspace=tmp_path, model="test-model")
     WebuiTurnCoordinator(
         bus=bus,
         sessions=loop.sessions,
@@ -40,10 +35,7 @@ async def test_process_direct_websocket_clears_run_status(tmp_path) -> None:
     loop = _make_loop(tmp_path)
 
     response = await loop.process_direct(
-        "deliver reminder",
-        session_key="cron:reminder-1",
-        channel="websocket",
-        chat_id="chat-1",
+        "deliver reminder", session_key="cron:reminder-1", channel="websocket", chat_id="chat-1"
     )
 
     assert response is not None
@@ -95,7 +87,7 @@ async def test_process_direct_reuses_existing_session_lock(tmp_path) -> None:
 
 @pytest.mark.asyncio
 async def test_process_direct_applies_per_run_hooks(tmp_path) -> None:
-    from nanobot.agent.hook import AgentHook, AgentRunHookContext
+    from vtx_claw.agent.hook import AgentHook, AgentRunHookContext
 
     loop = _make_loop(tmp_path)
     events: list[tuple[str, str | None]] = []
@@ -108,9 +100,7 @@ async def test_process_direct_applies_per_run_hooks(tmp_path) -> None:
             events.append(("after", context.final_content))
 
     response = await loop.process_direct(
-        "hello",
-        session_key="api:per-run-hook",
-        hooks=[RecordingHook()],
+        "hello", session_key="api:per-run-hook", hooks=[RecordingHook()]
     )
 
     assert response is not None

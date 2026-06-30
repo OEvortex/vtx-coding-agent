@@ -9,13 +9,13 @@ from unittest.mock import AsyncMock, MagicMock
 import pytest
 import pytest_asyncio
 
-from nanobot.api.server import (
+from vtx_claw.api.server import (
     _FileSizeExceeded,
     _parse_json_content,
     _save_base64_data_url,
     create_app,
 )
-from nanobot.utils.document import extract_documents
+from vtx_claw.utils.document import extract_documents
 
 try:
     from aiohttp.test_utils import TestClient, TestServer
@@ -143,10 +143,7 @@ def test_parse_json_content_plain_text_only() -> None:
 def test_parse_json_content_validates_single_message() -> None:
     """Multiple messages raise ValueError."""
     body = {
-        "messages": [
-            {"role": "user", "content": "first"},
-            {"role": "user", "content": "second"},
-        ]
+        "messages": [{"role": "user", "content": "first"}, {"role": "user", "content": "second"}]
     }
     with pytest.raises(ValueError, match="single user message"):
         _parse_json_content(body)
@@ -210,8 +207,7 @@ async def test_multipart_upload_saves_file(aiohttp_client, mock_agent, tmp_path)
         data = BytesIO(file_data)
 
         resp = await client.post(
-            "/v1/chat/completions",
-            data={"message": "analyze this", "files": data},
+            "/v1/chat/completions", data={"message": "analyze this", "files": data}
         )
         assert resp.status == 200
         call_kwargs = mock_agent.process_direct.call_args.kwargs
@@ -240,8 +236,7 @@ async def test_multipart_multiple_files(aiohttp_client, mock_agent, tmp_path) ->
         data = BytesIO(file_data)
 
         resp = await client.post(
-            "/v1/chat/completions",
-            data={"message": "analyze", "files": data},
+            "/v1/chat/completions", data={"message": "analyze", "files": data}
         )
         assert resp.status == 200
     finally:
@@ -266,8 +261,7 @@ async def test_multipart_file_size_limit(aiohttp_client, mock_agent, tmp_path) -
         data = BytesIO(large_data)
 
         resp = await client.post(
-            "/v1/chat/completions",
-            data={"message": "analyze", "files": data},
+            "/v1/chat/completions", data={"message": "analyze", "files": data}
         )
         assert resp.status == 413
     finally:
@@ -290,10 +284,7 @@ async def test_multipart_defaults_text_when_missing(aiohttp_client, mock_agent, 
         file_data = b"content"
         data = BytesIO(file_data)
 
-        resp = await client.post(
-            "/v1/chat/completions",
-            data={"files": data},
-        )
+        resp = await client.post("/v1/chat/completions", data={"files": data})
         assert resp.status == 200
         call_kwargs = mock_agent.process_direct.call_args.kwargs
         assert call_kwargs["content"] == "请分析上传的文件"
@@ -340,8 +331,7 @@ async def test_plain_text_backward_compat(aiohttp_client, mock_agent) -> None:
     app = create_app(mock_agent, model_name="m")
     client = await aiohttp_client(app)
     resp = await client.post(
-        "/v1/chat/completions",
-        json={"messages": [{"role": "user", "content": "hello world"}]},
+        "/v1/chat/completions", json={"messages": [{"role": "user", "content": "hello world"}]}
     )
     assert resp.status == 200
     body = await resp.json()
@@ -393,7 +383,7 @@ async def test_json_base64_image_upload(aiohttp_client, mock_agent, tmp_path) ->
 
 
 # ---------------------------------------------------------------------------
-# extract_documents tests (now in nanobot.utils.document)
+# extract_documents tests (now in vtx_claw.utils.document)
 # ---------------------------------------------------------------------------
 
 
@@ -421,12 +411,10 @@ def test_extract_documents_skips_extraction_errors(tmp_path, monkeypatch) -> Non
     bad_file = tmp_path / "broken.docx"
     bad_file.write_text("not a docx", encoding="utf-8")
 
-    import nanobot.utils.document as _doc
+    import vtx_claw.utils.document as _doc
 
     monkeypatch.setattr(
-        _doc,
-        "extract_text",
-        lambda _path: "[error: failed to extract DOCX: boom]",
+        _doc, "extract_text", lambda _path: "[error: failed to extract DOCX: boom]"
     )
 
     text, image_paths = extract_documents("hello", [str(bad_file)])

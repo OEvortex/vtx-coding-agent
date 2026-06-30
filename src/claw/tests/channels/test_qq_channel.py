@@ -7,7 +7,7 @@ import pytest
 
 # Check optional QQ dependencies before running tests
 try:
-    from nanobot.channels import qq
+    from vtx_claw.channels import qq
 
     QQ_AVAILABLE = getattr(qq, "QQ_AVAILABLE", False)
 except ImportError:
@@ -18,9 +18,9 @@ if not QQ_AVAILABLE:
 
 import aiohttp
 
-from nanobot.bus.events import OutboundMessage
-from nanobot.bus.queue import MessageBus
-from nanobot.channels.qq import QQChannel, QQConfig
+from vtx_claw.bus.events import OutboundMessage
+from vtx_claw.bus.queue import MessageBus
+from vtx_claw.channels.qq import QQChannel, QQConfig
 
 
 class _FakeApi:
@@ -42,7 +42,9 @@ class _FakeClient:
 
 @pytest.mark.asyncio
 async def test_on_group_message_routes_to_group_chat_id() -> None:
-    channel = QQChannel(QQConfig(app_id="app", secret="secret", allow_from=["user1"]), MessageBus())
+    channel = QQChannel(
+        QQConfig(app_id="app", secret="secret", allow_from=["user1"]), MessageBus()
+    )
 
     data = SimpleNamespace(
         id="msg1",
@@ -61,14 +63,13 @@ async def test_on_group_message_routes_to_group_chat_id() -> None:
 
 @pytest.mark.asyncio
 async def test_on_c2c_message_passes_is_dm_true_to_base_handler() -> None:
-    channel = QQChannel(QQConfig(app_id="app", secret="secret", allow_from=["user1"]), MessageBus())
+    channel = QQChannel(
+        QQConfig(app_id="app", secret="secret", allow_from=["user1"]), MessageBus()
+    )
     channel._handle_message = AsyncMock()
 
     data = SimpleNamespace(
-        id="msg-c2c",
-        content="hello",
-        author=SimpleNamespace(user_openid="user1"),
-        attachments=[],
+        id="msg-c2c", content="hello", author=SimpleNamespace(user_openid="user1"), attachments=[]
     )
 
     await channel._on_message(data, is_group=False)
@@ -83,7 +84,9 @@ async def test_on_c2c_message_passes_is_dm_true_to_base_handler() -> None:
 
 @pytest.mark.asyncio
 async def test_on_group_message_passes_is_dm_false_to_base_handler() -> None:
-    channel = QQChannel(QQConfig(app_id="app", secret="secret", allow_from=["user1"]), MessageBus())
+    channel = QQChannel(
+        QQConfig(app_id="app", secret="secret", allow_from=["user1"]), MessageBus()
+    )
     channel._handle_message = AsyncMock()
 
     data = SimpleNamespace(
@@ -112,10 +115,7 @@ async def test_send_group_message_uses_plain_text_group_api_with_msg_seq() -> No
 
     await channel.send(
         OutboundMessage(
-            channel="qq",
-            chat_id="group123",
-            content="hello",
-            metadata={"message_id": "msg1"},
+            channel="qq", chat_id="group123", content="hello", metadata={"message_id": "msg1"}
         )
     )
 
@@ -138,10 +138,7 @@ async def test_send_c2c_message_uses_plain_text_c2c_api_with_msg_seq() -> None:
 
     await channel.send(
         OutboundMessage(
-            channel="qq",
-            chat_id="user123",
-            content="hello",
-            metadata={"message_id": "msg1"},
+            channel="qq", chat_id="user123", content="hello", metadata={"message_id": "msg1"}
         )
     )
 
@@ -168,10 +165,7 @@ async def test_send_group_message_uses_markdown_when_configured() -> None:
 
     await channel.send(
         OutboundMessage(
-            channel="qq",
-            chat_id="group123",
-            content="**hello**",
-            metadata={"message_id": "msg1"},
+            channel="qq", chat_id="group123", content="**hello**", metadata={"message_id": "msg1"}
         )
     )
 
@@ -228,10 +222,7 @@ async def test_read_media_bytes_missing_file() -> None:
 
 def _make_channel_with_local_file(suffix: str = ".png", content: bytes = b"\x89PNG\r\n"):
     """Create a QQChannel with a fake client and a temp file for media."""
-    channel = QQChannel(
-        QQConfig(app_id="app", secret="secret", allow_from=["*"]),
-        MessageBus(),
-    )
+    channel = QQChannel(QQConfig(app_id="app", secret="secret", allow_from=["*"]), MessageBus())
     channel._client = _FakeClient()
     channel._chat_type_cache["user1"] = "c2c"
 
@@ -249,15 +240,12 @@ async def test_send_media_network_error_propagates() -> None:
     # Make the base64 upload raise a network error
     channel._client.api._http = SimpleNamespace()
     channel._client.api._http.request = AsyncMock(
-        side_effect=aiohttp.ServerDisconnectedError("connection lost"),
+        side_effect=aiohttp.ServerDisconnectedError("connection lost")
     )
 
     with pytest.raises(aiohttp.ServerDisconnectedError):
         await channel._send_media(
-            chat_id="user1",
-            media_ref=tmp_path,
-            msg_id="msg1",
-            is_group=False,
+            chat_id="user1", media_ref=tmp_path, msg_id="msg1", is_group=False
         )
 
 
@@ -270,21 +258,15 @@ async def test_send_media_client_connector_error_propagates() -> None:
 
     conn_key = ConnectionKey("api.qq.com", 443, True, None, None, None, None)
     connector_error = aiohttp.ClientConnectorError(
-        connection_key=conn_key,
-        os_error=OSError("Connection refused"),
+        connection_key=conn_key, os_error=OSError("Connection refused")
     )
 
     channel._client.api._http = SimpleNamespace()
-    channel._client.api._http.request = AsyncMock(
-        side_effect=connector_error,
-    )
+    channel._client.api._http.request = AsyncMock(side_effect=connector_error)
 
     with pytest.raises(aiohttp.ClientConnectorError):
         await channel._send_media(
-            chat_id="user1",
-            media_ref=tmp_path,
-            msg_id="msg1",
-            is_group=False,
+            chat_id="user1", media_ref=tmp_path, msg_id="msg1", is_group=False
         )
 
 
@@ -294,16 +276,11 @@ async def test_send_media_oserror_propagates() -> None:
     channel, tmp_path = _make_channel_with_local_file()
 
     channel._client.api._http = SimpleNamespace()
-    channel._client.api._http.request = AsyncMock(
-        side_effect=OSError("Network is unreachable"),
-    )
+    channel._client.api._http.request = AsyncMock(side_effect=OSError("Network is unreachable"))
 
     with pytest.raises(OSError):
         await channel._send_media(
-            chat_id="user1",
-            media_ref=tmp_path,
-            msg_id="msg1",
-            is_group=False,
+            chat_id="user1", media_ref=tmp_path, msg_id="msg1", is_group=False
         )
 
 
@@ -316,15 +293,10 @@ async def test_send_media_api_error_returns_false() -> None:
     from botpy.errors import ServerError
 
     channel._client.api._http = SimpleNamespace()
-    channel._client.api._http.request = AsyncMock(
-        side_effect=ServerError("internal server error"),
-    )
+    channel._client.api._http.request = AsyncMock(side_effect=ServerError("internal server error"))
 
     result = await channel._send_media(
-        chat_id="user1",
-        media_ref=tmp_path,
-        msg_id="msg1",
-        is_group=False,
+        chat_id="user1", media_ref=tmp_path, msg_id="msg1", is_group=False
     )
     assert result is False
 
@@ -335,15 +307,10 @@ async def test_send_media_generic_runtime_error_returns_false() -> None:
     channel, tmp_path = _make_channel_with_local_file()
 
     channel._client.api._http = SimpleNamespace()
-    channel._client.api._http.request = AsyncMock(
-        side_effect=RuntimeError("some API error"),
-    )
+    channel._client.api._http.request = AsyncMock(side_effect=RuntimeError("some API error"))
 
     result = await channel._send_media(
-        chat_id="user1",
-        media_ref=tmp_path,
-        msg_id="msg1",
-        is_group=False,
+        chat_id="user1", media_ref=tmp_path, msg_id="msg1", is_group=False
     )
     assert result is False
 
@@ -354,15 +321,10 @@ async def test_send_media_value_error_returns_false() -> None:
     channel, tmp_path = _make_channel_with_local_file()
 
     channel._client.api._http = SimpleNamespace()
-    channel._client.api._http.request = AsyncMock(
-        side_effect=ValueError("bad response data"),
-    )
+    channel._client.api._http.request = AsyncMock(side_effect=ValueError("bad response data"))
 
     result = await channel._send_media(
-        chat_id="user1",
-        media_ref=tmp_path,
-        msg_id="msg1",
-        is_group=False,
+        chat_id="user1", media_ref=tmp_path, msg_id="msg1", is_group=False
     )
     assert result is False
 
@@ -376,15 +338,12 @@ async def test_send_media_timeout_error_propagates() -> None:
 
     channel._client.api._http = SimpleNamespace()
     channel._client.api._http.request = AsyncMock(
-        side_effect=aiohttp.ServerTimeoutError("request timed out"),
+        side_effect=aiohttp.ServerTimeoutError("request timed out")
     )
 
     with pytest.raises(aiohttp.ServerTimeoutError):
         await channel._send_media(
-            chat_id="user1",
-            media_ref=tmp_path,
-            msg_id="msg1",
-            is_group=False,
+            chat_id="user1", media_ref=tmp_path, msg_id="msg1", is_group=False
         )
 
 
@@ -396,9 +355,7 @@ async def test_send_fallback_text_on_api_error() -> None:
     from botpy.errors import ServerError
 
     channel._client.api._http = SimpleNamespace()
-    channel._client.api._http.request = AsyncMock(
-        side_effect=ServerError("internal server error"),
-    )
+    channel._client.api._http.request = AsyncMock(side_effect=ServerError("internal server error"))
 
     await channel.send(
         OutboundMessage(
@@ -423,7 +380,7 @@ async def test_send_propagates_network_error_no_fallback() -> None:
 
     channel._client.api._http = SimpleNamespace()
     channel._client.api._http.request = AsyncMock(
-        side_effect=aiohttp.ServerDisconnectedError("connection lost"),
+        side_effect=aiohttp.ServerDisconnectedError("connection lost")
     )
 
     with pytest.raises(aiohttp.ServerDisconnectedError):

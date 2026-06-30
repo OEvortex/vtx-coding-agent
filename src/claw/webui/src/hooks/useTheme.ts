@@ -9,7 +9,7 @@ import {
 } from "react";
 
 type Theme = "light" | "dark";
-const STORAGE_KEY = "nanobot-webui.theme";
+const STORAGE_KEY = "vtx-claw-webui.theme";
 const ThemeContext = createContext<Theme>("light");
 
 function readStored(): Theme | null {

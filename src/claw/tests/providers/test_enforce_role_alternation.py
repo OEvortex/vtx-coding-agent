@@ -1,6 +1,6 @@
 """Tests for LLMProvider._enforce_role_alternation."""
 
-from nanobot.providers.base import LLMProvider, _SYNTHETIC_USER_CONTENT
+from vtx_claw.providers.base import _SYNTHETIC_USER_CONTENT, LLMProvider
 
 
 class TestEnforceRoleAlternation:
@@ -21,10 +21,7 @@ class TestEnforceRoleAlternation:
         assert result[-1]["role"] == "user"
 
     def test_trailing_assistant_removed(self):
-        msgs = [
-            {"role": "user", "content": "Hi"},
-            {"role": "assistant", "content": "Hello!"},
-        ]
+        msgs = [{"role": "user", "content": "Hi"}, {"role": "assistant", "content": "Hello!"}]
         result = LLMProvider._enforce_role_alternation(msgs)
         assert len(result) == 1
         assert result[0]["role"] == "user"
@@ -40,10 +37,7 @@ class TestEnforceRoleAlternation:
         assert result[0]["role"] == "user"
 
     def test_consecutive_user_messages_merged(self):
-        msgs = [
-            {"role": "user", "content": "Hello"},
-            {"role": "user", "content": "How are you?"},
-        ]
+        msgs = [{"role": "user", "content": "Hello"}, {"role": "user", "content": "How are you?"}]
         result = LLMProvider._enforce_role_alternation(msgs)
         assert len(result) == 1
         assert "Hello" in result[0]["content"]
@@ -122,10 +116,7 @@ class TestEnforceRoleAlternation:
         assert result[0]["content"] == "B"
 
     def test_original_messages_not_mutated(self):
-        msgs = [
-            {"role": "user", "content": "Hello"},
-            {"role": "user", "content": "World"},
-        ]
+        msgs = [{"role": "user", "content": "Hello"}, {"role": "user", "content": "World"}]
         original_first = dict(msgs[0])
         LLMProvider._enforce_role_alternation(msgs)
         assert msgs[0] == original_first
@@ -173,10 +164,7 @@ class TestEnforceRoleAlternation:
         assert result[-1]["role"] == "tool"
 
     def test_only_assistant_messages(self):
-        msgs = [
-            {"role": "assistant", "content": "A"},
-            {"role": "assistant", "content": "B"},
-        ]
+        msgs = [{"role": "assistant", "content": "A"}, {"role": "assistant", "content": "B"}]
         result = LLMProvider._enforce_role_alternation(msgs)
         assert result == []
 

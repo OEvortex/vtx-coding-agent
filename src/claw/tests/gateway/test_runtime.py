@@ -1,7 +1,7 @@
 import json
 from pathlib import Path
 
-from nanobot.gateway import GatewayRuntime, GatewayRuntimePaths, GatewayStartOptions
+from vtx_claw.gateway import GatewayRuntime, GatewayRuntimePaths, GatewayStartOptions
 
 
 class FakeProcess:
@@ -16,14 +16,10 @@ def _paths(tmp_path: Path) -> GatewayRuntimePaths:
 def test_paths_use_stable_instance_suffix_for_custom_selectors(tmp_path):
     default_paths = GatewayRuntimePaths.for_instance(data_dir=tmp_path)
     first_paths = GatewayRuntimePaths.for_instance(
-        data_dir=tmp_path,
-        workspace="/tmp/workspace-a",
-        config_path="/tmp/config-a.json",
+        data_dir=tmp_path, workspace="/tmp/workspace-a", config_path="/tmp/config-a.json"
     )
     second_paths = GatewayRuntimePaths.for_instance(
-        data_dir=tmp_path,
-        workspace="/tmp/workspace-b",
-        config_path="/tmp/config-b.json",
+        data_dir=tmp_path, workspace="/tmp/workspace-b", config_path="/tmp/config-b.json"
     )
 
     assert default_paths.state_path.name == "gateway.json"
@@ -51,10 +47,7 @@ def test_start_background_writes_state_and_child_command(tmp_path, monkeypatch):
 
     result = runtime.start_background(
         GatewayStartOptions(
-            port=18790,
-            verbose=True,
-            workspace="/tmp/workspace",
-            config_path="/tmp/config.json",
+            port=18790, verbose=True, workspace="/tmp/workspace", config_path="/tmp/config.json"
         )
     )
 
@@ -63,7 +56,7 @@ def test_start_background_writes_state_and_child_command(tmp_path, monkeypatch):
     assert calls[0]["command"] == [
         "/python",
         "-m",
-        "nanobot",
+        "vtx_claw",
         "gateway",
         "--foreground",
         "--port",

@@ -3,27 +3,25 @@ from unittest.mock import MagicMock
 
 import pytest
 
-from nanobot.agent.loop import AgentLoop
-from nanobot.bus.events import InboundMessage
-from nanobot.bus.queue import MessageBus
-from nanobot.command.builtin import (
+from vtx_claw.agent.loop import AgentLoop
+from vtx_claw.bus.events import InboundMessage
+from vtx_claw.bus.queue import MessageBus
+from vtx_claw.command.builtin import (
     build_help_text,
     builtin_command_palette,
     cmd_goal,
     cmd_model,
     register_builtin_commands,
 )
-from nanobot.command.router import CommandContext, CommandRouter
-from nanobot.config.schema import ModelPresetConfig
+from vtx_claw.command.router import CommandContext, CommandRouter
+from vtx_claw.config.schema import ModelPresetConfig
 
 
 def _provider(default_model: str, max_tokens: int = 123) -> MagicMock:
     provider = MagicMock()
     provider.get_default_model.return_value = default_model
     provider.generation = SimpleNamespace(
-        max_tokens=max_tokens,
-        temperature=0.1,
-        reasoning_effort=None,
+        max_tokens=max_tokens, temperature=0.1, reasoning_effort=None
     )
     return provider
 
@@ -37,14 +35,10 @@ def _make_loop(tmp_path) -> AgentLoop:
         context_window_tokens=1000,
         model_presets={
             "default": ModelPresetConfig(
-                model="base-model",
-                max_tokens=123,
-                context_window_tokens=1000,
+                model="base-model", max_tokens=123, context_window_tokens=1000
             ),
             "fast": ModelPresetConfig(
-                model="openai/gpt-4.1",
-                max_tokens=4096,
-                context_window_tokens=32_768,
+                model="openai/gpt-4.1", max_tokens=4096, context_window_tokens=32_768
             ),
         },
     )
@@ -52,18 +46,15 @@ def _make_loop(tmp_path) -> AgentLoop:
 
 def _ctx(loop: AgentLoop, raw: str, args: str = "") -> CommandContext:
     msg = InboundMessage(channel="cli", sender_id="user", chat_id="direct", content=raw)
-    return CommandContext(msg=msg, session=None, key=msg.session_key, raw=raw, args=args, loop=loop)
+    return CommandContext(
+        msg=msg, session=None, key=msg.session_key, raw=raw, args=args, loop=loop
+    )
 
 
 def _ctx_session(loop: AgentLoop, raw: str, args: str = "") -> CommandContext:
     msg = InboundMessage(channel="cli", sender_id="user", chat_id="direct", content=raw)
     return CommandContext(
-        msg=msg,
-        session=MagicMock(),
-        key=msg.session_key,
-        raw=raw,
-        args=args,
-        loop=loop,
+        msg=msg, session=MagicMock(), key=msg.session_key, raw=raw, args=args, loop=loop
     )
 
 

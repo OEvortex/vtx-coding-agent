@@ -6,13 +6,13 @@ from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
-import nanobot.agent.runner as runner_module
-from nanobot.agent.loop import AgentLoop
-from nanobot.bus.events import InboundMessage
-from nanobot.bus.queue import MessageBus
-from nanobot.providers.base import LLMResponse, ToolCallRequest
-from nanobot.session.webui_turns import WebuiTurnCoordinator
-from nanobot.utils.progress_events import (
+import vtx_claw.agent.runner as runner_module
+from vtx_claw.agent.loop import AgentLoop
+from vtx_claw.bus.events import InboundMessage
+from vtx_claw.bus.queue import MessageBus
+from vtx_claw.providers.base import LLMResponse, ToolCallRequest
+from vtx_claw.session.webui_turns import WebuiTurnCoordinator
+from vtx_claw.utils.progress_events import (
     invoke_file_edit_progress,
     on_progress_accepts_file_edit_events,
 )
@@ -55,10 +55,7 @@ class TestToolEventProgress:
         progress: list[tuple[str, bool, list[dict] | None]] = []
 
         async def on_progress(
-            content: str,
-            *,
-            tool_hint: bool = False,
-            tool_events: list[dict] | None = None,
+            content: str, *, tool_hint: bool = False, tool_events: list[dict] | None = None
         ) -> None:
             progress.append((content, tool_hint, tool_events))
 
@@ -122,7 +119,7 @@ class TestToolEventProgress:
         loop.provider.chat_with_retry = AsyncMock(side_effect=lambda *a, **kw: next(calls))
         loop.tools.get_definitions = MagicMock(return_value=[])
         loop.tools.prepare_call = MagicMock(
-            return_value=(None, {"path": "foo.txt", "content": "new\nextra\n"}, None),
+            return_value=(None, {"path": "foo.txt", "content": "new\nextra\n"}, None)
         )
 
         async def execute(name: str, params: dict) -> str:
@@ -164,17 +161,13 @@ class TestToolEventProgress:
 
     @pytest.mark.asyncio
     async def test_file_edit_snapshot_skipped_when_progress_callback_cannot_emit_file_edits(
-        self,
-        tmp_path: Path,
-        monkeypatch: pytest.MonkeyPatch,
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
     ) -> None:
         loop = _make_loop(tmp_path)
         target = tmp_path / "foo.txt"
         target.write_text("old\n", encoding="utf-8")
         tool_call = ToolCallRequest(
-            id="call-write",
-            name="write_file",
-            arguments={"path": "foo.txt", "content": "new\n"},
+            id="call-write", name="write_file", arguments={"path": "foo.txt", "content": "new\n"}
         )
         calls = iter(
             [
@@ -185,7 +178,7 @@ class TestToolEventProgress:
         loop.provider.chat_with_retry = AsyncMock(side_effect=lambda *a, **kw: next(calls))
         loop.tools.get_definitions = MagicMock(return_value=[])
         loop.tools.prepare_call = MagicMock(
-            return_value=(None, {"path": "foo.txt", "content": "new\n"}, None),
+            return_value=(None, {"path": "foo.txt", "content": "new\n"}, None)
         )
 
         async def execute(name: str, params: dict) -> str:
@@ -197,10 +190,7 @@ class TestToolEventProgress:
         monkeypatch.setattr(runner_module, "prepare_file_edit_tracker", prepare_tracker)
 
         async def on_progress(
-            content: str,
-            *,
-            tool_hint: bool = False,
-            tool_events: list[dict] | None = None,
+            content: str, *, tool_hint: bool = False, tool_events: list[dict] | None = None
         ) -> None:
             pass
 
@@ -214,9 +204,7 @@ class TestToolEventProgress:
     async def test_exec_does_not_emit_file_edit_progress(self, tmp_path: Path) -> None:
         loop = _make_loop(tmp_path)
         tool_call = ToolCallRequest(
-            id="call-exec",
-            name="exec",
-            arguments={"command": "printf hi > foo.txt"},
+            id="call-exec", name="exec", arguments={"command": "printf hi > foo.txt"}
         )
         calls = iter(
             [
@@ -227,7 +215,7 @@ class TestToolEventProgress:
         loop.provider.chat_with_retry = AsyncMock(side_effect=lambda *a, **kw: next(calls))
         loop.tools.get_definitions = MagicMock(return_value=[])
         loop.tools.prepare_call = MagicMock(
-            return_value=(None, {"command": "printf hi > foo.txt"}, None),
+            return_value=(None, {"command": "printf hi > foo.txt"}, None)
         )
         loop.tools.execute = AsyncMock(return_value="ok")
         file_events: list[dict] = []
@@ -268,12 +256,7 @@ class TestToolEventProgress:
         loop.tools.prepare_call = MagicMock(return_value=(None, {"command": "ls"}, None))
         loop.tools.execute = AsyncMock(return_value="file.txt")
 
-        msg = InboundMessage(
-            channel="telegram",
-            sender_id="u1",
-            chat_id="chat1",
-            content="run ls",
-        )
+        msg = InboundMessage(channel="telegram", sender_id="u1", chat_id="chat1", content="run ls")
         await loop._dispatch(msg)
 
         # Drain all outbound messages and find the one carrying _tool_events
@@ -288,7 +271,9 @@ class TestToolEventProgress:
             m for m in tool_event_msgs if m.metadata["_tool_events"][0]["phase"] == "start"
         ]
         finish_msgs = [
-            m for m in tool_event_msgs if m.metadata["_tool_events"][0]["phase"] in ("end", "error")
+            m
+            for m in tool_event_msgs
+            if m.metadata["_tool_events"][0]["phase"] in ("end", "error")
         ]
         assert start_msgs, "expected a start-phase tool event"
         assert finish_msgs, "expected a finish-phase tool event"
@@ -324,12 +309,7 @@ class TestToolEventProgress:
         ]
 
         progress = await loop._build_bus_progress_callback(
-            InboundMessage(
-                channel="telegram",
-                sender_id="u1",
-                chat_id="chat1",
-                content="edit",
-            )
+            InboundMessage(channel="telegram", sender_id="u1", chat_id="chat1", content="edit")
         )
         assert on_progress_accepts_file_edit_events(progress) is True
         await invoke_file_edit_progress(progress, edit_events)
@@ -360,12 +340,7 @@ class TestToolEventProgress:
                         "arguments_delta": '{"path":"goal.txt","content":"',
                     }
                 )
-                await on_tool_call_delta(
-                    {
-                        "index": 0,
-                        "arguments_delta": "one\\ntwo\\nthree\\n",
-                    }
-                )
+                await on_tool_call_delta({"index": 0, "arguments_delta": "one\\ntwo\\nthree\\n"})
                 await on_tool_call_delta({"index": 0, "arguments_delta": '"}'})
                 return LLMResponse(
                     content=None,
@@ -373,10 +348,7 @@ class TestToolEventProgress:
                         ToolCallRequest(
                             id="call-goal-write",
                             name="write_file",
-                            arguments={
-                                "path": "goal.txt",
-                                "content": "one\ntwo\nthree\n",
-                            },
+                            arguments={"path": "goal.txt", "content": "one\ntwo\nthree\n"},
                         )
                     ],
                     usage={},
@@ -392,16 +364,10 @@ class TestToolEventProgress:
         provider.chat_with_retry = AsyncMock()
         loop = AgentLoop(bus=bus, provider=provider, workspace=tmp_path, model="test-model")
         loop.tools.get_definitions = MagicMock(
-            return_value=[
-                {"type": "function", "function": {"name": "write_file"}},
-            ]
+            return_value=[{"type": "function", "function": {"name": "write_file"}}]
         )
         loop.tools.prepare_call = MagicMock(
-            return_value=(
-                None,
-                {"path": "goal.txt", "content": "one\ntwo\nthree\n"},
-                None,
-            ),
+            return_value=(None, {"path": "goal.txt", "content": "one\ntwo\nthree\n"}, None)
         )
         loop.tools.execute = AsyncMock(side_effect=execute)
         loop.consolidator.maybe_consolidate_by_tokens = AsyncMock(return_value=False)  # type: ignore[method-assign]
@@ -435,8 +401,7 @@ class TestToolEventProgress:
 
     @pytest.mark.asyncio
     async def test_non_streaming_channel_does_not_publish_codex_progress_deltas(
-        self,
-        tmp_path: Path,
+        self, tmp_path: Path
     ) -> None:
         """Non-streaming channels should get one final reply, not token progress spam."""
         bus = MessageBus()
@@ -455,10 +420,7 @@ class TestToolEventProgress:
 
         await loop._dispatch(
             InboundMessage(
-                channel="whatsapp",
-                sender_id="u1",
-                chat_id="chat1",
-                content="say hello",
+                channel="whatsapp", sender_id="u1", chat_id="chat1", content="say hello"
             )
         )
 
@@ -474,8 +436,7 @@ class TestToolEventProgress:
 
     @pytest.mark.asyncio
     async def test_streaming_channel_streams_provider_deltas_for_codex_style_provider(
-        self,
-        tmp_path: Path,
+        self, tmp_path: Path
     ) -> None:
         """Streaming channels still receive provider deltas through _stream_delta messages."""
         bus = MessageBus()
@@ -532,10 +493,7 @@ class TestToolEventProgress:
         provider.chat_with_retry.assert_not_awaited()
 
     @pytest.mark.asyncio
-    async def test_stream_timeout_recovery_continues_in_new_segment(
-        self,
-        tmp_path: Path,
-    ) -> None:
+    async def test_stream_timeout_recovery_continues_in_new_segment(self, tmp_path: Path) -> None:
         """Recovered streaming output should use a new stream segment."""
         bus = MessageBus()
         provider = MagicMock()
@@ -593,8 +551,7 @@ class TestToolEventProgress:
 
     @pytest.mark.asyncio
     async def test_streamed_progress_is_not_repeated_before_tool_execution(
-        self,
-        tmp_path: Path,
+        self, tmp_path: Path
     ) -> None:
         """If content was already streamed as progress, tool setup should not repeat it."""
         loop = _make_loop(tmp_path)
@@ -627,17 +584,12 @@ class TestToolEventProgress:
             streamed.append(delta)
 
         async def on_progress(
-            content: str,
-            *,
-            tool_hint: bool = False,
-            tool_events: list[dict] | None = None,
+            content: str, *, tool_hint: bool = False, tool_events: list[dict] | None = None
         ) -> None:
             progress.append((content, tool_hint, tool_events))
 
         final_content, _, _, _, _ = await loop._run_agent_loop(
-            [],
-            on_progress=on_progress,
-            on_stream=on_stream,
+            [], on_progress=on_progress, on_stream=on_stream
         )
 
         assert final_content == "Done"
@@ -646,7 +598,9 @@ class TestToolEventProgress:
         assert all(item[0] != "I will inspect it." for item in progress)
 
     @pytest.mark.asyncio
-    async def test_websocket_dispatch_publishes_final_turn_end_marker(self, tmp_path: Path) -> None:
+    async def test_websocket_dispatch_publishes_final_turn_end_marker(
+        self, tmp_path: Path
+    ) -> None:
         bus = MessageBus()
         provider = MagicMock()
         provider.get_default_model.return_value = "test-model"
@@ -660,10 +614,7 @@ class TestToolEventProgress:
 
         await loop._dispatch(
             InboundMessage(
-                channel="websocket",
-                sender_id="u1",
-                chat_id="chat1",
-                content="say hello",
+                channel="websocket", sender_id="u1", chat_id="chat1", content="say hello"
             )
         )
 
@@ -682,10 +633,7 @@ class TestToolEventProgress:
         assert outbound.index(done_msgs[0]) < outbound.index(turn_end_msgs[0])
 
     @pytest.mark.asyncio
-    async def test_websocket_dispatch_publishes_turn_end_after_error(
-        self,
-        tmp_path: Path,
-    ) -> None:
+    async def test_websocket_dispatch_publishes_turn_end_after_error(self, tmp_path: Path) -> None:
         bus = MessageBus()
         provider = MagicMock()
         provider.get_default_model.return_value = "test-model"
@@ -699,10 +647,7 @@ class TestToolEventProgress:
 
         await loop._dispatch(
             InboundMessage(
-                channel="websocket",
-                sender_id="u1",
-                chat_id="chat1",
-                content="say hello",
+                channel="websocket", sender_id="u1", chat_id="chat1", content="say hello"
             )
         )
 
@@ -787,9 +732,7 @@ class TestToolEventProgress:
 
     @pytest.mark.asyncio
     async def test_webui_title_generation_uses_turn_model_snapshot(
-        self,
-        tmp_path: Path,
-        monkeypatch: pytest.MonkeyPatch,
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
     ) -> None:
         bus = MessageBus()
         provider = MagicMock()
@@ -809,7 +752,7 @@ class TestToolEventProgress:
             return False
 
         monkeypatch.setattr(
-            "nanobot.session.webui_turns.maybe_generate_webui_title_after_turn",
+            "vtx_claw.session.webui_turns.maybe_generate_webui_title_after_turn",
             fake_title_after_turn,
         )
         scheduled_title: list[object] = []
@@ -844,9 +787,7 @@ class TestToolEventProgress:
 
     @pytest.mark.asyncio
     async def test_webui_command_turn_does_not_schedule_title_generation(
-        self,
-        tmp_path: Path,
-        monkeypatch: pytest.MonkeyPatch,
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
     ) -> None:
         bus = MessageBus()
         provider = MagicMock()
@@ -861,7 +802,7 @@ class TestToolEventProgress:
             raise AssertionError("command-only turns should not generate titles")
 
         monkeypatch.setattr(
-            "nanobot.session.webui_turns.maybe_generate_webui_title_after_turn",
+            "vtx_claw.session.webui_turns.maybe_generate_webui_title_after_turn",
             fake_title_after_turn,
         )
         scheduled: list[object] = []
@@ -894,12 +835,7 @@ class TestToolEventProgress:
         loop.consolidator.maybe_consolidate_by_tokens = AsyncMock(return_value=False)  # type: ignore[method-assign]
 
         await loop._dispatch(
-            InboundMessage(
-                channel="slack",
-                sender_id="u1",
-                chat_id="chat1",
-                content="say hello",
-            )
+            InboundMessage(channel="slack", sender_id="u1", chat_id="chat1", content="say hello")
         )
 
         outbound = []

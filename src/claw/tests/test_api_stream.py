@@ -9,11 +9,7 @@ from unittest.mock import AsyncMock, MagicMock
 import pytest
 import pytest_asyncio
 
-from nanobot.api.server import (
-    _SSE_DONE,
-    _sse_chunk,
-    create_app,
-)
+from vtx_claw.api.server import _SSE_DONE, _sse_chunk, create_app
 
 try:
     from aiohttp.test_utils import TestClient, TestServer
@@ -171,8 +167,7 @@ async def test_stream_default_is_false(aiohttp_client) -> None:
     client = await aiohttp_client(app)
 
     resp = await client.post(
-        "/v1/chat/completions",
-        json={"messages": [{"role": "user", "content": "hi"}]},
+        "/v1/chat/completions", json={"messages": [{"role": "user", "content": "hi"}]}
     )
     assert resp.status == 200
     body = await resp.json()

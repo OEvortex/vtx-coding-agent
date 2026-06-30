@@ -21,13 +21,10 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import httpx
 import pytest
 
-from nanobot.channels.websocket import WebSocketChannel, WebSocketConfig
-from nanobot.session.manager import Session, SessionManager
-from nanobot.webui.gateway_services import build_gateway_services
-from nanobot.webui.media_api import (
-    b64url_decode,
-    b64url_encode,
-)
+from vtx_claw.channels.websocket import WebSocketChannel, WebSocketConfig
+from vtx_claw.session.manager import Session, SessionManager
+from vtx_claw.webui.gateway_services import build_gateway_services
+from vtx_claw.webui.media_api import b64url_decode, b64url_encode
 
 # PNG magic bytes + a couple of sentinel bytes so we can verify byte-for-byte
 # round-trip of the served payload. Stays under mimetype + size limits.
@@ -110,7 +107,7 @@ def test_sign_media_path_rejects_paths_outside_media_root(bus: MagicMock, tmp_pa
     media = tmp_path / "media"
     media.mkdir()
     channel = _ch(bus, port=0)
-    with patch("nanobot.webui.media_gateway.get_media_dir", return_value=media):
+    with patch("vtx_claw.webui.media_gateway.get_media_dir", return_value=media):
         assert channel.gateway.media.sign_media_path(outside) is None
         # Traversal via the media root is also rejected — the resolve() step
         # normalises ``..`` out before the relative_to check.
@@ -123,7 +120,7 @@ def test_sign_media_path_round_trips_via_hmac(bus: MagicMock, tmp_path: Path) ->
     media.mkdir()
     (media / "a.png").write_bytes(_PNG_BYTES)
     channel = _ch(bus, port=0)
-    with patch("nanobot.webui.media_gateway.get_media_dir", return_value=media):
+    with patch("vtx_claw.webui.media_gateway.get_media_dir", return_value=media):
         url = channel.gateway.media.sign_media_path(media / "a.png")
     assert url is not None
     assert url.startswith("/api/media/")
@@ -136,17 +133,14 @@ def test_sign_media_path_round_trips_via_hmac(bus: MagicMock, tmp_path: Path) ->
     assert b64url_decode(payload).decode() == "a.png"
 
 
-def test_local_markdown_image_is_staged_and_rewritten(
-    bus: MagicMock,
-    tmp_path: Path,
-) -> None:
+def test_local_markdown_image_is_staged_and_rewritten(bus: MagicMock, tmp_path: Path) -> None:
     workspace = tmp_path / "workspace"
     workspace.mkdir()
     (workspace / "demo_arch.png").write_bytes(_PNG_BYTES)
     media = tmp_path / "media"
     channel = _ch(bus, workspace_path=workspace, port=0)
 
-    with patch("nanobot.webui.media_gateway.get_media_dir", side_effect=_fake_media_dir(media)):
+    with patch("vtx_claw.webui.media_gateway.get_media_dir", side_effect=_fake_media_dir(media)):
         rewritten = channel.gateway.media.rewrite_local_markdown_images(
             "The result:\n![Cloud Architecture Diagram](demo_arch.png)"
         )
@@ -157,32 +151,26 @@ def test_local_markdown_image_is_staged_and_rewritten(
     assert staged[0].read_bytes() == _PNG_BYTES
 
 
-def test_local_markdown_video_is_staged_and_rewritten(
-    bus: MagicMock,
-    tmp_path: Path,
-) -> None:
+def test_local_markdown_video_is_staged_and_rewritten(bus: MagicMock, tmp_path: Path) -> None:
     workspace = tmp_path / "workspace"
     workspace.mkdir()
     video_bytes = b"fake mp4"
-    (workspace / "nanobot-intro.mp4").write_bytes(video_bytes)
+    (workspace / "vtx_claw-intro.mp4").write_bytes(video_bytes)
     media = tmp_path / "media"
     channel = _ch(bus, workspace_path=workspace, port=0)
 
-    with patch("nanobot.webui.media_gateway.get_media_dir", side_effect=_fake_media_dir(media)):
+    with patch("vtx_claw.webui.media_gateway.get_media_dir", side_effect=_fake_media_dir(media)):
         rewritten = channel.gateway.media.rewrite_local_markdown_images(
-            "The result:\n![nanobot-intro.mp4](nanobot-intro.mp4)"
+            "The result:\n![vtx_claw-intro.mp4](vtx_claw-intro.mp4)"
         )
 
-    assert "![nanobot-intro.mp4](/api/media/" in rewritten
+    assert "![vtx_claw-intro.mp4](/api/media/" in rewritten
     staged = list((media / "websocket").iterdir())
     assert len(staged) == 1
     assert staged[0].read_bytes() == video_bytes
 
 
-def test_local_markdown_image_rejects_workspace_escape(
-    bus: MagicMock,
-    tmp_path: Path,
-) -> None:
+def test_local_markdown_image_rejects_workspace_escape(bus: MagicMock, tmp_path: Path) -> None:
     workspace = tmp_path / "workspace"
     workspace.mkdir()
     outside = tmp_path / "outside.png"
@@ -191,7 +179,7 @@ def test_local_markdown_image_rejects_workspace_escape(
     channel = _ch(bus, workspace_path=workspace, port=0)
     text = "![nope](../outside.png)"
 
-    with patch("nanobot.webui.media_gateway.get_media_dir", side_effect=_fake_media_dir(media)):
+    with patch("vtx_claw.webui.media_gateway.get_media_dir", side_effect=_fake_media_dir(media)):
         assert channel.gateway.media.rewrite_local_markdown_images(text) == text
 
     assert not (media / "websocket").exists()
@@ -211,7 +199,7 @@ async def test_media_route_serves_signed_file(bus: MagicMock, tmp_path: Path) ->
     target.write_bytes(_PNG_BYTES)
 
     channel = _ch(bus, port=29920)
-    with patch("nanobot.webui.media_gateway.get_media_dir", return_value=media):
+    with patch("vtx_claw.webui.media_gateway.get_media_dir", return_value=media):
         url_path = channel.gateway.media.sign_media_path(target)
         assert url_path is not None
         server_task = asyncio.create_task(channel.start())
@@ -242,15 +230,14 @@ async def test_media_route_serves_video_byte_ranges(bus: MagicMock, tmp_path: Pa
     target.write_bytes(b"0123456789")
 
     channel = _ch(bus, port=29927)
-    with patch("nanobot.webui.media_gateway.get_media_dir", return_value=media):
+    with patch("vtx_claw.webui.media_gateway.get_media_dir", return_value=media):
         url_path = channel.gateway.media.sign_media_path(target)
         assert url_path is not None
         server_task = asyncio.create_task(channel.start())
         await asyncio.sleep(0.3)
         try:
             resp = await _http_get(
-                f"http://127.0.0.1:29927{url_path}",
-                headers={"Range": "bytes=2-5"},
+                f"http://127.0.0.1:29927{url_path}", headers={"Range": "bytes=2-5"}
             )
         finally:
             await channel.stop()
@@ -272,15 +259,14 @@ async def test_media_route_serves_suffix_video_byte_ranges(bus: MagicMock, tmp_p
     target.write_bytes(b"0123456789")
 
     channel = _ch(bus, port=29928)
-    with patch("nanobot.webui.media_gateway.get_media_dir", return_value=media):
+    with patch("vtx_claw.webui.media_gateway.get_media_dir", return_value=media):
         url_path = channel.gateway.media.sign_media_path(target)
         assert url_path is not None
         server_task = asyncio.create_task(channel.start())
         await asyncio.sleep(0.3)
         try:
             resp = await _http_get(
-                f"http://127.0.0.1:29928{url_path}",
-                headers={"Range": "bytes=-3"},
+                f"http://127.0.0.1:29928{url_path}", headers={"Range": "bytes=-3"}
             )
         finally:
             await channel.stop()
@@ -292,22 +278,23 @@ async def test_media_route_serves_suffix_video_byte_ranges(bus: MagicMock, tmp_p
 
 
 @pytest.mark.asyncio
-async def test_media_route_rejects_unsatisfiable_byte_range(bus: MagicMock, tmp_path: Path) -> None:
+async def test_media_route_rejects_unsatisfiable_byte_range(
+    bus: MagicMock, tmp_path: Path
+) -> None:
     media = tmp_path / "media"
     media.mkdir()
     target = media / "clip.mp4"
     target.write_bytes(b"0123456789")
 
     channel = _ch(bus, port=29929)
-    with patch("nanobot.webui.media_gateway.get_media_dir", return_value=media):
+    with patch("vtx_claw.webui.media_gateway.get_media_dir", return_value=media):
         url_path = channel.gateway.media.sign_media_path(target)
         assert url_path is not None
         server_task = asyncio.create_task(channel.start())
         await asyncio.sleep(0.3)
         try:
             resp = await _http_get(
-                f"http://127.0.0.1:29929{url_path}",
-                headers={"Range": "bytes=100-200"},
+                f"http://127.0.0.1:29929{url_path}", headers={"Range": "bytes=100-200"}
             )
         finally:
             await channel.stop()
@@ -330,7 +317,7 @@ async def test_media_route_rejects_bad_signature(bus: MagicMock, tmp_path: Path)
     (media / "f.png").write_bytes(_PNG_BYTES)
 
     channel = _ch(bus, port=29921)
-    with patch("nanobot.webui.media_gateway.get_media_dir", return_value=media):
+    with patch("vtx_claw.webui.media_gateway.get_media_dir", return_value=media):
         good = channel.gateway.media.sign_media_path(media / "f.png")
         assert good is not None
         _, payload = good[len("/api/media/") :].split("/", 1)
@@ -369,7 +356,7 @@ async def test_media_route_rejects_path_traversal_payload(bus: MagicMock, tmp_pa
     ]
     url = f"/api/media/{b64url_encode(mac)}/{payload}"
 
-    with patch("nanobot.webui.media_gateway.get_media_dir", return_value=media):
+    with patch("vtx_claw.webui.media_gateway.get_media_dir", return_value=media):
         server_task = asyncio.create_task(channel.start())
         await asyncio.sleep(0.3)
         try:
@@ -391,7 +378,7 @@ async def test_media_route_404s_missing_file(bus: MagicMock, tmp_path: Path) -> 
     target.write_bytes(_PNG_BYTES)
 
     channel = _ch(bus, port=29923)
-    with patch("nanobot.webui.media_gateway.get_media_dir", return_value=media):
+    with patch("vtx_claw.webui.media_gateway.get_media_dir", return_value=media):
         url_path = channel.gateway.media.sign_media_path(target)
         assert url_path is not None
         target.unlink()  # the file vanishes between signing and fetching
@@ -419,7 +406,7 @@ async def test_media_route_degrades_non_image_to_octet_stream(
     (media / "scary.html").write_bytes(b"<script>alert(1)</script>")
 
     channel = _ch(bus, port=29924)
-    with patch("nanobot.webui.media_gateway.get_media_dir", return_value=media):
+    with patch("vtx_claw.webui.media_gateway.get_media_dir", return_value=media):
         payload = b64url_encode(b"scary.html")
         mac = hmac.new(
             channel.gateway.media.secret, payload.encode("ascii"), hashlib.sha256
@@ -448,7 +435,7 @@ async def test_media_route_serves_svg_with_strict_csp(bus: MagicMock, tmp_path: 
     target.write_text("<svg xmlns='http://www.w3.org/2000/svg'><script>alert(1)</script></svg>")
 
     channel = _ch(bus, port=29928)
-    with patch("nanobot.webui.media_gateway.get_media_dir", return_value=media):
+    with patch("vtx_claw.webui.media_gateway.get_media_dir", return_value=media):
         url_path = channel.gateway.media.sign_media_path(target)
         assert url_path is not None
         server_task = asyncio.create_task(channel.start())
@@ -487,7 +474,7 @@ async def test_session_messages_exposes_signed_media_urls(bus: MagicMock, tmp_pa
     sm.save(sess)
 
     channel = _ch(bus, session_manager=sm, port=29925)
-    with patch("nanobot.webui.media_gateway.get_media_dir", return_value=media):
+    with patch("vtx_claw.webui.media_gateway.get_media_dir", return_value=media):
         server_task = asyncio.create_task(channel.start())
         await asyncio.sleep(0.3)
         try:
@@ -530,7 +517,7 @@ async def test_session_messages_skips_vanished_media(bus: MagicMock, tmp_path: P
     sm.save(sess)
 
     channel = _ch(bus, session_manager=sm, port=29926)
-    with patch("nanobot.webui.media_gateway.get_media_dir", return_value=media):
+    with patch("vtx_claw.webui.media_gateway.get_media_dir", return_value=media):
         server_task = asyncio.create_task(channel.start())
         await asyncio.sleep(0.3)
         try:

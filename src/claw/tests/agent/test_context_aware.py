@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from nanobot.agent.tools.context import ContextAware, RequestContext
+from vtx_claw.agent.tools.context import ContextAware, RequestContext
 
 
 class _ContextTool:

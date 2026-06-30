@@ -6,7 +6,7 @@ from pathlib import Path
 
 import pytest
 
-from nanobot.security.workspace_policy import (
+from vtx_claw.security.workspace_policy import (
     WorkspaceBoundaryError,
     is_path_within,
     resolve_allowed_path,
@@ -112,10 +112,7 @@ def test_resolve_allowed_path_allows_extra_root(tmp_path: Path) -> None:
     image.write_bytes(b"\x89PNG\r\n\x1a\n")
 
     resolved = resolve_allowed_path(
-        image,
-        workspace=workspace,
-        allowed_root=workspace,
-        extra_allowed_roots=[media],
+        image, workspace=workspace, allowed_root=workspace, extra_allowed_roots=[media]
     )
 
     assert resolved == image.resolve()
@@ -129,10 +126,7 @@ def test_resolve_allowed_path_allows_extra_file_only_exactly(tmp_path: Path) -> 
     allowed = outside / "allowed.txt"
 
     resolved = resolve_allowed_path(
-        allowed,
-        workspace=workspace,
-        allowed_root=workspace,
-        extra_allowed_files=[allowed],
+        allowed, workspace=workspace, allowed_root=workspace, extra_allowed_files=[allowed]
     )
 
     assert resolved == allowed.resolve()

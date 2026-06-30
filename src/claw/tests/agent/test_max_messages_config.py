@@ -7,22 +7,15 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-from nanobot.agent.loop import AgentLoop
-from nanobot.bus.events import InboundMessage
-from nanobot.bus.queue import MessageBus
-from nanobot.providers.base import LLMResponse
-from nanobot.providers.factory import ProviderSnapshot
-from nanobot.session.manager import (
-    FILE_MAX_MESSAGES,
-    Session,
-    replay_max_messages_for_context,
-)
+from vtx_claw.agent.loop import AgentLoop
+from vtx_claw.bus.events import InboundMessage
+from vtx_claw.bus.queue import MessageBus
+from vtx_claw.providers.base import LLMResponse
+from vtx_claw.providers.factory import ProviderSnapshot
+from vtx_claw.session.manager import FILE_MAX_MESSAGES, Session, replay_max_messages_for_context
 
 
-def _make_loop(
-    tmp_path: Path,
-    context_window_tokens: int = 200_000,
-) -> AgentLoop:
+def _make_loop(tmp_path: Path, context_window_tokens: int = 200_000) -> AgentLoop:
     provider = MagicMock()
     provider.get_default_model.return_value = "test-model"
     provider.generation.max_tokens = 4096
@@ -156,8 +149,7 @@ class TestMaxMessagesIntegration:
 
     @pytest.mark.asyncio
     async def test_default_limit_passes_context_derived_limit_to_history_call(
-        self,
-        tmp_path: Path,
+        self, tmp_path: Path
     ) -> None:
         loop = _make_loop(tmp_path)
         loop.provider.chat_with_retry = AsyncMock(
@@ -178,8 +170,7 @@ class TestMaxMessagesIntegration:
 
     @pytest.mark.asyncio
     async def test_process_message_uses_current_user_as_replay_boundary(
-        self,
-        tmp_path: Path,
+        self, tmp_path: Path
     ) -> None:
         """A live user turn should not extend history to an older long tool turn."""
         loop = _make_loop(tmp_path)
@@ -201,10 +192,7 @@ class TestMaxMessagesIntegration:
         with patch.object(session, "get_history", wraps=session.get_history) as mock_hist:
             result = await loop._process_message(
                 InboundMessage(
-                    channel="cli",
-                    sender_id="user",
-                    chat_id="test",
-                    content="new question",
+                    channel="cli", sender_id="user", chat_id="test", content="new question"
                 )
             )
 

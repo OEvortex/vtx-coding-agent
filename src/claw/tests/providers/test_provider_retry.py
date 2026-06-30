@@ -3,7 +3,7 @@ import copy
 
 import pytest
 
-from nanobot.providers.base import GenerationSettings, LLMProvider, LLMResponse
+from vtx_claw.providers.base import GenerationSettings, LLMProvider, LLMResponse
 
 
 class ScriptedProvider(LLMProvider):
@@ -39,17 +39,14 @@ class ScriptedProvider(LLMProvider):
 @pytest.mark.asyncio
 async def test_chat_with_retry_retries_transient_error_then_succeeds(monkeypatch) -> None:
     provider = ScriptedProvider(
-        [
-            LLMResponse(content="429 rate limit", finish_reason="error"),
-            LLMResponse(content="ok"),
-        ]
+        [LLMResponse(content="429 rate limit", finish_reason="error"), LLMResponse(content="ok")]
     )
     delays: list[int] = []
 
     async def _fake_sleep(delay: int) -> None:
         delays.append(delay)
 
-    monkeypatch.setattr("nanobot.providers.base.asyncio.sleep", _fake_sleep)
+    monkeypatch.setattr("vtx_claw.providers.base.asyncio.sleep", _fake_sleep)
 
     response = await provider.chat_with_retry(messages=[{"role": "user", "content": "hello"}])
 
@@ -61,17 +58,13 @@ async def test_chat_with_retry_retries_transient_error_then_succeeds(monkeypatch
 
 @pytest.mark.asyncio
 async def test_chat_with_retry_does_not_retry_non_transient_error(monkeypatch) -> None:
-    provider = ScriptedProvider(
-        [
-            LLMResponse(content="401 unauthorized", finish_reason="error"),
-        ]
-    )
+    provider = ScriptedProvider([LLMResponse(content="401 unauthorized", finish_reason="error")])
     delays: list[int] = []
 
     async def _fake_sleep(delay: int) -> None:
         delays.append(delay)
 
-    monkeypatch.setattr("nanobot.providers.base.asyncio.sleep", _fake_sleep)
+    monkeypatch.setattr("vtx_claw.providers.base.asyncio.sleep", _fake_sleep)
 
     response = await provider.chat_with_retry(messages=[{"role": "user", "content": "hello"}])
 
@@ -95,7 +88,7 @@ async def test_chat_with_retry_returns_final_error_after_retries(monkeypatch) ->
     async def _fake_sleep(delay: int) -> None:
         delays.append(delay)
 
-    monkeypatch.setattr("nanobot.providers.base.asyncio.sleep", _fake_sleep)
+    monkeypatch.setattr("vtx_claw.providers.base.asyncio.sleep", _fake_sleep)
 
     response = await provider.chat_with_retry(messages=[{"role": "user", "content": "hello"}])
 
@@ -124,11 +117,10 @@ async def test_chat_with_retry_emits_terminal_progress_when_standard_retries_exh
     async def _progress(msg: str) -> None:
         progress.append(msg)
 
-    monkeypatch.setattr("nanobot.providers.base.asyncio.sleep", _fake_sleep)
+    monkeypatch.setattr("vtx_claw.providers.base.asyncio.sleep", _fake_sleep)
 
     response = await provider.chat_with_retry(
-        messages=[{"role": "user", "content": "hello"}],
-        on_retry_wait=_progress,
+        messages=[{"role": "user", "content": "hello"}], on_retry_wait=_progress
     )
 
     assert response.content == "503 final server error"
@@ -147,12 +139,7 @@ async def test_chat_with_retry_preserves_cancelled_error() -> None:
 async def test_chat_stream_with_retry_does_not_retry_after_emitting_content(monkeypatch) -> None:
     first = LLMResponse(content="stream stalled", finish_reason="error")
     first._test_stream_delta = "partial"  # type: ignore[attr-defined]
-    provider = ScriptedProvider(
-        [
-            first,
-            LLMResponse(content="ok"),
-        ]
-    )
+    provider = ScriptedProvider([first, LLMResponse(content="ok")])
     deltas: list[str] = []
     delays: list[int] = []
 
@@ -162,11 +149,10 @@ async def test_chat_stream_with_retry_does_not_retry_after_emitting_content(monk
     async def _on_delta(delta: str) -> None:
         deltas.append(delta)
 
-    monkeypatch.setattr("nanobot.providers.base.asyncio.sleep", _fake_sleep)
+    monkeypatch.setattr("vtx_claw.providers.base.asyncio.sleep", _fake_sleep)
 
     response = await provider.chat_stream_with_retry(
-        messages=[{"role": "user", "content": "hello"}],
-        on_content_delta=_on_delta,
+        messages=[{"role": "user", "content": "hello"}], on_content_delta=_on_delta
     )
 
     assert response.content == "stream stalled"
@@ -183,12 +169,7 @@ async def test_chat_stream_with_retry_retries_timeout_after_emitting_content(mon
         error_kind="timeout",
     )
     first._test_stream_delta = "partial"  # type: ignore[attr-defined]
-    provider = ScriptedProvider(
-        [
-            first,
-            LLMResponse(content="full retry response"),
-        ]
-    )
+    provider = ScriptedProvider([first, LLMResponse(content="full retry response")])
     deltas: list[str] = []
     delays: list[int] = []
 
@@ -198,11 +179,10 @@ async def test_chat_stream_with_retry_retries_timeout_after_emitting_content(mon
     async def _on_delta(delta: str) -> None:
         deltas.append(delta)
 
-    monkeypatch.setattr("nanobot.providers.base.asyncio.sleep", _fake_sleep)
+    monkeypatch.setattr("vtx_claw.providers.base.asyncio.sleep", _fake_sleep)
 
     response = await provider.chat_stream_with_retry(
-        messages=[{"role": "user", "content": "hello"}],
-        on_content_delta=_on_delta,
+        messages=[{"role": "user", "content": "hello"}], on_content_delta=_on_delta
     )
 
     assert response.content == "full retry response"
@@ -214,9 +194,7 @@ async def test_chat_stream_with_retry_retries_timeout_after_emitting_content(mon
 
 
 @pytest.mark.asyncio
-async def test_chat_stream_with_retry_retries_timeout_in_new_stream_segment(
-    monkeypatch,
-) -> None:
+async def test_chat_stream_with_retry_retries_timeout_in_new_stream_segment(monkeypatch) -> None:
     first = LLMResponse(
         content="Error calling LLM: stream stalled for more than 30 seconds",
         finish_reason="error",
@@ -239,7 +217,7 @@ async def test_chat_stream_with_retry_retries_timeout_in_new_stream_segment(
     async def _on_stream_recover() -> None:
         recoveries.append("recover")
 
-    monkeypatch.setattr("nanobot.providers.base.asyncio.sleep", _fake_sleep)
+    monkeypatch.setattr("vtx_claw.providers.base.asyncio.sleep", _fake_sleep)
 
     response = await provider.chat_stream_with_retry(
         messages=[{"role": "user", "content": "hello"}],
@@ -306,7 +284,7 @@ _IMAGE_MSG = [
                 "_meta": {"path": "/media/test.png"},
             },
         ],
-    },
+    }
 ]
 
 _IMAGE_MSG_NO_META = [
@@ -316,7 +294,7 @@ _IMAGE_MSG_NO_META = [
             {"type": "text", "text": "describe this"},
             {"type": "image_url", "image_url": {"url": "data:image/png;base64,abc"}},
         ],
-    },
+    }
 ]
 
 
@@ -365,15 +343,9 @@ async def test_successful_image_retry_mutates_original_messages_in_place() -> No
 @pytest.mark.asyncio
 async def test_non_transient_error_without_images_no_retry() -> None:
     """Non-transient errors without image content are returned immediately."""
-    provider = ScriptedProvider(
-        [
-            LLMResponse(content="401 unauthorized", finish_reason="error"),
-        ]
-    )
+    provider = ScriptedProvider([LLMResponse(content="401 unauthorized", finish_reason="error")])
 
-    response = await provider.chat_with_retry(
-        messages=[{"role": "user", "content": "hello"}],
-    )
+    response = await provider.chat_with_retry(messages=[{"role": "user", "content": "hello"}])
 
     assert provider.calls == 1
     assert response.finish_reason == "error"
@@ -400,10 +372,7 @@ async def test_image_fallback_returns_error_on_second_failure() -> None:
 async def test_image_fallback_without_meta_uses_default_placeholder() -> None:
     """When _meta is absent, fallback placeholder is non-descriptive."""
     provider = ScriptedProvider(
-        [
-            LLMResponse(content="error", finish_reason="error"),
-            LLMResponse(content="ok"),
-        ]
+        [LLMResponse(content="error", finish_reason="error"), LLMResponse(content="ok")]
     )
 
     response = await provider.chat_with_retry(messages=copy.deepcopy(_IMAGE_MSG_NO_META))
@@ -434,11 +403,10 @@ async def test_chat_with_retry_uses_retry_after_and_emits_wait_progress(monkeypa
     async def _progress(msg: str) -> None:
         progress.append(msg)
 
-    monkeypatch.setattr("nanobot.providers.base.asyncio.sleep", _fake_sleep)
+    monkeypatch.setattr("vtx_claw.providers.base.asyncio.sleep", _fake_sleep)
 
     response = await provider.chat_with_retry(
-        messages=[{"role": "user", "content": "hello"}],
-        on_retry_wait=_progress,
+        messages=[{"role": "user", "content": "hello"}], on_retry_wait=_progress
     )
 
     assert response.content == "ok"
@@ -457,7 +425,7 @@ def test_extract_retry_after_from_headers_supports_numeric_and_http_date() -> No
     assert LLMProvider._extract_retry_after_from_headers({"retry-after": "20"}) == 20.0
     assert (
         LLMProvider._extract_retry_after_from_headers(
-            {"Retry-After": "Wed, 21 Oct 2015 07:28:00 GMT"},
+            {"Retry-After": "Wed, 21 Oct 2015 07:28:00 GMT"}
         )
         == 0.1
     )
@@ -468,7 +436,7 @@ def test_extract_retry_after_from_headers_supports_retry_after_ms() -> None:
     assert LLMProvider._extract_retry_after_from_headers({"Retry-After-Ms": "1000"}) == 1.0
     assert (
         LLMProvider._extract_retry_after_from_headers(
-            {"retry-after-ms": "500", "retry-after": "10"},
+            {"retry-after-ms": "500", "retry-after": "10"}
         )
         == 0.5
     )
@@ -487,7 +455,7 @@ async def test_chat_with_retry_prefers_structured_retry_after_when_present(monke
     async def _fake_sleep(delay: float) -> None:
         delays.append(delay)
 
-    monkeypatch.setattr("nanobot.providers.base.asyncio.sleep", _fake_sleep)
+    monkeypatch.setattr("vtx_claw.providers.base.asyncio.sleep", _fake_sleep)
 
     response = await provider.chat_with_retry(messages=[{"role": "user", "content": "hello"}])
 
@@ -499,11 +467,7 @@ async def test_chat_with_retry_prefers_structured_retry_after_when_present(monke
 async def test_chat_with_retry_retries_structured_status_code_without_keyword(monkeypatch) -> None:
     provider = ScriptedProvider(
         [
-            LLMResponse(
-                content="request failed",
-                finish_reason="error",
-                error_status_code=409,
-            ),
+            LLMResponse(content="request failed", finish_reason="error", error_status_code=409),
             LLMResponse(content="ok"),
         ]
     )
@@ -512,7 +476,7 @@ async def test_chat_with_retry_retries_structured_status_code_without_keyword(mo
     async def _fake_sleep(delay: float) -> None:
         delays.append(delay)
 
-    monkeypatch.setattr("nanobot.providers.base.asyncio.sleep", _fake_sleep)
+    monkeypatch.setattr("vtx_claw.providers.base.asyncio.sleep", _fake_sleep)
 
     response = await provider.chat_with_retry(messages=[{"role": "user", "content": "hello"}])
 
@@ -540,7 +504,7 @@ async def test_chat_with_retry_stops_on_429_quota_exhausted(monkeypatch) -> None
     async def _fake_sleep(delay: float) -> None:
         delays.append(delay)
 
-    monkeypatch.setattr("nanobot.providers.base.asyncio.sleep", _fake_sleep)
+    monkeypatch.setattr("vtx_claw.providers.base.asyncio.sleep", _fake_sleep)
 
     response = await provider.chat_with_retry(messages=[{"role": "user", "content": "hello"}])
 
@@ -569,7 +533,7 @@ async def test_chat_with_retry_retries_429_transient_rate_limit(monkeypatch) -> 
     async def _fake_sleep(delay: float) -> None:
         delays.append(delay)
 
-    monkeypatch.setattr("nanobot.providers.base.asyncio.sleep", _fake_sleep)
+    monkeypatch.setattr("vtx_claw.providers.base.asyncio.sleep", _fake_sleep)
 
     response = await provider.chat_with_retry(messages=[{"role": "user", "content": "hello"}])
 
@@ -582,11 +546,7 @@ async def test_chat_with_retry_retries_429_transient_rate_limit(monkeypatch) -> 
 async def test_chat_with_retry_retries_structured_timeout_kind(monkeypatch) -> None:
     provider = ScriptedProvider(
         [
-            LLMResponse(
-                content="request failed",
-                finish_reason="error",
-                error_kind="timeout",
-            ),
+            LLMResponse(content="request failed", finish_reason="error", error_kind="timeout"),
             LLMResponse(content="ok"),
         ]
     )
@@ -595,7 +555,7 @@ async def test_chat_with_retry_retries_structured_timeout_kind(monkeypatch) -> N
     async def _fake_sleep(delay: float) -> None:
         delays.append(delay)
 
-    monkeypatch.setattr("nanobot.providers.base.asyncio.sleep", _fake_sleep)
+    monkeypatch.setattr("vtx_claw.providers.base.asyncio.sleep", _fake_sleep)
 
     response = await provider.chat_with_retry(messages=[{"role": "user", "content": "hello"}])
 
@@ -607,20 +567,14 @@ async def test_chat_with_retry_retries_structured_timeout_kind(monkeypatch) -> N
 @pytest.mark.asyncio
 async def test_chat_with_retry_structured_should_retry_false_disables_retry(monkeypatch) -> None:
     provider = ScriptedProvider(
-        [
-            LLMResponse(
-                content="429 rate limit",
-                finish_reason="error",
-                error_should_retry=False,
-            ),
-        ]
+        [LLMResponse(content="429 rate limit", finish_reason="error", error_should_retry=False)]
     )
     delays: list[float] = []
 
     async def _fake_sleep(delay: float) -> None:
         delays.append(delay)
 
-    monkeypatch.setattr("nanobot.providers.base.asyncio.sleep", _fake_sleep)
+    monkeypatch.setattr("vtx_claw.providers.base.asyncio.sleep", _fake_sleep)
 
     response = await provider.chat_with_retry(messages=[{"role": "user", "content": "hello"}])
 
@@ -646,7 +600,7 @@ async def test_chat_with_retry_prefers_structured_retry_after(monkeypatch) -> No
     async def _fake_sleep(delay: float) -> None:
         delays.append(delay)
 
-    monkeypatch.setattr("nanobot.providers.base.asyncio.sleep", _fake_sleep)
+    monkeypatch.setattr("vtx_claw.providers.base.asyncio.sleep", _fake_sleep)
 
     response = await provider.chat_with_retry(messages=[{"role": "user", "content": "hello"}])
 
@@ -667,11 +621,10 @@ async def test_persistent_retry_aborts_after_ten_identical_transient_errors(monk
     async def _fake_sleep(delay: float) -> None:
         delays.append(delay)
 
-    monkeypatch.setattr("nanobot.providers.base.asyncio.sleep", _fake_sleep)
+    monkeypatch.setattr("vtx_claw.providers.base.asyncio.sleep", _fake_sleep)
 
     response = await provider.chat_with_retry(
-        messages=[{"role": "user", "content": "hello"}],
-        retry_mode="persistent",
+        messages=[{"role": "user", "content": "hello"}], retry_mode="persistent"
     )
 
     assert response.finish_reason == "error"
@@ -685,9 +638,7 @@ async def test_persistent_retry_emits_terminal_progress_on_identical_error_limit
     monkeypatch,
 ) -> None:
     provider = ScriptedProvider(
-        [
-            *[LLMResponse(content="429 rate limit", finish_reason="error") for _ in range(10)],
-        ]
+        [*[LLMResponse(content="429 rate limit", finish_reason="error") for _ in range(10)]]
     )
     progress: list[str] = []
 
@@ -697,7 +648,7 @@ async def test_persistent_retry_emits_terminal_progress_on_identical_error_limit
     async def _progress(msg: str) -> None:
         progress.append(msg)
 
-    monkeypatch.setattr("nanobot.providers.base.asyncio.sleep", _fake_sleep)
+    monkeypatch.setattr("vtx_claw.providers.base.asyncio.sleep", _fake_sleep)
 
     response = await provider.chat_with_retry(
         messages=[{"role": "user", "content": "hello"}],
@@ -720,9 +671,7 @@ async def test_chat_with_retry_normalizes_explicit_none_max_tokens() -> None:
     provider = ScriptedProvider([LLMResponse(content="ok")])
 
     response = await provider.chat_with_retry(
-        messages=[{"role": "user", "content": "hi"}],
-        max_tokens=None,
-        temperature=None,
+        messages=[{"role": "user", "content": "hi"}], max_tokens=None, temperature=None
     )
 
     assert response.content == "ok"
@@ -749,7 +698,7 @@ async def test_chat_with_retry_retries_zhipu_1302_rate_limit(monkeypatch) -> Non
     async def _fake_sleep(delay: float) -> None:
         delays.append(delay)
 
-    monkeypatch.setattr("nanobot.providers.base.asyncio.sleep", _fake_sleep)
+    monkeypatch.setattr("vtx_claw.providers.base.asyncio.sleep", _fake_sleep)
 
     response = await provider.chat_with_retry(messages=[{"role": "user", "content": "hello"}])
 
@@ -777,7 +726,7 @@ async def test_chat_with_retry_retries_zhipu_1302_with_429_status(monkeypatch) -
     async def _fake_sleep(delay: float) -> None:
         delays.append(delay)
 
-    monkeypatch.setattr("nanobot.providers.base.asyncio.sleep", _fake_sleep)
+    monkeypatch.setattr("vtx_claw.providers.base.asyncio.sleep", _fake_sleep)
 
     response = await provider.chat_with_retry(messages=[{"role": "user", "content": "hello"}])
 
@@ -792,9 +741,7 @@ async def test_chat_stream_with_retry_normalizes_explicit_none_max_tokens() -> N
     provider = ScriptedProvider([LLMResponse(content="ok")])
 
     response = await provider.chat_stream_with_retry(
-        messages=[{"role": "user", "content": "hi"}],
-        max_tokens=None,
-        temperature=None,
+        messages=[{"role": "user", "content": "hi"}], max_tokens=None, temperature=None
     )
 
     assert response.content == "ok"

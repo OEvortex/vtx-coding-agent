@@ -7,14 +7,11 @@ from pathlib import Path
 def test_config_base_import_does_not_load_config_schema():
     code = """
 import sys
-from nanobot.config_base import Base
-print("nanobot.config.schema" in sys.modules)
+from vtx_claw.config_base import Base
+print("vtx_claw.config.schema" in sys.modules)
 """
     result = subprocess.run(
-        [sys.executable, "-c", code],
-        check=True,
-        capture_output=True,
-        text=True,
+        [sys.executable, "-c", code], check=True, capture_output=True, text=True
     )
 
     assert result.stdout.strip() == "False"
@@ -22,7 +19,7 @@ print("nanobot.config.schema" in sys.modules)
 
 def test_builtin_tool_configs_do_not_depend_on_config_schema_base():
     repo = Path(__file__).resolve().parents[2]
-    tool_paths = sorted((repo / "nanobot/agent/tools").glob("*.py"))
+    tool_paths = sorted((repo / "vtx_claw/agent/tools").glob("*.py"))
 
     violations = []
     for path in tool_paths:
@@ -30,7 +27,7 @@ def test_builtin_tool_configs_do_not_depend_on_config_schema_base():
         for node in ast.walk(tree):
             if not isinstance(node, ast.ImportFrom):
                 continue
-            if node.module != "nanobot.config.schema":
+            if node.module != "vtx_claw.config.schema":
                 continue
             if any(alias.name == "Base" for alias in node.names):
                 violations.append(str(path.relative_to(repo)))

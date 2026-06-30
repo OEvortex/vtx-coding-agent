@@ -5,11 +5,11 @@ from unittest.mock import AsyncMock, MagicMock
 import pytest
 from pydantic import ValidationError
 
-import nanobot.agent.memory as memory_module
-from nanobot.agent.loop import AgentLoop
-from nanobot.bus.queue import MessageBus
-from nanobot.config.schema import AgentDefaults
-from nanobot.providers.base import GenerationSettings, LLMResponse
+import vtx_claw.agent.memory as memory_module
+from vtx_claw.agent.loop import AgentLoop
+from vtx_claw.bus.queue import MessageBus
+from vtx_claw.config.schema import AgentDefaults
+from vtx_claw.providers.base import GenerationSettings, LLMResponse
 
 
 def _make_loop(
@@ -57,11 +57,7 @@ def _session_with_turns(loop: AgentLoop, *, turns: int):
 @pytest.mark.asyncio
 @pytest.mark.parametrize(
     ("ratio", "context_window_tokens", "estimates", "expected_archives"),
-    [
-        (0.5, 200, [250, 90], 1),
-        (0.1, 1000, [1200, 800, 400, 50], 2),
-        (0.9, 200, [300, 175], 1),
-    ],
+    [(0.5, 200, [250, 90], 1), (0.1, 1000, [1200, 800, 400, 50], 2), (0.9, 200, [300, 175], 1)],
 )
 async def test_consolidation_ratio_controls_target(
     tmp_path,
@@ -72,9 +68,7 @@ async def test_consolidation_ratio_controls_target(
     expected_archives: int,
 ) -> None:
     loop = _make_loop(
-        tmp_path,
-        context_window_tokens=context_window_tokens,
-        consolidation_ratio=ratio,
+        tmp_path, context_window_tokens=context_window_tokens, consolidation_ratio=ratio
     )
     loop.consolidator.archive = AsyncMock(return_value=True)  # type: ignore[method-assign]
     session = _session_with_turns(loop, turns=10)

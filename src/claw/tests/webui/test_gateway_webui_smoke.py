@@ -34,10 +34,7 @@ def _write_smoke_config(path: Path, *, workspace: Path, ws_port: int, gateway_po
             }
         },
         "providers": {
-            "custom": {
-                "apiKey": "smoke-no-external-call",
-                "apiBase": "http://127.0.0.1:9/v1",
-            }
+            "custom": {"apiKey": "smoke-no-external-call", "apiBase": "http://127.0.0.1:9/v1"}
         },
         "channels": {
             "websocket": {
@@ -47,11 +44,7 @@ def _write_smoke_config(path: Path, *, workspace: Path, ws_port: int, gateway_po
                 "allowFrom": ["*"],
             }
         },
-        "gateway": {
-            "host": "127.0.0.1",
-            "port": gateway_port,
-            "heartbeat": {"enabled": False},
-        },
+        "gateway": {"host": "127.0.0.1", "port": gateway_port, "heartbeat": {"enabled": False}},
     }
     path.write_text(json.dumps(config), encoding="utf-8")
 
@@ -60,14 +53,7 @@ def _start_gateway(config_path: Path, log_path: Path) -> subprocess.Popen[bytes]
     log_file = log_path.open("wb")
     try:
         process = subprocess.Popen(
-            [
-                sys.executable,
-                "-m",
-                "nanobot",
-                "gateway",
-                "--config",
-                str(config_path),
-            ],
+            [sys.executable, "-m", "vtx_claw", "gateway", "--config", str(config_path)],
             cwd=Path(__file__).resolve().parents[2],
             stdout=log_file,
             stderr=subprocess.STDOUT,
@@ -129,10 +115,7 @@ async def test_gateway_webui_bootstrap_message_and_thread_hydration(tmp_path: Pa
     config_path = tmp_path / "config.json"
     log_path = tmp_path / "gateway.log"
     _write_smoke_config(
-        config_path,
-        workspace=workspace,
-        ws_port=ws_port,
-        gateway_port=gateway_port,
+        config_path, workspace=workspace, ws_port=ws_port, gateway_port=gateway_port
     )
 
     process = _start_gateway(config_path, log_path)
@@ -172,10 +155,7 @@ async def test_gateway_webui_bootstrap_message_and_thread_hydration(tmp_path: Pa
         assert key in {row["key"] for row in sessions["sessions"]}
 
         encoded_key = quote(key, safe="")
-        thread = _get_json(
-            f"{base_url}/api/sessions/{encoded_key}/webui-thread",
-            token=api_token,
-        )
+        thread = _get_json(f"{base_url}/api/sessions/{encoded_key}/webui-thread", token=api_token)
         contents = [str(message.get("content") or "") for message in thread["messages"]]
         assert "/model" in contents
         assert any("Current model: `custom/smoke-model`" in text for text in contents)

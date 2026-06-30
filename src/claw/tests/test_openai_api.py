@@ -9,7 +9,7 @@ from unittest.mock import AsyncMock, MagicMock
 import pytest
 import pytest_asyncio
 
-from nanobot.api.server import (
+from vtx_claw.api.server import (
     API_CHAT_ID,
     API_SESSION_KEY,
     _chat_completion_response,
@@ -113,8 +113,7 @@ async def test_missing_messages_returns_400(aiohttp_client, app) -> None:
 async def test_no_user_message_returns_400(aiohttp_client, app) -> None:
     client = await aiohttp_client(app)
     resp = await client.post(
-        "/v1/chat/completions",
-        json={"messages": [{"role": "system", "content": "you are a bot"}]},
+        "/v1/chat/completions", json={"messages": [{"role": "system", "content": "you are a bot"}]}
     )
     assert resp.status == 400
 
@@ -135,10 +134,7 @@ async def test_stream_true_returns_sse(aiohttp_client, app) -> None:
 async def test_model_mismatch_returns_400() -> None:
     request = MagicMock()
     request.json = AsyncMock(
-        return_value={
-            "model": "other-model",
-            "messages": [{"role": "user", "content": "hello"}],
-        }
+        return_value={"model": "other-model", "messages": [{"role": "user", "content": "hello"}]}
     )
     request.app = {
         "agent_loop": _make_mock_agent(),
@@ -161,7 +157,7 @@ async def test_single_user_message_required() -> None:
             "messages": [
                 {"role": "user", "content": "hello"},
                 {"role": "assistant", "content": "previous reply"},
-            ],
+            ]
         }
     )
     request.app = {
@@ -181,9 +177,7 @@ async def test_single_user_message_required() -> None:
 async def test_single_user_message_must_have_user_role() -> None:
     request = MagicMock()
     request.json = AsyncMock(
-        return_value={
-            "messages": [{"role": "system", "content": "you are a bot"}],
-        }
+        return_value={"messages": [{"role": "system", "content": "you are a bot"}]}
     )
     request.app = {
         "agent_loop": _make_mock_agent(),
@@ -204,8 +198,7 @@ async def test_successful_request_uses_fixed_api_session(aiohttp_client, mock_ag
     app = create_app(mock_agent, model_name="test-model")
     client = await aiohttp_client(app)
     resp = await client.post(
-        "/v1/chat/completions",
-        json={"messages": [{"role": "user", "content": "hello"}]},
+        "/v1/chat/completions", json={"messages": [{"role": "user", "content": "hello"}]}
     )
     assert resp.status == 200
     body = await resp.json()
@@ -239,12 +232,10 @@ async def test_followup_requests_share_same_session_key(aiohttp_client) -> None:
     client = await aiohttp_client(app)
 
     r1 = await client.post(
-        "/v1/chat/completions",
-        json={"messages": [{"role": "user", "content": "first"}]},
+        "/v1/chat/completions", json={"messages": [{"role": "user", "content": "first"}]}
     )
     r2 = await client.post(
-        "/v1/chat/completions",
-        json={"messages": [{"role": "user", "content": "second"}]},
+        "/v1/chat/completions", json={"messages": [{"role": "user", "content": "second"}]}
     )
 
     assert r1.status == 200
@@ -278,8 +269,7 @@ async def test_fixed_session_requests_are_serialized(aiohttp_client) -> None:
 
     async def send(msg: str):
         return await client.post(
-            "/v1/chat/completions",
-            json={"messages": [{"role": "user", "content": msg}]},
+            "/v1/chat/completions", json={"messages": [{"role": "user", "content": msg}]}
         )
 
     first = asyncio.create_task(send("first"))
@@ -394,8 +384,7 @@ async def test_empty_response_retry_then_success(aiohttp_client) -> None:
     app = create_app(agent, model_name="m")
     client = await aiohttp_client(app)
     resp = await client.post(
-        "/v1/chat/completions",
-        json={"messages": [{"role": "user", "content": "hello"}]},
+        "/v1/chat/completions", json={"messages": [{"role": "user", "content": "hello"}]}
     )
     assert resp.status == 200
     body = await resp.json()
@@ -421,8 +410,7 @@ async def test_empty_response_retry_does_not_duplicate_user_turn(aiohttp_client)
     app = create_app(agent, model_name="m")
     client = await aiohttp_client(app)
     resp = await client.post(
-        "/v1/chat/completions",
-        json={"messages": [{"role": "user", "content": "hello"}]},
+        "/v1/chat/completions", json={"messages": [{"role": "user", "content": "hello"}]}
     )
     assert resp.status == 200
     # first call persists the user turn; the retry must not persist it again
@@ -432,7 +420,7 @@ async def test_empty_response_retry_does_not_duplicate_user_turn(aiohttp_client)
 @pytest.mark.skipif(not HAS_AIOHTTP, reason="aiohttp not installed")
 @pytest.mark.asyncio
 async def test_empty_response_falls_back(aiohttp_client) -> None:
-    from nanobot.utils.runtime import EMPTY_FINAL_RESPONSE_MESSAGE
+    from vtx_claw.utils.runtime import EMPTY_FINAL_RESPONSE_MESSAGE
 
     call_count = 0
 
@@ -450,8 +438,7 @@ async def test_empty_response_falls_back(aiohttp_client) -> None:
     app = create_app(agent, model_name="m")
     client = await aiohttp_client(app)
     resp = await client.post(
-        "/v1/chat/completions",
-        json={"messages": [{"role": "user", "content": "hello"}]},
+        "/v1/chat/completions", json={"messages": [{"role": "user", "content": "hello"}]}
     )
     assert resp.status == 200
     body = await resp.json()
@@ -462,7 +449,7 @@ async def test_empty_response_falls_back(aiohttp_client) -> None:
 @pytest.mark.asyncio
 async def test_process_direct_accepts_media() -> None:
     """process_direct should forward media paths to _process_message."""
-    from nanobot.agent.loop import AgentLoop
+    from vtx_claw.agent.loop import AgentLoop
 
     loop = AgentLoop.__new__(AgentLoop)
     loop._connect_mcp = AsyncMock()
@@ -486,9 +473,7 @@ async def test_process_direct_accepts_media() -> None:
     loop._process_message = fake_process
 
     await loop.process_direct(
-        content="analyze this",
-        media=["/tmp/image.png", "/tmp/report.pdf"],
-        session_key="test:1",
+        content="analyze this", media=["/tmp/image.png", "/tmp/report.pdf"], session_key="test:1"
     )
 
     assert captured_msg is not None

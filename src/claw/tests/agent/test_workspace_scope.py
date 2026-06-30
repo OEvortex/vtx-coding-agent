@@ -5,15 +5,15 @@ from types import SimpleNamespace
 
 import pytest
 
-from nanobot.agent.tools.cli_apps import CliAppsTool
-from nanobot.agent.tools.filesystem import ReadFileTool, WriteFileTool
-from nanobot.agent.tools.image_generation import ImageGenerationError, ImageGenerationTool
-from nanobot.agent.tools.message import MessageTool
-from nanobot.agent.tools.shell import ExecTool
-from nanobot.agent.tools.spawn import SpawnTool
-from nanobot.apps.cli.service import CliAppManager, CliAppsRuntimeConfig
-from nanobot.config.schema import ImageGenerationToolConfig, ProviderConfig
-from nanobot.security.workspace_access import (
+from vtx_claw.agent.tools.cli_apps import CliAppsTool
+from vtx_claw.agent.tools.filesystem import ReadFileTool, WriteFileTool
+from vtx_claw.agent.tools.image_generation import ImageGenerationError, ImageGenerationTool
+from vtx_claw.agent.tools.message import MessageTool
+from vtx_claw.agent.tools.shell import ExecTool
+from vtx_claw.agent.tools.spawn import SpawnTool
+from vtx_claw.apps.cli.service import CliAppManager, CliAppsRuntimeConfig
+from vtx_claw.config.schema import ImageGenerationToolConfig, ProviderConfig
+from vtx_claw.security.workspace_access import (
     WORKSPACE_SCOPE_METADATA_KEY,
     WorkspaceScopeError,
     bind_workspace_scope,
@@ -59,8 +59,7 @@ def test_workspace_scope_rejects_invalid_project_path(tmp_path: Path) -> None:
 
 
 def test_workspace_scope_accepts_home_relative_project_path(
-    tmp_path: Path,
-    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     home = tmp_path / "home"
     project = home / "Desktop" / "Photos"
@@ -254,8 +253,7 @@ def test_message_media_scope_restricted_blocks_outside_and_full_allows(tmp_path:
 
 @pytest.mark.asyncio
 async def test_cli_app_scope_controls_working_dir(
-    tmp_path: Path,
-    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     project = tmp_path / "project"
     outside = tmp_path / "outside"
@@ -278,23 +276,20 @@ async def test_cli_app_scope_controls_working_dir(
     }
     data_dir.mkdir()
     (data_dir / "harness_registry_cache.json").write_text(
-        json.dumps({"_cached_at": time.time(), "data": registry}),
-        encoding="utf-8",
+        json.dumps({"_cached_at": time.time(), "data": registry}), encoding="utf-8"
     )
     (data_dir / "public_registry_cache.json").write_text(
-        json.dumps({"_cached_at": time.time(), "data": {"meta": {}, "clis": []}}),
-        encoding="utf-8",
+        json.dumps({"_cached_at": time.time(), "data": {"meta": {}, "clis": []}}), encoding="utf-8"
     )
     (data_dir / "extensions_registry_cache.json").write_text(
-        json.dumps({"_cached_at": time.time(), "data": {"meta": {}, "clis": []}}),
-        encoding="utf-8",
+        json.dumps({"_cached_at": time.time(), "data": {"meta": {}, "clis": []}}), encoding="utf-8"
     )
     CliAppManager(workspace=project, data_dir=data_dir)._save_installed(
         {"demo": {"entry_point": "demo-cli"}}
     )
-    monkeypatch.setattr("nanobot.apps.cli.service.get_runtime_subdir", lambda _name: data_dir)
+    monkeypatch.setattr("vtx_claw.apps.cli.service.get_runtime_subdir", lambda _name: data_dir)
     monkeypatch.setattr(
-        "nanobot.apps.cli.service.shutil.which",
+        "vtx_claw.apps.cli.service.shutil.which",
         lambda entry: "/usr/bin/demo-cli" if entry == "demo-cli" else None,
     )
 
@@ -304,11 +299,9 @@ async def test_cli_app_scope_controls_working_dir(
         seen["cwd"] = kwargs["cwd"]
         return SimpleNamespace(returncode=0, stdout="ok", stderr="")
 
-    monkeypatch.setattr("nanobot.apps.cli.service.subprocess.run", fake_run)
+    monkeypatch.setattr("vtx_claw.apps.cli.service.subprocess.run", fake_run)
     tool = CliAppsTool(
-        workspace=tmp_path,
-        restrict_to_workspace=True,
-        runtime=CliAppsRuntimeConfig(run_timeout=5),
+        workspace=tmp_path, restrict_to_workspace=True, runtime=CliAppsRuntimeConfig(run_timeout=5)
     )
 
     restricted = validate_workspace_scope_payload(

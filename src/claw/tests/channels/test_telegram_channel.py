@@ -13,9 +13,9 @@ except ImportError:
         "Telegram dependencies not installed (python-telegram-bot)", allow_module_level=True
     )
 
-from nanobot.bus.events import OutboundMessage
-from nanobot.bus.queue import MessageBus
-from nanobot.channels.telegram import (
+from vtx_claw.bus.events import OutboundMessage
+from vtx_claw.bus.queue import MessageBus
+from vtx_claw.channels.telegram import (
     TELEGRAM_REPLY_CONTEXT_MAX_LEN,
     TelegramChannel,
     TelegramConfig,
@@ -63,7 +63,7 @@ class _FakeBot:
 
     async def get_me(self):
         self.get_me_calls += 1
-        return SimpleNamespace(id=999, username="nanobot_test")
+        return SimpleNamespace(id=999, username="vtx_claw_test")
 
     async def set_my_commands(self, commands) -> None:
         self.commands = commands
@@ -239,20 +239,16 @@ def test_split_telegram_markdown_leading_whitespace_before_fence() -> None:
 async def test_start_creates_separate_pools_with_proxy(monkeypatch) -> None:
     _FakeHTTPXRequest.clear()
     config = TelegramConfig(
-        enabled=True,
-        token="123:abc",
-        allow_from=["*"],
-        proxy="http://127.0.0.1:7890",
+        enabled=True, token="123:abc", allow_from=["*"], proxy="http://127.0.0.1:7890"
     )
     bus = MessageBus()
     channel = TelegramChannel(config, bus)
     app = _FakeApp(lambda: setattr(channel, "_running", False))
     builder = _FakeBuilder(app)
 
-    monkeypatch.setattr("nanobot.channels.telegram.HTTPXRequest", _FakeHTTPXRequest)
+    monkeypatch.setattr("vtx_claw.channels.telegram.HTTPXRequest", _FakeHTTPXRequest)
     monkeypatch.setattr(
-        "nanobot.channels.telegram.Application",
-        SimpleNamespace(builder=lambda: builder),
+        "vtx_claw.channels.telegram.Application", SimpleNamespace(builder=lambda: builder)
     )
 
     await channel.start()
@@ -278,21 +274,16 @@ async def test_start_creates_separate_pools_with_proxy(monkeypatch) -> None:
 async def test_start_respects_custom_pool_config(monkeypatch) -> None:
     _FakeHTTPXRequest.clear()
     config = TelegramConfig(
-        enabled=True,
-        token="123:abc",
-        allow_from=["*"],
-        connection_pool_size=32,
-        pool_timeout=10.0,
+        enabled=True, token="123:abc", allow_from=["*"], connection_pool_size=32, pool_timeout=10.0
     )
     bus = MessageBus()
     channel = TelegramChannel(config, bus)
     app = _FakeApp(lambda: setattr(channel, "_running", False))
     builder = _FakeBuilder(app)
 
-    monkeypatch.setattr("nanobot.channels.telegram.HTTPXRequest", _FakeHTTPXRequest)
+    monkeypatch.setattr("vtx_claw.channels.telegram.HTTPXRequest", _FakeHTTPXRequest)
     monkeypatch.setattr(
-        "nanobot.channels.telegram.Application",
-        SimpleNamespace(builder=lambda: builder),
+        "vtx_claw.channels.telegram.Application", SimpleNamespace(builder=lambda: builder)
     )
 
     await channel.start()
@@ -346,10 +337,9 @@ async def test_start_webhook_mode(monkeypatch) -> None:
     app = _FakeApp(lambda: setattr(channel, "_running", False))
     builder = _FakeBuilder(app)
 
-    monkeypatch.setattr("nanobot.channels.telegram.HTTPXRequest", _FakeHTTPXRequest)
+    monkeypatch.setattr("vtx_claw.channels.telegram.HTTPXRequest", _FakeHTTPXRequest)
     monkeypatch.setattr(
-        "nanobot.channels.telegram.Application",
-        SimpleNamespace(builder=lambda: builder),
+        "vtx_claw.channels.telegram.Application", SimpleNamespace(builder=lambda: builder)
     )
 
     await channel.start()
@@ -370,8 +360,7 @@ async def test_start_webhook_mode(monkeypatch) -> None:
 @pytest.mark.asyncio
 async def test_running_message_handler_reorders_same_session_updates() -> None:
     channel = TelegramChannel(
-        TelegramConfig(enabled=True, token="123:abc", allow_from=["*"]),
-        MessageBus(),
+        TelegramConfig(enabled=True, token="123:abc", allow_from=["*"]), MessageBus()
     )
     seen: list[int] = []
 
@@ -402,8 +391,7 @@ async def test_send_text_retries_on_timeout() -> None:
     from telegram.error import TimedOut
 
     channel = TelegramChannel(
-        TelegramConfig(enabled=True, token="123:abc", allow_from=["*"]),
-        MessageBus(),
+        TelegramConfig(enabled=True, token="123:abc", allow_from=["*"]), MessageBus()
     )
     channel._app = _FakeApp(lambda: None)
 
@@ -419,7 +407,7 @@ async def test_send_text_retries_on_timeout() -> None:
 
     channel._app.bot.send_message = flaky_send
 
-    import nanobot.channels.telegram as tg_mod
+    import vtx_claw.channels.telegram as tg_mod
 
     orig_delay = tg_mod._SEND_RETRY_BASE_DELAY
     tg_mod._SEND_RETRY_BASE_DELAY = 0.01
@@ -438,8 +426,7 @@ async def test_send_text_gives_up_after_max_retries() -> None:
     from telegram.error import TimedOut
 
     channel = TelegramChannel(
-        TelegramConfig(enabled=True, token="123:abc", allow_from=["*"]),
-        MessageBus(),
+        TelegramConfig(enabled=True, token="123:abc", allow_from=["*"]), MessageBus()
     )
     channel._app = _FakeApp(lambda: None)
 
@@ -448,7 +435,7 @@ async def test_send_text_gives_up_after_max_retries() -> None:
 
     channel._app.bot.send_message = always_timeout
 
-    import nanobot.channels.telegram as tg_mod
+    import vtx_claw.channels.telegram as tg_mod
 
     orig_delay = tg_mod._SEND_RETRY_BASE_DELAY
     tg_mod._SEND_RETRY_BASE_DELAY = 0.01
@@ -504,8 +491,7 @@ async def test_send_rich_bad_request_does_not_latch_capability() -> None:
 async def test_rich_messages_default_skips_send_rich_message() -> None:
     """By default, sendRichMessage should not be called."""
     channel = TelegramChannel(
-        TelegramConfig(enabled=True, token="123:abc", allow_from=["*"]),
-        MessageBus(),
+        TelegramConfig(enabled=True, token="123:abc", allow_from=["*"]), MessageBus()
     )
     channel._app = _FakeApp(lambda: None)
     channel._app.bot.do_api_request = AsyncMock()
@@ -522,8 +508,7 @@ async def test_on_error_logs_network_issues_as_warning(monkeypatch) -> None:
     from telegram.error import NetworkError
 
     channel = TelegramChannel(
-        TelegramConfig(enabled=True, token="123:abc", allow_from=["*"]),
-        MessageBus(),
+        TelegramConfig(enabled=True, token="123:abc", allow_from=["*"]), MessageBus()
     )
     recorded: list[tuple[str, str]] = []
 
@@ -548,8 +533,7 @@ async def test_on_error_summarizes_empty_network_error(monkeypatch) -> None:
     from telegram.error import NetworkError
 
     channel = TelegramChannel(
-        TelegramConfig(enabled=True, token="123:abc", allow_from=["*"]),
-        MessageBus(),
+        TelegramConfig(enabled=True, token="123:abc", allow_from=["*"]), MessageBus()
     )
     recorded: list[tuple[str, str]] = []
 
@@ -567,8 +551,7 @@ async def test_on_error_summarizes_empty_network_error(monkeypatch) -> None:
 @pytest.mark.asyncio
 async def test_on_error_keeps_non_network_exceptions_as_error(monkeypatch) -> None:
     channel = TelegramChannel(
-        TelegramConfig(enabled=True, token="123:abc", allow_from=["*"]),
-        MessageBus(),
+        TelegramConfig(enabled=True, token="123:abc", allow_from=["*"]), MessageBus()
     )
     recorded: list[tuple[str, str]] = []
 
@@ -591,8 +574,7 @@ async def test_on_error_keeps_non_network_exceptions_as_error(monkeypatch) -> No
 @pytest.mark.asyncio
 async def test_send_delta_stream_end_raises_and_keeps_buffer_on_failure() -> None:
     channel = TelegramChannel(
-        TelegramConfig(enabled=True, token="123:abc", allow_from=["*"]),
-        MessageBus(),
+        TelegramConfig(enabled=True, token="123:abc", allow_from=["*"]), MessageBus()
     )
     channel._app = _FakeApp(lambda: None)
     channel._app.bot.edit_message_text = AsyncMock(side_effect=RuntimeError("boom"))
@@ -609,8 +591,7 @@ async def test_send_delta_stream_end_treats_not_modified_as_success() -> None:
     from telegram.error import BadRequest
 
     channel = TelegramChannel(
-        TelegramConfig(enabled=True, token="123:abc", allow_from=["*"]),
-        MessageBus(),
+        TelegramConfig(enabled=True, token="123:abc", allow_from=["*"]), MessageBus()
     )
     channel._app = _FakeApp(lambda: None)
     channel._app.bot.edit_message_text = AsyncMock(
@@ -631,8 +612,7 @@ async def test_send_delta_stream_end_does_not_fallback_on_network_timeout() -> N
     from telegram.error import TimedOut
 
     channel = TelegramChannel(
-        TelegramConfig(enabled=True, token="123:abc", allow_from=["*"]),
-        MessageBus(),
+        TelegramConfig(enabled=True, token="123:abc", allow_from=["*"]), MessageBus()
     )
     channel._app = _FakeApp(lambda: None)
     # _call_with_retry retries TimedOut up to 3 times, so the mock will be called
@@ -657,8 +637,7 @@ async def test_send_delta_stream_end_does_not_fallback_on_network_error() -> Non
     from telegram.error import NetworkError
 
     channel = TelegramChannel(
-        TelegramConfig(enabled=True, token="123:abc", allow_from=["*"]),
-        MessageBus(),
+        TelegramConfig(enabled=True, token="123:abc", allow_from=["*"]), MessageBus()
     )
     channel._app = _FakeApp(lambda: None)
     channel._app.bot.edit_message_text = AsyncMock(side_effect=NetworkError("connection reset"))
@@ -681,8 +660,7 @@ async def test_send_delta_stream_end_falls_back_on_bad_request() -> None:
     from telegram.error import BadRequest
 
     channel = TelegramChannel(
-        TelegramConfig(enabled=True, token="123:abc", allow_from=["*"]),
-        MessageBus(),
+        TelegramConfig(enabled=True, token="123:abc", allow_from=["*"]), MessageBus()
     )
     channel._app = _FakeApp(lambda: None)
 
@@ -713,8 +691,7 @@ async def test_send_delta_stream_end_splits_oversized_reply() -> None:
     conversion, which could still overflow when HTML tags were added.
     """
     channel = TelegramChannel(
-        TelegramConfig(enabled=True, token="123:abc", allow_from=["*"]),
-        MessageBus(),
+        TelegramConfig(enabled=True, token="123:abc", allow_from=["*"]), MessageBus()
     )
     channel._app = _FakeApp(lambda: None)
     channel._app.bot.edit_message_text = AsyncMock()
@@ -746,11 +723,10 @@ async def test_send_delta_stream_end_html_expansion_does_not_overflow() -> None:
     could become 4800+ chars after HTML conversion, exceeding 4096 limit.
     The fix converts to HTML first, THEN splits by 4096.
     """
-    from nanobot.channels.telegram import _markdown_to_telegram_html
+    from vtx_claw.channels.telegram import _markdown_to_telegram_html
 
     channel = TelegramChannel(
-        TelegramConfig(enabled=True, token="123:abc", allow_from=["*"]),
-        MessageBus(),
+        TelegramConfig(enabled=True, token="123:abc", allow_from=["*"]), MessageBus()
     )
     channel._app = _FakeApp(lambda: None)
     channel._app.bot.edit_message_text = AsyncMock()
@@ -780,8 +756,7 @@ async def test_send_delta_stream_end_html_expansion_does_not_overflow() -> None:
 async def test_send_delta_stream_end_splits_long_code_block_before_html_rendering() -> None:
     """Final streamed replies must not split Telegram HTML inside <pre><code>."""
     channel = TelegramChannel(
-        TelegramConfig(enabled=True, token="123:abc", allow_from=["*"]),
-        MessageBus(),
+        TelegramConfig(enabled=True, token="123:abc", allow_from=["*"]), MessageBus()
     )
     channel._app = _FakeApp(lambda: None)
     channel._app.bot.edit_message_text = AsyncMock()
@@ -806,15 +781,11 @@ async def test_send_delta_stream_end_splits_long_code_block_before_html_renderin
 @pytest.mark.asyncio
 async def test_send_delta_new_stream_id_replaces_stale_buffer() -> None:
     channel = TelegramChannel(
-        TelegramConfig(enabled=True, token="123:abc", allow_from=["*"]),
-        MessageBus(),
+        TelegramConfig(enabled=True, token="123:abc", allow_from=["*"]), MessageBus()
     )
     channel._app = _FakeApp(lambda: None)
     channel._stream_bufs["123"] = _StreamBuf(
-        text="hello",
-        message_id=7,
-        last_edit=0.0,
-        stream_id="old:0",
+        text="hello", message_id=7, last_edit=0.0, stream_id="old:0"
     )
 
     await channel.send_delta("123", "world", {"_stream_delta": True, "_stream_id": "new:0"})
@@ -830,8 +801,7 @@ async def test_send_delta_incremental_edit_treats_not_modified_as_success() -> N
     from telegram.error import BadRequest
 
     channel = TelegramChannel(
-        TelegramConfig(enabled=True, token="123:abc", allow_from=["*"]),
-        MessageBus(),
+        TelegramConfig(enabled=True, token="123:abc", allow_from=["*"]), MessageBus()
     )
     channel._app = _FakeApp(lambda: None)
     channel._stream_bufs["123"] = _StreamBuf(
@@ -851,11 +821,10 @@ async def test_send_delta_incremental_edit_splits_oversized_buffer() -> None:
     """Mid-stream overflow: once buf.text exceeds Telegram's limit, split into
     chunks, edit the current message with the first chunk, and re-anchor the
     buffer to a new message for the tail so further deltas keep streaming."""
-    from nanobot.channels.telegram import TELEGRAM_MAX_MESSAGE_LEN
+    from vtx_claw.channels.telegram import TELEGRAM_MAX_MESSAGE_LEN
 
     channel = TelegramChannel(
-        TelegramConfig(enabled=True, token="123:abc", allow_from=["*"]),
-        MessageBus(),
+        TelegramConfig(enabled=True, token="123:abc", allow_from=["*"]), MessageBus()
     )
     channel._app = _FakeApp(lambda: None)
     channel._app.bot.edit_message_text = AsyncMock()
@@ -882,15 +851,12 @@ async def test_send_delta_incremental_edit_splits_oversized_buffer() -> None:
 @pytest.mark.asyncio
 async def test_send_delta_initial_send_keeps_message_in_thread() -> None:
     channel = TelegramChannel(
-        TelegramConfig(enabled=True, token="123:abc", allow_from=["*"]),
-        MessageBus(),
+        TelegramConfig(enabled=True, token="123:abc", allow_from=["*"]), MessageBus()
     )
     channel._app = _FakeApp(lambda: None)
 
     await channel.send_delta(
-        "123",
-        "hello",
-        {"_stream_delta": True, "_stream_id": "s:0", "message_thread_id": 42},
+        "123", "hello", {"_stream_delta": True, "_stream_id": "s:0", "message_thread_id": 42}
     )
 
     assert channel._app.bot.sent_messages[0]["message_thread_id"] == 42
@@ -898,9 +864,7 @@ async def test_send_delta_initial_send_keeps_message_in_thread() -> None:
 
 def test_derive_topic_session_key_uses_thread_id() -> None:
     message = SimpleNamespace(
-        chat=SimpleNamespace(type="supergroup"),
-        chat_id=-100123,
-        message_thread_id=42,
+        chat=SimpleNamespace(type="supergroup"), chat_id=-100123, message_thread_id=42
     )
 
     assert TelegramChannel._derive_topic_session_key(message) == "telegram:-100123:topic:42"
@@ -909,9 +873,7 @@ def test_derive_topic_session_key_uses_thread_id() -> None:
 def test_derive_topic_session_key_private_dm_thread() -> None:
     """Private DM threads (Telegram Threaded Mode) must get their own session key."""
     message = SimpleNamespace(
-        chat=SimpleNamespace(type="private"),
-        chat_id=999,
-        message_thread_id=7,
+        chat=SimpleNamespace(type="private"), chat_id=999, message_thread_id=7
     )
     assert TelegramChannel._derive_topic_session_key(message) == "telegram:999:topic:7"
 
@@ -920,9 +882,7 @@ def test_derive_topic_session_key_none_without_thread() -> None:
     """No thread id → no topic session key, regardless of chat type."""
     for chat_type in ("private", "supergroup", "group"):
         message = SimpleNamespace(
-            chat=SimpleNamespace(type=chat_type),
-            chat_id=123,
-            message_thread_id=None,
+            chat=SimpleNamespace(type=chat_type), chat_id=123, message_thread_id=None
         )
         assert TelegramChannel._derive_topic_session_key(message) is None
 
@@ -982,10 +942,7 @@ async def test_send_reply_infers_topic_from_message_id_cache() -> None:
 
     await channel.send(
         OutboundMessage(
-            channel="telegram",
-            chat_id="123",
-            content="hello",
-            metadata={"message_id": 10},
+            channel="telegram", chat_id="123", content="hello", metadata={"message_id": 10}
         )
     )
 
@@ -996,18 +953,14 @@ async def test_send_reply_infers_topic_from_message_id_cache() -> None:
 @pytest.mark.asyncio
 async def test_send_remote_media_url_after_security_validation(monkeypatch) -> None:
     channel = TelegramChannel(
-        TelegramConfig(enabled=True, token="123:abc", allow_from=["*"]),
-        MessageBus(),
+        TelegramConfig(enabled=True, token="123:abc", allow_from=["*"]), MessageBus()
     )
     channel._app = _FakeApp(lambda: None)
-    monkeypatch.setattr("nanobot.channels.telegram.validate_url_target", lambda url: (True, ""))
+    monkeypatch.setattr("vtx_claw.channels.telegram.validate_url_target", lambda url: (True, ""))
 
     await channel.send(
         OutboundMessage(
-            channel="telegram",
-            chat_id="123",
-            content="",
-            media=["https://example.com/cat.jpg"],
+            channel="telegram", chat_id="123", content="", media=["https://example.com/cat.jpg"]
         )
     )
 
@@ -1024,20 +977,14 @@ async def test_send_remote_media_url_after_security_validation(monkeypatch) -> N
 @pytest.mark.asyncio
 async def test_send_local_media_preserves_filename(tmp_path: Path) -> None:
     channel = TelegramChannel(
-        TelegramConfig(enabled=True, token="123:abc", allow_from=["*"]),
-        MessageBus(),
+        TelegramConfig(enabled=True, token="123:abc", allow_from=["*"]), MessageBus()
     )
     channel._app = _FakeApp(lambda: None)
     attachment = tmp_path / "report.final.md"
     attachment.write_bytes(b"# Report\n")
 
     await channel.send(
-        OutboundMessage(
-            channel="telegram",
-            chat_id="123",
-            content="",
-            media=[str(attachment)],
-        )
+        OutboundMessage(channel="telegram", chat_id="123", content="", media=[str(attachment)])
     )
 
     assert channel._app.bot.sent_media == [
@@ -1054,12 +1001,11 @@ async def test_send_local_media_preserves_filename(tmp_path: Path) -> None:
 @pytest.mark.asyncio
 async def test_send_blocks_unsafe_remote_media_url(monkeypatch) -> None:
     channel = TelegramChannel(
-        TelegramConfig(enabled=True, token="123:abc", allow_from=["*"]),
-        MessageBus(),
+        TelegramConfig(enabled=True, token="123:abc", allow_from=["*"]), MessageBus()
     )
     channel._app = _FakeApp(lambda: None)
     monkeypatch.setattr(
-        "nanobot.channels.telegram.validate_url_target",
+        "vtx_claw.channels.telegram.validate_url_target",
         lambda url: (False, "Blocked: example.com resolves to private/internal address 127.0.0.1"),
     )
 
@@ -1074,11 +1020,7 @@ async def test_send_blocks_unsafe_remote_media_url(monkeypatch) -> None:
 
     assert channel._app.bot.sent_media == []
     assert channel._app.bot.sent_messages == [
-        {
-            "chat_id": 123,
-            "text": "[Failed to send: internal.jpg]",
-            "reply_parameters": None,
-        }
+        {"chat_id": 123, "text": "[Failed to send: internal.jpg]", "reply_parameters": None}
     ]
 
 
@@ -1122,10 +1064,10 @@ async def test_group_policy_mention_accepts_text_mention_and_caches_bot_identity
 
     mention = SimpleNamespace(type="mention", offset=0, length=13)
     await channel._on_message(
-        _make_telegram_update(text="@nanobot_test hi", entities=[mention]), None
+        _make_telegram_update(text="@vtx_claw_test hi", entities=[mention]), None
     )
     await channel._on_message(
-        _make_telegram_update(text="@nanobot_test again", entities=[mention]), None
+        _make_telegram_update(text="@vtx_claw_test again", entities=[mention]), None
     )
 
     assert len(handled) == 2
@@ -1150,12 +1092,11 @@ async def test_group_policy_mention_accepts_caption_mention() -> None:
 
     mention = SimpleNamespace(type="mention", offset=0, length=13)
     await channel._on_message(
-        _make_telegram_update(caption="@nanobot_test photo", caption_entities=[mention]),
-        None,
+        _make_telegram_update(caption="@vtx_claw_test photo", caption_entities=[mention]), None
     )
 
     assert len(handled) == 1
-    assert handled[0]["content"] == "@nanobot_test photo"
+    assert handled[0]["content"] == "@vtx_claw_test photo"
 
 
 @pytest.mark.asyncio
@@ -1299,13 +1240,12 @@ async def test_download_message_media_returns_path_when_download_succeeds(
     media_dir = tmp_path / "media" / "telegram"
     media_dir.mkdir(parents=True)
     monkeypatch.setattr(
-        "nanobot.channels.telegram.get_media_dir",
+        "vtx_claw.channels.telegram.get_media_dir",
         lambda channel=None: media_dir if channel else tmp_path / "media",
     )
 
     channel = TelegramChannel(
-        TelegramConfig(enabled=True, token="123:abc", allow_from=["*"]),
-        MessageBus(),
+        TelegramConfig(enabled=True, token="123:abc", allow_from=["*"]), MessageBus()
     )
     channel._app = _FakeApp(lambda: None)
     channel._app.bot.get_file = AsyncMock(
@@ -1335,7 +1275,7 @@ async def test_download_message_media_uses_file_unique_id_when_available(
     media_dir = tmp_path / "media" / "telegram"
     media_dir.mkdir(parents=True)
     monkeypatch.setattr(
-        "nanobot.channels.telegram.get_media_dir",
+        "vtx_claw.channels.telegram.get_media_dir",
         lambda channel=None: media_dir if channel else tmp_path / "media",
     )
 
@@ -1345,11 +1285,12 @@ async def test_download_message_media_uses_file_unique_id_when_available(
         downloaded["path"] = path
 
     channel = TelegramChannel(
-        TelegramConfig(enabled=True, token="123:abc", allow_from=["*"]),
-        MessageBus(),
+        TelegramConfig(enabled=True, token="123:abc", allow_from=["*"]), MessageBus()
     )
     app = _FakeApp(lambda: None)
-    app.bot.get_file = AsyncMock(return_value=SimpleNamespace(download_to_drive=_download_to_drive))
+    app.bot.get_file = AsyncMock(
+        return_value=SimpleNamespace(download_to_drive=_download_to_drive)
+    )
     channel._app = app
 
     msg = SimpleNamespace(
@@ -1382,7 +1323,7 @@ async def test_on_message_attaches_reply_to_media_when_available(monkeypatch, tm
     media_dir = tmp_path / "media" / "telegram"
     media_dir.mkdir(parents=True)
     monkeypatch.setattr(
-        "nanobot.channels.telegram.get_media_dir",
+        "vtx_claw.channels.telegram.get_media_dir",
         lambda channel=None: media_dir if channel else tmp_path / "media",
     )
 
@@ -1414,10 +1355,7 @@ async def test_on_message_attaches_reply_to_media_when_available(monkeypatch, tm
         video_note=None,
         animation=None,
     )
-    update = _make_telegram_update(
-        text="what is the image?",
-        reply_to_message=reply_with_photo,
-    )
+    update = _make_telegram_update(text="what is the image?", reply_to_message=reply_with_photo)
     await channel._on_message(update, None)
 
     assert len(handled) == 1
@@ -1469,7 +1407,7 @@ async def test_on_message_reply_to_caption_and_media(monkeypatch, tmp_path) -> N
     media_dir = tmp_path / "media" / "telegram"
     media_dir.mkdir(parents=True)
     monkeypatch.setattr(
-        "nanobot.channels.telegram.get_media_dir",
+        "vtx_claw.channels.telegram.get_media_dir",
         lambda channel=None: media_dir if channel else tmp_path / "media",
     )
 
@@ -1502,8 +1440,7 @@ async def test_on_message_reply_to_caption_and_media(monkeypatch, tmp_path) -> N
         animation=None,
     )
     update = _make_telegram_update(
-        text="what breed is this?",
-        reply_to_message=reply_with_caption_and_photo,
+        text="what breed is this?", reply_to_message=reply_with_caption_and_photo
     )
     await channel._on_message(update, None)
 
@@ -1544,7 +1481,7 @@ async def test_forward_command_pairs_unauthorized_private_user(monkeypatch) -> N
         MessageBus(),
     )
     channel._app = _FakeApp(lambda: None)
-    monkeypatch.setattr("nanobot.channels.base.generate_code", lambda _ch, _sid: "ABCD-EFGH")
+    monkeypatch.setattr("vtx_claw.channels.base.generate_code", lambda _ch, _sid: "ABCD-EFGH")
 
     await channel._forward_command(_make_telegram_update(text="/new", chat_type="private"), None)
 
@@ -1565,7 +1502,7 @@ async def test_forward_command_preserves_dream_log_args_and_strips_bot_suffix() 
         handled.append(kwargs)
 
     channel._handle_message = capture_handle
-    update = _make_telegram_update(text="/dream-log@nanobot_test deadbeef", reply_to_message=None)
+    update = _make_telegram_update(text="/dream-log@vtx_claw_test deadbeef", reply_to_message=None)
 
     await channel._forward_command(update, None)
 
@@ -1587,7 +1524,7 @@ async def test_forward_command_normalizes_telegram_safe_dream_aliases() -> None:
 
     channel._handle_message = capture_handle
     update = _make_telegram_update(
-        text="/dream_restore@nanobot_test deadbeef", reply_to_message=None
+        text="/dream_restore@vtx_claw_test deadbeef", reply_to_message=None
     )
 
     await channel._forward_command(update, None)
@@ -1605,9 +1542,9 @@ def test_telegram_bus_slash_command_regex_matches_agent_loop_commands() -> None:
     assert pat.fullmatch("/pairing list")
     assert pat.fullmatch("/model fast")
     assert pat.fullmatch("/skill")
-    assert pat.fullmatch("/skill@nanobot_bot")
-    assert pat.fullmatch("/new@nanobot_bot")
-    assert pat.fullmatch("/goal@nanobot_bot refine objective")
+    assert pat.fullmatch("/skill@vtx_claw_bot")
+    assert pat.fullmatch("/new@vtx_claw_bot")
+    assert pat.fullmatch("/goal@vtx_claw_bot refine objective")
     assert pat.fullmatch("/dream-log deadbeef") is None
     assert pat.fullmatch("/dream-restore deadbeef") is None
 
@@ -1645,7 +1582,7 @@ async def test_on_start_sends_pairing_code_to_unauthorized_private_user(monkeypa
     channel._app = _FakeApp(lambda: None)
     update = _make_telegram_update(text="/start", chat_type="private")
     update.message.reply_text = AsyncMock()
-    monkeypatch.setattr("nanobot.channels.base.generate_code", lambda _ch, _sid: "ABCD-EFGH")
+    monkeypatch.setattr("vtx_claw.channels.base.generate_code", lambda _ch, _sid: "ABCD-EFGH")
 
     await channel._on_start(update, None)
 
@@ -1663,7 +1600,7 @@ async def test_on_help_sends_pairing_code_to_unauthorized_private_user(monkeypat
     channel._app = _FakeApp(lambda: None)
     update = _make_telegram_update(text="/help", chat_type="private")
     update.message.reply_text = AsyncMock()
-    monkeypatch.setattr("nanobot.channels.base.generate_code", lambda _ch, _sid: "ABCD-EFGH")
+    monkeypatch.setattr("vtx_claw.channels.base.generate_code", lambda _ch, _sid: "ABCD-EFGH")
 
     await channel._on_help(update, None)
 
@@ -1673,9 +1610,7 @@ async def test_on_help_sends_pairing_code_to_unauthorized_private_user(monkeypat
 
 
 @pytest.mark.asyncio
-async def test_on_message_pairs_unauthorized_private_user_before_side_effects(
-    monkeypatch,
-) -> None:
+async def test_on_message_pairs_unauthorized_private_user_before_side_effects(monkeypatch) -> None:
     channel = TelegramChannel(
         TelegramConfig(enabled=True, token="123:abc", allow_from=["999"], group_policy="open"),
         MessageBus(),
@@ -1685,7 +1620,7 @@ async def test_on_message_pairs_unauthorized_private_user_before_side_effects(
     channel._start_typing = lambda chat_id: started_typing.append(chat_id)
     channel._add_reaction = AsyncMock(return_value=None)
     channel._download_message_media = AsyncMock(return_value=([], []))
-    monkeypatch.setattr("nanobot.channels.base.generate_code", lambda _ch, _sid: "ABCD-EFGH")
+    monkeypatch.setattr("vtx_claw.channels.base.generate_code", lambda _ch, _sid: "ABCD-EFGH")
 
     await channel._on_message(_make_telegram_update(text="hello", chat_type="private"), None)
 
@@ -1761,8 +1696,7 @@ async def test_send_text_does_not_fallback_on_network_timeout() -> None:
     from telegram.error import TimedOut
 
     channel = TelegramChannel(
-        TelegramConfig(enabled=True, token="123:abc", allow_from=["*"]),
-        MessageBus(),
+        TelegramConfig(enabled=True, token="123:abc", allow_from=["*"]), MessageBus()
     )
     channel._app = _FakeApp(lambda: None)
 
@@ -1775,7 +1709,7 @@ async def test_send_text_does_not_fallback_on_network_timeout() -> None:
 
     channel._app.bot.send_message = always_timeout
 
-    import nanobot.channels.telegram as tg_mod
+    import vtx_claw.channels.telegram as tg_mod
 
     orig_delay = tg_mod._SEND_RETRY_BASE_DELAY
     tg_mod._SEND_RETRY_BASE_DELAY = 0.01
@@ -1799,8 +1733,7 @@ async def test_send_text_does_not_fallback_on_network_error() -> None:
     from telegram.error import NetworkError
 
     channel = TelegramChannel(
-        TelegramConfig(enabled=True, token="123:abc", allow_from=["*"]),
-        MessageBus(),
+        TelegramConfig(enabled=True, token="123:abc", allow_from=["*"]), MessageBus()
     )
     channel._app = _FakeApp(lambda: None)
 
@@ -1813,7 +1746,7 @@ async def test_send_text_does_not_fallback_on_network_error() -> None:
 
     channel._app.bot.send_message = always_network_error
 
-    import nanobot.channels.telegram as tg_mod
+    import vtx_claw.channels.telegram as tg_mod
 
     orig_delay = tg_mod._SEND_RETRY_BASE_DELAY
     tg_mod._SEND_RETRY_BASE_DELAY = 0.01
@@ -1835,8 +1768,7 @@ async def test_send_text_falls_back_on_bad_request() -> None:
     from telegram.error import BadRequest
 
     channel = TelegramChannel(
-        TelegramConfig(enabled=True, token="123:abc", allow_from=["*"]),
-        MessageBus(),
+        TelegramConfig(enabled=True, token="123:abc", allow_from=["*"]), MessageBus()
     )
     channel._app = _FakeApp(lambda: None)
 
@@ -1852,7 +1784,7 @@ async def test_send_text_falls_back_on_bad_request() -> None:
 
     channel._app.bot.send_message = html_fails
 
-    import nanobot.channels.telegram as tg_mod
+    import vtx_claw.channels.telegram as tg_mod
 
     orig_delay = tg_mod._SEND_RETRY_BASE_DELAY
     tg_mod._SEND_RETRY_BASE_DELAY = 0.01
@@ -1874,8 +1806,7 @@ async def test_send_text_bad_request_plain_fallback_exhausted() -> None:
     from telegram.error import BadRequest
 
     channel = TelegramChannel(
-        TelegramConfig(enabled=True, token="123:abc", allow_from=["*"]),
-        MessageBus(),
+        TelegramConfig(enabled=True, token="123:abc", allow_from=["*"]), MessageBus()
     )
     channel._app = _FakeApp(lambda: None)
 
@@ -1888,7 +1819,7 @@ async def test_send_text_bad_request_plain_fallback_exhausted() -> None:
 
     channel._app.bot.send_message = always_bad_request
 
-    import nanobot.channels.telegram as tg_mod
+    import vtx_claw.channels.telegram as tg_mod
 
     orig_delay = tg_mod._SEND_RETRY_BASE_DELAY
     tg_mod._SEND_RETRY_BASE_DELAY = 0.01
@@ -1910,7 +1841,7 @@ async def test_send_text_bad_request_plain_fallback_exhausted() -> None:
 
 
 def test_markdown_to_html_headers_become_bold() -> None:
-    from nanobot.channels.telegram import _markdown_to_telegram_html
+    from vtx_claw.channels.telegram import _markdown_to_telegram_html
 
     assert _markdown_to_telegram_html("# Title") == "<b>Title</b>"
     assert _markdown_to_telegram_html("## Subtitle") == "<b>Subtitle</b>"
@@ -1918,7 +1849,7 @@ def test_markdown_to_html_headers_become_bold() -> None:
 
 
 def test_markdown_to_html_numbered_lists_preserved() -> None:
-    from nanobot.channels.telegram import _markdown_to_telegram_html
+    from vtx_claw.channels.telegram import _markdown_to_telegram_html
 
     text = "1. First\n2. Second\n3. Third"
     result = _markdown_to_telegram_html(text)
@@ -1928,7 +1859,7 @@ def test_markdown_to_html_numbered_lists_preserved() -> None:
 
 
 def test_markdown_to_html_numbered_list_normalizes_whitespace() -> None:
-    from nanobot.channels.telegram import _markdown_to_telegram_html
+    from vtx_claw.channels.telegram import _markdown_to_telegram_html
 
     # Extra spaces after dot should be normalized
     text = "1.   Lots of space\n2.  Two spaces"
@@ -1939,15 +1870,15 @@ def test_markdown_to_html_numbered_list_normalizes_whitespace() -> None:
 
 def test_markdown_to_html_headers_survive_html_escaping() -> None:
     """Headers containing special HTML chars should still render as bold."""
-    from nanobot.channels.telegram import _markdown_to_telegram_html
+    from vtx_claw.channels.telegram import _markdown_to_telegram_html
 
     result = _markdown_to_telegram_html("# A < B & C > D")
-    assert "<b>A &lt; B &amp; C &gt; D</b>" == result
+    assert result == "<b>A &lt; B &amp; C &gt; D</b>"
 
 
 def test_markdown_to_html_mixed_formatting() -> None:
     """Headers, bullets, numbered lists, and bold coexist correctly."""
-    from nanobot.channels.telegram import _markdown_to_telegram_html
+    from vtx_claw.channels.telegram import _markdown_to_telegram_html
 
     text = "# Overview\n\n- bullet one\n- bullet two\n\n1. step one\n2. step two\n\n**bold text**"
     result = _markdown_to_telegram_html(text)
@@ -1963,7 +1894,7 @@ def test_markdown_to_html_mixed_formatting() -> None:
 
 
 def test_strip_md_block_removes_inline_formatting() -> None:
-    from nanobot.channels.telegram import _strip_md_block
+    from vtx_claw.channels.telegram import _strip_md_block
 
     text = "**bold** and _italic_ and ~~struck~~"
     result = _strip_md_block(text)
@@ -1971,13 +1902,13 @@ def test_strip_md_block_removes_inline_formatting() -> None:
 
 
 def test_strip_md_block_strips_headers() -> None:
-    from nanobot.channels.telegram import _strip_md_block
+    from vtx_claw.channels.telegram import _strip_md_block
 
     assert _strip_md_block("## Title\nBody") == "Title\nBody"
 
 
 def test_strip_md_block_converts_bullets_and_numbers() -> None:
-    from nanobot.channels.telegram import _strip_md_block
+    from vtx_claw.channels.telegram import _strip_md_block
 
     text = "- item a\n1. item b\n2. item c"
     result = _strip_md_block(text)
@@ -1987,7 +1918,7 @@ def test_strip_md_block_converts_bullets_and_numbers() -> None:
 
 
 def test_strip_md_block_strips_links() -> None:
-    from nanobot.channels.telegram import _strip_md_block
+    from vtx_claw.channels.telegram import _strip_md_block
 
     assert _strip_md_block("[click here](https://example.com)") == "click here"
 
@@ -2001,8 +1932,7 @@ def test_strip_md_block_strips_links() -> None:
 async def test_send_delta_mid_stream_strips_markdown() -> None:
     """Mid-stream edits should strip markdown so users see clean text."""
     channel = TelegramChannel(
-        TelegramConfig(enabled=True, token="123:abc", allow_from=["*"]),
-        MessageBus(),
+        TelegramConfig(enabled=True, token="123:abc", allow_from=["*"]), MessageBus()
     )
     channel._app = _FakeApp(lambda: None)
     channel._app.bot.send_message = AsyncMock(return_value=SimpleNamespace(message_id=42))
@@ -2036,14 +1966,12 @@ def test_build_keyboard_respects_inline_keyboards_flag() -> None:
     from telegram import InlineKeyboardMarkup
 
     off = TelegramChannel(
-        TelegramConfig(enabled=True, token="123:abc", inline_keyboards=False),
-        MessageBus(),
+        TelegramConfig(enabled=True, token="123:abc", inline_keyboards=False), MessageBus()
     )
     assert off._build_keyboard([["A", "B"]]) is None
 
     on = TelegramChannel(
-        TelegramConfig(enabled=True, token="123:abc", inline_keyboards=True),
-        MessageBus(),
+        TelegramConfig(enabled=True, token="123:abc", inline_keyboards=True), MessageBus()
     )
     assert on._build_keyboard([]) is None  # empty still no-op
     markup = on._build_keyboard([["Yes", "No"], ["Cancel"]])
@@ -2076,8 +2004,7 @@ def test_safe_callback_data_truncates_at_utf8_boundary() -> None:
 def test_build_keyboard_uses_safe_callback_data_for_long_labels() -> None:
     # Pins the integration so a long-label payload survives ``send_message`` instead of 400ing.
     channel = TelegramChannel(
-        TelegramConfig(enabled=True, token="123:abc", inline_keyboards=True),
-        MessageBus(),
+        TelegramConfig(enabled=True, token="123:abc", inline_keyboards=True), MessageBus()
     )
     long_label = "Approve and continue to the next step with the updated terms of service"
     assert len(long_label.encode("utf-8")) > 64
@@ -2138,10 +2065,7 @@ async def test_send_uses_native_keyboard_when_flag_on() -> None:
 
     await channel.send(
         OutboundMessage(
-            channel="telegram",
-            chat_id="123",
-            content="Proceed?",
-            buttons=[["Yes", "No"]],
+            channel="telegram", chat_id="123", content="Proceed?", buttons=[["Yes", "No"]]
         )
     )
 
@@ -2162,10 +2086,7 @@ async def test_callback_query_ignores_unauthorized_user_before_side_effects() ->
         id="cb_1",
         data="Yes",
         answer=AsyncMock(),
-        message=SimpleNamespace(
-            chat_id=123,
-            edit_reply_markup=AsyncMock(),
-        ),
+        message=SimpleNamespace(chat_id=123, edit_reply_markup=AsyncMock()),
     )
     update = SimpleNamespace(
         callback_query=query,

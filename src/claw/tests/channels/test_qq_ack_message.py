@@ -13,7 +13,7 @@ from types import SimpleNamespace
 import pytest
 
 try:
-    from nanobot.channels import qq
+    from vtx_claw.channels import qq
 
     QQ_AVAILABLE = getattr(qq, "QQ_AVAILABLE", False)
 except ImportError:
@@ -22,8 +22,8 @@ except ImportError:
 if not QQ_AVAILABLE:
     pytest.skip("QQ dependencies not installed (qq-botpy)", allow_module_level=True)
 
-from nanobot.bus.queue import MessageBus
-from nanobot.channels.qq import QQChannel, QQConfig
+from vtx_claw.bus.queue import MessageBus
+from vtx_claw.channels.qq import QQChannel, QQConfig
 
 
 class _FakeApi:
@@ -47,21 +47,13 @@ class _FakeClient:
 async def test_ack_sent_on_c2c_message() -> None:
     """Ack is sent immediately for C2C messages, then normal processing continues."""
     channel = QQChannel(
-        QQConfig(
-            app_id="app",
-            secret="secret",
-            allow_from=["*"],
-            ack_message="⏳ Processing...",
-        ),
+        QQConfig(app_id="app", secret="secret", allow_from=["*"], ack_message="⏳ Processing..."),
         MessageBus(),
     )
     channel._client = _FakeClient()
 
     data = SimpleNamespace(
-        id="msg1",
-        content="hello",
-        author=SimpleNamespace(user_openid="user1"),
-        attachments=[],
+        id="msg1", content="hello", author=SimpleNamespace(user_openid="user1"), attachments=[]
     )
     await channel._on_message(data, is_group=False)
 
@@ -81,12 +73,7 @@ async def test_ack_sent_on_c2c_message() -> None:
 async def test_ack_sent_on_group_message() -> None:
     """Ack is sent immediately for group messages, then normal processing continues."""
     channel = QQChannel(
-        QQConfig(
-            app_id="app",
-            secret="secret",
-            allow_from=["*"],
-            ack_message="⏳ Processing...",
-        ),
+        QQConfig(app_id="app", secret="secret", allow_from=["*"], ack_message="⏳ Processing..."),
         MessageBus(),
     )
     channel._client = _FakeClient()
@@ -116,21 +103,12 @@ async def test_ack_sent_on_group_message() -> None:
 async def test_no_ack_when_ack_message_empty() -> None:
     """Setting ack_message to empty string disables the ack entirely."""
     channel = QQChannel(
-        QQConfig(
-            app_id="app",
-            secret="secret",
-            allow_from=["*"],
-            ack_message="",
-        ),
-        MessageBus(),
+        QQConfig(app_id="app", secret="secret", allow_from=["*"], ack_message=""), MessageBus()
     )
     channel._client = _FakeClient()
 
     data = SimpleNamespace(
-        id="msg3",
-        content="hello",
-        author=SimpleNamespace(user_openid="user1"),
-        attachments=[],
+        id="msg3", content="hello", author=SimpleNamespace(user_openid="user1"), attachments=[]
     )
     await channel._on_message(data, is_group=False)
 
@@ -146,13 +124,7 @@ async def test_custom_ack_message_text() -> None:
     """Custom Chinese ack_message text is delivered correctly."""
     custom = "正在处理中，请稍候..."
     channel = QQChannel(
-        QQConfig(
-            app_id="app",
-            secret="secret",
-            allow_from=["*"],
-            ack_message=custom,
-        ),
-        MessageBus(),
+        QQConfig(app_id="app", secret="secret", allow_from=["*"], ack_message=custom), MessageBus()
     )
     channel._client = _FakeClient()
 

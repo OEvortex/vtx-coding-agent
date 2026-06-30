@@ -2,10 +2,7 @@
 
 from unittest.mock import MagicMock
 
-from nanobot.providers.openai_compat_provider import (
-    OpenAICompatProvider,
-    _is_local_endpoint,
-)
+from vtx_claw.providers.openai_compat_provider import OpenAICompatProvider, _is_local_endpoint
 
 
 def _make_spec(is_local: bool = False) -> MagicMock:
@@ -90,9 +87,7 @@ class TestLocalKeepaliveConfig:
         spec.env_key = ""
         spec.default_api_base = "http://localhost:11434/v1"
         provider = OpenAICompatProvider(
-            api_key="test",
-            api_base="http://localhost:11434/v1",
-            spec=spec,
+            api_key="test", api_base="http://localhost:11434/v1", spec=spec
         )
         await provider._ensure_client()
         pool = provider._client._client._transport._pool
@@ -104,9 +99,7 @@ class TestLocalKeepaliveConfig:
         spec.env_key = ""
         spec.default_api_base = None
         provider = OpenAICompatProvider(
-            api_key="test",
-            api_base="http://192.168.8.188:1234/v1",
-            spec=spec,
+            api_key="test", api_base="http://192.168.8.188:1234/v1", spec=spec
         )
         await provider._ensure_client()
         pool = provider._client._client._transport._pool
@@ -116,11 +109,7 @@ class TestLocalKeepaliveConfig:
         spec = _make_spec(is_local=False)
         spec.env_key = ""
         spec.default_api_base = "https://api.openai.com/v1"
-        provider = OpenAICompatProvider(
-            api_key="test",
-            api_base=None,
-            spec=spec,
-        )
+        provider = OpenAICompatProvider(api_key="test", api_base=None, spec=spec)
         await provider._ensure_client()
         pool = provider._client._client._transport._pool
         # Default httpx keepalive is 5.0s

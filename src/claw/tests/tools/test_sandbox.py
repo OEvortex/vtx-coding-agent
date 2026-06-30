@@ -1,10 +1,10 @@
-"""Tests for nanobot.agent.tools.sandbox."""
+"""Tests for vtx_claw.agent.tools.sandbox."""
 
 import shlex
 
 import pytest
 
-from nanobot.agent.tools.sandbox import wrap_command
+from vtx_claw.agent.tools.sandbox import wrap_command
 
 
 def _parse(cmd: str) -> list[str]:
@@ -107,10 +107,7 @@ class TestBwrapBackend:
         """Media directory should be read-only mounted inside the sandbox."""
         fake_media = tmp_path / "media"
         fake_media.mkdir()
-        monkeypatch.setattr(
-            "nanobot.agent.tools.sandbox.get_media_dir",
-            lambda: fake_media,
-        )
+        monkeypatch.setattr("vtx_claw.agent.tools.sandbox.get_media_dir", lambda: fake_media)
         ws = str(tmp_path / "project")
         result = wrap_command("bwrap", "ls", ws, ws)
         tokens = _parse(result)

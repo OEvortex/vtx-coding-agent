@@ -1,12 +1,12 @@
 """Tests for GitStore — line_ages() and core git operations."""
 
 import subprocess
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 from unittest.mock import patch
 
 import pytest
 
-from nanobot.utils.gitstore import GitStore
+from vtx_claw.utils.gitstore import GitStore
 
 
 @pytest.fixture
@@ -53,8 +53,8 @@ class TestLineAges:
         (tmp_path / "MEMORY.md").write_text("## A\n- x\n", encoding="utf-8")
         git.auto_commit("initial")
 
-        future_now = datetime.now(tz=timezone.utc) + timedelta(days=30)
-        with patch("nanobot.utils.gitstore.datetime") as mock_dt:
+        future_now = datetime.now(tz=UTC) + timedelta(days=30)
+        with patch("vtx_claw.utils.gitstore.datetime") as mock_dt:
             mock_dt.now.return_value = future_now
             mock_dt.fromtimestamp = datetime.fromtimestamp
             ages = git.line_ages("MEMORY.md")
@@ -70,7 +70,7 @@ class TestLineAges:
 
     def test_partial_edit_only_updates_changed_lines(self, git, tmp_path):
         """Only modified lines should reflect the new commit's timestamp."""
-        now = datetime(2026, 5, 1, tzinfo=timezone.utc)
+        now = datetime(2026, 5, 1, tzinfo=UTC)
         old = now - timedelta(days=30)
 
         (tmp_path / "MEMORY.md").write_text(
@@ -86,7 +86,7 @@ class TestLineAges:
         with patch("dulwich.worktree.time.time", return_value=now.timestamp()):
             git.auto_commit("commit2")
 
-        with patch("nanobot.utils.gitstore.datetime") as mock_dt:
+        with patch("vtx_claw.utils.gitstore.datetime") as mock_dt:
             mock_dt.now.return_value = now
             mock_dt.fromtimestamp = datetime.fromtimestamp
             ages = git.line_ages("MEMORY.md")

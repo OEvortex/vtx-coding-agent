@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from nanobot.session.goal_state import (
+from vtx_claw.session.goal_state import (
     GOAL_STATE_KEY,
     discard_legacy_goal_state_key,
     goal_state_runtime_lines,
@@ -11,7 +11,7 @@ from nanobot.session.goal_state import (
     runner_wall_llm_timeout_s,
     sustained_goal_active,
 )
-from nanobot.session.manager import SessionManager
+from vtx_claw.session.manager import SessionManager
 
 
 def test_runtime_lines_empty_when_no_metadata():
@@ -20,19 +20,13 @@ def test_runtime_lines_empty_when_no_metadata():
 
 
 def test_runtime_lines_empty_when_completed():
-    meta = {
-        GOAL_STATE_KEY: {"status": "completed", "objective": "was doing X"},
-    }
+    meta = {GOAL_STATE_KEY: {"status": "completed", "objective": "was doing X"}}
     assert goal_state_runtime_lines(meta) == []
 
 
 def test_runtime_lines_include_objective_when_active():
     meta = {
-        GOAL_STATE_KEY: {
-            "status": "active",
-            "objective": "Ship the fix.",
-            "ui_summary": "fix",
-        },
+        GOAL_STATE_KEY: {"status": "active", "objective": "Ship the fix.", "ui_summary": "fix"}
     }
     lines = goal_state_runtime_lines(meta)
     assert "Goal (active):" in lines
@@ -74,17 +68,13 @@ def test_goal_state_ws_blob_inactive_when_missing_or_completed():
     assert goal_state_ws_blob(None) == {"active": False}
     assert goal_state_ws_blob({}) == {"active": False}
     assert goal_state_ws_blob({GOAL_STATE_KEY: {"status": "completed", "objective": "x"}}) == {
-        "active": False,
+        "active": False
     }
 
 
 def test_goal_state_ws_blob_active_shape():
     meta = {
-        GOAL_STATE_KEY: {
-            "status": "active",
-            "objective": "Build feature.",
-            "ui_summary": "feat",
-        },
+        GOAL_STATE_KEY: {"status": "active", "objective": "Build feature.", "ui_summary": "feat"}
     }
     assert goal_state_ws_blob(meta) == {
         "active": True,
@@ -115,9 +105,7 @@ def test_runner_wall_llm_timeout_uses_metadata_override(tmp_path):
     sm = SessionManager(tmp_path)
     assert (
         runner_wall_llm_timeout_s(
-            sm,
-            "cli:test",
-            metadata={GOAL_STATE_KEY: {"status": "active", "objective": "x"}},
+            sm, "cli:test", metadata={GOAL_STATE_KEY: {"status": "active", "objective": "x"}}
         )
         == 0.0
     )

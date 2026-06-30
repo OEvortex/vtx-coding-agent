@@ -6,9 +6,9 @@ from typing import Any
 
 import pytest
 
-from nanobot.config.schema import Config, ProvidersConfig
-from nanobot.providers.bedrock_provider import BedrockProvider
-from nanobot.providers.registry import find_by_name
+from vtx_claw.config.schema import Config, ProvidersConfig
+from vtx_claw.providers.bedrock_provider import BedrockProvider
+from vtx_claw.providers.registry import find_by_name
 
 
 class FakeClient:
@@ -42,14 +42,8 @@ class FakeBedrockError(Exception):
     def __init__(self) -> None:
         super().__init__("too many requests")
         self.response = {
-            "ResponseMetadata": {
-                "HTTPStatusCode": 429,
-                "HTTPHeaders": {"retry-after": "3"},
-            },
-            "Error": {
-                "Code": "ThrottlingException",
-                "Message": "Rate exceeded",
-            },
+            "ResponseMetadata": {"HTTPStatusCode": 429, "HTTPHeaders": {"retry-after": "3"}},
+            "Error": {"Code": "ThrottlingException", "Message": "Rate exceeded"},
         }
 
 
@@ -153,13 +147,7 @@ def test_build_kwargs_converts_messages_tools_and_tool_results() -> None:
 
     assert kwargs["system"] == [{"text": "You are helpful."}]
     assert kwargs["messages"][1]["content"] == [
-        {
-            "toolUse": {
-                "toolUseId": "toolu_1",
-                "name": "read_file",
-                "input": {"path": "x"},
-            }
-        }
+        {"toolUse": {"toolUseId": "toolu_1", "name": "read_file", "input": {"path": "x"}}}
     ]
     assert kwargs["messages"][2]["role"] == "user"
     assert kwargs["messages"][2]["content"][0]["toolResult"]["toolUseId"] == "toolu_1"
@@ -171,10 +159,7 @@ def test_build_kwargs_converts_messages_tools_and_tool_results() -> None:
 
 def test_tool_use_block_repairs_history_tool_arguments() -> None:
     block = BedrockProvider._tool_use_block(
-        {
-            "id": "toolu_1",
-            "function": {"name": "read_file", "arguments": '{path:"foo.txt"}'},
-        }
+        {"id": "toolu_1", "function": {"name": "read_file", "arguments": '{path:"foo.txt"}'}}
     )
 
     assert block is not None
@@ -212,7 +197,7 @@ def test_build_kwargs_keeps_tool_config_for_historical_tool_blocks_without_tools
 
     assert any("toolUse" in block for msg in kwargs["messages"] for block in msg["content"])
     assert any("toolResult" in block for msg in kwargs["messages"] for block in msg["content"])
-    assert kwargs["toolConfig"]["tools"][0]["toolSpec"]["name"] == "nanobot_noop"
+    assert kwargs["toolConfig"]["tools"][0]["toolSpec"]["name"] == "vtx_claw_noop"
     assert "toolChoice" not in kwargs["toolConfig"]
 
 
@@ -244,7 +229,9 @@ def test_parse_response_maps_text_tools_reasoning_usage_and_stop_reason() -> Non
     assert result.usage["prompt_tokens"] == 10
     assert result.usage["cached_tokens"] == 2
     assert result.reasoning_content == "think"
-    assert result.thinking_blocks == [{"type": "thinking", "thinking": "think", "signature": "sig"}]
+    assert result.thinking_blocks == [
+        {"type": "thinking", "thinking": "think", "signature": "sig"}
+    ]
     assert result.tool_calls[0].id == "t1"
     assert result.tool_calls[0].arguments == {"q": "x"}
 

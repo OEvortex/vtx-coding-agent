@@ -4,7 +4,7 @@ import sys
 
 import pytest
 
-from nanobot.agent.tools.shell import ExecTool
+from vtx_claw.agent.tools.shell import ExecTool
 
 _UNIX_ONLY = pytest.mark.skipif(sys.platform == "win32", reason="Unix shell commands")
 
@@ -13,9 +13,9 @@ _UNIX_ONLY = pytest.mark.skipif(sys.platform == "win32", reason="Unix shell comm
 @pytest.mark.asyncio
 async def test_exec_does_not_leak_parent_env(monkeypatch):
     """Env vars from the parent process must not be visible to commands."""
-    monkeypatch.setenv("NANOBOT_SECRET_TOKEN", "super-secret-value")
+    monkeypatch.setenv("VTX_CLAW_SECRET_TOKEN", "super-secret-value")
     tool = ExecTool()
-    result = await tool.execute(command="printenv NANOBOT_SECRET_TOKEN")
+    result = await tool.execute(command="printenv VTX_CLAW_SECRET_TOKEN")
     assert "super-secret-value" not in result
 
 
@@ -152,9 +152,7 @@ async def test_exec_path_append_command_substitution_does_not_execute(tmp_path):
     marker = tmp_path / "secret_marker.txt"
     marker.write_text("SHOULD_NOT_APPEAR")
 
-    tool = ExecTool(
-        path_append=f"/tmp/bin; echo $(cat {marker})",
-    )
+    tool = ExecTool(path_append=f"/tmp/bin; echo $(cat {marker})")
     result = await tool.execute(command="echo OK")
 
     assert "OK" in result

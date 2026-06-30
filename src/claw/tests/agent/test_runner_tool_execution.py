@@ -7,13 +7,13 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-from nanobot.agent.runner import AgentRunner, AgentRunSpec
-from nanobot.agent.tools.base import Tool
-from nanobot.agent.tools.registry import ToolRegistry
-from nanobot.config.schema import AgentDefaults
-from nanobot.providers.base import LLMResponse, ToolCallRequest
-from nanobot.providers.openai_compat_provider import OpenAICompatProvider
-from nanobot.providers.openai_responses.parsing import parse_response_output
+from vtx_claw.agent.runner import AgentRunner, AgentRunSpec
+from vtx_claw.agent.tools.base import Tool
+from vtx_claw.agent.tools.registry import ToolRegistry
+from vtx_claw.config.schema import AgentDefaults
+from vtx_claw.providers.base import LLMResponse, ToolCallRequest
+from vtx_claw.providers.openai_compat_provider import OpenAICompatProvider
+from vtx_claw.providers.openai_responses.parsing import parse_response_output
 
 _MAX_TOOL_RESULT_CHARS = AgentDefaults().max_tool_result_chars
 
@@ -75,12 +75,7 @@ async def _run_optional_tool_response(response: LLMResponse):
     tools = ToolRegistry()
     shared_events: list[str] = []
     tools.register(
-        _DelayTool(
-            "optional_tool",
-            delay=0,
-            read_only=True,
-            shared_events=shared_events,
-        )
+        _DelayTool("optional_tool", delay=0, read_only=True, shared_events=shared_events)
     )
 
     result = await AgentRunner(provider).run(
@@ -96,11 +91,11 @@ async def _run_optional_tool_response(response: LLMResponse):
 
 
 def _tool_message(result, tool_call_id: str) -> dict:
-    return [
+    return next(
         msg
         for msg in result.messages
         if msg.get("role") == "tool" and msg.get("tool_call_id") == tool_call_id
-    ][0]
+    )
 
 
 @pytest.mark.asyncio
@@ -147,11 +142,7 @@ async def test_runner_does_not_batch_exclusive_read_only_tools():
     read_a = _DelayTool("read_a", delay=0.03, read_only=True, shared_events=shared_events)
     read_b = _DelayTool("read_b", delay=0.03, read_only=True, shared_events=shared_events)
     ddg_like = _DelayTool(
-        "ddg_like",
-        delay=0.01,
-        read_only=True,
-        shared_events=shared_events,
-        exclusive=True,
+        "ddg_like", delay=0.01, read_only=True, shared_events=shared_events, exclusive=True
     )
     tools.register(read_a)
     tools.register(ddg_like)
@@ -193,11 +184,7 @@ async def test_runner_rejects_near_miss_tool_name_without_executing():
             return LLMResponse(
                 content="",
                 tool_calls=[
-                    ToolCallRequest(
-                        id="call_1",
-                        name="readFile",
-                        arguments={"path": "notes.txt"},
-                    )
+                    ToolCallRequest(id="call_1", name="readFile", arguments={"path": "notes.txt"})
                 ],
                 finish_reason="tool_calls",
                 usage={},
@@ -208,14 +195,7 @@ async def test_runner_rejects_near_miss_tool_name_without_executing():
     provider.chat_with_retry = chat_with_retry
     tools = ToolRegistry()
     shared_events: list[str] = []
-    tools.register(
-        _DelayTool(
-            "read_file",
-            delay=0,
-            read_only=True,
-            shared_events=shared_events,
-        )
-    )
+    tools.register(_DelayTool("read_file", delay=0, read_only=True, shared_events=shared_events))
 
     runner = AgentRunner(provider)
     result = await runner.run(
@@ -231,30 +211,30 @@ async def test_runner_rejects_near_miss_tool_name_without_executing():
     assert result.final_content == "done"
     assert result.tools_used == []
     assert shared_events == []
-    assistant_message = [
+    assistant_message = next(
         msg for msg in result.messages if msg.get("role") == "assistant" and msg.get("tool_calls")
-    ][0]
+    )
     assert assistant_message["tool_calls"][0]["function"]["name"] == "readFile"
-    tool_message = [
+    tool_message = next(
         msg
         for msg in result.messages
         if msg.get("role") == "tool" and msg.get("tool_call_id") == "call_1"
-    ][0]
+    )
     assert tool_message["name"] == "readFile"
     assert "Tool 'readFile' not found" in tool_message["content"]
     assert "Did you mean 'read_file'?" in tool_message["content"]
-    replayed_assistant = [
+    replayed_assistant = next(
         msg
         for msg in captured_second_call
         if msg.get("role") == "assistant" and msg.get("tool_calls")
-    ][0]
+    )
     assert replayed_assistant["tool_calls"][0]["function"]["name"] == "readFile"
 
 
 @pytest.mark.asyncio
 @pytest.mark.parametrize("arguments", ['{path:"notes.txt"}', "null"])
 async def test_runner_rejects_openai_compat_invalid_arguments_without_executing(arguments):
-    with patch("nanobot.providers.openai_compat_provider.AsyncOpenAI"):
+    with patch("vtx_claw.providers.openai_compat_provider.AsyncOpenAI"):
         parsed = OpenAICompatProvider()._parse(
             {
                 "choices": [
@@ -264,12 +244,9 @@ async def test_runner_rejects_openai_compat_invalid_arguments_without_executing(
                                 {
                                     "id": "call_1",
                                     "type": "function",
-                                    "function": {
-                                        "name": "optional_tool",
-                                        "arguments": arguments,
-                                    },
+                                    "function": {"name": "optional_tool", "arguments": arguments},
                                 }
-                            ],
+                            ]
                         },
                         "finish_reason": "tool_calls",
                     }
@@ -385,9 +362,9 @@ async def test_runner_blocks_repeated_external_fetches():
 
     assert result.final_content == "done"
     assert tools.execute.await_count == 2
-    blocked_tool_message = [
+    blocked_tool_message = next(
         msg
         for msg in captured_final_call
         if msg.get("role") == "tool" and msg.get("tool_call_id") == "call_3"
-    ][0]
+    )
     assert "repeated external lookup blocked" in blocked_tool_message["content"]

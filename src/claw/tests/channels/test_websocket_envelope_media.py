@@ -16,12 +16,8 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-from nanobot.channels.websocket import (
-    WebSocketChannel,
-    WebSocketConfig,
-    _extract_data_url_mime,
-)
-from nanobot.webui.gateway_services import build_gateway_services
+from vtx_claw.channels.websocket import WebSocketChannel, WebSocketConfig, _extract_data_url_mime
+from vtx_claw.webui.gateway_services import build_gateway_services
 
 
 def _tiny_png_data_url() -> str:
@@ -88,7 +84,7 @@ def test_extract_data_url_mime(url: Any, expected: str | None) -> None:
 
 def test_max_message_bytes_default_supports_multi_image_frame() -> None:
     """Default 36 MB must comfortably hold 4 × 6 MB base64-encoded images."""
-    from nanobot.channels.websocket import WebSocketConfig
+    from vtx_claw.channels.websocket import WebSocketConfig
 
     default = WebSocketConfig().max_message_bytes
     # 4 images × 6 MB × 1.37 base64 overhead ≈ 33 MB
@@ -168,7 +164,7 @@ async def test_message_with_single_image_forwards_saved_path(tmp_path) -> None:
         "media": [{"data_url": _tiny_png_data_url(), "name": "shot.png"}],
     }
 
-    with patch("nanobot.channels.websocket.get_media_dir", return_value=tmp_path):
+    with patch("vtx_claw.channels.websocket.get_media_dir", return_value=tmp_path):
         await channel._dispatch_envelope(mock_conn, "client-1", envelope)
 
     channel._handle_message.assert_awaited_once()
@@ -195,7 +191,7 @@ async def test_message_with_multiple_images(tmp_path) -> None:
         ],
     }
 
-    with patch("nanobot.channels.websocket.get_media_dir", return_value=tmp_path):
+    with patch("vtx_claw.channels.websocket.get_media_dir", return_value=tmp_path):
         await channel._dispatch_envelope(mock_conn, "client-1", envelope)
 
     paths = channel._handle_message.call_args.kwargs["media"]
@@ -216,7 +212,7 @@ async def test_image_only_message_allows_empty_text(tmp_path) -> None:
         "media": [{"data_url": _tiny_png_data_url()}],
     }
 
-    with patch("nanobot.channels.websocket.get_media_dir", return_value=tmp_path):
+    with patch("vtx_claw.channels.websocket.get_media_dir", return_value=tmp_path):
         await channel._dispatch_envelope(mock_conn, "client-1", envelope)
 
     channel._handle_message.assert_awaited_once()
@@ -235,7 +231,7 @@ async def test_message_rejected_when_more_than_four_images(tmp_path) -> None:
         "media": [{"data_url": _tiny_png_data_url()}] * 5,
     }
 
-    with patch("nanobot.channels.websocket.get_media_dir", return_value=tmp_path):
+    with patch("vtx_claw.channels.websocket.get_media_dir", return_value=tmp_path):
         await channel._dispatch_envelope(mock_conn, "client-1", envelope)
 
     channel._handle_message.assert_not_awaited()
@@ -258,7 +254,7 @@ async def test_message_rejected_on_oversize_payload(tmp_path) -> None:
         "media": [{"data_url": _data_url("image/png", oversized)}],
     }
 
-    with patch("nanobot.channels.websocket.get_media_dir", return_value=tmp_path):
+    with patch("vtx_claw.channels.websocket.get_media_dir", return_value=tmp_path):
         await channel._dispatch_envelope(mock_conn, "client-1", envelope)
 
     channel._handle_message.assert_not_awaited()
@@ -278,7 +274,7 @@ async def test_message_rejected_on_non_image_mime(tmp_path) -> None:
         "media": [{"data_url": _data_url("application/pdf", b"%PDF-1.4")}],
     }
 
-    with patch("nanobot.channels.websocket.get_media_dir", return_value=tmp_path):
+    with patch("vtx_claw.channels.websocket.get_media_dir", return_value=tmp_path):
         await channel._dispatch_envelope(mock_conn, "client-1", envelope)
 
     channel._handle_message.assert_not_awaited()
@@ -299,7 +295,7 @@ async def test_message_rejected_on_svg_mime(tmp_path) -> None:
         "media": [{"data_url": _data_url("image/svg+xml", b"<svg/>")}],
     }
 
-    with patch("nanobot.channels.websocket.get_media_dir", return_value=tmp_path):
+    with patch("vtx_claw.channels.websocket.get_media_dir", return_value=tmp_path):
         await channel._dispatch_envelope(mock_conn, "client-1", envelope)
 
     channel._handle_message.assert_not_awaited()
@@ -318,7 +314,7 @@ async def test_message_rejected_on_malformed_data_url(tmp_path) -> None:
         "media": [{"data_url": "http://evil.example/image.png"}],
     }
 
-    with patch("nanobot.channels.websocket.get_media_dir", return_value=tmp_path):
+    with patch("vtx_claw.channels.websocket.get_media_dir", return_value=tmp_path):
         await channel._dispatch_envelope(mock_conn, "client-1", envelope)
 
     channel._handle_message.assert_not_awaited()
@@ -337,7 +333,7 @@ async def test_message_rejected_on_broken_base64(tmp_path) -> None:
         "media": [{"data_url": "data:image/png;base64,not-valid-base64!!!"}],
     }
 
-    with patch("nanobot.channels.websocket.get_media_dir", return_value=tmp_path):
+    with patch("vtx_claw.channels.websocket.get_media_dir", return_value=tmp_path):
         await channel._dispatch_envelope(mock_conn, "client-1", envelope)
 
     channel._handle_message.assert_not_awaited()
@@ -357,7 +353,7 @@ async def test_message_rejected_when_media_item_shape_wrong(tmp_path) -> None:
         "media": ["data:image/png;base64,XXXX"],
     }
 
-    with patch("nanobot.channels.websocket.get_media_dir", return_value=tmp_path):
+    with patch("vtx_claw.channels.websocket.get_media_dir", return_value=tmp_path):
         await channel._dispatch_envelope(mock_conn, "client-1", envelope)
 
     channel._handle_message.assert_not_awaited()
@@ -369,12 +365,7 @@ async def test_message_rejected_when_media_item_shape_wrong(tmp_path) -> None:
 async def test_message_rejected_when_media_field_is_not_list() -> None:
     channel = _make_channel()
     mock_conn = AsyncMock()
-    envelope = {
-        "type": "message",
-        "chat_id": "abc123",
-        "content": "huh",
-        "media": "not-a-list",
-    }
+    envelope = {"type": "message", "chat_id": "abc123", "content": "huh", "media": "not-a-list"}
 
     await channel._dispatch_envelope(mock_conn, "client-1", envelope)
 
@@ -403,7 +394,7 @@ async def test_failed_media_does_not_partially_persist(tmp_path) -> None:
         ],
     }
 
-    with patch("nanobot.channels.websocket.get_media_dir", return_value=tmp_path):
+    with patch("vtx_claw.channels.websocket.get_media_dir", return_value=tmp_path):
         await channel._dispatch_envelope(mock_conn, "client-1", envelope)
 
     channel._handle_message.assert_not_awaited()
@@ -420,11 +411,7 @@ async def test_rejects_empty_text_without_media() -> None:
     (matches the existing behavior for backward compat)."""
     channel = _make_channel()
     mock_conn = AsyncMock()
-    envelope = {
-        "type": "message",
-        "chat_id": "abc123",
-        "content": "   ",
-    }
+    envelope = {"type": "message", "chat_id": "abc123", "content": "   "}
 
     await channel._dispatch_envelope(mock_conn, "client-1", envelope)
 
@@ -437,11 +424,7 @@ async def test_rejects_empty_text_without_media() -> None:
 async def test_non_string_content_still_rejected() -> None:
     channel = _make_channel()
     mock_conn = AsyncMock()
-    envelope = {
-        "type": "message",
-        "chat_id": "abc123",
-        "content": 42,
-    }
+    envelope = {"type": "message", "chat_id": "abc123", "content": 42}
 
     await channel._dispatch_envelope(mock_conn, "client-1", envelope)
 

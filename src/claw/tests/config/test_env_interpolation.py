@@ -2,7 +2,7 @@ import json
 
 import pytest
 
-from nanobot.config.loader import (
+from vtx_claw.config.loader import (
     _resolve_env_vars,
     load_config,
     resolve_config_env_vars,
@@ -53,8 +53,7 @@ class TestResolveConfig:
         monkeypatch.setenv("TEST_API_KEY", "resolved-key")
         config_path = tmp_path / "config.json"
         config_path.write_text(
-            json.dumps({"providers": {"groq": {"apiKey": "${TEST_API_KEY}"}}}),
-            encoding="utf-8",
+            json.dumps({"providers": {"groq": {"apiKey": "${TEST_API_KEY}"}}}), encoding="utf-8"
         )
 
         raw = load_config(config_path)
@@ -67,8 +66,7 @@ class TestResolveConfig:
         monkeypatch.setenv("MY_TOKEN", "real-token")
         config_path = tmp_path / "config.json"
         config_path.write_text(
-            json.dumps({"channels": {"telegram": {"token": "${MY_TOKEN}"}}}),
-            encoding="utf-8",
+            json.dumps({"channels": {"telegram": {"token": "${MY_TOKEN}"}}}), encoding="utf-8"
         )
 
         raw = load_config(config_path)
@@ -128,8 +126,7 @@ class TestResolveConfig:
         roundtrip silently dropped them."""
         config_path = tmp_path / "config.json"
         config_path.write_text(
-            json.dumps({"providers": {"openaiCodex": {"apiKey": "secret"}}}),
-            encoding="utf-8",
+            json.dumps({"providers": {"openaiCodex": {"apiKey": "secret"}}}), encoding="utf-8"
         )
 
         raw = load_config(config_path)

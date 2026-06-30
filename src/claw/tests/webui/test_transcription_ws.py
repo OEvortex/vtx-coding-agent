@@ -8,9 +8,9 @@ from typing import Any
 
 import pytest
 
-from nanobot.config.loader import save_config
-from nanobot.config.schema import Config
-from nanobot.webui.transcription_ws import webui_transcription_event
+from vtx_claw.config.loader import save_config
+from vtx_claw.config.schema import Config
+from vtx_claw.webui.transcription_ws import webui_transcription_event
 
 
 def _audio_data_url(payload: bytes = b"voice", mime: str = "audio/webm") -> str:
@@ -19,47 +19,35 @@ def _audio_data_url(payload: bytes = b"voice", mime: str = "audio/webm") -> str:
 
 @pytest.mark.asyncio
 async def test_webui_transcribe_audio_rejects_unconfigured_provider(
-    tmp_path,
-    monkeypatch: pytest.MonkeyPatch,
+    tmp_path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     config_path = tmp_path / "config.json"
     config = Config()
     config.transcription.provider = "groq"
     save_config(config, config_path)
-    monkeypatch.setattr("nanobot.config.loader._current_config_path", config_path)
+    monkeypatch.setattr("vtx_claw.config.loader._current_config_path", config_path)
 
     event, payload = await webui_transcription_event(
-        {
-            "request_id": "voice-1",
-            "data_url": _audio_data_url(),
-        }
+        {"request_id": "voice-1", "data_url": _audio_data_url()}
     )
 
     assert event == "transcription_error"
-    assert payload == {
-        "request_id": "voice-1",
-        "detail": "not_configured",
-        "provider": "groq",
-    }
+    assert payload == {"request_id": "voice-1", "detail": "not_configured", "provider": "groq"}
 
 
 @pytest.mark.asyncio
 async def test_webui_transcribe_audio_rejects_unsupported_mime(
-    tmp_path,
-    monkeypatch: pytest.MonkeyPatch,
+    tmp_path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     config_path = tmp_path / "config.json"
     config = Config()
     config.transcription.provider = "groq"
     config.providers.groq.api_key = "gsk-test"
     save_config(config, config_path)
-    monkeypatch.setattr("nanobot.config.loader._current_config_path", config_path)
+    monkeypatch.setattr("vtx_claw.config.loader._current_config_path", config_path)
 
     event, payload = await webui_transcription_event(
-        {
-            "request_id": "voice-1",
-            "data_url": _audio_data_url(mime="text/plain"),
-        }
+        {"request_id": "voice-1", "data_url": _audio_data_url(mime="text/plain")}
     )
 
     assert event == "transcription_error"
@@ -69,8 +57,7 @@ async def test_webui_transcribe_audio_rejects_unsupported_mime(
 
 @pytest.mark.asyncio
 async def test_webui_transcribe_audio_rejects_oversized_audio(
-    tmp_path,
-    monkeypatch: pytest.MonkeyPatch,
+    tmp_path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     config_path = tmp_path / "config.json"
     config = Config()
@@ -78,14 +65,13 @@ async def test_webui_transcribe_audio_rejects_oversized_audio(
     config.transcription.max_upload_mb = 1
     config.providers.groq.api_key = "gsk-test"
     save_config(config, config_path)
-    monkeypatch.setattr("nanobot.config.loader._current_config_path", config_path)
-    monkeypatch.setattr("nanobot.audio.transcription.get_media_dir", lambda _channel=None: tmp_path)
+    monkeypatch.setattr("vtx_claw.config.loader._current_config_path", config_path)
+    monkeypatch.setattr(
+        "vtx_claw.audio.transcription.get_media_dir", lambda _channel=None: tmp_path
+    )
 
     event, payload = await webui_transcription_event(
-        {
-            "request_id": "voice-1",
-            "data_url": _audio_data_url(payload=b"x" * (1024 * 1024 + 1)),
-        }
+        {"request_id": "voice-1", "data_url": _audio_data_url(payload=b"x" * (1024 * 1024 + 1))}
     )
 
     assert event == "transcription_error"
@@ -95,8 +81,7 @@ async def test_webui_transcribe_audio_rejects_oversized_audio(
 
 @pytest.mark.asyncio
 async def test_webui_transcribe_audio_returns_text_and_removes_temp_file(
-    tmp_path,
-    monkeypatch: pytest.MonkeyPatch,
+    tmp_path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     config_path = tmp_path / "config.json"
     media_dir = tmp_path / "media"
@@ -105,10 +90,9 @@ async def test_webui_transcribe_audio_returns_text_and_removes_temp_file(
     config.transcription.provider = "groq"
     config.providers.groq.api_key = "gsk-test"
     save_config(config, config_path)
-    monkeypatch.setattr("nanobot.config.loader._current_config_path", config_path)
+    monkeypatch.setattr("vtx_claw.config.loader._current_config_path", config_path)
     monkeypatch.setattr(
-        "nanobot.audio.transcription.get_media_dir",
-        lambda _channel=None: media_dir,
+        "vtx_claw.audio.transcription.get_media_dir", lambda _channel=None: media_dir
     )
     captured_paths: list[Path] = []
 
@@ -119,8 +103,7 @@ async def test_webui_transcribe_audio_returns_text_and_removes_temp_file(
         return "hello voice"
 
     monkeypatch.setattr(
-        "nanobot.audio.transcription.transcribe_audio_file",
-        fake_transcribe_audio_file,
+        "vtx_claw.audio.transcription.transcribe_audio_file", fake_transcribe_audio_file
     )
 
     event, payload = await webui_transcription_event(

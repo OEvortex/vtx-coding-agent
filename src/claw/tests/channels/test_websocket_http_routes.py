@@ -15,12 +15,12 @@ from urllib.parse import quote, urlencode
 import httpx
 import pytest
 
-from nanobot.channels.websocket import WebSocketChannel, WebSocketConfig
-from nanobot.cron.service import CronService
-from nanobot.cron.types import CronJob, CronPayload, CronSchedule
-from nanobot.session.keys import UNIFIED_SESSION_KEY
-from nanobot.session.manager import Session, SessionManager
-from nanobot.webui.gateway_services import GatewayServices, build_gateway_services
+from vtx_claw.channels.websocket import WebSocketChannel, WebSocketConfig
+from vtx_claw.cron.service import CronService
+from vtx_claw.cron.types import CronJob, CronPayload, CronSchedule
+from vtx_claw.session.keys import UNIFIED_SESSION_KEY
+from vtx_claw.session.manager import Session, SessionManager
+from vtx_claw.webui.gateway_services import GatewayServices, build_gateway_services
 
 _PORT = 29900
 
@@ -174,8 +174,7 @@ async def test_sessions_routes_require_bearer_token(bus: MagicMock, tmp_path: Pa
         assert all("path" not in s for s in listing.json()["sessions"])
 
         msgs = await _http_get(
-            "http://127.0.0.1:29902/api/sessions/websocket:abc/messages",
-            headers=auth,
+            "http://127.0.0.1:29902/api/sessions/websocket:abc/messages", headers=auth
         )
         assert msgs.status_code == 200
         body = msgs.json()
@@ -241,8 +240,7 @@ async def test_session_automations_route_filters_by_webui_session(
         token = boot.json()["token"]
         auth = {"Authorization": f"Bearer {token}"}
         resp = await _http_get(
-            "http://127.0.0.1:29914/api/sessions/websocket%3Aabc/automations",
-            headers=auth,
+            "http://127.0.0.1:29914/api/sessions/websocket%3Aabc/automations", headers=auth
         )
 
         assert resp.status_code == 200
@@ -295,15 +293,13 @@ async def test_session_automations_route_ignores_unified_owner(
         auth = {"Authorization": f"Bearer {token}"}
 
         resp = await _http_get(
-            "http://127.0.0.1:29917/api/sessions/websocket%3Aabc/automations",
-            headers=auth,
+            "http://127.0.0.1:29917/api/sessions/websocket%3Aabc/automations", headers=auth
         )
         assert resp.status_code == 200
         assert [job["name"] for job in resp.json()["jobs"]] == ["Visible chat job"]
 
         resp = await _http_get(
-            "http://127.0.0.1:29917/api/sessions/websocket%3Aother/automations",
-            headers=auth,
+            "http://127.0.0.1:29917/api/sessions/websocket%3Aother/automations", headers=auth
         )
         assert resp.status_code == 200
         assert resp.json()["jobs"] == []
@@ -319,8 +315,7 @@ async def test_webui_skills_route_requires_token_and_hides_paths(
     workspace_skill = tmp_path / "skills" / "workspace-skill"
     workspace_skill.mkdir(parents=True)
     (workspace_skill / "SKILL.md").write_text(
-        "---\nname: workspace-skill\ndescription: Workspace skill.\n---\n",
-        encoding="utf-8",
+        "---\nname: workspace-skill\ndescription: Workspace skill.\n---\n", encoding="utf-8"
     )
     unavailable_skill = tmp_path / "skills" / "zz-unavailable-skill"
     unavailable_skill.mkdir(parents=True)
@@ -331,12 +326,12 @@ async def test_webui_skills_route_requires_token_and_hides_paths(
                 "name: zz-unavailable-skill",
                 "description: Missing CLI skill.",
                 "metadata:",
-                "  nanobot:",
+                "  vtx_claw:",
                 "    requires:",
                 "      bins:",
-                "        - definitely-missing-nanobot-skill-cli",
+                "        - definitely-missing-vtx_claw-skill-cli",
                 "      env:",
-                "        - DEFINITELY_MISSING_NANOBOT_SKILL_ENV",
+                "        - DEFINITELY_MISSING_VTX_CLAW_SKILL_ENV",
                 "---",
                 "Use the missing CLI and env var.",
             ]
@@ -344,10 +339,7 @@ async def test_webui_skills_route_requires_token_and_hides_paths(
         encoding="utf-8",
     )
     channel = _ch(
-        bus,
-        session_manager=_seed_session(tmp_path),
-        workspace_path=tmp_path,
-        port=29920,
+        bus, session_manager=_seed_session(tmp_path), workspace_path=tmp_path, port=29920
     )
     server_task = asyncio.create_task(channel.start())
     await asyncio.sleep(0.3)
@@ -360,8 +352,7 @@ async def test_webui_skills_route_requires_token_and_hides_paths(
         boot = await _http_get("http://127.0.0.1:29920/webui/bootstrap")
         token = boot.json()["token"]
         resp = await _http_get(
-            "http://127.0.0.1:29920/api/webui/skills",
-            headers={"Authorization": f"Bearer {token}"},
+            "http://127.0.0.1:29920/api/webui/skills", headers={"Authorization": f"Bearer {token}"}
         )
 
         assert resp.status_code == 200
@@ -383,7 +374,7 @@ async def test_webui_skills_route_requires_token_and_hides_paths(
         )
         assert unavailable["available"] is False
         assert unavailable["unavailable_reason"] == (
-            "CLI: definitely-missing-nanobot-skill-cli, ENV: DEFINITELY_MISSING_NANOBOT_SKILL_ENV"
+            "CLI: definitely-missing-vtx_claw-skill-cli, ENV: DEFINITELY_MISSING_VTX_CLAW_SKILL_ENV"
         )
 
         detail = await _http_get(
@@ -394,10 +385,10 @@ async def test_webui_skills_route_requires_token_and_hides_paths(
         detail_body = detail.json()
         assert "path" not in detail_body
         assert detail_body["requirements"] == {
-            "bins": ["definitely-missing-nanobot-skill-cli"],
-            "env": ["DEFINITELY_MISSING_NANOBOT_SKILL_ENV"],
-            "missing_bins": ["definitely-missing-nanobot-skill-cli"],
-            "missing_env": ["DEFINITELY_MISSING_NANOBOT_SKILL_ENV"],
+            "bins": ["definitely-missing-vtx_claw-skill-cli"],
+            "env": ["DEFINITELY_MISSING_VTX_CLAW_SKILL_ENV"],
+            "missing_bins": ["definitely-missing-vtx_claw-skill-cli"],
+            "missing_env": ["DEFINITELY_MISSING_VTX_CLAW_SKILL_ENV"],
         }
         assert "Use the missing CLI and env var." in detail_body["raw_markdown"]
     finally:
@@ -407,9 +398,7 @@ async def test_webui_skills_route_requires_token_and_hides_paths(
 
 @pytest.mark.asyncio
 async def test_cli_apps_routes_require_token_and_return_payload(
-    bus: MagicMock,
-    tmp_path: Path,
-    monkeypatch: pytest.MonkeyPatch,
+    bus: MagicMock, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     async def payload(*, installed_only: bool = False) -> dict[str, Any]:
         return {
@@ -435,12 +424,9 @@ async def test_cli_apps_routes_require_token_and_return_payload(
             "catalog_updated_at": "2026-04-18",
         }
 
+    monkeypatch.setattr("vtx_claw.webui.settings_routes.cli_apps_payload", payload)
     monkeypatch.setattr(
-        "nanobot.webui.settings_routes.cli_apps_payload",
-        payload,
-    )
-    monkeypatch.setattr(
-        "nanobot.webui.settings_routes.cli_apps_action",
+        "vtx_claw.webui.settings_routes.cli_apps_action",
         lambda action, query: {
             "apps": [],
             "installed_count": 1,
@@ -459,16 +445,12 @@ async def test_cli_apps_routes_require_token_and_return_payload(
         token = boot.json()["token"]
         auth = {"Authorization": f"Bearer {token}"}
 
-        catalog = await _http_get(
-            "http://127.0.0.1:29912/api/settings/cli-apps",
-            headers=auth,
-        )
+        catalog = await _http_get("http://127.0.0.1:29912/api/settings/cli-apps", headers=auth)
         assert catalog.status_code == 200
         assert catalog.json()["apps"][0]["name"] == "gimp"
 
         installed = await _http_get(
-            "http://127.0.0.1:29912/api/settings/cli-apps/install?name=gimp",
-            headers=auth,
+            "http://127.0.0.1:29912/api/settings/cli-apps/install?name=gimp", headers=auth
         )
         assert installed.status_code == 200
         assert installed.json()["last_action"]["message"] == "install:gimp"
@@ -479,9 +461,7 @@ async def test_cli_apps_routes_require_token_and_return_payload(
 
 @pytest.mark.asyncio
 async def test_cli_apps_catalog_does_not_block_other_webui_http_routes(
-    bus: MagicMock,
-    tmp_path: Path,
-    monkeypatch: pytest.MonkeyPatch,
+    bus: MagicMock, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     entered = asyncio.Event()
     release = asyncio.Event()
@@ -493,7 +473,7 @@ async def test_cli_apps_catalog_does_not_block_other_webui_http_routes(
             await asyncio.wait_for(release.wait(), 2.0)
         return {"apps": [], "installed_count": 0, "catalog_updated_at": None}
 
-    monkeypatch.setattr("nanobot.webui.settings_routes.cli_apps_payload", slow_payload)
+    monkeypatch.setattr("vtx_claw.webui.settings_routes.cli_apps_payload", slow_payload)
     channel = _ch(bus, session_manager=_seed_session(tmp_path), port=29935)
     server_task = asyncio.create_task(channel.start())
     await asyncio.sleep(0.3)
@@ -525,9 +505,7 @@ async def test_cli_apps_catalog_does_not_block_other_webui_http_routes(
 
 @pytest.mark.asyncio
 async def test_cli_apps_route_supports_installed_only_payload(
-    bus: MagicMock,
-    tmp_path: Path,
-    monkeypatch: pytest.MonkeyPatch,
+    bus: MagicMock, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     calls: list[bool] = []
 
@@ -535,7 +513,7 @@ async def test_cli_apps_route_supports_installed_only_payload(
         calls.append(installed_only)
         return {"apps": [], "installed_count": 0, "catalog_updated_at": None}
 
-    monkeypatch.setattr("nanobot.webui.settings_routes.cli_apps_payload", payload)
+    monkeypatch.setattr("vtx_claw.webui.settings_routes.cli_apps_payload", payload)
     channel = _ch(bus, session_manager=_seed_session(tmp_path), port=29936)
     server_task = asyncio.create_task(channel.start())
     await asyncio.sleep(0.3)
@@ -545,8 +523,7 @@ async def test_cli_apps_route_supports_installed_only_payload(
         auth = {"Authorization": f"Bearer {token}"}
 
         resp = await _http_get(
-            "http://127.0.0.1:29936/api/settings/cli-apps?installed_only=1",
-            headers=auth,
+            "http://127.0.0.1:29936/api/settings/cli-apps?installed_only=1", headers=auth
         )
 
         assert resp.status_code == 200
@@ -559,12 +536,10 @@ async def test_cli_apps_route_supports_installed_only_payload(
 
 @pytest.mark.asyncio
 async def test_mcp_presets_routes_require_token_and_return_payload(
-    bus: MagicMock,
-    tmp_path: Path,
-    monkeypatch: pytest.MonkeyPatch,
+    bus: MagicMock, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     monkeypatch.setattr(
-        "nanobot.webui.mcp_presets_api.mcp_presets_payload",
+        "vtx_claw.webui.mcp_presets_api.mcp_presets_payload",
         lambda: {
             "presets": [
                 {
@@ -608,28 +583,16 @@ async def test_mcp_presets_routes_require_token_and_return_payload(
             "presets": [],
             "installed_count": 1,
             "requires_restart": True,
-            "last_action": {
-                "ok": True,
-                "message": f"{action}:{query.get('name', ['config'])[0]}",
-            },
+            "last_action": {"ok": True, "message": f"{action}:{query.get('name', ['config'])[0]}"},
         }
 
-    monkeypatch.setattr(
-        "nanobot.webui.mcp_presets_api.mcp_presets_action",
-        _mcp_preset_action,
-    )
-    monkeypatch.setattr(
-        "nanobot.webui.mcp_presets_api.custom_mcp_action",
-        _custom_action,
-    )
+    monkeypatch.setattr("vtx_claw.webui.mcp_presets_api.mcp_presets_action", _mcp_preset_action)
+    monkeypatch.setattr("vtx_claw.webui.mcp_presets_api.custom_mcp_action", _custom_action)
 
     async def _hot_reload(_bus):
         return {"ok": True, "message": "MCP config reloaded.", "requires_restart": False}
 
-    monkeypatch.setattr(
-        "nanobot.webui.settings_routes.request_mcp_reload",
-        _hot_reload,
-    )
+    monkeypatch.setattr("vtx_claw.webui.settings_routes.request_mcp_reload", _hot_reload)
     channel = _ch(bus, session_manager=_seed_session(tmp_path), port=29913)
     server_task = asyncio.create_task(channel.start())
     await asyncio.sleep(0.3)
@@ -641,10 +604,7 @@ async def test_mcp_presets_routes_require_token_and_return_payload(
         token = boot.json()["token"]
         auth = {"Authorization": f"Bearer {token}"}
 
-        catalog = await _http_get(
-            "http://127.0.0.1:29913/api/settings/mcp-presets",
-            headers=auth,
-        )
+        catalog = await _http_get("http://127.0.0.1:29913/api/settings/mcp-presets", headers=auth)
         assert catalog.status_code == 200
         assert catalog.json()["presets"][0]["name"] == "browserbase"
 
@@ -652,7 +612,7 @@ async def test_mcp_presets_routes_require_token_and_return_payload(
             "http://127.0.0.1:29913/api/settings/mcp-presets/enable?name=browserbase",
             headers={
                 **auth,
-                "X-Nanobot-MCP-Values": json.dumps({"browserbase_api_key": "bb_live_secret"}),
+                "X-VtxClaw-MCP-Values": json.dumps({"browserbase_api_key": "bb_live_secret"}),
             },
         )
         assert enabled.status_code == 200
@@ -665,7 +625,7 @@ async def test_mcp_presets_routes_require_token_and_return_payload(
 
         bad_header = await _http_get(
             "http://127.0.0.1:29913/api/settings/mcp-presets/enable?name=browserbase",
-            headers={**auth, "X-Nanobot-MCP-Values": "[]"},
+            headers={**auth, "X-VtxClaw-MCP-Values": "[]"},
         )
         assert bad_header.status_code == 400
 
@@ -673,7 +633,7 @@ async def test_mcp_presets_routes_require_token_and_return_payload(
             "http://127.0.0.1:29913/api/settings/mcp-presets/custom",
             headers={
                 **auth,
-                "X-Nanobot-MCP-Values": json.dumps({"name": "docs", "command": "npx"}),
+                "X-VtxClaw-MCP-Values": json.dumps({"name": "docs", "command": "npx"}),
             },
         )
         assert custom.status_code == 200
@@ -682,7 +642,7 @@ async def test_mcp_presets_routes_require_token_and_return_payload(
 
         imported = await _http_get(
             "http://127.0.0.1:29913/api/settings/mcp-presets/import",
-            headers={**auth, "X-Nanobot-MCP-Values": json.dumps({"config": "{}"})},
+            headers={**auth, "X-VtxClaw-MCP-Values": json.dumps({"config": "{}"})},
         )
         assert imported.status_code == 200
         assert imported.json()["last_action"]["message"] == "import:config MCP config reloaded."
@@ -691,7 +651,7 @@ async def test_mcp_presets_routes_require_token_and_return_payload(
             "http://127.0.0.1:29913/api/settings/mcp-presets/tools",
             headers={
                 **auth,
-                "X-Nanobot-MCP-Values": json.dumps({"name": "docs", "enabled_tools": []}),
+                "X-VtxClaw-MCP-Values": json.dumps({"name": "docs", "enabled_tools": []}),
             },
         )
         assert tools.status_code == 200
@@ -708,14 +668,7 @@ async def test_sessions_list_only_returns_websocket_sessions_by_default(
     # Seed a realistic multi-channel disk state: CLI, Slack, Lark and
     # websocket sessions all live in the same ``sessions/`` directory.
     sm = _seed_many(
-        tmp_path,
-        [
-            "cli:direct",
-            "slack:C123",
-            "lark:oc_abc",
-            "websocket:alpha",
-            "websocket:beta",
-        ],
+        tmp_path, ["cli:direct", "slack:C123", "lark:oc_abc", "websocket:alpha", "websocket:beta"]
     )
     channel = _ch(bus, session_manager=sm, port=29906)
     server_task = asyncio.create_task(channel.start())
@@ -740,7 +693,7 @@ async def test_sessions_list_only_returns_websocket_sessions_by_default(
 async def test_webui_sidebar_state_routes_are_config_dir_scoped(
     bus: MagicMock, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    monkeypatch.setattr("nanobot.config.paths.get_data_dir", lambda: tmp_path)
+    monkeypatch.setattr("vtx_claw.config.paths.get_data_dir", lambda: tmp_path)
     sm = _seed_session(tmp_path, key="websocket:sidebar")
     channel = _ch(bus, session_manager=sm, port=29911)
     server_task = asyncio.create_task(channel.start())
@@ -750,10 +703,7 @@ async def test_webui_sidebar_state_routes_are_config_dir_scoped(
         token = boot.json()["token"]
         auth = {"Authorization": f"Bearer {token}"}
 
-        initial = await _http_get(
-            "http://127.0.0.1:29911/api/webui/sidebar-state",
-            headers=auth,
-        )
+        initial = await _http_get("http://127.0.0.1:29911/api/webui/sidebar-state", headers=auth)
         assert initial.status_code == 200
         assert initial.json()["schema_version"] == 1
         assert initial.json()["pinned_keys"] == []
@@ -766,8 +716,7 @@ async def test_webui_sidebar_state_routes_are_config_dir_scoped(
         }
         query = urlencode({"state": json.dumps(payload)})
         updated = await _http_get(
-            f"http://127.0.0.1:29911/api/webui/sidebar-state/update?{query}",
-            headers=auth,
+            f"http://127.0.0.1:29911/api/webui/sidebar-state/update?{query}", headers=auth
         )
         assert updated.status_code == 200
         body = updated.json()
@@ -789,9 +738,9 @@ async def test_webui_sidebar_state_routes_are_config_dir_scoped(
 async def test_session_delete_removes_file(
     bus: MagicMock, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    monkeypatch.setattr("nanobot.config.paths.get_data_dir", lambda: tmp_path)
+    monkeypatch.setattr("vtx_claw.config.paths.get_data_dir", lambda: tmp_path)
     sm = _seed_session(tmp_path, key="websocket:doomed")
-    from nanobot.webui.transcript import append_transcript_object
+    from vtx_claw.webui.transcript import append_transcript_object
 
     append_transcript_object(
         "websocket:doomed", {"event": "user", "chat_id": "doomed", "text": "x"}
@@ -809,8 +758,7 @@ async def test_session_delete_removes_file(
         webui_path = tmp_path / "webui" / f"{SessionManager.safe_key('websocket:doomed')}.jsonl"
         assert webui_path.is_file()
         resp = await _http_get(
-            "http://127.0.0.1:29903/api/sessions/websocket:doomed/delete",
-            headers=auth,
+            "http://127.0.0.1:29903/api/sessions/websocket:doomed/delete", headers=auth
         )
         assert resp.status_code == 200
         assert resp.json()["deleted"] is True
@@ -887,10 +835,7 @@ async def test_webui_automations_route_lists_all_jobs_and_allows_user_actions(
         boot = await _http_get(f"{base_url}/webui/bootstrap")
         token = boot.json()["token"]
         auth = {"Authorization": f"Bearer {token}"}
-        resp = await _http_get(
-            f"{base_url}/api/webui/automations",
-            headers=auth,
-        )
+        resp = await _http_get(f"{base_url}/api/webui/automations", headers=auth)
         assert resp.status_code == 200
         assert "wx-chat" not in resp.text
         assert "unified:default" not in resp.text
@@ -918,15 +863,11 @@ async def test_webui_automations_route_lists_all_jobs_and_allows_user_actions(
             f"{base_url}/api/webui/automations/update?id={user_job.id}",
             headers={
                 **auth,
-                "X-Nanobot-Automation-Values": json.dumps(
+                "X-VtxClaw-Automation-Values": json.dumps(
                     {
                         "name": "Daily quiz",
                         "message": "Ask the daily quiz",
-                        "schedule": {
-                            "kind": "cron",
-                            "expr": "0 9 * * *",
-                            "tz": "UTC",
-                        },
+                        "schedule": {"kind": "cron", "expr": "0 9 * * *", "tz": "UTC"},
                     }
                 ),
             },
@@ -943,14 +884,8 @@ async def test_webui_automations_route_lists_all_jobs_and_allows_user_actions(
             f"{base_url}/api/webui/automations/update?id={user_job.id}",
             headers={
                 **auth,
-                "X-Nanobot-Automation-Values": quote(
-                    json.dumps(
-                        {
-                            "name": "每日测验",
-                            "message": "问今日测验",
-                        },
-                        ensure_ascii=False,
-                    ),
+                "X-VtxClaw-Automation-Values": quote(
+                    json.dumps({"name": "每日测验", "message": "问今日测验"}, ensure_ascii=False),
                     safe="",
                 ),
             },
@@ -961,10 +896,7 @@ async def test_webui_automations_route_lists_all_jobs_and_allows_user_actions(
 
         malformed_update = await _http_get(
             f"{base_url}/api/webui/automations/update?id={user_job.id}",
-            headers={
-                **auth,
-                "X-Nanobot-Automation-Values": json.dumps({"message": ["bad"]}),
-            },
+            headers={**auth, "X-VtxClaw-Automation-Values": json.dumps({"message": ["bad"]})},
         )
         assert malformed_update.status_code == 400
         assert cron.get_job(user_job.id).payload.message == "问今日测验"
@@ -973,7 +905,7 @@ async def test_webui_automations_route_lists_all_jobs_and_allows_user_actions(
             f"{base_url}/api/webui/automations/update?id={user_job.id}",
             headers={
                 **auth,
-                "X-Nanobot-Automation-Values": json.dumps(
+                "X-VtxClaw-Automation-Values": json.dumps(
                     {"schedule": {"kind": "cron", "expr": "not a cron", "tz": "UTC"}}
                 ),
             },
@@ -985,11 +917,8 @@ async def test_webui_automations_route_lists_all_jobs_and_allows_user_actions(
             f"{base_url}/api/webui/automations/update?id={past_one_shot_job.id}",
             headers={
                 **auth,
-                "X-Nanobot-Automation-Values": json.dumps(
-                    {
-                        "message": "Updated one-shot message",
-                        "schedule": {"kind": "at", "at_ms": 1},
-                    }
+                "X-VtxClaw-Automation-Values": json.dumps(
+                    {"message": "Updated one-shot message", "schedule": {"kind": "at", "at_ms": 1}}
                 ),
             },
         )
@@ -999,68 +928,56 @@ async def test_webui_automations_route_lists_all_jobs_and_allows_user_actions(
 
         protected_update = await _http_get(
             f"{base_url}/api/webui/automations/update?id=heartbeat",
-            headers={
-                **auth,
-                "X-Nanobot-Automation-Values": json.dumps({"name": "bad"}),
-            },
+            headers={**auth, "X-VtxClaw-Automation-Values": json.dumps({"name": "bad"})},
         )
         assert protected_update.status_code == 403
 
         disabled = await _http_get(
-            f"{base_url}/api/webui/automations/disable?id={user_job.id}",
-            headers=auth,
+            f"{base_url}/api/webui/automations/disable?id={user_job.id}", headers=auth
         )
         assert disabled.status_code == 200
         by_id = {job["id"]: job for job in disabled.json()["jobs"]}
         assert by_id[user_job.id]["enabled"] is False
 
         disabled_run = await _http_get(
-            f"{base_url}/api/webui/automations/run?id={user_job.id}",
-            headers=auth,
+            f"{base_url}/api/webui/automations/run?id={user_job.id}", headers=auth
         )
         assert disabled_run.status_code == 409
 
         unbound_run = await _http_get(
-            f"{base_url}/api/webui/automations/run?id={incomplete_job.id}",
-            headers=auth,
+            f"{base_url}/api/webui/automations/run?id={incomplete_job.id}", headers=auth
         )
         assert unbound_run.status_code == 409
         assert "no linked chat" in unbound_run.text
 
         unbound_enable = await _http_get(
-            f"{base_url}/api/webui/automations/enable?id={incomplete_job.id}",
-            headers=auth,
+            f"{base_url}/api/webui/automations/enable?id={incomplete_job.id}", headers=auth
         )
         assert unbound_enable.status_code == 409
         assert "no linked chat" in unbound_enable.text
 
         protected_delete = await _http_get(
-            f"{base_url}/api/webui/automations/delete?id=heartbeat",
-            headers=auth,
+            f"{base_url}/api/webui/automations/delete?id=heartbeat", headers=auth
         )
         assert protected_delete.status_code == 403
         protected_disable = await _http_get(
-            f"{base_url}/api/webui/automations/disable?id=heartbeat",
-            headers=auth,
+            f"{base_url}/api/webui/automations/disable?id=heartbeat", headers=auth
         )
         assert protected_disable.status_code == 403
         protected_run = await _http_get(
-            f"{base_url}/api/webui/automations/run?id=heartbeat",
-            headers=auth,
+            f"{base_url}/api/webui/automations/run?id=heartbeat", headers=auth
         )
         assert protected_run.status_code == 403
 
         enabled = await _http_get(
-            f"{base_url}/api/webui/automations/enable?id={user_job.id}",
-            headers=auth,
+            f"{base_url}/api/webui/automations/enable?id={user_job.id}", headers=auth
         )
         assert enabled.status_code == 200
         by_id = {job["id"]: job for job in enabled.json()["jobs"]}
         assert by_id[user_job.id]["enabled"] is True
 
         deleted = await _http_get(
-            f"{base_url}/api/webui/automations/delete?id={user_job.id}",
-            headers=auth,
+            f"{base_url}/api/webui/automations/delete?id={user_job.id}", headers=auth
         )
         assert deleted.status_code == 200
         assert user_job.id not in {job["id"] for job in deleted.json()["jobs"]}
@@ -1074,7 +991,7 @@ async def test_webui_automations_route_lists_all_jobs_and_allows_user_actions(
 async def test_session_delete_blocks_when_bound_automation_exists(
     bus: MagicMock, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    monkeypatch.setattr("nanobot.config.paths.get_data_dir", lambda: tmp_path)
+    monkeypatch.setattr("vtx_claw.config.paths.get_data_dir", lambda: tmp_path)
     sm = _seed_session(tmp_path, key="websocket:doomed")
     cron = CronService(tmp_path / "cron" / "jobs.json")
     cron.add_job(
@@ -1095,8 +1012,7 @@ async def test_session_delete_blocks_when_bound_automation_exists(
 
         path = sm._get_session_path("websocket:doomed")
         resp = await _http_get(
-            "http://127.0.0.1:29915/api/sessions/websocket:doomed/delete",
-            headers=auth,
+            "http://127.0.0.1:29915/api/sessions/websocket:doomed/delete", headers=auth
         )
 
         assert resp.status_code == 200
@@ -1115,7 +1031,7 @@ async def test_session_delete_blocks_when_bound_automation_exists(
 async def test_session_delete_can_cascade_bound_automations(
     bus: MagicMock, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    monkeypatch.setattr("nanobot.config.paths.get_data_dir", lambda: tmp_path)
+    monkeypatch.setattr("vtx_claw.config.paths.get_data_dir", lambda: tmp_path)
     sm = _seed_session(tmp_path, key="websocket:doomed")
     cron = CronService(tmp_path / "cron" / "jobs.json")
     cron.add_job(
@@ -1161,7 +1077,7 @@ async def test_session_delete_can_cascade_bound_automations(
 async def test_session_delete_blocks_origin_automation_when_unified_enabled(
     bus: MagicMock, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    monkeypatch.setattr("nanobot.config.paths.get_data_dir", lambda: tmp_path)
+    monkeypatch.setattr("vtx_claw.config.paths.get_data_dir", lambda: tmp_path)
     sm = _seed_session(tmp_path, key="websocket:doomed")
     cron = CronService(tmp_path / "cron" / "jobs.json")
     cron.add_job(
@@ -1172,12 +1088,7 @@ async def test_session_delete_blocks_origin_automation_when_unified_enabled(
         origin_channel="websocket",
         origin_chat_id="doomed",
     )
-    channel = _ch(
-        bus,
-        session_manager=sm,
-        cron_service=cron,
-        port=29918,
-    )
+    channel = _ch(bus, session_manager=sm, cron_service=cron, port=29918)
     server_task = asyncio.create_task(channel.start())
     await asyncio.sleep(0.3)
     try:
@@ -1187,8 +1098,7 @@ async def test_session_delete_blocks_origin_automation_when_unified_enabled(
 
         path = sm._get_session_path("websocket:doomed")
         resp = await _http_get(
-            "http://127.0.0.1:29918/api/sessions/websocket:doomed/delete",
-            headers=auth,
+            "http://127.0.0.1:29918/api/sessions/websocket:doomed/delete", headers=auth
         )
 
         assert resp.status_code == 200
@@ -1219,8 +1129,7 @@ async def test_session_routes_accept_percent_encoded_websocket_keys(
         auth = {"Authorization": f"Bearer {token}"}
 
         msgs = await _http_get(
-            "http://127.0.0.1:29910/api/sessions/websocket%3Aencoded-key/messages",
-            headers=auth,
+            "http://127.0.0.1:29910/api/sessions/websocket%3Aencoded-key/messages", headers=auth
         )
         assert msgs.status_code == 200
         assert msgs.json()["key"] == "websocket:encoded-key"
@@ -1228,8 +1137,7 @@ async def test_session_routes_accept_percent_encoded_websocket_keys(
         path = sm._get_session_path("websocket:encoded-key")
         assert path.exists()
         deleted = await _http_get(
-            "http://127.0.0.1:29910/api/sessions/websocket%3Aencoded-key/delete",
-            headers=auth,
+            "http://127.0.0.1:29910/api/sessions/websocket%3Aencoded-key/delete", headers=auth
         )
         assert deleted.status_code == 200
         assert deleted.json()["deleted"] is True
@@ -1243,9 +1151,9 @@ async def test_session_routes_accept_percent_encoded_websocket_keys(
 async def test_webui_thread_resigns_assistant_media_urls(
     bus: MagicMock, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    from nanobot.webui.transcript import append_transcript_object
+    from vtx_claw.webui.transcript import append_transcript_object
 
-    monkeypatch.setattr("nanobot.config.paths.get_data_dir", lambda: tmp_path)
+    monkeypatch.setattr("vtx_claw.config.paths.get_data_dir", lambda: tmp_path)
     media_root = tmp_path / "media"
     websocket_media = media_root / "websocket"
     websocket_media.mkdir(parents=True)
@@ -1255,7 +1163,7 @@ async def test_webui_thread_resigns_assistant_media_urls(
     def fake_media_dir(channel: str | None = None) -> Path:
         return websocket_media if channel == "websocket" else media_root
 
-    monkeypatch.setattr("nanobot.channels.websocket.get_media_dir", fake_media_dir)
+    monkeypatch.setattr("vtx_claw.channels.websocket.get_media_dir", fake_media_dir)
 
     append_transcript_object(
         "websocket:video-replay",
@@ -1280,8 +1188,7 @@ async def test_webui_thread_resigns_assistant_media_urls(
         token = boot.json()["token"]
         auth = {"Authorization": f"Bearer {token}"}
         resp = await _http_get(
-            "http://127.0.0.1:29914/api/sessions/websocket:video-replay/webui-thread",
-            headers=auth,
+            "http://127.0.0.1:29914/api/sessions/websocket:video-replay/webui-thread", headers=auth
         )
         assert resp.status_code == 200
         assistant = next(m for m in resp.json()["messages"] if m["role"] == "assistant")
@@ -1301,14 +1208,7 @@ async def test_webui_thread_resigns_assistant_media_urls(
 
 @pytest.mark.asyncio
 async def test_session_routes_reject_non_websocket_keys(bus: MagicMock, tmp_path: Path) -> None:
-    sm = _seed_many(
-        tmp_path,
-        [
-            "websocket:kept",
-            "cli:direct",
-            "slack:C123",
-        ],
-    )
+    sm = _seed_many(tmp_path, ["websocket:kept", "cli:direct", "slack:C123"])
     channel = _ch(bus, session_manager=sm, port=29909)
     server_task = asyncio.create_task(channel.start())
     await asyncio.sleep(0.3)
@@ -1320,16 +1220,14 @@ async def test_session_routes_reject_non_websocket_keys(bus: MagicMock, tmp_path
         # The webui list already hides non-websocket sessions; handcrafted URLs
         # should hit the same boundary rather than exposing or deleting them.
         msgs = await _http_get(
-            "http://127.0.0.1:29909/api/sessions/cli:direct/messages",
-            headers=auth,
+            "http://127.0.0.1:29909/api/sessions/cli:direct/messages", headers=auth
         )
         assert msgs.status_code == 404
 
         doomed = sm._get_session_path("slack:C123")
         assert doomed.exists()
         deny_delete = await _http_get(
-            "http://127.0.0.1:29909/api/sessions/slack:C123/delete",
-            headers=auth,
+            "http://127.0.0.1:29909/api/sessions/slack:C123/delete", headers=auth
         )
         assert deny_delete.status_code == 404
         assert doomed.exists()
@@ -1352,8 +1250,7 @@ async def test_session_routes_reject_invalid_key(bus: MagicMock, tmp_path: Path)
         # Invalid characters in the key -> regex match fails -> 404
         # (route doesn't match, falls through to channel 404).
         resp = await _http_get(
-            "http://127.0.0.1:29904/api/sessions/bad%20key/messages",
-            headers=auth,
+            "http://127.0.0.1:29904/api/sessions/bad%20key/messages", headers=auth
         )
         assert resp.status_code in {400, 404}
     finally:
@@ -1496,7 +1393,7 @@ def test_wildcard_ipv6_without_auth_raises(bus: MagicMock) -> None:
 
 def test_wildcard_ipv6_with_secret_is_valid(bus: MagicMock) -> None:
     channel = _ch(bus, host="::", tokenIssueSecret="s3cret")
-    resp = channel.gateway.http._handle_bootstrap(_REMOTE, _FakeReq({"X-Nanobot-Auth": "s3cret"}))
+    resp = channel.gateway.http._handle_bootstrap(_REMOTE, _FakeReq({"X-VtxClaw-Auth": "s3cret"}))
     assert resp.status_code == 200
 
 
@@ -1514,12 +1411,11 @@ def test_bootstrap_accepts_static_token_as_secret(bus: MagicMock) -> None:
 def test_bootstrap_ws_url_uses_forwarded_https_host(bus: MagicMock) -> None:
     channel = _ch(bus, host="127.0.0.1", port=29931)
     resp = channel.gateway.http._handle_bootstrap(
-        _LOCAL,
-        _FakeReq({"Host": "nanobot.example", "X-Forwarded-Proto": "https"}),
+        _LOCAL, _FakeReq({"Host": "vtx_claw.example", "X-Forwarded-Proto": "https"})
     )
     assert resp.status_code == 200
     body = json.loads(resp.body)
-    assert body["ws_url"] == "wss://nanobot.example/"
+    assert body["ws_url"] == "wss://vtx_claw.example/"
 
 
 def test_localhost_without_auth_is_valid(bus: MagicMock) -> None:
@@ -1532,8 +1428,7 @@ def test_bootstrap_prefers_runtime_model_name(
     bus: MagicMock, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     monkeypatch.setattr(
-        "nanobot.webui.ws_http._default_model_name_from_config",
-        lambda: "from-disk",
+        "vtx_claw.webui.ws_http._default_model_name_from_config", lambda: "from-disk"
     )
     channel = _ch(bus, host="127.0.0.1", runtime_model_name=lambda: "  live/model  ")
     resp = channel.gateway.http._handle_bootstrap(_LOCAL, _NO_HEADERS)
@@ -1546,8 +1441,7 @@ def test_bootstrap_falls_back_when_runtime_returns_empty(
     bus: MagicMock, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     monkeypatch.setattr(
-        "nanobot.webui.ws_http._default_model_name_from_config",
-        lambda: "from-disk",
+        "vtx_claw.webui.ws_http._default_model_name_from_config", lambda: "from-disk"
     )
     channel = _ch(bus, host="127.0.0.1", runtime_model_name=lambda: "   ")
     resp = channel.gateway.http._handle_bootstrap(_LOCAL, _NO_HEADERS)
@@ -1560,8 +1454,7 @@ def test_bootstrap_falls_back_when_runtime_raises(
     bus: MagicMock, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     monkeypatch.setattr(
-        "nanobot.webui.ws_http._default_model_name_from_config",
-        lambda: "from-disk",
+        "vtx_claw.webui.ws_http._default_model_name_from_config", lambda: "from-disk"
     )
 
     def boom():
@@ -1592,9 +1485,9 @@ def test_bootstrap_accepts_remote_with_valid_secret(bus: MagicMock) -> None:
     assert body["token"].startswith("nbwt_")
 
 
-def test_bootstrap_accepts_x_nanobot_auth_header(bus: MagicMock) -> None:
+def test_bootstrap_accepts_x_vtx_claw_auth_header(bus: MagicMock) -> None:
     channel = _ch(bus, host="0.0.0.0", tokenIssueSecret="s3cret")
-    resp = channel.gateway.http._handle_bootstrap(_REMOTE, _FakeReq({"X-Nanobot-Auth": "s3cret"}))
+    resp = channel.gateway.http._handle_bootstrap(_REMOTE, _FakeReq({"X-VtxClaw-Auth": "s3cret"}))
     assert resp.status_code == 200
 
 

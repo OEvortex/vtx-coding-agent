@@ -4,7 +4,7 @@ from unittest.mock import MagicMock
 
 import pytest
 
-from nanobot.agent.tools.self import MyTool
+from vtx_claw.agent.tools.self import MyTool
 
 
 @pytest.mark.asyncio

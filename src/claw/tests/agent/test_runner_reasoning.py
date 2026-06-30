@@ -13,9 +13,9 @@ from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
-from nanobot.agent.hook import AgentHook, AgentHookContext
-from nanobot.config.schema import AgentDefaults
-from nanobot.providers.base import LLMResponse, ToolCallRequest
+from vtx_claw.agent.hook import AgentHook, AgentHookContext
+from vtx_claw.config.schema import AgentDefaults
+from vtx_claw.providers.base import LLMResponse, ToolCallRequest
 
 _MAX_TOOL_RESULT_CHARS = AgentDefaults().max_tool_result_chars
 
@@ -38,7 +38,7 @@ class _RecordingHook(AgentHook):
 async def test_runner_preserves_reasoning_fields_in_assistant_history():
     """Reasoning fields ride along on the persisted assistant message so
     follow-up provider calls retain the model's prior thinking context."""
-    from nanobot.agent.runner import AgentRunner, AgentRunSpec
+    from vtx_claw.agent.runner import AgentRunner, AgentRunSpec
 
     provider = MagicMock()
     captured_second_call: list[dict] = []
@@ -49,7 +49,9 @@ async def test_runner_preserves_reasoning_fields_in_assistant_history():
         if call_count["n"] == 1:
             return LLMResponse(
                 content="thinking",
-                tool_calls=[ToolCallRequest(id="call_1", name="list_dir", arguments={"path": "."})],
+                tool_calls=[
+                    ToolCallRequest(id="call_1", name="list_dir", arguments={"path": "."})
+                ],
                 reasoning_content="hidden reasoning",
                 thinking_blocks=[{"type": "thinking", "thinking": "step"}],
                 usage={"prompt_tokens": 5, "completion_tokens": 3},
@@ -89,7 +91,7 @@ async def test_runner_preserves_reasoning_fields_in_assistant_history():
 
 @pytest.mark.asyncio
 async def test_runner_emits_anthropic_thinking_blocks():
-    from nanobot.agent.runner import AgentRunner, AgentRunSpec
+    from vtx_claw.agent.runner import AgentRunner, AgentRunSpec
 
     provider = MagicMock()
 
@@ -139,7 +141,7 @@ async def test_runner_emits_anthropic_thinking_blocks():
 async def test_runner_emits_inline_think_content_as_reasoning():
     """Models embedding reasoning in <think>...</think> blocks should have
     that content extracted and emitted, and stripped from the answer."""
-    from nanobot.agent.runner import AgentRunner, AgentRunSpec
+    from vtx_claw.agent.runner import AgentRunner, AgentRunSpec
 
     provider = MagicMock()
 
@@ -176,7 +178,7 @@ async def test_runner_emits_inline_think_content_as_reasoning():
 async def test_runner_prefers_reasoning_content_over_inline_think():
     """Fallback priority: dedicated reasoning_content wins; inline <think>
     is still scrubbed from the answer content."""
-    from nanobot.agent.runner import AgentRunner, AgentRunSpec
+    from vtx_claw.agent.runner import AgentRunner, AgentRunSpec
 
     provider = MagicMock()
 
@@ -214,7 +216,7 @@ async def test_runner_emits_reasoning_content_even_when_answer_was_streamed():
     """`reasoning_content` arrives only on the final response; streaming the
     answer must not suppress it (the answer stream and the reasoning channel
     are independent — only the reasoning-already-emitted bit matters)."""
-    from nanobot.agent.runner import AgentRunner, AgentRunSpec
+    from vtx_claw.agent.runner import AgentRunner, AgentRunSpec
 
     provider = MagicMock()
     provider.supports_progress_deltas = True
@@ -263,7 +265,7 @@ async def test_runner_emits_reasoning_content_even_when_answer_was_streamed():
 async def test_runner_does_not_double_emit_when_inline_think_already_streamed():
     """Inline `<think>` blocks streamed incrementally during the answer
     stream must not be re-emitted from the final response."""
-    from nanobot.agent.runner import AgentRunner, AgentRunSpec
+    from vtx_claw.agent.runner import AgentRunner, AgentRunSpec
 
     provider = MagicMock()
     provider.supports_progress_deltas = True
@@ -310,7 +312,7 @@ async def test_runner_closes_reasoning_stream_after_one_shot_response():
     """A non-streaming response carrying ``reasoning_content`` must emit
     both a reasoning delta and an end marker so channels can finalize the
     in-place bubble."""
-    from nanobot.agent.runner import AgentRunner, AgentRunSpec
+    from vtx_claw.agent.runner import AgentRunner, AgentRunSpec
 
     provider = MagicMock()
 
@@ -356,7 +358,7 @@ class _StreamRecordingHook(_RecordingHook):
 async def test_runner_streams_native_thinking_deltas_without_post_hoc_dup():
     """Anthropic-style ``on_thinking_delta`` should fan out to ``emit_reasoning``;
     final ``thinking_blocks`` must not emit again when already streamed."""
-    from nanobot.agent.runner import AgentRunner, AgentRunSpec
+    from vtx_claw.agent.runner import AgentRunner, AgentRunSpec
 
     provider = MagicMock()
 
@@ -396,7 +398,7 @@ async def test_runner_streams_native_thinking_deltas_without_post_hoc_dup():
 
 @pytest.mark.asyncio
 async def test_runner_strips_thinking_tags_from_native_thinking_deltas():
-    from nanobot.agent.runner import AgentRunner, AgentRunSpec
+    from vtx_claw.agent.runner import AgentRunner, AgentRunSpec
 
     provider = MagicMock()
 
@@ -432,7 +434,7 @@ async def test_runner_strips_thinking_tags_from_native_thinking_deltas():
 
 @pytest.mark.asyncio
 async def test_runner_ignores_empty_thinking_marker_before_final_reasoning():
-    from nanobot.agent.runner import AgentRunner, AgentRunSpec
+    from vtx_claw.agent.runner import AgentRunner, AgentRunSpec
 
     provider = MagicMock()
 
@@ -442,10 +444,7 @@ async def test_runner_ignores_empty_thinking_marker_before_final_reasoning():
         if on_content_delta:
             await on_content_delta("done")
         return LLMResponse(
-            content="done",
-            reasoning_content="Preparing final response",
-            tool_calls=[],
-            usage={},
+            content="done", reasoning_content="Preparing final response", tool_calls=[], usage={}
         )
 
     provider.chat_stream_with_retry = chat_stream_with_retry

@@ -7,25 +7,21 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-from nanobot.agent.context_governance import (
+from vtx_claw.agent.context_governance import (
     BACKFILL_CONTENT,
     MICROCOMPACT_KEEP_RECENT,
     ContextGovernanceConfig,
     ContextGovernor,
 )
-from nanobot.agent.runner import AgentRunSpec
-from nanobot.config.schema import AgentDefaults
-from nanobot.providers.base import LLMResponse, ToolCallRequest
+from vtx_claw.agent.runner import AgentRunSpec
+from vtx_claw.config.schema import AgentDefaults
+from vtx_claw.providers.base import LLMResponse, ToolCallRequest
 
 _MAX_TOOL_RESULT_CHARS = AgentDefaults().max_tool_result_chars
 
 
 def _governance_config(
-    provider,
-    tools,
-    spec: AgentRunSpec,
-    *,
-    inflight_start_index: int = 0,
+    provider, tools, spec: AgentRunSpec, *, inflight_start_index: int = 0
 ) -> ContextGovernanceConfig:
     return ContextGovernanceConfig(
         provider=provider,
@@ -42,17 +38,17 @@ def _governance_config(
 
 
 def _make_loop(tmp_path):
-    from nanobot.agent.loop import AgentLoop
-    from nanobot.bus.queue import MessageBus
+    from vtx_claw.agent.loop import AgentLoop
+    from vtx_claw.bus.queue import MessageBus
 
     bus = MessageBus()
     provider = MagicMock()
     provider.get_default_model.return_value = "test-model"
 
     with (
-        patch("nanobot.agent.loop.ContextBuilder"),
-        patch("nanobot.agent.loop.SessionManager"),
-        patch("nanobot.agent.loop.SubagentManager") as mock_sub_mgr,
+        patch("vtx_claw.agent.loop.ContextBuilder"),
+        patch("vtx_claw.agent.loop.SessionManager"),
+        patch("vtx_claw.agent.loop.SubagentManager") as mock_sub_mgr,
     ):
         mock_sub_mgr.return_value.cancel_by_session = AsyncMock(return_value=0)
         loop = AgentLoop(bus=bus, provider=provider, workspace=tmp_path)
@@ -60,7 +56,7 @@ def _make_loop(tmp_path):
 
 
 async def test_runner_uses_raw_messages_when_context_governance_fails():
-    from nanobot.agent.runner import AgentRunner
+    from vtx_claw.agent.runner import AgentRunner
 
     provider = MagicMock()
     captured_messages: list[dict] = []
@@ -123,7 +119,7 @@ def test_snip_history_drops_orphaned_tool_results_from_trimmed_slice(monkeypatch
     )
 
     monkeypatch.setattr(
-        "nanobot.agent.context_governance.estimate_prompt_tokens_chain",
+        "vtx_claw.agent.context_governance.estimate_prompt_tokens_chain",
         lambda *_args, **_kwargs: (500, None),
     )
     token_sizes = {
@@ -134,7 +130,7 @@ def test_snip_history_drops_orphaned_tool_results_from_trimmed_slice(monkeypatch
         "system": 0,
     }
     monkeypatch.setattr(
-        "nanobot.agent.context_governance.estimate_message_tokens",
+        "vtx_claw.agent.context_governance.estimate_message_tokens",
         lambda msg: token_sizes.get(str(msg.get("content")), 40),
     )
 
@@ -178,7 +174,9 @@ def test_snip_history_reserves_budget_for_tool_definitions(monkeypatch):
         assert estimate_tools == tools.get_definitions.return_value
         return 350, None
 
-    monkeypatch.setattr("nanobot.agent.context_governance.estimate_prompt_tokens_chain", _estimate)
+    monkeypatch.setattr(
+        "vtx_claw.agent.context_governance.estimate_prompt_tokens_chain", _estimate
+    )
     token_sizes = {
         "system": 50,
         "old user": 200,
@@ -188,7 +186,7 @@ def test_snip_history_reserves_budget_for_tool_definitions(monkeypatch):
         "recent two": 200,
     }
     monkeypatch.setattr(
-        "nanobot.agent.context_governance.estimate_message_tokens",
+        "vtx_claw.agent.context_governance.estimate_message_tokens",
         lambda msg: token_sizes.get(str(msg.get("content")), 40),
     )
 
@@ -242,7 +240,7 @@ def test_drop_orphan_tool_results_removes_unmatched_tool_messages():
                     "id": "call_ok",
                     "type": "function",
                     "function": {"name": "read_file", "arguments": "{}"},
-                },
+                }
             ],
         },
         {"role": "tool", "tool_call_id": "call_ok", "name": "read_file", "content": "ok"},
@@ -263,7 +261,7 @@ def test_drop_orphan_tool_results_removes_unmatched_tool_messages():
                     "id": "call_ok",
                     "type": "function",
                     "function": {"name": "read_file", "arguments": "{}"},
-                },
+                }
             ],
         },
         {"role": "tool", "tool_call_id": "call_ok", "name": "read_file", "content": "ok"},
@@ -284,7 +282,7 @@ async def test_backfill_noop_when_complete():
                     "id": "call_x",
                     "type": "function",
                     "function": {"name": "exec", "arguments": "{}"},
-                },
+                }
             ],
         },
         {"role": "tool", "tool_call_id": "call_x", "name": "exec", "content": "done"},
@@ -296,7 +294,7 @@ async def test_backfill_noop_when_complete():
 
 @pytest.mark.asyncio
 async def test_runner_drops_orphan_tool_results_before_model_request():
-    from nanobot.agent.runner import AgentRunner
+    from vtx_claw.agent.runner import AgentRunner
 
     provider = MagicMock()
     captured_messages: list[dict] = []
@@ -315,7 +313,12 @@ async def test_runner_drops_orphan_tool_results_before_model_request():
             initial_messages=[
                 {"role": "system", "content": "system"},
                 {"role": "user", "content": "old user"},
-                {"role": "tool", "tool_call_id": "call_orphan", "name": "exec", "content": "stale"},
+                {
+                    "role": "tool",
+                    "tool_call_id": "call_orphan",
+                    "name": "exec",
+                    "content": "stale",
+                },
                 {"role": "assistant", "content": "after orphan"},
                 {"role": "user", "content": "new prompt"},
             ],
@@ -338,9 +341,9 @@ async def test_runner_drops_orphan_tool_results_before_model_request():
 @pytest.mark.asyncio
 async def test_backfill_repairs_model_context_without_shifting_save_turn_boundary(tmp_path):
     """Historical backfill should not duplicate old tail messages on persist."""
-    from nanobot.agent.loop import AgentLoop
-    from nanobot.bus.events import InboundMessage
-    from nanobot.bus.queue import MessageBus
+    from vtx_claw.agent.loop import AgentLoop
+    from vtx_claw.bus.events import InboundMessage
+    from vtx_claw.bus.queue import MessageBus
 
     provider = MagicMock()
     provider.get_default_model.return_value = "test-model"
@@ -348,12 +351,7 @@ async def test_backfill_repairs_model_context_without_shifting_save_turn_boundar
     provider.chat_with_retry = AsyncMock(return_value=response)
     provider.chat_stream_with_retry = AsyncMock(return_value=response)
 
-    loop = AgentLoop(
-        bus=MessageBus(),
-        provider=provider,
-        workspace=tmp_path,
-        model="test-model",
-    )
+    loop = AgentLoop(bus=MessageBus(), provider=provider, workspace=tmp_path, model="test-model")
     loop.tools.get_definitions = MagicMock(return_value=[])
     loop.consolidator.maybe_consolidate_by_tokens = AsyncMock(return_value=False)  # type: ignore[method-assign]
 
@@ -422,7 +420,7 @@ async def test_backfill_repairs_model_context_without_shifting_save_turn_boundar
 @pytest.mark.asyncio
 async def test_runner_backfill_only_mutates_model_context_not_returned_messages():
     """Runner should repair orphaned tool calls for the model without rewriting result.messages."""
-    from nanobot.agent.runner import AgentRunner
+    from vtx_claw.agent.runner import AgentRunner
 
     provider = MagicMock()
     captured_messages: list[dict] = []
@@ -521,12 +519,7 @@ def _microcompact_messages(*, total: int, tool_name: str, content: str) -> list[
             }
         )
         messages.append(
-            {
-                "role": "tool",
-                "tool_call_id": f"c{i}",
-                "name": tool_name,
-                "content": content,
-            }
+            {"role": "tool", "tool_call_id": f"c{i}", "name": tool_name, "content": content}
         )
     return messages
 
@@ -552,14 +545,12 @@ def test_microcompact_skips_when_prompt_under_hard_budget(monkeypatch):
     )
 
     monkeypatch.setattr(
-        "nanobot.agent.context_governance.estimate_prompt_tokens_chain",
+        "vtx_claw.agent.context_governance.estimate_prompt_tokens_chain",
         lambda *_args, **_kwargs: (1000, "test"),
     )
 
     result = ContextGovernor().compact_inflight_overflow(
-        _governance_config(provider, tools, spec),
-        messages,
-        set(),
+        _governance_config(provider, tools, spec), messages, set()
     )
 
     assert result is messages
@@ -596,12 +587,10 @@ def test_microcompact_overflow_compacts_to_low_watermark(monkeypatch):
             if msg.get("role") == "tool"
         ), "test"
 
-    monkeypatch.setattr("nanobot.agent.context_governance.estimate_prompt_tokens_chain", estimate)
+    monkeypatch.setattr("vtx_claw.agent.context_governance.estimate_prompt_tokens_chain", estimate)
 
     result = ContextGovernor().compact_inflight_overflow(
-        _governance_config(provider, tools, spec),
-        messages,
-        set(),
+        _governance_config(provider, tools, spec), messages, set()
     )
     tool_msgs = [m for m in result if m.get("role") == "tool"]
     compacted = [m for m in tool_msgs if "omitted from context" in str(m.get("content", ""))]
@@ -639,13 +628,11 @@ def test_microcompact_compacts_newest_when_it_alone_overflows(monkeypatch):
             if msg.get("role") == "tool"
         ), "test"
 
-    monkeypatch.setattr("nanobot.agent.context_governance.estimate_prompt_tokens_chain", estimate)
+    monkeypatch.setattr("vtx_claw.agent.context_governance.estimate_prompt_tokens_chain", estimate)
 
     compacted_tool_call_ids: set[str] = set()
     result = ContextGovernor().compact_inflight_overflow(
-        _governance_config(provider, tools, spec),
-        messages,
-        compacted_tool_call_ids,
+        _governance_config(provider, tools, spec), messages, compacted_tool_call_ids
     )
 
     tool_msg = next(m for m in result if m.get("role") == "tool")
@@ -679,7 +666,7 @@ def test_context_governor_keeps_compaction_boundary_stable(monkeypatch):
             if msg.get("role") == "tool"
         ), "test"
 
-    monkeypatch.setattr("nanobot.agent.context_governance.estimate_prompt_tokens_chain", estimate)
+    monkeypatch.setattr("vtx_claw.agent.context_governance.estimate_prompt_tokens_chain", estimate)
 
     governor = ContextGovernor()
     compacted_tool_call_ids: set[str] = set()
@@ -713,14 +700,12 @@ def test_microcompact_preserves_short_results(monkeypatch):
     )
 
     monkeypatch.setattr(
-        "nanobot.agent.context_governance.estimate_prompt_tokens_chain",
+        "vtx_claw.agent.context_governance.estimate_prompt_tokens_chain",
         lambda *_args, **_kwargs: (2000, "test"),
     )
 
     result = ContextGovernor().compact_inflight_overflow(
-        _governance_config(provider, tools, spec),
-        messages,
-        set(),
+        _governance_config(provider, tools, spec), messages, set()
     )
     assert result is messages  # no copy needed — all stale results are short
 
@@ -746,14 +731,12 @@ def test_microcompact_skips_non_compactable_tools(monkeypatch):
     )
 
     monkeypatch.setattr(
-        "nanobot.agent.context_governance.estimate_prompt_tokens_chain",
+        "vtx_claw.agent.context_governance.estimate_prompt_tokens_chain",
         lambda *_args, **_kwargs: (2000, "test"),
     )
 
     result = ContextGovernor().compact_inflight_overflow(
-        _governance_config(provider, tools, spec),
-        messages,
-        set(),
+        _governance_config(provider, tools, spec), messages, set()
     )
     assert result is messages  # no compactable tools found
 
@@ -809,7 +792,7 @@ def test_snip_history_preserves_user_message_after_truncation(monkeypatch):
     messages = [
         {"role": "system", "content": "system"},
         {"role": "assistant", "content": "previous reply"},
-        {"role": "user", "content": ".nanobot的同目录"},
+        {"role": "user", "content": ".vtx_claw的同目录"},
         {
             "role": "assistant",
             "content": None,
@@ -840,19 +823,19 @@ def test_snip_history_preserves_user_message_after_truncation(monkeypatch):
 
     # Make estimate_prompt_tokens_chain report above budget so _snip_history activates.
     monkeypatch.setattr(
-        "nanobot.agent.context_governance.estimate_prompt_tokens_chain",
+        "vtx_claw.agent.context_governance.estimate_prompt_tokens_chain",
         lambda *_a, **_kw: (500, None),
     )
     # Make kept window small: only the last 2 messages fit the budget.
     token_sizes = {
         "system": 0,
         "previous reply": 200,
-        ".nanobot的同目录": 80,
+        ".vtx_claw的同目录": 80,
         "tool output 1": 80,
         "tool output 2": 80,
     }
     monkeypatch.setattr(
-        "nanobot.agent.context_governance.estimate_message_tokens",
+        "vtx_claw.agent.context_governance.estimate_message_tokens",
         lambda msg: token_sizes.get(str(msg.get("content")), 100),
     )
 
@@ -893,12 +876,11 @@ def test_snip_history_no_user_at_all_falls_back_gracefully(monkeypatch):
     )
 
     monkeypatch.setattr(
-        "nanobot.agent.context_governance.estimate_prompt_tokens_chain",
+        "vtx_claw.agent.context_governance.estimate_prompt_tokens_chain",
         lambda *_a, **_kw: (500, None),
     )
     monkeypatch.setattr(
-        "nanobot.agent.context_governance.estimate_message_tokens",
-        lambda msg: 100,
+        "vtx_claw.agent.context_governance.estimate_message_tokens", lambda msg: 100
     )
 
     trimmed = ContextGovernor().snip_history(_governance_config(provider, tools, spec), messages)
@@ -909,7 +891,7 @@ def test_snip_history_no_user_at_all_falls_back_gracefully(monkeypatch):
     assert any(m.get("role") == "system" for m in trimmed)
     # The _enforce_role_alternation safety net must be able to fix whatever
     # _snip_history returns here — verify it produces a valid sequence.
-    from nanobot.providers.base import LLMProvider
+    from vtx_claw.providers.base import LLMProvider
 
     fixed = LLMProvider._enforce_role_alternation(trimmed)
     non_system = [m for m in fixed if m["role"] != "system"]
@@ -927,7 +909,7 @@ def test_snip_history_no_user_at_all_falls_back_gracefully(monkeypatch):
 
 def test_drop_malformed_tool_calls_trims_response():
     """LLM response tool_calls with a missing/empty name are dropped in place."""
-    from nanobot.agent.runner import AgentRunner
+    from vtx_claw.agent.runner import AgentRunner
 
     response = LLMResponse(
         content=None,
@@ -949,7 +931,7 @@ def test_drop_malformed_tool_calls_trims_response():
 
 def test_drop_malformed_tool_calls_all_bad_disables_execution():
     """If every tool call is malformed, execution is disabled (no empty exec)."""
-    from nanobot.agent.runner import AgentRunner
+    from vtx_claw.agent.runner import AgentRunner
 
     response = LLMResponse(
         content="some text",
@@ -967,7 +949,7 @@ def test_drop_malformed_tool_calls_all_bad_disables_execution():
 
 def test_drop_malformed_returns_tuple_no_calls():
     """No tool calls returns (0, False, current_finish_reason)."""
-    from nanobot.agent.runner import AgentRunner
+    from vtx_claw.agent.runner import AgentRunner
 
     response = LLMResponse(content="hi", finish_reason="stop")
     dropped, all_dropped, orig = AgentRunner._drop_malformed_tool_calls(response)
@@ -1007,7 +989,7 @@ def test_strip_malformed_tool_calls_drops_empty_assistant_turn():
             "role": "assistant",
             "content": None,
             "tool_calls": [
-                {"id": "bad", "type": "function", "function": {"name": None, "arguments": "{}"}},
+                {"id": "bad", "type": "function", "function": {"name": None, "arguments": "{}"}}
             ],
         },
         {"role": "tool", "tool_call_id": "bad", "name": "", "content": "r"},
@@ -1026,7 +1008,7 @@ def test_strip_malformed_tool_calls_noop_when_clean():
             "role": "assistant",
             "content": "",
             "tool_calls": [
-                {"id": "ok", "type": "function", "function": {"name": "exec", "arguments": "{}"}},
+                {"id": "ok", "type": "function", "function": {"name": "exec", "arguments": "{}"}}
             ],
         },
         {"role": "tool", "tool_call_id": "ok", "name": "exec", "content": "done"},
@@ -1046,22 +1028,13 @@ def test_strip_placeholder_assistant_messages_removes_omitted():
         {"role": "user", "content": "hello"},
     ]
     result = ContextGovernor.strip_placeholder_assistant_messages(messages)
-    assert [m["role"] for m in result] == [
-        "user",
-        "assistant",
-        "user",
-        "user",
-        "user",
-    ]
+    assert [m["role"] for m in result] == ["user", "assistant", "user", "user", "user"]
     assert result[1]["content"] == "real response"
 
 
 def test_strip_placeholder_noop_when_clean():
     """Clean history is returned unchanged (same object)."""
-    messages = [
-        {"role": "user", "content": "hi"},
-        {"role": "assistant", "content": "hello back"},
-    ]
+    messages = [{"role": "user", "content": "hi"}, {"role": "assistant", "content": "hello back"}]
     assert ContextGovernor.strip_placeholder_assistant_messages(messages) is messages
 
 
@@ -1073,7 +1046,7 @@ def test_strip_placeholder_keeps_assistant_with_tool_calls():
             "role": "assistant",
             "content": "[Previous assistant message omitted.]",
             "tool_calls": [
-                {"id": "1", "type": "function", "function": {"name": "exec", "arguments": "{}"}},
+                {"id": "1", "type": "function", "function": {"name": "exec", "arguments": "{}"}}
             ],
         },
         {"role": "tool", "tool_call_id": "1", "name": "exec", "content": "done"},

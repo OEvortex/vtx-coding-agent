@@ -5,7 +5,7 @@ import pytest
 
 # Check optional msteams dependencies before running tests
 try:
-    from nanobot.channels import msteams
+    from vtx_claw.channels import msteams
 
     MSTEAMS_AVAILABLE = getattr(msteams, "MSTEAMS_AVAILABLE", False)
 except ImportError:
@@ -13,16 +13,16 @@ except ImportError:
 
 if not MSTEAMS_AVAILABLE:
     pytest.skip(
-        "MSTeams dependencies not installed (PyJWT, cryptography). Run: pip install nanobot-ai[msteams]",
+        "MSTeams dependencies not installed (PyJWT, cryptography). Run: pip install vtx-claw[msteams]",
         allow_module_level=True,
     )
 
 import jwt
 from cryptography.hazmat.primitives.asymmetric import rsa
 
-import nanobot.channels.msteams as msteams_module
-from nanobot.bus.events import OutboundMessage
-from nanobot.channels.msteams import ConversationRef, MSTeamsChannel
+import vtx_claw.channels.msteams as msteams_module
+from vtx_claw.bus.events import OutboundMessage
+from vtx_claw.channels.msteams import ConversationRef, MSTeamsChannel
 
 
 class DummyBus:
@@ -63,7 +63,7 @@ class FakeHttpClient:
 
 @pytest.fixture
 def make_channel(tmp_path, monkeypatch):
-    monkeypatch.setattr("nanobot.channels.msteams.get_workspace_path", lambda: tmp_path)
+    monkeypatch.setattr("vtx_claw.channels.msteams.get_workspace_path", lambda: tmp_path)
 
     def _make_channel(**config_overrides):
         config = {
@@ -88,22 +88,10 @@ async def test_handle_activity_personal_message_publishes_and_stores_ref(make_ch
         "id": "activity-1",
         "text": "Hello from Teams",
         "serviceUrl": "https://smba.trafficmanager.net/amer/",
-        "conversation": {
-            "id": "conv-123",
-            "conversationType": "personal",
-        },
-        "from": {
-            "id": "29:user-id",
-            "aadObjectId": "aad-user-1",
-            "name": "Bob",
-        },
-        "recipient": {
-            "id": "28:bot-id",
-            "name": "nanobot",
-        },
-        "channelData": {
-            "tenant": {"id": "tenant-id"},
-        },
+        "conversation": {"id": "conv-123", "conversationType": "personal"},
+        "from": {"id": "29:user-id", "aadObjectId": "aad-user-1", "name": "Bob"},
+        "recipient": {"id": "28:bot-id", "name": "vtx_claw"},
+        "channelData": {"tenant": {"id": "tenant-id"}},
     }
 
     await ch._handle_activity(activity)
@@ -123,7 +111,7 @@ async def test_handle_activity_personal_message_publishes_and_stores_ref(make_ch
     assert saved["conv-123"]["conversation_id"] == "conv-123"
     assert saved["conv-123"]["tenant_id"] == "tenant-id"
     saved_meta = json.loads(
-        (tmp_path / "state" / msteams_module.MSTEAMS_REF_META_FILENAME).read_text(encoding="utf-8"),
+        (tmp_path / "state" / msteams_module.MSTEAMS_REF_META_FILENAME).read_text(encoding="utf-8")
     )
     assert float(saved_meta["conv-123"]["updated_at"]) > 0
 
@@ -239,7 +227,7 @@ def test_save_prunes_unsupported_conversation_refs(make_channel, tmp_path, monke
     )
     assert set(saved.keys()) == {"conv-valid"}
     saved_meta = json.loads(
-        (tmp_path / "state" / msteams_module.MSTEAMS_REF_META_FILENAME).read_text(encoding="utf-8"),
+        (tmp_path / "state" / msteams_module.MSTEAMS_REF_META_FILENAME).read_text(encoding="utf-8")
     )
     assert set(saved_meta.keys()) == {"conv-valid"}
 
@@ -401,19 +389,9 @@ async def test_handle_activity_ignores_group_messages(make_channel):
         "id": "activity-2",
         "text": "Hello group",
         "serviceUrl": "https://smba.trafficmanager.net/amer/",
-        "conversation": {
-            "id": "conv-group",
-            "conversationType": "channel",
-        },
-        "from": {
-            "id": "29:user-id",
-            "aadObjectId": "aad-user-1",
-            "name": "Bob",
-        },
-        "recipient": {
-            "id": "28:bot-id",
-            "name": "nanobot",
-        },
+        "conversation": {"id": "conv-group", "conversationType": "channel"},
+        "from": {"id": "29:user-id", "aadObjectId": "aad-user-1", "name": "Bob"},
+        "recipient": {"id": "28:bot-id", "name": "vtx_claw"},
     }
 
     await ch._handle_activity(activity)
@@ -431,22 +409,10 @@ async def test_handle_activity_denied_sender_does_not_store_ref(make_channel, tm
         "id": "activity-denied",
         "text": "Hello from denied user",
         "serviceUrl": "https://smba.trafficmanager.net/amer/",
-        "conversation": {
-            "id": "conv-denied",
-            "conversationType": "personal",
-        },
-        "from": {
-            "id": "29:user-id",
-            "aadObjectId": "aad-user-1",
-            "name": "Bob",
-        },
-        "recipient": {
-            "id": "28:bot-id",
-            "name": "nanobot",
-        },
-        "channelData": {
-            "tenant": {"id": "tenant-id"},
-        },
+        "conversation": {"id": "conv-denied", "conversationType": "personal"},
+        "from": {"id": "29:user-id", "aadObjectId": "aad-user-1", "name": "Bob"},
+        "recipient": {"id": "28:bot-id", "name": "vtx_claw"},
+        "channelData": {"tenant": {"id": "tenant-id"}},
     }
 
     await ch._handle_activity(activity)
@@ -466,19 +432,13 @@ async def test_handle_activity_rejects_untrusted_service_url(make_channel, tmp_p
         "text": "Hello from forged Teams activity",
         "serviceUrl": "https://attacker.example/collect",
         "channelId": "msteams",
-        "conversation": {
-            "id": "conv-poison",
-            "conversationType": "personal",
-        },
+        "conversation": {"id": "conv-poison", "conversationType": "personal"},
         "from": {
             "id": "29:attacker-user-id",
             "aadObjectId": "attacker-user-id",
             "name": "Attacker",
         },
-        "recipient": {
-            "id": "28:bot-id",
-            "name": "nanobot",
-        },
+        "recipient": {"id": "28:bot-id", "name": "vtx_claw"},
     }
 
     await ch._handle_activity(activity)
@@ -495,21 +455,11 @@ async def test_handle_activity_mention_only_uses_default_response(make_channel):
     activity = {
         "type": "message",
         "id": "activity-3",
-        "text": "<at>Nanobot</at>",
+        "text": "<at>VtxClaw</at>",
         "serviceUrl": "https://smba.trafficmanager.net/amer/",
-        "conversation": {
-            "id": "conv-empty",
-            "conversationType": "personal",
-        },
-        "from": {
-            "id": "29:user-id",
-            "aadObjectId": "aad-user-1",
-            "name": "Bob",
-        },
-        "recipient": {
-            "id": "28:bot-id",
-            "name": "nanobot",
-        },
+        "conversation": {"id": "conv-empty", "conversationType": "personal"},
+        "from": {"id": "29:user-id", "aadObjectId": "aad-user-1", "name": "Bob"},
+        "recipient": {"id": "28:bot-id", "name": "vtx_claw"},
     }
 
     await ch._handle_activity(activity)
@@ -526,21 +476,11 @@ async def test_handle_activity_mention_only_ignores_when_response_disabled(make_
     activity = {
         "type": "message",
         "id": "activity-4",
-        "text": "<at>Nanobot</at>",
+        "text": "<at>VtxClaw</at>",
         "serviceUrl": "https://smba.trafficmanager.net/amer/",
-        "conversation": {
-            "id": "conv-empty-disabled",
-            "conversationType": "personal",
-        },
-        "from": {
-            "id": "29:user-id",
-            "aadObjectId": "aad-user-1",
-            "name": "Bob",
-        },
-        "recipient": {
-            "id": "28:bot-id",
-            "name": "nanobot",
-        },
+        "conversation": {"id": "conv-empty-disabled", "conversationType": "personal"},
+        "from": {"id": "29:user-id", "aadObjectId": "aad-user-1", "name": "Bob"},
+        "recipient": {"id": "28:bot-id", "name": "vtx_claw"},
     }
 
     await ch._handle_activity(activity)
@@ -552,17 +492,14 @@ async def test_handle_activity_mention_only_ignores_when_response_disabled(make_
 def test_strip_possible_bot_mention_removes_generic_at_tags(make_channel):
     ch = make_channel()
 
-    assert ch._strip_possible_bot_mention("<at>Nanobot</at> hello") == "hello"
+    assert ch._strip_possible_bot_mention("<at>VtxClaw</at> hello") == "hello"
     assert ch._strip_possible_bot_mention("hi <at>Some Bot</at> there") == "hi there"
 
 
 def test_sanitize_inbound_text_keeps_normal_inline_message(make_channel):
     ch = make_channel()
 
-    activity = {
-        "text": "<at>Nanobot</at> normal inline message",
-        "channelData": {},
-    }
+    activity = {"text": "<at>VtxClaw</at> normal inline message", "channelData": {}}
 
     assert ch._sanitize_inbound_text(activity) == "normal inline message"
 
@@ -570,10 +507,7 @@ def test_sanitize_inbound_text_keeps_normal_inline_message(make_channel):
 def test_sanitize_inbound_text_normalizes_nbsp_entities(make_channel):
     ch = make_channel()
 
-    activity = {
-        "text": "Hello&nbsp;from&nbsp;Teams",
-        "channelData": {},
-    }
+    activity = {"text": "Hello&nbsp;from&nbsp;Teams", "channelData": {}}
 
     assert ch._sanitize_inbound_text(activity) == "Hello from Teams"
 
@@ -739,7 +673,7 @@ async def test_send_success_refreshes_updated_at_and_persists_meta(
 
     assert ch._conversation_refs["conv-123"].updated_at == now["value"]
     saved_meta = json.loads(
-        (tmp_path / "state" / msteams_module.MSTEAMS_REF_META_FILENAME).read_text(encoding="utf-8"),
+        (tmp_path / "state" / msteams_module.MSTEAMS_REF_META_FILENAME).read_text(encoding="utf-8")
     )
     assert saved_meta["conv-123"]["updated_at"] == now["value"]
 
@@ -871,10 +805,7 @@ async def test_validate_inbound_auth_accepts_observed_botframework_shape(make_ch
         headers={"kid": jwk["kid"]},
     )
 
-    result = await ch._validate_inbound_auth(
-        f"Bearer {token}",
-        {"serviceUrl": service_url},
-    )
+    result = await ch._validate_inbound_auth(f"Bearer {token}", {"serviceUrl": service_url})
     assert result is None
 
 
@@ -901,8 +832,7 @@ async def test_validate_inbound_auth_rejects_service_url_mismatch(make_channel):
 
     with pytest.raises(ValueError, match="serviceUrl claim mismatch"):
         await ch._validate_inbound_auth(
-            f"Bearer {token}",
-            {"serviceUrl": "https://smba.trafficmanager.net/amer/tenant-b/"},
+            f"Bearer {token}", {"serviceUrl": "https://smba.trafficmanager.net/amer/tenant-b/"}
         )
 
 
@@ -927,7 +857,7 @@ async def test_start_logs_install_hint_when_pyjwt_missing(make_channel, monkeypa
 
     await ch.start()
 
-    assert errors == ["PyJWT not installed. Run: pip install nanobot-ai[msteams]"]
+    assert errors == ["PyJWT not installed. Run: pip install vtx-claw[msteams]"]
 
 
 def test_save_refs_prunes_webchat_and_stale_refs(make_channel):

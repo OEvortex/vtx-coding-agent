@@ -2,8 +2,8 @@
 
 from types import SimpleNamespace
 
-from nanobot.apps.cli.service import CliAppManager
-from nanobot.apps.cli.utils import runtime_lines, session_extra
+from vtx_claw.apps.cli.service import CliAppManager
+from vtx_claw.apps.cli.utils import runtime_lines, session_extra
 
 
 def test_session_extra_returns_cli_apps_only_when_present() -> None:
@@ -15,24 +15,17 @@ def test_session_extra_returns_cli_apps_only_when_present() -> None:
 
 def test_cli_app_mentions_inject_runtime_metadata(tmp_path, monkeypatch):
     data_dir = tmp_path / "data"
-    monkeypatch.setattr("nanobot.apps.cli.service.get_runtime_subdir", lambda _name: data_dir)
+    monkeypatch.setattr("vtx_claw.apps.cli.service.get_runtime_subdir", lambda _name: data_dir)
     manager = CliAppManager(workspace=tmp_path)
     manager._save_installed(
         {
-            "zoom": {
-                "entry_point": "cli-anything-zoom",
-                "source": "harness",
-            },
-            "krita": {
-                "entry_point": "cli-anything-krita",
-                "source": "harness",
-            },
+            "zoom": {"entry_point": "cli-anything-zoom", "source": "harness"},
+            "krita": {"entry_point": "cli-anything-krita", "source": "harness"},
         }
     )
 
     lines = runtime_lines(
-        SimpleNamespace(content="please use @zoom tonight; ignore @krita?", metadata={}),
-        tmp_path,
+        SimpleNamespace(content="please use @zoom tonight; ignore @krita?", metadata={}), tmp_path
     )
 
     joined = "\n".join(lines)
@@ -48,12 +41,8 @@ def test_structured_cli_app_attachment_injects_runtime_metadata(tmp_path):
             content="please use @zoom tonight",
             metadata={
                 "cli_apps": [
-                    {
-                        "name": "zoom",
-                        "entry_point": "cli-anything-zoom",
-                        "display_name": "Zoom",
-                    }
-                ],
+                    {"name": "zoom", "entry_point": "cli-anything-zoom", "display_name": "Zoom"}
+                ]
             },
         ),
         tmp_path,

@@ -8,8 +8,8 @@ parse → serialize round-trip so the model can continue reasoning.
 from types import SimpleNamespace
 from unittest.mock import patch
 
-from nanobot.providers.base import ToolCallRequest
-from nanobot.providers.openai_compat_provider import OpenAICompatProvider
+from vtx_claw.providers.base import ToolCallRequest
+from vtx_claw.providers.openai_compat_provider import OpenAICompatProvider
 
 GEMINI_EXTRA = {"google": {"thought_signature": "sig-abc-123"}}
 
@@ -19,10 +19,7 @@ GEMINI_EXTRA = {"google": {"thought_signature": "sig-abc-123"}}
 
 def test_tool_call_request_serializes_extra_content() -> None:
     tc = ToolCallRequest(
-        id="abc123xyz",
-        name="read_file",
-        arguments={"path": "todo.md"},
-        extra_content=GEMINI_EXTRA,
+        id="abc123xyz", name="read_file", arguments={"path": "todo.md"}, extra_content=GEMINI_EXTRA
     )
 
     payload = tc.to_openai_tool_call()
@@ -62,24 +59,16 @@ def _make_sdk_response_with_extra_content():
     """Simulate a Gemini response via the OpenAI SDK (SimpleNamespace)."""
     fn = SimpleNamespace(name="get_weather", arguments='{"city":"Tokyo"}')
     tc = SimpleNamespace(
-        id="call_1",
-        index=0,
-        type="function",
-        function=fn,
-        extra_content=GEMINI_EXTRA,
+        id="call_1", index=0, type="function", function=fn, extra_content=GEMINI_EXTRA
     )
-    msg = SimpleNamespace(
-        content=None,
-        tool_calls=[tc],
-        reasoning_content=None,
-    )
+    msg = SimpleNamespace(content=None, tool_calls=[tc], reasoning_content=None)
     choice = SimpleNamespace(message=msg, finish_reason="tool_calls")
     usage = SimpleNamespace(prompt_tokens=10, completion_tokens=5, total_tokens=15)
     return SimpleNamespace(choices=[choice], usage=usage)
 
 
 def test_parse_sdk_object_preserves_extra_content() -> None:
-    with patch("nanobot.providers.openai_compat_provider.AsyncOpenAI"):
+    with patch("vtx_claw.providers.openai_compat_provider.AsyncOpenAI"):
         provider = OpenAICompatProvider()
 
     result = provider._parse(_make_sdk_response_with_extra_content())
@@ -97,7 +86,7 @@ def test_parse_sdk_object_preserves_extra_content() -> None:
 
 
 def test_parse_dict_preserves_extra_content() -> None:
-    with patch("nanobot.providers.openai_compat_provider.AsyncOpenAI"):
+    with patch("vtx_claw.providers.openai_compat_provider.AsyncOpenAI"):
         provider = OpenAICompatProvider()
 
     response_dict = {
@@ -132,7 +121,7 @@ def test_parse_dict_preserves_extra_content() -> None:
 
 
 def test_parse_dict_deduplicates_duplicate_tool_call_ids() -> None:
-    with patch("nanobot.providers.openai_compat_provider.AsyncOpenAI"):
+    with patch("vtx_claw.providers.openai_compat_provider.AsyncOpenAI"):
         provider = OpenAICompatProvider()
 
     response_dict = {
@@ -163,7 +152,7 @@ def test_parse_dict_deduplicates_duplicate_tool_call_ids() -> None:
                 },
                 "finish_reason": "tool_calls",
             },
-        ],
+        ]
     }
 
     result = provider._parse(response_dict)
@@ -181,12 +170,7 @@ def test_parse_dict_deduplicates_duplicate_tool_call_ids() -> None:
 
 def test_parse_chunks_sdk_preserves_extra_content() -> None:
     fn_delta = SimpleNamespace(name="get_weather", arguments='{"city":"Tokyo"}')
-    tc_delta = SimpleNamespace(
-        id="call_1",
-        index=0,
-        function=fn_delta,
-        extra_content=GEMINI_EXTRA,
-    )
+    tc_delta = SimpleNamespace(id="call_1", index=0, function=fn_delta, extra_content=GEMINI_EXTRA)
     delta = SimpleNamespace(content=None, tool_calls=[tc_delta])
     choice = SimpleNamespace(finish_reason="tool_calls", delta=delta)
     chunk = SimpleNamespace(choices=[choice], usage=None)
@@ -218,7 +202,7 @@ def test_parse_chunks_dict_preserves_extra_content() -> None:
                     ],
                 },
             }
-        ],
+        ]
     }
 
     result = OpenAICompatProvider._parse_chunks([chunk])
@@ -238,7 +222,7 @@ def test_stale_extra_content_in_tool_calls_survives_sanitize() -> None:
     """When switching from Gemini to OpenAI, extra_content inside tool_calls
     should survive message sanitization (it lives inside the tool_call dict,
     not at message level, so it bypasses _ALLOWED_MSG_KEYS filtering)."""
-    with patch("nanobot.providers.openai_compat_provider.AsyncOpenAI"):
+    with patch("vtx_claw.providers.openai_compat_provider.AsyncOpenAI"):
         provider = OpenAICompatProvider()
 
     messages = [

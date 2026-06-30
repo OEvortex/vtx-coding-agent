@@ -12,9 +12,9 @@ try:
 except ImportError:
     pytest.skip("Slack dependencies not installed (slack-sdk)", allow_module_level=True)
 
-from nanobot.bus.events import OutboundMessage
-from nanobot.bus.queue import MessageBus
-from nanobot.channels.slack import SLACK_MAX_MESSAGE_LEN, SlackChannel, SlackConfig
+from vtx_claw.bus.events import OutboundMessage
+from vtx_claw.bus.queue import MessageBus
+from vtx_claw.channels.slack import SLACK_MAX_MESSAGE_LEN, SlackChannel, SlackConfig
 
 
 class _FakeAsyncWebClient:
@@ -40,58 +40,22 @@ class _FakeAsyncWebClient:
         thread_ts: str | None = None,
         blocks: list[dict[str, object]] | None = None,
     ) -> None:
-        call: dict[str, object | None] = {
-            "channel": channel,
-            "text": text,
-            "thread_ts": thread_ts,
-        }
+        call: dict[str, object | None] = {"channel": channel, "text": text, "thread_ts": thread_ts}
         if blocks is not None:
             call["blocks"] = blocks
         self.chat_post_calls.append(call)
 
     async def files_upload_v2(
-        self,
-        *,
-        channel: str,
-        file: str,
-        thread_ts: str | None = None,
+        self, *, channel: str, file: str, thread_ts: str | None = None
     ) -> None:
-        self.file_upload_calls.append(
-            {
-                "channel": channel,
-                "file": file,
-                "thread_ts": thread_ts,
-            }
-        )
+        self.file_upload_calls.append({"channel": channel, "file": file, "thread_ts": thread_ts})
 
-    async def reactions_add(
-        self,
-        *,
-        channel: str,
-        name: str,
-        timestamp: str,
-    ) -> None:
-        self.reactions_add_calls.append(
-            {
-                "channel": channel,
-                "name": name,
-                "timestamp": timestamp,
-            }
-        )
+    async def reactions_add(self, *, channel: str, name: str, timestamp: str) -> None:
+        self.reactions_add_calls.append({"channel": channel, "name": name, "timestamp": timestamp})
 
-    async def reactions_remove(
-        self,
-        *,
-        channel: str,
-        name: str,
-        timestamp: str,
-    ) -> None:
+    async def reactions_remove(self, *, channel: str, name: str, timestamp: str) -> None:
         self.reactions_remove_calls.append(
-            {
-                "channel": channel,
-                "name": name,
-                "timestamp": timestamp,
-            }
+            {"channel": channel, "name": name, "timestamp": timestamp}
         )
 
     async def conversations_list(self, **kwargs):
@@ -199,14 +163,14 @@ async def test_send_splits_long_messages() -> None:
 
     await channel.send(
         OutboundMessage(
-            channel="slack",
-            chat_id="C123",
-            content="x" * (SLACK_MAX_MESSAGE_LEN + 10),
+            channel="slack", chat_id="C123", content="x" * (SLACK_MAX_MESSAGE_LEN + 10)
         )
     )
 
     assert len(fake_web.chat_post_calls) == 2
-    assert all(len(str(call["text"])) <= SLACK_MAX_MESSAGE_LEN for call in fake_web.chat_post_calls)
+    assert all(
+        len(str(call["text"])) <= SLACK_MAX_MESSAGE_LEN for call in fake_web.chat_post_calls
+    )
 
 
 @pytest.mark.asyncio
@@ -217,10 +181,7 @@ async def test_send_renders_buttons_on_last_message_chunk() -> None:
 
     await channel.send(
         OutboundMessage(
-            channel="slack",
-            chat_id="C123",
-            content="Choose one",
-            buttons=[["Yes", "No"]],
+            channel="slack", chat_id="C123", content="Choose one", buttons=[["Yes", "No"]]
         )
     )
 
@@ -257,9 +218,7 @@ async def test_send_updates_reaction_when_final_response_sent() -> None:
             channel="slack",
             chat_id="C123",
             content="done",
-            metadata={
-                "slack": {"event": {"ts": "1700000000.000100"}, "channel_type": "channel"},
-            },
+            metadata={"slack": {"event": {"ts": "1700000000.000100"}, "channel_type": "channel"}},
         )
     )
 
@@ -283,13 +242,7 @@ async def test_send_resolves_channel_name_to_channel_id() -> None:
     ]
     channel._web_client = fake_web
 
-    await channel.send(
-        OutboundMessage(
-            channel="slack",
-            chat_id="#channel_x",
-            content="hello",
-        )
-    )
+    await channel.send(OutboundMessage(channel="slack", chat_id="#channel_x", content="hello"))
 
     assert fake_web.chat_post_calls == [{"channel": "C999", "text": "hello", "thread_ts": None}]
     assert len(fake_web.conversations_list_calls) == 1
@@ -301,26 +254,14 @@ async def test_send_resolves_user_handle_to_dm_channel() -> None:
     fake_web = _FakeAsyncWebClient()
     fake_web._users_pages = [
         {
-            "members": [
-                {
-                    "id": "U234",
-                    "name": "alice",
-                    "profile": {"display_name": "Alice"},
-                }
-            ],
+            "members": [{"id": "U234", "name": "alice", "profile": {"display_name": "Alice"}}],
             "response_metadata": {"next_cursor": ""},
         }
     ]
     fake_web._open_dm_response = {"channel": {"id": "D234"}}
     channel._web_client = fake_web
 
-    await channel.send(
-        OutboundMessage(
-            channel="slack",
-            chat_id="@alice",
-            content="hello",
-        )
-    )
+    await channel.send(OutboundMessage(channel="slack", chat_id="@alice", content="hello"))
 
     assert fake_web.conversations_open_calls == [{"users": "U234"}]
     assert fake_web.chat_post_calls == [{"channel": "D234", "text": "hello", "thread_ts": None}]
@@ -347,7 +288,7 @@ async def test_send_updates_reaction_on_origin_channel_for_cross_channel_send() 
                 "slack": {
                     "event": {"ts": "1700000000.000100", "channel": "D_ORIGIN"},
                     "channel_type": "im",
-                },
+                }
             },
         )
     )
@@ -383,7 +324,7 @@ async def test_send_does_not_reuse_origin_thread_ts_for_cross_channel_send() -> 
                     "event": {"ts": "1700000000.000100", "channel": "C_ORIGIN"},
                     "thread_ts": "1700000000.000200",
                     "channel_type": "channel",
-                },
+                }
             },
         )
     )
@@ -399,11 +340,7 @@ async def test_send_raises_when_named_target_cannot_be_resolved() -> None:
 
     with pytest.raises(ValueError, match="was not found"):
         await channel.send(
-            OutboundMessage(
-                channel="slack",
-                chat_id="#missing-channel",
-                content="hello",
-            )
+            OutboundMessage(channel="slack", chat_id="#missing-channel", content="hello")
         )
 
 
@@ -626,9 +563,7 @@ def test_slack_download_rejects_login_html() -> None:
         content=b"<!doctype html><html><title>Sign in to Slack</title>",
     )
     markdown_response = httpx.Response(
-        200,
-        headers={"content-type": "text/markdown"},
-        content=b"# PR Extraction Guide\n",
+        200, headers={"content-type": "text/markdown"}, content=b"# PR Extraction Guide\n"
     )
 
     assert SlackChannel._looks_like_html_download(html_response) is True
@@ -638,7 +573,7 @@ def test_slack_download_rejects_login_html() -> None:
 def test_slack_download_failure_marker_is_actionable() -> None:
     marker = SlackChannel._download_failure_marker("image", "screenshot.png", "download failed")
 
-    assert "not available to nanobot" in marker
+    assert "not available to vtx_claw" in marker
     assert "files:read" in marker
     assert "reinstall the Slack app" in marker
 

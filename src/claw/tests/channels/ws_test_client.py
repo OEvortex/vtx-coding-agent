@@ -1,4 +1,4 @@
-"""Lightweight WebSocket test client for integration testing the nanobot WebSocket channel.
+"""Lightweight WebSocket test client for integration testing the vtx_claw WebSocket channel.
 
 Provides an async ``WsTestClient`` class and token-issuance helpers that
 integration tests can import and use directly::
@@ -90,10 +90,7 @@ class WsTestClient:
         self._ws: ClientConnection | None = None
 
     async def connect(self) -> None:
-        self._ws = await websockets.connect(
-            self._uri,
-            additional_headers=self._extra_headers,
-        )
+        self._ws = await websockets.connect(self._uri, additional_headers=self._extra_headers)
 
     async def close(self) -> None:
         if self._ws:
@@ -187,10 +184,7 @@ class WsTestClient:
 
 
 async def issue_token(
-    host: str = "127.0.0.1",
-    port: int = 8765,
-    issue_path: str = "/auth/token",
-    secret: str = "",
+    host: str = "127.0.0.1", port: int = 8765, issue_path: str = "/auth/token", secret: str = ""
 ) -> tuple[dict[str, Any] | None, int]:
     """Request a short-lived token from the token-issue HTTP endpoint.
 
@@ -211,10 +205,7 @@ async def issue_token(
 
 
 async def issue_token_ok(
-    host: str = "127.0.0.1",
-    port: int = 8765,
-    issue_path: str = "/auth/token",
-    secret: str = "",
+    host: str = "127.0.0.1", port: int = 8765, issue_path: str = "/auth/token", secret: str = ""
 ) -> str:
     """Request a token, asserting success, and return the token string."""
     (data, status) = await issue_token(host, port, issue_path, secret)

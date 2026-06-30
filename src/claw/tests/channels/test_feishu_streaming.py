@@ -6,9 +6,9 @@ from unittest.mock import MagicMock
 
 import pytest
 
-from nanobot.bus.events import OutboundMessage
-from nanobot.bus.queue import MessageBus
-from nanobot.channels.feishu import FeishuChannel, FeishuConfig, _FeishuStreamBuf
+from vtx_claw.bus.events import OutboundMessage
+from vtx_claw.bus.queue import MessageBus
+from vtx_claw.channels.feishu import FeishuChannel, FeishuConfig, _FeishuStreamBuf
 
 
 def _make_channel(streaming: bool = True, reply_to_message: bool = False) -> FeishuChannel:
@@ -192,9 +192,7 @@ class TestSendDelta:
         ch._client.cardkit.v1.card_element.content.return_value = _mock_content_response()
 
         await ch.send_delta(
-            "oc_chat1",
-            "Hello ",
-            metadata={"message_id": "om_001", "chat_type": "group"},
+            "oc_chat1", "Hello ", metadata={"message_id": "om_001", "chat_type": "group"}
         )
 
         ch._client.im.v1.message.create.assert_called_once()
@@ -230,9 +228,7 @@ class TestSendDelta:
         ch._client.cardkit.v1.card_element.content.return_value = _mock_content_response()
 
         await ch.send_delta(
-            "oc_chat1",
-            "Hello ",
-            metadata={"message_id": "om_001", "chat_type": "group"},
+            "oc_chat1", "Hello ", metadata={"message_id": "om_001", "chat_type": "group"}
         )
 
         ch._client.im.v1.message.reply.assert_called_once()
@@ -272,10 +268,7 @@ class TestSendDelta:
     async def test_stream_end_sends_final_update(self):
         ch = _make_channel()
         ch._stream_bufs["oc_chat1"] = _FeishuStreamBuf(
-            text="Final content",
-            card_id="card_1",
-            sequence=3,
-            last_edit=0.0,
+            text="Final content", card_id="card_1", sequence=3, last_edit=0.0
         )
         ch._client.cardkit.v1.card_element.content.return_value = _mock_content_response()
         ch._client.cardkit.v1.card.settings.return_value = _mock_content_response()
@@ -293,10 +286,7 @@ class TestSendDelta:
         """If card creation failed, stream_end falls back to a plain card message."""
         ch = _make_channel()
         ch._stream_bufs["oc_chat1"] = _FeishuStreamBuf(
-            text="Fallback content",
-            card_id=None,
-            sequence=0,
-            last_edit=0.0,
+            text="Fallback content", card_id=None, sequence=0, last_edit=0.0
         )
         ch._client.im.v1.message.create.return_value = _mock_send_response("om_fb")
 
@@ -310,10 +300,7 @@ class TestSendDelta:
     async def test_stream_end_fallback_group_uses_create_when_reply_disabled(self):
         ch = _make_channel(reply_to_message=False)
         ch._stream_bufs["om_001"] = _FeishuStreamBuf(
-            text="Fallback content",
-            card_id=None,
-            sequence=0,
-            last_edit=0.0,
+            text="Fallback content", card_id=None, sequence=0, last_edit=0.0
         )
         ch._client.im.v1.message.create.return_value = _mock_send_response("om_fb")
 
@@ -330,10 +317,7 @@ class TestSendDelta:
     async def test_stream_end_fallback_keeps_existing_topic_when_reply_disabled(self):
         ch = _make_channel(reply_to_message=False)
         ch._stream_bufs["om_001"] = _FeishuStreamBuf(
-            text="Fallback content",
-            card_id=None,
-            sequence=0,
-            last_edit=0.0,
+            text="Fallback content", card_id=None, sequence=0, last_edit=0.0
         )
         reply_resp = MagicMock()
         reply_resp.success.return_value = True
@@ -359,10 +343,7 @@ class TestSendDelta:
     async def test_stream_end_fallback_group_replies_when_reply_enabled(self):
         ch = _make_channel(reply_to_message=True)
         ch._stream_bufs["om_001"] = _FeishuStreamBuf(
-            text="Fallback content",
-            card_id=None,
-            sequence=0,
-            last_edit=0.0,
+            text="Fallback content", card_id=None, sequence=0, last_edit=0.0
         )
         reply_resp = MagicMock()
         reply_resp.success.return_value = True
@@ -384,10 +365,7 @@ class TestSendDelta:
         """If streaming mode was closed (e.g. Feishu timeout), fall back to a regular card."""
         ch = _make_channel()
         ch._stream_bufs["oc_chat1"] = _FeishuStreamBuf(
-            text="Lost content",
-            card_id="card_1",
-            sequence=3,
-            last_edit=0.0,
+            text="Lost content", card_id="card_1", sequence=3, last_edit=0.0
         )
         ch._client.cardkit.v1.card_element.content.return_value = _mock_content_response(
             success=False
@@ -405,10 +383,7 @@ class TestSendDelta:
     async def test_stream_end_reopens_streaming_card_before_fallback(self):
         ch = _make_channel()
         ch._stream_bufs["oc_chat1"] = _FeishuStreamBuf(
-            text="Recovered content",
-            card_id="card_1",
-            sequence=3,
-            last_edit=0.0,
+            text="Recovered content", card_id="card_1", sequence=3, last_edit=0.0
         )
         ch._client.cardkit.v1.card_element.content.side_effect = [
             _mock_content_response(False),
@@ -467,10 +442,7 @@ class TestToolHintInlineStreaming:
         """With an active streaming buffer, tool hint appends to the card."""
         ch = _make_channel()
         ch._stream_bufs["oc_chat1"] = _FeishuStreamBuf(
-            text="Partial answer",
-            card_id="card_1",
-            sequence=2,
-            last_edit=0.0,
+            text="Partial answer", card_id="card_1", sequence=2, last_edit=0.0
         )
         ch._client.cardkit.v1.card_element.content.return_value = _mock_content_response()
 
@@ -590,10 +562,7 @@ class TestToolHintInlineStreaming:
         """When multiple tool hints arrive consecutively, each appends to the card."""
         ch = _make_channel()
         ch._stream_bufs["oc_chat1"] = _FeishuStreamBuf(
-            text="Partial answer",
-            card_id="card_1",
-            sequence=2,
-            last_edit=0.0,
+            text="Partial answer", card_id="card_1", sequence=2, last_edit=0.0
         )
         ch._client.cardkit.v1.card_element.content.return_value = _mock_content_response()
 
@@ -644,10 +613,7 @@ class TestToolHintInlineStreaming:
         """Empty or whitespace-only tool hint content is silently ignored."""
         ch = _make_channel()
         ch._stream_bufs["oc_chat1"] = _FeishuStreamBuf(
-            text="Partial answer",
-            card_id="card_1",
-            sequence=2,
-            last_edit=0.0,
+            text="Partial answer", card_id="card_1", sequence=2, last_edit=0.0
         )
 
         for content in ("", "   ", "\t\n"):

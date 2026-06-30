@@ -2,8 +2,8 @@ from __future__ import annotations
 
 from typing import Any
 
-from nanobot.providers.anthropic_provider import AnthropicProvider
-from nanobot.providers.openai_compat_provider import OpenAICompatProvider
+from vtx_claw.providers.anthropic_provider import AnthropicProvider
+from vtx_claw.providers.openai_compat_provider import OpenAICompatProvider
 
 
 def _openai_tools(*names: str) -> list[dict[str, Any]]:
@@ -54,8 +54,7 @@ def test_openai_compat_marks_builtin_boundary_and_tail_tool() -> None:
         {"role": "user", "content": "user"},
     ]
     _, marked_tools = OpenAICompatProvider._apply_cache_control(
-        messages,
-        _openai_tools("read_file", "write_file", "mcp_fs_ls", "mcp_git_status"),
+        messages, _openai_tools("read_file", "write_file", "mcp_fs_ls", "mcp_git_status")
     )
     assert _marked_openai_tool_names(marked_tools) == ["write_file", "mcp_git_status"]
 
@@ -81,7 +80,6 @@ def test_openai_compat_marks_only_tail_without_mcp() -> None:
         {"role": "user", "content": "user"},
     ]
     _, marked_tools = OpenAICompatProvider._apply_cache_control(
-        messages,
-        _openai_tools("read_file", "write_file"),
+        messages, _openai_tools("read_file", "write_file")
     )
     assert _marked_openai_tool_names(marked_tools) == ["write_file"]

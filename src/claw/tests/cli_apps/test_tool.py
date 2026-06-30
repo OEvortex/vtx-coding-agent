@@ -6,22 +6,16 @@ import subprocess
 import time
 from pathlib import Path
 
-from nanobot.agent.tools.cli_apps import CliAppsTool
-from nanobot.apps.cli.service import CliAppManager, CliAppsRuntimeConfig
+from vtx_claw.agent.tools.cli_apps import CliAppsTool
+from vtx_claw.apps.cli.service import CliAppManager, CliAppsRuntimeConfig
 
 
 def _write_cache(path: Path, registry: dict) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(
-        json.dumps({"_cached_at": time.time(), "data": registry}),
-        encoding="utf-8",
-    )
+    path.write_text(json.dumps({"_cached_at": time.time(), "data": registry}), encoding="utf-8")
 
 
-def test_run_cli_app_uses_installed_registry_app(
-    tmp_path: Path,
-    monkeypatch,
-) -> None:
+def test_run_cli_app_uses_installed_registry_app(tmp_path: Path, monkeypatch) -> None:
     workspace = tmp_path / "workspace"
     workspace.mkdir()
     data_dir = tmp_path / "data"
@@ -47,21 +41,16 @@ def test_run_cli_app_uses_installed_registry_app(
     )
     resolved = str(tmp_path / "bin" / "cli-anything-gimp")
     monkeypatch.setattr(
-        "nanobot.apps.cli.service.shutil.which",
+        "vtx_claw.apps.cli.service.shutil.which",
         lambda entry: resolved if entry == "cli-anything-gimp" else None,
     )
 
     def fake_run(argv: list[str], **kwargs: object) -> subprocess.CompletedProcess[str]:
         assert "shell" not in kwargs or kwargs["shell"] is False
-        return subprocess.CompletedProcess(
-            argv,
-            0,
-            stdout="tool:" + " ".join(argv[1:]),
-            stderr="",
-        )
+        return subprocess.CompletedProcess(argv, 0, stdout="tool:" + " ".join(argv[1:]), stderr="")
 
-    monkeypatch.setattr("nanobot.apps.cli.service.subprocess.run", fake_run)
-    monkeypatch.setattr("nanobot.apps.cli.service.get_runtime_subdir", lambda _name: data_dir)
+    monkeypatch.setattr("vtx_claw.apps.cli.service.subprocess.run", fake_run)
+    monkeypatch.setattr("vtx_claw.apps.cli.service.get_runtime_subdir", lambda _name: data_dir)
 
     tool = CliAppsTool(
         workspace=workspace,
@@ -71,12 +60,7 @@ def test_run_cli_app_uses_installed_registry_app(
     assert tool.name == "run_cli_app"
 
     result = asyncio.run(
-        tool.execute(
-            name="gimp",
-            args=["project", "list"],
-            json=True,
-            working_dir=str(workspace),
-        )
+        tool.execute(name="gimp", args=["project", "list"], json=True, working_dir=str(workspace))
     )
 
     assert "CLI app 'gimp' exited 0" in result
@@ -104,7 +88,7 @@ def test_run_cli_app_rejects_uninstalled_app(tmp_path: Path, monkeypatch) -> Non
     _write_cache(data_dir / "harness_registry_cache.json", registry)
     _write_cache(data_dir / "public_registry_cache.json", {"meta": {}, "clis": []})
     _write_cache(data_dir / "extensions_registry_cache.json", {"meta": {}, "clis": []})
-    monkeypatch.setattr("nanobot.apps.cli.service.get_runtime_subdir", lambda _name: data_dir)
+    monkeypatch.setattr("vtx_claw.apps.cli.service.get_runtime_subdir", lambda _name: data_dir)
     tool = CliAppsTool(workspace=workspace, restrict_to_workspace=True)
 
     result = asyncio.run(tool.execute(name="gimp"))
@@ -121,7 +105,7 @@ def test_run_cli_app_description_names_only_settings_installed_apps(
     CliAppManager(workspace=workspace, data_dir=data_dir)._save_installed(
         {"drawio": {"entry_point": "cli-anything-drawio"}}
     )
-    monkeypatch.setattr("nanobot.apps.cli.service.get_runtime_subdir", lambda _name: data_dir)
+    monkeypatch.setattr("vtx_claw.apps.cli.service.get_runtime_subdir", lambda _name: data_dir)
 
     tool = CliAppsTool(workspace=workspace)
 

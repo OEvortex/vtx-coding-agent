@@ -4,29 +4,12 @@ from __future__ import annotations
 
 import pytest
 
-from nanobot.channels.websocket import (
-    _extract_data_url_mime,
-    _is_valid_chat_id,
-    _parse_envelope,
-)
+from vtx_claw.channels.websocket import _extract_data_url_mime, _is_valid_chat_id, _parse_envelope
 
 
 def test_chat_id_validator_accepts_only_compact_capability_keys() -> None:
-    valid = [
-        "a",
-        "A-Z_09:chat-id",
-        "x" * 64,
-    ]
-    invalid = [
-        "",
-        "x" * 65,
-        "../escape",
-        "chat/id",
-        "chat id",
-        "chat\nid",
-        None,
-        123,
-    ]
+    valid = ["a", "A-Z_09:chat-id", "x" * 64]
+    invalid = ["", "x" * 65, "../escape", "chat/id", "chat id", "chat\nid", None, 123]
 
     for value in valid:
         assert _is_valid_chat_id(value), value
@@ -47,8 +30,7 @@ def test_chat_id_validator_accepts_only_compact_capability_keys() -> None:
     ],
 )
 def test_parse_envelope_only_accepts_typed_json_objects(
-    raw: str,
-    expected_type: str | None,
+    raw: str, expected_type: str | None
 ) -> None:
     parsed = _parse_envelope(raw)
     if expected_type is None:
@@ -71,7 +53,6 @@ def test_parse_envelope_only_accepts_typed_json_objects(
     ],
 )
 def test_extract_data_url_mime_normalizes_only_base64_data_urls(
-    url: str,
-    expected: str | None,
+    url: str, expected: str | None
 ) -> None:
     assert _extract_data_url_mime(url) == expected

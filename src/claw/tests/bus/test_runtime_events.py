@@ -1,7 +1,7 @@
 import pytest
 
-from nanobot.bus.events import InboundMessage
-from nanobot.bus.runtime_events import (
+from vtx_claw.bus.events import InboundMessage
+from vtx_claw.bus.runtime_events import (
     RuntimeEventBus,
     RuntimeEventContext,
     RuntimeEventPublisher,
@@ -25,11 +25,7 @@ async def test_runtime_event_bus_filters_by_event_type() -> None:
     await bus.publish(RuntimeModelChanged(model="m", model_preset=None))
     await bus.publish(
         TurnRunStatusChanged(
-            context=RuntimeEventContext(
-                channel="cli",
-                chat_id="direct",
-                session_key="cli:direct",
-            ),
+            context=RuntimeEventContext(channel="cli", chat_id="direct", session_key="cli:direct"),
             status="running",
         )
     )
@@ -68,12 +64,7 @@ async def test_runtime_event_publisher_builds_context_from_inbound_message() -> 
     bus.subscribe(seen.append)
 
     await publisher.session_turn_started(msg, "websocket:chat-a")
-    await publisher.run_status_changed(
-        msg,
-        "websocket:chat-a",
-        "running",
-        started_at=12.5,
-    )
+    await publisher.run_status_changed(msg, "websocket:chat-a", "running", started_at=12.5)
 
     started = seen[0]
     running = seen[1]
@@ -99,16 +90,10 @@ async def test_runtime_event_publisher_consumes_turn_metadata_on_complete() -> N
     publisher.record_turn_latency("cli:direct", 123)
 
     await publisher.turn_completed(
-        channel="cli",
-        chat_id="direct",
-        session_key="cli:direct",
-        metadata={"source": "test"},
+        channel="cli", chat_id="direct", session_key="cli:direct", metadata={"source": "test"}
     )
     await publisher.turn_completed(
-        channel="cli",
-        chat_id="direct",
-        session_key="cli:direct",
-        metadata=None,
+        channel="cli", chat_id="direct", session_key="cli:direct", metadata=None
     )
 
     first = seen[0]

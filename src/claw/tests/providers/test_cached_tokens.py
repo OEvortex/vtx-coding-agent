@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from nanobot.providers.openai_compat_provider import OpenAICompatProvider
+from vtx_claw.providers.openai_compat_provider import OpenAICompatProvider
 
 
 class FakeUsage:
@@ -93,11 +93,7 @@ def test_extract_usage_no_cached_tokens_dict():
     p = _provider()
     response = {
         "choices": [_DICT_CHOICE],
-        "usage": {
-            "prompt_tokens": 1000,
-            "completion_tokens": 200,
-            "total_tokens": 1200,
-        },
+        "usage": {"prompt_tokens": 1000, "completion_tokens": 200, "total_tokens": 1200},
     }
     result = p._parse(response)
     assert "cached_tokens" not in result.usage
@@ -140,10 +136,7 @@ def test_extract_usage_deepseek_cached_tokens_obj():
     """prompt_cache_hit_tokens from a DeepSeek SDK object response."""
     p = _provider()
     usage_obj = FakeUsage(
-        prompt_tokens=1500,
-        completion_tokens=200,
-        total_tokens=1700,
-        prompt_cache_hit_tokens=1200,
+        prompt_tokens=1500, completion_tokens=200, total_tokens=1700, prompt_cache_hit_tokens=1200
     )
     response = FakeUsage(choices=[_FakeChoice()], usage=usage_obj)
     result = p._parse(response)
@@ -170,10 +163,7 @@ def test_extract_usage_stepfun_top_level_cached_tokens_obj():
     """StepFun/Moonshot: usage.cached_tokens as SDK object attribute."""
     p = _provider()
     usage_obj = FakeUsage(
-        prompt_tokens=591,
-        completion_tokens=120,
-        total_tokens=711,
-        cached_tokens=512,
+        prompt_tokens=591, completion_tokens=120, total_tokens=711, cached_tokens=512
     )
     response = FakeUsage(choices=[_FakeChoice()], usage=usage_obj)
     result = p._parse(response)
@@ -199,7 +189,7 @@ def test_extract_usage_priority_nested_over_top_level_dict():
 
 def test_anthropic_maps_cache_fields_to_cached_tokens():
     """Anthropic's cache_read_input_tokens should map to cached_tokens."""
-    from nanobot.providers.anthropic_provider import AnthropicProvider
+    from vtx_claw.providers.anthropic_provider import AnthropicProvider
 
     usage_obj = FakeUsage(
         input_tokens=800,
@@ -224,7 +214,7 @@ def test_anthropic_maps_cache_fields_to_cached_tokens():
 
 def test_anthropic_no_cache_fields():
     """Anthropic response without cache fields should not have cached_tokens."""
-    from nanobot.providers.anthropic_provider import AnthropicProvider
+    from vtx_claw.providers.anthropic_provider import AnthropicProvider
 
     usage_obj = FakeUsage(input_tokens=800, output_tokens=200)
     content_block = FakeUsage(type="text", text="hello")

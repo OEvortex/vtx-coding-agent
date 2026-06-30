@@ -2,9 +2,9 @@
 
 from unittest.mock import patch
 
-from nanobot.config.schema import Config, ProvidersConfig
-from nanobot.providers.openai_compat_provider import OpenAICompatProvider
-from nanobot.providers.registry import PROVIDERS, find_by_name
+from vtx_claw.config.schema import Config, ProvidersConfig
+from vtx_claw.providers.openai_compat_provider import OpenAICompatProvider
+from vtx_claw.providers.registry import PROVIDERS, find_by_name
 
 
 def test_ant_ling_config_field_exists() -> None:
@@ -35,16 +35,8 @@ def test_find_by_name_accepts_ant_ling_spellings() -> None:
 def test_ant_ling_model_auto_matches_with_default_api_base() -> None:
     config = Config.model_validate(
         {
-            "providers": {
-                "antLing": {
-                    "apiKey": "ling-key",
-                },
-            },
-            "agents": {
-                "defaults": {
-                    "model": "Ling-2.6-flash",
-                },
-            },
+            "providers": {"antLing": {"apiKey": "ling-key"}},
+            "agents": {"defaults": {"model": "Ling-2.6-flash"}},
         }
     )
 
@@ -55,11 +47,9 @@ def test_ant_ling_model_auto_matches_with_default_api_base() -> None:
 
 def test_ant_ling_preserves_official_model_name() -> None:
     spec = find_by_name("ant_ling")
-    with patch("nanobot.providers.openai_compat_provider.AsyncOpenAI"):
+    with patch("vtx_claw.providers.openai_compat_provider.AsyncOpenAI"):
         provider = OpenAICompatProvider(
-            api_key="ling-key",
-            default_model="Ling-2.6-flash",
-            spec=spec,
+            api_key="ling-key", default_model="Ling-2.6-flash", spec=spec
         )
 
     kwargs = provider._build_kwargs(

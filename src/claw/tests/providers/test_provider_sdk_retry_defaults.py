@@ -1,12 +1,12 @@
 from unittest.mock import patch
 
-from nanobot.providers.anthropic_provider import AnthropicProvider
-from nanobot.providers.azure_openai_provider import AzureOpenAIProvider
-from nanobot.providers.openai_compat_provider import OpenAICompatProvider
+from vtx_claw.providers.anthropic_provider import AnthropicProvider
+from vtx_claw.providers.azure_openai_provider import AzureOpenAIProvider
+from vtx_claw.providers.openai_compat_provider import OpenAICompatProvider
 
 
 async def test_openai_compat_disables_sdk_retries_by_default() -> None:
-    with patch("nanobot.providers.openai_compat_provider.AsyncOpenAI") as mock_client:
+    with patch("vtx_claw.providers.openai_compat_provider.AsyncOpenAI") as mock_client:
         provider = OpenAICompatProvider(api_key="sk-test", default_model="gpt-4o")
         await provider._ensure_client()
 
@@ -35,11 +35,9 @@ def test_anthropic_normalizes_versioned_base_url() -> None:
 
 
 def test_azure_openai_disables_sdk_retries_by_default() -> None:
-    with patch("nanobot.providers.azure_openai_provider.AsyncOpenAI") as mock_client:
+    with patch("vtx_claw.providers.azure_openai_provider.AsyncOpenAI") as mock_client:
         AzureOpenAIProvider(
-            api_key="sk-test",
-            api_base="https://example.openai.azure.com",
-            default_model="gpt-4.1",
+            api_key="sk-test", api_base="https://example.openai.azure.com", default_model="gpt-4.1"
         )
 
     kwargs = mock_client.call_args.kwargs

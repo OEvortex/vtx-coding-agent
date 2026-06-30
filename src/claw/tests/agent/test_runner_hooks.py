@@ -7,16 +7,16 @@ from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
-from nanobot.config.schema import AgentDefaults
-from nanobot.providers.base import LLMProvider, LLMResponse, ToolCallRequest
+from vtx_claw.config.schema import AgentDefaults
+from vtx_claw.providers.base import LLMProvider, LLMResponse, ToolCallRequest
 
 _MAX_TOOL_RESULT_CHARS = AgentDefaults().max_tool_result_chars
 
 
 @pytest.mark.asyncio
 async def test_runner_calls_hooks_in_order():
-    from nanobot.agent.hook import AgentHook, AgentHookContext
-    from nanobot.agent.runner import AgentRunner, AgentRunSpec
+    from vtx_claw.agent.hook import AgentHook, AgentHookContext
+    from vtx_claw.agent.runner import AgentRunner, AgentRunSpec
 
     provider = MagicMock(spec=LLMProvider)
     call_count = {"n": 0}
@@ -27,7 +27,9 @@ async def test_runner_calls_hooks_in_order():
         if call_count["n"] == 1:
             return LLMResponse(
                 content="thinking",
-                tool_calls=[ToolCallRequest(id="call_1", name="list_dir", arguments={"path": "."})],
+                tool_calls=[
+                    ToolCallRequest(id="call_1", name="list_dir", arguments={"path": "."})
+                ],
             )
         return LLMResponse(content="done", tool_calls=[], usage={})
 
@@ -42,11 +44,7 @@ async def test_runner_calls_hooks_in_order():
 
         async def before_execute_tools(self, context: AgentHookContext) -> None:
             events.append(
-                (
-                    "before_execute_tools",
-                    context.iteration,
-                    [tc.name for tc in context.tool_calls],
-                )
+                ("before_execute_tools", context.iteration, [tc.name for tc in context.tool_calls])
             )
 
         async def after_iteration(self, context: AgentHookContext) -> None:
@@ -97,8 +95,8 @@ async def test_runner_calls_hooks_in_order():
 
 @pytest.mark.asyncio
 async def test_runner_streaming_hook_receives_deltas_and_end_signal():
-    from nanobot.agent.hook import AgentHook, AgentHookContext
-    from nanobot.agent.runner import AgentRunner, AgentRunSpec
+    from vtx_claw.agent.hook import AgentHook, AgentHookContext
+    from vtx_claw.agent.runner import AgentRunner, AgentRunSpec
 
     provider = MagicMock(spec=LLMProvider)
     streamed: list[str] = []
@@ -145,8 +143,8 @@ async def test_runner_streaming_hook_receives_deltas_and_end_signal():
 @pytest.mark.asyncio
 async def test_runner_passes_cached_tokens_to_hook_context():
     """Hook context.usage should contain cached_tokens."""
-    from nanobot.agent.hook import AgentHook, AgentHookContext
-    from nanobot.agent.runner import AgentRunner, AgentRunSpec
+    from vtx_claw.agent.hook import AgentHook, AgentHookContext
+    from vtx_claw.agent.runner import AgentRunner, AgentRunSpec
 
     provider = MagicMock(spec=LLMProvider)
     captured_usage: list[dict] = []
@@ -185,8 +183,8 @@ async def test_runner_passes_cached_tokens_to_hook_context():
 
 @pytest.mark.asyncio
 async def test_runner_estimates_usage_when_provider_omits_usage(monkeypatch):
-    from nanobot.agent.hook import AgentHook, AgentHookContext
-    from nanobot.agent.runner import AgentRunner, AgentRunSpec
+    from vtx_claw.agent.hook import AgentHook, AgentHookContext
+    from vtx_claw.agent.runner import AgentRunner, AgentRunSpec
 
     provider = MagicMock(spec=LLMProvider)
     captured_usage: list[dict] = []
@@ -202,10 +200,10 @@ async def test_runner_estimates_usage_when_provider_omits_usage(monkeypatch):
     tools = MagicMock()
     tools.get_definitions.return_value = [{"type": "function", "function": {"name": "lookup"}}]
     monkeypatch.setattr(
-        "nanobot.agent.runner.estimate_prompt_tokens_chain",
+        "vtx_claw.agent.runner.estimate_prompt_tokens_chain",
         lambda provider, model, messages, tools: (123, "test"),
     )
-    monkeypatch.setattr("nanobot.agent.runner.estimate_message_tokens", lambda message: 7)
+    monkeypatch.setattr("vtx_claw.agent.runner.estimate_message_tokens", lambda message: 7)
 
     runner = AgentRunner(provider)
     result = await runner.run(
@@ -228,8 +226,8 @@ async def test_runner_estimates_usage_when_provider_omits_usage(monkeypatch):
 
 @pytest.mark.asyncio
 async def test_runner_calls_run_level_hooks_on_success():
-    from nanobot.agent.hook import AgentHook, AgentRunHookContext
-    from nanobot.agent.runner import AgentRunner, AgentRunSpec
+    from vtx_claw.agent.hook import AgentHook, AgentRunHookContext
+    from vtx_claw.agent.runner import AgentRunner, AgentRunSpec
 
     provider = MagicMock(spec=LLMProvider)
     events: list[tuple] = []
@@ -237,9 +235,7 @@ async def test_runner_calls_run_level_hooks_on_success():
     async def chat_with_retry(**kwargs):
         events.append(("request_messages", list(kwargs["messages"])))
         return LLMResponse(
-            content="done",
-            tool_calls=[],
-            usage={"prompt_tokens": 3, "completion_tokens": 2},
+            content="done", tool_calls=[], usage={"prompt_tokens": 3, "completion_tokens": 2}
         )
 
     provider.chat_with_retry = chat_with_retry
@@ -290,12 +286,7 @@ async def test_runner_calls_run_level_hooks_on_success():
             "done",
             "completed",
             None,
-            {
-                "prompt_tokens": 3,
-                "completion_tokens": 2,
-                "total_tokens": 5,
-                "provider_tokens": 5,
-            },
+            {"prompt_tokens": 3, "completion_tokens": 2, "total_tokens": 5, "provider_tokens": 5},
             ["user", "assistant"],
         ),
         ("on_finally", "completed", None),
@@ -304,8 +295,8 @@ async def test_runner_calls_run_level_hooks_on_success():
 
 @pytest.mark.asyncio
 async def test_runner_run_level_context_is_detached_snapshot():
-    from nanobot.agent.hook import AgentHook, AgentRunHookContext
-    from nanobot.agent.runner import AgentRunner, AgentRunSpec
+    from vtx_claw.agent.hook import AgentHook, AgentRunHookContext
+    from vtx_claw.agent.runner import AgentRunner, AgentRunSpec
 
     provider = MagicMock(spec=LLMProvider)
     call_count = {"n": 0}
@@ -317,7 +308,9 @@ async def test_runner_run_level_context_is_detached_snapshot():
         if call_count["n"] == 1:
             return LLMResponse(
                 content="thinking",
-                tool_calls=[ToolCallRequest(id="call_1", name="list_dir", arguments={"path": "."})],
+                tool_calls=[
+                    ToolCallRequest(id="call_1", name="list_dir", arguments={"path": "."})
+                ],
             )
         return LLMResponse(content="done", tool_calls=[], usage={})
 
@@ -358,8 +351,8 @@ async def test_runner_run_level_context_is_detached_snapshot():
 
 @pytest.mark.asyncio
 async def test_runner_calls_on_error_for_model_error_result():
-    from nanobot.agent.hook import AgentHook, AgentRunHookContext
-    from nanobot.agent.runner import AgentRunner, AgentRunSpec
+    from vtx_claw.agent.hook import AgentHook, AgentRunHookContext
+    from vtx_claw.agent.runner import AgentRunner, AgentRunSpec
 
     provider = MagicMock(spec=LLMProvider)
     events: list[tuple] = []
@@ -408,8 +401,8 @@ async def test_runner_calls_on_error_for_model_error_result():
 
 @pytest.mark.asyncio
 async def test_runner_calls_on_error_and_finally_for_unhandled_exception():
-    from nanobot.agent.hook import AgentHook, AgentRunHookContext
-    from nanobot.agent.runner import AgentRunner, AgentRunSpec
+    from vtx_claw.agent.hook import AgentHook, AgentRunHookContext
+    from vtx_claw.agent.runner import AgentRunner, AgentRunSpec
 
     provider = MagicMock(spec=LLMProvider)
     events: list[tuple] = []
@@ -463,8 +456,8 @@ async def test_runner_calls_on_error_and_finally_for_unhandled_exception():
 
 @pytest.mark.asyncio
 async def test_runner_preserves_original_exception_when_finally_hook_fails():
-    from nanobot.agent.hook import AgentHook, AgentRunHookContext
-    from nanobot.agent.runner import AgentRunner, AgentRunSpec
+    from vtx_claw.agent.hook import AgentHook, AgentRunHookContext
+    from vtx_claw.agent.runner import AgentRunner, AgentRunSpec
 
     provider = MagicMock(spec=LLMProvider)
 
@@ -497,8 +490,8 @@ async def test_runner_preserves_original_exception_when_finally_hook_fails():
 async def test_runner_does_not_report_cancellation_as_error():
     import asyncio
 
-    from nanobot.agent.hook import AgentHook, AgentRunHookContext
-    from nanobot.agent.runner import AgentRunner, AgentRunSpec
+    from vtx_claw.agent.hook import AgentHook, AgentRunHookContext
+    from vtx_claw.agent.runner import AgentRunner, AgentRunSpec
 
     provider = MagicMock(spec=LLMProvider)
     events: list[tuple] = []
@@ -543,18 +536,15 @@ async def test_runner_does_not_report_cancellation_as_error():
             )
         )
 
-    assert events == [
-        ("before_run", None),
-        ("on_finally", "cancelled", None, "CancelledError"),
-    ]
+    assert events == [("before_run", None), ("on_finally", "cancelled", None, "CancelledError")]
 
 
 @pytest.mark.asyncio
 async def test_runner_preserves_cancellation_when_finally_hook_fails():
     import asyncio
 
-    from nanobot.agent.hook import AgentHook, AgentRunHookContext
-    from nanobot.agent.runner import AgentRunner, AgentRunSpec
+    from vtx_claw.agent.hook import AgentHook, AgentRunHookContext
+    from vtx_claw.agent.runner import AgentRunner, AgentRunSpec
 
     provider = MagicMock(spec=LLMProvider)
 

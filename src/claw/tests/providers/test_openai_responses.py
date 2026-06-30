@@ -5,13 +5,13 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from nanobot.providers.openai_responses.converters import (
+from vtx_claw.providers.openai_responses.converters import (
     convert_messages,
     convert_tools,
     convert_user_message,
     split_tool_call_id,
 )
-from nanobot.providers.openai_responses.parsing import (
+from vtx_claw.providers.openai_responses.parsing import (
     consume_sdk_stream,
     consume_sse,
     consume_sse_with_reasoning,
@@ -60,12 +60,10 @@ class TestConvertUserMessage:
 
     def test_image_url_block(self):
         result = convert_user_message(
-            [
-                {"type": "image_url", "image_url": {"url": "https://img.example/a.png"}},
-            ]
+            [{"type": "image_url", "image_url": {"url": "https://img.example/a.png"}}]
         )
         assert result["content"] == [
-            {"type": "input_image", "image_url": "https://img.example/a.png", "detail": "auto"},
+            {"type": "input_image", "image_url": "https://img.example/a.png", "detail": "auto"}
         ]
 
     def test_mixed_text_and_image(self):
@@ -94,9 +92,7 @@ class TestConvertUserMessage:
     def test_meta_fields_not_leaked(self):
         """_meta on content blocks must never appear in converted output."""
         result = convert_user_message(
-            [
-                {"type": "text", "text": "hi", "_meta": {"path": "/tmp/x"}},
-            ]
+            [{"type": "text", "text": "hi", "_meta": {"path": "/tmp/x"}}]
         )
         assert "_meta" not in result["content"][0]
 
@@ -136,11 +132,7 @@ class TestConvertMessages:
         assert items[0]["content"][0]["type"] == "input_text"
 
     def test_assistant_text_message(self):
-        _, items = convert_messages(
-            [
-                {"role": "assistant", "content": "I'll help"},
-            ]
-        )
+        _, items = convert_messages([{"role": "assistant", "content": "I'll help"}])
         assert items[0]["type"] == "message"
         assert items[0]["role"] == "assistant"
         assert items[0]["content"][0]["type"] == "output_text"
@@ -197,10 +189,7 @@ class TestConvertMessages:
                     "role": "assistant",
                     "content": None,
                     "tool_calls": [
-                        {
-                            "id": "call_a|rs_same",
-                            "function": {"name": "first", "arguments": "{}"},
-                        }
+                        {"id": "call_a|rs_same", "function": {"name": "first", "arguments": "{}"}}
                     ],
                 },
                 {"role": "tool", "tool_call_id": "call_a|rs_same", "content": "ok"},
@@ -208,10 +197,7 @@ class TestConvertMessages:
                     "role": "assistant",
                     "content": None,
                     "tool_calls": [
-                        {
-                            "id": "call_b|rs_same",
-                            "function": {"name": "second", "arguments": "{}"},
-                        }
+                        {"id": "call_b|rs_same", "function": {"name": "second", "arguments": "{}"}}
                     ],
                 },
                 {"role": "tool", "tool_call_id": "call_b|rs_same", "content": "ok"},
@@ -254,13 +240,7 @@ class TestConvertMessages:
 
     def test_tool_message(self):
         _, items = convert_messages(
-            [
-                {
-                    "role": "tool",
-                    "tool_call_id": "call_abc",
-                    "content": "result text",
-                }
-            ]
+            [{"role": "tool", "tool_call_id": "call_abc", "content": "result text"}]
         )
         assert items[0]["type"] == "function_call_output"
         assert items[0]["call_id"] == "call_abc"
@@ -268,13 +248,7 @@ class TestConvertMessages:
 
     def test_tool_message_dict_content(self):
         _, items = convert_messages(
-            [
-                {
-                    "role": "tool",
-                    "tool_call_id": "call_1",
-                    "content": {"key": "value"},
-                }
-            ]
+            [{"role": "tool", "tool_call_id": "call_1", "content": {"key": "value"}}]
         )
         assert items[0]["output"] == '{"key": "value"}'
 
@@ -452,7 +426,7 @@ class TestParseResponseOutput:
             "status": "completed",
             "usage": {},
         }
-        with patch("nanobot.providers.openai_responses.parsing.logger") as mock_logger:
+        with patch("vtx_claw.providers.openai_responses.parsing.logger") as mock_logger:
             result = parse_response_output(resp)
         assert result.tool_calls[0].arguments == "{bad json"
         mock_logger.warning.assert_called_once()
@@ -591,8 +565,7 @@ class TestConsumeSse:
             deltas.append(delta)
 
         content, tool_calls, finish_reason, usage, reasoning = await consume_sse_with_reasoning(
-            response,
-            on_reasoning_delta=on_reasoning,
+            response, on_reasoning_delta=on_reasoning
         )
 
         assert content == "answer"
@@ -617,10 +590,10 @@ class TestConsumeSse:
                                     {"type": "summary_text", "text": "cached "},
                                     {"type": "summary_text", "text": "summary"},
                                 ],
-                            },
+                            }
                         ],
                     },
-                },
+                }
             ]
         )
 
@@ -648,8 +621,7 @@ class TestConsumeSse:
             deltas.append(delta)
 
         _, _, _, _, reasoning = await consume_sse_with_reasoning(
-            response,
-            on_reasoning_delta=on_reasoning,
+            response, on_reasoning_delta=on_reasoning
         )
 
         assert reasoning == "done summary"
@@ -681,7 +653,7 @@ class TestConsumeSse:
                         "status": "completed",
                         "usage": {"input_tokens": 10, "output_tokens": 5, "total_tokens": 15},
                     },
-                },
+                }
             ]
         )
 
@@ -789,7 +761,7 @@ class TestConsumeSdkStream:
             for e in [ev1, ev2, ev3]:
                 yield e
 
-        content, tool_calls, finish_reason, usage, reasoning = await consume_sdk_stream(stream())
+        content, tool_calls, finish_reason, _usage, _reasoning = await consume_sdk_stream(stream())
         assert content == "Hello world"
         assert tool_calls == []
         assert finish_reason == "stop"
@@ -832,7 +804,7 @@ class TestConsumeSdkStream:
             for e in [ev1, ev2, ev3, ev4, ev5]:
                 yield e
 
-        content, tool_calls, finish_reason, usage, reasoning = await consume_sdk_stream(stream())
+        content, tool_calls, _finish_reason, _usage, _reasoning = await consume_sdk_stream(stream())
         assert content == ""
         assert len(tool_calls) == 1
         assert tool_calls[0].name == "get_weather"
@@ -849,9 +821,7 @@ class TestConsumeSdkStream:
             delta='{"path":"a.txt","content":"',
         )
         ev3 = MagicMock(
-            type="response.function_call_arguments.delta",
-            call_id="c1",
-            delta="hello\\n",
+            type="response.function_call_arguments.delta", call_id="c1", delta="hello\\n"
         )
         ev4 = MagicMock(
             type="response.function_call_arguments.done",
@@ -1014,7 +984,7 @@ class TestConsumeSdkStream:
             for e in [ev1, ev2, ev3, ev4]:
                 yield e
 
-        with patch("nanobot.providers.openai_responses.parsing.logger") as mock_logger:
+        with patch("vtx_claw.providers.openai_responses.parsing.logger") as mock_logger:
             _, tool_calls, _, _, _ = await consume_sdk_stream(stream())
         assert tool_calls[0].arguments == "{bad"
         mock_logger.warning.assert_called_once()

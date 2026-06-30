@@ -2,8 +2,8 @@ import asyncio
 
 import pytest
 
-from nanobot.bus.queue import MessageBus
-from nanobot.channels.napcat import NapcatChannel, NapcatConfig
+from vtx_claw.bus.queue import MessageBus
+from vtx_claw.channels.napcat import NapcatChannel, NapcatConfig
 
 
 class _FakeWs:
@@ -123,11 +123,7 @@ async def test_notice_with_invalid_ids_is_ignored(monkeypatch) -> None:
     monkeypatch.setattr(channel, "_lookup_member_name", fail_lookup)
 
     await channel._on_notice(
-        {
-            "notice_type": "group_increase",
-            "group_id": "not-an-int",
-            "user_id": "user1",
-        }
+        {"notice_type": "group_increase", "group_id": "not-an-int", "user_id": "user1"}
     )
 
     assert channel.bus.inbound_size == 0
@@ -138,10 +134,7 @@ async def test_download_image_rejects_redirects(tmp_path, monkeypatch) -> None:
     channel = _channel()
     channel._media_root = tmp_path
     channel._http = _FakeHttp(_FakeResponse(status=302))
-    monkeypatch.setattr(
-        "nanobot.channels.napcat.validate_url_target",
-        lambda _url: (True, ""),
-    )
+    monkeypatch.setattr("vtx_claw.channels.napcat.validate_url_target", lambda _url: (True, ""))
 
     result = await channel._download_image({"url": "https://example.com/a.png", "file": "a.png"})
 

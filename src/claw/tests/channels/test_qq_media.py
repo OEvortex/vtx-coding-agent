@@ -6,7 +6,7 @@ from unittest.mock import AsyncMock, patch
 import pytest
 
 try:
-    from nanobot.channels import qq
+    from vtx_claw.channels import qq
 
     QQ_AVAILABLE = getattr(qq, "QQ_AVAILABLE", False)
 except ImportError:
@@ -15,9 +15,9 @@ except ImportError:
 if not QQ_AVAILABLE:
     pytest.skip("QQ dependencies not installed (qq-botpy)", allow_module_level=True)
 
-from nanobot.bus.events import OutboundMessage
-from nanobot.bus.queue import MessageBus
-from nanobot.channels.qq import (
+from vtx_claw.bus.events import OutboundMessage
+from vtx_claw.bus.queue import MessageBus
+from vtx_claw.channels.qq import (
     QQ_FILE_TYPE_FILE,
     QQ_FILE_TYPE_IMAGE,
     QQChannel,
@@ -181,7 +181,9 @@ async def test_send_media_failure_falls_back_to_text() -> None:
 
     # Should have the failure text among the c2c calls
     failure_calls = [
-        c for c in channel._client.api.c2c_calls if "Attachment send failed" in c.get("content", "")
+        c
+        for c in channel._client.api.c2c_calls
+        if "Attachment send failed" in c.get("content", "")
     ]
     assert len(failure_calls) == 1
     assert "bad.png" in failure_calls[0]["content"]
@@ -191,10 +193,7 @@ async def test_send_media_failure_falls_back_to_text() -> None:
 async def test_on_message_unauthorized_c2c_pairs_before_attachments_and_ack() -> None:
     channel = QQChannel(
         QQConfig(
-            app_id="app",
-            secret="secret",
-            allow_from=["allowed-user"],
-            ack_message="Processing...",
+            app_id="app", secret="secret", allow_from=["allowed-user"], ack_message="Processing..."
         ),
         MessageBus(),
     )
@@ -213,10 +212,7 @@ async def test_on_message_unauthorized_c2c_pairs_before_attachments_and_ack() ->
 
     channel._handle_attachments.assert_not_awaited()
     channel._handle_message.assert_awaited_once_with(
-        sender_id="blocked-user",
-        chat_id="blocked-user",
-        content="",
-        is_dm=True,
+        sender_id="blocked-user", chat_id="blocked-user", content="", is_dm=True
     )
     assert channel._client.api.c2c_calls == []
 
@@ -225,10 +221,7 @@ async def test_on_message_unauthorized_c2c_pairs_before_attachments_and_ack() ->
 async def test_on_message_ignores_unauthorized_group_before_attachments_and_ack() -> None:
     channel = QQChannel(
         QQConfig(
-            app_id="app",
-            secret="secret",
-            allow_from=["allowed-user"],
-            ack_message="Processing...",
+            app_id="app", secret="secret", allow_from=["allowed-user"], ack_message="Processing..."
         ),
         MessageBus(),
     )
@@ -359,11 +352,7 @@ async def test_post_base64file_filters_response_to_file_info() -> None:
     """Response with file_info + extra fields must be filtered to only file_info."""
     channel = QQChannel(QQConfig(app_id="app", secret="secret"), MessageBus())
     channel._client = _FakeClient(
-        http_return={
-            "file_info": "fi_123",
-            "file_uuid": "uuid_xxx",
-            "ttl": 3600,
-        }
+        http_return={"file_info": "fi_123", "file_uuid": "uuid_xxx", "ttl": 3600}
     )
 
     result = await channel._post_base64file(

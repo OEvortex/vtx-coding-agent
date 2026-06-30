@@ -7,28 +7,20 @@ from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
-from nanobot.agent.loop import AgentLoop
-from nanobot.agent.tools.context import RequestContext
-from nanobot.agent.tools.long_task import (
-    CompleteGoalTool,
-    LongTaskTool,
-)
-from nanobot.bus.queue import MessageBus
-from nanobot.bus.runtime_events import RuntimeEventBus
-from nanobot.session.goal_state import GOAL_STATE_KEY
-from nanobot.session.manager import SessionManager
-from nanobot.session.webui_turns import WebuiTurnCoordinator
+from vtx_claw.agent.loop import AgentLoop
+from vtx_claw.agent.tools.context import RequestContext
+from vtx_claw.agent.tools.long_task import CompleteGoalTool, LongTaskTool
+from vtx_claw.bus.queue import MessageBus
+from vtx_claw.bus.runtime_events import RuntimeEventBus
+from vtx_claw.session.goal_state import GOAL_STATE_KEY
+from vtx_claw.session.manager import SessionManager
+from vtx_claw.session.webui_turns import WebuiTurnCoordinator
 
 
 def _tools(sm: SessionManager) -> tuple[LongTaskTool, CompleteGoalTool]:
     lt = LongTaskTool(sessions=sm)
     cg = CompleteGoalTool(sessions=sm)
-    rc = RequestContext(
-        channel="websocket",
-        chat_id="c1",
-        session_key="websocket:c1",
-        metadata={},
-    )
+    rc = RequestContext(channel="websocket", chat_id="c1", session_key="websocket:c1", metadata={})
     lt.set_context(rc)
     cg.set_context(rc)
     return lt, cg
@@ -124,17 +116,12 @@ async def test_long_task_publishes_goal_state_ws_after_save(tmp_path):
     bus.publish_outbound = AsyncMock()
     runtime_events = RuntimeEventBus()
     sm = SessionManager(tmp_path)
-    WebuiTurnCoordinator(
-        bus=bus,
-        sessions=sm,
-        schedule_background=lambda _coro: None,
-    ).subscribe(runtime_events)
+    WebuiTurnCoordinator(bus=bus, sessions=sm, schedule_background=lambda _coro: None).subscribe(
+        runtime_events
+    )
     lt = LongTaskTool(sessions=sm, runtime_events=runtime_events)
     rc = RequestContext(
-        channel="websocket",
-        chat_id="chat-99",
-        session_key="websocket:chat-99",
-        metadata={},
+        channel="websocket", chat_id="chat-99", session_key="websocket:chat-99", metadata={}
     )
     lt.set_context(rc)
 
@@ -158,18 +145,13 @@ async def test_complete_goal_publishes_inactive_goal_state_ws(tmp_path):
     bus.publish_outbound = AsyncMock()
     runtime_events = RuntimeEventBus()
     sm = SessionManager(tmp_path)
-    WebuiTurnCoordinator(
-        bus=bus,
-        sessions=sm,
-        schedule_background=lambda _coro: None,
-    ).subscribe(runtime_events)
+    WebuiTurnCoordinator(bus=bus, sessions=sm, schedule_background=lambda _coro: None).subscribe(
+        runtime_events
+    )
     lt = LongTaskTool(sessions=sm, runtime_events=runtime_events)
     cg = CompleteGoalTool(sessions=sm, runtime_events=runtime_events)
     rc = RequestContext(
-        channel="websocket",
-        chat_id="chat-z",
-        session_key="websocket:chat-z",
-        metadata={},
+        channel="websocket", chat_id="chat-z", session_key="websocket:chat-z", metadata={}
     )
     lt.set_context(rc)
     await lt.execute(goal="X")

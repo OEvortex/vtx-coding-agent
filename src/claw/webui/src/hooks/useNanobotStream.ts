@@ -9,7 +9,7 @@ import {
   toolTraceLinesFromEvents,
 } from "@/lib/tool-traces";
 import { hasPendingAgentActivity } from "@/lib/activity-timeline";
-import type { StreamError } from "@/lib/nanobot-client";
+import type { StreamError } from "@/lib/vtx-claw-client";
 import type {
   InboundEvent,
   OutboundCliAppMention,
@@ -448,7 +448,7 @@ export interface SendOptions {
   workspaceScope?: WorkspaceScopePayload | null;
 }
 
-export function useNanobotStream(
+export function useVtxClawStream(
   chatId: string | null,
   initialMessages: UIMessage[] = [],
   hasPendingToolCalls = false,

@@ -7,18 +7,15 @@ from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
-from nanobot.agent.loop import AgentLoop
-from nanobot.bus.events import InboundMessage
-from nanobot.bus.queue import MessageBus
-from nanobot.command import CommandContext
-from nanobot.config.schema import AgentDefaults
-from nanobot.providers.base import LLMResponse
+from vtx_claw.agent.loop import AgentLoop
+from vtx_claw.bus.events import InboundMessage
+from vtx_claw.bus.queue import MessageBus
+from vtx_claw.command import CommandContext
+from vtx_claw.config.schema import AgentDefaults
+from vtx_claw.providers.base import LLMResponse
 
 
-def _make_loop(
-    tmp_path: Path,
-    session_ttl_minutes: int = 15,
-) -> AgentLoop:
+def _make_loop(tmp_path: Path, session_ttl_minutes: int = 15) -> AgentLoop:
     """Create a minimal AgentLoop for testing."""
     bus = MessageBus()
     provider = MagicMock()
@@ -81,7 +78,7 @@ def _make_fake_compact(
     track_count: bool = False,
 ):
     """Return a fake compact_idle_session that mirrors the real method's session mutation."""
-    from nanobot.session.manager import Session as _Session
+    from vtx_claw.session.manager import Session as _Session
 
     state = {"count": 0}
 
@@ -103,10 +100,7 @@ def _make_fake_compact(
             metadata={},
             last_consolidated=0,
         )
-        result = probe.retain_recent_legal_suffix(
-            max_suffix,
-            extend_to_user=True,
-        )
+        result = probe.retain_recent_legal_suffix(max_suffix, extend_to_user=True)
         kept = probe.messages
         archive_msgs = result.dropped[result.already_consolidated_count :]
 
@@ -125,10 +119,7 @@ def _make_fake_compact(
                 track_archived.extend(archive_msgs)
 
         if s and s != "(nothing)":
-            session.metadata["_last_summary"] = {
-                "text": s,
-                "last_active": last_active.isoformat(),
-            }
+            session.metadata["_last_summary"] = {"text": s, "last_active": last_active.isoformat()}
 
         session.messages = kept
         session.last_consolidated = 0
@@ -185,7 +176,7 @@ class TestSessionTTLConfig:
 
     def test_session_file_cap_is_internal_constant(self):
         """Session file cap should remain an internal constant, not a config field."""
-        from nanobot.session.manager import FILE_MAX_MESSAGES
+        from vtx_claw.session.manager import FILE_MAX_MESSAGES
 
         assert FILE_MAX_MESSAGES == 2000
 
@@ -213,12 +204,7 @@ class TestAgentLoopTTLParam:
         loop._run_agent_loop = AsyncMock(return_value=("ok", [], [], "stop", False))
         loop._save_turn = MagicMock()
 
-        msg = InboundMessage(
-            channel="cli",
-            sender_id="u1",
-            chat_id="direct",
-            content="hello",
-        )
+        msg = InboundMessage(channel="cli", sender_id="u1", chat_id="direct", content="hello")
         await loop._process_message(msg)
         session.get_history.assert_called_once()
         kwargs = session.get_history.call_args.kwargs
@@ -233,22 +219,19 @@ class TestAgentLoopTTLParam:
 
         for i in range(4):
             msg = InboundMessage(
-                channel="cli",
-                sender_id="u1",
-                chat_id="direct",
-                content=f"hello {i}",
+                channel="cli", sender_id="u1", chat_id="direct", content=f"hello {i}"
             )
             await loop._process_message(msg)
 
         session = loop.sessions.get_or_create("cli:direct")
-        from nanobot.session.manager import FILE_MAX_MESSAGES
+        from vtx_claw.session.manager import FILE_MAX_MESSAGES
 
         assert len(session.messages) <= FILE_MAX_MESSAGES
 
     def test_session_enforce_file_cap_skips_archive_when_dropped_prefix_already_consolidated(
         self, tmp_path
     ):
-        from nanobot.session.manager import Session
+        from vtx_claw.session.manager import Session
 
         archive_fn = MagicMock()
         session = Session(key="cli:direct")
@@ -262,7 +245,7 @@ class TestAgentLoopTTLParam:
         archive_fn.assert_not_called()
 
     def test_session_enforce_file_cap_archives_only_unconsolidated_dropped_prefix(self, tmp_path):
-        from nanobot.session.manager import Session
+        from vtx_claw.session.manager import Session
 
         archive_fn = MagicMock()
         session = Session(key="cli:direct")
@@ -334,8 +317,7 @@ class TestAutoCompact:
 
         archived_messages = []
         loop.consolidator.compact_idle_session = _make_fake_compact(
-            loop,
-            track_archived=archived_messages,
+            loop, track_archived=archived_messages
         )
 
         await loop.auto_compact._archive("cli:test")
@@ -383,8 +365,7 @@ class TestAutoCompact:
         loop.sessions.save(session)
 
         loop.consolidator.compact_idle_session = _make_fake_compact(
-            loop,
-            summary="User said hello.",
+            loop, summary="User said hello."
         )
 
         await loop.auto_compact._archive("cli:test")
@@ -421,8 +402,7 @@ class TestAutoCompact:
 
         archived_messages = []
         loop.consolidator.compact_idle_session = _make_fake_compact(
-            loop,
-            track_archived=archived_messages,
+            loop, track_archived=archived_messages
         )
 
         await loop.auto_compact._archive("cli:test")
@@ -461,8 +441,7 @@ class TestAutoCompactIdleDetection:
 
         archived_messages = []
         loop.consolidator.compact_idle_session = _make_fake_compact(
-            loop,
-            track_archived=archived_messages,
+            loop, track_archived=archived_messages
         )
 
         # Simulate proactive archive completing before message arrives
@@ -593,10 +572,7 @@ class TestAutoCompactSystemMessages:
         await loop.auto_compact._archive("cli:test")
 
         msg = InboundMessage(
-            channel="system",
-            sender_id="subagent",
-            chat_id="cli:test",
-            content="subagent result",
+            channel="system", sender_id="subagent", chat_id="cli:test", content="subagent result"
         )
         await loop._process_message(msg)
 
@@ -665,8 +641,7 @@ class TestAutoCompactEdgeCases:
 
         archived_messages = []
         loop.consolidator.compact_idle_session = _make_fake_compact(
-            loop,
-            track_archived=archived_messages,
+            loop, track_archived=archived_messages
         )
 
         # Simulate proactive archive completing before message arrives
@@ -790,8 +765,7 @@ class TestProactiveAutoCompact:
     async def _run_check_expired(loop, active_session_keys=()):
         """Helper: run check_expired via callback and wait for background tasks."""
         loop.auto_compact.check_expired(
-            loop._schedule_background,
-            active_session_keys=active_session_keys,
+            loop._schedule_background, active_session_keys=active_session_keys
         )
         await _drain_background_tasks(loop)
 
@@ -821,9 +795,7 @@ class TestProactiveAutoCompact:
 
         archived_messages = []
         loop.consolidator.compact_idle_session = _make_fake_compact(
-            loop,
-            summary="User chatted about old things.",
-            track_archived=archived_messages,
+            loop, summary="User chatted about old things.", track_archived=archived_messages
         )
 
         await self._run_check_expired(loop)
@@ -1106,8 +1078,7 @@ class TestSummaryPersistence:
         loop.sessions.save(session)
 
         loop.consolidator.compact_idle_session = _make_fake_compact(
-            loop,
-            summary="User said hello.",
+            loop, summary="User said hello."
         )
 
         await loop.auto_compact._archive("cli:test")
@@ -1131,8 +1102,7 @@ class TestSummaryPersistence:
         loop.sessions.save(session)
 
         loop.consolidator.compact_idle_session = _make_fake_compact(
-            loop,
-            summary="User said hello.",
+            loop, summary="User said hello."
         )
 
         # Archive
@@ -1217,10 +1187,7 @@ class TestSummaryPersistence:
         session.updated_at = datetime.now() - timedelta(minutes=20)
         loop.sessions.save(session)
 
-        loop.consolidator.compact_idle_session = _make_fake_compact(
-            loop,
-            summary="First summary.",
-        )
+        loop.consolidator.compact_idle_session = _make_fake_compact(loop, summary="First summary.")
         await loop.auto_compact._archive("cli:test")
 
         # Consume the first summary via hot path
@@ -1237,8 +1204,7 @@ class TestSummaryPersistence:
         loop.sessions.save(session)
 
         loop.consolidator.compact_idle_session = _make_fake_compact(
-            loop,
-            summary="Second summary.",
+            loop, summary="Second summary."
         )
         await loop.auto_compact._archive("cli:test")
 
@@ -1261,10 +1227,7 @@ class TestSummaryPersistence:
         session.updated_at = datetime.now() - timedelta(minutes=20)
         loop.sessions.save(session)
 
-        loop.consolidator.compact_idle_session = _make_fake_compact(
-            loop,
-            summary="Old summary.",
-        )
+        loop.consolidator.compact_idle_session = _make_fake_compact(loop, summary="Old summary.")
         await loop.auto_compact._archive("cli:test")
 
         # Verify summary exists before /new

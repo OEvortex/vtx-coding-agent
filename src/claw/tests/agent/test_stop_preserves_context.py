@@ -4,7 +4,7 @@ When /stop cancels an active task, the runtime checkpoint (tool results,
 assistant messages accumulated so far) should be materialized into session
 history rather than silently discarded.
 
-See: https://github.com/HKUDS/nanobot/issues/2966
+See: https://github.com/HKUDS/vtx_claw/issues/2966
 """
 
 from __future__ import annotations
@@ -12,14 +12,12 @@ from __future__ import annotations
 import asyncio
 from pathlib import Path
 from types import SimpleNamespace
-from typing import Any
-from unittest.mock import MagicMock, patch, AsyncMock
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-from nanobot.agent.loop import AgentLoop
-from nanobot.bus.queue import MessageBus
-from nanobot.providers.base import LLMProvider
+from vtx_claw.agent.loop import AgentLoop
+from vtx_claw.bus.queue import MessageBus
 
 
 def _make_provider():
@@ -38,9 +36,9 @@ def _make_loop(tmp_path: Path) -> AgentLoop:
     bus = MessageBus()
     provider = _make_provider()
     with (
-        patch("nanobot.agent.loop.ContextBuilder"),
-        patch("nanobot.agent.loop.SessionManager"),
-        patch("nanobot.agent.loop.SubagentManager") as MockSubMgr,
+        patch("vtx_claw.agent.loop.ContextBuilder"),
+        patch("vtx_claw.agent.loop.SessionManager"),
+        patch("vtx_claw.agent.loop.SubagentManager") as MockSubMgr,
     ):
         MockSubMgr.return_value.cancel_by_session = AsyncMock(return_value=0)
         return AgentLoop(bus=bus, provider=provider, workspace=tmp_path)
@@ -79,14 +77,12 @@ class TestStopPreservesContext:
                     ],
                 },
                 "completed_tool_results": [
-                    {"role": "tool", "tool_call_id": "tc_1", "content": "Search results: ..."},
+                    {"role": "tool", "tool_call_id": "tc_1", "content": "Search results: ..."}
                 ],
                 "pending_tool_calls": [],
             }
         }
-        session.messages = [
-            {"role": "user", "content": "Search for something"},
-        ]
+        session.messages = [{"role": "user", "content": "Search for something"}]
         loop.sessions.get_or_create.return_value = session
 
         restored = loop._restore_runtime_checkpoint(session)
@@ -106,8 +102,8 @@ async def test_dispatch_cancellation_restores_checkpoint():
     isolation, so a future refactor that drops the cancel-time restore is
     caught by CI instead of silently regressing.
     """
-    from nanobot.bus.events import InboundMessage
-    from nanobot.bus.queue import MessageBus
+    from vtx_claw.bus.events import InboundMessage
+    from vtx_claw.bus.queue import MessageBus
 
     bus = MessageBus()
     provider = MagicMock()
@@ -116,9 +112,9 @@ async def test_dispatch_cancellation_restores_checkpoint():
     workspace.__truediv__ = MagicMock(return_value=MagicMock())
 
     with (
-        patch("nanobot.agent.loop.ContextBuilder"),
-        patch("nanobot.agent.loop.SessionManager"),
-        patch("nanobot.agent.loop.SubagentManager") as MockSubMgr,
+        patch("vtx_claw.agent.loop.ContextBuilder"),
+        patch("vtx_claw.agent.loop.SessionManager"),
+        patch("vtx_claw.agent.loop.SubagentManager") as MockSubMgr,
     ):
         MockSubMgr.return_value.cancel_by_session = AsyncMock(return_value=0)
         loop = AgentLoop(bus=bus, provider=provider, workspace=workspace)
@@ -142,7 +138,7 @@ async def test_dispatch_cancellation_restores_checkpoint():
                     ],
                 },
                 "completed_tool_results": [
-                    {"role": "tool", "tool_call_id": "tc_1", "content": "Search hit."},
+                    {"role": "tool", "tool_call_id": "tc_1", "content": "Search hit."}
                 ],
                 "pending_tool_calls": [],
             }

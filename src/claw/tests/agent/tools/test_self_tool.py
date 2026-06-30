@@ -9,7 +9,7 @@ from unittest.mock import MagicMock
 import pytest
 from pydantic import BaseModel
 
-from nanobot.agent.tools.self import MyTool
+from vtx_claw.agent.tools.self import MyTool
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -285,9 +285,7 @@ class TestModifyBlocked:
         """Fix 3.1: leaf segment of dot-path must also be validated."""
         tool = _make_tool()
         result = await tool.execute(
-            action="set",
-            key="provider_retry_mode.__class__",
-            value="evil",
+            action="set", key="provider_retry_mode.__class__", value="evil"
         )
         assert "not accessible" in result
 
@@ -295,11 +293,7 @@ class TestModifyBlocked:
     async def test_modify_dotpath_leaf_denied_attr_blocked(self):
         """Fix 3.1: leaf segment matching _DENIED_ATTRS must be rejected."""
         tool = _make_tool()
-        result = await tool.execute(
-            action="set",
-            key="provider_retry_mode.__globals__",
-            value={},
-        )
+        result = await tool.execute(action="set", key="provider_retry_mode.__globals__", value={})
         assert "not accessible" in result
 
 
@@ -621,7 +615,7 @@ class TestDeniedAttrs:
 class TestSubagentStatusFormatting:
     def test_format_single_status(self):
         """_format_value should produce a rich multi-line display for a SubagentStatus."""
-        from nanobot.agent.subagent import SubagentStatus
+        from vtx_claw.agent.subagent import SubagentStatus
 
         status = SubagentStatus(
             task_id="abc12345",
@@ -648,7 +642,7 @@ class TestSubagentStatusFormatting:
 
     def test_format_status_dict(self):
         """_format_value should handle dict[str, SubagentStatus] with rich display."""
-        from nanobot.agent.subagent import SubagentStatus
+        from vtx_claw.agent.subagent import SubagentStatus
 
         statuses = {
             "abc12345": SubagentStatus(
@@ -658,7 +652,7 @@ class TestSubagentStatusFormatting:
                 started_at=time.monotonic() - 5.0,
                 phase="awaiting_tools",
                 iteration=1,
-            ),
+            )
         }
         result = MyTool._format_value(statuses)
         assert "1 subagent(s)" in result
@@ -672,7 +666,7 @@ class TestSubagentStatusFormatting:
 
     def test_format_status_with_error(self):
         """Status with error should include the error message."""
-        from nanobot.agent.subagent import SubagentStatus
+        from vtx_claw.agent.subagent import SubagentStatus
 
         status = SubagentStatus(
             task_id="err00001",
@@ -695,14 +689,11 @@ class TestSubagentHookStatus:
     @pytest.mark.asyncio
     async def test_after_iteration_updates_status(self):
         """after_iteration should copy iteration, tool_events, usage to status."""
-        from nanobot.agent.hook import AgentHookContext
-        from nanobot.agent.subagent import SubagentStatus, _SubagentHook
+        from vtx_claw.agent.hook import AgentHookContext
+        from vtx_claw.agent.subagent import SubagentStatus, _SubagentHook
 
         status = SubagentStatus(
-            task_id="test",
-            label="test",
-            task_description="test",
-            started_at=time.monotonic(),
+            task_id="test", label="test", task_description="test", started_at=time.monotonic()
         )
         hook = _SubagentHook("test", status)
 
@@ -722,22 +713,15 @@ class TestSubagentHookStatus:
     @pytest.mark.asyncio
     async def test_after_iteration_with_error(self):
         """after_iteration should set status.error when context has an error."""
-        from nanobot.agent.hook import AgentHookContext
-        from nanobot.agent.subagent import SubagentStatus, _SubagentHook
+        from vtx_claw.agent.hook import AgentHookContext
+        from vtx_claw.agent.subagent import SubagentStatus, _SubagentHook
 
         status = SubagentStatus(
-            task_id="test",
-            label="test",
-            task_description="test",
-            started_at=time.monotonic(),
+            task_id="test", label="test", task_description="test", started_at=time.monotonic()
         )
         hook = _SubagentHook("test", status)
 
-        context = AgentHookContext(
-            iteration=1,
-            messages=[],
-            error="something went wrong",
-        )
+        context = AgentHookContext(iteration=1, messages=[], error="something went wrong")
         await hook.after_iteration(context)
 
         assert status.error == "something went wrong"
@@ -745,8 +729,8 @@ class TestSubagentHookStatus:
     @pytest.mark.asyncio
     async def test_after_iteration_no_status_is_noop(self):
         """after_iteration with no status should be a no-op."""
-        from nanobot.agent.hook import AgentHookContext
-        from nanobot.agent.subagent import _SubagentHook
+        from vtx_claw.agent.hook import AgentHookContext
+        from vtx_claw.agent.subagent import _SubagentHook
 
         hook = _SubagentHook("test")
         context = AgentHookContext(iteration=1, messages=[])
@@ -766,13 +750,10 @@ class TestCheckpointCallback:
     async def test_checkpoint_updates_phase_and_iteration(self):
         """The _on_checkpoint callback should update status.phase and iteration."""
 
-        from nanobot.agent.subagent import SubagentStatus
+        from vtx_claw.agent.subagent import SubagentStatus
 
         status = SubagentStatus(
-            task_id="cp",
-            label="test",
-            task_description="test",
-            started_at=time.monotonic(),
+            task_id="cp", label="test", task_description="test", started_at=time.monotonic()
         )
 
         # Simulate the checkpoint callback as defined in _run_subagent
@@ -791,7 +772,7 @@ class TestCheckpointCallback:
     @pytest.mark.asyncio
     async def test_checkpoint_preserves_phase_on_missing_key(self):
         """If payload doesn't have 'phase', status.phase should stay unchanged."""
-        from nanobot.agent.subagent import SubagentStatus
+        from vtx_claw.agent.subagent import SubagentStatus
 
         status = SubagentStatus(
             task_id="cp",
@@ -821,7 +802,7 @@ class TestInspectTaskStatuses:
     @pytest.mark.asyncio
     async def test_inspect_task_statuses_accessible(self):
         """subagents is READ_ONLY — check should show subagent statuses."""
-        from nanobot.agent.subagent import SubagentStatus
+        from vtx_claw.agent.subagent import SubagentStatus
 
         loop = _make_mock_loop()
         loop.subagents._task_statuses = {
@@ -834,7 +815,7 @@ class TestInspectTaskStatuses:
                 iteration=2,
                 tool_events=[{"name": "read_file", "status": "ok", "detail": "ok"}],
                 usage={"prompt_tokens": 500, "completion_tokens": 100},
-            ),
+            )
         }
         tool = _make_tool(runtime_state=loop)
         result = await tool.execute(action="check", key="subagents._task_statuses")
@@ -844,7 +825,7 @@ class TestInspectTaskStatuses:
     @pytest.mark.asyncio
     async def test_inspect_single_subagent_status_accessible(self):
         """subagents._task_statuses.<id> should return individual SubagentStatus."""
-        from nanobot.agent.subagent import SubagentStatus
+        from vtx_claw.agent.subagent import SubagentStatus
 
         loop = _make_mock_loop()
         status = SubagentStatus(
@@ -912,9 +893,9 @@ class TestRuntimeVarsInspectFallback:
     @pytest.mark.asyncio
     async def test_inspect_runtime_var_string(self):
         tool = _make_tool()
-        await tool.execute(action="set", key="current_project", value="nanobot")
+        await tool.execute(action="set", key="current_project", value="vtx_claw")
         result = await tool.execute(action="check", key="current_project")
-        assert "nanobot" in result
+        assert "vtx_claw" in result
 
     @pytest.mark.asyncio
     async def test_inspect_runtime_var_dict(self):
@@ -1128,7 +1109,7 @@ class TestLastUsageInSummary:
 
 class TestSetContext:
     def test_set_context_stores_channel_and_chat_id(self):
-        from nanobot.agent.tools.context import RequestContext
+        from vtx_claw.agent.tools.context import RequestContext
 
         tool = _make_tool()
         tool.set_context(RequestContext(channel="feishu", chat_id="oc_abc123"))

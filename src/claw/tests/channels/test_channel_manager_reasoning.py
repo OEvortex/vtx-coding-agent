@@ -17,15 +17,16 @@ primitives.
 from __future__ import annotations
 
 import asyncio
+import contextlib
 from unittest.mock import AsyncMock
 
 import pytest
 
-from nanobot.bus.events import OutboundMessage
-from nanobot.bus.queue import MessageBus
-from nanobot.channels.base import BaseChannel
-from nanobot.channels.manager import ChannelManager
-from nanobot.config.schema import Config
+from vtx_claw.bus.events import OutboundMessage
+from vtx_claw.bus.queue import MessageBus
+from vtx_claw.channels.base import BaseChannel
+from vtx_claw.channels.manager import ChannelManager
+from vtx_claw.config.schema import Config
 
 
 class _MockChannel(BaseChannel):
@@ -67,19 +68,13 @@ def manager() -> ChannelManager:
 
 def test_websocket_gateway_uses_configured_workspace_restriction(tmp_path, monkeypatch):
     monkeypatch.setattr(
-        "nanobot.webui.workspaces.read_webui_default_access_mode",
-        lambda: "default",
+        "vtx_claw.webui.workspaces.read_webui_default_access_mode", lambda: "default"
     )
     config = Config.model_validate(
         {
             "agents": {"defaults": {"workspace": str(tmp_path)}},
             "tools": {"restrictToWorkspace": True},
-            "channels": {
-                "websocket": {
-                    "enabled": True,
-                    "websocketRequiresToken": False,
-                },
-            },
+            "channels": {"websocket": {"enabled": True, "websocketRequiresToken": False}},
         }
     )
 
@@ -299,7 +294,5 @@ async def _pump_one(manager: ChannelManager) -> None:
         if manager.bus.outbound.qsize() == 0:
             break
     task.cancel()
-    try:
+    with contextlib.suppress(asyncio.CancelledError):
         await task
-    except asyncio.CancelledError:
-        pass

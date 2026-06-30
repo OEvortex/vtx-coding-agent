@@ -15,23 +15,19 @@ from mcp.shared.exceptions import McpError
 from mcp.shared.message import SessionMessage
 from mcp.types import ErrorData
 
-from nanobot.agent.loop import AgentLoop
-from nanobot.agent.tools import mcp as mcp_runtime
-from nanobot.agent.tools.base import Tool
-from nanobot.agent.tools.mcp import MCPResourceWrapper, MCPToolWrapper
-from nanobot.bus.queue import MessageBus
-from nanobot.config.loader import load_config, save_config
-from nanobot.config.schema import MCPServerConfig
+from vtx_claw.agent.loop import AgentLoop
+from vtx_claw.agent.tools import mcp as mcp_runtime
+from vtx_claw.agent.tools.base import Tool
+from vtx_claw.agent.tools.mcp import MCPResourceWrapper, MCPToolWrapper
+from vtx_claw.bus.queue import MessageBus
+from vtx_claw.config.loader import load_config, save_config
+from vtx_claw.config.schema import MCPServerConfig
 
 
 def _mcp_notification(method: str, params: dict[str, Any] | None = None) -> SessionMessage:
     return SessionMessage(
         message=mcp_types.JSONRPCMessage(
-            mcp_types.JSONRPCNotification(
-                jsonrpc="2.0",
-                method=method,
-                params=params,
-            )
+            mcp_types.JSONRPCNotification(jsonrpc="2.0", method=method, params=params)
         )
     )
 
@@ -39,14 +35,12 @@ def _mcp_notification(method: str, params: dict[str, Any] | None = None) -> Sess
 def test_mcp_progress_detection_accepts_flattened_sdk_message_shape():
     malformed = SimpleNamespace(
         message=SimpleNamespace(
-            method="notifications/progress",
-            params={"progress": 20, "total": 600},
+            method="notifications/progress", params={"progress": 20, "total": 600}
         )
     )
     valid = SimpleNamespace(
         message=SimpleNamespace(
-            method="notifications/progress",
-            params={"progressToken": "req-1", "progress": 25},
+            method="notifications/progress", params={"progressToken": "req-1", "progress": 25}
         )
     )
 
@@ -92,8 +86,7 @@ def _make_loop(tmp_path, *, mcp_servers: dict | None = None) -> AgentLoop:
 async def test_mcp_read_filter_drops_progress_notifications_without_progress_token():
     send, receive = anyio.create_memory_object_stream(4)
     malformed_progress = _mcp_notification(
-        "notifications/progress",
-        {"progress": 20, "total": 600, "message": "Polling"},
+        "notifications/progress", {"progress": 20, "total": 600, "message": "Polling"}
     )
     tool_change = _mcp_notification("notifications/tools/list_changed")
     valid_progress = _mcp_notification(
@@ -127,7 +120,7 @@ async def test_connect_mcp_retries_when_no_servers_connect(
         attempts += 1
         return {}
 
-    monkeypatch.setattr("nanobot.agent.tools.mcp.connect_mcp_servers", _fake_connect)
+    monkeypatch.setattr("vtx_claw.agent.tools.mcp.connect_mcp_servers", _fake_connect)
 
     await loop._connect_mcp()
     await loop._connect_mcp()
@@ -139,8 +132,7 @@ async def test_connect_mcp_retries_when_no_servers_connect(
 
 @pytest.mark.asyncio
 async def test_agent_loop_run_closes_mcp_from_connection_owner_task(
-    tmp_path,
-    monkeypatch: pytest.MonkeyPatch,
+    tmp_path, monkeypatch: pytest.MonkeyPatch
 ):
     loop = _make_loop(tmp_path, mcp_servers={"playwright": object()})
     connected = asyncio.Event()
@@ -161,7 +153,7 @@ async def test_agent_loop_run_closes_mcp_from_connection_owner_task(
         connected.set()
         return stacks
 
-    monkeypatch.setattr("nanobot.agent.tools.mcp.connect_mcp_servers", _fake_connect)
+    monkeypatch.setattr("vtx_claw.agent.tools.mcp.connect_mcp_servers", _fake_connect)
 
     task = asyncio.create_task(loop.run())
     await asyncio.wait_for(connected.wait(), timeout=1)
@@ -176,15 +168,13 @@ async def test_agent_loop_run_closes_mcp_from_connection_owner_task(
 
 @pytest.mark.asyncio
 async def test_reload_mcp_servers_adds_and_removes_tools_without_restart(
-    tmp_path,
-    monkeypatch: pytest.MonkeyPatch,
+    tmp_path, monkeypatch: pytest.MonkeyPatch
 ):
     config_path = tmp_path / "config.json"
-    monkeypatch.setattr("nanobot.config.loader._current_config_path", config_path)
+    monkeypatch.setattr("vtx_claw.config.loader._current_config_path", config_path)
     config = load_config()
     config.tools.mcp_servers["browserbase"] = MCPServerConfig(
-        type="stdio",
-        command="browserbase-mcp",
+        type="stdio", command="browserbase-mcp"
     )
     save_config(config)
 
@@ -203,7 +193,7 @@ async def test_reload_mcp_servers_adds_and_removes_tools_without_restart(
             stacks[name] = stack
         return stacks
 
-    monkeypatch.setattr("nanobot.agent.tools.mcp.connect_mcp_servers", _fake_connect)
+    monkeypatch.setattr("vtx_claw.agent.tools.mcp.connect_mcp_servers", _fake_connect)
     loop = _make_loop(tmp_path, mcp_servers={})
 
     added = await mcp_runtime.reload_servers(loop, loop.tools)
@@ -228,15 +218,13 @@ async def test_reload_mcp_servers_adds_and_removes_tools_without_restart(
 
 @pytest.mark.asyncio
 async def test_request_mcp_reload_reaches_runtime_control_without_restart(
-    tmp_path,
-    monkeypatch: pytest.MonkeyPatch,
+    tmp_path, monkeypatch: pytest.MonkeyPatch
 ):
     config_path = tmp_path / "config.json"
-    monkeypatch.setattr("nanobot.config.loader._current_config_path", config_path)
+    monkeypatch.setattr("vtx_claw.config.loader._current_config_path", config_path)
     config = load_config()
     config.tools.mcp_servers["browserbase"] = MCPServerConfig(
-        type="stdio",
-        command="browserbase-mcp",
+        type="stdio", command="browserbase-mcp"
     )
     save_config(config)
 
@@ -255,7 +243,7 @@ async def test_request_mcp_reload_reaches_runtime_control_without_restart(
             stacks[name] = stack
         return stacks
 
-    monkeypatch.setattr("nanobot.agent.tools.mcp.connect_mcp_servers", _fake_connect)
+    monkeypatch.setattr("vtx_claw.agent.tools.mcp.connect_mcp_servers", _fake_connect)
     loop = _make_loop(tmp_path, mcp_servers={})
 
     async def _handle_one_runtime_control() -> None:
@@ -289,15 +277,13 @@ async def test_request_mcp_reload_reaches_runtime_control_without_restart(
 
 @pytest.mark.asyncio
 async def test_reload_mcp_servers_retries_configured_server_without_live_stack(
-    tmp_path,
-    monkeypatch: pytest.MonkeyPatch,
+    tmp_path, monkeypatch: pytest.MonkeyPatch
 ):
     config_path = tmp_path / "config.json"
-    monkeypatch.setattr("nanobot.config.loader._current_config_path", config_path)
+    monkeypatch.setattr("vtx_claw.config.loader._current_config_path", config_path)
     config = load_config()
     config.tools.mcp_servers["browserbase"] = MCPServerConfig(
-        type="stdio",
-        command="browserbase-mcp",
+        type="stdio", command="browserbase-mcp"
     )
     save_config(config)
 
@@ -310,7 +296,7 @@ async def test_reload_mcp_servers_retries_configured_server_without_live_stack(
             stacks[name] = stack
         return stacks
 
-    monkeypatch.setattr("nanobot.agent.tools.mcp.connect_mcp_servers", _fake_connect)
+    monkeypatch.setattr("vtx_claw.agent.tools.mcp.connect_mcp_servers", _fake_connect)
     loop = _make_loop(
         tmp_path, mcp_servers={"browserbase": config.tools.mcp_servers["browserbase"]}
     )
@@ -327,8 +313,7 @@ async def test_reload_mcp_servers_retries_configured_server_without_live_stack(
 
 @pytest.mark.asyncio
 async def test_mcp_tool_reconnects_after_session_terminated(
-    tmp_path,
-    monkeypatch: pytest.MonkeyPatch,
+    tmp_path, monkeypatch: pytest.MonkeyPatch
 ):
     loop = _make_loop(tmp_path, mcp_servers={"remote": object()})
     closed: list[str] = []
@@ -369,7 +354,7 @@ async def test_mcp_tool_reconnects_after_session_terminated(
             stacks[name] = stack
         return stacks
 
-    monkeypatch.setattr("nanobot.agent.tools.mcp.connect_mcp_servers", _fake_connect)
+    monkeypatch.setattr("vtx_claw.agent.tools.mcp.connect_mcp_servers", _fake_connect)
 
     await loop._connect_mcp()
     old_tool = loop.tools.get("mcp_remote_quote")
@@ -388,8 +373,7 @@ async def test_mcp_tool_reconnects_after_session_terminated(
 
 @pytest.mark.asyncio
 async def test_mcp_reconnect_handler_uses_sanitized_server_prefix(
-    tmp_path,
-    monkeypatch: pytest.MonkeyPatch,
+    tmp_path, monkeypatch: pytest.MonkeyPatch
 ):
     loop = _make_loop(tmp_path, mcp_servers={"remote_": object()})
     connect_count = 0
@@ -420,7 +404,7 @@ async def test_mcp_reconnect_handler_uses_sanitized_server_prefix(
             stacks[name] = stack
         return stacks
 
-    monkeypatch.setattr("nanobot.agent.tools.mcp.connect_mcp_servers", _fake_connect)
+    monkeypatch.setattr("vtx_claw.agent.tools.mcp.connect_mcp_servers", _fake_connect)
 
     await loop._connect_mcp()
     old_tool = loop.tools.get("mcp_remote_quote")
@@ -435,8 +419,7 @@ async def test_mcp_reconnect_handler_uses_sanitized_server_prefix(
 
 @pytest.mark.asyncio
 async def test_concurrent_mcp_reconnect_reuses_fresh_session(
-    tmp_path,
-    monkeypatch: pytest.MonkeyPatch,
+    tmp_path, monkeypatch: pytest.MonkeyPatch
 ):
     loop = _make_loop(tmp_path, mcp_servers={"remote": object()})
     closed: list[str] = []
@@ -455,8 +438,7 @@ async def test_concurrent_mcp_reconnect_reuses_fresh_session(
             return SimpleNamespace(
                 contents=[
                     mcp_types.TextResourceContents(
-                        uri=uri,
-                        text=f"fresh:{uri.rsplit('/', maxsplit=1)[-1]}",
+                        uri=uri, text=f"fresh:{uri.rsplit('/', maxsplit=1)[-1]}"
                     )
                 ]
             )
@@ -480,7 +462,7 @@ async def test_concurrent_mcp_reconnect_reuses_fresh_session(
             stacks[name] = stack
         return stacks
 
-    monkeypatch.setattr("nanobot.agent.tools.mcp.connect_mcp_servers", _fake_connect)
+    monkeypatch.setattr("vtx_claw.agent.tools.mcp.connect_mcp_servers", _fake_connect)
 
     await loop._connect_mcp()
     old_alpha = loop.tools.get("mcp_remote_resource_alpha")

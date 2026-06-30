@@ -9,9 +9,9 @@ from unittest.mock import AsyncMock
 import httpx
 import pytest
 
-import nanobot.channels.weixin as weixin_mod
-from nanobot.bus.queue import MessageBus
-from nanobot.channels.weixin import (
+import vtx_claw.channels.weixin as weixin_mod
+from vtx_claw.bus.queue import MessageBus
+from vtx_claw.channels.weixin import (
     ITEM_IMAGE,
     ITEM_TEXT,
     MESSAGE_TYPE_BOT,
@@ -29,7 +29,7 @@ def _make_channel() -> tuple[WeixinChannel, MessageBus]:
         WeixinConfig(
             enabled=True,
             allow_from=["*"],
-            state_dir=tempfile.mkdtemp(prefix="nanobot-weixin-test-"),
+            state_dir=tempfile.mkdtemp(prefix="vtx_claw-weixin-test-"),
         ),
         bus,
     )
@@ -38,10 +38,7 @@ def _make_channel() -> tuple[WeixinChannel, MessageBus]:
 
 def test_make_headers_includes_route_tag_when_configured() -> None:
     bus = MessageBus()
-    channel = WeixinChannel(
-        WeixinConfig(enabled=True, allow_from=["*"], route_tag=123),
-        bus,
-    )
+    channel = WeixinChannel(WeixinConfig(enabled=True, allow_from=["*"], route_tag=123), bus)
     channel._token = "token"
 
     headers = channel._make_headers()
@@ -59,8 +56,7 @@ def test_channel_version_matches_reference_plugin_version() -> None:
 def test_save_and_load_state_persists_context_tokens(tmp_path) -> None:
     bus = MessageBus()
     channel = WeixinChannel(
-        WeixinConfig(enabled=True, allow_from=["*"], state_dir=str(tmp_path)),
-        bus,
+        WeixinConfig(enabled=True, allow_from=["*"], state_dir=str(tmp_path)), bus
     )
     channel._token = "token"
     channel._get_updates_buf = "cursor"
@@ -72,8 +68,7 @@ def test_save_and_load_state_persists_context_tokens(tmp_path) -> None:
     assert saved["context_tokens"] == {"wx-user": "ctx-1"}
 
     restored = WeixinChannel(
-        WeixinConfig(enabled=True, allow_from=["*"], state_dir=str(tmp_path)),
-        bus,
+        WeixinConfig(enabled=True, allow_from=["*"], state_dir=str(tmp_path)), bus
     )
 
     assert restored._load_state() is True
@@ -88,9 +83,7 @@ async def test_process_message_deduplicates_inbound_ids() -> None:
         "message_id": "m1",
         "from_user_id": "wx-user",
         "context_token": "ctx-1",
-        "item_list": [
-            {"type": ITEM_TEXT, "text_item": {"text": "hello"}},
-        ],
+        "item_list": [{"type": ITEM_TEXT, "text_item": {"text": "hello"}}],
     }
 
     await channel._process_message(msg)
@@ -116,9 +109,7 @@ async def test_process_message_caches_context_token_and_send_uses_it() -> None:
             "message_id": "m2",
             "from_user_id": "wx-user",
             "context_token": "ctx-2",
-            "item_list": [
-                {"type": ITEM_TEXT, "text_item": {"text": "ping"}},
-            ],
+            "item_list": [{"type": ITEM_TEXT, "text_item": {"text": "ping"}}],
         }
     )
 
@@ -131,13 +122,11 @@ async def test_process_message_caches_context_token_and_send_uses_it() -> None:
 
 @pytest.mark.asyncio
 async def test_process_message_pairs_unauthorized_sender_before_media_side_effects(
-    monkeypatch,
-    tmp_path,
+    monkeypatch, tmp_path
 ) -> None:
     bus = MessageBus()
     channel = WeixinChannel(
-        WeixinConfig(enabled=True, allow_from=["allowed-user"], state_dir=str(tmp_path)),
-        bus,
+        WeixinConfig(enabled=True, allow_from=["allowed-user"], state_dir=str(tmp_path)), bus
     )
     channel._client = object()
     channel._token = "token"
@@ -145,7 +134,7 @@ async def test_process_message_pairs_unauthorized_sender_before_media_side_effec
     channel._start_typing = AsyncMock()
     channel._get_typing_ticket = AsyncMock(return_value="")
     channel._send_text = AsyncMock()
-    monkeypatch.setattr("nanobot.channels.base.generate_code", lambda _ch, _sid: "ABCD-EFGH")
+    monkeypatch.setattr("vtx_claw.channels.base.generate_code", lambda _ch, _sid: "ABCD-EFGH")
 
     await channel._process_message(
         {
@@ -154,7 +143,7 @@ async def test_process_message_pairs_unauthorized_sender_before_media_side_effec
             "from_user_id": "blocked-user",
             "context_token": "ctx-blocked",
             "item_list": [
-                {"type": ITEM_IMAGE, "image_item": {"media": {"encrypt_query_param": "x"}}},
+                {"type": ITEM_IMAGE, "image_item": {"media": {"encrypt_query_param": "x"}}}
             ],
         }
     )
@@ -174,8 +163,7 @@ async def test_process_message_pairs_unauthorized_sender_before_media_side_effec
 async def test_process_message_persists_context_token_to_state_file(tmp_path) -> None:
     bus = MessageBus()
     channel = WeixinChannel(
-        WeixinConfig(enabled=True, allow_from=["*"], state_dir=str(tmp_path)),
-        bus,
+        WeixinConfig(enabled=True, allow_from=["*"], state_dir=str(tmp_path)), bus
     )
 
     await channel._process_message(
@@ -184,9 +172,7 @@ async def test_process_message_persists_context_token_to_state_file(tmp_path) ->
             "message_id": "m2b",
             "from_user_id": "wx-user",
             "context_token": "ctx-2b",
-            "item_list": [
-                {"type": ITEM_TEXT, "text_item": {"text": "ping"}},
-            ],
+            "item_list": [{"type": ITEM_TEXT, "text_item": {"text": "ping"}}],
         }
     )
 
@@ -206,7 +192,7 @@ async def test_process_message_extracts_media_and_preserves_paths() -> None:
             "from_user_id": "wx-user",
             "context_token": "ctx-3",
             "item_list": [
-                {"type": ITEM_IMAGE, "image_item": {"media": {"encrypt_query_param": "x"}}},
+                {"type": ITEM_IMAGE, "image_item": {"media": {"encrypt_query_param": "x"}}}
             ],
         }
     )
@@ -237,9 +223,9 @@ async def test_process_message_falls_back_to_referenced_media_when_no_top_level_
                         "message_item": {
                             "type": ITEM_IMAGE,
                             "image_item": {"media": {"encrypt_query_param": "ref-enc"}},
-                        },
+                        }
                     },
-                },
+                }
             ],
         }
     )
@@ -247,8 +233,7 @@ async def test_process_message_falls_back_to_referenced_media_when_no_top_level_
     inbound = await asyncio.wait_for(bus.consume_inbound(), timeout=1.0)
 
     channel._download_media_item.assert_awaited_once_with(
-        {"media": {"encrypt_query_param": "ref-enc"}},
-        "image",
+        {"media": {"encrypt_query_param": "ref-enc"}}, "image"
     )
     assert inbound.media == ["/tmp/ref.jpg"]
     assert "reply to image" in inbound.content
@@ -277,7 +262,7 @@ async def test_process_message_does_not_use_referenced_fallback_when_top_level_m
                         "message_item": {
                             "type": ITEM_IMAGE,
                             "image_item": {"media": {"encrypt_query_param": "ref-enc"}},
-                        },
+                        }
                     },
                 },
             ],
@@ -287,8 +272,7 @@ async def test_process_message_does_not_use_referenced_fallback_when_top_level_m
     inbound = await asyncio.wait_for(bus.consume_inbound(), timeout=1.0)
 
     channel._download_media_item.assert_awaited_once_with(
-        {"media": {"encrypt_query_param": "top-enc"}},
-        "image",
+        {"media": {"encrypt_query_param": "top-enc"}}, "image"
     )
     assert inbound.media == ["/tmp/top.jpg"]
     assert "/tmp/ref.jpg" not in inbound.content
@@ -317,7 +301,7 @@ async def test_process_message_does_not_fallback_when_top_level_media_exists_but
                         "message_item": {
                             "type": ITEM_IMAGE,
                             "image_item": {"media": {"encrypt_query_param": "ref-enc"}},
-                        },
+                        }
                     },
                 },
             ],
@@ -328,8 +312,7 @@ async def test_process_message_does_not_fallback_when_top_level_media_exists_but
 
     # Should only attempt top-level media item; reference fallback must not activate.
     channel._download_media_item.assert_awaited_once_with(
-        {"media": {"encrypt_query_param": "top-enc"}},
-        "image",
+        {"media": {"encrypt_query_param": "top-enc"}}, "image"
     )
     assert inbound.media == []
     assert "[image]" in inbound.content
@@ -401,11 +384,7 @@ async def test_send_uses_typing_start_and_cancel_when_ticket_available() -> None
     channel._context_token_at["wx-user"] = time.time()
     channel._send_text = AsyncMock()
     channel._api_post = AsyncMock(
-        side_effect=[
-            {"ret": 0, "typing_ticket": "ticket-typing"},
-            {"ret": 0},
-            {"ret": 0},
-        ]
+        side_effect=[{"ret": 0, "typing_ticket": "ticket-typing"}, {"ret": 0}, {"ret": 0}]
     )
 
     await channel.send(
@@ -619,9 +598,7 @@ async def test_process_message_skips_bot_messages() -> None:
             "message_type": MESSAGE_TYPE_BOT,
             "message_id": "m4",
             "from_user_id": "wx-user",
-            "item_list": [
-                {"type": ITEM_TEXT, "text_item": {"text": "hello"}},
-            ],
+            "item_list": [{"type": ITEM_TEXT, "text_item": {"text": "hello"}}],
         }
     )
 
@@ -643,9 +620,7 @@ async def test_process_message_starts_typing_on_inbound() -> None:
             "message_id": "m-typing",
             "from_user_id": "wx-user",
             "context_token": "ctx-typing",
-            "item_list": [
-                {"type": ITEM_TEXT, "text_item": {"text": "hello"}},
-            ],
+            "item_list": [{"type": ITEM_TEXT, "text_item": {"text": "hello"}}],
         }
     )
 
@@ -725,7 +700,9 @@ async def test_send_media_uses_upload_full_url_when_present(tmp_path) -> None:
     media_file = tmp_path / "photo.jpg"
     media_file.write_bytes(b"hello-weixin")
 
-    cdn_post = AsyncMock(return_value=_DummyHttpResponse(headers={"x-encrypted-param": "dl-param"}))
+    cdn_post = AsyncMock(
+        return_value=_DummyHttpResponse(headers={"x-encrypted-param": "dl-param"})
+    )
     channel._client = SimpleNamespace(post=cdn_post)
     channel._api_post = AsyncMock(
         side_effect=[
@@ -751,14 +728,11 @@ async def test_send_media_falls_back_to_upload_param_url(tmp_path) -> None:
     media_file = tmp_path / "photo.jpg"
     media_file.write_bytes(b"hello-weixin")
 
-    cdn_post = AsyncMock(return_value=_DummyHttpResponse(headers={"x-encrypted-param": "dl-param"}))
-    channel._client = SimpleNamespace(post=cdn_post)
-    channel._api_post = AsyncMock(
-        side_effect=[
-            {"upload_param": "enc-need-fallback"},
-            {"ret": 0},
-        ]
+    cdn_post = AsyncMock(
+        return_value=_DummyHttpResponse(headers={"x-encrypted-param": "dl-param"})
     )
+    channel._client = SimpleNamespace(post=cdn_post)
+    channel._api_post = AsyncMock(side_effect=[{"upload_param": "enc-need-fallback"}, {"ret": 0}])
 
     await channel._send_media_file("wx-user", str(media_file), "ctx-1")
 
@@ -810,7 +784,9 @@ async def test_send_typing_uses_keepalive_until_send_finishes() -> None:
     typing_statuses: list[int] = []
     keepalive_seen = asyncio.Event()
 
-    async def _api_post_side_effect(endpoint: str, _body: dict | None = None, *, auth: bool = True):
+    async def _api_post_side_effect(
+        endpoint: str, _body: dict | None = None, *, auth: bool = True
+    ):
         if endpoint == "ilink/bot/getconfig":
             return {"ret": 0, "typing_ticket": "ticket-keepalive"}
         if endpoint == "ilink/bot/sendtyping" and _body is not None:
@@ -957,9 +933,7 @@ class _DummyErrorDownloadResponse(_DummyDownloadResponse):
         request = httpx.Request("GET", self._url)
         response = httpx.Response(self.status_code, request=request)
         raise httpx.HTTPStatusError(
-            f"download failed with status {self.status_code}",
-            request=request,
-            response=response,
+            f"download failed with status {self.status_code}", request=request, response=response
         )
 
 
@@ -974,10 +948,7 @@ async def test_download_media_item_uses_full_url_when_present(tmp_path) -> None:
     )
 
     item = {
-        "media": {
-            "full_url": full_url,
-            "encrypt_query_param": "enc-fallback-should-not-be-used",
-        },
+        "media": {"full_url": full_url, "encrypt_query_param": "enc-fallback-should-not-be-used"}
     }
     saved_path = await channel._download_media_item(item, "image")
 
@@ -1003,12 +974,7 @@ async def test_download_media_item_falls_back_when_full_url_returns_retryable_er
         )
     )
 
-    item = {
-        "media": {
-            "full_url": full_url,
-            "encrypt_query_param": "enc-fallback",
-        },
-    }
+    item = {"media": {"full_url": full_url, "encrypt_query_param": "enc-fallback"}}
     saved_path = await channel._download_media_item(item, "image")
 
     assert saved_path is not None
@@ -1070,11 +1036,7 @@ async def test_download_media_item_non_image_requires_aes_key_even_with_full_url
         get=AsyncMock(return_value=_DummyDownloadResponse(content=b"ciphertext-or-unknown"))
     )
 
-    item = {
-        "media": {
-            "full_url": full_url,
-        },
-    }
+    item = {"media": {"full_url": full_url}}
     saved_path = await channel._download_media_item(item, "voice")
 
     assert saved_path is None
@@ -1088,14 +1050,10 @@ async def test_download_media_item_non_image_requires_aes_key_even_with_full_url
 
 def _make_outbound_msg(chat_id: str = "wx-user", content: str = "", media: list | None = None):
     """Build a minimal OutboundMessage-like object for send() tests."""
-    from nanobot.bus.events import OutboundMessage
+    from vtx_claw.bus.events import OutboundMessage
 
     return OutboundMessage(
-        channel="weixin",
-        chat_id=chat_id,
-        content=content,
-        media=media or [],
-        metadata={},
+        channel="weixin", chat_id=chat_id, content=content, media=media or [], metadata={}
     )
 
 
@@ -1146,8 +1104,7 @@ async def test_send_media_5xx_http_status_error_propagates_without_text_fallback
     channel._context_tokens["wx-user"] = "ctx-1"
 
     fake_response = httpx.Response(
-        status_code=503,
-        request=httpx.Request("POST", "https://example.test/upload"),
+        status_code=503, request=httpx.Request("POST", "https://example.test/upload")
     )
     channel._send_media_file = AsyncMock(
         side_effect=httpx.HTTPStatusError(
@@ -1173,8 +1130,7 @@ async def test_send_media_4xx_http_status_error_falls_back_to_text() -> None:
     channel._context_tokens["wx-user"] = "ctx-1"
 
     fake_response = httpx.Response(
-        status_code=400,
-        request=httpx.Request("POST", "https://example.test/upload"),
+        status_code=400, request=httpx.Request("POST", "https://example.test/upload")
     )
     channel._send_media_file = AsyncMock(
         side_effect=httpx.HTTPStatusError(
@@ -1209,7 +1165,9 @@ async def test_send_media_file_not_found_falls_back_to_text() -> None:
     # Should NOT raise
     await channel.send(msg)
 
-    channel._send_text.assert_awaited_once_with("wx-user", "[Failed to send: missing.jpg]", "ctx-1")
+    channel._send_text.assert_awaited_once_with(
+        "wx-user", "[Failed to send: missing.jpg]", "ctx-1"
+    )
 
 
 @pytest.mark.asyncio
@@ -1453,16 +1411,7 @@ async def test_buffer_multiple_tool_hints_flushed_on_final_answer() -> None:
         )
 
     await channel.send(
-        type(
-            "Msg",
-            (),
-            {
-                "chat_id": "wx-user",
-                "content": "Done",
-                "media": [],
-                "metadata": {},
-            },
-        )()
+        type("Msg", (), {"chat_id": "wx-user", "content": "Done", "media": [], "metadata": {}})()
     )
 
     assert channel._send_text.await_count == 2
@@ -1519,16 +1468,7 @@ async def test_thought_progress_flushes_tool_hints() -> None:
 
     # Final answer arrives with nothing left to flush.
     await channel.send(
-        type(
-            "Msg",
-            (),
-            {
-                "chat_id": "wx-user",
-                "content": "Done",
-                "media": [],
-                "metadata": {},
-            },
-        )()
+        type("Msg", (), {"chat_id": "wx-user", "content": "Done", "media": [], "metadata": {}})()
     )
 
     assert channel._send_text.await_count == 3
@@ -1582,16 +1522,7 @@ async def test_reasoning_delta_does_not_flush_tool_hints() -> None:
 
     # Final answer flushes the buffered hint
     await channel.send(
-        type(
-            "Msg",
-            (),
-            {
-                "chat_id": "wx-user",
-                "content": "Done",
-                "media": [],
-                "metadata": {},
-            },
-        )()
+        type("Msg", (), {"chat_id": "wx-user", "content": "Done", "media": [], "metadata": {}})()
     )
 
     channel._send_text.assert_any_await("wx-user", "search 'foo'", "ctx-1")
@@ -1645,16 +1576,7 @@ async def test_empty_progress_message_does_not_flush_tool_hints() -> None:
 
     # Final answer flushes the buffered hint
     await channel.send(
-        type(
-            "Msg",
-            (),
-            {
-                "chat_id": "wx-user",
-                "content": "Done",
-                "media": [],
-                "metadata": {},
-            },
-        )()
+        type("Msg", (), {"chat_id": "wx-user", "content": "Done", "media": [], "metadata": {}})()
     )
 
     channel._send_text.assert_any_await("wx-user", "search 'foo'", "ctx-1")
@@ -1687,16 +1609,7 @@ async def test_buffer_flush_refreshes_context_token() -> None:
     )
 
     await channel.send(
-        type(
-            "Msg",
-            (),
-            {
-                "chat_id": "wx-user",
-                "content": "Done",
-                "media": [],
-                "metadata": {},
-            },
-        )()
+        type("Msg", (), {"chat_id": "wx-user", "content": "Done", "media": [], "metadata": {}})()
     )
 
     assert channel._refresh_context_token_if_stale.await_count == 2
@@ -1728,16 +1641,7 @@ async def test_buffer_flush_failure_does_not_block_final_answer() -> None:
     )
 
     await channel.send(
-        type(
-            "Msg",
-            (),
-            {
-                "chat_id": "wx-user",
-                "content": "Done",
-                "media": [],
-                "metadata": {},
-            },
-        )()
+        type("Msg", (), {"chat_id": "wx-user", "content": "Done", "media": [], "metadata": {}})()
     )
 
     assert channel._send_text.await_count == 2

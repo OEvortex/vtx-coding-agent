@@ -2,7 +2,7 @@
 
 from pathlib import Path
 
-from nanobot.session.manager import Session, SessionManager
+from vtx_claw.session.manager import Session, SessionManager
 
 
 def _seed(workspace: Path, key: str = "telegram:abc") -> SessionManager:
@@ -85,10 +85,7 @@ def _write_legacy_session(legacy_dir: Path, key: str, roles: list[str]) -> Path:
 def test_delete_session_cleans_legacy_file(tmp_path: Path, monkeypatch) -> None:
     """A session that only exists at the legacy location must also be deleted."""
     legacy = tmp_path / "legacy_sessions"
-    monkeypatch.setattr(
-        "nanobot.session.manager.get_legacy_sessions_dir",
-        lambda: legacy,
-    )
+    monkeypatch.setattr("vtx_claw.session.manager.get_legacy_sessions_dir", lambda: legacy)
     key = "telegram:only-legacy"
     legacy_path = _write_legacy_session(legacy, key, ["user", "assistant"])
     assert legacy_path.exists()
@@ -104,10 +101,7 @@ def test_delete_session_cleans_legacy_file(tmp_path: Path, monkeypatch) -> None:
 def test_delete_session_cleans_both_locations(tmp_path: Path, monkeypatch) -> None:
     """When files exist at both the new and legacy paths, both must be removed."""
     legacy = tmp_path / "legacy_sessions"
-    monkeypatch.setattr(
-        "nanobot.session.manager.get_legacy_sessions_dir",
-        lambda: legacy,
-    )
+    monkeypatch.setattr("vtx_claw.session.manager.get_legacy_sessions_dir", lambda: legacy)
     workspace = tmp_path / "workspace"
     key = "telegram:both-paths"
     _write_legacy_session(legacy, key, ["user", "assistant"])
@@ -129,10 +123,7 @@ def test_delete_session_cleans_both_locations(tmp_path: Path, monkeypatch) -> No
 def test_delete_session_prevents_legacy_revival(tmp_path: Path, monkeypatch) -> None:
     """After delete_session, a subsequent get_or_create must not resurrect history."""
     legacy = tmp_path / "legacy_sessions"
-    monkeypatch.setattr(
-        "nanobot.session.manager.get_legacy_sessions_dir",
-        lambda: legacy,
-    )
+    monkeypatch.setattr("vtx_claw.session.manager.get_legacy_sessions_dir", lambda: legacy)
     workspace = tmp_path / "workspace"
     key = "telegram:no-revival"
     _write_legacy_session(legacy, key, ["user", "assistant"])

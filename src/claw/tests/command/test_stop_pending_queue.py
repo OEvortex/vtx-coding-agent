@@ -5,9 +5,9 @@ from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
-from nanobot.bus.events import OutboundMessage
-from nanobot.command.builtin import cmd_stop
-from nanobot.command.router import CommandContext
+from vtx_claw.bus.events import OutboundMessage
+from vtx_claw.command.builtin import cmd_stop
+from vtx_claw.command.router import CommandContext
 
 
 @pytest.mark.asyncio

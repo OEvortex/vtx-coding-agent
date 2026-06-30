@@ -6,14 +6,14 @@
     <meta name="color-scheme" content="light dark" />
     <meta
       name="description"
-      content="nanobot web UI — chat with your nanobot workspace."
+      content="vtx-claw web UI — chat with your vtx-claw workspace."
       data-i18n-meta="description"
     />
     <meta name="theme-color" content="#fafaf9" media="(prefers-color-scheme: light)" />
     <meta name="theme-color" content="#161618" media="(prefers-color-scheme: dark)" />
-    <link rel="icon" type="image/png" sizes="32x32" href="/brand/nanobot_favicon_32.png" />
-    <link rel="icon" type="image/png" sizes="73x75" href="/brand/nanobot_icon.png" />
-    <link rel="apple-touch-icon" sizes="180x180" href="/brand/nanobot_apple_touch.png" />
+    <link rel="icon" type="image/png" sizes="32x32" href="/brand/vtx-claw_favicon_32.png" />
+    <link rel="icon" type="image/png" sizes="73x75" href="/brand/vtx-claw_icon.png" />
+    <link rel="apple-touch-icon" sizes="180x180" href="/brand/vtx-claw_apple_touch.png" />
     <style>
       html,
       body,
@@ -80,7 +80,7 @@
     <script>
       (function () {
         try {
-          var stored = localStorage.getItem("nanobot-webui.theme");
+          var stored = localStorage.getItem("vtx-claw-webui.theme");
           var dark =
             stored === "dark" ||
             (!stored &&
@@ -92,43 +92,43 @@
     </script>
     <script>
       (function () {
-        var localeKey = "nanobot.locale";
+        var localeKey = "vtx-claw.locale";
         var copy = {
           en: {
-            boot: "Loading nanobot…",
-            description: "nanobot web UI — chat with your nanobot workspace."
+            boot: "Loading vtx-claw…",
+            description: "vtx-claw web UI — chat with your vtx-claw workspace."
           },
           "zh-CN": {
-            boot: "正在加载 nanobot…",
-            description: "nanobot Web UI —— 与你的 nanobot 工作区对话。"
+            boot: "正在加载 vtx-claw…",
+            description: "vtx-claw Web UI —— 与你的 vtx-claw 工作区对话。"
           },
           "zh-TW": {
-            boot: "正在載入 nanobot…",
-            description: "nanobot Web UI —— 與你的 nanobot 工作區對話。"
+            boot: "正在載入 vtx-claw…",
+            description: "vtx-claw Web UI —— 與你的 vtx-claw 工作區對話。"
           },
           fr: {
-            boot: "Chargement de nanobot…",
-            description: "Interface web nanobot — discutez avec votre espace de travail nanobot."
+            boot: "Chargement de vtx-claw…",
+            description: "Interface web vtx-claw — discutez avec votre espace de travail vtx-claw."
           },
           ja: {
-            boot: "nanobot を読み込み中…",
-            description: "nanobot Web UI — nanobot ワークスペースと会話します。"
+            boot: "vtx-claw を読み込み中…",
+            description: "vtx-claw Web UI — vtx-claw ワークスペースと会話します。"
           },
           ko: {
-            boot: "nanobot 불러오는 중…",
-            description: "nanobot 웹 UI — nanobot 작업공간과 대화하세요."
+            boot: "vtx-claw 불러오는 중…",
+            description: "vtx-claw 웹 UI — vtx-claw 작업공간과 대화하세요."
           },
           es: {
-            boot: "Cargando nanobot…",
-            description: "Interfaz web de nanobot: conversa con tu espacio de trabajo de nanobot."
+            boot: "Cargando vtx-claw…",
+            description: "Interfaz web de vtx-claw: conversa con tu espacio de trabajo de vtx-claw."
           },
           vi: {
-            boot: "Đang tải nanobot…",
-            description: "Giao diện web nanobot — trò chuyện với workspace nanobot của bạn."
+            boot: "Đang tải vtx-claw…",
+            description: "Giao diện web vtx-claw — trò chuyện với workspace vtx-claw của bạn."
           },
           id: {
-            boot: "Memuat nanobot…",
-            description: "UI web nanobot — ngobrol dengan workspace nanobot Anda."
+            boot: "Memuat vtx-claw…",
+            description: "UI web vtx-claw — ngobrol dengan workspace vtx-claw Anda."
           }
         };
 
@@ -170,14 +170,14 @@
         } catch {}
       })();
     </script>
-    <title>nanobot</title>
+    <title>vtx-claw</title>
   </head>
   <body class="bg-background text-foreground antialiased">
     <div id="root">
       <div class="boot-splash">
         <div class="boot-splash-inner">
           <span class="boot-dot" aria-hidden="true"></span>
-          <span data-boot-copy>Loading nanobot…</span>
+          <span data-boot-copy>Loading vtx-claw…</span>
         </div>
       </div>
     </div>

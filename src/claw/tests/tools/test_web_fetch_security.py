@@ -9,10 +9,10 @@ from unittest.mock import patch
 import httpx
 import pytest
 
-from nanobot.agent.tools import web as web_module
-from nanobot.agent.tools.web import WebFetchTool
-from nanobot.config.schema import WebFetchConfig
-from nanobot.security.workspace_access import (
+from vtx_claw.agent.tools import web as web_module
+from vtx_claw.agent.tools.web import WebFetchTool
+from vtx_claw.config.schema import WebFetchConfig
+from vtx_claw.security.workspace_access import (
     bind_workspace_scope,
     build_workspace_scope,
     reset_workspace_scope,
@@ -32,7 +32,7 @@ def _fake_resolve_public(hostname, port, family=0, type_=0):
 @pytest.mark.asyncio
 async def test_web_fetch_blocks_private_ip():
     tool = WebFetchTool()
-    with patch("nanobot.security.network.socket.getaddrinfo", _fake_resolve_private):
+    with patch("vtx_claw.security.network.socket.getaddrinfo", _fake_resolve_private):
         result = await tool.execute(url="http://169.254.169.254/computeMetadata/v1/")
     data = json.loads(result)
     assert "error" in data
@@ -46,7 +46,7 @@ async def test_web_fetch_blocks_localhost():
     def _resolve_localhost(hostname, port, family=0, type_=0):
         return [(socket.AF_INET, socket.SOCK_STREAM, 0, "", ("127.0.0.1", 0))]
 
-    with patch("nanobot.security.network.socket.getaddrinfo", _resolve_localhost):
+    with patch("vtx_claw.security.network.socket.getaddrinfo", _resolve_localhost):
         result = await tool.execute(url="http://localhost/admin")
     data = json.loads(result)
     assert "error" in data
@@ -62,7 +62,7 @@ async def test_web_fetch_blocks_localhost_even_in_full_workspace_scope(tmp_path)
 
     token = bind_workspace_scope(scope)
     try:
-        with patch("nanobot.security.network.socket.getaddrinfo", _resolve_localhost):
+        with patch("vtx_claw.security.network.socket.getaddrinfo", _resolve_localhost):
             result = await tool.execute(url="http://localhost/admin")
     finally:
         reset_workspace_scope(token)
@@ -94,7 +94,7 @@ async def test_web_fetch_result_contains_untrusted_flag():
         return FakeResponse()
 
     with (
-        patch("nanobot.security.network.socket.getaddrinfo", _fake_resolve_public),
+        patch("vtx_claw.security.network.socket.getaddrinfo", _fake_resolve_public),
         patch("httpx.AsyncClient.get", _fake_get),
     ):
         result = await tool.execute(url="https://example.com/page")
@@ -107,8 +107,7 @@ async def test_web_fetch_result_contains_untrusted_flag():
 @pytest.mark.asyncio
 async def test_web_fetch_can_skip_jina_and_use_custom_user_agent(monkeypatch):
     tool = WebFetchTool(
-        config=WebFetchConfig(use_jina_reader=False),
-        user_agent="nanobot-test-agent",
+        config=WebFetchConfig(use_jina_reader=False), user_agent="vtx_claw-test-agent"
     )
     seen_headers: list[dict] = []
 
@@ -159,16 +158,16 @@ async def test_web_fetch_can_skip_jina_and_use_custom_user_agent(monkeypatch):
 
     monkeypatch.setattr(tool, "_fetch_jina", _fail_jina)
     monkeypatch.setattr(tool, "_extract_readable_html", lambda html, mode: "Hello world")
-    monkeypatch.setattr("nanobot.agent.tools.web.httpx.AsyncClient", FakeClient)
+    monkeypatch.setattr("vtx_claw.agent.tools.web.httpx.AsyncClient", FakeClient)
 
-    with patch("nanobot.security.network.socket.getaddrinfo", _fake_resolve_public):
+    with patch("vtx_claw.security.network.socket.getaddrinfo", _fake_resolve_public):
         result = await tool.execute(url="https://example.com/page")
 
     data = json.loads(result)
     assert data["extractor"] == "readability"
     assert [headers["User-Agent"] for headers in seen_headers] == [
-        "nanobot-test-agent",
-        "nanobot-test-agent",
+        "vtx_claw-test-agent",
+        "vtx_claw-test-agent",
     ]
 
 
@@ -202,9 +201,9 @@ async def test_web_fetch_falls_back_when_readability_dependency_is_missing(monke
         raise ModuleNotFoundError("No module named 'lxml_html_clean'")
 
     monkeypatch.setattr(tool, "_extract_readable_html", _missing_readability)
-    monkeypatch.setattr("nanobot.agent.tools.web.httpx.AsyncClient", FakeClient)
+    monkeypatch.setattr("vtx_claw.agent.tools.web.httpx.AsyncClient", FakeClient)
 
-    with patch("nanobot.security.network.socket.getaddrinfo", _fake_resolve_public):
+    with patch("vtx_claw.security.network.socket.getaddrinfo", _fake_resolve_public):
         result = await tool._fetch_readability("https://example.com/page", "markdown", 5000)
 
     data = json.loads(result)
@@ -266,7 +265,7 @@ async def test_web_fetch_blocks_private_redirect_before_readability_request(monk
             return _fake_resolve_public(hostname, port, family, type_)
         return _REAL_GETADDRINFO(hostname, port, family, type_)
 
-    with patch("nanobot.security.network.socket.getaddrinfo", resolve_public_start_only):
+    with patch("vtx_claw.security.network.socket.getaddrinfo", resolve_public_start_only):
         result = await tool.execute(url="https://attacker.example/start")
 
     data = json.loads(result)
@@ -282,9 +281,7 @@ async def test_web_fetch_blocks_private_redirect_before_returning_image(monkeypa
     def handler(request: httpx.Request) -> httpx.Response:
         if str(request.url) == "https://example.com/image.png":
             return httpx.Response(
-                302,
-                headers={"Location": "http://127.0.0.1/secret.png"},
-                request=request,
+                302, headers={"Location": "http://127.0.0.1/secret.png"}, request=request
             )
         if str(request.url) == "http://127.0.0.1/secret.png":
             return httpx.Response(
@@ -303,14 +300,14 @@ async def test_web_fetch_blocks_private_redirect_before_returning_image(monkeypa
             kwargs.pop("proxy", None)
             super().__init__(*args, transport=transport, **kwargs)
 
-    monkeypatch.setattr("nanobot.agent.tools.web.httpx.AsyncClient", TransportAsyncClient)
+    monkeypatch.setattr("vtx_claw.agent.tools.web.httpx.AsyncClient", TransportAsyncClient)
 
     def resolve_public_start_only(hostname, port, family=0, type_=0):
         if hostname == "example.com":
             return _fake_resolve_public(hostname, port, family, type_)
         return _REAL_GETADDRINFO(hostname, port, family, type_)
 
-    with patch("nanobot.security.network.socket.getaddrinfo", resolve_public_start_only):
+    with patch("vtx_claw.security.network.socket.getaddrinfo", resolve_public_start_only):
         result = await tool.execute(url="https://example.com/image.png")
 
     data = json.loads(result)
@@ -327,9 +324,7 @@ async def test_web_fetch_does_not_request_private_redirect_target(monkeypatch):
         requested.append(str(request.url))
         if str(request.url) == "https://attacker.example/start":
             return httpx.Response(
-                302,
-                headers={"Location": "http://127.0.0.1:8765/metadata"},
-                request=request,
+                302, headers={"Location": "http://127.0.0.1:8765/metadata"}, request=request
             )
         if str(request.url) == "http://127.0.0.1:8765/metadata":
             return httpx.Response(200, content=b"internal secret", request=request)
@@ -350,7 +345,7 @@ async def test_web_fetch_does_not_request_private_redirect_target(monkeypatch):
             return _fake_resolve_public(hostname, port, family, type_)
         return _REAL_GETADDRINFO(hostname, port, family, type_)
 
-    with patch("nanobot.security.network.socket.getaddrinfo", resolve_public_start_only):
+    with patch("vtx_claw.security.network.socket.getaddrinfo", resolve_public_start_only):
         result = await tool.execute(url="https://attacker.example/start")
 
     data = json.loads(result)

@@ -2,9 +2,9 @@ from __future__ import annotations
 
 from typing import Any
 
-from nanobot.agent.tools.base import Tool
-from nanobot.agent.tools.filesystem import ReadFileTool
-from nanobot.agent.tools.registry import ToolRegistry
+from vtx_claw.agent.tools.base import Tool
+from vtx_claw.agent.tools.filesystem import ReadFileTool
+from vtx_claw.agent.tools.registry import ToolRegistry
 
 
 class _FakeTool(Tool):
@@ -149,11 +149,7 @@ def test_prepare_call_rejects_scalar_for_single_required_parameter() -> None:
     registry.register(
         _FakeTool(
             "web_fetch",
-            {
-                "type": "object",
-                "properties": {"url": {"type": "string"}},
-                "required": ["url"],
-            },
+            {"type": "object", "properties": {"url": {"type": "string"}}, "required": ["url"]},
         )
     )
 
@@ -191,18 +187,11 @@ def test_prepare_call_unwraps_arguments_payload() -> None:
     registry.register(
         _FakeTool(
             "read_file",
-            {
-                "type": "object",
-                "properties": {"path": {"type": "string"}},
-                "required": ["path"],
-            },
+            {"type": "object", "properties": {"path": {"type": "string"}}, "required": ["path"]},
         )
     )
 
-    tool, params, error = registry.prepare_call(
-        "read_file",
-        {"arguments": '{"path":"foo.txt"}'},
-    )
+    tool, params, error = registry.prepare_call("read_file", {"arguments": '{"path":"foo.txt"}'})
 
     assert tool is not None
     assert params == {"path": "foo.txt"}
@@ -246,17 +235,10 @@ async def test_registry_rejects_unknown_builtin_tool_parameters(tmp_path) -> Non
     (tmp_path / "sample.txt").write_text("one\ntwo\nthree\n", encoding="utf-8")
     registry = ToolRegistry()
     registry.register(
-        ReadFileTool(
-            workspace=tmp_path,
-            allowed_dir=tmp_path,
-            restrict_to_workspace=True,
-        )
+        ReadFileTool(workspace=tmp_path, allowed_dir=tmp_path, restrict_to_workspace=True)
     )
 
-    result = await registry.execute(
-        "read_file",
-        {"path": "sample.txt", "line_limit": 1},
-    )
+    result = await registry.execute("read_file", {"path": "sample.txt", "line_limit": 1})
 
     assert "Invalid parameters" in result
     assert "unexpected parameter line_limit" in result

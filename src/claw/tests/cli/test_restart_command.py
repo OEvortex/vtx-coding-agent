@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import os
 import time
 from types import SimpleNamespace
@@ -10,14 +11,14 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-from nanobot.bus.events import InboundMessage
-from nanobot.providers.base import LLMResponse
+from vtx_claw.bus.events import InboundMessage
+from vtx_claw.providers.base import LLMResponse
 
 
 def _make_loop():
     """Create a minimal AgentLoop with mocked dependencies."""
-    from nanobot.agent.loop import AgentLoop
-    from nanobot.bus.queue import MessageBus
+    from vtx_claw.agent.loop import AgentLoop
+    from vtx_claw.bus.queue import MessageBus
 
     bus = MessageBus()
     provider = MagicMock()
@@ -26,9 +27,9 @@ def _make_loop():
     workspace.__truediv__ = MagicMock(return_value=MagicMock())
 
     with (
-        patch("nanobot.agent.loop.ContextBuilder"),
-        patch("nanobot.agent.loop.SessionManager"),
-        patch("nanobot.agent.loop.SubagentManager"),
+        patch("vtx_claw.agent.loop.ContextBuilder"),
+        patch("vtx_claw.agent.loop.SessionManager"),
+        patch("vtx_claw.agent.loop.SubagentManager"),
     ):
         loop = AgentLoop(bus=bus, provider=provider, workspace=workspace)
     return loop, bus
@@ -37,15 +38,15 @@ def _make_loop():
 class TestRestartCommand:
     @pytest.mark.asyncio
     async def test_restart_sends_message_and_calls_execv(self):
-        from nanobot.command.builtin import cmd_restart
-        from nanobot.command.router import CommandContext
-        from nanobot.utils.restart import (
+        from vtx_claw.command.builtin import cmd_restart
+        from vtx_claw.command.router import CommandContext
+        from vtx_claw.utils.restart import (
             RESTART_NOTIFY_CHANNEL_ENV,
             RESTART_NOTIFY_CHAT_ID_ENV,
             RESTART_STARTED_AT_ENV,
         )
 
-        loop, bus = _make_loop()
+        loop, _bus = _make_loop()
         msg = InboundMessage(channel="cli", sender_id="user", chat_id="direct", content="/restart")
         ctx = CommandContext(msg=msg, session=None, key=msg.session_key, raw="/restart", loop=loop)
 
@@ -59,15 +60,12 @@ class TestRestartCommand:
             scheduled.append(task)
             return task
 
-        fake_asyncio = SimpleNamespace(
-            sleep=_fast_sleep,
-            create_task=_capture_task,
-        )
+        fake_asyncio = SimpleNamespace(sleep=_fast_sleep, create_task=_capture_task)
 
         with (
             patch.dict(os.environ, {}, clear=False),
-            patch("nanobot.command.builtin.asyncio", new=fake_asyncio),
-            patch("nanobot.command.builtin.os.execv") as mock_execv,
+            patch("vtx_claw.command.builtin.asyncio", new=fake_asyncio),
+            patch("vtx_claw.command.builtin.os.execv") as mock_execv,
         ):
             out = await cmd_restart(ctx)
             assert "Restarting" in out.content
@@ -95,15 +93,12 @@ class TestRestartCommand:
             scheduled.append(task)
             return task
 
-        fake_asyncio = SimpleNamespace(
-            sleep=_fast_sleep,
-            create_task=_capture_task,
-        )
+        fake_asyncio = SimpleNamespace(sleep=_fast_sleep, create_task=_capture_task)
 
         with (
             patch.object(loop, "_dispatch", new_callable=AsyncMock) as mock_dispatch,
-            patch("nanobot.command.builtin.asyncio", new=fake_asyncio),
-            patch("nanobot.command.builtin.os.execv"),
+            patch("vtx_claw.command.builtin.asyncio", new=fake_asyncio),
+            patch("vtx_claw.command.builtin.os.execv"),
         ):
             await bus.publish_inbound(msg)
 
@@ -112,10 +107,8 @@ class TestRestartCommand:
             out = await asyncio.wait_for(bus.consume_outbound(), timeout=1.0)
             loop._running = False
             run_task.cancel()
-            try:
+            with contextlib.suppress(asyncio.CancelledError):
                 await run_task
-            except asyncio.CancelledError:
-                pass
 
             mock_dispatch.assert_not_called()
             assert "Restarting" in out.content
@@ -136,13 +129,11 @@ class TestRestartCommand:
             out = await asyncio.wait_for(bus.consume_outbound(), timeout=1.0)
             loop._running = False
             run_task.cancel()
-            try:
+            with contextlib.suppress(asyncio.CancelledError):
                 await run_task
-            except asyncio.CancelledError:
-                pass
 
             mock_dispatch.assert_not_called()
-            assert "nanobot" in out.content.lower() or "Model" in out.content
+            assert "vtx_claw" in out.content.lower() or "Model" in out.content
 
     @pytest.mark.asyncio
     async def test_run_propagates_external_cancellation(self):
@@ -158,7 +149,7 @@ class TestRestartCommand:
 
     @pytest.mark.asyncio
     async def test_help_includes_restart(self):
-        loop, bus = _make_loop()
+        loop, _bus = _make_loop()
         msg = InboundMessage(channel="telegram", sender_id="u1", chat_id="c1", content="/help")
 
         response = await loop._process_message(msg)
@@ -222,13 +213,10 @@ class TestRestartCommand:
     async def test_run_agent_loop_estimates_usage_when_provider_omits_it(self, monkeypatch):
         loop, _bus = _make_loop()
         monkeypatch.setattr(
-            "nanobot.agent.runner.estimate_prompt_tokens_chain",
+            "vtx_claw.agent.runner.estimate_prompt_tokens_chain",
             lambda *_args, **_kwargs: (123, "test"),
         )
-        monkeypatch.setattr(
-            "nanobot.agent.runner.estimate_message_tokens",
-            lambda _message: 7,
-        )
+        monkeypatch.setattr("vtx_claw.agent.runner.estimate_message_tokens", lambda _message: 7)
         loop.provider.chat_with_retry = AsyncMock(
             side_effect=[
                 LLMResponse(content="first", usage={"prompt_tokens": 9, "completion_tokens": 4}),
@@ -295,7 +283,9 @@ class TestRestartCommand:
         ]
         loop.sessions.get_or_create.return_value = session
 
-        msg = InboundMessage(channel="telegram", sender_id="u1", chat_id="c1", content="/history 3")
+        msg = InboundMessage(
+            channel="telegram", sender_id="u1", chat_id="c1", content="/history 3"
+        )
         response = await loop._process_message(msg)
 
         assert response is not None

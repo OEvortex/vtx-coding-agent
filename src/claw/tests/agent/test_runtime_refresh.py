@@ -2,12 +2,12 @@ from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import MagicMock
 
-from nanobot.agent.loop import AgentLoop
-from nanobot.bus.queue import MessageBus
-from nanobot.config.loader import save_config
-from nanobot.config.schema import Config
-from nanobot.providers.factory import ProviderSnapshot, load_provider_snapshot
-from nanobot.webui.settings_api import update_agent_settings
+from vtx_claw.agent.loop import AgentLoop
+from vtx_claw.bus.queue import MessageBus
+from vtx_claw.config.loader import save_config
+from vtx_claw.config.schema import Config
+from vtx_claw.providers.factory import ProviderSnapshot, load_provider_snapshot
+from vtx_claw.webui.settings_api import update_agent_settings
 
 
 def _provider(default_model: str, max_tokens: int = 123) -> MagicMock:
@@ -74,10 +74,7 @@ def test_llm_runtime_refreshes_provider_snapshot(tmp_path: Path) -> None:
     assert loop.runner.provider is new_provider
 
 
-def test_settings_context_window_refreshes_runtime_state(
-    tmp_path: Path,
-    monkeypatch,
-) -> None:
+def test_settings_context_window_refreshes_runtime_state(tmp_path: Path, monkeypatch) -> None:
     config_path = tmp_path / "config.json"
     config = Config()
     config.agents.defaults.workspace = str(tmp_path / "workspace")
@@ -86,7 +83,7 @@ def test_settings_context_window_refreshes_runtime_state(
     config.agents.defaults.context_window_tokens = 65_536
     config.providers.openai.api_key = "sk-test"
     save_config(config, config_path)
-    monkeypatch.setattr("nanobot.config.loader._current_config_path", config_path)
+    monkeypatch.setattr("vtx_claw.config.loader._current_config_path", config_path)
 
     def loader(*, preset_name: str | None = None) -> ProviderSnapshot:
         return load_provider_snapshot(config_path, preset_name=preset_name)

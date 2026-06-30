@@ -7,7 +7,7 @@ from unittest.mock import patch
 
 import pytest
 
-from nanobot.agent.tools.web import WebFetchTool, _validate_url
+from vtx_claw.agent.tools.web import WebFetchTool, _validate_url
 
 
 def _fake_resolve_public(hostname, port, family=0, type_=0):
@@ -58,8 +58,8 @@ class FakeClient:
 
 
 def _patch_env():
-    return patch("nanobot.security.network.socket.getaddrinfo", _fake_resolve_public), patch(
-        "nanobot.agent.tools.web.httpx.AsyncClient", FakeClient
+    return patch("vtx_claw.security.network.socket.getaddrinfo", _fake_resolve_public), patch(
+        "vtx_claw.agent.tools.web.httpx.AsyncClient", FakeClient
     )
 
 
@@ -77,12 +77,12 @@ def _patch_env():
     ],
 )
 def test_dirty_urls_fail_validation(dirty_url):
-    is_valid, msg = _validate_url(dirty_url)
+    is_valid, _msg = _validate_url(dirty_url)
     assert not is_valid
 
 
 def test_clean_url_passes_validation():
-    is_valid, msg = _validate_url("https://example.com/page")
+    is_valid, _msg = _validate_url("https://example.com/page")
     assert is_valid
 
 

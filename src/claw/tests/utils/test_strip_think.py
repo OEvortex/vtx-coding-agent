@@ -1,4 +1,4 @@
-from nanobot.utils.helpers import (
+from vtx_claw.utils.helpers import (
     extract_reasoning,
     extract_think,
     strip_reasoning_tags,
@@ -251,18 +251,14 @@ class TestExtractReasoning:
 
     def test_strips_tags_from_dedicated_reasoning_content(self):
         reasoning, content = extract_reasoning(
-            "<thinking>Preparing final response",
-            None,
-            "visible answer",
+            "<thinking>Preparing final response", None, "visible answer"
         )
         assert reasoning == "Preparing final response"
         assert content == "visible answer"
 
     def test_self_closing_thinking_marker_in_reasoning_content(self):
         reasoning, content = extract_reasoning(
-            "<thinking/>Preparing final response",
-            None,
-            "visible answer",
+            "<thinking/>Preparing final response", None, "visible answer"
         )
         assert reasoning == "Preparing final response"
         assert content == "visible answer"
@@ -270,9 +266,7 @@ class TestExtractReasoning:
     def test_prefers_reasoning_content_and_strips_inline_think(self):
         # Dedicated field wins; inline tags are still scrubbed from content.
         reasoning, content = extract_reasoning(
-            "dedicated",
-            None,
-            "<think>inline</think>visible answer",
+            "dedicated", None, "<think>inline</think>visible answer"
         )
         assert reasoning == "dedicated"
         assert content == "visible answer"

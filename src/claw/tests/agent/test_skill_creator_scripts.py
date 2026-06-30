@@ -1,11 +1,9 @@
 import importlib
-import shutil
 import sys
 import zipfile
 from pathlib import Path
 
-
-SCRIPT_DIR = Path("nanobot/skills/skill-creator/scripts").resolve()
+SCRIPT_DIR = Path("vtx_claw/skills/skill-creator/scripts").resolve()
 if str(SCRIPT_DIR) not in sys.path:
     sys.path.insert(0, str(SCRIPT_DIR))
 
@@ -16,10 +14,7 @@ quick_validate = importlib.import_module("quick_validate")
 
 def test_init_skill_creates_expected_files(tmp_path: Path) -> None:
     skill_dir = init_skill.init_skill(
-        "demo-skill",
-        tmp_path,
-        ["scripts", "references", "assets"],
-        include_examples=True,
+        "demo-skill", tmp_path, ["scripts", "references", "assets"], include_examples=True
     )
 
     assert skill_dir == tmp_path / "demo-skill"
@@ -30,7 +25,7 @@ def test_init_skill_creates_expected_files(tmp_path: Path) -> None:
 
 
 def test_validate_skill_accepts_existing_skill_creator() -> None:
-    valid, message = quick_validate.validate_skill(Path("nanobot/skills/skill-creator").resolve())
+    valid, message = quick_validate.validate_skill(Path("vtx_claw/skills/skill-creator").resolve())
 
     assert valid, message
 
@@ -68,8 +63,7 @@ def test_package_skill_creates_archive(tmp_path: Path) -> None:
     skill_dir = tmp_path / "package-me"
     skill_dir.mkdir()
     (skill_dir / "SKILL.md").write_text(
-        "---\nname: package-me\ndescription: Package this skill.\n---\n# Skill\n",
-        encoding="utf-8",
+        "---\nname: package-me\ndescription: Package this skill.\n---\n# Skill\n", encoding="utf-8"
     )
     scripts_dir = skill_dir / "scripts"
     scripts_dir.mkdir()

@@ -14,9 +14,9 @@ import websockets
 from websockets.exceptions import ConnectionClosed
 from websockets.frames import Close
 
-from nanobot.bus.events import OUTBOUND_META_AGENT_UI, OutboundMessage
-from nanobot.bus.queue import MessageBus
-from nanobot.channels.websocket import (
+from vtx_claw.bus.events import OUTBOUND_META_AGENT_UI, OutboundMessage
+from vtx_claw.bus.queue import MessageBus
+from vtx_claw.channels.websocket import (
     WebSocketChannel,
     WebSocketConfig,
     _is_valid_chat_id,
@@ -24,28 +24,18 @@ from nanobot.channels.websocket import (
     _parse_inbound_payload,
     publish_runtime_model_update,
 )
-from nanobot.config.loader import load_config, save_config
-from nanobot.config.schema import Config, ModelPresetConfig
-from nanobot.session import webui_turns as wth
-from nanobot.session.manager import SessionManager
-from nanobot.webui.gateway_services import GatewayServices, build_gateway_services
-from nanobot.webui.http_utils import (
-    issue_route_secret_matches as _issue_route_secret_matches,
-)
-from nanobot.webui.http_utils import (
-    normalize_config_path as _normalize_config_path,
-)
-from nanobot.webui.http_utils import (
-    normalize_http_path as _normalize_http_path,
-)
-from nanobot.webui.http_utils import (
-    parse_query as _parse_query,
-)
-from nanobot.webui.http_utils import (
-    parse_request_path as _parse_request_path,
-)
-from nanobot.webui.settings_api import settings_payload, update_provider_settings
-from nanobot.webui.transcript import append_transcript_object, read_transcript_lines
+from vtx_claw.config.loader import load_config, save_config
+from vtx_claw.config.schema import Config, ModelPresetConfig
+from vtx_claw.session import webui_turns as wth
+from vtx_claw.session.manager import SessionManager
+from vtx_claw.webui.gateway_services import GatewayServices, build_gateway_services
+from vtx_claw.webui.http_utils import issue_route_secret_matches as _issue_route_secret_matches
+from vtx_claw.webui.http_utils import normalize_config_path as _normalize_config_path
+from vtx_claw.webui.http_utils import normalize_http_path as _normalize_http_path
+from vtx_claw.webui.http_utils import parse_query as _parse_query
+from vtx_claw.webui.http_utils import parse_request_path as _parse_request_path
+from vtx_claw.webui.settings_api import settings_payload, update_provider_settings
+from vtx_claw.webui.transcript import append_transcript_object, read_transcript_lines
 
 # -- Shared helpers (aligned with test_websocket_integration.py) ---------------
 
@@ -131,11 +121,8 @@ def bus() -> MagicMock:
 
 @pytest.fixture(autouse=True)
 def isolate_webui_workspace_state(tmp_path, monkeypatch) -> None:
-    monkeypatch.setattr("nanobot.config.paths.get_data_dir", lambda: tmp_path)
-    monkeypatch.setattr(
-        "nanobot.webui.workspaces.get_webui_dir",
-        lambda: tmp_path / "webui",
-    )
+    monkeypatch.setattr("vtx_claw.config.paths.get_data_dir", lambda: tmp_path)
+    monkeypatch.setattr("vtx_claw.webui.workspaces.get_webui_dir", lambda: tmp_path / "webui")
 
 
 async def _http_get(url: str, headers: dict[str, str] | None = None) -> httpx.Response:
@@ -169,16 +156,9 @@ async def test_send_session_updated_broadcasts_to_other_webui_connections(bus) -
     active_events = [json.loads(raw)["event"] for raw in active_conn.sent]
     other_events = [json.loads(raw)["event"] for raw in other_conn.sent]
 
-    assert (active_events, other_events) == (
-        ["session_updated"],
-        ["session_updated"],
-    )
+    assert (active_events, other_events) == (["session_updated"], ["session_updated"])
     payload = json.loads(other_conn.sent[0])
-    assert payload == {
-        "event": "session_updated",
-        "chat_id": "chat-a",
-        "scope": "thread",
-    }
+    assert payload == {"event": "session_updated", "chat_id": "chat-a", "scope": "thread"}
 
 
 async def _recv_ws_event(client: Any, event: str) -> dict[str, Any]:
@@ -300,7 +280,7 @@ def test_issue_route_secret_matches_bearer_and_header() -> None:
     secret = "my-secret"
     bearer_headers = Headers([("Authorization", "Bearer my-secret")])
     assert _issue_route_secret_matches(bearer_headers, secret) is True
-    x_headers = Headers([("X-Nanobot-Auth", "my-secret")])
+    x_headers = Headers([("X-VtxClaw-Auth", "my-secret")])
     assert _issue_route_secret_matches(x_headers, secret) is True
     wrong = Headers([("Authorization", "Bearer other")])
     assert _issue_route_secret_matches(wrong, secret) is False
@@ -335,8 +315,7 @@ async def test_token_issue_route_requires_secret_when_static_token_configured(
         assert denied.status_code == 401
 
         allowed = await _http_get(
-            f"http://127.0.0.1:{port}/auth/token",
-            headers={"Authorization": "Bearer static-token"},
+            f"http://127.0.0.1:{port}/auth/token", headers={"Authorization": "Bearer static-token"}
         )
         assert allowed.status_code == 200
         assert allowed.json()["token"].startswith("nbwt_")
@@ -347,7 +326,7 @@ async def test_token_issue_route_requires_secret_when_static_token_configured(
 
 @pytest.mark.asyncio
 async def test_webui_message_envelope_marks_inbound_metadata(bus: MagicMock) -> None:
-    from nanobot.webui.transcript import read_transcript_lines
+    from vtx_claw.webui.transcript import read_transcript_lines
 
     channel = _ch(bus)
     conn = MagicMock()
@@ -386,13 +365,11 @@ async def test_webui_message_envelope_marks_inbound_metadata(bus: MagicMock) -> 
 
 @pytest.mark.asyncio
 async def test_webui_message_envelope_persists_user_transcript_for_refresh(
-    bus: MagicMock,
-    tmp_path,
-    monkeypatch,
+    bus: MagicMock, tmp_path, monkeypatch
 ) -> None:
-    from nanobot.webui.transcript import build_webui_thread_response, read_transcript_lines
+    from vtx_claw.webui.transcript import build_webui_thread_response, read_transcript_lines
 
-    monkeypatch.setattr("nanobot.config.paths.get_data_dir", lambda: tmp_path)
+    monkeypatch.setattr("vtx_claw.config.paths.get_data_dir", lambda: tmp_path)
     channel = _ch(bus)
     conn = AsyncMock()
     conn.remote_address = ("127.0.0.1", 50123)
@@ -421,13 +398,11 @@ async def test_webui_message_envelope_persists_user_transcript_for_refresh(
 
 @pytest.mark.asyncio
 async def test_webui_stop_control_message_is_not_persisted_as_user_bubble(
-    bus: MagicMock,
-    tmp_path,
-    monkeypatch,
+    bus: MagicMock, tmp_path, monkeypatch
 ) -> None:
-    from nanobot.webui.transcript import read_transcript_lines
+    from vtx_claw.webui.transcript import read_transcript_lines
 
-    monkeypatch.setattr("nanobot.config.paths.get_data_dir", lambda: tmp_path)
+    monkeypatch.setattr("vtx_claw.config.paths.get_data_dir", lambda: tmp_path)
     channel = _ch(bus)
     conn = AsyncMock()
     conn.remote_address = ("127.0.0.1", 50123)
@@ -445,13 +420,12 @@ async def test_webui_stop_control_message_is_not_persisted_as_user_bubble(
 
 @pytest.mark.asyncio
 async def test_webui_user_transcript_append_failure_does_not_block_inbound(
-    bus: MagicMock,
-    monkeypatch,
+    bus: MagicMock, monkeypatch
 ) -> None:
     def fail_append(_session_key: str, _obj: dict[str, Any]) -> None:
         raise OSError("disk full")
 
-    monkeypatch.setattr("nanobot.webui.transcript.append_transcript_object", fail_append)
+    monkeypatch.setattr("vtx_claw.webui.transcript.append_transcript_object", fail_append)
     channel = _ch(bus)
     conn = AsyncMock()
     conn.remote_address = ("127.0.0.1", 50123)
@@ -473,9 +447,7 @@ async def test_plain_websocket_message_does_not_mark_webui(bus: MagicMock) -> No
     conn = MagicMock()
 
     await channel._dispatch_envelope(
-        conn,
-        "custom-client",
-        {"type": "message", "chat_id": "chat-1", "content": "hello"},
+        conn, "custom-client", {"type": "message", "chat_id": "chat-1", "content": "hello"}
     )
 
     msg = bus.publish_inbound.await_args.args[0]
@@ -484,8 +456,7 @@ async def test_plain_websocket_message_does_not_mark_webui(bus: MagicMock) -> No
 
 @pytest.mark.asyncio
 async def test_webui_message_scope_inherits_persisted_session_scope(
-    bus: MagicMock,
-    tmp_path,
+    bus: MagicMock, tmp_path
 ) -> None:
     default_workspace = tmp_path / "default"
     project = tmp_path / "project"
@@ -506,10 +477,7 @@ async def test_webui_message_scope_inherits_persisted_session_scope(
         {
             "type": "set_workspace_scope",
             "chat_id": "chat-scope",
-            "workspace_scope": {
-                "project_path": str(project),
-                "access_mode": "full",
-            },
+            "workspace_scope": {"project_path": str(project), "access_mode": "full"},
         },
     )
     await channel._dispatch_envelope(
@@ -527,9 +495,7 @@ async def test_webui_message_scope_inherits_persisted_session_scope(
 
 @pytest.mark.asyncio
 async def test_webui_scope_expands_home_project_path(
-    bus: MagicMock,
-    tmp_path,
-    monkeypatch: pytest.MonkeyPatch,
+    bus: MagicMock, tmp_path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     default_workspace = tmp_path / "default"
     home = tmp_path / "home"
@@ -556,10 +522,7 @@ async def test_webui_scope_expands_home_project_path(
         {
             "type": "set_workspace_scope",
             "chat_id": "chat-scope",
-            "workspace_scope": {
-                "project_path": "~/Desktop/Photos",
-                "access_mode": "restricted",
-            },
+            "workspace_scope": {"project_path": "~/Desktop/Photos", "access_mode": "restricted"},
         },
     )
     await channel._dispatch_envelope(
@@ -634,10 +597,7 @@ async def test_webui_scope_rejects_running_scope_change(bus: MagicMock, tmp_path
         {
             "type": "set_workspace_scope",
             "chat_id": "chat-running",
-            "workspace_scope": {
-                "project_path": str(project),
-                "access_mode": "restricted",
-            },
+            "workspace_scope": {"project_path": str(project), "access_mode": "restricted"},
         },
     )
     wth._WEBSOCKET_TURN_WALL_STARTED_AT["chat-running"] = 123.0
@@ -650,10 +610,7 @@ async def test_webui_scope_rejects_running_scope_change(bus: MagicMock, tmp_path
                 "chat_id": "chat-running",
                 "content": "hello",
                 "webui": True,
-                "workspace_scope": {
-                    "project_path": str(other),
-                    "access_mode": "full",
-                },
+                "workspace_scope": {"project_path": str(other), "access_mode": "full"},
             },
         )
     finally:
@@ -690,10 +647,7 @@ async def test_webui_set_workspace_scope_rejects_running_chat(bus: MagicMock, tm
         {
             "type": "set_workspace_scope",
             "chat_id": "chat-running",
-            "workspace_scope": {
-                "project_path": str(project),
-                "access_mode": "restricted",
-            },
+            "workspace_scope": {"project_path": str(project), "access_mode": "restricted"},
         },
     )
     conn.send.reset_mock()
@@ -706,10 +660,7 @@ async def test_webui_set_workspace_scope_rejects_running_chat(bus: MagicMock, tm
             {
                 "type": "set_workspace_scope",
                 "chat_id": "chat-running",
-                "workspace_scope": {
-                    "project_path": str(other),
-                    "access_mode": "full",
-                },
+                "workspace_scope": {"project_path": str(other), "access_mode": "full"},
             },
         )
     finally:
@@ -749,10 +700,7 @@ async def test_webui_scope_rejects_non_loopback_custom_scope(bus: MagicMock, tmp
         {
             "type": "set_workspace_scope",
             "chat_id": "chat-remote",
-            "workspace_scope": {
-                "project_path": str(project),
-                "access_mode": "full",
-            },
+            "workspace_scope": {"project_path": str(project), "access_mode": "full"},
         },
     )
 
@@ -766,8 +714,7 @@ async def test_webui_scope_rejects_non_loopback_custom_scope(bus: MagicMock, tmp
 
 @pytest.mark.asyncio
 async def test_native_webui_scope_allows_custom_scope_without_loopback(
-    bus: MagicMock,
-    tmp_path,
+    bus: MagicMock, tmp_path
 ) -> None:
     default_workspace = tmp_path / "default"
     project = tmp_path / "project"
@@ -793,10 +740,7 @@ async def test_native_webui_scope_allows_custom_scope_without_loopback(
         {
             "type": "set_workspace_scope",
             "chat_id": "chat-native",
-            "workspace_scope": {
-                "project_path": str(project),
-                "access_mode": "full",
-            },
+            "workspace_scope": {"project_path": str(project), "access_mode": "full"},
         },
     )
 
@@ -866,11 +810,7 @@ async def test_send_broadcasts_runtime_model_updates() -> None:
 async def test_runtime_model_update_publisher_uses_websocket_outbound_event() -> None:
     bus = MessageBus()
 
-    publish_runtime_model_update(
-        bus,
-        "openai/gpt-4.1",
-        "fast",
-    )
+    publish_runtime_model_update(bus, "openai/gpt-4.1", "fast")
 
     event = bus.outbound.get_nowait()
     assert event.channel == "websocket"
@@ -895,8 +835,8 @@ async def test_send_stages_external_media_as_signed_url(monkeypatch, tmp_path) -
     def fake_media_dir(channel: str | None = None):
         return ws_media if channel == "websocket" else media_root
 
-    monkeypatch.setattr("nanobot.channels.websocket.get_media_dir", fake_media_dir)
-    monkeypatch.setattr("nanobot.webui.media_gateway.get_media_dir", fake_media_dir)
+    monkeypatch.setattr("vtx_claw.channels.websocket.get_media_dir", fake_media_dir)
+    monkeypatch.setattr("vtx_claw.webui.media_gateway.get_media_dir", fake_media_dir)
     channel = WebSocketChannel(
         {"enabled": True, "allowFrom": ["*"]}, bus, gateway=_basic_handler(bus)
     )
@@ -905,10 +845,7 @@ async def test_send_stages_external_media_as_signed_url(monkeypatch, tmp_path) -
 
     await channel.send(
         OutboundMessage(
-            channel="websocket",
-            chat_id="chat-1",
-            content="video",
-            media=[str(external)],
+            channel="websocket", chat_id="chat-1", content="video", media=[str(external)]
         )
     )
 
@@ -1065,10 +1002,7 @@ async def test_send_progress_includes_agent_ui_blob() -> None:
     mock_ws = AsyncMock()
     channel._attach(mock_ws, "chat-1")
 
-    blob = {
-        "kind": "panel",
-        "data": {"version": 1, "event": "tick", "id": "r1"},
-    }
+    blob = {"kind": "panel", "data": {"version": 1, "event": "tick", "id": "r1"}}
     await channel.send(
         OutboundMessage(
             channel="websocket",
@@ -1161,8 +1095,8 @@ async def test_send_delta_stream_end_rewrites_local_markdown_image(monkeypatch, 
         path.mkdir(parents=True, exist_ok=True)
         return path
 
-    monkeypatch.setattr("nanobot.channels.websocket.get_media_dir", fake_media_dir)
-    monkeypatch.setattr("nanobot.webui.media_gateway.get_media_dir", fake_media_dir)
+    monkeypatch.setattr("vtx_claw.channels.websocket.get_media_dir", fake_media_dir)
+    monkeypatch.setattr("vtx_claw.webui.media_gateway.get_media_dir", fake_media_dir)
     channel = WebSocketChannel(
         {"enabled": True, "allowFrom": ["*"], "streaming": True},
         bus,
@@ -1172,7 +1106,9 @@ async def test_send_delta_stream_end_rewrites_local_markdown_image(monkeypatch, 
     channel._attach(mock_ws, "chat-1")
 
     await channel.send_delta("chat-1", "![Diagram](", {"_stream_delta": True, "_stream_id": "sid"})
-    await channel.send_delta("chat-1", "diagram.png)", {"_stream_delta": True, "_stream_id": "sid"})
+    await channel.send_delta(
+        "chat-1", "diagram.png)", {"_stream_delta": True, "_stream_id": "sid"}
+    )
     await channel.send_delta("chat-1", "", {"_stream_end": True, "_stream_id": "sid"})
 
     assert mock_ws.send.await_count == 3
@@ -1194,8 +1130,8 @@ async def test_send_delta_stream_end_rewrites_inline_final_text(monkeypatch, tmp
         path.mkdir(parents=True, exist_ok=True)
         return path
 
-    monkeypatch.setattr("nanobot.channels.websocket.get_media_dir", fake_media_dir)
-    monkeypatch.setattr("nanobot.webui.media_gateway.get_media_dir", fake_media_dir)
+    monkeypatch.setattr("vtx_claw.channels.websocket.get_media_dir", fake_media_dir)
+    monkeypatch.setattr("vtx_claw.webui.media_gateway.get_media_dir", fake_media_dir)
     channel = WebSocketChannel(
         {"enabled": True, "allowFrom": ["*"], "streaming": True},
         bus,
@@ -1226,9 +1162,7 @@ async def test_send_reasoning_delta_emits_streaming_frame() -> None:
     channel._attach(mock_ws, "chat-1")
 
     await channel.send_reasoning_delta(
-        "chat-1",
-        "step-by-step thinking",
-        {"_reasoning_delta": True, "_stream_id": "r1"},
+        "chat-1", "step-by-step thinking", {"_reasoning_delta": True, "_stream_id": "r1"}
     )
 
     mock_ws.send.assert_awaited_once()
@@ -1311,13 +1245,11 @@ async def test_send_reasoning_without_subscribers_is_noop() -> None:
 
 @pytest.mark.asyncio
 async def test_stream_transcript_persists_without_subscribers() -> None:
-    from nanobot.webui.transcript import build_webui_thread_response, read_transcript_lines
+    from vtx_claw.webui.transcript import build_webui_thread_response, read_transcript_lines
 
     bus = MagicMock()
     channel = WebSocketChannel(
-        {"enabled": True, "allowFrom": ["*"], "streaming": True},
-        bus,
-        gateway=_basic_handler(bus),
+        {"enabled": True, "allowFrom": ["*"], "streaming": True}, bus, gateway=_basic_handler(bus)
     )
 
     await channel.send_delta("chat-1", "hello", {"_stream_delta": True, "_stream_id": "s1"})
@@ -1353,10 +1285,7 @@ async def test_send_turn_end_emits_turn_end_event() -> None:
 
     await channel.send(
         OutboundMessage(
-            channel="websocket",
-            chat_id="chat-1",
-            content="",
-            metadata={"_turn_end": True},
+            channel="websocket", chat_id="chat-1", content="", metadata={"_turn_end": True}
         )
     )
 
@@ -1461,11 +1390,7 @@ async def test_send_goal_status_idle_omits_started_at() -> None:
             channel="websocket",
             chat_id="chat-1",
             content="",
-            metadata={
-                "_goal_status": True,
-                "goal_status": "idle",
-                "goal_started_at": 99.0,
-            },
+            metadata={"_goal_status": True, "goal_status": "idle", "goal_started_at": 99.0},
         )
     )
 
@@ -1490,10 +1415,7 @@ async def test_send_goal_state_emits_blob_per_chat() -> None:
             channel="websocket",
             chat_id="chat-a",
             content="",
-            metadata={
-                "_goal_state_sync": True,
-                "goal_state": {"active": True, "ui_summary": "A"},
-            },
+            metadata={"_goal_state_sync": True, "goal_state": {"active": True, "ui_summary": "A"}},
         )
     )
 
@@ -1525,9 +1447,7 @@ async def test_maybe_push_active_goal_state_skips_when_no_goal_on_disk() -> None
     sm = MagicMock()
     sm.read_session_file.return_value = None
     channel = WebSocketChannel(
-        {"enabled": True, "allowFrom": ["*"]},
-        bus,
-        gateway=_basic_handler(bus, session_manager=sm),
+        {"enabled": True, "allowFrom": ["*"]}, bus, gateway=_basic_handler(bus, session_manager=sm)
     )
     mock_ws = AsyncMock()
     channel._attach(mock_ws, "chat-1")
@@ -1541,18 +1461,12 @@ async def test_maybe_push_active_goal_state_notifies_when_goal_active_on_disk() 
     sm = MagicMock()
     sm.read_session_file.return_value = {
         "metadata": {
-            "goal_state": {
-                "status": "active",
-                "objective": "finish docs",
-                "ui_summary": "Docs",
-            },
+            "goal_state": {"status": "active", "objective": "finish docs", "ui_summary": "Docs"}
         },
         "messages": [],
     }
     channel = WebSocketChannel(
-        {"enabled": True, "allowFrom": ["*"]},
-        bus,
-        gateway=_basic_handler(bus, session_manager=sm),
+        {"enabled": True, "allowFrom": ["*"]}, bus, gateway=_basic_handler(bus, session_manager=sm)
     )
     mock_ws = AsyncMock()
     channel._attach(mock_ws, "chat-1")
@@ -1574,7 +1488,7 @@ async def test_maybe_push_turn_run_wall_clock_skips_when_no_active_turn() -> Non
     )
     mock_ws = AsyncMock()
     channel._attach(mock_ws, "chat-1")
-    from nanobot.session import webui_turns as wth
+    from vtx_claw.session import webui_turns as wth
 
     wth._WEBSOCKET_TURN_WALL_STARTED_AT.clear()
     await channel._maybe_push_turn_run_wall_clock("chat-1")
@@ -1589,7 +1503,7 @@ async def test_maybe_push_turn_run_wall_clock_replays_running() -> None:
     )
     mock_ws = AsyncMock()
     channel._attach(mock_ws, "chat-1")
-    from nanobot.session import webui_turns as wth
+    from vtx_claw.session import webui_turns as wth
 
     wth._WEBSOCKET_TURN_WALL_STARTED_AT.clear()
     try:
@@ -1619,10 +1533,7 @@ async def test_send_session_updated_emits_session_updated_event() -> None:
 
     await channel.send(
         OutboundMessage(
-            channel="websocket",
-            chat_id="chat-1",
-            content="",
-            metadata={"_session_updated": True},
+            channel="websocket", chat_id="chat-1", content="", metadata={"_session_updated": True}
         )
     )
 
@@ -1765,7 +1676,7 @@ async def test_wrong_path_returns_404(bus: MagicMock) -> None:
 
 
 def test_registry_discovers_websocket_channel() -> None:
-    from nanobot.channels.registry import load_channel_class
+    from vtx_claw.channels.registry import load_channel_class
 
     cls = load_channel_class("websocket")
     assert cls.name == "websocket"
@@ -1790,8 +1701,7 @@ async def test_http_route_issues_token_then_websocket_requires_it(bus: MagicMock
         assert deny.status_code == 401
 
         issue = await _http_get(
-            f"http://127.0.0.1:{port}/auth/token",
-            headers={"Authorization": "Bearer route-secret"},
+            f"http://127.0.0.1:{port}/auth/token", headers={"Authorization": "Bearer route-secret"}
         )
         assert issue.status_code == 200
         token = issue.json()["token"]
@@ -1819,9 +1729,7 @@ async def test_http_route_issues_token_then_websocket_requires_it(bus: MagicMock
 
 @pytest.mark.asyncio
 async def test_settings_api_returns_safe_subset_and_updates_whitelist(
-    bus: MagicMock,
-    monkeypatch,
-    tmp_path,
+    bus: MagicMock, monkeypatch, tmp_path
 ) -> None:
     port = 29891
     config_path = tmp_path / "config.json"
@@ -1829,16 +1737,14 @@ async def test_settings_api_returns_safe_subset_and_updates_whitelist(
     config.agents.defaults.model = "openai/gpt-4o"
     config.providers.openai.api_key = "secret-key"
     config.model_presets["deep"] = ModelPresetConfig(
-        model="anthropic/claude-opus-4-5",
-        provider="anthropic",
-        reasoning_effort="high",
+        model="anthropic/claude-opus-4-5", provider="anthropic", reasoning_effort="high"
     )
     config.tools.web.search.provider = "brave"
     config.tools.web.search.api_key = "brave-secret"
     save_config(config, config_path)
-    monkeypatch.setattr("nanobot.config.loader._current_config_path", config_path)
+    monkeypatch.setattr("vtx_claw.config.loader._current_config_path", config_path)
     monkeypatch.setattr(
-        "nanobot.webui.settings_api._oauth_provider_status",
+        "vtx_claw.webui.settings_api._oauth_provider_status",
         lambda _spec: {
             "configured": False,
             "account": None,
@@ -1855,8 +1761,7 @@ async def test_settings_api_returns_safe_subset_and_updates_whitelist(
 
     try:
         settings = await _http_get(
-            f"http://127.0.0.1:{port}/api/settings",
-            headers={"Authorization": "Bearer tok"},
+            f"http://127.0.0.1:{port}/api/settings", headers={"Authorization": "Bearer tok"}
         )
         assert settings.status_code == 200
         body = settings.json()
@@ -1914,7 +1819,7 @@ async def test_settings_api_returns_safe_subset_and_updates_whitelist(
         assert image_providers["gemini"]["label"] == "Gemini"
         assert body["runtime"]["config_path"] == str(config_path)
         workspace_path = body["runtime"]["workspace_path"].replace("\\", "/")
-        assert workspace_path.endswith("/.nanobot/workspace")
+        assert workspace_path.endswith("/.vtx_claw/workspace")
         assert body["runtime"]["gateway_port"] == 18790
         assert body["advanced"]["exec_enabled"] is True
         assert body["advanced"]["webui_allow_local_service_access"] is True
@@ -2144,8 +2049,7 @@ async def test_commands_api_returns_slash_command_metadata(bus: MagicMock) -> No
         assert denied.status_code == 401
 
         response = await _http_get(
-            f"http://127.0.0.1:{port}/api/commands",
-            headers={"Authorization": "Bearer tok"},
+            f"http://127.0.0.1:{port}/api/commands", headers={"Authorization": "Bearer tok"}
         )
         assert response.status_code == 200
         body = response.json()
@@ -2182,8 +2086,7 @@ async def test_bootstrap_exposes_native_surface(bus: MagicMock) -> None:
 
     try:
         response = await _http_get(
-            f"http://127.0.0.1:{port}/webui/bootstrap",
-            headers={"X-Nanobot-Auth": "native-secret"},
+            f"http://127.0.0.1:{port}/webui/bootstrap", headers={"X-VtxClaw-Auth": "native-secret"}
         )
         assert response.status_code == 200
         body = response.json()
@@ -2197,15 +2100,13 @@ async def test_bootstrap_exposes_native_surface(bus: MagicMock) -> None:
 
 
 def test_settings_payload_normalizes_camel_case_provider(
-    bus: MagicMock,
-    monkeypatch,
-    tmp_path,
+    bus: MagicMock, monkeypatch, tmp_path
 ) -> None:
     config_path = tmp_path / "config.json"
     config = Config()
     config.agents.defaults.provider = "minimaxAnthropic"
     save_config(config, config_path)
-    monkeypatch.setattr("nanobot.config.loader._current_config_path", config_path)
+    monkeypatch.setattr("vtx_claw.config.loader._current_config_path", config_path)
 
     body = settings_payload()
 
@@ -2217,7 +2118,7 @@ def test_settings_payload_exposes_api_type_only_for_openai(monkeypatch, tmp_path
     config = Config()
     config.providers.openai.api_type = "responses"
     save_config(config, config_path)
-    monkeypatch.setattr("nanobot.config.loader._current_config_path", config_path)
+    monkeypatch.setattr("vtx_claw.config.loader._current_config_path", config_path)
 
     body = settings_payload()
     providers = {provider["name"]: provider for provider in body["providers"]}
@@ -2231,8 +2132,8 @@ def test_settings_payload_reports_workspace_sandbox(monkeypatch, tmp_path) -> No
     config = Config()
     config.tools.restrict_to_workspace = True
     save_config(config, config_path)
-    monkeypatch.setattr("nanobot.config.loader._current_config_path", config_path)
-    monkeypatch.setenv("NANOBOT_SANDBOX_ENFORCED", "macos_app_sandbox")
+    monkeypatch.setattr("vtx_claw.config.loader._current_config_path", config_path)
+    monkeypatch.setenv("VTX_CLAW_SANDBOX_ENFORCED", "macos_app_sandbox")
 
     body = settings_payload()
     sandbox = body["advanced"]["workspace_sandbox"]
@@ -2247,7 +2148,7 @@ def test_settings_payload_reports_workspace_sandbox(monkeypatch, tmp_path) -> No
 def test_settings_payload_includes_native_runtime_surface(monkeypatch, tmp_path) -> None:
     config_path = tmp_path / "config.json"
     save_config(Config(), config_path)
-    monkeypatch.setattr("nanobot.config.loader._current_config_path", config_path)
+    monkeypatch.setattr("vtx_claw.config.loader._current_config_path", config_path)
 
     body = settings_payload(
         surface="native",
@@ -2267,7 +2168,7 @@ def test_settings_payload_includes_native_runtime_surface(monkeypatch, tmp_path)
 def test_update_provider_settings_ignores_api_type_for_non_openai(monkeypatch, tmp_path) -> None:
     config_path = tmp_path / "config.json"
     save_config(Config(), config_path)
-    monkeypatch.setattr("nanobot.config.loader._current_config_path", config_path)
+    monkeypatch.setattr("vtx_claw.config.loader._current_config_path", config_path)
 
     body = update_provider_settings(
         {
@@ -2300,7 +2201,9 @@ async def test_end_to_end_server_pushes_streaming_deltas_to_client(bus: MagicMoc
             chat_id = ready["chat_id"]
 
             # Server pushes deltas directly
-            await channel.send_delta(chat_id, "Hello ", {"_stream_delta": True, "_stream_id": "s1"})
+            await channel.send_delta(
+                chat_id, "Hello ", {"_stream_delta": True, "_stream_id": "s1"}
+            )
             await channel.send_delta(chat_id, "world", {"_stream_delta": True, "_stream_id": "s1"})
             await channel.send_delta(chat_id, "", {"_stream_end": True, "_stream_id": "s1"})
 
@@ -2320,10 +2223,7 @@ async def test_end_to_end_server_pushes_streaming_deltas_to_client(bus: MagicMoc
 
             await channel.send(
                 OutboundMessage(
-                    channel="websocket",
-                    chat_id=chat_id,
-                    content="",
-                    metadata={"_turn_end": True},
+                    channel="websocket", chat_id=chat_id, content="", metadata={"_turn_end": True}
                 )
             )
 
@@ -2350,8 +2250,7 @@ async def test_token_issue_rejects_when_at_capacity(bus: MagicMock) -> None:
         }
 
         resp = await _http_get(
-            f"http://127.0.0.1:{port}/auth/token",
-            headers={"Authorization": "Bearer s"},
+            f"http://127.0.0.1:{port}/auth/token", headers={"Authorization": "Bearer s"}
         )
         assert resp.status_code == 429
         data = resp.json()
@@ -2436,8 +2335,7 @@ async def test_static_token_accepts_issued_token_as_fallback(bus: MagicMock) -> 
     try:
         # Get an issued token
         resp = await _http_get(
-            f"http://127.0.0.1:{port}/auth/token",
-            headers={"Authorization": "Bearer route-secret"},
+            f"http://127.0.0.1:{port}/auth/token", headers={"Authorization": "Bearer route-secret"}
         )
         assert resp.status_code == 200
         issued_token = resp.json()["token"]
@@ -2570,7 +2468,9 @@ async def test_multiplex_new_chat_roundtrip(bus: MagicMock) -> None:
             assert inbound.content == "hi on new"
 
             # Server pushes a message back; chat_id must match
-            await channel.send(OutboundMessage(channel="websocket", chat_id=new_chat, content="ok"))
+            await channel.send(
+                OutboundMessage(channel="websocket", chat_id=new_chat, content="ok")
+            )
             reply = json.loads(await client.recv())
             if reply["event"] == "session_updated":
                 reply = json.loads(await client.recv())
@@ -2584,11 +2484,9 @@ async def test_multiplex_new_chat_roundtrip(bus: MagicMock) -> None:
 
 @pytest.mark.asyncio
 async def test_fork_chat_copies_only_prefix_session_and_transcript(
-    bus: MagicMock,
-    tmp_path,
-    monkeypatch: pytest.MonkeyPatch,
+    bus: MagicMock, tmp_path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    monkeypatch.setattr("nanobot.config.paths.get_data_dir", lambda: tmp_path)
+    monkeypatch.setattr("vtx_claw.config.paths.get_data_dir", lambda: tmp_path)
     sessions = SessionManager(tmp_path / "sessions")
     source = sessions.get_or_create("websocket:source")
     source.metadata["webui"] = True
@@ -2637,11 +2535,9 @@ async def test_fork_chat_copies_only_prefix_session_and_transcript(
 
 @pytest.mark.asyncio
 async def test_webui_message_envelope_appends_user_transcript(
-    bus: MagicMock,
-    tmp_path,
-    monkeypatch: pytest.MonkeyPatch,
+    bus: MagicMock, tmp_path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    monkeypatch.setattr("nanobot.config.paths.get_data_dir", lambda: tmp_path)
+    monkeypatch.setattr("vtx_claw.config.paths.get_data_dir", lambda: tmp_path)
     sessions = SessionManager(tmp_path / "sessions")
     channel = WebSocketChannel(
         {"enabled": True, "allowFrom": ["*"], "host": "127.0.0.1"},
@@ -2654,12 +2550,7 @@ async def test_webui_message_envelope_appends_user_transcript(
     await channel._dispatch_envelope(
         conn,
         "webui-client",
-        {
-            "type": "message",
-            "chat_id": "source",
-            "content": "round1",
-            "webui": True,
-        },
+        {"type": "message", "chat_id": "source", "content": "round1", "webui": True},
     )
 
     [line] = read_transcript_lines("websocket:source")
@@ -2795,8 +2686,8 @@ def test_sessions_list_includes_active_run_started_at(monkeypatch) -> None:
     from websockets.datastructures import Headers
     from websockets.http11 import Request
 
-    from nanobot.session import webui_turns as wth
-    from nanobot.webui import ws_http as ws_http_module
+    from vtx_claw.session import webui_turns as wth
+    from vtx_claw.webui import ws_http as ws_http_module
 
     bus = MagicMock()
     session_manager = MagicMock()
@@ -2874,9 +2765,9 @@ def test_handle_webui_thread_get_returns_json(tmp_path, monkeypatch) -> None:
     from websockets.datastructures import Headers
     from websockets.http11 import Request
 
-    from nanobot.webui.transcript import append_transcript_object
+    from vtx_claw.webui.transcript import append_transcript_object
 
-    monkeypatch.setattr("nanobot.config.paths.get_data_dir", lambda: tmp_path)
+    monkeypatch.setattr("vtx_claw.config.paths.get_data_dir", lambda: tmp_path)
     key = "websocket:c1"
     append_transcript_object(key, {"event": "user", "chat_id": "c1", "text": "hi"})
     bus = MagicMock()
@@ -2899,18 +2790,16 @@ def test_handle_webui_thread_get_accepts_pagination_query(tmp_path, monkeypatch)
     from websockets.datastructures import Headers
     from websockets.http11 import Request
 
-    from nanobot.webui.transcript import append_transcript_object
+    from vtx_claw.webui.transcript import append_transcript_object
 
-    monkeypatch.setattr("nanobot.config.paths.get_data_dir", lambda: tmp_path)
+    monkeypatch.setattr("vtx_claw.config.paths.get_data_dir", lambda: tmp_path)
     key = "websocket:paged-route"
     for idx in range(1, 4):
         append_transcript_object(
-            key,
-            {"event": "user", "chat_id": "paged-route", "text": f"q{idx}"},
+            key, {"event": "user", "chat_id": "paged-route", "text": f"q{idx}"}
         )
         append_transcript_object(
-            key,
-            {"event": "message", "chat_id": "paged-route", "text": f"a{idx}"},
+            key, {"event": "message", "chat_id": "paged-route", "text": f"a{idx}"}
         )
         append_transcript_object(key, {"event": "turn_end", "chat_id": "paged-route"})
 
@@ -2939,7 +2828,7 @@ def test_handle_file_preview_returns_workspace_file(tmp_path) -> None:
     from websockets.http11 import Request
 
     workspace = tmp_path / "workspace"
-    source = workspace / "nanobot" / "agent" / "hook.py"
+    source = workspace / "vtx_claw" / "agent" / "hook.py"
     source.parent.mkdir(parents=True)
     source.write_text("print('hello')\n", encoding="utf-8")
 
@@ -2947,24 +2836,23 @@ def test_handle_file_preview_returns_workspace_file(tmp_path) -> None:
     gateway.tokens.api_tokens["tok"] = time.monotonic() + 300.0
     key = "websocket:file-preview"
     enc = quote(key, safe="")
-    path = quote("nanobot/agent/hook.py:12", safe="")
+    path = quote("vtx_claw/agent/hook.py:12", safe="")
     req = Request(
-        f"/api/sessions/{enc}/file-preview?path={path}",
-        Headers([("Authorization", "Bearer tok")]),
+        f"/api/sessions/{enc}/file-preview?path={path}", Headers([("Authorization", "Bearer tok")])
     )
 
     resp = gateway.http._handle_file_preview(req, enc)
 
     assert resp.status_code == 200
     body = json.loads(resp.body.decode())
-    assert body["display_path"] == "nanobot/agent/hook.py"
+    assert body["display_path"] == "vtx_claw/agent/hook.py"
     assert body["language"] == "python"
     assert body["content"].splitlines() == ["print('hello')"]
     assert body["truncated"] is False
 
 
 def test_file_preview_normalizes_windows_file_url() -> None:
-    from nanobot.webui.file_preview import _clean_preview_path
+    from vtx_claw.webui.file_preview import _clean_preview_path
 
     assert _clean_preview_path("file:///C:/Users/me/project/app.py") == (
         "C:/Users/me/project/app.py"
@@ -2997,18 +2885,15 @@ def test_handle_file_preview_rejects_paths_outside_workspace(tmp_path) -> None:
     assert resp.status_code == 403
 
 
-def test_handle_webui_thread_get_backfills_legacy_missing_user_rows(
-    tmp_path,
-    monkeypatch,
-) -> None:
+def test_handle_webui_thread_get_backfills_legacy_missing_user_rows(tmp_path, monkeypatch) -> None:
     from urllib.parse import quote
 
     from websockets.datastructures import Headers
     from websockets.http11 import Request
 
-    from nanobot.webui.transcript import append_transcript_object
+    from vtx_claw.webui.transcript import append_transcript_object
 
-    monkeypatch.setattr("nanobot.config.paths.get_data_dir", lambda: tmp_path)
+    monkeypatch.setattr("vtx_claw.config.paths.get_data_dir", lambda: tmp_path)
     workspace = tmp_path / "workspace"
     sessions = SessionManager(workspace)
     key = "websocket:c-legacy"
@@ -3017,8 +2902,7 @@ def test_handle_webui_thread_get_backfills_legacy_missing_user_rows(
     session.add_message("assistant", "legacy answer")
     sessions.save(session)
     append_transcript_object(
-        key,
-        {"event": "message", "chat_id": "c-legacy", "text": "legacy answer"},
+        key, {"event": "message", "chat_id": "c-legacy", "text": "legacy answer"}
     )
 
     bus = MagicMock()
@@ -3042,18 +2926,17 @@ def test_handle_webui_thread_get_backfills_legacy_missing_user_rows(
 
 
 def test_handle_webui_thread_get_does_not_backfill_cron_internal_prompt(
-    tmp_path,
-    monkeypatch,
+    tmp_path, monkeypatch
 ) -> None:
     from urllib.parse import quote
 
     from websockets.datastructures import Headers
     from websockets.http11 import Request
 
-    from nanobot.cron.session_turns import CRON_HISTORY_META
-    from nanobot.webui.transcript import append_transcript_object
+    from vtx_claw.cron.session_turns import CRON_HISTORY_META
+    from vtx_claw.webui.transcript import append_transcript_object
 
-    monkeypatch.setattr("nanobot.config.paths.get_data_dir", lambda: tmp_path)
+    monkeypatch.setattr("vtx_claw.config.paths.get_data_dir", lambda: tmp_path)
     workspace = tmp_path / "workspace"
     sessions = SessionManager(workspace)
     key = "websocket:c-cron"
@@ -3066,8 +2949,7 @@ def test_handle_webui_thread_get_does_not_backfill_cron_internal_prompt(
     session.add_message("assistant", "提醒已经到期。")
     sessions.save(session)
     append_transcript_object(
-        key,
-        {"event": "message", "chat_id": "c-cron", "text": "提醒已经到期。"},
+        key, {"event": "message", "chat_id": "c-cron", "text": "提醒已经到期。"}
     )
 
     bus = MagicMock()

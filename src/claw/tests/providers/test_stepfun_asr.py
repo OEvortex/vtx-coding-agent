@@ -10,12 +10,12 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import httpx
 import pytest
 
-from nanobot.audio.transcription_registry import (
+from vtx_claw.audio.transcription_registry import (
     get_transcription_provider,
     transcription_provider_names,
 )
-from nanobot.config.schema import Config
-from nanobot.providers.transcription import StepFunTranscriptionProvider
+from vtx_claw.config.schema import Config
+from vtx_claw.providers.transcription import StepFunTranscriptionProvider
 
 
 @pytest.fixture
@@ -38,16 +38,14 @@ def test_stepfun_defaults() -> None:
 
 def test_stepfun_api_base_overrides_url() -> None:
     provider = StepFunTranscriptionProvider(
-        api_key="sk-test",
-        api_base="https://api.stepfun.com/step_plan/v1/audio/asr/sse",
+        api_key="sk-test", api_base="https://api.stepfun.com/step_plan/v1/audio/asr/sse"
     )
     assert provider.api_url == "https://api.stepfun.com/step_plan/v1/audio/asr/sse"
 
 
 def test_stepfun_api_base_appends_asr_path() -> None:
     provider = StepFunTranscriptionProvider(
-        api_key="sk-test",
-        api_base="https://api.stepfun.com/step_plan/v1",
+        api_key="sk-test", api_base="https://api.stepfun.com/step_plan/v1"
     )
     assert provider.api_url == "https://api.stepfun.com/step_plan/v1/audio/asr/sse"
 
@@ -108,9 +106,7 @@ async def test_sse_delta_then_done(audio_file: Path) -> None:
 @pytest.mark.asyncio
 async def test_sse_only_done_event(audio_file: Path) -> None:
     """Single transcript.text.done event without deltas."""
-    events = [
-        {"type": "transcript.text.done", "session_id": "s1", "text": "hello world"},
-    ]
+    events = [{"type": "transcript.text.done", "session_id": "s1", "text": "hello world"}]
     lines = [f"data: {json.dumps(e)}" for e in events]
 
     provider = StepFunTranscriptionProvider(api_key="sk-test")
@@ -125,9 +121,7 @@ async def test_sse_only_done_event(audio_file: Path) -> None:
 @pytest.mark.asyncio
 async def test_sse_error_event(audio_file: Path) -> None:
     """Error event in SSE stream returns "" immediately."""
-    events = [
-        {"type": "error", "session_id": "s1", "message": "audio too short"},
-    ]
+    events = [{"type": "error", "session_id": "s1", "message": "audio too short"}]
     lines = [f"data: {json.dumps(e)}" for e in events]
 
     provider = StepFunTranscriptionProvider(api_key="sk-test")
@@ -142,9 +136,7 @@ async def test_sse_error_event(audio_file: Path) -> None:
 @pytest.mark.asyncio
 async def test_sse_ignores_non_data_lines(audio_file: Path) -> None:
     """Empty lines and lines without 'data:' prefix are ignored."""
-    events = [
-        {"type": "transcript.text.done", "session_id": "s1", "text": "result"},
-    ]
+    events = [{"type": "transcript.text.done", "session_id": "s1", "text": "result"}]
     raw_lines = [
         "",  # empty line
         "event: session.start",  # non-data event
@@ -163,13 +155,8 @@ async def test_sse_ignores_non_data_lines(audio_file: Path) -> None:
 @pytest.mark.asyncio
 async def test_sse_malformed_json_skipped(audio_file: Path) -> None:
     """Malformed JSON in data lines are skipped gracefully."""
-    events = [
-        {"type": "transcript.text.done", "session_id": "s1", "text": "ok"},
-    ]
-    raw_lines = [
-        "data: not-json-at-all",
-        f"data: {json.dumps(events[0])}",
-    ]
+    events = [{"type": "transcript.text.done", "session_id": "s1", "text": "ok"}]
+    raw_lines = ["data: not-json-at-all", f"data: {json.dumps(events[0])}"]
 
     provider = StepFunTranscriptionProvider(api_key="sk-test")
     stream_cm = _make_stream_cm(200, raw_lines)
@@ -189,7 +176,7 @@ async def test_sse_malformed_json_skipped(audio_file: Path) -> None:
 async def test_retries_on_503_then_succeeds(audio_file: Path) -> None:
     """Transient 503 is retried, then a successful SSE stream yields text."""
     success_lines = [
-        f"data: {json.dumps({'type': 'transcript.text.done', 'session_id': 's1', 'text': 'ok'})}",
+        f"data: {json.dumps({'type': 'transcript.text.done', 'session_id': 's1', 'text': 'ok'})}"
     ]
     # First call: 503 (FailingResponse), second call: success (FakeResponse with lines)
     stream_cm = _make_stream_cm_sequence([503, success_lines])
@@ -217,9 +204,7 @@ async def test_gives_up_after_max_retries(audio_file: Path) -> None:
 @pytest.mark.asyncio
 async def test_sse_empty_text_done_returns_empty(audio_file: Path) -> None:
     """Empty text in transcript.text.done should return "" immediately, not retry."""
-    events = [
-        {"type": "transcript.text.done", "session_id": "s1", "text": ""},
-    ]
+    events = [{"type": "transcript.text.done", "session_id": "s1", "text": ""}]
     lines = [f"data: {json.dumps(e)}" for e in events]
 
     provider = StepFunTranscriptionProvider(api_key="sk-test")
@@ -250,7 +235,7 @@ async def test_401_returns_empty_without_retry(audio_file: Path) -> None:
 async def test_retries_on_connect_error(audio_file: Path) -> None:
     """Network-level transient errors are retried."""
     success_lines = [
-        f"data: {json.dumps({'type': 'transcript.text.done', 'session_id': 's1', 'text': 'ok'})}",
+        f"data: {json.dumps({'type': 'transcript.text.done', 'session_id': 's1', 'text': 'ok'})}"
     ]
     call_count = [0]
 
@@ -261,7 +246,7 @@ async def test_retries_on_connect_error(audio_file: Path) -> None:
         status_code = 200
         reason_phrase = "OK"
 
-        async def __aenter__(self) -> "FakeResponse":
+        async def __aenter__(self) -> FakeResponse:
             return self
 
         async def __aexit__(self, *exc: object) -> None:
@@ -298,7 +283,7 @@ def test_stepfun_in_registry() -> None:
     spec = get_transcription_provider("stepfun")
     assert spec is not None
     assert spec.default_model == "stepaudio-2.5-asr"
-    assert spec.adapter == "nanobot.providers.transcription:StepFunTranscriptionProvider"
+    assert spec.adapter == "vtx_claw.providers.transcription:StepFunTranscriptionProvider"
 
 
 def test_config_resolves_stepfun() -> None:
@@ -309,7 +294,7 @@ def test_config_resolves_stepfun() -> None:
     config.providers.stepfun.api_key = "step-test"
     config.providers.stepfun.api_base = "https://api.stepfun.com/step_plan/v1/audio/asr/sse"
 
-    from nanobot.audio.transcription import resolve_transcription_config
+    from vtx_claw.audio.transcription import resolve_transcription_config
 
     resolved = resolve_transcription_config(config)
 
@@ -334,7 +319,7 @@ def _make_stream_cm(status: int, lines: list[str]) -> MagicMock:
             self.status_code = status
             self.reason_phrase = "OK" if status == 200 else "Error"
 
-        async def __aenter__(self) -> "FakeResponse":
+        async def __aenter__(self) -> FakeResponse:
             return self
 
         async def __aexit__(self, *exc: object) -> None:
@@ -371,7 +356,7 @@ def _make_stream_cm_sequence(statuses: list[str | int]) -> MagicMock:
             self.status_code = 200
             self.reason_phrase = "OK"
 
-        async def __aenter__(self) -> "FakeResponse":
+        async def __aenter__(self) -> FakeResponse:
             return self
 
         async def __aexit__(self, *exc: object) -> None:
@@ -389,7 +374,7 @@ def _make_stream_cm_sequence(statuses: list[str | int]) -> MagicMock:
             self.status_code = status
             self.reason_phrase = "Error"
 
-        async def __aenter__(self) -> "FailingResponse":
+        async def __aenter__(self) -> FailingResponse:
             return self
 
         async def __aexit__(self, *exc: object) -> None:
