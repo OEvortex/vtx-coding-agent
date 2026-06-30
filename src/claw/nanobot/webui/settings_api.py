@@ -22,12 +22,10 @@ from nanobot.audio.transcription_registry import (
     resolve_transcription_provider,
     transcription_provider_names,
 )
+from nanobot._vtx_bridge import merge_vtx_config
 from nanobot.config.loader import get_config_path, load_config, save_config
 from nanobot.config.schema import ModelPresetConfig, ProviderConfig
-from nanobot.providers.image_generation import (
-    get_image_gen_provider,
-    image_gen_provider_names,
-)
+from nanobot.providers.image_generation import get_image_gen_provider, image_gen_provider_names
 from nanobot.providers.registry import create_dynamic_spec, find_by_name, list_providers
 from nanobot.security.workspace_access import workspace_sandbox_status
 from nanobot.webui.token_usage import token_usage_payload
@@ -42,9 +40,7 @@ RuntimeSurface = Literal["browser", "native"]
 
 def _version_payload() -> dict[str, Any]:
     """Return version info for the settings payload."""
-    return {
-        "current": __version__,
-    }
+    return {"current": __version__}
 
 
 _RUNTIME_CAPABILITIES = {
@@ -86,58 +82,19 @@ _WEB_SEARCH_PROVIDER_BY_NAME = {
     provider["name"]: provider for provider in _WEB_SEARCH_PROVIDER_OPTIONS
 }
 
-_IMAGE_GENERATION_ASPECT_RATIOS = {
-    "1:1",
-    "3:4",
-    "9:16",
-    "4:3",
-    "16:9",
-    "3:2",
-    "2:3",
-    "21:9",
-}
+_IMAGE_GENERATION_ASPECT_RATIOS = {"1:1", "3:4", "9:16", "4:3", "16:9", "3:2", "2:3", "21:9"}
 _CONTEXT_WINDOW_TOKEN_OPTIONS = {65_536, 200_000, 262_144}
 _MODEL_CONFIGURATION_SLUG_RE = re.compile(r"[^a-z0-9_-]+")
 _ENV_REF_RE = re.compile(r"\$\{([A-Za-z_][A-Za-z0-9_]*)\}")
 
+# Backend protocol names that don't expose an OpenAI-compatible /models endpoint.
+# This set maps API protocol, not provider identity.
 _MODEL_LIST_UNSUPPORTED_BACKENDS = {
     "anthropic",
     "azure_openai",
     "bedrock",
     "github_copilot",
     "openai_codex",
-}
-
-_MODEL_LIST_CATALOG_PROVIDERS = {
-    "aihubmix",
-    "byteplus",
-    "byteplus_coding_plan",
-    "huggingface",
-    "novita",
-    "openrouter",
-    "siliconflow",
-    "volcengine",
-    "volcengine_coding_plan",
-}
-
-_MODEL_LIST_OFFICIAL_PROVIDERS = {
-    "ant_ling",
-    "dashscope",
-    "deepseek",
-    "gemini",
-    "groq",
-    "longcat",
-    "minimax",
-    "minimax_anthropic",
-    "mistral",
-    "moonshot",
-    "nvidia",
-    "openai",
-    "qianfan",
-    "skywork",
-    "stepfun",
-    "xiaomi_mimo",
-    "zhipu",
 }
 
 
@@ -150,13 +107,25 @@ class WebUISettingsError(ValueError):
         self.status = status
 
 
+def _load_webui_config() -> Any:
+    """Load config and merge vtx's last_selected provider/model.
+
+    The WebUI settings endpoints load config independently of the CLI's
+    ``_load_runtime_config`` (which calls ``merge_vtx_config``).  This
+    helper ensures the settings UI sees the same resolved provider and
+    model that the CLI uses, sourced from vtx's ``last_selected``.
+    """
+    config = load_config()
+    config = merge_vtx_config(config)
+    return config
+
+
 def _normalize_surface(surface: str | None) -> RuntimeSurface:
     return "native" if surface in {"native", "desktop"} else "browser"
 
 
 def runtime_capabilities(
-    surface: str | None = "browser",
-    overrides: dict[str, Any] | None = None,
+    surface: str | None = "browser", overrides: dict[str, Any] | None = None
 ) -> dict[str, bool]:
     """Return the capability flags exposed to the WebUI runtime."""
     base = (
@@ -198,8 +167,7 @@ def decorate_settings_payload(
     result["surface"] = surface_value
     result["runtime_surface"] = surface_value
     result["runtime_capabilities"] = runtime_capabilities(
-        surface_value,
-        runtime_capability_overrides,
+        surface_value, runtime_capability_overrides
     )
     result["restart_behavior_by_section"] = restart_behavior_by_section(surface_value)
     result["restart_required_sections"] = sections
@@ -284,9 +252,7 @@ def _oauth_provider_status(spec: Any) -> dict[str, Any]:
             }
         token = None
         with suppress(Exception):
-            token = FileTokenStorage(
-                token_filename=OPENAI_CODEX_PROVIDER.token_filename,
-            ).load()
+            token = FileTokenStorage(token_filename=OPENAI_CODEX_PROVIDER.token_filename).load()
         expires_at = getattr(token, "expires", None) if token else None
         now_ms = int(time.time() * 1000)
         return {
@@ -347,8 +313,7 @@ def _dynamic_provider_items(config: Any) -> list[tuple[str, ProviderConfig]]:
 
 
 def _resolve_settings_provider(
-    config: Any,
-    provider_name: str,
+    config: Any, provider_name: str
 ) -> tuple[Any, str, ProviderConfig] | None:
     spec = find_by_name(provider_name)
     if spec is not None:
@@ -371,9 +336,7 @@ def _resolve_settings_provider(
 
 
 def _provider_settings_row(
-    name: str,
-    spec: Any,
-    provider_config: ProviderConfig,
+    name: str, spec: Any, provider_config: ProviderConfig
 ) -> dict[str, Any]:
     oauth_status = _oauth_provider_status(spec) if spec.is_oauth else None
     row = {
@@ -401,16 +364,16 @@ def _provider_settings_row(
 
 
 def _model_catalog_kind(spec: Any) -> str:
-    if spec.name in _MODEL_LIST_CATALOG_PROVIDERS:
-        return "catalog"
-    if spec.name in _MODEL_LIST_OFFICIAL_PROVIDERS:
-        return "official"
+    """Derive the model list display kind from provider spec properties.
+
+    All provider metadata comes from vtx's provider catalog — no
+    hardcoded name lists.  The WebUI frontend uses this string to decide
+    how to present the model list.
+    """
     if spec.is_local:
         return "local"
     if spec.is_direct:
         return "custom"
-    if spec.is_gateway:
-        return "catalog"
     return "official"
 
 
@@ -491,7 +454,7 @@ def provider_models_payload(query: QueryParams) -> dict[str, Any]:
     if not provider_name:
         raise WebUISettingsError("provider is required")
 
-    config = load_config()
+    config = _load_webui_config()
     resolved_provider = _resolve_settings_provider(config, provider_name)
     if resolved_provider is None:
         raise WebUISettingsError("unknown provider")
@@ -508,7 +471,7 @@ def provider_models_payload(query: QueryParams) -> dict[str, Any]:
     }
     if (
         spec.is_transcription_only
-        or (spec.backend in _MODEL_LIST_UNSUPPORTED_BACKENDS and spec.name != "minimax_anthropic")
+        or spec.backend in _MODEL_LIST_UNSUPPORTED_BACKENDS
         or spec.is_oauth
     ):
         return {
@@ -538,22 +501,12 @@ def provider_models_payload(query: QueryParams) -> dict[str, Any]:
 
     headers = {"Accept": "application/json"}
     if api_key:
-        if spec.name == "minimax_anthropic":
-            headers["X-Api-Key"] = api_key
-        else:
-            headers["Authorization"] = f"Bearer {api_key}"
+        headers["Authorization"] = f"Bearer {api_key}"
 
     models_url = f"{api_base.rstrip('/')}/models"
-    if spec.name == "minimax_anthropic" and not api_base.rstrip("/").endswith("/v1"):
-        models_url = f"{api_base.rstrip('/')}/v1/models"
 
     try:
-        response = httpx.get(
-            models_url,
-            headers=headers,
-            timeout=10.0,
-            follow_redirects=False,
-        )
+        response = httpx.get(models_url, headers=headers, timeout=10.0, follow_redirects=False)
         response.raise_for_status()
         rows = _extract_model_rows(response.json())
     except httpx.HTTPStatusError as exc:
@@ -570,18 +523,9 @@ def provider_models_payload(query: QueryParams) -> dict[str, Any]:
             "message": f"Model list request failed with HTTP {status}.",
         }
     except (httpx.HTTPError, ValueError) as exc:
-        return {
-            **base_payload,
-            "status": "error",
-            "message": f"Could not load models: {exc}",
-        }
+        return {**base_payload, "status": "error", "message": f"Could not load models: {exc}"}
 
-    return {
-        **base_payload,
-        "status": "available",
-        "models": rows,
-        "model_count": len(rows),
-    }
+    return {**base_payload, "status": "available", "models": rows, "model_count": len(rows)}
 
 
 def _parse_bool(value: str, field: str) -> bool:
@@ -716,7 +660,7 @@ def settings_payload(
     restart_required_sections: list[str] | None = None,
     apply_state: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
-    config = load_config()
+    config = _load_webui_config()
     defaults = config.agents.defaults
     active_preset_name = defaults.model_preset or "default"
     try:
@@ -806,8 +750,7 @@ def settings_payload(
 
     exec_config = config.tools.exec
     sandbox_status = workspace_sandbox_status(
-        restrict_to_workspace=config.tools.restrict_to_workspace,
-        workspace=config.workspace_path,
+        restrict_to_workspace=config.tools.restrict_to_workspace, workspace=config.workspace_path
     )
     payload = {
         "agent": {
@@ -839,13 +782,8 @@ def settings_payload(
             "enable": config.tools.web.enable,
             "proxy": config.tools.web.proxy,
             "user_agent": config.tools.web.user_agent,
-            "search": {
-                "max_results": search_config.max_results,
-                "timeout": search_config.timeout,
-            },
-            "fetch": {
-                "use_jina_reader": config.tools.web.fetch.use_jina_reader,
-            },
+            "search": {"max_results": search_config.max_results, "timeout": search_config.timeout},
+            "fetch": {"use_jina_reader": config.tools.web.fetch.use_jina_reader},
         },
         "image_generation": {
             "enabled": image_config.enabled,
@@ -880,9 +818,7 @@ def settings_payload(
                 "interval_s": config.gateway.heartbeat.interval_s,
                 "keep_recent_messages": config.gateway.heartbeat.keep_recent_messages,
             },
-            "dream": {
-                "schedule": defaults.dream.describe_schedule(),
-            },
+            "dream": {"schedule": defaults.dream.describe_schedule()},
             "unified_session": defaults.unified_session,
         },
         "usage": token_usage_payload(timezone_name=defaults.timezone),
@@ -914,7 +850,7 @@ def settings_payload(
 
 def settings_usage_payload() -> dict[str, Any]:
     """Return the lightweight token usage slice for Overview refreshes."""
-    config = load_config()
+    config = _load_webui_config()
     return token_usage_payload(timezone_name=config.agents.defaults.timezone)
 
 
@@ -994,11 +930,7 @@ def update_agent_settings(query: QueryParams) -> dict[str, Any]:
             changed = True
             restart_required = True
 
-    tool_hint_max_length = _query_first_alias(
-        query,
-        "tool_hint_max_length",
-        "toolHintMaxLength",
-    )
+    tool_hint_max_length = _query_first_alias(query, "tool_hint_max_length", "toolHintMaxLength")
     if tool_hint_max_length is not None:
         try:
             parsed = int(tool_hint_max_length)
@@ -1400,11 +1332,7 @@ def update_image_generation_settings(query: QueryParams) -> dict[str, Any]:
             image_config.model = model
             changed = True
 
-    default_aspect_ratio = _query_first_alias(
-        query,
-        "default_aspect_ratio",
-        "defaultAspectRatio",
-    )
+    default_aspect_ratio = _query_first_alias(query, "default_aspect_ratio", "defaultAspectRatio")
     if default_aspect_ratio is not None:
         default_aspect_ratio = default_aspect_ratio.strip()
         if default_aspect_ratio not in _IMAGE_GENERATION_ASPECT_RATIOS:
@@ -1413,11 +1341,7 @@ def update_image_generation_settings(query: QueryParams) -> dict[str, Any]:
             image_config.default_aspect_ratio = default_aspect_ratio
             changed = True
 
-    default_image_size = _query_first_alias(
-        query,
-        "default_image_size",
-        "defaultImageSize",
-    )
+    default_image_size = _query_first_alias(query, "default_image_size", "defaultImageSize")
     if default_image_size is not None:
         default_image_size = default_image_size.strip()
         if not default_image_size:
@@ -1431,11 +1355,7 @@ def update_image_generation_settings(query: QueryParams) -> dict[str, Any]:
             image_config.default_image_size = default_image_size
             changed = True
 
-    max_images_per_turn = _query_first_alias(
-        query,
-        "max_images_per_turn",
-        "maxImagesPerTurn",
-    )
+    max_images_per_turn = _query_first_alias(query, "max_images_per_turn", "maxImagesPerTurn")
     if max_images_per_turn is not None:
         try:
             parsed_max = int(max_images_per_turn)
