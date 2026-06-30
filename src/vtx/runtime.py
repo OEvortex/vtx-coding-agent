@@ -34,7 +34,7 @@ from .llm.base import AuthMode
 from .llm.dynamic_models import find_dynamic_model, get_dynamic_provider_headers
 from .loop import Agent
 from .prompts import build_system_prompt
-from .session import CustomMessageEntry, MessageEntry, Session
+from .session import CompactionEntry, CustomMessageEntry, GoalEntry, MessageEntry, Session
 from .tools import DEFAULT_TOOLS, BaseTool, tools_by_name
 
 log = logging.getLogger("vtx.runtime")
@@ -942,6 +942,8 @@ class ConversationRuntime:
         if self.session is None:
             return 0
         for entry in reversed(self.session.active_entries):
+            if isinstance(entry, CompactionEntry):
+                return entry.tokens_after or 0
             if isinstance(entry, MessageEntry) and isinstance(entry.message, AssistantMessage):
                 usage = entry.message.usage
                 if usage is None:
@@ -1002,12 +1004,28 @@ class ConversationRuntime:
         summary = await generate_summary(
             self.session.all_messages, self.provider, system_prompt=self.agent.system_prompt
         )
+
+        active_goal_text = ""
+        for entry in self.session.active_entries:
+            if isinstance(entry, GoalEntry) and entry.goal.get("objective"):
+                active_goal_text = entry.goal["objective"]
+
+        summary_text = summary
+        if active_goal_text:
+            summary_text += f"\n\n[Active goal: {active_goal_text}]"
+
+        user_msg = (
+            "[Context compacted — conversation history summarized above."
+            " Continue working on the task.]"
+        )
+        tokens_after = (len(summary_text) + len(user_msg)) // 4
+
         self.session.append_compaction(
             summary=summary,
             first_kept_entry_id=self.session.leaf_id or "",
             tokens_before=tokens_before,
+            tokens_after=tokens_after,
         )
-        tokens_after = self.session.token_totals().context_tokens
         return CompactionResult(tokens_before=tokens_before, tokens_after=tokens_after)
 
     async def create_handoff(self, query: str) -> HandoffResult:

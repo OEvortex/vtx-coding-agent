@@ -554,26 +554,84 @@ class Session:
         output_tokens = 0
         cache_read_tokens = 0
         cache_write_tokens = 0
-        context_tokens = 0
 
         for entry in self.active_entries:
             if isinstance(entry, MessageEntry) and isinstance(entry.message, AssistantMessage):
                 usage = entry.message.usage
-                if usage is None:
+                if usage is not None:
+                    input_tokens += usage.input_tokens
+                    output_tokens += usage.output_tokens
+                    cache_read_tokens += usage.cache_read_tokens
+                    cache_write_tokens += usage.cache_write_tokens
+
+        # For context_tokens, find the last compaction entry
+        last_compaction: CompactionEntry | None = None
+        for entry in reversed(self.active_entries):
+            if isinstance(entry, CompactionEntry):
+                last_compaction = entry
+                break
+
+        if last_compaction is None:
+            context_tokens = 0
+            for entry in self.active_entries:
+                if isinstance(entry, MessageEntry) and isinstance(entry.message, AssistantMessage):
+                    usage = entry.message.usage
+                    if usage is not None:
+                        context_tokens = max(
+                            context_tokens,
+                            (
+                                usage.input_tokens
+                                + usage.output_tokens
+                                + usage.cache_read_tokens
+                                + usage.cache_write_tokens
+                            ),
+                        )
+        else:
+            post_compaction_usages = []
+            past_compaction = False
+            for entry in self.active_entries:
+                if isinstance(entry, CompactionEntry) and entry.id == last_compaction.id:
+                    past_compaction = True
                     continue
-                input_tokens += usage.input_tokens
-                output_tokens += usage.output_tokens
-                cache_read_tokens += usage.cache_read_tokens
-                cache_write_tokens += usage.cache_write_tokens
+                if (
+                    past_compaction
+                    and isinstance(entry, MessageEntry)
+                    and isinstance(entry.message, AssistantMessage)
+                    and entry.message.usage is not None
+                ):
+                    post_compaction_usages.append(entry.message.usage)
+
+            if post_compaction_usages:
                 context_tokens = max(
-                    context_tokens,
-                    (
-                        usage.input_tokens
-                        + usage.output_tokens
-                        + usage.cache_read_tokens
-                        + usage.cache_write_tokens
-                    ),
+                    (u.input_tokens + u.output_tokens + u.cache_read_tokens + u.cache_write_tokens)
+                    for u in post_compaction_usages
                 )
+            else:
+                # Estimate from active messages (self.messages)
+                context_tokens = 0
+                for msg in self.messages:
+                    if isinstance(msg, UserMessage):
+                        if isinstance(msg.content, str):
+                            context_tokens += len(msg.content) // 4
+                        elif isinstance(msg.content, list):
+                            for part in msg.content:
+                                text = getattr(part, "text", None)
+                                if isinstance(text, str):
+                                    context_tokens += len(text) // 4
+                    elif isinstance(msg, AssistantMessage):
+                        for part in msg.content:
+                            text = getattr(part, "text", None)
+                            if isinstance(text, str):
+                                context_tokens += len(text) // 4
+                            else:
+                                thinking = getattr(part, "thinking", None)
+                                if isinstance(thinking, str):
+                                    context_tokens += len(thinking) // 4
+                    elif isinstance(msg, ToolResultMessage):
+                        for part in msg.content:
+                            text = getattr(part, "text", None)
+                            if isinstance(text, str):
+                                context_tokens += len(text) // 4
 
         return SessionTokenTotals(
             input_tokens=input_tokens,

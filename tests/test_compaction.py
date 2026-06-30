@@ -467,3 +467,56 @@ class TestCompactionConfig:
         assert cfg.ui.theme == "one-light"
         assert cfg.ui.colors.bg == "#fafafa"
         assert cfg.ui.colors.accent == "#4078f2"
+
+
+class TestCompactionTokenCalculation:
+    def test_token_totals_ignores_pre_compaction_for_context_tokens(self):
+        session = Session.in_memory()
+        session.append_message(UserMessage(content="hi"))
+        session.append_message(
+            AssistantMessage(
+                content=[TextContent(text="usable")],
+                usage=Usage(
+                    input_tokens=3000,
+                    output_tokens=500,
+                    cache_read_tokens=100,
+                    cache_write_tokens=50,
+                ),
+            )
+        )
+
+        # Initially, context_tokens should be the max (3650)
+        totals = session.token_totals()
+        assert totals.context_tokens == 3650
+
+        # Append a compaction entry
+        session.append_compaction(
+            summary="This is a summary of 30 characters.",
+            first_kept_entry_id=session.leaf_id or "",
+            tokens_before=3650,
+            tokens_after=100,  # Explicitly set
+        )
+
+        # token_totals should now return context_tokens estimated or from the new usages
+        totals = session.token_totals()
+        # With compaction but no new assistant message, it should estimate from session.messages
+        # self.messages has UserMessage + AssistantMessage summary
+        assert totals.context_tokens < 100
+
+        # Now add an assistant message after compaction with usage
+        session.append_message(
+            AssistantMessage(
+                content=[TextContent(text="post-compact")],
+                usage=Usage(
+                    input_tokens=500, output_tokens=100, cache_read_tokens=0, cache_write_tokens=0
+                ),
+            )
+        )
+
+        totals = session.token_totals()
+        # Since there is a post-compaction message with usage, it should use its usage (600)
+        assert totals.context_tokens == 600
+
+        # Cumulative tokens should still include everything
+        assert totals.input_tokens == 3500  # 3000 + 500
+        assert totals.output_tokens == 600  # 500 + 100
