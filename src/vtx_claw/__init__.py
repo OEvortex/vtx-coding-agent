@@ -1,11 +1,17 @@
-"""
-vtx_claw - A lightweight AI agent framework
-"""
+"""Vtx-Claw: vtx-based project orchestration for LLMs."""
+
+from __future__ import annotations
 
 import tomllib
 from importlib.metadata import PackageNotFoundError
 from importlib.metadata import version as _pkg_version
 from pathlib import Path
+
+
+# ====================================================================================
+# __version__, __logo__ — resolved lazily so circular-import clients (cli/command.py)
+# can still ``from vtx_claw import __version__`` at module load time.
+# ====================================================================================
 
 
 def _read_pyproject_version() -> str | None:
@@ -21,64 +27,34 @@ def _resolve_version() -> str:
     try:
         return _pkg_version("vtx-claw")
     except PackageNotFoundError:
-        # Source checkouts often import vtx_claw without installed dist-info.
         return _read_pyproject_version() or "0.2.2"
 
 
 __version__ = _resolve_version()
 __logo__ = "🐈"
 
-_LAZY_EXPORTS = {
-    "VtxClaw": ".vtx_claw",
-    "RunStream": ".vtx_claw",
-    "RunResult": ".vtx_claw",
-    "SessionInfo": ".vtx_claw",
-    "SessionSnapshot": ".vtx_claw",
-    "STREAM_EVENT_REASONING_COMPLETED": ".vtx_claw",
-    "STREAM_EVENT_REASONING_DELTA": ".vtx_claw",
-    "STREAM_EVENT_RUN_COMPLETED": ".vtx_claw",
-    "STREAM_EVENT_RUN_FAILED": ".vtx_claw",
-    "STREAM_EVENT_RUN_STARTED": ".vtx_claw",
-    "STREAM_EVENT_TEXT_COMPLETED": ".vtx_claw",
-    "STREAM_EVENT_TEXT_DELTA": ".vtx_claw",
-    "STREAM_EVENT_TOOL_COMPLETED": ".vtx_claw",
-    "STREAM_EVENT_TOOL_FAILED": ".vtx_claw",
-    "STREAM_EVENT_TOOL_STARTED": ".vtx_claw",
-    "STREAM_EVENT_TYPES": ".vtx_claw",
-    "StreamEvent": ".vtx_claw",
-    "StreamEventType": ".vtx_claw",
-}
+
+# ====================================================================================
+# Lazy exports — avoid circular imports for modules that import us during their
+# own module-level setup (e.g. ``cli/commands.py`` imports ``__version__``).
+# ====================================================================================
+
+_LAZY_EXPORTS: dict[str, str] = {}
 
 
-def __getattr__(name: str):
+def __getattr__(name: str) -> object:
     module_path = _LAZY_EXPORTS.get(name)
-    if module_path is None:
-        raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
-    from importlib import import_module
-
-    mod = import_module(module_path, __name__)
-    val = getattr(mod, name)
-    globals()[name] = val
-    return val
+    if module_path is not None:
+        from importlib import import_module
+        mod = import_module(module_path, __name__)
+        val = getattr(mod, name)
+        globals()[name] = val
+        return val
+    raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
 
 
 __all__ = [
-    "STREAM_EVENT_REASONING_COMPLETED",
-    "STREAM_EVENT_REASONING_DELTA",
-    "STREAM_EVENT_RUN_COMPLETED",
-    "STREAM_EVENT_RUN_FAILED",
-    "STREAM_EVENT_RUN_STARTED",
-    "STREAM_EVENT_TEXT_COMPLETED",
-    "STREAM_EVENT_TEXT_DELTA",
-    "STREAM_EVENT_TOOL_COMPLETED",
-    "STREAM_EVENT_TOOL_FAILED",
-    "STREAM_EVENT_TOOL_STARTED",
-    "STREAM_EVENT_TYPES",
-    "RunResult",
-    "RunStream",
-    "SessionInfo",
-    "SessionSnapshot",
-    "StreamEvent",
-    "StreamEventType",
+    "__version__",
+    "__logo__",
     "VtxClaw",
 ]

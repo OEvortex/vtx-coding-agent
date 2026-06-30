@@ -423,139 +423,44 @@ class _ClawProviderAdapter:
         if reasoning_effort is not None:
             kwargs["reasoning_effort"] = reasoning_effort
 
-        has_streaming = (
-            "chat_stream_with_retry" in type(self._claw).__dict__
-            or "chat_stream_with_retry" in self._claw.__dict__
+        # Use vtx's stream() method — returns LLMStream (AsyncIterator[StreamPart])
+        from vtx.core.types import (
+            StreamDone, TextPart, ThinkPart, ToolCallDelta, ToolCallStart,
+            StopReason,
         )
-
-        if not has_streaming:
-            # Non-streaming fallback
-            response = await self._claw.chat_with_retry(**kwargs)
-            self._last_response = response
-            content = getattr(response, "content", None)
-            if content:
-                yield TextPart(text=content)
-            reasoning = getattr(response, "reasoning_content", None)
-            if reasoning:
-                yield ThinkPart(think=reasoning)
-            for i, tc in enumerate(getattr(response, "tool_calls", None) or []):
-                tc_id = getattr(tc, "id", f"call_{i}")
-                tc_name = getattr(tc, "name", "")
-                tc_args = getattr(tc, "arguments", {})
-                yield ToolCallStart(id=tc_id, name=tc_name, index=i, arguments=tc_args)
-                if isinstance(tc_args, dict) and tc_args:
-                    yield ToolCallDelta(index=i, arguments_delta=json.dumps(tc_args))
-                elif isinstance(tc_args, str) and tc_args.strip():
-                    yield ToolCallDelta(index=i, arguments_delta=tc_args)
-            finish_reason = getattr(response, "finish_reason", None) or "stop"
-            self._last_usage = _usage_dict_from_response(response)
-            self._last_finish_reason = finish_reason
-            yield StreamDone(stop_reason=claw_verdict_to_vtx(finish_reason))
-            return
-
-        # Streaming path: queue-based callback adapter
-        queue: asyncio.Queue = asyncio.Queue()
-        error_ref: list[Exception] = []
-        response_ref: list[Any] = []
-        _yielded_text: bool = False
-        _yielded_tool_call: bool = False
-
-        async def on_content_delta(delta: str) -> None:
-            nonlocal _yielded_text
-            _yielded_text = bool(delta) or _yielded_text
-            await queue.put(("text", _sanitize_surrogates(delta)))
-
-        async def on_thinking_delta(delta: str) -> None:
-            await queue.put(("think", delta))
-
-        async def on_tool_call_delta(delta: dict[str, Any]) -> None:
-            nonlocal _yielded_tool_call
-            _yielded_tool_call = True
-            await queue.put(("tool_call", delta))
-
-        _recover_callback = on_stream_recover or (lambda: None)
-
-        async def _on_stream_recover() -> None:
-            if callable(_recover_callback):
-                r = _recover_callback()
-                if r is not None and hasattr(r, "__await__"):
-                    await r
-
-        async def _run_stream():
-            try:
-                resp = await self._claw.chat_stream_with_retry(
-                    **kwargs,
-                    on_content_delta=on_content_delta,
-                    on_thinking_delta=on_thinking_delta,
-                    on_tool_call_delta=on_tool_call_delta,
-                    on_stream_recover=_on_stream_recover,
-                )
-                response_ref.append(resp)
-            except Exception as e:
-                error_ref.append(e)
-            finally:
-                await queue.put(("_done", None))
-
-        stream_task = asyncio.create_task(_run_stream())
-
-        try:
-            while True:
-                event_type, data = await queue.get()
-                if event_type == "_done":
-                    break
-                if event_type == "text":
-                    yield TextPart(text=data)
-                elif event_type == "think":
-                    yield ThinkPart(think=data)
-                elif event_type == "tool_call":
-                    tc_id = data.get("id", "")
-                    tc_name = data.get("name", "")
-                    tc_args = data.get("arguments", "{}")
-                    fn = data.get("function", {})
-                    if not tc_name:
-                        tc_name = fn.get("name", "")
-                    if not tc_id:
-                        tc_id = fn.get("id", "")
-                    if not tc_id:
-                        tc_id = "call_" + str(hash(str(data)) & 0xFFFFFFFF)
-                    if not tc_args:
-                        tc_args = fn.get("arguments", "{}")
-
-                    yield ToolCallStart(id=tc_id, name=tc_name, index=0, arguments=tc_args)
-                    if isinstance(tc_args, str) and tc_args.strip():
-                        yield ToolCallDelta(index=0, arguments_delta=tc_args)
-        finally:
-            if not stream_task.done():
-                stream_task.cancel()
-                with contextlib.suppress(asyncio.CancelledError, Exception):
-                    await stream_task
-
-        if error_ref:
-            raise error_ref[0]
-
-        final_response = response_ref[0] if response_ref else None
-        if final_response is not None:
-            # Fallback: if the provider returned data through the response
-            # object instead of streaming callbacks, yield it now.
-            if not _yielded_text and not _yielded_tool_call:
-                content = getattr(final_response, "content", None)
-                if content:
-                    yield TextPart(text=content)
-                for i, tc in enumerate(getattr(final_response, "tool_calls", None) or []):
-                    tc_id = getattr(tc, "id", f"call_{i}")
-                    tc_name = getattr(tc, "name", "")
-                    tc_args = getattr(tc, "arguments", {})
-                    yield ToolCallStart(id=tc_id, name=tc_name, index=i, arguments=tc_args)
-                    if isinstance(tc_args, dict) and tc_args:
-                        yield ToolCallDelta(index=i, arguments_delta=json.dumps(tc_args))
-                    elif isinstance(tc_args, str) and tc_args.strip():
-                        yield ToolCallDelta(index=i, arguments_delta=tc_args)
-
-            self._last_response = final_response
-            self._last_usage = _usage_dict_from_response(final_response)
-            finish_reason = getattr(final_response, "finish_reason", None) or "stop"
-            self._last_finish_reason = finish_reason
-            yield StreamDone(stop_reason=claw_verdict_to_vtx(finish_reason))
+        
+        vtx_messages = dicts_to_vtx_messages(dict_messages)
+        
+        # Convert tools to vtx ToolDefinition format if needed
+        vtx_tool_defs = [{"name": t["name"], "description": t.get("description", ""), "parameters": t.get("parameters", {})} for t in tools] if tools else None
+        
+        stream = await self._claw.stream(
+            vtx_messages,
+            system_prompt=system_prompt,
+            tools=vtx_tool_defs,
+            temperature=temperature,
+            max_tokens=max_tokens,
+        )
+        
+        async for part in stream:
+            match part:
+                case TextPart(text=t):
+                    yield TextPart(text=t)
+                case ThinkPart(think=t):
+                    yield ThinkPart(think=t)
+                case ToolCallStart(id=id_, name=n, index=i, arguments=a):
+                    yield ToolCallStart(id=id_, name=n, index=i, arguments=a)
+                case ToolCallDelta(index=i, arguments_delta=ad):
+                    yield ToolCallDelta(index=i, arguments_delta=ad)
+                case StreamDone(stop_reason=sr):
+                    yield StreamDone(stop_reason=sr)
+                case _:
+                    pass
+        
+        # Track usage after iteration
+        self._last_usage = _usage_dict_from_response(stream)
+        self._last_finish_reason = getattr(stream, "stop_reason", None) or "stop"
+        yield StreamDone(stop_reason=claw_verdict_to_vtx(self._last_finish_reason))
 
     def should_retry_for_error(self, error: Exception) -> bool:
         if hasattr(self._claw, "should_retry_for_error"):
