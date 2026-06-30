@@ -3,7 +3,7 @@ name = "nanobot-ai"
 version = "0.2.2"
 description = "A lightweight personal AI assistant framework — vtx-backed"
 readme = { file = "README.md", content-type = "text/markdown" }
-requires-python = ">=3.11"
+requires-python = ">=3.12"
 license = {text = "MIT"}
 authors = [
     {name = "Xubin Ren"},
@@ -14,8 +14,8 @@ classifiers = [
     "Development Status :: 3 - Alpha",
     "Intended Audience :: Developers",
     "License :: OSI Approved :: MIT License",
-    "Programming Language :: Python :: 3.11",
     "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
 ]
 license-files = [
     "LICENSE",
@@ -181,6 +181,13 @@ exclude_lines = [
     "raise NotImplementedError",
     "if __name__ == .__main__.:",
     "if TYPE_CHECKING:",
+]
+
+[tool.uv]
+# matrix-nio 0.25.2 pins aiofiles~=24.1 (<25), but vtx-coding-agent needs >=25.1.0.
+# Override to allow the newer aiofiles — matrix-nio works fine with it.
+override-dependencies = [
+    "aiofiles>=25.1.0",
 ]
 
 [tool.uv.sources]
