@@ -1200,8 +1200,8 @@ def _configure_model_presets(config: Config) -> None:
 
 @lru_cache(maxsize=1)
 def _get_provider_info() -> dict[str, tuple[str, bool, bool, str]]:
-    """Get provider info from registry (cached)."""
-    from nanobot.providers.registry import PROVIDERS
+    """Get provider info from vtx catalog (cached)."""
+    from nanobot.providers.registry import list_providers
 
     return {
         spec.name: (
@@ -1210,7 +1210,7 @@ def _get_provider_info() -> dict[str, tuple[str, bool, bool, str]]:
             spec.is_local,
             spec.default_api_base,
         )
-        for spec in PROVIDERS
+        for spec in list_providers()
         if not spec.is_oauth
     }
 
@@ -1621,10 +1621,10 @@ def _show_quick_start_progress(active_step: int) -> None:
 @lru_cache(maxsize=1)
 def _get_quick_start_provider_info() -> dict[str, _QuickStartProviderInfo]:
     """Return chat-capable providers supported by Quick Start."""
-    from nanobot.providers.registry import PROVIDERS
+    from nanobot.providers.registry import list_providers
 
     result: dict[str, _QuickStartProviderInfo] = {}
-    for spec in PROVIDERS:
+    for spec in list_providers():
         if spec.name == "custom" or spec.is_oauth or spec.is_transcription_only:
             continue
         result[spec.name] = _QuickStartProviderInfo(

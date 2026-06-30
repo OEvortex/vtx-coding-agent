@@ -1767,14 +1767,16 @@ def status():
     )
 
     if config_path.exists():
-        from nanobot.providers.registry import PROVIDERS
-
         _model, _preset_tag = _model_display(config)
         console.print(f"Model: {_model}{_preset_tag}")
 
-        # Check API keys from registry
-        for spec in PROVIDERS:
+        # Check API keys from registry (vtx catalog + nanobot-specific OAuth)
+        from nanobot.providers.registry import list_providers
+
+        for spec in list_providers():
             p = getattr(config.providers, spec.name, None)
+            if p is None:
+                p = (config.providers.model_extra or {}).get(spec.name)
             if p is None:
                 continue
             if spec.is_oauth:
@@ -1831,12 +1833,30 @@ def _register_logout(name: str):
 
 def _resolve_oauth_provider(provider: str):
     """Resolve and validate an OAuth provider configuration."""
-    from nanobot.providers.registry import PROVIDERS
+    from nanobot.providers.registry import ProviderSpec, find_by_name, list_providers
 
     key = provider.replace("-", "_")
-    spec = next((s for s in PROVIDERS if s.name == key and s.is_oauth), None)
-    if not spec:
-        names = ", ".join(s.name.replace("_", "-") for s in PROVIDERS if s.is_oauth)
+    spec = find_by_name(provider)
+    if not spec or not spec.is_oauth:
+        # Nanobot-specific OAuth providers not in vtx's catalog
+        oauth_providers = {
+            "openai_codex": "OpenAI Codex",
+            "github_copilot": "GitHub Copilot",
+        }
+        if key in oauth_providers:
+            spec = ProviderSpec(
+                name=key,
+                keywords=(key,),
+                env_key="",
+                display_name=oauth_providers[key],
+                backend=key,
+                is_oauth=True,
+            )
+            return spec
+        names = ", ".join(s.name.replace("_", "-") for s in list_providers() if s.is_oauth)
+        if names:
+            names += ", "
+        names += "openai-codex, github-copilot"
         console.print(f"[red]Unknown OAuth provider: {provider}[/red]  Supported: {names}")
         raise typer.Exit(1)
     return spec

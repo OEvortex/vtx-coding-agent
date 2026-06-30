@@ -28,7 +28,7 @@ from nanobot.providers.image_generation import (
     get_image_gen_provider,
     image_gen_provider_names,
 )
-from nanobot.providers.registry import PROVIDERS, create_dynamic_spec, find_by_name
+from nanobot.providers.registry import create_dynamic_spec, find_by_name, list_providers
 from nanobot.security.workspace_access import workspace_sandbox_status
 from nanobot.webui.token_usage import token_usage_payload
 from nanobot.webui.workspaces import (
@@ -736,8 +736,11 @@ def settings_payload(
         selected_provider = spec.name if spec else provider_name
 
     providers = []
-    for spec in PROVIDERS:
+    for spec in list_providers():
         provider_config = getattr(config.providers, spec.name, None)
+        if provider_config is None:
+            # Also check model_extra (bridge-populated providers)
+            provider_config = (config.providers.model_extra or {}).get(spec.name)
         if provider_config is None:
             continue
         providers.append(_provider_settings_row(spec.name, spec, provider_config))
