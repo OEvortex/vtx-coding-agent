@@ -66,6 +66,15 @@ def load_config(config_path: Path | None = None) -> Config:
             raise ValueError(f"Failed to load config from {path}: {e}") from e
 
     _apply_ssrf_whitelist(config)
+
+    if config_path is None:
+        try:
+            from vtx_claw._vtx_bridge import merge_vtx_config
+
+            config = merge_vtx_config(config)
+        except Exception as e:
+            logger.error("Failed to merge VTX configuration: {}", e)
+
     return config
 
 
@@ -144,7 +153,9 @@ def _resolve_in_place(obj: Any) -> Any:
         return resolved if any(resolved[k] is not obj[k] for k in obj) else obj
     if isinstance(obj, list):
         resolved = [_resolve_in_place(v) for v in obj]
-        return resolved if any(nv is not ov for nv, ov in zip(resolved, obj, strict=False)) else obj
+        return (
+            resolved if any(nv is not ov for nv, ov in zip(resolved, obj, strict=False)) else obj
+        )
     return obj
 
 
