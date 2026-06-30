@@ -6,10 +6,10 @@ import copy
 import logging
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any
+from typing import Any, cast
 
 from .registry import HookRegistry
-from .types import HOOK_EVENTS, HookConfig, HookSnapshot, HookSource
+from .types import HOOK_EVENTS, HookConfig, HookEvent, HookSnapshot, HookSource
 
 log = logging.getLogger("vtx.hooks")
 
@@ -107,7 +107,9 @@ async def load_hooks(
     ]:
         if path and path.exists():
             try:
-                sources.append(_normalize_source(_read_hooks_yaml(path), source, path=path))
+                sources.append(
+                    _normalize_source(_read_hooks_yaml(path), cast(HookSource, source), path=path)
+                )
             except Exception as exc:
                 log.debug("%s hook load skipped: %s", label, exc)
     if settings_hooks:
@@ -121,7 +123,7 @@ async def load_hooks(
             for hook in entries:
                 parsed.append(
                     HookConfig(
-                        event=event,
+                        event=cast(HookEvent, event),
                         matcher=getattr(hook, "matcher", None),
                         type=getattr(hook, "type", "command") or "command",
                         command=getattr(hook, "command", "") or "",

@@ -5,62 +5,7 @@ All notable changes to Vtx are documented in this file. The format is based on
 adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 
-## [0.2.1] - 2026-06-30 — VTX Claw System Prompt & Tool Configuration
-
-### Added
-
-#### VTX Claw dedicated system prompt
-- New `vtx_claw/prompts/` package with custom system prompt for messaging gateway usage.
-- `identity.py` defines Claw-specific sections: identity, messaging context, tool usage, memory guidance, skills guidance, output format, safety, error recovery, and task completion.
-- `builder.py` assembles the system prompt following OSINT-AGENT's pattern (base → tooling → project context → skills → env).
-- `ClawConversationRuntime` subclass overrides `_rebuild_system_prompt()` to use Claw's custom builder instead of VTX's default.
-
-#### VTX Claw restricted tool set
-- New `vtx_claw/tools.py` with `CLAW_TOOL_NAMES` list defining approved tools for the messaging gateway.
-- `get_claw_tools()` returns only: `read`, `write`, `edit`, `bash`, `fetch_webpage`, `web_search`, `skill`, and `mcp`.
-- MCP proxy tool is added separately with its registry for server discovery and tool calling.
-
-#### MCP integration for VTX Claw
-- MCP subsystem initialized in `AgentHandler.ensure_runtime()` with lazy connection by default.
-- MCP proxy tool added to tool list when servers are configured.
-- MCP registry shutdown in `AgentHandler.close()` for clean teardown.
-- Configuration via `~/.vtx/claw/mcp.yml` or `./.mcp.json`.
-
-### Changed
-- `AgentHandler` now uses `ClawConversationRuntime` instead of base `ConversationRuntime`.
-- System prompt is now messaging-platform-aware with concise formatting guidance.
-- Tool surface restricted to claw-approved subset (removed `find`, `grep`, `ask_user`, `task`, `background` from default tools).
-
-## [0.2.0] - 2026-06-30 — Hook System & Gitlawb Opengateway Provider
-
-### Added
-
-#### vtx-claw: dedicated TUI with branded splash and daemon status badge
-- New `ClawVtx(Vtx)` app subclass with its own compose method that injects
-  `ClawInfoBar` instead of the default `InfoBar`. The `ClawInfoBar` displays
-  a 🦞 daemon status badge (green = running, red = stopped) on the info bar's
-  second row.
-- Monkey-patched exit-message logo (`vtx.ui.launch._LOGO`) so the TUI exit
-  summary shows a "vtx-claw" ASCII art instead of the default "VTX" logo.
-- Monkey-patched `ChatLog.add_session_info` so the in-TUI splash renders a
-  6-line "CLAW" logo matching the exit-message style, with `v{VERSION}` label.
-- Refactored `/claw` action dispatch from a monolithic if/elif chain to a
-  dict-based method dispatch table, making each action a focused method
-  (`_action_status`, `_action_start`, `_action_stop`, etc.).
-- Daemon status now syncs automatically at startup via `on_mount` and
-  after every `/claw status` / `/claw start` / `/claw stop` action.
-
-#### Fixed
-- **Critical**: `ClawVtx.on_mount()` now calls `super().on_mount()` so that
-  `Vtx.on_mount()` startup logic (runtime initialization, session resume,
-  hook loading, binary tools setup, splash rendering) actually runs. The
-  previous comment incorrectly claimed Textual dispatches `on_mount` to all
-  MRO handlers — overriding without `super()` silently skipped all startup.
-- Splash now displays the correct vtx-claw version number instead of vtx's
-  version.
-- Removed `cfg.memory.markdown_dir` reference that doesn't exist on
-  `MemoryConfig` (broken `/claw memory` command).
-- Removed unused `pathlib.Path` import.
+## [0.2.0] - 2026-06-30 — Hook System, Gitlawb Opengateway Provider, System Prompt & Tool Configuration
 
 ### Added
 
@@ -93,6 +38,28 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - Added mapping to resolve `OPENGATEWAY_API_KEY` from environment variables.
 - Configured auto-fetching of model lists from the gateway's `/models` endpoint.
 - Known model fallbacks include MiMo V2.5/V2.5 Pro/V2 Flash, Gemini 3.1 Flash Lite, MiniMax M3, Qwen 3.7 Max, GLM 5.2, and Nemotron 3 Ultra Free.
+
+#### Dedicated system prompt
+- Prompts package with custom system prompt for gateway usage.
+- `identity.py` defines platform-specific sections: identity, messaging context, tool usage, memory guidance, skills guidance, output format, safety, error recovery, and task completion.
+- `builder.py` assembles the system prompt following OSINT-AGENT's pattern (base → tooling → project context → skills → env).
+- Agent runtime supports custom system prompt builder strategies.
+
+#### Restricted tool set
+- Tool configuration module with an approved tool list for the gateway.
+- Approved tools: `read`, `write`, `edit`, `bash`, `fetch_webpage`, `web_search`, `skill`, and `mcp`.
+- MCP proxy tool added with registry for server discovery and tool calling.
+
+#### MCP integration
+- MCP subsystem initialized in agent runtime with lazy connection by default.
+- MCP proxy tool added to tool list when servers are configured.
+- MCP registry shutdown on agent close for clean teardown.
+- Configuration via `~/.vtx/mcp.yml` or `./.mcp.json`.
+
+### Changed
+- Agent runtime supports custom system prompt builder strategies.
+- System prompt is now messaging-platform-aware with concise formatting guidance.
+- Tool surface restricted to approved subset (removed `find`, `grep`, `ask_user`, `task`, `background` from default tools).
 
 ### Fixed
 

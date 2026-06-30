@@ -17,4 +17,3 @@ class SelectionMode(StrEnum):
     TREE = "tree"
     API_KEY = "api_key"
     API_KEY_ACTION = "api_key_action"
-    CLAW = "claw"
