@@ -51,7 +51,9 @@ def get_webui_dir() -> Path:
 
 def get_workspace_path(workspace: str | None = None) -> Path:
     """Resolve and ensure the agent workspace path."""
-    path = Path(workspace).expanduser() if workspace else Path.home() / ".nanobot" / "workspace"
+    path = (
+        Path(workspace).expanduser() if workspace else Path.home() / ".vtx" / "claw" / "workspace"
+    )
     return ensure_dir(path)
 
 
@@ -60,17 +62,17 @@ def is_default_workspace(workspace: str | Path | None) -> bool:
     current = (
         Path(workspace).expanduser()
         if workspace is not None
-        else Path.home() / ".nanobot" / "workspace"
+        else Path.home() / ".vtx" / "claw" / "workspace"
     )
-    default = Path.home() / ".nanobot" / "workspace"
+    default = Path.home() / ".vtx" / "claw" / "workspace"
     return current.resolve(strict=False) == default.resolve(strict=False)
 
 
 def get_cli_history_path() -> Path:
     """Return the shared CLI history file path."""
-    return Path.home() / ".nanobot" / "history" / "cli_history"
+    return Path.home() / ".vtx" / "claw" / "history" / "cli_history"
 
 
 def get_legacy_sessions_dir() -> Path:
     """Return the legacy global session directory used for migration fallback."""
-    return Path.home() / ".nanobot" / "sessions"
+    return Path.home() / ".vtx" / "claw" / "sessions"

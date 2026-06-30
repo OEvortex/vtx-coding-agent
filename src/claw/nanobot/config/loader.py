@@ -27,7 +27,15 @@ def get_config_path() -> Path:
     """Get the configuration file path."""
     if _current_config_path:
         return _current_config_path
-    return Path.home() / ".nanobot" / "config.json"
+    new_path = Path.home() / ".vtx" / "claw" / "config.json"
+    old_path = Path.home() / ".nanobot" / "config.json"
+    # Auto-migrate from legacy location on first access
+    if not new_path.exists() and old_path.exists():
+        new_path.parent.mkdir(parents=True, exist_ok=True)
+        import shutil
+
+        shutil.copy2(str(old_path), str(new_path))
+    return new_path
 
 
 def load_config(config_path: Path | None = None) -> Config:
