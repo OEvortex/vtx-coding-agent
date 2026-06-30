@@ -476,23 +476,122 @@ def provider_models_payload(query: QueryParams) -> dict[str, Any]:
         "fetched_at": time.time(),
     }
     try:
-        from vtx.llm.models import get_models_by_provider
+        from vtx.llm import provider_catalog as _vtx_providers
+        from vtx.llm.model_fetcher import get_fetched_models
+        from vtx.llm.provider_catalog import _provider_info_to_model
 
-        vtx_models = get_models_by_provider(provider_key)
-        if not vtx_models:
-            from vtx.llm import provider_catalog as _vtx_providers
-            from vtx.llm.model_fetcher import refresh_provider_models
+        p_info = _vtx_providers.get(provider_key)
+        vtx_models = []
+        if p_info:
+            vtx_models = get_fetched_models(p_info)
+            if not vtx_models:
+                # If cache is expired or empty, try reading the cache file directly to return stale data quickly
+                try:
+                    import json
+                    from vtx.llm.model_fetcher import _cache_path, FetchedModel, ApiType, Model
+                    from vtx.llm.context_length import context_length_manager
 
-            p_info = _vtx_providers.get(provider_key)
-            api_key = _resolve_env_placeholders(provider_config.api_key)
-            if p_info and p_info.api_key_env and api_key:
-                os.environ[p_info.api_key_env] = api_key
+                    cache_file = _cache_path(provider_key)
+                    if cache_file.exists():
+                        data = json.loads(cache_file.read_text(encoding="utf-8"))
+                        cached_entries = [
+                            FetchedModel(
+                                id=entry["id"],
+                                name=entry.get("name", entry["id"]),
+                                context_length=entry.get("context_length", 0),
+                                max_output_tokens=entry.get("max_output_tokens", 0),
+                                supports_images=entry.get("supports_images", False),
+                            )
+                            for entry in data.get("models", [])
+                        ]
+                        if cached_entries:
+                            family_to_api = {
+                                "openai_compat": ApiType(ApiType.OPENAI_SDK),
+                                "anthropic": ApiType(ApiType.ANTHROPIC),
+                            }
+                            for entry in cached_entries:
+                                limits = context_length_manager.get_limits(entry.id)
+                                is_matched = entry.id in context_length_manager._limits or any(
+                                    entry.id.lower() in k.lower() or k.lower() in entry.id.lower()
+                                    for k in context_length_manager._limits
+                                )
+                                max_tokens = entry.max_output_tokens or p_info.max_tokens
+                                supports_images = entry.supports_images or p_info.supports_vision
+                                supports_thinking = p_info.supports_thinking
+                                context_window = entry.context_length or None
+
+                                if is_matched:
+                                    if context_window is None or context_window == 0:
+                                        context_window = limits.context
+                                    if max_tokens == 0 or max_tokens == p_info.max_tokens:
+                                        max_tokens = limits.output
+                                    if not supports_thinking:
+                                        supports_thinking = limits.supports_reasoning
+                                    if not supports_images:
+                                        supports_images = limits.supports_vision
+                                    supports_tools = limits.supports_tools
+                                    supports_audio = limits.supports_audio
+                                else:
+                                    supports_tools = p_info.supports_tools
+                                    supports_audio = False
+
+                                vtx_models.append(
+                                    Model(
+                                        id=entry.id,
+                                        provider=p_info.slug,
+                                        api=family_to_api.get(
+                                            p_info.family, ApiType(ApiType.OPENAI_SDK)
+                                        ),
+                                        base_url=p_info.base_url or "",
+                                        max_tokens=max_tokens,
+                                        supports_images=supports_images,
+                                        supports_thinking=supports_thinking,
+                                        context_window=context_window,
+                                        supports_tools=supports_tools,
+                                        supports_audio=supports_audio,
+                                    )
+                                )
+                except Exception as cache_e:
+                    logger.error(
+                        "Failed to read expired model cache for {}: {}", provider_key, cache_e
+                    )
+
+            if not vtx_models:
+                # Fall back to statically known models
+                vtx_models = []
+                for model_id in p_info.known_models:
+                    vtx_models.append(_provider_info_to_model(p_info, model_id))
+        else:
+            # Fallback for dynamic providers not in catalog
             try:
-                count = refresh_provider_models(provider_key)
-                if count > 0:
-                    vtx_models = get_models_by_provider(provider_key)
-            except Exception as inner_e:
-                logger.error("Failed to refresh provider models from VTX catalog: {}", inner_e)
+                from vtx.llm.dynamic_models import (
+                    DYNAMIC_PROVIDERS,
+                    _to_static_model,
+                    get_provider_models,
+                )
+
+                if provider_key in DYNAMIC_PROVIDERS:
+                    entries = get_provider_models(provider_key)
+                    vtx_models = [_to_static_model(provider_key, entry) for entry in entries]
+            except Exception:
+                pass
+
+        # Trigger background refresh asynchronously so we don't block settings API
+        if p_info and p_info.fetch_models:
+            import threading
+
+            def do_refresh():
+                try:
+                    from vtx.llm.model_fetcher import refresh_provider_models
+
+                    api_key = _resolve_env_placeholders(provider_config.api_key)
+                    if p_info.api_key_env and api_key:
+                        os.environ[p_info.api_key_env] = api_key
+                    refresh_provider_models(provider_key)
+                except Exception as ref_e:
+                    logger.error("Background model refresh failed for {}: {}", provider_key, ref_e)
+
+            threading.Thread(target=do_refresh, daemon=True).start()
 
         if vtx_models:
             models_payload = []
@@ -512,6 +611,14 @@ def provider_models_payload(query: QueryParams) -> dict[str, Any]:
                 "status": "success",
                 "models": models_payload,
                 "model_count": len(models_payload),
+            }
+        else:
+            return {
+                **base_payload,
+                "status": "success",
+                "models": [],
+                "model_count": 0,
+                "message": "Model list is being loaded in the background. Please try again in a moment.",
             }
     except Exception as e:
         logger.error("Failed to load models from VTX catalog: {}", e)
