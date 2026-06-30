@@ -18,6 +18,7 @@ from websockets.asyncio.server import ServerConnection, serve, unix_serve
 from websockets.exceptions import ConnectionClosed
 from websockets.http11 import Request as WsRequest
 
+import vtx
 from vtx_claw.bus.events import OUTBOUND_META_AGENT_UI, OutboundMessage
 from vtx_claw.bus.queue import MessageBus
 from vtx_claw.channels.base import BaseChannel
@@ -656,6 +657,12 @@ class WebSocketChannel(BaseChannel):
             if scope is None:
                 return
             self._workspaces.persist_scope(cid, scope)
+            # Sync WebUI access_mode to vtx's permission_mode.
+            # "full"  -> "auto"   (tool calls execute without prompting)
+            # other   -> "prompt" (agent prompts before executing a tool)
+            _mode = "auto" if scope.access_mode == "full" else "prompt"
+            with suppress(Exception):
+                vtx.set_permissions_mode(_mode)
             await self._send_event(
                 connection,
                 "session_updated",
