@@ -46,6 +46,7 @@ def __getattr__(name: str) -> object:
     module_path = _LAZY_EXPORTS.get(name)
     if module_path is not None:
         from importlib import import_module
+
         mod = import_module(module_path, __name__)
         val = getattr(mod, name)
         globals()[name] = val
@@ -53,8 +54,4 @@ def __getattr__(name: str) -> object:
     raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
 
 
-__all__ = [
-    "__version__",
-    "__logo__",
-    "VtxClaw",
-]
+__all__ = ["__version__", "__logo__", "VtxClaw"]

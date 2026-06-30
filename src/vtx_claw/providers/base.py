@@ -7,33 +7,14 @@ All provider types now live in vtx. This module delegates to them.
 
 from __future__ import annotations
 
-from abc import abstractmethod
-from collections.abc import Awaitable, Callable
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from typing import Any
 
-import json_repair
-from loguru import logger
-
-from vtx.config import get_last_selected, set_last_selected
-
 # vtx BaseProvider interface
-from vtx.core.types import (
-    Message,
-    StreamDone,
-    StreamError,
-    TextPart,
-    ThinkPart,
-    ToolCallDelta,
-    ToolCallStart,
-)
-from vtx.llm.base import BaseProvider as LLMProvider
-from vtx.llm.base import ProviderConfig
-
 # Same type aliases used internally
-from vtx.llm.base import AuthMode as _AuthMode
+from vtx.llm.base import BaseProvider as LLMProvider
 
-__all__ = ["LLMProvider", "LLMResponse", "ToolCallRequest", "GenerationSettings"]
+__all__ = ["GenerationSettings", "LLMProvider", "LLMResponse", "ToolCallRequest"]
 
 
 # =================================================================================================
@@ -59,7 +40,12 @@ class LLMResponse:
     finish_reason: str = "stop"
     error_kind: str | None = None
     reasoning_content: str | None = None
+    thinking_blocks: list[Any] | None = None
     usage: dict[str, int] | None = None
+
+    @property
+    def should_execute_tools(self) -> bool:
+        return bool(self.tool_calls) and self.finish_reason == "tool_calls"
 
     def __init__(
         self,
@@ -70,7 +56,6 @@ class LLMResponse:
         reasoning_content: str | None = None,
         usage: dict[str, int] | None = None,
     ) -> None:
-        super().__init__()
         self.content = content
         self.tool_calls = tool_calls
         self.finish_reason = finish_reason

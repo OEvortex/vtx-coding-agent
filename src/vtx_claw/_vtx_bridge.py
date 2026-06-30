@@ -8,7 +8,6 @@ so consumers are isolated from the conversion logic.
 
 from __future__ import annotations
 
-import asyncio
 import contextlib
 import json
 from pathlib import Path
@@ -424,16 +423,22 @@ class _ClawProviderAdapter:
             kwargs["reasoning_effort"] = reasoning_effort
 
         # Use vtx's stream() method — returns LLMStream (AsyncIterator[StreamPart])
-        from vtx.core.types import (
-            StreamDone, TextPart, ThinkPart, ToolCallDelta, ToolCallStart,
-            StopReason,
-        )
-        
+
         vtx_messages = dicts_to_vtx_messages(dict_messages)
-        
-        # Convert tools to vtx ToolDefinition format if needed
-        vtx_tool_defs = [{"name": t["name"], "description": t.get("description", ""), "parameters": t.get("parameters", {})} for t in tools] if tools else None
-        
+
+        from vtx.core.types import ToolDefinition
+
+        # Convert OpenAI nested tool format to vtx ToolDefinition model instances.
+        def _unwrap(t: dict[str, Any]) -> ToolDefinition:
+            fn = t.get("function") or {}
+            return ToolDefinition(
+                name=fn.get("name") or t.get("name", ""),
+                description=fn.get("description") or t.get("description", ""),
+                parameters=fn.get("parameters") or t.get("parameters", {}),
+            )
+
+        vtx_tool_defs = [_unwrap(t) for t in tools] if tools else None
+
         stream = await self._claw.stream(
             vtx_messages,
             system_prompt=system_prompt,
@@ -441,7 +446,7 @@ class _ClawProviderAdapter:
             temperature=temperature,
             max_tokens=max_tokens,
         )
-        
+
         async for part in stream:
             match part:
                 case TextPart(text=t):
@@ -456,7 +461,7 @@ class _ClawProviderAdapter:
                     yield StreamDone(stop_reason=sr)
                 case _:
                     pass
-        
+
         # Track usage after iteration
         self._last_usage = _usage_dict_from_response(stream)
         self._last_finish_reason = getattr(stream, "stop_reason", None) or "stop"

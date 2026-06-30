@@ -171,7 +171,7 @@ class GitHubCopilotProvider(LLMProvider):
                 "User-Agent": USER_AGENT,
             },
             spec=find_by_name("github_copilot"),
-        ) 
+        )
 
     async def _get_copilot_access_token(self) -> str:
         now = time.time()
