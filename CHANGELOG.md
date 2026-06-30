@@ -5,7 +5,7 @@ All notable changes to Vtx are documented in this file. The format is based on
 adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 
-## [0.2.0] - 2026-06-30 — Hook System, Gitlawb Opengateway Provider, System Prompt & Tool Configuration
+## [0.2.0] - 2026-06-30 — Hook System, Gitlawb Opengateway Provider, System Prompt & Tool Configuration, Recent Model Tracking
 
 ### Added
 
@@ -55,6 +55,16 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - MCP proxy tool added to tool list when servers are configured.
 - MCP registry shutdown on agent close for clean teardown.
 - Configuration via `~/.vtx/mcp.yml` or `./.mcp.json`.
+
+#### Recent model tracking in `/model` picker
+- `/model` now surfaces your top 5 most recently used models at the top of
+  the picker, regardless of any active `/provider` filter, making model
+  switching seamless across different providers.
+- Each recent model is marked with a `↻` prefix and sorted by recency (most
+  recent first) so you can instantly re-select a previously used model.
+- The list of recent models (up to 10 entries) is persisted across sessions
+  in `~/.vtx/config.yml` under `recent_models.entries` and updated on every
+  model switch.
 
 ### Changed
 - Agent runtime supports custom system prompt builder strategies.
