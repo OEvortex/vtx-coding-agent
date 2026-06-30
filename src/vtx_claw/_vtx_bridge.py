@@ -739,19 +739,23 @@ def merge_vtx_config(config: Any) -> Any:
         with contextlib.suppress(Exception):
             preferred_model = _vtx_get_config().llm.default_model or ""
 
+    # Track if we already set the preferred model
+    has_preferred = False
+
     # --- Step A: try the preferred provider ---------------------------------
     if preferred_slug:
         p_info = _vtx_providers.get(preferred_slug)
         if p_info and p_info.api_key_env:
             api_key = _get_dynamic_api_key(p_info.slug)
             if api_key:
-                return _set_provider(
+                config = _set_provider(
                     config,
                     p_info.slug,
                     api_key=api_key,
                     api_base=p_info.base_url,
                     model=preferred_model,
                 )
+                has_preferred = True
 
     # --- Step B: API-key scan (vtx's own resolution order, checking env vars
     #              and dynamic_auth.json) ---------------------------------------
@@ -761,19 +765,25 @@ def merge_vtx_config(config: Any) -> Any:
         if p_info.api_key_env:
             api_key = _get_dynamic_api_key(p_info.slug)
             if api_key:
-                return _set_provider(
+                model_to_set = preferred_model if not has_preferred else None
+                config = _set_provider(
                     config,
                     p_info.slug,
                     api_key=api_key,
                     api_base=p_info.base_url,
-                    model=preferred_model,
+                    model=model_to_set,
                 )
+                if model_to_set:
+                    has_preferred = True
 
     # --- Step C: keyless local providers ------------------------------------
     for p_info in _vtx_providers.list_providers():
         if p_info.is_local and p_info.api_key_optional:
-            return _set_provider(
-                config, p_info.slug, api_key="", api_base=p_info.base_url, model=preferred_model
+            model_to_set = preferred_model if not has_preferred else None
+            config = _set_provider(
+                config, p_info.slug, api_key="", api_base=p_info.base_url, model=model_to_set
             )
+            if model_to_set:
+                has_preferred = True
 
     return config

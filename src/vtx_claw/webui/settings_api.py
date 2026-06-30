@@ -538,7 +538,7 @@ def provider_models_payload(query: QueryParams) -> dict[str, Any]:
     models_url = f"{api_base.rstrip('/')}/models"
 
     try:
-        response = httpx.get(models_url, headers=headers, timeout=10.0, follow_redirects=False)
+        response = httpx.get(models_url, headers=headers, timeout=2.0, follow_redirects=False)
         response.raise_for_status()
         rows = _extract_model_rows(response.json())
     except httpx.HTTPStatusError as exc:
