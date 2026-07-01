@@ -331,3 +331,46 @@ def test_should_retry_for_unrelated_errors():
     provider = SupercodeProvider(ProviderConfig(api_key="test"))
     assert provider.should_retry_for_error(ValueError("bad request")) is False
     assert provider.should_retry_for_error(RuntimeError("invalid api key")) is False
+
+
+@pytest.mark.asyncio
+async def test_multiple_tool_calls_in_one_turn():
+    """Provider yields multiple ToolCallStart/ToolCallDelta with unique indices."""
+    provider = SupercodeProvider(ProviderConfig(api_key="test"))
+    tool_defs = [
+        _make_tool_definition("get_weather", "Get weather"),
+        _make_tool_definition("calculate", "Perform math"),
+    ]
+    mock_chunks = [
+        {
+            "type": "tool_calls",
+            "tool_calls": [{"id": "call-1", "name": "get_weather", "arguments": '{"city":"NYC"}'}],
+            "index": 0,
+        },
+        {
+            "type": "tool_calls",
+            "tool_calls": [
+                {"id": "call-2", "name": "calculate", "arguments": '{"expression":"2+2"}'}
+            ],
+            "index": 1,
+        },
+        {"type": "finish_reason", "finish_reason": "tool_calls", "usage": {}},
+    ]
+
+    with patch.object(provider._sdk, "_stream_chat", return_value=_make_mock_stream(mock_chunks)):
+        stream = await provider.stream(
+            [UserMessage(content="Check weather in NYC and calculate 2+2")], tools=tool_defs
+        )
+        parts = await _collect(stream)
+
+    starts = [p for p in parts if isinstance(p, ToolCallStart)]
+    assert len(starts) == 2
+    assert starts[0].index == 0
+    assert starts[0].id == "call-1"
+    assert starts[1].index == 1
+    assert starts[1].id == "call-2"
+
+    deltas = [p for p in parts if isinstance(p, ToolCallDelta)]
+    assert len(deltas) == 2
+    assert deltas[0].index == 0
+    assert deltas[1].index == 1

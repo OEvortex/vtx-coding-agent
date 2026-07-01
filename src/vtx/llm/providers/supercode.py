@@ -186,6 +186,7 @@ class SupercodeProvider(BaseProvider):
                 elif chunk_type == "tool_calls":
                     has_tool_calls = True
                     tool_calls = chunk.get("tool_calls", [])
+                    base_index = chunk.get("index", 0)
                     for i, tc in enumerate(tool_calls):
                         if isinstance(tc, dict):
                             tc_id = tc.get("id", "")
@@ -195,8 +196,9 @@ class SupercodeProvider(BaseProvider):
                             tc_id = tc.id
                             tc_name = tc.name
                             tc_args = tc.arguments
-                        yield ToolCallStart(id=tc_id, name=tc_name, index=i)
-                        yield ToolCallDelta(index=i, arguments_delta=tc_args)
+                        idx = base_index + i
+                        yield ToolCallStart(id=tc_id, name=tc_name, index=idx)
+                        yield ToolCallDelta(index=idx, arguments_delta=tc_args)
                 elif chunk_type == "finish_reason":
                     # The API always sends reason="stop" even when tool calls
                     # happen. Detect tool calls from the event stream instead.

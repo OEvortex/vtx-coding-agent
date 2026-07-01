@@ -177,61 +177,67 @@ class SupercodeSDK(BaseLLMSDK):
         url = f"{self._base_url}{_CHAT_ENDPOINT}"
         async with httpx.AsyncClient(timeout=120) as client:
             try:
-                response = await client.post(url, json=payload, headers=headers)
-                response.raise_for_status()
+                async with client.stream("POST", url, json=payload, headers=headers) as response:
+                    response.raise_for_status()
+                    finish_reason: str | None = None
+                    tool_calls_acc: dict[int, dict[str, Any]] = {}
+
+                    async for line in response.aiter_lines():
+                        line = line.strip()
+                        if not line:
+                            continue
+                        try:
+                            event = json.loads(line)
+                        except json.JSONDecodeError:
+                            continue
+
+                        match event.get("type"):
+                            case "error":
+                                msg = event.get("error", "Unknown Supercode API error")
+                                raise RuntimeError(f"Supercode API error: {msg}")
+                            case "text":
+                                yield {"type": "text", "content": event.get("content", "")}
+                            case "reasoning":
+                                yield {
+                                    "type": "reasoning",
+                                    "content": event.get("content", ""),
+                                    "signature": "reasoning_content",
+                                }
+                            case "tool-call":
+                                idx = len(tool_calls_acc)
+                                tc_id = event.get("toolCallId", f"call_{time.time_ns()}_{idx}")
+                                tc_name = event.get("toolName", "")
+                                tc_args = json.dumps(event.get("args", {}))
+                                tool_calls_acc[idx] = {
+                                    "id": tc_id,
+                                    "name": tc_name,
+                                    "arguments": tc_args,
+                                }
+                                yield {
+                                    "type": "tool_calls",
+                                    "tool_calls": [
+                                        ToolCall(id=tc_id, name=tc_name, arguments=tc_args)
+                                    ],
+                                    "index": idx,
+                                }
+                            case "finish":
+                                finish_reason = event.get("reason", "stop")
+                                usage_raw = event.get("usage", {}) or {}
+                                yield {"type": "usage", "usage": _extract_usage(usage_raw)}
+                                yield {
+                                    "type": "finish_reason",
+                                    "finish_reason": finish_reason,
+                                    "usage": _extract_usage(usage_raw),
+                                }
+
+                    if finish_reason is None:
+                        yield {"type": "finish_reason", "finish_reason": "stop"}
             except httpx.HTTPStatusError as e:
                 body = await e.response.aread()
                 raise RuntimeError(
                     f"Supercode API error {e.response.status_code}: "
                     f"{body.decode(errors='replace')}"
                 ) from e
-
-        finish_reason: str | None = None
-        tool_calls_acc: dict[int, dict[str, Any]] = {}
-
-        async for line in response.aiter_lines():
-            line = line.strip()
-            if not line:
-                continue
-            try:
-                event = json.loads(line)
-            except json.JSONDecodeError:
-                continue
-
-            match event.get("type"):
-                case "error":
-                    msg = event.get("error", "Unknown Supercode API error")
-                    raise RuntimeError(f"Supercode API error: {msg}")
-                case "text":
-                    yield {"type": "text", "content": event.get("content", "")}
-                case "reasoning":
-                    yield {
-                        "type": "reasoning",
-                        "content": event.get("content", ""),
-                        "signature": "reasoning_content",
-                    }
-                case "tool-call":
-                    idx = len(tool_calls_acc)
-                    tc_id = event.get("toolCallId", f"call_{time.time_ns()}_{idx}")
-                    tc_name = event.get("toolName", "")
-                    tc_args = json.dumps(event.get("args", {}))
-                    tool_calls_acc[idx] = {"id": tc_id, "name": tc_name, "arguments": tc_args}
-                    yield {
-                        "type": "tool_calls",
-                        "tool_calls": [ToolCall(id=tc_id, name=tc_name, arguments=tc_args)],
-                    }
-                case "finish":
-                    finish_reason = event.get("reason", "stop")
-                    usage_raw = event.get("usage", {}) or {}
-                    yield {"type": "usage", "usage": _extract_usage(usage_raw)}
-                    yield {
-                        "type": "finish_reason",
-                        "finish_reason": finish_reason,
-                        "usage": _extract_usage(usage_raw),
-                    }
-
-        if finish_reason is None:
-            yield {"type": "finish_reason", "finish_reason": "stop"}
 
     async def _non_streaming_chat(
         self, payload: dict[str, Any], headers: dict[str, str], config: GenerationConfig
@@ -240,12 +246,15 @@ class SupercodeSDK(BaseLLMSDK):
         reasoning_content = ""
         finish_reason = "stop"
         usage_dict: dict[str, int] | None = None
+        tool_calls: list[ToolCall] = []
 
         async for chunk in self._stream_chat(payload, headers, config):
             if chunk.get("type") == "text":
                 collected_content += chunk.get("content", "")
             elif chunk.get("type") == "reasoning":
                 reasoning_content += chunk.get("content", "")
+            elif chunk.get("type") == "tool_calls":
+                tool_calls.extend(chunk.get("tool_calls", []))
             elif chunk.get("type") == "finish_reason":
                 finish_reason = chunk.get("finish_reason", "stop")
                 usage_dict = chunk.get("usage")
@@ -254,6 +263,7 @@ class SupercodeSDK(BaseLLMSDK):
             content=collected_content,
             model=payload.get("model", ""),
             finish_reason=finish_reason,
+            tool_calls=tool_calls if tool_calls else None,
             usage=usage_dict,
             reasoning_content=reasoning_content,
         )

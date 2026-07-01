@@ -1,203 +1,158 @@
-#!/usr/bin/env python3
-"""Supercode CLI — Send a prompt to Supercode and stream the response.
-
-Reads OAuth token from ``~/.better-auth/token.json`` (written by
-``supercode login``) — no ``SUPERCODE_TOKEN`` env var fallback.
-
-Usage:
-    python scripts/supercode_proxy.py "What is the weather in NYC?"
-    python scripts/supercode_proxy.py --model google/gemini-2.5-flash "Hello"
-    python scripts/supercode_proxy.py --model google/gemini-2.5-flash \\
-        --system "You are a helpful assistant" "Hi"
-    python scripts/supercode_proxy.py --show-usage "Tell me a joke"
-    python scripts/supercode_proxy.py --raw "Hi"   # Show raw NDJSON events
-    python scripts/supercode_proxy.py --help
-"""
-
-from __future__ import annotations
-
-import argparse
-import asyncio
-import json
 import os
-import sys
-from collections.abc import AsyncGenerator
-from typing import Any
-
+import json
+import asyncio
+from typing import AsyncGenerator, Dict, Any, List, Callable, Optional
 import httpx
 
-SUPERCODE_URL = os.environ.get("SUPERCODE_URL", "https://supercode-8w7e.onrender.com")
+
+class Supercode:
+    def __init__(self, token: Optional[str] = None, base_url: Optional[str] = None):
+        self.base_url = base_url or os.environ.get(
+            "SUPERCODE_URL", "https://supercode-8w7e.onrender.com"
+        )
+        self.token = token or self._load_token()
+        self.tools: Dict[str, Callable] = {}
+
+    def _load_token(self) -> str:
+        try:
+            with open(os.path.expanduser("~/.better-auth/token.json")) as f:
+                return json.load(f)["access_token"]
+        except Exception:
+            raise RuntimeError("No token provided and ~/.better-auth/token.json not found.")
+
+    def register_tool(self, name: str, func: Callable):
+        """Register a local Python function that the agent can execute."""
+        self.tools[name] = func
+
+    async def chat(
+        self, model: str, messages: List[Dict[str, Any]]
+    ) -> AsyncGenerator[Dict[str, Any], None]:
+        """Runs the main agentic loop, executing tool calls internally and yielding events."""
+        provider, model_name = model.split("/", 1) if "/" in model else ("concentrateai", model)
+
+        async with httpx.AsyncClient(timeout=120) as client:
+            while True:
+                payload = {"provider": provider, "model": model_name, "messages": messages}
+                headers = {
+                    "Content-Type": "application/json",
+                    "Authorization": f"Bearer {self.token}",
+                }
+
+                assistant_response = ""
+                tool_calls_to_run = []
+
+                async with client.stream(
+                    "POST", f"{self.base_url}/api/ai/chat", json=payload, headers=headers
+                ) as resp:
+                    if resp.status_code >= 400:
+                        yield {"type": "error", "content": f"API Error {resp.status_code}"}
+                        return
+
+                    async for line in resp.aiter_lines():
+                        if not line.strip():
+                            continue
+                        event = json.loads(line)
+                        ev_type = event.get("type")
+
+                        if ev_type == "text":
+                            content = event.get("content", "")
+                            assistant_response += content
+                            yield {"type": "text", "content": content}
+                        elif ev_type == "reasoning" and event.get("content"):
+                            yield {"type": "reasoning", "content": event["content"]}
+                        elif ev_type == "tool-call":
+                            tool_calls_to_run.append(event)
+                            yield {
+                                "type": "tool_call_start",
+                                "name": event.get("toolName"),
+                                "args": event.get("args"),
+                            }
+
+                # Update state with assistant's turn details
+                if assistant_response or tool_calls_to_run:
+                    msg = {"role": "assistant"}
+                    if assistant_response:
+                        msg["content"] = assistant_response
+                    if tool_calls_to_run:
+                        msg["tool_calls"] = [
+                            {
+                                "id": tc.get("toolCallId"),
+                                "type": "function",
+                                "function": {
+                                    "name": tc.get("toolName"),
+                                    "arguments": json.dumps(tc.get("args", {})),
+                                },
+                            }
+                            for tc in tool_calls_to_run
+                        ]
+                    messages.append(msg)
+
+                # Base case: Agent finished thinking/speaking and called zero tools
+                if not tool_calls_to_run:
+                    break
+
+                # Turn Execution: Process tools locally and insert back into conversation block
+                for tc in tool_calls_to_run:
+                    tc_id = tc.get("toolCallId")
+                    tc_name = tc.get("toolName")
+                    tc_args = tc.get("args", {})
+
+                    if tc_name in self.tools:
+                        try:
+                            result = self.tools[tc_name](**tc_args)
+                        except Exception as e:
+                            result = f"Error executing tool: {str(e)}"
+                    else:
+                        result = f"Tool '{tc_name}' is not registered on this client instance."
+
+                    yield {"type": "tool_call_result", "name": tc_name, "result": result}
+
+                    messages.append(
+                        {
+                            "role": "tool",
+                            "tool_call_id": tc_id,
+                            "name": tc_name,
+                            "content": str(result),
+                        }
+                    )
 
 
-# ── Auth ────────────────────────────────────────────────────────────────────────
+# Dummy local function to bind
+def get_weather(location: str) -> str:
+    return f"The weather in {location} is 72°F and clear."
 
 
-def _get_token() -> str:
-    """Load the OAuth token from ``~/.better-auth/token.json``."""
-    path = os.path.expanduser("~/.better-auth/token.json")
-    try:
-        with open(path) as f:
-            data = json.load(f)
-        token = data.get("access_token", "")
-        if token:
-            return token
-    except (OSError, json.JSONDecodeError, KeyError):
-        pass
-    raise RuntimeError("No Supercode token found. Run `supercode login` first.")
+async def main():
+    # Initialize SDK
+    ai = Supercode()
+    ai.register_tool("get_weather", get_weather)
 
+    # Conversation history tracking
+    messages = [{"role": "system", "content": "You are a helpful companion engine."}]
 
-# ── API call ────────────────────────────────────────────────────────────────────
+    print("Supercode Agent Session Initialized. Type 'exit' to quit.\n")
 
+    while True:
+        user_input = input("\nYou: ").strip()
+        if user_input.lower() in ("exit", "quit"):
+            break
+        if not user_input:
+            continue
 
-async def _stream_ndjson(payload: dict[str, Any]) -> AsyncGenerator[dict[str, Any]]:
-    """Call Supercode and yield parsed NDJSON events."""
-    token = _get_token()
-    headers = {"Content-Type": "application/json", "Authorization": f"Bearer {token}"}
-    async with httpx.AsyncClient(timeout=120) as client:
-        resp = await client.post(f"{SUPERCODE_URL}/api/ai/chat", json=payload, headers=headers)
-        if resp.status_code >= 400:
-            body = await resp.aread()
-            try:
-                err = json.loads(body)
-                msg = err.get("error", body.decode())
-            except Exception:
-                msg = body.decode()
-            raise RuntimeError(f"Supercode API error {resp.status_code}: {msg}")
+        messages.append({"role": "user", "content": user_input})
+        print("Agent: ", end="", flush=True)
 
-        async for line in resp.aiter_lines():
-            line = line.strip()
-            if line:
-                try:
-                    yield json.loads(line)
-                except json.JSONDecodeError:
-                    continue
-
-
-# ── Event handlers ──────────────────────────────────────────────────────────────
-
-
-def _handle_text(event: dict[str, Any], *, end: str = "") -> None:
-    sys.stdout.write(event.get("content", ""))
-    sys.stdout.flush()
-
-
-def _handle_tool_call(event: dict[str, Any]) -> None:
-    tc_id = event.get("toolCallId", "?")
-    tc_name = event.get("toolName", "?")
-    tc_args = json.dumps(event.get("args", {}))
-    sys.stdout.write(f"\n  ▶ Tool call: {tc_name}({tc_args}) [{tc_id}]\n")
-    sys.stdout.flush()
-
-
-def _handle_reasoning(event: dict[str, Any]) -> None:
-    content = event.get("content", "")
-    if content:
-        sys.stdout.write(f"\n  🧠 {content}\n")
-        sys.stdout.flush()
-
-
-def _handle_finish(event: dict[str, Any], *, show_usage: bool = False) -> str:
-    reason = event.get("reason", "stop")
-    usage_raw = event.get("usage", {}) or {}
-    if show_usage:
-        print("\n  ── Usage ──")
-        print(f"    Input tokens:  {usage_raw.get('inputTokens', 0)}")
-        print(f"    Output tokens: {usage_raw.get('outputTokens', 0)}")
-        input_detail = usage_raw.get("inputTokenDetails") or {}
-        if input_detail:
-            print(f"    Cache read:    {input_detail.get('cacheReadTokens', 0)}")
-            print(f"    Cache write:   {input_detail.get('cacheWriteTokens', 0)}")
-        output_detail = usage_raw.get("outputTokenDetails") or {}
-        if output_detail:
-            print(f"    Reasoning:     {output_detail.get('reasoningTokens', 0)}")
-    return reason
-
-
-# ── Main ────────────────────────────────────────────────────────────────────────
-
-
-async def main() -> None:
-    parser = argparse.ArgumentParser(
-        description="Send a prompt to Supercode API and stream the response.",
-        formatter_class=argparse.RawDescriptionHelpFormatter,
-        epilog=__doc__,
-    )
-    parser.add_argument("prompt", nargs="*", help="The user message to send")
-    parser.add_argument(
-        "--model",
-        default="concentrateai/deepseek-v4-flash",
-        help="Model ID in subprovider/modelname format (default: concentrateai/deepseek-v4-flash)",
-    )
-    parser.add_argument("--system", default="", help="Optional system prompt")
-    parser.add_argument(
-        "--show-usage", action="store_true", help="Print token usage after the response"
-    )
-    parser.add_argument(
-        "--raw", action="store_true", help="Show raw NDJSON events instead of formatted output"
-    )
-    args = parser.parse_args()
-
-    prompt = " ".join(args.prompt) if args.prompt else None
-    if not prompt and sys.stdin.isatty():
-        parser.print_help()
-        sys.exit(1)
-    if not prompt:
-        prompt = sys.stdin.read().strip()
-
-    # Build payload
-    provider, model_name = (
-        args.model.split("/", 1) if "/" in args.model else ("concentrateai", args.model)
-    )
-    messages: list[dict[str, Any]] = []
-    if args.system:
-        messages.append({"role": "system", "content": args.system})
-    messages.append({"role": "user", "content": prompt})
-
-    payload = {"provider": provider, "model": model_name, "messages": messages}
-
-    # Verify token
-    try:
-        token_preview = _get_token()[:16]
-    except RuntimeError as e:
-        print(f"ERROR: {e}", file=sys.stderr)
-        sys.exit(1)
-
-    print(f"Model:     {args.model}", file=sys.stderr)
-    print(f"Token:     {token_preview}...", file=sys.stderr)
-    print(file=sys.stderr)
-
-    has_tool_calls = False
-    finish_reason = "stop"
-
-    try:
-        async for event in _stream_ndjson(payload):
-            if args.raw:
-                print(json.dumps(event))
-                sys.stdout.flush()
-                continue
-
-            match event.get("type"):
-                case "text":
-                    _handle_text(event)
-                case "reasoning":
-                    _handle_reasoning(event)
-                case "tool-call":
-                    has_tool_calls = True
-                    _handle_tool_call(event)
-                case "finish":
-                    finish_reason = _handle_finish(event, show_usage=args.show_usage)
-                case "error":
-                    print(f"\nERROR: {event.get('error', 'Unknown error')}", file=sys.stderr)
-                    sys.exit(1)
-    except RuntimeError as e:
-        print(f"ERROR: {e}", file=sys.stderr)
-        sys.exit(1)
-
-    print(file=sys.stderr)
-    if has_tool_calls:
-        print("\nFinish reason: tool_calls (forced — API always sends 'stop')", file=sys.stderr)
-    else:
-        print(f"\nFinish reason: {finish_reason}", file=sys.stderr)
+        # Stream out tokens/steps just like OpenAI's stream chunks
+        async for delta in ai.chat("concentrateai/deepseek-v4-flash", messages):
+            if delta["type"] == "text":
+                print(delta["content"], end="", flush=True)
+            elif delta["type"] == "tool_call_start":
+                print(
+                    f"\n[Running tool {delta['name']} with {delta['args']}...]", end="", flush=True
+                )
+            elif delta["type"] == "tool_call_result":
+                print(f"\n[Tool Result: {delta['result']}]", end="", flush=True)
+        print()
 
 
 if __name__ == "__main__":
