@@ -447,6 +447,7 @@ class _ClawProviderAdapter:
             max_tokens=max_tokens,
         )
 
+        saw_stream_done = False
         async for part in stream:
             match part:
                 case TextPart(text=t):
@@ -458,14 +459,16 @@ class _ClawProviderAdapter:
                 case ToolCallDelta(index=i, arguments_delta=ad):
                     yield ToolCallDelta(index=i, arguments_delta=ad)
                 case StreamDone(stop_reason=sr):
+                    saw_stream_done = True
                     yield StreamDone(stop_reason=sr)
                 case _:
                     pass
 
         # Track usage after iteration
         self._last_usage = _usage_dict_from_response(stream)
-        self._last_finish_reason = getattr(stream, "stop_reason", None) or "stop"
-        yield StreamDone(stop_reason=claw_verdict_to_vtx(self._last_finish_reason))
+        if not saw_stream_done:
+            self._last_finish_reason = getattr(stream, "stop_reason", None) or "stop"
+            yield StreamDone(stop_reason=claw_verdict_to_vtx(self._last_finish_reason))
 
     def should_retry_for_error(self, error: Exception) -> bool:
         if hasattr(self._claw, "should_retry_for_error"):

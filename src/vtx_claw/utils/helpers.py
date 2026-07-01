@@ -771,37 +771,12 @@ async def collect_stream_to_response(
     reasoning_effort: str | None = None,
     **kwargs: Any,
 ) -> Any:
-    """Collect a vtx stream into an LLMResponse. Replaces chat_with_retry."""
+    """Collect a vtx stream into an LLMResponse. Replaces chat_with_retry.
+
+    Uses create_bridge_stream (same path as the main runner loop) for
+    consistent finish_reason mapping and stream handling.
+    """
     import json as _json
-
-    from vtx.core.types import StopReason, ToolDefinition
-    from vtx_claw._vtx_bridge import vtx_stop_reason_to_claw
-    from vtx_claw.providers.base import LLMResponse, ToolCallRequest
-
-    system_prompt = None
-    chat_messages = list(messages)
-    if chat_messages and chat_messages[0].get("role") == "system":
-        system_prompt = chat_messages.pop(0).get("content")
-
-    tool_defs = None
-    if tools:
-        tool_defs = [
-            ToolDefinition(
-                name=t["function"]["name"],
-                description=t["function"].get("description", ""),
-                parameters=t["function"].get("parameters", {}),
-            )
-            for t in tools
-            if isinstance(t, dict) and "function" in t
-        ]
-
-    stream = await provider.stream(
-        chat_messages,
-        system_prompt=system_prompt,
-        tools=tool_defs,
-        temperature=temperature,
-        max_tokens=max_tokens,
-    )
 
     from vtx.core.types import (
         StreamDone,
@@ -810,12 +785,30 @@ async def collect_stream_to_response(
         ToolCallDelta,
         ToolCallStart,
     )
+    from vtx_claw._vtx_bridge import create_bridge_stream, vtx_stop_reason_to_claw
+    from vtx_claw.providers.base import LLMResponse, ToolCallRequest
+
+    system_prompt = None
+    chat_messages = list(messages)
+    if chat_messages and chat_messages[0].get("role") == "system":
+        system_prompt = chat_messages.pop(0).get("content")
+
+    _model = model or "default"
+
+    adapter, stream = await create_bridge_stream(
+        provider=provider,
+        messages=chat_messages,
+        model=_model,
+        tool_defs=tools,
+        system_prompt=system_prompt,
+        temperature=temperature,
+        max_tokens=max_tokens,
+    )
 
     content_parts: list[str] = []
     thinking_parts: list[str] = []
     tool_calls_raw: dict[int, dict[str, Any]] = {}
     stop_reason = "stop"
-    usage_dict: dict[str, int] = {}
 
     async for part in stream:
         if isinstance(part, TextPart):
@@ -834,12 +827,7 @@ async def collect_stream_to_response(
         elif isinstance(part, StreamDone):
             stop_reason = vtx_stop_reason_to_claw(part.stop_reason)
 
-    if stream.usage:
-        usage_dict = {
-            "prompt_tokens": stream.usage.input_tokens,
-            "completion_tokens": stream.usage.output_tokens,
-            "total_tokens": stream.usage.input_tokens + stream.usage.output_tokens,
-        }
+    usage_dict = adapter.last_usage or {}
 
     tool_call_requests = []
     for idx in sorted(tool_calls_raw):
