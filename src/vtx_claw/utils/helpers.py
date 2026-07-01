@@ -819,7 +819,9 @@ async def collect_stream_to_response(
                 tool_calls_raw[part.index]["arguments"] += part.arguments_delta or ""
         elif ptype == "StreamDone":
             sr = part.stop_reason
-            stop_reason = sr.value if hasattr(sr, "value") else str(sr)
+            raw = sr.value if hasattr(sr, "value") else str(sr)
+            # vtx uses "tool_use", vtx_claw expects "tool_calls"
+            stop_reason = "tool_calls" if raw == "tool_use" else raw
         elif ptype == "Usage":
             usage_dict = {
                 "prompt_tokens": getattr(part, "input_tokens", 0),
