@@ -29,12 +29,19 @@ from .openai import (
     load_openai_credentials,
 )
 from .openai import login as openai_login
+from .supercode import (
+    SupercodeCredentials,
+    get_supercode_auth_path,
+    is_supercode_logged_in,
+    load_supercode_credentials,
+)
 
 __all__ = [
     "COPILOT_HEADERS",
     "CopilotCredentials",
     "DynamicProviderStatus",
     "OpenAICredentials",
+    "SupercodeCredentials",
     "clear_api_key",
     "clear_credentials",
     "clear_openai_credentials",
@@ -44,15 +51,18 @@ __all__ = [
     "get_dynamic_auth_path",
     "get_openai_auth_path",
     "get_provider_status",
+    "get_supercode_auth_path",
     "get_valid_openai_credentials",
     "get_valid_openai_token",
     "get_valid_token",
     "has_api_key",
     "is_copilot_logged_in",
     "is_openai_logged_in",
+    "is_supercode_logged_in",
     "load_api_key",
     "load_credentials",
     "load_openai_credentials",
+    "load_supercode_credentials",
     "login",
     "openai_login",
     "save_api_key",

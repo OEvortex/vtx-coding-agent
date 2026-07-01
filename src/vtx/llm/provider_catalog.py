@@ -131,6 +131,20 @@ def detect_provider_from_env() -> ProviderInfo:
         if p.api_key_env and os.getenv(p.api_key_env):
             return p
 
+    # Check OAuth-backed providers by probing their credential file
+    for slug in order:
+        p = providers[slug]
+        if p.is_local:
+            continue
+        if slug == "supercode":
+            try:
+                from vtx.llm.oauth.supercode import is_supercode_logged_in
+
+                if is_supercode_logged_in():
+                    return p
+            except Exception:
+                pass
+
     for slug in order:
         p = providers[slug]
         if p.is_local and p.api_key_optional:
@@ -151,6 +165,7 @@ def _provider_info_to_model(p: ProviderInfo, model_id: str) -> Model:
     family_to_api = {
         "openai_compat": ApiType(ApiType.OPENAI_SDK),
         "anthropic": ApiType(ApiType.ANTHROPIC),
+        "supercode": ApiType(ApiType.SUPERCODE),
     }
     from .context_length import context_length_manager
 

@@ -71,13 +71,13 @@ class WebSocketConfig(Base):
     websocket_requires_token: bool = True
     allow_from: list[str] = Field(default_factory=lambda: ["*"])
     streaming: bool = True
-    # Default 36 MB, upper 40 MB: supports up to 4 images at ~6 MB each after
+    # Default 40 MB: supports up to 4 images at ~6 MB each after
     # client-side Worker normalization (see webui Composer). 4 × 6 MB × 1.37
     # (base64 overhead) + envelope framing stays under 36 MB; the 40 MB ceiling
     # leaves a small margin for sender slop without opening a DoS avenue.
-    max_message_bytes: int = Field(default=37_748_736, ge=1024, le=41_943_040)
-    ping_interval_s: float = Field(default=20.0, ge=5.0, le=300.0)
-    ping_timeout_s: float = Field(default=20.0, ge=5.0, le=300.0)
+    max_message_bytes: int = Field(default=41_943_040, ge=1024, le=41_943_040)
+    ping_interval_s: float = Field(default=60.0, ge=5.0, le=300.0)
+    ping_timeout_s: float = Field(default=120.0, ge=5.0, le=300.0)
     ssl_certfile: str = ""
     ssl_keyfile: str = ""
 
@@ -355,28 +355,15 @@ class WebSocketChannel(BaseChannel):
         ctx_tokens = meta.get("context_tokens")
         ctx_window = meta.get("context_window")
         if ctx_tokens is not None or ctx_window is not None:
-            payload = {
-                "event": "turn_end",
-                "chat_id": chat_id,
-                "metadata": {"context_tokens": ctx_tokens, "context_window": ctx_window},
-            }
-            await self._broadcast_to_subscribers(chat_id, payload)
+            await self.send_turn_end(
+                chat_id, metadata={"context_tokens": ctx_tokens, "context_window": ctx_window}
+            )
 
     async def _hydrate_after_subscribe(self, chat_id: str) -> None:
         """Replay goal/run/context strip state after subscribe (same-process refresh)."""
         await self._maybe_push_active_goal_state(chat_id)
         await self._maybe_push_turn_run_wall_clock(chat_id)
         await self._maybe_push_context_state(chat_id)
-
-        # Push the active default context window if the client doesn't have it yet
-        ctx_window = getattr(self.config.agent, "default_context_window", 0) or 200000
-        if ctx_window > 0:
-            payload = {
-                "event": "turn_end",
-                "chat_id": chat_id,
-                "metadata": {"context_window": ctx_window},
-            }
-            await self._broadcast_to_subscribers(chat_id, payload)
 
     async def _send_event(self, connection: Any, event: str, **fields: Any) -> None:
         """Send a control event (attached, error, ...) to a single connection."""

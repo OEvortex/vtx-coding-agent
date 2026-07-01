@@ -157,6 +157,32 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   the WebUI default access mode from config, preserving the selected permission mode
   across reconnects.
 
+#### Supercode provider support
+- Registered Supercode as a new OpenAI-compatible provider with base URL `https://supercode-8w7e.onrender.com`.
+- Added `SupercodeProvider`, OAuth credential handling (`SupercodeCredentials`), and
+  provider-specific API type (`ApiType.SUPERCODE`).
+- Configured auto-fetching of model lists from the provider's `/models` endpoint with
+  known model fallbacks including DeepSeek, GLM, Kimi, MiniMax, Gemini, Llama, and
+  OpenRouter routes.
+- Added `is_supercode_logged_in`, `load_supercode_credentials`, and
+  `get_supercode_auth_path` to the OAuth package.
+- `get_dynamic_api_key` now falls back to provider-specific OAuth token files when no
+  env var or stored key is present.
+- `detect_provider_from_env` probes Supercode OAuth credentials during auto-detection.
+
+#### WebSocket channel defaults and context hydration
+- Raised `max_message_bytes` default to 40 MB, matching the documented ceiling.
+- Increased `ping_interval_s` to 60s and `ping_timeout_s` to 120s to reduce
+  unnecessary keepalive traffic on stable connections.
+- Refactored `_maybe_push_context_state` to use `send_turn_end` instead of raw
+  `_broadcast_to_subscribers`, aligning it with normal outbound message formatting.
+- Removed the active-loop default context window push on subscribe; context window
+  is now sourced from model catalog/runtime data and turn metadata only.
+
+#### SDK provider resolution fix
+- `get_provider_class` now accepts the provider slug and passes it through to the
+  provider constructor, fixing incorrect config wiring for non-default providers.
+
 ### Changed
 - Agent runtime supports custom system prompt builder strategies.
 - System prompt is now messaging-platform-aware with concise formatting guidance.

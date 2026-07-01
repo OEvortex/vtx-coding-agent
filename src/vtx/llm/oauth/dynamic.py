@@ -175,15 +175,33 @@ def _env_var_for(provider: str) -> str | None:
 def get_dynamic_api_key(provider: str) -> str | None:
     """Return the best available API key for a dynamic provider.
 
-    Priority: ``<NAME>_API_KEY`` env var > stored ``dynamic_auth.json`` entry.
-    Returns ``None`` if neither is set.
+    Priority:
+    1. ``<NAME>_API_KEY`` env var
+    2. Stored ``dynamic_auth.json`` entry
+    3. Provider-specific OAuth token file (e.g. ``~/.better-auth/token.json``)
     """
     env_var = _env_var_for(provider)
     if env_var:
         env_value = os.environ.get(env_var)
         if env_value and env_value.strip():
             return env_value.strip()
-    return load_api_key(provider)
+
+    stored = load_api_key(provider)
+    if stored:
+        return stored
+
+    # Fall back to OAuth token files for specific providers
+    if provider == "supercode":
+        try:
+            from .supercode import load_supercode_credentials
+
+            creds = load_supercode_credentials()
+            if creds is not None and creds.token:
+                return creds.token
+        except Exception:
+            pass
+
+    return None
 
 
 def get_provider_status(provider: str) -> DynamicProviderStatus | None:
@@ -209,11 +227,22 @@ def get_provider_status(provider: str) -> DynamicProviderStatus | None:
         return None
     env_var = p.api_key_env
     has_env = bool(env_var and os.environ.get(env_var, "").strip())
+    has_stored = has_api_key(provider)
+
+    # Check OAuth token files for providers that use them
+    if not has_stored and provider == "supercode":
+        try:
+            from .supercode import is_supercode_logged_in
+
+            has_stored = is_supercode_logged_in()
+        except Exception:
+            pass
+
     return DynamicProviderStatus(
         provider=provider,
         env_var=env_var,
         has_env_key=has_env,
-        has_stored_key=has_api_key(provider),
+        has_stored_key=has_stored,
         api_key_optional=p.api_key_optional,
     )
 

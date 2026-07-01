@@ -451,7 +451,7 @@ class Agent[TContext]:
                 provider=provider_slug,
                 default_headers=default_headers or {},
             )
-            return get_provider_class(api_type)(config)  # type: ignore[arg-type]  # type: ignore[arg-type]
+            return get_provider_class(api_type, provider_slug)(config)  # type: ignore[arg-type]  # type: ignore[arg-type]
 
         # ------------------------------------------------------------------
         # Case 2: name is NOT a built-in. It's a custom / non-builtin
@@ -487,7 +487,7 @@ class Agent[TContext]:
                 provider=name or sdk,
                 default_headers=default_headers or {},
             )
-            return get_provider_class(api_type)(config)  # type: ignore[arg-type]
+            return get_provider_class(api_type, name or sdk)(config)  # type: ignore[arg-type]
 
         # ------------------------------------------------------------------
         # Case 3: No provider info at all. Fall back to env vars.
@@ -519,7 +519,7 @@ class Agent[TContext]:
             provider=provider_slug,
             default_headers=default_headers or {},
         )
-        return get_provider_class(api_type)(config)  # type: ignore[arg-type]
+        return get_provider_class(api_type, provider_slug)(config)  # type: ignore[arg-type]
 
 
 __all__ = ["Agent", "AgentOutputSchema"]

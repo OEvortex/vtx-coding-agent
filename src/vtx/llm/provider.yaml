@@ -345,6 +345,29 @@ providers:
     model_parser:
       cooldown_minutes: 10
 
+  - slug: supercode
+    display_name: Supercode
+    description: "Supercode proxy — models via concentrateai, google, nvidia, openrouter."
+    family: supercode
+    base_url: https://supercode-8w7e.onrender.com
+    known_models:
+      - concentrateai/deepseek-v4-flash
+      - concentrateai/glm-5.2
+      - concentrateai/glm-5.1
+      - concentrateai/kimi-k2-6
+      - concentrateai/minimax-m3
+      - google/gemini-2.5-flash
+      - google/gemini-2.5-pro
+      - nvidia/minimaxai/minimax-m3
+      - nvidia/deepseek-ai/deepseek-v4-flash
+      - nvidia/meta/llama-3.3-70b-instruct
+      - openrouter/openai/gpt-oss-120b:free
+      - openrouter/deepseek/deepseek-v4-flash
+      - openrouter/minimax/minimax-m3
+      - openrouter/z-ai/glm-5.1
+      - openrouter/moonshotai/kimi-k2.6
+    api_key_optional: true
+
   - slug: blackbox
     display_name: Blackbox AI
     description: Blackbox AI gateway.
