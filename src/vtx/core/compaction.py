@@ -15,29 +15,46 @@ from ..llm.base import BaseProvider
 
 SUMMARIZATION_PROMPT = """You are summarizing a coding conversation so that \
 another agent can pick up exactly where the previous one left off. \
+Your summary MUST be comprehensive, high-fidelity, and detailed. Do NOT compress \
+information so aggressively that critical technical context, logic, decisions, or \
+code details are lost. A coding agent needs precise context to continue effectively.
+
 Output MUST follow this exact structure — no preamble, no extra sections:
 
-## Goal
-[One or two sentences: the user's objective. Be specific, not generic.]
+## Goal & Requirements
+- [The user's objective and core requirements. Be specific, detailed, and non-generic.]
+- [Copy verbatim any concrete checklists, plans, specs, or task rules provided by the user.]
+- [List all user preferences, constraints, and instructions.]
 
-## Instructions
-- [List EVERY concrete instruction, constraint, or preference the user stated.]
-- [Include partial decisions made mid-conversation.]
-- [Copy verbatim any plan, spec, or checklist the user provided.]
+## Technical Architecture & Context
+- [Key discoveries about the codebase: architecture, modules, classes, and environment details.]
+- [API / Interface Signatures: Exact signatures, types, or models designed, created, or modified.]
+- [Key Algorithms / Logic: Detailed description of any complex logic or custom protocols \
+implemented.]
 
-## Discoveries
-- [Bugs found and their root causes.]
-- [File paths, function names, class names — use exact identifiers.]
-- [Configuration values, environment details, version numbers.]
+## Decisions Made & Rationale
+- [Key design and architectural choices made mid-conversation, with brief explanations.]
+- [Rejected Alternatives: Explicitly detail any paths investigated but rejected, and WHY they \
+were rejected (to prevent the next agent iteration from repeating the same investigation).]
 
-## Accomplished
-- [Bullet list of completed work.]
-- [Current work in progress — what was happening RIGHT BEFORE compaction.]
-- [Remaining steps, in order.]
+## Troubleshooting & Debugging
+- [Exact bugs encountered, stack traces, error messages, and their root causes.]
+- [The specific fixes implemented and why they resolved the issue.]
 
-## Relevant files
-[Exact paths to files read, edited, or created. Group by directory if \
-multiple files in the same dir are relevant.]
+## Accomplished & Active State
+- [Bullet list of completed work items.]
+- [Current work in progress: The exact state of the system right before compaction \
+(e.g., active files being edited, current task focus, or compile/test issues).]
+- [Verification & Testing: Test commands run, new tests added, and latest test status \
+(passing/failing).]
+
+## Action Plan
+- [Immediate next 2-3 specific developer actions.]
+- [Remaining checklist items and TODOs in order.]
+
+## Relevant Files
+- [Exact paths to files read, created, or edited. Group by directory. Include brief notes on \
+their roles.]
 ---"""
 
 

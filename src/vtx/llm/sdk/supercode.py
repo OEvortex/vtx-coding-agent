@@ -146,10 +146,22 @@ class SupercodeSDK(BaseLLMSDK):
             return await self._non_streaming_chat(payload, headers, config)
 
     def _messages_to_supercode(self, messages: list[Message]) -> list[dict[str, Any]]:
-        """Convert Vtx SDK Messages to Supercode's message format."""
+        """Convert Vtx SDK Messages to Supercode's message format.
+
+        Per the OpenAI spec (which Supercode follows), assistant messages
+        with ``tool_calls`` and no text content should have ``content: null``,
+        not ``content: ""``.  Some providers reject empty-string content
+        on tool-call assistant blocks.
+        """
         result = []
         for msg in messages:
-            entry: dict[str, Any] = {"role": msg.role, "content": msg.content}
+            has_tool_calls = msg.metadata and "tool_calls" in msg.metadata
+            entry: dict[str, Any] = {"role": msg.role}
+            if has_tool_calls and not msg.content:
+                # OpenAI format: null content when assistant only sends tool calls
+                entry["content"] = None
+            else:
+                entry["content"] = msg.content
             if msg.metadata:
                 if "tool_calls" in msg.metadata:
                     entry["tool_calls"] = msg.metadata["tool_calls"]

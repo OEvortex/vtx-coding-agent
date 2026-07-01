@@ -193,7 +193,7 @@ def _spec_from_vtx_catalog(name: str) -> ProviderSpec | None:
         if info is None:
             return None
         normalized = to_snake(name.replace("-", "_"))
-        family_to_backend = {"anthropic": "anthropic"}
+        family_to_backend = {"anthropic": "anthropic", "supercode": "supercode"}
         backend = family_to_backend.get(info.family, "openai_compat")
         return ProviderSpec(
             name=normalized,

@@ -617,6 +617,18 @@ def _set_provider(
     return config
 
 
+def _has_oauth_token(slug: str) -> bool:
+    """Check if an OAuth-backed provider has credentials available."""
+    try:
+        if slug == "supercode":
+            from vtx.llm.oauth.supercode import is_supercode_logged_in
+
+            return is_supercode_logged_in()
+    except Exception:
+        pass
+    return False
+
+
 def merge_vtx_config(config: Any) -> Any:
     """Merge settings from vtx config into a vtx_claw Config.
 
@@ -671,18 +683,31 @@ def merge_vtx_config(config: Any) -> Any:
     # --- Step A: try the preferred provider ---------------------------------
     if preferred_slug:
         p_info = _vtx_providers.get(preferred_slug)
-        if p_info and p_info.api_key_env:
-            api_key = _get_dynamic_api_key(p_info.slug)
-            if api_key:
-                config = _set_provider(
-                    config,
-                    p_info.slug,
-                    api_key=api_key,
-                    api_base=p_info.base_url,
-                    model=preferred_model,
-                    set_active=True,
-                )
-                has_preferred = True
+        if p_info:
+            if p_info.api_key_env:
+                api_key = _get_dynamic_api_key(p_info.slug)
+                if api_key:
+                    config = _set_provider(
+                        config,
+                        p_info.slug,
+                        api_key=api_key,
+                        api_base=p_info.base_url,
+                        model=preferred_model,
+                        set_active=True,
+                    )
+                    has_preferred = True
+            elif p_info.api_key_optional:
+                # OAuth-backed provider (e.g. supercode) — check token file
+                if _has_oauth_token(p_info.slug):
+                    config = _set_provider(
+                        config,
+                        p_info.slug,
+                        api_key="",
+                        api_base=p_info.base_url,
+                        model=preferred_model,
+                        set_active=True,
+                    )
+                    has_preferred = True
 
     # --- Step B: API-key scan (vtx's own resolution order, checking env vars
     #              and dynamic_auth.json) ---------------------------------------
@@ -718,5 +743,32 @@ def merge_vtx_config(config: Any) -> Any:
             )
             if model_to_set:
                 has_preferred = True
+
+    # --- Step D: OAuth-only providers (no api_key_env, uses ~/.better-auth) ---
+    if not has_preferred:
+        for p_info in _vtx_providers.list_providers():
+            if p_info.api_key_env is not None:
+                continue
+            if not p_info.api_key_optional:
+                continue
+            if not p_info.base_url:
+                continue
+            # Check if the provider has OAuth credentials available
+            try:
+                from vtx.llm.oauth.supercode import is_supercode_logged_in
+
+                if p_info.slug == "supercode" and is_supercode_logged_in():
+                    config = _set_provider(
+                        config,
+                        p_info.slug,
+                        api_key="",
+                        api_base=p_info.base_url,
+                        model=preferred_model,
+                        set_active=True,
+                    )
+                    has_preferred = True
+                    break
+            except Exception:
+                pass
 
     return config
