@@ -206,6 +206,7 @@ _MAX_IMAGES_PER_MESSAGE = 4
 _MAX_IMAGE_BYTES = 8 * 1024 * 1024
 _MAX_VIDEOS_PER_MESSAGE = 1
 _MAX_VIDEO_BYTES = 20 * 1024 * 1024
+_MAX_DOC_BYTES = 50 * 1024 * 1024
 
 # Image MIME whitelist — matches the Composer's ``accept`` list. SVG is
 # explicitly excluded to avoid the XSS surface inside embedded scripts.
@@ -215,7 +216,35 @@ _IMAGE_MIME_ALLOWED: frozenset[str] = frozenset(
 
 _VIDEO_MIME_ALLOWED: frozenset[str] = frozenset({"video/mp4", "video/webm", "video/quicktime"})
 
-_UPLOAD_MIME_ALLOWED: frozenset[str] = _IMAGE_MIME_ALLOWED | _VIDEO_MIME_ALLOWED
+_DOC_MIME_ALLOWED: frozenset[str] = frozenset(
+    {
+        "application/pdf",
+        "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+        "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        "application/vnd.openxmlformats-officedocument.presentationml.presentation",
+        "text/plain",
+        "text/markdown",
+        "text/x-markdown",
+        "text/csv",
+        "application/csv",
+        "application/json",
+        "text/json",
+        "application/x-yaml",
+        "text/yaml",
+        "text/x-yaml",
+        "application/toml",
+        "text/toml",
+        "application/xml",
+        "text/xml",
+        "text/html",
+        "text/x-log",
+        "application/octet-stream",
+    }
+)
+
+_UPLOAD_MIME_ALLOWED: frozenset[str] = (
+    _IMAGE_MIME_ALLOWED | _VIDEO_MIME_ALLOWED | _DOC_MIME_ALLOWED
+)
 
 _DATA_URL_MIME_RE = re.compile(r"^data:([^;,]+)(?:;[^,]*)*;base64,", re.DOTALL)
 
@@ -586,8 +615,12 @@ class WebSocketChannel(BaseChannel):
                 return _abort("decode")
             if mime not in _UPLOAD_MIME_ALLOWED:
                 return _abort("mime")
-            is_video = mime in _VIDEO_MIME_ALLOWED
-            max_bytes = _MAX_VIDEO_BYTES if is_video else _MAX_IMAGE_BYTES
+            if mime in _VIDEO_MIME_ALLOWED:
+                max_bytes = _MAX_VIDEO_BYTES
+            elif mime in _DOC_MIME_ALLOWED:
+                max_bytes = _MAX_DOC_BYTES
+            else:
+                max_bytes = _MAX_IMAGE_BYTES
             try:
                 saved = save_base64_data_url(data_url, media_dir, max_bytes=max_bytes)
             except FileSizeExceeded:

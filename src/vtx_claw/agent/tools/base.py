@@ -310,7 +310,7 @@ def tool_parameters(schema: dict[str, Any]) -> Callable[[type[_ToolT]], type[_To
         def parameters(self: Any) -> dict[str, Any]:
             return deepcopy(frozen)
 
-        cls.__dict__["parameters"] = parameters
+        setattr(cls, "parameters", parameters)
 
         abstract = getattr(cls, "__abstractmethods__", None)
         if abstract is not None and "parameters" in abstract:

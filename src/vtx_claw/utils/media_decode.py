@@ -32,6 +32,15 @@ _MIME_EXTENSION_OVERRIDES = {
     "audio/x-wav": ".wav",
     "audio/vnd.wave": ".wav",
     "video/webm": ".webm",
+    "text/yaml": ".yaml",
+    "text/x-yaml": ".yaml",
+    "application/x-yaml": ".yaml",
+    "text/markdown": ".md",
+    "text/x-markdown": ".md",
+    "text/toml": ".toml",
+    "application/toml": ".toml",
+    "text/x-log": ".log",
+    "text/csv": ".csv",
 }
 
 

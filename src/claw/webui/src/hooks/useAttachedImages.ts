@@ -45,12 +45,67 @@ export type AttachmentError =
 
 export const MAX_IMAGES_PER_MESSAGE = 4;
 
-/** MIME whitelist — mirrors the server's and the ``<input accept>`` attr. */
-const ACCEPTED_MIMES: ReadonlySet<string> = new Set([
+const IMAGE_MIMES: ReadonlySet<string> = new Set([
   "image/png",
   "image/jpeg",
   "image/webp",
   "image/gif",
+]);
+
+const VIDEO_MIMES: ReadonlySet<string> = new Set([
+  "video/mp4",
+  "video/webm",
+  "video/quicktime",
+]);
+
+const DOCUMENT_MIMES: ReadonlySet<string> = new Set([
+  "application/pdf",
+  "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+  "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+  "application/vnd.openxmlformats-officedocument.presentationml.presentation",
+  "text/plain",
+  "text/markdown",
+  "text/x-markdown",
+  "text/csv",
+  "application/csv",
+  "application/json",
+  "text/json",
+  "application/x-yaml",
+  "text/yaml",
+  "text/x-yaml",
+  "application/toml",
+  "text/toml",
+  "application/xml",
+  "text/xml",
+  "text/html",
+  "text/x-log",
+]);
+
+const SUPPORTED_DOCUMENT_EXTENSIONS = new Set([
+  ".pdf",
+  ".docx",
+  ".xlsx",
+  ".pptx",
+  ".txt",
+  ".md",
+  ".csv",
+  ".json",
+  ".xml",
+  ".html",
+  ".htm",
+  ".log",
+  ".yaml",
+  ".yml",
+  ".toml",
+  ".ini",
+  ".cfg",
+]);
+
+/** MIME whitelist — mirrors the server's and the ``<input accept>`` attr. */
+const ACCEPTED_MIMES: ReadonlySet<string> = new Set([
+  ...IMAGE_MIMES,
+  ...VIDEO_MIMES,
+  ...DOCUMENT_MIMES,
 ]);
 
 function dataUrlMime(dataUrl: string): string {
@@ -151,7 +206,11 @@ export function useAttachedImages(): UseAttachedImagesApi {
       let slot = MAX_IMAGES_PER_MESSAGE - imagesRef.current.length;
 
       for (const file of files) {
-        if (!ACCEPTED_MIMES.has(file.type)) {
+        const ext = file.name.slice(file.name.lastIndexOf(".")).toLowerCase();
+        const isSupportedMime = ACCEPTED_MIMES.has(file.type);
+        const isSupportedExt = SUPPORTED_DOCUMENT_EXTENSIONS.has(ext);
+
+        if (!isSupportedMime && !isSupportedExt) {
           rejected.push({ file, reason: "unsupported_type" });
           continue;
         }
@@ -175,29 +234,75 @@ export function useAttachedImages(): UseAttachedImagesApi {
         // Fire the Worker after the commit so chips render first (good INP).
         for (const entry of toAdd) {
           queueMicrotask(() => {
-            encodeImage(entry.file).then(
-              (result) => {
-                if (result.ok) {
-                  setEntry(entry.id, {
-                    status: "ready",
-                    dataUrl: result.dataUrl,
-                    encodedBytes: result.bytes,
-                    normalized: result.normalized,
-                  });
-                } else {
+            const ext = entry.file.name.slice(entry.file.name.lastIndexOf(".")).toLowerCase();
+            const isImage = IMAGE_MIMES.has(entry.file.type) || (!entry.file.type && !SUPPORTED_DOCUMENT_EXTENSIONS.has(ext));
+
+            if (isImage) {
+              encodeImage(entry.file).then(
+                (result) => {
+                  if (result.ok) {
+                    setEntry(entry.id, {
+                      status: "ready",
+                      dataUrl: result.dataUrl,
+                      encodedBytes: result.bytes,
+                      normalized: result.normalized,
+                    });
+                  } else {
+                    setEntry(entry.id, {
+                      status: "error",
+                      error: mapEncodeFailure(result.reason),
+                    });
+                  }
+                },
+                () => {
                   setEntry(entry.id, {
                     status: "error",
-                    error: mapEncodeFailure(result.reason),
+                    error: "decode_failed",
                   });
+                },
+              );
+            } else {
+              const reader = new FileReader();
+              reader.onload = () => {
+                let dataUrl = reader.result as string;
+                if (dataUrl.startsWith("data:application/octet-stream;base64,") || dataUrl.startsWith("data:;base64,")) {
+                  const extToMime: Record<string, string> = {
+                    ".pdf": "application/pdf",
+                    ".docx": "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+                    ".xlsx": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                    ".pptx": "application/vnd.openxmlformats-officedocument.presentationml.presentation",
+                    ".txt": "text/plain",
+                    ".md": "text/markdown",
+                    ".csv": "text/csv",
+                    ".json": "application/json",
+                    ".xml": "application/xml",
+                    ".html": "text/html",
+                    ".htm": "text/html",
+                    ".log": "text/plain",
+                    ".yaml": "text/yaml",
+                    ".yml": "text/yaml",
+                    ".toml": "text/toml",
+                    ".ini": "text/plain",
+                    ".cfg": "text/plain",
+                  };
+                  const mime = extToMime[ext] || "application/octet-stream";
+                  dataUrl = dataUrl.replace(/^data:[^;]*/, `data:${mime}`);
                 }
-              },
-              () => {
+                setEntry(entry.id, {
+                  status: "ready",
+                  dataUrl,
+                  encodedBytes: entry.file.size,
+                  normalized: false,
+                });
+              };
+              reader.onerror = () => {
                 setEntry(entry.id, {
                   status: "error",
-                  error: "decode_failed",
+                  error: "io",
                 });
-              },
-            );
+              };
+              reader.readAsDataURL(entry.file);
+            }
           });
         }
       }

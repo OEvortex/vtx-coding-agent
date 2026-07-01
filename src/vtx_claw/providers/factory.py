@@ -74,11 +74,11 @@ def _make_provider_core(
         thinking_level="high",
     )
 
+    from contextlib import suppress
+
     provider = provider_class(provider_config)
-    try:
+    with suppress(TypeError, AttributeError):
         provider.generation = resolved.to_generation_settings()
-    except (TypeError, AttributeError):
-        pass
     return provider
 
 
@@ -121,7 +121,6 @@ def make_provider(
     model: str | None = None,
 ) -> Any:
     """Create the LLM provider implied by config."""
-    resolved = _resolve_model_preset(config, preset_name=preset_name, preset=preset)
     provider = _make_provider_core(config, preset_name=preset_name, preset=preset, model=model)
     return provider
 

@@ -279,9 +279,7 @@ class BaseProvider(ABC):
         )
         if error_kind and any(m in error_kind.lower() for m in markers):
             return True
-        if text and any(m in text for m in markers):
-            return True
-        return False
+        return bool(text and any(m in text for m in markers))
 
     async def chat_with_retry(
         self,
@@ -345,7 +343,6 @@ class BaseProvider(ABC):
                         part.arguments_delta or ""
                     )
             elif isinstance(part, StreamDone):
-                sr = part.stop_reason
                 usage_dict = {
                     "prompt_tokens": getattr(part, "input_tokens", 0),
                     "completion_tokens": getattr(part, "output_tokens", 0),
