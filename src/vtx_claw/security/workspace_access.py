@@ -189,7 +189,15 @@ def workspace_sandbox_status(
     )
 
 
-def default_access_mode(restrict_to_workspace: bool) -> WorkspaceAccessMode:
+def default_access_mode(
+    restrict_to_workspace: bool, *, source_channel: str | None = None
+) -> WorkspaceAccessMode:
+    if source_channel == "websocket":
+        from vtx_claw.webui.workspaces import read_webui_default_access_mode
+
+        mode = read_webui_default_access_mode()
+        if mode == "full":
+            return "full"
     return "restricted" if restrict_to_workspace else "full"
 
 
@@ -212,7 +220,9 @@ def default_workspace_scope(
     workspace: str | Path, restrict_to_workspace: bool, *, source_channel: str | None = None
 ) -> WorkspaceScope:
     return build_workspace_scope(
-        workspace, default_access_mode(restrict_to_workspace), source_channel=source_channel
+        workspace,
+        default_access_mode(restrict_to_workspace, source_channel=source_channel),
+        source_channel=source_channel,
     )
 
 
@@ -248,7 +258,9 @@ def validate_workspace_scope_payload(
 
     raw_mode = raw.get("access_mode")
     if raw_mode is None:
-        raw_mode = default_access_mode(default_restrict_to_workspace)
+        raw_mode = default_access_mode(
+            default_restrict_to_workspace, source_channel=source_channel
+        )
     if not isinstance(raw_mode, str):
         raise WorkspaceScopeError("access_mode must be a string")
     return build_workspace_scope(project, raw_mode, source_channel=source_channel)

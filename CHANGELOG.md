@@ -139,6 +139,24 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 #### Brand asset updates
 - Replaced bundled application icons and favicons.
 
+#### WebUI multilingual locale updates
+- Restructured locale strings in `es`, `fr`, `id`, `ja`, `ko`, `vi`, `zh-CN`, and `zh-TW`
+  `common.json` files to match the new English i18n key layout and expanded coverage.
+
+#### WebUI ThreadComposer context display
+- The context circle now renders when `contextWindow` is known, using `contextTokens ?? 0`
+  as a fallback instead of requiring both values to be non-null.
+
+#### WebSocket context state hydration
+- After subscribe, replay saved `context_tokens`/`context_window` from session metadata
+  so refreshed WebUI clients restore context usage immediately.
+- Push the active loop's default context window when the client does not yet have it.
+
+#### Workspace access mode source channel awareness
+- `default_access_mode` now accepts `source_channel`; for websocket connections it reads
+  the WebUI default access mode from config, preserving the selected permission mode
+  across reconnects.
+
 ### Changed
 - Agent runtime supports custom system prompt builder strategies.
 - System prompt is now messaging-platform-aware with concise formatting guidance.

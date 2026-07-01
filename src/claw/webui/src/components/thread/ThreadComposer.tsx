@@ -1856,8 +1856,8 @@ export function ThreadComposer({
             ) : null}
           </div>
           <div className={cn("ml-auto flex min-w-0 shrink-0 items-center", isHero ? "gap-1.5" : "gap-2")}>
-            {contextTokens !== null && contextWindow !== null && contextWindow > 0 && !voiceRecorder.isRecording ? (
-              <ComposerContextCircle tokens={contextTokens} window={contextWindow} />
+            {contextWindow !== null && contextWindow > 0 && !voiceRecorder.isRecording ? (
+              <ComposerContextCircle tokens={contextTokens ?? 0} window={contextWindow} />
             ) : null}
             {modelLabel && !voiceRecorder.isRecording ? (
               <ComposerModelBadge

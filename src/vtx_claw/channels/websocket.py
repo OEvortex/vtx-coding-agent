@@ -344,10 +344,39 @@ class WebSocketChannel(BaseChannel):
             return
         await self.send_goal_status(chat_id, "running", started_at=t0)
 
+    async def _maybe_push_context_state(self, chat_id: str) -> None:
+        """Send the last saved context usage tokens and window size to the client."""
+        if self.gateway.session_manager is None:
+            return
+        row = self.gateway.session_manager.read_session_file(f"websocket:{chat_id}")
+        meta = row.get("metadata", {}) if isinstance(row, dict) else {}
+        if not isinstance(meta, dict):
+            meta = {}
+        ctx_tokens = meta.get("context_tokens")
+        ctx_window = meta.get("context_window")
+        if ctx_tokens is not None or ctx_window is not None:
+            payload = {
+                "event": "turn_end",
+                "chat_id": chat_id,
+                "metadata": {"context_tokens": ctx_tokens, "context_window": ctx_window},
+            }
+            await self._broadcast_to_subscribers(chat_id, payload)
+
     async def _hydrate_after_subscribe(self, chat_id: str) -> None:
-        """Replay goal/run strip state after subscribe (same-process refresh)."""
+        """Replay goal/run/context strip state after subscribe (same-process refresh)."""
         await self._maybe_push_active_goal_state(chat_id)
         await self._maybe_push_turn_run_wall_clock(chat_id)
+        await self._maybe_push_context_state(chat_id)
+
+        # Push the active default context window if the client doesn't have it yet
+        ctx_window = getattr(self.config.agent, "default_context_window", 0) or 200000
+        if ctx_window > 0:
+            payload = {
+                "event": "turn_end",
+                "chat_id": chat_id,
+                "metadata": {"context_window": ctx_window},
+            }
+            await self._broadcast_to_subscribers(chat_id, payload)
 
     async def _send_event(self, connection: Any, event: str, **fields: Any) -> None:
         """Send a control event (attached, error, ...) to a single connection."""
