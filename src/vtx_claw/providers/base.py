@@ -7,7 +7,9 @@ All provider types now live in vtx. This module delegates to them.
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+import json
+
+from dataclasses import dataclass, field
 from typing import Any
 
 # vtx BaseProvider interface
@@ -29,6 +31,26 @@ class ToolCallRequest:
     id: str
     name: str
     arguments: dict[str, Any] | str
+    extra_content: dict[str, Any] | None = None
+    provider_specific_fields: dict[str, Any] | None = None
+    function_provider_specific_fields: dict[str, Any] | None = None
+
+    def has_valid_name(self) -> bool:
+        return isinstance(self.name, str) and bool(self.name)
+
+    def to_openai_tool_call(self) -> dict[str, Any]:
+        args = self.arguments
+        if isinstance(args, dict):
+            args = json.dumps(args)
+        func: dict[str, Any] = {"name": self.name, "arguments": args}
+        if self.function_provider_specific_fields:
+            func["provider_specific_fields"] = self.function_provider_specific_fields
+        payload: dict[str, Any] = {"id": self.id, "type": "function", "function": func}
+        if self.extra_content:
+            payload["extra_content"] = self.extra_content
+        if self.provider_specific_fields:
+            payload["provider_specific_fields"] = self.provider_specific_fields
+        return payload
 
 
 @dataclass(slots=True)
