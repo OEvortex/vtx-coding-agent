@@ -289,7 +289,9 @@ class BaseProvider(ABC):
             elif part_type == "ToolCallDelta":
                 if part.index in tool_calls_raw:
                     existing = tool_calls_raw[part.index]["arguments"]
-                    tool_calls_raw[part.index]["arguments"] = existing + (part.arguments_delta or "")
+                    tool_calls_raw[part.index]["arguments"] = existing + (
+                        part.arguments_delta or ""
+                    )
             elif part_type == "StreamDone":
                 sr = part.stop_reason
                 if hasattr(sr, "value"):
@@ -338,7 +340,5 @@ class BaseProvider(ABC):
             usage=usage_dict or None,
         )
 
-    def _convert_dict_messages(
-        self, messages: list[dict[str, Any]]
-    ) -> list[dict[str, Any]]:
+    def _convert_dict_messages(self, messages: list[dict[str, Any]]) -> list[dict[str, Any]]:
         return messages

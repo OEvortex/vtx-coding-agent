@@ -404,7 +404,7 @@ class AgentRunner:
             await hook.before_iteration(context)
             response = await self._request_model(spec, messages_for_model, hook, context)
             context.response = response
-            context.tool_calls = list(response.tool_calls)
+            context.tool_calls = list(response.tool_calls or [])
 
             reasoning_text, cleaned_content = extract_reasoning(
                 response.reasoning_content, response.thinking_blocks, response.content
@@ -419,7 +419,7 @@ class AgentRunner:
                 context.streamed_reasoning = True
 
             if response.should_execute_tools:
-                context.tool_calls = list(response.tool_calls)
+                context.tool_calls = list(response.tool_calls or [])
                 if hook.wants_streaming():
                     await hook.on_stream_end(context, resuming=True)
 
@@ -544,7 +544,7 @@ class AgentRunner:
                 raw_usage = self._merge_usage(raw_usage, retry_usage)
                 context.response = response
                 context.usage = dict(raw_usage)
-                context.tool_calls = list(response.tool_calls)
+                context.tool_calls = list(response.tool_calls or [])
                 clean = hook.finalize_content(context, response.content)
 
             if response.finish_reason == "length" and not is_blank_text(clean):

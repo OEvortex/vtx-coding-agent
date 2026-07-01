@@ -5,7 +5,15 @@ from pathlib import Path
 from typing import TextIO
 
 from vtx import config, get_config
-from vtx.config import get_last_selected
+from vtx.config import (
+    _ensure_config_file,
+    _read_config_data,
+    _serialize_config_yaml,
+    _set_config_version,
+    _atomic_write_text,
+    reload_config,
+    get_last_selected,
+)
 
 from .core.types import StopReason, TextContent
 from .events import (
@@ -117,8 +125,13 @@ async def run_headless(
 
     cfg = get_config()
     previous_permission_mode = cfg.permissions.mode
-    # Headless can't show approval prompts; force auto in-memory for this run only.
-    cfg.permissions.mode = "auto"
+    # Headless can't show approval prompts; force auto for this run only,
+    # without mutating the saved config or clobbering the config file.
+    previous_config_data = _read_config_data(_ensure_config_file())
+    previous_config_data.setdefault("permissions", {})["mode"] = "auto"
+    _set_config_version(previous_config_data)
+    _atomic_write_text(_ensure_config_file(), _serialize_config_yaml(previous_config_data))
+    reload_config()
 
     try:
         last_selected = get_last_selected()
@@ -247,4 +260,8 @@ async def run_headless(
             await hook_bridge.unload()
             await runtime.close()
     finally:
-        cfg.permissions.mode = previous_permission_mode
+        current_config_data = _read_config_data(_ensure_config_file())
+        current_config_data.setdefault("permissions", {})["mode"] = previous_permission_mode
+        _set_config_version(current_config_data)
+        _atomic_write_text(_ensure_config_file(), _serialize_config_yaml(current_config_data))
+        reload_config()

@@ -778,13 +778,7 @@ async def collect_stream_to_response(
     """
     import json as _json
 
-    from vtx.core.types import (
-        StreamDone,
-        TextPart,
-        ThinkPart,
-        ToolCallDelta,
-        ToolCallStart,
-    )
+    from vtx.core.types import StreamDone, TextPart, ThinkPart, ToolCallDelta, ToolCallStart
     from vtx_claw._vtx_bridge import create_bridge_stream, vtx_stop_reason_to_claw
     from vtx_claw.providers.base import LLMResponse, ToolCallRequest
 
@@ -823,7 +817,9 @@ async def collect_stream_to_response(
                 if part.replace:
                     tool_calls_raw[part.index]["arguments"] = part.arguments_delta or ""
                 else:
-                    tool_calls_raw[part.index]["arguments"] = existing + (part.arguments_delta or "")
+                    tool_calls_raw[part.index]["arguments"] = existing + (
+                        part.arguments_delta or ""
+                    )
         elif isinstance(part, StreamDone):
             stop_reason = vtx_stop_reason_to_claw(part.stop_reason)
 
@@ -836,9 +832,7 @@ async def collect_stream_to_response(
             args = _json.loads(tc["arguments"]) if tc["arguments"] else {}
         except _json.JSONDecodeError:
             args = {"raw": tc["arguments"]}
-        tool_call_requests.append(
-            ToolCallRequest(id=tc["id"], name=tc["name"], arguments=args)
-        )
+        tool_call_requests.append(ToolCallRequest(id=tc["id"], name=tc["name"], arguments=args))
 
     return LLMResponse(
         content="\n".join(content_parts) if content_parts else None,

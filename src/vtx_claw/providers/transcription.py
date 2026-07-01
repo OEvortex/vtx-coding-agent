@@ -117,7 +117,7 @@ async def _request_json_with_retry(
         except _RETRYABLE_EXCEPTIONS as e:
             if attempt < _MAX_RETRIES:
                 logger.warning(
-                    "{} transcription transient error (attempt {}/{})": {}",
+                    "{} transcription transient error (attempt {}/{}) {}",
                     provider_label,
                     attempt + 1,
                     _MAX_RETRIES + 1,
@@ -126,7 +126,10 @@ async def _request_json_with_retry(
                 await asyncio.sleep(_BACKOFF_S[attempt])
                 continue
             logger.exception(
-                "{} transcription error after {} attempts": {}, provider_label, _MAX_RETRIES + 1, e
+                "{} transcription error after {} attempts {}",
+                provider_label,
+                _MAX_RETRIES + 1,
+                e,
             )
             return None
         except Exception as e:
