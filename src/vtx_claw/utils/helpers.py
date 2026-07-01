@@ -772,7 +772,10 @@ async def collect_stream_to_response(
     **kwargs: Any,
 ) -> Any:
     """Collect a vtx stream into an LLMResponse. Replaces chat_with_retry."""
-    from vtx.core.types import ToolDefinition
+    import json as _json
+
+    from vtx.core.types import StopReason, ToolDefinition
+    from vtx_claw._vtx_bridge import vtx_stop_reason_to_claw
     from vtx_claw.providers.base import LLMResponse, ToolCallRequest
 
     system_prompt = None
@@ -800,6 +803,14 @@ async def collect_stream_to_response(
         max_tokens=max_tokens,
     )
 
+    from vtx.core.types import (
+        StreamDone,
+        TextPart,
+        ThinkPart,
+        ToolCallDelta,
+        ToolCallStart,
+    )
+
     content_parts: list[str] = []
     thinking_parts: list[str] = []
     tool_calls_raw: dict[int, dict[str, Any]] = {}
@@ -807,26 +818,21 @@ async def collect_stream_to_response(
     usage_dict: dict[str, int] = {}
 
     async for part in stream:
-        ptype = type(part).__name__
-        if ptype == "TextPart":
+        if isinstance(part, TextPart):
             content_parts.append(part.text)
-        elif ptype == "ThinkPart":
+        elif isinstance(part, ThinkPart):
             thinking_parts.append(part.think)
-        elif ptype == "ToolCallStart":
+        elif isinstance(part, ToolCallStart):
             tool_calls_raw[part.index] = {"id": part.id, "name": part.name, "arguments": ""}
-        elif ptype == "ToolCallDelta":
+        elif isinstance(part, ToolCallDelta):
             if part.index in tool_calls_raw:
-                tool_calls_raw[part.index]["arguments"] += part.arguments_delta or ""
-        elif ptype == "StreamDone":
-            sr = part.stop_reason
-            raw = sr.value if hasattr(sr, "value") else str(sr)
-            # vtx uses "tool_use", vtx_claw expects "tool_calls"
-            stop_reason = "tool_calls" if raw == "tool_use" else raw
-        elif ptype == "Usage":
-            usage_dict = {
-                "prompt_tokens": getattr(part, "input_tokens", 0),
-                "completion_tokens": getattr(part, "output_tokens", 0),
-            }
+                existing = tool_calls_raw[part.index]["arguments"]
+                if part.replace:
+                    tool_calls_raw[part.index]["arguments"] = part.arguments_delta or ""
+                else:
+                    tool_calls_raw[part.index]["arguments"] = existing + (part.arguments_delta or "")
+        elif isinstance(part, StreamDone):
+            stop_reason = vtx_stop_reason_to_claw(part.stop_reason)
 
     if stream.usage:
         usage_dict = {
@@ -839,8 +845,8 @@ async def collect_stream_to_response(
     for idx in sorted(tool_calls_raw):
         tc = tool_calls_raw[idx]
         try:
-            args = json.loads(tc["arguments"]) if tc["arguments"] else {}
-        except json.JSONDecodeError:
+            args = _json.loads(tc["arguments"]) if tc["arguments"] else {}
+        except _json.JSONDecodeError:
             args = {"raw": tc["arguments"]}
         tool_call_requests.append(
             ToolCallRequest(id=tc["id"], name=tc["name"], arguments=args)
