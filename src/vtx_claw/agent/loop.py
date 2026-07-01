@@ -1498,7 +1498,7 @@ class AgentLoop:
             "extend_to_user": False,
         }
         ctx.history = ctx.session.get_history(**_hist_kwargs)
-        self._runtime_events().record_turn_runtime(ctx.session_key, self.llm_runtime())
+        self._runtime_events().record_turn_runtime(ctx.session_key, self)
 
         ctx.initial_messages = self._build_initial_messages(
             ctx.msg,

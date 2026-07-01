@@ -84,35 +84,62 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - Documents are read as data URLs on the client side using `FileReader` (bypassing the image encoder worker) and sent to the WebSocket server with a 50MB size limit.
  - Whitelisted document types and mapped file extensions dynamically in `media_decode.py` and `websocket.py` to ensure correct ingestion and parsing.
 
-+#### WebUI paste and drop support for documents
-+- Extended `extractImageFilesFromPaste` and `extractImageFilesFromDrop` to accept
-+  document files (PDF, Office, text formats) in addition to images, matching the
-+  server-side MIME/extension whitelist.
-+- Files are validated against `ACCEPTED_MIMES` and `SUPPORTED_DOCUMENT_EXTENSIONS`
-+  before being forwarded to the composer.
-+
-+#### WebUI exported attachment constants
-+- Exported `IMAGE_MIMES`, `VIDEO_MIMES`, `DOCUMENT_MIMES`,
-+  `SUPPORTED_DOCUMENT_EXTENSIONS`, and `ACCEPTED_MIMES` from
-+  `useAttachedImages.ts` so WebUI components can share a single source of
-+  truth for attachment validation.
-+
-+#### WebUI document upload accept attribute
-+- Updated the `<input accept>` attribute in `ThreadComposer` to include video
-+  and document MIME types plus file extensions, ensuring the OS file picker
-+  allows all supported attachment formats.
-+
-+#### WebUI fixed extension extraction for edge-case filenames
-+- Guarded `lastIndexOf(".")` calls in `useAttachedImages.ts` and
-+  `useClipboardAndDrop.ts` so files without an extension are handled safely
-+  instead of producing an empty string slice from index `-1`.
-+
-+#### Fixed Vite build output path
-+- Corrected `vite.config.ts` `outDir` to point to `../../vtx_claw/web/dist`
-+  instead of `../vtx-claw/web/dist`, fixing production WebUI builds after
-+  directory restructuring.
-+
- ### Changed
+#### WebUI paste and drop support for documents
+- Extended `extractImageFilesFromPaste` and `extractImageFilesFromDrop` to accept
+  document files (PDF, Office, text formats) in addition to images, matching the
+  server-side MIME/extension whitelist.
+- Files are validated against `ACCEPTED_MIMES` and `SUPPORTED_DOCUMENT_EXTENSIONS`
+  before being forwarded to the composer.
+
+#### WebUI exported attachment constants
+- Exported `IMAGE_MIMES`, `VIDEO_MIMES`, `DOCUMENT_MIMES`,
+  `SUPPORTED_DOCUMENT_EXTENSIONS`, and `ACCEPTED_MIMES` from
+  `useAttachedImages.ts` so WebUI components can share a single source of
+  truth for attachment validation.
+
+#### WebUI document upload accept attribute
+- Updated the `<input accept>` attribute in `ThreadComposer` to include video
+  and document MIME types plus file extensions, ensuring the OS file picker
+  allows all supported attachment formats.
+
+#### WebUI fixed extension extraction for edge-case filenames
+- Guarded `lastIndexOf(".")` calls in `useAttachedImages.ts` and
+  `useClipboardAndDrop.ts` so files without an extension are handled safely
+  instead of producing an empty string slice from index `-1`.
+
+#### Fixed Vite build output path
+- Corrected `vite.config.ts` `outDir` to point to `../../vtx_claw/web/dist`
+  instead of `../vtx-claw/web/dist`, fixing production WebUI builds after
+  directory restructuring.
+
+#### WebUI context token and window tracking
+- The WebUI client now records `context_tokens` and `context_window` per chat
+  and exposes them via `getContextTokens()` and `getContextWindow()`.
+- `handle_turn_end` extracts the values from the agent runtime after each turn,
+  falling back to last LLM usage when consolidator estimates are unavailable.
+- Removed the manual `context_window_tokens` setting from WebUI settings and
+  model-configuration updates; the value is now derived from the active model's
+  catalog/runtime data automatically.
+
+#### Agent loop runtime event fix
+- `record_turn_runtime` now receives the full `AgentLoop` instance instead of
+  only its `LLMRuntime`, restoring accurate runtime introspection for
+  downstream WebUI turn metadata.
+
+#### WebUI i18n updates
+- Restructured English locale strings in `common.json` with expanded coverage
+  for settings status, actions, BYOK, model overview, token usage, providers,
+  apps, automations, OAuth, skills, voice, thread composer, chat actions,
+  message states, lightbox, file preview, and error copy.
+
+#### WebUI ThreadComposer and ThreadShell updates
+- Updated composer and shell components to match the new i18n keys and
+  context-token tracking behavior.
+
+#### Brand asset updates
+- Replaced bundled application icons and favicons.
+
+### Changed
 - Agent runtime supports custom system prompt builder strategies.
 - System prompt is now messaging-platform-aware with concise formatting guidance.
 - Tool surface restricted to approved subset (removed `find`, `grep`, `ask_user`, `task`, `background` from default tools).

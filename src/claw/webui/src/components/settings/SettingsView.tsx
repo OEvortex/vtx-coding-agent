@@ -170,7 +170,6 @@ interface AgentSettingsDraft {
   provider: string;
   modelPreset: string;
   presetLabel: string;
-  contextWindowTokens: number;
   timezone: string;
   botName: string;
   botIcon: string;
@@ -195,7 +194,7 @@ type ProviderApiType = "auto" | "chat_completions" | "responses";
 type ProviderForm = { apiKey: string; apiBase: string; apiType: ProviderApiType };
 type CustomMcpTransport = "stdio" | "streamableHttp" | "sse";
 
-const CONTEXT_WINDOW_TOKEN_OPTIONS = [65_536, 200_000, 262_144] as const;
+
 const DEFERRED_MODEL_LIST_PROVIDERS = new Set([
   "aihubmix",
   "atomic_chat",
@@ -334,9 +333,7 @@ function defaultPreset(payload: SettingsPayload): SettingsPayload["model_presets
   return payload.model_presets.find((preset) => preset.is_default) ?? null;
 }
 
-function normalizeContextWindowTokens(value: number | null | undefined): number {
-  return typeof value === "number" && Number.isFinite(value) && value > 0 ? value : 200_000;
-}
+
 
 function editableDefaultProvider(payload: SettingsPayload): string {
   const base = defaultPreset(payload);
@@ -372,7 +369,6 @@ const DEFAULT_AGENT_SETTINGS_DRAFT: AgentSettingsDraft = {
   provider: "",
   modelPreset: "default",
   presetLabel: "Default",
-  contextWindowTokens: 200_000,
   timezone: "UTC",
   botName: "vtx-claw",
   botIcon: "",
@@ -434,9 +430,6 @@ function agentDraftFromPayload(payload: SettingsPayload): AgentSettingsDraft {
       : activePreset?.provider ?? editableDefaultProvider(payload),
     modelPreset: activePresetName,
     presetLabel: activePreset?.label ?? activePresetName,
-    contextWindowTokens: normalizeContextWindowTokens(
-      activePreset?.context_window_tokens ?? payload.agent.context_window_tokens,
-    ),
     timezone: payload.agent.timezone,
     botName: payload.agent.bot_name,
     botIcon: payload.agent.bot_icon,
@@ -834,7 +827,6 @@ export function SettingsView({
       form.modelPreset !== activePresetName ||
       form.model !== selectedPreset.model ||
       form.provider !== selectedProvider ||
-      form.contextWindowTokens !== normalizeContextWindowTokens(selectedPreset.context_window_tokens) ||
       (!selectedPreset.is_default && form.presetLabel.trim() !== selectedPreset.label)
     );
   }, [form, settings]);
@@ -966,23 +958,14 @@ export function SettingsView({
           label: form.presetLabel.trim(),
           model: form.model,
           provider: form.provider,
-          ...(form.contextWindowTokens !== selectedPreset.context_window_tokens
-            ? { contextWindowTokens: form.contextWindowTokens }
-            : {}),
         });
       } else {
         const defaultModel = defaultPreset(settings)?.model ?? settings.agent.model;
         const defaultProvider = editableDefaultProvider(settings);
-        const defaultContextWindowTokens = normalizeContextWindowTokens(
-          defaultPreset(settings)?.context_window_tokens ?? settings.agent.context_window_tokens,
-        );
         payload = await updateSettings(token, {
           modelPreset: form.modelPreset,
           ...(form.model !== defaultModel ? { model: form.model } : {}),
           ...(form.provider !== defaultProvider ? { provider: form.provider } : {}),
-          ...(form.contextWindowTokens !== defaultContextWindowTokens
-            ? { contextWindowTokens: form.contextWindowTokens }
-            : {}),
         });
       }
       applyPayload(payload);
@@ -2464,9 +2447,7 @@ function ModelsSettings({
                     ? editableDefaultProvider(settings)
                     : nextPreset?.provider ?? prev.provider,
                   presetLabel: nextPreset?.label ?? modelPreset,
-                  contextWindowTokens: normalizeContextWindowTokens(
-                    nextPreset?.context_window_tokens ?? prev.contextWindowTokens,
-                  ),
+
                 }));
               }}
               onCreateConfiguration={onCreateConfiguration}
@@ -2541,28 +2522,7 @@ function ModelsSettings({
               onChange={(model) => setForm((prev) => ({ ...prev, model }))}
             />
           </SettingsRow>
-          <SettingsRow
-            title={tx("settings.rows.contextWindow", "Context window")}
-            description={tx(
-              "settings.help.contextWindow",
-              "Choose the default context budget for this model configuration.",
-            )}
-          >
-            <SegmentedControl
-              value={String(form.contextWindowTokens)}
-              options={CONTEXT_WINDOW_TOKEN_OPTIONS.map((tokens) => ({
-                value: String(tokens),
-                label:
-                  tokens === 262_144 ? "256K" : tokens === 200_000 ? "200K" : "64K",
-              }))}
-              onChange={(value) =>
-                setForm((prev) => ({
-                  ...prev,
-                  contextWindowTokens: normalizeContextWindowTokens(Number(value)),
-                }))
-              }
-            />
-          </SettingsRow>
+
           <SettingsFooter
             dirty={dirty}
             saving={saving}

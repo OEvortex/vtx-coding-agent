@@ -174,6 +174,8 @@ interface ThreadComposerProps {
   onWorkspaceScopeChange?: (scope: WorkspaceScopePayload) => void;
   pendingQueueKey?: string | null;
   transcriptionProvider?: string | null;
+  contextTokens?: number | null;
+  contextWindow?: number | null;
 }
 
 const COMMAND_ICONS: Record<string, LucideIcon> = {
@@ -759,6 +761,83 @@ function RunElapsedStrip({
   );
 }
 
+function ComposerContextCircle({
+  tokens,
+  window: maxWindow,
+}: {
+  tokens: number;
+  window: number;
+}) {
+  const percent = Math.min(100, Math.round((tokens / maxWindow) * 100));
+  const formatCompact = (num: number) => {
+    if (num >= 1000000) return `${(num / 1000000).toFixed(1)}M`;
+    if (num >= 1000) return `${(num / 1000).toFixed(0)}K`;
+    return String(num);
+  };
+
+  const radius = 15;
+  const stroke = 2.5;
+  const normalizedRadius = radius - stroke;
+  const circumference = normalizedRadius * 2 * Math.PI;
+  const strokeDashoffset = circumference - (percent / 100) * circumference;
+
+  let colorClass = "text-emerald-500 dark:text-emerald-400";
+  if (percent > 85) {
+    colorClass = "text-red-500 dark:text-red-400";
+  } else if (percent > 65) {
+    colorClass = "text-amber-500 dark:text-amber-400";
+  }
+
+  return (
+    <TooltipProvider delayDuration={220} skipDelayDuration={80}>
+      <Tooltip>
+        <TooltipTrigger asChild>
+          <div className="relative flex h-8 w-8 items-center justify-center shrink-0 cursor-help select-none bg-muted/20 border border-border/40 rounded-full">
+            <svg
+              height={radius * 2}
+              width={radius * 2}
+              className="-rotate-90 transform"
+            >
+              {/* Background circle */}
+              <circle
+                className="text-muted-foreground/10"
+                stroke="currentColor"
+                fill="transparent"
+                strokeWidth={stroke}
+                r={normalizedRadius}
+                cx={radius}
+                cy={radius}
+              />
+              {/* Progress circle */}
+              <circle
+                className={cn(colorClass, "transition-all duration-300")}
+                stroke="currentColor"
+                fill="transparent"
+                strokeWidth={stroke}
+                strokeDasharray={circumference + " " + circumference}
+                style={{ strokeDashoffset }}
+                strokeLinecap="round"
+                r={normalizedRadius}
+                cx={radius}
+                cy={radius}
+              />
+            </svg>
+            <span className="absolute text-[8px] font-bold tabular-nums text-foreground">
+              {percent}%
+            </span>
+          </div>
+        </TooltipTrigger>
+        <TooltipContent side="top" align="center" className="text-xs p-2">
+          <div className="font-semibold mb-0.5">Context Usage</div>
+          <div className="text-muted-foreground tabular-nums">
+            {formatCompact(tokens)} / {formatCompact(maxWindow)}
+          </div>
+        </TooltipContent>
+      </Tooltip>
+    </TooltipProvider>
+  );
+}
+
 export function ThreadComposer({
   onSend,
   disabled,
@@ -785,6 +864,8 @@ export function ThreadComposer({
   onWorkspaceScopeChange,
   pendingQueueKey = null,
   transcriptionProvider = null,
+  contextTokens = null,
+  contextWindow = null,
 }: ThreadComposerProps) {
   const { t } = useTranslation();
   const [value, setValue] = useState("");
@@ -1775,6 +1856,9 @@ export function ThreadComposer({
             ) : null}
           </div>
           <div className={cn("ml-auto flex min-w-0 shrink-0 items-center", isHero ? "gap-1.5" : "gap-2")}>
+            {contextTokens !== null && contextWindow !== null && contextWindow > 0 && !voiceRecorder.isRecording ? (
+              <ComposerContextCircle tokens={contextTokens} window={contextWindow} />
+            ) : null}
             {modelLabel && !voiceRecorder.isRecording ? (
               <ComposerModelBadge
                 label={modelLabel}

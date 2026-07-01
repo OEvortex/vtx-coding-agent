@@ -272,7 +272,10 @@ class WebuiTurnCoordinator:
             return
         msg = self._ctx_msg(event.context)
         await self.handle_turn_end(
-            msg, session_key=event.context.session_key, latency_ms=event.latency_ms
+            msg,
+            session_key=event.context.session_key,
+            latency_ms=event.latency_ms,
+            runtime=event.runtime,
         )
         self._schedule_title_update_from_event(event)
 
@@ -323,7 +326,12 @@ class WebuiTurnCoordinator:
         await publish_turn_run_status(self.bus, msg, status, started_at=started_at)
 
     async def handle_turn_end(
-        self, msg: InboundMessage, *, session_key: str, latency_ms: int | None
+        self,
+        msg: InboundMessage,
+        *,
+        session_key: str,
+        latency_ms: int | None,
+        runtime: Any | None = None,
     ) -> None:
         if msg.channel != "websocket":
             return
@@ -332,6 +340,30 @@ class WebuiTurnCoordinator:
         if latency_ms is not None:
             turn_metadata["latency_ms"] = int(latency_ms)
         session = self.sessions.get_or_create(session_key)
+
+        ctx_est = 0
+        ctx_window = 0
+        if runtime is not None:
+            from contextlib import suppress
+
+            consolidator = getattr(runtime, "consolidator", None)
+            if consolidator is not None:
+                with suppress(Exception):
+                    ctx_est, _ = consolidator.estimate_session_prompt_tokens(session)
+            last_usage = getattr(runtime, "_last_usage", None)
+            if ctx_est <= 0 and last_usage is not None:
+                with suppress(Exception):
+                    ctx_est = last_usage.get("prompt_tokens", 0)
+            ctx_window = getattr(runtime, "context_window_tokens", 0)
+
+        if ctx_est > 0:
+            turn_metadata["context_tokens"] = ctx_est
+            session.metadata["context_tokens"] = ctx_est
+        if ctx_window > 0:
+            turn_metadata["context_window"] = ctx_window
+            session.metadata["context_window"] = ctx_window
+
+        self.sessions.save(session)
         turn_metadata["goal_state"] = goal_state_ws_blob(session.metadata)
         await self.bus.publish_outbound(
             OutboundMessage(
@@ -372,6 +404,10 @@ class WebuiTurnCoordinator:
 
     def _schedule_title_update_from_event(self, event: TurnCompleted) -> None:
         title_context = event.runtime
+        if title_context is not None and not isinstance(title_context, LLMRuntime):
+            if hasattr(title_context, "llm_runtime"):
+                title_context = title_context.llm_runtime()
+
         if (
             event.context.metadata.get("webui") is not True
             or title_context is None

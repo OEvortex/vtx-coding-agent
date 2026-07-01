@@ -460,6 +460,8 @@ export function useVtxClawStream(
   runStartedAt: number | null;
   /** Latest sustained goal for this ``chatId`` (``goal_state`` WS events). */
   goalState: GoalStateWsPayload | undefined;
+  contextTokens: number | null;
+  contextWindow: number | null;
   send: (content: string, images?: SendImage[], options?: SendOptions) => void;
   transcribeAudio: (dataUrl: string, options?: { durationMs?: number }) => Promise<string>;
   stop: () => void;
@@ -479,6 +481,8 @@ export function useVtxClawStream(
   /** Unix epoch seconds when the current user turn started; cleared on ``idle``. */
   const [runStartedAt, setRunStartedAt] = useState<number | null>(null);
   const [goalState, setGoalState] = useState<GoalStateWsPayload | undefined>(undefined);
+  const [contextTokens, setContextTokens] = useState<number | null>(null);
+  const [contextWindow, setContextWindow] = useState<number | null>(null);
   const [streamError, setStreamError] = useState<StreamError | null>(null);
   const buffer = useRef<StreamBuffer | null>(null);
   const activeAssistantRef = useRef<ActiveAssistantCursor | null>(null);
@@ -718,6 +722,8 @@ export function useVtxClawStream(
     setStreamError(null);
     setRunStartedAt(chatId ? client.getRunStartedAt(chatId) : null);
     setGoalState(chatId ? client.getGoalState(chatId) : undefined);
+    setContextTokens(chatId ? (client as any).getContextTokens(chatId) : null);
+    setContextWindow(chatId ? (client as any).getContextWindow(chatId) : null);
     buffer.current = null;
     activeAssistantRef.current = null;
     closedAssistantStreamIdsRef.current.clear();
@@ -821,6 +827,15 @@ export function useVtxClawStream(
       if (ev.event === "turn_end") {
         if ("goal_state" in ev && ev.goal_state != null && typeof ev.goal_state === "object") {
           setGoalState(ev.goal_state);
+        }
+        const metadata = (ev as any).metadata;
+        if (metadata && typeof metadata === "object") {
+          if (typeof metadata.context_tokens === "number") {
+            setContextTokens(metadata.context_tokens);
+          }
+          if (typeof metadata.context_window === "number") {
+            setContextWindow(metadata.context_window);
+          }
         }
         setRunStartedAt(null);
         // Definitive signal that the turn is fully complete.  Cancel any
@@ -1118,6 +1133,8 @@ export function useVtxClawStream(
     isStreaming,
     runStartedAt,
     goalState,
+    contextTokens,
+    contextWindow,
     send,
     transcribeAudio,
     stop,

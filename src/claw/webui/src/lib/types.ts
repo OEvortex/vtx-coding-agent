@@ -353,7 +353,6 @@ export interface SettingsPayload {
     has_api_key: boolean;
     model_preset: string | null;
     max_tokens: number;
-    context_window_tokens: number;
     temperature: number;
     reasoning_effort: string | null;
     timezone: string;
@@ -369,7 +368,6 @@ export interface SettingsPayload {
     model: string;
     provider: string;
     max_tokens: number;
-    context_window_tokens: number;
     temperature: number;
     reasoning_effort: string | null;
     reasoning_effort_values?: string[];

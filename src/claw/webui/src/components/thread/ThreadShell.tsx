@@ -359,6 +359,8 @@ export function ThreadShell({
     isStreaming,
     runStartedAt,
     goalState,
+    contextTokens,
+    contextWindow,
     send,
     transcribeAudio,
     stop,
@@ -738,6 +740,8 @@ export function ThreadShell({
           onWorkspaceScopeChange={onWorkspaceScopeChange}
           pendingQueueKey={chatId}
           transcriptionProvider={settingsSnapshot?.transcription?.provider}
+          contextTokens={contextTokens}
+          contextWindow={contextWindow}
         />
       ) : (
         <ThreadComposer
@@ -768,6 +772,8 @@ export function ThreadShell({
           workspaceError={workspaceError}
           onWorkspaceScopeChange={onWorkspaceScopeChange}
           transcriptionProvider={settingsSnapshot?.transcription?.provider}
+          contextTokens={contextTokens}
+          contextWindow={contextWindow}
         />
       )}
     </>

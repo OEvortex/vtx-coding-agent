@@ -137,6 +137,8 @@ export class VtxClawClient {
   private runStartedAtByChatId = new Map<string, number>();
   /** Latest ``goal_state`` snapshot per ``chat_id`` (multi-session isolation). */
   private goalStateByChatId = new Map<string, GoalStateWsPayload>();
+  private contextTokensByChatId = new Map<string, number>();
+  private contextWindowByChatId = new Map<string, number>();
   private pendingNewChat: PendingNewChat | null = null;
   private pendingTranscriptions = new Map<string, PendingTranscription>();
   // Frames queued while the socket is not yet OPEN
@@ -222,6 +224,14 @@ export class VtxClawClient {
     return v === undefined ? null : v;
   }
 
+  getContextTokens(chatId: string): number | null {
+    return this.contextTokensByChatId.get(chatId) ?? null;
+  }
+
+  getContextWindow(chatId: string): number | null {
+    return this.contextWindowByChatId.get(chatId) ?? null;
+  }
+
   /** Last ``goal_state`` payload for *chatId*, if any frame has arrived this connection. */
   getGoalState(chatId: string): GoalStateWsPayload | undefined {
     return this.goalStateByChatId.get(chatId);
@@ -243,6 +253,20 @@ export class VtxClawClient {
     } else if (this.runStartedAtByChatId.has(chatId)) {
       this.runStartedAtByChatId.delete(chatId);
       this.emitRunStatus(chatId, null);
+    }
+  }
+
+  private recordContextTokens(chatId: string, ev: InboundEvent): void {
+    if (ev.event === "turn_end") {
+      const metadata = (ev as any).metadata;
+      if (metadata && typeof metadata === "object") {
+        if (typeof metadata.context_tokens === "number") {
+          this.contextTokensByChatId.set(chatId, metadata.context_tokens);
+        }
+        if (typeof metadata.context_window === "number") {
+          this.contextWindowByChatId.set(chatId, metadata.context_window);
+        }
+      }
     }
   }
 
@@ -525,6 +549,7 @@ export class VtxClawClient {
     if (chatId) {
       this.recordGoalStatusForRunStrip(chatId, parsed);
       this.recordGoalStateSnapshot(chatId, parsed);
+      this.recordContextTokens(chatId, parsed);
       this.dispatch(chatId, parsed);
     }
   }
