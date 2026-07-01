@@ -246,22 +246,16 @@ class ProvidersConfig(Base):
 
     @model_validator(mode="after")
     def convert_extra_providers(self):
-        """Convert extra fields (custom providers) to ProviderConfig objects."""
+        """Convert extra fields (providers) to ProviderConfig objects."""
         if self.model_extra:
-            from vtx_claw.providers.registry import find_by_name
-
             for key, value in self.model_extra.items():
-                if spec := find_by_name(key):
-                    raise ValueError(
-                        f"providers.{key} conflicts with built-in provider {spec.name!r}; "
-                        "use the built-in provider key or choose a different custom provider name"
-                    )
                 if isinstance(value, dict):
                     self.model_extra[key] = ProviderConfig.model_validate(value)
         return self
 
     @model_validator(mode="after")
     def _validate_api_type_scope(self) -> ProvidersConfig:
+        # Check model fields
         for name in self.__class__.model_fields:
             if name == "openai":
                 continue
@@ -270,11 +264,13 @@ class ProvidersConfig(Base):
                 raise ValueError(
                     "providers.<name>.api_type is only supported for providers.openai"
                 )
-        for provider in (self.model_extra or {}).values():
+        # Check model_extra fields - only openai is allowed to have non-auto api_type
+        for name, provider in (self.model_extra or {}).items():
             if isinstance(provider, ProviderConfig) and provider.api_type != "auto":
-                raise ValueError(
-                    "providers.<name>.api_type is only supported for providers.openai"
-                )
+                if name != "openai":
+                    raise ValueError(
+                        "providers.<name>.api_type is only supported for providers.openai"
+                    )
         return self
 
 

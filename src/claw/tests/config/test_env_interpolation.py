@@ -50,17 +50,23 @@ class TestResolveEnvVars:
 
 class TestResolveConfig:
     def test_resolves_env_vars_in_config(self, tmp_path, monkeypatch):
+        # Note: With the alignment to vtx's provider management format,
+        # provider API keys are now stored in vtx's dynamic_auth.json and are
+        # resolved via env vars (e.g., GROQ_API_KEY) by vtx's get_dynamic_api_key.
+        # Env var interpolation in claw's config.json for providers is no longer
+        # supported. This test now verifies env var interpolation for other
+        # config sections (e.g., channels).
         monkeypatch.setenv("TEST_API_KEY", "resolved-key")
         config_path = tmp_path / "config.json"
         config_path.write_text(
-            json.dumps({"providers": {"groq": {"apiKey": "${TEST_API_KEY}"}}}), encoding="utf-8"
+            json.dumps({"channels": {"telegram": {"token": "${TEST_API_KEY}"}}}), encoding="utf-8"
         )
 
         raw = load_config(config_path)
-        assert raw.providers.groq.api_key == "${TEST_API_KEY}"
+        assert raw.channels.telegram["token"] == "${TEST_API_KEY}"
 
         resolved = resolve_config_env_vars(raw)
-        assert resolved.providers.groq.api_key == "resolved-key"
+        assert resolved.channels.telegram["token"] == "resolved-key"
 
     def test_save_preserves_templates(self, tmp_path, monkeypatch):
         monkeypatch.setenv("MY_TOKEN", "real-token")
@@ -95,18 +101,14 @@ class TestResolveConfig:
         assert schedule.expr == "0 */4 * * *"
 
     def test_save_keeps_oauth_provider_configs_excluded(self, tmp_path):
+        # Note: With the alignment to vtx's provider management format,
+        # all providers are now managed by vtx (via dynamic_auth.json for API keys,
+        # config.yml for defaults). The providers section is no longer saved to
+        # claw's config.json. This test now verifies that other config sections
+        # are preserved.
         config_path = tmp_path / "config.json"
         config_path.write_text(
-            json.dumps(
-                {
-                    "agents": {"defaults": {"dream": {"cron": "0 */4 * * *"}}},
-                    "providers": {
-                        "openaiCodex": {"apiKey": "codex-secret"},
-                        "githubCopilot": {"apiKey": "copilot-secret"},
-                        "groq": {"apiKey": "groq-secret"},
-                    },
-                }
-            ),
+            json.dumps({"agents": {"defaults": {"dream": {"cron": "0 */4 * * *"}}}}),
             encoding="utf-8",
         )
 
@@ -115,40 +117,35 @@ class TestResolveConfig:
 
         saved = json.loads(config_path.read_text(encoding="utf-8"))
         assert saved["agents"]["defaults"]["dream"]["cron"] == "0 */4 * * *"
-        assert "openaiCodex" not in saved["providers"]
-        assert "githubCopilot" not in saved["providers"]
-        assert saved["providers"]["groq"]["apiKey"] == "groq-secret"
 
     def test_preserves_excluded_fields_when_no_env_refs(self, tmp_path):
-        """Regression: fields with ``exclude=True`` (e.g. ProviderConfig.openai_codex)
-        must survive ``resolve_config_env_vars`` when the config has no
-        ``${VAR}`` references. Previously the unconditional dump→revalidate
-        roundtrip silently dropped them."""
+        """Regression: fields with ``exclude=True`` must survive
+        ``resolve_config_env_vars`` when the config has no
+        ``${VAR}`` references. This test uses channels as an example
+        since providers are no longer stored in config.json."""
         config_path = tmp_path / "config.json"
         config_path.write_text(
-            json.dumps({"providers": {"openaiCodex": {"apiKey": "secret"}}}), encoding="utf-8"
+            json.dumps({"channels": {"webui": {"port": 8080}}}), encoding="utf-8"
         )
 
         raw = load_config(config_path)
-        assert raw.providers.openai_codex.api_key == "secret"
+        assert raw.channels.webui["port"] == 8080
 
         resolved = resolve_config_env_vars(raw)
-        assert resolved.providers.openai_codex.api_key == "secret"
+        assert resolved.channels.webui["port"] == 8080
 
     def test_preserves_excluded_fields_with_env_refs(self, tmp_path, monkeypatch):
         """Excluded fields must also survive when the config contains
         ``${VAR}`` refs elsewhere. An in-place walk preserves the excluded
-        field even as unrelated string fields are substituted."""
+        field even as unrelated string fields are substituted.
+
+        Note: With the alignment to vtx's provider management format,
+        this test now uses channels instead of providers."""
         monkeypatch.setenv("TEST_API_KEY", "resolved-key")
         config_path = tmp_path / "config.json"
         config_path.write_text(
             json.dumps(
-                {
-                    "providers": {
-                        "openaiCodex": {"apiKey": "secret"},
-                        "groq": {"apiKey": "${TEST_API_KEY}"},
-                    }
-                }
+                {"channels": {"webui": {"port": 8080}, "telegram": {"token": "${TEST_API_KEY}"}}}
             ),
             encoding="utf-8",
         )
@@ -156,5 +153,5 @@ class TestResolveConfig:
         raw = load_config(config_path)
         resolved = resolve_config_env_vars(raw)
 
-        assert resolved.providers.groq.api_key == "resolved-key"
-        assert resolved.providers.openai_codex.api_key == "secret"
+        assert resolved.channels.telegram["token"] == "resolved-key"
+        assert resolved.channels.webui["port"] == 8080

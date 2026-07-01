@@ -596,12 +596,35 @@ def _set_provider(
 
     field_name = slug.replace("-", "_").lower()
 
-    provider_cfg = ProviderConfig(api_key=api_key, api_base=api_base or "")
+    # Get existing provider config if it exists
+    existing_cfg = None
+    if hasattr(providers, field_name):
+        existing_cfg = getattr(providers, field_name)
+    elif providers.model_extra and field_name in providers.model_extra:
+        existing_cfg = providers.model_extra[field_name]
+
+    # Create new config, preserving existing settings if available
+    if existing_cfg and isinstance(existing_cfg, ProviderConfig):
+        # Preserve existing api_base if it's already set, even if a new default is provided.
+        # This allows users to configure custom api_base values that persist across restarts.
+        # Only the api_key is always updated from vtx (since it comes from dynamic_auth.json).
+        new_cfg = ProviderConfig(
+            api_key=api_key if api_key else existing_cfg.api_key,
+            # Keep existing api_base if set, otherwise use provided value
+            api_base=existing_cfg.api_base if existing_cfg.api_base else (api_base or ""),
+            api_type=existing_cfg.api_type,
+            extra_headers=existing_cfg.extra_headers,
+            extra_body=existing_cfg.extra_body,
+            extra_query=existing_cfg.extra_query,
+            thinking_style=existing_cfg.thinking_style,
+        )
+    else:
+        new_cfg = ProviderConfig(api_key=api_key, api_base=api_base or "")
 
     if hasattr(providers, field_name):
-        setattr(providers, field_name, provider_cfg)
+        setattr(providers, field_name, new_cfg)
     else:
-        providers.model_extra[field_name] = provider_cfg
+        providers.model_extra[field_name] = new_cfg
 
     # Set the active provider and model on agent defaults so vtx_claw's
     # _match_provider finds them via the forced-provider path (step 1).

@@ -316,14 +316,15 @@ def _dynamic_provider_items(config: Any) -> list[tuple[str, ProviderConfig]]:
 def _resolve_settings_provider(
     config: Any, provider_name: str
 ) -> tuple[Any, str, ProviderConfig] | None:
+    from vtx_claw.config.schema import ProviderConfig
+    from vtx_claw.providers.registry import create_dynamic_spec
+
     spec = find_by_name(provider_name)
     if spec is not None:
         provider_config = getattr(config.providers, spec.name, None)
         if provider_config is None:
             provider_config = (config.providers.model_extra or {}).get(spec.name)
         if provider_config is None:
-            from vtx_claw.config.schema import ProviderConfig
-
             provider_config = ProviderConfig()
             if hasattr(config.providers, spec.name):
                 setattr(config.providers, spec.name, provider_config)
@@ -332,6 +333,7 @@ def _resolve_settings_provider(
         return spec, spec.name, provider_config
 
     normalized = provider_name.replace("-", "_")
+    # Check for existing dynamic providers
     for extra_name, provider_config in _dynamic_provider_items(config):
         if provider_name == extra_name or normalized == extra_name.replace("-", "_"):
             return (
@@ -341,7 +343,12 @@ def _resolve_settings_provider(
                 extra_name,
                 provider_config,
             )
-    return None
+
+    # Create a new dynamic provider spec for custom providers not yet in config
+    field_name = normalized
+    provider_config = ProviderConfig()
+    config.providers.model_extra[field_name] = provider_config
+    return create_dynamic_spec(field_name), field_name, provider_config
 
 
 def _provider_settings_row(

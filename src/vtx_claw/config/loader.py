@@ -56,10 +56,15 @@ def load_config(config_path: Path | None = None) -> Config:
     path = config_path or get_config_path()
 
     config = Config()
+    data: dict[str, Any] | None = None
     if path.exists():
         try:
             with open(path, encoding="utf-8") as f:
                 data = json.load(f)
+            # Note: providers section may contain non-API-key settings (api_base, api_type, etc.)
+            # that are persisted in config.json. API keys for known vtx providers are stored in
+            # vtx's dynamic_auth.json via save_config(). The vtx bridge (merge_vtx_config) merges
+            # API keys from vtx into the config at runtime.
             data = _migrate_config(data)
             config = Config.model_validate(data)
         except (json.JSONDecodeError, ValueError, pydantic.ValidationError) as e:
@@ -98,15 +103,94 @@ def save_config(config: Config, config_path: Path | None = None) -> None:
 
     data = config.model_dump(mode="json", by_alias=True)
 
-    # Strip empty provider entries (no api_key) — the vtx bridge manages
-    # these at runtime from ~/.vtx/config.yml. Keeps the config file lean.
-    providers = data.get("providers")
-    if isinstance(providers, dict):
-        data["providers"] = {
-            k: v
-            for k, v in providers.items()
-            if v.get("apiKey") is not None or v.get("api_key") is not None
-        }
+    # Handle providers: save API keys to vtx's dynamic_auth.json for known vtx providers,
+    # keep other settings (apiBase, apiType, etc.) and custom provider API keys in config.json.
+    # This allows provider configuration from the WebUI.
+    if "providers" in data:
+        providers_data = data["providers"]
+
+        # Extract API keys and save them to vtx's dynamic_auth.json
+        # Also handle clearing of API keys (empty string or None)
+        # Provider configs can be in model fields (e.g., custom) or model_extra
+        api_keys_to_save = {}
+        api_keys_to_clear = []
+
+        # Get the list of known vtx providers
+        try:
+            from vtx.llm.dynamic_models import DYNAMIC_PROVIDERS
+
+            known_providers = set(DYNAMIC_PROVIDERS.keys())
+            for p in DYNAMIC_PROVIDERS.values():
+                if hasattr(p, "name"):
+                    known_providers.add(p.name)
+            # Also check provider catalog
+            try:
+                from vtx.llm.provider_catalog import list_providers as list_vtx_providers
+
+                for p in list_vtx_providers():
+                    known_providers.add(p.slug)
+            except Exception:
+                pass
+        except Exception as e:
+            logger.debug("Could not determine known vtx providers: {}", e)
+            known_providers = set()
+
+        # Process all provider entries
+        if isinstance(providers_data, dict):
+            for provider_name, provider_config in providers_data.items():
+                if isinstance(provider_config, dict):
+                    api_key = provider_config.get("apiKey")
+                    # Non-None and non-empty string
+                    if api_key and provider_name in known_providers:
+                        api_keys_to_save[provider_name] = api_key
+                    # Empty string - clear the key
+                    elif api_key is not None and provider_name in known_providers:
+                        api_keys_to_clear.append(provider_name)
+
+        # Save API keys to vtx's dynamic_auth.json
+        if api_keys_to_save:
+            try:
+                from vtx.llm.oauth.dynamic import save_api_key
+
+                for provider_name, api_key in api_keys_to_save.items():
+                    try:
+                        save_api_key(provider_name, api_key)
+                    except ValueError as e:
+                        # Provider might not be in vtx's list, skip it
+                        logger.debug("Skipping save_api_key for {}: {}", provider_name, e)
+            except Exception as e:
+                logger.error("Failed to save API keys to vtx dynamic_auth.json: {}", e)
+
+        # Clear API keys that were set to empty string
+        if api_keys_to_clear:
+            try:
+                from vtx.llm.oauth.dynamic import clear_api_key
+
+                for provider_name in api_keys_to_clear:
+                    try:
+                        clear_api_key(provider_name)
+                    except Exception as e:
+                        logger.debug("Skipping clear_api_key for {}: {}", provider_name, e)
+            except Exception as e:
+                logger.error("Failed to clear API keys from vtx dynamic_auth.json: {}", e)
+
+        # Remove apiKey from all provider configs before saving to config.json
+        # Keep other settings like apiBase, apiType, etc.
+        # For known vtx providers, apiKey is saved to dynamic_auth.json and removed from config
+        # For custom providers (not in vtx), apiKey is kept in config.json
+        if isinstance(providers_data, dict):
+            for provider_name, provider_config in providers_data.items():
+                if isinstance(provider_config, dict) and provider_name in known_providers:
+                    provider_config.pop("apiKey", None)
+
+        # Only remove providers section if it's empty after removing API keys
+        # If there are other settings (apiBase, apiType, etc.), keep them in config.json
+        if not any(
+            v
+            for v in providers_data.values()
+            if isinstance(v, dict) and v  # Non-empty dict
+        ):
+            del data["providers"]
 
     if config_path is None:
         try:
