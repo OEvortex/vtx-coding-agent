@@ -16,7 +16,7 @@ from vtx_claw.security.workspace_access import (
     WorkspaceScope,
     WorkspaceScopeError,
     build_workspace_scope,
-    default_workspace_scope,
+    default_access_mode,
     validate_workspace_scope_payload,
 )
 
@@ -118,8 +118,15 @@ def default_scope_for_webui(
 ) -> WorkspaceScope:
     mode = read_webui_default_access_mode()
     if mode == "default":
-        return default_workspace_scope(
-            default_workspace, default_restrict_to_workspace, source_channel=_WEBUI_SCOPE_CHANNEL
+        try:
+            from vtx.config import get_config as _get_vtx_config
+
+            vtx_mode = _get_vtx_config().permissions.mode
+            access_mode = "restricted" if vtx_mode == "prompt" else "full"
+        except Exception:
+            access_mode = default_access_mode(default_restrict_to_workspace)
+        return build_workspace_scope(
+            default_workspace, access_mode, source_channel=_WEBUI_SCOPE_CHANNEL
         )
     return build_workspace_scope(default_workspace, mode, source_channel=_WEBUI_SCOPE_CHANNEL)
 
@@ -128,15 +135,7 @@ def workspaces_payload(
     *, default_workspace: Path, default_restrict_to_workspace: bool, controls_available: bool
 ) -> dict[str, Any]:
     default_access_mode = read_webui_default_access_mode()
-    default_scope = (
-        default_workspace_scope(
-            default_workspace, default_restrict_to_workspace, source_channel=_WEBUI_SCOPE_CHANNEL
-        )
-        if default_access_mode == "default"
-        else build_workspace_scope(
-            default_workspace, default_access_mode, source_channel=_WEBUI_SCOPE_CHANNEL
-        )
-    )
+    default_scope = default_scope_for_webui(default_workspace, default_restrict_to_workspace)
     return {
         "schema_version": WEBUI_WORKSPACE_STATE_SCHEMA_VERSION,
         "default_access_mode": default_access_mode,

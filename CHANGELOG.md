@@ -9,6 +9,13 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Added
 
+#### WebUI "default" access mode now reads vtx config permission mode
+- When the WebUI site access mode is set to "default", it now reads `config.permissions.mode` from the vtx config to determine the workspace scope.
+- If vtx config has `permissions.mode = "prompt"`, the workspace scope uses "restricted" (prompt mode).
+- If vtx config has `permissions.mode = "auto"`, the workspace scope uses "full" (auto mode).
+- Previously, the "default" mode always mapped to "full" (auto) because it used `restrict_to_workspace` which defaults to `False`, ignoring the user's vtx permission mode setting.
+- Refactored `workspaces_payload()` to use `default_scope_for_webui()` for consistency.
+
 #### Hook system — YAML-driven lifecycle hooks
 - New `vtx.hooks` package with `HookRegistry`, `HookRuntime`, `HookConfigManager`,
   and `HookBridge` for reacting to session, tool, and lifecycle events.
