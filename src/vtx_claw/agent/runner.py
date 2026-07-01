@@ -1108,8 +1108,12 @@ class AgentRunner:
     async def _request_no_tools(
         self, spec: AgentRunSpec, messages: list[dict[str, Any]]
     ) -> LLMResponse:
+        from vtx_claw.utils.helpers import collect_stream_to_response
+
         kwargs = self._build_request_kwargs(spec, messages, tools=None)
-        return await self.provider.chat_with_retry(**kwargs)
+        kwargs.pop("retry_mode", None)
+        kwargs.pop("on_retry_wait", None)
+        return await collect_stream_to_response(self.provider, **kwargs)
 
     @staticmethod
     def _budget_exhausted_finalization_messages(

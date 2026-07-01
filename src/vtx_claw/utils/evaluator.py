@@ -53,7 +53,10 @@ async def evaluate_response(
     ``False`` to fail closed.
     """
     try:
-        llm_response = await provider.chat_with_retry(
+        from vtx_claw.utils.helpers import collect_stream_to_response
+
+        llm_response = await collect_stream_to_response(
+            provider,
             messages=[
                 {
                     "role": "system",

@@ -124,8 +124,11 @@ async def maybe_generate_webui_title(
         prompt += f"\nAssistant: {truncate_text(assistant_text, 1_000)}"
 
     try:
-        response = await provider.chat_with_retry(
-            [
+        from vtx_claw.utils.helpers import collect_stream_to_response
+
+        response = await collect_stream_to_response(
+            provider,
+            messages=[
                 {
                     "role": "system",
                     "content": (
@@ -139,7 +142,6 @@ async def maybe_generate_webui_title(
             max_tokens=TITLE_GENERATION_MAX_TOKENS,
             temperature=0.2,
             reasoning_effort=TITLE_GENERATION_REASONING_EFFORT,
-            retry_mode="standard",
         )
     except Exception:
         logger.debug("Failed to generate webui session title for {}", session_key, exc_info=True)

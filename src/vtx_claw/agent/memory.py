@@ -808,9 +808,12 @@ class Consolidator:
             return None
         messages_to_summarize = summary_messages if summary_messages is not None else messages
         try:
+            from vtx_claw.utils.helpers import collect_stream_to_response
+
             formatted = MemoryStore._format_messages(messages_to_summarize)
             formatted = self._truncate_to_token_budget(formatted)
-            response = await self.provider.chat_with_retry(
+            response = await collect_stream_to_response(
+                self.provider,
                 model=self.model,
                 messages=[
                     {

@@ -757,3 +757,97 @@ def load_bundled_template(template_name: str) -> str | None:
         if tpl.is_file():
             return tpl.read_text(encoding="utf-8")
     return None
+
+
+async def collect_stream_to_response(
+    provider: Any,
+    *,
+    messages: list[dict[str, Any]],
+    model: str | None = None,
+    tools: list[dict[str, Any]] | None = None,
+    tool_choice: str | dict[str, Any] | None = None,
+    temperature: float | None = None,
+    max_tokens: int | None = None,
+    reasoning_effort: str | None = None,
+    **kwargs: Any,
+) -> Any:
+    """Collect a vtx stream into an LLMResponse. Replaces chat_with_retry."""
+    from vtx.core.types import ToolDefinition
+    from vtx_claw.providers.base import LLMResponse, ToolCallRequest
+
+    system_prompt = None
+    chat_messages = list(messages)
+    if chat_messages and chat_messages[0].get("role") == "system":
+        system_prompt = chat_messages.pop(0).get("content")
+
+    tool_defs = None
+    if tools:
+        tool_defs = [
+            ToolDefinition(
+                name=t["function"]["name"],
+                description=t["function"].get("description", ""),
+                parameters=t["function"].get("parameters", {}),
+            )
+            for t in tools
+            if isinstance(t, dict) and "function" in t
+        ]
+
+    stream = await provider.stream(
+        chat_messages,
+        system_prompt=system_prompt,
+        tools=tool_defs,
+        temperature=temperature,
+        max_tokens=max_tokens,
+    )
+
+    content_parts: list[str] = []
+    thinking_parts: list[str] = []
+    tool_calls_raw: dict[int, dict[str, Any]] = {}
+    stop_reason = "stop"
+    usage_dict: dict[str, int] = {}
+
+    async for part in stream:
+        ptype = type(part).__name__
+        if ptype == "TextPart":
+            content_parts.append(part.text)
+        elif ptype == "ThinkPart":
+            thinking_parts.append(part.think)
+        elif ptype == "ToolCallStart":
+            tool_calls_raw[part.index] = {"id": part.id, "name": part.name, "arguments": ""}
+        elif ptype == "ToolCallDelta":
+            if part.index in tool_calls_raw:
+                tool_calls_raw[part.index]["arguments"] += part.arguments_delta or ""
+        elif ptype == "StreamDone":
+            sr = part.stop_reason
+            stop_reason = sr.value if hasattr(sr, "value") else str(sr)
+        elif ptype == "Usage":
+            usage_dict = {
+                "prompt_tokens": getattr(part, "input_tokens", 0),
+                "completion_tokens": getattr(part, "output_tokens", 0),
+            }
+
+    if stream.usage:
+        usage_dict = {
+            "prompt_tokens": stream.usage.input_tokens,
+            "completion_tokens": stream.usage.output_tokens,
+            "total_tokens": stream.usage.input_tokens + stream.usage.output_tokens,
+        }
+
+    tool_call_requests = []
+    for idx in sorted(tool_calls_raw):
+        tc = tool_calls_raw[idx]
+        try:
+            args = json.loads(tc["arguments"]) if tc["arguments"] else {}
+        except json.JSONDecodeError:
+            args = {"raw": tc["arguments"]}
+        tool_call_requests.append(
+            ToolCallRequest(id=tc["id"], name=tc["name"], arguments=args)
+        )
+
+    return LLMResponse(
+        content="\n".join(content_parts) if content_parts else None,
+        tool_calls=tool_call_requests or None,
+        finish_reason=stop_reason,
+        reasoning_content="\n".join(thinking_parts) if thinking_parts else None,
+        usage=usage_dict or None,
+    )
