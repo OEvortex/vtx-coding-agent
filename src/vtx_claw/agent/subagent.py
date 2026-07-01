@@ -164,7 +164,9 @@ class SubagentManager:
         """Spawn a subagent to execute a task in the background."""
         task_id = str(uuid.uuid4())[:8]
         display_label = label or task[:30] + ("..." if len(task) > 30 else "")
-        origin = {"channel": origin_channel, "chat_id": origin_chat_id, "session_key": session_key}
+        origin: dict[str, str] = {"channel": origin_channel, "chat_id": origin_chat_id}
+        if session_key is not None:
+            origin["session_key"] = session_key
 
         status = SubagentStatus(
             task_id=task_id,

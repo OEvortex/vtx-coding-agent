@@ -6,13 +6,13 @@ from typing import TextIO
 
 from vtx import config, get_config
 from vtx.config import (
+    _atomic_write_text,
     _ensure_config_file,
     _read_config_data,
     _serialize_config_yaml,
     _set_config_version,
-    _atomic_write_text,
-    reload_config,
     get_last_selected,
+    reload_config,
 )
 
 from .core.types import StopReason, TextContent

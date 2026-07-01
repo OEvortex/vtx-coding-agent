@@ -68,7 +68,8 @@ async def handle_webui_fork_chat(
     validate the request, clone session/transcript state, attach the new chat,
     and hydrate the client.
     """
-    source_chat_id = envelope.get("source_chat_id")
+    raw_source = envelope.get("source_chat_id")
+    source_chat_id = str(raw_source) if raw_source is not None else None
     raw_index = envelope.get("before_user_index")
     if not _valid_webui_chat_id(source_chat_id):
         await channel._send_event(connection, "error", detail="invalid source_chat_id")
@@ -85,7 +86,7 @@ async def handle_webui_fork_chat(
     try:
         forked = create_webui_chat_fork(
             session_manager,
-            source_chat_id=source_chat_id,
+            source_chat_id=str(source_chat_id),
             before_user_index=raw_index,
             title=envelope.get("title") if isinstance(envelope.get("title"), str) else None,
         )

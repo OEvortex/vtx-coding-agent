@@ -231,13 +231,13 @@ def handle_pairing_command(channel: str, subcommand_text: str) -> str:
         if len(parts) == 2:
             return (
                 f"Revoked {arg} from {channel}"
-                if revoke(channel, arg)
+                if revoke(channel, arg or "")
                 else f"{arg} was not in the approved list for {channel}"
             )
         if len(parts) == 3:
             return (
                 f"Revoked {parts[2]} from {arg}"
-                if revoke(arg, parts[2])
+                if revoke(arg or "", parts[2])
                 else f"{parts[2]} was not in the approved list for {arg}"
             )
         return "Usage: `/pairing revoke <user_id>` or `/pairing revoke <channel> <user_id>`"

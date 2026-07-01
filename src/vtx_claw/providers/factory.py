@@ -7,15 +7,9 @@ from pathlib import Path
 from typing import Any
 
 from vtx.llm.base import ProviderConfig
-from vtx.llm.models import ApiType
 from vtx.llm.providers import get_provider_class, resolve_provider_api_type
-
-from vtx_claw.config.schema import (
-    Config,
-    InlineFallbackConfig,
-    ModelPresetConfig,
-    ProviderConfig as ClawProviderConfig,
-)
+from vtx_claw.config.schema import Config, InlineFallbackConfig, ModelPresetConfig
+from vtx_claw.config.schema import ProviderConfig as ClawProviderConfig
 from vtx_claw.providers.registry import ProviderSpec, create_dynamic_spec, find_by_name
 
 

@@ -7,7 +7,6 @@ from importlib.metadata import PackageNotFoundError
 from importlib.metadata import version as _pkg_version
 from pathlib import Path
 
-
 # ====================================================================================
 # __version__, __logo__ — resolved lazily so circular-import clients (cli/command.py)
 # can still ``from vtx_claw import __version__`` at module load time.
@@ -54,4 +53,4 @@ def __getattr__(name: str) -> object:
     raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
 
 
-__all__ = ["__version__", "__logo__", "VtxClaw"]
+__all__ = ["VtxClaw", "__logo__", "__version__"]

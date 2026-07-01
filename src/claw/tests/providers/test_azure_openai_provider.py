@@ -6,8 +6,8 @@ from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
-
 from vtx_claw.providers.azure_openai_provider import AzureOpenAIProvider, _AzureTokenProvider
+
 from vtx_claw.providers.base import LLMResponse
 
 # ---------------------------------------------------------------------------

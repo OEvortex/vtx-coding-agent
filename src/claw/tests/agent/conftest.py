@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from pathlib import Path
 from types import SimpleNamespace
+from typing import Any
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
@@ -51,7 +52,7 @@ def make_loop(
     if provider is None:
         provider = make_provider(default_model=model)
 
-    kwargs = dict(
+    kwargs: dict[str, Any] = dict(
         bus=bus,
         provider=provider,
         workspace=tmp_path,

@@ -6,7 +6,7 @@ import os
 from contextvars import ContextVar, Token
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Literal
+from typing import Any, Literal, cast
 
 WorkspaceAccessMode = Literal["restricted", "full"]
 WORKSPACE_SCOPE_METADATA_KEY = "workspace_scope"
@@ -388,4 +388,4 @@ def _normalize_access_mode(value: str) -> WorkspaceAccessMode:
         mode = "full"
     if mode not in _ACCESS_MODES:
         raise WorkspaceScopeError("access_mode must be restricted or full")
-    return mode  # type: ignore[return-value]
+    return cast(WorkspaceAccessMode, mode)

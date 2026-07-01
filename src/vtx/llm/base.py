@@ -3,14 +3,24 @@ from abc import ABC, abstractmethod
 from collections.abc import AsyncIterator
 from dataclasses import dataclass, field
 from ipaddress import ip_address
-from typing import Any, ClassVar, Literal
+from typing import Any, ClassVar, Literal, cast
 from urllib.parse import urlparse
 
 import httpx
 
 from vtx import config as vtx_config
 
-from ..core.types import Message, StreamPart, ToolDefinition, Usage
+from ..core.types import (
+    Message,
+    StreamDone,
+    StreamPart,
+    TextPart,
+    ThinkPart,
+    ToolCallDelta,
+    ToolCallStart,
+    ToolDefinition,
+    Usage,
+)
 
 DEFAULT_THINKING_LEVELS: list[str] = ["none", "minimal", "low", "medium", "high", "xhigh"]
 LOCAL_API_KEY_PLACEHOLDER = "vtx-local"
@@ -221,6 +231,58 @@ class BaseProvider(ABC):
     @abstractmethod
     def should_retry_for_error(self, error: Exception) -> bool: ...
 
+    @staticmethod
+    def get_default_model() -> str:
+        """Return the default model name for this provider."""
+        return ""
+
+    @property
+    def generation(self) -> Any:
+        """Return generation settings (max_tokens, temperature, etc.)."""
+        from dataclasses import dataclass
+
+        @dataclass
+        class _DefaultGen:
+            max_tokens: int = 4096
+            temperature: float | None = None
+            reasoning_effort: str | None = None
+            thinking_budget: int | None = None
+
+        return _DefaultGen()
+
+    @generation.setter
+    def generation(self, value: Any) -> None:
+        """Allow providers to store custom generation settings."""
+        self._generation = value
+
+    @classmethod
+    def is_arrearage_response(cls, response: Any) -> bool:
+        """Check if the LLM response indicates an arrears/out-of-quota error."""
+
+        finish_reason = getattr(response, "finish_reason", None)
+        if finish_reason != "error":
+            return False
+        error_kind = getattr(response, "error_kind", None) or ""
+        text = str(getattr(response, "content", "") or "").lower()
+        markers = (
+            "insufficient_quota",
+            "rate_limit",
+            "403",
+            "payment",
+            "billing",
+            "account",
+            "quota",
+            "exceeded",
+            "out of credits",
+            "arrear",
+            "429",
+        )
+        if error_kind and any(m in error_kind.lower() for m in markers):
+            return True
+        if text and any(m in text for m in markers):
+            return True
+        return False
+
     async def chat_with_retry(
         self,
         *,
@@ -236,16 +298,7 @@ class BaseProvider(ABC):
         **kwargs: Any,
     ) -> Any:
         """Non-streaming chat completion with retry. Consumes stream internally."""
-        from ..core.types import (
-            AssistantMessage,
-            TextContent,
-            ThinkingContent,
-            ToolCall,
-            ToolDefinition,
-            ToolResultMessage,
-            UserMessage,
-        )
-        from ..llm.rate_limit import rate_limit_manager
+        from ..core.types import ToolDefinition
 
         converted_messages = self._convert_dict_messages(messages)
         system_prompt = None
@@ -265,7 +318,7 @@ class BaseProvider(ABC):
             ]
 
         stream = await self.stream(
-            converted_messages,
+            cast(list[Message], converted_messages),
             system_prompt=system_prompt,
             tools=tool_defs,
             temperature=temperature,
@@ -279,25 +332,20 @@ class BaseProvider(ABC):
         usage_dict: dict[str, int] = {}
 
         async for part in stream:
-            part_type = type(part).__name__
-            if part_type == "TextPart":
+            if isinstance(part, TextPart):
                 content_parts.append(part.text)
-            elif part_type == "ThinkPart":
+            elif isinstance(part, ThinkPart):
                 thinking_parts.append(part.think)
-            elif part_type == "ToolCallStart":
+            elif isinstance(part, ToolCallStart):
                 tool_calls_raw[part.index] = {"id": part.id, "name": part.name, "arguments": ""}
-            elif part_type == "ToolCallDelta":
+            elif isinstance(part, ToolCallDelta):
                 if part.index in tool_calls_raw:
                     existing = tool_calls_raw[part.index]["arguments"]
                     tool_calls_raw[part.index]["arguments"] = existing + (
                         part.arguments_delta or ""
                     )
-            elif part_type == "StreamDone":
+            elif isinstance(part, StreamDone):
                 sr = part.stop_reason
-                if hasattr(sr, "value"):
-                    sr = sr.value
-                stop_reason = str(sr) if sr else "stop"
-            elif part_type == "Usage":
                 usage_dict = {
                     "prompt_tokens": getattr(part, "input_tokens", 0),
                     "completion_tokens": getattr(part, "output_tokens", 0),
@@ -321,7 +369,7 @@ class BaseProvider(ABC):
                 args = _json.loads(tc["arguments"]) if tc["arguments"] else {}
             except _json.JSONDecodeError:
                 args = {"raw": tc["arguments"]}
-            from ..providers.base import ToolCallRequest
+            from vtx_claw.providers.base import ToolCallRequest
 
             tool_call_requests.append(
                 ToolCallRequest(id=tc["id"], name=tc["name"], arguments=args)
@@ -330,7 +378,7 @@ class BaseProvider(ABC):
         reasoning_content = "\n".join(thinking_parts) if thinking_parts else None
         final_content = "\n".join(content_parts) if content_parts else None
 
-        from ..providers.base import LLMResponse
+        from vtx_claw.providers.base import LLMResponse
 
         return LLMResponse(
             content=final_content,

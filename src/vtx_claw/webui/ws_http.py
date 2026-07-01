@@ -879,7 +879,7 @@ def _validate_automation_schedule(schedule: CronSchedule) -> str | None:
 
         tz = ZoneInfo(schedule.tz) if schedule.tz else datetime.now().astimezone().tzinfo
         base = datetime.now(tz=tz)
-        croniter(schedule.expr, base).get_next(datetime)
+        croniter(str(schedule.expr), base).get_next(datetime)
     except Exception:
         return "cron schedule is invalid"
     return None

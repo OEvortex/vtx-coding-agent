@@ -250,7 +250,9 @@ class MyTool(Tool, ContextAware):
             try:
                 if isinstance(obj, dict):
                     if part in obj:
-                        obj = obj[part]
+                        from typing import cast
+
+                        obj = cast(dict[str, Any], obj)[part]
                     else:
                         return None, f"'{part}' not found in dict"
                 else:
@@ -378,6 +380,7 @@ class MyTool(Tool, ContextAware):
     def _inspect(self, key: str | None) -> str:
         if not key:
             return self._inspect_all()
+        assert key is not None
         top = key.split(".")[0]
         if top in self._DENIED_ATTRS or top.startswith("__"):
             return f"Error: '{top}' is not accessible"
@@ -432,6 +435,7 @@ class MyTool(Tool, ContextAware):
     def _modify(self, key: str | None, value: Any) -> str:
         if err := self._validate_key(key):
             return err
+        assert key is not None
         top = key.split(".")[0]
         if (
             top in self.BLOCKED

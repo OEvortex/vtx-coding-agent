@@ -312,7 +312,7 @@ def _render_interactive_ansi(render_fn) -> str:
     """Render Rich output to ANSI so prompt_toolkit can print it safely."""
     ansi_console = Console(
         force_terminal=sys.stdout.isatty(),
-        color_system=console.color_system or "standard",
+        color_system=console.color_system or "standard",  # type: ignore
         width=console.width,
     )
     with ansi_console.capture() as capture:
@@ -570,7 +570,7 @@ def onboard(
     # Create or update config
     if config_path.exists():
         if wizard:
-            config = _apply_workspace_override(load_config(config_path))
+            loaded_config = _apply_workspace_override(load_config(config_path))
         else:
             console.print(f"[yellow]Config already exists at {config_path}[/yellow]")
             console.print(
@@ -580,20 +580,20 @@ def onboard(
                 "  [bold]N[/bold] = refresh config, keeping existing values and adding new fields"
             )
             if typer.confirm("Overwrite?"):
-                config = _apply_workspace_override(Config())
-                save_config(config, config_path)
+                loaded_config = _apply_workspace_override(Config())
+                save_config(loaded_config, config_path)
                 console.print(f"[green]✓[/green] Config reset to defaults at {config_path}")
             else:
-                config = _apply_workspace_override(load_config(config_path))
-                save_config(config, config_path)
+                loaded_config = _apply_workspace_override(load_config(config_path))
+                save_config(loaded_config, config_path)
                 console.print(
                     f"[green]✓[/green] Config refreshed at {config_path} (existing values preserved)"
                 )
     else:
-        config = _apply_workspace_override(Config())
+        loaded_config = _apply_workspace_override(Config())
         # In wizard mode, don't save yet - the wizard will handle saving if should_save=True
         if not wizard:
-            save_config(config, config_path)
+            save_config(loaded_config, config_path)
             console.print(f"[green]✓[/green] Created config at {config_path}")
 
     # Run interactive wizard if enabled
@@ -601,13 +601,13 @@ def onboard(
         from vtx_claw.cli.onboard import run_onboard
 
         try:
-            result = run_onboard(initial_config=config)
+            result = run_onboard(initial_config=loaded_config)
             if not result.should_save:
                 console.print("[yellow]Configuration discarded. No changes were saved.[/yellow]")
                 return
 
-            config = result.config
-            save_config(config, config_path)
+            loaded_config = result.config
+            save_config(loaded_config, config_path)
             console.print(f"[green]✓[/green] Config saved at {config_path}")
         except Exception as e:
             console.print(f"[red]✗[/red] Error during configuration: {e}")
@@ -618,7 +618,7 @@ def onboard(
     _onboard_plugins(config_path)
 
     # Create workspace, preferring the configured workspace path.
-    workspace_path = get_workspace_path(config.workspace_path)
+    workspace_path = get_workspace_path(str(loaded_config.workspace_path))
     if not workspace_path.exists():
         workspace_path.mkdir(parents=True, exist_ok=True)
         console.print(f"[green]✓[/green] Created workspace at {workspace_path}")
@@ -1335,17 +1335,17 @@ def agent(
     from vtx_claw.cron.service import CronService
     from vtx_claw.providers.image_generation import image_gen_provider_configs
 
-    config = _load_runtime_config(config, workspace)
-    sync_workspace_templates(config.workspace_path)
+    loaded_config = _load_runtime_config(config, workspace)
+    sync_workspace_templates(loaded_config.workspace_path)
 
     bus = MessageBus()
 
     # Preserve existing single-workspace installs, but keep custom workspaces clean.
-    if is_default_workspace(config.workspace_path):
-        _migrate_cron_store(config)
+    if is_default_workspace(loaded_config.workspace_path):
+        _migrate_cron_store(loaded_config)
 
     # Create cron service with workspace-scoped store
-    cron_store_path = config.workspace_path / "cron" / "jobs.json"
+    cron_store_path = loaded_config.workspace_path / "cron" / "jobs.json"
     cron = CronService(cron_store_path)
 
     if logs:
@@ -1355,10 +1355,10 @@ def agent(
 
     try:
         agent_loop = AgentLoop.from_config(
-            config,
+            loaded_config,
             bus,
             cron_service=cron,
-            image_generation_provider_configs=image_gen_provider_configs(config),
+            image_generation_provider_configs=image_gen_provider_configs(loaded_config),
         )
     except ValueError as exc:
         console.print(f"[red]Error: {exc}[/red]")
@@ -1408,8 +1408,8 @@ def agent(
         async def run_once():
             renderer = StreamRenderer(
                 render_markdown=markdown,
-                bot_name=config.agents.defaults.bot_name,
-                bot_icon=config.agents.defaults.bot_icon,
+                bot_name=loaded_config.agents.defaults.bot_name,
+                bot_icon=loaded_config.agents.defaults.bot_icon,
             )
             response = await agent_loop.process_direct(
                 message,
@@ -1437,8 +1437,8 @@ def agent(
         from vtx_claw.bus.events import InboundMessage
 
         _init_prompt_session()
-        _model, _preset_tag = _model_display(config)
-        _icon = config.agents.defaults.bot_icon or __logo__
+        _model, _preset_tag = _model_display(loaded_config)
+        _icon = loaded_config.agents.defaults.bot_icon or __logo__
         console.print(
             f"{_icon} Interactive mode [bold blue]({_model})[/bold blue]{_preset_tag} — type [bold]exit[/bold] or [bold]Ctrl+C[/bold] to quit\n"
         )
@@ -1492,7 +1492,7 @@ def agent(
                             continue
 
                         if await _maybe_print_interactive_progress(
-                            msg, renderer, agent_loop.channels_config, renderer, reasoning_buffer
+                            msg, _thinking, agent_loop.channels_config, renderer, reasoning_buffer
                         ):
                             continue
 
@@ -1534,8 +1534,8 @@ def agent(
                         reasoning_buffer.clear()
                         renderer = StreamRenderer(
                             render_markdown=markdown,
-                            bot_name=config.agents.defaults.bot_name,
-                            bot_icon=config.agents.defaults.bot_icon,
+                            bot_name=loaded_config.agents.defaults.bot_name,
+                            bot_icon=loaded_config.agents.defaults.bot_icon,
                         )
 
                         await bus.publish_inbound(
@@ -1654,7 +1654,7 @@ def channels_login(
     console.print(f"{__logo__} {all_channels[channel_name].display_name} Login\n")
 
     channel_cls = all_channels[channel_name]
-    channel = channel_cls(channel_cfg, bus=None)
+    channel = channel_cls(channel_cfg, bus=None)  # type: ignore
 
     success = asyncio.run(channel.login(force=force))
 

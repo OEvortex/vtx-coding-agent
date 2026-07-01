@@ -7,10 +7,10 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 from loguru import logger
+from vtx_claw.providers.fallback_provider import FallbackProvider
 
 from vtx_claw.config.schema import ModelPresetConfig
 from vtx_claw.providers.base import LLMProvider, LLMResponse
-from vtx_claw.providers.fallback_provider import FallbackProvider
 
 
 def _make_response(

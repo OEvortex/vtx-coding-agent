@@ -7,13 +7,9 @@ WebUI upload validation, and channel integration live in
 """
 
 import asyncio
-import base64
-import json
 import mimetypes
-import os
-from collections.abc import Callable
 from pathlib import Path
-from typing import Any
+from typing import Any, cast
 
 import httpx
 from loguru import logger
@@ -111,9 +107,9 @@ async def _request_json_with_retry(
         try:
             request = getattr(client, method.lower(), None)
             if request is None:
-                response = await client.request(method, url, **kwargs)
+                response = await client.request(method, url, **cast(Any, kwargs))
             else:
-                response = await request(url, **kwargs)
+                response = await request(url, **cast(Any, kwargs))
         except _RETRYABLE_EXCEPTIONS as e:
             if attempt < _MAX_RETRIES:
                 logger.warning(
@@ -126,10 +122,7 @@ async def _request_json_with_retry(
                 await asyncio.sleep(_BACKOFF_S[attempt])
                 continue
             logger.exception(
-                "{} transcription error after {} attempts {}",
-                provider_label,
-                _MAX_RETRIES + 1,
-                e,
+                "{} transcription error after {} attempts {}", provider_label, _MAX_RETRIES + 1, e
             )
             return None
         except Exception as e:
@@ -181,51 +174,35 @@ async def _request_json_with_retry(
     return None
 
 
-async def _post_transcription_with_retry(
-    build_request, provider_label, parse_fn
-) -> str:
-    ...
+async def _post_transcription_with_retry(build_request, provider_label, parse_fn) -> None: ...
 
 
-async def _post_json_transcription_with_retry(
-    build_request, provider_label, parse_fn
-) -> str:
-    ...
+async def _post_json_transcription_with_retry(build_request, provider_label, parse_fn) -> None: ...
 
 
-async def _post_xiaomi_mimo_asr_with_retry(
-    build_request, provider_label, parse_fn
-) -> str:
-    ...
+async def _post_xiaomi_mimo_asr_with_retry(build_request, provider_label, parse_fn) -> None: ...
 
 
-async def _post_stepfun_asr_with_retry(
-    build_request, provider_label, parse_fn
-) -> str:
-    ...
+async def _post_stepfun_asr_with_retry(build_request, provider_label, parse_fn) -> None: ...
 
 
-class OpenAITranscriptionProvider:
-    ...
+class OpenAITranscriptionProvider: ...
 
 
-class GroqTranscriptionProvider:
-    ...
+class GroqTranscriptionProvider: ...
 
 
-class OpenRouterTranscriptionProvider:
-    ...
+class OpenRouterTranscriptionProvider: ...
 
 
-class XiaomiMiMoTranscriptionProvider:
-    ...
+class XiaomiMiMoTranscriptionProvider: ...
 
 
-class StepFunTranscriptionProvider:
-    ...
+class StepFunTranscriptionProvider: ...
 
 
 def find_by_name(name: str) -> Any:
     """Find a transcription provider by name from the registry."""
     from vtx_claw.providers.registry import find_by_name as _find_by_name
+
     return _find_by_name(name)

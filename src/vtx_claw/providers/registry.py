@@ -14,12 +14,6 @@ from typing import Any
 
 from pydantic.alias_generators import to_snake
 
-from vtx.llm.provider_catalog import (
-    ProviderInfo as _VtxProviderInfo,
-    get as _vtx_get_provider,
-    list_providers as _vtx_list_providers,
-)
-
 
 @dataclass(frozen=True)
 class ProviderSpec:

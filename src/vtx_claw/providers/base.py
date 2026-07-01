@@ -8,8 +8,7 @@ All provider types now live in vtx. This module delegates to them.
 from __future__ import annotations
 
 import json
-
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from typing import Any
 
 # vtx BaseProvider interface

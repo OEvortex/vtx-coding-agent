@@ -138,16 +138,10 @@ class TurnContext:
 
 
 class AgentLoop:
-    """
-    The agent loop is the core processing engine.
-
-    It:
-    1. Receives messages from the bus
-    2. Builds context with history, memory, skills
-    3. Calls the LLM
-    4. Executes tool calls
-    5. Sends responses back
-    """
+    @property
+    def workspace_sandbox(self) -> Any:
+        """Satisfy the RuntimeState protocol."""
+        return self.workspace_scopes.sandbox_status
 
     @property
     def current_iteration(self) -> int:
@@ -177,6 +171,16 @@ class AgentLoop:
         (TurnState.SAVE, "ok"): TurnState.RESPOND,
         (TurnState.RESPOND, "ok"): TurnState.DONE,
     }
+    """
+    The agent loop is the core processing engine.
+
+    It:
+    1. Receives messages from the bus
+    2. Builds context with history, memory, skills
+    3. Calls the LLM
+    4. Executes tool calls
+    5. Sends responses back
+    """
 
     def __init__(
         self,
@@ -461,6 +465,8 @@ class AgentLoop:
         )
         self._apply_provider_snapshot(snapshot)
 
+        # Remove the duplicate properties that are now at the top of the class
+
     @property
     def model_preset(self) -> str | None:
         return self._active_preset
@@ -503,12 +509,19 @@ class AgentLoop:
             runtime_events=self.runtime_events,
         )
         loader = ToolLoader()
-        registered = loader.load(ctx, self.tools)
-
-        # MyTool needs runtime state reference — manual registration
+        registered = loader.load(
+            ctx, self.tools
+        )  # MyTool needs runtime state reference — manual registration
         if self.tools_config.my.enable:
+            from typing import cast
+
+            from vtx_claw.agent.tools import runtime_state as _rs
+
             self.tools.register(
-                MyTool(runtime_state=self, modify_allowed=self.tools_config.my.allow_set)
+                MyTool(
+                    runtime_state=cast(_rs.RuntimeState, self),
+                    modify_allowed=self.tools_config.my.allow_set,
+                )
             )
             registered.append("my")
 
@@ -867,7 +880,26 @@ class AgentLoop:
         # Convert vtx typed stop_reason to string for loop consumers
         stop_reason_str = vtx_stop_reason_to_claw(result.stop_reason)
 
-        self._last_usage = result.usage
+        self._last_usage = {
+            "prompt_tokens": getattr(
+                result.usage,
+                "input_tokens",
+                result.usage.get("input_tokens", 0) if isinstance(result.usage, dict) else 0,
+            )
+            or 0,
+            "completion_tokens": getattr(
+                result.usage,
+                "output_tokens",
+                result.usage.get("output_tokens", 0) if isinstance(result.usage, dict) else 0,
+            )
+            or 0,
+            "total_tokens": (
+                getattr(result.usage, "input_tokens", 0)
+                + getattr(result.usage, "output_tokens", 0)
+                if result.usage is not None
+                else 0
+            ),
+        }
         if stop_reason_str == "max_iterations":
             logger.warning("Max iterations ({}) reached", self.max_iterations)
             should_stream = turn_continuation.should_stream_budget_response(
@@ -909,7 +941,8 @@ class AgentLoop:
                 except asyncio.CancelledError:
                     # Preserve real task cancellation so shutdown can complete cleanly.
                     # Only ignore non-task CancelledError signals that may leak from integrations.
-                    if not self._running or asyncio.current_task().cancelling():
+                    task = asyncio.current_task()
+                    if not self._running or (task is not None and task.cancelling()):
                         raise
                     continue
                 except Exception as e:
@@ -1346,7 +1379,7 @@ class AgentLoop:
     def _assemble_outbound(
         self,
         msg: InboundMessage,
-        final_content: str,
+        final_content: str | None,
         all_msgs: list[dict[str, Any]],
         stop_reason: str,
         had_injections: bool,
@@ -1360,7 +1393,10 @@ class AgentLoop:
             if not had_injections or stop_reason == "empty_final_response":
                 return None
 
-        preview = final_content[:120] + "..." if len(final_content) > 120 else final_content
+        final_content_str = final_content or ""
+        preview = (
+            final_content_str[:120] + "..." if len(final_content_str) > 120 else final_content_str
+        )
         logger.info("Response to {}:{}: {}", msg.channel, msg.sender_id, preview)
 
         meta = dict(msg.metadata or {})
@@ -1370,10 +1406,10 @@ class AgentLoop:
             meta["latency_ms"] = int(turn_latency_ms)
 
         return OutboundMessage(
-            channel=msg.channel, chat_id=msg.chat_id, content=final_content, metadata=meta
+            channel=msg.channel, chat_id=msg.chat_id, content=final_content_str, metadata=meta
         )
 
-    async def _state_restore(self, ctx: TurnContext) -> TurnState:
+    async def _state_restore(self, ctx: TurnContext) -> str:
         """Restore checkpoint / pending user turn; extract documents."""
         msg = ctx.msg
 
@@ -1410,12 +1446,14 @@ class AgentLoop:
         return self.channels_config.extract_document_text
 
     async def _state_compact(self, ctx: TurnContext) -> str:
+        assert ctx.session is not None
         ctx.session, pending = self.auto_compact.prepare_session(ctx.session, ctx.session_key)
         ctx.pending_summary = pending
         return "ok"
 
     async def _state_command(self, ctx: TurnContext) -> str:
         raw = ctx.msg.content.strip()
+        assert ctx.session is not None
         cmd_ctx = CommandContext(
             msg=ctx.msg, session=ctx.session, key=ctx.session_key, raw=raw, loop=self
         )
@@ -1438,6 +1476,7 @@ class AgentLoop:
         return "dispatch"
 
     async def _state_build(self, ctx: TurnContext) -> str:
+        assert ctx.session is not None
         if not ctx.ephemeral:
             await self.consolidator.maybe_consolidate_by_tokens(
                 ctx.session, replay_max_messages=self._max_messages
@@ -1512,6 +1551,7 @@ class AgentLoop:
 
     async def _state_save(self, ctx: TurnContext) -> str:
         turn_continuation.prepare_save_boundary(ctx)
+        assert ctx.session is not None
 
         if (
             ctx.final_content is None or not ctx.final_content.strip()
@@ -1547,6 +1587,7 @@ class AgentLoop:
         if ctx.suppress_response:
             ctx.outbound = None
             return "ok"
+        assert ctx.session is not None
         ctx.outbound = self._assemble_outbound(
             ctx.msg,
             ctx.final_content,

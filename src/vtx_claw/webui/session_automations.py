@@ -114,21 +114,18 @@ def _serialize_job(
     payload["created_at_ms"] = job.created_at_ms
     payload["updated_at_ms"] = job.updated_at_ms
     payload["payload"].update({"kind": job.payload.kind})
-    payload["state"].update(
+    state: dict[str, Any] = payload["state"]
+    state["last_run_at_ms"] = job.state.last_run_at_ms
+    state["last_error"] = job.state.last_error
+    state["run_history"] = [
         {
-            "last_run_at_ms": job.state.last_run_at_ms,
-            "last_error": job.state.last_error,
-            "run_history": [
-                {
-                    "run_at_ms": record.run_at_ms,
-                    "status": record.status,
-                    "duration_ms": record.duration_ms,
-                    "error": record.error,
-                }
-                for record in job.state.run_history[-5:]
-            ],
+            "run_at_ms": record.run_at_ms,
+            "status": record.status,
+            "duration_ms": record.duration_ms,
+            "error": record.error,
         }
-    )
+        for record in job.state.run_history[-5:]
+    ]
     payload["origin"] = _origin_payload(job, session_manager)
     return payload
 

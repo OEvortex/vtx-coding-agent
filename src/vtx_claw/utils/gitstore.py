@@ -7,7 +7,9 @@ import time
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
+from typing import Any, cast
 
+from dulwich.objects import Commit
 from loguru import logger
 
 
@@ -37,7 +39,8 @@ def _compute_line_ages(annotated) -> list[LineAge]:
     now = datetime.now(tz=UTC).date()
     ages: list[LineAge] = []
     for (commit, _tree_entry), _line_bytes in annotated:
-        dt = datetime.fromtimestamp(commit.commit_time, tz=UTC).date()
+        commit_obj = cast(Commit, commit)
+        dt = datetime.fromtimestamp(commit_obj.commit_time, tz=UTC).date()
         ages.append(LineAge(age_days=(now - dt).days))
     return ages
 
@@ -158,16 +161,17 @@ class GitStore:
 
             with Repo(str(self._workspace)) as repo:
                 try:
-                    sha = repo.refs[b"HEAD"]
+                    sha = cast(Any, repo.refs)[b"HEAD"]
                 except KeyError:
                     return None
 
                 while sha:
                     if sha.hex().startswith(short_sha):
                         return sha
-                    commit = repo[sha]
-                    if commit.type_name != b"commit":
+                    obj = repo[sha]
+                    if obj.type_name != b"commit":
                         break
+                    commit = cast(Commit, obj)
                     sha = commit.parents[0] if commit.parents else None
             return None
         except Exception:
@@ -217,15 +221,16 @@ class GitStore:
             entries: list[CommitInfo] = []
             with Repo(str(self._workspace)) as repo:
                 try:
-                    head = repo.refs[b"HEAD"]
+                    head = cast(Any, repo.refs)[b"HEAD"]
                 except KeyError:
                     return []
 
                 sha = head
                 while sha and len(entries) < max_entries:
-                    commit = repo[sha]
-                    if commit.type_name != b"commit":
+                    obj = repo[sha]
+                    if obj.type_name != b"commit":
                         break
+                    commit = cast(Commit, obj)
                     ts = time.strftime("%Y-%m-%d %H:%M", time.localtime(commit.commit_time))
                     msg = commit.message.decode("utf-8", errors="replace").strip()
                     entries.append(CommitInfo(sha=sha.hex()[:8], message=msg, timestamp=ts))
@@ -324,16 +329,17 @@ class GitStore:
                 return None
 
             with Repo(str(self._workspace)) as repo:
-                commit_obj = repo[full_sha]
-                if commit_obj.type_name != b"commit":
+                obj = repo[full_sha]
+                if obj.type_name != b"commit":
                     return None
+                commit_obj = cast(Commit, obj)
 
                 if not commit_obj.parents:
                     logger.warning("Git revert: cannot revert root commit {}", commit)
                     return None
 
                 # Use the parent's tree — this undoes the commit's changes
-                parent_obj = repo[commit_obj.parents[0]]
+                parent_obj = cast(Commit, repo[commit_obj.parents[0]])
                 tree = repo[parent_obj.tree]
 
                 restored: list[str] = []

@@ -4,7 +4,6 @@ import json
 from unittest.mock import MagicMock, patch
 
 import pytest
-
 from vtx_claw.providers.openai_responses.converters import (
     convert_messages,
     convert_tools,

@@ -9,6 +9,7 @@ import time
 from contextlib import suppress
 from dataclasses import dataclass
 
+from vtx_claw import __version__
 from vtx_claw.bus.events import OutboundMessage
 from vtx_claw.command.router import CommandContext, CommandRouter
 from vtx_claw.utils.helpers import build_status_content

@@ -201,7 +201,7 @@ class Tool(ABC):
         return cls()
 
     @abstractmethod
-    async def execute(self, **kwargs: Any) -> Any:
+    async def execute(self, *args: Any, **kwargs: Any) -> Any:
         """Run the tool; returns a string or list of content blocks."""
         ...
 
@@ -310,7 +310,7 @@ def tool_parameters(schema: dict[str, Any]) -> Callable[[type[_ToolT]], type[_To
         def parameters(self: Any) -> dict[str, Any]:
             return deepcopy(frozen)
 
-        cls.parameters = parameters  # type: ignore[assignment]
+        cls.__dict__["parameters"] = parameters
 
         abstract = getattr(cls, "__abstractmethods__", None)
         if abstract is not None and "parameters" in abstract:

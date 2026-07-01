@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import asyncio
 import base64
 import binascii
 import re
@@ -12,7 +11,6 @@ from pathlib import Path
 from typing import Any
 
 import httpx
-from loguru import logger
 
 from vtx_claw.providers.registry import find_by_name
 from vtx_claw.utils.helpers import detect_image_mime

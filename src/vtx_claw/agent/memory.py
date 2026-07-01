@@ -581,8 +581,10 @@ class MemoryStore:
     def build_dream_commit_message(prefix: str, resp: object | None) -> str:
         """Build a Dream auto-commit message, appending the LLM summary if present."""
         msg = prefix
-        if resp is not None and getattr(resp, "content", None):
-            msg = f"{msg}\n\n{resp.content.strip()}"
+        if resp is not None:
+            content = getattr(resp, "content", None)
+            if content is not None:
+                msg = f"{msg}\n\n{str(content).strip()}"
         return msg
 
     @staticmethod

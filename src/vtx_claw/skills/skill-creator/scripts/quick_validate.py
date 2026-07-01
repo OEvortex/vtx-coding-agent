@@ -6,11 +6,14 @@ Minimal validator for vtx_claw skill folders.
 import re
 import sys
 from pathlib import Path
+from typing import Any
 
 try:
-    import yaml
+    import yaml as _yaml
+
+    _HAS_YAML = True
 except ModuleNotFoundError:
-    yaml = None
+    _HAS_YAML = False
 
 MAX_SKILL_NAME_LENGTH = 64
 ALLOWED_FRONTMATTER_KEYS = {
@@ -83,10 +86,10 @@ def _parse_simple_frontmatter(frontmatter_text: str) -> dict[str, str] | None:
 
 
 def _load_frontmatter(frontmatter_text: str) -> tuple[dict | None, str | None]:
-    if yaml is not None:
+    if _HAS_YAML:
         try:
-            frontmatter = yaml.safe_load(frontmatter_text)
-        except yaml.YAMLError as exc:
+            frontmatter = _yaml.safe_load(frontmatter_text)
+        except _yaml.YAMLError as exc:
             return None, f"Invalid YAML in frontmatter: {exc}"
         if not isinstance(frontmatter, dict):
             return None, "Frontmatter must be a YAML dictionary"
@@ -153,6 +156,8 @@ def validate_skill(skill_path):
     frontmatter, error = _load_frontmatter(frontmatter_text)
     if error:
         return False, error
+    if frontmatter is None:
+        return False, "Failed to parse frontmatter"
 
     unexpected_keys = sorted(set(frontmatter.keys()) - ALLOWED_FRONTMATTER_KEYS)
     if unexpected_keys:
@@ -168,21 +173,21 @@ def validate_skill(skill_path):
     if "description" not in frontmatter:
         return False, "Missing 'description' in frontmatter"
 
-    name = frontmatter["name"]
+    name: Any = frontmatter["name"]
     if not isinstance(name, str):
         return False, f"Name must be a string, got {type(name).__name__}"
     name_error = _validate_skill_name(name.strip(), skill_path.name)
     if name_error:
         return False, name_error
 
-    description = frontmatter["description"]
+    description: Any = frontmatter["description"]
     if not isinstance(description, str):
         return False, f"Description must be a string, got {type(description).__name__}"
     description_error = _validate_description(description)
     if description_error:
         return False, description_error
 
-    always = frontmatter.get("always")
+    always: Any = frontmatter.get("always")
     if always is not None and not isinstance(always, bool):
         return False, f"'always' must be a boolean, got {type(always).__name__}"
 

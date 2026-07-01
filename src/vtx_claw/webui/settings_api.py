@@ -6,6 +6,7 @@ settings payload shape and the allowlisted config mutations exposed to WebUI.
 
 from __future__ import annotations
 
+import logging
 import os
 import re
 import time
@@ -36,6 +37,9 @@ from vtx_claw.webui.workspaces import (
 
 QueryParams = dict[str, list[str]]
 RuntimeSurface = Literal["browser", "native"]
+
+
+logger = logging.getLogger(__name__)
 
 
 def _version_payload() -> dict[str, Any]:
@@ -488,8 +492,9 @@ def provider_models_payload(query: QueryParams) -> dict[str, Any]:
                 # If cache is expired or empty, try reading the cache file directly to return stale data quickly
                 try:
                     import json
-                    from vtx.llm.model_fetcher import _cache_path, FetchedModel, ApiType, Model
+
                     from vtx.llm.context_length import context_length_manager
+                    from vtx.llm.model_fetcher import ApiType, FetchedModel, Model, _cache_path
 
                     cache_file = _cache_path(provider_key)
                     if cache_file.exists():
@@ -1226,7 +1231,7 @@ def update_provider_settings(query: QueryParams) -> dict[str, Any]:
     if "api_type" in query and spec.name == "openai":
         api_type = (_query_first(query, "api_type") or "").strip()
         try:
-            parsed_api_type = type(provider_config)(api_type=api_type).api_type
+            parsed_api_type = type(provider_config)(api_type=api_type).api_type  # ty: ignore[invalid-argument-type]
         except Exception:
             raise WebUISettingsError(
                 "api_type must be auto, chat_completions, or responses"

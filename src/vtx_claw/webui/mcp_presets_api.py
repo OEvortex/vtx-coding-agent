@@ -14,7 +14,7 @@ from contextlib import suppress
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
-from typing import Any, Literal
+from typing import Any, Literal, cast
 
 from vtx_claw.agent.tools.registry import ToolRegistry
 from vtx_claw.apps.protocol import app_manifest, compact_dict
@@ -1009,7 +1009,9 @@ async def mcp_presets_test_action(query: QueryParams) -> dict[str, Any]:
         await _close_mcp_stacks(stacks)
 
     preview = {name: last_action.get("tool_names", [])} if last_action.get("tool_names") else None
-    return mcp_presets_payload(last_action=last_action, tool_preview=preview)
+    return mcp_presets_payload(
+        last_action=last_action, tool_preview=cast("dict[str, list[str]] | None", preview)
+    )
 
 
 def _parse_json_value(raw: str | None, *, fallback: Any) -> Any:
@@ -1075,7 +1077,7 @@ def _normalize_transport(
     normalized = aliases.get(raw)
     if normalized is None:
         raise McpPresetError("unsupported MCP transport")
-    return normalized  # type: ignore[return-value]
+    return cast(Literal["stdio", "sse", "streamableHttp"], normalized)
 
 
 def _validated_server_name(name: str) -> str:

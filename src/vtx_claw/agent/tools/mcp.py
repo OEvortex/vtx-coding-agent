@@ -275,6 +275,7 @@ class _MCPWrapperBase(Tool):
     """Common reconnect handling for wrappers bound to one MCP server session."""
 
     _plugin_discoverable = False
+    _name: str = ""
 
     def _set_mcp_connection(self, session: Any, server_name: str) -> None:
         self._session = session
@@ -329,7 +330,7 @@ def _image_block_data_url(block: Any, types: Any) -> str | None:
         if blob_cls is not None and isinstance(resource, blob_cls):
             mime = getattr(resource, "mimeType", None) or ""
             if isinstance(mime, str) and mime.startswith("image/"):
-                return f"data:{mime};base64,{resource.blob}"
+                return f"data:{mime};base64,{resource.blob}" if resource is not None else None
     return None
 
 

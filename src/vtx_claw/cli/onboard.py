@@ -5,12 +5,12 @@ import json
 import types
 from dataclasses import dataclass
 from functools import lru_cache
-from typing import Any, Literal, NamedTuple, get_args, get_origin
+from typing import Any, Literal, NamedTuple, cast, get_args, get_origin
 
 try:
     import questionary
 except ModuleNotFoundError:  # pragma: no cover - exercised in environments without wizard deps
-    questionary = None
+    questionary = None  # type: ignore[assignment]
 from loguru import logger
 from pydantic import BaseModel
 from rich.console import Console
@@ -621,7 +621,7 @@ def _input_model_with_autocomplete(
         def __init__(self, provider_name: str):
             self.provider = provider_name
 
-        def get_completions(self, document, _complete_event):
+        def get_completions(self, document, complete_event):
             text = document.text_before_cursor
             suggestions = get_model_suggestions(text, provider=self.provider, limit=50)
             for model in suggestions:
@@ -720,6 +720,7 @@ def _handle_model_field(
         return
     if new_value is not None and new_value != current_value:
         setattr(working_model, field_name, new_value)
+        assert isinstance(new_value, str)
         _try_auto_fill_context_window(working_model, new_value)
 
 
@@ -1106,7 +1107,7 @@ def _configure_model_presets(config: Config) -> None:
                 new_preset = ModelPresetConfig(model="")
                 updated = _configure_pydantic_model(new_preset, f"New Preset: {name}")
                 if updated is not None:
-                    config.model_presets[name] = updated
+                    config.model_presets[name] = cast(ModelPresetConfig, updated)
                     _sync_preset_cache(config)
                     last_preset_name = name
                 continue
@@ -1143,7 +1144,7 @@ def _configure_model_presets(config: Config) -> None:
             if action == "Edit":
                 updated = _configure_pydantic_model(preset, f"Edit Preset: {preset_name}")
                 if updated is not None:
-                    config.model_presets[preset_name] = updated
+                    config.model_presets[preset_name] = cast(ModelPresetConfig, updated)
                     _sync_preset_cache(config)
 
         except KeyboardInterrupt:
@@ -1311,7 +1312,6 @@ def _run_channel_login(
 
     if hasattr(model, "enabled"):
         model.enabled = True
-
     console.print(f"[{_UI_ACCENT}]Starting {display_name} login...[/]")
     try:
         channel = channel_cls(model, bus=None)
@@ -1672,9 +1672,8 @@ def _configure_quick_start_provider(config: Config) -> bool | object:
                 continue
             if api_base_result is None:
                 return False
+            assert isinstance(api_base_result, tuple)
             api_base, base_was_prompted = api_base_result
-
-        api_key: str | None = None
         if _quick_start_requires_api_key(provider_name, provider_info):
             api_key = _input_text(f"{answer} API key", "", "str")
             if api_key is _BACK_PRESSED:
@@ -1694,6 +1693,7 @@ def _configure_quick_start_provider(config: Config) -> bool | object:
                 continue
             if api_base_result is None:
                 return False
+            assert isinstance(api_base_result, tuple)
             api_base, base_was_prompted = api_base_result
 
         provider_config = getattr(config.providers, provider_name, None)
@@ -1704,6 +1704,7 @@ def _configure_quick_start_provider(config: Config) -> bool | object:
         model = _input_model_with_autocomplete("Model ID", "", provider_name)
         if model is _BACK_PRESSED:
             continue
+        assert isinstance(model, str)
         model = (model or "").strip()
         if not model:
             console.print("[yellow]! Model ID is required for Quick Start[/yellow]")
@@ -1883,6 +1884,7 @@ def _configure_advanced_settings(config: Config) -> None:
 
         if answer is _BACK_PRESSED or answer is None or answer == "<- Back":
             break
+        assert isinstance(answer, str)
 
         _advanced_dispatch = {
             "[P] LLM Provider": lambda: _configure_providers(config),

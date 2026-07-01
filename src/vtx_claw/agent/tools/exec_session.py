@@ -255,7 +255,9 @@ class ExecSessionManager:
                 self._sessions.pop(session_id, None)
         return poll
 
-    async def list(self, *, owner_session_key: str | None = None) -> list[ExecSessionInfo]:
+    async def list_sessions(
+        self, *, owner_session_key: str | None = None
+    ) -> list[ExecSessionInfo]:
         async with self._lock:
             await self._cleanup_locked()
             now = time.monotonic()
@@ -555,7 +557,9 @@ class ListExecSessionsTool(Tool):
 
     async def execute(self, **kwargs: Any) -> str:
         try:
-            sessions = await self._manager.list(owner_session_key=current_request_session_key())
+            sessions = await self._manager.list_sessions(
+                owner_session_key=current_request_session_key()
+            )
             if not sessions:
                 return "No active exec sessions."
             lines = []

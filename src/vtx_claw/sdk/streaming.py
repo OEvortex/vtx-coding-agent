@@ -6,6 +6,7 @@ import asyncio
 from collections.abc import AsyncIterator
 from contextlib import suppress
 from copy import deepcopy
+from typing import Any, cast
 
 from vtx_claw.agent.hook import AgentHook, AgentHookContext
 from vtx_claw.sdk.types import (
@@ -57,7 +58,7 @@ class RunStream:
                 if item is _STREAM_SENTINEL:
                     self._events_done = True
                     break
-                yield item
+                yield cast(StreamEvent, item)
         finally:
             self._stream_active = False
             if not self._events_done:
@@ -176,7 +177,7 @@ class SDKStreamingHook(AgentHook):
                     type=STREAM_EVENT_TOOL_STARTED,
                     name=call.name,
                     tool_call_id=call.id,
-                    arguments=deepcopy(call.arguments),
+                    arguments=cast("dict[str, Any] | None", deepcopy(call.arguments)),
                     iteration=context.iteration,
                 )
             )
@@ -211,7 +212,9 @@ class SDKStreamingHook(AgentHook):
                     type=event_type,
                     name=name or None,
                     tool_call_id=call.id if call else None,
-                    arguments=deepcopy(call.arguments) if call else None,
+                    arguments=cast("dict[str, Any] | None", deepcopy(call.arguments))
+                    if call
+                    else None,
                     iteration=context.iteration,
                     error=None if status == "ok" else str(event.get("detail") or ""),
                     metadata=event,

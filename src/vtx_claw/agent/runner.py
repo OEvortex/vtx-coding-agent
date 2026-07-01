@@ -218,13 +218,17 @@ class AgentRunner:
         return True, injection_cycles
 
     def _build_goal_continue_message(self, spec: AgentRunSpec) -> dict[str, str]:
-        custom = spec.goal_continue_message
-        if callable(custom):
-            try:
-                custom = custom()
-            except Exception:
-                logger.exception("goal_continue_message callback failed")
-                custom = None
+        custom: str | None = None
+        msg = spec.goal_continue_message
+        if msg is not None:
+            if isinstance(msg, str):
+                custom = msg
+            else:
+                try:
+                    custom = msg()
+                except Exception:
+                    logger.exception("goal_continue_message callback failed")
+                    custom = None
         return build_goal_continue_message(custom)
 
     async def _drain_injections(self, spec: AgentRunSpec) -> list[dict[str, Any]]:
@@ -425,7 +429,7 @@ class AgentRunner:
 
                 assistant_message = build_assistant_message(
                     response.content or "",
-                    tool_calls=[tc.to_openai_tool_call() for tc in response.tool_calls],
+                    tool_calls=[tc.to_openai_tool_call() for tc in (response.tool_calls or [])],
                     reasoning_content=response.reasoning_content,
                     thinking_blocks=response.thinking_blocks,
                 )
@@ -674,8 +678,9 @@ class AgentRunner:
                 had_injections = True
             final_content = None
             if spec.finalize_on_max_iterations:
-                final_content = await self._try_finalize_after_max_iterations(
-                    spec, hook, messages, usage
+                final_content = (
+                    await self._try_finalize_after_max_iterations(spec, hook, messages, usage)
+                    or None
                 )
             if final_content is None:
                 final_content = self._max_iterations_fallback(spec)
@@ -768,7 +773,8 @@ class AgentRunner:
         ):
 
             async def _emit_live_file_edits(events: list[dict[str, Any]]) -> None:
-                await invoke_file_edit_progress(spec.progress_callback, events)
+                if spec.progress_callback is not None:
+                    await invoke_file_edit_progress(spec.progress_callback, events)
 
             live_file_edits = StreamingFileEditTracker(
                 workspace=spec.workspace, tools=spec.tools, emit=_emit_live_file_edits
@@ -1088,7 +1094,7 @@ class AgentRunner:
                 "Budget-exhausted finalization returned finish_reason='{}' "
                 "with {} tool call(s) for {}; using fallback",
                 response.finish_reason,
-                len(response.tool_calls),
+                len(response.tool_calls or []),
                 spec.session_key or "default",
             )
             return None
@@ -1154,7 +1160,7 @@ class AgentRunner:
         prompt_tokens, _ = estimate_prompt_tokens_chain(self.provider, spec.model, messages, tools)
         assistant_message = build_assistant_message(
             response.content or "",
-            tool_calls=[tc.to_openai_tool_call() for tc in response.tool_calls],
+            tool_calls=[tc.to_openai_tool_call() for tc in (response.tool_calls or [])],
             reasoning_content=response.reasoning_content,
             thinking_blocks=response.thinking_blocks,
         )
@@ -1315,7 +1321,11 @@ class AgentRunner:
             )
         try:
             if tool is not None:
-                result = await tool.execute(**params)
+                result = (
+                    await tool.execute(**params)
+                    if isinstance(params, dict)
+                    else await tool.execute(**{})
+                )
             else:
                 result = await spec.tools.execute(tool_call.name, params)
         except asyncio.CancelledError:

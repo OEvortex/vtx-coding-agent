@@ -123,13 +123,15 @@ class ImageGenerationTool(Tool):
         cls = get_image_gen_provider(self.config.provider)
         if cls is None:
             return None
-        kwargs = {
-            "api_key": provider.api_key if provider else None,
-            "api_base": provider.api_base if provider else None,
-            "extra_headers": provider.extra_headers if provider else None,
-            "extra_body": provider.extra_body if provider else None,
-        }
-        return cls(**kwargs)
+        from vtx_claw.config.schema import ProviderConfig as _PC
+
+        provider_cfg: _PC | None = provider
+        return cls(
+            api_key=provider_cfg.api_key if provider_cfg else None,
+            api_base=provider_cfg.api_base if provider_cfg else None,
+            extra_headers=provider_cfg.extra_headers if provider_cfg else None,
+            extra_body=provider_cfg.extra_body if provider_cfg else None,
+        )
 
     def _resolve_reference_image(self, value: str) -> str:
         access = current_tool_workspace(self.workspace, restrict_to_workspace=True)

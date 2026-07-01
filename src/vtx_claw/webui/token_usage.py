@@ -101,7 +101,7 @@ def _normalize_usage(raw: dict[str, Any] | None) -> dict[str, int]:
 
 
 def _normalize_usage_row(row: dict[str, Any]) -> dict[str, int]:
-    cleaned = {key: _clean_int(row.get(key)) for key in _USAGE_KEYS}
+    cleaned: dict[str, int] = {key: _clean_int(row.get(key)) for key in _USAGE_KEYS}
     if cleaned["total_tokens"] <= 0:
         cleaned["total_tokens"] = cleaned["prompt_tokens"] + cleaned["completion_tokens"]
     if cleaned["provider_tokens"] <= 0 and cleaned["estimated_tokens"] <= 0:
@@ -125,7 +125,9 @@ def _normalize_sources(raw: Any, fallback: dict[str, int]) -> dict[str, dict[str
         for source, row in raw.items():
             if not isinstance(row, dict):
                 continue
-            normalized = _normalize_usage_row(row)
+            raw_row: dict[Any, Any] = dict(row)
+            row_dict: dict[str, Any] = {str(k): v for k, v in raw_row.items()}
+            normalized = _normalize_usage_row(row_dict)
             if normalized["total_tokens"] <= 0 and normalized["requests"] <= 0:
                 continue
             source_key = _clean_source(str(source))
@@ -152,7 +154,8 @@ def normalize_token_usage_state(raw: Any) -> dict[str, Any]:
     for date, row in sorted(days_raw.items())[-_MAX_DAYS_RETAINED:]:
         if not isinstance(date, str) or len(date) != 10 or not isinstance(row, dict):
             continue
-        normalized = _normalize_usage_row(row)
+        row_dict: dict[str, Any] = {str(k): v for k, v in row.items()}
+        normalized = _normalize_usage_row(row_dict)
         if normalized["total_tokens"] <= 0 and normalized["requests"] <= 0:
             continue
         days[date] = {
@@ -224,7 +227,7 @@ def record_token_usage(
     with _WRITE_LOCK:
         state = read_token_usage_state()
         day = _local_day(now, timezone_name=timezone_name)
-        row = dict(state["days"].get(day) or {"date": day, "requests": 0})
+        row: dict[str, Any] = dict(state["days"].get(day) or {"date": day, "requests": 0})
         for key in _USAGE_KEYS:
             row[key] = _clean_int(row.get(key)) + normalized.get(key, 0)
         row["requests"] = _clean_int(row.get("requests")) + 1
@@ -234,8 +237,14 @@ def record_token_usage(
             row["provider_requests"] = _clean_int(row.get("provider_requests")) + 1
 
         source_key = _clean_source(source)
-        sources = dict(row.get("sources") or {})
-        source_row = dict(sources.get(source_key) or {"requests": 0})
+        sources_val: Any = row.get("sources")
+        sources_raw: dict[str, Any] = sources_val if isinstance(sources_val, dict) else {}
+        sources: dict[str, Any] = {k: v for k, v in sources_raw.items()}
+        source_val: Any = sources.get(source_key)
+        source_row_raw: dict[str, Any] = (
+            source_val if isinstance(source_val, dict) else {"requests": 0}
+        )
+        source_row: dict[str, Any] = {k: v for k, v in source_row_raw.items()}
         for key in _USAGE_KEYS:
             source_row[key] = _clean_int(source_row.get(key)) + normalized.get(key, 0)
         source_row["requests"] = _clean_int(source_row.get("requests")) + 1

@@ -115,7 +115,7 @@ class AgentProgressHook(AgentHook):
             tool_hint = self._strip_think(self._tool_hint(context.tool_calls))
             tool_events = [build_tool_event_start_payload(tc) for tc in context.tool_calls]
             await invoke_on_progress(
-                self._on_progress, tool_hint, tool_hint=True, tool_events=tool_events
+                self._on_progress, tool_hint or "", tool_hint=True, tool_events=tool_events
             )
         for tc in context.tool_calls:
             args_str = json.dumps(tc.arguments, ensure_ascii=False)

@@ -6,14 +6,14 @@ import asyncio
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
+from vtx_claw.providers.openai_compat_provider import OpenAICompatProvider
+from vtx_claw.providers.openai_responses.parsing import parse_response_output
 
 from vtx_claw.agent.runner import AgentRunner, AgentRunSpec
 from vtx_claw.agent.tools.base import Tool
 from vtx_claw.agent.tools.registry import ToolRegistry
 from vtx_claw.config.schema import AgentDefaults
 from vtx_claw.providers.base import LLMResponse, ToolCallRequest
-from vtx_claw.providers.openai_compat_provider import OpenAICompatProvider
-from vtx_claw.providers.openai_responses.parsing import parse_response_output
 
 _MAX_TOOL_RESULT_CHARS = AgentDefaults().max_tool_result_chars
 

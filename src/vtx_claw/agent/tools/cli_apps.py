@@ -122,6 +122,7 @@ class CliAppsTool(Tool):
         json: bool | None = False,
         working_dir: str | None = None,
         timeout: int | None = None,
+        **kwargs: Any,
     ) -> str:
         access = current_tool_workspace(
             self.workspace, restrict_to_workspace=self.restrict_to_workspace

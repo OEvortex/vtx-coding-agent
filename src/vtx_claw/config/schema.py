@@ -549,7 +549,7 @@ class Config(BaseSettings):
                 return spec.default_api_base
         return None
 
-    model_config = ConfigDict(env_prefix="VTX_CLAW_", env_nested_delimiter="__")
+    model_config = ConfigDict(env_prefix="VTX_CLAW_", env_nested_delimiter="__")  # type: ignore[call-arg]
 
 
 def _resolve_tool_config_refs() -> None:
@@ -570,14 +570,14 @@ def _resolve_tool_config_refs() -> None:
 
     # Re-export into this module's namespace
     mod = sys.modules[__name__]
-    mod.ExecToolConfig = ExecToolConfig  # type: ignore[attr-defined]
-    mod.FileToolsConfig = FileToolsConfig  # type: ignore[attr-defined]
-    mod.CliAppsToolConfig = CliAppsToolConfig  # type: ignore[attr-defined]
-    mod.WebToolsConfig = WebToolsConfig  # type: ignore[attr-defined]
-    mod.WebSearchConfig = WebSearchConfig  # type: ignore[attr-defined]
-    mod.WebFetchConfig = WebFetchConfig  # type: ignore[attr-defined]
-    mod.MyToolConfig = MyToolConfig  # type: ignore[attr-defined]
-    mod.ImageGenerationToolConfig = ImageGenerationToolConfig  # type: ignore[attr-defined]
+    mod.ExecToolConfig = ExecToolConfig  # type: ignore[unresolved-attribute]
+    mod.FileToolsConfig = FileToolsConfig  # type: ignore[unresolved-attribute]
+    mod.CliAppsToolConfig = CliAppsToolConfig  # type: ignore[unresolved-attribute]
+    mod.WebToolsConfig = WebToolsConfig  # type: ignore[unresolved-attribute]
+    mod.WebSearchConfig = WebSearchConfig  # type: ignore[unresolved-attribute]
+    mod.WebFetchConfig = WebFetchConfig  # type: ignore[unresolved-attribute]
+    mod.MyToolConfig = MyToolConfig  # type: ignore[unresolved-attribute]
+    mod.ImageGenerationToolConfig = ImageGenerationToolConfig  # type: ignore[unresolved-attribute]
 
     ToolsConfig.model_rebuild()
     Config.model_rebuild()

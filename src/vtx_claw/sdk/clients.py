@@ -72,7 +72,7 @@ class SessionClient:
             return None
         return snapshot_from_payload(payload)
 
-    def list(self) -> list[SessionInfo]:
+    def list_sessions(self) -> list[SessionInfo]:
         """List persisted sessions."""
         return [
             SessionInfo(
