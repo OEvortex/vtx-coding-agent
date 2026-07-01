@@ -114,9 +114,8 @@ def test_convert_assistant_message_with_tool_calls():
     assert len(result) == 1
     assert result[0].role == "assistant"
     assert "Let me check" in result[0].content
-    assert result[0].metadata is not None
-    assert "tool_calls" in result[0].metadata
-    assert result[0].metadata["tool_calls"][0]["function"]["name"] == "get_weather"
+    assert '[Called tool get_weather with arguments {"city": "NYC"}]' in result[0].content
+    assert result[0].metadata is None
 
 
 def test_convert_tool_result_message():
@@ -130,9 +129,8 @@ def test_convert_tool_result_message():
     ]
     result = provider._convert_messages(msgs, None)
     assert len(result) == 1
-    assert result[0].role == "tool"
-    assert "72°F" in result[0].content
-    assert result[0].metadata["tool_call_id"] == "call-1"
+    assert result[0].role == "user"
+    assert "[Tool results]\n72°F, sunny" in result[0].content
 
 
 def test_convert_system_prompt():

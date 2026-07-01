@@ -47,10 +47,30 @@ class SupercodeProvider(BaseProvider):
     def _convert_messages(
         self, messages: list[Message], system_prompt: str | None
     ) -> list[SDKMessage]:
+        import json
+
         result: list[SDKMessage] = []
         if system_prompt:
             result.append(SDKMessage(role="system", content=system_prompt))
+
+        pending_tool_results: list[str] = []
+
+        def flush_tool_results():
+            if not pending_tool_results:
+                return
+            summary = "\n".join(pending_tool_results)
+            result.append(SDKMessage(role="user", content=f"[Tool results]\n{summary}"))
+            pending_tool_results.clear()
+
         for msg in messages:
+            if isinstance(msg, ToolResultMessage):
+                text_parts = [item.text for item in msg.content if isinstance(item, TextContent)]
+                content = "\n".join(text_parts) if text_parts else "(no output)"
+                pending_tool_results.append(content)
+                continue
+
+            flush_tool_results()
+
             if isinstance(msg, UserMessage):
                 content = msg.content if isinstance(msg.content, str) else ""
                 if not content or content.isspace():
@@ -58,7 +78,6 @@ class SupercodeProvider(BaseProvider):
                 result.append(SDKMessage(role="user", content=content))
             elif isinstance(msg, AssistantMessage):
                 content_parts: list[str] = []
-                tool_calls: list[dict[str, Any]] = []
                 for item in msg.content:
                     if isinstance(item, TextContent):
                         if item.text.strip():
@@ -66,36 +85,17 @@ class SupercodeProvider(BaseProvider):
                     elif isinstance(item, ThinkingContent):
                         content_parts.append(f"<think>{item.thinking}</think>")
                     elif isinstance(item, ToolCall):
-                        import json
-
-                        tool_calls.append(
-                            {
-                                "id": item.id,
-                                "type": "function",
-                                "function": {
-                                    "name": item.name,
-                                    "arguments": json.dumps(item.arguments),
-                                },
-                            }
+                        args_str = json.dumps(item.arguments)
+                        content_parts.append(
+                            f"\n[Called tool {item.name} with arguments {args_str}]"
                         )
-                metadata = {}
-                if tool_calls:
-                    metadata["tool_calls"] = tool_calls
                 result.append(
                     SDKMessage(
-                        role="assistant",
-                        content="".join(content_parts) if content_parts else "",
-                        metadata=metadata or None,
+                        role="assistant", content="".join(content_parts) if content_parts else ""
                     )
                 )
-            elif isinstance(msg, ToolResultMessage):
-                text_parts = [item.text for item in msg.content if isinstance(item, TextContent)]
-                content = "\n".join(text_parts) if text_parts else "(no output)"
-                result.append(
-                    SDKMessage(
-                        role="tool", content=content, metadata={"tool_call_id": msg.tool_call_id}
-                    )
-                )
+
+        flush_tool_results()
         return result
 
     def _convert_tools(self, tools: list[ToolDefinition]) -> list[dict[str, Any]]:
