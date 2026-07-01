@@ -1,11 +1,11 @@
 import { useCallback, useRef, useState } from "react";
 
-/** Extract image ``File``s from a paste / drop event.
+import { ACCEPTED_MIMES, SUPPORTED_DOCUMENT_EXTENSIONS } from "./useAttachedImages";
+
+/** Extract image / document ``File``s from a paste / drop event.
  *
  * Deliberate behaviour:
- *   - Only items whose ``kind === "file"`` and ``type`` starts with
- *     ``image/`` are returned; ``<img>`` tags inside HTML fragments are
- *     ignored (defending against remote URL fetch + XSS surfaces).
+ *   - Only items whose ``kind === "file"`` and type/extension match the whitelist are returned.
  *   - Plain text pasted alongside images is *not* consumed by this helper,
  *     so the caller can still let the textarea receive it naturally.
  */
@@ -18,14 +18,19 @@ export function extractImageFilesFromPaste(
   const files: File[] = [];
   for (const item of Array.from(clipboard.items)) {
     if (item.kind !== "file") continue;
-    if (!item.type.startsWith("image/")) continue;
     const file = item.getAsFile();
-    if (file) files.push(file);
+    if (file) {
+      const lastDot = file.name.lastIndexOf(".");
+      const ext = lastDot !== -1 ? file.name.slice(lastDot).toLowerCase() : "";
+      if (ACCEPTED_MIMES.has(file.type) || SUPPORTED_DOCUMENT_EXTENSIONS.has(ext)) {
+        files.push(file);
+      }
+    }
   }
   return files;
 }
 
-/** Extract dropped image files, mirroring ``extractImageFilesFromPaste``. */
+/** Extract dropped files, mirroring ``extractImageFilesFromPaste``. */
 export function extractImageFilesFromDrop(
   event: DragEvent | React.DragEvent,
 ): File[] {
@@ -34,7 +39,11 @@ export function extractImageFilesFromDrop(
   if (!dt) return [];
   const files: File[] = [];
   for (const item of Array.from(dt.files)) {
-    if (item.type.startsWith("image/")) files.push(item);
+    const lastDot = item.name.lastIndexOf(".");
+    const ext = lastDot !== -1 ? item.name.slice(lastDot).toLowerCase() : "";
+    if (ACCEPTED_MIMES.has(item.type) || SUPPORTED_DOCUMENT_EXTENSIONS.has(ext)) {
+      files.push(item);
+    }
   }
   return files;
 }

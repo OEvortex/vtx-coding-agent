@@ -45,20 +45,20 @@ export type AttachmentError =
 
 export const MAX_IMAGES_PER_MESSAGE = 4;
 
-const IMAGE_MIMES: ReadonlySet<string> = new Set([
+export const IMAGE_MIMES: ReadonlySet<string> = new Set([
   "image/png",
   "image/jpeg",
   "image/webp",
   "image/gif",
 ]);
 
-const VIDEO_MIMES: ReadonlySet<string> = new Set([
+export const VIDEO_MIMES: ReadonlySet<string> = new Set([
   "video/mp4",
   "video/webm",
   "video/quicktime",
 ]);
 
-const DOCUMENT_MIMES: ReadonlySet<string> = new Set([
+export const DOCUMENT_MIMES: ReadonlySet<string> = new Set([
   "application/pdf",
   "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
   "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
@@ -81,7 +81,7 @@ const DOCUMENT_MIMES: ReadonlySet<string> = new Set([
   "text/x-log",
 ]);
 
-const SUPPORTED_DOCUMENT_EXTENSIONS = new Set([
+export const SUPPORTED_DOCUMENT_EXTENSIONS = new Set([
   ".pdf",
   ".docx",
   ".xlsx",
@@ -102,7 +102,7 @@ const SUPPORTED_DOCUMENT_EXTENSIONS = new Set([
 ]);
 
 /** MIME whitelist — mirrors the server's and the ``<input accept>`` attr. */
-const ACCEPTED_MIMES: ReadonlySet<string> = new Set([
+export const ACCEPTED_MIMES: ReadonlySet<string> = new Set([
   ...IMAGE_MIMES,
   ...VIDEO_MIMES,
   ...DOCUMENT_MIMES,
@@ -206,7 +206,8 @@ export function useAttachedImages(): UseAttachedImagesApi {
       let slot = MAX_IMAGES_PER_MESSAGE - imagesRef.current.length;
 
       for (const file of files) {
-        const ext = file.name.slice(file.name.lastIndexOf(".")).toLowerCase();
+        const lastDot = file.name.lastIndexOf(".");
+        const ext = lastDot !== -1 ? file.name.slice(lastDot).toLowerCase() : "";
         const isSupportedMime = ACCEPTED_MIMES.has(file.type);
         const isSupportedExt = SUPPORTED_DOCUMENT_EXTENSIONS.has(ext);
 
@@ -234,7 +235,8 @@ export function useAttachedImages(): UseAttachedImagesApi {
         // Fire the Worker after the commit so chips render first (good INP).
         for (const entry of toAdd) {
           queueMicrotask(() => {
-            const ext = entry.file.name.slice(entry.file.name.lastIndexOf(".")).toLowerCase();
+            const entryLastDot = entry.file.name.lastIndexOf(".");
+            const ext = entryLastDot !== -1 ? entry.file.name.slice(entryLastDot).toLowerCase() : "";
             const isImage = IMAGE_MIMES.has(entry.file.type) || (!entry.file.type && !SUPPORTED_DOCUMENT_EXTENSIONS.has(ext));
 
             if (isImage) {

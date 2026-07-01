@@ -27,7 +27,7 @@ export default defineConfig(({ mode }) => {
       ],
     },
     build: {
-      outDir: path.resolve(__dirname, "../vtx-claw/web/dist"),
+      outDir: path.resolve(__dirname, "../../vtx_claw/web/dist"),
       emptyOutDir: true,
       sourcemap: false,
       rollupOptions: {

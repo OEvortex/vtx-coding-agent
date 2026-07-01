@@ -79,7 +79,40 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   in `~/.vtx/config.yml` under `recent_models.entries` and updated on every
   model switch.
 
-### Changed
+#### Document and text file upload support in WebUI
+- Added support for attaching document formats (PDF, DOCX, XLSX, PPTX) and plain text formats (.txt, .md, .csv, .json, .yaml, .yml, .toml, .ini, .cfg, .log) via the WebUI composer.
+- Documents are read as data URLs on the client side using `FileReader` (bypassing the image encoder worker) and sent to the WebSocket server with a 50MB size limit.
+ - Whitelisted document types and mapped file extensions dynamically in `media_decode.py` and `websocket.py` to ensure correct ingestion and parsing.
+
++#### WebUI paste and drop support for documents
++- Extended `extractImageFilesFromPaste` and `extractImageFilesFromDrop` to accept
++  document files (PDF, Office, text formats) in addition to images, matching the
++  server-side MIME/extension whitelist.
++- Files are validated against `ACCEPTED_MIMES` and `SUPPORTED_DOCUMENT_EXTENSIONS`
++  before being forwarded to the composer.
++
++#### WebUI exported attachment constants
++- Exported `IMAGE_MIMES`, `VIDEO_MIMES`, `DOCUMENT_MIMES`,
++  `SUPPORTED_DOCUMENT_EXTENSIONS`, and `ACCEPTED_MIMES` from
++  `useAttachedImages.ts` so WebUI components can share a single source of
++  truth for attachment validation.
++
++#### WebUI document upload accept attribute
++- Updated the `<input accept>` attribute in `ThreadComposer` to include video
++  and document MIME types plus file extensions, ensuring the OS file picker
++  allows all supported attachment formats.
++
++#### WebUI fixed extension extraction for edge-case filenames
++- Guarded `lastIndexOf(".")` calls in `useAttachedImages.ts` and
++  `useClipboardAndDrop.ts` so files without an extension are handled safely
++  instead of producing an empty string slice from index `-1`.
++
++#### Fixed Vite build output path
++- Corrected `vite.config.ts` `outDir` to point to `../../vtx_claw/web/dist`
++  instead of `../vtx-claw/web/dist`, fixing production WebUI builds after
++  directory restructuring.
++
+ ### Changed
 - Agent runtime supports custom system prompt builder strategies.
 - System prompt is now messaging-platform-aware with concise formatting guidance.
 - Tool surface restricted to approved subset (removed `find`, `grep`, `ask_user`, `task`, `background` from default tools).
@@ -97,6 +130,9 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - Improved error messages when provider API keys are invalid or rejected.
 - The `/models` fetch now surfaces the provider's actual error detail (e.g. `invalid api key (2049)`) instead of a generic `Authentication required` message, so users can distinguish between a missing key and a rejected key.
 - Added robust parsing for varied auth error payload shapes: handles both `{"error": {"message": "..."}}` and `{"error": "Unauthorized: ..."}` formats from providers like MiniMax and Cline.
+
+#### TypeError in tool parameters decorator
+- Fixed a TypeError where `tool_parameters` decorator attempted to dynamically mutate `cls.__dict__` directly, which is a read-only `mappingproxy` object. Replaced direct assignment with `setattr()`.
 
 ## [0.1.9] - 2026-06-29 — Fix Context Length Overflow & Remove Hardcoded Token Defaults
 
