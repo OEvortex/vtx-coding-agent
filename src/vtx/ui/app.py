@@ -139,7 +139,7 @@ class Vtx(
             if provider is not None
             else (
                 last_selected.provider
-                if last_selected.model_id
+                if last_selected.provider
                 else (config.llm.default_provider if model is None else None)
             )
         )

@@ -678,8 +678,9 @@ def merge_vtx_config(config: Any) -> Any:
     defaults = getattr(getattr(config, "agents", None), "defaults", None)
     user_configured_provider = False
     if defaults:
-        current = (getattr(defaults, "provider", None) or "").strip().lower()
-        if current and current != "auto":
+        current_provider = (getattr(defaults, "provider", None) or "").strip().lower()
+        current_preset = (getattr(defaults, "model_preset", None) or "").strip()
+        if (current_provider and current_provider != "auto") or current_preset:
             user_configured_provider = True
 
     # --- Phase 1: inject API keys for all known providers --------------------
