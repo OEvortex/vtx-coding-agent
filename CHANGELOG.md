@@ -183,10 +183,30 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - `get_provider_class` now accepts the provider slug and passes it through to the
   provider constructor, fixing incorrect config wiring for non-default providers.
 
+#### vtx-claw documentation
+- Expanded vtx-claw docs with 16 new markdown files under `docs/claw/` covering
+  architecture, channels, CLI, configuration, gateway, security, sessions,
+  skills, slash commands, tools, WebUI, audio, cron, MCP, providers, and
+  pairing.
+- Added an index in `docs/README.md` so users browsing the docs folder can
+  quickly navigate to the gateway documentation.
+
 ### Changed
 - Agent runtime supports custom system prompt builder strategies.
 - System prompt is now messaging-platform-aware with concise formatting guidance.
 - Tool surface restricted to approved subset (removed `find`, `grep`, `ask_user`, `task`, `background` from default tools).
+
+#### vtx-claw provider resolution respects explicit provider choice
+- Refactored `merge_vtx_config()` to a two-phase strategy: Phase 1 injects
+  API keys for all known providers (using vtx's own catalog and
+  `dynamic_auth.json`); Phase 2 only sets the active provider and model
+  when the user has not explicitly chosen one in vtx-claw config.
+  - When `agents.defaults.provider` is a specific slug (not `"auto"`),
+    vtx resolution is skipped entirely — the user's choice is honored and
+    only missing API keys are filled in.
+- Simplified the previous four-step fallback loop into a cleaner structure
+  that still covers `last_selected`, `claw.llm` legacy fallback, and
+  `detect_provider_from_env`.
 
 ### Fixed
 
@@ -204,6 +224,13 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 #### TypeError in tool parameters decorator
 - Fixed a TypeError where `tool_parameters` decorator attempted to dynamically mutate `cls.__dict__` directly, which is a read-only `mappingproxy` object. Replaced direct assignment with `setattr()`.
+
+#### `/pairing` command forwarding for unauthorized users
+- `BaseChannel.is_allowed()` and `TelegramChannel` now forward `/pairing`
+  messages from unauthorized senders to the bus instead of blocking them.
+  The command handler itself approves the user and issues the pairing code.
+  Previously the authorization gate intercepted the pairing request,
+  preventing users from ever pairing.
 
 ## [0.1.9] - 2026-06-29 — Fix Context Length Overflow & Remove Hardcoded Token Defaults
 

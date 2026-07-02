@@ -630,12 +630,18 @@ def _set_provider(
     # _match_provider finds them via the forced-provider path (step 1).
     # This matches vtx's behaviour where last_selected is the single
     # source of truth for the active provider/model.
+    #
+    # Don't overwrite an explicitly configured provider — only update when
+    # the current value is still the default "auto" (i.e. the user hasn't
+    # chosen a provider yet in their vtx-claw config).
     if set_active and hasattr(config, "agents"):
         defaults = getattr(config.agents, "defaults", None)
         if defaults is not None:
             if model:
                 defaults.model = model
-            defaults.provider = slug
+            current_provider = (getattr(defaults, "provider", None) or "").strip().lower()
+            if not current_provider or current_provider == "auto":
+                defaults.provider = slug
 
     return config
 
@@ -655,34 +661,70 @@ def _has_oauth_token(slug: str) -> bool:
 def merge_vtx_config(config: Any) -> Any:
     """Merge settings from vtx config into a vtx_claw Config.
 
-    Uses vtx's own resolution order, importing from vtx's modules
-    instead of reimplementing YAML parsing or env-var logic:
+    Uses vtx's own provider resolution logic — the same catalog and
+    ``detect_provider_from_env`` that vtx uses — instead of reimplementing
+    provider scanning.
 
-    1. ``last_selected`` provider + model (the user's active vtx pick).
-    2. ``claw.llm`` section (backward-compat legacy fallback).
-    3. Env-var scan in vtx's provider order (same as
-       ``detect_provider_from_env``).
-    4. Local keyless providers.
-
-    No slug mapping — vtx's own provider catalog is the source of truth
-    for provider metadata (env-var name, base URL, family).
+    Strategy:
+    1. Inject API keys for all providers that have credentials in
+       ``dynamic_auth.json`` or environment variables.
+    2. If the user has NOT explicitly configured a provider in vtx-claw
+       (provider is still "auto" or empty), use vtx's own resolution
+       (``last_selected`` → ``detect_provider_from_env``) to set the
+       active provider and model.
+    3. If the user HAS explicitly configured a provider, respect that
+       choice — only inject API keys, don't change the active provider.
     """
-    if _already_configured(config):
+    defaults = getattr(getattr(config, "agents", None), "defaults", None)
+    user_configured_provider = False
+    if defaults:
+        current = (getattr(defaults, "provider", None) or "").strip().lower()
+        if current and current != "auto":
+            user_configured_provider = True
+
+    # --- Phase 1: inject API keys for all known providers --------------------
+    # This ensures vtx-claw can find credentials regardless of which provider
+    # is active, using the same key source vtx uses (dynamic_auth.json).
+    for p_info in _vtx_providers.list_providers():
+        if p_info.is_local:
+            continue
+        api_key = _get_dynamic_api_key(p_info.slug) if p_info.api_key_env else None
+        if api_key:
+            config = _set_provider(
+                config,
+                p_info.slug,
+                api_key=api_key,
+                api_base=p_info.base_url,
+                model=None,
+                set_active=False,
+            )
+        elif p_info.api_key_optional and _has_oauth_token(p_info.slug):
+            config = _set_provider(
+                config,
+                p_info.slug,
+                api_key="",
+                api_base=p_info.base_url,
+                model=None,
+                set_active=False,
+            )
+
+    # --- Phase 2: set active provider only if user hasn't configured one -----
+    if user_configured_provider:
+        # User explicitly chose a provider — respect it, just inject keys above.
         return config
 
-    # --- 1. last_selected — the user's actual active pick in vtx -------------
+    # User hasn't configured a provider. Use vtx's own resolution order:
+    # 1. last_selected (user's active vtx pick)
+    # 2. claw.llm legacy fallback
+    # 3. detect_provider_from_env (env-var scan)
+    preferred_slug = ""
+    preferred_model = ""
+
     last_sel = _vtx_get_last_selected()
     if last_sel and last_sel.provider:
-        # Use last_selected
         preferred_slug = last_sel.provider
         preferred_model = last_sel.model_id or ""
-    else:
-        preferred_slug = ""
-        preferred_model = ""
 
-    from vtx.llm import provider_catalog as _vtx_providers
-
-    # --- 2. claw.llm fallback (backward compat) -----------------------------
     if not preferred_slug:
         try:
             import yaml
@@ -695,103 +737,40 @@ def merge_vtx_config(config: Any) -> Any:
         except Exception:
             pass
 
-    # --- 3. vtx llm defaults for model (when last_selected has no model_id) --
     if not preferred_model:
         with contextlib.suppress(Exception):
             preferred_model = _vtx_get_config().llm.default_model or ""
 
-    # Track if we already set the preferred model
-    has_preferred = False
-
-    # --- Step A: try the preferred provider ---------------------------------
+    # Try the preferred provider from last_selected
+    has_active = False
     if preferred_slug:
         p_info = _vtx_providers.get(preferred_slug)
         if p_info:
-            if p_info.api_key_env:
-                api_key = _get_dynamic_api_key(p_info.slug)
-                if api_key:
-                    config = _set_provider(
-                        config,
-                        p_info.slug,
-                        api_key=api_key,
-                        api_base=p_info.base_url,
-                        model=preferred_model,
-                        set_active=True,
-                    )
-                    has_preferred = True
-            elif p_info.api_key_optional:
-                # OAuth-backed provider (e.g. supercode) — check token file
-                if _has_oauth_token(p_info.slug):
-                    config = _set_provider(
-                        config,
-                        p_info.slug,
-                        api_key="",
-                        api_base=p_info.base_url,
-                        model=preferred_model,
-                        set_active=True,
-                    )
-                    has_preferred = True
-
-    # --- Step B: API-key scan (vtx's own resolution order, checking env vars
-    #              and dynamic_auth.json) ---------------------------------------
-    for p_info in _vtx_providers.list_providers():
-        if p_info.is_local:
-            continue
-        if p_info.api_key_env:
-            api_key = _get_dynamic_api_key(p_info.slug)
-            if api_key:
-                model_to_set = preferred_model if not has_preferred else None
+            api_key = _get_dynamic_api_key(p_info.slug) if p_info.api_key_env else None
+            if api_key or p_info.api_key_optional:
                 config = _set_provider(
                     config,
                     p_info.slug,
-                    api_key=api_key,
+                    api_key=api_key or "",
                     api_base=p_info.base_url,
-                    model=model_to_set,
-                    set_active=model_to_set is not None,
+                    model=preferred_model,
+                    set_active=True,
                 )
-                if model_to_set:
-                    has_preferred = True
+                has_active = True
 
-    # --- Step C: keyless local providers ------------------------------------
-    for p_info in _vtx_providers.list_providers():
-        if p_info.is_local and p_info.api_key_optional:
-            model_to_set = preferred_model if not has_preferred else None
-            config = _set_provider(
-                config,
-                p_info.slug,
-                api_key="",
-                api_base=p_info.base_url,
-                model=model_to_set,
-                set_active=model_to_set is not None,
-            )
-            if model_to_set:
-                has_preferred = True
-
-    # --- Step D: OAuth-only providers (no api_key_env, uses ~/.better-auth) ---
-    if not has_preferred:
-        for p_info in _vtx_providers.list_providers():
-            if p_info.api_key_env is not None:
-                continue
-            if not p_info.api_key_optional:
-                continue
-            if not p_info.base_url:
-                continue
-            # Check if the provider has OAuth credentials available
-            try:
-                from vtx.llm.oauth.supercode import is_supercode_logged_in
-
-                if p_info.slug == "supercode" and is_supercode_logged_in():
-                    config = _set_provider(
-                        config,
-                        p_info.slug,
-                        api_key="",
-                        api_base=p_info.base_url,
-                        model=preferred_model,
-                        set_active=True,
-                    )
-                    has_preferred = True
-                    break
-            except Exception:
-                pass
+    # Fall back to env-var detection (same as vtx's detect_provider_from_env)
+    if not has_active:
+        detected = _vtx_providers.detect_provider_from_env()
+        if detected and detected.slug:
+            api_key = _get_dynamic_api_key(detected.slug) if detected.api_key_env else None
+            if api_key or detected.api_key_optional:
+                config = _set_provider(
+                    config,
+                    detected.slug,
+                    api_key=api_key or "",
+                    api_base=detected.base_url,
+                    model=preferred_model,
+                    set_active=True,
+                )
 
     return config

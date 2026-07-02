@@ -166,7 +166,7 @@ class GoalConfig(BaseModel):
 
 class AgentConfig(BaseModel):
     max_turns: int = 500
-    default_context_window: int = 0
+    default_context_window: int = 200000
 
 
 class PermissionsConfig(BaseModel):

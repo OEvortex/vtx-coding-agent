@@ -211,25 +211,33 @@ class BaseChannel(ABC):
         """Handle an incoming message: check permissions, issue pairing codes in DMs, or forward to bus."""
         if not self.is_allowed(sender_id):
             if is_dm:
-                code = generate_code(self.name, str(sender_id))
-                await self.send(
-                    OutboundMessage(
-                        channel=self.name,
-                        chat_id=str(chat_id),
-                        content=format_pairing_reply(code),
-                        metadata={PAIRING_CODE_META_KEY: code},
+                # /pairing commands must pass through so the command
+                # handler can approve the user. Skip the new-code step.
+                if not content.strip().lower().startswith("/pairing"):
+                    code = generate_code(self.name, str(sender_id))
+                    await self.send(
+                        OutboundMessage(
+                            channel=self.name,
+                            chat_id=str(chat_id),
+                            content=format_pairing_reply(code),
+                            metadata={PAIRING_CODE_META_KEY: code},
+                        )
                     )
-                )
-                self.logger.info(
-                    "Sent pairing code {} to sender {} in chat {}", code, sender_id, chat_id
-                )
+                    self.logger.info(
+                        "Sent pairing code {} to sender {} in chat {}", code, sender_id, chat_id
+                    )
+                else:
+                    self.logger.debug("Forwarding /pairing command from {} to bus", sender_id)
             else:
                 self.logger.warning(
                     "Access denied for sender {}. "
                     "Add them to allowFrom list in config to grant access.",
                     sender_id,
                 )
-            return
+                return
+            # Non-pairing messages: return without forwarding to bus
+            if not content.strip().lower().startswith("/pairing"):
+                return
 
         meta = metadata or {}
         if self.supports_streaming:

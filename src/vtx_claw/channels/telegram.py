@@ -1390,8 +1390,13 @@ class TelegramChannel(BaseChannel):
         user = update.effective_user
         sender_id = self._sender_id(user)
         if not self.is_allowed(sender_id):
-            await self._send_pairing_code_if_private(sender_id, message, user)
-            return
+            # Don't block /pairing — the command handler itself
+            # (cmd_pairing in the bus) is what approves the user.
+            if (message.text or "").strip().lower().startswith("/pairing"):
+                pass  # will forward to the bus below
+            else:
+                await self._send_pairing_code_if_private(sender_id, message, user)
+                return
         self._remember_thread_context(message)
 
         # Strip @bot_username suffix if present
@@ -1430,8 +1435,13 @@ class TelegramChannel(BaseChannel):
         chat_id = message.chat_id
         sender_id = self._sender_id(user)
         if not self.is_allowed(sender_id):
-            await self._send_pairing_code_if_private(sender_id, message, user)
-            return
+            # Don't block /pairing — the command handler itself
+            # (cmd_pairing in the bus) is what approves the user.
+            if (message.text or "").strip().lower().startswith("/pairing"):
+                pass  # will forward to the bus below
+            else:
+                await self._send_pairing_code_if_private(sender_id, message, user)
+                return
         self._remember_thread_context(message)
 
         # Store chat_id for replies

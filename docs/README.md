@@ -26,9 +26,34 @@ This folder is the reference companion to the top-level [README](../README.md). 
 | [development.md](development.md) | Build, test, lint, typecheck, and release Vtx itself |
 | [e2e-test-coverage-review.md](e2e-test-coverage-review.md) | State of the tmux e2e harness and recommended additions |
 
+## vtx-claw docs
+
+vtx-claw is the multi-channel AI agent gateway. Full documentation lives in [`claw/`](claw/README.md).
+
+| Doc | What it covers |
+| --- | --- |
+| [claw/README.md](claw/README.md) | Overview, quick start, architecture diagram |
+| [claw/architecture.md](claw/architecture.md) | Package structure, message bus, agent loop |
+| [claw/configuration.md](claw/configuration.md) | Full JSON config reference |
+| [claw/cli.md](claw/cli.md) | All CLI commands and subcommands |
+| [claw/channels.md](claw/channels.md) | 16 chat platform integrations |
+| [claw/tools.md](claw/tools.md) | All agent tools (18+) |
+| [claw/slash-commands.md](claw/slash-commands.md) | Built-in slash commands |
+| [claw/skills.md](claw/skills.md) | Skills catalog and authoring |
+| [claw/providers.md](claw/providers.md) | 50+ LLM providers |
+| [claw/gateway.md](claw/gateway.md) | Gateway lifecycle, service installation |
+| [claw/sessions.md](claw/sessions.md) | Session storage, compaction, goals |
+| [claw/cron.md](claw/cron.md) | Scheduled jobs |
+| [claw/security.md](claw/security.md) | SSRF protection, sandboxing |
+| [claw/pairing.md](claw/pairing.md) | Device pairing system |
+| [claw/webui.md](claw/webui.md) | WebUI backend and WebSocket protocol |
+| [claw/audio.md](claw/audio.md) | Audio transcription |
+| [claw/mcp.md](claw/mcp.md) | MCP server integration |
+
 ## How to read these
 
 - **New to Vtx:** start with the [README](../README.md), then read [configuration.md](configuration.md) and [tools.md](tools.md).
+- **Using vtx-claw:** start with [claw/README.md](claw/README.md), then [claw/configuration.md](claw/configuration.md) and [claw/channels.md](claw/channels.md).
 - **Adding a provider:** [providers.md](providers.md) and [configuration.md](configuration.md) (the `llm` section).
 - **Adding a tool:** [tools.md](tools.md) and [architecture.md](architecture.md) (the `tools/` layer).
 - **Adding a skill:** [skills.md](skills.md).
@@ -36,3 +61,4 @@ This folder is the reference companion to the top-level [README](../README.md). 
 - **Debugging sessions or compaction:** [sessions.md](sessions.md).
 - **Tuning for a local model:** [local-models.md](local-models.md) and [configuration.md](configuration.md) (the `compaction` section).
 - **Working on Vtx itself:** [development.md](development.md), then [architecture.md](architecture.md).
+- **Working on vtx-claw:** [claw/architecture.md](claw/architecture.md), then [claw/README.md](claw/README.md).
