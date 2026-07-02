@@ -208,6 +208,17 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   that still covers `last_selected`, `claw.llm` legacy fallback, and
   `detect_provider_from_env`.
 
+#### vtx-claw provider resolution respects explicit preset selection
+- The explicit-provider guard now also considers `agents.defaults.model_preset`.
+  Loading a preset no longer triggers vtx provider auto-detection.
+
+#### Web tools consolidated onto vtx Exa backend
+- `vtx_claw/agent/tools/web.py` no longer contains inline search or fetch
+  implementations. `WebSearchTool` and `WebFetchTool` now delegate to
+  `vtx.tools.web`, simplifying maintenance and removing the previous
+  provider-specific backends (Brave, Tavily, SearXNG, Jina, Kagi, Exa,
+  Bocha, Volcengine, Keenable, DuckDuckGo, Olostep).
+
 ### Fixed
 
 #### Compaction context preservation
@@ -231,6 +242,21 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   The command handler itself approves the user and issues the pairing code.
   Previously the authorization gate intercepted the pairing request,
   preventing users from ever pairing.
+
+#### Telegram markdown italic and blockquote rendering
+- `*text*` is now stripped and rendered as italic in Telegram HTML output,
+  matching the existing `_text_` behavior.
+- Blockquotes (`> text`) now preserve formatting inside `<blockquote>` tags
+  instead of being stripped to plain text.
+
+#### WebUI folder browsing authorization
+- Folder browsing (`api/fs/browse`) is now available to authenticated users
+  regardless of runtime surface or connection origin. The endpoint still
+  enforces its own token check.
+
+#### Compaction default context window
+- Reverted `default_context_window` back to `200000` for gateway
+  compatibility and updated compaction tests accordingly.
 
 ## [0.1.9] - 2026-06-29 — Fix Context Length Overflow & Remove Hardcoded Token Defaults
 
