@@ -132,6 +132,7 @@ def _strip_md(s: str) -> str:
     """Strip markdown inline formatting from text."""
     s = re.sub(r"\*\*(.+?)\*\*", r"\1", s)
     s = re.sub(r"__(.+?)__", r"\1", s)
+    s = re.sub(r"\*(.+?)\*", r"\1", s)
     s = re.sub(r"~~(.+?)~~", r"\1", s)
     s = re.sub(r"`([^`]+)`", r"\1", s)
     return s.strip()
@@ -152,7 +153,8 @@ def _strip_md_block(text: str) -> str:
     # Bold / italic / strikethrough
     text = re.sub(r"\*\*(.+?)\*\*", r"\1", text)
     text = re.sub(r"__(.+?)__", r"\1", text)
-    text = re.sub(r"(?<![a-zA-Z0-9])_([^_]+)_(?![a-zA-Z0-9])", r"\1", text)
+    text = re.sub(r"\*(.+?)\*", r"\1", text)
+    text = re.sub(r"(?<![a-zA-Z0-9])_([^_]+)_(?![a-zA-Z0-9])", r"\1", text)  # italic _
     text = re.sub(r"~~(.+?)~~", r"\1", text)
     # Inline code
     text = re.sub(r"`([^`]+)`", r"\1", text)
@@ -246,8 +248,13 @@ def _markdown_to_telegram_html(text: str) -> str:
     # 3. Headers # Title -> <b>Title</b> (preserve visual hierarchy)
     text = re.sub(r"^#{1,6}\s+(.+)$", r"⟪B⟫\1⟪/B⟫", text, flags=re.MULTILINE)
 
-    # 4. Blockquotes > text -> just the text (before HTML escaping)
-    text = re.sub(r"^>\s*(.*)$", r"\1", text, flags=re.MULTILINE)
+    # 4. Blockquotes > text -> ⟪BQ⟫inner⟪/BQ⟫ (passes through formatting pipeline)
+    # Consecutive > lines are grouped into one blockquote
+    def _wrap_blockquotes(m: re.Match) -> str:
+        inner = re.sub(r"^>\s?", "", m.group(0), flags=re.MULTILINE)
+        return f"⟪BQ⟫{inner}⟪/BQ⟫"
+
+    text = re.sub(r"(?:^>.*\n?)+", _wrap_blockquotes, text, flags=re.MULTILINE)
 
     # 5. Escape HTML special characters
     text = _escape_telegram_html(text)
@@ -259,14 +266,15 @@ def _markdown_to_telegram_html(text: str) -> str:
     text = re.sub(r"\*\*(.+?)\*\*", r"<b>\1</b>", text)
     text = re.sub(r"__(.+?)__", r"<b>\1</b>", text)
 
-    # 8. Italic _text_ (avoid matching inside words like some_var_name)
+    # 7.5. Bullet lists - item -> • item (before *italic* to avoid catching bullet lines)
+    text = re.sub(r"^[-*]\s+", "• ", text, flags=re.MULTILINE)
+
+    # 8. Italic _text_ or *text* (avoid matching inside words like some_var_name)
     text = re.sub(r"(?<![a-zA-Z0-9])_([^_]+)_(?![a-zA-Z0-9])", r"<i>\1</i>", text)
+    text = re.sub(r"\*(.+?)\*", r"<i>\1</i>", text)
 
     # 9. Strikethrough ~~text~~
     text = re.sub(r"~~(.+?)~~", r"<s>\1</s>", text)
-
-    # 10. Bullet lists - item -> • item
-    text = re.sub(r"^[-*]\s+", "• ", text, flags=re.MULTILINE)
 
     # 10.5. Numbered lists  1. item -> 1. item (keep number, normalize indent)
     text = re.sub(r"^(\d+)\.\s+", r"\1. ", text, flags=re.MULTILINE)
@@ -283,8 +291,9 @@ def _markdown_to_telegram_html(text: str) -> str:
         escaped = _escape_telegram_html(code)
         text = text.replace(f"\x00CB{i}\x00", f"<pre><code>{escaped}</code></pre>")
 
-    # 13. Restore header bold markers (inserted in step 3, after HTML escaping)
+    # 13. Restore header bold and blockquote markers (from steps 3/4, after HTML escaping)
     text = text.replace("⟪B⟫", "<b>").replace("⟪/B⟫", "</b>")
+    text = text.replace("⟪BQ⟫", "<blockquote>").replace("⟪/BQ⟫", "</blockquote>")
 
     return text
 
