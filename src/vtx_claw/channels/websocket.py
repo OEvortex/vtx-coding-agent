@@ -32,6 +32,7 @@ from vtx_claw.webui.cli_apps_api import normalize_cli_app_mentions
 from vtx_claw.webui.forking import handle_webui_fork_chat
 from vtx_claw.webui.gateway_services import GatewayServices
 from vtx_claw.webui.http_utils import normalize_config_path as _normalize_config_path
+from vtx_claw.agent.vtx_adapter import VtxModeHandler
 from vtx_claw.webui.http_utils import parse_request_path as _parse_request_path
 from vtx_claw.webui.http_utils import query_first as _query_first
 from vtx_claw.webui.mcp_presets_api import normalize_mcp_preset_mentions
@@ -296,6 +297,24 @@ class WebSocketChannel(BaseChannel):
         self._workspaces = gateway.workspaces
 
         self._stream_text_buffers: dict[tuple[str, str], list[str]] = {}
+        self._vtx_mode_tasks: set[asyncio.Task[None]] = set()
+
+        # VTX mode handler — instantiated lazy on first use.
+        self._vtx_handler: VtxModeHandler | None = None
+
+    def _ensure_vtx_handler(self) -> VtxModeHandler:
+        if self._vtx_handler is None:
+            from vtx_claw.webui.gateway_services import GatewayServices as _GS
+
+            workspace = Path(
+                getattr(self.gateway, "workspace_path", None)
+                or str(self._workspaces._default_workspace)
+                or "."
+            )
+            self._vtx_handler = VtxModeHandler(
+                workspace=workspace, config=self.config, send_to_chat=self._send_vtx_event
+            )
+        return self._vtx_handler
 
     # -- Subscription bookkeeping -------------------------------------------
 
@@ -797,14 +816,30 @@ class WebSocketChannel(BaseChannel):
                     cli_apps=cli_apps or None,
                     mcp_presets=mcp_presets or None,
                 )
-            await self._handle_message(
-                sender_id=client_id,
-                chat_id=cid,
-                content=content,
-                media=media_paths or None,
-                metadata=metadata,
-                is_dm=False,
-            )
+
+            # -- VTX / Claw mode routing -----------------------------------
+            mode = envelope.get("mode", "claw")
+            if mode == "vtx":
+                handler = self._ensure_vtx_handler()
+                task = asyncio.create_task(
+                    handler.handle_turn(
+                        chat_id=cid,
+                        content=content,
+                        media_paths=media_paths or None,
+                        metadata=metadata,
+                    )
+                )
+                self._vtx_mode_tasks.add(task)
+                task.add_done_callback(self._vtx_mode_tasks.discard)
+            else:
+                await self._handle_message(
+                    sender_id=client_id,
+                    chat_id=cid,
+                    content=content,
+                    media=media_paths or None,
+                    metadata=metadata,
+                    is_dm=False,
+                )
             return
         await self._send_event(connection, "error", detail=f"unknown type: {t!r}")
 
@@ -1007,6 +1042,112 @@ class WebSocketChannel(BaseChannel):
             return
         for connection in conns:
             await self._safe_send_to(connection, raw, label=" reasoning_end ")
+
+    # -- VTX mode event helper ------------------------------------------------
+
+    def _send_vtx_event(self, chat_id: str, event_type: str, **kwargs: Any) -> None:
+        """Send a JSON event from the VTX mode handler to all subscribers.
+
+        This is a synchronous adapter that dispatches to the appropriate
+        ``send_*`` method or does a raw JSON send for simple frames.
+        """
+        conns = list(self._subs.get(chat_id, ()))
+        if not conns and event_type not in ("goal_status",):
+            return
+
+        if event_type == "delta":
+            body = {"event": "delta", "chat_id": chat_id, "text": kwargs.get("text", "")}
+            raw = json.dumps(body, ensure_ascii=False)
+            for c in conns:
+                asyncio.ensure_future(self._safe_send_to(c, raw, label=" vtx-stream "))
+
+        elif event_type == "reasoning_delta":
+            body = {"event": "reasoning_delta", "chat_id": chat_id, "text": kwargs.get("text", "")}
+            raw = json.dumps(body, ensure_ascii=False)
+            for c in conns:
+                asyncio.ensure_future(self._safe_send_to(c, raw, label=" vtx-reason "))
+
+        elif event_type == "reasoning_end":
+            body = {"event": "reasoning_end", "chat_id": chat_id}
+            raw = json.dumps(body, ensure_ascii=False)
+            for c in conns:
+                asyncio.ensure_future(self._safe_send_to(c, raw, label=" vtx-reason-end "))
+
+        elif event_type == "stream_end":
+            body = {"event": "stream_end", "chat_id": chat_id, "text": kwargs.get("text", "")}
+            raw = json.dumps(body, ensure_ascii=False)
+            for c in conns:
+                asyncio.ensure_future(self._safe_send_to(c, raw, label=" vtx-stream-end "))
+
+        elif event_type == "message":
+            body: dict[str, Any] = {
+                "event": "message",
+                "chat_id": chat_id,
+                "content": kwargs.get("content", ""),
+                "kind": kwargs.get("kind", "message"),
+                "role": kwargs.get("role", "assistant"),
+            }
+            for key in ("turn_id", "turn_seq"):
+                if key in kwargs:
+                    body[key] = kwargs[key]
+            raw = json.dumps(body, ensure_ascii=False)
+            for c in conns:
+                asyncio.ensure_future(self._safe_send_to(c, raw, label=" vtx-msg "))
+
+        elif event_type == "file_edit":
+            body = {
+                "event": "file_edit",
+                "chat_id": chat_id,
+                "phase": kwargs.get("phase", "start"),
+                "tool": kwargs.get("tool", ""),
+                "call_id": kwargs.get("call_id", ""),
+            }
+            for key in ("turn_id", "turn_seq", "summary"):
+                if key in kwargs:
+                    body[key] = kwargs[key]
+            raw = json.dumps(body, ensure_ascii=False)
+            for c in conns:
+                asyncio.ensure_future(self._safe_send_to(c, raw, label=" vtx-edit "))
+
+        elif event_type == "turn_end":
+            body: dict[str, Any] = {"event": "turn_end", "chat_id": chat_id}
+            for key in ("turn_id", "turn_seq", "latency_ms", "goal_state"):
+                if key in kwargs:
+                    body[key] = kwargs[key]
+            meta: dict[str, Any] = {}
+            for key in ("context_tokens", "context_window"):
+                if key in kwargs:
+                    meta[key] = kwargs[key]
+            if meta:
+                body["metadata"] = meta
+            raw = json.dumps(body, ensure_ascii=False)
+            for c in conns:
+                asyncio.ensure_future(self._safe_send_to(c, raw, label=" vtx-turn-end "))
+
+        elif event_type == "goal_status":
+            # goal_status is sent as the outbound-bus goal_status mechanism
+            body = {
+                "event": "goal_status",
+                "chat_id": chat_id,
+                "status": kwargs.get("status", "idle"),
+            }
+            if "started_at" in kwargs:
+                body["started_at"] = kwargs["started_at"]
+            raw = json.dumps(body, ensure_ascii=False)
+            for c in conns:
+                asyncio.ensure_future(self._safe_send_to(c, raw, label=" vtx-goal "))
+
+        elif event_type == "error":
+            body = {
+                "event": "error",
+                "chat_id": chat_id,
+                "detail": kwargs.get("detail", "vtx_error"),
+            }
+            if "reason" in kwargs:
+                body["reason"] = kwargs["reason"]
+            raw = json.dumps(body, ensure_ascii=False)
+            for c in conns:
+                asyncio.ensure_future(self._safe_send_to(c, raw, label=" vtx-err "))
 
     async def send_file_edit_events(
         self, chat_id: str, edits: list[dict[str, Any]], metadata: dict[str, Any] | None = None

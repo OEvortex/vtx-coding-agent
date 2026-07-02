@@ -4,6 +4,7 @@ import { useTranslation } from "react-i18next";
 
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
+import { useAgentMode, useSetAgentMode } from "@/providers/ClientProvider";
 
 interface ThreadHeaderProps {
   title: string;
@@ -31,6 +32,8 @@ export function ThreadHeader({
   sessionInfoAction,
 }: ThreadHeaderProps) {
   const { t } = useTranslation();
+  const agentMode = useAgentMode();
+  const setAgentMode = useSetAgentMode();
 
   return (
     <div
@@ -60,7 +63,37 @@ export function ThreadHeader({
         ) : null}
       </div>
 
-      <div className="ml-auto flex shrink-0 items-center gap-1">
+      <div className="ml-auto flex shrink-0 items-center gap-1.5">
+        {/* Agent mode toggle */}
+        <div className="flex items-center overflow-hidden rounded-md border border-border/50 bg-muted/30 text-[11px] font-medium leading-none">
+          <button
+            type="button"
+            onClick={() => setAgentMode("vtx")}
+            className={cn(
+              "px-2 py-1 transition-colors",
+              agentMode === "vtx"
+                ? "bg-primary text-primary-foreground"
+                : "text-muted-foreground hover:text-foreground",
+            )}
+            aria-label="VTX mode"
+          >
+            VTX
+          </button>
+          <button
+            type="button"
+            onClick={() => setAgentMode("claw")}
+            className={cn(
+              "px-2 py-1 transition-colors",
+              agentMode === "claw"
+                ? "bg-primary text-primary-foreground"
+                : "text-muted-foreground hover:text-foreground",
+            )}
+            aria-label="Claw mode"
+          >
+            Claw
+          </button>
+        </div>
+
         {sessionInfoAction}
         {promptNavigatorAction}
         {!hideThemeButton ? (

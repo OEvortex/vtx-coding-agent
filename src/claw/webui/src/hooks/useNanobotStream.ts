@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 
-import { useClient } from "@/providers/ClientProvider";
+import { useClient, useAgentMode } from "@/providers/ClientProvider";
 import { toMediaAttachment } from "@/lib/media";
 import {
   mergeToolProgressEvents,
@@ -446,6 +446,7 @@ export interface SendOptions {
   cliApps?: OutboundCliAppMention[];
   mcpPresets?: OutboundMcpPresetMention[];
   workspaceScope?: WorkspaceScopePayload | null;
+  mode?: "vtx" | "claw";
 }
 
 export function useVtxClawStream(
@@ -1066,6 +1067,8 @@ export function useVtxClawStream(
     schedulePendingStreamFlush,
   ]);
 
+  const agentMode = useAgentMode();
+
   const send = useCallback(
     (content: string, images?: SendImage[], options?: SendOptions) => {
       if (!chatId) return;
@@ -1102,9 +1105,13 @@ export function useVtxClawStream(
       // right away, before the first delta arrives from the server.
       setIsStreaming(true);
       const wireMedia = hasImages ? images!.map((i) => i.media) : undefined;
-      client.sendMessage(chatId, content, wireMedia, { ...options, turnId });
+      client.sendMessage(chatId, content, wireMedia, {
+        ...options,
+        turnId,
+        mode: agentMode,
+      });
     },
-    [chatId, clearActivitySegment, client, flushPendingStreamEvents],
+    [chatId, clearActivitySegment, client, flushPendingStreamEvents, agentMode],
   );
 
   const stop = useCallback(() => {

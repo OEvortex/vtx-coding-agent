@@ -414,6 +414,7 @@ export class VtxClawClient {
       mcpPresets?: OutboundMcpPresetMention[];
       workspaceScope?: WorkspaceScopePayload | null;
       turnId?: string;
+      mode?: "vtx" | "claw";
     },
   ): void {
     this.knownChats.add(chatId);
@@ -427,6 +428,7 @@ export class VtxClawClient {
       ...(options?.mcpPresets?.length ? { mcp_presets: options.mcpPresets } : {}),
       ...(options?.workspaceScope ? { workspace_scope: options.workspaceScope } : {}),
       ...(options?.turnId ? { turn_id: options.turnId } : {}),
+      ...(options?.mode ? { mode: options.mode } : {}),
       webui: true,
     };
     this.queueSend(frame);

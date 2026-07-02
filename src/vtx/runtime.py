@@ -745,7 +745,7 @@ class ConversationRuntime:
         if replacement_provider is not None:
             self.provider = replacement_provider
         elif self.provider:
-            self.provider.config.model = model.id
+            self.provider.config.model = model.effective_id
             self.provider.config.base_url = model.base_url
             self.provider.config.max_tokens = get_max_tokens(model.id)
             self.provider.config.provider = model.provider

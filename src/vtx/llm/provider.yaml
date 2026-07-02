@@ -727,3 +727,14 @@ providers:
     models_endpoint: /models
     model_parser:
       cooldown_minutes: 60
+
+  - slug: badtheorylabs
+    display_name: BadTheoryLabs
+    description: BadTheoryLabs API.
+    family: openai_compat
+    base_url: https://api.badtheorylabs.com/v1
+    api_key_env: BADTHEORYLABS_API_KEY
+    fetch_models: true
+    models_endpoint: /models
+    model_parser:
+      cooldown_minutes: 60

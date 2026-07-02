@@ -47,6 +47,11 @@ class Model:
     context_window: int | None = None
     supports_tools: bool = True
     supports_audio: bool = False
+    api_model_id: str = ""
+
+    @property
+    def effective_id(self) -> str:
+        return self.api_model_id or self.id
 
 
 def get_model(model_id: str, provider: str | None = None) -> Model | None:
