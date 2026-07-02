@@ -36,6 +36,104 @@ interface MarkdownTextRendererProps {
   onOpenFilePreview?: (path: string) => void;
 }
 
+/**
+ * Fix broken inline formatting caused by LLMs emitting newlines inside
+ * inline markdown spans. Without this, `` `Code\nbaseIndexer` `` or
+ * `**\ntext**` render as literal punctuation because `remark-breaks`
+ * inserts `<br>` before the parser can pair the delimiters.
+ */
+function preprocessMarkdown(src: string): string {
+  let result = "";
+  let i = 0;
+  const len = src.length;
+
+  while (i < len) {
+    // Fenced code block (```): copy verbatim until closing ```
+    if (src[i] === "`" && src[i + 1] === "`" && src[i + 2] === "`") {
+      result += "```";
+      i += 3;
+      const endIdx = src.indexOf("```", i);
+      if (endIdx !== -1) {
+        result += src.slice(i, endIdx + 3);
+        i = endIdx + 3;
+      } else {
+        result += src.slice(i);
+        i = len;
+      }
+      continue;
+    }
+
+    // Inline code span: copy until closing `, collapsing newlines
+    if (src[i] === "`") {
+      result += "`";
+      i++;
+      while (i < len && src[i] !== "`") {
+        result += src[i] === "\n" ? " " : src[i];
+        i++;
+      }
+      if (i < len) { result += "`"; i++; }
+      continue;
+    }
+
+    // Bold **: collapse newlines, trim inner whitespace
+    if (src[i] === "*" && i + 1 < len && src[i + 1] === "*") {
+      let inner = "";
+      i += 2;
+      while (i < len && !(src[i] === "*" && i + 1 < len && src[i + 1] === "*")) {
+        inner += src[i] === "\n" ? " " : src[i];
+        i++;
+      }
+      if (i + 1 < len) {
+        result += "**" + inner.trim() + "**";
+        i += 2;
+      } else {
+        result += "**" + inner;
+      }
+      continue;
+    }
+
+    // Italic *: collapse newlines, trim inner whitespace
+    if (
+      src[i] === "*"
+      && (i === 0 || src[i - 1] !== "*")
+      && i + 1 < len && src[i + 1] !== "*"
+    ) {
+      let inner = "";
+      i++;
+      while (i < len && src[i] !== "*") {
+        inner += src[i] === "\n" ? " " : src[i];
+        i++;
+      }
+      if (i < len) {
+        result += "*" + inner.trim() + "*";
+        i++;
+      } else {
+        result += "*" + inner;
+      }
+      continue;
+    }
+
+    // Link [text](url): collapse newlines in the text portion
+    if (src[i] === "[") {
+      const closeB = src.indexOf("]", i + 1);
+      if (closeB !== -1 && closeB + 1 < len && src[closeB + 1] === "(") {
+        const closeP = src.indexOf(")", closeB + 2);
+        if (closeP !== -1) {
+          const text = src.slice(i + 1, closeB).replace(/\n/g, " ");
+          const href = src.slice(closeB + 2, closeP);
+          result += `[${text}](${href})`;
+          i = closeP + 1;
+          continue;
+        }
+      }
+    }
+
+    result += src[i];
+    i++;
+  }
+  return result;
+}
+
 type MarkdownAstNode = {
   type: string;
   value?: string;
@@ -602,7 +700,7 @@ export default function MarkdownTextRenderer({
         rehypePlugins={rehypePlugins}
         components={components}
       >
-        {children}
+        {preprocessMarkdown(children)}
       </ReactMarkdown>
     </div>
   );

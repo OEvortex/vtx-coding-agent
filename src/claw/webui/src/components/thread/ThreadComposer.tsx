@@ -1511,7 +1511,10 @@ export function ThreadComposer({
     // Bubble owns the data URL copy; safe to revoke every staged blob
     // preview here without affecting the rendered message.
     clear();
-    clearComposerText();
+    // Delay clearing the composer text to prevent flickering
+    requestAnimationFrame(() => {
+      clearComposerText();
+    });
   }, [
     activeCliMentionApps,
     activeMcpPresetMentions,
