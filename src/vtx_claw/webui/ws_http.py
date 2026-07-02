@@ -161,6 +161,11 @@ class GatewayHTTPHandler:
     def workspace_controls_available(self, connection: Any) -> bool:
         return self._runtime_surface == "native" or _is_localhost(connection)
 
+    def folder_browsing_available(self, connection: Any) -> bool:
+        # Allow folder browsing for authenticated users regardless of location
+        # The /api/fs/browse endpoint has its own authentication check
+        return True
+
     # -- Token management ---------------------------------------------------
 
     def check_api_token(self, request: WsRequest) -> bool:
@@ -675,7 +680,8 @@ class GatewayHTTPHandler:
             return _http_error(401, "Unauthorized")
         return _http_json_response(
             self.workspaces.payload(
-                controls_available=self.workspace_controls_available(connection)
+                controls_available=self.workspace_controls_available(connection),
+                folder_browsing_available=self.folder_browsing_available(connection),
             )
         )
 

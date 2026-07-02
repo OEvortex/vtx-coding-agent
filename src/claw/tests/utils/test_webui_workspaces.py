@@ -53,7 +53,10 @@ def test_workspace_payload_is_config_data_dir_scoped(tmp_path, monkeypatch) -> N
     default.mkdir()
 
     payload = workspaces_payload(
-        default_workspace=default, default_restrict_to_workspace=False, controls_available=True
+        default_workspace=default,
+        default_restrict_to_workspace=False,
+        controls_available=True,
+        folder_browsing_available=True,
     )
 
     assert payload["default_scope"]["project_path"] == str(default.resolve())
@@ -70,12 +73,34 @@ def test_workspace_payload_hides_mutable_state_when_controls_unavailable(
     default.mkdir()
 
     payload = workspaces_payload(
-        default_workspace=default, default_restrict_to_workspace=False, controls_available=False
+        default_workspace=default,
+        default_restrict_to_workspace=False,
+        controls_available=False,
+        folder_browsing_available=False,
     )
 
     assert payload["default_scope"]["project_path"] == str(default.resolve())
     assert payload["controls"]["can_change_project"] is False
     assert payload["controls"]["can_use_full_access"] is False
+
+
+def test_workspace_payload_allows_folder_browsing_when_controls_unavailable(
+    tmp_path, monkeypatch
+) -> None:
+    monkeypatch.setattr("vtx_claw.webui.workspaces.get_webui_dir", lambda: tmp_path / "webui")
+    default = tmp_path / "default"
+    default.mkdir()
+
+    payload = workspaces_payload(
+        default_workspace=default,
+        default_restrict_to_workspace=False,
+        controls_available=False,
+        folder_browsing_available=True,
+    )
+
+    assert payload["default_scope"]["project_path"] == str(default.resolve())
+    assert payload["controls"]["can_change_project"] is True  # folder browsing available
+    assert payload["controls"]["can_use_full_access"] is False  # but full access still restricted
 
 
 def test_workspace_payload_uses_webui_default_access_mode(tmp_path, monkeypatch) -> None:
@@ -87,7 +112,10 @@ def test_workspace_payload_uses_webui_default_access_mode(tmp_path, monkeypatch)
     assert write_webui_default_access_mode("full") is False
 
     payload = workspaces_payload(
-        default_workspace=default, default_restrict_to_workspace=True, controls_available=True
+        default_workspace=default,
+        default_restrict_to_workspace=True,
+        controls_available=True,
+        folder_browsing_available=True,
     )
 
     assert payload["default_access_mode"] == "full"

@@ -132,7 +132,11 @@ def default_scope_for_webui(
 
 
 def workspaces_payload(
-    *, default_workspace: Path, default_restrict_to_workspace: bool, controls_available: bool
+    *,
+    default_workspace: Path,
+    default_restrict_to_workspace: bool,
+    controls_available: bool,
+    folder_browsing_available: bool = True,
 ) -> dict[str, Any]:
     default_access_mode = read_webui_default_access_mode()
     default_scope = default_scope_for_webui(default_workspace, default_restrict_to_workspace)
@@ -141,7 +145,7 @@ def workspaces_payload(
         "default_access_mode": default_access_mode,
         "default_scope": default_scope.payload(),
         "controls": {
-            "can_change_project": controls_available,
+            "can_change_project": folder_browsing_available,
             "can_use_full_access": controls_available,
         },
     }
@@ -187,11 +191,14 @@ class WebUIWorkspaceController:
         except WorkspaceScopeError:
             return self.default_scope()
 
-    def payload(self, *, controls_available: bool) -> dict[str, Any]:
+    def payload(
+        self, *, controls_available: bool, folder_browsing_available: bool = True
+    ) -> dict[str, Any]:
         return workspaces_payload(
             default_workspace=self._default_workspace,
             default_restrict_to_workspace=self._default_restrict_to_workspace,
             controls_available=controls_available,
+            folder_browsing_available=folder_browsing_available,
         )
 
     def scope_from_envelope(
