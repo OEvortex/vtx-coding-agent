@@ -447,13 +447,13 @@ class TestCompactionConfig:
         cfg = Config({})
         assert cfg.compaction.on_overflow == "continue"
         assert cfg.compaction.threshold_percent == 80.0
-        assert cfg.agent.default_context_window == 0
+        assert cfg.agent.default_context_window == 200000
 
     def test_config_override(self):
         cfg = Config({"compaction": {"on_overflow": "pause", "threshold_percent": 90.0}})
         assert cfg.compaction.on_overflow == "pause"
         assert cfg.compaction.threshold_percent == 90.0
-        assert cfg.agent.default_context_window == 0
+        assert cfg.agent.default_context_window == 200000
 
     def test_badge_colors_default(self):
         cfg = Config({})
