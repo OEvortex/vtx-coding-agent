@@ -63,54 +63,48 @@ function preprocessMarkdown(src: string): string {
       continue;
     }
 
-    // Inline code span: copy until closing `, collapsing newlines
+    // Inline code span: copy until closing `, collapsing newlines ONLY if closed
     if (src[i] === "`") {
-      result += "`";
-      i++;
-      while (i < len && src[i] !== "`") {
-        result += src[i] === "\n" ? " " : src[i];
-        i++;
-      }
-      if (i < len) { result += "`"; i++; }
-      continue;
-    }
-
-    // Bold **: collapse newlines, trim inner whitespace
-    if (src[i] === "*" && i + 1 < len && src[i + 1] === "*") {
-      let inner = "";
-      i += 2;
-      while (i < len && !(src[i] === "*" && i + 1 < len && src[i + 1] === "*")) {
-        inner += src[i] === "\n" ? " " : src[i];
-        i++;
-      }
-      if (i + 1 < len) {
-        result += "**" + inner.trim() + "**";
-        i += 2;
+      const endIdx = src.indexOf("`", i + 1);
+      if (endIdx !== -1) {
+        const inner = src.slice(i + 1, endIdx).replace(/\n/g, " ");
+        result += "`" + inner + "`";
+        i = endIdx + 1;
       } else {
-        result += "**" + inner;
+        result += "`";
+        i++;
       }
       continue;
     }
 
-    // Italic *: collapse newlines, trim inner whitespace
+    // Bold **: collapse newlines ONLY if closed and left-flanking (not followed by whitespace)
+    if (src[i] === "*" && i + 1 < len && src[i + 1] === "*") {
+      if (i + 2 < len && !/\s/.test(src[i + 2])) {
+        const endIdx = src.indexOf("**", i + 2);
+        if (endIdx !== -1) {
+          const inner = src.slice(i + 2, endIdx).replace(/\n/g, " ");
+          result += "**" + inner.trim() + "**";
+          i = endIdx + 2;
+          continue;
+        }
+      }
+    }
+
+    // Italic *: collapse newlines ONLY if closed and left-flanking (not followed by whitespace)
     if (
       src[i] === "*"
       && (i === 0 || src[i - 1] !== "*")
       && i + 1 < len && src[i + 1] !== "*"
     ) {
-      let inner = "";
-      i++;
-      while (i < len && src[i] !== "*") {
-        inner += src[i] === "\n" ? " " : src[i];
-        i++;
+      if (!/\s/.test(src[i + 1])) {
+        const endIdx = src.indexOf("*", i + 1);
+        if (endIdx !== -1 && src[endIdx + 1] !== "*") {
+          const inner = src.slice(i + 1, endIdx).replace(/\n/g, " ");
+          result += "*" + inner.trim() + "*";
+          i = endIdx + 1;
+          continue;
+        }
       }
-      if (i < len) {
-        result += "*" + inner.trim() + "*";
-        i++;
-      } else {
-        result += "*" + inner;
-      }
-      continue;
     }
 
     // Link [text](url): collapse newlines in the text portion

@@ -42,7 +42,7 @@ describe("MarkdownText", () => {
       expect(screen.getByTestId("markdown-renderer")).toHaveTextContent("hello");
       expect(screen.getByTestId("markdown-renderer")).toHaveAttribute(
         "data-highlight-code",
-        "true",
+        "false",
       );
       expect(rendererSpy).toHaveBeenCalledTimes(1);
 
@@ -51,7 +51,7 @@ describe("MarkdownText", () => {
       expect(rendererSpy).toHaveBeenCalledTimes(1);
 
       act(() => {
-        vi.advanceTimersByTime(79);
+        vi.advanceTimersByTime(19);
       });
       expect(screen.getByTestId("markdown-renderer")).toHaveTextContent("hello");
       expect(rendererSpy).toHaveBeenCalledTimes(1);

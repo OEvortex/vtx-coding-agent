@@ -874,7 +874,7 @@ export function ThreadComposer({
   const [selectedCommandIndex, setSelectedCommandIndex] = useState(0);
   const [cliAppMenuDismissed, setCliAppMenuDismissed] = useState(false);
   const [selectedCliAppIndex, setSelectedCliAppIndex] = useState(0);
-  const [cursorPosition, setCursorPosition] = useState(0);
+  const cursorPositionRef = useRef(0);
   const [recentSlashCommands, setRecentSlashCommands] = useState<string[]>(() => readSlashRecents());
   const [queuedPrompts, setQueuedPrompts] = useState<QueuedPrompt[]>([]);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
@@ -1074,19 +1074,33 @@ export function ThreadComposer({
   }, [goalState?.active, isStreaming, modelLabel, recentSlashCommands, slashQuery, t, visibleSlashCommands]);
 
   const showSlashMenu = filteredSlashCommands.length > 0;
-  const cliAppMention = useMemo<CliAppMentionQuery | null>(() => {
-    if (disabled || cliAppMenuDismissed) return null;
-    const caret = Math.min(Math.max(cursorPosition, 0), value.length);
-    const beforeCaret = value.slice(0, caret);
+  const [cliAppMention, setCliAppMention] = useState<CliAppMentionQuery | null>(null);
+
+  const recomputeMention = useCallback((val: string, caret: number) => {
+    if (disabled || cliAppMenuDismissed) {
+      setCliAppMention(null);
+      return;
+    }
+    const clampedCaret = Math.min(Math.max(caret, 0), val.length);
+    const beforeCaret = val.slice(0, clampedCaret);
     const match = /(?:^|\s)@([a-z0-9_-]*)$/i.exec(beforeCaret);
-    if (!match) return null;
+    if (!match) {
+      setCliAppMention(null);
+      return;
+    }
     const query = match[1].toLowerCase();
-    return {
-      query,
-      start: caret - query.length - 1,
-      end: caret,
-    };
-  }, [cliAppMenuDismissed, cursorPosition, disabled, value]);
+    const next: CliAppMentionQuery = { query, start: clampedCaret - query.length - 1, end: clampedCaret };
+    setCliAppMention((prev) => {
+      if (prev === null && next === null) return prev;
+      if (prev !== null && next !== null
+        && prev.query === next.query && prev.start === next.start && prev.end === next.end) return prev;
+      return next;
+    });
+  }, [disabled, cliAppMenuDismissed]);
+
+  useEffect(() => {
+    recomputeMention(value, cursorPositionRef.current);
+  }, [recomputeMention]);
 
   const filteredMentionCandidates = useMemo<MentionCandidate[]>(() => {
     if (!cliAppMention) return [];
@@ -1243,7 +1257,8 @@ export function ThreadComposer({
     setInlineError(null);
     setSlashMenuDismissed(false);
     setCliAppMenuDismissed(false);
-    setCursorPosition(0);
+    cursorPositionRef.current = 0;
+    setCliAppMention(null);
     clear();
     requestAnimationFrame(() => {
       const el = textareaRef.current;
@@ -1349,7 +1364,7 @@ export function ThreadComposer({
       const next = `${value.slice(0, cliAppMention.start)}${mention}${suffix}`;
       const nextCursor = cliAppMention.start + mention.length;
       setValue(next);
-      setCursorPosition(nextCursor);
+      cursorPositionRef.current = nextCursor;
       setCliAppMenuDismissed(true);
       setSlashMenuDismissed(false);
       setInlineError(null);
@@ -1369,7 +1384,8 @@ export function ThreadComposer({
     setInlineError(null);
     setSlashMenuDismissed(false);
     setCliAppMenuDismissed(false);
-    setCursorPosition(0);
+    cursorPositionRef.current = 0;
+    setCliAppMention(null);
     resizeTextarea();
   }, [resizeTextarea]);
 
@@ -1401,7 +1417,7 @@ export function ThreadComposer({
     setInlineError(null);
     setSlashMenuDismissed(false);
     setCliAppMenuDismissed(false);
-    setCursorPosition(prompt.text.length);
+    cursorPositionRef.current = prompt.text.length;
     if (prompt.images?.length) {
       restoreReadyImages(prompt.images as RestoredReadyImage[]);
     } else {
@@ -1695,8 +1711,8 @@ export function ThreadComposer({
       ) : null}
       <div
         className={cn(
-          "group/composer relative mx-auto flex w-full flex-col overflow-visible transition-all duration-200",
-          "after:pointer-events-none after:absolute after:inset-[-1px] after:rounded-[inherit] after:border after:border-blue-300/75 after:opacity-0 after:transition-opacity after:duration-200 focus-within:after:opacity-100 dark:after:border-blue-400/55",
+          "group/composer relative mx-auto flex w-full flex-col overflow-visible",
+          "after:pointer-events-none after:absolute after:inset-[-1px] after:rounded-[inherit] after:border after:border-blue-300/75 after:opacity-0 focus-within:after:opacity-100 dark:after:border-blue-400/55",
           isHero
             ? "max-w-[58rem] rounded-[28px] border border-black/[0.035] bg-card shadow-[0_20px_55px_rgba(15,23,42,0.08)] dark:border-white/[0.06] dark:shadow-[0_24px_55px_rgba(0,0,0,0.34)]"
             : "max-w-[49.5rem] rounded-[22px] border border-black/[0.035] bg-card shadow-[0_12px_30px_rgba(15,23,42,0.07)] dark:border-white/[0.06] dark:shadow-[0_16px_34px_rgba(0,0,0,0.28)]",
@@ -1772,16 +1788,30 @@ export function ThreadComposer({
             ref={textareaRef}
             value={value}
             onChange={(e) => {
+              const caret = e.target.selectionStart ?? e.target.value.length;
+              cursorPositionRef.current = caret;
               setValue(e.target.value);
               setSlashMenuDismissed(false);
               setCliAppMenuDismissed(false);
-              setCursorPosition(e.target.selectionStart ?? e.target.value.length);
+              recomputeMention(e.target.value, caret);
             }}
             onInput={onInput}
             onKeyDown={onKeyDown}
-            onKeyUp={(e) => setCursorPosition(e.currentTarget.selectionStart ?? e.currentTarget.value.length)}
-            onSelect={(e) => setCursorPosition(e.currentTarget.selectionStart ?? e.currentTarget.value.length)}
-            onClick={(e) => setCursorPosition(e.currentTarget.selectionStart ?? e.currentTarget.value.length)}
+            onKeyUp={(e) => {
+              const caret = e.currentTarget.selectionStart ?? e.currentTarget.value.length;
+              cursorPositionRef.current = caret;
+              recomputeMention(e.currentTarget.value, caret);
+            }}
+            onSelect={(e) => {
+              const caret = e.currentTarget.selectionStart ?? e.currentTarget.value.length;
+              cursorPositionRef.current = caret;
+              recomputeMention(e.currentTarget.value, caret);
+            }}
+            onClick={(e) => {
+              const caret = e.currentTarget.selectionStart ?? e.currentTarget.value.length;
+              cursorPositionRef.current = caret;
+              recomputeMention(e.currentTarget.value, caret);
+            }}
             onPaste={onPaste}
             rows={1}
             placeholder={resolvedPlaceholder}

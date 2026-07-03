@@ -3,7 +3,6 @@ import {
   Suspense,
   lazy,
   memo,
-  startTransition,
   useCallback,
   useEffect,
   useLayoutEffect,
@@ -46,10 +45,9 @@ const MemoizedMarkdownRenderer = memo(function MemoizedMarkdownRenderer({
   );
 });
 
-const SHORT_STREAM_COMMIT_MS = 80;
-const MEDIUM_STREAM_COMMIT_MS = 140;
-const LONG_STREAM_COMMIT_MS = 220;
-const STREAMING_HIGHLIGHT_CHAR_LIMIT = 16_000;
+const SHORT_STREAM_COMMIT_MS = 20;
+const MEDIUM_STREAM_COMMIT_MS = 40;
+const LONG_STREAM_COMMIT_MS = 80;
 
 class MarkdownRendererBoundary extends Component<
   { children: ReactNode; fallback: ReactNode },
@@ -83,7 +81,7 @@ export function MarkdownText({
 }: MarkdownTextProps) {
   const renderedSource = useStreamingMarkdownSource(children, streaming);
   const highlightCode = streaming
-    ? renderedSource.length <= STREAMING_HIGHLIGHT_CHAR_LIMIT
+    ? false
     : renderedSource === children;
 
   useEffect(() => {
@@ -129,13 +127,10 @@ function useStreamingMarkdownSource(source: string, streaming: boolean): string 
   }, []);
 
   const commitSource = useCallback((next: string, urgent: boolean) => {
+    void urgent;
     if (renderedSourceRef.current === next) return;
     renderedSourceRef.current = next;
-    if (urgent) {
-      setRenderedSource(next);
-      return;
-    }
-    startTransition(() => setRenderedSource(next));
+    setRenderedSource(next);
   }, []);
 
   const scheduleCommit = useCallback(() => {
