@@ -105,12 +105,16 @@ class VtxModeHandler:
             # Without it, the WebUI's streaming spinner hangs permanently.
             try:
                 async for event in agent.run(query=content, cancel_event=cancel_event):
-                    await self._translate_event(chat_id, event, turn_id, seq, turn_text, turn_reasoning)
+                    await self._translate_event(
+                        chat_id, event, turn_id, seq, turn_text, turn_reasoning
+                    )
             except BaseException:
                 # Flush any partial text we collected so the user sees it.
                 error_text = _collect_text(turn_text)
                 if error_text:
-                    self._send(chat_id, "stream_end", turn_id=turn_id, turn_seq=seq, text=error_text)
+                    self._send(
+                        chat_id, "stream_end", turn_id=turn_id, turn_seq=seq, text=error_text
+                    )
                     self._send(
                         chat_id,
                         "message",

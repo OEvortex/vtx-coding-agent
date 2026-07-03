@@ -5,9 +5,17 @@ All notable changes to Vtx are documented in this file. The format is based on
 adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 
-## [0.2.0] - 2026-06-30 — Hook System, Gitlawb Opengateway Provider, System Prompt & Tool Configuration, Recent Model Tracking
+## [0.2.0] - 2026-07-03 — Hook System, Gitlawb Opengateway Provider, System Prompt & Tool Configuration, Recent Model Tracking
 
 ### Added
+
+#### VTX mode — full VTX agent loop inside vtx-claw WebUI
+- A new `VtxModeHandler` adapter (`vtx_claw/agent/vtx_adapter.py`) wraps `vtx.loop.Agent` for use from the WebUI WebSocket channel.
+- When the WebUI agent mode toggle is set to `"vtx"`, messages are routed through the full VTX agent loop with the 11-core tool set and VTX system prompt instead of the normal vtx-claw `AgentLoop`.
+- VTX events (`delta`, `reasoning_delta`, `stream_end`, `turn_end`, etc.) are transparently translated into the WebSocket JSON events the frontend already understands.
+- Added `agent_mode` field to WebUI client config with `"standard"` and `"vtx"` options, persisted per chat across reconnects.
+- Added 9 new model entries to `provider.yaml` (Mistral Small 3.1, Gemini 2.5 Flash variants, Llama 4 variants, Gemma 3) to power VTX mode.
+- `model_fetcher.py` gained `fetch_model_list_by_provider()` for provider-scoped catalog refresh in the WebUI.
 
 #### WebUI "default" access mode now reads vtx config permission mode
 - When the WebUI site access mode is set to "default", it now reads `config.permissions.mode` from the vtx config to determine the workspace scope.
@@ -257,6 +265,56 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 #### Compaction default context window
 - Reverted `default_context_window` back to `200000` for gateway
   compatibility and updated compaction tests accordingly.
+
+#### WebUI markdown inline formatting
+- Added `preprocessMarkdown()` that collapses newlines inside inline code
+  spans, bold markers, italic markers, and link text before remark-breaks
+  runs. This prevents remark-breaks from inserting `<br>` before the parser
+  can pair delimiters, which was causing literal `**` to show and code spans
+  to wrap oddly.
+- Removed the lazy `React.lazy` + `Suspense` + error boundary wrapping from
+  `MarkdownText.tsx`; the renderer is now eagerly imported, eliminating
+  a flash of unstyled plain-text fallback on every streaming commit.
+- Streaming commit for the initial render is now immediate (no 20ms delay),
+  so the first characters appear with zero artificial latency.
+- Disabled syntax highlighting during streaming; highlighting is deferred
+  until the source is stable, reducing jank on every partial render.
+
+#### WebUI streaming stability and composer refinements
+- `MessageBubble` wrapped in `React.memo` to prevent unnecessary rerenders
+  of the entire message list on every keystroke or stream event.
+- `ThreadComposer` wrapped in `React.memo` with stable `forkCallbacks` via
+  `useMemo`, eliminating redundant re-renders of the composer tree.
+- `ThreadShell` composer assignment wrapped in `useMemo` with a correct
+  dependency array, preventing the composer from remounting on every parent
+  render.
+- Removed streaming text sheen animation (`streaming-text-sheen` CSS) and
+  pulse animations from activity rows, trace favicons, and composer run
+  indicators — these caused continuous layout/style recalculations on every
+  animation frame during streaming.
+- Replaced the animated `TypingDots` bouncing dots with a static span,
+  removing the CSS animation-driven layout thrash.
+- `useNanobotStream`: `stream_end` now defers resetting `isStreaming` by
+  1 second to keep the spinner alive across tool-call boundaries.
+- `useNanobotStream`: `turn_end` now atomically applies pending stream
+  deltas AND finalizes streaming flags in a single `setMessages` call,
+  eliminating a two-frame flicker at turn boundaries.
+- `useNanobotStream`: pending deltas are skipped for `turn_end` events
+  to avoid double-rendering the same content.
+- Removed `RunElapsedStrip` from inside the `ThreadComposer` — it now
+  renders independently so the composer never jumps when the strip appears
+  or disappears during streaming.
+- Removed the spinning `Loader2` icon that briefly flashed before the stop
+  button appeared, removing another source of streaming jank.
+- Hero composer no longer has special relaxed padding logic — consistent
+  padding regardless of streaming state prevents layout shifts.
+- Fork callback computation in `ThreadMessages` moved to a `useMemo`-wrapped
+  `Map`, avoiding re-creation on every render.
+- `animate-pulse` removed from trace favicons, CLI run rows, and MCP run
+  rows in `AgentActivityCluster` to reduce continuous style recalculations.
+- Activity cluster timer interval reduced from 500ms to 1000ms.
+- `CodeBlock` gains a subtle `transition-opacity duration-150` for smoother
+  visual transitions.
 
 ## [0.1.9] - 2026-06-29 — Fix Context Length Overflow & Remove Hardcoded Token Defaults
 
@@ -885,6 +943,12 @@ to keep the model's context window free for what matters.
   via `uv tool install vtx-coding-agent`.
 - Licensed under **Apache License 2.0**.
 
+[0.2.0]: https://github.com/OEvortex/vtx-coding-agent/compare/v0.1.9...v0.2.0
+[0.1.9]: https://github.com/OEvortex/vtx-coding-agent/compare/v0.1.8...v0.1.9
+[0.1.8]: https://github.com/OEvortex/vtx-coding-agent/compare/v0.1.7...v0.1.8
+[0.1.7]: https://github.com/OEvortex/vtx-coding-agent/compare/v0.1.6...v0.1.7
+[0.1.6]: https://github.com/OEvortex/vtx-coding-agent/compare/v0.1.5...v0.1.6
+[0.1.5]: https://github.com/OEvortex/vtx-coding-agent/compare/v0.1.4...v0.1.5
 [0.1.4]: https://github.com/OEvortex/vtx-coding-agent/compare/v0.1.3...v0.1.4
 [0.1.3]: https://github.com/OEvortex/vtx-coding-agent/compare/v0.1.2...v0.1.3
 [0.1.2]: https://github.com/OEvortex/vtx-coding-agent/compare/v0.1.1...v0.1.2

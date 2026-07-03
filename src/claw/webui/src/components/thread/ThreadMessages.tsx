@@ -1,4 +1,4 @@
-import { Fragment, useMemo } from "react";
+import { Fragment, useCallback, useMemo } from "react";
 import { useTranslation } from "react-i18next";
 import { MessageBubble } from "@/components/MessageBubble";
 import { AgentActivityCluster } from "@/components/thread/AgentActivityCluster";
@@ -84,6 +84,23 @@ export function ThreadMessages({
   const unitKeys = useMemo(() => unitKeysForDisplay(units), [units]);
   let nextUserIndex = hiddenUserMessageCount;
 
+  const forkCallbacks = useMemo(() => {
+    if (!onForkFromMessage) return new Map<number, () => void>();
+    const map = new Map<number, () => void>();
+    for (let i = 0; i < units.length; i++) {
+      const unit = units[i];
+      if (unit.type === "message" && unit.message.role === "assistant" && copyFlags[i]) {
+        let userCount = 0;
+        for (let j = 0; j <= i; j++) {
+          if (units[j].type === "message" && units[j].message.role === "user") userCount++;
+        }
+        const idx = userCount - 1 + hiddenUserMessageCount;
+        map.set(i, () => onForkFromMessage(idx));
+      }
+    }
+    return map;
+  }, [onForkFromMessage, units, copyFlags, hiddenUserMessageCount]);
+
   return (
     <div className="flex w-full flex-col">
       {units.map((unit, index) => {
@@ -101,10 +118,6 @@ export function ThreadMessages({
         const userPromptId =
           unit.type === "message" && unit.message.role === "user"
             ? unit.message.id
-            : undefined;
-        const forkIndex =
-          unit.type === "message" && unit.message.role === "assistant" && copyFlags[index]
-            ? nextUserIndex
             : undefined;
         if (unit.type === "message" && unit.message.role === "user") nextUserIndex += 1;
 
@@ -132,11 +145,7 @@ export function ThreadMessages({
                   cliApps={cliApps}
                   mcpPresets={mcpPresets}
                   onOpenFilePreview={onOpenFilePreview}
-                  onForkFromHere={
-                    onForkFromMessage && forkIndex !== undefined
-                      ? () => onForkFromMessage(forkIndex)
-                      : undefined
-                  }
+                  onForkFromHere={forkCallbacks.get(index)}
                 />
               )}
             </div>

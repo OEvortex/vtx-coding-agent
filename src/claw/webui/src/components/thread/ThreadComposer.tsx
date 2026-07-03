@@ -1,4 +1,5 @@
 import {
+  memo,
   useCallback,
   useEffect,
   useLayoutEffect,
@@ -646,7 +647,11 @@ function RunElapsedStrip({
     };
   }, [goalPanelOpen]);
 
-  if (!renderStrip || !display) return null;
+  if (!renderStrip || !display) {
+    // Keep the strip in the DOM (collapsed) so the composer never jumps
+    // when the strip appears or disappears during streaming.
+    return <div className="h-0 w-full overflow-hidden" aria-hidden />;
+  }
 
   const elapsed =
     displayStartedAt != null ? Math.max(0, Math.floor(Date.now() / 1000 - displayStartedAt)) : 0;
@@ -838,7 +843,7 @@ function ComposerContextCircle({
   );
 }
 
-export function ThreadComposer({
+export const ThreadComposer = memo(function ThreadComposer({
   onSend,
   disabled,
   placeholder,
@@ -914,9 +919,7 @@ export function ThreadComposer({
     storeQueuedPrompts(queuedPromptStorageKey, queuedPrompts);
   }, [queuedPromptStorageKey, queuedPrompts]);
 
-  const resolvedPlaceholder = isStreaming
-    ? t("thread.composer.placeholderStreaming")
-    : placeholder ?? t("thread.composer.placeholderThread");
+  const resolvedPlaceholder = placeholder ?? t("thread.composer.placeholderThread");
 
   const { images, enqueue, remove, clear, restoreReadyImages, encoding, full } =
     useAttachedImages();
@@ -1665,14 +1668,10 @@ export function ThreadComposer({
         ? t("thread.composer.voice.transcribing")
         : t("thread.composer.voice.hint");
   const showStopButton = isStreaming && !!onStop;
-  const relaxedHeroInput = isHero && images.length === 0 && !isStreaming;
   const inputTextClasses = cn(
     "w-full resize-none bg-transparent",
     isHero
-      ? cn(
-          "min-h-[78px] px-4 text-[16px] leading-6 sm:px-5",
-          relaxedHeroInput ? "pb-2 pt-[27px]" : "pb-1.5 pt-4",
-        )
+      ? "min-h-[78px] px-4 pb-1.5 pt-4 text-[16px] leading-6 sm:px-5"
       : "min-h-[50px] px-3.5 pb-1.5 pt-3 text-[16px] leading-5 sm:px-4",
   );
 
@@ -1775,7 +1774,6 @@ export function ThreadComposer({
             ))}
           </div>
         ) : null}
-        <RunElapsedStrip startedAt={runStartedAt} goalState={goalState} />
         <div className="relative">
           {hasMentionDecorations ? (
             <ComposerCliMentionOverlay
@@ -1974,8 +1972,6 @@ export function ThreadComposer({
             >
               {showStopButton ? (
                 <Square className={cn("fill-current stroke-current", isHero ? "h-3 w-3" : "h-3.5 w-3.5")} />
-              ) : isStreaming ? (
-                <Loader2 className={cn(isHero ? "h-4 w-4" : "h-4 w-4", "animate-spin")} />
               ) : (
                 <ArrowUp className={cn(isHero ? "h-4 w-4" : "h-4 w-4")} />
               )}
@@ -1994,7 +1990,7 @@ export function ThreadComposer({
       </div>
     </form>
   );
-}
+});
 
 function QueuedPromptStack({
   prompts,

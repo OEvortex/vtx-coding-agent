@@ -397,7 +397,7 @@ export function AgentActivityCluster({
 
   useEffect(() => {
     if (!isTurnStreaming) return undefined;
-    const interval = window.setInterval(() => setNow(Date.now()), 500);
+    const interval = window.setInterval(() => setNow(Date.now()), 1000);
     return () => window.clearInterval(interval);
   }, [isTurnStreaming]);
 
@@ -926,10 +926,7 @@ function TraceIconMark({
     return (
       <span
         data-testid={`activity-web-favicon-${trace.host}`}
-        className={cn(
-          "grid h-4 w-4 shrink-0 place-items-center overflow-hidden rounded-[4px] border border-border/45 bg-background shadow-[inset_0_0_0_1px_rgba(0,0,0,0.02)]",
-          active && "animate-pulse",
-        )}
+        className="grid h-4 w-4 shrink-0 place-items-center overflow-hidden rounded-[4px] border border-border/45 bg-background shadow-[inset_0_0_0_1px_rgba(0,0,0,0.02)]"
         aria-hidden
       >
         <img
@@ -1719,10 +1716,7 @@ function CliRunRow({ run, active, app }: { run: CliRunSummary; active: boolean; 
       marker={(
         <span
           data-testid={`activity-cli-logo-${run.name.toLowerCase()}`}
-          className={cn(
-            "grid h-4 w-4 shrink-0 place-items-center overflow-hidden rounded-[4px] border text-[6.5px] font-semibold text-white",
-            rowActive && "animate-pulse",
-          )}
+          className="grid h-4 w-4 shrink-0 place-items-center overflow-hidden rounded-[4px] border text-[6.5px] font-semibold text-white"
           style={{
             borderColor: alphaColor(color, 22),
             backgroundColor: logoUrl ? "hsl(var(--background))" : color,
@@ -1830,10 +1824,7 @@ function McpRunRow({ run, active, preset }: { run: McpRunSummary; active: boolea
       marker={(
         <span
           data-testid={`activity-mcp-logo-${run.presetName.toLowerCase()}`}
-          className={cn(
-            "grid h-4 w-4 shrink-0 place-items-center overflow-hidden rounded-[4px] border text-[6.5px] font-semibold text-white",
-            rowActive && "animate-pulse",
-          )}
+          className="grid h-4 w-4 shrink-0 place-items-center overflow-hidden rounded-[4px] border text-[6.5px] font-semibold text-white"
           style={{
             borderColor: alphaColor(color, 22),
             backgroundColor: logoUrl ? "hsl(var(--background))" : color,

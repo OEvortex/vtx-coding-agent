@@ -203,7 +203,7 @@ export function CodeBlock({
   return (
     <div
       className={cn(
-        "not-prose overflow-hidden",
+        "not-prose overflow-hidden transition-opacity duration-150",
         hasChrome && "rounded-lg border",
         hasChrome && (isDark ? "border-white/10" : "border-black/10"),
         className,

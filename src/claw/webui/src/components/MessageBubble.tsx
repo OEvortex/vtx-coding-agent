@@ -1,4 +1,5 @@
 import {
+  memo,
   useCallback,
   useEffect,
   useMemo,
@@ -71,6 +72,8 @@ function ForkArrowIcon({ className }: { className?: string }) {
   );
 }
 
+const BASE_ANIM = "animate-in fade-in-0 slide-in-from-bottom-1 duration-300";
+
 /**
  * Render a single message. Following agent-chat-ui: user turns are a rounded
  * "pill" right-aligned with a muted fill; assistant turns render as bare
@@ -80,7 +83,7 @@ function ForkArrowIcon({ className }: { className?: string }) {
  * Trace rows (tool-call hints, progress breadcrumbs) render as a subdued
  * collapsible group so intermediate steps never masquerade as replies.
  */
-export function MessageBubble({
+export const MessageBubble = memo(function MessageBubble({
   message,
   showAssistantCopyAction = true,
   cliApps = [],
@@ -91,7 +94,7 @@ export function MessageBubble({
   const { t } = useTranslation();
   const [copied, setCopied] = useState(false);
   const copyResetRef = useRef<number | null>(null);
-  const baseAnim = "animate-in fade-in-0 slide-in-from-bottom-1 duration-300";
+  const baseAnim = BASE_ANIM;
   const mentionCliApps = useMemo(
     () => mergeCliMentionApps(cliApps, message.cliApps),
     [cliApps, message.cliApps],
@@ -195,7 +198,7 @@ export function MessageBubble({
         />
       ) : null}
       {empty && message.isStreaming && !hasReasoning ? (
-        <TypingDots />
+        <span className="inline-block h-1.5 w-1.5 rounded-full bg-muted-foreground/40" />
       ) : empty && message.isStreaming ? null : (
         <>
           {automationSourceLabel ? (
@@ -271,7 +274,7 @@ export function MessageBubble({
       )}
     </div>
   );
-}
+});
 
 function AutomationSourceBadge({ label, triggerLabel }: { label: string; triggerLabel: string }) {
   return (
@@ -549,11 +552,7 @@ function TypingDots() {
 function Dot({ delay }: { delay: string }) {
   return (
     <span
-      style={{ animationDelay: delay }}
-      className={cn(
-        "inline-block h-1.5 w-1.5 rounded-full bg-muted-foreground/60",
-        "animate-bounce",
-      )}
+      className="inline-block h-1.5 w-1.5 rounded-full bg-muted-foreground/60"
     />
   );
 }
@@ -568,19 +567,9 @@ export function StreamingLabelSheen({
   active: boolean;
   className?: string;
 }) {
-  const sheenText =
-    typeof children === "string" || typeof children === "number"
-      ? String(children)
-      : undefined;
   return (
     <span className={cn("block min-w-0 overflow-hidden py-px", className)}>
-      <span
-        data-sheen-text={active ? sheenText : undefined}
-        className={cn(
-          "block w-fit max-w-full truncate font-medium leading-normal",
-          active ? "streaming-text-sheen" : "text-muted-foreground",
-        )}
-      >
+      <span className="block w-fit max-w-full truncate font-medium leading-normal text-muted-foreground">
         {children}
       </span>
     </span>
@@ -649,7 +638,7 @@ export function ReasoningBubble({
         aria-live={streaming ? "polite" : undefined}
       >
         <Sparkles
-          className={cn("h-3.5 w-3.5", streaming && "animate-pulse")}
+          className="h-3.5 w-3.5"
           aria-hidden
         />
         <StreamingLabelSheen active={streaming} className="min-w-0 flex-1 text-left">
@@ -703,7 +692,7 @@ interface TraceGroupProps {
  * collapsed because tool traces are supporting evidence, not the answer.
  * A single click expands the exact calls when the user wants details.
  */
-export function TraceGroup({ message, animClass }: TraceGroupProps) {
+export function TraceGroup({ message, animClass = BASE_ANIM }: TraceGroupProps) {
   const { t } = useTranslation();
   const lines = message.traces ?? [message.content];
   const count = lines.length;

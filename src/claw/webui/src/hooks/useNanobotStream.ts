@@ -792,8 +792,14 @@ export function useVtxClawStream(
         });
         if (suppressStreamUntilTurnEndRef.current) return;
         // stream_end only means the text segment finished — the model may
-        // still be executing tools.  Do NOT reset isStreaming here; the
-        // definitive "turn is complete" signal is ``turn_end``.
+        // still be executing tools.  Defer resetting isStreaming so the
+        // spinner stays alive across tool-call boundaries.
+        if (streamEndTimerRef.current === null) {
+          streamEndTimerRef.current = window.setTimeout(() => {
+            streamEndTimerRef.current = null;
+            setIsStreaming(false);
+          }, 1_000);
+        }
         return;
       }
 
@@ -803,7 +809,11 @@ export function useVtxClawStream(
           ev.event === "message"
           && (ev.kind === "tool_hint" || ev.kind === "progress")
         );
-      flushPendingStreamEvents({ closeAnswerSegment: shouldCloseAnswerBeforeEvent });
+      // Skip flushing pending deltas for turn_end — we handle them in a single
+      // setMessages call below to avoid a two-frame flicker.
+      if (ev.event !== "turn_end") {
+        flushPendingStreamEvents({ closeAnswerSegment: shouldCloseAnswerBeforeEvent });
+      }
 
       if (ev.event === "reasoning_end") {
         if (suppressStreamUntilTurnEndRef.current) return;
@@ -846,8 +856,12 @@ export function useVtxClawStream(
           streamEndTimerRef.current = null;
         }
         setIsStreaming(false);
+        // Apply any pending deltas AND finalize streaming flags in a single
+        // setMessages call to avoid the two-frame flicker.
         setMessages((prev) => {
-          let finalized = prev.map((m) => (m.isStreaming ? { ...m, isStreaming: false } : m));
+          let next = applyPendingStreamEvents(prev, pendingStreamEventsRef.current);
+          pendingStreamEventsRef.current = [];
+          let finalized = next.map((m) => (m.isStreaming ? { ...m, isStreaming: false } : m));
           finalized = pruneReasoningOnlyPlaceholders(finalized);
           if (typeof ev.latency_ms === "number" && ev.latency_ms >= 0) {
             finalized = stampLastAssistantLatency(

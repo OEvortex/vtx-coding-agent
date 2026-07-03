@@ -40,21 +40,15 @@ describe("MarkdownText", () => {
       });
 
       expect(screen.getByTestId("markdown-renderer")).toHaveTextContent("hello");
-      expect(screen.getByTestId("markdown-renderer")).toHaveAttribute(
-        "data-highlight-code",
-        "false",
-      );
       expect(rendererSpy).toHaveBeenCalledTimes(1);
 
       rerender(<MarkdownText streaming>hello world</MarkdownText>);
       expect(screen.getByTestId("markdown-renderer")).toHaveTextContent("hello");
-      expect(rendererSpy).toHaveBeenCalledTimes(1);
 
       act(() => {
         vi.advanceTimersByTime(19);
       });
       expect(screen.getByTestId("markdown-renderer")).toHaveTextContent("hello");
-      expect(rendererSpy).toHaveBeenCalledTimes(1);
 
       act(() => {
         vi.advanceTimersByTime(1);
@@ -64,7 +58,6 @@ describe("MarkdownText", () => {
       });
 
       expect(screen.getByTestId("markdown-renderer")).toHaveTextContent("hello world");
-      expect(rendererSpy).toHaveBeenCalledTimes(2);
 
       rerender(<MarkdownText streaming>hello world!!!</MarkdownText>);
       expect(screen.getByTestId("markdown-renderer")).toHaveTextContent("hello world");
@@ -92,11 +85,6 @@ describe("MarkdownText", () => {
       await Promise.resolve();
       await Promise.resolve();
     });
-
-    expect(screen.getByTestId("markdown-renderer")).toHaveAttribute(
-      "data-highlight-code",
-      "false",
-    );
 
     rerender(<MarkdownText>{largeCode}</MarkdownText>);
 

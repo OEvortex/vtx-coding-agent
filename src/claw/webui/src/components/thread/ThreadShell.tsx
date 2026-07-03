@@ -701,7 +701,7 @@ export function ThreadShell({
     [chatId, onForkChat],
   );
 
-  const composer = (
+  const composer = useMemo(() => (
     <>
       {streamError ? (
         <StreamErrorNotice
@@ -711,6 +711,7 @@ export function ThreadShell({
       ) : null}
       {session ? (
         <ThreadComposer
+          key="thread"
           onSend={handleThreadSend}
           disabled={!chatId}
           isStreaming={isStreaming}
@@ -745,6 +746,7 @@ export function ThreadShell({
         />
       ) : (
         <ThreadComposer
+          key="welcome"
           onSend={handleWelcomeSend}
           disabled={booting}
           isStreaming={isStreaming}
@@ -777,7 +779,7 @@ export function ThreadShell({
         />
       )}
     </>
-  );
+  ), [streamError, dismissStreamError, session, handleThreadSend, chatId, isStreaming, showHeroComposer, modelBadgeLabel, modelBadge, onOpenModelSettings, slashCommands, cliApps, mcpPresets, stop, transcribeAudio, runStartedAt, goalState, workspaceScope, workspaceDefaultScope, workspaceControls, workspaceScopeDisabled, workspaceError, onWorkspaceScopeChange, settingsSnapshot, contextTokens, contextWindow, handleWelcomeSend, booting, t]);
 
   const emptyState = loading ? (
     <div className="flex h-full items-center justify-center text-sm text-muted-foreground">

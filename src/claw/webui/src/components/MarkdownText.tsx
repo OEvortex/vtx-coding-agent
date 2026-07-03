@@ -1,17 +1,12 @@
 import {
-  Component,
-  Suspense,
-  lazy,
-  memo,
   useCallback,
   useEffect,
   useLayoutEffect,
   useRef,
   useState,
-  type ReactNode,
 } from "react";
 
-import { cn } from "@/lib/utils";
+import MarkdownTextRenderer from "@/components/MarkdownTextRenderer";
 
 interface MarkdownTextProps {
   children: string;
@@ -20,59 +15,14 @@ interface MarkdownTextProps {
   onOpenFilePreview?: (path: string) => void;
 }
 
-const loadMarkdownRenderer = () => import("@/components/MarkdownTextRenderer");
-const LazyMarkdownRenderer = lazy(loadMarkdownRenderer);
-
-const MemoizedMarkdownRenderer = memo(function MemoizedMarkdownRenderer({
-  source,
-  className,
-  highlightCode,
-  onOpenFilePreview,
-}: {
-  source: string;
-  className?: string;
-  highlightCode: boolean;
-  onOpenFilePreview?: (path: string) => void;
-}) {
-  return (
-    <LazyMarkdownRenderer
-      className={className}
-      highlightCode={highlightCode}
-      onOpenFilePreview={onOpenFilePreview}
-    >
-      {source}
-    </LazyMarkdownRenderer>
-  );
-});
+export function preloadMarkdownText(): void {
+  // No-op: renderer is eagerly imported
+}
 
 const SHORT_STREAM_COMMIT_MS = 20;
 const MEDIUM_STREAM_COMMIT_MS = 40;
 const LONG_STREAM_COMMIT_MS = 80;
 
-class MarkdownRendererBoundary extends Component<
-  { children: ReactNode; fallback: ReactNode },
-  { failed: boolean }
-> {
-  state = { failed: false };
-
-  static getDerivedStateFromError() {
-    return { failed: true };
-  }
-
-  render() {
-    return this.state.failed ? this.props.fallback : this.props.children;
-  }
-}
-
-export function preloadMarkdownText(): void {
-  void loadMarkdownRenderer();
-}
-
-/**
- * Lightweight markdown renderer mirroring agent-chat-ui: GFM + math via
- * ``remark-math`` / ``rehype-katex``, and fenced code blocks delegated to
- * ``CodeBlock`` for copy-to-clipboard and syntax highlighting.
- */
 export function MarkdownText({
   children,
   className,
@@ -80,36 +30,16 @@ export function MarkdownText({
   onOpenFilePreview,
 }: MarkdownTextProps) {
   const renderedSource = useStreamingMarkdownSource(children, streaming);
-  const highlightCode = streaming
-    ? false
-    : renderedSource === children;
-
-  useEffect(() => {
-    if (streaming) preloadMarkdownText();
-  }, [streaming]);
-
-  const plainFallback = (
-    <div
-      className={cn(
-        "whitespace-pre-wrap break-words leading-relaxed text-foreground/92",
-        className,
-      )}
-    >
-      {renderedSource}
-    </div>
-  );
+  const highlightCode = renderedSource === children;
 
   return (
-    <MarkdownRendererBoundary fallback={plainFallback}>
-      <Suspense fallback={plainFallback}>
-        <MemoizedMarkdownRenderer
-          source={renderedSource}
-          className={className}
-          highlightCode={highlightCode}
-          onOpenFilePreview={onOpenFilePreview}
-        />
-      </Suspense>
-    </MarkdownRendererBoundary>
+    <MarkdownTextRenderer
+      className={className}
+      highlightCode={highlightCode}
+      onOpenFilePreview={onOpenFilePreview}
+    >
+      {renderedSource}
+    </MarkdownTextRenderer>
   );
 }
 
@@ -126,8 +56,7 @@ function useStreamingMarkdownSource(source: string, streaming: boolean): string 
     }
   }, []);
 
-  const commitSource = useCallback((next: string, urgent: boolean) => {
-    void urgent;
+  const commitSource = useCallback((next: string) => {
     if (renderedSourceRef.current === next) return;
     renderedSourceRef.current = next;
     setRenderedSource(next);
@@ -137,7 +66,7 @@ function useStreamingMarkdownSource(source: string, streaming: boolean): string 
     if (timerRef.current !== null) return;
     timerRef.current = window.setTimeout(() => {
       timerRef.current = null;
-      commitSource(latestSourceRef.current, false);
+      commitSource(latestSourceRef.current);
     }, streamingCommitDelay(latestSourceRef.current.length));
   }, [commitSource]);
 
@@ -147,7 +76,7 @@ function useStreamingMarkdownSource(source: string, streaming: boolean): string 
     latestSourceRef.current = source;
     if (!streaming) {
       clearPendingCommit();
-      commitSource(source, true);
+      commitSource(source);
     }
   }, [clearPendingCommit, commitSource, source, streaming]);
 
