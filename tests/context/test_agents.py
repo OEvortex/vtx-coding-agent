@@ -26,7 +26,7 @@ class TestFindGitRoot:
         subdir = tmp_path / "no" / "git" / "here"
         subdir.mkdir(parents=True)
 
-        result = _find_git_root(subdir)
+        result = _find_git_root(subdir, boundary=tmp_path)
 
         assert result is None
 
@@ -86,7 +86,7 @@ class TestGetStopDirectory:
         outside = tmp_path / "mnt" / "external"
         outside.mkdir(parents=True)
 
-        result = _get_stop_directory(outside)
+        result = _get_stop_directory(outside, boundary=tmp_path)
 
         assert result == outside
 

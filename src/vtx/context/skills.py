@@ -267,13 +267,17 @@ def _load_skills_recursive(directory: Path, *, max_depth: int = 2) -> LoadSkills
     return LoadSkillsResult(skills=skills, warnings=warnings)
 
 
-def _find_git_root(start: Path) -> Path | None:
-    current = start
+def _find_git_root(start: Path, boundary: Path | None = None) -> Path | None:
+    if boundary is not None:
+        boundary = boundary.resolve()
+    current = start.resolve()
     while True:
         if (current / ".git").is_dir():
             return current
         parent = current.parent
         if parent == current:
+            return None
+        if boundary is not None and not parent.is_relative_to(boundary):
             return None
         current = parent
 

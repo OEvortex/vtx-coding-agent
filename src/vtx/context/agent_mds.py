@@ -21,23 +21,28 @@ class ContextFile:
     content: str
 
 
-def _find_git_root(start: Path) -> Path | None:
-    current = start
+def _find_git_root(start: Path, boundary: Path | None = None) -> Path | None:
+    if boundary is not None:
+        boundary = boundary.resolve()
+    current = start.resolve()
     while True:
         if (current / ".git").is_dir():
             return current
         parent = current.parent
         if parent == current:
             return None
+        if boundary is not None and not parent.is_relative_to(boundary):
+            return None
         current = parent
 
 
-def _get_stop_directory(cwd: Path) -> Path:
-    git_root = _find_git_root(cwd)
+def _get_stop_directory(cwd: Path, boundary: Path | None = None) -> Path:
+    home = Path.home()
+    git_root = _find_git_root(
+        cwd, boundary=boundary or (home if cwd.is_relative_to(home) else None)
+    )
     if git_root:
         return git_root
-
-    home = Path.home()
     try:
         cwd.relative_to(home)
         return home
