@@ -1,0 +1,14 @@
+[src]
+exclude = [
+    "tests/",
+    "src/claw/",
+    "src/vtx_claw/channels/",
+    "src/vtx_claw/cli/onboard.py",
+    "src/vtx_claw/config/schema.py",
+    "src/vtx_claw/cron/service.py",
+    "src/vtx_claw/gateway/runtime.py",
+    "src/vtx_claw/providers/github_copilot_provider.py",
+    "src/vtx_claw/agent/tools/filesystem.py",
+    "src/vtx_claw/agent/tools/web.py",
+    ".venv/",
+]

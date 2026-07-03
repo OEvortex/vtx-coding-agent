@@ -1,5 +1,5 @@
 meta:
-  config_version: 11
+  config_version: 12
 
 llm:
   default_provider: "openai-codex"
@@ -48,7 +48,7 @@ goal:
 
 agent:
   max_turns: 500
-  default_context_window: 0
+  default_context_window: 200000
 
 ui:
   theme: "gruvbox-dark"

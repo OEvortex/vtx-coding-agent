@@ -65,7 +65,7 @@ from .extensions import (
 from .goal import GOAL_TAG, GoalManager
 from .llm import BaseProvider
 from .prompts import build_system_prompt
-from .session import MessageEntry, Session
+from .session import CompactionEntry, GoalEntry, MessageEntry, Session
 from .tools import BaseTool
 from .turn import run_single_turn
 
@@ -508,8 +508,12 @@ class Agent:
 
         # Get the latest assistant message that has usage.
         # The most recent assistant entry can be interrupted/error and have no usage.
+        # Stop searching if we hit a compaction entry to avoid
+        # backtracking to pre-compaction usage.
         last_usage: Usage | None = None
         for entry in reversed(self.session.active_entries):
+            if isinstance(entry, CompactionEntry):
+                break
             if isinstance(entry, MessageEntry) and isinstance(entry.message, AssistantMessage):
                 usage = entry.message.usage
                 if usage is None:
@@ -553,7 +557,22 @@ class Agent:
             # Everything before is summarized, nothing "kept"
             first_kept_id = self.session.leaf_id or ""
 
-            tokens_after = self.session.token_totals().context_tokens
+            # Estimate tokens of the compacted context
+            active_goal_text = ""
+            for entry in self.session.active_entries:
+                if isinstance(entry, GoalEntry) and entry.goal.get("objective"):
+                    active_goal_text = entry.goal["objective"]
+
+            summary_text = summary
+            if active_goal_text:
+                summary_text += f"\n\n[Active goal: {active_goal_text}]"
+
+            user_msg = (
+                "[Context compacted — conversation history summarized above."
+                " Continue working on the task.]"
+            )
+            tokens_after = (len(summary_text) + len(user_msg)) // 4
+
             self.session.append_compaction(
                 summary=summary,
                 first_kept_entry_id=first_kept_id,
@@ -561,13 +580,16 @@ class Agent:
                 tokens_after=tokens_after,
             )
 
-            # In continue mode, inject synthetic continue message
+            # In continue mode, inject synthetic continue message that
+            # reinforces the active task rather than offering an exit.
             if vtx_config.compaction.on_overflow == "continue":
                 continue_msg = UserMessage(
                     content=(
-                        "Continue if you have next steps, or stop and ask for clarification if you"
-                        " are unsure how to proceed. If there is nothing to do don't add a large"
-                        " preamble, just summarise everything so far in 2-3 lines and be done."
+                        "[context compacted — summary above preserves conversation state]\n"
+                        "Pick up exactly where you left off. Do not re-read or"
+                        " re-explore files you already have context for from the"
+                        " summary above. Continue executing the next step of the"
+                        " task described in the summary."
                     )
                 )
                 self.session.append_message(continue_msg)

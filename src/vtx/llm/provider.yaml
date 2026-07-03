@@ -106,6 +106,27 @@ providers:
     model_parser:
       cooldown_minutes: 60
 
+  - slug: opengateway
+    display_name: Gitlawb Opengateway
+    description: Smart gateway routing Xiaomi MiMo and partner models.
+    family: openai_compat
+    base_url: https://opengateway.gitlawb.com/v1
+    api_key_env: OPENGATEWAY_API_KEY
+    known_models:
+      - auto
+      - mimo-v2.5-pro
+      - mimo-v2.5
+      - mimo-v2-flash
+      - google/gemini-3.1-flash-lite
+      - minimax/minimax-m3
+      - qwen/qwen3.7-max
+      - z-ai/glm-5.2
+      - nvidia/nemotron-3-ultra-550b-a55b:free
+    fetch_models: true
+    models_endpoint: /models
+    model_parser:
+      cooldown_minutes: 60
+
   - slug: groq
     display_name: Groq
     description: Ultra-fast LPU inference.
@@ -323,6 +344,29 @@ providers:
     models_endpoint: /models
     model_parser:
       cooldown_minutes: 10
+
+  - slug: supercode
+    display_name: Supercode
+    description: "Supercode proxy — models via concentrateai, google, nvidia, openrouter."
+    family: supercode
+    base_url: https://supercode-8w7e.onrender.com
+    known_models:
+      - concentrateai/deepseek-v4-flash
+      - concentrateai/glm-5.2
+      - concentrateai/glm-5.1
+      - concentrateai/kimi-k2-6
+      - concentrateai/minimax-m3
+      - google/gemini-2.5-flash
+      - google/gemini-2.5-pro
+      - nvidia/minimaxai/minimax-m3
+      - nvidia/deepseek-ai/deepseek-v4-flash
+      - nvidia/meta/llama-3.3-70b-instruct
+      - openrouter/openai/gpt-oss-120b:free
+      - openrouter/deepseek/deepseek-v4-flash
+      - openrouter/minimax/minimax-m3
+      - openrouter/z-ai/glm-5.1
+      - openrouter/moonshotai/kimi-k2.6
+    api_key_optional: true
 
   - slug: blackbox
     display_name: Blackbox AI
@@ -671,3 +715,26 @@ providers:
     models_endpoint: /models
     model_parser:
       cooldown_minutes: 10
+
+  - slug: conduit
+    display_name: Conduit
+    description: "Conduit multi-model gateway at conduit.ozdoev.net."
+    family: openai_compat
+    base_url: https://conduit.ozdoev.net/api/v1
+    api_key_env: CONDUIT_API_KEY
+    openmodelendpoint: true
+    fetch_models: true
+    models_endpoint: /models
+    model_parser:
+      cooldown_minutes: 60
+
+  - slug: badtheorylabs
+    display_name: BadTheoryLabs
+    description: BadTheoryLabs API.
+    family: openai_compat
+    base_url: https://api.badtheorylabs.com/v1
+    api_key_env: BADTHEORYLABS_API_KEY
+    fetch_models: true
+    models_endpoint: /models
+    model_parser:
+      cooldown_minutes: 60

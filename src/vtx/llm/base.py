@@ -3,14 +3,24 @@ from abc import ABC, abstractmethod
 from collections.abc import AsyncIterator
 from dataclasses import dataclass, field
 from ipaddress import ip_address
-from typing import ClassVar, Literal
+from typing import Any, ClassVar, Literal, cast
 from urllib.parse import urlparse
 
 import httpx
 
 from vtx import config as vtx_config
 
-from ..core.types import Message, StreamPart, ToolDefinition, Usage
+from ..core.types import (
+    Message,
+    StreamDone,
+    StreamPart,
+    TextPart,
+    ThinkPart,
+    ToolCallDelta,
+    ToolCallStart,
+    ToolDefinition,
+    Usage,
+)
 
 DEFAULT_THINKING_LEVELS: list[str] = ["none", "minimal", "low", "medium", "high", "xhigh"]
 LOCAL_API_KEY_PLACEHOLDER = "vtx-local"
@@ -27,6 +37,7 @@ ENV_API_KEY_MAP: dict[str, str] = {
     "tokenrouter": "TOKENROUTER_API_KEY",
     "openrouter": "OPENROUTER_API_KEY",
     "zyloo": "ZYLOO_API_KEY",
+    "opengateway": "OPENGATEWAY_API_KEY",
 }
 
 
@@ -219,3 +230,160 @@ class BaseProvider(ABC):
 
     @abstractmethod
     def should_retry_for_error(self, error: Exception) -> bool: ...
+
+    @staticmethod
+    def get_default_model() -> str:
+        """Return the default model name for this provider."""
+        return ""
+
+    @property
+    def generation(self) -> Any:
+        """Return generation settings (max_tokens, temperature, etc.)."""
+        from dataclasses import dataclass
+
+        @dataclass
+        class _DefaultGen:
+            max_tokens: int = 4096
+            temperature: float | None = None
+            reasoning_effort: str | None = None
+            thinking_budget: int | None = None
+
+        return _DefaultGen()
+
+    @generation.setter
+    def generation(self, value: Any) -> None:
+        """Allow providers to store custom generation settings."""
+        self._generation = value
+
+    @classmethod
+    def is_arrearage_response(cls, response: Any) -> bool:
+        """Check if the LLM response indicates an arrears/out-of-quota error."""
+
+        finish_reason = getattr(response, "finish_reason", None)
+        if finish_reason != "error":
+            return False
+        error_kind = getattr(response, "error_kind", None) or ""
+        text = str(getattr(response, "content", "") or "").lower()
+        markers = (
+            "insufficient_quota",
+            "rate_limit",
+            "403",
+            "payment",
+            "billing",
+            "account",
+            "quota",
+            "exceeded",
+            "out of credits",
+            "arrear",
+            "429",
+        )
+        if error_kind and any(m in error_kind.lower() for m in markers):
+            return True
+        return bool(text and any(m in text for m in markers))
+
+    async def chat_with_retry(
+        self,
+        *,
+        messages: list[dict[str, Any]],
+        model: str | None = None,
+        tools: list[dict[str, Any]] | None = None,
+        tool_choice: str | dict[str, Any] | None = None,
+        temperature: float | None = None,
+        max_tokens: int | None = None,
+        reasoning_effort: str | None = None,
+        retry_mode: str = "standard",
+        on_retry_wait: Any = None,
+        **kwargs: Any,
+    ) -> Any:
+        """Non-streaming chat completion with retry. Consumes stream internally."""
+        from ..core.types import ToolDefinition
+
+        converted_messages = self._convert_dict_messages(messages)
+        system_prompt = None
+        if converted_messages and converted_messages[0].get("role") == "system":
+            system_prompt = converted_messages.pop(0).get("content")
+
+        tool_defs = None
+        if tools:
+            tool_defs = [
+                ToolDefinition(
+                    name=t["function"]["name"],
+                    description=t["function"].get("description", ""),
+                    parameters=t["function"].get("parameters", {}),
+                )
+                for t in tools
+                if "function" in t
+            ]
+
+        stream = await self.stream(
+            cast(list[Message], converted_messages),
+            system_prompt=system_prompt,
+            tools=tool_defs,
+            temperature=temperature,
+            max_tokens=max_tokens,
+        )
+
+        content_parts: list[str] = []
+        thinking_parts: list[str] = []
+        tool_calls_raw: dict[int, dict[str, Any]] = {}
+        stop_reason = "stop"
+        usage_dict: dict[str, int] = {}
+
+        async for part in stream:
+            if isinstance(part, TextPart):
+                content_parts.append(part.text)
+            elif isinstance(part, ThinkPart):
+                thinking_parts.append(part.think)
+            elif isinstance(part, ToolCallStart):
+                tool_calls_raw[part.index] = {"id": part.id, "name": part.name, "arguments": ""}
+            elif isinstance(part, ToolCallDelta):
+                if part.index in tool_calls_raw:
+                    existing = tool_calls_raw[part.index]["arguments"]
+                    tool_calls_raw[part.index]["arguments"] = existing + (
+                        part.arguments_delta or ""
+                    )
+            elif isinstance(part, StreamDone):
+                usage_dict = {
+                    "prompt_tokens": getattr(part, "input_tokens", 0),
+                    "completion_tokens": getattr(part, "output_tokens", 0),
+                    "total_tokens": getattr(part, "input_tokens", 0)
+                    + getattr(part, "output_tokens", 0),
+                }
+
+        if stream.usage:
+            usage_dict = {
+                "prompt_tokens": stream.usage.input_tokens,
+                "completion_tokens": stream.usage.output_tokens,
+                "total_tokens": stream.usage.input_tokens + stream.usage.output_tokens,
+            }
+
+        import json as _json
+
+        tool_call_requests = []
+        for idx in sorted(tool_calls_raw):
+            tc = tool_calls_raw[idx]
+            try:
+                args = _json.loads(tc["arguments"]) if tc["arguments"] else {}
+            except _json.JSONDecodeError:
+                args = {"raw": tc["arguments"]}
+            from vtx_claw.providers.base import ToolCallRequest
+
+            tool_call_requests.append(
+                ToolCallRequest(id=tc["id"], name=tc["name"], arguments=args)
+            )
+
+        reasoning_content = "\n".join(thinking_parts) if thinking_parts else None
+        final_content = "\n".join(content_parts) if content_parts else None
+
+        from vtx_claw.providers.base import LLMResponse
+
+        return LLMResponse(
+            content=final_content,
+            tool_calls=tool_call_requests or None,
+            finish_reason=stop_reason,
+            reasoning_content=reasoning_content,
+            usage=usage_dict or None,
+        )
+
+    def _convert_dict_messages(self, messages: list[dict[str, Any]]) -> list[dict[str, Any]]:
+        return messages

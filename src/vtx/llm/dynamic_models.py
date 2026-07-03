@@ -449,7 +449,7 @@ async def _async_fetch_catalog(
         if cached:
             return cached
         raise RuntimeError(
-            f"Authentication required for {config.name}. "
+            f"No API key found for {config.name}. "
             f"Set {config.env_var} or /login for this provider."
         )
 
@@ -475,8 +475,26 @@ async def _async_fetch_catalog(
         if cached:
             logger.debug("Auth error fetching %s; using cached snapshot", config.name)
             return cached
+        error_detail = ""
+        try:
+            payload = response.json()
+            if isinstance(payload, dict):
+                raw_error = payload.get("error") or payload.get("message", "")
+                if isinstance(raw_error, dict):
+                    error_detail = raw_error.get("message", "")
+                elif isinstance(raw_error, str):
+                    error_detail = raw_error
+            elif isinstance(payload, str):
+                error_detail = payload
+        except json.JSONDecodeError:
+            pass
+        if error_detail:
+            raise RuntimeError(
+                f"Authentication error for {config.name}: {error_detail}. "
+                f"Set {config.env_var} or /login for this provider."
+            )
         raise RuntimeError(
-            f"Authentication required for {config.name}. "
+            f"Authentication failed for {config.name}. "
             f"Set {config.env_var} or /login for this provider."
         )
 

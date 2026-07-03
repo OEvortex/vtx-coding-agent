@@ -13,40 +13,48 @@ Overflow formula:
 from ..core.types import Message, TextPart, Usage, UserMessage
 from ..llm.base import BaseProvider
 
-SUMMARIZATION_PROMPT = """Provide a detailed prompt for continuing our \
-conversation above. Focus on information that would be helpful for \
-continuing the conversation, including what we did, what we're doing, \
-which files we're working on, and what we're going to do next. \
-The summary that you construct will be used so that another agent \
-can read it and continue the work.
+SUMMARIZATION_PROMPT = """You are summarizing a coding conversation so that \
+another agent can pick up exactly where the previous one left off. \
+Your summary MUST be comprehensive, high-fidelity, and detailed. Do NOT compress \
+information so aggressively that critical technical context, logic, decisions, or \
+code details are lost. A coding agent needs precise context to continue effectively.
 
-When constructing the summary, try to stick to this template:
----
-## Goal
+Output MUST follow this exact structure — no preamble, no extra sections:
 
-[What goal(s) is the user trying to accomplish?]
+## Goal & Requirements
+- [The user's objective and core requirements. Be specific, detailed, and non-generic.]
+- [Copy verbatim any concrete checklists, plans, specs, or task rules provided by the user.]
+- [List all user preferences, constraints, and instructions.]
 
-## Instructions
+## Technical Architecture & Context
+- [Key discoveries about the codebase: architecture, modules, classes, and environment details.]
+- [API / Interface Signatures: Exact signatures, types, or models designed, created, or modified.]
+- [Key Algorithms / Logic: Detailed description of any complex logic or custom protocols \
+implemented.]
 
-- [What important instructions did the user give you that are relevant]
-- [If there is a plan or spec, include information about it
-  so next agent can continue using it]
+## Decisions Made & Rationale
+- [Key design and architectural choices made mid-conversation, with brief explanations.]
+- [Rejected Alternatives: Explicitly detail any paths investigated but rejected, and WHY they \
+were rejected (to prevent the next agent iteration from repeating the same investigation).]
 
-## Discoveries
+## Troubleshooting & Debugging
+- [Exact bugs encountered, stack traces, error messages, and their root causes.]
+- [The specific fixes implemented and why they resolved the issue.]
 
-[What notable things were learned during this conversation that would
-be useful for the next agent to know when continuing the work]
+## Accomplished & Active State
+- [Bullet list of completed work items.]
+- [Current work in progress: The exact state of the system right before compaction \
+(e.g., active files being edited, current task focus, or compile/test issues).]
+- [Verification & Testing: Test commands run, new tests added, and latest test status \
+(passing/failing).]
 
-## Accomplished
+## Action Plan
+- [Immediate next 2-3 specific developer actions.]
+- [Remaining checklist items and TODOs in order.]
 
-[What work has been completed, what work is still in progress,
-and what work is left?]
-
-## Relevant files / directories
-
-[Construct a structured list of relevant files that have been read,
-edited, or created that pertain to the task at hand. If all the files
-in a directory are relevant, include the path to the directory.]
+## Relevant Files
+- [Exact paths to files read, created, or edited. Group by directory. Include brief notes on \
+their roles.]
 ---"""
 
 

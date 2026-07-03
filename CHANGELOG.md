@@ -4,6 +4,178 @@ All notable changes to Vtx are documented in this file. The format is based on
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project
 adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+
+## [0.2.0] - 2026-07-03 — Hook System, Gitlawb Opengateway Provider, System Prompt & Tool Configuration, Recent Model Tracking
+
+### Added
+
+#### Hook system — YAML-driven lifecycle hooks
+- New `vtx.hooks` package with `HookRegistry`, `HookRuntime`, `HookConfigManager`,
+  and `HookBridge` for reacting to session, tool, and lifecycle events.
+- YAML configuration via `.vtx/hooks.yml` (project-local) or
+  `~/.vtx/hooks.yml` (global). Category keys organize entries; the `event`
+  field inside each entry determines when the hook fires.
+- `HookBridge` connects YAML hook configs to the extension `EventBus` so they
+  fire alongside extension handlers. Maps `session_start` → `SessionStart`,
+  `tool_call` → `PreToolUse`, `tool_result` → `PostToolUse`,
+  `compaction_start` → `PreCompact`, and more.
+- **Blocking hooks**: `PreToolUse` and `PostToolUse` hooks can deny tool
+  execution or suppress tool results by exiting non-zero (stderr becomes the
+  denial reason shown to the agent).
+- **Matcher patterns**: `bash*` (prefix), `*edit` (suffix), `read` (exact),
+  or omit for all tools.
+- **Once-only hooks**: `once: true` fires the hook on the first matching
+  event only, then removes it.
+- **Shell command execution**: `type: command` hooks run as async subprocesses
+  with configurable timeouts (default 30s).
+- Wired into both the TUI (`ui/app.py`) and headless mode (`headless.py`)
+  automatically at startup.
+- Added `TurnStart` and `TurnEnd` to the hook event catalog.
+- Full reference: [docs/hooks.md](docs/hooks.md).
+
+#### Gitlawb Opengateway provider support
+- Registered Gitlawb Opengateway as a new OpenAI-compatible provider with base URL `https://opengateway.gitlawb.com/v1`.
+- Added mapping to resolve `OPENGATEWAY_API_KEY` from environment variables.
+- Configured auto-fetching of model lists from the gateway's `/models` endpoint.
+- Known model fallbacks include MiMo V2.5/V2.5 Pro/V2 Flash, Gemini 3.1 Flash Lite, MiniMax M3, Qwen 3.7 Max, GLM 5.2, and Nemotron 3 Ultra Free.
+
+#### Conduit OpenAI-compatible provider support
+- Registered Conduit as a new OpenAI-compatible provider with base URL `https://conduit.ozdoev.net/api/v1`.
+- Added mapping to resolve `CONDUIT_API_KEY` from environment variables.
+- Configured auto-fetching of model lists from the `/models` endpoint with a 60-minute cache TTL.
+- Marked as `openmodelendpoint: true` — model discovery works without an API key.
+
+#### Dedicated system prompt
+- Prompts package with custom system prompt for gateway usage.
+- `identity.py` defines platform-specific sections: identity, messaging context, tool usage, memory guidance, skills guidance, output format, safety, error recovery, and task completion.
+- `builder.py` assembles the system prompt following OSINT-AGENT's pattern (base → tooling → project context → skills → env).
+- Agent runtime supports custom system prompt builder strategies.
+
+#### Restricted tool set
+- Tool configuration module with an approved tool list for the gateway.
+- Approved tools: `read`, `write`, `edit`, `bash`, `fetch_webpage`, `web_search`, `skill`, and `mcp`.
+- MCP proxy tool added with registry for server discovery and tool calling.
+
+#### MCP integration
+- MCP subsystem initialized in agent runtime with lazy connection by default.
+- MCP proxy tool added to tool list when servers are configured.
+- MCP registry shutdown on agent close for clean teardown.
+- Configuration via `~/.vtx/mcp.yml` or `./.mcp.json`.
+
+#### Recent model tracking in `/model` picker
+- `/model` now surfaces your top 5 most recently used models at the top of
+  the picker, regardless of any active `/provider` filter, making model
+  switching seamless across different providers.
+- Each recent model is marked with a `↻` prefix and sorted by recency (most
+  recent first) so you can instantly re-select a previously used model.
+- The list of recent models (up to 10 entries) is persisted across sessions
+  in `~/.vtx/config.yml` under `recent_models.entries` and updated on every
+  model switch.
+
+#### Agent loop runtime event fix
+- `record_turn_runtime` now receives the full `AgentLoop` instance instead of
+  only its `LLMRuntime`, restoring accurate runtime introspection for
+  downstream turn metadata.
+
+#### Brand asset updates
+- Replaced bundled application icons and favicons.
+
+#### Supercode provider support
+- Registered Supercode as a new OpenAI-compatible provider with base URL `https://supercode-8w7e.onrender.com`.
+- Added `SupercodeProvider`, OAuth credential handling (`SupercodeCredentials`), and
+  provider-specific API type (`ApiType.SUPERCODE`).
+- Configured auto-fetching of model lists from the provider's `/models` endpoint with
+  known model fallbacks including DeepSeek, GLM, Kimi, MiniMax, Gemini, Llama, and
+  OpenRouter routes.
+- Added `is_supercode_logged_in`, `load_supercode_credentials`, and
+  `get_supercode_auth_path` to the OAuth package.
+- `get_dynamic_api_key` now falls back to provider-specific OAuth token files when no
+  env var or stored key is present.
+- `detect_provider_from_env` probes Supercode OAuth credentials during auto-detection.
+
+#### WebSocket channel defaults and context hydration
+- Raised `max_message_bytes` default to 40 MB, matching the documented ceiling.
+- Increased `ping_interval_s` to 60s and `ping_timeout_s` to 120s to reduce
+  unnecessary keepalive traffic on stable connections.
+- Refactored `_maybe_push_context_state` to use `send_turn_end` instead of raw
+  `_broadcast_to_subscribers`, aligning it with normal outbound message formatting.
+- Removed the active-loop default context window push on subscribe; context window
+  is now sourced from model catalog/runtime data and turn metadata only.
+
+#### SDK provider resolution fix
+- `get_provider_class` now accepts the provider slug and passes it through to the
+  provider constructor, fixing incorrect config wiring for non-default providers.
+
+#### vtx-claw documentation
+- Expanded vtx-claw docs with 16 new markdown files under `docs/claw/` covering
+  architecture, channels, CLI, configuration, gateway, security, sessions,
+  skills, slash commands, tools, audio, cron, MCP, providers, and
+  pairing.
+- Added an index in `docs/README.md` so users browsing the docs folder can
+  quickly navigate to the gateway documentation.
+
+### Changed
+- Agent runtime supports custom system prompt builder strategies.
+- System prompt is now messaging-platform-aware with concise formatting guidance.
+- Tool surface restricted to approved subset (removed `find`, `grep`, `ask_user`, `task`, `background` from default tools).
+
+#### vtx-claw provider resolution respects explicit provider choice
+- Refactored `merge_vtx_config()` to a two-phase strategy: Phase 1 injects
+  API keys for all known providers (using vtx's own catalog and
+  `dynamic_auth.json`); Phase 2 only sets the active provider and model
+  when the user has not explicitly chosen one in vtx-claw config.
+  - When `agents.defaults.provider` is a specific slug (not `"auto"`),
+    vtx resolution is skipped entirely — the user's choice is honored and
+    only missing API keys are filled in.
+- Simplified the previous four-step fallback loop into a cleaner structure
+  that still covers `last_selected`, `claw.llm` legacy fallback, and
+  `detect_provider_from_env`.
+
+#### vtx-claw provider resolution respects explicit preset selection
+- The explicit-provider guard now also considers `agents.defaults.model_preset`.
+  Loading a preset no longer triggers vtx provider auto-detection.
+
+#### Web tools consolidated onto vtx Exa backend
+- `vtx_claw/agent/tools/web.py` no longer contains inline search or fetch
+  implementations. `WebSearchTool` and `WebFetchTool` now delegate to
+  `vtx.tools.web`, simplifying maintenance and removing the previous
+  provider-specific backends (Brave, Tavily, SearXNG, Jina, Kagi, Exa,
+  Bocha, Volcengine, Keenable, DuckDuckGo, Olostep).
+
+### Fixed
+
+#### Compaction context preservation
+- Rewrote the post-compaction `continue` message to reinforce active task execution instead of offering an exit ramp. The old message ("stop and ask for clarification if unsure, summarise and be done") actively encouraged the model to quit.
+- Changed the compacted view framing from a fake Q&A ("What did we do so far?") to a system status restoration message. The model no longer sees a question it never asked, which caused it to shift from active-task mode to retrospective mode.
+- `GoalEntry` state is now injected into the compaction summary, so the model retains knowledge of the active `/goal` objective after context reset. Previously goal state was silently dropped.
+- Fixed `token_totals().context_tokens` to use `max()` across all assistant messages instead of overwriting with the last message's count. The "tokens after" value now correctly reflects peak context size.
+- Tightened the summarization prompt to enforce structured output (Goal / Instructions / Discoveries / Accomplished / Files) with requirements for exact identifiers, verbatim instruction preservation, and explicit "what was happening RIGHT BEFORE compaction" tracking.
+
+#### Provider authentication error handling
+- Improved error messages when provider API keys are invalid or rejected.
+- The `/models` fetch now surfaces the provider's actual error detail (e.g. `invalid api key (2049)`) instead of a generic `Authentication required` message, so users can distinguish between a missing key and a rejected key.
+- Added robust parsing for varied auth error payload shapes: handles both `{"error": {"message": "..."}}` and `{"error": "Unauthorized: ..."}` formats from providers like MiniMax and Cline.
+
+#### TypeError in tool parameters decorator
+- Fixed a TypeError where `tool_parameters` decorator attempted to dynamically mutate `cls.__dict__` directly, which is a read-only `mappingproxy` object. Replaced direct assignment with `setattr()`.
+
+#### `/pairing` command forwarding for unauthorized users
+- `BaseChannel.is_allowed()` and `TelegramChannel` now forward `/pairing`
+  messages from unauthorized senders to the bus instead of blocking them.
+  The command handler itself approves the user and issues the pairing code.
+  Previously the authorization gate intercepted the pairing request,
+  preventing users from ever pairing.
+
+#### Telegram markdown italic and blockquote rendering
+- `*text*` is now stripped and rendered as italic in Telegram HTML output,
+  matching the existing `_text_` behavior.
+- Blockquotes (`> text`) now preserve formatting inside `<blockquote>` tags
+  instead of being stripped to plain text.
+
+#### Compaction default context window
+- Reverted `default_context_window` back to `200000` for gateway
+  compatibility and updated compaction tests accordingly.
+
 ## [0.1.9] - 2026-06-29 — Fix Context Length Overflow & Remove Hardcoded Token Defaults
 
 ### Fixed
@@ -631,6 +803,12 @@ to keep the model's context window free for what matters.
   via `uv tool install vtx-coding-agent`.
 - Licensed under **Apache License 2.0**.
 
+[0.2.0]: https://github.com/OEvortex/vtx-coding-agent/compare/v0.1.9...v0.2.0
+[0.1.9]: https://github.com/OEvortex/vtx-coding-agent/compare/v0.1.8...v0.1.9
+[0.1.8]: https://github.com/OEvortex/vtx-coding-agent/compare/v0.1.7...v0.1.8
+[0.1.7]: https://github.com/OEvortex/vtx-coding-agent/compare/v0.1.6...v0.1.7
+[0.1.6]: https://github.com/OEvortex/vtx-coding-agent/compare/v0.1.5...v0.1.6
+[0.1.5]: https://github.com/OEvortex/vtx-coding-agent/compare/v0.1.4...v0.1.5
 [0.1.4]: https://github.com/OEvortex/vtx-coding-agent/compare/v0.1.3...v0.1.4
 [0.1.3]: https://github.com/OEvortex/vtx-coding-agent/compare/v0.1.2...v0.1.3
 [0.1.2]: https://github.com/OEvortex/vtx-coding-agent/compare/v0.1.1...v0.1.2

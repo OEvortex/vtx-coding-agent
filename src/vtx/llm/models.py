@@ -12,8 +12,9 @@ class ApiType:
     OPENAI_COMPLETIONS = "openai-completions"
     OPENAI_SDK = "openai-sdk"
     ANTHROPIC = "anthropic"
+    SUPERCODE = "supercode"
 
-    _VALUES: frozenset[str] = frozenset({OPENAI_COMPLETIONS, OPENAI_SDK, ANTHROPIC})
+    _VALUES: frozenset[str] = frozenset({OPENAI_COMPLETIONS, OPENAI_SDK, ANTHROPIC, SUPERCODE})
 
     def __init__(self, value: str):
         if value not in self._VALUES:
@@ -46,6 +47,11 @@ class Model:
     context_window: int | None = None
     supports_tools: bool = True
     supports_audio: bool = False
+    api_model_id: str = ""
+
+    @property
+    def effective_id(self) -> str:
+        return self.api_model_id or self.id
 
 
 def get_model(model_id: str, provider: str | None = None) -> Model | None:

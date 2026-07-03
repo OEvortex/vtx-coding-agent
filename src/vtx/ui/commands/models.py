@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import asyncio
 
-from ...config import get_config
+from ...config import get_config, get_recent_models
 from ...llm import (
     DYNAMIC_PROVIDERS,
     Model,
@@ -63,28 +63,61 @@ class ModelCommands(CommandSupport):
             return
 
         hidden_providers, hidden_combos = _parse_hidden_entries(get_config().ui.hidden_models)
-        models = get_all_models()
+        all_models = get_all_models()
         # Filter out hidden models, but always keep the currently active model
         # so its selection state is visible in the picker.
         if hidden_providers or hidden_combos:
-            models = [
+            all_models = [
                 m
-                for m in models
+                for m in all_models
                 if not _is_model_hidden(m, hidden_providers, hidden_combos)
                 or (m.id == self._runtime.model and m.provider == self._runtime.model_provider)
             ]
-        # Apply the model_provider_filter. Empty string = show everything.
-        filter_slug = get_config().ui.model_provider_filter
-        if filter_slug:
-            models = [m for m in models if m.provider == filter_slug]
-        if not models:
+        if not all_models:
             self.notify("No models configured", title="Models", timeout=3, severity="warning")
             return
 
-        models.sort(key=lambda m: (m.provider, m.id))
+        # --- Recent models section (top 5, always shown regardless of provider filter) ---
+        recent_raw = get_recent_models()[:5]  # at most 5 most recent
+        recent_model_set = set(recent_raw)
+        recent_items: list[ListItem] = []
+        recent_found: set[tuple[str, str]] = set()
 
-        items: list[ListItem] = []
-        for m in models:
+        for m in all_models:
+            key = (m.provider, m.id)
+            if key in recent_model_set and key not in recent_found:
+                recent_found.add(key)
+                parts = [m.provider]
+                if not m.supports_images:
+                    parts.append("[no-vision]")
+                caption = " ".join(parts)
+                label = (
+                    f"{m.id} ✓"
+                    if m.id == self._runtime.model and m.provider == self._runtime.model_provider
+                    else m.id
+                )
+                item = ListItem(value=m, label=label, description=caption)
+                item.prefix = "↻ "
+                item.prefix_style = "dim"
+                recent_items.append(item)
+
+        # Sort recent items by recency order (most recent first)
+        recent_order = {key: i for i, key in enumerate(recent_raw)}
+        recent_items.sort(key=lambda x: recent_order.get((x.value.provider, x.value.id), 999))
+
+        # --- Rest of models, filtered by provider ---
+        filter_slug = get_config().ui.model_provider_filter
+        if filter_slug:
+            all_models = [m for m in all_models if m.provider == filter_slug]
+        if not all_models and not recent_items:
+            self.notify("No models configured", title="Models", timeout=3, severity="warning")
+            return
+
+        other_items: list[ListItem] = []
+        for m in all_models:
+            key = (m.provider, m.id)
+            if key in recent_found:
+                continue  # already shown in recent section
             parts = [m.provider]
             if not m.supports_images:
                 parts.append("[no-vision]")
@@ -94,7 +127,11 @@ class ModelCommands(CommandSupport):
                 if m.id == self._runtime.model and m.provider == self._runtime.model_provider
                 else m.id
             )
-            items.append(ListItem(value=m, label=label, description=caption))
+            other_items.append(ListItem(value=m, label=label, description=caption))
+
+        other_items.sort(key=lambda x: (x.value.provider, x.value.id))
+
+        items = recent_items + other_items
 
         self._show_selection_picker(items, SelectionMode.MODEL)
 

@@ -37,6 +37,7 @@ class FetchedModel:
     context_length: int = 0
     max_output_tokens: int = 0
     supports_images: bool = False
+    api_model_id: str = ""
 
 
 def _get_cache_dir() -> Path:
@@ -71,6 +72,7 @@ def _read_cache(provider_slug: str) -> list[FetchedModel] | None:
                 context_length=entry.get("context_length", 0),
                 max_output_tokens=entry.get("max_output_tokens", 0),
                 supports_images=entry.get("supports_images", False),
+                api_model_id=entry.get("api_model_id", ""),
             )
         )
     return models
@@ -102,12 +104,24 @@ def _resolve_api_key(provider) -> str | None:
     return None
 
 
+def _is_free_model(raw: dict[str, Any]) -> bool:
+    bp = raw.get("benchmark_pricing")
+    if not isinstance(bp, dict):
+        return False
+    return bp.get("input_per_mtok_min", 1) == 0 and bp.get("output_per_mtok_min", 1) == 0
+
+
 def _parse_models(raw_models: list[dict[str, Any]], parser_config) -> list[FetchedModel]:
     models: list[FetchedModel] = []
     for raw in raw_models:
         model_id = raw.get(parser_config.id_field, "")
         if not model_id:
             continue
+
+        api_model_id = ""
+        if _is_free_model(raw):
+            api_model_id = model_id
+            model_id = f"{model_id}-free"
 
         name = raw.get(parser_config.name_field, model_id)
         if isinstance(name, str) and ":" in name:
@@ -143,6 +157,7 @@ def _parse_models(raw_models: list[dict[str, Any]], parser_config) -> list[Fetch
                 context_length=context_length,
                 max_output_tokens=max_output,
                 supports_images=supports_images,
+                api_model_id=api_model_id,
             )
         )
 
@@ -274,6 +289,7 @@ def get_fetched_models(provider) -> list[Model]:
                 context_window=context_window,
                 supports_tools=supports_tools,
                 supports_audio=supports_audio,
+                api_model_id=entry.api_model_id,
             )
         )
     return models

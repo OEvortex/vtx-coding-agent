@@ -117,7 +117,8 @@ class TestSessionCompactedMessages:
         # Should be: synthetic user + synthetic assistant (summary) + new user + new assistant
         assert len(messages) == 4
         assert messages[0].role == "user"
-        assert messages[0].content == "What did we do so far?"
+        assert messages[0].role == "user"
+        assert "Context compacted" in messages[0].content
         assert messages[1].role == "assistant"
         assistant = messages[1]
         assert isinstance(assistant, AssistantMessage)
@@ -158,7 +159,7 @@ class TestSessionCompactedMessages:
 
         # Only synthetic user + assistant summary, no messages after compaction
         assert len(messages) == 2
-        assert messages[0].content == "What did we do so far?"
+        assert "Context compacted" in messages[0].content
         assistant = messages[1]
         assert isinstance(assistant, AssistantMessage)
         content = assistant.content[0]
@@ -192,7 +193,7 @@ class TestSessionCompactedMessages:
 
         # Should use second compaction's summary
         assert len(messages) == 3
-        assert messages[0].content == "What did we do so far?"
+        assert "Context compacted" in messages[0].content
         assistant = messages[1]
         assert isinstance(assistant, AssistantMessage)
         content = assistant.content[0]
@@ -288,7 +289,7 @@ class TestCompactionPersistence:
         # messages should be compacted view
         messages = loaded.messages
         assert len(messages) == 4
-        assert messages[0].content == "What did we do so far?"
+        assert "Context compacted" in messages[0].content
         assistant = messages[1]
         assert isinstance(assistant, AssistantMessage)
         content = assistant.content[0]
@@ -446,13 +447,13 @@ class TestCompactionConfig:
         cfg = Config({})
         assert cfg.compaction.on_overflow == "continue"
         assert cfg.compaction.threshold_percent == 80.0
-        assert cfg.agent.default_context_window == 0
+        assert cfg.agent.default_context_window == 200000
 
     def test_config_override(self):
         cfg = Config({"compaction": {"on_overflow": "pause", "threshold_percent": 90.0}})
         assert cfg.compaction.on_overflow == "pause"
         assert cfg.compaction.threshold_percent == 90.0
-        assert cfg.agent.default_context_window == 0
+        assert cfg.agent.default_context_window == 200000
 
     def test_badge_colors_default(self):
         cfg = Config({})
@@ -466,3 +467,56 @@ class TestCompactionConfig:
         assert cfg.ui.theme == "one-light"
         assert cfg.ui.colors.bg == "#fafafa"
         assert cfg.ui.colors.accent == "#4078f2"
+
+
+class TestCompactionTokenCalculation:
+    def test_token_totals_ignores_pre_compaction_for_context_tokens(self):
+        session = Session.in_memory()
+        session.append_message(UserMessage(content="hi"))
+        session.append_message(
+            AssistantMessage(
+                content=[TextContent(text="usable")],
+                usage=Usage(
+                    input_tokens=3000,
+                    output_tokens=500,
+                    cache_read_tokens=100,
+                    cache_write_tokens=50,
+                ),
+            )
+        )
+
+        # Initially, context_tokens should be the max (3650)
+        totals = session.token_totals()
+        assert totals.context_tokens == 3650
+
+        # Append a compaction entry
+        session.append_compaction(
+            summary="This is a summary of 30 characters.",
+            first_kept_entry_id=session.leaf_id or "",
+            tokens_before=3650,
+            tokens_after=100,  # Explicitly set
+        )
+
+        # token_totals should now return context_tokens estimated or from the new usages
+        totals = session.token_totals()
+        # With compaction but no new assistant message, it should estimate from session.messages
+        # self.messages has UserMessage + AssistantMessage summary
+        assert totals.context_tokens < 100
+
+        # Now add an assistant message after compaction with usage
+        session.append_message(
+            AssistantMessage(
+                content=[TextContent(text="post-compact")],
+                usage=Usage(
+                    input_tokens=500, output_tokens=100, cache_read_tokens=0, cache_write_tokens=0
+                ),
+            )
+        )
+
+        totals = session.token_totals()
+        # Since there is a post-compaction message with usage, it should use its usage (600)
+        assert totals.context_tokens == 600
+
+        # Cumulative tokens should still include everything
+        assert totals.input_tokens == 3500  # 3000 + 500
+        assert totals.output_tokens == 600  # 500 + 100

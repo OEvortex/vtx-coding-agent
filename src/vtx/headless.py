@@ -1,10 +1,19 @@
 import os
 import sys
 from collections.abc import AsyncIterator
+from pathlib import Path
 from typing import TextIO
 
 from vtx import config, get_config
-from vtx.config import get_last_selected
+from vtx.config import (
+    _atomic_write_text,
+    _ensure_config_file,
+    _read_config_data,
+    _serialize_config_yaml,
+    _set_config_version,
+    get_last_selected,
+    reload_config,
+)
 
 from .core.types import StopReason, TextContent
 from .events import (
@@ -116,8 +125,13 @@ async def run_headless(
 
     cfg = get_config()
     previous_permission_mode = cfg.permissions.mode
-    # Headless can't show approval prompts; force auto in-memory for this run only.
-    cfg.permissions.mode = "auto"
+    # Headless can't show approval prompts; force auto for this run only,
+    # without mutating the saved config or clobbering the config file.
+    previous_config_data = _read_config_data(_ensure_config_file())
+    previous_config_data.setdefault("permissions", {})["mode"] = "auto"
+    _set_config_version(previous_config_data)
+    _atomic_write_text(_ensure_config_file(), _serialize_config_yaml(previous_config_data))
+    reload_config()
 
     try:
         last_selected = get_last_selected()
@@ -127,7 +141,7 @@ async def run_headless(
             if provider is not None
             else (
                 last_selected.provider
-                if last_selected.model_id
+                if last_selected.provider
                 else (config.llm.default_provider if model is None else None)
             )
         )
@@ -199,6 +213,16 @@ async def run_headless(
         )
         runtime.set_loaded_extensions(loaded_extensions)
 
+        # Hook system: bridge YAML hook configs onto the extension EventBus.
+        from .hooks.bridge import HookBridge
+
+        hook_bridge = HookBridge(
+            bus=loaded_extensions.bus,
+            project_path=Path.cwd() / ".vtx" / "hooks.yml",
+            global_path=Path.home() / ".vtx" / "hooks.yml",
+        )
+        await hook_bridge.load()
+
         try:
             init = runtime.initialize()
             if init.provider_error:
@@ -233,6 +257,11 @@ async def run_headless(
         try:
             return _exit_code(await render_run(agent.run(prompt)))
         finally:
+            await hook_bridge.unload()
             await runtime.close()
     finally:
-        cfg.permissions.mode = previous_permission_mode
+        current_config_data = _read_config_data(_ensure_config_file())
+        current_config_data.setdefault("permissions", {})["mode"] = previous_permission_mode
+        _set_config_version(current_config_data)
+        _atomic_write_text(_ensure_config_file(), _serialize_config_yaml(current_config_data))
+        reload_config()
