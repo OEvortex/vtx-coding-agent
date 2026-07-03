@@ -13,7 +13,6 @@ from vtx_claw.bus.events import InboundMessage, OutboundMessage
 from vtx_claw.cron.session_delivery import origin_delivery_context
 from vtx_claw.cron.session_turns import CRON_DEFER_UNTIL_IDLE_META, CRON_TRIGGER_META
 from vtx_claw.cron.types import CronJob
-from vtx_claw.cron.webui_metadata import cron_proactive_delivery_metadata
 from vtx_claw.utils.prompt_templates import render_template
 
 
@@ -42,11 +41,6 @@ def _bound_session_delivery_context(
 
     if channel == "websocket":
         metadata["webui"] = True
-        metadata.update(
-            cron_proactive_delivery_metadata(
-                "websocket", metadata, turn_seed=turn_seed, source_label=source_label
-            )
-        )
 
     return channel, chat_id, metadata
 

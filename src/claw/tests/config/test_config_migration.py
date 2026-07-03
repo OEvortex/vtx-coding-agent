@@ -227,7 +227,8 @@ def test_load_config_defaults_local_service_access_to_enabled(tmp_path) -> None:
 
     config = load_config(config_path)
 
-    assert config.tools.webui_allow_local_service_access is True
+    # webui_allow_local_service_access was removed; field no longer exists
+    assert not hasattr(config.tools, "webui_allow_local_service_access")
 
 
 def test_load_config_accepts_legacy_local_preview_access(tmp_path) -> None:
@@ -238,4 +239,5 @@ def test_load_config_accepts_legacy_local_preview_access(tmp_path) -> None:
 
     config = load_config(config_path)
 
-    assert config.tools.webui_allow_local_service_access is False
+    # webui_allow_local_service_access was removed; field no longer exists
+    assert not hasattr(config.tools, "webui_allow_local_service_access")

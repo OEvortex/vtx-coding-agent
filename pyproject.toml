@@ -6,9 +6,7 @@ build-backend = "hatchling.build"
 packages = ["src/vtx", "src/vtx_claw"]
 
 [tool.hatch.build]
-artifacts = [
-    "src/vtx_claw/web/dist/**/*",
-]
+artifacts = []
 
 [tool.uv]
 package = true

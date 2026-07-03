@@ -65,7 +65,6 @@ from vtx_claw.session.manager import Session, SessionManager, replay_max_message
 from vtx_claw.utils.document import extract_documents, reference_non_image_attachments
 from vtx_claw.utils.helpers import image_placeholder_text
 from vtx_claw.utils.helpers import truncate_text as truncate_text_fn
-from vtx_claw.utils.image_generation_intent import image_generation_prompt
 from vtx_claw.utils.llm_runtime import LLMRuntime
 from vtx_claw.utils.runtime import EMPTY_FINAL_RESPONSE_MESSAGE
 
@@ -633,7 +632,7 @@ class AgentLoop:
         scope = self.workspace_scopes.for_message(msg, session.metadata)
         return self.context.build_messages(
             history=history,
-            current_message=image_generation_prompt(msg.content, msg.metadata),
+            current_message=msg.content,
             media=msg.media if msg.media else None,
             channel=msg.channel,
             chat_id=self._runtime_chat_id(msg),

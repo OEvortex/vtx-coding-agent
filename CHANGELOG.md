@@ -9,21 +9,6 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Added
 
-#### VTX mode — full VTX agent loop inside vtx-claw WebUI
-- A new `VtxModeHandler` adapter (`vtx_claw/agent/vtx_adapter.py`) wraps `vtx.loop.Agent` for use from the WebUI WebSocket channel.
-- When the WebUI agent mode toggle is set to `"vtx"`, messages are routed through the full VTX agent loop with the 11-core tool set and VTX system prompt instead of the normal vtx-claw `AgentLoop`.
-- VTX events (`delta`, `reasoning_delta`, `stream_end`, `turn_end`, etc.) are transparently translated into the WebSocket JSON events the frontend already understands.
-- Added `agent_mode` field to WebUI client config with `"standard"` and `"vtx"` options, persisted per chat across reconnects.
-- Added 9 new model entries to `provider.yaml` (Mistral Small 3.1, Gemini 2.5 Flash variants, Llama 4 variants, Gemma 3) to power VTX mode.
-- `model_fetcher.py` gained `fetch_model_list_by_provider()` for provider-scoped catalog refresh in the WebUI.
-
-#### WebUI "default" access mode now reads vtx config permission mode
-- When the WebUI site access mode is set to "default", it now reads `config.permissions.mode` from the vtx config to determine the workspace scope.
-- If vtx config has `permissions.mode = "prompt"`, the workspace scope uses "restricted" (prompt mode).
-- If vtx config has `permissions.mode = "auto"`, the workspace scope uses "full" (auto mode).
-- Previously, the "default" mode always mapped to "full" (auto) because it used `restrict_to_workspace` which defaults to `False`, ignoring the user's vtx permission mode setting.
-- Refactored `workspaces_payload()` to use `default_scope_for_webui()` for consistency.
-
 #### Hook system — YAML-driven lifecycle hooks
 - New `vtx.hooks` package with `HookRegistry`, `HookRuntime`, `HookConfigManager`,
   and `HookBridge` for reacting to session, tool, and lifecycle events.
@@ -87,83 +72,13 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   in `~/.vtx/config.yml` under `recent_models.entries` and updated on every
   model switch.
 
-#### Document and text file upload support in WebUI
-- Added support for attaching document formats (PDF, DOCX, XLSX, PPTX) and plain text formats (.txt, .md, .csv, .json, .yaml, .yml, .toml, .ini, .cfg, .log) via the WebUI composer.
-- Documents are read as data URLs on the client side using `FileReader` (bypassing the image encoder worker) and sent to the WebSocket server with a 50MB size limit.
- - Whitelisted document types and mapped file extensions dynamically in `media_decode.py` and `websocket.py` to ensure correct ingestion and parsing.
-
-#### WebUI paste and drop support for documents
-- Extended `extractImageFilesFromPaste` and `extractImageFilesFromDrop` to accept
-  document files (PDF, Office, text formats) in addition to images, matching the
-  server-side MIME/extension whitelist.
-- Files are validated against `ACCEPTED_MIMES` and `SUPPORTED_DOCUMENT_EXTENSIONS`
-  before being forwarded to the composer.
-
-#### WebUI exported attachment constants
-- Exported `IMAGE_MIMES`, `VIDEO_MIMES`, `DOCUMENT_MIMES`,
-  `SUPPORTED_DOCUMENT_EXTENSIONS`, and `ACCEPTED_MIMES` from
-  `useAttachedImages.ts` so WebUI components can share a single source of
-  truth for attachment validation.
-
-#### WebUI document upload accept attribute
-- Updated the `<input accept>` attribute in `ThreadComposer` to include video
-  and document MIME types plus file extensions, ensuring the OS file picker
-  allows all supported attachment formats.
-
-#### WebUI fixed extension extraction for edge-case filenames
-- Guarded `lastIndexOf(".")` calls in `useAttachedImages.ts` and
-  `useClipboardAndDrop.ts` so files without an extension are handled safely
-  instead of producing an empty string slice from index `-1`.
-
-#### Fixed Vite build output path
-- Corrected `vite.config.ts` `outDir` to point to `../../vtx_claw/web/dist`
-  instead of `../vtx-claw/web/dist`, fixing production WebUI builds after
-  directory restructuring.
-
-#### WebUI context token and window tracking
-- The WebUI client now records `context_tokens` and `context_window` per chat
-  and exposes them via `getContextTokens()` and `getContextWindow()`.
-- `handle_turn_end` extracts the values from the agent runtime after each turn,
-  falling back to last LLM usage when consolidator estimates are unavailable.
-- Removed the manual `context_window_tokens` setting from WebUI settings and
-  model-configuration updates; the value is now derived from the active model's
-  catalog/runtime data automatically.
-
 #### Agent loop runtime event fix
 - `record_turn_runtime` now receives the full `AgentLoop` instance instead of
   only its `LLMRuntime`, restoring accurate runtime introspection for
-  downstream WebUI turn metadata.
-
-#### WebUI i18n updates
-- Restructured English locale strings in `common.json` with expanded coverage
-  for settings status, actions, BYOK, model overview, token usage, providers,
-  apps, automations, OAuth, skills, voice, thread composer, chat actions,
-  message states, lightbox, file preview, and error copy.
-
-#### WebUI ThreadComposer and ThreadShell updates
-- Updated composer and shell components to match the new i18n keys and
-  context-token tracking behavior.
+  downstream turn metadata.
 
 #### Brand asset updates
 - Replaced bundled application icons and favicons.
-
-#### WebUI multilingual locale updates
-- Restructured locale strings in `es`, `fr`, `id`, `ja`, `ko`, `vi`, `zh-CN`, and `zh-TW`
-  `common.json` files to match the new English i18n key layout and expanded coverage.
-
-#### WebUI ThreadComposer context display
-- The context circle now renders when `contextWindow` is known, using `contextTokens ?? 0`
-  as a fallback instead of requiring both values to be non-null.
-
-#### WebSocket context state hydration
-- After subscribe, replay saved `context_tokens`/`context_window` from session metadata
-  so refreshed WebUI clients restore context usage immediately.
-- Push the active loop's default context window when the client does not yet have it.
-
-#### Workspace access mode source channel awareness
-- `default_access_mode` now accepts `source_channel`; for websocket connections it reads
-  the WebUI default access mode from config, preserving the selected permission mode
-  across reconnects.
 
 #### Supercode provider support
 - Registered Supercode as a new OpenAI-compatible provider with base URL `https://supercode-8w7e.onrender.com`.
@@ -194,7 +109,7 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 #### vtx-claw documentation
 - Expanded vtx-claw docs with 16 new markdown files under `docs/claw/` covering
   architecture, channels, CLI, configuration, gateway, security, sessions,
-  skills, slash commands, tools, WebUI, audio, cron, MCP, providers, and
+  skills, slash commands, tools, audio, cron, MCP, providers, and
   pairing.
 - Added an index in `docs/README.md` so users browsing the docs folder can
   quickly navigate to the gateway documentation.
@@ -257,64 +172,9 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - Blockquotes (`> text`) now preserve formatting inside `<blockquote>` tags
   instead of being stripped to plain text.
 
-#### WebUI folder browsing authorization
-- Folder browsing (`api/fs/browse`) is now available to authenticated users
-  regardless of runtime surface or connection origin. The endpoint still
-  enforces its own token check.
-
 #### Compaction default context window
 - Reverted `default_context_window` back to `200000` for gateway
   compatibility and updated compaction tests accordingly.
-
-#### WebUI markdown inline formatting
-- Added `preprocessMarkdown()` that collapses newlines inside inline code
-  spans, bold markers, italic markers, and link text before remark-breaks
-  runs. This prevents remark-breaks from inserting `<br>` before the parser
-  can pair delimiters, which was causing literal `**` to show and code spans
-  to wrap oddly.
-- Removed the lazy `React.lazy` + `Suspense` + error boundary wrapping from
-  `MarkdownText.tsx`; the renderer is now eagerly imported, eliminating
-  a flash of unstyled plain-text fallback on every streaming commit.
-- Streaming commit for the initial render is now immediate (no 20ms delay),
-  so the first characters appear with zero artificial latency.
-- Disabled syntax highlighting during streaming; highlighting is deferred
-  until the source is stable, reducing jank on every partial render.
-
-#### WebUI streaming stability and composer refinements
-- `MessageBubble` wrapped in `React.memo` to prevent unnecessary rerenders
-  of the entire message list on every keystroke or stream event.
-- `ThreadComposer` wrapped in `React.memo` with stable `forkCallbacks` via
-  `useMemo`, eliminating redundant re-renders of the composer tree.
-- `ThreadShell` composer assignment wrapped in `useMemo` with a correct
-  dependency array, preventing the composer from remounting on every parent
-  render.
-- Removed streaming text sheen animation (`streaming-text-sheen` CSS) and
-  pulse animations from activity rows, trace favicons, and composer run
-  indicators — these caused continuous layout/style recalculations on every
-  animation frame during streaming.
-- Replaced the animated `TypingDots` bouncing dots with a static span,
-  removing the CSS animation-driven layout thrash.
-- `useNanobotStream`: `stream_end` now defers resetting `isStreaming` by
-  1 second to keep the spinner alive across tool-call boundaries.
-- `useNanobotStream`: `turn_end` now atomically applies pending stream
-  deltas AND finalizes streaming flags in a single `setMessages` call,
-  eliminating a two-frame flicker at turn boundaries.
-- `useNanobotStream`: pending deltas are skipped for `turn_end` events
-  to avoid double-rendering the same content.
-- Removed `RunElapsedStrip` from inside the `ThreadComposer` — it now
-  renders independently so the composer never jumps when the strip appears
-  or disappears during streaming.
-- Removed the spinning `Loader2` icon that briefly flashed before the stop
-  button appeared, removing another source of streaming jank.
-- Hero composer no longer has special relaxed padding logic — consistent
-  padding regardless of streaming state prevents layout shifts.
-- Fork callback computation in `ThreadMessages` moved to a `useMemo`-wrapped
-  `Map`, avoiding re-creation on every render.
-- `animate-pulse` removed from trace favicons, CLI run rows, and MCP run
-  rows in `AgentActivityCluster` to reduce continuous style recalculations.
-- Activity cluster timer interval reduced from 500ms to 1000ms.
-- `CodeBlock` gains a subtle `transition-opacity duration-150` for smoother
-  visual transitions.
 
 ## [0.1.9] - 2026-06-29 — Fix Context Length Overflow & Remove Hardcoded Token Defaults
 

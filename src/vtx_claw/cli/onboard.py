@@ -1733,14 +1733,16 @@ def _enable_quick_start_websocket_defaults(config: Config) -> bool:
         answer = _get_questionary().confirm("Enable WebSocket channel now?", default=True).ask()
         if not answer:
             console.print(
-                "[yellow]! Quick Start needs the WebSocket channel for the local WebUI[/yellow]"
+                "[yellow]! Quick Start needs the WebSocket channel for remote access[/yellow]"
             )
             return False
-        webui_secret = _input_secret("Set a WebUI password")
+        webui_secret = _input_secret("Set a WebSocket password")
         if webui_secret is _BACK_PRESSED:
             continue
         if not webui_secret:
-            console.print("[yellow]! WebUI password is required when enabling WebSocket[/yellow]")
+            console.print(
+                "[yellow]! WebSocket password is required when enabling WebSocket[/yellow]"
+            )
             return False
         break
 

@@ -1111,7 +1111,7 @@ async def request_mcp_reload(bus: Any, *, timeout: float = 15.0) -> dict[str, An
     await bus.publish_inbound(
         InboundMessage(
             channel="system",
-            sender_id="webui-settings",
+            sender_id="system-settings",
             chat_id="runtime",
             content=RUNTIME_CONTROL_MCP_RELOAD,
             metadata={

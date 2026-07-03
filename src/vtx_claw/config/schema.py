@@ -353,15 +353,6 @@ class ToolsConfig(Base):
     restrict_to_workspace: bool = (
         False  # policy intent: keep tool access inside workspace when possible
     )
-    webui_allow_local_service_access: bool = Field(
-        default=True,
-        validation_alias=AliasChoices(
-            "webuiAllowLocalServiceAccess",
-            "webui_allow_local_service_access",
-            "allowLocalPreviewAccess",
-            "allow_local_preview_access",
-        ),
-    )  # allow WebUI Full Access shell checks against localhost services; legacy allowLocalPreviewAccess still reads
     mcp_servers: dict[str, MCPServerConfig] = Field(default_factory=dict)
     ssrf_whitelist: list[str] = Field(
         default_factory=list

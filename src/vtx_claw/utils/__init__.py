@@ -29,11 +29,7 @@ class _LazyModuleAlias(ModuleType):
         return sorted(set(super().__dir__()) | set(dir(self._load())))
 
 
-_LEGACY_MODULE_ALIASES = {
-    "webui_thread_disk": "vtx_claw.webui.thread_disk",
-    "webui_transcript": "vtx_claw.webui.transcript",
-    "webui_turn_helpers": "vtx_claw.session.webui_turns",
-}
+_LEGACY_MODULE_ALIASES = {}
 
 for _legacy_name, _target_name in _LEGACY_MODULE_ALIASES.items():
     sys.modules.setdefault(

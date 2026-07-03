@@ -18,7 +18,6 @@ from websockets.asyncio.server import ServerConnection, serve, unix_serve
 from websockets.exceptions import ConnectionClosed
 from websockets.http11 import Request as WsRequest
 
-import vtx
 from vtx_claw.bus.events import OUTBOUND_META_AGENT_UI, OutboundMessage
 from vtx_claw.bus.queue import MessageBus
 from vtx_claw.channels.base import BaseChannel
@@ -26,18 +25,7 @@ from vtx_claw.config.paths import get_media_dir
 from vtx_claw.config.schema import Base
 from vtx_claw.security.workspace_access import WORKSPACE_SCOPE_METADATA_KEY, WorkspaceScopeError
 from vtx_claw.session.goal_state import goal_state_ws_blob
-from vtx_claw.session.webui_turns import websocket_turn_wall_started_at
 from vtx_claw.utils.media_decode import FileSizeExceeded, save_base64_data_url
-from vtx_claw.webui.cli_apps_api import normalize_cli_app_mentions
-from vtx_claw.webui.forking import handle_webui_fork_chat
-from vtx_claw.webui.gateway_services import GatewayServices
-from vtx_claw.webui.http_utils import normalize_config_path as _normalize_config_path
-from vtx_claw.agent.vtx_adapter import VtxModeHandler
-from vtx_claw.webui.http_utils import parse_request_path as _parse_request_path
-from vtx_claw.webui.http_utils import query_first as _query_first
-from vtx_claw.webui.mcp_presets_api import normalize_mcp_preset_mentions
-from vtx_claw.webui.transcription_ws import webui_transcription_event
-from vtx_claw.webui.websocket_logging import websockets_server_logger
 
 
 class WebSocketConfig(Base):
@@ -72,10 +60,6 @@ class WebSocketConfig(Base):
     websocket_requires_token: bool = True
     allow_from: list[str] = Field(default_factory=lambda: ["*"])
     streaming: bool = True
-    # Default 40 MB: supports up to 4 images at ~6 MB each after
-    # client-side Worker normalization (see webui Composer). 4 × 6 MB × 1.37
-    # (base64 overhead) + envelope framing stays under 36 MB; the 40 MB ceiling
-    # leaves a small margin for sender slop without opening a DoS avenue.
     max_message_bytes: int = Field(default=41_943_040, ge=1024, le=41_943_040)
     ping_interval_s: float = Field(default=60.0, ge=5.0, le=300.0)
     ping_timeout_s: float = Field(default=120.0, ge=5.0, le=300.0)
@@ -130,6 +114,179 @@ class WebSocketConfig(Base):
             "host is 0.0.0.0 (all interfaces) but neither token nor "
             "token_issue_secret is set — set one to prevent unauthenticated access"
         )
+
+
+# Local replacements for removed webui utilities
+
+
+def _normalize_config_path(path: str) -> str:
+    """Normalize a config path by stripping trailing slashes."""
+    return path.rstrip("/") or "/"
+
+
+def _parse_request_path(raw: str) -> tuple[str, dict[str, list[str]]]:
+    """Parse a request path into (path, query_dict)."""
+    from urllib.parse import parse_qs, urlparse
+
+    parsed = urlparse(raw)
+    return parsed.path, parse_qs(parsed.query)
+
+
+def _query_first(query: dict[str, list[str]], key: str) -> str | None:
+    """Get the first value for a query key."""
+    values = query.get(key)
+    return values[0] if values else None
+
+
+def _websockets_server_logger():
+    """Return a logger for the WebSocket server."""
+    from loguru import logger
+
+    return logger.bind(channel="websocket")
+
+
+def websocket_turn_wall_started_at(chat_id: str) -> float | None:
+    """Return the wall-clock start time of the current turn for chat_id, or None."""
+    return None
+
+
+class _TokenStore:
+    """Simple token store for WebSocket authentication."""
+
+    def __init__(self) -> None:
+        self._issued: dict[str, float] = {}
+        self._ttl_s: int = 300
+
+    def take_issued_token_if_valid(self, token: str) -> bool:
+        import time
+
+        if token in self._issued:
+            if time.time() - self._issued[token] < self._ttl_s:
+                del self._issued[token]
+                return True
+            del self._issued[token]
+        return False
+
+    def clear(self) -> None:
+        self._issued.clear()
+
+
+class _MediaHandler:
+    """Simple media handler for rewriting local markdown images."""
+
+    def rewrite_local_markdown_images(self, text: str) -> str:
+        return text
+
+    def sign_or_stage_media_path(self, path: Any) -> dict[str, str] | None:
+        return None
+
+
+class _TranscriptRecorder:
+    """Simple transcript recorder."""
+
+    def client_turn_metadata(self, turn_id: str | None) -> dict[str, Any]:
+        return {}
+
+    def append_user_message(self, chat_id: str, content: str, **kwargs: Any) -> None:
+        pass
+
+    def prepare_and_append(self, chat_id: str, payload: dict[str, Any], **kwargs: Any) -> None:
+        pass
+
+
+class _WorkspaceController:
+    """Simple workspace controller."""
+
+    def __init__(
+        self, default_workspace: Any = None, *, restrict_to_workspace: bool = False
+    ) -> None:
+        self._default_workspace = default_workspace
+        self._restrict_to_workspace = restrict_to_workspace
+
+    def default_scope(self) -> Any:
+        from vtx_claw.security.workspace_access import default_workspace_scope
+
+        return default_workspace_scope(
+            self._default_workspace or Path("."), restrict_to_workspace=self._restrict_to_workspace
+        )
+
+    def scope_for_new_chat(self, envelope: dict, **kwargs: Any) -> Any:
+        from vtx_claw.security.workspace_access import WorkspaceScope
+
+        return WorkspaceScope(
+            project_path=Path("."),
+            access_mode="full",
+            restrict_to_workspace=False,
+            sandbox_status=None,
+        )
+
+    def scope_for_set_request(self, envelope: dict, **kwargs: Any) -> Any:
+        from vtx_claw.security.workspace_access import WorkspaceScope
+
+        return WorkspaceScope(
+            project_path=Path("."),
+            access_mode="full",
+            restrict_to_workspace=False,
+            sandbox_status=None,
+        )
+
+    def scope_for_message(self, envelope: dict, **kwargs: Any) -> Any:
+        from vtx_claw.security.workspace_access import WorkspaceScope
+
+        return WorkspaceScope(
+            project_path=Path("."),
+            access_mode="full",
+            restrict_to_workspace=False,
+            sandbox_status=None,
+        )
+
+    def persist_scope(self, chat_id: str, scope: Any) -> None:
+        pass
+
+    def workspace_controls_available(self, connection: Any) -> bool:
+        return False
+
+
+class GatewayServices:
+    """Minimal gateway services for WebSocket channel."""
+
+    def __init__(
+        self,
+        *,
+        bus: Any = None,
+        session_manager: Any = None,
+        workspace_path: Any = None,
+        restrict_to_workspace: bool = False,
+    ) -> None:
+        self.bus = bus
+        self.session_manager = session_manager
+        self.workspace_path = workspace_path
+        self.http = None
+        self.tokens = _TokenStore()
+        self.media = _MediaHandler()
+        self.transcripts = _TranscriptRecorder()
+        self.workspaces = _WorkspaceController(
+            workspace_path, restrict_to_workspace=restrict_to_workspace
+        )
+
+
+def build_gateway_services(
+    *,
+    config: Any = None,
+    bus: Any = None,
+    session_manager: Any = None,
+    static_dist_path: Any = None,
+    workspace_path: Any = None,
+    default_restrict_to_workspace: bool = False,
+    **kwargs: Any,
+) -> GatewayServices:
+    """Build gateway services for the WebSocket channel."""
+    return GatewayServices(
+        bus=bus,
+        session_manager=session_manager,
+        workspace_path=workspace_path,
+        restrict_to_workspace=default_restrict_to_workspace,
+    )
 
 
 def publish_runtime_model_update(bus: MessageBus, model: str, model_preset: str | None) -> None:
@@ -290,36 +447,17 @@ class WebSocketChannel(BaseChannel):
         self._server_task: asyncio.Task[None] | None = None
 
         self.gateway = gateway
-        self._http_router = gateway.http
         self._tokens = gateway.tokens
         self._media = gateway.media
         self._transcripts = gateway.transcripts
         self._workspaces = gateway.workspaces
 
         self._stream_text_buffers: dict[tuple[str, str], list[str]] = {}
-        self._vtx_mode_tasks: set[asyncio.Task[None]] = set()
-
-        # VTX mode handler — instantiated lazy on first use.
-        self._vtx_handler: VtxModeHandler | None = None
-
-    def _ensure_vtx_handler(self) -> VtxModeHandler:
-        if self._vtx_handler is None:
-            from vtx_claw.webui.gateway_services import GatewayServices as _GS
-
-            workspace = Path(
-                getattr(self.gateway, "workspace_path", None)
-                or str(self._workspaces._default_workspace)
-                or "."
-            )
-            self._vtx_handler = VtxModeHandler(
-                workspace=workspace, config=self.config, send_to_chat=self._send_vtx_event
-            )
-        return self._vtx_handler
 
     # -- Subscription bookkeeping -------------------------------------------
 
     def _workspace_controls_available(self, connection: Any) -> bool:
-        return self._http_router.workspace_controls_available(connection)
+        return False
 
     def _attach(self, connection: Any, chat_id: str) -> None:
         """Idempotently subscribe *connection* to *chat_id*."""
@@ -420,7 +558,7 @@ class WebSocketChannel(BaseChannel):
     # -- HTTP dispatch ------------------------------------------------------
 
     async def _dispatch_http(self, connection: Any, request: WsRequest) -> Any:
-        """Route an inbound HTTP request to the HTTP handler or WS upgrade."""
+        """Route an inbound HTTP request to WS upgrade."""
         got, query = _parse_request_path(request.path)
 
         # WebSocket upgrade — channel handles this itself
@@ -433,8 +571,8 @@ class WebSocketChannel(BaseChannel):
                 return connection.respond(403, "Forbidden")
             return self._authorize_websocket_handshake(connection, query)
 
-        # Everything else goes to the HTTP handler
-        return await self._http_router.dispatch(connection, request)
+        # No HTTP routes without webui
+        return connection.respond(404, "Not Found")
 
     def _authorize_websocket_handshake(self, connection: Any, query: dict[str, list[str]]) -> Any:
         supplied = _query_first(query, "token")
@@ -462,7 +600,7 @@ class WebSocketChannel(BaseChannel):
         from vtx_claw.utils.logging_bridge import redirect_lib_logging
 
         redirect_lib_logging("websockets", level="WARNING")
-        ws_logger = websockets_server_logger()
+        ws_logger = _websockets_server_logger()
 
         self._running = True
         self._stop_event = asyncio.Event()
@@ -695,9 +833,6 @@ class WebSocketChannel(BaseChannel):
             )
             await self._hydrate_after_subscribe(new_id)
             return
-        if t == "fork_chat":
-            await handle_webui_fork_chat(self, connection, envelope)
-            return
         if t == "attach":
             cid = envelope.get("chat_id")
             if not _is_valid_chat_id(cid):
@@ -725,12 +860,6 @@ class WebSocketChannel(BaseChannel):
             if scope is None:
                 return
             self._workspaces.persist_scope(cid, scope)
-            # Sync WebUI access_mode to vtx's permission_mode.
-            # "full"  -> "auto"   (tool calls execute without prompting)
-            # other   -> "prompt" (agent prompts before executing a tool)
-            _mode = "auto" if scope.access_mode == "full" else "prompt"
-            with suppress(Exception):
-                vtx.set_permissions_mode(_mode)
             await self._send_event(
                 connection,
                 "session_updated",
@@ -738,10 +867,6 @@ class WebSocketChannel(BaseChannel):
                 scope="metadata",
                 workspace_scope=scope.payload(),
             )
-            return
-        if t == "transcribe_audio":
-            event, payload = await webui_transcription_event(envelope)
-            await self._send_event(connection, event, **payload)
             return
         if t == "message":
             cid = envelope.get("chat_id")
@@ -789,57 +914,17 @@ class WebSocketChannel(BaseChannel):
             self._attach(connection, cid)
             await self._hydrate_after_subscribe(cid)
             metadata: dict[str, Any] = {"remote": getattr(connection, "remote_address", None)}
-            if envelope.get("webui") is True:
-                metadata["webui"] = True
-                metadata.update(self._transcripts.client_turn_metadata(envelope.get("turn_id")))
-            cli_apps = normalize_cli_app_mentions(envelope.get("cli_apps"))
-            if cli_apps:
-                metadata["cli_apps"] = cli_apps
-            mcp_presets = normalize_mcp_preset_mentions(envelope.get("mcp_presets"))
-            if mcp_presets:
-                metadata["mcp_presets"] = mcp_presets
             metadata[WORKSPACE_SCOPE_METADATA_KEY] = scope.metadata()
             self._workspaces.persist_scope(cid, scope)
-            image_generation = envelope.get("image_generation")
-            if isinstance(image_generation, dict) and image_generation.get("enabled") is True:
-                aspect_ratio = image_generation.get("aspect_ratio")
-                metadata["image_generation"] = {
-                    "enabled": True,
-                    "aspect_ratio": aspect_ratio if isinstance(aspect_ratio, str) else None,
-                }
-            if metadata.get("webui") is True and self.is_allowed(client_id):
-                self._transcripts.append_user_message(
-                    cid,
-                    content,
-                    metadata=metadata,
-                    media_paths=media_paths or None,
-                    cli_apps=cli_apps or None,
-                    mcp_presets=mcp_presets or None,
-                )
 
-            # -- VTX / Claw mode routing -----------------------------------
-            mode = envelope.get("mode", "claw")
-            if mode == "vtx":
-                handler = self._ensure_vtx_handler()
-                task = asyncio.create_task(
-                    handler.handle_turn(
-                        chat_id=cid,
-                        content=content,
-                        media_paths=media_paths or None,
-                        metadata=metadata,
-                    )
-                )
-                self._vtx_mode_tasks.add(task)
-                task.add_done_callback(self._vtx_mode_tasks.discard)
-            else:
-                await self._handle_message(
-                    sender_id=client_id,
-                    chat_id=cid,
-                    content=content,
-                    media=media_paths or None,
-                    metadata=metadata,
-                    is_dm=False,
-                )
+            await self._handle_message(
+                sender_id=client_id,
+                chat_id=cid,
+                content=content,
+                media=media_paths or None,
+                metadata=metadata,
+                is_dm=False,
+            )
             return
         await self._send_event(connection, "error", detail=f"unknown type: {t!r}")
 
@@ -1043,111 +1128,7 @@ class WebSocketChannel(BaseChannel):
         for connection in conns:
             await self._safe_send_to(connection, raw, label=" reasoning_end ")
 
-    # -- VTX mode event helper ------------------------------------------------
-
-    def _send_vtx_event(self, chat_id: str, event_type: str, **kwargs: Any) -> None:
-        """Send a JSON event from the VTX mode handler to all subscribers.
-
-        This is a synchronous adapter that dispatches to the appropriate
-        ``send_*`` method or does a raw JSON send for simple frames.
-        """
-        conns = list(self._subs.get(chat_id, ()))
-        if not conns and event_type not in ("goal_status",):
-            return
-
-        if event_type == "delta":
-            body = {"event": "delta", "chat_id": chat_id, "text": kwargs.get("text", "")}
-            raw = json.dumps(body, ensure_ascii=False)
-            for c in conns:
-                asyncio.ensure_future(self._safe_send_to(c, raw, label=" vtx-stream "))
-
-        elif event_type == "reasoning_delta":
-            body = {"event": "reasoning_delta", "chat_id": chat_id, "text": kwargs.get("text", "")}
-            raw = json.dumps(body, ensure_ascii=False)
-            for c in conns:
-                asyncio.ensure_future(self._safe_send_to(c, raw, label=" vtx-reason "))
-
-        elif event_type == "reasoning_end":
-            body = {"event": "reasoning_end", "chat_id": chat_id}
-            raw = json.dumps(body, ensure_ascii=False)
-            for c in conns:
-                asyncio.ensure_future(self._safe_send_to(c, raw, label=" vtx-reason-end "))
-
-        elif event_type == "stream_end":
-            body = {"event": "stream_end", "chat_id": chat_id, "text": kwargs.get("text", "")}
-            raw = json.dumps(body, ensure_ascii=False)
-            for c in conns:
-                asyncio.ensure_future(self._safe_send_to(c, raw, label=" vtx-stream-end "))
-
-        elif event_type == "message":
-            body: dict[str, Any] = {
-                "event": "message",
-                "chat_id": chat_id,
-                "content": kwargs.get("content", ""),
-                "kind": kwargs.get("kind", "message"),
-                "role": kwargs.get("role", "assistant"),
-            }
-            for key in ("turn_id", "turn_seq"):
-                if key in kwargs:
-                    body[key] = kwargs[key]
-            raw = json.dumps(body, ensure_ascii=False)
-            for c in conns:
-                asyncio.ensure_future(self._safe_send_to(c, raw, label=" vtx-msg "))
-
-        elif event_type == "file_edit":
-            body = {
-                "event": "file_edit",
-                "chat_id": chat_id,
-                "phase": kwargs.get("phase", "start"),
-                "tool": kwargs.get("tool", ""),
-                "call_id": kwargs.get("call_id", ""),
-            }
-            for key in ("turn_id", "turn_seq", "summary"):
-                if key in kwargs:
-                    body[key] = kwargs[key]
-            raw = json.dumps(body, ensure_ascii=False)
-            for c in conns:
-                asyncio.ensure_future(self._safe_send_to(c, raw, label=" vtx-edit "))
-
-        elif event_type == "turn_end":
-            body: dict[str, Any] = {"event": "turn_end", "chat_id": chat_id}
-            for key in ("turn_id", "turn_seq", "latency_ms", "goal_state"):
-                if key in kwargs:
-                    body[key] = kwargs[key]
-            meta: dict[str, Any] = {}
-            for key in ("context_tokens", "context_window"):
-                if key in kwargs:
-                    meta[key] = kwargs[key]
-            if meta:
-                body["metadata"] = meta
-            raw = json.dumps(body, ensure_ascii=False)
-            for c in conns:
-                asyncio.ensure_future(self._safe_send_to(c, raw, label=" vtx-turn-end "))
-
-        elif event_type == "goal_status":
-            # goal_status is sent as the outbound-bus goal_status mechanism
-            body = {
-                "event": "goal_status",
-                "chat_id": chat_id,
-                "status": kwargs.get("status", "idle"),
-            }
-            if "started_at" in kwargs:
-                body["started_at"] = kwargs["started_at"]
-            raw = json.dumps(body, ensure_ascii=False)
-            for c in conns:
-                asyncio.ensure_future(self._safe_send_to(c, raw, label=" vtx-goal "))
-
-        elif event_type == "error":
-            body = {
-                "event": "error",
-                "chat_id": chat_id,
-                "detail": kwargs.get("detail", "vtx_error"),
-            }
-            if "reason" in kwargs:
-                body["reason"] = kwargs["reason"]
-            raw = json.dumps(body, ensure_ascii=False)
-            for c in conns:
-                asyncio.ensure_future(self._safe_send_to(c, raw, label=" vtx-err "))
+    # -- Outbound WebSocket events -----------------------------------------
 
     async def send_file_edit_events(
         self, chat_id: str, edits: list[dict[str, Any]], metadata: dict[str, Any] | None = None

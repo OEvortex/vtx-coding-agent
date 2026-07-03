@@ -9,7 +9,6 @@ from vtx_claw.config.paths import (
     get_logs_dir,
     get_media_dir,
     get_runtime_subdir,
-    get_webui_dir,
     get_workspace_path,
     is_default_workspace,
 )
@@ -25,7 +24,6 @@ __all__ = [
     "get_logs_dir",
     "get_media_dir",
     "get_runtime_subdir",
-    "get_webui_dir",
     "get_workspace_path",
     "is_default_workspace",
     "load_config",

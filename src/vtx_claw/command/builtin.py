@@ -348,11 +348,6 @@ async def cmd_dream(ctx: CommandContext) -> OutboundMessage:
             elapsed = time.monotonic() - t0
             content = f"Dream failed after {elapsed:.1f}s: {e}"
         finally:
-            from vtx_claw.webui.token_usage import record_response_token_usage
-
-            record_response_token_usage(
-                resp, source="dream", timezone_name=getattr(loop.context, "timezone", None)
-            )
             if store.git.is_initialized():
                 commit_msg = build_dream_commit_message("dream: manual run", resp)
                 sha = store.git.auto_commit(commit_msg)
@@ -376,7 +371,7 @@ def _format_dream_no_input_message() -> str:
             "Dream reads new entries from `memory/history.jsonl` after the current Dream cursor.",
             (
                 "Short chats only reach that file after token compaction or idle auto-compact, "
-                "so a fresh or short WebUI chat may leave Dream with no input."
+                "so a fresh or short chat may leave Dream with no input."
             ),
             "",
             "Next steps:",

@@ -27,7 +27,7 @@ _CURRENT_WORKSPACE_SCOPE: ContextVar[WorkspaceScope | None] = ContextVar(
 
 
 class WorkspaceScopeError(ValueError):
-    """Raised when a requested WebUI workspace scope is invalid."""
+    """Raised when a requested workspace scope is invalid."""
 
     status = 400
 
@@ -192,12 +192,6 @@ def workspace_sandbox_status(
 def default_access_mode(
     restrict_to_workspace: bool, *, source_channel: str | None = None
 ) -> WorkspaceAccessMode:
-    if source_channel == "websocket":
-        from vtx_claw.webui.workspaces import read_webui_default_access_mode
-
-        mode = read_webui_default_access_mode()
-        if mode == "full":
-            return "full"
     return "restricted" if restrict_to_workspace else "full"
 
 
@@ -349,7 +343,7 @@ def current_tool_workspace(
 
 
 def current_scope_allows_loopback(*, enabled: bool) -> bool:
-    """Return True when the current WebUI Full Access turn may touch loopback URLs."""
+    """Return True when the current full-access turn may touch loopback URLs."""
 
     scope = current_workspace_scope()
     return bool(

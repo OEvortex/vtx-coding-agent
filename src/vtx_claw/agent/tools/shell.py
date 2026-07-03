@@ -155,7 +155,6 @@ class ExecTool(Tool):
             working_dir=ctx.workspace,
             timeout=cfg.timeout,
             restrict_to_workspace=ctx.config.restrict_to_workspace,
-            webui_allow_local_service_access=ctx.config.webui_allow_local_service_access,
             sandbox=cfg.sandbox,
             path_prepend=cfg.path_prepend,
             path_append=cfg.path_append,
@@ -171,7 +170,6 @@ class ExecTool(Tool):
         deny_patterns: list[str] | None = None,
         allow_patterns: list[str] | None = None,
         restrict_to_workspace: bool = False,
-        webui_allow_local_service_access: bool = True,
         allow_local_preview_access: bool | None = None,
         sandbox: str = "",
         path_prepend: str = "",
@@ -206,9 +204,7 @@ class ExecTool(Tool):
         )
         self.allow_patterns = allow_patterns or []
         self.restrict_to_workspace = restrict_to_workspace
-        if allow_local_preview_access is not None:
-            webui_allow_local_service_access = allow_local_preview_access
-        self.webui_allow_local_service_access = webui_allow_local_service_access
+        self.allow_local_preview_access = allow_local_preview_access or False
         self.path_prepend = path_prepend
         self.path_append = path_append
         self.allowed_env_keys = allowed_env_keys or []
@@ -629,9 +625,7 @@ class ExecTool(Tool):
 
         if contains_internal_url(
             cmd,
-            allow_loopback=current_scope_allows_loopback(
-                enabled=self.webui_allow_local_service_access
-            ),
+            allow_loopback=current_scope_allows_loopback(enabled=self.allow_local_preview_access),
         ):
             # The runner turns this marker into a non-retryable security hint.
             return "Error: Command blocked by safety guard (internal/private URL detected)"

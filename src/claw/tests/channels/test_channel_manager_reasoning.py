@@ -66,10 +66,7 @@ def manager() -> ChannelManager:
     return mgr
 
 
-def test_websocket_gateway_uses_configured_workspace_restriction(tmp_path, monkeypatch):
-    monkeypatch.setattr(
-        "vtx_claw.webui.workspaces.read_webui_default_access_mode", lambda: "default"
-    )
+def test_websocket_gateway_uses_configured_workspace_restriction(tmp_path):
     config = Config.model_validate(
         {
             "agents": {"defaults": {"workspace": str(tmp_path)}},
@@ -78,7 +75,7 @@ def test_websocket_gateway_uses_configured_workspace_restriction(tmp_path, monke
         }
     )
 
-    mgr = ChannelManager(config, MessageBus(), webui_static_dist=False)
+    mgr = ChannelManager(config, MessageBus())
     channel = mgr.channels["websocket"]
 
     scope = channel.gateway.workspaces.default_scope()

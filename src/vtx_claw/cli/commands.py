@@ -61,7 +61,6 @@ from vtx_claw.utils.restart import (  # noqa: E402
     format_restart_completed_message,
     should_show_cli_restart_notice,
 )
-from vtx_claw.webui.sidebar_state import read_webui_sidebar_state  # noqa: E402
 
 
 def _sanitize_surrogates(text: str) -> str:
@@ -846,9 +845,6 @@ def _run_gateway(
     *,
     port: int | None = None,
     open_browser_url: str | None = None,
-    webui_static_dist: bool = True,
-    webui_runtime_surface: str = "browser",
-    webui_runtime_capabilities: dict[str, Any] | None = None,
     health_server_enabled: bool = True,
 ) -> None:
     """Shared gateway runtime; ``open_browser_url`` opens a tab once channels are up."""
@@ -863,8 +859,6 @@ def _run_gateway(
     from vtx_claw.providers.factory import build_provider_snapshot, load_provider_snapshot
     from vtx_claw.providers.image_generation import image_gen_provider_configs
     from vtx_claw.session.manager import SessionManager
-    from vtx_claw.session.webui_turns import WebuiTurnCoordinator
-    from vtx_claw.webui.token_usage import TokenUsageHook
 
     port = port if port is not None else config.gateway.port
 
@@ -900,13 +894,7 @@ def _run_gateway(
         provider_snapshot_loader=load_provider_snapshot,
         runtime_events=runtime_events,
         provider_signature=provider_snapshot.signature,
-        hooks=[TokenUsageHook(timezone_name=config.agents.defaults.timezone)],
     )
-    WebuiTurnCoordinator(
-        bus=bus,
-        sessions=session_manager,
-        schedule_background=lambda coro: agent._schedule_background(coro),
-    ).subscribe(runtime_events)
 
     from vtx_claw.bus.events import OutboundMessage
     from vtx_claw.session.keys import session_key_for_channel
@@ -994,11 +982,6 @@ def _run_gateway(
             except Exception:
                 logger.exception("Dream cron job failed")
             finally:
-                from vtx_claw.webui.token_usage import record_response_token_usage
-
-                record_response_token_usage(
-                    resp, source="dream", timezone_name=config.agents.defaults.timezone
-                )
                 if store.git.is_initialized():
                     msg = build_dream_commit_message("dream: periodic memory consolidation", resp)
                     sha = store.git.auto_commit(msg)
@@ -1087,25 +1070,14 @@ def _run_gateway(
 
     # Create channel manager (forwards SessionManager so the WebSocket channel
     # can serve the embedded webui's REST surface).
-    channels = ChannelManager(
-        config,
-        bus,
-        session_manager=session_manager,
-        cron_service=cron,
-        webui_runtime_model_name=_webui_runtime_model_name,
-        webui_cron_pending_job_ids=getattr(agent, "pending_cron_job_ids_for_session", None),
-        webui_static_dist=webui_static_dist,
-        webui_runtime_surface=webui_runtime_surface,
-        webui_runtime_capabilities=webui_runtime_capabilities,
-    )
+    channels = ChannelManager(config, bus, session_manager=session_manager, cron_service=cron)
 
     def _pick_heartbeat_target() -> tuple[str, str]:
         """Pick a routable channel/chat target for heartbeat-triggered messages."""
-        sidebar_state = read_webui_sidebar_state()
         return _pick_heartbeat_target_from_sessions(
             enabled_channels=channels.enabled_channels,
             sessions=session_manager.list_sessions(),
-            archived_keys=sidebar_state.get("archived_keys", []),
+            archived_keys=[],
         )
 
     if channels.enabled_channels:
