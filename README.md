@@ -21,6 +21,15 @@ Unlike heavy agentic frameworks that load thousands of hidden tokens, Vtx is tra
 
 By keeping the core prompt lean, Vtx leaves the model's context window open for what matters most: **your code, your project files, and your task context**.
 
+## Dual agentic backends
+
+`vtx-coding-agent` ships two agentic execution engines:
+
+- **`vtx` native event loop** (`src/vtx/loop.py`, `src/vtx/turn.py`) — the original single-session, event-stream loop. It powers the TUI and the headless CLI (`vtx -p "..."`). It handles thinking streaming, tool permissions, file edits, and compaction between turns.
+- **`vtx_claw` advanced backend** (`src/vtx_claw/agent/loop.py`, `src/vtx_claw/agent/runner.py`) — a production-grade multi-session gateway loop with concurrent tool batching, context governance, crash-checkpoint restore, mid-turn message injection, subagent orchestration, MCP servers, cron turns, and a hook lifecycle. It powers the `vtx-claw` gateway, WebUI, and 16+ chat-channel integrations.
+
+The core TUI is lightweight. The advanced gateway backend requires the **`[claw]` extra** because it pulls in channel adapters, cron, MCP, and subagent dependencies.
+
 ---
 
 ## ⚡ Key Features
@@ -58,6 +67,11 @@ Both scripts detect Python 3.12+ on PATH, upgrade pip, and guide you through an 
 Alternatively, install directly with `uv`:
 ```bash
 uv tool install vtx-coding-agent
+```
+
+**Install the advanced gateway backend:**
+```bash
+uv tool install "vtx-coding-agent[claw]"
 ```
 
 ### Run

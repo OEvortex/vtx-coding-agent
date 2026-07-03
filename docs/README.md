@@ -22,7 +22,7 @@ This folder is the reference companion to the top-level [README](../README.md). 
 
 | Doc | What it covers |
 | --- | --- |
-| [architecture.md](architecture.md) | Internal module map, message types, request flow, design decisions |
+| [architecture.md](architecture.md) | Internal module map, message types, request flow, dual agentic loop design |
 | [development.md](development.md) | Build, test, lint, typecheck, and release Vtx itself |
 | [e2e-test-coverage-review.md](e2e-test-coverage-review.md) | State of the tmux e2e harness and recommended additions |
 
@@ -61,4 +61,4 @@ vtx-claw is the multi-channel AI agent gateway. Full documentation lives in [`cl
 - **Debugging sessions or compaction:** [sessions.md](sessions.md).
 - **Tuning for a local model:** [local-models.md](local-models.md) and [configuration.md](configuration.md) (the `compaction` section).
 - **Working on Vtx itself:** [development.md](development.md), then [architecture.md](architecture.md).
-- **Working on vtx-claw:** [claw/architecture.md](claw/architecture.md), then [claw/README.md](claw/README.md).
+- **Working on vtx-claw:** [architecture.md](architecture.md) (dual-loop section), then [claw/architecture.md](claw/architecture.md) and [claw/README.md](claw/README.md).

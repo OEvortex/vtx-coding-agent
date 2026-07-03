@@ -172,18 +172,21 @@ class UserMessage(BaseModel):
     role: Literal["user"]
     content: list[TextContent | ImageContent]
 
+
 class AssistantMessage(BaseModel):
     role: Literal["assistant"]
     content: list[TextContent | ThinkingContent | ToolCall]
-    stop_reason: StopReason     # STOP | LENGTH | ERROR
-    usage: Usage                # tokens
+    stop_reason: StopReason  # STOP | LENGTH | ERROR
+    usage: Usage  # tokens
     model: str
+
 
 class ToolResultMessage(BaseModel):
     role: Literal["tool_result"]
     tool_call_id: str
     content: list[TextContent | ImageContent]
     is_error: bool
+
 
 class ToolCall(BaseModel):
     id: str
@@ -205,9 +208,68 @@ These are the only message shapes that flow between the LLM provider and the age
 
 `runtime.prepare_for_run()` returns an `AgentLoop` configured for the current settings. The loop is the consumer/producer of `AgentEvent`s.
 
-## Agent loop
+## Agent loops
 
-`loop.py` contains the agentic loop. For each iteration:
+Vtx ships two execution engines. Both consume the same core types (`Message`, `AssistantMessage`, `ToolResultMessage`) but differ in scope, resilience, and concurrency.
+
+### Native event loop (`vtx/loop.py` + `vtx/turn.py`)
+
+The **native event loop** powers the TUI and headless CLI (`vtx -p "..."`).
+
+```
+src/vtx/
+├── loop.py   # Agent — async generator yielding typed Events
+└── turn.py   # _TurnRunner / run_single_turn — single-turn stream + tool execution
+```
+
+Turn shape:
+1. Yield `TurnStartEvent`.
+2. Call `run_single_turn()` → stream LLM parts → yield `TextDeltaEvent`, `ThinkingDeltaEvent`, `ToolStartEvent`, `ToolArgsDeltaEvent`, `ToolEndEvent`, `ToolResultEvent`.
+3. Yield `TurnEndEvent` with the final `AssistantMessage`.
+4. If the model returned tool calls, the outer `Agent.run()` loop continues to the next turn.
+
+Key properties:
+- **Event stream**: the TUI is a pure consumer of `AgentEvent`s; the headless runner is a different consumer of the same stream.
+- **Cancellation**: races each stream chunk against `cancel_event` via `asyncio.wait(FIRST_COMPLETED)` so ESC takes effect immediately.
+- **Permissions**: auto-approve read-only tools, prompt for mutating ones, and yield `ToolApprovalEvent` for the UI to resolve.
+- **Stall detection**: tool-call idle timeout (`tool_call_idle_timeout_seconds`) finalizes partial arguments instead of hanging.
+- **Compaction**: after each turn, if the most recent assistant usage exceeds the context window threshold, `generate_summary()` produces a synthetic compaction message and the loop continues with the summary in place.
+
+### Advanced backend loop (`vtx_claw/agent/loop.py` + `vtx_claw/agent/runner.py`)
+
+The **advanced backend loop** is part of the same `vtx-coding-agent` package. It powers the `vtx-claw gateway` command and the WebUI. It is a state-machine-driven, multi-session, concurrent executor.
+
+```
+src/vtx_claw/agent/
+├── loop.py     # AgentLoop — 8-state machine (RESTORE → COMPACT → ... → DONE)
+└── runner.py   # AgentRunner — inner LLM iteration with streaming + tool execution
+```
+
+Turn shape (inside `AgentLoop._state_run`):
+1. `_run_agent_loop()` creates an `AgentProgressHook` (wraps streaming/progress callbacks) and composes it with any extra `AgentHook`s via `CompositeHook`.
+2. `AgentRunner.run()` iterates up to `max_iterations`:
+   - Call `_request_model()` → consume `TextPart`, `ThinkPart`, `ToolCallStart`, `ToolCallDelta`, `StreamDone` from a bridge adapter.
+   - If tools are present, execute them in concurrent batches (`asyncio.gather` for `concurrency_safe` tools).
+   - Empty-content retry (2×), length recovery (3×), malformed-tool-call retry, and injection draining between iterations.
+3. Return `(final_content, tools_used, messages, stop_reason)` to `_state_save`, then `_state_respond`.
+
+Key properties:
+- **State machine**: explicit `TurnState` enum with a `_TRANSITIONS` table and per-state trace logging.
+- **Concurrency**: per-session locks, cross-session semaphore (`VTX_CLAW_MAX_CONCURRENT_REQUESTS`), and concurrent tool batching.
+- **Resilience**: context governance (orphan-tool-result repair, block limits), runtime checkpoints for `/stop` recovery, error-isolated `CompositeHook`.
+- **Injection system**: mid-turn follow-up messages drained from a per-session pending queue, capped at `_MAX_INJECTIONS_PER_TURN`.
+- **Subagents**: `SubagentManager` spawns isolated child sessions and streams live progress back into the parent.
+- **Memory**: `Consolidator` summarizes old turns in the background; `AutoCompact` runs pre-turn compaction.
+
+### When each is used
+
+The native event loop is in the base install. The advanced `vtx_claw` backend requires the `[claw]` extra because it includes channel adapters, cron, MCP, and subagent dependencies.
+
+| Entry point | Loop used | Notes |
+|---|---|---|
+| `vtx` (TUI) | Native event loop | Interactive Textual session |
+| `vtx -p "..."` (headless) | Native event loop | Non-interactive stdout runner |
+| `vtx-claw gateway` | Advanced backend loop | Persistent multi-channel + WebUI server |
 
 1. Send the message list to the provider.
 2. Receive a stream of `LLMStream` parts.

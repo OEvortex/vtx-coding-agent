@@ -26,7 +26,7 @@ def _resolve_version() -> str:
     try:
         return _pkg_version("vtx-claw")
     except PackageNotFoundError:
-        return _read_pyproject_version() or "0.2.2"
+        return _read_pyproject_version() or "0.2.1"
 
 
 __version__ = _resolve_version()
