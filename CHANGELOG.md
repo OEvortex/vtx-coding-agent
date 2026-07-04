@@ -5,6 +5,38 @@ All notable changes to Vtx are documented in this file. The format is based on
 adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 
+## [0.2.2] - 2026-07-04 — Interactive Onboarding Overhaul
+
+### Added
+
+#### Interactive onboarding wizard (5-step Quick Start)
+- `vtx-claw onboard` now launches the interactive wizard by default (use `--no-wizard` for the old non-interactive path).
+- Quick Start expanded from 3 steps to 5:
+  1. **LLM Provider** — pick provider, enter API key, choose model. API keys are now validated against the provider's real API before proceeding.
+  2. **Channel** — enable the local WebUI with a password, optionally connect a chat channel (Telegram, WhatsApp, Discord, etc.) via QR login or manual config.
+  3. **Gateway** — configure port and host with sensible defaults, option to install as a system service.
+  4. **Personal Profile** — fill name, timezone, language, role, and projects. Answers are written to `USER.md` in the workspace.
+  5. **Review** — rich summary panel showing everything configured with exact next-step commands.
+
+#### Auto-detect first run
+- `vtx-claw gateway` and `vtx-claw agent` now detect when no config exists and automatically launch the onboarding wizard instead of silently failing with default config.
+
+#### API key validation
+- New `_validate_api_key()` function that makes real HTTP requests to verify API keys before saving. Supports OpenAI-compatible and Anthropic backends. Shows a spinner during validation and lets users retry on failure.
+
+#### Popular model suggestions
+- Re-enabled model autocomplete and context-window auto-fill in the onboarding wizard with a hardcoded catalog of popular models across 12+ providers (OpenAI, Anthropic, DeepSeek, Google, Groq, OpenRouter, DashScope, Zhipu, VolcEngine, Xiaomi MiMo, MiniMax, StepFun, Ollama).
+
+#### User profile during onboarding
+- New `_configure_quick_start_profile()` step collects user name, timezone, language, role, and projects, then writes them to `USER.md` in the workspace.
+
+### Changed
+- WebSocket password prompt now explains why the password is needed (protects local WebUI access) instead of silently rejecting empty input.
+- Quick Start summary panel now shows LLM provider, API key status, WebUI URL, enabled channels, and exact next-step commands.
+
+### Fixed
+- Fixed `UnboundLocalError` when `api_key` was unset for local providers (e.g., Ollama) in the Quick Start flow.
+
 ## [0.2.0] - 2026-07-03 — Hook System, Gitlawb Opengateway Provider, System Prompt & Tool Configuration, Recent Model Tracking
 
 ### Added
@@ -803,6 +835,8 @@ to keep the model's context window free for what matters.
   via `uv tool install vtx-coding-agent`.
 - Licensed under **Apache License 2.0**.
 
+[0.2.2]: https://github.com/OEvortex/vtx-coding-agent/compare/v0.2.1...v0.2.2
+[0.2.1]: https://github.com/OEvortex/vtx-coding-agent/compare/v0.2.0...v0.2.1
 [0.2.0]: https://github.com/OEvortex/vtx-coding-agent/compare/v0.1.9...v0.2.0
 [0.1.9]: https://github.com/OEvortex/vtx-coding-agent/compare/v0.1.8...v0.1.9
 [0.1.8]: https://github.com/OEvortex/vtx-coding-agent/compare/v0.1.7...v0.1.8

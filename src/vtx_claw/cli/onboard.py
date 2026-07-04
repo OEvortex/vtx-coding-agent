@@ -72,7 +72,7 @@ _QUICK_START_CUSTOM_PROVIDER_CHOICE = "Other OpenAI-compatible"
 
 _CLEAR_CHOICE = "Clear value"
 _QUICK_START_MENU_CHOICE = "[Q] Quick Start"
-_QUICK_START_STEPS = ("Provider setup", "WebSocket channel", "Review")
+_QUICK_START_STEPS = ("LLM Provider", "Channel", "Gateway", "Profile", "Review")
 _QUICK_START_ENDPOINT_CHOICES: dict[str, tuple[_QuickStartEndpointChoice, ...]] = {
     "zhipu": (
         _QuickStartEndpointChoice("Standard API", "https://open.bigmodel.cn/api/paas/v4"),
@@ -1649,6 +1649,80 @@ def _select_quick_start_api_base(
     return api_base, True
 
 
+def _validate_api_key(provider_name: str, api_key: str, api_base: str) -> tuple[bool, str]:
+    """Validate an API key by making a lightweight request to the provider.
+
+    Returns (success, error_message). On success error_message is empty.
+    """
+    import urllib.request
+    import urllib.error
+    import json as _json
+
+    if not api_key or not api_key.strip():
+        return False, "API key is empty"
+
+    base = api_base.rstrip("/") if api_base else ""
+
+    # Build the validation request based on provider backend
+    try:
+        from vtx_claw.providers.registry import find_by_name
+
+        spec = find_by_name(provider_name)
+        backend = spec.backend if spec else "openai_compat"
+    except Exception:
+        backend = "openai_compat"
+
+    headers = {"Authorization": f"Bearer {api_key}", "Content-Type": "application/json"}
+
+    if backend == "anthropic":
+        # Anthropic: minimal messages request
+        url = f"{base}/v1/messages" if base else "https://api.anthropic.com/v1/messages"
+        if base:
+            url = f"{base}/messages" if "/v1" not in base else f"{base}/messages"
+            # Ensure correct path
+            if not url.endswith("/messages"):
+                url = base.rstrip("/") + "/v1/messages"
+        payload = _json.dumps(
+            {
+                "model": "claude-3-5-haiku-20241022",
+                "max_tokens": 1,
+                "messages": [{"role": "user", "content": "hi"}],
+            }
+        ).encode()
+        headers = {
+            "x-api-key": api_key,
+            "anthropic-version": "2023-06-01",
+            "content-type": "application/json",
+        }
+    else:
+        # OpenAI-compatible: list models endpoint
+        url = f"{base}/models" if base else "https://api.openai.com/v1/models"
+        payload = None
+
+    try:
+        req = urllib.request.Request(
+            url, data=payload, headers=headers, method="GET" if payload is None else "POST"
+        )
+        with urllib.request.urlopen(req, timeout=15) as resp:
+            if resp.status in (200, 201):
+                return True, ""
+            return False, f"Unexpected status: {resp.status}"
+    except urllib.error.HTTPError as e:
+        try:
+            body = e.read().decode("utf-8", errors="replace")
+            err_data = _json.loads(body)
+            msg = err_data.get("error", {}).get("message", "") or err_data.get("message", str(e))
+        except Exception:
+            msg = str(e)
+        return False, f"API returned {e.code}: {msg}"
+    except urllib.error.URLError as e:
+        return False, f"Connection failed: {e.reason}"
+    except TimeoutError:
+        return False, "Request timed out"
+    except Exception as e:
+        return False, str(e)
+
+
 def _configure_quick_start_provider(config: Config) -> bool | object:
     """Configure the beginner path from provider credentials and model."""
     while True:
@@ -1674,6 +1748,7 @@ def _configure_quick_start_provider(config: Config) -> bool | object:
                 return False
             assert isinstance(api_base_result, tuple)
             api_base, base_was_prompted = api_base_result
+        api_key = None
         if _quick_start_requires_api_key(provider_name, provider_info):
             api_key = _input_text(f"{answer} API key", "", "str")
             if api_key is _BACK_PRESSED:
@@ -1684,6 +1759,19 @@ def _configure_quick_start_provider(config: Config) -> bool | object:
             if not api_key:
                 console.print("[yellow]! API key is required for Quick Start[/yellow]")
                 return False
+
+            # Validate the API key
+            console.print(f"  [{_UI_MUTED}]Validating API key...[/]")
+            valid, err_msg = _validate_api_key(provider_name, api_key, api_base)
+            if not valid:
+                console.print(f"[red]  x API key validation failed: {err_msg}[/red]")
+                retry = _get_questionary().confirm("Try a different key?", default=True).ask()
+                if retry:
+                    continue
+                # User chose to skip validation — proceed anyway
+                console.print(f"  [{_UI_MUTED}]Proceeding without validation[/]")
+            else:
+                console.print(f"  [{_UI_SUCCESS}]API key verified![/]")
 
         if provider_name not in _QUICK_START_ENDPOINT_CHOICES and _quick_start_requires_base_url(
             provider_name, provider_info
@@ -1719,31 +1807,20 @@ def _configure_quick_start_provider(config: Config) -> bool | object:
         return True
 
 
-def _enable_quick_start_websocket_defaults(config: Config) -> bool:
-    """Enable local WebUI with the default WebSocket settings."""
-    _show_quick_start_progress(2)
+def _enable_quick_start_websocket(config: Config) -> bool:
+    """Enable the local WebUI WebSocket channel with a password."""
+    console.print(f"[{_UI_ACCENT}]The WebUI lets you chat with your AI in the browser.[/]")
     console.print(
-        f"[{_UI_ACCENT}]Quick Start will enable the WebSocket channel for the local WebUI.[/]"
-    )
-    console.print(
-        f"[{_UI_MUTED}]This lets the browser UI at http://127.0.0.1:8765 connect to vtx_claw.[/]"
+        f"[{_UI_MUTED}]It runs at http://127.0.0.1:8765 and needs a password to protect access.[/]"
     )
     console.print()
     while True:
-        answer = _get_questionary().confirm("Enable WebSocket channel now?", default=True).ask()
-        if not answer:
-            console.print(
-                "[yellow]! Quick Start needs the WebSocket channel for remote access[/yellow]"
-            )
-            return False
-        webui_secret = _input_secret("Set a WebSocket password")
+        webui_secret = _input_secret("Set a WebUI password")
         if webui_secret is _BACK_PRESSED:
-            continue
-        if not webui_secret:
-            console.print(
-                "[yellow]! WebSocket password is required when enabling WebSocket[/yellow]"
-            )
             return False
+        if not webui_secret:
+            console.print("[yellow]! A password is required to protect the WebUI[/yellow]")
+            continue
         break
 
     config_cls = _get_channel_config_class("websocket")
@@ -1763,54 +1840,315 @@ def _enable_quick_start_websocket_defaults(config: Config) -> bool:
     return True
 
 
-def _show_quick_start_summary(config: Config) -> None:
-    """Show the small summary users need before returning to the menu."""
-    _show_quick_start_progress(3)
-    preset = config.model_presets.get("primary")
-    provider_label = "AI provider"
-    has_api_key = True
-    if preset:
-        provider_config = getattr(config.providers, preset.provider, None)
-        provider_label, _is_gateway, is_local, _api_base = _get_provider_info().get(
-            preset.provider, (preset.provider, False, False, "")
-        )
-        has_api_key = is_local or bool(provider_config and provider_config.api_key)
+def _configure_quick_start_channels(config: Config) -> bool:
+    """Step 2: Set up the WebUI channel and optionally a chat channel."""
+    _show_quick_start_progress(2)
 
-    start_command = "`vtx-claw gateway`"
-    next_step = f"Run {start_command}"
-    status = "Ready"
-    if not has_api_key:
-        status = f"{provider_label} API key missing"
-        next_step = f"Add your {provider_label} API key, then run {start_command}"
+    # Always enable WebUI
+    console.print(f"[{_UI_ACCENT}]Step 2: Connect your channels[/]")
+    console.print()
+    if not _enable_quick_start_websocket(config):
+        return False
+    console.print(f"  [{_UI_SUCCESS}]WebUI enabled at http://127.0.0.1:8765[/]")
+    console.print()
+
+    # Ask about chat channels
+    add_channel = (
+        _get_questionary()
+        .confirm(
+            "Would you like to connect a chat channel (Telegram, WhatsApp, Discord, etc.)?",
+            default=False,
+        )
+        .ask()
+    )
+
+    if add_channel:
+        _configure_quick_start_chat_channel(config)
+
+    return True
+
+
+def _configure_quick_start_chat_channel(config: Config) -> None:
+    """Let the user pick and set up a chat channel during Quick Start."""
+    channel_names = _get_channel_names()
+    if not channel_names:
+        console.print(f"[{_UI_MUTED}]No chat channels available[/]")
+        return
+
+    choices = list(channel_names.keys()) + ["Skip"]
+    answer = _select_with_back("Which channel would you like to set up?", choices)
+    if answer is _BACK_PRESSED or answer is None or answer == "Skip":
+        return
+
+    assert isinstance(answer, str)
+    channel_name = answer
+    display_name = channel_names.get(channel_name, channel_name)
+
+    config_cls = _get_channel_config_class(channel_name)
+    if config_cls is None:
+        console.print(f"[red]No configuration class found for {display_name}[/red]")
+        return
+
+    channel_dict = getattr(config.channels, channel_name, None) or {}
+    model = config_cls.model_validate(channel_dict) if channel_dict else config_cls()
+
+    channel_cls = _get_channel_class(channel_name)
+    if _channel_supports_login(channel_cls):
+        action = _select_with_back(
+            f"Configure {display_name}:",
+            [_CHANNEL_LOGIN_CHOICE, _CHANNEL_ADVANCED_CHOICE, "<- Skip"],
+            default=_CHANNEL_LOGIN_CHOICE,
+        )
+        if action is _BACK_PRESSED or action is None or action == "<- Skip":
+            return
+        if action == _CHANNEL_LOGIN_CHOICE:
+            if _run_channel_login(config, channel_name, model, display_name):
+                console.print(f"  [{_UI_SUCCESS}]{display_name} connected![/]")
+            return
+
+    # Fallback to advanced editor
+    updated = _configure_pydantic_model(model, display_name)
+    if updated is not None:
+        setattr(
+            config.channels, channel_name, updated.model_dump(by_alias=True, exclude_none=True)
+        )
+        console.print(f"  [{_UI_SUCCESS}]{display_name} configured![/]")
+
+
+def _configure_quick_start_gateway(config: Config) -> bool:
+    """Step 3: Configure gateway settings with sensible defaults."""
+    _show_quick_start_progress(3)
+    console.print(f"[{_UI_ACCENT}]Step 3: Gateway settings[/]")
+    console.print()
+    console.print(f"[{_UI_MUTED}]The gateway runs vtx-claw as a background service, enabling[/]")
+    console.print(
+        f"[{_UI_MUTED}]scheduled tasks, heartbeats, and message delivery to channels.[/]"
+    )
+    console.print()
+
+    # Port with default
+    port_answer = (
+        _get_questionary()
+        .text("WebUI port:", default="8765", key_bindings=_input_back_key_bindings())
+        .ask()
+    )
+    if port_answer is _BACK_PRESSED or port_answer is None:
+        return True  # Non-fatal, use defaults
+    try:
+        port = int(port_answer.strip()) if port_answer.strip() else 8765
+    except ValueError:
+        port = 8765
+    config.gateway.port = port
+
+    # Offer to install as system service
+    install_service = (
+        _get_questionary()
+        .confirm("Install as a system service (auto-start on boot)?", default=False)
+        .ask()
+    )
+    if install_service:
+        console.print(f"[{_UI_MUTED}]Run this after setup to install the service:[/]")
+        console.print(f"  [cyan]vtx-claw gateway install-service[/cyan]")
+    console.print()
+    return True
+
+
+def _configure_quick_start_profile(config: Config) -> bool:
+    """Step 4: Fill in the user profile (USER.md)."""
+    _show_quick_start_progress(4)
+    console.print(f"[{_UI_ACCENT}]Step 4: Personalize your setup[/]")
+    console.print()
+    console.print(f"[{_UI_MUTED}]This info helps vtx-claw personalize its responses.[/]")
+    console.print(f"[{_UI_MUTED}]All fields are optional — press Enter to skip any.[/]")
+    console.print()
+
+    name = (
+        _get_questionary()
+        .text("Your name:", default="", key_bindings=_input_back_key_bindings())
+        .ask()
+    )
+    if name is _BACK_PRESSED:
+        return False
+    name = (name or "").strip()
+
+    timezone = (
+        _get_questionary()
+        .text(
+            "Timezone (e.g. UTC+8, America/New_York):",
+            default="",
+            key_bindings=_input_back_key_bindings(),
+        )
+        .ask()
+    )
+    if timezone is _BACK_PRESSED:
+        return False
+    timezone = (timezone or "").strip()
+
+    language = (
+        _get_questionary()
+        .text(
+            "Preferred language (e.g. English, Chinese):",
+            default="English",
+            key_bindings=_input_back_key_bindings(),
+        )
+        .ask()
+    )
+    if language is _BACK_PRESSED:
+        return False
+    language = (language or "English").strip()
+
+    role = (
+        _get_questionary()
+        .text(
+            "Your primary role (e.g. Developer, Researcher, Designer):",
+            default="",
+            key_bindings=_input_back_key_bindings(),
+        )
+        .ask()
+    )
+    if role is _BACK_PRESSED:
+        return False
+    role = (role or "").strip()
+
+    projects = (
+        _get_questionary()
+        .text(
+            "What are you working on? (brief description):",
+            default="",
+            key_bindings=_input_back_key_bindings(),
+        )
+        .ask()
+    )
+    if projects is _BACK_PRESSED:
+        return False
+    projects = (projects or "").strip()
+
+    # Write to USER.md
+    workspace = config.workspace_path
+    user_md = workspace / "USER.md"
+    if user_md.exists():
+        content = user_md.read_text(encoding="utf-8")
+        if name:
+            content = content.replace("(your name)", name)
+        if timezone:
+            content = content.replace("(your timezone, e.g., UTC+8)", timezone)
+        if language:
+            content = content.replace("(preferred language)", language)
+        if role:
+            content = content.replace("(your role, e.g., developer, researcher)", role)
+        if projects:
+            content = content.replace("(what you're working on)", projects)
+        user_md.write_text(content, encoding="utf-8")
+        console.print(f"  [{_UI_SUCCESS}]Profile saved to USER.md[/]")
+
+    return True
+
+
+def _show_quick_start_summary(config: Config) -> None:
+    """Show a comprehensive summary of everything configured."""
+    _show_quick_start_progress(5)
+    console.print()
+
+    # LLM Provider info
+    preset = config.model_presets.get("primary")
+    provider_label = "Not configured"
+    model_label = "Not set"
+    has_api_key = False
+    if preset:
+        provider_label = preset.provider
+        model_label = preset.model
+        provider_config = getattr(config.providers, preset.provider, None)
+        _info = _get_provider_info().get(preset.provider)
+        if _info:
+            provider_label = _info[0]
+        has_api_key = _info and _info[2] if _info else False  # is_local
+        if not has_api_key:
+            has_api_key = bool(provider_config and provider_config.api_key)
+
+    # Channel info
+    channel_names = _get_channel_names()
+    enabled_channels = []
+    for ch_name in channel_names:
+        ch = getattr(config.channels, ch_name, None)
+        if ch:
+            enabled = (
+                ch.get("enabled", False) if isinstance(ch, dict) else getattr(ch, "enabled", False)
+            )
+            if enabled:
+                enabled_channels.append(channel_names[ch_name])
+
+    # WebSocket / WebUI
+    ws = getattr(config.channels, "websocket", None)
+    ws_enabled = False
+    if ws:
+        ws_enabled = (
+            ws.get("enabled", False) if isinstance(ws, dict) else getattr(ws, "enabled", False)
+        )
 
     rows = [
-        ("Status", status),
-        ("Next", next_step),
-        ("WebSocket channel", "enabled"),
-        ("Open", "http://127.0.0.1:8765"),
+        ("LLM Provider", f"{provider_label} / {model_label}"),
+        ("API Key", f"[{_UI_SUCCESS}]verified[/]" if has_api_key else f"[{_UI_MUTED}]missing[/]"),
+        (
+            "WebUI",
+            f"http://127.0.0.1:{config.gateway.port}"
+            if ws_enabled
+            else f"[{_UI_MUTED}]disabled[/]",
+        ),
     ]
-    _print_summary_panel(rows, "Quick Start")
+    if enabled_channels:
+        rows.append(("Channels", ", ".join(enabled_channels)))
+
+    _print_summary_panel(rows, "Setup Complete")
+
+    # Next steps
+    console.print()
+    console.print(f"[bold {_UI_TEXT}]Next steps:[/]")
+    console.print(f"  1. Start:  [cyan]vtx-claw gateway[/cyan]")
+    console.print(f"  2. Open:   [cyan]http://127.0.0.1:{config.gateway.port}[/cyan]")
+    console.print(f'  3. Chat:   [cyan]vtx-claw agent -m "Hello!"[/cyan]')
+    console.print()
+    console.print(f"[{_UI_MUTED}]Add more channels anytime with: vtx-claw onboard --wizard[/]")
 
 
 def _configure_quick_start(config: Config) -> bool:
-    """First-run path: provider + API key + local WebUI, with advanced settings hidden."""
+    """Full Quick Start path: provider + channels + gateway + profile + review."""
     console.clear()
     _show_section_header(
         "Quick Start",
-        "Choose provider endpoint, add credentials and model, then enable the local WebUI channel.",
+        "Set up everything you need in a few steps: AI provider, channels, gateway, and profile.",
     )
     draft = config.model_copy(deep=True)
+
+    # Step 1: LLM Provider
     provider_result = _configure_quick_start_provider(draft)
     if provider_result is _BACK_PRESSED:
         return False
     if not provider_result:
         _pause()
         return False
-    if not _enable_quick_start_websocket_defaults(draft):
+
+    # Step 2: Channels (WebUI + optional chat channel)
+    console.clear()
+    _show_section_header("Connect Channels", "Set up the WebUI and optionally a chat app.")
+    if not _configure_quick_start_channels(draft):
         _pause()
         return False
+
+    # Step 3: Gateway
+    console.clear()
+    _show_section_header("Gateway", "Configure how vtx-claw runs as a service.")
+    _configure_quick_start_gateway(draft)
+
+    # Step 4: Personal Profile
+    console.clear()
+    _show_section_header("Your Profile", "Personalize vtx-claw with your info.")
+    _configure_quick_start_profile(draft)
+
+    # Step 5: Summary
+    console.clear()
     _show_quick_start_summary(draft)
     _pause("Press Enter to save and exit...")
+
     for field_name in type(config).model_fields:
         setattr(config, field_name, getattr(draft, field_name))
     return True

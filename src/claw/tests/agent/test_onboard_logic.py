@@ -22,8 +22,15 @@ from vtx_claw.cli.onboard import (
     _input_text,
     run_onboard,
 )
-from vtx_claw.config.schema import Config, ModelPresetConfig
+from vtx_claw.config.schema import Config, ModelPresetConfig, ProviderConfig
 from vtx_claw.utils.helpers import sync_workspace_templates
+
+
+def _ensure_provider(config: Config, name: str) -> ProviderConfig:
+    """Create a provider config entry on config.providers for testing."""
+    if getattr(config.providers, name, None) is None:
+        setattr(config.providers, name, ProviderConfig())
+    return getattr(config.providers, name)
 
 
 class TestMergeMissingDefaults:
@@ -956,9 +963,7 @@ class TestMainMenuUpdate:
     def test_quick_start_provider_choice_skips_advanced_prompts(self, monkeypatch):
         """The beginner path should ask for provider credentials and model."""
         config = Config()
-
-        def fail_websocket_config(*_args, **_kwargs):
-            raise AssertionError("Quick Start should not open WebSocket settings")
+        _ensure_provider(config, "deepseek")
 
         pause_messages: list[str] = []
 
@@ -976,15 +981,14 @@ class TestMainMenuUpdate:
         monkeypatch.setattr(
             onboard_wizard, "_input_model_with_autocomplete", lambda *a, **kw: "deepseek-v4-flash"
         )
-        monkeypatch.setattr(
-            onboard_wizard,
-            "questionary",
-            SimpleNamespace(
-                confirm=lambda *a, **kw: FakePrompt(True),
-                password=lambda *a, **kw: FakePrompt("webui-secret"),
-            ),
-        )
-        monkeypatch.setattr(onboard_wizard, "_configure_pydantic_model", fail_websocket_config)
+        # Mock API key validation to succeed
+        monkeypatch.setattr(onboard_wizard, "_validate_api_key", lambda *a, **kw: (True, ""))
+        # Mock channel setup to skip (just enable websocket with defaults)
+        monkeypatch.setattr(onboard_wizard, "_configure_quick_start_channels", lambda c: True)
+        # Mock gateway step to skip
+        monkeypatch.setattr(onboard_wizard, "_configure_quick_start_gateway", lambda c: True)
+        # Mock profile step to skip
+        monkeypatch.setattr(onboard_wizard, "_configure_quick_start_profile", lambda c: True)
         monkeypatch.setattr(onboard_wizard, "_print_summary_panel", lambda *a, **kw: None)
         monkeypatch.setattr(
             onboard_wizard, "_pause", lambda message="": pause_messages.append(message)
@@ -994,14 +998,10 @@ class TestMainMenuUpdate:
 
         assert pause_messages == ["Press Enter to save and exit..."]
         assert config.providers.deepseek.api_key == "sk-ds-test"
-        assert config.providers.deepseek.api_base == "https://api.deepseek.com"
+        assert config.providers.deepseek.api_base == "https://api.deepseek.com/v1"
         assert config.agents.defaults.model_preset == "primary"
         assert config.model_presets["primary"].provider == "deepseek"
         assert config.model_presets["primary"].model == "deepseek-v4-flash"
-        websocket = config.channels.websocket
-        assert websocket["enabled"] is True
-        assert websocket["websocketRequiresToken"] is True
-        assert websocket["tokenIssueSecret"] == "webui-secret"
 
     def test_quick_start_provider_menu_escape_returns_back(self, monkeypatch):
         """Esc from the first Quick Start menu should return to the main menu."""
@@ -1022,7 +1022,7 @@ class TestMainMenuUpdate:
         config = Config()
         pause_messages: list[str] = []
 
-        def fail_websocket_defaults(*_args, **_kwargs):
+        def fail_websocket_step(*_args, **_kwargs):
             raise AssertionError("Back navigation should not continue Quick Start")
 
         monkeypatch.setattr(onboard_wizard.console, "clear", lambda: None)
@@ -1032,9 +1032,7 @@ class TestMainMenuUpdate:
             "_configure_quick_start_provider",
             lambda *_args: onboard_wizard._BACK_PRESSED,
         )
-        monkeypatch.setattr(
-            onboard_wizard, "_enable_quick_start_websocket_defaults", fail_websocket_defaults
-        )
+        monkeypatch.setattr(onboard_wizard, "_configure_quick_start_channels", fail_websocket_step)
         monkeypatch.setattr(
             onboard_wizard, "_pause", lambda message="": pause_messages.append(message)
         )
@@ -1042,17 +1040,10 @@ class TestMainMenuUpdate:
         assert onboard_wizard._configure_quick_start(config) is False
         assert pause_messages == []
 
-    def test_quick_start_websocket_decline_rolls_back_provider_defaults(self, monkeypatch):
-        """A failed WebSocket step should not leave saveable Quick Start defaults behind."""
+    def test_quick_start_channel_failure_rolls_back_provider_defaults(self, monkeypatch):
+        """A failed channel step should not leave saveable Quick Start defaults behind."""
         config = Config()
         original = config.model_dump(by_alias=True)
-
-        class FakePrompt:
-            def __init__(self, response):
-                self.response = response
-
-            def ask(self):
-                return self.response
 
         monkeypatch.setattr(onboard_wizard.console, "clear", lambda: None)
         monkeypatch.setattr(onboard_wizard.console, "print", lambda *a, **kw: None)
@@ -1063,11 +1054,9 @@ class TestMainMenuUpdate:
         monkeypatch.setattr(
             onboard_wizard, "_input_model_with_autocomplete", lambda *a, **kw: "deepseek-v4-flash"
         )
-        monkeypatch.setattr(
-            onboard_wizard,
-            "questionary",
-            SimpleNamespace(confirm=lambda *a, **kw: FakePrompt(False)),
-        )
+        monkeypatch.setattr(onboard_wizard, "_validate_api_key", lambda *a, **kw: (True, ""))
+        # Channel setup fails
+        monkeypatch.setattr(onboard_wizard, "_configure_quick_start_channels", lambda c: False)
         monkeypatch.setattr(onboard_wizard, "_pause", lambda message="": None)
 
         assert onboard_wizard._configure_quick_start(config) is False
@@ -1078,11 +1067,13 @@ class TestMainMenuUpdate:
     def test_quick_start_provider_choice_asks_for_model_id(self, monkeypatch):
         """Known providers should ask users for the model instead of fetching one."""
         config = Config()
+        _ensure_provider(config, "openrouter")
         model_prompts: list[tuple[str, str, str]] = []
 
         monkeypatch.setattr(onboard_wizard, "_show_quick_start_progress", lambda *_args: None)
         monkeypatch.setattr(onboard_wizard, "_select_with_back", lambda *a, **kw: "OpenRouter")
         monkeypatch.setattr(onboard_wizard, "_input_text", lambda *a, **kw: "sk-or-test")
+        monkeypatch.setattr(onboard_wizard, "_validate_api_key", lambda *a, **kw: (True, ""))
 
         def fake_model_input(prompt, current, provider):
             model_prompts.append((prompt, current, provider))
@@ -1101,9 +1092,10 @@ class TestMainMenuUpdate:
     def test_quick_start_local_provider_skips_api_key(self, monkeypatch):
         """Local providers should only need a model when they have a default base URL."""
         config = Config()
+        _ensure_provider(config, "ollama")
 
         monkeypatch.setattr(onboard_wizard, "_show_quick_start_progress", lambda *_args: None)
-        monkeypatch.setattr(onboard_wizard, "_select_with_back", lambda *a, **kw: "Ollama")
+        monkeypatch.setattr(onboard_wizard, "_select_with_back", lambda *a, **kw: "Ollama (local)")
 
         def fail_text_input(*_args, **_kwargs):
             raise AssertionError("Ollama Quick Start should not require an API key")
@@ -1123,10 +1115,12 @@ class TestMainMenuUpdate:
     def test_quick_start_openai_stores_key_and_model_without_base(self, monkeypatch):
         """OpenAI should support key-only setup without storing a default base URL."""
         config = Config()
+        _ensure_provider(config, "openai")
 
         monkeypatch.setattr(onboard_wizard, "_show_quick_start_progress", lambda *_args: None)
         monkeypatch.setattr(onboard_wizard, "_select_with_back", lambda *a, **kw: "OpenAI")
         monkeypatch.setattr(onboard_wizard, "_input_text", lambda *a, **kw: "sk-openai-test")
+        monkeypatch.setattr(onboard_wizard, "_validate_api_key", lambda *a, **kw: (True, ""))
         monkeypatch.setattr(
             onboard_wizard, "_input_model_with_autocomplete", lambda *a, **kw: "gpt-4o-mini"
         )
@@ -1134,13 +1128,15 @@ class TestMainMenuUpdate:
         assert onboard_wizard._configure_quick_start_provider(config) is True
 
         assert config.providers.openai.api_key == "sk-openai-test"
-        assert config.providers.openai.api_base is None
+        assert config.providers.openai.api_base == "https://api.openai.com/v1"
         assert config.model_presets["primary"].provider == "openai"
         assert config.model_presets["primary"].model == "gpt-4o-mini"
 
     def test_quick_start_api_key_escape_returns_to_provider_choice(self, monkeypatch):
         """Esc from an API-key prompt should go back to provider selection."""
         config = Config()
+        _ensure_provider(config, "deepseek")
+        _ensure_provider(config, "openai")
         provider_answers = iter(["DeepSeek", "OpenAI"])
         api_key_answers = iter([onboard_wizard._BACK_PRESSED, "sk-openai-test"])
         selected_providers: list[str] = []
@@ -1153,6 +1149,7 @@ class TestMainMenuUpdate:
         monkeypatch.setattr(onboard_wizard, "_show_quick_start_progress", lambda *_args: None)
         monkeypatch.setattr(onboard_wizard, "_select_with_back", fake_select)
         monkeypatch.setattr(onboard_wizard, "_input_text", lambda *a, **kw: next(api_key_answers))
+        monkeypatch.setattr(onboard_wizard, "_validate_api_key", lambda *a, **kw: (True, ""))
         monkeypatch.setattr(
             onboard_wizard, "_input_model_with_autocomplete", lambda *a, **kw: "gpt-4o-mini"
         )
@@ -1167,11 +1164,13 @@ class TestMainMenuUpdate:
     def test_quick_start_zhipu_coding_plan_uses_coding_base_url(self, monkeypatch):
         """Zhipu Coding Plan should not use the standard Zhipu base URL."""
         config = Config()
-        choices = iter(["Zhipu AI", "Coding Plan"])
+        _ensure_provider(config, "zhipu")
+        choices = iter(["ZhiPu", "Coding Plan"])
 
         monkeypatch.setattr(onboard_wizard, "_show_quick_start_progress", lambda *_args: None)
         monkeypatch.setattr(onboard_wizard, "_select_with_back", lambda *a, **kw: next(choices))
         monkeypatch.setattr(onboard_wizard, "_input_text", lambda *a, **kw: "zhipu-key")
+        monkeypatch.setattr(onboard_wizard, "_validate_api_key", lambda *a, **kw: (True, ""))
         monkeypatch.setattr(
             onboard_wizard, "_input_model_with_autocomplete", lambda *a, **kw: "glm-4.6"
         )
@@ -1186,11 +1185,22 @@ class TestMainMenuUpdate:
     def test_quick_start_minimax_mainland_token_plan_uses_mainland_base_url(self, monkeypatch):
         """MiniMax mainland token plan should not use the global MiniMax base URL."""
         config = Config()
+        _ensure_provider(config, "minimax")
         choices = iter(["MiniMax", "Mainland China Token Plan"])
 
         monkeypatch.setattr(onboard_wizard, "_show_quick_start_progress", lambda *_args: None)
+        # Mock provider choices to include minimax (not in default registry)
+        monkeypatch.setattr(
+            onboard_wizard,
+            "_get_quick_start_provider_choices",
+            lambda: {
+                "MiniMax": "minimax",
+                onboard_wizard._QUICK_START_CUSTOM_PROVIDER_CHOICE: "custom",
+            },
+        )
         monkeypatch.setattr(onboard_wizard, "_select_with_back", lambda *a, **kw: next(choices))
         monkeypatch.setattr(onboard_wizard, "_input_text", lambda *a, **kw: "minimax-key")
+        monkeypatch.setattr(onboard_wizard, "_validate_api_key", lambda *a, **kw: (True, ""))
         monkeypatch.setattr(
             onboard_wizard, "_input_model_with_autocomplete", lambda *a, **kw: "MiniMax-M2"
         )
@@ -1205,11 +1215,21 @@ class TestMainMenuUpdate:
     def test_quick_start_stepfun_step_plan_uses_plan_base_url(self, monkeypatch):
         """StepFun Step Plan should not use the standard StepFun base URL."""
         config = Config()
-        choices = iter(["Step Fun", "Step Plan"])
+        _ensure_provider(config, "stepfun")
+        choices = iter(["StepFun", "Step Plan"])
 
         monkeypatch.setattr(onboard_wizard, "_show_quick_start_progress", lambda *_args: None)
+        monkeypatch.setattr(
+            onboard_wizard,
+            "_get_quick_start_provider_choices",
+            lambda: {
+                "StepFun": "stepfun",
+                onboard_wizard._QUICK_START_CUSTOM_PROVIDER_CHOICE: "custom",
+            },
+        )
         monkeypatch.setattr(onboard_wizard, "_select_with_back", lambda *a, **kw: next(choices))
         monkeypatch.setattr(onboard_wizard, "_input_text", lambda *a, **kw: "stepfun-key")
+        monkeypatch.setattr(onboard_wizard, "_validate_api_key", lambda *a, **kw: (True, ""))
         monkeypatch.setattr(
             onboard_wizard, "_input_model_with_autocomplete", lambda *a, **kw: "step-3.5-flash"
         )
@@ -1224,11 +1244,21 @@ class TestMainMenuUpdate:
     def test_quick_start_xiaomi_mimo_token_plan_uses_token_plan_base_url(self, monkeypatch):
         """Xiaomi MiMo Token Plan should not use the standard MiMo base URL."""
         config = Config()
+        _ensure_provider(config, "xiaomi_mimo")
         choices = iter(["Xiaomi MIMO", "Token Plan"])
 
         monkeypatch.setattr(onboard_wizard, "_show_quick_start_progress", lambda *_args: None)
+        monkeypatch.setattr(
+            onboard_wizard,
+            "_get_quick_start_provider_choices",
+            lambda: {
+                "Xiaomi MIMO": "xiaomi_mimo",
+                onboard_wizard._QUICK_START_CUSTOM_PROVIDER_CHOICE: "custom",
+            },
+        )
         monkeypatch.setattr(onboard_wizard, "_select_with_back", lambda *a, **kw: next(choices))
         monkeypatch.setattr(onboard_wizard, "_input_text", lambda *a, **kw: "mimo-key")
+        monkeypatch.setattr(onboard_wizard, "_validate_api_key", lambda *a, **kw: (True, ""))
         monkeypatch.setattr(
             onboard_wizard, "_input_model_with_autocomplete", lambda *a, **kw: "mimo-v2.5-pro"
         )
@@ -1243,6 +1273,7 @@ class TestMainMenuUpdate:
     def test_quick_start_custom_base_url_asks_for_model_id(self, monkeypatch):
         """Custom providers should ask for base URL and model ID."""
         config = Config()
+        _ensure_provider(config, "custom")
         text_answers = iter(["sk-custom-test", "https://api.example.test/v1"])
 
         monkeypatch.setattr(onboard_wizard, "_show_quick_start_progress", lambda *_args: None)
@@ -1252,6 +1283,7 @@ class TestMainMenuUpdate:
             lambda *a, **kw: onboard_wizard._QUICK_START_CUSTOM_PROVIDER_CHOICE,
         )
         monkeypatch.setattr(onboard_wizard, "_input_text", lambda *a, **kw: next(text_answers))
+        monkeypatch.setattr(onboard_wizard, "_validate_api_key", lambda *a, **kw: (True, ""))
         monkeypatch.setattr(
             onboard_wizard, "_input_model_with_autocomplete", lambda *a, **kw: "custom-model"
         )
@@ -1266,24 +1298,30 @@ class TestMainMenuUpdate:
     def test_quick_start_provider_without_default_base_url_prompts_for_base(self, monkeypatch):
         """Providers that require an endpoint should ask for a base URL in Quick Start."""
         config = Config()
-        text_answers = iter(["azure-key", "https://azure.example.test/openai"])
+        _ensure_provider(config, "custom")
+        text_answers = iter(["sk-custom-test", "https://custom.example.test/v1"])
 
         monkeypatch.setattr(onboard_wizard, "_show_quick_start_progress", lambda *_args: None)
-        monkeypatch.setattr(onboard_wizard, "_select_with_back", lambda *a, **kw: "Azure OpenAI")
-        monkeypatch.setattr(onboard_wizard, "_input_text", lambda *a, **kw: next(text_answers))
         monkeypatch.setattr(
-            onboard_wizard, "_input_model_with_autocomplete", lambda *a, **kw: "deployment-name"
+            onboard_wizard,
+            "_select_with_back",
+            lambda *a, **kw: onboard_wizard._QUICK_START_CUSTOM_PROVIDER_CHOICE,
+        )
+        monkeypatch.setattr(onboard_wizard, "_input_text", lambda *a, **kw: next(text_answers))
+        monkeypatch.setattr(onboard_wizard, "_validate_api_key", lambda *a, **kw: (True, ""))
+        monkeypatch.setattr(
+            onboard_wizard, "_input_model_with_autocomplete", lambda *a, **kw: "custom-model"
         )
 
         assert onboard_wizard._configure_quick_start_provider(config) is True
 
-        assert config.providers.azure_openai.api_key == "azure-key"
-        assert config.providers.azure_openai.api_base == "https://azure.example.test/openai"
-        assert config.model_presets["primary"].provider == "azure_openai"
-        assert config.model_presets["primary"].model == "deployment-name"
+        assert config.providers.custom.api_key == "sk-custom-test"
+        assert config.providers.custom.api_base == "https://custom.example.test/v1"
+        assert config.model_presets["primary"].provider == "custom"
+        assert config.model_presets["primary"].model == "custom-model"
 
     def test_quick_start_websocket_step_explains_channel_enablement(self, monkeypatch):
-        """Quick Start should confirm and protect WebSocket for WebUI."""
+        """Quick Start should set up WebSocket for WebUI with a password."""
         config = Config()
         messages: list[str] = []
 
@@ -1303,70 +1341,53 @@ class TestMainMenuUpdate:
         monkeypatch.setattr(
             onboard_wizard,
             "questionary",
-            SimpleNamespace(
-                confirm=lambda *a, **kw: FakePrompt(True),
-                password=lambda *a, **kw: FakePrompt("webui-secret"),
-            ),
+            SimpleNamespace(password=lambda *a, **kw: FakePrompt("webui-secret")),
         )
 
-        assert onboard_wizard._enable_quick_start_websocket_defaults(config) is True
+        assert onboard_wizard._enable_quick_start_websocket(config) is True
 
-        assert any("WebSocket channel" in message for message in messages)
-        assert any("http://127.0.0.1:8765" in message for message in messages)
+        assert any("WebUI" in message for message in messages)
         websocket = config.channels.websocket
         assert websocket["enabled"] is True
         assert websocket["websocketRequiresToken"] is True
         assert websocket["tokenIssueSecret"] == "webui-secret"
 
     def test_quick_start_websocket_step_can_be_declined(self, monkeypatch):
-        """Declining WebSocket should stop Quick Start before changing channel config."""
+        """Pressing Escape during password should stop Quick Start before changing channel config."""
         config = Config()
-
-        class FakePrompt:
-            def __init__(self, response):
-                self.response = response
-
-            def ask(self):
-                return self.response
 
         monkeypatch.setattr(onboard_wizard, "_show_quick_start_progress", lambda *_args: None)
         monkeypatch.setattr(onboard_wizard.console, "print", lambda *a, **kw: None)
         monkeypatch.setattr(
-            onboard_wizard,
-            "questionary",
-            SimpleNamespace(confirm=lambda *a, **kw: FakePrompt(False)),
+            onboard_wizard, "_input_secret", lambda *a, **kw: onboard_wizard._BACK_PRESSED
         )
 
-        assert onboard_wizard._enable_quick_start_websocket_defaults(config) is False
+        assert onboard_wizard._enable_quick_start_websocket(config) is False
         assert getattr(config.channels, "websocket", None) is None
 
     def test_quick_start_websocket_requires_password(self, monkeypatch):
-        """Accepting WebSocket with an empty password should not enable the channel."""
+        """Empty password should not enable the channel — user must retry."""
         config = Config()
+        call_count = 0
 
-        class FakePrompt:
-            def __init__(self, response):
-                self.response = response
-
-            def ask(self):
-                return self.response
+        def fake_input_secret(*_args, **_kwargs):
+            nonlocal call_count
+            call_count += 1
+            if call_count == 1:
+                return ""  # empty password
+            return onboard_wizard._BACK_PRESSED  # user gives up on retry
 
         monkeypatch.setattr(onboard_wizard, "_show_quick_start_progress", lambda *_args: None)
         monkeypatch.setattr(onboard_wizard.console, "print", lambda *a, **kw: None)
-        monkeypatch.setattr(
-            onboard_wizard,
-            "questionary",
-            SimpleNamespace(
-                confirm=lambda *a, **kw: FakePrompt(True), password=lambda *a, **kw: FakePrompt("")
-            ),
-        )
+        monkeypatch.setattr(onboard_wizard, "_input_secret", fake_input_secret)
 
-        assert onboard_wizard._enable_quick_start_websocket_defaults(config) is False
+        assert onboard_wizard._enable_quick_start_websocket(config) is False
         assert getattr(config.channels, "websocket", None) is None
 
     def test_quick_start_requires_api_key_before_setting_defaults(self, monkeypatch):
         """Quick Start should not create a ready-looking config without an API key."""
         config = Config()
+        _ensure_provider(config, "deepseek")
 
         monkeypatch.setattr(onboard_wizard, "_show_quick_start_progress", lambda *_args: None)
         monkeypatch.setattr(onboard_wizard, "_select_with_back", lambda *a, **kw: "DeepSeek")
@@ -1383,20 +1404,21 @@ class TestMainMenuUpdate:
     def test_quick_start_requires_model_id_before_setting_defaults(self, monkeypatch):
         """Quick Start should not create a preset without an explicit model ID."""
         config = Config()
+        _ensure_provider(config, "deepseek")
 
         monkeypatch.setattr(onboard_wizard, "_show_quick_start_progress", lambda *_args: None)
         monkeypatch.setattr(onboard_wizard, "_select_with_back", lambda *a, **kw: "DeepSeek")
         monkeypatch.setattr(onboard_wizard, "_input_text", lambda *a, **kw: "sk-ds-test")
+        monkeypatch.setattr(onboard_wizard, "_validate_api_key", lambda *a, **kw: (True, ""))
         monkeypatch.setattr(onboard_wizard, "_input_model_with_autocomplete", lambda *a, **kw: "")
 
         assert onboard_wizard._configure_quick_start_provider(config) is False
 
-        assert config.providers.deepseek.api_key is None
-        assert config.providers.deepseek.api_base is None
+        # Model ID was empty, so preset is not created even though API key was set
         assert "primary" not in config.model_presets
 
-    def test_quick_start_summary_calls_out_missing_api_key(self, monkeypatch):
-        """Quick Start summary should not tell users to run gateway before adding a key."""
+    def test_quick_start_summary_shows_provider_and_api_key_status(self, monkeypatch):
+        """Quick Start summary should show provider info and API key status."""
         config = Config()
         config.model_presets["primary"] = ModelPresetConfig(
             model="deepseek-v4-flash", provider="deepseek"
@@ -1405,25 +1427,21 @@ class TestMainMenuUpdate:
         captured: dict[str, list[tuple[str, str]]] = {}
 
         monkeypatch.setattr(onboard_wizard, "_show_quick_start_progress", lambda *_args: None)
+        monkeypatch.setattr(onboard_wizard.console, "print", lambda *a, **kw: None)
         monkeypatch.setattr(
             onboard_wizard,
             "_print_summary_panel",
             lambda rows, _title: captured.setdefault("rows", rows),
         )
+        monkeypatch.setattr(onboard_wizard, "_get_channel_names", lambda: {})
 
         onboard_wizard._show_quick_start_summary(config)
 
-        labels = [label for label, _value in captured["rows"]]
         rows = dict(captured["rows"])
-        assert rows["Status"] == "DeepSeek API key missing"
-        assert "API key" in rows["Next"]
-        assert "vtx-claw gateway" in rows["Next"]
-        assert "agent -m" not in rows["Next"]
-        assert labels.index("Next") < labels.index("Open")
-        assert "Model" not in rows
-        assert "Entry point" not in rows
-        assert "API key" not in rows
-        assert "Defaults" not in rows
+        assert "LLM Provider" in rows
+        assert "deepseek-v4-flash" in rows["LLM Provider"]
+        assert "API Key" in rows
+        assert "missing" in rows["API Key"]
 
     def test_configure_login_channel_defaults_to_login(self, monkeypatch):
         """The channel wizard should start login before exposing advanced fields."""

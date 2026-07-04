@@ -548,7 +548,7 @@ def main(
 def onboard(
     workspace: str | None = typer.Option(None, "--workspace", "-w", help="Workspace directory"),
     config: str | None = typer.Option(None, "--config", "-c", help="Path to config file"),
-    wizard: bool = typer.Option(False, "--wizard", help="Use interactive wizard"),
+    wizard: bool = typer.Option(True, "--wizard/--no-wizard", help="Interactive wizard (default)"),
 ):
     """Initialize vtx_claw configuration and workspace."""
     from vtx_claw.config.loader import get_config_path, load_config, save_config, set_config_path
@@ -1306,6 +1306,26 @@ def agent(
     from vtx_claw.bus.queue import MessageBus
     from vtx_claw.cron.service import CronService
     from vtx_claw.providers.image_generation import image_gen_provider_configs
+
+    # Auto-detect first run: if no config exists, launch the onboard wizard
+    from vtx_claw.config.loader import get_config_path as _get_config_path
+
+    cfg_path = Path(config) if config else _get_config_path()
+    if not cfg_path.exists():
+        console.print("\n[cyan]No configuration found. Let's set things up![/cyan]\n")
+        from vtx_claw.cli.onboard import run_onboard
+        from vtx_claw.config.loader import save_config as _save_config
+
+        try:
+            result = run_onboard()
+            if not result.should_save:
+                console.print("[yellow]Setup cancelled.[/yellow]")
+                raise typer.Exit(0)
+            _save_config(result.config, cfg_path)
+            console.print(f"[green]Config saved at {cfg_path}[/green]\n")
+        except Exception as e:
+            console.print(f"[red]Setup failed: {e}[/red]")
+            raise typer.Exit(1)
 
     loaded_config = _load_runtime_config(config, workspace)
     sync_workspace_templates(loaded_config.workspace_path)
