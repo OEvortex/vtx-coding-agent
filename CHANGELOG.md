@@ -5,6 +5,22 @@ All notable changes to Vtx are documented in this file. The format is based on
 adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 
+## [0.2.3] - 2026-07-10 — Custom Provider Support
+
+### Added
+- **Custom providers without editing source** — clients can add any OpenAI-compatible or Anthropic-compatible endpoint as a first-class provider.
+  - Project-local YAML files in `.vtx/providers/*.yaml` (loaded from the current working directory; commit to share with a team).
+  - User-wide YAML files in `~/.vtx/providers/*.yaml`.
+  - Programmatic registration via `register_custom_provider(slug, display_name=..., family=..., base_url=...)` from Python.
+- Custom providers are merged into the real catalog, so they appear in the `/model` picker, are auto-detected from environment variables, and have their model catalogs fetched automatically from `<base_url>/models`.
+- Precedence order: built-in providers → `~/.vtx/providers` → `.vtx/providers` (project-local overrides on slug collision).
+- Full `provider.yaml` schema support for custom entries (all fields: `family`, `base_url`, `api_key_env`, `known_models`, `fetch_models`, `models_endpoint`, `openmodelendpoint`, `headers`, `model_parser`, etc.).
+- README "Custom Providers" section with a fully-annotated example `provider.yaml` entry.
+
+### Changed
+- Refactored the catalog loader to share a single `_parse_entry()` path between built-in and custom providers.
+- Custom-provider loading is lazy (on first catalog access) and invalid entries are skipped with a clear warning rather than crashing startup.
+
 ## [0.2.2] - 2026-07-04 — Interactive Onboarding Overhaul
 
 ### Added

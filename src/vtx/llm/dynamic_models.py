@@ -88,7 +88,9 @@ def _build_dynamic_providers() -> dict[str, DynamicProviderConfig]:
     Every provider with a ``base_url`` becomes a dynamic provider. Extra
     request headers and the ``api_key_optional`` flag are passed through
     unchanged — they are how the catalog tells us "this provider does not
-    require a key at all" (e.g. ollama).
+    require a key at all" (e.g. ollama). Custom providers registered via
+    :func:`vtx.llm.provider_catalog.register_custom_provider` are included
+    automatically because they live in the same catalog.
     """
     from .provider_catalog import list_providers
 

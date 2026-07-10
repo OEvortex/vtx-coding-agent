@@ -194,6 +194,98 @@ notifications:
 
 ---
 
+## 🧩 Custom Providers
+
+Vtx can talk to **any** OpenAI-compatible or Anthropic-compatible endpoint — not just the providers that ship in `provider.yaml`. You can add your own provider **without editing any source code**, in three ways. Custom providers are first-class: they appear in the `/model` picker, are auto-detected from env vars, and their model catalogs are fetched automatically.
+
+### Option 1 — Project-local (recommended for teams)
+
+Drop a YAML file into a `.vtx/providers/` folder at your repo root (it's gitignored by default — commit it to share with teammates):
+
+```bash
+mkdir -p .vtx/providers
+cat > .vtx/providers/my-company.yaml <<'EOF'
+slug: acme
+display_name: "Acme AI Gateway"
+description: "Internal OpenAI-compatible gateway."
+family: openai_compat
+base_url: https://ai.acme.internal/v1
+api_key_env: ACME_API_KEY
+fetch_models: true
+EOF
+```
+
+### Option 2 — User-wide (your machine, every project)
+
+Same shape, but in your home config dir: `~/.vtx/providers/<name>.yaml`.
+
+> **Precedence:** built-in providers → `~/.vtx/providers` → `.vtx/providers` (project-local wins on slug collision).
+
+### Option 3 — Programmatic (Python)
+
+```python
+from vtx.llm.provider_catalog import register_custom_provider
+
+register_custom_provider(
+    "acme",
+    display_name="Acme AI Gateway",
+    family="openai_compat",          # openai_compat | anthropic | supercode
+    base_url="https://ai.acme.internal/v1",
+    api_key_env="ACME_API_KEY",
+    fetch_models=True,               # pull model list from <base_url>/models
+)
+```
+
+Then run Vtx and pick the provider:
+```bash
+export ACME_API_KEY=sk-...
+vtx --provider acme -m <model-id>
+# or just: vtx  (it auto-detects providers whose API key is set in the env)
+```
+
+### Full `provider.yaml` reference
+
+Every field from the built-in catalog is supported. A complete annotated entry:
+
+```yaml
+- slug: acme                      # REQUIRED. Unique id; used by --provider and in configs.
+  display_name: "Acme AI Gateway" # Shown in UIs (defaults to slug if omitted).
+  description: "Internal gateway" # One-line description (optional).
+  family: openai_compat          # REQUIRED. "openai_compat" | "anthropic" | "supercode".
+  base_url: "https://ai.acme.internal/v1"  # API root. Omit for key-only gateways.
+  api_key_env: ACME_API_KEY      # Env var holding the key. null = no key / not needed.
+  known_models:                  # Fallback model list (used when fetch fails or fetch_models=false).
+    - acme-large
+    - acme-fast
+  supports_tools: true            # Tool/function calling support (default: true).
+  supports_vision: false          # Image input support (default: false).
+  supports_thinking: false        # Reasoning/thinking token support (default: false).
+  api_key_optional: false         # Works without an API key (default: false).
+  is_local: false                 # Marks a local endpoint (skipped in auto-env detection).
+  max_tokens: null                # Optional hard cap on max output tokens.
+  # Auto-fetch model catalog from the provider's /models endpoint:
+  fetch_models: true              # (default: false)
+  models_endpoint: "/models"      # Path appended to base_url (default: "/models").
+  openmodelendpoint: false        # Catalog is public (no key needed for discovery).
+  headers:                        # Extra static request headers, e.g. org/project ids.
+    X-Acme-Project: "vtx"
+  # How to parse the /models JSON response:
+  model_parser:
+    array_path: "data"            # JSON key holding the model array (default: "data").
+    id_field: "id"                # Field for the model id (default: "id").
+    name_field: "name"            # Field for the display name (default: "name").
+    context_field: "context_length"   # Field for context window (default).
+    output_field: "max_completion_tokens"  # Field for max output (default).
+    cooldown_minutes: 60          # Cache TTL for the fetched catalog (default: 60).
+```
+
+Notes:
+- For **Anthropic-compatible** gateways set `family: anthropic` and point `base_url` at the gateway root (e.g. `https://ai.acme.internal`).
+- For **local servers** (LM Studio, vLLM, llama.cpp, Ollama) use `is_local: true`, `api_key_env: null`, `api_key_optional: true`, and `fetch_models: true` so models are discovered automatically.
+- See [docs/providers.md](docs/providers.md) for authentication, env vars, and the dynamic gateway catalog.
+
+---
+
 ## 💻 Terminal UI (TUI) Interactions
 
 Vtx features a keyboard-friendly interactive interface:
