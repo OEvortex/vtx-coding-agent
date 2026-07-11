@@ -18,17 +18,9 @@ MAX_DIRECTORY_ROWS = 1000
 
 
 class ReadParams(BaseModel):
-    path: str = Field(description="Absolute path of the file or directory to read")
-    offset: int | None = Field(
-        description="Line number to start reading from. "
-        "Only provide if the file is too large to read at once.",
-        default=None,
-    )
-    limit: int | None = Field(
-        description="Number of lines to read. "
-        "Only provide if the file is too large to read at once.",
-        default=None,
-    )
+    path: str = Field(description="Absolute path of file or directory")
+    offset: int | None = Field(description="Start line (for large files)", default=None)
+    limit: int | None = Field(description="Line count (for large files)", default=None)
 
 
 class ReadTool(BaseTool):
@@ -36,13 +28,11 @@ class ReadTool(BaseTool):
     tool_icon = "→"
     params = ReadParams
     mutating = False
-    prompt_guidelines = ("Use read to view files (NOT cat/head/tail)",)
+    prompt_guidelines = ("read (not cat/head/tail)",)
     description = (
-        "Read the contents of a file or directory. "
-        f"File reads truncate to {MAX_LINES_PER_FILE} lines and "
-        f"{MAX_CHARS_PER_LINE} chars per line. "
-        "Use offset/limit to paginate large files. "
-        "Supports reading jpg/jpeg/png/gif/webp images."
+        "Read a file or directory. Truncates to "
+        f"{MAX_LINES_PER_FILE} lines/{MAX_CHARS_PER_LINE} chars per line; "
+        "use offset/limit to paginate. Supports jpg/png/gif/webp images."
     )
 
     def format_call(self, params: ReadParams) -> str:

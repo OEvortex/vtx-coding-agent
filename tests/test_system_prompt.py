@@ -11,17 +11,17 @@ def test_system_prompt_includes_guidelines():
     finally:
         reset_config()
 
-    assert "Use find to search for files by name/glob" in prompt
-    assert "Use read to view files" in prompt
-    assert "Use edit for precise changes" in prompt
-    assert "Use write only for new files or complete rewrites" in prompt
-    assert "Use bash for terminal operations" in prompt
-    assert "Vtx session logs are JSONL files in ~/.vtx/sessions" in prompt
+    assert "find for files by glob" in prompt
+    assert "read (not cat/head/tail)" in prompt
+    assert "edit (not sed/awk)" in prompt
+    assert "write for new files/rewrites" in prompt
+    assert "bash for git/builds/tests/scripts" in prompt
+    assert "Session logs: JSONL in ~/.vtx/sessions" in prompt
     # Exactly one tool-usage section header.
     assert prompt.count("# Tool usage\n\n") == 1
     tool_usage = prompt.split("# Tool usage", 1)[1]
-    assert "  - Use read" not in tool_usage
-    assert "- Use read to view files" in tool_usage
+    assert "  - read (not cat" not in tool_usage
+    assert "- read (not cat/head/tail)" in tool_usage
 
 
 def test_system_prompt_includes_cwd():
