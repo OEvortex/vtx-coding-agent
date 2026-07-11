@@ -44,7 +44,9 @@ class TaskParams(BaseModel):
     model: str | None = Field(default=None, description="Model override (default: parent's)")
     background: bool = Field(
         default=False,
-        description="Run concurrently, return a task_id now; answer arrives next turn. Don't poll.",
+        description=(
+            "Run concurrently, return a task_id now; answer arrives next turn. Don't poll."
+        ),
     )
 
 
