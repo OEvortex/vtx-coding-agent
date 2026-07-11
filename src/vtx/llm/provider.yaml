@@ -122,6 +122,7 @@ providers:
       - qwen/qwen3.7-max
       - z-ai/glm-5.2
       - nvidia/nemotron-3-ultra-550b-a55b:free
+      - tencent/hy3
     fetch_models: true
     models_endpoint: /models
     model_parser:
