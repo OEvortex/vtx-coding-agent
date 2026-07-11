@@ -37,13 +37,8 @@ def _split_for_expand(text: str) -> tuple[str, str | None]:
 
 
 class FetchParams(BaseModel):
-    urls: Annotated[
-        list[str],
-        Field(min_length=1, description="URLs to read. Batch multiple URLs in one call."),
-    ]
-    max_characters: int = Field(
-        default=3000, ge=1, description="Maximum characters to extract per page (default: 3000)."
-    )
+    urls: Annotated[list[str], Field(min_length=1, description="URLs to read (batch in one call)")]
+    max_characters: int = Field(default=3000, ge=1, description="Max chars per page")
 
 
 class WebFetchTool(BaseTool):
@@ -53,17 +48,8 @@ class WebFetchTool(BaseTool):
     tool_icon = "🌐"
     params = FetchParams
     mutating = False
-    description = (
-        "Read a webpage's full content as clean markdown via the Exa MCP endpoint. "
-        "Use after web_search when highlights are insufficient or to read any URL. "
-        "Batch multiple URLs in one call. "
-        "Not suitable for JavaScript-rendered pages — use web_search for those. "
-        "Returns up to 3000 characters per page by default."
-    )
-    prompt_guidelines = (
-        "Use fetch_webpage to read a specific URL you already know.",
-        "Use web_search first if you need to discover URLs.",
-    )
+    description = "Read a webpage as clean markdown (Exa). Batch URLs. Not for JS-rendered pages."
+    prompt_guidelines = ()
 
     _MCP_URL = "https://mcp.exa.ai/mcp"
 
@@ -156,14 +142,10 @@ class WebFetchTool(BaseTool):
 
 
 class SearchParams(BaseModel):
-    query: str = Field(description="The search query")
+    query: str = Field(description="Search query")
     num_results: int = Field(default=8, ge=1, le=20, description="Number of results")
-    search_type: str = Field(
-        default="auto", description="Search type: 'auto', 'neural', or 'keyword'"
-    )
-    livecrawl: str = Field(
-        default="fallback", description="Livecrawl mode: 'fallback', 'always', or 'never'"
-    )
+    search_type: str = Field(default="auto", description="'auto', 'neural', or 'keyword'")
+    livecrawl: str = Field(default="fallback", description="'fallback', 'always', or 'never'")
 
 
 class WebSearchTool(BaseTool):
@@ -173,15 +155,8 @@ class WebSearchTool(BaseTool):
     tool_icon = "🔍"
     params = SearchParams
     mutating = False
-    description = (
-        "Search the web using the Exa neural search API (via free MCP endpoint). "
-        "Returns titles, URLs, and rich content snippets. "
-        "Better for semantic/research queries than keyword search. "
-        "Requires internet access."
-    )
-    prompt_guidelines = (
-        "Use web_search for research, semantic queries, and finding current information.",
-    )
+    description = "Web search (Exa neural). Returns titles, URLs, snippets. Needs internet."
+    prompt_guidelines = ()
 
     _MCP_URL = "https://mcp.exa.ai/mcp"
     _TIMEOUT = 25.0

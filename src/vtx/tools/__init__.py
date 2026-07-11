@@ -111,12 +111,33 @@ def get_tools_with_extensions(
     return result
 
 
+_SCHEMA_DROP_KEYS = frozenset({"title", "minLength", "maxLength", "minItems", "maxItems"})
+
+
+def _slim_schema(node: object) -> object:
+    """Shrink pydantic JSON schema for the LLM: drop ``title`` and length
+    constraints (still enforced by pydantic on the actual call) and collapse
+    ``anyOf: [T, null]`` optional unions down to ``T``."""
+    if isinstance(node, dict):
+        any_of = node.get("anyOf")
+        if isinstance(any_of, list):
+            non_null = [s for s in any_of if s.get("type") != "null"]
+            if len(non_null) == 1:
+                merged = {k: v for k, v in node.items() if k != "anyOf"}
+                merged.update(non_null[0])
+                node = merged
+        return {k: _slim_schema(v) for k, v in node.items() if k not in _SCHEMA_DROP_KEYS}
+    if isinstance(node, list):
+        return [_slim_schema(item) for item in node]
+    return node
+
+
 def get_tool_definitions(tools: list[BaseTool]) -> list[ToolDefinition]:
     return [
         ToolDefinition(
             name=tool.name,
             description=tool.description,
-            parameters=tool.params.model_json_schema(),
+            parameters=_slim_schema(tool.params.model_json_schema()),
         )
         for tool in tools
     ]

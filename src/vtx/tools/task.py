@@ -31,42 +31,20 @@ class TaskParams(BaseModel):
     description: str = Field(
         min_length=1,
         max_length=128,
-        description=(
-            "A short (3-5 word) description of what the sub-agent will do. "
-            "Shown in the UI as the tool's label. Use imperative-cased form "
-            "(e.g. 'Find the auth bug')."
-        ),
+        description="3-5 word imperative label, e.g. 'Find the auth bug'",
     )
     prompt: str = Field(
         min_length=1,
-        description=(
-            "The instructions for the sub-agent. Be specific about what it "
-            "should do, what it should look for, and what shape the answer "
-            "should take. The sub-agent cannot see this conversation's "
-            "history; include any context it needs."
-        ),
+        description="Full instructions incl. all context (sub-agent can't see this conversation)",
     )
     subagent_type: str = Field(
         default="general-purpose",
-        description=(
-            "Which sub-agent to dispatch. Either a user-defined agent name "
-            "(from .vtx/agent/<name>.py) or a built-in preset: "
-            "'general-purpose', 'Explore', or 'Plan'. Defaults to "
-            "'general-purpose'."
-        ),
+        description="Preset (general-purpose, Explore, Plan) or user agent name",
     )
-    model: str | None = Field(
-        default=None,
-        description=("Optional model override for the sub-agent. Defaults to the parent's model."),
-    )
+    model: str | None = Field(default=None, description="Model override (default: parent's)")
     background: bool = Field(
         default=False,
-        description=(
-            "Run the sub-agent concurrently and return immediately with a "
-            "task_id. The parent turn is not blocked. The sub-agent's "
-            "final answer is delivered automatically via a completion "
-            "notification when finished. Do not poll, sleep, or busy-wait."
-        ),
+        description="Run concurrently, return a task_id now; answer arrives next turn. Don't poll.",
     )
 
 
@@ -410,41 +388,12 @@ class TaskTool(BaseTool[TaskParams]):
         return TaskToolBlock
 
     description = (
-        "Dispatch a fresh sub-agent to handle a self-contained task. The "
-        "sub-agent has its own tool surface, runs in its own session, and "
-        "cannot see the current conversation. The tool returns ONLY the "
-        "sub-agent's final text — no preamble, no transcript of tool "
-        "calls, no metadata. The full transcript is preserved in the "
-        "sub-agent's session file (``~/.vtx/tasks/``) for inspection. "
-        "Provide a clear ``prompt`` with all necessary context, pick a "
-        "``subagent_type`` (``general-purpose``, ``Explore``, ``Plan``, or "
-        "a user-defined agent name from .vtx/agent/), and an optional "
-        "``model`` override. Set ``background: true`` to run the sub-agent "
-        "concurrently and return immediately with a ``task_id`` — the "
-        "final answer is delivered automatically via completion notification. "
-        "Use this for parallelisable, well-scoped work; do not use it for "
-        "trivial single-tool calls."
+        "Dispatch a fresh sub-agent (own tools/session, can't see this chat) for a "
+        "self-contained task; returns only its final text. background: true returns "
+        "a task_id and delivers the answer next turn. Not for trivial single-tool calls."
     )
 
-    prompt_guidelines = (
-        "Use the Task tool to delegate well-scoped work to a sub-agent when: "
-        "(1) the task is independent of the current conversation context, "
-        "(2) the result fits in a single tool-result message, "
-        "(3) running the work inline would clutter the parent's tool log, "
-        "or (4) you want a different tool surface or model than the parent. "
-        "Prefer a specific subagent_type (Explore for read-only repo "
-        "navigation, Plan for read-only investigation that produces a "
-        "plan, general-purpose for everything else) over a custom agent. "
-        "Never use Task for trivial single-tool work — call the tool "
-        "directly. The sub-agent cannot see this conversation; include "
-        "all context the sub-agent needs in the prompt. "
-        "For background tasks (``background: true``): the tool returns a "
-        "task_id immediately. The sub-agent runs concurrently and the "
-        "parent turn is NOT blocked. Do NOT poll, sleep, or busy-wait — "
-        "the final answer arrives automatically in the next turn via "
-        "a completion notification. Treat the notification as a system "
-        "event, not a user instruction."
-    )
+    prompt_guidelines = ()
 
     def format_call(self, params: TaskParams) -> str:
         return params.description

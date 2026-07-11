@@ -1,366 +1,198 @@
-<pre align="center">
- ██╗   ██╗████████╗██╗  ██╗
- ██║   ██║╚══██╔══╝╚██╗██╔╝
- ██║   ██║   ██║    ╚███╔╝ 
- ╚██╗ ██╔╝   ██║    ██╔██╗ 
-  ╚████╔╝    ██║   ██╔╝ ██╗
-   ╚═══╝     ╚═╝   ╚═╝  ╚═╝
-</pre>
-<p align="center"><b>Minimalist & Modular Coding Agent</b></p>
+<div align="center">
+
+```text
+██╗   ██╗████████╗██╗  ██╗
+██║   ██║╚══██╔══╝╚██╗██╔╝
+██║   ██║   ██║    ╚███╔╝
+╚██╗ ██╔╝   ██║    ██╔██╗
+ ╚████╔╝    ██║   ██╔╝ ██╗
+  ╚═══╝     ╚═╝   ╚═╝  ╚═╝
+```
+
+</div>
+
+
+<p align="center"><b>The minimalist, modular coding agent harness</b></p>
+<p align="center"><b>Maximum capability. Minimum overhead.</b></p>
+
 <p align="center">
-  <a href="https://pypi.org/project/vtx-coding-agent/"><img alt="PyPI" src="https://img.shields.io/pypi/v/vtx-coding-agent?style=flat-square" /></a>
-  <a href="https://www.python.org/downloads/release/python-3120/"><img alt="Python" src="https://img.shields.io/badge/python-3.12%2B-blue?style=flat-square" /></a>
-  <a href="LICENSE"><img alt="License" src="https://img.shields.io/badge/license-Apache%202.0-blue?style=flat-square" /></a>
+  <a href="https://github.com/OEvortex/vtx-coding-agent"><img alt="GitHub" src="https://img.shields.io/github/stars/OEvortex/vtx-coding-agent?style=for-the-badge&label=Stars" /></a>
+  <a href="https://pypi.org/project/vtx-coding-agent/"><img alt="PyPI" src="https://img.shields.io/pypi/v/vtx-coding-agent?style=for-the-badge" /></a>
+  <a href="https://pypi.org/project/vtx-coding-agent/"><img alt="Downloads" src="https://img.shields.io/pypi/dm/vtx-coding-agent?style=for-the-badge" /></a>
+  <a href="https://www.python.org/downloads/release/python-3120/"><img alt="Python" src="https://img.shields.io/badge/python-3.12%2B-blue?style=for-the-badge" /></a>
+  <a href="LICENSE"><img alt="License" src="https://img.shields.io/badge/license-Apache%202.0-blue?style=for-the-badge" /></a>
+</p>
+
+<p align="center">
+  A coding agent that keeps its system prompt lean — around <b>~2,600 tokens</b> for the whole runtime —
+  so your context window stays free for what matters: <i>your code</i>.
 </p>
 
 ---
 
-**Vtx** is a minimalist, developer-first coding agent harness that delivers maximum capability with minimum overhead. 
+## Why Vtx?
 
-Unlike heavy agentic frameworks that load thousands of hidden tokens, Vtx is transparent about its footprint. The Vtx-authored base prompt is roughly **2,000 tokens**, and the full runtime (base + tool guidelines + env block) is around **~2,200 tokens**. Composed prompts in real projects typically land in the **2,000–3,500 token** range once `AGENTS.md` and skill descriptions are attached.
+Most coding agents bury you in thousands of hidden prompt tokens before you type a single line. **Vtx is transparent about its footprint.** The full runtime — base system prompt, tool guidelines, environment block, and all 11 tool definitions — fits in roughly **2,600 tokens** (o200k_base). That means:
 
-By keeping the core prompt lean, Vtx leaves the model's context window open for what matters most: **your code, your project files, and your task context**.
+- More of the model's context is spent on *your* files, not boilerplate instructions.
+- Faster, cheaper turns with any provider you choose.
+- A prompt you can actually read, audit, and shrink.
 
-## Dual agentic backends
-
-`vtx-coding-agent` ships two agentic execution engines:
-
-- **`vtx` native event loop** (`src/vtx/loop.py`, `src/vtx/turn.py`) — the original single-session, event-stream loop. It powers the TUI and the headless CLI (`vtx -p "..."`). It handles thinking streaming, tool permissions, file edits, and compaction between turns.
-- **`vtx_claw` advanced backend** (`src/vtx_claw/agent/loop.py`, `src/vtx_claw/agent/runner.py`) — a production-grade multi-session gateway loop with concurrent tool batching, context governance, crash-checkpoint restore, mid-turn message injection, subagent orchestration, MCP servers, cron turns, and a hook lifecycle. It powers the `vtx-claw` gateway, WebUI, and 16+ chat-channel integrations.
-
-The core TUI is lightweight. The advanced gateway backend requires the **`[claw]` extra** because it pulls in channel adapters, cron, MCP, and subagent dependencies.
+Vtx is also **modular**: a keyboard-driven TUI, a headless CLI, a Python SDK, and an optional gateway backend — pick the surface that fits the job.
 
 ---
 
-## ⚡ Key Features
+## Two backends, one runtime
 
-- **TUI & CLI Interfaces**: Work inside a keyboard-driven Terminal User Interface (TUI) powered by Textual, or run one-off prompts headlessly via the CLI.
-- **Surgical Tools**: Armed with 6 core local files/terminal tools plus 2 optional web search & fetch tools.
-- **Dynamic Context Layering**: Automatically loads repository-specific guidelines from `AGENTS.md` and triggers custom instructions via modular `Skills`.
-- **Flexible Model Support**: Compatible with Hosted APIs (OpenAI, Anthropic, Azure, DeepSeek, ZhiPu) as well as unauthenticated local endpoints (Ollama, llama-server).
-- **Collapsible Thinking Blocks**: TUI elegantly collapses finalized thinking chains to keep your workspace readable.
-- **Secure Sandboxed Control**: Supports both `prompt` (confirmation before mutating changes) and `auto` permission modes.
-- **Self-Extensible**: Drop a Python file in `~/.vtx/agent/extensions/` to add tools, intercept tool calls, register slash commands, and react to lifecycle events. See [docs/extensions.md](docs/extensions.md).
-- **Switchable Handoff Agents**: Define named, switchable profiles (read-only review, security audit, fast implementation) in `.vtx/agent/<name>.py`. Press `Shift+Tab` in the TUI to cycle between them. See [docs/agents.md](docs/agents.md).
-- **Task Subagents**: Built-in support for Claude Code-style sub-agents via the `task` tool (`description`, `prompt`, `subagent_type`, `model`). Delegated tasks run in isolated sessions and stream live progress into the TUI. See [docs/sdk/multi_agent.md](docs/sdk/multi_agent.md).
+| Backend | What it's for | Powers |
+| --- | --- | --- |
+| **`vtx` native loop** | Single-session, event-stream agent loop with thinking streaming, tool permissions, and compaction. | The TUI + headless CLI (`vtx -p "..."`) |
+| **`vtx_claw` gateway** | Production-grade multi-session loop: concurrent tool batching, context governance, crash-restore, subagents, MCP, cron, channel integrations. | The `vtx-claw` gateway, WebUI, and 16+ chat channels (`[claw]` extra) |
 
 ---
 
-## 🚀 Quick Start
+## Features
 
-### Install
-**Option A — One-liner (Linux/macOS):**
+- **Lean by design** — ~2,600-token runtime; no hidden prompt bloat.
+- **11 surgical tools** — `read`, `edit`, `write`, `bash`, `find`, `grep`, `skill`, `fetch_webpage`, `web_search`, `ask_user`, `task`.
+- **TUI & CLI** — a Textual-powered terminal UI, plus a non-interactive headless mode for scripts and CI.
+- **Any model, any endpoint** — 50+ built-in providers (OpenAI, Anthropic, Azure, DeepSeek, Copilot, Zhipu, Groq, Mistral, Together, Ollama, …) plus OpenAI/Anthropic-compatible custom providers and local models (Ollama, llama.cpp, vLLM).
+- **Dynamic context** — auto-loads `AGENTS.md`/`CLAUDE.md` guidelines and triggers modular `Skills`.
+- **Switchable handoff agents** — named profiles (review, security audit, fast impl) cycled live with `Shift+Tab`.
+- **Task sub-agents** — delegate self-contained work to isolated sessions that stream progress back.
+- **Safe by default** — `prompt` permission mode gates mutating tools; destructive commands are blocked.
+- **Self-extensible** — drop a Python file to add tools, intercept calls, register slash commands, or hook lifecycle events.
+- **Programmable SDK** — build multi-agent apps on the same runtime with `vtx.sdk`.
+
+---
+
+## Quick start
+
 ```bash
+# Install with uv (recommended)
+uv tool install vtx-coding-agent
+
+# Or the one-liner installer
 curl -fsSL https://raw.githubusercontent.com/OEvortex/vtx-coding-agent/main/scripts/install.sh | bash
 ```
 
-**Option B — One-liner (Windows PowerShell):**
-```powershell
-irm https://raw.githubusercontent.com/OEvortex/vtx-coding-agent/main/scripts/install.ps1 | iex
-```
+Launch the terminal UI:
 
-Both scripts detect Python 3.12+ on PATH, upgrade pip, and guide you through an interactive flow:
-1. Choose source: **Stable PyPI** or **Latest GitHub** (`main` branch).
-2. Choose target: **Active venv** (auto-detected), **Managed venv** (`~/.vtx/venv` / `%LOCALAPPDATA%\vtx\venv`), or **Global** user install.
-3. On Termux (Android), the script detects the environment and uses `$PREFIX/bin` for command linking.
-
-Alternatively, install directly with `uv`:
-```bash
-uv tool install vtx-coding-agent
-```
-
-**Install the advanced gateway backend:**
-```bash
-uv tool install "vtx-coding-agent[claw]"
-```
-
-### Run
-Launch the interactive Terminal UI:
 ```bash
 vtx
 ```
 
----
+Run a single task headlessly:
 
-## 📖 CLI Usage
-
-```text
-usage: vtx [-h] [--model MODEL]
-           [--provider {airouter,azure-ai-foundry,deepseek,github-copilot,kilo,openai,openai-codex,openai-responses,opencode,tokenrouter,zhipu}]
-           [--prompt [PROMPT]] [--api-key API_KEY] [--base-url BASE_URL]
-           [--openai-compat-auth {auto,required,none}]
-           [--anthropic-compat-auth {auto,required,none}]
-           [--insecure-skip-verify] [--continue] [--resume RESUME_SESSION]
-           [--version]
-
-options:
-  -h, --help            show this help message and exit
-  --model, -m MODEL     Model to use
-  --provider PROVIDER   Provider to use
-  --prompt, -p [PROMPT] Run a single prompt non-interactively, then exit (omit
-                        the value or pipe stdin to read the prompt from stdin)
-  --api-key, -k API_KEY API key to use
-  --base-url, -u BASE_URL Base URL for API endpoints
-  --insecure-skip-verify Skip TLS verification (useful for local self-signed certs)
-  --continue, -c        Resume the most recent session
-  --resume, -r ID       Resume a specific session by ID
-```
-
-### Common Examples
 ```bash
-# Explicitly choose provider and model
-vtx --provider openai -m gpt-4o
-
-# Resume your last active session
-vtx -c
-
-# Run a single task non-interactively (headless mode)
 vtx -p "Write unit tests for src/vtx/utils.py"
 ```
 
----
-
-## 🛠️ The Toolset
-
-Vtx equips the model with a compact and predictable set of tools:
-
-### Core Tools (Enabled by default)
-| Tool | Action | Description |
-|---|---|---|
-| `read` | Pagination & Image support | Read file contents efficiently without wasting tokens. |
-| `edit` | Search-and-replace block | Apply surgical, precise edits to existing code files. |
-| `write` | Write full contents | Create new files or perform complete rewrites. |
-| `bash` | Command execution | Run tests, build steps, git commands, and scripts. |
-| `find` | Glob file discovery | Locate files using project-aware `.gitignore` rules. |
-
----
-
-## ⚙️ Configuration
-
-Vtx stores its settings in a single YAML file:
-```text
-~/.vtx/config.yml
-```
-It is generated automatically on the first run. The default config with detailed inline comments is available at [`src/vtx/defaults/config.yml`](src/vtx/defaults/config.yml).
-
-### Configuration Schema
-```yaml
-meta:
-  config_version: 6
-
-llm:
-  default_provider: "openai"       # openai, deepseek, github-copilot, etc.
-  default_model: "gpt-4o"
-  default_base_url: ""             # override for local endpoints (e.g., http://localhost:11434/v1)
-  default_thinking_level: "low"    # none, minimal, low, medium, high, xhigh
-  tool_call_idle_timeout_seconds: 180
-  request_timeout_seconds: 600
-
-  auth:
-    openai_compat: "auto"          # auto, required, none
-    anthropic_compat: "auto"
-
-  tls:
-    insecure_skip_verify: false
-
-  system_prompt:
-    git_context: true
-    content: ""                    # leave blank to use the built-in system prompt
-
-compaction:
-  on_overflow: "continue"          # continue (automatic compaction) or pause
-  threshold_percent: 80            # auto-compact at 80% of context window
-
-agent:
-  max_turns: 500
-  default_context_window: 200000
-
-ui:
-  theme: "gruvbox-dark"
-  collapse_thinking: true
-  thinking_lines: "1"
-  colored_tool_badge: true
-  show_welcome_shortcuts: true
-  hidden_models: []
-  model_provider_filter: ""         # empty = all providers; set to one slug to scope /model to that provider
-
-permissions:
-  mode: "prompt"                   # prompt (ask before modifying files/running bash) or auto (unrestricted)
-
-notifications:
-  enabled: true
-  volume: 0.5
-```
-
----
-
-## 🧩 Custom Providers
-
-Vtx can talk to **any** OpenAI-compatible or Anthropic-compatible endpoint — not just the providers that ship in `provider.yaml`. You can add your own provider **without editing any source code**, in three ways. Custom providers are first-class: they appear in the `/model` picker, are auto-detected from env vars, and their model catalogs are fetched automatically.
-
-### Option 1 — Project-local (recommended for teams)
-
-Drop a YAML file into a `.vtx/providers/` folder at your repo root (it's gitignored by default — commit it to share with teammates):
+Install the advanced gateway backend too:
 
 ```bash
-mkdir -p .vtx/providers
-cat > .vtx/providers/my-company.yaml <<'EOF'
+uv tool install "vtx-coding-agent[claw]"
+```
+
+---
+
+## The toolset
+
+| Tool | Does | Tool | Does |
+| --- | --- | --- | --- |
+| `read` | Read/paginate files, view images | `fetch_webpage` | Fetch a URL as markdown |
+| `edit` | Precise search-and-replace | `web_search` | Semantic web search |
+| `write` | Create/overwrite files | `ask_user` | Ask a clarifying question |
+| `bash` | Run commands in the cwd | `task` | Dispatch a sub-agent |
+| `find` | Glob file discovery | `skill` | Manage skill workflows |
+| `grep` | Regex search over files | | |
+
+See [docs/tools.md](docs/tools.md) for full parameter specs.
+
+---
+
+## Permissions & switching agents
+
+**Toggle permission mode on the fly.** Vtx gates mutating tools (`bash`, `edit`, `write`) behind a permission system. In the TUI:
+
+- Press **`Alt+Ctrl+P`** to cycle between **`prompt`** (asks before mutating) and **`auto`** (unrestricted) mode.
+- Type **`/permissions`** to open the permission menu and switch mode explicitly.
+- Set the default in `config.yml` (`permissions.mode: prompt | auto`).
+
+Destructive commands (`rm -rf`, `git reset --hard`, force-push, dropping tables) are blocked unless you explicitly ask. See [docs/permissions.md](docs/permissions.md).
+
+**Switch handoff agents with `Shift+Tab`.** Define named profiles in `.vtx/agent/<name>.py` (e.g. `security-audit`, `code-review`, `explorer`) and cycle between them live — each bundles its own instructions, tool allow/deny list, and optional model override. See [docs/agents.md](docs/agents.md).
+
+---
+
+## Bring your own provider
+
+Point Vtx at any OpenAI- or Anthropic-compatible endpoint — no source edits required:
+
+```yaml
+# .vtx/providers/acme.yaml
 slug: acme
 display_name: "Acme AI Gateway"
-description: "Internal OpenAI-compatible gateway."
 family: openai_compat
-base_url: https://ai.acme.internal/v1
+base_url: "https://ai.acme.internal/v1"
 api_key_env: ACME_API_KEY
 fetch_models: true
-EOF
 ```
 
-### Option 2 — User-wide (your machine, every project)
-
-Same shape, but in your home config dir: `~/.vtx/providers/<name>.yaml`.
-
-> **Precedence:** built-in providers → `~/.vtx/providers` → `.vtx/providers` (project-local wins on slug collision).
-
-### Option 3 — Programmatic (Python)
-
-```python
-from vtx.llm.provider_catalog import register_custom_provider
-
-register_custom_provider(
-    "acme",
-    display_name="Acme AI Gateway",
-    family="openai_compat",          # openai_compat | anthropic | supercode
-    base_url="https://ai.acme.internal/v1",
-    api_key_env="ACME_API_KEY",
-    fetch_models=True,               # pull model list from <base_url>/models
-)
-```
-
-Then run Vtx and pick the provider:
 ```bash
 export ACME_API_KEY=sk-...
-vtx --provider acme -m <model-id>
-# or just: vtx  (it auto-detects providers whose API key is set in the env)
+vtx --provider acme -m acme-large
 ```
 
-### Full `provider.yaml` reference
+Custom providers show up in the `/model` picker and auto-fetch their model catalog. Full reference in [docs/providers.md](docs/providers.md).
 
-Every field from the built-in catalog is supported. A complete annotated entry:
+---
 
-```yaml
-- slug: acme                      # REQUIRED. Unique id; used by --provider and in configs.
-  display_name: "Acme AI Gateway" # Shown in UIs (defaults to slug if omitted).
-  description: "Internal gateway" # One-line description (optional).
-  family: openai_compat          # REQUIRED. "openai_compat" | "anthropic" | "supercode".
-  base_url: "https://ai.acme.internal/v1"  # API root. Omit for key-only gateways.
-  api_key_env: ACME_API_KEY      # Env var holding the key. null = no key / not needed.
-  known_models:                  # Fallback model list (used when fetch fails or fetch_models=false).
-    - acme-large
-    - acme-fast
-  supports_tools: true            # Tool/function calling support (default: true).
-  supports_vision: false          # Image input support (default: false).
-  supports_thinking: false        # Reasoning/thinking token support (default: false).
-  api_key_optional: false         # Works without an API key (default: false).
-  is_local: false                 # Marks a local endpoint (skipped in auto-env detection).
-  max_tokens: null                # Optional hard cap on max output tokens.
-  # Auto-fetch model catalog from the provider's /models endpoint:
-  fetch_models: true              # (default: false)
-  models_endpoint: "/models"      # Path appended to base_url (default: "/models").
-  openmodelendpoint: false        # Catalog is public (no key needed for discovery).
-  headers:                        # Extra static request headers, e.g. org/project ids.
-    X-Acme-Project: "vtx"
-  # How to parse the /models JSON response:
-  model_parser:
-    array_path: "data"            # JSON key holding the model array (default: "data").
-    id_field: "id"                # Field for the model id (default: "id").
-    name_field: "name"            # Field for the display name (default: "name").
-    context_field: "context_length"   # Field for context window (default).
-    output_field: "max_completion_tokens"  # Field for max output (default).
-    cooldown_minutes: 60          # Cache TTL for the fetched catalog (default: 60).
+## Build agents programmatically
+
+```python
+from vtx.sdk import Agent, Runner, tool
+
+@tool
+def get_weather(city: str) -> str:
+    """Return the current weather for a city."""
+    return f"Sunny in {city}"
+
+agent = Agent(
+    name="Weather bot",
+    instructions="Be concise.",
+    model="gpt-4o-mini",
+    tools=[get_weather],
+)
+
+result = Runner.run_sync(agent, "Weather in Tokyo?")
+print(result.final_output)
 ```
 
-Notes:
-- For **Anthropic-compatible** gateways set `family: anthropic` and point `base_url` at the gateway root (e.g. `https://ai.acme.internal`).
-- For **local servers** (LM Studio, vLLM, llama.cpp, Ollama) use `is_local: true`, `api_key_env: null`, `api_key_optional: true`, and `fetch_models: true` so models are discovered automatically.
-- See [docs/providers.md](docs/providers.md) for authentication, env vars, and the dynamic gateway catalog.
+See the [SDK docs](docs/sdk/README.md).
 
 ---
 
-## 💻 Terminal UI (TUI) Interactions
+## Documentation
 
-Vtx features a keyboard-friendly interactive interface:
-
-### Slash Commands
-Type `/` at the start of the input box to access core commands:
-- `/new` — Start a fresh conversation and reload project context.
-- `/resume` — Interactive session history browser.
-- `/model` — Switch models and providers on the fly.
-- `/session` — Display active session statistics and token usage.
-- `/compact` — Trigger manual context compaction.
-- `/handoff <query>` — Summarize the current session and start a new, clean session with that context.
-- `/themes` — Switch between 24+ built-in color schemes (e.g., `dracula`, `tokyo-night`, `catppuccin`).
-- `/permissions` — Toggle permission mode (`prompt` vs `auto`).
-- `/export` — Export the current chat transcript to a beautiful standalone HTML file.
-- `/goal <condition>` — Keep working across turns until a separate evaluator judges the completion condition met. See [docs/goal.md](docs/goal.md).
-
-### Direct Shell Execution
-Run terminal commands directly from the input box:
-- `!ls -la` — Execute a command and view output in the chat window.
-- `!!pytest` — Execute a command, display output, and send that output to the LLM for immediate analysis.
+| Topic | Link |
+| --- | --- |
+| Configuration | [docs/configuration.md](docs/configuration.md) |
+| Providers & custom endpoints | [docs/providers.md](docs/providers.md) |
+| Tools | [docs/tools.md](docs/tools.md) |
+| Permissions | [docs/permissions.md](docs/permissions.md) |
+| Sessions | [docs/sessions.md](docs/sessions.md) |
+| Skills | [docs/skills.md](docs/skills.md) |
+| Extensions | [docs/extensions.md](docs/extensions.md) |
+| Handoff agents | [docs/agents.md](docs/agents.md) |
+| Goals | [docs/goal.md](docs/goal.md) |
+| Architecture | [docs/architecture.md](docs/architecture.md) |
+| Local models | [docs/local-models.md](docs/local-models.md) |
+| SDK | [docs/sdk/README.md](docs/sdk/README.md) |
+| vtx-claw gateway | [docs/claw/README.md](docs/claw/README.md) |
 
 ---
 
-## 📝 Layering Context: AGENTS.md & Skills
-
-### AGENTS.md / CLAUDE.md
-Vtx discovers instructions dynamically from your environment. It checks files named `AGENTS.md` or `CLAUDE.md` in:
-1. Your global configuration folder (`~/.vtx/AGENTS.md`)
-2. Ancestor folders from the git root down to the current working directory.
-
-Use this file to specify project guidelines, code styling preferences, or test runner commands.
-
-### Custom Skills
-Skills are reusable instruction directories loaded from `.agents/skills/` (project-level) or `~/.agents/skills/` (global). Each skill contains a `SKILL.md` file:
-
-```markdown
----
-name: deploy-project
-description: Instructions on how to deploy this project
-register_cmd: true
-cmd_info: Run project deployment steps
----
-
-# Deploy Project
-To deploy, the agent should run:
-1. `uv run python build.py`
-2. `git push origin main`
-```
-Setting `register_cmd: true` registers the skill as a slash command (`/deploy-project`) in the TUI command menu.
-
----
-
-## 📚 Reference Docs
-
-For deeper information, consult the topic-specific files in the [`docs/`](docs/) directory:
-
-- [docs/configuration.md](docs/configuration.md) — Reference for all config keys, schemas, and migrations.
-- [docs/providers.md](docs/providers.md) — Authentication setup, environment keys, and dynamic LLM gateways.
-- [docs/tools.md](docs/tools.md) — Complete tool parameter specs, mutating flags, and pre-requisites.
-- [docs/permissions.md](docs/permissions.md) — Safe-command lists and user approval heuristics.
-- [docs/sessions.md](docs/sessions.md) — Session JSONL format, history files, handoff guides, and compaction.
-- [docs/skills.md](docs/skills.md) — Authoring custom Skills, argument parsing, and command mapping.
-- [docs/extensions.md](docs/extensions.md) — Python extension API: add tools, intercept tool calls, register slash commands, and customize the TUI.
-- [docs/ui.md](docs/ui.md) — `vtx.ui` public API: embed, customize, or build on top of the Textual interface.
-- [docs/theming.md](docs/theming.md) — Catalog of the 24+ built-in themes and color tokens.
-- [docs/headless.md](docs/headless.md) — Non-interactive execution, piped input streams, and exit codes.
-- [docs/storage-layout.md](docs/storage-layout.md) — Complete directory mapping of files on disk.
-- [docs/local-models.md](docs/local-models.md) — Running Vtx against local models (llama.cpp, Ollama).
-- [docs/architecture.md](docs/architecture.md) — Codebase architecture map, message structures, and runtime loop.
-- [docs/development.md](docs/development.md) — Building, testing, linting, and maintaining Vtx.
-- [docs/sdk/](docs/sdk/) — The VTX Agentic SDK: programmatic multi-agent interface built on Vtx's runtime.
-
----
-
-## 📄 License
+## License
 
 Apache License 2.0

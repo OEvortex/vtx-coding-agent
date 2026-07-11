@@ -17,14 +17,10 @@ CONTEXT_LINES = 4
 
 
 class EditParams(BaseModel):
-    path: str = Field(description="Absolute path of the file to edit")
-    old_string: str = Field(description="The text to replace")
-    new_string: str = Field(
-        description="The text to replace it with (must be different from old_string)"
-    )
-    replace_all: bool = Field(
-        description="Replace all occurrences of old_string (default false)", default=False
-    )
+    path: str = Field(description="Absolute path of file to edit")
+    old_string: str = Field(description="Text to replace (exact match)")
+    new_string: str = Field(description="Replacement text (must differ)")
+    replace_all: bool = Field(description="Replace all occurrences", default=False)
 
 
 def _ellipsis(line_num_width: int, skipped: int) -> str:
@@ -199,11 +195,8 @@ class EditTool(BaseTool):
     name = "edit"
     tool_icon = "←"
     params = EditParams
-    prompt_guidelines = ("Use edit for precise changes (NOT sed/awk)",)
-    description = (
-        "Edit a file by replacing exact text. The old_string must match exactly "
-        "(including whitespaces). Use this for precise, surgical edits."
-    )
+    prompt_guidelines = ("edit (not sed/awk)",)
+    description = "Replace exact text in a file. old_string must match exactly (incl. whitespace)."
 
     def format_call(self, params: EditParams) -> str:
         return shorten_path(params.path)

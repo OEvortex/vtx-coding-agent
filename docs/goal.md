@@ -1,130 +1,45 @@
-# `/goal` — autonomous multi-turn objective
+# Goals (`/goal`)
 
-`/goal` tells the agent to keep working across turns until a separate
-evaluator judges your completion condition met. You write the
-condition once, the agent runs as many turns as it needs, and you get
-control back when the goal is achieved (or when the budget runs out).
+Goals let the agent keep working across turns until a separate evaluator judges a completion condition met. This is useful for open-ended tasks ("refactor the auth module and ensure all tests pass") where you don't want to babysit every turn.
 
-## At a glance
+## Usage
 
-```text
-/goal <completion condition>     set a goal and start working toward it
-/goal                            show current goal status
-/goal pause                      pause the active goal
-/goal resume                     resume a paused goal
-/goal clear                      remove the active goal
-                                 (aliases: stop, off, reset, none, cancel)
+```
+/goal <condition>
 ```
 
-The TUI also accepts the headless flag `--goal "<objective>"` to set
-a goal before the run starts.
+Example:
 
-## What "done" means
-
-The condition you write is a **completion check**, not a to-do list.
-After every turn, a separate evaluator (the small fast model, by
-default — falls back to your active model) reads the recent
-transcript and answers:
-
-- **YES** — the condition is fully met. The goal clears, the loop
-  emits `GoalAchievedEvent`, and you get control back with a one-line
-  confirmation in the chat.
-- **NO** — the agent keeps going. The evaluator's "why not" reason is
-  injected into the next turn as a synthetic user message so the
-  agent starts with concrete guidance.
-- **Budget exhausted** — the per-goal turn cap was hit before the
-  evaluator said YES. The loop emits `GoalBudgetLimitedEvent` and
-  exits gracefully with a `[goal] ⏱ Budget exhausted` badge.
-
-The agent's evaluator **only reads the transcript** — it does not
-call tools. Write your condition as something the agent's own output
-can prove: test results, file paths, command exit codes, file
-counts.
-
-## Examples
-
-```text
-/goal Get the test suite green and run ruff cleanly
-/goal Migrate the auth module to the new client API
-/goal All files in src/vtx/cli.py use click; no argparse imports remain
-/goal Ship the release notes in CHANGELOG.md or stop after 10 turns
+```
+/goal Make the test suite pass and add a test for the new parser, or stop after 50 turns
 ```
 
-## Bounds and budgets
+The objective text may include a budget clause — `or stop after N turns` / `or stop after N minutes` — which overrides the per-goal turn cap. Otherwise the cap falls back to `goal.max_turns` (and ultimately `agent.max_turns`).
 
-| Knob | Default | Where |
-| --- | --- | --- |
-| `goal.enabled` | `true` | `~/.vtx/config.yml` |
-| `goal.max_turns` | `100` | per-goal turn cap |
-| `goal.max_objective_chars` | `4000` | matches Claude Code / Codex |
-| `goal.evaluator_model` | `""` (active model) | route through a faster model |
-| `goal.evaluator_provider` | `""` (active provider) | as above |
-| `agent.max_turns` | `500` | global safety net (always wins) |
+## How it works
 
-Two ways to bound a run from inside the objective:
-
-- **Per-goal cap**: the loop stops with `GoalBudgetLimitedEvent` once
-  `goal.max_turns` is hit. The cap is also bounded by the global
-  `agent.max_turns`.
-- **Inline clause**: append `or stop after N turns` (or `or stop
-  after N minutes`) to the objective. The loop parses it, lowers the
-  per-run cap accordingly, and warns you in the chat.
+- A `Goal` holds state only; it does not call tools.
+- Between turns, the loop runs a cheap evaluator LLM call (the configured `goal.evaluator_model`, or the active default) that returns a yes/no decision plus a one-line reason.
+- If the verdict is "not done", the loop injects the evaluator's "why not" guidance as a user message so the next turn starts with direction.
+- Goal state is persisted to the session and restored on `--resume`.
 
 ## Lifecycle states
 
-The TUI's info bar shows a small `◎ /goal active · 5m` badge while a
-goal is running and switches to `paused` when you pause it. The chat
-renders a one-line block on every state change:
+`pursuing`, `paused`, `achieved`, `unmet`, `budget_limited`. The run ends with a budget-limited event when the turn cap is hit.
 
-- `[goal] ✓ Goal achieved — <reason>` (after turns and tokens)
-- `[goal] ⏱ Budget exhausted after N turns / cap N · K tokens`
-- `[goal] ↻ Continuing (turn N) — <reason>` (small dim line)
+## Configuration
 
-When you replace a goal (`/goal new-objective`), the prior goal is
-closed with status `cleared` and the new one starts on the next turn.
+See `goal:` in [configuration.md](configuration.md):
 
-## Resume
-
-Goal state is persisted to the session as a `GoalEntry`. Resuming
-with `vtx --resume <id>` restores the latest snapshot:
-
-- `pursuing` → continues evaluating on the next turn
-- `paused` → stays paused; use `/goal resume`
-- `achieved` / `budget_limited` / `unmet` → kept for visibility; not
-  auto-restarted
-
-## Headless
-
-```bash
-vtx -p "run all tests and tell me which ones fail" --goal "all tests pass and lint is clean"
+```yaml
+goal:
+  enabled: true          # master switch; /goal is rejected when false
+  max_turns: 100         # per-goal turn cap
+  max_objective_chars: 4000
+  evaluator_provider: "" # empty = active default
+  evaluator_model: ""
 ```
 
-The agent runs until the evaluator says YES or the budget is
-exhausted. Status transitions print to **stderr** (not stdout), so
-scripts can still pipe the agent's final assistant message:
+## Extension events
 
-```text
-goal: Get the test suite green and keep ruff clean
-goal: evaluating (turn 1)...
-goal: continuing (turn 1): 2 tests failing in test_auth.py
-goal: evaluating (turn 2)...
-goal: achieved (turn 2): tests pass, ruff clean
-<assistant final answer>
-```
-
-## Design notes
-
-- The evaluator reads only the transcript. It cannot call tools,
-  inspect the filesystem, or read the agent's hidden state. This
-  keeps the loop predictable and avoids the evaluator "helping" the
-  agent.
-- The active model is swapped briefly for the evaluator model inside
-  `GoalManager.evaluate`. The swap is restored in a `finally` so an
-  evaluator failure never leaves the provider in a wrong state.
-- Budget enforcement happens at the agent-loop level. A goal that
-  hits its turn cap does not silently stop — it emits
-  `GoalBudgetLimitedEvent` and the `AgentEndEvent.goal_status` field
-  surfaces it for headless scripts.
-
-See `src/vtx/goal.py` for the full implementation and
-`tests/test_goal.py` for the test coverage.
+Extensions can observe goal transitions via `goal_start`, `goal_end`, `goal_paused`, `goal_resumed` (see [extensions.md](extensions.md)).

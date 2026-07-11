@@ -269,7 +269,7 @@ class ChatLog(VerticalScroll):
         for i, line in enumerate(logo_lines):
             info_text.append(line, style=accent)
             if i == len(logo_lines) - 1:
-                info_text.append(f" v{version}", style=dim)
+                info_text.append(f" {version}", style=dim)
             info_text.append("\n")
 
         if config.ui.show_welcome_shortcuts:
@@ -283,7 +283,7 @@ class ChatLog(VerticalScroll):
                     ("↑/↓", "history"),
                 ),
                 (
-                    ("shift+tab", "permissions"),
+                    ("shift+tab", "switch agent"),
                     ("esc", "to interrupt"),
                     ("shift+enter", "add newline"),
                 ),

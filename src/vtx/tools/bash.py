@@ -137,7 +137,7 @@ def _write_full_output_to_temp(output: str) -> str:
 
 
 class BashParams(BaseModel):
-    command: str = Field(description="The bash command to execute")
+    command: str = Field(description="Bash command to execute")
     timeout: int = Field(
         description=f"Timeout in seconds (default {DEFAULT_TIMEOUT})", default=DEFAULT_TIMEOUT
     )
@@ -147,16 +147,11 @@ class BashTool(BaseTool):
     name = "bash"
     tool_icon = "$"
     params = BashParams
-    prompt_guidelines = (
-        "Use bash for terminal operations (git, package managers, builds, tests, running scripts)",
-    )
+    prompt_guidelines = ("bash for git/builds/tests/scripts (not file read/search/edit)",)
     description = (
-        "Execute a bash command in the current working directory. "
-        f"Output truncated to last {MAX_OUTPUT_LINES} lines or {MAX_OUTPUT_BYTES // 1024}KB. "
-        "If truncated, full output is saved to a temp file. "
-        "Optionally provide a timeout in seconds. "
-        "IMPORTANT: Do NOT use bash for file search (use the find tool instead), "
-        "reading files (use read), or editing files (use edit)."
+        "Run a bash command in the cwd. Output truncated to last "
+        f"{MAX_OUTPUT_LINES} lines/{MAX_OUTPUT_BYTES // 1024}KB (full saved to temp file). "
+        "Do NOT use for file search (find), reading (read), or editing (edit)."
     )
 
     # TODO: Add streaming support via an optional `on_chunk` callback parameter

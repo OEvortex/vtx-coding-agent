@@ -12,20 +12,17 @@ from .base import BaseTool, ToolResult
 
 
 class WriteParams(BaseModel):
-    path: str = Field(description="Absolute path of the file to write to")
-    content: str = Field(description="Content to be written to the file")
+    path: str = Field(description="Absolute path of file to write")
+    content: str = Field(description="File content")
 
 
 class WriteTool(BaseTool):
     name = "write"
     tool_icon = "+"
     params = WriteParams
-    prompt_guidelines = (
-        "Use write only for new files or complete rewrites (NOT echo >/cat <<EOF)",
-    )
+    prompt_guidelines = ("write for new files/rewrites (not echo >/heredoc)",)
     description = (
-        "Write content to a file. Creates the file if it doesn't exist, overwrites if it does. "
-        "Automatically creates parent directories."
+        "Write a file (creates or overwrites; makes parent dirs). Use edit for partial changes."
     )
 
     def format_call(self, params: WriteParams) -> str:

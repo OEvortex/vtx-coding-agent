@@ -34,18 +34,9 @@ MAX_HEADER_CHARS = 12
 
 
 class AskUserOptionParam(BaseModel):
-    label: str = Field(
-        min_length=1,
-        max_length=MAX_LABEL_CHARS,
-        description=(
-            "Short label shown in the picker and returned to the LLM. "
-            "Must be unique within the question."
-        ),
-    )
+    label: str = Field(min_length=1, max_length=MAX_LABEL_CHARS, description="Short unique label")
     description: str = Field(
-        default="",
-        max_length=MAX_DESCRIPTION_CHARS,
-        description="Optional longer explanation shown under the label.",
+        default="", max_length=MAX_DESCRIPTION_CHARS, description="Optional one-line explanation"
     )
 
 
@@ -53,32 +44,16 @@ class AskUserParams(BaseModel):
     question: str = Field(
         min_length=1,
         max_length=MAX_QUESTION_CHARS,
-        description=(
-            "The question to ask the user. Keep it short and specific. "
-            "Avoid embedding options in the question — pass them via the "
-            "``options`` field instead so the UI can render them as "
-            "selectable choices."
-        ),
+        description="Short, specific question (put choices in options, not here)",
     )
     options: list[AskUserOptionParam] | None = Field(
-        default=None,
-        description=(
-            f"2-{MAX_OPTIONS} options to offer. Omit for an open-ended "
-            "question that accepts free text only. The user can always "
-            "type a custom answer via the synthetic 'Other' option."
-        ),
+        default=None, description=f"2-{MAX_OPTIONS} options; omit for free text"
     )
-    multi_select: bool = Field(
-        default=False, description="Allow the user to pick more than one option."
-    )
+    multi_select: bool = Field(default=False, description="Allow multiple selections")
     header: str | None = Field(
         default=None,
         max_length=MAX_HEADER_CHARS,
-        description=(
-            f"Optional short tag shown in the modal header (max "
-            f"{MAX_HEADER_CHARS} chars). Use a noun, not a question "
-            "(e.g. 'Package manager', 'Auth method')."
-        ),
+        description=f"Short noun tag for the modal (max {MAX_HEADER_CHARS} chars)",
     )
 
     @field_validator("options")
@@ -106,21 +81,10 @@ class AskUserTool(BaseTool):
     tool_icon = "?"
     params = AskUserParams
     mutating = False
-    prompt_guidelines = (
-        "Use ask_user to ask a clarifying question before acting when the "
-        "answer would change the approach, not for routine decisions. "
-        "Prefer 2-4 options with a short label and one-line description; "
-        "omit options for open-ended questions. Never use ask_user to ask "
-        "questions the user can answer by running a tool (e.g. 'what files "
-        "are in this dir?' — use find instead).",
-    )
+    prompt_guidelines = ()
     description = (
-        "Ask the user a clarifying question and wait for their answer. "
-        "Pass 2-4 options for a multiple-choice question (use "
-        "``multi_select`` to allow several), or omit options to accept "
-        "free text. Returns the user's selection (labels) or the custom "
-        "text they typed. The user can always type a custom answer even "
-        "when options are given."
+        "Ask the user a clarifying question and wait. Pass 2-4 options for "
+        "multiple choice (multi_select for several), or omit for free text."
     )
 
     def format_call(self, params: AskUserParams) -> str:

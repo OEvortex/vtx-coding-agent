@@ -25,47 +25,22 @@ class SkillParams(BaseModel):
         return data
 
     action: Literal["list", "view", "create", "patch", "edit", "delete"] = Field(
-        description=(
-            "The action to perform: list (shows all loaded skills), "
-            "view (reads full instructions), create (creates new), "
-            "patch (find-and-replace), edit (overwrites file), "
-            "delete (deletes skill folder)."
-        ),
+        description="list, view, create, patch (find-replace), edit (overwrite), delete",
         default="view",
     )
     name: str | None = Field(
-        description=(
-            "Name of the skill (lowercase, alphanumeric, and hyphens only). "
-            "Required for all actions except 'list'."
-        ),
-        default=None,
+        description="Skill name (lowercase/hyphens). Required except for 'list'.", default=None
     )
     content: str | None = Field(
-        description=(
-            "Full SKILL.md content (YAML frontmatter + markdown body). "
-            "Required for 'create' and 'edit'."
-        ),
-        default=None,
+        description="Full SKILL.md content. Required for create/edit.", default=None
     )
-    old_string: str | None = Field(
-        description="Text to search for (required for 'patch'). Must be a unique match.",
-        default=None,
-    )
-    new_string: str | None = Field(
-        description="Replacement text (required for 'patch').", default=None
-    )
+    old_string: str | None = Field(description="Unique text to find (patch)", default=None)
+    new_string: str | None = Field(description="Replacement text (patch)", default=None)
     file_path: str | None = Field(
-        description=(
-            "Relative path of a supporting file to target (e.g., 'templates/prompt.md'). "
-            "Defaults to 'SKILL.md' if omitted."
-        ),
-        default=None,
+        description="Supporting file to target (default: SKILL.md)", default=None
     )
     scope: Literal["project", "global"] = Field(
-        description=(
-            "For 'create': whether to create project-level skill in "
-            ".agents/skills/ (default) or user-global skill in ~/.agents/skills/."
-        ),
+        description="create: project (.agents/skills) or global (~/.agents/skills)",
         default="project",
     )
 
@@ -75,13 +50,8 @@ class SkillTool(BaseTool):
     tool_icon = "⚙"
     params = SkillParams
     mutating = True  # Can modify skills, though list/view are read-only
-    prompt_guidelines = (
-        "Use skill to list, view, create, patch, edit, or delete skill workflows.",
-    )
-    description = (
-        "Manage or view the AI's skills. Actions: list, view, create, patch, edit, delete. "
-        "Allows progressive loading, targeting specific parts of instructions, or self-evolution."
-    )
+    prompt_guidelines = ()
+    description = "List, view, create, patch, edit, or delete skill workflows."
 
     def format_call(self, params: SkillParams) -> str:
         name_str = f" name={params.name}" if params.name else ""

@@ -10,7 +10,7 @@ from importlib import resources
 from pathlib import Path
 from typing import Any, Literal, get_args
 
-from pydantic import BaseModel, Field, ValidationError, field_validator
+from pydantic import BaseModel, Field, ValidationError, field_validator, model_validator
 
 from .themes import ColorsConfig, get_theme, get_theme_ids
 
@@ -192,6 +192,20 @@ class RecentModelsEntry(BaseModel):
 
 class RecentModelsConfig(BaseModel):
     entries: list[RecentModelsEntry] = Field(default_factory=list)
+
+    @model_validator(mode="before")
+    @classmethod
+    def _drop_invalid_entries(cls, data: Any) -> Any:
+        # Tolerate corrupt entries (e.g. model_id: null) that older writes
+        # or manual edits may have produced, instead of failing config load.
+        if isinstance(data, dict) and isinstance(data.get("entries"), list):
+            data = {
+                **data,
+                "entries": [
+                    e for e in data["entries"] if isinstance(e, dict) and e.get("model_id")
+                ],
+            }
+        return data
 
 
 class AgentsConfig(BaseModel):

@@ -8,7 +8,7 @@ _LOGO = ("░█░█░███░█░█", "░█░█░░█░░░
 
 _SHORTCUT_ROWS = (
     (("/", "slash commands"), ("@", "files/dirs"), ("tab", "complete paths"), ("↑/↓", "history")),
-    (("shift+tab", "permissions"), ("esc", "to interrupt"), ("shift+enter", "add newline")),
+    (("shift+tab", "switch agent"), ("esc", "to interrupt"), ("shift+enter", "add newline")),
     (("ctrl+c", "clear input"), ("ctrl+c x2", "exit"), ("enter", "queue"), ("alt+enter", "steer")),
     (("↑/↓", "select queue"), ("ctrl+t", "cycle thinking"), ("ctrl+shift+t", "toggle thinking")),
 )
@@ -24,7 +24,7 @@ def build_welcome(version: str) -> tuple[Text, Panel]:
     for i, line in enumerate(_LOGO):
         logo.append(line, style=accent)
         if i == len(_LOGO) - 1:
-            logo.append(f" v{version}", style=dim)
+            logo.append(f" {version}", style=dim)
         logo.append("\n")
     logo.append("\n")
 

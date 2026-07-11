@@ -18,12 +18,8 @@ MAX_OUTPUT_BYTES = 20 * 1024
 
 
 class FindParams(BaseModel):
-    pattern: str = Field(
-        description="Glob pattern to match files, e.g. '*.py', '**/*.json', or 'src/**/*.spec.ts'"
-    )
-    path: str | None = Field(
-        description="Directory to search in (default: current directory)", default=None
-    )
+    pattern: str = Field(description="Glob pattern, e.g. '*.py', '**/*.json'")
+    path: str | None = Field(description="Directory to search (default: cwd)", default=None)
 
 
 class FindTool(BaseTool):
@@ -31,12 +27,10 @@ class FindTool(BaseTool):
     tool_icon = "*"
     params = FindParams
     mutating = False
-    prompt_guidelines = ("Use find to search for files by name/glob (NOT find or ls via bash)",)
+    prompt_guidelines = ("find for files by glob (not bash find/ls)",)
     description = (
-        "Search for files by glob pattern using fd. "
-        "Returns matching file paths relative to the search directory, "
-        "sorted by modification time."
-        f"Respects .gitignore. Truncated to {MAX_RESULTS} results."
+        "Find files by glob (fd). Returns paths sorted by mtime, "
+        f"respects .gitignore, truncated to {MAX_RESULTS}."
     )
 
     def format_call(self, params: FindParams) -> str:
