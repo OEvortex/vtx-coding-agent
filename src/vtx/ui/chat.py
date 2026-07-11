@@ -283,7 +283,7 @@ class ChatLog(VerticalScroll):
                     ("↑/↓", "history"),
                 ),
                 (
-                    ("shift+tab", "permissions"),
+                    ("shift+tab", "switch agent"),
                     ("esc", "to interrupt"),
                     ("shift+enter", "add newline"),
                 ),

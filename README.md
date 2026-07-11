@@ -51,9 +51,9 @@ Vtx is also **modular**: a keyboard-driven TUI, a headless CLI, a Python SDK, an
 - **Lean by design** — ~2,600-token runtime; no hidden prompt bloat.
 - **11 surgical tools** — `read`, `edit`, `write`, `bash`, `find`, `grep`, `skill`, `fetch_webpage`, `web_search`, `ask_user`, `task`.
 - **TUI & CLI** — a Textual-powered terminal UI, plus a non-interactive headless mode for scripts and CI.
-- **Any model, any endpoint** — 18+ built-in providers (OpenAI, Anthropic, Azure, DeepSeek, Copilot, Zhipu, …) plus OpenAI/Anthropic-compatible custom providers and local models (Ollama, llama.cpp, vLLM).
+- **Any model, any endpoint** — 50+ built-in providers (OpenAI, Anthropic, Azure, DeepSeek, Copilot, Zhipu, Groq, Mistral, Together, Ollama, …) plus OpenAI/Anthropic-compatible custom providers and local models (Ollama, llama.cpp, vLLM).
 - **Dynamic context** — auto-loads `AGENTS.md`/`CLAUDE.md` guidelines and triggers modular `Skills`.
-- **Switchable handoff agents** — named profiles (review, security audit, fast impl) cycled with `Shift+Tab`.
+- **Switchable handoff agents** — named profiles (review, security audit, fast impl) cycled live with `Shift+Tab`.
 - **Task sub-agents** — delegate self-contained work to isolated sessions that stream progress back.
 - **Safe by default** — `prompt` permission mode gates mutating tools; destructive commands are blocked.
 - **Self-extensible** — drop a Python file to add tools, intercept calls, register slash commands, or hook lifecycle events.
@@ -121,6 +121,20 @@ $ vtx
 | `grep` | Regex search over files | | |
 
 See [docs/tools.md](docs/tools.md) for full parameter specs.
+
+---
+
+## Permissions & switching agents
+
+**Toggle permission mode on the fly.** Vtx gates mutating tools (`bash`, `edit`, `write`) behind a permission system. In the TUI:
+
+- Press **`Alt+Ctrl+P`** to cycle between **`prompt`** (asks before mutating) and **`auto`** (unrestricted) mode.
+- Type **`/permissions`** to open the permission menu and switch mode explicitly.
+- Set the default in `config.yml` (`permissions.mode: prompt | auto`).
+
+Destructive commands (`rm -rf`, `git reset --hard`, force-push, dropping tables) are blocked unless you explicitly ask. See [docs/permissions.md](docs/permissions.md).
+
+**Switch handoff agents with `Shift+Tab`.** Define named profiles in `.vtx/agent/<name>.py` (e.g. `security-audit`, `code-review`, `explorer`) and cycle between them live — each bundles its own instructions, tool allow/deny list, and optional model override. See [docs/agents.md](docs/agents.md).
 
 ---
 
