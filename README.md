@@ -8,6 +8,7 @@
 </pre>
 
 <p align="center"><b>The minimalist, modular coding agent harness</b></p>
+<p align="center"><b>Maximum capability. Minimum overhead.</b></p>
 
 <p align="center">
   <a href="https://github.com/OEvortex/vtx-coding-agent"><img alt="GitHub" src="https://img.shields.io/github/stars/OEvortex/vtx-coding-agent?style=for-the-badge&label=Stars" /></a>
@@ -18,7 +19,6 @@
 </p>
 
 <p align="center">
-  <b>Maximum capability. Minimum overhead.</b><br/>
   A coding agent that keeps its system prompt lean — around <b>~2,600 tokens</b> for the whole runtime —
   so your context window stays free for what matters: <i>your code</i>.
 </p>
@@ -96,15 +96,15 @@ uv tool install "vtx-coding-agent[claw]"
 ```
 $ vtx
 ╭─ Vtx ──────────────────────────────────────────────── v-editable ─╮
-│ ░█░█░███░█░█                                            v0.2.3  │
-│ > Refactor auth.py to use typed credentials                  │
-│                                                              │
-│  ╭─ bash ──────────────────────────────────────────────╮    │
-│  │ $ uv run pytest tests/test_auth.py                   │    │
-│  │ 12 passed in 0.84s                                  │    │
-│  ╰────────────────────────────────────────────────────╯    │
-│ ✔ Refactored auth.py (3 files) — all tests green.          │
-╰──────────────────────────────────────────────────────────────╯
+│ ░█░█░███░█░█                                                v0.2.3 │
+│ > Refactor auth.py to use typed credentials                        │
+│                                                                   │
+│  ╭─ bash ────────────────────────────────────────────────────╮   │
+│  │ $ uv run pytest tests/test_auth.py                         │   │
+│  │ 12 passed in 0.84s                                         │   │
+│  ╰───────────────────────────────────────────────────────────╯   │
+│ ✔ Refactored auth.py (3 files) — all tests green.                 │
+╰───────────────────────────────────────────────────────────────────╯
 ```
 
 ---
