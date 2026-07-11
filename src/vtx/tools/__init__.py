@@ -1,3 +1,5 @@
+from typing import Any
+
 from ..core.types import ToolDefinition
 from .ask_user import AskUserTool
 from .background import BackgroundTaskManager, BackgroundTaskRecord, get_manager, set_manager
@@ -114,7 +116,7 @@ def get_tools_with_extensions(
 _SCHEMA_DROP_KEYS = frozenset({"title", "minLength", "maxLength", "minItems", "maxItems"})
 
 
-def _slim_schema(node: object) -> object:
+def _slim_schema(node: Any) -> Any:
     """Shrink pydantic JSON schema for the LLM: drop ``title`` and length
     constraints (still enforced by pydantic on the actual call) and collapse
     ``anyOf: [T, null]`` optional unions down to ``T``."""
