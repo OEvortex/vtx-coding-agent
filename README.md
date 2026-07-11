@@ -96,24 +96,6 @@ uv tool install "vtx-coding-agent[claw]"
 
 ---
 
-## See it in action
-
-```
-$ vtx
-╭─ Vtx ──────────────────────────────────────────────── v-editable ─╮
-│ ░█░█░███░█░█                                                v0.2.3 │
-│ > Refactor auth.py to use typed credentials                        │
-│                                                                   │
-│  ╭─ bash ────────────────────────────────────────────────────╮   │
-│  │ $ uv run pytest tests/test_auth.py                         │   │
-│  │ 12 passed in 0.84s                                         │   │
-│  ╰───────────────────────────────────────────────────────────╯   │
-│ ✔ Refactored auth.py (3 files) — all tests green.                 │
-╰───────────────────────────────────────────────────────────────────╯
-```
-
----
-
 ## The toolset
 
 | Tool | Does | Tool | Does |

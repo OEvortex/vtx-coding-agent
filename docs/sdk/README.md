@@ -2,7 +2,7 @@
 
 The VTX Agentic SDK is Vtx's programmatic, multi-agent interface. It
 exposes Vtx's lean runtime (system prompt + tool definitions around
-~2.6k tokens), 18+ LLM provider catalog, and Pydantic-typed tool
+~2.6k tokens), 50+ LLM provider catalog, and Pydantic-typed tool
 system as a clean Python API you can build agentic applications on top
 of.
 
@@ -87,7 +87,7 @@ the full event stream for UIs / automation / testing.
 Differentiators vs. `openai-agents`:
 
 - **Lean ~2.6k-token runtime** (system prompt + tool definitions; Vtx is among the leanest agentic runtimes in Python)
-- **18+ providers out of the box** (OpenAI, Anthropic, Azure, Copilot, DeepSeek, Kilo, OpenCode, TokenRouter, Zhipu, Ollama, llama-server, …)
+- **50+ providers out of the box** (OpenAI, Anthropic, Azure, Copilot, DeepSeek, Kilo, OpenCode, TokenRouter, Zhipu, Groq, Mistral, Together, Ollama, llama-server, …)
 - **Markdown-driven skills** (`.agents/skills/`, `register_cmd: true` slash commands)
 - **Branchable JSONL sessions** (`.tree` style tree navigation)
 - **Permissions as a pure function** (`PermissionPolicy` Protocol)
