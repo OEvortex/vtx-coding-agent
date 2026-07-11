@@ -5,6 +5,19 @@ All notable changes to Vtx are documented in this file. The format is based on
 adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 
+## [Unreleased]
+
+### Added
+- **Editable build indicator** — when vtx is installed as an editable package (`pip install -e .`), the TUI now displays `v-editable` instead of a release version number. Detection uses the installed distribution's `direct_url.json` `dir_info.editable` flag.
+
+### Changed
+- **Minimalist system prompt** — drastically reduced the model context footprint:
+  - Rewrote the system prompt sections to be terse while preserving all behavioral guidance.
+  - Trimmed every tool description and field description.
+  - Slimmed the LLM-facing tool JSON schemas: dropped `title`/`minLength`/`maxLength` noise and collapsed `anyOf: [type, null]` optional unions. Pydantic still enforces all validation constraints on real tool calls.
+  - Removed redundant tool-usage guidelines that duplicated the tool descriptions.
+  - Total system prompt + tool definitions lowered from ~5,500 tokens to ~2,600 tokens (o200k_base).
+
 ## [0.2.3] - 2026-07-10 — Custom Provider Support
 
 ### Added
