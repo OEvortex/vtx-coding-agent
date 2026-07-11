@@ -4,6 +4,15 @@ from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
+from vtx_claw.session.webui_turns import (
+    TITLE_GENERATION_MAX_TOKENS,
+    TITLE_GENERATION_REASONING_EFFORT,
+    WEBUI_SESSION_METADATA_KEY,
+    WEBUI_TITLE_METADATA_KEY,
+    WebuiTurnCoordinator,
+    clean_generated_title,
+    maybe_generate_webui_title,
+)
 
 from vtx_claw.agent.context import ContextBuilder
 from vtx_claw.agent.loop import AgentLoop
@@ -16,15 +25,6 @@ from vtx_claw.session.manager import Session, SessionManager
 from vtx_claw.session.turn_continuation import (
     INTERNAL_CONTINUATION_META,
     INTERNAL_CONTINUATION_RUN_STARTED_AT_META,
-)
-from vtx_claw.session.webui_turns import (
-    TITLE_GENERATION_MAX_TOKENS,
-    TITLE_GENERATION_REASONING_EFFORT,
-    WEBUI_SESSION_METADATA_KEY,
-    WEBUI_TITLE_METADATA_KEY,
-    WebuiTurnCoordinator,
-    clean_generated_title,
-    maybe_generate_webui_title,
 )
 from vtx_claw.utils.llm_runtime import LLMRuntime
 

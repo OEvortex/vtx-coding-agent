@@ -8,8 +8,9 @@ parse → serialize round-trip so the model can continue reasoning.
 from types import SimpleNamespace
 from unittest.mock import patch
 
-from vtx_claw.providers.base import ToolCallRequest
 from vtx_claw.providers.openai_compat_provider import OpenAICompatProvider
+
+from vtx_claw.providers.base import ToolCallRequest
 
 GEMINI_EXTRA = {"google": {"thought_signature": "sig-abc-123"}}
 

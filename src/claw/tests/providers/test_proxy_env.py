@@ -3,7 +3,6 @@
 from unittest.mock import MagicMock
 
 import httpx
-
 from vtx_claw.providers.openai_compat_provider import OpenAICompatProvider
 
 

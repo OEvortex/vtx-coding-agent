@@ -2,12 +2,12 @@ import asyncio
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
+from vtx_claw.session.webui_turns import WebuiTurnCoordinator
 
 from vtx_claw.agent.loop import AgentLoop
 from vtx_claw.bus.events import OutboundMessage
 from vtx_claw.bus.queue import MessageBus
 from vtx_claw.providers.base import GenerationSettings, LLMResponse
-from vtx_claw.session.webui_turns import WebuiTurnCoordinator
 
 
 def _make_loop(tmp_path):

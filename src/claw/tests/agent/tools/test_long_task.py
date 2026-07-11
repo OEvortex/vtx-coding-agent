@@ -6,6 +6,7 @@ import asyncio
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
+from vtx_claw.session.webui_turns import WebuiTurnCoordinator
 
 from vtx_claw.agent.loop import AgentLoop
 from vtx_claw.agent.tools.context import RequestContext
@@ -14,7 +15,6 @@ from vtx_claw.bus.queue import MessageBus
 from vtx_claw.bus.runtime_events import RuntimeEventBus
 from vtx_claw.session.goal_state import GOAL_STATE_KEY
 from vtx_claw.session.manager import SessionManager
-from vtx_claw.session.webui_turns import WebuiTurnCoordinator
 
 
 def _tools(sm: SessionManager) -> tuple[LongTaskTool, CompleteGoalTool]:

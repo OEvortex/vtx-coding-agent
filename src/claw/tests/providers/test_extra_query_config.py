@@ -4,9 +4,10 @@ from __future__ import annotations
 
 from unittest.mock import MagicMock, patch
 
+from vtx_claw.providers.openai_compat_provider import OpenAICompatProvider
+
 from vtx_claw.config.schema import Config, ProviderConfig
 from vtx_claw.providers.factory import provider_signature
-from vtx_claw.providers.openai_compat_provider import OpenAICompatProvider
 
 
 class TestExtraQuerySchema:

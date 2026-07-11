@@ -1654,9 +1654,9 @@ def _validate_api_key(provider_name: str, api_key: str, api_base: str) -> tuple[
 
     Returns (success, error_message). On success error_message is empty.
     """
-    import urllib.request
-    import urllib.error
     import json as _json
+    import urllib.error
+    import urllib.request
 
     if not api_key or not api_key.strip():
         return False, "API key is empty"
@@ -1875,7 +1875,7 @@ def _configure_quick_start_chat_channel(config: Config) -> None:
         console.print(f"[{_UI_MUTED}]No chat channels available[/]")
         return
 
-    choices = list(channel_names.keys()) + ["Skip"]
+    choices = [*list(channel_names.keys()), "Skip"]
     answer = _select_with_back("Which channel would you like to set up?", choices)
     if answer is _BACK_PRESSED or answer is None or answer == "Skip":
         return
@@ -1948,7 +1948,7 @@ def _configure_quick_start_gateway(config: Config) -> bool:
     )
     if install_service:
         console.print(f"[{_UI_MUTED}]Run this after setup to install the service:[/]")
-        console.print(f"  [cyan]vtx-claw gateway install-service[/cyan]")
+        console.print("  [cyan]vtx-claw gateway install-service[/cyan]")
     console.print()
     return True
 
@@ -2103,9 +2103,9 @@ def _show_quick_start_summary(config: Config) -> None:
     # Next steps
     console.print()
     console.print(f"[bold {_UI_TEXT}]Next steps:[/]")
-    console.print(f"  1. Start:  [cyan]vtx-claw gateway[/cyan]")
+    console.print("  1. Start:  [cyan]vtx-claw gateway[/cyan]")
     console.print(f"  2. Open:   [cyan]http://127.0.0.1:{config.gateway.port}[/cyan]")
-    console.print(f'  3. Chat:   [cyan]vtx-claw agent -m "Hello!"[/cyan]')
+    console.print('  3. Chat:   [cyan]vtx-claw agent -m "Hello!"[/cyan]')
     console.print()
     console.print(f"[{_UI_MUTED}]Add more channels anytime with: vtx-claw onboard --wizard[/]")
 

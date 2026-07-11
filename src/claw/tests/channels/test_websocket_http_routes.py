@@ -14,13 +14,13 @@ from urllib.parse import quote, urlencode
 
 import httpx
 import pytest
+from vtx_claw.webui.gateway_services import GatewayServices, build_gateway_services
 
 from vtx_claw.channels.websocket import WebSocketChannel, WebSocketConfig
 from vtx_claw.cron.service import CronService
 from vtx_claw.cron.types import CronJob, CronPayload, CronSchedule
 from vtx_claw.session.keys import UNIFIED_SESSION_KEY
 from vtx_claw.session.manager import Session, SessionManager
-from vtx_claw.webui.gateway_services import GatewayServices, build_gateway_services
 
 _PORT = 29900
 

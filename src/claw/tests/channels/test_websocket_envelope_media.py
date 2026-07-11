@@ -15,9 +15,9 @@ from typing import Any
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
+from vtx_claw.webui.gateway_services import build_gateway_services
 
 from vtx_claw.channels.websocket import WebSocketChannel, WebSocketConfig, _extract_data_url_mime
-from vtx_claw.webui.gateway_services import build_gateway_services
 
 
 def _tiny_png_data_url() -> str:

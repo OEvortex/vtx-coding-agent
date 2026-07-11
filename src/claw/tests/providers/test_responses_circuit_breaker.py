@@ -3,7 +3,6 @@
 import time
 
 import pytest
-
 from vtx_claw.providers.openai_compat_provider import (
     _RESPONSES_FAILURE_THRESHOLD,
     _RESPONSES_PROBE_INTERVAL_S,

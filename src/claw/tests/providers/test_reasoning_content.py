@@ -8,6 +8,7 @@ from types import SimpleNamespace
 from unittest.mock import patch
 
 from vtx_claw.providers.openai_compat_provider import OpenAICompatProvider
+
 from vtx_claw.utils.helpers import build_assistant_message
 
 # ── _parse: non-streaming ─────────────────────────────────────────────────

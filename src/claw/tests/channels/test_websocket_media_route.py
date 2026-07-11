@@ -20,11 +20,11 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import httpx
 import pytest
+from vtx_claw.webui.gateway_services import build_gateway_services
+from vtx_claw.webui.media_api import b64url_decode, b64url_encode
 
 from vtx_claw.channels.websocket import WebSocketChannel, WebSocketConfig
 from vtx_claw.session.manager import Session, SessionManager
-from vtx_claw.webui.gateway_services import build_gateway_services
-from vtx_claw.webui.media_api import b64url_decode, b64url_encode
 
 # PNG magic bytes + a couple of sentinel bytes so we can verify byte-for-byte
 # round-trip of the served payload. Stays under mimetype + size limits.

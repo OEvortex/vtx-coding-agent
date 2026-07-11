@@ -9,8 +9,8 @@ from __future__ import annotations
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
-
 from vtx_claw.providers.openai_compat_provider import OpenAICompatProvider
+
 from vtx_claw.providers.registry import find_by_name
 
 
