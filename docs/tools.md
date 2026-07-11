@@ -1,197 +1,133 @@
 # Tools
 
-Vtx ships with **5 core tools** enabled by default. The full registry lives in [`src/vtx/tools/__init__.py`](../src/vtx/tools/__init__.py). Each tool is a Pydantic-typed async function exposed to the LLM as a JSON tool definition.
+Vtx gives the model a small, predictable set of tools. They are implemented in `src/vtx/tools/` as Pydantic-validated `BaseTool` subclasses. The tool JSON schemas sent to the model are deliberately slim (no `title`/`minLength` noise, optional fields collapsed) to keep the prompt footprint small; pydantic still enforces every validation constraint on the actual call.
 
-## Tool summary
+## Summary
 
-| Tool | Mutating | Default | Icon | Purpose |
-| --- | --- | --- | --- | --- |
-| `read` | no | yes | (varies) | Read a file or directory, with pagination and image support |
-| `edit` | yes | yes | `←` | Exact text replacement in a file |
-| `write` | yes | yes | `+` | Create or fully overwrite a file |
-| `bash` | yes | yes | `$` | Run a shell command |
-| `find` | no | yes | (varies) | Glob-based file discovery |
+| Tool | Action | Mutating |
+|------|--------|----------|
+| `read` | Read a file or directory (pagination + images) | No |
+| `edit` | Exact text search-and-replace | **Yes** |
+| `write` | Create/overwrite a file | **Yes** |
+| `bash` | Run a shell command in the cwd | **Yes** |
+| `find` | Glob file discovery (fd) | No |
+| `grep` | Regex search over file contents (ripgrep) | No |
+| `skill` | Manage skill workflows | Depends |
+| `fetch_webpage` | Read a URL as markdown (Exa) | No |
+| `web_search` | Web search (Exa neural) | No |
+| `ask_user` | Ask a clarifying question and wait | No |
+| `task` | Dispatch a sub-agent | No |
 
-## Common conventions
+Mutating tools (`bash`, `edit`, `write`) are gated by the permission mode (`prompt` or `auto`) — see [permissions.md](permissions.md).
 
-Every tool:
+---
 
-- Receives arguments as a **Pydantic model** (validated, type-checked, JSON-serialized to the model).
-- Returns a `ToolResult` with `content`, `ui_summary`, and `ui_details` for the chat UI.
-- Can be **cancelled** by a long-running agent cancellation event.
-- Declares `mutating: bool` for the permission system. Non-mutating tools never trigger a confirmation prompt.
-- Exposes a `prompt_guidelines` tuple that the system prompt picks up under `# Tool usage` — these are short hints that tell the model "use this tool for X, not that one for Y".
+## read
 
-The tool block in the chat shows the icon, the tool name (in the theme's badge color), a one-line call summary, and the result summary. Long results are truncated and collapsible.
+Read a file or directory. Truncates to 2000 lines / 2000 chars per line; use `offset`/`limit` to paginate large files. Supports `jpg`/`jpeg`/`png`/`gif`/`webp` images.
 
-## `read`
+Parameters:
+- `path` (string, required) — absolute path of file or directory.
+- `offset` (int, optional) — start line for large files.
+- `limit` (int, optional) — line count for large files.
 
-Read a file or directory with pagination, or load an image and show it inline.
+## edit
 
-**Mutating:** no (read-only, never prompts).
+Replace exact text in a file. `old_string` must match exactly, including whitespace.
 
-**Parameters:**
+Parameters:
+- `path` (string, required) — absolute path of file to edit.
+- `old_string` (string, required) — exact text to replace.
+- `new_string` (string, required) — replacement text (must differ).
+- `replace_all` (bool, default `false`) — replace all occurrences.
 
-| Name | Type | Required | Notes |
-| --- | --- | --- | --- |
-| `path` | str | yes | Absolute path of the file or directory. |
-| `offset` | int | no | Line number to start at. Use for large files. |
-| `limit` | int | no | Maximum lines to return. |
+## write
 
-**Limits (in-process):**
+Write a file. Creates or overwrites; makes parent directories. Use `edit` for partial changes.
 
-- `MAX_CHARS_PER_LINE = 2000` (longer lines are truncated)
-- `MAX_LINES_PER_FILE = 2000` (capped return per call)
-- `MAX_DIRECTORY_ROWS = 1000`
+Parameters:
+- `path` (string, required) — absolute path of file to write.
+- `content` (string, required) — file content.
 
-**Behavior:**
+## bash
 
-- **Text files** — return numbered lines. Use `offset` + `limit` to read in chunks. If the path is a directory, returns a directory listing (respecting `.gitignore`).
-- **Image files** — `.png`, `.jpg`, `.jpeg`, `.gif`, `.webp`, `.bmp` are decoded, resized to fit, and rendered inline. The model sees a `ImageContent` block. See `_read_image.py` for the resize rules.
-- **Large output** — truncated with a `[... N more lines ...]` marker. Re-read with `offset` to continue.
+Run a bash command in the cwd. Output is truncated to the last 2000 lines / 50KB (full output is written to a temp file). Do not use it for file search (`find`), reading (`read`), or editing (`edit`).
 
-**When to use:** always for files you haven't seen this session. Pair with `rg` (via bash) or the `find` tool to locate the right region first, then `read` with `offset` + `limit`.
+Parameters:
+- `command` (string, required) — the command to execute.
+- `timeout` (int, default 180) — timeout in seconds.
 
-## `edit`
+## find
 
-Exact text replacement in a file. Best for surgical changes.
+Find files by glob using `fd`. Returns paths sorted by mtime, respects `.gitignore`, truncated to 100 results.
 
-**Mutating:** yes (prompts in `prompt` mode).
+Parameters:
+- `pattern` (string, required) — glob, e.g. `*.py`, `**/*.json`.
+- `path` (string, optional) — directory to search (default: cwd).
 
-**Parameters:**
+## grep
 
-| Name | Type | Required | Notes |
-| --- | --- | --- | --- |
-| `path` | str | yes | Absolute path. |
-| `old_string` | str | yes | The text to replace. Must be unique unless `replace_all` is set. |
-| `new_string` | str | yes | The replacement. Must differ from `old_string`. |
-| `replace_all` | bool | no | Default `false`. If true, replaces every occurrence. |
+Search file contents by regex using `ripgrep`. Returns matching lines with `path:line`, respects `.gitignore`, truncated to 100 matches.
 
-**Behavior:**
+Parameters:
+- `pattern` (string, required) — text or regex to search for.
+- `path` (string, optional) — dir or file to search (default: cwd).
+- `glob` (string, optional) — file filter glob, e.g. `*.py`.
 
-- The tool reads the file, looks for `old_string`, and replaces it with `new_string`.
-- `old_string` must match exactly (including whitespace). Read the file first to confirm the exact bytes.
-- A 4-line context diff is rendered in the chat so you can verify what changed.
-- The tool's preview during the approval prompt shows the proposed diff.
+## skill
 
-**When to use:** any change that's localized — rename a symbol, fix a typo, add a parameter. The model is instructed in the system prompt to prefer `edit` over `write` when only a small region changes.
+List, view, create, patch, edit, or delete skill workflows.
 
-## `write`
+Actions: `list`, `view`, `create`, `patch`, `edit`, `delete`.
 
-Create a new file or completely overwrite an existing one.
+Parameters:
+- `action` (enum, default `view`)
+- `name` (string, optional) — skill name (lowercase/hyphens); required except for `list`.
+- `content` (string, optional) — full `SKILL.md` content; required for `create`/`edit`.
+- `old_string` (string, optional) — unique text to find (`patch`).
+- `new_string` (string, optional) — replacement text (`patch`).
+- `file_path` (string, optional) — supporting file to target (default: `SKILL.md`).
+- `scope` (enum, default `project`) — `project` (`.agents/skills`) or `global` (`~/.agents/skills`) for `create`.
 
-**Mutating:** yes (prompts in `prompt` mode).
+See [skills.md](skills.md).
 
-**Parameters:**
+## fetch_webpage
 
-| Name | Type | Required | Notes |
-| --- | --- | --- | --- |
-| `path` | str | yes | Absolute path. |
-| `content` | str | yes | The full new file content. |
+Read a webpage as clean markdown via the Exa endpoint. Batch multiple URLs in one call. Not for JS-rendered pages.
 
-**Behavior:**
+Parameters:
+- `urls` (list[string], required, min 1) — URLs to read.
+- `max_characters` (int, default 3000) — max chars per page.
 
-- Writes the file in a single call, atomically (temp file + rename on POSIX).
-- Tracked in the file-change counter for the info bar.
-- Shows a "[file created]" / "[file overwritten]" indicator in the chat.
+## web_search
 
-**When to use:** new files, or when the change is so large that `edit` would need 20+ calls. The model is told not to use shell `echo` / heredoc / `cat` for writes.
+Web search via the Exa neural API. Returns titles, URLs, and snippets. Needs internet.
 
-## `bash`
+Parameters:
+- `query` (string, required)
+- `num_results` (int, default 8, 1–20)
+- `search_type` (string, default `auto`) — `auto`, `neural`, or `keyword`.
+- `livecrawl` (string, default `fallback`) — `fallback`, `always`, or `never`.
 
-Run a shell command. The workhorse tool for builds, tests, git, package managers, and ad-hoc scripts.
+## ask_user
 
-**Mutating:** depends on the command (see [permissions.md](permissions.md)).
+Ask the user a clarifying question and wait. Pass 2–4 options for multiple choice, or omit for free text. The user can always type a custom answer.
 
-**Parameters:**
+Parameters:
+- `question` (string, required, 1–500 chars) — keep it short; put choices in `options`, not here.
+- `options` (list, optional) — 2–4 options; each has `label` (required, short unique) and `description` (optional).
+- `multi_select` (bool, default `false`) — allow multiple selections.
+- `header` (string, optional, max 12 chars) — short noun tag for the modal.
 
-| Name | Type | Required | Notes |
-| --- | --- | --- | --- |
-| `command` | str | yes | The full shell command line. |
-| `cwd` | str | no | Working directory. Defaults to the project root. |
-| `timeout` | int | no | Seconds. Default 180. |
+## task
 
-**Limits (in-process):**
+Dispatch a fresh sub-agent (own tools/session, cannot see this chat) for a self-contained task; returns only its final text. `background: true` returns a `task_id` and delivers the answer in the next turn. Not for trivial single-tool work.
 
-- `DEFAULT_TIMEOUT = 180` seconds
-- `MAX_OUTPUT_BYTES = 50 * 1024` (50 KiB)
-- `MAX_OUTPUT_LINES = 2000`
+Parameters:
+- `description` (string, required, 1–128 chars) — 3–5 word imperative label, e.g. "Find the auth bug".
+- `prompt` (string, required) — full instructions including all context.
+- `subagent_type` (string, default `general-purpose`) — `general-purpose`, `Explore`, `Plan`, or a user agent name.
+- `model` (string, optional) — model override (default: parent's).
+- `background` (bool, default `false`) — run concurrently, return `task_id` now.
 
-**Behavior:**
-
-- The command is parsed with `shlex` (POSIX) to look for safe-command allowlist matches before the permission check fires.
-- ANSI escape codes are stripped from the captured output before display.
-- Long output is truncated with a marker showing how many lines/bytes were cut.
-- Cancellation works through the agent's cancel event — the subprocess is sent `SIGINT`/`SIGTERM` cleanly.
-- On Windows, signals are emulated via `subprocess.CREATE_NEW_PROCESS_GROUP`.
-
-**When to use:** any operation that isn't a Vtx tool. Tests (`pytest`), builds, `git`, `npm install`, `docker`, etc. The model is told to avoid `cat`/`head`/`tail` (use `read`), file search via bash (use the `find` tool), and content search via bash (use `rg` directly — Vtx shells out to it for the `find` tool's content side and recommends it for fast shell text search).
-
-## `find`
-
-Glob-based file discovery. Wraps `fd` if available, falls back to `pathlib`.
-
-**Mutating:** no (read-only, never prompts).
-
-**Parameters:**
-
-| Name | Type | Required | Notes |
-| --- | --- | --- | --- |
-| `pattern` | str | yes | Glob, e.g. `*.py`, `**/*.spec.ts`, `src/**/test_*.py`. |
-| `path` | str | no | Directory to search. Defaults to the project root. |
-
-**Limits:**
-
-- `MAX_RESULTS = 100`
-- `MAX_OUTPUT_BYTES = 20 * 1024`
-
-**Behavior:**
-
-- Respects `.gitignore` (when `fd` is available).
-- Returns paths as absolute paths, with `~` shortened for display.
-
-**When to use:** "where is this file?", "list all the tests", "find every config". Replaces `find ... | head` and `ls -R` in the agent's tool belt.
-
-## Tool binaries
-
-`find` will use `fd` if it's on `PATH` (with a `pathlib` fallback otherwise). Vtx also bundles a `rg` download — it's not used by any built-in tool, but the binary lands in `~/.vtx/bin/` for shell text search via `rg ...`. Vtx detects both at startup and prints a launch warning if either is missing (with a one-line install hint per platform). The `find` tool still works without `fd` — the Python fallback is slower but functionally equivalent.
-
-You can also drop them into `~/.vtx/bin/` if you want them auto-discovered without touching the system `PATH`.
-
-## Writing your own tool
-
-The `BaseTool` interface is small. To add a new tool:
-
-```python
-# src/vtx/tools/my_tool.py
-from pydantic import BaseModel, Field
-from ..core.types import ToolResult
-from .base import BaseTool
-
-
-class MyParams(BaseModel):
-    path: str = Field(description="Absolute path of the file to act on")
-
-
-class MyTool(BaseTool):
-    name = "my_tool"
-    tool_icon = "*"
-    mutating = True
-    description = "One-line description the model sees in the tool list."
-    params = MyParams
-    prompt_guidelines = ("Use my_tool for X, not bash",)
-
-    async def execute(self, params: MyParams, cancel_event=None) -> ToolResult:
-        # do the work
-        return ToolResult(content=..., ui_summary="...", ui_details=...)
-```
-
-Then register it in [`src/vtx/tools/__init__.py`](../src/vtx/tools/__init__.py) (`all_tools` and `DEFAULT_TOOLS`).
-
-For the system-prompt side: `prompt_guidelines` lines get aggregated into the `# Tool usage` section of the system prompt. Keep each line short and concrete ("Use find to locate a file, not bash find / ls").
-
-## Cancellation and timeouts
-
-Every tool's `execute` accepts an `cancel_event: asyncio.Event` (passed by the runtime). When the user hits `Esc` mid-run, the event fires and the tool is expected to abort cleanly. The base implementation `_tool_utils.communicate_or_cancel` is the canonical way to wrap a subprocess call with cancellation. See the existing tools for the pattern.
-
-For tools that spawn a long-running process (mostly `bash`), the `timeout` parameter caps the wall-clock time. Cancellation is independent — even before the timeout, an `Esc` will tear the subprocess down.
+Built-in sub-agent presets are configured under `task.subagent_presets` in `config.yml` (see [configuration.md](configuration.md)).

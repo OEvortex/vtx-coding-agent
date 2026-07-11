@@ -8,12 +8,15 @@ This folder is the reference companion to the top-level [README](../README.md). 
 | --- | --- |
 | [configuration.md](configuration.md) | Every YAML config field with its default, validation rule, and CLI override |
 | [providers.md](providers.md) | Built-in LLM providers, OAuth and API-key auth, dynamic catalog providers, env vars |
-| [tools.md](tools.md) | The 6 core tools + 2 web tools — parameters, mutating flag, and worked examples |
-| [permissions.md](permissions.md) | The `prompt`/`auto` modes, the safe-command allowlist, and the decision algorithm |
-| [sessions.md](sessions.md) | JSONL session format, resume, handoff, `/export`, compaction, and tree navigation |
-| [skills.md](skills.md) | Authoring skills — frontmatter, `$ARGUMENTS`, `register_cmd`, discovery paths |
-| [agents.md](agents.md) | Switchable handoff agents — `.vtx/agent/<name>.py`, `AgentAPI`, `Shift+Tab` cycling |
+| [tools.md](tools.md) | The 11 tools — parameters, mutating flag, and worked examples |
+| [permissions.md](permissions.md) | The `prompt`/`auto` modes, safety guarantees, and the approval decision flow |
+| [sessions.md](sessions.md) | JSONL session format, resume, handoff, `/export`, compaction |
+| [skills.md](skills.md) | Authoring skills — frontmatter, `register_cmd`, discovery paths |
+| [agents.md](agents.md) | Switchable handoff agents — `.vtx/agent/<name>.py`, `Shift+Tab` cycling |
 | [theming.md](theming.md) | The full theme catalog and palette tokens |
+| [ui.md](ui.md) | TUI input, shell execution, slash commands, thinking blocks |
+| [goal.md](goal.md) | Continuous `/goal` work with an evaluator loop |
+| [hooks.md](hooks.md) | The extension-based hook lifecycle (tool_call, tool_result, lifecycle events) |
 | [headless.md](headless.md) | The `-p`/`--prompt` non-interactive flow, exit codes, stdin handling |
 | [local-models.md](local-models.md) | Tested local models, llama-server setup, model-specific config tuning |
 | [storage-layout.md](storage-layout.md) | Every file Vtx touches on disk — config, sessions, models, auth |

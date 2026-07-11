@@ -17,7 +17,7 @@
 
 **Vtx** is a minimalist, developer-first coding agent harness that delivers maximum capability with minimum overhead. 
 
-Unlike heavy agentic frameworks that load thousands of hidden tokens, Vtx is transparent about its footprint. The Vtx-authored base prompt is roughly **2,000 tokens**, and the full runtime (base + tool guidelines + env block) is around **~2,200 tokens**. Composed prompts in real projects typically land in the **2,000–3,500 token** range once `AGENTS.md` and skill descriptions are attached.
+Unlike heavy agentic frameworks that load thousands of hidden tokens, Vtx is transparent about its footprint. The full runtime (base system prompt + tool guidelines + environment block + 11 tool definitions) is around **~2,600 tokens** (o200k_base). Composed prompts in real projects typically land a bit higher once `AGENTS.md` and skill descriptions are attached.
 
 By keeping the core prompt lean, Vtx leaves the model's context window open for what matters most: **your code, your project files, and your task context**.
 
@@ -35,7 +35,7 @@ The core TUI is lightweight. The advanced gateway backend requires the **`[claw]
 ## ⚡ Key Features
 
 - **TUI & CLI Interfaces**: Work inside a keyboard-driven Terminal User Interface (TUI) powered by Textual, or run one-off prompts headlessly via the CLI.
-- **Surgical Tools**: Armed with 6 core local files/terminal tools plus 2 optional web search & fetch tools.
+- **Surgical Tools**: Armed with 11 compact, predictable tools — local file/terminal tools (`read`, `edit`, `write`, `bash`, `find`, `grep`), skill management, web search & fetch, user prompts, and a task sub-agent dispatcher.
 - **Dynamic Context Layering**: Automatically loads repository-specific guidelines from `AGENTS.md` and triggers custom instructions via modular `Skills`.
 - **Flexible Model Support**: Compatible with Hosted APIs (OpenAI, Anthropic, Azure, DeepSeek, ZhiPu) as well as unauthenticated local endpoints (Ollama, llama-server).
 - **Collapsible Thinking Blocks**: TUI elegantly collapses finalized thinking chains to keep your workspace readable.
@@ -122,16 +122,22 @@ vtx -p "Write unit tests for src/vtx/utils.py"
 
 ## 🛠️ The Toolset
 
-Vtx equips the model with a compact and predictable set of tools:
+Vtx equips the model with a compact and predictable set of 11 tools:
 
 ### Core Tools (Enabled by default)
 | Tool | Action | Description |
 |---|---|---|
-| `read` | Pagination & Image support | Read file contents efficiently without wasting tokens. |
+| `read` | Pagination & Image support | Read file contents efficiently without wasting tokens. Supports images. |
 | `edit` | Search-and-replace block | Apply surgical, precise edits to existing code files. |
 | `write` | Write full contents | Create new files or perform complete rewrites. |
 | `bash` | Command execution | Run tests, build steps, git commands, and scripts. |
 | `find` | Glob file discovery | Locate files using project-aware `.gitignore` rules. |
+| `grep` | Regex content search | Search file contents with ripgrep. |
+| `skill` | Skill management | List, view, create, patch, edit, or delete skills. |
+| `fetch_webpage` | Read a URL as markdown | Fetch a web page (Exa) as clean markdown. |
+| `web_search` | Web search | Semantic web search (Exa neural). |
+| `ask_user` | Clarifying question | Ask the user a question and wait for the answer. |
+| `task` | Sub-agent dispatch | Delegate a self-contained task to a fresh sub-agent. |
 
 ---
 
