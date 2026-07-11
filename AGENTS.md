@@ -26,21 +26,13 @@
 - If the user asks you to push code, run these first before doing so: `uv run ruff format .`, `uv run ruff check .`, `uvx ty check  .` and `uv run python -m pytest` in parallel (same tool call)
 - Only if these all pass without issues should you push otherwise report the warnings/errors back to user and ask for next steps
 
-## CodeBase Search
+## Codebase Search
 
-Search the codebase using semantic + BM25 hybrid retrieval. PREFER this over grep/rg/Glob for finding code.
+Use vortexa (not grep/rg/file reads) to search code or understand a repo. It
+indexes the current directory (or pass --root <dir>).
 
-Use this tool when you need to:
-- Find where a function, class, or pattern is implemented
-- Understand how a feature or concept works across the codebase
-- Locate code by describing what it does (not just exact strings)
-- Find examples of a pattern or API usage
-- Explore unfamiliar parts of the codebase
-- Identify relevant code for a task without knowing exact names or locations
-- Preferable than grep/rg/Glob for code search because it can understand the meaning and intent behind the query, rather than just matching exact strings. This allows for more flexible and powerful searching, especially in large and complex codebases.
-Advantages over text search: understands synonyms, paraphrases, and intent.
-Returns file paths, line ranges, relevance scores, and matching code.
+  vortexa resolve "<query>" --plain          # default: matches + tests + callers/callees + deps
+  vortexa search "<query>" --hybrid --plain  # ranked hits + per-file graph context
+  vortexa explain "<file>:<line>|<symbol>"   # deep dive into a known location
 
-- For codebase Search use `vortexa -q "you natural query here"` to get relevant code snippets from the codebase. This will help you understand the existing code and avoid duplicating functionality.
-
-- Instead of using grep use rg (ripgrep) for faster and more efficient searching. For example, `rg "def my_function"` to find all occurrences of a function definition.
+Install: pip install vortexa  (add [full] for tree-sitter AST chunking).
