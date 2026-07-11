@@ -174,7 +174,7 @@ llm:
     reset_config()
     cfg = get_config()
 
-    assert cfg.llm.system_prompt.content.startswith("You are Vtx, an expert coding assistant.")
+    assert cfg.llm.system_prompt.content.startswith("You are Vtx, an expert coding agent.")
     assert "# Tool usage" not in cfg.llm.system_prompt.content
     assert "Old tool instruction" not in cfg.llm.system_prompt.content
     assert "~/.agents/skills" in cfg.llm.system_prompt.content
@@ -215,7 +215,7 @@ llm:
     cfg = get_config()
 
     assert cfg.llm.default_model == "legacy-model"
-    assert cfg.llm.system_prompt.content.startswith("You are Vtx, an expert coding assistant.")
+    assert cfg.llm.system_prompt.content.startswith("You are Vtx, an expert coding agent.")
     assert "legacy prompt" not in cfg.llm.system_prompt.content
     assert cfg.llm.system_prompt.git_context is True
 
