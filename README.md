@@ -1,11 +1,16 @@
-<pre align="center">
- ██╗   ██╗████████╗██╗  ██╗
- ██║   ██║╚══██╔══╝╚██╗██╔╝
- ██║   ██║   ██║    ╚███╔╝
- ╚██╗ ██╔╝   ██║    ██╔██╗
-  ╚████╔╝    ██║   ██╔╝ ██╗
-   ╚═══╝     ╚═╝   ╚═╝  ╚═╝
-</pre>
+<div align="center">
+
+```text
+██╗   ██╗████████╗██╗  ██╗
+██║   ██║╚══██╔══╝╚██╗██╔╝
+██║   ██║   ██║    ╚███╔╝
+╚██╗ ██╔╝   ██║    ██╔██╗
+ ╚████╔╝    ██║   ██╔╝ ██╗
+  ╚═══╝     ╚═╝   ╚═╝  ╚═╝
+```
+
+</div>
+
 
 <p align="center"><b>The minimalist, modular coding agent harness</b></p>
 <p align="center"><b>Maximum capability. Minimum overhead.</b></p>
