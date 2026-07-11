@@ -11,14 +11,6 @@ from unittest.mock import AsyncMock, MagicMock
 import httpx
 import pytest
 import websockets
-from vtx_claw.webui.gateway_services import GatewayServices, build_gateway_services
-from vtx_claw.webui.http_utils import issue_route_secret_matches as _issue_route_secret_matches
-from vtx_claw.webui.http_utils import normalize_config_path as _normalize_config_path
-from vtx_claw.webui.http_utils import normalize_http_path as _normalize_http_path
-from vtx_claw.webui.http_utils import parse_query as _parse_query
-from vtx_claw.webui.http_utils import parse_request_path as _parse_request_path
-from vtx_claw.webui.settings_api import settings_payload, update_provider_settings
-from vtx_claw.webui.transcript import append_transcript_object, read_transcript_lines
 from websockets.exceptions import ConnectionClosed
 from websockets.frames import Close
 
@@ -36,6 +28,14 @@ from vtx_claw.config.loader import load_config, save_config
 from vtx_claw.config.schema import Config, ModelPresetConfig
 from vtx_claw.session import webui_turns as wth
 from vtx_claw.session.manager import SessionManager
+from vtx_claw.webui.gateway_services import GatewayServices, build_gateway_services
+from vtx_claw.webui.http_utils import issue_route_secret_matches as _issue_route_secret_matches
+from vtx_claw.webui.http_utils import normalize_config_path as _normalize_config_path
+from vtx_claw.webui.http_utils import normalize_http_path as _normalize_http_path
+from vtx_claw.webui.http_utils import parse_query as _parse_query
+from vtx_claw.webui.http_utils import parse_request_path as _parse_request_path
+from vtx_claw.webui.settings_api import settings_payload, update_provider_settings
+from vtx_claw.webui.transcript import append_transcript_object, read_transcript_lines
 
 # -- Shared helpers (aligned with test_websocket_integration.py) ---------------
 
@@ -2683,11 +2683,11 @@ def test_parse_envelope_rejects_legacy_and_garbage() -> None:
 
 
 def test_sessions_list_includes_active_run_started_at(monkeypatch) -> None:
-    from vtx_claw.webui import ws_http as ws_http_module
     from websockets.datastructures import Headers
     from websockets.http11 import Request
 
     from vtx_claw.session import webui_turns as wth
+    from vtx_claw.webui import ws_http as ws_http_module
 
     bus = MagicMock()
     session_manager = MagicMock()
@@ -2762,9 +2762,10 @@ def test_is_valid_chat_id(value: Any, expected: bool) -> None:
 def test_handle_webui_thread_get_returns_json(tmp_path, monkeypatch) -> None:
     from urllib.parse import quote
 
-    from vtx_claw.webui.transcript import append_transcript_object
     from websockets.datastructures import Headers
     from websockets.http11 import Request
+
+    from vtx_claw.webui.transcript import append_transcript_object
 
     monkeypatch.setattr("vtx_claw.config.paths.get_data_dir", lambda: tmp_path)
     key = "websocket:c1"
@@ -2786,9 +2787,10 @@ def test_handle_webui_thread_get_returns_json(tmp_path, monkeypatch) -> None:
 def test_handle_webui_thread_get_accepts_pagination_query(tmp_path, monkeypatch) -> None:
     from urllib.parse import quote
 
-    from vtx_claw.webui.transcript import append_transcript_object
     from websockets.datastructures import Headers
     from websockets.http11 import Request
+
+    from vtx_claw.webui.transcript import append_transcript_object
 
     monkeypatch.setattr("vtx_claw.config.paths.get_data_dir", lambda: tmp_path)
     key = "websocket:paged-route"
@@ -2886,9 +2888,10 @@ def test_handle_file_preview_rejects_paths_outside_workspace(tmp_path) -> None:
 def test_handle_webui_thread_get_backfills_legacy_missing_user_rows(tmp_path, monkeypatch) -> None:
     from urllib.parse import quote
 
-    from vtx_claw.webui.transcript import append_transcript_object
     from websockets.datastructures import Headers
     from websockets.http11 import Request
+
+    from vtx_claw.webui.transcript import append_transcript_object
 
     monkeypatch.setattr("vtx_claw.config.paths.get_data_dir", lambda: tmp_path)
     workspace = tmp_path / "workspace"
@@ -2927,11 +2930,11 @@ def test_handle_webui_thread_get_does_not_backfill_cron_internal_prompt(
 ) -> None:
     from urllib.parse import quote
 
-    from vtx_claw.webui.transcript import append_transcript_object
     from websockets.datastructures import Headers
     from websockets.http11 import Request
 
     from vtx_claw.cron.session_turns import CRON_HISTORY_META
+    from vtx_claw.webui.transcript import append_transcript_object
 
     monkeypatch.setattr("vtx_claw.config.paths.get_data_dir", lambda: tmp_path)
     workspace = tmp_path / "workspace"

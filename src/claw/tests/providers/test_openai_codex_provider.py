@@ -7,6 +7,8 @@ from typing import Any
 import httpx
 import pytest
 from loguru import logger
+
+import vtx_claw.providers.base as provider_base
 from vtx_claw.providers.openai_codex_provider import (
     OpenAICodexProvider,
     _build_reasoning_options,
@@ -16,8 +18,6 @@ from vtx_claw.providers.openai_codex_provider import (
     _request_codex,
     _should_retry_status,
 )
-
-import vtx_claw.providers.base as provider_base
 
 
 def _mock_codex_token(monkeypatch: pytest.MonkeyPatch) -> None:

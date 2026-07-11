@@ -9,7 +9,6 @@ from types import SimpleNamespace
 from unittest.mock import patch
 
 from vtx_claw.providers.openai_compat_provider import OpenAICompatProvider
-
 from vtx_claw.providers.registry import ProviderSpec
 
 _STEPFUN_SPEC = ProviderSpec(

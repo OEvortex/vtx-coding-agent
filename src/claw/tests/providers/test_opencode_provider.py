@@ -1,8 +1,7 @@
 """Tests for the OpenCode Zen and OpenCode Go provider registrations."""
 
-from vtx_claw.providers.openai_compat_provider import OpenAICompatProvider
-
 from vtx_claw.config.schema import Config, ProvidersConfig
+from vtx_claw.providers.openai_compat_provider import OpenAICompatProvider
 from vtx_claw.providers.registry import PROVIDERS, find_by_name
 
 

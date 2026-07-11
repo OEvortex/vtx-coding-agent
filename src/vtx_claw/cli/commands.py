@@ -1304,11 +1304,11 @@ def agent(
     from loguru import logger
 
     from vtx_claw.bus.queue import MessageBus
+    from vtx_claw.cron.service import CronService
+    from vtx_claw.providers.image_generation import image_gen_provider_configs
 
     # Auto-detect first run: if no config exists, launch the onboard wizard
     from vtx_claw.config.loader import get_config_path as _get_config_path
-    from vtx_claw.cron.service import CronService
-    from vtx_claw.providers.image_generation import image_gen_provider_configs
 
     cfg_path = Path(config) if config else _get_config_path()
     if not cfg_path.exists():

@@ -1,19 +1,17 @@
-import asyncio
-import json
 import os
-from collections.abc import AsyncGenerator, Callable
-from typing import Any
-
+import json
+import asyncio
+from typing import AsyncGenerator, Dict, Any, List, Callable, Optional
 import httpx
 
 
 class Supercode:
-    def __init__(self, token: str | None = None, base_url: str | None = None):
+    def __init__(self, token: Optional[str] = None, base_url: Optional[str] = None):
         self.base_url = base_url or os.environ.get(
             "SUPERCODE_URL", "https://supercode-8w7e.onrender.com"
         )
         self.token = token or self._load_token()
-        self.tools: dict[str, Callable] = {}
+        self.tools: Dict[str, Callable] = {}
 
     def _load_token(self) -> str:
         try:
@@ -27,8 +25,8 @@ class Supercode:
         self.tools[name] = func
 
     async def chat(
-        self, model: str, messages: list[dict[str, Any]]
-    ) -> AsyncGenerator[dict[str, Any], None]:
+        self, model: str, messages: List[Dict[str, Any]]
+    ) -> AsyncGenerator[Dict[str, Any], None]:
         """Runs the main agentic loop, executing tool calls internally and yielding events."""
         provider, model_name = model.split("/", 1) if "/" in model else ("concentrateai", model)
 
@@ -103,7 +101,7 @@ class Supercode:
                         try:
                             result = self.tools[tc_name](**tc_args)
                         except Exception as e:
-                            result = f"Error executing tool: {e!s}"
+                            result = f"Error executing tool: {str(e)}"
                     else:
                         result = f"Tool '{tc_name}' is not registered on this client instance."
 

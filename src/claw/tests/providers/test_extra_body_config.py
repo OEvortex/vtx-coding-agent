@@ -6,7 +6,6 @@ from typing import Any
 from unittest.mock import MagicMock
 
 from vtx_claw.providers.openai_compat_provider import OpenAICompatProvider, _deep_merge
-
 from vtx_claw.providers.registry import find_by_name
 
 # ---------------------------------------------------------------------------

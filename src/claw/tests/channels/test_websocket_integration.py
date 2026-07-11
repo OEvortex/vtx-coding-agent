@@ -13,11 +13,11 @@ from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 import websockets
-from vtx_claw.webui.gateway_services import build_gateway_services
 from ws_test_client import WsTestClient, issue_token, issue_token_ok
 
 from vtx_claw.bus.events import OutboundMessage
 from vtx_claw.channels.websocket import WebSocketChannel, WebSocketConfig
+from vtx_claw.webui.gateway_services import build_gateway_services
 
 
 def _ch(bus: Any, port: int, **kw: Any) -> WebSocketChannel:

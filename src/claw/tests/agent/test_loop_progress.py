@@ -5,13 +5,13 @@ from pathlib import Path
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
-from vtx_claw.session.webui_turns import WebuiTurnCoordinator
 
 import vtx_claw.agent.runner as runner_module
 from vtx_claw.agent.loop import AgentLoop
 from vtx_claw.bus.events import InboundMessage
 from vtx_claw.bus.queue import MessageBus
 from vtx_claw.providers.base import LLMResponse, ToolCallRequest
+from vtx_claw.session.webui_turns import WebuiTurnCoordinator
 from vtx_claw.utils.progress_events import (
     invoke_file_edit_progress,
     on_progress_accepts_file_edit_events,

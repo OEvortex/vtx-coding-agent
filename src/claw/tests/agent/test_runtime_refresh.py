@@ -2,13 +2,12 @@ from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import MagicMock
 
-from vtx_claw.webui.settings_api import update_agent_settings
-
 from vtx_claw.agent.loop import AgentLoop
 from vtx_claw.bus.queue import MessageBus
 from vtx_claw.config.loader import save_config
 from vtx_claw.config.schema import Config
 from vtx_claw.providers.factory import ProviderSnapshot, load_provider_snapshot
+from vtx_claw.webui.settings_api import update_agent_settings
 
 
 def _provider(default_model: str, max_tokens: int = 123) -> MagicMock:

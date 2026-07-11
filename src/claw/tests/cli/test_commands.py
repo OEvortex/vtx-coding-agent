@@ -9,9 +9,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 from typer.testing import CliRunner
-from vtx_claw.cron.webui_metadata import cron_proactive_delivery_metadata
 from vtx_claw.providers.openai_codex_provider import _strip_model_prefix
-from vtx_claw.webui.metadata import WEBUI_MESSAGE_SOURCE_METADATA_KEY, WEBUI_TURN_METADATA_KEY
 
 from vtx_claw.agent.memory import MemoryStore
 from vtx_claw.bus.events import InboundMessage, OutboundMessage
@@ -21,8 +19,10 @@ from vtx_claw.config.schema import Config
 from vtx_claw.cron.service import CronJobSkippedError
 from vtx_claw.cron.session_turns import CRON_DEFER_UNTIL_IDLE_META, CRON_TRIGGER_META
 from vtx_claw.cron.types import CronJob, CronPayload
+from vtx_claw.cron.webui_metadata import cron_proactive_delivery_metadata
 from vtx_claw.providers.factory import ProviderSnapshot, make_provider
 from vtx_claw.providers.registry import find_by_name
+from vtx_claw.webui.metadata import WEBUI_MESSAGE_SOURCE_METADATA_KEY, WEBUI_TURN_METADATA_KEY
 
 runner = CliRunner()
 

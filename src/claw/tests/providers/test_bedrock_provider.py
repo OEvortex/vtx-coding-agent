@@ -5,9 +5,9 @@ from __future__ import annotations
 from typing import Any
 
 import pytest
-from vtx_claw.providers.bedrock_provider import BedrockProvider
 
 from vtx_claw.config.schema import Config, ProvidersConfig
+from vtx_claw.providers.bedrock_provider import BedrockProvider
 from vtx_claw.providers.registry import find_by_name
 
 

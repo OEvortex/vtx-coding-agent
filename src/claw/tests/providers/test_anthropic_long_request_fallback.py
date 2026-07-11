@@ -12,8 +12,8 @@ from typing import Any
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
-from vtx_claw.providers.anthropic_provider import AnthropicProvider
 
+from vtx_claw.providers.anthropic_provider import AnthropicProvider
 from vtx_claw.providers.base import LLMResponse
 
 _LONG_REQUEST_MESSAGE = (

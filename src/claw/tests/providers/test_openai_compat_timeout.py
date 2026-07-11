@@ -1,7 +1,6 @@
 from unittest.mock import patch, sentinel
 
 from vtx_claw.providers.openai_compat_provider import OpenAICompatProvider
-
 from vtx_claw.providers.registry import ProviderSpec
 
 

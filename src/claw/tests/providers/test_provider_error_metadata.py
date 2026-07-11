@@ -1,10 +1,10 @@
 from types import SimpleNamespace
 
 import pytest
-from vtx_claw.providers.anthropic_provider import AnthropicProvider
-from vtx_claw.providers.openai_compat_provider import OpenAICompatProvider
 
+from vtx_claw.providers.anthropic_provider import AnthropicProvider
 from vtx_claw.providers.base import LLMProvider, LLMResponse
+from vtx_claw.providers.openai_compat_provider import OpenAICompatProvider
 
 
 def _fake_response(
