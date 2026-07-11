@@ -739,3 +739,15 @@ providers:
     models_endpoint: /models
     model_parser:
       cooldown_minutes: 60
+
+  - slug: meta
+    display_name: Meta AI
+    description: Meta AI API (Llama models).
+    family: openai_compat
+    base_url: https://api.meta.ai/v1
+    api_key_env: META_API_KEY
+    known_models: []
+    fetch_models: true
+    models_endpoint: /models
+    model_parser:
+      cooldown_minutes: 60
