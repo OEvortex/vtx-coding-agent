@@ -24,7 +24,7 @@ def build_welcome(version: str) -> tuple[Text, Panel]:
     for i, line in enumerate(_LOGO):
         logo.append(line, style=accent)
         if i == len(_LOGO) - 1:
-            logo.append(f" v{version}", style=dim)
+            logo.append(f" {version}", style=dim)
         logo.append("\n")
     logo.append("\n")
 

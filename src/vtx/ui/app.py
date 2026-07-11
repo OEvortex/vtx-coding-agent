@@ -26,7 +26,7 @@ from textual.widgets import Input
 from vtx import config, consume_config_warnings
 from vtx.config import get_last_selected
 from vtx.tools_manager import get_tool_path
-from vtx.version import VERSION
+from vtx.version import VERSION, format_version
 
 from ..context.skills import (
     load_builtin_cmd_skills,
@@ -71,7 +71,7 @@ class Vtx(
 ):
     CSS = get_styles()
     TITLE = "vtx"
-    VERSION = VERSION
+    VERSION = format_version()
     PAUSE_GC_ON_SCROLL = True
 
     BINDINGS: ClassVar[list] = [
