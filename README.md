@@ -1,6 +1,9 @@
 <div align="center">
 
-```text
+<table align="center">
+<tr><td align="center">
+
+```
 ██╗   ██╗████████╗██╗  ██╗
 ██║   ██║╚══██╔══╝╚██╗██╔╝
 ██║   ██║   ██║    ╚███╔╝
@@ -9,8 +12,10 @@
   ╚═══╝     ╚═╝   ╚═╝  ╚═╝
 ```
 
-</div>
+</td></tr>
+</table>
 
+</div>
 
 <p align="center"><b>The minimalist, modular coding agent harness</b></p>
 <p align="center"><b>Maximum capability. Minimum overhead.</b></p>
