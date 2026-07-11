@@ -5,7 +5,7 @@ All notable changes to Vtx are documented in this file. The format is based on
 adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 
-## [Unreleased]
+## [0.2.4] - 2026-07-11
 
 ### Added
 - **Documentation rewrite** — rewrote the user-facing docs from scratch for accuracy: `docs/tools.md`, `permissions.md`, `configuration.md`, `providers.md`, `sessions.md`, `skills.md`, `extensions.md`, `agents.md`, `goal.md`, `hooks.md`, `ui.md`, `theming.md`, `headless.md`, `storage-layout.md`, `local-models.md`, `architecture.md`, `development.md`, and `docs/README.md`; refreshed the README and SDK README token figures (full runtime ~2,600 tokens, 11 tools).
