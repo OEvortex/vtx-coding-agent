@@ -7,7 +7,7 @@ Vtx is a minimalist coding-agent harness built around a small, transparent runti
 `vtx-coding-agent` ships two agentic execution engines:
 
 - **`vtx` native event loop** (`src/vtx/loop.py`, `src/vtx/turn.py`) — the original single-session, event-stream loop. It powers the TUI and the headless CLI (`vtx -p "..."`). Handles thinking streaming, tool permissions, file edits, and compaction between turns.
-- **`vtx_claw` advanced backend** (`src/vtx_claw/...`) — a production-grade multi-session gateway loop with concurrent tool batching, context governance, crash-checkpoint restore, mid-turn message injection, subagent orchestration, MCP servers, cron turns, and a hook lifecycle. Powers the `vtx-claw` gateway, WebUI, and 16+ chat-channel integrations. Requires the `[claw]` extra.
+- **`agenite_claw` advanced backend** (`src/agenite_claw/...`) — a production-grade multi-session gateway loop with concurrent tool batching, context governance, crash-checkpoint restore, mid-turn message injection, subagent orchestration, MCP servers, cron turns, and a hook lifecycle. Powers the `agenite-claw` gateway, WebUI, and 16+ chat-channel integrations. Requires the `[claw]` extra.
 
 ## Core runtime (`src/vtx`)
 

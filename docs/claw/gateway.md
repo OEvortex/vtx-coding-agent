@@ -1,21 +1,21 @@
 # Gateway
 
-The gateway is the persistent background process that runs all channels, the WebUI, and the agent loop. It's the primary way to run vtx-claw.
+The gateway is the persistent background process that runs all channels, the WebUI, and the agent loop. It's the primary way to run agenite-claw.
 
 ## Starting the Gateway
 
 ```bash
 # Foreground (default)
-vtx-claw gateway
+agenite-claw gateway
 
 # Background (detached)
-vtx-claw gateway --background
+agenite-claw gateway --background
 
 # Custom port
-vtx-claw gateway --port 9000
+agenite-claw gateway --port 9000
 
 # With verbose logging
-vtx-claw gateway --verbose
+agenite-claw gateway --verbose
 ```
 
 Default port: `18790`
@@ -38,7 +38,7 @@ Multiple gateway instances can coexist by computing a deterministic suffix from 
 ### Status
 
 ```bash
-vtx-claw gateway status
+agenite-claw gateway status
 ```
 
 Checks if the PID is alive AND the process identity matches (prevents stale state from recycled PIDs).
@@ -46,7 +46,7 @@ Checks if the PID is alive AND the process identity matches (prevents stale stat
 ### Stop
 
 ```bash
-vtx-claw gateway stop
+agenite-claw gateway stop
 ```
 
 **POSIX**: Sends SIGTERM to the process group, waits for timeout, then SIGKILL.
@@ -56,7 +56,7 @@ vtx-claw gateway stop
 ### Restart
 
 ```bash
-vtx-claw gateway restart
+agenite-claw gateway restart
 ```
 
 Stops the current instance and starts a new one.
@@ -66,16 +66,16 @@ Stops the current instance and starts a new one.
 Install the gateway as a system service that starts on boot:
 
 ```bash
-vtx-claw gateway install-service
+agenite-claw gateway install-service
 ```
 
 ### Linux (systemd)
 
-Creates `~/.config/systemd/user/vtx_claw-gateway.service`:
+Creates `~/.config/systemd/user/agenite_claw-gateway.service`:
 
 ```ini
 [Unit]
-Description=vtx-claw Gateway
+Description=agenite-claw Gateway
 After=network-online.target
 
 [Service]
@@ -84,7 +84,7 @@ Restart=always
 RestartSec=10
 NoNewPrivileges=yes
 Environment=PYTHONUNBUFFERED=1
-ExecStart=/path/to/python -m vtx_claw gateway --foreground
+ExecStart=/path/to/python -m agenite_claw gateway --foreground
 
 [Install]
 WantedBy=default.target
@@ -94,7 +94,7 @@ Commands: `daemon-reload`, `enable`, `restart`
 
 ### macOS (launchd)
 
-Creates `~/Library/LaunchAgents/ai.vtx_claw.gateway.plist`:
+Creates `~/Library/LaunchAgents/ai.agenite_claw.gateway.plist`:
 
 - `KeepAlive: {SuccessfulExit: false}` (restart on crash)
 - `RunAtLoad` for auto-start
@@ -105,7 +105,7 @@ Commands: `bootstrap`, `enable`, `kickstart -k`
 ### Uninstall Service
 
 ```bash
-vtx-claw gateway uninstall-service
+agenite-claw gateway uninstall-service
 ```
 
 ## Heartbeat
@@ -137,7 +137,7 @@ Gateway logs are stored at:
 
 View logs:
 ```bash
-vtx-claw gateway logs
+agenite-claw gateway logs
 ```
 
 ## Port Management

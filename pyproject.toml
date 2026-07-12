@@ -3,7 +3,7 @@ requires = ["hatchling"]
 build-backend = "hatchling.build"
 
 [tool.hatch.build.targets.wheel]
-packages = ["src/vtx", "src/vtx_claw"]
+packages = ["src/vtx", "src/agenite_claw"]
 
 [tool.hatch.build]
 artifacts = []
@@ -21,10 +21,10 @@ default = true
 [project]
 name = "vtx-coding-agent"
 version = "0.2.5"
-description = "Minimalist coding agent harness with a Textual TUI and headless CLI. Ships two agentic backends: the native vtx event loop and the advanced vtx-claw gateway loop (install the [claw] extra for multi-channel + subagent + cron features). <1k-token system prompt, 50+ LLM providers, AGENTS.md + skills context, session tree, prompt/auto permissions."
+description = "Minimalist coding agent harness with a Textual TUI and headless CLI. Ships two agentic backends: the native vtx event loop and the advanced agenite-claw gateway loop (install the [claw] extra for multi-channel + subagent + cron features). <1k-token system prompt, 50+ LLM providers, AGENTS.md + skills context, session tree, prompt/auto permissions."
 readme = "README.md"
 requires-python = ">=3.12"
-keywords = ["coding-agent", "tui", "cli", "llm", "agent-loop", "vtx-claw"]
+keywords = ["coding-agent", "tui", "cli", "llm", "agent-loop", "agenite-claw"]
 dependencies = [
     "aiofiles>=25.1.0",
     "aiohttp>=3.13.3",
@@ -100,9 +100,9 @@ pdf = [
 olostep = [
     "olostep>=0.1.0",
 ]
-# vtx_claw advanced gateway backend dependencies. These are not needed for
+# agenite_claw advanced gateway backend dependencies. These are not needed for
 # the core `vtx` TUI / headless CLI; install them only when using the
-# `vtx-claw` multi-channel gateway, WebUI, cron, MCP, or subagent features.
+# `agenite-claw` multi-channel gateway, WebUI, cron, MCP, or subagent features.
 claw = [
     "boto3>=1.43.0",
     "croniter>=6.0.0,<7.0.0",
@@ -133,7 +133,7 @@ dev = [
 
 [project.scripts]
 vtx = "vtx.cli:main"
-vtx-claw = "vtx_claw.cli.commands:app"
+agenite-claw = "agenite_claw.cli.commands:app"
 
 [tool.ruff]
 target-version = "py312"

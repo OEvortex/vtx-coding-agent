@@ -1,4 +1,4 @@
-"""In-process agent hook API (vtx_claw-style AgentHook).
+"""In-process agent hook API (agenite_claw-style AgentHook).
 
 This is an *additive* lifecycle layer alongside the existing external YAML
 hook system (``hooks/bridge.py`` + ``EventBus``). It lets Python callers

@@ -1,6 +1,6 @@
 """Provider-agnostic single-turn execution engine.
 
-This mirrors the *engine* layer of ``vtx_claw`` (``AgentRunner``): a thin,
+This mirrors the *engine* layer of ``agenite_claw`` (``AgentRunner``): a thin,
 transport-free function that runs one LLM turn and yields its events. The
 product/transport loop in :mod:`vtx.loop` owns sessions, UI events, goals and
 persistence; this module owns only the turn itself.
@@ -50,7 +50,7 @@ class AgentRunSpec:
     # turn state (text so far + tool results) for cancel/resume. Receives a
     # dict snapshot; return value is ignored.
     checkpoint_callback: Callable[[dict[str, Any]], Any] | None = None
-    # In-process lifecycle hooks (vtx_claw-style AgentHook). Fired by the
+    # In-process lifecycle hooks (agenite_claw-style AgentHook). Fired by the
     # engine around run/iteration boundaries and stream deltas.
     hooks: list[AgentHook] | None = None
 

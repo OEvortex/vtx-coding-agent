@@ -331,7 +331,7 @@ class _ChunkOutcome(Enum):
     STALLED = auto()
 
 
-# Engine-grade recovery around a single provider request (mirrors vtx_claw's
+# Engine-grade recovery around a single provider request (mirrors agenite_claw's
 # _run_core stop-condition handling). Kept small and config-free for now.
 _MAX_EMPTY_RETRIES = 2
 _MAX_LENGTH_RECOVERIES = 3
@@ -535,7 +535,7 @@ class _TurnRunner:
             # Mid-turn injection: a follow-up user message (sub-agent
             # completion, queued prompt) arrived while we were running tools.
             # Feed it back into the conversation and continue the turn instead
-            # of ending — mirrors vtx_claw's injection_callback.
+            # of ending — mirrors agenite_claw's injection_callback.
             injected = await self._drain_injections()
             if injected:
                 injection_cycles += 1

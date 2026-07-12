@@ -1,6 +1,6 @@
 # MCP Integration
 
-vtx-claw supports the Model Context Protocol (MCP) for connecting to external tool servers.
+agenite-claw supports the Model Context Protocol (MCP) for connecting to external tool servers.
 
 ## Configuration
 
@@ -99,7 +99,7 @@ The `enabled_tools` field controls which tools are registered:
 MCP tools are bridged as native tools with the `mcp_` prefix:
 
 - MCP tool name: `read_file`
-- vtx-claw tool name: `mcp_my-server_read_file`
+- agenite-claw tool name: `mcp_my-server_read_file`
 
 This prevents naming conflicts between MCP servers and built-in tools.
 
@@ -164,7 +164,7 @@ Tool calls are cancelled after `tool_timeout` seconds (default: 30). This preven
 
 ## Auto-Detection
 
-If `type` is omitted, vtx-claw auto-detects the server type:
+If `type` is omitted, agenite-claw auto-detects the server type:
 - If `command` is set → `stdio`
 - If `url` is set with SSE patterns → `sse`
 - If `url` is set with HTTP patterns → `streamableHttp`

@@ -53,7 +53,7 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 ### Added
 
 #### Interactive onboarding wizard (5-step Quick Start)
-- `vtx-claw onboard` now launches the interactive wizard by default (use `--no-wizard` for the old non-interactive path).
+- `agenite-claw onboard` now launches the interactive wizard by default (use `--no-wizard` for the old non-interactive path).
 - Quick Start expanded from 3 steps to 5:
   1. **LLM Provider** — pick provider, enter API key, choose model. API keys are now validated against the provider's real API before proceeding.
   2. **Channel** — enable the local WebUI with a password, optionally connect a chat channel (Telegram, WhatsApp, Discord, etc.) via QR login or manual config.
@@ -62,7 +62,7 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   5. **Review** — rich summary panel showing everything configured with exact next-step commands.
 
 #### Auto-detect first run
-- `vtx-claw gateway` and `vtx-claw agent` now detect when no config exists and automatically launch the onboarding wizard instead of silently failing with default config.
+- `agenite-claw gateway` and `agenite-claw agent` now detect when no config exists and automatically launch the onboarding wizard instead of silently failing with default config.
 
 #### API key validation
 - New `_validate_api_key()` function that makes real HTTP requests to verify API keys before saving. Supports OpenAI-compatible and Anthropic backends. Shows a spinner during validation and lets users retry on failure.
@@ -181,8 +181,8 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - `get_provider_class` now accepts the provider slug and passes it through to the
   provider constructor, fixing incorrect config wiring for non-default providers.
 
-#### vtx-claw documentation
-- Expanded vtx-claw docs with 16 new markdown files under `docs/claw/` covering
+#### agenite-claw documentation
+- Expanded agenite-claw docs with 16 new markdown files under `docs/claw/` covering
   architecture, channels, CLI, configuration, gateway, security, sessions,
   skills, slash commands, tools, audio, cron, MCP, providers, and
   pairing.
@@ -194,11 +194,11 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - System prompt is now messaging-platform-aware with concise formatting guidance.
 - Tool surface restricted to approved subset (removed `find`, `grep`, `ask_user`, `task`, `background` from default tools).
 
-#### vtx-claw provider resolution respects explicit provider choice
+#### agenite-claw provider resolution respects explicit provider choice
 - Refactored `merge_vtx_config()` to a two-phase strategy: Phase 1 injects
   API keys for all known providers (using vtx's own catalog and
   `dynamic_auth.json`); Phase 2 only sets the active provider and model
-  when the user has not explicitly chosen one in vtx-claw config.
+  when the user has not explicitly chosen one in agenite-claw config.
   - When `agents.defaults.provider` is a specific slug (not `"auto"`),
     vtx resolution is skipped entirely — the user's choice is honored and
     only missing API keys are filled in.
@@ -206,12 +206,12 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   that still covers `last_selected`, `claw.llm` legacy fallback, and
   `detect_provider_from_env`.
 
-#### vtx-claw provider resolution respects explicit preset selection
+#### agenite-claw provider resolution respects explicit preset selection
 - The explicit-provider guard now also considers `agents.defaults.model_preset`.
   Loading a preset no longer triggers vtx provider auto-detection.
 
 #### Web tools consolidated onto vtx Exa backend
-- `vtx_claw/agent/tools/web.py` no longer contains inline search or fetch
+- `agenite_claw/agent/tools/web.py` no longer contains inline search or fetch
   implementations. `WebSearchTool` and `WebFetchTool` now delegate to
   `vtx.tools.web`, simplifying maintenance and removing the previous
   provider-specific backends (Brave, Tavily, SearXNG, Jina, Kagi, Exa,

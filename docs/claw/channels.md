@@ -1,10 +1,10 @@
 # Channels
 
-vtx-claw connects to 16 chat platforms via a unified channel abstraction. Each channel is a thin adapter that translates platform-specific messages into a common `InboundMessage` format and sends responses back via `OutboundMessage`.
+agenite-claw connects to 16 chat platforms via a unified channel abstraction. Each channel is a thin adapter that translates platform-specific messages into a common `InboundMessage` format and sends responses back via `OutboundMessage`.
 
 ## How Channels Work
 
-1. **Discovery**: Channels are discovered via `pkgutil` + `entry_points(group="vtx_claw.channels")`.
+1. **Discovery**: Channels are discovered via `pkgutil` + `entry_points(group="agenite_claw.channels")`.
 2. **Configuration**: Each channel reads its config from `channels.<name>` in the JSON config.
 3. **Lifecycle**: `ChannelManager` calls `start()` on each enabled channel at gateway startup.
 4. **Permission**: `is_allowed(sender_id)` checks the `allow_from` list or the pairing store.

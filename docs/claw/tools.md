@@ -1,6 +1,6 @@
 # Tools
 
-vtx-claw equips the agent with 18+ tools organized into categories. Tools are discovered via `ToolLoader` (`agent/tools/loader.py`) scanning `pkgutil` + `entry_points(group="vtx_claw.tools")`.
+agenite-claw equips the agent with 18+ tools organized into categories. Tools are discovered via `ToolLoader` (`agent/tools/loader.py`) scanning `pkgutil` + `entry_points(group="agenite_claw.tools")`.
 
 ## Tool Categories
 

@@ -69,7 +69,7 @@ Step-by-step guide for using this skill.
 Skills are discovered from:
 - `skills/` in the workspace
 - `~/.vtx/claw/skills/`
-- Built-in skills in the vtx-claw package
+- Built-in skills in the agenite-claw package
 
 ### Creating a Skill
 
@@ -85,4 +85,4 @@ Skills can be installed from the [ClawHub](https://clawhub.com) public registry:
 npx --yes clawhub@latest install <slug> --workdir ~/.vtx/claw/workspace
 ```
 
-The `--workdir` flag ensures skills install to the vtx-claw workspace.
+The `--workdir` flag ensures skills install to the agenite-claw workspace.

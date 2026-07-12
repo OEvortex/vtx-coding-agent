@@ -34,7 +34,7 @@ Run **only** the tests relevant to your change. The full suite can take a long t
 ## Project layout
 
 - `src/vtx/` — the core agent harness (see [architecture.md](architecture.md)).
-- `src/vtx_claw/` — the advanced gateway backend (requires `[claw]`).
+- `src/agenite_claw/` — the advanced gateway backend (requires `[claw]`).
 - `docs/` — documentation (this tree).
 - `examples/` — runnable examples (`agents/`, `extensions/`, `sdk/`).
 - `tests/` — the test suite.

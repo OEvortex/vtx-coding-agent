@@ -2,13 +2,13 @@
 
 ## Package Structure
 
-vtx-claw lives under `src/vtx_claw/` with the following subpackages:
+agenite-claw lives under `src/agenite_claw/` with the following subpackages:
 
 ```
-src/vtx_claw/
+src/agenite_claw/
 ├── __init__.py              # Version, logo, lazy imports
-├── __main__.py              # python -m vtx_claw entry point
-├── _vtx_bridge.py           # Bridges vtx-core config into vtx-claw
+├── __main__.py              # python -m agenite_claw entry point
+├── _vtx_bridge.py           # Bridges vtx-core config into agenite-claw
 ├── config_base.py           # Shared Pydantic Base model
 │
 ├── agent/                   # Core agent execution

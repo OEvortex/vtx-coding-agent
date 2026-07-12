@@ -121,8 +121,8 @@ Resume a previous session:
 
 ```bash
 # Resume most recent
-vtx-claw agent -c
+agenite-claw agent -c
 
 # Resume specific session
-vtx-claw agent --session <session-id>
+agenite-claw agent --session <session-id>
 ```

@@ -1,6 +1,6 @@
 # Providers
 
-vtx-claw supports 50+ LLM providers through vtx's unified provider catalog. Providers are configured in `providers.<name>` in the JSON config.
+agenite-claw supports 50+ LLM providers through vtx's unified provider catalog. Providers are configured in `providers.<name>` in the JSON config.
 
 ## Provider Configuration
 
@@ -34,7 +34,7 @@ vtx-claw supports 50+ LLM providers through vtx's unified provider catalog. Prov
 
 ## Auto-Detection
 
-When `agents.defaults.provider` is `"auto"`, vtx-claw detects the provider from:
+When `agents.defaults.provider` is `"auto"`, agenite-claw detects the provider from:
 1. The `api_key` format (e.g., `sk-ant-` → Anthropic)
 2. The `api_base` URL (e.g., `api.openai.com` → OpenAI)
 3. Environment variables
@@ -186,4 +186,4 @@ Then set `agents.defaults.provider: "my-local"`.
 API keys are managed via vtx's `dynamic_auth.json`:
 - When you set `api_key` in config, it's saved to vtx's auth store
 - The key is removed from `config.json` for security
-- Use `vtx-claw provider login <name>` for OAuth providers
+- Use `agenite-claw provider login <name>` for OAuth providers

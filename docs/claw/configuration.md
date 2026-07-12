@@ -1,12 +1,12 @@
 # Configuration
 
-vtx-claw's configuration lives in a single JSON file at:
+agenite-claw's configuration lives in a single JSON file at:
 
 ```text
 ~/.vtx/claw/config.json
 ```
 
-The file is created automatically by `vtx-claw onboard`. All keys are optional — anything you omit uses the shipped defaults.
+The file is created automatically by `agenite-claw onboard`. All keys are optional — anything you omit uses the shipped defaults.
 
 ## Environment Variable Interpolation
 
@@ -63,7 +63,7 @@ Agent-level configuration.
 | `tool_hint_max_length` | int | `40` | Max chars for tool hint display |
 | `reasoning_effort` | string \| null | `null` | LLM thinking effort (low/medium/high/adaptive/none) |
 | `timezone` | string | `"UTC"` | IANA timezone |
-| `bot_name` | string | `"vtx_claw"` | Display name in prompts |
+| `bot_name` | string | `"agenite_claw"` | Display name in prompts |
 | `bot_icon` | string | `"🐈"` | Icon next to bot name |
 | `unified_session` | bool | `false` | Share one session across all channels |
 | `disabled_skills` | list | `[]` | Skill names to exclude |
@@ -161,7 +161,7 @@ Tool configuration.
 
 ## `api`
 
-OpenAI-compatible API server (started via `vtx-claw serve`).
+OpenAI-compatible API server (started via `agenite-claw serve`).
 
 | Field | Type | Default | Description |
 |-------|------|---------|-------------|

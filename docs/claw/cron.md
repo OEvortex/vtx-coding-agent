@@ -1,6 +1,6 @@
 # Cron System
 
-vtx-claw includes a built-in cron system for scheduling recurring tasks and one-shot reminders.
+agenite-claw includes a built-in cron system for scheduling recurring tasks and one-shot reminders.
 
 ## Schedule Types
 

@@ -1,6 +1,6 @@
 # Device Pairing
 
-vtx-claw includes a device pairing system for controlling who can interact with the bot via DMs.
+agenite-claw includes a device pairing system for controlling who can interact with the bot via DMs.
 
 ## How Pairing Works
 

@@ -1,8 +1,8 @@
-# vtx-claw
+# agenite-claw
 
-vtx-claw is the multi-channel AI agent gateway. It runs as a persistent background process, connecting your AI agent to chat platforms (Telegram, Discord, Slack, WhatsApp, Matrix, etc.) and a built-in WebUI simultaneously.
+agenite-claw is the multi-channel AI agent gateway. It runs as a persistent background process, connecting your AI agent to chat platforms (Telegram, Discord, Slack, WhatsApp, Matrix, etc.) and a built-in WebUI simultaneously.
 
-Unlike the `vtx` TUI (which runs interactively in your terminal), `vtx-claw` operates headlessly — managing sessions, memory, scheduling, and multi-user access across all connected channels.
+Unlike the `vtx` TUI (which runs interactively in your terminal), `agenite-claw` operates headlessly — managing sessions, memory, scheduling, and multi-user access across all connected channels.
 
 ## Quick Start
 
@@ -11,10 +11,10 @@ Unlike the `vtx` TUI (which runs interactively in your terminal), `vtx-claw` ope
 pip install vtx-coding-agent
 
 # First-time setup
-vtx-claw onboard --wizard
+agenite-claw onboard --wizard
 
 # Start the gateway (all channels + WebUI)
-vtx-claw gateway
+agenite-claw gateway
 ```
 
 The WebUI opens at `http://127.0.0.1:8765`. Enabled chat channels start automatically.
@@ -44,7 +44,7 @@ The WebUI opens at `http://127.0.0.1:8765`. Enabled chat channels start automati
 
 ```
 ┌─────────────────────────────────────────────────┐
-│                  vtx-claw gateway                │
+│                  agenite-claw gateway                │
 │                                                  │
 │  ┌──────────┐   ┌──────────┐   ┌──────────┐    │
 │  │ Telegram  │   │ Discord  │   │ WebUI    │    │

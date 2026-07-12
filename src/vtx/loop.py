@@ -113,10 +113,10 @@ class Agent:
             max_objective_chars=vtx_config.goal.max_objective_chars,
             max_turns_default=vtx_config.goal.max_turns,
         )
-        # In-process hooks (vtx_claw-style AgentHook). Wired into the engine in
+        # In-process hooks (agenite_claw-style AgentHook). Wired into the engine in
         # P6; unused until then and default-empty so callers are unaffected.
         self._hooks: list[Any] = list(hooks or [])
-        # Mid-turn follow-up queue (vtx_claw-style pending queue). Populated by
+        # Mid-turn follow-up queue (agenite_claw-style pending queue). Populated by
         # callers via :meth:`queue_follow_up`; drained by the engine mid-turn so
         # sub-agent/queued results reach the model without ending the turn.
         self._pending_queue: deque[UserMessage] = deque()

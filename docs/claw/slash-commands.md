@@ -1,6 +1,6 @@
 # Slash Commands
 
-vtx-claw includes 14 built-in slash commands for in-chat control. These are registered via the command router (`command/builtin.py`).
+agenite-claw includes 14 built-in slash commands for in-chat control. These are registered via the command router (`command/builtin.py`).
 
 ## Command Reference
 
@@ -30,7 +30,7 @@ Cancel active tasks and drain pending queue.
 
 ### `/restart`
 
-Restart the vtx-claw process.
+Restart the agenite-claw process.
 
 ```
 /restart
@@ -161,7 +161,7 @@ Commands are routed through a three-tier dispatch system:
 2. **Exact**: Exact command name match
 3. **Prefix**: Commands that start with the input
 
-The router supports `@username` suffixes for bots in groups (e.g., `/status@vtx_claw`).
+The router supports `@username` suffixes for bots in groups (e.g., `/status@agenite_claw`).
 
 ## Custom Commands
 

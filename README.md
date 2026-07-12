@@ -52,7 +52,7 @@ Vtx is also **modular**: a keyboard-driven TUI, a headless CLI, a Python SDK, an
 | Backend | What it's for | Powers |
 | --- | --- | --- |
 | **`vtx` native loop** | Single-session, event-stream agent loop with thinking streaming, tool permissions, and compaction. | The TUI + headless CLI (`vtx -p "..."`) |
-| **`vtx_claw` gateway** | Production-grade multi-session loop: concurrent tool batching, context governance, crash-restore, subagents, MCP, cron, channel integrations. | The `vtx-claw` gateway, WebUI, and 16+ chat channels (`[claw]` extra) |
+| **`agenite_claw` gateway** | Production-grade multi-session loop: concurrent tool batching, context governance, crash-restore, subagents, MCP, cron, channel integrations. | The `agenite-claw` gateway, WebUI, and 16+ chat channels (`[claw]` extra) |
 
 ---
 
@@ -194,7 +194,7 @@ See the [SDK docs](docs/sdk/README.md).
 | Architecture | [docs/architecture.md](docs/architecture.md) |
 | Local models | [docs/local-models.md](docs/local-models.md) |
 | SDK | [docs/sdk/README.md](docs/sdk/README.md) |
-| vtx-claw gateway | [docs/claw/README.md](docs/claw/README.md) |
+| agenite-claw gateway | [docs/claw/README.md](docs/claw/README.md) |
 
 ---
 

@@ -1,9 +1,9 @@
 # CLI Reference
 
-The `vtx-claw` CLI is built with Typer. Entry point: `vtx_claw.cli.commands:app`.
+The `agenite-claw` CLI is built with Typer. Entry point: `agenite_claw.cli.commands:app`.
 
 ```bash
-vtx-claw [OPTIONS] COMMAND [ARGS]
+agenite-claw [OPTIONS] COMMAND [ARGS]
 ```
 
 ## Global Options
@@ -15,9 +15,9 @@ vtx-claw [OPTIONS] COMMAND [ARGS]
 
 ## Commands
 
-### `vtx-claw onboard`
+### `agenite-claw onboard`
 
-Initialize vtx-claw configuration and workspace.
+Initialize agenite-claw configuration and workspace.
 
 | Flag | Description |
 |------|-------------|
@@ -27,13 +27,13 @@ Initialize vtx-claw configuration and workspace.
 
 ```bash
 # First-time setup with wizard
-vtx-claw onboard --wizard
+agenite-claw onboard --wizard
 
 # Non-interactive setup
-vtx-claw onboard
+agenite-claw onboard
 ```
 
-### `vtx-claw agent`
+### `agenite-claw agent`
 
 Interact with the agent directly from the CLI.
 
@@ -48,13 +48,13 @@ Interact with the agent directly from the CLI.
 
 ```bash
 # One-shot mode
-vtx-claw agent -m "Write unit tests for src/app.py"
+agenite-claw agent -m "Write unit tests for src/app.py"
 
 # Interactive REPL
-vtx-claw agent
+agenite-claw agent
 ```
 
-### `vtx-claw serve`
+### `agenite-claw serve`
 
 Start the OpenAI-compatible API server (`/v1/chat/completions`).
 
@@ -68,27 +68,27 @@ Start the OpenAI-compatible API server (`/v1/chat/completions`).
 | `--config` / `-c` | Config file path |
 
 ```bash
-vtx-claw serve
+agenite-claw serve
 # Endpoint: http://127.0.0.1:8900/v1/chat/completions
 ```
 
-Requires `aiohttp`: `pip install 'vtx-claw[api]'`
+Requires `aiohttp`: `pip install 'agenite-claw[api]'`
 
-### `vtx-claw status`
+### `agenite-claw status`
 
-Show vtx-claw status (config, workspace, model, API keys).
+Show agenite-claw status (config, workspace, model, API keys).
 
 ```bash
-vtx-claw status
+agenite-claw status
 ```
 
 ---
 
 ## Gateway Subcommands
 
-### `vtx-claw gateway`
+### `agenite-claw gateway`
 
-Start the vtx-claw gateway (all channels + WebUI).
+Start the agenite-claw gateway (all channels + WebUI).
 
 | Flag | Description |
 |------|-------------|
@@ -101,48 +101,48 @@ Start the vtx-claw gateway (all channels + WebUI).
 
 ```bash
 # Foreground (default)
-vtx-claw gateway
+agenite-claw gateway
 
 # Background
-vtx-claw gateway --background
+agenite-claw gateway --background
 
 # Custom port
-vtx-claw gateway --port 9000
+agenite-claw gateway --port 9000
 ```
 
-### `vtx-claw gateway status`
+### `agenite-claw gateway status`
 
 Check if the gateway is running.
 
 ```bash
-vtx-claw gateway status
+agenite-claw gateway status
 ```
 
-### `vtx-claw gateway stop`
+### `agenite-claw gateway stop`
 
 Stop the running gateway.
 
 ```bash
-vtx-claw gateway stop
+agenite-claw gateway stop
 ```
 
-### `vtx-claw gateway restart`
+### `agenite-claw gateway restart`
 
 Restart the gateway.
 
 ```bash
-vtx-claw gateway restart
+agenite-claw gateway restart
 ```
 
-### `vtx-claw gateway logs`
+### `agenite-claw gateway logs`
 
 Show gateway logs.
 
 ```bash
-vtx-claw gateway logs
+agenite-claw gateway logs
 ```
 
-### `vtx-claw gateway install-service`
+### `agenite-claw gateway install-service`
 
 Install the gateway as a system service.
 
@@ -153,65 +153,65 @@ Install the gateway as a system service.
 
 ```bash
 # Auto-detect (systemd on Linux, launchd on macOS)
-vtx-claw gateway install-service
+agenite-claw gateway install-service
 
 # Preview without installing
-vtx-claw gateway install-service --dry-run
+agenite-claw gateway install-service --dry-run
 ```
 
-**Linux (systemd):** Creates `~/.config/systemd/user/vtx_claw-gateway.service`
+**Linux (systemd):** Creates `~/.config/systemd/user/agenite_claw-gateway.service`
 
-**macOS (launchd):** Creates `~/Library/LaunchAgents/ai.vtx_claw.gateway.plist`
+**macOS (launchd):** Creates `~/Library/LaunchAgents/ai.agenite_claw.gateway.plist`
 
-### `vtx-claw gateway uninstall-service`
+### `agenite-claw gateway uninstall-service`
 
 Remove the installed system service.
 
 ```bash
-vtx-claw gateway uninstall-service
+agenite-claw gateway uninstall-service
 ```
 
 ---
 
 ## Channel Subcommands
 
-### `vtx-claw channels status`
+### `agenite-claw channels status`
 
 Show status of all registered channels.
 
 ```bash
-vtx-claw channels status
+agenite-claw channels status
 ```
 
 ---
 
 ## Provider Subcommands
 
-### `vtx-claw provider login <provider>`
+### `agenite-claw provider login <provider>`
 
 Authenticate with an OAuth provider.
 
 ```bash
-vtx-claw provider login openai-codex
-vtx-claw provider login github-copilot
+agenite-claw provider login openai-codex
+agenite-claw provider login github-copilot
 ```
 
-### `vtx-claw provider logout <provider>`
+### `agenite-claw provider logout <provider>`
 
 Log out from an OAuth provider.
 
 ```bash
-vtx-claw provider logout openai-codex
+agenite-claw provider logout openai-codex
 ```
 
 ---
 
 ## Plugin Subcommands
 
-### `vtx-claw plugins list`
+### `agenite-claw plugins list`
 
 List installed plugins.
 
-### `vtx-claw plugins install <path>`
+### `agenite-claw plugins install <path>`
 
 Install a plugin from a local path.

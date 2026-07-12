@@ -1,6 +1,6 @@
 # Security
 
-vtx-claw includes built-in security features to protect against common attack vectors.
+agenite-claw includes built-in security features to protect against common attack vectors.
 
 ## SSRF Protection
 
@@ -78,8 +78,8 @@ The `workspace_access.py` module controls file system access scope.
 
 | Variable | Description |
 |----------|-------------|
-| `VTX_CLAW_WORKSPACE_SANDBOX_PROVIDER` | Sandbox provider identifier |
-| `VTX_CLAW_WORKSPACE_SANDBOX_ENFORCED` | Whether sandbox is enforced |
+| `AGENITE_CLAW_WORKSPACE_SANDBOX_PROVIDER` | Sandbox provider identifier |
+| `AGENITE_CLAW_WORKSPACE_SANDBOX_ENFORCED` | Whether sandbox is enforced |
 
 ### Turn-Level Scope
 

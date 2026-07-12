@@ -1,6 +1,6 @@
 """Per-iteration message repair before each model call.
 
-A minimal, correct counterpart to ``vtx_claw``'s ``ContextGovernor``:
+A minimal, correct counterpart to ``agenite_claw``'s ``ContextGovernor``:
 strip tool-result messages that have no matching assistant tool call (orphans
 left by cancelled/partial turns) and enforce a soft budget on tool-result text
 so a single huge tool output can't blow the context window. Offloaded results

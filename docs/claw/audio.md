@@ -1,6 +1,6 @@
 # Audio Transcription
 
-vtx-claw supports audio transcription via multiple providers, enabling voice messages on supported channels.
+agenite-claw supports audio transcription via multiple providers, enabling voice messages on supported channels.
 
 ## Configuration
 

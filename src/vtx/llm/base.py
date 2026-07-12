@@ -366,7 +366,7 @@ class BaseProvider(ABC):
                 args = _json.loads(tc["arguments"]) if tc["arguments"] else {}
             except _json.JSONDecodeError:
                 args = {"raw": tc["arguments"]}
-            from vtx_claw.providers.base import ToolCallRequest
+            from agenite_claw.providers.base import ToolCallRequest
 
             tool_call_requests.append(
                 ToolCallRequest(id=tc["id"], name=tc["name"], arguments=args)
@@ -375,7 +375,7 @@ class BaseProvider(ABC):
         reasoning_content = "\n".join(thinking_parts) if thinking_parts else None
         final_content = "\n".join(content_parts) if content_parts else None
 
-        from vtx_claw.providers.base import LLMResponse
+        from agenite_claw.providers.base import LLMResponse
 
         return LLMResponse(
             content=final_content,
