@@ -5,6 +5,16 @@ All notable changes to Vtx are documented in this file. The format is based on
 adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 
+## [0.2.5] - 2026-07-12
+
+### Added
+- **Meta AI provider** — registered Meta AI as a new OpenAI-compatible provider (slug `meta`) with base URL `https://api.meta.ai/v1`, resolving `META_API_KEY` from the environment, and fetching its Llama model catalog from `/models`.
+- **AGENTS.md codebase search** — replaced the CodeBase Search section with `vortexa` CLI usage (`resolve` / `search --hybrid` / `explain`) so the agent prefers a semantic index over grep/rg for code search.
+
+### Fixed
+- **Typing** — widened `_slim_schema()` parameter and return types from `object` to `Any` in `src/vtx/tools/__init__.py` to satisfy `ty`.
+- **System-prompt migration tests** — updated stale assertions from "You are Vtx, an expert coding assistant." to "You are Vtx, an expert coding agent." in `tests/test_config_migration.py`.
+
 ## [0.2.4] - 2026-07-11
 
 ### Added
@@ -868,6 +878,8 @@ to keep the model's context window free for what matters.
   via `uv tool install vtx-coding-agent`.
 - Licensed under **Apache License 2.0**.
 
+[0.2.5]: https://github.com/OEvortex/vtx-coding-agent/compare/v0.2.4...v0.2.5
+[0.2.4]: https://github.com/OEvortex/vtx-coding-agent/compare/v0.2.3...v0.2.4
 [0.2.2]: https://github.com/OEvortex/vtx-coding-agent/compare/v0.2.1...v0.2.2
 [0.2.1]: https://github.com/OEvortex/vtx-coding-agent/compare/v0.2.0...v0.2.1
 [0.2.0]: https://github.com/OEvortex/vtx-coding-agent/compare/v0.1.9...v0.2.0
