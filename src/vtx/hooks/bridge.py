@@ -194,12 +194,72 @@ def _make_handler_for_config(cfg: HookConfig) -> Any:
         cmd = cfg.command
         timeout = cfg.timeout
 
-        async def _command_handler(context: dict[str, Any]) -> HookResult:
+        async def _command_handler(context: dict[str, Any], config: HookConfig) -> HookResult:
             return await run_command_hook(cmd, timeout)
 
         return _command_handler
 
+    if cfg.type == "prompt":
+        text = cfg.prompt_text or ""
+
+        async def _prompt_handler(context: dict[str, Any], config: HookConfig) -> HookResult:
+            # A prompt hook doesn't execute anything; it records the
+            # instruction so it's visible in hook output/metadata.
+            return HookResult(exit_code=0, output=text, metadata={"prompt": text})
+
+        return _prompt_handler
+
+    if cfg.type == "http" and cfg.url:
+        url = cfg.url
+        timeout = cfg.timeout
+
+        async def _http_handler(context: dict[str, Any], config: HookConfig) -> HookResult:
+            return await _run_http_hook(url, timeout, context, cfg)
+
+        return _http_handler
+
+    if cfg.type == "agent":
+        instructions = cfg.agent_instructions or ""
+
+        async def _agent_handler(context: dict[str, Any], config: HookConfig) -> HookResult:
+            # ponytail: full delegation spawns a sub-agent; for now we surface
+            # the instruction as output. Wire to subagent/background spawn when
+            # the bridge is given a task runner.
+            return HookResult(
+                exit_code=0, output=instructions, metadata={"agent_instructions": instructions}
+            )
+
+        return _agent_handler
+
     return None
+
+
+async def _run_http_hook(
+    url: str, timeout: int | None, context: dict[str, Any], cfg: HookConfig
+) -> HookResult:
+    """POST the hook context to *url* and return the response body as output."""
+
+    effective_timeout = timeout if timeout and timeout > 0 else 30
+    # Lazy import keeps the hook subsystem import-light.
+    try:
+        import httpx
+    except ImportError:
+        return HookResult(
+            exit_code=1, output="", blocking_error="hook type 'http' requires the 'httpx' package"
+        )
+    try:
+        async with httpx.AsyncClient(timeout=effective_timeout) as client:
+            resp = await client.post(url, json=context)
+        body = resp.text.strip()
+        if resp.status_code >= 400:
+            return HookResult(
+                exit_code=resp.status_code,
+                output=body,
+                blocking_error=f"hook http {url} returned {resp.status_code}",
+            )
+        return HookResult(exit_code=resp.status_code, output=body)
+    except Exception as exc:  # network/timeout
+        return HookResult(exit_code=1, output="", blocking_error=f"hook http failed: {exc}")
 
 
 # ---------------------------------------------------------------------------

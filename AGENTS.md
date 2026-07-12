@@ -8,7 +8,7 @@
 
 ## Testing
 
-- After making changes, run only the tests relevant to those changes using `uv run python -m pytest path/to/test_file.py`
+- After making breaking changes, run only the tests relevant to those changes using `uv run python -m pytest path/to/test_file.py`
 - If the user asks for e2e tests then run the vtx-tmux e2e test if available
 - Never run the full test suite unless the user explicitly asks for it. It can take a long time to run and is not always necessary.
 

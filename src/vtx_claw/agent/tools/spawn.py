@@ -16,13 +16,12 @@ if TYPE_CHECKING:
 
 @tool_parameters(
     tool_parameters_schema(
-        task=StringSchema("The task for the subagent to complete"),
-        label=StringSchema("Optional short label for the task (for display)"),
+        task=StringSchema("Task for the subagent to complete"),
+        label=StringSchema("Optional short display label"),
         temperature=NumberSchema(
             description=(
-                "Optional sampling temperature for the subagent "
-                "(0.0 = deterministic, higher = more creative). "
-                "Defaults to the provider's configured temperature."
+                "Sampling temperature (0.0=deterministic, higher=creative). "
+                "Defaults to the provider's setting."
             ),
             minimum=0.0,
             maximum=2.0,
@@ -62,11 +61,8 @@ class SpawnTool(Tool, ContextAware):
     @property
     def description(self) -> str:
         return (
-            "Spawn a subagent to handle a task in the background. "
-            "Use this for complex or time-consuming tasks that can run independently. "
-            "The subagent will complete the task and report back when done. "
-            "For deliverables or existing projects, inspect the workspace first "
-            "and use a dedicated subdirectory when helpful."
+            "Spawn a background subagent for an independent task. It reports back when "
+            "done. Inspect the workspace first; use a subdirectory when helpful."
         )
 
     async def execute(

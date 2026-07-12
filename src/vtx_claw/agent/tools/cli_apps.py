@@ -33,21 +33,21 @@ class CliAppsToolConfig(Base):
     tool_parameters_schema(
         required=["name"],
         name=StringSchema(
-            "Installed CLI app registry name, for example gimp, safari, or obsidian."
+            "Installed CLI app registry name (e.g. gimp, safari, obsidian)."
         ),
         args=ArraySchema(
             StringSchema("One command-line argument."),
-            description="Arguments to pass to the CLI entry point. Do not include the entry point itself.",
+            description="Args for the CLI entry point (not the entry point itself).",
             nullable=True,
         ),
         json=BooleanSchema(
-            description="Whether to prepend --json when supported by the CLI.",
+            description="Prepend --json when the CLI supports it.",
             default=False,
             nullable=True,
         ),
-        working_dir=StringSchema("Optional working directory for the CLI call.", nullable=True),
+        working_dir=StringSchema("Optional working directory.", nullable=True),
         timeout=IntegerSchema(
-            description="Timeout in seconds for this CLI call.",
+            description="Timeout seconds for this CLI call.",
             minimum=1,
             maximum=600,
             nullable=True,
@@ -105,14 +105,13 @@ class CliAppsTool(Tool):
         except Exception:
             installed = []
         installed_note = (
-            f" Installed Settings CLI Apps: {', '.join(installed)}."
+            f" Installed: {', '.join(installed)}."
             if installed
-            else " No Settings CLI Apps are currently installed."
+            else " No Settings CLI Apps installed."
         )
         return (
-            "Run a CLI App that the user explicitly installed in Settings or attached as @app. "
-            "Do not use this for ordinary system CLIs such as git, gh, python, npm, or brew; "
-            "unknown names are rejected. Execution uses argv, not shell." + installed_note
+            "Run a user-installed CLI App (from Settings or @app). Unknown names are "
+            "rejected; not for system CLIs (git, gh, python...). Uses argv, not shell." + installed_note
         )
 
     async def execute(

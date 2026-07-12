@@ -91,14 +91,12 @@ class _GoalToolsMixin(ContextAware):
 @tool_parameters(
     tool_parameters_schema(
         goal=StringSchema(
-            "Sustained objective for this chat thread. First read the built-in **long-goal** skill, "
-            "especially its Start fast section, then call this promptly once the user's intent is clear. "
-            "The goal must still be idempotent, self-contained, bounded, and explicit about done-ness; "
-            "do not delay this tool call to over-plan, research, or decide execution details.",
+            "Sustained objective for this thread. First read the **long-goal** skill, then "
+            "call promptly. Must be idempotent, bounded, explicit about done-ness.",
             max_length=12_000,
         ),
         ui_summary=StringSchema(
-            "Optional one-line label for session lists / logs (≤120 chars).",
+            "Optional one-line label (≤120 chars).",
             max_length=120,
             nullable=True,
         ),
@@ -128,13 +126,10 @@ class LongTaskTool(Tool, _GoalToolsMixin):
     @property
     def description(self) -> str:
         return (
-            "Mark this thread as a sustained long-running task. "
-            "First read the built-in **long-goal** skill, especially its Start fast section; then call this "
-            "as soon as the user's intent is clear. Write a good idempotent goal, but do not delay the tool "
-            "call with long planning, research, or execution-detail thinking. "
-            "The active goal is mirrored in Runtime Context each turn. Use normal tools until done, then call "
-            "complete_goal when the objective is satisfied, cancelled, or replaced. "
-            "If a goal is already active, finish it or call complete_goal before registering another."
+            "Mark this thread as a sustained long-running task. First read the "
+            "**long-goal** skill, then call promptly once intent is clear. Write an "
+            "idempotent goal; don't delay the call to over-plan. Use normal tools until "
+            "done, then complete_goal. If a goal is active, finish it first."
         )
 
     async def execute(self, goal: str, ui_summary: str | None = None, **kwargs: Any) -> str:
@@ -170,8 +165,8 @@ class LongTaskTool(Tool, _GoalToolsMixin):
 @tool_parameters(
     tool_parameters_schema(
         recap=StringSchema(
-            "Brief recap for the user (plain text). When the goal succeeded, confirm outcomes; "
-            "if the user cancelled, pivoted, or replaced the objective, say so honestly.",
+            "Brief honest recap for the user (plain text). Confirm what was delivered, "
+            "or state if the user cancelled/redirected.",
             max_length=8000,
             nullable=True,
         ),
@@ -201,11 +196,9 @@ class CompleteGoalTool(Tool, _GoalToolsMixin):
     @property
     def description(self) -> str:
         return (
-            "End bookkeeping for the active sustained goal. "
-            "Use when the objective is fully achieved and verified—recap what was delivered. "
-            "Also call when the user cancels, redirects, or replaces the goal: recap must reflect "
-            "what actually happened (not necessarily success). "
-            "If no goal is active, the tool reports that and leaves metadata unchanged."
+            "End bookkeeping for the active sustained goal. Call when achieved and "
+            "verified (recap what was delivered), or when cancelled/redirected. "
+            "If no goal is active, it reports that and leaves metadata unchanged."
         )
 
     async def execute(self, recap: str | None = None, **kwargs: Any) -> str:

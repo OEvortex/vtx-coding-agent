@@ -49,21 +49,17 @@ class ImageGenerationToolConfig(Base):
 @tool_parameters(
     tool_parameters_schema(
         prompt=StringSchema(
-            "Detailed image generation or edit prompt. Include style, subject, composition, colors, and constraints.",
+            "Image generation/edit prompt: subject, style, composition, colors.",
             min_length=1,
         ),
         reference_images=ArraySchema(
-            StringSchema(
-                "Local path of an existing image artifact or user-provided image to use as an edit reference."
-            ),
-            description="Optional local image paths. Use generated artifact paths for iterative edits.",
+            StringSchema("Local image path to use as an edit reference."),
+            description="Optional image paths; use generated artifact paths for iterative edits.",
         ),
-        aspect_ratio=StringSchema("Optional output aspect ratio, e.g. 1:1, 16:9, 9:16, 4:3."),
-        image_size=StringSchema(
-            "Optional output size hint supported by the configured provider, e.g. 1K, 2K, 4K, or 1024x1024."
-        ),
+        aspect_ratio=StringSchema("Optional ratio e.g. 1:1, 16:9, 9:16, 4:3."),
+        image_size=StringSchema("Optional size hint e.g. 1K, 2K, 4K, 1024x1024."),
         count=IntegerSchema(
-            description="Number of images to generate in this turn.", minimum=1, maximum=8
+            description="Images to generate this turn (1-8).", minimum=1, maximum=8
         ),
         required=["prompt"],
     )
@@ -110,9 +106,8 @@ class ImageGenerationTool(Tool):
     @property
     def description(self) -> str:
         return (
-            "Generate or edit images and store them as persistent artifacts. "
-            "Returns artifact ids and local paths. For edits, pass prior generated image paths "
-            "or user image paths as reference_images."
+            "Generate/edit images, stored as persistent artifacts (returns ids/paths). "
+            "For edits, pass prior generated or user image paths as reference_images."
         )
 
     def _provider_config(self) -> ProviderConfig | None:

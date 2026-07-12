@@ -19,29 +19,23 @@ from vtx_claw.security.workspace_access import current_tool_workspace
 @tool_parameters(
     tool_parameters_schema(
         content=StringSchema(
-            "Message content for proactive or cross-channel delivery. "
-            "Do not use this for a normal reply in the current chat."
+            "Content to send proactively/cross-channel (not a normal reply)."
         ),
         channel=StringSchema(
-            "Optional target channel for cross-channel/proactive delivery. "
-            "Do not set this to the current runtime channel for a normal reply."
+            "Optional target channel for proactive/cross-channel delivery."
         ),
         chat_id=StringSchema(
-            "Optional target chat/user ID for cross-channel/proactive delivery. "
-            "On WebSocket/WebUI turns: omit chat_id to use the server's conversation id "
-            "(never pass client_id values like anon-…). "
-            "Do not set this to the current runtime chat for a normal reply."
+            "Optional target chat/user id. Omit on WebSocket to use the conversation id."
         ),
         media=ArraySchema(
             StringSchema(""),
             description=(
-                "Optional list of existing file paths to attach. "
-                "Use artifact paths returned by generate_image here when delivering generated images."
+                "Optional file paths to attach. Use generate_image artifact paths for images."
             ),
         ),
         buttons=ArraySchema(
             ArraySchema(StringSchema("Button label")),
-            description="Optional: inline keyboard buttons as list of rows, each row is list of button labels.",
+            description="Optional inline buttons: list of rows, each a list of labels.",
         ),
         required=["content"],
     )
@@ -148,15 +142,10 @@ class MessageTool(Tool, ContextAware):
     @property
     def description(self) -> str:
         return (
-            "Proactively send a message to a user/channel, optionally with file attachments. "
-            "Use this for reminders, cross-channel delivery, or explicit proactive sends. "
-            "Do not use this for the normal reply in the current chat: answer naturally instead. "
-            "If channel/chat_id would target the current runtime conversation, do not call this tool "
-            "unless the user explicitly asked you to proactively send an existing file attachment. "
-            "When generate_image creates images in the current chat, use the message tool "
-            "with the artifact paths in the media parameter to deliver the images to the user. "
-            "For proactive attachment delivery, use the 'media' parameter with file paths. "
-            "Do NOT use read_file to send files — that only reads content for your own analysis."
+            "Proactively send a message to a user/channel with optional attachments. "
+            "Use for reminders and cross-channel delivery, not the normal reply. "
+            "Use media paths to deliver generated images. Never call this to reply "
+            "in the current chat."
         )
 
     def _resolve_media(self, media: list[str]) -> list[str]:

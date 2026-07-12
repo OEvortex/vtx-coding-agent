@@ -16,11 +16,13 @@ The loop ends on stop/error/interruption, compaction pause mode, max turns, or g
 import asyncio
 import logging
 import os
+from collections import deque
 from collections.abc import AsyncIterator
 from dataclasses import dataclass
 from typing import Any
 
 from . import config as vtx_config
+from .agent_runner import AgentRunSpec, run_agent_turn
 from .context import Context
 from .core.compaction import generate_summary, is_overflow
 from .core.errors import format_error
@@ -67,7 +69,6 @@ from .llm import BaseProvider
 from .prompts import build_system_prompt
 from .session import CompactionEntry, GoalEntry, MessageEntry, Session
 from .tools import BaseTool
-from .turn import run_single_turn
 
 # Re-exported so existing callers (runtime, tests) keep working.
 __all__ = ["Agent", "AgentConfig", "GoalManager", "build_system_prompt"]
@@ -94,6 +95,7 @@ class Agent:
         extensions: EventBus | None = None,
         background_manager: Any = None,
         goal_manager: GoalManager | None = None,
+        hooks: list[Any] | None = None,
     ):
         self.provider = provider
         self.tools = tools
@@ -111,6 +113,13 @@ class Agent:
             max_objective_chars=vtx_config.goal.max_objective_chars,
             max_turns_default=vtx_config.goal.max_turns,
         )
+        # In-process hooks (vtx_claw-style AgentHook). Wired into the engine in
+        # P6; unused until then and default-empty so callers are unaffected.
+        self._hooks: list[Any] = list(hooks or [])
+        # Mid-turn follow-up queue (vtx_claw-style pending queue). Populated by
+        # callers via :meth:`queue_follow_up`; drained by the engine mid-turn so
+        # sub-agent/queued results reach the model without ending the turn.
+        self._pending_queue: deque[UserMessage] = deque()
 
     @property
     def context(self) -> Context:
@@ -151,6 +160,15 @@ class Agent:
             user_message = UserMessage(content=query)
 
         self.session.append_message(user_message)
+
+        # Resume from a checkpoint left by a previous cancelled (/stop) run in
+        # this session. We surface the partial text/tool results as a
+        # continuation prompt so the model picks up where it left off instead
+        # of discarding in-flight work. Backward-compatible: only fires when a
+        # stale active checkpoint exists.
+        restored = self._restore_checkpoint()
+        if restored is not None:
+            self.session.append_message(restored)
 
         if self._extensions is not None:
             await self._extensions.emit(AGENT_START, cancel_event=cancel_event)
@@ -198,14 +216,19 @@ class Agent:
 
                 messages = self.session.messages
                 tool_results: list[ToolResultMessage] = []
-                async for event in run_single_turn(
-                    provider=self.provider,
-                    messages=messages,
-                    tools=self.tools,
-                    system_prompt=system_prompt,
-                    turn=turn,
-                    cancel_event=cancel_event,
-                    extensions=self._extensions,
+                async for event in run_agent_turn(
+                    AgentRunSpec(
+                        provider=self.provider,
+                        messages=messages,
+                        tools=self.tools,
+                        system_prompt=system_prompt,
+                        turn=turn,
+                        cancel_event=cancel_event,
+                        extensions=self._extensions,
+                        injection_callback=self._drain_injection_messages,
+                        checkpoint_callback=self._persist_checkpoint,
+                        hooks=self._hooks,
+                    )
                 ):
                     yield event
 
@@ -220,6 +243,9 @@ class Agent:
                         stop_reason = event.stop_reason
                         for result in tool_results:
                             self.session.append_message(result)
+                        # Turn completed normally — any stale checkpoint from a
+                        # previous cancelled run is no longer relevant.
+                        self.session.clear_runtime_checkpoint()
                     elif isinstance(event, InterruptedEvent):
                         was_interrupted = True
 
@@ -486,6 +512,63 @@ class Agent:
             )
             self.session.append_message(synthetic)
         return out
+
+    def queue_follow_up(self, message: UserMessage) -> None:
+        """Queue a follow-up user message for mid-turn injection.
+
+        Picked up by the engine's injection callback while a turn is running,
+        so sub-agent completions / queued prompts are fed into the live turn
+        instead of waiting for the next one.
+        """
+        self._pending_queue.append(message)
+
+    def _drain_injection_messages(self) -> list[UserMessage]:
+        """Return and clear queued follow-up messages for the engine.
+
+        Called by the engine between tool execution and the next model call.
+        Keeping the queue separate from the between-turns background drain
+        avoids double-delivering notifications.
+        """
+        if not self._pending_queue:
+            return []
+        drained = list(self._pending_queue)
+        self._pending_queue.clear()
+        return drained
+
+    def _persist_checkpoint(self, snapshot: dict) -> None:
+        """Persist a partial-turn checkpoint to the session for cancel/resume."""
+        try:
+            self.session.append_runtime_checkpoint(
+                partial_content=snapshot.get("partial_content", []),
+                tool_results=snapshot.get("tool_results", []),
+                text_so_far=snapshot.get("text_so_far", ""),
+            )
+        except Exception:
+            log.exception("failed to persist runtime checkpoint")
+
+    def _restore_checkpoint(self) -> UserMessage | None:
+        """Build a continuation prompt from a stale active checkpoint, if any."""
+        checkpoint = self.session.load_runtime_checkpoint()
+        if checkpoint is None:
+            return None
+        try:
+            text = checkpoint.text_so_far or "(no text captured)"
+            n_tools = len(checkpoint.tool_results)
+            prompt = (
+                "[System: a previous run was interrupted. Resume from the "
+                f"partial state below rather than restarting.]\n\n"
+                f"Partial assistant text so far:\n{text}\n"
+            )
+            if n_tools:
+                prompt += f"\nTool results already produced this turn: {n_tools}."
+            return UserMessage(content=prompt)
+        except Exception:
+            log.exception("failed to restore runtime checkpoint")
+            return None
+        finally:
+            # The checkpoint is consumed by this resume; deactivate it so it
+            # isn't restored again on a later turn.
+            self.session.clear_runtime_checkpoint()
 
     @staticmethod
     def _format_bg_summary(record: Any) -> str:

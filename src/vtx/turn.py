@@ -26,14 +26,17 @@ Cancellation handling:
 import asyncio
 import contextlib
 import json
-from collections.abc import AsyncIterator
+import logging
+from collections.abc import AsyncIterator, Callable
 from dataclasses import dataclass
 from enum import Enum, StrEnum, auto
+from typing import Any
 
 from pydantic import ValidationError
 
 from . import config as vtx_config
 from .async_utils import OperationCancelledError, await_or_cancel
+from .context_governance import prepare_for_model
 from .core.errors import format_error
 from .core.types import (
     AssistantMessage,
@@ -52,6 +55,7 @@ from .core.types import (
     ToolCallStart,
     ToolResult,
     ToolResultMessage,
+    UserMessage,
 )
 from .events import (
     AskUserEvent,
@@ -75,6 +79,7 @@ from .events import (
     WarningEvent,
 )
 from .extensions import TOOL_CALL, TOOL_RESULT, EventBus
+from .hooks.agent_hook import AgentHook, AgentHookContext, AgentRunHookContext
 from .llm import BaseProvider
 from .llm.base import LLMStream
 from .permissions import (
@@ -89,11 +94,32 @@ from .tools.ask_user import AskUserParams
 
 _STREAM_EXHAUSTED = object()
 _TOOL_ARGS_TOKEN_DISPLAY_THRESHOLD = 20
+
+log = logging.getLogger("vtx.turn")
 _TOOL_ARGS_TOKEN_CHUNK_UPDATE_INTERVAL = 4
 
 
 def _count_tokens(text: str) -> int:
     return len(text) // 4
+
+
+def _hook_rewritten_output(hook_result: dict | None) -> str | None:
+    """Extract a PostToolUse output rewrite from a hook dispatch result.
+
+    The bridge returns ``{"results": [HookResult, ...], **merged}``. For a
+    command hook, the rewritten text lives in ``results[].output`` (top-level
+    ``output`` is only populated by dict-returning handlers), so check both.
+    """
+    if not hook_result:
+        return None
+    output = hook_result.get("output")
+    if output is not None:
+        return output
+    for r in hook_result.get("results", []):
+        result_output = getattr(r, "output", None)
+        if result_output is not None:
+            return result_output
+    return None
 
 
 class StreamState(StrEnum):
@@ -305,6 +331,22 @@ class _ChunkOutcome(Enum):
     STALLED = auto()
 
 
+# Engine-grade recovery around a single provider request (mirrors vtx_claw's
+# _run_core stop-condition handling). Kept small and config-free for now.
+_MAX_EMPTY_RETRIES = 2
+_MAX_LENGTH_RECOVERIES = 3
+# Cap mid-turn injection cycles so a misbehaving callback can't loop forever.
+_MAX_INJECTION_CYCLES = 8
+_RECOVERY_HINT_EMPTY = (
+    "[system: your previous response was empty. Provide a concrete reply or "
+    "a tool call — do not return nothing.]"
+)
+_RECOVERY_HINT_LENGTH = (
+    "[system: your previous response was truncated by the output token limit. "
+    "Continue from where you left off; do not repeat what you already produced.]"
+)
+
+
 class _TurnRunner:
     """
     State for one streaming turn, split into phases:
@@ -326,6 +368,9 @@ class _TurnRunner:
         cancel_event: asyncio.Event | None,
         retry_delays: list[int] | None,
         extensions: EventBus | None = None,
+        injection_callback: Callable[[], Any] | None = None,
+        checkpoint_callback: Callable[[dict[str, Any]], Any] | None = None,
+        hooks: "AgentHook | None" = None,
     ):
         self._provider = provider
         self._messages = messages
@@ -335,6 +380,9 @@ class _TurnRunner:
         self._cancel_event = cancel_event
         self._retry_delays = retry_delays if retry_delays is not None else [2, 4, 8]
         self._extensions = extensions
+        self._injection_callback = injection_callback
+        self._checkpoint_callback = checkpoint_callback
+        self._hooks = hooks
 
         self._stream: LLMStream | None = None
 
@@ -356,37 +404,225 @@ class _TurnRunner:
         self._current_state: StreamState | None = None
         self._stop_reason: StopReason = StopReason.STOP
         self._interrupted = False
+        self._hook_tasks: list[asyncio.Task] = []
 
     async def run(self) -> AsyncIterator[StreamEvent]:
-        if self._is_cancelled():
-            for event in self._interrupted_turn_end():
+        run_ctx = AgentRunHookContext(session_key=getattr(self._provider, "session_id", None))
+        await self._fire("before_run", run_ctx)
+        try:
+            if self._is_cancelled():
+                for event in self._interrupted_turn_end():
+                    yield event
+                return
+
+            async for event in self._run_with_recovery():
                 yield event
+
+            if self._stream is None:
+                return
+
+            if self._interrupted:
+                yield InterruptedEvent(message="Interrupted by user")
+
+            assistant_message = AssistantMessage(
+                content=self._content, usage=self._stream.usage, stop_reason=self._stop_reason
+            )
+            # finalize_content is the one flow-affecting hook: it may rewrite
+            # the final assistant text.
+            assistant_message = self._apply_finalize(assistant_message)
+
+            yield TurnEndEvent(
+                turn=self._turn,
+                assistant_message=assistant_message,
+                tool_results=self._tool_results,
+                stop_reason=self._stop_reason,
+                tool_call_count=self._tool_call_count,
+            )
+        except Exception as exc:  # surface to hooks, then propagate
+            run_ctx.exception = exc
+            run_ctx.error = str(exc)
+            await self._fire("on_error", run_ctx)
+            raise
+        else:
+            run_ctx.stop_reason = self._stop_reason
+            run_ctx.usage = self._stream.usage if self._stream else None
+            await self._fire("after_run", run_ctx)
+        finally:
+            await self._fire("on_finally", run_ctx)
+
+    async def _fire(self, method: str, *args: Any) -> None:
+        """Fire a hook method on the composite hook, if any (isolated)."""
+        if self._hooks is None:
+            return
+        try:
+            await getattr(self._hooks, method)(*args)
+        except Exception:
+            log.exception("hook %s failed", method)
+
+    def _apply_finalize(self, message: AssistantMessage) -> AssistantMessage:
+        """Apply the finalize_content hook to the assistant's text, if any."""
+        if self._hooks is None:
+            return message
+        text = "".join(c.text for c in message.content if isinstance(c, TextContent))
+        if not text:
+            return message
+        try:
+            rewritten = self._hooks.finalize_content(
+                AgentHookContext(turn=self._turn, iteration=0), text
+            )
+        except Exception:
+            log.exception("finalize_content failed")
+            return message
+        if not rewritten or rewritten == text:
+            return message
+        new_content: list[TextContent | ThinkingContent | ToolCall] = []
+        for c in message.content:
+            if isinstance(c, TextContent):
+                new_content.append(TextContent(text=rewritten))
+            else:
+                new_content.append(c)
+        return AssistantMessage(
+            content=new_content, usage=message.usage, stop_reason=message.stop_reason
+        )
+
+    def _queue_hook(self, method: str, *args: Any) -> None:
+        """Schedule a stream/reasoning hook fire without blocking the chunk loop."""
+        if self._hooks is None:
+            return
+        self._hook_tasks.append(asyncio.create_task(self._fire(method, *args)))
+
+    async def _run_with_recovery(self) -> AsyncIterator[StreamEvent]:
+        """Run one request, then retry/continue on empty/length finishes.
+
+        Wraps the open→consume→tools phases. On a degenerate finish
+        (``STOP`` with no content and no tool calls, or ``LENGTH`` truncation)
+        we append a recovery hint and re-request, up to a capped number of
+        times. Arrearage/quota errors surface earlier as ``ErrorEvent`` from
+        ``_open_stream`` and are not retried here (ponytail: arrearage
+        detection needs the provider's raw error response, not exposed on
+        ``LLMStream``; add it in the provider error path if needed).
+        """
+        empty_retries = 0
+        length_recoveries = 0
+        injection_cycles = 0
+
+        while True:
+            # Per-iteration governance: drop orphan tool results / budget
+            # oversized outputs before the model sees the conversation.
+            self._messages = prepare_for_model(self._messages)
+
+            iter_ctx = AgentHookContext(turn=self._turn, iteration=len(self._content))
+            await self._fire("before_iteration", iter_ctx)
+
+            async for event in self._open_stream():
+                yield event
+            if self._stream is None:
+                return
+
+            async for event in self._consume_stream():
+                yield event
+
+            await self._fire("before_execute_tools", iter_ctx)
+            async for event in self._run_pending_tools():
+                yield event
+
+            await self._fire("after_iteration", iter_ctx)
+
+            # Persist partial turn state so a /stop (cancel) mid-turn can be
+            # resumed without losing tool results produced so far.
+            await self._emit_checkpoint()
+
+            # Mid-turn injection: a follow-up user message (sub-agent
+            # completion, queued prompt) arrived while we were running tools.
+            # Feed it back into the conversation and continue the turn instead
+            # of ending — mirrors vtx_claw's injection_callback.
+            injected = await self._drain_injections()
+            if injected:
+                injection_cycles += 1
+                if injection_cycles > _MAX_INJECTION_CYCLES:
+                    log.warning("mid-turn injection cap reached; ending turn")
+                    return
+                self._messages = [*self._messages, *injected]
+                self._reset_buffers()
+                continue
+
+            # The turn produced tool calls — that's a valid, actionable result.
+            if self._tool_results or self._pending_tool_calls:
+                self._promote_tool_use_stop_reason()
+                return
+
+            has_text = any(
+                (getattr(c, "text", None) or getattr(c, "thinking", None)) for c in self._content
+            )
+            length_truncated = self._stop_reason == StopReason.LENGTH
+            if length_truncated and length_recoveries < _MAX_LENGTH_RECOVERIES:
+                length_recoveries += 1
+                self._messages = [*self._messages, UserMessage(content=_RECOVERY_HINT_LENGTH)]
+                self._reset_buffers()
+                continue
+            if not has_text and empty_retries < _MAX_EMPTY_RETRIES:
+                empty_retries += 1
+                self._messages = [*self._messages, UserMessage(content=_RECOVERY_HINT_EMPTY)]
+                self._reset_buffers()
+                continue
+
             return
 
-        async for event in self._open_stream():
-            yield event
-        if self._stream is None:
+    async def _drain_injections(self) -> list[Message]:
+        """Poll the injection callback for mid-turn follow-up messages.
+
+        Returns messages to append before the next model call. A missing or
+        failing callback yields nothing (ponytail: single global poll point,
+        not a per-phase drain loop — enough for sub-agent/queue injection).
+        """
+        if self._injection_callback is None:
+            return []
+        try:
+            result = self._injection_callback()
+            if hasattr(result, "__await__"):
+                result = await result
+        except Exception:
+            log.exception("injection_callback raised; ignoring")
+            return []
+        if not result:
+            return []
+        return [m for m in result if isinstance(m, Message)]
+
+    async def _emit_checkpoint(self) -> None:
+        """Persist partial turn state via the checkpoint callback (if any)."""
+        if self._checkpoint_callback is None:
             return
+        try:
+            snapshot = {
+                "partial_content": [c.model_dump() for c in self._content],
+                "tool_results": [r.model_dump() for r in self._tool_results],
+                "text_so_far": "".join(
+                    getattr(c, "text", "") for c in self._content if hasattr(c, "text")
+                ),
+            }
+            result = self._checkpoint_callback(snapshot)
+            if hasattr(result, "__await__"):
+                await result
+        except Exception:
+            log.exception("checkpoint_callback raised; ignoring")
 
-        async for event in self._consume_stream():
-            yield event
+    def _reset_buffers(self) -> None:
+        """Clear per-request buffers between recovery attempts.
 
-        async for event in self._run_pending_tools():
-            yield event
-
-        if self._interrupted:
-            yield InterruptedEvent(message="Interrupted by user")
-
-        assistant_message = AssistantMessage(
-            content=self._content, usage=self._stream.usage, stop_reason=self._stop_reason
-        )
-        yield TurnEndEvent(
-            turn=self._turn,
-            assistant_message=assistant_message,
-            tool_results=self._tool_results,
-            stop_reason=self._stop_reason,
-            tool_call_count=self._tool_call_count,
-        )
+        The collected content/tool state from a degenerate attempt is dropped;
+        the model re-responds from the appended hint. Tool results are never
+        kept because a degenerate turn produced none.
+        """
+        self._content = []
+        self._tool_results = []
+        self._pending_tool_calls = []
+        self._active_tool_calls = {}
+        self._tool_arg_counters = {}
+        self._think_buffer = []
+        self._think_signature = None
+        self._text_buffer = []
+        self._current_state = None
+        self._stop_reason = StopReason.STOP
 
     # -- Phase 1: open the stream, retrying transient failures ----------------
 
@@ -497,6 +733,10 @@ class _TurnRunner:
             # Clean up the cancel waiter task
             if cancel_task and not cancel_task.done():
                 await _cancel_and_reap(cancel_task)
+            # Let any stream/reasoning hook fires complete before continuing.
+            if self._hook_tasks:
+                await asyncio.gather(*self._hook_tasks, return_exceptions=True)
+                self._hook_tasks = []
 
         # Handle interruption - finalize partial content
         if self._interrupted:
@@ -537,8 +777,10 @@ class _TurnRunner:
     def _handle_chunk(self, chunk: object) -> list[StreamEvent]:
         match chunk:
             case ThinkPart(think=t, signature=sig):
+                self._queue_hook("emit_reasoning", t)
                 return self._on_think_part(t, sig)
             case TextPart(text=t):
+                self._queue_hook("on_stream", AgentHookContext(turn=self._turn, iteration=0), t)
                 return self._on_text_part(t)
             case ToolCallStart(id=id, name=name, index=index, arguments=initial_arguments):
                 return self._on_tool_call_start(id, name, index, initial_arguments)
@@ -820,8 +1062,8 @@ class _TurnRunner:
                             args=pending.tool_call.arguments,
                             result=result,
                         )
-                        if hook_result.get("output") is not None:
-                            new_output = hook_result["output"]
+                        new_output = _hook_rewritten_output(hook_result)
+                        if new_output is not None:
                             result = ToolResultMessage(
                                 tool_call_id=result.tool_call_id,
                                 tool_name=result.tool_name,
@@ -960,6 +1202,9 @@ async def run_single_turn(
     cancel_event: asyncio.Event | None = None,
     retry_delays: list[int] | None = None,
     extensions: EventBus | None = None,
+    injection_callback: Callable[[], Any] | None = None,
+    checkpoint_callback: Callable[[dict[str, Any]], Any] | None = None,
+    hooks: AgentHook | None = None,
 ) -> AsyncIterator[StreamEvent]:
     runner = _TurnRunner(
         provider=provider,
@@ -970,6 +1215,9 @@ async def run_single_turn(
         cancel_event=cancel_event,
         retry_delays=retry_delays,
         extensions=extensions,
+        injection_callback=injection_callback,
+        checkpoint_callback=checkpoint_callback,
+        hooks=hooks,
     )
     async for event in runner.run():
         yield event

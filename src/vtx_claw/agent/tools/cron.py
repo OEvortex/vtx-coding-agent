@@ -14,36 +14,31 @@ from vtx_claw.cron.types import CronJob, CronJobState, CronSchedule
 from vtx_claw.session.keys import UNIFIED_SESSION_KEY
 
 _CRON_PARAMETERS = tool_parameters_schema(
-    action=StringSchema("Action to perform", enum=["add", "list", "remove"]),
+    action=StringSchema("Action", enum=["add", "list", "remove"]),
     name=StringSchema(
-        "Optional short human-readable label for the job "
-        "(e.g., 'weather-monitor', 'daily-standup'). Defaults to first 30 chars of message."
+        "Optional label (e.g. 'daily-standup'). Defaults to first 30 chars of message."
     ),
     message=StringSchema(
-        "REQUIRED when action='add'. Instruction for the agent to execute when the job triggers "
-        "(e.g., 'Send a reminder to WeChat: xxx' or 'Check system status and report'). "
-        "Not used for action='list' or action='remove'."
+        "Required for add: instruction to run when the job triggers. Unused for list/remove."
     ),
-    every_seconds=IntegerSchema(0, description="Interval in seconds (for recurring tasks)"),
-    cron_expr=StringSchema("Cron expression like '0 9 * * *' (for scheduled tasks)"),
+    every_seconds=IntegerSchema(0, description="Interval seconds (recurring)"),
+    cron_expr=StringSchema("Cron expression e.g. '0 9 * * *' (scheduled)"),
     tz=StringSchema(
-        "Optional IANA timezone for cron expressions (e.g. 'America/Vancouver'). "
-        "When omitted with cron_expr, the tool's default timezone applies."
+        "Optional IANA timezone for cron_expr (e.g. 'America/Vancouver'). "
+        "Defaults to the tool's timezone when omitted."
     ),
     at=StringSchema(
-        "ISO datetime for one-time execution (e.g. '2026-02-12T10:30:00'). "
-        "Naive values use the tool's default timezone."
+        "ISO datetime for one-time run (e.g. '2026-02-12T10:30:00'). "
+        "Naive values use the default timezone."
     ),
     job_id=StringSchema(
-        "REQUIRED when action='remove'. Job ID to remove (obtain via action='list')."
+        "Required for remove: job id to delete (from action='list')."
     ),
     required=["action"],
     description=(
-        "Action-specific parameters: add requires a non-empty message plus one schedule "
-        "(every_seconds, cron_expr, or at); remove requires job_id; list only needs action. "
-        "Per-action requirements are enforced at runtime (see field descriptions) so the "
-        "top-level schema stays compatible with providers (e.g. OpenAI Codex/Responses) that "
-        "reject oneOf/anyOf/allOf/enum/not at the root of function parameters."
+        "add needs a non-empty message plus one schedule (every_seconds, cron_expr, or at); "
+        "remove needs job_id; list needs only action. Enforced at runtime so the root schema "
+        "stays provider-compatible (no oneOf/anyOf at root)."
     ),
 )
 
@@ -118,7 +113,7 @@ class CronTool(Tool, ContextAware):
     def description(self) -> str:
         return (
             "Schedule reminders and recurring tasks. Actions: add, list, remove. "
-            f"If tz is omitted, cron expressions and naive ISO times default to {self._default_timezone}."
+            f"Without tz, cron/ISO times default to {self._default_timezone}."
         )
 
     def validate_params(self, params: dict[str, Any]) -> list[str]:

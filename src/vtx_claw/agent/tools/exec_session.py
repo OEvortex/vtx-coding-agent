@@ -339,46 +339,33 @@ def format_session_poll(session_id: str, poll: _SessionPoll) -> str:
 
 @tool_parameters(
     tool_parameters_schema(
-        session_id=StringSchema("Session id returned by exec when yield_time_ms is used."),
+        session_id=StringSchema("Session id from exec with yield_time_ms."),
         chars=StringSchema(
-            "Bytes/text to write to stdin. Omit or pass an empty string to only poll recent output.",
-            nullable=True,
+            "Text to write to stdin. Omit/empty to only poll output.", nullable=True
         ),
-        close_stdin=BooleanSchema(
-            description="Close stdin after writing chars. Useful for commands waiting for EOF.",
-            default=False,
-        ),
-        terminate=BooleanSchema(description="Terminate the running exec session.", default=False),
+        close_stdin=BooleanSchema(description="Close stdin (sends EOF).", default=False),
+        terminate=BooleanSchema(description="Terminate the session.", default=False),
         yield_time_ms=IntegerSchema(
             DEFAULT_YIELD_MS,
-            description="Milliseconds to wait before returning recent output (default 1000, max 30000).",
+            description="Wait ms before returning output (default 1000, max 30000).",
             minimum=0,
             maximum=MAX_YIELD_MS,
         ),
         wait_for=StringSchema(
-            "Optional text to wait for in output before returning. "
-            "Useful for interactive commands and dev servers.",
-            nullable=True,
+            "Wait for this text in output before returning (dev servers, prompts).", nullable=True
         ),
         wait_timeout_ms=IntegerSchema(
             DEFAULT_WAIT_FOR_MS,
-            description="Maximum milliseconds to wait for wait_for text (default 10000, max 120000).",
+            description="Max ms to wait for wait_for (default 10000, max 120000).",
             minimum=0,
             maximum=MAX_WAIT_FOR_MS,
             nullable=True,
         ),
         max_output_chars=IntegerSchema(
             DEFAULT_MAX_OUTPUT_CHARS,
-            description="Maximum output characters to return from this poll (default 10000, max 50000).",
+            description="Max output chars to return (default 10000, max 50000).",
             minimum=1000,
             maximum=MAX_OUTPUT_CHARS,
-        ),
-        max_output_tokens=IntegerSchema(
-            DEFAULT_MAX_OUTPUT_CHARS,
-            description="Compatibility alias for max_output_chars. The current runtime uses a character budget.",
-            minimum=1000,
-            maximum=MAX_OUTPUT_CHARS,
-            nullable=True,
         ),
         required=["session_id"],
     )
@@ -417,12 +404,9 @@ class WriteStdinTool(Tool):
     @property
     def description(self) -> str:
         return (
-            "Interact with a running exec session created by exec with "
-            "yield_time_ms. Use chars='' to poll without writing, chars to send "
-            "stdin, close_stdin=true to send EOF, or terminate=true to stop the "
-            "process. Use wait_for with wait_timeout_ms for dev servers, test "
-            "watchers, and prompts where you need to wait for expected output. "
-            "Do not use this to start new commands; start them with exec."
+            "Poll or write to a running exec session (chars for stdin, "
+            "close_stdin=true for EOF, terminate=true to stop). Use wait_for/"
+            "wait_timeout_ms for dev servers and prompts. Start new commands with exec."
         )
 
     async def execute(
@@ -435,12 +419,9 @@ class WriteStdinTool(Tool):
         wait_for: str | None = None,
         wait_timeout_ms: int | None = None,
         max_output_chars: int | None = None,
-        max_output_tokens: int | None = None,
         **kwargs: Any,
     ) -> str:
         try:
-            if max_output_chars is None:
-                max_output_chars = max_output_tokens
             output_limit = clamp_session_int(
                 max_output_chars, DEFAULT_MAX_OUTPUT_CHARS, 1000, MAX_OUTPUT_CHARS
             )

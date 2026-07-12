@@ -81,52 +81,26 @@ class _PreparedCommand:
 
 @tool_parameters(
     tool_parameters_schema(
-        command=StringSchema("The shell command to execute"),
-        cmd=StringSchema("Compatibility alias for command"),
-        working_dir=StringSchema("Optional working directory for the command"),
-        workdir=StringSchema("Compatibility alias for working_dir"),
+        command=StringSchema("Shell command to execute"),
+        working_dir=StringSchema("Optional working directory"),
         timeout=IntegerSchema(
-            60,
-            description=(
-                "Timeout in seconds. Increase for long-running commands "
-                "like compilation or installation (default 60, max 600)."
-            ),
-            minimum=1,
-            maximum=600,
+            60, description="Timeout seconds (default 60, max 600)", minimum=1, maximum=600
         ),
-        shell=StringSchema(
-            "Optional shell binary to launch. On Unix, supports sh, bash, or zsh.", nullable=True
-        ),
+        shell=StringSchema("Shell binary: sh, bash, or zsh.", nullable=True),
         login=BooleanSchema(
-            description="Whether to run bash/zsh with login shell semantics (default false).",
-            default=False,
-            nullable=True,
+            description="Login shell semantics (default false).", default=False, nullable=True
         ),
         yield_time_ms=IntegerSchema(
             description=(
-                "Optional milliseconds to wait before returning output. "
-                "When set, a still-running command returns a session_id that "
-                "can be polled or written to with write_stdin. Omit this field "
-                "to keep one-shot exec behavior."
+                "Wait ms; if the command is still running it returns a "
+                "session_id pollable via write_stdin."
             ),
             minimum=0,
             maximum=MAX_YIELD_MS,
             nullable=True,
         ),
         max_output_chars=IntegerSchema(
-            description=(
-                "Maximum output characters to return when yield_time_ms is used "
-                "(default 10000, max 50000)."
-            ),
-            minimum=1000,
-            maximum=MAX_OUTPUT_CHARS,
-            nullable=True,
-        ),
-        max_output_tokens=IntegerSchema(
-            description=(
-                "Compatibility alias for max_output_chars. The current runtime "
-                "uses a character budget."
-            ),
+            description="Max output chars when yield_time_ms is used (default 10000, max 50000).",
             minimum=1000,
             maximum=MAX_OUTPUT_CHARS,
             nullable=True,
@@ -235,16 +209,10 @@ class ExecTool(Tool):
     @property
     def description(self) -> str:
         return (
-            "Execute a shell command and return its output. "
-            "Use this for tests, builds, package commands, git commands, and "
-            "other process execution. Prefer read_file/find_files/grep for "
-            "inspection and apply_patch/write_file/edit_file for file changes "
-            "instead of cat, shell find/grep, echo, or sed. "
-            "Use -y or --yes flags to avoid interactive prompts. "
-            "For long-running or interactive commands, pass yield_time_ms; "
-            "if the command keeps running, exec returns a session_id that can "
-            "be polled or written to with write_stdin. Output is truncated at "
-            "10 000 chars; timeout defaults to 60s."
+            "Run shell commands (tests, builds, git, installs). Prefer "
+            "read_file/find_files/grep/apply_patch for inspection and edits. "
+            "Use yield_time_ms for long commands; a running command returns a "
+            "session_id for write_stdin. Output truncated at 10000 chars; default timeout 60s."
         )
 
     @property
@@ -254,23 +222,16 @@ class ExecTool(Tool):
     async def execute(
         self,
         command: str | None = None,
-        cmd: str | None = None,
         working_dir: str | None = None,
-        workdir: str | None = None,
         timeout: int | None = None,
         shell: str | None = None,
         login: bool | None = None,
         yield_time_ms: int | None = None,
         max_output_chars: int | None = None,
-        max_output_tokens: int | None = None,
         **kwargs: Any,
     ) -> str:
-        command = command or cmd
-        working_dir = working_dir or workdir
         if not command:
-            return "Error: Missing command. Provide command or cmd."
-        if max_output_chars is None:
-            max_output_chars = max_output_tokens
+            return "Error: Missing command."
 
         prepared = self._prepare_command(command, working_dir, timeout, shell, login)
         if isinstance(prepared, str):

@@ -47,6 +47,7 @@ class MockProvider(BaseProvider):
         super().__init__(config or ProviderConfig())
         self.scenario = scenario
         self._attempt_count = 0
+        self._last_messages: list[Message] = []
 
     async def _stream_impl(
         self,
@@ -58,6 +59,7 @@ class MockProvider(BaseProvider):
         max_tokens: int | None = None,
     ) -> LLMStream:
         self._attempt_count += 1
+        self._last_messages = list(messages)
 
         if self.scenario == "retries":
             if self._attempt_count < 3:
@@ -229,6 +231,30 @@ class MockProvider(BaseProvider):
                     yield StreamDone(stop_reason=StopReason.STOP)
 
                 return leading_empty_text_then_text_iter()
+
+            case "empty_then_text":
+                # First request returns an empty STOP (degenerate), recovery
+                # re-requests and we then return real text.
+                async def empty_then_text_iter():
+                    if self._attempt_count <= 1:
+                        yield StreamDone(stop_reason=StopReason.STOP)
+                        return
+                    yield TextPart(text="Recovered real answer.")
+                    yield StreamDone(stop_reason=StopReason.STOP)
+
+                return empty_then_text_iter()
+
+            case "length_then_text":
+                # First request is truncated (LENGTH, no text), recovery
+                # re-requests and we then return real text.
+                async def length_then_text_iter():
+                    if self._attempt_count <= 1:
+                        yield StreamDone(stop_reason=StopReason.LENGTH)
+                        return
+                    yield TextPart(text="Continued after truncation.")
+                    yield StreamDone(stop_reason=StopReason.STOP)
+
+                return length_then_text_iter()
 
             case _:
                 # Fallback to default

@@ -23,6 +23,7 @@ class HookRuntime:
         fail_safe: bool = True,
     ) -> dict[str, Any]:
         hooks = await self.registry.get_hooks(event, tool_name=tool_name)
+        hooks = [h for h in hooks if self._condition_met(h.config, context)]
         if not hooks:
             return {}
         return await run_hook_handlers(hooks, context, fail_safe=fail_safe)
@@ -36,6 +37,7 @@ class HookRuntime:
         fail_safe: bool = True,
     ) -> tuple[dict[str, Any], list[Any]]:
         hooks = await self.registry.claim_once_hooks(event, tool_name=tool_name)
+        hooks = [h for h in hooks if self._condition_met(h.config, context)]
         results: dict[str, Any] = {}
         if hooks:
             results = await run_hook_handlers(hooks, context, fail_safe=fail_safe)
@@ -43,6 +45,25 @@ class HookRuntime:
 
     async def has_hooks(self, event: str, tool_name: str | None = None) -> bool:
         return await self.registry.has_hooks(event, tool_name=tool_name)
+
+    @staticmethod
+    def _condition_met(config: Any, context: dict[str, Any]) -> bool:
+        """Evaluate a hook's ``if_condition`` against the context.
+
+        The condition is a Python boolean expression over context keys. It is
+        evaluated in a restricted namespace (no builtins, no imports) so a
+        misconfigured or hostile condition can't escape. Absent/empty/erroring
+        conditions are treated as "run" (safe default).
+        """
+        condition = getattr(config, "if_condition", None)
+        if not condition:
+            return True
+        try:
+            allowed = {"__builtins__": {}}
+            return bool(eval(condition, allowed, dict(context)))
+        except Exception:
+            log.warning("hook if_condition failed to evaluate; running hook: %r", condition)
+            return True
 
 
 class HookContextBuilder:

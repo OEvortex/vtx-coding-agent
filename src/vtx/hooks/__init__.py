@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from .agent_hook import AgentHook, AgentHookContext, AgentRunHookContext, CompositeHook
 from .bridge import HookBridge, run_command_hook
 from .loader import HookConfigManager, validate_hook_configs
 from .registry import HookRegistry, run_hook_handlers
@@ -20,6 +21,10 @@ from .types import (
 
 __all__ = [
     "HOOK_EVENTS",
+    "AgentHook",
+    "AgentHookContext",
+    "AgentRunHookContext",
+    "CompositeHook",
     "HandlerType",
     "HookBridge",
     "HookConfig",

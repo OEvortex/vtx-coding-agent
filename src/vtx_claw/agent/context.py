@@ -21,6 +21,7 @@ from vtx_claw.utils.helpers import (
     load_bundled_template,
     truncate_text_to_tokens,
 )
+from vtx_claw.agent.prompts import _static_tool_section, build_system_base
 from vtx_claw.utils.prompt_templates import render_template
 
 
@@ -90,13 +91,15 @@ class ContextBuilder:
     ) -> str:
         """Build the system prompt from identity, bootstrap files, memory, and skills."""
         root = workspace or self.workspace
-        parts = [self._get_identity(channel=channel, workspace=root)]
+        parts = [build_system_base()]
 
         bootstrap = self._load_bootstrap_files(root)
         if bootstrap:
             parts.append(bootstrap)
 
-        parts.append(render_template("agent/tool_contract.md"))
+        tool_section = _static_tool_section()
+        if tool_section:
+            parts.append(tool_section)
 
         memory = self.memory.get_memory_context()
         if memory and not self._is_template_content(self.memory.read_memory(), "memory/MEMORY.md"):
@@ -130,19 +133,11 @@ class ContextBuilder:
         return "\n\n---\n\n".join(parts)
 
     def _get_identity(self, channel: str | None = None, workspace: Path | None = None) -> str:
-        """Get the core identity section."""
+        """Minimal identity block (used by the claw_status tool for its Runtime line)."""
         root = workspace or self.workspace
-        workspace_path = str(root.expanduser().resolve())
         system = platform.system()
         runtime = f"{'macOS' if system == 'Darwin' else system} {platform.machine()}, Python {platform.python_version()}"
-
-        return render_template(
-            "agent/identity.md",
-            workspace_path=workspace_path,
-            runtime=runtime,
-            platform_policy=render_template("agent/platform_policy.md", system=system),
-            channel=channel or "",
-        )
+        return f"Runtime: {runtime}\nWorkspace: {root.expanduser().resolve()}"
 
     @staticmethod
     def _build_runtime_context(

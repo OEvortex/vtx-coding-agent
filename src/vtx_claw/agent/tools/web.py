@@ -82,17 +82,16 @@ class WebToolsConfig(Base):
         query=StringSchema("Search query"),
         count=IntegerSchema(1, description="Results (1-10)", minimum=1, maximum=10),
         timeRange=StringSchema(
-            "Optional time filter for providers that support it: "
-            "OneDay, OneWeek, OneMonth, OneYear, or YYYY-MM-DD..YYYY-MM-DD"
+            "Optional time filter (OneDay..OneYear, or YYYY-MM-DD..YYYY-MM-DD)"
         ),
         authLevel=IntegerSchema(
             0,
-            description="Authority filter: 0=all, 1=authoritative (if provider supports it)",
+            description="Authority filter: 0=all, 1=authoritative",
             minimum=0,
             maximum=1,
         ),
         queryRewrite=BooleanSchema(
-            description="Provider-side query rewrite for conversational/ambiguous searches"
+            description="Provider-side query rewrite for ambiguous searches"
         ),
         required=["query"],
     )
@@ -104,10 +103,8 @@ class WebSearchTool(Tool):
 
     name = "web_search"
     description = (
-        "Search the web. Returns titles, URLs, and snippets. "
-        "count defaults to 5 (max 10). "
-        "Some providers support timeRange, authLevel, and queryRewrite. "
-        "Use web_fetch to read a specific page in full."
+        "Web search. Returns titles, URLs, snippets. count default 5 (max 10). "
+        "Some providers support timeRange/authLevel/queryRewrite. Use web_fetch for full pages."
     )
 
     config_key = "web"
@@ -161,8 +158,7 @@ class WebFetchTool(Tool):
     name = "web_fetch"
     description = (
         "Fetch a URL and extract readable content (HTML → markdown/text). "
-        "Output is capped at maxChars (default 50 000). "
-        "Works for most web pages and docs; may fail on login-walled or JS-heavy sites."
+        "Capped at maxChars (default 50 000). May fail on login-walled/JS-heavy sites."
     )
 
     config_key = "web"

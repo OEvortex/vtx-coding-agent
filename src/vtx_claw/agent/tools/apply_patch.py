@@ -91,24 +91,23 @@ def _format_summary(summary: _PatchSummary) -> str:
         edits=ArraySchema(
             items=ObjectSchema(
                 path=StringSchema(
-                    "Path to the file to edit. Relative paths resolve against the "
-                    "workspace; absolute paths and '..' obey the workspace access policy."
+                    "File to edit (relative resolves in workspace; absolute/.. obey policy)."
                 ),
                 action=StringSchema("Operation type: replace or add.", enum=["replace", "add"]),
                 old_text=StringSchema(
-                    "Exact text to search for in the file. Required for replace.", nullable=True
+                    "Exact text to find. Required for replace.", nullable=True
                 ),
                 new_text=StringSchema(
-                    "Text to replace with or append. Required for replace and add.", nullable=True
+                    "Text to replace/append. Required for add and replace.", nullable=True
                 ),
                 required=["path", "action"],
             ),
-            description="List of edits to apply. Each edit specifies a file and the change to make.",
+            description="List of edits; each targets a file with a change.",
             min_items=1,
             max_items=20,
         ),
         dry_run=BooleanSchema(
-            description="Validate and summarize the patch without writing files.", default=False
+            description="Validate and preview without writing files.", default=False
         ),
         required=["edits"],
     )
@@ -125,12 +124,9 @@ class ApplyPatchTool(_FsTool):
     @property
     def description(self) -> str:
         return (
-            "Default tool for code edits. Supports multi-file changes in a single call. "
-            "Provide a list of structured edits, each specifying a file path, action "
-            "(replace/add), and the exact text to change. "
-            "Paths are resolved by the current workspace access policy. "
-            "Set dry_run=true to validate and preview without writing files. "
-            "Use edit_file only for small exact replacements on a single file."
+            "Default tool for code edits; supports multi-file changes in one call. "
+            "Provide structured edits (file, action, text). Set dry_run=true to "
+            "preview. Use edit_file for single small exact replacements."
         )
 
     async def execute(

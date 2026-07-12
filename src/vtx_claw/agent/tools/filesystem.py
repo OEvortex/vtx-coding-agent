@@ -212,14 +212,14 @@ def _parse_page_range(pages: str, total: int) -> tuple[int, int]:
     tool_parameters_schema(
         path=StringSchema("The file path to read"),
         offset=IntegerSchema(
-            1, description="Line number to start reading from (1-indexed, default 1)", minimum=1
+            1, description="Start line (1-indexed, default 1)", minimum=1
         ),
         limit=IntegerSchema(
-            2000, description="Maximum number of lines to read (default 2000)", minimum=1
+            2000, description="Max lines to read (default 2000)", minimum=1
         ),
-        pages=StringSchema("Page range for PDF files, e.g. '1-5' (default: all, max 20 pages)"),
+        pages=StringSchema("PDF page range e.g. '1-5' (default all, max 20)"),
         force=BooleanSchema(
-            description="Bypass same-file read deduplication and return content again.",
+            description="Re-read even if unchanged (bypass dedup).",
             default=False,
         ),
         required=["path"],
@@ -241,16 +241,10 @@ class ReadFileTool(_FsTool):
     @property
     def description(self) -> str:
         return (
-            "Read a file (text, image, or document). "
-            "Text output format: LINE_NUM|CONTENT. "
-            "Images return visual content for analysis. "
-            "Supports PDF, DOCX, XLSX, PPTX documents. "
-            "Use find_files/list_dir first when the path is uncertain. "
-            "Read the relevant range before editing so replacements or patches "
-            "are based on current content. "
-            "Use offset and limit for large text files. "
-            "Use force=true to re-read content even if unchanged. "
-            "Reads exceeding ~128K chars are truncated."
+            "Read text, images, or documents (PDF/DOCX/XLSX/PPTX). "
+            "Text format: LINE_NUM|CONTENT. Use offset/limit for large files. "
+            "force=true re-reads. Reads >~128K chars are truncated. "
+            "Locate paths with find_files/list_dir first."
         )
 
     @property
@@ -460,8 +454,8 @@ class ReadFileTool(_FsTool):
 
 @tool_parameters(
     tool_parameters_schema(
-        path=StringSchema("The file path to write to"),
-        content=StringSchema("The content to write"),
+        path=StringSchema("File path to write"),
+        content=StringSchema("Content to write"),
         required=["path", "content"],
     )
 )
@@ -477,10 +471,8 @@ class WriteFileTool(_FsTool):
     @property
     def description(self) -> str:
         return (
-            "Create a new file or intentionally replace an entire file with "
-            "the provided content. Overwrites existing files and creates parent "
-            "directories as needed. For code changes or partial edits, prefer "
-            "apply_patch; use edit_file only for small exact replacements."
+            "Create or fully overwrite a file (creates parent dirs). "
+            "For code edits prefer apply_patch; edit_file for small exact changes."
         )
 
     async def execute(
@@ -774,25 +766,25 @@ def _find_match(content: str, old_text: str) -> tuple[str | None, int]:
 
 @tool_parameters(
     tool_parameters_schema(
-        path=StringSchema("The file path to edit"),
-        old_text=StringSchema("The text to find and replace"),
-        new_text=StringSchema("The text to replace with"),
-        replace_all=BooleanSchema(description="Replace all occurrences (default false)"),
+        path=StringSchema("File path to edit"),
+        old_text=StringSchema("Text to find and replace"),
+        new_text=StringSchema("Replacement text"),
+        replace_all=BooleanSchema(description="Replace all (default false)"),
         occurrence=IntegerSchema(
             1,
-            description="Optional 1-based occurrence to replace when old_text appears multiple times.",
+            description="1-based occurrence to replace when old_text repeats.",
             minimum=1,
             nullable=True,
         ),
         line_hint=IntegerSchema(
             1,
-            description="Optional 1-based line hint used to choose the nearest match.",
+            description="1-based line hint to pick the nearest match.",
             minimum=1,
             nullable=True,
         ),
         expected_replacements=IntegerSchema(
             1,
-            description="Optional guard for the number of replacements that must be made.",
+            description="Guard: exact number of replacements required.",
             minimum=1,
             nullable=True,
         ),
@@ -814,13 +806,10 @@ class EditFileTool(_FsTool):
     @property
     def description(self) -> str:
         return (
-            "Perform a small, exact replacement in one file by replacing "
-            "old_text with new_text. Use this for narrow text substitutions "
-            "with old_text copied from read_file. For multi-file, structural, "
-            "or generated code edits, prefer apply_patch. If old_text matches "
-            "multiple times, provide more context or set occurrence, line_hint, "
-            "replace_all, and expected_replacements. Shows closest-match "
-            "diagnostics on failure."
+            "Small exact replacement in one file (old_text -> new_text copied "
+            "from read_file). For multi-file/structural edits use apply_patch. "
+            "If old_text repeats, give occurrence/line_hint/replace_all. "
+            "Shows closest-match diagnostics on failure."
         )
 
     @staticmethod
@@ -1031,10 +1020,10 @@ class EditFileTool(_FsTool):
 
 @tool_parameters(
     tool_parameters_schema(
-        path=StringSchema("The directory path to list"),
-        recursive=BooleanSchema(description="Recursively list all files (default false)"),
+        path=StringSchema("Directory to list"),
+        recursive=BooleanSchema(description="List recursively (default false)"),
         max_entries=IntegerSchema(
-            200, description="Maximum entries to return (default 200)", minimum=1
+            200, description="Max entries (default 200)", minimum=1
         ),
         required=["path"],
     )
@@ -1068,9 +1057,8 @@ class ListDirTool(_FsTool):
     @property
     def description(self) -> str:
         return (
-            "List the contents of a directory. "
-            "Set recursive=true to explore nested structure. "
-            "Common noise directories (.git, node_modules, __pycache__, etc.) are auto-ignored."
+            "List a directory. recursive=true explores nested trees. "
+            "Noise dirs (.git, node_modules, __pycache__...) are auto-ignored."
         )
 
     @property

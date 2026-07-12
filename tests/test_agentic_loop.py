@@ -1,10 +1,13 @@
 import asyncio
 from collections.abc import AsyncIterator
+from typing import Any
 
 import pytest
 
 from vtx import Config, reset_config, set_config
+from vtx.context_governance import _MAX_TOOL_RESULT_CHARS, prepare_for_model
 from vtx.core.types import (
+    AssistantMessage,
     Message,
     StopReason,
     StreamDone,
@@ -14,6 +17,7 @@ from vtx.core.types import (
     ToolCallDelta,
     ToolCallStart,
     ToolDefinition,
+    ToolResultMessage,
     UserMessage,
 )
 from vtx.events import (
@@ -774,3 +778,284 @@ async def test_tool_args_token_count_resets_between_tools(tools, sample_messages
     # Default scenario has small args, so few or no updates expected
     # Just verify the mechanism works without erroring
     [e for e in events if isinstance(e, ToolArgsTokenUpdateEvent)]
+
+
+@pytest.mark.asyncio
+async def test_run_single_turn_empty_recovery(sample_messages, tools):
+    """A degenerate empty STOP response is retried; recovery yields real text."""
+    provider = MockProvider(scenario="empty_then_text")
+    events = []
+
+    async for event in run_single_turn(provider, sample_messages, tools, turn=1):
+        events.append(event)
+
+    turn_end = next(e for e in events if isinstance(e, TurnEndEvent))
+    assert turn_end.stop_reason == StopReason.STOP
+    assert turn_end.assistant_message is not None
+    text = "".join(
+        c.text for c in turn_end.assistant_message.content if isinstance(c, TextContent)
+    )
+    assert "Recovered real answer." in text
+    # Exactly one TurnEndEvent despite the internal retry.
+    assert len([e for e in events if isinstance(e, TurnEndEvent)]) == 1
+
+
+@pytest.mark.asyncio
+async def test_run_single_turn_length_recovery(sample_messages, tools):
+    """A LENGTH-truncated response is retried; recovery yields continued text."""
+    provider = MockProvider(scenario="length_then_text")
+    events = []
+
+    async for event in run_single_turn(provider, sample_messages, tools, turn=1):
+        events.append(event)
+
+    turn_end = next(e for e in events if isinstance(e, TurnEndEvent))
+    assert turn_end.stop_reason == StopReason.STOP
+    assert turn_end.assistant_message is not None
+    text = "".join(
+        c.text for c in turn_end.assistant_message.content if isinstance(c, TextContent)
+    )
+    assert "Continued after truncation." in text
+    assert len([e for e in events if isinstance(e, TurnEndEvent)]) == 1
+
+
+@pytest.mark.asyncio
+async def test_run_single_turn_mid_turn_injection(sample_messages, tools):
+    """A follow-up message drained mid-turn is fed back into the model."""
+    provider = MockProvider(scenario="thinking_text_tool")
+
+    injected: list[Message] = []
+
+    def injection_callback():
+        # Simulate a single follow-up that arrived while tools ran: only the
+        # first poll returns it, subsequent polls return nothing.
+        if not injected:
+            injected.append(UserMessage(content="Follow-up: also check port 8080"))
+        return injected
+
+    events = []
+    async for event in run_single_turn(
+        provider, sample_messages, tools, turn=1, injection_callback=injection_callback
+    ):
+        events.append(event)
+
+    turn_end = next(e for e in events if isinstance(e, TurnEndEvent))
+    # The turn ends only after the injected follow-up is consumed (tool call
+    # produced), so exactly one TurnEndEvent.
+    assert len([e for e in events if isinstance(e, TurnEndEvent)]) == 1
+    assert turn_end.stop_reason == StopReason.TOOL_USE
+    # The injection callback fired and its message reached the provider's
+    # conversation on the (second) model call.
+    assert injected, "injection callback was never polled"
+    last_call_messages = provider._last_messages
+    injected_present = any(
+        isinstance(m, UserMessage)
+        and isinstance(m.content, str)
+        and "Follow-up: also check port 8080" in m.content
+        for m in last_call_messages
+    )
+    assert injected_present, "injected follow-up did not reach the model"
+
+
+@pytest.mark.asyncio
+async def test_session_runtime_checkpoint_roundtrip(in_memory_session):
+    """A checkpoint is persisted, loadable, and cleared on completion."""
+    assert in_memory_session.load_runtime_checkpoint() is None
+
+    in_memory_session.append_runtime_checkpoint(
+        partial_content=[{"role": "assistant", "content": []}],
+        tool_results=[{"role": "tool_result", "tool_name": "read"}],
+        text_so_far="half done",
+    )
+    cp = in_memory_session.load_runtime_checkpoint()
+    assert cp is not None
+    assert cp.text_so_far == "half done"
+    assert len(cp.tool_results) == 1
+
+    # Checkpoints must not leak into the message stream.
+    assert in_memory_session.messages == []
+
+    in_memory_session.clear_runtime_checkpoint()
+    assert in_memory_session.load_runtime_checkpoint() is None
+
+
+@pytest.mark.asyncio
+async def test_agent_restores_checkpoint_on_resume(in_memory_session):
+    """A stale active checkpoint becomes a continuation prompt on next run."""
+    from vtx.loop import Agent
+
+    in_memory_session.append_runtime_checkpoint(
+        partial_content=[],
+        tool_results=[{"role": "tool_result", "tool_name": "bash"}],
+        text_so_far="I was mid-task",
+    )
+
+    provider = MockProvider(scenario="simple_text")
+    agent = Agent(provider=provider, tools=[], session=in_memory_session)
+    events = []
+    async for event in agent.run("continue"):
+        events.append(event)
+
+    # The restore injects a continuation user message before the model call,
+    # so the conversation now contains the resumption prompt.
+    assert any(
+        isinstance(m, UserMessage)
+        and isinstance(m.content, str)
+        and "previous run was interrupted" in m.content
+        for m in in_memory_session.messages
+    )
+    assert in_memory_session.load_runtime_checkpoint() is None
+    assert any(isinstance(e, AgentEndEvent) for e in events)
+
+
+@pytest.mark.asyncio
+async def test_context_governance_drops_orphan_tool_result():
+    """A tool result with no preceding assistant tool call is dropped."""
+
+    orphan = ToolResultMessage(
+        tool_call_id="call-x", tool_name="read", content=[TextContent(text="leaked")]
+    )
+    messages: list[Message] = [
+        UserMessage(content="hi"),
+        orphan,
+        AssistantMessage(content=[TextContent(text="done")]),
+    ]
+    repaired = prepare_for_model(messages)
+    assert orphan not in repaired
+    assert len(repaired) == 2
+
+
+@pytest.mark.asyncio
+async def test_context_governance_keeps_matched_tool_result():
+    """A tool result matching a preceding assistant tool call is kept."""
+
+    assistant = AssistantMessage(content=[ToolCall(id="call-1", name="read", arguments={})])
+    result = ToolResultMessage(
+        tool_call_id="call-1", tool_name="read", content=[TextContent(text="file data")]
+    )
+    messages: list[Message] = [UserMessage(content="hi"), assistant, result]
+    repaired = prepare_for_model(messages)
+    assert result in repaired
+
+
+@pytest.mark.asyncio
+async def test_context_governance_budgets_oversized_result():
+    """An oversized tool result is truncated with a summary note."""
+
+    big = "x" * (_MAX_TOOL_RESULT_CHARS + 5000)
+    result = ToolResultMessage(
+        tool_call_id="call-1", tool_name="bash", content=[TextContent(text=big)]
+    )
+    assistant = AssistantMessage(content=[ToolCall(id="call-1", name="bash", arguments={})])
+    repaired = prepare_for_model([UserMessage(content="hi"), assistant, result])
+    kept = next(m for m in repaired if isinstance(m, ToolResultMessage))
+    text = kept.content[0].text
+    assert "truncated" in text
+    assert len(text) <= _MAX_TOOL_RESULT_CHARS + 200
+
+
+@pytest.mark.asyncio
+async def test_agent_hook_lifecycle_fires(sample_messages, tools):
+    """AgentHook lifecycle methods fire around a turn; finalize can rewrite."""
+    from vtx.hooks.agent_hook import AgentHook, CompositeHook
+
+    fired: list[str] = []
+
+    class Recorder(AgentHook):
+        async def before_run(self, ctx):
+            fired.append("before_run")
+
+        async def after_run(self, ctx):
+            fired.append("after_run")
+
+        async def on_finally(self, ctx):
+            fired.append("on_finally")
+
+        async def before_iteration(self, ctx):
+            fired.append("before_iteration")
+
+        async def after_iteration(self, ctx):
+            fired.append("after_iteration")
+
+        def finalize_content(self, ctx, content):
+            return content + " [finalized]"
+
+    provider = MockProvider(scenario="simple_text")
+    events = []
+    async for event in run_single_turn(
+        provider, sample_messages, tools, turn=1, hooks=CompositeHook([Recorder()])
+    ):
+        events.append(event)
+
+    assert "before_run" in fired
+    assert "after_run" in fired
+    assert "on_finally" in fired
+    assert "before_iteration" in fired
+    assert "after_iteration" in fired
+    turn_end = next(e for e in events if isinstance(e, TurnEndEvent))
+    text = "".join(
+        c.text for c in turn_end.assistant_message.content if isinstance(c, TextContent)
+    )
+    assert text.endswith("[finalized]")
+
+
+@pytest.mark.asyncio
+async def test_agent_hook_error_isolation(sample_messages, tools):
+    """A failing hook is isolated and does not crash the turn."""
+    from vtx.hooks.agent_hook import AgentHook, CompositeHook
+
+    class Boom(AgentHook):
+        async def before_iteration(self, ctx):
+            raise RuntimeError("hook broke")
+
+    provider = MockProvider(scenario="simple_text")
+    events = []
+    async for event in run_single_turn(
+        provider, sample_messages, tools, turn=1, hooks=CompositeHook([Boom()])
+    ):
+        events.append(event)
+    assert any(isinstance(e, TurnEndEvent) for e in events)
+
+
+def test_hook_bridge_end_to_end_post_tool_use_rewrite(tmp_path):
+    """A PostToolUse command hook wired via HookBridge rewrites tool output.
+
+    This is the integration contract the refactor must preserve: bus → bridge
+    → command hook → turn's PostToolUse output rewrite feeds the model.
+    """
+    from vtx.extensions import EventBus
+    from vtx.hooks.bridge import HookBridge
+
+    hooks_yml = tmp_path / "hooks.yml"
+    hooks_yml.write_text(
+        "PostToolUse:\n"
+        "  - event: PostToolUse\n"
+        "    type: command\n"
+        '    command: "echo HOOK_REWRITTEN"\n'
+        '    matcher: "read"\n'
+    )
+
+    bus = EventBus()
+    bridge = HookBridge(bus, project_path=hooks_yml)
+    asyncio.run(bridge.load())
+
+    provider = MockProvider(scenario="thinking_text_tool")
+    events: list[Any] = []
+
+    async def run():
+        async for e in run_single_turn(
+            provider, [UserMessage(content="read file")], [ReadTool()], turn=1, extensions=bus
+        ):
+            events.append(e)
+
+    asyncio.run(run())
+
+    # The tool result delivered to the model must be the rewritten text.
+    assert any(
+        isinstance(e, ToolResultEvent)
+        and e.result is not None
+        and "".join(c.text for c in e.result.content if isinstance(c, TextContent)).strip()
+        == "HOOK_REWRITTEN"
+        for e in events
+    )
+    asyncio.run(bridge.unload())

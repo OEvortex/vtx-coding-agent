@@ -120,6 +120,22 @@ class GoalEntry(EntryBase):
     goal: dict[str, Any]
 
 
+class RuntimeCheckpointEntry(EntryBase):
+    """Snapshot of partial in-flight turn state for cancel/resume.
+
+    Written while a turn runs (after each tool batch) and cleared when the
+    turn completes normally. If the user cancels (``/stop``) mid-turn, the
+    latest active checkpoint is what resume restores — so partial assistant
+    text / tool results aren't lost. Old readers ignore unknown ``type``.
+    """
+
+    type: Literal["runtime_checkpoint"] = "runtime_checkpoint"
+    is_active: bool = True
+    partial_content: builtins.list[dict[str, Any]] = field(default_factory=list)
+    tool_results: builtins.list[dict[str, Any]] = field(default_factory=list)
+    text_so_far: str = ""
+
+
 SessionEntry = (
     MessageEntry
     | ThinkingLevelChangeEntry
@@ -129,6 +145,7 @@ SessionEntry = (
     | SessionInfoEntry
     | LeafEntry
     | GoalEntry
+    | RuntimeCheckpointEntry
 )
 
 
@@ -425,6 +442,45 @@ class Session:
         )
         self._append_entry(entry)
         return entry.id
+
+    def append_runtime_checkpoint(
+        self,
+        partial_content: builtins.list[dict[str, Any]],
+        tool_results: builtins.list[dict[str, Any]],
+        text_so_far: str = "",
+    ) -> str:
+        """Record partial in-flight turn state for cancel/resume.
+
+        Marks any prior checkpoint inactive so the latest active one wins on
+        resume. Not a ``MessageEntry``, so it never pollutes ``messages``.
+        """
+        # Deactivate any previously-active checkpoint on this branch.
+        for entry in self.active_entries:
+            if isinstance(entry, RuntimeCheckpointEntry) and entry.is_active:
+                entry.is_active = False
+        entry = RuntimeCheckpointEntry(
+            id=self._generate_entry_id(),
+            parent_id=self._leaf_id,
+            timestamp=_now_iso(),
+            partial_content=list(partial_content),
+            tool_results=list(tool_results),
+            text_so_far=text_so_far,
+        )
+        self._append_entry(entry)
+        return entry.id
+
+    def clear_runtime_checkpoint(self) -> None:
+        """Drop active checkpoints once a turn completes normally."""
+        for entry in self.active_entries:
+            if isinstance(entry, RuntimeCheckpointEntry) and entry.is_active:
+                entry.is_active = False
+
+    def load_runtime_checkpoint(self) -> RuntimeCheckpointEntry | None:
+        """Return the latest active runtime checkpoint, if any."""
+        for entry in reversed(self.active_entries):
+            if isinstance(entry, RuntimeCheckpointEntry) and entry.is_active:
+                return entry
+        return None
 
     def move_to(self, entry_id: str | None) -> None:
         if entry_id is not None and entry_id not in self._by_id:

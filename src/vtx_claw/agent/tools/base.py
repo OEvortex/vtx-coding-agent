@@ -162,6 +162,15 @@ class Tool(ABC):
         ...
 
     @property
+    def prompt_guidelines(self) -> list[str]:
+        """Short one-line usage hints surfaced in the system prompt (vtx style).
+
+        Empty by default; subclasses may override to contribute to the
+        ``# Tool usage`` section. Lines are deduped across the tool set.
+        """
+        return []
+
+    @property
     @abstractmethod
     def parameters(self) -> dict[str, Any]:
         """JSON Schema for tool parameters."""
