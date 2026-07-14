@@ -1,15 +1,11 @@
-"""Web tools: web_search and web_fetch — delegating to vtx Exa-based implementations."""
+"""Web search tool — delegating to the vtx Exa-based implementation."""
 
 from __future__ import annotations
 
 from typing import Any
-from urllib.parse import urlparse
 
 from pydantic import Field
 
-# Import vtx web tools to delegate execution to
-from vtx.tools.web import WebFetchTool as _VtxWebFetchTool
-from vtx.tools.web import WebSearchTool as _VtxWebSearchTool
 from agenite_claw.agent.tools.base import Tool, tool_parameters
 from agenite_claw.agent.tools.schema import (
     BooleanSchema,
@@ -18,20 +14,7 @@ from agenite_claw.agent.tools.schema import (
     tool_parameters_schema,
 )
 from agenite_claw.config_base import Base
-
-
-def _validate_url(url: str) -> tuple[bool, str]:
-    """Validate URL scheme/domain. Kept for backward compatibility with tests."""
-    try:
-        p = urlparse(url)
-        if p.scheme not in ("http", "https"):
-            return False, f"Only http/https allowed, got '{p.scheme or 'none'}'"
-        if not p.netloc:
-            return False, "Missing domain"
-        return True, ""
-    except Exception as e:
-        return False, str(e)
-
+from vtx.tools.web import WebSearchTool as _VtxWebSearchTool
 
 # Single source of truth for selectable search providers (CLI wizard + WebUI).
 # "credential" describes what each provider needs: none / api_key / base_url /
@@ -61,12 +44,6 @@ class WebSearchConfig(Base):
     timeout: int = 30
 
 
-class WebFetchConfig(Base):
-    """Web fetch tool configuration."""
-
-    use_jina_reader: bool = True
-
-
 class WebToolsConfig(Base):
     """Web tools configuration."""
 
@@ -74,7 +51,6 @@ class WebToolsConfig(Base):
     proxy: str | None = None
     user_agent: str | None = None
     search: WebSearchConfig = Field(default_factory=WebSearchConfig)
-    fetch: WebFetchConfig = Field(default_factory=WebFetchConfig)
 
 
 @tool_parameters(
@@ -101,7 +77,7 @@ class WebSearchTool(Tool):
     name = "web_search"
     description = (
         "Web search. Returns titles, URLs, snippets. count default 5 (max 10). "
-        "Some providers support timeRange/authLevel/queryRewrite. Use web_fetch for full pages."
+        "Some providers support timeRange/authLevel/queryRewrite."
     )
 
     config_key = "web"
@@ -136,50 +112,4 @@ class WebSearchTool(Tool):
             query=query, num_results=n, search_type="auto", livecrawl="fallback"
         )
         result = await _VtxWebSearchTool().execute(params)
-        return result.result or ""
-
-
-@tool_parameters(
-    tool_parameters_schema(
-        url=StringSchema("URL to fetch"),
-        extractMode={"type": "string", "enum": ["markdown", "text"], "default": "markdown"},
-        maxChars=IntegerSchema(0, minimum=100),
-        required=["url"],
-    )
-)
-class WebFetchTool(Tool):
-    """Fetch and extract content from a URL using the vtx Exa-based web fetch tool."""
-
-    _scopes = {"core", "subagent"}
-
-    name = "web_fetch"
-    description = (
-        "Fetch a URL and extract readable content (HTML → markdown/text). "
-        "Capped at maxChars (default 50 000). May fail on login-walled/JS-heavy sites."
-    )
-
-    config_key = "web"
-
-    @classmethod
-    def config_cls(cls):
-        return WebToolsConfig
-
-    @classmethod
-    def enabled(cls, ctx: Any) -> bool:
-        return ctx.config.web.enable
-
-    @classmethod
-    def create(cls, ctx: Any) -> Tool:
-        return cls()
-
-    @property
-    def read_only(self) -> bool:
-        return True
-
-    async def execute(
-        self, url: str, extract_mode: str = "markdown", max_chars: int | None = None, **kwargs: Any
-    ) -> str:
-        max_chars = kwargs.pop("maxChars", max_chars) or 50000
-        params = _VtxWebFetchTool.params(urls=[url.strip(" \t\r\n`\"'")], max_characters=max_chars)
-        result = await _VtxWebFetchTool().execute(params)
         return result.result or ""

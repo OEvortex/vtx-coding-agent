@@ -1,10 +1,9 @@
-"""Web fetch and web search tools for vtx."""
+"""Web search tool for vtx via the Exa MCP endpoint (no API key needed)."""
 
 from __future__ import annotations
 
 import asyncio
 import json
-from typing import Annotated
 
 import httpx
 from pydantic import BaseModel, Field
@@ -15,129 +14,74 @@ from ..core.types import ToolResult
 from .base import BaseTool
 
 # ---------------------------------------------------------------------------
-# Shared constants
+# Shared constants / helpers
 # ---------------------------------------------------------------------------
 
-_FETCH_TIMEOUT = 25.0
+_MCP_URL = "https://mcp.exa.ai/mcp"
+_TIMEOUT = 25.0
 
 
 def _split_for_expand(text: str) -> tuple[str, str | None]:
     """Split long text into collapsed + expanded form so ctrl+o can reveal it.
 
     Mirrors the fallback in ``SessionUIMixin._format_tool_result_text`` so the
-    web tools get the same expand/collapse affordance as bash/edit.
+    web tool gets the same expand/collapse affordance as bash/edit.
     """
     collapsed, truncated = truncate_tool_output_text(text)
     return collapsed, escape_tool_output_text(text) if truncated else None
 
 
-# ===========================================================================
-# WebFetchTool  (Exa MCP — no API key needed)
-# ===========================================================================
+def _extract_text(data: dict) -> str | None:
+    content = data.get("result", {}).get("content", [])
+    if content and isinstance(content, list):
+        return content[0].get("text")
+    return None
 
 
-class FetchParams(BaseModel):
-    urls: Annotated[list[str], Field(min_length=1, description="URLs to read (batch in one call)")]
-    max_characters: int = Field(default=3000, ge=1, description="Max chars per page")
+async def _call_exa(payload: dict) -> tuple[str | None, str | None]:
+    """POST a JSON-RPC call to the Exa MCP endpoint.
 
+    Returns ``(text, None)`` on success or ``(None, error_message)`` on any
+    failure (timeout, HTTP error, empty body). Handles both SSE-streamed and
+    plain-JSON responses.
+    """
+    headers = {"Accept": "application/json, text/event-stream", "Content-Type": "application/json"}
+    try:
+        async with httpx.AsyncClient(timeout=_TIMEOUT) as client:
+            resp = await client.post(_MCP_URL, headers=headers, json=payload)
+            resp.raise_for_status()
+    except httpx.TimeoutException:
+        return None, f"Exa timed out after {_TIMEOUT}s"
+    except httpx.HTTPStatusError as e:
+        return None, f"Exa API error {e.response.status_code}"
+    except Exception as e:
+        return None, f"Exa request failed: {e}"
 
-class WebFetchTool(BaseTool):
-    """Read a webpage's full content as clean markdown via the Exa MCP endpoint."""
-
-    name = "fetch_webpage"
-    tool_icon = "🌐"
-    params = FetchParams
-    mutating = False
-    description = "Read a webpage as clean markdown (Exa). Batch URLs. Not for JS-rendered pages."
-    prompt_guidelines = ()
-
-    _MCP_URL = "https://mcp.exa.ai/mcp"
-
-    def format_call(self, params: FetchParams) -> str:
-        if len(params.urls) == 1:
-            return params.urls[0]
-        return f"{params.urls[0]} (+{len(params.urls) - 1} more)"
-
-    async def execute(
-        self, params: FetchParams, cancel_event: asyncio.Event | None = None
-    ) -> ToolResult:
-        payload = {
-            "jsonrpc": "2.0",
-            "id": 1,
-            "method": "tools/call",
-            "params": {
-                "name": "web_fetch_exa",
-                "arguments": {"urls": params.urls, "maxCharacters": params.max_characters},
-            },
-        }
-        headers = {
-            "Accept": "application/json, text/event-stream",
-            "Content-Type": "application/json",
-        }
-
+    # SSE-streamed response: find the first data line with content.
+    for line in resp.text.splitlines():
+        if not line.startswith("data: "):
+            continue
         try:
-            async with httpx.AsyncClient(timeout=_FETCH_TIMEOUT) as client:
-                resp = await client.post(self._MCP_URL, headers=headers, json=payload)
-                resp.raise_for_status()
+            data = json.loads(line[6:])
+        except json.JSONDecodeError:
+            continue
+        text = _extract_text(data)
+        if text:
+            return text, None
 
-            for line in resp.text.splitlines():
-                if not line.startswith("data: "):
-                    continue
-                try:
-                    data = json.loads(line[6:])
-                except json.JSONDecodeError:
-                    continue
-                text = self._extract_text(data)
-                if text:
-                    ui_details, ui_details_full = _split_for_expand(text)
-                    return ToolResult(
-                        success=True,
-                        result=text,
-                        ui_summary="[dim]exa[/dim]",
-                        ui_details=ui_details,
-                        ui_details_full=ui_details_full,
-                    )
+    # Fallback: parse the whole body as a single JSON object.
+    try:
+        text = _extract_text(resp.json())
+        if text:
+            return text, None
+    except Exception:
+        pass
 
-            try:
-                text = self._extract_text(resp.json())
-                if text:
-                    ui_details, ui_details_full = _split_for_expand(text)
-                    return ToolResult(
-                        success=True,
-                        result=text,
-                        ui_summary="[dim]exa[/dim]",
-                        ui_details=ui_details,
-                        ui_details_full=ui_details_full,
-                    )
-            except Exception:
-                pass
-
-            return ToolResult(
-                success=False,
-                result="No results returned from Exa API",
-                ui_summary="[red]No Exa results[/red]",
-            )
-
-        except httpx.TimeoutException:
-            msg = f"Exa timed out after {_FETCH_TIMEOUT}s"
-            return ToolResult(success=False, result=msg, ui_summary=f"[red]{msg}[/red]")
-        except httpx.HTTPStatusError as e:
-            msg = f"Exa API error {e.response.status_code}"
-            return ToolResult(success=False, result=msg, ui_summary=f"[red]{msg}[/red]")
-        except Exception as e:
-            msg = f"Exa fetch failed: {e}"
-            return ToolResult(success=False, result=msg, ui_summary=f"[red]{msg}[/red]")
-
-    @staticmethod
-    def _extract_text(data: dict) -> str | None:
-        content = data.get("result", {}).get("content", [])
-        if content and isinstance(content, list):
-            return content[0].get("text")
-        return None
+    return None, "No results returned from Exa API"
 
 
 # ===========================================================================
-# WebSearchTool  (Exa neural search — no API key needed)
+# WebTool  (Exa neural search — no API key needed)
 # ===========================================================================
 
 
@@ -148,18 +92,15 @@ class SearchParams(BaseModel):
     livecrawl: str = Field(default="fallback", description="'fallback', 'always', or 'never'")
 
 
-class WebSearchTool(BaseTool):
+class WebTool(BaseTool):
     """Web search via Exa MCP endpoint (no API key required)."""
 
-    name = "web_search"
+    name = "web"
     tool_icon = "🔍"
     params = SearchParams
     mutating = False
     description = "Web search (Exa neural). Returns titles, URLs, snippets. Needs internet."
     prompt_guidelines = ()
-
-    _MCP_URL = "https://mcp.exa.ai/mcp"
-    _TIMEOUT = 25.0
 
     def format_call(self, params: SearchParams) -> str:
         return f'"{params.query}"'
@@ -181,69 +122,29 @@ class WebSearchTool(BaseTool):
                 },
             },
         }
-        headers = {
-            "Accept": "application/json, text/event-stream",
-            "Content-Type": "application/json",
-        }
+        text, err = await _call_exa(payload)
+        if err:
+            return ToolResult(success=False, result=err, ui_summary=f"[red]{err}[/red]")
+        assert text is not None
+        ui_details, ui_details_full = _split_for_expand(text)
+        return ToolResult(
+            success=True,
+            result=text,
+            ui_summary=f"[dim]exa: {params.query!r}[/dim]",
+            ui_details=ui_details,
+            ui_details_full=ui_details_full,
+        )
 
-        try:
-            async with httpx.AsyncClient(timeout=self._TIMEOUT) as client:
-                resp = await client.post(self._MCP_URL, headers=headers, json=payload)
-                resp.raise_for_status()
 
-            # Try SSE lines first
-            for line in resp.text.splitlines():
-                if not line.startswith("data: "):
-                    continue
-                try:
-                    data = json.loads(line[6:])
-                except json.JSONDecodeError:
-                    continue
-                text = self._extract_text(data)
-                if text:
-                    ui_details, ui_details_full = _split_for_expand(text)
-                    return ToolResult(
-                        success=True,
-                        result=text,
-                        ui_summary=f"[dim]exa: {params.query!r}[/dim]",
-                        ui_details=ui_details,
-                        ui_details_full=ui_details_full,
-                    )
+# ===========================================================================
+# Backward-compatible alias (used by agenite_claw and legacy tests)
+# ===========================================================================
 
-            # Fallback: parse whole body as JSON
-            try:
-                text = self._extract_text(resp.json())
-                if text:
-                    ui_details, ui_details_full = _split_for_expand(text)
-                    return ToolResult(
-                        success=True,
-                        result=text,
-                        ui_summary=f"[dim]exa: {params.query!r}[/dim]",
-                        ui_details=ui_details,
-                        ui_details_full=ui_details_full,
-                    )
-            except Exception:
-                pass
 
-            return ToolResult(
-                success=False,
-                result="No results returned from Exa API",
-                ui_summary="[red]No Exa results[/red]",
-            )
+class WebSearchTool(WebTool):
+    """Web search via Exa MCP endpoint (no API key required)."""
 
-        except httpx.TimeoutException:
-            msg = f"Exa timed out after {self._TIMEOUT}s"
-            return ToolResult(success=False, result=msg, ui_summary=f"[red]{msg}[/red]")
-        except httpx.HTTPStatusError as e:
-            msg = f"Exa API error {e.response.status_code}"
-            return ToolResult(success=False, result=msg, ui_summary=f"[red]{msg}[/red]")
-        except Exception as e:
-            msg = f"Exa search failed: {e}"
-            return ToolResult(success=False, result=msg, ui_summary=f"[red]{msg}[/red]")
-
-    @staticmethod
-    def _extract_text(data: dict) -> str | None:
-        content = data.get("result", {}).get("content", [])
-        if content and isinstance(content, list):
-            return content[0].get("text")
-        return None
+    name = "web_search"
+    tool_icon = "🔍"
+    params = SearchParams
+    description = "Web search (Exa neural). Returns titles, URLs, snippets. Needs internet."

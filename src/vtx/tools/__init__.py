@@ -11,7 +11,7 @@ from .grep import GrepTool
 from .read import ReadTool
 from .skill import SkillTool
 from .task import TaskTool
-from .web import WebFetchTool, WebSearchTool
+from .web import WebSearchTool, WebTool
 from .write import WriteTool
 
 # Note: Sub-agent dispatching is shipped as a default tool in vtx.
@@ -34,8 +34,8 @@ __all__ = [
     "ReadTool",
     "SkillTool",
     "TaskTool",
-    "WebFetchTool",
     "WebSearchTool",
+    "WebTool",
     "WriteTool",
     "get_manager",
     "get_tool",
@@ -54,8 +54,7 @@ all_tools: list[BaseTool] = [
     FindTool(),
     GrepTool(),
     SkillTool(),
-    WebFetchTool(),
-    WebSearchTool(),
+    WebTool(),
     AskUserTool(),
     TaskTool(),
 ]
@@ -68,8 +67,7 @@ DEFAULT_TOOLS: list[str] = [
     "bash",
     "find",
     "skill",
-    "fetch_webpage",
-    "web_search",
+    "web",
     "ask_user",
     "task",
 ]

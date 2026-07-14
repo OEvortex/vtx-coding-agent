@@ -1,8 +1,8 @@
-"""Tests for the web_search and fetch_webpage tool expand/collapse behavior.
+"""Tests for the web search tool expand/collapse behavior.
 
 The expand/collapse affordance (ctrl+o) requires the tool to populate
 ``ui_details`` (collapsed body) and ``ui_details_full`` (expanded body) on
-its :class:`ToolResult`. The web tools used to only set ``ui_summary``,
+its :class:`ToolResult`. The web tool used to only set ``ui_summary``,
 which kept the body hidden. These tests pin the fix.
 """
 
@@ -13,7 +13,7 @@ from unittest.mock import AsyncMock, patch
 
 import pytest
 
-from vtx.tools.web import FetchParams, SearchParams, WebFetchTool, WebSearchTool
+from vtx.tools.web import SearchParams, WebSearchTool
 
 
 def _sse_payload(text: str) -> str:
@@ -63,20 +63,3 @@ async def test_web_search_short_result_has_no_full_view():
     assert result.ui_details == short_text
     # No truncation needed, so the "expanded" view is the same as collapsed.
     assert result.ui_details_full is None
-
-
-@pytest.mark.asyncio
-async def test_web_fetch_long_result_exposes_expand_hint():
-    tool = WebFetchTool()
-    long_text = "\n".join(f"Paragraph {i}" for i in range(15))
-
-    with patch("httpx.AsyncClient") as mock_client:
-        mock_client.return_value.__aenter__.return_value.post = AsyncMock(
-            return_value=_mock_response(long_text)
-        )
-        result = await tool.execute(FetchParams(urls=["https://example.com"]))
-
-    assert result.success is True
-    assert result.ui_details is not None
-    assert "ctrl+o" in result.ui_details
-    assert result.ui_details_full == long_text
