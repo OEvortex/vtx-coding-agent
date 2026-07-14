@@ -18,11 +18,6 @@ from ..events import (
     CompactionEndEvent,
     CompactionStartEvent,
     ErrorEvent,
-    GoalAchievedEvent,
-    GoalBudgetLimitedEvent,
-    GoalContinueEvent,
-    GoalEvaluatingEvent,
-    GoalStartEvent,
     InterruptedEvent,
     RetryEvent,
     TextDeltaEvent,
@@ -331,25 +326,6 @@ class AgentRunnerMixin:
 
             case BackgroundTaskCompletedEvent(task_id=tid, description=desc, status=st):
                 chat.add_info_message(f"Background task '{desc}' ({st}) — task_id={tid}")
-
-            case GoalStartEvent(objective=objective):
-                chat.show_status(f"Goal set: {objective[:80]}")
-
-            case GoalEvaluatingEvent(turns_evaluated=te):
-                chat.add_goal_evaluating(te)
-
-            case GoalContinueEvent(reason=reason, turns_evaluated=te):
-                chat.add_goal_continue(reason, te)
-
-            case GoalAchievedEvent(reason=reason, turns_evaluated=te, tokens_used=tokens):
-                chat.add_goal_achieved(reason, te, tokens)
-                info_bar = self.query_one("#info-bar", InfoBar)
-                info_bar.set_goal("")
-
-            case GoalBudgetLimitedEvent(turns_evaluated=te, tokens_used=tokens, max_turns=mt):
-                chat.add_goal_budget_limited(te, tokens, mt)
-                info_bar = self.query_one("#info-bar", InfoBar)
-                info_bar.set_goal("")
 
             case AgentEndEvent(stop_reason=reason):
                 if reason == StopReason.INTERRUPTED:

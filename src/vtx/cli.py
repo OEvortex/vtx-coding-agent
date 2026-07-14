@@ -93,12 +93,6 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "--list-agents", action="store_true", help="List all available agents and exit"
     )
-    parser.add_argument(
-        "--goal",
-        default=None,
-        metavar="OBJECTIVE",
-        help="Set a completion goal before the run (see /goal command).",
-    )
     parser.add_argument("--version", action="version", version=f"vtx {VERSION}")
     return parser
 
@@ -161,7 +155,6 @@ def main() -> None:
                     active_agent_name=args.agent,
                     agent_files=args.agent_files,
                     auto_discover_agents=not args.no_agents,
-                    goal_objective=args.goal,
                 )
             )
         )

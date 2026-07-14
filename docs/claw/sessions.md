@@ -111,7 +111,6 @@ Sustained goals track long-running objectives:
 ```
 
 Goals are managed via:
-- `/goal <text>` — Start a goal
 - `long_task` tool — Register from agent
 - `complete_goal` tool — Close with recap
 

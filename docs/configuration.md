@@ -45,19 +45,6 @@ compaction:
   threshold_percent: 80                # auto-compact at 80% of the context window
 ```
 
-### `goal`
-
-See [goal.md](goal.md). Controls the `/goal` continuous-work command.
-
-```yaml
-goal:
-  enabled: true
-  max_turns: 100
-  max_objective_chars: 4000
-  evaluator_provider: ""               # empty = active default
-  evaluator_model: ""
-```
-
 ### `agent`
 
 ```yaml
@@ -127,7 +114,7 @@ task:
     - name: "Explore"
       description: "Read-only repository exploration agent."
       instructions: "You are an exploration agent. You cannot modify the filesystem..."
-      tools_allow: ["read", "find", "skill", "fetch_webpage", "web_search"]
+      tools_allow: ["read", "find", "skill", "web"]
       max_turns: 100
 ```
 

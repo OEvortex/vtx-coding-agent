@@ -15,7 +15,6 @@ This folder is the reference companion to the top-level [README](../README.md). 
 | [agents.md](agents.md) | Switchable handoff agents — `.vtx/agent/<name>.py`, `Shift+Tab` cycling |
 | [theming.md](theming.md) | The full theme catalog and palette tokens |
 | [ui.md](ui.md) | TUI input, shell execution, slash commands, thinking blocks |
-| [goal.md](goal.md) | Continuous `/goal` work with an evaluator loop |
 | [hooks.md](hooks.md) | The extension-based hook lifecycle (tool_call, tool_result, lifecycle events) |
 | [headless.md](headless.md) | The `-p`/`--prompt` non-interactive flow, exit codes, stdin handling |
 | [local-models.md](local-models.md) | Tested local models, llama-server setup, model-specific config tuning |

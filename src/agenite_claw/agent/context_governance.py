@@ -30,16 +30,7 @@ MICROCOMPACT_KEEP_RECENT = 10
 MICROCOMPACT_MIN_CHARS = 500
 INFLIGHT_COMPACT_TARGET_RATIO = 0.85
 COMPACTABLE_TOOLS = frozenset(
-    {
-        "read_file",
-        "exec",
-        "grep",
-        "find_files",
-        "web_search",
-        "web_fetch",
-        "list_dir",
-        "list_exec_sessions",
-    }
+    {"read_file", "exec", "grep", "find_files", "web_search", "list_dir", "list_exec_sessions"}
 )
 # read_file is the recovery path for persisted results; exempting it prevents persist->read->persist loops.
 TOOL_RESULT_OFFLOAD_EXEMPT_TOOLS = frozenset({"read_file"})

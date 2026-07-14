@@ -59,7 +59,7 @@ Vtx is also **modular**: a keyboard-driven TUI, a headless CLI, a Python SDK, an
 ## Features
 
 - **Lean by design** — ~2,600-token runtime; no hidden prompt bloat.
-- **11 surgical tools** — `read`, `edit`, `write`, `bash`, `find`, `grep`, `skill`, `fetch_webpage`, `web_search`, `ask_user`, `task`.
+- **10 surgical tools** — `read`, `edit`, `write`, `bash`, `find`, `grep`, `skill`, `web`, `ask_user`, `task`.
 - **TUI & CLI** — a Textual-powered terminal UI, plus a non-interactive headless mode for scripts and CI.
 - **Any model, any endpoint** — 50+ built-in providers (OpenAI, Anthropic, Azure, DeepSeek, Copilot, Zhipu, Groq, Mistral, Together, Ollama, …) plus OpenAI/Anthropic-compatible custom providers and local models (Ollama, llama.cpp, vLLM).
 - **Dynamic context** — auto-loads `AGENTS.md`/`CLAUDE.md` guidelines and triggers modular `Skills`.
@@ -105,10 +105,9 @@ uv tool install "vtx-coding-agent[claw]"
 
 | Tool | Does | Tool | Does |
 | --- | --- | --- | --- |
-| `read` | Read/paginate files, view images | `fetch_webpage` | Fetch a URL as markdown |
-| `edit` | Precise search-and-replace | `web_search` | Semantic web search |
-| `write` | Create/overwrite files | `ask_user` | Ask a clarifying question |
-| `bash` | Run commands in the cwd | `task` | Dispatch a sub-agent |
+| `read` | Read/paginate files, view images | `web` | Web search (Exa neural) |
+| `edit` | Precise search-and-replace | `ask_user` | Ask a clarifying question |
+| `write` | Create/overwrite files | `task` | Dispatch a sub-agent |
 | `find` | Glob file discovery | `skill` | Manage skill workflows |
 | `grep` | Regex search over files | | |
 
@@ -190,7 +189,6 @@ See the [SDK docs](docs/sdk/README.md).
 | Skills | [docs/skills.md](docs/skills.md) |
 | Extensions | [docs/extensions.md](docs/extensions.md) |
 | Handoff agents | [docs/agents.md](docs/agents.md) |
-| Goals | [docs/goal.md](docs/goal.md) |
 | Architecture | [docs/architecture.md](docs/architecture.md) |
 | Local models | [docs/local-models.md](docs/local-models.md) |
 | SDK | [docs/sdk/README.md](docs/sdk/README.md) |

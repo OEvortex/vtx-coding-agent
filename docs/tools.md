@@ -13,8 +13,7 @@ Vtx gives the model a small, predictable set of tools. They are implemented in `
 | `find` | Glob file discovery (fd) | No |
 | `grep` | Regex search over file contents (ripgrep) | No |
 | `skill` | Manage skill workflows | Depends |
-| `fetch_webpage` | Read a URL as markdown (Exa) | No |
-| `web_search` | Web search (Exa neural) | No |
+| `web` | Web search (Exa neural) | No |
 | `ask_user` | Ask a clarifying question and wait | No |
 | `task` | Dispatch a sub-agent | No |
 
@@ -91,17 +90,10 @@ Parameters:
 
 See [skills.md](skills.md).
 
-## fetch_webpage
+## web
 
-Read a webpage as clean markdown via the Exa endpoint. Batch multiple URLs in one call. Not for JS-rendered pages.
-
-Parameters:
-- `urls` (list[string], required, min 1) — URLs to read.
-- `max_characters` (int, default 3000) — max chars per page.
-
-## web_search
-
-Web search via the Exa neural API. Returns titles, URLs, and snippets. Needs internet.
+Web search tool backed by the Exa neural endpoint. Returns titles, URLs, and
+snippets. Needs internet.
 
 Parameters:
 - `query` (string, required)

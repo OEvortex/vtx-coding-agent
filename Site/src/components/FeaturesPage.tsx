@@ -62,7 +62,7 @@ const FEATURE_SECTIONS: FeatureSection[] = [
     features: [
       { label: "File Operations", description: "read (handles large files with offset/limit paging and images), write (create or completely rewrite files), edit (apply precise search-and-replace blocks)." },
       { label: "System & Discovery", description: "bash (runs shell processes with timeouts and background task spawning), find (discovers workspace files respecting project .gitignore rules)." },
-      { label: "Web Capabilities", description: "fetch_webpage (converts raw page HTML into clean markdown), web_search (queries Exa or Brave APIs for real-time web references)." },
+      { label: "Web Capabilities", description: "web_search (queries Exa or Brave APIs for real-time web references)." },
       { label: "User Interaction", description: "ask_user (allows the agent to pose multiple-choice options or custom questions to the user during long executions)." },
       { label: "Skills Tool", description: "skill (lets the agent list, view, create, patch, edit, or delete skill instruction folders dynamically)." },
     ],

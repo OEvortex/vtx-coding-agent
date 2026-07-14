@@ -559,7 +559,7 @@ def _resolve_tool_config_refs() -> None:
     from agenite_claw.agent.tools.image_generation import ImageGenerationToolConfig
     from agenite_claw.agent.tools.self import MyToolConfig
     from agenite_claw.agent.tools.shell import ExecToolConfig
-    from agenite_claw.agent.tools.web import WebFetchConfig, WebSearchConfig, WebToolsConfig
+    from agenite_claw.agent.tools.web import WebSearchConfig, WebToolsConfig
 
     # Re-export into this module's namespace
     mod = sys.modules[__name__]
@@ -568,7 +568,6 @@ def _resolve_tool_config_refs() -> None:
     mod.CliAppsToolConfig = CliAppsToolConfig  # type: ignore[unresolved-attribute]
     mod.WebToolsConfig = WebToolsConfig  # type: ignore[unresolved-attribute]
     mod.WebSearchConfig = WebSearchConfig  # type: ignore[unresolved-attribute]
-    mod.WebFetchConfig = WebFetchConfig  # type: ignore[unresolved-attribute]
     mod.MyToolConfig = MyToolConfig  # type: ignore[unresolved-attribute]
     mod.ImageGenerationToolConfig = ImageGenerationToolConfig  # type: ignore[unresolved-attribute]
 

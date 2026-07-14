@@ -178,15 +178,7 @@ def load_all_agents(
                 description="Read-only plan formulation and investigation profile.",
                 icon="📋",
                 thinking_level="high",
-                tools_allow=[
-                    "read",
-                    "find",
-                    "grep",
-                    "skill",
-                    "fetch_webpage",
-                    "web_search",
-                    "ask_user",
-                ],
+                tools_allow=["read", "find", "grep", "skill", "web", "ask_user"],
                 tools_deny=["bash", "write", "edit"],
                 instructions=(
                     "You are Vtx in Plan mode. Your sole objective is to formulate a "
@@ -197,7 +189,7 @@ def load_all_agents(
                     "- Do not write or edit any files, do not run bash commands, and do "
                     "not execute code.\n"
                     "- You are allowed to use read-only tools to gather context: `read`, `find`, "
-                    "`grep`, `skill`, `fetch_webpage`, `web_search`, and `ask_user`.\n"
+                    "`grep`, `skill`, `web`, and `ask_user`.\n"
                     "- Avoid conversational filler. Start directly with progress or the plan.\n"
                     "\n"
                     "## Planning Guidelines\n"

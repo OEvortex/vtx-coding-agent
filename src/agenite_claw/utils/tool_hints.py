@@ -16,7 +16,6 @@ _TOOL_FORMATS: dict[str, tuple[list[str], str, bool, bool]] = {
     "exec": (["command"], "$ {}", False, True),
     "list_exec_sessions": ([], "exec sessions", False, False),
     "web_search": (["query"], 'search "{}"', False, False),
-    "web_fetch": (["url"], "fetch {}", True, False),
     "list_dir": (["path"], "ls {}", True, False),
 }
 

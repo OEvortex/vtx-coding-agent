@@ -134,36 +134,6 @@ class CompactionConfig(BaseModel):
     threshold_percent: float = 80.0
 
 
-class GoalConfig(BaseModel):
-    """Configuration for the ``/goal`` command.
-
-    Goals let the agent keep working across turns until a separate
-    evaluator judges a completion condition met. The settings below
-    bound the run and pick the evaluator model.
-
-    ``enabled`` is a master switch (matches Codex's
-    ``features.goals = true``). When false the ``/goal`` command is
-    rejected and the ``--goal`` CLI flag is ignored.
-
-    ``max_turns`` is the per-goal turn cap. The loop ends with
-    :class:`~vtx.events.GoalBudgetLimitedEvent` when this is hit. The
-    YAML ``agent.max_turns`` knob is the global safety net.
-
-    ``max_objective_chars`` is the cap on the user's goal text. Claude
-    Code and Codex both use 4,000.
-
-    ``evaluator_provider`` / ``evaluator_model``: empty string means
-    "use the active default". Set them to route the evaluator through
-    a cheaper / faster model when the plan supports it.
-    """
-
-    enabled: bool = True
-    max_turns: int = 100
-    max_objective_chars: int = 4000
-    evaluator_provider: str = ""
-    evaluator_model: str = ""
-
-
 class AgentConfig(BaseModel):
     max_turns: int = 500
     default_context_window: int = 200000
@@ -274,7 +244,6 @@ class ConfigSchema(BaseModel):
     agent: AgentConfig
     permissions: PermissionsConfig
     notifications: NotificationsConfig = NotificationsConfig()
-    goal: GoalConfig = GoalConfig()
     last_selected: LastSelectedConfig = LastSelectedConfig()
     recent_models: RecentModelsConfig = RecentModelsConfig()
     # User-configured extension paths (file or package). Auto-discovered
@@ -371,10 +340,6 @@ class Config:
     @property
     def compaction(self) -> CompactionConfig:
         return self._parsed.compaction
-
-    @property
-    def goal(self) -> GoalConfig:
-        return self._parsed.goal
 
     @property
     def agent(self) -> AgentConfig:
@@ -668,25 +633,8 @@ def _migrate_v9_to_v10(data: dict[str, Any]) -> dict[str, Any]:
 
 
 def _migrate_v10_to_v11(data: dict[str, Any]) -> dict[str, Any]:
-    """Add the ``goal:`` block. Pre-v11 users get the built-in defaults.
-
-    Matches the addition of the ``/goal`` command: an opt-in master
-    switch, a turn cap, the 4,000-char objective limit from Claude
-    Code / Codex, and empty evaluator-model overrides (which fall
-    back to the active default).
-    """
+    """No-op migration. Goal config removed."""
     migrated = Config._apply_legacy_key_shims(data)
-
-    goal = migrated.get("goal")
-    if not isinstance(goal, dict):
-        goal = {}
-        migrated["goal"] = goal
-
-    goal.setdefault("enabled", _DEFAULT_CONFIG_DATA["goal"]["enabled"])
-    goal.setdefault("max_turns", _DEFAULT_CONFIG_DATA["goal"]["max_turns"])
-    goal.setdefault("max_objective_chars", _DEFAULT_CONFIG_DATA["goal"]["max_objective_chars"])
-    goal.setdefault("evaluator_provider", _DEFAULT_CONFIG_DATA["goal"]["evaluator_provider"])
-    goal.setdefault("evaluator_model", _DEFAULT_CONFIG_DATA["goal"]["evaluator_model"])
 
     meta = migrated.get("meta")
     if not isinstance(meta, dict):

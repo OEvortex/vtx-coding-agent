@@ -23,7 +23,7 @@ const capabilities = [
     n: "02",
     title: "Nine default tools",
     icon: Wrench,
-    body: "read (with image viewing), edit, write, bash, find, skill, fetch_webpage, web_search, and ask_user. Each Pydantic-typed and cancellable.",
+    body: "read (with image viewing), edit, write, bash, find, skill, web_search, and ask_user. Each Pydantic-typed and cancellable.",
     span: "lg:col-span-5",
     accent: false,
   },

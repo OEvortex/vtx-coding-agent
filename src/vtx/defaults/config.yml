@@ -28,24 +28,6 @@ compaction:
   on_overflow: "continue"
   threshold_percent: 80
 
-# /goal command: the agent keeps working across turns until a separate
-# evaluator judges the completion condition met. See ``/goal <objective>``
-# and ``docs/goal.md``.
-#
-# enabled: master switch (matches Codex's ``features.goals``).
-# max_turns: per-goal turn cap; the loop ends with a "budget-limited"
-#   block when this is hit. ``agent.max_turns`` is the global safety net.
-# max_objective_chars: cap on the goal text. Claude Code / Codex: 4,000.
-# evaluator_provider / evaluator_model: empty = reuse the active default
-#   model. Set both to route the evaluator through a cheaper / faster
-#   model when the plan supports it.
-goal:
-  enabled: true
-  max_turns: 100
-  max_objective_chars: 4000
-  evaluator_provider: ""
-  evaluator_model: ""
-
 agent:
   max_turns: 500
   default_context_window: 200000
@@ -125,7 +107,7 @@ task:
         You are an exploration agent. You cannot modify the filesystem —
         only read and search. Be thorough but concise. When you have found
         what was asked, stop and report back.
-      tools_allow: [read, find, skill, fetch_webpage, web_search]
+      tools_allow: [read, find, skill, web]
       max_turns: 100
     - name: Plan
       description: Read-only planning agent. Investigates the codebase and
@@ -136,7 +118,7 @@ task:
         existing code paths over new abstractions. The plan should be
         detailed enough that another agent can execute it without further
         questions.
-      tools_allow: [read, find, skill, fetch_webpage, web_search]
+      tools_allow: [read, find, skill, web]
       max_turns: 100
 
 # Example: DeepSeek provider

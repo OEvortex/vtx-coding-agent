@@ -37,15 +37,15 @@ AGENT = AgentDef(
         "and surface concrete issues with line references. Do not modify files."
     ),
     instructions_mode="append",
-    tools_allow=["read", "find", "grep", "skill", "fetch_webpage", "web_search"],
+    tools_allow=["read", "find", "grep", "skill", "web"],
     tools_deny=["bash", "write", "edit"],
     # New field: raw tools declared directly on AgentDef.
     # These are auto-wrapped into BaseTool instances at load time.
     tools=[_file_stats, _schema_lookup],
     # New field: named tool groups for intra-profile cycling.
     tool_groups={
-        "read-only": ["read", "find", "grep", "skill", "fetch_webpage", "web_search"],
-        "with-search": ["read", "find", "grep", "skill", "fetch_webpage", "web_search"],
+        "read-only": ["read", "find", "grep", "skill", "web"],
+        "with-search": ["read", "find", "grep", "skill", "web"],
     },
     # New field: per-profile skills. These skill names are matched against
     # loaded skills and the matching descriptions are injected into the

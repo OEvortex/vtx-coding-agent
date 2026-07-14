@@ -74,21 +74,6 @@ Display recent conversation messages.
 /history 20         # Show last 20 messages (max 50)
 ```
 
-### `/goal`
-
-Declare a sustained objective.
-
-```
-/goal Refactor the authentication module to use OAuth2
-```
-
-- Injects a prompt for the agent to use `long_task`/`complete_goal`
-- Goal persists across turns until completed
-- Use `/goal status` to check progress
-- Use `/goal pause` to pause
-- Use `/goal resume` to resume
-- Use `/goal clear` to cancel
-
 ### `/dream`
 
 Trigger memory consolidation manually.

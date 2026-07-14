@@ -37,7 +37,7 @@ AGENT = AgentDef(
         "grep to map the codebase. Never modify files. When you have "
         "found what was asked, stop and report back concisely."
     ),
-    tools_allow=["read", "find", "skill", "fetch_webpage", "web_search"],
+    tools_allow=["read", "find", "skill", "web"],
     tools_deny=["bash", "write", "edit"],
     permission_mode="auto",
     handoff_back=True,

@@ -106,20 +106,6 @@ class LeafEntry(EntryBase):
     target_id: str | None = None
 
 
-class GoalEntry(EntryBase):
-    """A persisted snapshot of the active goal at a point in time.
-
-    The latest :class:`GoalEntry` on the active branch is the source
-    of truth on resume. ``goal`` is a free-form dict so future schema
-    additions stay backwards-compatible without bumping the JSONL
-    session version. Older sessions that never wrote a goal entry
-    simply have no :class:`GoalEntry` and resume with no active goal.
-    """
-
-    type: Literal["goal"] = "goal"
-    goal: dict[str, Any]
-
-
 class RuntimeCheckpointEntry(EntryBase):
     """Snapshot of partial in-flight turn state for cancel/resume.
 
@@ -144,7 +130,6 @@ SessionEntry = (
     | CustomMessageEntry
     | SessionInfoEntry
     | LeafEntry
-    | GoalEntry
     | RuntimeCheckpointEntry
 )
 
@@ -427,22 +412,6 @@ class Session:
         self._append_entry(entry)
         return entry.id
 
-    def append_goal_state(self, goal: dict[str, Any]) -> str:
-        """Record a snapshot of the active :class:`~vtx.goal.Goal`.
-
-        The manager calls this whenever the goal's runtime state
-        changes (``set``, ``pause``, ``resume``, ``achieved``, etc.).
-        The latest entry on the active branch is what resume restores.
-        """
-        entry = GoalEntry(
-            id=self._generate_entry_id(),
-            parent_id=self._leaf_id,
-            timestamp=_now_iso(),
-            goal=dict(goal),
-        )
-        self._append_entry(entry)
-        return entry.id
-
     def append_runtime_checkpoint(
         self,
         partial_content: builtins.list[dict[str, Any]],
@@ -551,17 +520,8 @@ class Session:
         # 1. Synthetic user message framing this as a state restoration
         # 2. Assistant message with the compaction summary
         # 3. All MessageEntry entries after the compaction entry
-        #
-        # Find the latest GoalEntry before the compaction so the model
-        # retains knowledge of the active task after context reset.
-        active_goal_text = ""
-        for entry in self.active_entries:
-            if isinstance(entry, GoalEntry) and entry.goal.get("objective"):
-                active_goal_text = entry.goal["objective"]
 
         summary_text = last_compaction.summary
-        if active_goal_text:
-            summary_text += f"\n\n[Active goal: {active_goal_text}]"
 
         result: builtins.list[Message] = [
             UserMessage(
@@ -848,8 +808,6 @@ class Session:
                     entries.append(SessionInfoEntry.model_validate(data))
                 elif entry_type == "leaf":
                     entries.append(LeafEntry.model_validate(data))
-                elif entry_type == "goal":
-                    entries.append(GoalEntry.model_validate(data))
 
         if not header:
             raise ValueError(f"Invalid session file (no header): {path}")

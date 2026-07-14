@@ -34,7 +34,6 @@ Type `/` to open the command menu:
 - `/themes` — switch color scheme (see [theming.md](theming.md)).
 - `/permissions` — toggle `prompt` vs `auto` mode.
 - `/export` — export transcript to standalone HTML.
-- `/goal <condition>` — continuous work until an evaluator judges it done (see [goal.md](goal.md)).
 - `/extensions` — list loaded extensions.
 
 ## Thinking blocks

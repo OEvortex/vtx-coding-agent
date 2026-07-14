@@ -5,6 +5,15 @@ All notable changes to Vtx are documented in this file. The format is based on
 adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 
+## [0.2.6] - 2026-07-14
+
+### Removed
+- **`/goal` command** — removed the entire goal feature: `/goal` slash command, `--goal` CLI flag, `GoalManager`, evaluator loop, `GoalEntry` session persistence, goal config section (`goal.enabled`, `goal.max_turns`, `goal.max_objective_chars`, `goal.evaluator_provider`, `goal.evaluator_model`), all `Goal*Event` event types, and the InfoBar goal badge.
+- **Web fetch tool** — removed the `fetch_webpage` / `web_fetch` web-fetch capability from both the `vtx` package (`vtx.tools.web`) and `agenite_claw` (`agenite_claw.agent.tools.web`). Removed `WebFetchTool`, `FetchParams`, `WebFetchConfig`, and the `WebToolsConfig.fetch` field, plus all related references in prompts, context governance, tool hints, runtime lookup throttling, and docs.
+
+### Changed
+- **Unified web tool** — merged the previously separate `fetch_webpage` and `web_search` vtx tools into a single `web` tool (search-only after the fetch removal above). `agenite_claw`'s `WebSearchTool` now delegates to the search-only `vtx.tools.web.WebSearchTool`.
+
 ## [0.2.5] - 2026-07-12
 
 ### Added

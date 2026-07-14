@@ -461,7 +461,6 @@ class ChatLog(VerticalScroll):
             ("/notifications", "Toggle notifications (/notifications on)"),
             ("/new", "Start new conversation"),
             ("/handoff", "Start focused handoff in new session"),
-            ("/goal", "Set a completion goal (or /goal status|pause|resume|clear)"),
             ("/resume", "Resume a session"),
             ("/session", "Show session info and stats"),
             ("/login", "Login to a provider"),
@@ -789,79 +788,6 @@ class ChatLog(VerticalScroll):
         label.add_class("compaction-message")
         self.mount(label)
         self._scroll_if_anchored(animate=False)
-
-    def add_goal_achieved(self, reason: str, turns: int = 0, tokens: int = 0) -> None:
-        """Render a one-line badge confirming the goal was met.
-
-        Mirrors the visual language of :meth:`add_compaction_message`:
-        a single dim label with a coloured badge prefix.
-        """
-        dim_color = config.ui.colors.dim
-        accent_color = config.ui.colors.accent
-        text = Text()
-        text.append("[goal]", style=accent_color)
-        text.append(" ✓ Goal achieved", style=accent_color)
-        if turns or tokens:
-            text.append(f" after {turns} turn(s) · {tokens:,} tokens", style=dim_color)
-        if reason:
-            text.append(f" — {reason}", style=dim_color)
-        stylize_badge_markers(text, ("[goal]",))
-        label = Label(text)
-        label.add_class("goal-message")
-        self.mount(label)
-        self._scroll_if_anchored(animate=False)
-
-    def add_goal_budget_limited(self, turns: int, tokens: int, max_turns: int) -> None:
-        """Render a badge announcing the goal hit its turn cap."""
-        notice_color = config.ui.colors.notice
-        dim_color = config.ui.colors.dim
-        text = Text()
-        text.append("[goal]", style=notice_color)
-        text.append(" ⏱ Budget exhausted", style=notice_color)
-        text.append(
-            f" after {turns} turn(s) / cap {max_turns} · {tokens:,} tokens", style=dim_color
-        )
-        stylize_badge_markers(text, ("[goal]",))
-        label = Label(text)
-        label.add_class("goal-message")
-        label.add_class("-budget")
-        self.mount(label)
-        self._scroll_if_anchored(animate=False)
-
-    def add_goal_continue(self, reason: str, turns: int = 0) -> None:
-        """Render a small dim line announcing a "continue" decision."""
-        dim_color = config.ui.colors.dim
-        text = Text()
-        text.append("[goal]", style=dim_color)
-        text.append(f" ↻ Continuing (turn {turns})", style=dim_color)
-        if reason:
-            text.append(f" — {reason}", style=dim_color)
-        stylize_badge_markers(text, ("[goal]",))
-        label = Label(text)
-        label.add_class("goal-message")
-        label.add_class("-continue")
-        self.mount(label)
-        self._scroll_if_anchored(animate=False)
-
-    def add_goal_evaluating(self, turns: int = 0) -> None:
-        """Render a transient status line for the in-flight evaluator call.
-
-        Stored on ``self._last_status_label`` so the next status update
-        can replace it in place (matches :meth:`show_status`).
-        """
-        dim_color = config.ui.colors.dim
-        text = Text()
-        text.append("[goal]", style=dim_color)
-        text.append(f" evaluating (turn {turns})…", style=dim_color)
-        stylize_badge_markers(text, ("[goal]",))
-        if self._is_last_child_status() and self._last_status_label is not None:
-            self._last_status_label.update(text)
-            self._scroll_if_anchored(animate=False)
-            return
-        label = Label(text)
-        label.add_class("info-message")
-        self.mount(label)
-        self._last_status_label = label
         self._scroll_if_anchored(animate=False)
 
     def add_aborted_message(self, message: str = "Interrupted by user") -> None:

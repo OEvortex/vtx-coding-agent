@@ -26,7 +26,7 @@ from vtx.sdk import AutoApprove, AllowlistApprove, PromptApprove
 policy = AutoApprove()
 
 # Allow only listed tools; prompt for everything else.
-policy = AllowlistApprove(["web_search", "fetch_webpage"])
+policy = AllowlistApprove(["web"])
 
 # Default: read-only auto-approved, mutating prompts.
 policy = PromptApprove()

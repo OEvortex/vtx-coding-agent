@@ -16,19 +16,7 @@ from vtx.config import (
 )
 
 from .core.types import StopReason, TextContent
-from .events import (
-    AgentEndEvent,
-    AskUserEvent,
-    ErrorEvent,
-    Event,
-    GoalAchievedEvent,
-    GoalBudgetLimitedEvent,
-    GoalContinueEvent,
-    GoalEvaluatingEvent,
-    GoalStartEvent,
-    ToolApprovalEvent,
-    TurnEndEvent,
-)
+from .events import AgentEndEvent, AskUserEvent, ErrorEvent, Event, ToolApprovalEvent, TurnEndEvent
 from .extensions import LoadedExtensions
 from .llm.base import AuthMode
 from .permissions import ApprovalResponse, AskUserResponse
@@ -61,16 +49,6 @@ async def render_run(
                 text = "".join(p.text for p in msg.content if isinstance(p, TextContent)).strip()
                 if text:
                     final_text = text
-            case GoalStartEvent(objective=objective):
-                print(f"goal: {truncate(objective)}", file=err)
-            case GoalEvaluatingEvent(turns_evaluated=te):
-                print(f"goal: evaluating (turn {te})...", file=err)
-            case GoalContinueEvent(reason=reason, turns_evaluated=te):
-                print(f"goal: continuing (turn {te}): {truncate(reason)}", file=err)
-            case GoalAchievedEvent(reason=reason, turns_evaluated=te):
-                print(f"goal: achieved (turn {te}): {truncate(reason)}", file=err)
-            case GoalBudgetLimitedEvent(turns_evaluated=te, max_turns=mt):
-                print(f"goal: budget-limited after {te} turn(s) (cap {mt})", file=err)
             case AgentEndEvent(stop_reason=stop_reason):
                 stop = stop_reason
             case ErrorEvent(error=error):
@@ -116,7 +94,6 @@ async def run_headless(
     active_agent_name: str | None = None,
     agent_files: list[str] | None = None,
     auto_discover_agents: bool = True,
-    goal_objective: str | None = None,
 ) -> int:
     prompt = resolve_prompt(prompt_arg, stdin=sys.stdin)
     if not prompt:
@@ -228,22 +205,6 @@ async def run_headless(
             if init.provider_error:
                 print(f"error: {init.provider_error}", file=sys.stderr)
                 return 2
-
-            # Set the goal before the run if the caller passed --goal.
-            if goal_objective:
-                if not config.goal.enabled:
-                    print(
-                        "warning: --goal ignored (goal.enabled is false in config)",
-                        file=sys.stderr,
-                    )
-                else:
-                    try:
-                        _goal, warning = runtime.set_goal(goal_objective)
-                    except ValueError as exc:
-                        print(f"error: {exc}", file=sys.stderr)
-                        return 2
-                    if warning:
-                        print(f"goal: {warning}", file=sys.stderr)
 
             agent = runtime.prepare_for_run()
         except Exception as e:

@@ -5,7 +5,6 @@ import contextlib
 import logging
 import os
 from dataclasses import dataclass
-from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
@@ -19,7 +18,6 @@ from .core.compaction import generate_summary
 from .core.handoff import generate_handoff_prompt
 from .core.types import AssistantMessage, TextContent, UserMessage
 from .extensions import EventBus, LoadedExtensions
-from .goal import GoalManager
 from .llm import (
     ApiType,
     BaseProvider,
@@ -34,7 +32,7 @@ from .llm.base import AuthMode
 from .llm.dynamic_models import find_dynamic_model, get_dynamic_provider_headers
 from .loop import Agent
 from .prompts import build_system_prompt
-from .session import CompactionEntry, CustomMessageEntry, GoalEntry, MessageEntry, Session
+from .session import CompactionEntry, CustomMessageEntry, MessageEntry, Session
 from .tools import DEFAULT_TOOLS, BaseTool, tools_by_name
 
 log = logging.getLogger("vtx.runtime")
@@ -179,14 +177,6 @@ class ConversationRuntime:
         self.session: Session | None = None
         self.agent: Agent | None = None
         self.context: Context | None = None
-
-        # The goal manager is owned here (not on the Agent) so slash
-        # commands can mutate its state between runs, and so resume can
-        # restore it from the session without rebuilding the agent.
-        self.goal_manager: GoalManager = GoalManager(
-            max_objective_chars=vtx_config.goal.max_objective_chars,
-            max_turns_default=vtx_config.goal.max_turns,
-        )
 
     # ---- agent lifecycle ------------------------------------------------
 
@@ -556,7 +546,6 @@ class ConversationRuntime:
             context=context,
             system_prompt=self.resolve_system_prompt(session, context=context),
             extensions=self.extensions,
-            goal_manager=self.goal_manager,
         )
 
     def initialize(
@@ -661,12 +650,6 @@ class ConversationRuntime:
         )
         if self.model_provider and self.model:
             add_recent_model(self.model_provider, self.model)
-
-        # Restore the active goal from the session (if any). A ``pursuing``
-        # goal stays pursuing; terminal goals (achieved / budget_limited /
-        # unmet) are kept in the manager for visibility but do not auto-run.
-        if self.session is not None:
-            self.goal_manager.restore_from_session(self.session)
 
         return RuntimeInitResult(provider_error=provider_error)
 
@@ -956,46 +939,6 @@ class ConversationRuntime:
                 )
         return 0
 
-    # ---- goal-mode management -------------------------------------------
-
-    def set_goal(self, objective: str) -> tuple[Any, str | None]:
-        """Set a new goal and persist the snapshot to the active session.
-
-        Returns ``(goal, parse_warning_or_None)``. Raises :class:`ValueError`
-        when the master ``goal.enabled`` switch is off, when the
-        objective is empty / too long, or when the session is not ready.
-        """
-        if not vtx_config.goal.enabled:
-            raise RuntimeError("goals are disabled (set goal.enabled: true in config)")
-        if self.session is None:
-            raise RuntimeError("Agent not initialized")
-        goal, warning = self.goal_manager.set_goal(objective)
-        self.session.append_goal_state(goal.to_dict())
-        return goal, warning
-
-    def clear_goal(self) -> Any | None:
-        prior = self.goal_manager.clear()
-        if self.session is not None and prior is not None:
-            prior_dict = prior.to_dict()
-            prior_dict["status"] = "cleared"
-            prior_dict["completed_at"] = (
-                prior_dict.get("completed_at") or datetime.now(UTC).isoformat()
-            )
-            self.session.append_goal_state(prior_dict)
-        return prior
-
-    def pause_goal(self) -> Any | None:
-        paused = self.goal_manager.pause()
-        if self.session is not None and paused is not None:
-            self.session.append_goal_state(paused.to_dict())
-        return paused
-
-    def resume_goal(self) -> Any | None:
-        resumed = self.goal_manager.resume()
-        if self.session is not None and resumed is not None:
-            self.session.append_goal_state(resumed.to_dict())
-        return resumed
-
     async def compact_now(self) -> CompactionResult:
         if self.provider is None or self.session is None or self.agent is None:
             raise RuntimeError("Agent not initialized")
@@ -1005,14 +948,7 @@ class ConversationRuntime:
             self.session.all_messages, self.provider, system_prompt=self.agent.system_prompt
         )
 
-        active_goal_text = ""
-        for entry in self.session.active_entries:
-            if isinstance(entry, GoalEntry) and entry.goal.get("objective"):
-                active_goal_text = entry.goal["objective"]
-
         summary_text = summary
-        if active_goal_text:
-            summary_text += f"\n\n[Active goal: {active_goal_text}]"
 
         user_msg = (
             "[Context compacted — conversation history summarized above."

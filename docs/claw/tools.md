@@ -112,19 +112,6 @@ Search the web across 11 providers.
 | `provider` | string | no | Provider override |
 
 Supported providers: `duckduckgo`, `brave`, `tavily`, `searxng`, `jina`, `kagi`, `exa`, `olostep`, `bocha`, `volcengine`, `keenable`
-
-#### `web_fetch`
-
-Fetch and extract content from URLs.
-
-| Parameter | Type | Required | Description |
-|-----------|------|----------|-------------|
-| `url` | string | yes | URL to fetch |
-| `extract_mode` | string | no | `text`, `markdown`, `html` |
-
-Features:
-- SSRF protection (blocks private networks)
-- Jina Reader integration for clean extraction
 - Fallback to readability-lxml
 
 ### Messaging

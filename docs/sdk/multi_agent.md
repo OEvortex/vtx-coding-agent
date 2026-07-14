@@ -114,7 +114,7 @@ Built-in `subagent_type` presets:
 - `general-purpose` — balanced, all read-only tools plus the
   full default toolset.
 - `Explore` — read-only repo navigation (`read`, `find`,
-  `web_search`, `fetch_webpage`).
+  `web`).
 - `Plan` — read-only, instructions tuned for producing a plan.
 
 User-defined agents from `.vtx/agent/<name>.py` are also accepted by
