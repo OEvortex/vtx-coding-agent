@@ -3,7 +3,7 @@ requires = ["hatchling"]
 build-backend = "hatchling.build"
 
 [tool.hatch.build.targets.wheel]
-packages = ["src/vtx", "src/agenite_claw"]
+packages = ["src/vtx"]
 
 [tool.hatch.build]
 artifacts = []
@@ -21,7 +21,7 @@ default = true
 [project]
 name = "vtx-coding-agent"
 version = "0.2.6"
-description = "Minimalist coding agent harness with a Textual TUI and headless CLI. Ships two agentic backends: the native vtx event loop and the advanced agenite-claw gateway loop (install the [claw] extra for multi-channel + subagent + cron features). <1k-token system prompt, 50+ LLM providers, AGENTS.md + skills context, session tree, prompt/auto permissions."
+description = "Minimalist coding agent harness with a Textual TUI and headless CLI. Native vtx event loop; the advanced multi-channel gateway loop (agenite-claw) is a separate package (pip install agenite-claw). <1k-token system prompt, 50+ LLM providers, AGENTS.md + skills context, session tree, prompt/auto permissions."
 readme = "README.md"
 requires-python = ">=3.12"
 keywords = ["coding-agent", "tui", "cli", "llm", "agent-loop", "agenite-claw"]
@@ -100,27 +100,10 @@ pdf = [
 olostep = [
     "olostep>=0.1.0",
 ]
-# agenite_claw advanced gateway backend dependencies. These are not needed for
-# the core `vtx` TUI / headless CLI; install them only when using the
-# `agenite-claw` multi-channel gateway, WebUI, cron, MCP, or subagent features.
-claw = [
-    "boto3>=1.43.0",
-    "croniter>=6.0.0,<7.0.0",
-    "ddgs>=9.5.5,<10.0.0",
-    "dingtalk-stream>=0.24.0,<1.0.0",
-    "lark-oapi>=1.5.0,<2.0.0",
-    "mcp>=1.28.1",
-    "msgpack>=1.1.0,<2.0.0",
-    "python-socketio>=5.16.0,<6.0.0",
-    "python-telegram-bot[socks,webhooks]>=22.6,<23.0",
-    "python-socks[asyncio]>=2.8.0,<3.0.0; sys_platform != 'win32'",
-    "qq-botpy>=1.2.0,<2.0.0",
-    "slack-sdk>=3.39.0,<4.0.0",
-    "slackify-markdown>=0.2.0,<1.0.0",
-    "socksio>=1.0.0,<2.0.0",
-    "websocket-client>=1.9.0,<2.0.0",
-    "websockets>=16.0,<17.0",
-]
+# The advanced multi-channel gateway backend is now the separate `agenite-claw`
+# package. Install it (or `pip install vtx[claw]`) to get the gateway, WebUI,
+# cron, MCP, and subagent features.
+claw = ["agenite-claw"]
 
 [dependency-groups]
 dev = [
@@ -133,7 +116,6 @@ dev = [
 
 [project.scripts]
 vtx = "vtx.cli:main"
-agenite-claw = "agenite_claw.cli.commands:app"
 
 [tool.ruff]
 target-version = "py312"

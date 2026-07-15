@@ -23,6 +23,80 @@ from ..core.types import (
 )
 
 DEFAULT_THINKING_LEVELS: list[str] = ["none", "minimal", "low", "medium", "high", "xhigh"]
+
+# Provider-agnostic request/response types.
+# Defined here (not in agenite_claw) so vtx core and the agenite-claw gateway
+# share a single source of truth without a circular import once agenite_claw
+# becomes a separate package.
+
+
+@dataclass(slots=True)
+class ToolCallRequest:
+    """A provider-agnostic tool call request."""
+
+    id: str
+    name: str
+    arguments: dict[str, Any] | str
+    extra_content: dict[str, Any] | None = None
+    provider_specific_fields: dict[str, Any] | None = None
+    function_provider_specific_fields: dict[str, Any] | None = None
+
+    def has_valid_name(self) -> bool:
+        return isinstance(self.name, str) and bool(self.name)
+
+    def to_openai_tool_call(self) -> dict[str, Any]:
+        args = self.arguments
+        if isinstance(args, dict):
+            args = json.dumps(args)
+        func: dict[str, Any] = {"name": self.name, "arguments": args}
+        if self.function_provider_specific_fields:
+            func["provider_specific_fields"] = self.function_provider_specific_fields
+        payload: dict[str, Any] = {"id": self.id, "type": "function", "function": func}
+        if self.extra_content:
+            payload["extra_content"] = self.extra_content
+        if self.provider_specific_fields:
+            payload["provider_specific_fields"] = self.provider_specific_fields
+        return payload
+
+
+@dataclass(slots=True)
+class LLMResponse:
+    """A provider-agnostic LLM response."""
+
+    content: str | None = None
+    tool_calls: list[ToolCallRequest] | None = None
+    finish_reason: str = "stop"
+    error_kind: str | None = None
+    reasoning_content: str | None = None
+    thinking_blocks: list[Any] | None = None
+    usage: dict[str, int] | None = None
+
+    @property
+    def should_execute_tools(self) -> bool:
+        return bool(self.tool_calls) and self.finish_reason == "tool_calls"
+
+    @property
+    def has_tool_calls(self) -> bool:
+        return bool(self.tool_calls)
+
+
+@dataclass(slots=True)
+class GenerationSettings:
+    """Per-run generation settings."""
+
+    temperature: float | None = None
+    max_tokens: int | None = None
+    reasoning_effort: str | None = None
+    thinking_budget: int | None = None
+    stop: list[str] | None = None
+    presence_penalty: float | None = None
+    frequency_penalty: float | None = None
+    top_p: float | None = None
+    seed: int | None = None
+    stream: bool = False
+    response_format: str | None = None
+    json_mode: bool = False
+    metadata: dict[str, Any] | None = None
 LOCAL_API_KEY_PLACEHOLDER = "vtx-local"
 AuthMode = Literal["auto", "required", "none"]
 
@@ -366,16 +440,12 @@ class BaseProvider(ABC):
                 args = _json.loads(tc["arguments"]) if tc["arguments"] else {}
             except _json.JSONDecodeError:
                 args = {"raw": tc["arguments"]}
-            from agenite_claw.providers.base import ToolCallRequest
-
             tool_call_requests.append(
                 ToolCallRequest(id=tc["id"], name=tc["name"], arguments=args)
             )
 
         reasoning_content = "\n".join(thinking_parts) if thinking_parts else None
         final_content = "\n".join(content_parts) if content_parts else None
-
-        from agenite_claw.providers.base import LLMResponse
 
         return LLMResponse(
             content=final_content,
