@@ -100,10 +100,7 @@ pdf = [
 olostep = [
     "olostep>=0.1.0",
 ]
-# The advanced multi-channel gateway backend is now the separate `agenite-claw`
-# package. Install it (or `pip install vtx[claw]`) to get the gateway, WebUI,
-# cron, MCP, and subagent features.
-claw = ["agenite-claw"]
+
 
 [dependency-groups]
 dev = [
