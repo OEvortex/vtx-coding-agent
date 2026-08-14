@@ -15,7 +15,6 @@ import pytest
 
 from vtx.tools.background import BackgroundTaskManager, get_manager, reset_manager, set_manager
 
-pytestmark = pytest.mark.asyncio
 
 
 class FakeResult:
@@ -112,6 +111,7 @@ class TestManagerContextVars:
 
 
 class TestRegistration:
+    @pytest.mark.asyncio
     async def test_register_returns_running_record(self, tmp_path: Path):
         mgr = BackgroundTaskManager(store_dir=tmp_path)
         record = await mgr.register(
@@ -133,6 +133,7 @@ class TestRegistration:
         # Cleanup so we don't leak the background task.
         await mgr.close()
 
+    @pytest.mark.asyncio
     async def test_register_assigns_distinct_ids(self, tmp_path: Path):
         mgr = BackgroundTaskManager(store_dir=tmp_path)
         ids: set[str] = set()
@@ -149,6 +150,7 @@ class TestRegistration:
         assert len(ids) == 3
         await mgr.close()
 
+    @pytest.mark.asyncio
     async def test_completed_record_carries_result(self, tmp_path: Path):
         mgr = BackgroundTaskManager(store_dir=tmp_path)
         record = await mgr.register(
@@ -171,6 +173,7 @@ class TestRegistration:
         assert on_disk["result_text"] == "the answer"
         await mgr.close()
 
+    @pytest.mark.asyncio
     async def test_factory_exception_marks_error(self, tmp_path: Path):
         async def boom() -> FakeResult:
             raise RuntimeError("kaboom")
@@ -194,6 +197,7 @@ class TestRegistration:
 class TestDrainSemantics:
     """Ack-on-consume: drain_completed returns each task at most once."""
 
+    @pytest.mark.asyncio
     async def test_drain_returns_running_then_completed(self, tmp_path: Path):
         mgr = BackgroundTaskManager(store_dir=tmp_path)
         record = await mgr.register(
@@ -215,6 +219,7 @@ class TestDrainSemantics:
         assert mgr.drain_completed() == []
         await mgr.close()
 
+    @pytest.mark.asyncio
     async def test_drain_burst_no_duplicates(self, tmp_path: Path):
         mgr = BackgroundTaskManager(store_dir=tmp_path)
         records = []
@@ -235,6 +240,7 @@ class TestDrainSemantics:
         assert mgr.drain_completed() == []
         await mgr.close()
 
+    @pytest.mark.asyncio
     async def test_drain_skips_cancelled(self, tmp_path: Path):
         mgr = BackgroundTaskManager(store_dir=tmp_path)
 
@@ -257,6 +263,7 @@ class TestDrainSemantics:
         assert drained[0].status == "cancelled"
         await mgr.close()
 
+    @pytest.mark.asyncio
     async def test_drain_skips_error(self, tmp_path: Path):
         mgr = BackgroundTaskManager(store_dir=tmp_path)
 
@@ -280,6 +287,7 @@ class TestDrainSemantics:
 
 
 class TestWaitAndCancel:
+    @pytest.mark.asyncio
     async def test_wait_returns_after_completion(self, tmp_path: Path):
         mgr = BackgroundTaskManager(store_dir=tmp_path)
         record = await mgr.register(
@@ -295,12 +303,14 @@ class TestWaitAndCancel:
         assert finished.result_text == "x"
         await mgr.close()
 
+    @pytest.mark.asyncio
     async def test_wait_unknown_id_raises_key_error(self, tmp_path: Path):
         mgr = BackgroundTaskManager(store_dir=tmp_path)
         with pytest.raises(KeyError):
             await mgr.wait("bg_9999_doesnotexist", timeout=1.0, cancel_event=None)
         await mgr.close()
 
+    @pytest.mark.asyncio
     async def test_wait_timeout_raises(self, tmp_path: Path):
         mgr = BackgroundTaskManager(store_dir=tmp_path)
 
@@ -321,6 +331,7 @@ class TestWaitAndCancel:
         cancelled = await mgr.cancel(record.task_id)
         assert cancelled is True
 
+    @pytest.mark.asyncio
     async def test_cancel_after_completion_is_false(self, tmp_path: Path):
         mgr = BackgroundTaskManager(store_dir=tmp_path)
         record = await mgr.register(
@@ -338,6 +349,7 @@ class TestWaitAndCancel:
 
 
 class TestDiskRehydration:
+    @pytest.mark.asyncio
     async def test_rehydrate_reads_persisted_records(self, tmp_path: Path):
         mgr = BackgroundTaskManager(store_dir=tmp_path)
         record = await mgr.register(
@@ -372,6 +384,7 @@ class TestDiskRehydration:
         await mgr.close()
         await mgr2.close()
 
+    @pytest.mark.asyncio
     async def test_rehydrate_finds_running_record_as_running(self, tmp_path: Path):
         """A record that was 'running' on disk stays 'running' after rehydrate."""
         mgr = BackgroundTaskManager(store_dir=tmp_path)
@@ -396,6 +409,7 @@ class TestDiskRehydration:
 
 
 class TestCloseSemantics:
+    @pytest.mark.asyncio
     async def test_close_cancels_running(self, tmp_path: Path):
         mgr = BackgroundTaskManager(store_dir=tmp_path)
 

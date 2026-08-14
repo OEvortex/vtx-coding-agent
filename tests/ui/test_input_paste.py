@@ -1,3 +1,4 @@
+# type: ignore
 from typing import Protocol, cast
 
 import pytest

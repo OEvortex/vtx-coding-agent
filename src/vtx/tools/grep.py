@@ -200,7 +200,7 @@ class GrepTool(BaseTool[GrepParams]):
         if not stdout and not used_fallback:
             return ToolResult(success=True, result="No matches found.", ui_summary="No matches")
 
-        lines = stdout.splitlines()
+        lines = list[str](stdout.splitlines())
         n_matches = len(lines)
         if n_matches > MAX_RESULTS:
             lines = lines[:MAX_RESULTS]

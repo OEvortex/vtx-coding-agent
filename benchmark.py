@@ -4,8 +4,8 @@ Vortexa Indexer Benchmark — VTX Codebase
 =========================================
 Benchmarks TWO embedding models from the vortexa library on the VTX codebase:
 
-  Model A: VTXAI/Vortex-Embed-4.7M  (LF4Embedder  — 4-bit static, ~3.5 MB)
-  Model B: AI4free/JARVIS-tool-search-v1 (Model2VecEmbedder — static, ~30 MB)
+  Model A: VTXAI/vtx-embed-1M   (LF4Embedder — 4-bit static nano, ~1 MB, fastest)
+  Model B: VTXAI/vtx-embed-7M   (LF4Embedder — 4-bit static mini, ~7 MB, default)
 
 Metrics reported per model
   - Indexing time (ms)
@@ -215,7 +215,7 @@ def run_benchmark(
     # Temporary isolated index dir to avoid cache pollution between runs
     tmp_index = tempfile.mkdtemp(prefix=f"vtx_bench_{model_label.replace(' ', '_')}_")
 
-    chunk_cfg = ChunkConfig(chunk_size=1500, chunk_overlap=200)
+    chunk_cfg = ChunkConfig(chunk_size=400, chunk_overlap=200)
     indexer = CodebaseIndexer(
         root=root, model=embedder, index_dir=tmp_index, chunk_config=chunk_cfg
     )
@@ -494,9 +494,7 @@ def main() -> None:
     parser.add_argument(
         "--no-m2v", action="store_true", help="Skip Model2Vec benchmark (faster, fewer deps)"
     )
-    parser.add_argument(
-        "--no-lf4", action="store_true", help="Skip LF4 (Vortex-Embed-4.7M) benchmark"
-    )
+    parser.add_argument("--no-lf4", action="store_true", help="Skip LF4 (vtx-embed-7M) benchmark")
     parser.add_argument(
         "--output",
         type=Path,
@@ -523,7 +521,8 @@ def main() -> None:
     models_to_run: list[tuple[str, Any]] = []
 
     if not args.no_lf4:
-        models_to_run.append(("LF4 Vortex-Embed-4.7M", LF4Embedder("VTXAI/Vortex-Embed-4.7M")))
+        models_to_run.append(("LF4 vtx-embed-1M (nano)", LF4Embedder("VTXAI/vtx-embed-1M")))
+        models_to_run.append(("LF4 vtx-embed-7M (mini)", LF4Embedder("VTXAI/vtx-embed-7M")))
 
     if not args.no_m2v:
         models_to_run.append(

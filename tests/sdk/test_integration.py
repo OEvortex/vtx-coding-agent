@@ -1,3 +1,4 @@
+# type: ignore
 """End-to-end integration tests for the SDK."""
 
 from __future__ import annotations

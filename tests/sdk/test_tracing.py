@@ -1,3 +1,4 @@
+# type: ignore
 """Tests for tracing primitives and exporters."""
 
 from __future__ import annotations

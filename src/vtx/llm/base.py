@@ -98,6 +98,8 @@ class GenerationSettings:
     response_format: str | None = None
     json_mode: bool = False
     metadata: dict[str, Any] | None = None
+
+
 LOCAL_API_KEY_PLACEHOLDER = "vtx-local"
 AuthMode = Literal["auto", "required", "none"]
 

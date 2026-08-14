@@ -1,3 +1,4 @@
+# type: ignore
 from vtx.ui.widgets import InfoBar
 
 

@@ -384,7 +384,7 @@ class TaskTool(BaseTool[TaskParams]):
     mutating = False
 
     @property
-    def ui_block(self) -> type | None:
+    def ui_block(self) -> type | None:  # type: ignore[override]
         from ..ui.blocks import TaskToolBlock
 
         return TaskToolBlock

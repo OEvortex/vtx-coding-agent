@@ -697,6 +697,7 @@ class Runner:
         # Find the matching handoff tool name.
         _all_tools, handoff_targets, _handoff_by_name = current_agent.all_tools()
         target_name = None
+        target_agent = None
         for tc in handoff_calls:
             for htool_name, target in handoff_targets.items():
                 if tc.name == htool_name:
@@ -708,6 +709,7 @@ class Runner:
 
         if target_name is None:
             return None
+        assert target_agent is not None
 
         # The handoff target takes over the conversation. We add a
         # synthetic user note that names the handoff so the target agent

@@ -184,7 +184,7 @@ class AnthropicSDK(BaseLLMSDK):
         self._client: httpx.AsyncClient | None = None
 
     @property
-    def client(self) -> httpx.AsyncClient:
+    def client(self) -> httpx.AsyncClient:  # pyright: ignore[reportIncompatibleMethodOverride]
         if self._client is None:
             assert self.base_url is not None
             self._client = httpx.AsyncClient(

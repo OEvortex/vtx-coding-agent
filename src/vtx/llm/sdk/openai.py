@@ -42,7 +42,7 @@ def _is_transient_error(e: Exception) -> bool:
     )
 
 
-async def _retry_on_transient(coro_factory, max_retries: int = _MAX_RETRIES):
+async def _retry_on_transient(coro_factory, max_retries: int = _MAX_RETRIES) -> Any:
     last_error = None
     for attempt in range(max_retries):
         try:
@@ -203,7 +203,7 @@ class OpenAISDK(BaseLLMSDK):
         self._provider_slug = (provider_slug or "").lower() or None
 
     @property
-    def client(self) -> AsyncOpenAI:
+    def client(self) -> AsyncOpenAI:  # pyright: ignore[reportIncompatibleMethodOverride]
         if self._async_client is None:
             self._async_client = AsyncOpenAI(
                 api_key=self.api_key, base_url=self.base_url, timeout=None, max_retries=3
@@ -299,6 +299,7 @@ class OpenAISDK(BaseLLMSDK):
                 raw_stream = await _retry_on_transient(
                     lambda: self.client.chat.completions.create(**kwargs)
                 )
+                assert raw_stream is not None
                 return _openai_stream_chunks(raw_stream)
             else:
 
@@ -306,6 +307,7 @@ class OpenAISDK(BaseLLMSDK):
                     return await self.client.chat.completions.create(**kwargs)
 
                 completion = await _retry_on_transient(_do_generate)
+                assert completion is not None
                 choice = completion.choices[0]
                 msg = choice.message
                 content = msg.content or ""
@@ -349,6 +351,7 @@ class OpenAISDK(BaseLLMSDK):
                 raw_stream = await _retry_on_transient(
                     lambda: self.client.chat.completions.create(**kwargs)
                 )
+                assert raw_stream is not None
                 return _openai_stream_chunks(raw_stream)
             else:
 
@@ -356,6 +359,7 @@ class OpenAISDK(BaseLLMSDK):
                     return await self.client.chat.completions.create(**kwargs)
 
                 completion = await _retry_on_transient(_do_generate)
+                assert completion is not None
                 choice = completion.choices[0]
                 msg = choice.message
                 content = msg.content or ""

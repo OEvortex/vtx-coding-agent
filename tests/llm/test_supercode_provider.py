@@ -1,3 +1,4 @@
+# type: ignore
 """Tests for the Supercode provider.
 
 Tests the provider's message conversion, tool conversion (both ToolDefinition

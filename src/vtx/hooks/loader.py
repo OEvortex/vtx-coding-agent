@@ -71,7 +71,7 @@ def _normalize_source(
                 continue
             events.setdefault(event, []).append(
                 HookConfig(
-                    event=event,
+                    event=cast(HookEvent, event),
                     matcher=entry.get("matcher"),
                     type=entry.get("type", "command"),
                     command=entry.get("command", ""),

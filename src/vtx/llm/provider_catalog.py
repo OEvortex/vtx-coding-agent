@@ -105,12 +105,6 @@ def _load_builtin() -> dict[str, ProviderInfo]:
     return {e["slug"]: _parse_entry(e) for e in data.get("providers", [])}
 
 
-def _load_builtin() -> dict[str, ProviderInfo]:
-    with open(_YAML_PATH, encoding="utf-8") as f:
-        data = yaml.safe_load(f)
-    return {e["slug"]: _parse_entry(e) for e in data.get("providers", [])}
-
-
 def _get_order() -> list[str]:
     global _order_cache
     if _order_cache is not None:

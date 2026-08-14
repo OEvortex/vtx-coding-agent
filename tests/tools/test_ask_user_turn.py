@@ -1,3 +1,4 @@
+# type: ignore
 """End-to-end test of the ask_user tool through run_single_turn.
 
 These tests exercise the interception logic in ``_TurnRunner._run_ask_user``:

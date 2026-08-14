@@ -10,6 +10,7 @@ from importlib import resources
 from pathlib import Path
 from typing import Any, Literal, get_args
 
+import yaml
 from pydantic import BaseModel, Field, ValidationError, field_validator, model_validator
 
 from .themes import ColorsConfig, get_theme, get_theme_ids
@@ -772,8 +773,6 @@ def update_available_binaries() -> None:
 
 def _read_config_data(config_file: Path) -> dict[str, Any]:
     try:
-        import yaml
-
         with open(config_file, encoding="utf-8") as f:
             return yaml.safe_load(f) or {}
     except (OSError, yaml.YAMLError) as exc:

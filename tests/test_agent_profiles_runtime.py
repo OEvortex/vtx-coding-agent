@@ -1,3 +1,4 @@
+# type: ignore
 """Tests for the agent end-to-end flow: loading, runtime activation, CLI."""
 
 from __future__ import annotations

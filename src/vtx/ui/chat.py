@@ -76,8 +76,10 @@ WITTY_ROTATE_EVERY_TICKS = 12
 
 def _pick_witty_line(exclude: str | None = None) -> str:
     """Pick a random witty spinner line, avoiding ``exclude`` if possible."""
+    if not WITTY_STATUS_LINES:
+        return ""
     if len(WITTY_STATUS_LINES) <= 1:
-        return WITTY_STATUS_LINES[0]
+        return WITTY_STATUS_LINES[0]  # pyright: ignore[reportGeneralTypeIssues]
     choice = random.choice(WITTY_STATUS_LINES)
     if exclude is None or choice != exclude:
         return choice

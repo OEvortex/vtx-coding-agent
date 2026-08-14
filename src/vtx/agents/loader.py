@@ -73,6 +73,7 @@ def _coerce_raw_tools(raw: list[Any] | None) -> dict[str, BaseTool]:
                 f"tools[{idx}]: unsupported type {type(item).__name__} "
                 f"(expected BaseTool, callable, or Agent)"
             )
+        assert isinstance(tool, BaseTool)
         key = tool.name or f"tool-{idx}"
         out[key] = tool
     return out
