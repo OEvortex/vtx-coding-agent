@@ -15,6 +15,22 @@ def build_parser() -> argparse.ArgumentParser:
     subparsers.add_parser(
         "update", help="Self-update vtx to the latest stable PyPI release and exit"
     )
+
+    install_parser = subparsers.add_parser(
+        "install", help="Install a vtx extension or agent package"
+    )
+    install_parser.add_argument(
+        "name", help="Extension or agent package name (tries vtx-<name> then <name>)"
+    )
+    install_parser.add_argument(
+        "--upgrade", action="store_true", help="Upgrade if already installed"
+    )
+
+    uninstall_parser = subparsers.add_parser("uninstall", help="Uninstall a vtx extension")
+    uninstall_parser.add_argument("name", help="Extension package name to uninstall")
+
+    subparsers.add_parser("list-extensions", help="List installed extensions")
+
     parser.add_argument("--model", "-m", help="Model to use")
     parser.add_argument("--provider", choices=sorted(PROVIDER_API_BY_NAME), help="Provider to use")
     parser.add_argument(
@@ -93,12 +109,65 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "--list-agents", action="store_true", help="List all available agents and exit"
     )
+    parser.add_argument(
+        "--list-extensions", action="store_true", help="List installed extensions and exit"
+    )
     parser.add_argument("--version", action="version", version=f"vtx {VERSION}")
     return parser
 
 
 def main() -> None:
     parser = build_parser()
+
+    # Handle subcommands before full parsing.
+    if len(sys.argv) > 1 and sys.argv[1] in ("install", "uninstall", "list-extensions"):
+        sub = sys.argv[1]
+
+        if sub == "install":
+            from .extension_manager import install_extension
+
+            name = sys.argv[2] if len(sys.argv) > 2 else None
+            if not name:
+                parser.error("install requires a package name")
+            upgrade = "--upgrade" in sys.argv
+            ok, msg, _ = install_extension(name, upgrade=upgrade)
+            if ok:
+                print(f"vtx install: {msg}")
+            else:
+                print(f"vtx install failed: {msg}", file=sys.stderr)
+                raise SystemExit(1)
+            raise SystemExit(0)
+
+        if sub == "uninstall":
+            from .extension_manager import uninstall_extension
+
+            name = sys.argv[2] if len(sys.argv) > 2 else None
+            if not name:
+                parser.error("uninstall requires a package name")
+            ok, msg = uninstall_extension(name)
+            if ok:
+                print(f"vtx uninstall: {msg}")
+            else:
+                print(f"vtx uninstall failed: {msg}", file=sys.stderr)
+                raise SystemExit(1)
+            raise SystemExit(0)
+
+        if sub == "list-extensions":
+            from .extension_manager import list_installed
+
+            extensions = list_installed()
+            if not extensions:
+                print("No installed extensions.")
+            else:
+                for ext in extensions:
+                    version = f" ({ext.version})" if ext.version else ""
+                    print(f"{ext.name}{version}  source={ext.source}")
+                    if ext.extensions:
+                        print(f"  extensions: {', '.join(ext.extensions)}")
+                    if ext.agents:
+                        print(f"  agents: {', '.join(ext.agents)}")
+            raise SystemExit(0)
+
     args = parser.parse_args()
 
     if args.command == "update":
@@ -129,6 +198,18 @@ def main() -> None:
                 print(f"{a.definition.name}\t{a.definition.description}\t{a.path}")
         for err in errors:
             print(f"agent error: {err}", file=sys.stderr)
+        raise SystemExit(0)
+
+    if args.list_extensions:
+        from .extension_manager import list_installed
+
+        extensions = list_installed()
+        if not extensions:
+            print("No installed extensions.")
+        else:
+            for ext in extensions:
+                version = f" ({ext.version})" if ext.version else ""
+                print(f"{ext.name}{version}  source={ext.source}")
         raise SystemExit(0)
 
     if args.prompt is not None:

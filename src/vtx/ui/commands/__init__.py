@@ -6,8 +6,7 @@
 - auth.py     - /login, /logout
 - providers.py - /provider
 - agents.py   - /agent
-
-CommandsMixin composes the domain mixins and owns the command router.
+- switch.py   - /switch
 """
 
 from __future__ import annotations
@@ -20,10 +19,17 @@ from .models import ModelCommands
 from .providers import ProviderCommands
 from .sessions import SessionCommands
 from .settings import SettingsCommands, SettingsSelectionResult
+from .switch import SwitchCommands
 
 
 class CommandsMixin(
-    SettingsCommands, ModelCommands, SessionCommands, AuthCommands, ProviderCommands, AgentCommands
+    SettingsCommands,
+    ModelCommands,
+    SessionCommands,
+    AuthCommands,
+    ProviderCommands,
+    AgentCommands,
+    SwitchCommands,
 ):
     def _handle_command(self, text: str) -> bool:
         parts = text[1:].split(maxsplit=1)
@@ -93,6 +99,9 @@ class CommandsMixin(
         if cmd == "agent":
             self._handle_agent_command(args)
             return True
+        if cmd == "switch":
+            self._handle_switch_command(args)
+            return True
 
         # Extension commands take a final swing at anything the built-ins
         # did not handle. They can shadow built-in commands; this matches
@@ -141,4 +150,5 @@ __all__ = [
     "SessionCommands",
     "SettingsCommands",
     "SettingsSelectionResult",
+    "SwitchCommands",
 ]
