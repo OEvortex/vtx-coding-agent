@@ -1,6 +1,6 @@
 """
 Extension manager: install, list, and uninstall vtx extensions from PyPI
-or local paths.
+or GitHub repos.
 
 An extension package can expose its extensions/agents via:
 
@@ -18,6 +18,7 @@ from __future__ import annotations
 import logging
 import subprocess
 import sys
+import tempfile
 from dataclasses import dataclass, field
 from pathlib import Path
 
@@ -31,7 +32,7 @@ INSTALLED_EXTENSIONS_FILE = "installed_extensions.yml"
 @dataclass
 class InstalledExtension:
     name: str
-    source: str  # pip package name or local path
+    source: str  # pip package name, local path, or git URL
     version: str = ""
     extensions: list[str] = field(default_factory=list)
     agents: list[str] = field(default_factory=list)
@@ -97,6 +98,26 @@ def _run_uv_pip_install(package: str) -> tuple[bool, str]:
         return False, "uv not found; install uv first"
     except subprocess.TimeoutExpired:
         return False, f"timeout installing {package}"
+    except Exception as exc:
+        return False, str(exc)
+
+
+def _run_git_clone(url: str, dest: Path) -> tuple[bool, str]:
+    """Run ``git clone <url> <dest>`` and return (success, output)."""
+    try:
+        result = subprocess.run(
+            ["git", "clone", "--depth", "1", url, str(dest)],
+            capture_output=True,
+            text=True,
+            timeout=120,
+        )
+        if result.returncode == 0:
+            return True, result.stdout
+        return False, result.stderr or result.stdout
+    except FileNotFoundError:
+        return False, "git not found; install git first"
+    except subprocess.TimeoutExpired:
+        return False, f"timeout cloning {url}"
     except Exception as exc:
         return False, str(exc)
 
@@ -179,14 +200,33 @@ def _get_package_version(package: str) -> str:
         return ""
 
 
+def _is_url(value: str) -> bool:
+    """Return True if value looks like a URL (git, https, ssh)."""
+    return value.startswith(("http://", "https://", "ssh://", "git@", "git://"))
+
+
+def _extract_repo_name(url: str) -> str:
+    """Extract repo name from a GitHub URL like https://github.com/user/repo."""
+    url = url.rstrip("/")
+    if url.endswith(".git"):
+        url = url[:-4]
+    name = url.split("/")[-1]
+    # Sanitize to a valid Python package name
+    return name.lower().replace("-", "_")
+
+
 def install_extension(
     name: str, *, upgrade: bool = False
 ) -> tuple[bool, str, InstalledExtension | None]:
-    """Install an extension package.
+    """Install an extension package from PyPI or a GitHub repo.
 
-    Tries ``vtx-<name>`` first, then ``<name>`` if the first fails.
-    Returns (success, message, extension_info).
+    - If ``name`` is a URL, clone it and install from the local path.
+    - Otherwise, try ``vtx-<name>`` then ``<name>`` via pip.
+    - Returns (success, message, extension_info).
     """
+    if _is_url(name):
+        return _install_from_git(name)
+
     candidates = [f"vtx-{name}", name] if not name.startswith("vtx-") else [name]
 
     installed_pkg = None
@@ -205,20 +245,63 @@ def install_extension(
     if pkg_location is None:
         return (False, f"installed {installed_pkg} but could not locate package files", None)
 
+    return _finalize_install(pkg_location, name, installed_pkg)
+
+
+def _install_from_git(url: str) -> tuple[bool, str, InstalledExtension | None]:
+    """Clone a git repo and install it as a local extension."""
+    repo_name = _extract_repo_name(url)
+    with tempfile.TemporaryDirectory(prefix="vtx-ext-") as tmp:
+        dest = Path(tmp) / repo_name
+        ok, msg = _run_git_clone(url, dest)
+        if not ok:
+            return False, f"git clone failed: {msg}", None
+
+        # Try pip install from the cloned path first
+        pip_ok, _pip_msg = _run_uv_pip_install(str(dest))
+        if pip_ok:
+            pkg_location = _find_package_location(repo_name)
+            if pkg_location:
+                return _finalize_install(pkg_location, repo_name, url)
+
+        # Fall back to direct package layout discovery from the clone
+        extensions, agents = _discover_entry_points(dest)
+        if not extensions and not agents:
+            extensions, agents = _discover_package_layout(dest)
+
+        info = InstalledExtension(
+            name=repo_name, source=url, version="", extensions=extensions, agents=agents
+        )
+        installed = _load_installed()
+        installed[repo_name] = info
+        _save_installed(installed)
+
+        parts = [f"cloned {url}"]
+        if extensions:
+            parts.append(f"{len(extensions)} extension(s)")
+        if agents:
+            parts.append(f"{len(agents)} agent(s)")
+        return True, ", ".join(parts), info
+
+
+def _finalize_install(
+    pkg_location: Path, name: str, source: str
+) -> tuple[bool, str, InstalledExtension]:
+    """Discover entry points and save to installed record."""
     extensions, agents = _discover_entry_points(pkg_location)
     if not extensions and not agents:
         extensions, agents = _discover_package_layout(pkg_location)
 
-    version = _get_package_version(installed_pkg)
+    version = _get_package_version(name)
     info = InstalledExtension(
-        name=name, source=installed_pkg, version=version, extensions=extensions, agents=agents
+        name=name, source=source, version=version, extensions=extensions, agents=agents
     )
 
     installed = _load_installed()
     installed[name] = info
     _save_installed(installed)
 
-    parts = [f"installed {installed_pkg} ({version})"]
+    parts = [f"installed {source} ({version})"]
     if extensions:
         parts.append(f"{len(extensions)} extension(s)")
     if agents:

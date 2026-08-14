@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import sys
-from unittest.mock import patch
 
 import pytest
 
@@ -72,5 +71,6 @@ def test_resume_flags_rejected_with_prompt(monkeypatch, flag):
     monkeypatch.setattr(sys, "argv", ["vtx", "-p", "x", *flag])
     with pytest.raises(SystemExit) as exc:
         from vtx.cli import main
+
         main()
     assert exc.value.code == 2
