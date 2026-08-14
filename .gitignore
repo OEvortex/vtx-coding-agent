@@ -25,3 +25,4 @@ image.png
 site/node_modules/
 model-merge/
 vscode-vtx/node_modules/
+benchmark_results.json

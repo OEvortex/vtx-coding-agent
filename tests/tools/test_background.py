@@ -16,7 +16,6 @@ import pytest
 from vtx.tools.background import BackgroundTaskManager, get_manager, reset_manager, set_manager
 
 
-
 class FakeResult:
     def __init__(self, final_text: str = "ok", turns: int = 1, total_tokens: int = 42):
         self.final_text = final_text
