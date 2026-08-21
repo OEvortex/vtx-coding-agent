@@ -1,4 +1,3 @@
-# type: ignore
 """Tests for the chat input's _on_key forwarding to the app.
 
 Mirrors the structure of ``test_input_approval_submit.py`` but covers

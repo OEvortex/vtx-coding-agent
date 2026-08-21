@@ -1,4 +1,3 @@
-# type: ignore
 from tui.app import Vtx
 from tui.blocks import LaunchWarning
 

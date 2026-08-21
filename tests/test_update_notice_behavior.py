@@ -1,4 +1,3 @@
-# type: ignore
 from tui.app import Vtx
 
 

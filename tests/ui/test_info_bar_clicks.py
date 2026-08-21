@@ -1,4 +1,3 @@
-# type: ignore
 from tui.widgets import InfoBar
 
 

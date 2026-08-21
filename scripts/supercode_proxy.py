@@ -19,8 +19,10 @@ class Supercode:
         try:
             with open(os.path.expanduser("~/.better-auth/token.json")) as f:
                 return json.load(f)["access_token"]
-        except Exception:
-            raise RuntimeError("No token provided and ~/.better-auth/token.json not found.")
+        except Exception as exc:
+            raise RuntimeError(
+                "No token provided and ~/.better-auth/token.json not found."
+            ) from exc
 
     def register_tool(self, name: str, func: Callable):
         """Register a local Python function that the agent can execute."""

@@ -1,4 +1,3 @@
-# type: ignore
 from tui.autocomplete import SlashCommand
 from tui.floating_list import ListItem
 from tui.input import InputBox
