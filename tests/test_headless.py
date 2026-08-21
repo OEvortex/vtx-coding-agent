@@ -3,7 +3,7 @@ from io import StringIO
 
 import pytest
 
-from agent.sdk import Agent
+from agent.loop import Agent
 from agent.session import Session
 from ai.providers.mock import MockProvider
 from coding_agent.config import get_config

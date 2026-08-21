@@ -3,9 +3,8 @@ from typing import cast
 
 import pytest
 
-from agent.loop import AgentConfig
+from agent.loop import Agent, AgentConfig
 from agent.runtime import ConversationRuntime
-from agent.sdk import Agent
 from agent.session import CompactionEntry, Session
 from ai.providers.mock import MockProvider
 from coding_agent.config import Config

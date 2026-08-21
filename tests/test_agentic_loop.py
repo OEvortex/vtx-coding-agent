@@ -6,7 +6,7 @@ from typing import Any
 import pytest
 
 from agent.context_governance import _MAX_TOOL_RESULT_CHARS
-from agent.sdk import Agent
+from agent.loop import Agent
 from agent.session import Session
 from agent.tools import BashTool, ReadTool
 from agent.turn import prepare_for_model, run_single_turn

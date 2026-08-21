@@ -1,7 +1,7 @@
 import pytest
 
+from agent.loop import Agent
 from agent.runtime import ConversationRuntime
-from agent.sdk import Agent
 from agent.session import Session
 from ai.providers.mock import MockProvider
 from protocol.types import AssistantMessage, TextContent
