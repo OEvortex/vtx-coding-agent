@@ -1,4 +1,5 @@
-from vtx.core.types import (
+from agent.session import Session
+from protocol.types import (
     AssistantMessage,
     FileChanges,
     TextContent,
@@ -7,7 +8,6 @@ from vtx.core.types import (
     Usage,
     UserMessage,
 )
-from vtx.session import Session
 
 
 def test_session_token_totals_file_changes_and_message_counts() -> None:

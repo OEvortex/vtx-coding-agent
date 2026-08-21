@@ -1,5 +1,5 @@
 # type: ignore
-from vtx.ui.app import Vtx
+from tui.app import Vtx
 
 
 def _make_app() -> Vtx:

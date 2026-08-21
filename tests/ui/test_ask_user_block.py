@@ -9,11 +9,11 @@ turn-runner tests in ``tests/tools/test_ask_user_turn.py``.
 import pytest
 from textual.app import App, ComposeResult
 
-from vtx.permissions import AskUserOption
-from vtx.ui.blocks import ASK_USER_OTHER_DISPLAY, ASK_USER_OTHER_LABEL, ToolBlock
-from vtx.ui.chat import ChatLog
-from vtx.ui.input import AskUserInput
-from vtx.ui.styles import get_styles
+from protocol import AskUserOption
+from tui.blocks import ASK_USER_OTHER_DISPLAY, ASK_USER_OTHER_LABEL, ToolBlock
+from tui.chat import ChatLog
+from tui.input import AskUserInput
+from tui.styles import get_styles
 
 
 def _options(n: int = 2) -> list[AskUserOption]:
@@ -207,7 +207,7 @@ class _AskUserFocusApp(App):
 
     def compose(self) -> ComposeResult:
         yield ChatLog(id="chat-log")
-        from vtx.ui.input import InputBox
+        from tui.input import InputBox
 
         yield InputBox(id="input-box")
 

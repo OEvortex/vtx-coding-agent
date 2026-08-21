@@ -10,8 +10,8 @@ and not consumed by the TextArea.
 import asyncio
 from typing import Any
 
-from vtx.permissions import AskUserOption
-from vtx.ui.input import _is_ask_user_picker_key
+from protocol import AskUserOption
+from tui.input import _is_ask_user_picker_key
 
 
 class FakeFuture:

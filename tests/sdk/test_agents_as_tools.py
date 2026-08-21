@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import pytest
 
-from vtx.sdk import Agent
+from agent.sdk import Agent
 
 
 def test_as_tool_default_metadata() -> None:
@@ -41,7 +41,7 @@ def test_as_tool_format_call() -> None:
 @pytest.mark.asyncio
 async def test_as_tool_executes_subagent() -> None:
     """The parent invokes the sub-agent; the sub-agent's final output becomes the tool result."""
-    from vtx.llm.providers.mock import MockProvider
+    from ai.providers.mock import MockProvider
 
     sub_provider = MockProvider(scenario="simple_text")
     sub = Agent(name="Sub", provider=sub_provider, instructions="be brief")

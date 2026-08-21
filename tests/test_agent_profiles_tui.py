@@ -4,10 +4,10 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from vtx.agents import AgentDef, AgentRegistry, LoadedAgent
-from vtx.config import set_last_selected
-from vtx.extensions import EventBus
-from vtx.runtime import ConversationRuntime
+from agent.agents import AgentDef, AgentRegistry, LoadedAgent
+from agent.extensions import EventBus
+from agent.runtime import ConversationRuntime
+from coding_agent.config import set_last_selected
 
 
 def _registry_with_agents(*names: str) -> AgentRegistry:
@@ -31,7 +31,7 @@ def test_action_cycle_agent_string_set(monkeypatch, tmp_path: Path):
     """
     monkeypatch.setattr("pathlib.Path.home", lambda: tmp_path / "home")
     monkeypatch.delenv("XDG_CONFIG_HOME", raising=False)
-    from vtx.config import reset_config
+    from coding_agent import reset_config
 
     reset_config()
 
@@ -69,7 +69,7 @@ def test_action_cycle_agent_string_set(monkeypatch, tmp_path: Path):
 def test_agents_command_mixin_exists():
     """The /agent command mixin is importable and exposes the expected
     methods used by the TUI."""
-    from vtx.ui.commands.agents import AgentCommands
+    from tui.commands.agents import AgentCommands
 
     assert hasattr(AgentCommands, "_handle_agent_command")
     assert hasattr(AgentCommands, "_set_active_agent")
@@ -82,7 +82,7 @@ def test_agents_command_mixin_exists():
 
 def test_agents_command_registered_in_router():
     """The /agent command is wired into the central command router."""
-    from vtx.ui.commands import CommandsMixin
+    from tui.commands import CommandsMixin
 
     src = Path(CommandsMixin._handle_command.__code__.co_filename)
     text = src.read_text()
@@ -92,7 +92,7 @@ def test_agents_command_registered_in_router():
 
 def test_app_binding_for_shift_tab_is_cycle_agent():
     """The Shift+Tab binding in the TUI app triggers the agent cycle."""
-    from vtx.ui.app import Vtx
+    from tui.app import Vtx
 
     bindings = {b.key: b.action for b in Vtx.BINDINGS if hasattr(b, "key")}
     assert "shift+tab" in bindings

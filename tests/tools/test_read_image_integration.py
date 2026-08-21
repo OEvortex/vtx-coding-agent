@@ -1,7 +1,7 @@
 import pytest
 
-from vtx.core.types import ImageContent
-from vtx.tools.read import ReadParams, ReadTool
+from agent.tools.read import ReadParams, ReadTool
+from protocol.types import ImageContent
 
 
 @pytest.fixture

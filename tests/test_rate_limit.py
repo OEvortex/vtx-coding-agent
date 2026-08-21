@@ -1,6 +1,6 @@
 import pytest
 
-from vtx.llm.rate_limit import RateLimitManager, is_rate_limit_error, parse_retry_after
+from ai.rate_limit import RateLimitManager, is_rate_limit_error, parse_retry_after
 
 
 class _StatusError(Exception):

@@ -1,8 +1,8 @@
 import subprocess
 
-from vtx import Config, reset_config, set_config
-from vtx.context import Context
-from vtx.loop import build_system_prompt
+from agent.context import Context
+from coding_agent.config import Config, reset_config, set_config
+from coding_agent.prompts import build_system_prompt
 
 
 def _run(cmd: list[str], cwd: str) -> None:

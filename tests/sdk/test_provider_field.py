@@ -17,9 +17,9 @@ from dataclasses import fields
 
 import pytest
 
-from vtx.llm.providers.mock import MockProvider
-from vtx.sdk import Agent, Runner
-from vtx.sdk.agent import _PROVIDER_DICT_KEYS
+from agent.sdk import Agent, Runner
+from agent.sdk.agent import _PROVIDER_DICT_KEYS
+from ai.providers.mock import MockProvider
 
 # ---------------------------------------------------------------------------
 # Field shape

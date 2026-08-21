@@ -10,8 +10,8 @@ from typing import cast
 
 from textual import events
 
-from vtx.permissions import AskUserOption, AskUserResponse
-from vtx.ui.app import Vtx
+from protocol import AskUserOption, AskUserResponse
+from tui.app import Vtx
 
 
 class FakeKeyEvent:

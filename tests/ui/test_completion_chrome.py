@@ -5,18 +5,18 @@ from typing import Any, cast
 
 import pytest
 
-from vtx.runtime import ConversationRuntime
-from vtx.session import SessionInfo
-from vtx.ui.app import Vtx
-from vtx.ui.autocomplete import (
+from agent.runtime import ConversationRuntime
+from agent.session import SessionInfo
+from tui.app import Vtx
+from tui.autocomplete import (
     FilePathProvider,
     PullRequestProvider,
     SlashCommand,
     SlashCommandProvider,
 )
-from vtx.ui.floating_list import FloatingList, ListItem
-from vtx.ui.input import InputBox
-from vtx.ui.selection_mode import SelectionMode
+from tui.floating_list import FloatingList, ListItem
+from tui.input import InputBox
+from tui.selection_mode import SelectionMode
 
 
 class FakeChat:

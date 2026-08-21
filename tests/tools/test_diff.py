@@ -1,4 +1,4 @@
-from vtx.tools.edit import generate_diff
+from agent.tools.edit import generate_diff
 
 
 class TestGenerateDiff:

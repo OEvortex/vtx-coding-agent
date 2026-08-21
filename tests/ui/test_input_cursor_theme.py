@@ -1,5 +1,5 @@
-from vtx import Config, reset_config, set_config
-from vtx.ui.input import _get_textarea_theme
+from coding_agent.config import Config, reset_config, set_config
+from tui.input import _get_textarea_theme
 
 
 def test_input_cursor_uses_theme_foreground():

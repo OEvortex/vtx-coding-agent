@@ -6,7 +6,7 @@ from pathlib import Path
 
 import pytest
 
-from vtx.sdk.sessions import InMemorySession, JSONLSession, Session
+from agent.sdk.sessions import InMemorySession, JSONLSession, Session
 
 
 @pytest.mark.asyncio

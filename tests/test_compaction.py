@@ -3,9 +3,14 @@ from typing import cast
 
 import pytest
 
-from vtx.config import Config
-from vtx.core.compaction import is_overflow
-from vtx.core.types import (
+from agent.loop import AgentConfig
+from agent.runtime import ConversationRuntime
+from agent.sdk import Agent
+from agent.session import CompactionEntry, Session
+from ai.providers.mock import MockProvider
+from coding_agent.config import Config
+from protocol.compaction import is_overflow
+from protocol.types import (
     AssistantMessage,
     StopReason,
     TextContent,
@@ -14,11 +19,7 @@ from vtx.core.types import (
     Usage,
     UserMessage,
 )
-from vtx.llm.providers.mock import MockProvider
-from vtx.loop import Agent, AgentConfig
-from vtx.runtime import ConversationRuntime
-from vtx.session import CompactionEntry, Session
-from vtx.ui.commands import CommandsMixin
+from tui.commands import CommandsMixin
 
 # ---------------------------------------------------------------------------
 # is_overflow tests
@@ -239,7 +240,7 @@ class TestSessionCompactedMessages:
 
 class TestCompactionPersistence:
     def test_compaction_entry_round_trip(self, tmp_path, monkeypatch):
-        monkeypatch.setattr("vtx.session.Session.get_sessions_dir", lambda cwd: tmp_path)
+        monkeypatch.setattr("agent.session.Session.get_sessions_dir", lambda cwd: tmp_path)
 
         session = Session.create("/test/project")
         session.append_message(UserMessage(content="Hello"))
@@ -267,7 +268,7 @@ class TestCompactionPersistence:
         assert compaction_entries[0].details == {"model": "test"}
 
     def test_loaded_session_messages_are_compacted(self, tmp_path, monkeypatch):
-        monkeypatch.setattr("vtx.session.Session.get_sessions_dir", lambda cwd: tmp_path)
+        monkeypatch.setattr("agent.session.Session.get_sessions_dir", lambda cwd: tmp_path)
 
         session = Session.create("/test/project")
         session.append_message(UserMessage(content="Old"))
@@ -378,7 +379,7 @@ class TestCompactionUsageBacktracking:
         async def _fake_summary(*args, **kwargs):
             return "summary"
 
-        monkeypatch.setattr("vtx.runtime.generate_summary", _fake_summary)
+        monkeypatch.setattr("agent.runtime.generate_summary", _fake_summary)
 
         await app._do_compact()
 
@@ -423,7 +424,7 @@ class TestCompactionUsageBacktracking:
         async def _fake_summary(*args, **kwargs):
             return "summary"
 
-        monkeypatch.setattr("vtx.loop.generate_summary", _fake_summary)
+        monkeypatch.setattr("agent.loop.generate_summary", _fake_summary)
 
         events = [e async for e in agent._check_compaction(StopReason.STOP, "system", None)]
         assert [e.type for e in events] == ["compaction_start", "compaction_end"]

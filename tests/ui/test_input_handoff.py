@@ -1,7 +1,7 @@
 # type: ignore
-from vtx.ui.autocomplete import SlashCommand
-from vtx.ui.floating_list import ListItem
-from vtx.ui.input import InputBox
+from tui.autocomplete import SlashCommand
+from tui.floating_list import ListItem
+from tui.input import InputBox
 
 
 class _FakeSelection:

@@ -1,5 +1,5 @@
 # type: ignore
-from vtx.ui.widgets import InfoBar
+from tui.widgets import InfoBar
 
 
 class _FakeLabel:

@@ -1,7 +1,7 @@
 from rich.text import Text
 
-from vtx import config
-from vtx.tools.edit import format_diff_display
+from agent.tools.edit import format_diff_display
+from coding_agent.config import config
 
 
 def test_format_diff_display_short_lines_not_truncated() -> None:

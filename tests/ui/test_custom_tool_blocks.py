@@ -10,13 +10,13 @@ from pathlib import Path
 import pytest
 from textual.app import App, ComposeResult
 
-from vtx.agents.api import AgentAPI
-from vtx.agents.loader import load_agent
-from vtx.extensions import Extension, ExtensionAPI, ExtensionTool
-from vtx.tools.base import BaseTool
-from vtx.ui.blocks import ToolBlock
-from vtx.ui.chat import ChatLog
-from vtx.ui.styles import get_styles
+from agent.agents.api import AgentAPI
+from agent.agents.loader import load_agent
+from agent.extensions import Extension, ExtensionAPI, ExtensionTool
+from agent.tools.base import BaseTool
+from tui.blocks import ToolBlock
+from tui.chat import ChatLog
+from tui.styles import get_styles
 
 # ---------------------------------------------------------------------------
 # A small custom block, used as a fixture
@@ -108,7 +108,7 @@ def _noop_params():
 
 def _make_ext_api(name: str = "ext_test") -> tuple[ExtensionAPI, Extension]:
     """Build a minimal ``ExtensionAPI`` wired to a real :class:`Extension`."""
-    from vtx.extensions import EventBus
+    from agent import EventBus
 
     ext = Extension(name=name, path=Path(f"/{name}.py"))
     api = ExtensionAPI(ext, bus=EventBus(), cwd=".", session_file=None, config_dir=Path("/"))
@@ -167,7 +167,8 @@ class TestLocalToolUiBlock:
     def _make_agent_api(self, tmp_path: Path) -> AgentAPI:
         agent_file = tmp_path / "reviewer.py"
         agent_file.write_text(
-            "from vtx.agents import AgentDef\nAGENT = AgentDef(name='reviewer', description='x')\n"
+            "from agent.agents import AgentDef\n"
+            "AGENT = AgentDef(name='reviewer', description='x')\n"
         )
         loaded = load_agent(agent_file, cwd=str(tmp_path), config_dir=tmp_path)
         return AgentAPI(loaded, cwd=str(tmp_path), config_dir=tmp_path)

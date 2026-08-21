@@ -1,7 +1,7 @@
 from typing import Any, cast
 
-from vtx import Config, reset_config, set_config
-from vtx.ui.widgets import InfoBar
+from coding_agent.config import Config, reset_config, set_config
+from tui.widgets import InfoBar
 
 
 class _FakeLabel:

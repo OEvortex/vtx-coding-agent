@@ -1,10 +1,15 @@
+import importlib
 from pathlib import Path
 
 import pytest
 
-import vtx.notify as mod
-from vtx.config import Config, set_config
-from vtx.notify import notify
+from coding_agent.config import Config, set_config
+from telemetry import notify
+
+# telemetry/__init__ re-exports the notify() function, which shadows the
+# telemetry.notify submodule for `import telemetry.notify as mod`; resolve
+# the module explicitly instead.
+mod = importlib.import_module("telemetry.notify")
 
 
 @pytest.fixture(autouse=True)

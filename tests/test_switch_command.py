@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from unittest.mock import MagicMock
 
-from vtx.ui.commands.switch import SwitchCommands
+from tui.commands.switch import SwitchCommands
 
 
 def test_switch_delegates_to_agent_handler():

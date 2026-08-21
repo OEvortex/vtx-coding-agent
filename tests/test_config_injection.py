@@ -2,7 +2,7 @@
 
 import pytest
 
-from vtx import Config, config, get_config, reload_config, reset_config, set_config
+from coding_agent.config import Config, config, get_config, reload_config, reset_config, set_config
 
 
 def test_config_proxy_delegates_to_get_config():

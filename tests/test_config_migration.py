@@ -2,7 +2,12 @@ from pathlib import Path
 
 import yaml
 
-from vtx.config import CURRENT_CONFIG_VERSION, consume_config_warnings, get_config, reset_config
+from coding_agent.config import (
+    CURRENT_CONFIG_VERSION,
+    consume_config_warnings,
+    get_config,
+    reset_config,
+)
 
 
 def test_old_config_is_migrated_and_backed_up(tmp_path, monkeypatch):

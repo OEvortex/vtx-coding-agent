@@ -2,8 +2,8 @@ from typing import cast
 
 from textual import events
 
-from vtx.permissions import ApprovalResponse
-from vtx.ui.app import Vtx
+from protocol import ApprovalResponse
+from tui.app import Vtx
 
 
 class FakeKeyEvent:

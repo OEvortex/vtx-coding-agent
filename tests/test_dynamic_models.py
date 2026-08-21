@@ -7,7 +7,7 @@ from pathlib import Path
 import httpx
 import pytest
 
-from vtx.llm import (
+from ai import (
     DYNAMIC_PROVIDERS,
     DynamicProviderConfig,
     get_dynamic_models,
@@ -16,7 +16,7 @@ from vtx.llm import (
     refresh_provider,
     register_dynamic_provider,
 )
-from vtx.llm.dynamic_models import (
+from ai.dynamic_models import (
     CachedCatalog,
     DynamicModelEntry,
     _cache_path,
@@ -28,7 +28,7 @@ from vtx.llm.dynamic_models import (
     get_cache_dir,
     get_dynamic_provider_headers,
 )
-from vtx.llm.models import Model
+from ai.models import Model
 
 
 @pytest.fixture(autouse=True)
@@ -279,7 +279,7 @@ async def test_async_fetch_writes_cache(monkeypatch: pytest.MonkeyPatch, tmp_pat
     }
     _stub_http_client(monkeypatch, payload)
 
-    from vtx.llm.dynamic_models import _async_fetch_catalog
+    from ai.dynamic_models import _async_fetch_catalog
 
     catalog = await _async_fetch_catalog(DYNAMIC_PROVIDERS["kilo"], api_key="test-key", force=True)
     assert len(catalog.models) == 1
@@ -317,7 +317,7 @@ async def test_async_fetch_falls_back_to_stale_cache_on_5xx(
 
     monkeypatch.setattr(httpx, "AsyncClient", _StubClient)
 
-    from vtx.llm.dynamic_models import _async_fetch_catalog
+    from ai.dynamic_models import _async_fetch_catalog
 
     catalog = await _async_fetch_catalog(DYNAMIC_PROVIDERS["kilo"], api_key="k", force=True)
     assert catalog.models[0].id == "stale"
@@ -349,7 +349,7 @@ async def test_async_fetch_auth_error_uses_cache(monkeypatch: pytest.MonkeyPatch
 
     monkeypatch.setattr(httpx, "AsyncClient", _StubClient)
 
-    from vtx.llm.dynamic_models import _async_fetch_catalog
+    from ai.dynamic_models import _async_fetch_catalog
 
     catalog = await _async_fetch_catalog(DYNAMIC_PROVIDERS["kilo"], api_key="k", force=True)
     assert catalog.models[0].id == "cached"
@@ -447,7 +447,7 @@ def test_get_dynamic_provider_headers():
 
 def test_get_dynamic_models_returns_static_shape(monkeypatch: pytest.MonkeyPatch, tmp_path: Path):
     monkeypatch.setenv("VTX_MODELS_CACHE_DIR", str(tmp_path))
-    monkeypatch.setattr("vtx.llm.dynamic_models._read_models_dev_sync", lambda: {})
+    monkeypatch.setattr("ai.dynamic_models._read_models_dev_sync", lambda: {})
     _write_cache(
         CachedCatalog(
             provider="kilo",
@@ -480,10 +480,10 @@ def test_get_all_models_dedupes_dynamic_overlap(monkeypatch: pytest.MonkeyPatch,
     cache. The merged result used to contain every dynamic model twice,
     which made the /model picker show each model with a duplicate row.
     """
-    from vtx.llm import get_all_models
+    from ai import get_all_models
 
     monkeypatch.setenv("VTX_MODELS_CACHE_DIR", str(tmp_path))
-    monkeypatch.setattr("vtx.llm.dynamic_models._read_models_dev_sync", lambda: {})
+    monkeypatch.setattr("ai.dynamic_models._read_models_dev_sync", lambda: {})
     _write_cache(
         CachedCatalog(
             provider="kilo",
@@ -517,7 +517,7 @@ def test_get_all_models_dedupes_dynamic_overlap(monkeypatch: pytest.MonkeyPatch,
 
 
 def test_dedupe_models_preserves_first_occurrence():
-    from vtx.llm.models import ApiType, dedupe_models
+    from ai.models import ApiType, dedupe_models
 
     a = Model(
         id="a",

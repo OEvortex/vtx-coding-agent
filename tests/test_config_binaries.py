@@ -1,4 +1,4 @@
-from vtx import AVAILABLE_BINARIES, config
+from coding_agent.config import AVAILABLE_BINARIES, config
 
 
 def test_available_binaries_is_set():

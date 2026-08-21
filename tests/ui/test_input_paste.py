@@ -4,8 +4,8 @@ from typing import Protocol, cast
 import pytest
 from textual._ansi_sequences import ANSI_SEQUENCES_KEYS
 
-from vtx.ui import prompt_history as ph
-from vtx.ui.input import InputBox
+from tui import prompt_history as ph
+from tui.input import InputBox
 
 
 @pytest.fixture(autouse=True)

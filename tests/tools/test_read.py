@@ -5,7 +5,7 @@ from pathlib import Path
 
 import pytest
 
-from vtx.tools.read import ReadParams, ReadTool
+from agent.tools.read import ReadParams, ReadTool
 
 
 @pytest.fixture
@@ -27,8 +27,8 @@ def _touch_with_timestamp(path: Path, year: int, month: int, day: int, hour: int
 
 @pytest.mark.asyncio
 async def test_read(read_tool, text_file, monkeypatch):
-    monkeypatch.setattr("vtx.tools.read.MAX_LINES_PER_FILE", 5)
-    monkeypatch.setattr("vtx.tools.read.MAX_CHARS_PER_LINE", 10)
+    monkeypatch.setattr("agent.tools.read.MAX_LINES_PER_FILE", 5)
+    monkeypatch.setattr("agent.tools.read.MAX_CHARS_PER_LINE", 10)
 
     tool_result = await read_tool.execute(ReadParams(path=str(text_file)))
     lines = tool_result.result.split("\n")
@@ -79,7 +79,7 @@ async def test_read_directory_uses_fd_with_depth_3_when_small(read_tool, tmp_pat
         return "fd"
 
     monkeypatch.setattr(ReadTool, "_list_directory_entries", mock_list_directory_entries)
-    monkeypatch.setattr("vtx.tools.read.ensure_tool", mock_ensure_tool)
+    monkeypatch.setattr("agent.tools.read.ensure_tool", mock_ensure_tool)
 
     tool_result = await read_tool.execute(ReadParams(path=str(tmp_path)))
 
@@ -107,7 +107,7 @@ async def test_read_directory_falls_back_to_depth_2(read_tool, tmp_path, monkeyp
         return "fd"
 
     monkeypatch.setattr(ReadTool, "_list_directory_entries", mock_list_directory_entries)
-    monkeypatch.setattr("vtx.tools.read.ensure_tool", mock_ensure_tool)
+    monkeypatch.setattr("agent.tools.read.ensure_tool", mock_ensure_tool)
 
     tool_result = await read_tool.execute(ReadParams(path=str(tmp_path)))
 
@@ -135,7 +135,7 @@ async def test_read_directory_falls_back_to_depth_1_and_truncates(
         return "fd"
 
     monkeypatch.setattr(ReadTool, "_list_directory_entries", mock_list_directory_entries)
-    monkeypatch.setattr("vtx.tools.read.ensure_tool", mock_ensure_tool)
+    monkeypatch.setattr("agent.tools.read.ensure_tool", mock_ensure_tool)
 
     tool_result = await read_tool.execute(ReadParams(path=str(tmp_path)))
 
@@ -159,7 +159,7 @@ async def test_read_directory_empty(read_tool, tmp_path, monkeypatch):
         return "fd"
 
     monkeypatch.setattr(ReadTool, "_list_directory_entries", mock_list_directory_entries)
-    monkeypatch.setattr("vtx.tools.read.ensure_tool", mock_ensure_tool)
+    monkeypatch.setattr("agent.tools.read.ensure_tool", mock_ensure_tool)
 
     tool_result = await read_tool.execute(ReadParams(path=str(tmp_path)))
 
