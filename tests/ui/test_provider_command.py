@@ -1,6 +1,7 @@
 """Tests for the /provider slash command and the /model model_provider_filter."""
 
 from contextlib import contextmanager
+from typing import TYPE_CHECKING, cast
 
 import pytest
 
@@ -11,6 +12,9 @@ from tui.commands import CommandsMixin
 from tui.commands.providers import _ALL_SLUG
 from tui.floating_list import ListItem
 from tui.selection_mode import SelectionMode
+
+if TYPE_CHECKING:
+    from agent.runtime import ConversationRuntime
 
 
 class FakeChat:
@@ -80,7 +84,7 @@ class FakeCommands(CommandsMixin):
         self.completion_list = FakeFloatingList()
         self.input_box = FakeInputBox()
         self._selection_mode: SelectionMode | None = None
-        self._runtime = FakeRuntime()  # type: ignore
+        self._runtime = cast("ConversationRuntime", FakeRuntime())
         self.notified: list[dict] = []
 
     @contextmanager

@@ -137,10 +137,12 @@ def _find_package_location(package: str) -> Path | None:
     # Fallback: try importlib.metadata
     try:
         from importlib.metadata import distribution
+        from pathlib import Path as _Path
 
         dist = distribution(package)
-        if dist.locate_file("").exists():
-            return Path(str(dist.locate_file("")))
+        located = _Path(str(dist.locate_file("")))
+        if located.exists():
+            return located
     except Exception:
         pass
     return None

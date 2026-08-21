@@ -28,8 +28,8 @@ class CommandsMixin(
     SessionCommands,
     AuthCommands,
     ProviderCommands,
-    AgentCommands,
     SwitchCommands,
+    AgentCommands,
 ):
     def _handle_command(self, text: str) -> bool:
         parts = text[1:].split(maxsplit=1)
