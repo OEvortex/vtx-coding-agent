@@ -1,6 +1,6 @@
 import pytest
 
-from agent.tools.write import WriteParams, WriteTool
+from ai.agent.tools.write import WriteParams, WriteTool
 
 
 @pytest.fixture

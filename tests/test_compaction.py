@@ -3,13 +3,13 @@ from typing import cast
 
 import pytest
 
-from agent.loop import Agent, AgentConfig
-from agent.runtime import ConversationRuntime
-from agent.session import CompactionEntry, Session
+from ai.agent.loop import Agent, AgentConfig
+from ai.agent.runtime import ConversationRuntime
+from ai.agent.session import CompactionEntry, Session
 from ai.providers.mock import MockProvider
 from coding_agent.config import Config
-from protocol.compaction import is_overflow
-from protocol.types import (
+from core.compaction import is_overflow
+from core.types import (
     AssistantMessage,
     StopReason,
     TextContent,
@@ -239,7 +239,7 @@ class TestSessionCompactedMessages:
 
 class TestCompactionPersistence:
     def test_compaction_entry_round_trip(self, tmp_path, monkeypatch):
-        monkeypatch.setattr("agent.session.Session.get_sessions_dir", lambda cwd: tmp_path)
+        monkeypatch.setattr("ai.agent.session.Session.get_sessions_dir", lambda cwd: tmp_path)
 
         session = Session.create("/test/project")
         session.append_message(UserMessage(content="Hello"))
@@ -267,7 +267,7 @@ class TestCompactionPersistence:
         assert compaction_entries[0].details == {"model": "test"}
 
     def test_loaded_session_messages_are_compacted(self, tmp_path, monkeypatch):
-        monkeypatch.setattr("agent.session.Session.get_sessions_dir", lambda cwd: tmp_path)
+        monkeypatch.setattr("ai.agent.session.Session.get_sessions_dir", lambda cwd: tmp_path)
 
         session = Session.create("/test/project")
         session.append_message(UserMessage(content="Old"))
@@ -378,7 +378,7 @@ class TestCompactionUsageBacktracking:
         async def _fake_summary(*args, **kwargs):
             return "summary"
 
-        monkeypatch.setattr("agent.runtime.generate_summary", _fake_summary)
+        monkeypatch.setattr("ai.agent.runtime.generate_summary", _fake_summary)
 
         await app._do_compact()
 
@@ -423,7 +423,7 @@ class TestCompactionUsageBacktracking:
         async def _fake_summary(*args, **kwargs):
             return "summary"
 
-        monkeypatch.setattr("agent.loop.generate_summary", _fake_summary)
+        monkeypatch.setattr("ai.agent.loop.generate_summary", _fake_summary)
 
         events = [e async for e in agent._check_compaction(StopReason.STOP, "system", None)]
         assert [e.type for e in events] == ["compaction_start", "compaction_end"]

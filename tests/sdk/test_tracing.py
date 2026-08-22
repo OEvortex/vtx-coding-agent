@@ -7,7 +7,7 @@ from pathlib import Path
 
 import pytest
 
-from telemetry.tracing import (
+from core.tracing import (
     DEFAULT_WORKFLOW_NAME,
     add_trace_processor,
     current_span,
@@ -18,8 +18,8 @@ from telemetry.tracing import (
     span,
     trace,
 )
-from telemetry.tracing.exporters import ConsoleTraceProcessor, JSONLTraceProcessor
-from telemetry.tracing.processor import get_default_processors, set_default_processors
+from core.tracing.exporters import ConsoleTraceProcessor, JSONLTraceProcessor
+from core.tracing.processor import get_default_processors, set_default_processors
 
 
 class _CollectingProcessor:

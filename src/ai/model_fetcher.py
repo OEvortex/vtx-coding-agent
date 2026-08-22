@@ -49,7 +49,7 @@ class FetchedModel:
 
 
 def _get_cache_dir() -> Path:
-    from protocol.paths import get_config_dir
+    from core.paths import get_config_dir
 
     env = os.environ.get("VTX_MODELS_CACHE_DIR")
     return Path(env) if env else get_config_dir() / CACHE_DIR

@@ -9,7 +9,7 @@ and not consumed by the TextArea.
 import asyncio
 from typing import Any
 
-from protocol import AskUserOption
+from core import AskUserOption
 from tui.input import _is_ask_user_picker_key
 
 

@@ -6,7 +6,7 @@ import asyncio
 
 import pytest
 
-from agent.sdk import (
+from ai.agent.sdk import (
     Agent,
     GuardrailFunctionOutput,
     InputGuardrailTripwireTriggered,
@@ -18,8 +18,8 @@ from agent.sdk import (
     tool_input_guardrail,
     tool_output_guardrail,
 )
-from agent.sdk.guardrails import run_input_guardrails, run_output_guardrails
-from agent.sdk.guardrails.types import ToolGuardrailFunctionOutput
+from ai.agent.sdk.guardrails import run_input_guardrails, run_output_guardrails
+from ai.agent.sdk.guardrails.types import ToolGuardrailFunctionOutput
 
 
 @pytest.mark.asyncio

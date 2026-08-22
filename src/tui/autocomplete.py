@@ -12,7 +12,7 @@ from collections.abc import Sequence
 from dataclasses import dataclass
 from functools import lru_cache
 
-from agent.gh_cli import PullRequest, is_available, list_pull_requests
+from ai.agent.gh_cli import PullRequest, is_available, list_pull_requests
 from tui.floating_list import ListItem
 
 

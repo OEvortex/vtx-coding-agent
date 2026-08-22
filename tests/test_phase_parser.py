@@ -22,7 +22,7 @@ from ai.phase_parser import (
 )
 from ai.providers.openai_sdk import OpenAISDKProvider
 from ai.sdk.openai import _openai_stream_chunks
-from protocol.types import AssistantMessage, TextContent, ThinkingContent
+from core.types import AssistantMessage, TextContent, ThinkingContent
 
 # =================================================================================================
 # Test helpers

@@ -1,7 +1,7 @@
 from contextlib import contextmanager
 from typing import Any, ClassVar, cast
 
-from agent.runtime import ConversationRuntime
+from ai.agent.runtime import ConversationRuntime
 from coding_agent.config import config, reset_config
 from tui.commands import CommandsMixin
 from tui.floating_list import ListItem

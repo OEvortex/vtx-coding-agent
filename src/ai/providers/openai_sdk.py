@@ -10,8 +10,8 @@ from ai.providers.sanitize import sanitize_surrogates
 from ai.sdk.base import GenerationConfig
 from ai.sdk.base import Message as SDKMessage
 from ai.sdk.openai import OpenAISDK
-from protocol.errors import format_error
-from protocol.types import (
+from core.errors import format_error
+from core.types import (
     AssistantMessage,
     ImageContent,
     Message,

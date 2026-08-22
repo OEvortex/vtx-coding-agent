@@ -2,7 +2,7 @@ from typing import cast
 
 from textual import events
 
-from protocol import ApprovalResponse
+from core import ApprovalResponse
 from tui.app import Vtx
 
 

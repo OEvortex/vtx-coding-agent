@@ -10,7 +10,7 @@ from typing import cast
 
 from textual import events
 
-from protocol import AskUserOption, AskUserResponse
+from core import AskUserOption, AskUserResponse
 from tui.app import Vtx
 
 

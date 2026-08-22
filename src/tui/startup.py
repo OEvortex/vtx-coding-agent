@@ -8,10 +8,10 @@ import glob
 import os
 from typing import TYPE_CHECKING, Any, Literal
 
-from agent.tools_manager import ensure_tools
+from ai.agent.tools_manager import ensure_tools
 from coding_agent.config import update_available_binaries
 from coding_agent.version import PACKAGE_NAME, VERSION
-from telemetry import get_newer_pypi_version
+from core.update_check import get_newer_pypi_version
 from tui.blocks import LaunchWarning
 from tui.chat import ChatLog
 from tui.input import InputBox

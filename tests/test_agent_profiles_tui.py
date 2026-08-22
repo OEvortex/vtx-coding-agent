@@ -4,9 +4,9 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from agent.agents import AgentDef, AgentRegistry, LoadedAgent
-from agent.extensions import EventBus
-from agent.runtime import ConversationRuntime
+from ai.agent.agents import AgentDef, AgentRegistry, LoadedAgent
+from ai.agent.extensions import EventBus
+from ai.agent.runtime import ConversationRuntime
 from coding_agent.config import set_last_selected
 
 

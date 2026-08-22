@@ -23,22 +23,22 @@ from textual.app import App, ComposeResult
 from textual.binding import Binding
 from textual.widgets import Input
 
-from agent.context.skills import (
+from ai import BaseProvider
+from ai.agent.context.skills import (
     load_builtin_cmd_skills,
     load_skills,
     merge_registered_skills,
     render_skill_prompt,
 )
-from agent.extensions import load_for_runtime
-from agent.runtime import ConversationRuntime
-from agent.session import Session
-from agent.tools import DEFAULT_TOOLS, get_tools_with_extensions
-from agent.tools_manager import get_tool_path
-from ai import BaseProvider
+from ai.agent.extensions import load_for_runtime
+from ai.agent.runtime import ConversationRuntime
+from ai.agent.session import Session
+from ai.agent.tools import DEFAULT_TOOLS, get_tools_with_extensions
+from ai.agent.tools_manager import get_tool_path
 from ai.base import AuthMode
 from coding_agent.config import config, consume_config_warnings, get_last_selected
 from coding_agent.version import VERSION, format_version
-from protocol import ApprovalResponse, AskUserOption, AskUserResponse
+from core import ApprovalResponse, AskUserOption, AskUserResponse
 from tui.agent_runner import AgentRunnerMixin
 from tui.autocomplete import DEFAULT_COMMANDS, SlashCommand
 from tui.blocks import HandoffLinkBlock, LaunchWarning
@@ -215,7 +215,7 @@ class Vtx(
         # Load handoff agents (project-local, global, plus the caller's
         # extra paths). Agent-scoped local tools + commands are merged
         # into the active tool set when an agent is active.
-        from agent.agents import AgentRegistry, load_all_agents
+        from ai.agent.agents import AgentRegistry, load_all_agents
 
         self._agent_registry = AgentRegistry()
         if auto_discover_agents or extra_agent_paths:
@@ -282,7 +282,7 @@ class Vtx(
         self._runtime.set_loaded_extensions(self._loaded_extensions)
 
         # Hook system: bridge YAML hook configs onto the extension EventBus.
-        from agent.hooks.bridge import HookBridge
+        from ai.agent.hooks.bridge import HookBridge
 
         self._hook_bridge = HookBridge(
             bus=self._loaded_extensions.bus,
@@ -429,7 +429,7 @@ class Vtx(
         sub-agent end) and renders them into the parent tool block
         after it mounts.
         """
-        from agent.dispatcher import get_context, set_context
+        from ai.agent.dispatcher import get_context, set_context
         from tui.chat import ChatLog
 
         def _callback(tool_call_id: str, event: dict) -> None:

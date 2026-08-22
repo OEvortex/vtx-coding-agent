@@ -3,7 +3,7 @@ import asyncio
 import pytest
 from pydantic import ValidationError
 
-from agent.tools.ask_user import (
+from ai.agent.tools.ask_user import (
     MAX_DESCRIPTION_CHARS,
     MAX_HEADER_CHARS,
     MAX_LABEL_CHARS,
@@ -12,7 +12,7 @@ from agent.tools.ask_user import (
     AskUserParams,
     AskUserTool,
 )
-from protocol import AskUserEvent, AskUserOption, AskUserResponse
+from core import AskUserEvent, AskUserOption, AskUserResponse
 
 
 class TestAskUserParamsValidation:

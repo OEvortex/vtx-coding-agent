@@ -5,8 +5,8 @@ from __future__ import annotations
 from collections.abc import Callable, Mapping, Sequence
 from typing import TYPE_CHECKING, Any, TypeVar, cast
 
-from agent.runtime import ConversationRuntime
-from agent.session import Session
+from ai.agent.runtime import ConversationRuntime
+from ai.agent.session import Session
 from tui.chat import ChatLog
 from tui.floating_list import ListItem
 from tui.input import InputBox

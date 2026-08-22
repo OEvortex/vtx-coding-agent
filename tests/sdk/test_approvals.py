@@ -4,8 +4,8 @@ from __future__ import annotations
 
 import pytest
 
-from agent.sdk.approvals import ApprovalDecision, RunState, ToolApprovalItem
-from protocol.types import ToolCall
+from ai.agent.sdk.approvals import ApprovalDecision, RunState, ToolApprovalItem
+from core.types import ToolCall
 
 
 def _make_approval(

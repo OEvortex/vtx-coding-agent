@@ -1,7 +1,7 @@
 from typing import Any, Protocol
 
-from agent.session import Session
 from ai import BaseProvider
+from ai.agent.session import Session
 from tui.selection_mode import SelectionMode
 
 

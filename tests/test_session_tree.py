@@ -1,5 +1,5 @@
-from agent.session import LeafEntry, MessageEntry, Session
-from protocol.types import AssistantMessage, StopReason, TextContent, UserMessage
+from ai.agent.session import LeafEntry, MessageEntry, Session
+from core.types import AssistantMessage, StopReason, TextContent, UserMessage
 
 
 def test_tree_navigation_branches_without_overwriting(tmp_path, monkeypatch):

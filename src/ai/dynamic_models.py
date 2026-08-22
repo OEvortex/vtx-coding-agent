@@ -247,7 +247,7 @@ class CachedCatalog:
 
 def get_cache_dir() -> Path:
     """Return the directory where per-provider model catalogs are cached."""
-    from protocol.paths import get_config_dir
+    from core.paths import get_config_dir
 
     base = os.environ.get("VTX_MODELS_CACHE_DIR")
     if base:

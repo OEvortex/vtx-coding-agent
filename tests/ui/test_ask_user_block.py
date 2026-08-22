@@ -9,7 +9,7 @@ turn-runner tests in ``tests/tools/test_ask_user_turn.py``.
 import pytest
 from textual.app import App, ComposeResult
 
-from protocol import AskUserOption
+from core import AskUserOption
 from tui.blocks import ASK_USER_OTHER_DISPLAY, ASK_USER_OTHER_LABEL, ToolBlock
 from tui.chat import ChatLog
 from tui.input import AskUserInput

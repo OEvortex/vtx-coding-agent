@@ -14,7 +14,7 @@ from tui.floating_list import ListItem
 from tui.selection_mode import SelectionMode
 
 if TYPE_CHECKING:
-    from agent.runtime import ConversationRuntime
+    from ai.agent.runtime import ConversationRuntime
 
 
 class FakeChat:

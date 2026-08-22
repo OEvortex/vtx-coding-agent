@@ -1,6 +1,6 @@
 import pytest
 
-from agent.tools.edit import EditParams, EditTool
+from ai.agent.tools.edit import EditParams, EditTool
 
 
 @pytest.fixture

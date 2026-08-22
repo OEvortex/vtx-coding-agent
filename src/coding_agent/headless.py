@@ -17,12 +17,12 @@ from coding_agent.config import (
     get_last_selected,
     reload_config,
 )
-from protocol.types import StopReason
+from core.types import StopReason
 
 if TYPE_CHECKING:
-    from agent.extensions import LoadedExtensions
+    from ai.agent.extensions import LoadedExtensions
     from ai.base import AuthMode
-    from protocol.events import Event
+    from core.events import Event
 
 # NOTE: agent.* / ai.* / most protocol.* imports are deliberately deferred
 # into functions. Module-level imports here would re-enter agent.extensions
@@ -45,15 +45,15 @@ def resolve_prompt(prompt_arg: str, *, stdin: TextIO) -> str:
 async def render_run(
     events: AsyncIterator[Event], *, out: TextIO | None = None, err: TextIO | None = None
 ) -> StopReason:
-    from protocol.events import (
+    from core.events import (
         AgentEndEvent,
         AskUserEvent,
         ErrorEvent,
         ToolApprovalEvent,
         TurnEndEvent,
     )
-    from protocol.permissions import ApprovalResponse, AskUserResponse
-    from protocol.types import TextContent
+    from core.permissions import ApprovalResponse, AskUserResponse
+    from core.types import TextContent
 
     out = sys.stdout if out is None else out
     err = sys.stderr if err is None else err
@@ -111,8 +111,8 @@ async def run_headless(
     agent_files: list[str] | None = None,
     auto_discover_agents: bool = True,
 ) -> int:
-    from agent.runtime import ConversationRuntime
-    from agent.tools import DEFAULT_TOOLS, get_tools_with_extensions
+    from ai.agent.runtime import ConversationRuntime
+    from ai.agent.tools import DEFAULT_TOOLS, get_tools_with_extensions
 
     prompt = resolve_prompt(prompt_arg, stdin=sys.stdin)
     if not prompt:
@@ -147,8 +147,8 @@ async def run_headless(
         anthropic_auth = anthropic_compat_auth_mode or config.llm.auth.anthropic_compat
 
         # Load agents first so the active agent's tool surface is applied.
-        from agent.agents import AgentRegistry, load_all_agents
-        from agent.extensions import load_for_runtime
+        from ai.agent.agents import AgentRegistry, load_all_agents
+        from ai.agent.extensions import load_for_runtime
 
         agent_registry = AgentRegistry()
         if auto_discover_agents or agent_files:
@@ -210,7 +210,7 @@ async def run_headless(
         runtime.set_loaded_extensions(loaded_extensions)
 
         # Hook system: bridge YAML hook configs onto the extension EventBus.
-        from agent.hooks.bridge import HookBridge
+        from ai.agent.hooks.bridge import HookBridge
 
         hook_bridge = HookBridge(
             bus=loaded_extensions.bus,

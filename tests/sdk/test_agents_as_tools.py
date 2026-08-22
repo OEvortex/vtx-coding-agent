@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import pytest
 
-from agent.sdk import Agent
+from ai.agent.sdk import Agent
 
 
 def test_as_tool_default_metadata() -> None:

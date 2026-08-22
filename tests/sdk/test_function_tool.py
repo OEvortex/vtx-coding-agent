@@ -7,9 +7,9 @@ import asyncio
 import pytest
 from pydantic import BaseModel
 
-from agent.sdk import tool
-from agent.sdk.tools import FunctionTool, _format_call_from_dict
-from protocol.types import ToolResult
+from ai.agent.sdk import tool
+from ai.agent.sdk.tools import FunctionTool, _format_call_from_dict
+from core.types import ToolResult
 
 
 def test_tool_decorator_basic() -> None:

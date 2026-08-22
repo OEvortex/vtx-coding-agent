@@ -1,6 +1,6 @@
 from rich.text import Text
 
-from agent.tools.edit import format_diff_display
+from ai.agent.tools.edit import format_diff_display
 from coding_agent.config import config
 
 

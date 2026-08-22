@@ -14,7 +14,7 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any
 
-from agent.tools import tools_by_name
+from ai.agent.tools import tools_by_name
 from coding_agent.config import get_config_dir
 
 MAX_RESULT_LINES = 10

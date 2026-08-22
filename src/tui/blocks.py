@@ -10,11 +10,11 @@ from textual.app import ComposeResult
 from textual.message import Message
 from textual.widgets import Label, Static
 
-from agent.diff_display import DIFF_BG_PAD_MARKER
-from agent.tools.base import BaseTool
+from ai.agent.diff_display import DIFF_BG_PAD_MARKER
+from ai.agent.tools.base import BaseTool
 from coding_agent.config import config
-from protocol import ApprovalResponse, AskUserOption
-from protocol.types import ImageContent
+from core import ApprovalResponse, AskUserOption
+from core.types import ImageContent
 from tui.formatting import (
     find_stable_block_boundary,
     format_bash_command,

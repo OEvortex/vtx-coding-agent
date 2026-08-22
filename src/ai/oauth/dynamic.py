@@ -26,7 +26,7 @@ import os
 from dataclasses import dataclass
 from pathlib import Path
 
-from protocol.paths import get_config_dir
+from core.paths import get_config_dir
 
 # Default configuration
 AUTH_FILENAME = "dynamic_auth.json"

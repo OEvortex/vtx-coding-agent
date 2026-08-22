@@ -16,8 +16,8 @@ from typing import Any
 import pytest
 from pydantic import ValidationError
 
-import agent.tools.task as _mod
-from agent.tools.task import (
+import ai.agent.tools.task as _mod
+from ai.agent.tools.task import (
     MAX_RESULT_CHARS,
     SubagentSpec,
     TaskParams,
@@ -79,7 +79,7 @@ class TestTaskParamsValidation:
 
 class TestResolveSubagentSpec:
     def test_user_defined_agent_wins(self):
-        from agent.agents import AgentDef, AgentRegistry, LoadedAgent
+        from ai.agent.agents import AgentDef, AgentRegistry, LoadedAgent
 
         loaded = LoadedAgent(
             definition=AgentDef(name="reviewer", description="Custom reviewer"), path=Path("/r.py")
@@ -115,18 +115,18 @@ class TestResolveSubagentSpec:
 
 class TestParentContext:
     def teardown_method(self):
-        from agent.dispatcher import set_context
+        from ai.agent.dispatcher import set_context
 
         set_context(None)
 
     def test_default_is_none(self):
-        from agent.dispatcher import get_context, set_context
+        from ai.agent.dispatcher import get_context, set_context
 
         set_context(None)
         assert get_context() is None
 
     def test_set_and_get(self):
-        from agent.dispatcher import DispatcherContext, get_context, set_context
+        from ai.agent.dispatcher import DispatcherContext, get_context, set_context
 
         ctx = DispatcherContext(
             provider=object(),
@@ -141,7 +141,7 @@ class TestParentContext:
         assert get_context() is ctx
 
     def test_set_none_clears(self):
-        from agent.dispatcher import DispatcherContext, get_context, set_context
+        from ai.agent.dispatcher import DispatcherContext, get_context, set_context
 
         set_context(
             DispatcherContext(
@@ -186,17 +186,17 @@ class _FakeRunResult:
 
     def __post_init__(self):
         if self.usage is None:
-            from protocol.types import Usage
+            from core.types import Usage
 
             self.usage = Usage()
         if self.stop_reason is None:
-            from protocol.types import StopReason
+            from core.types import StopReason
 
             self.stop_reason = StopReason.STOP
 
 
 def _install_dispatcher_ctx() -> None:
-    from agent.dispatcher import DispatcherContext, set_context
+    from ai.agent.dispatcher import DispatcherContext, set_context
 
     set_context(
         DispatcherContext(
@@ -213,12 +213,12 @@ def _install_dispatcher_ctx() -> None:
 
 class TestTaskToolExecute:
     def teardown_method(self):
-        from agent.dispatcher import set_context
+        from ai.agent.dispatcher import set_context
 
         set_context(None)
 
     def test_no_dispatcher_context(self):
-        from agent.dispatcher import set_context
+        from ai.agent.dispatcher import set_context
 
         # Force the no-context branch even if another test leaked one.
         set_context(None)
@@ -249,7 +249,7 @@ class TestTaskToolExecute:
         assert "→ bash" in (result.ui_details_full or "")
 
     def test_execute_returns_final_text(self, monkeypatch):
-        from protocol.types import StopReason, Usage
+        from core.types import StopReason, Usage
 
         _install_dispatcher_ctx()
 
@@ -295,7 +295,7 @@ class TestTaskToolExecute:
         assert "truncated" not in (result.result or "")
 
     def test_execute_does_not_leak_metadata_to_llm(self, monkeypatch):
-        from protocol.types import StopReason, Usage
+        from core.types import StopReason, Usage
 
         _install_dispatcher_ctx()
 
@@ -331,7 +331,7 @@ class TestTaskToolExecute:
             )
 
     def test_execute_progress_callback_runs(self, monkeypatch):
-        from agent.dispatcher import DispatcherContext, set_context
+        from ai.agent.dispatcher import DispatcherContext, set_context
 
         seen: list[tuple[str, dict]] = []
 
@@ -365,14 +365,8 @@ class TestTaskToolExecute:
         part in the final turn concatenated, with ``ThinkingContent``
         filtered out, and earlier mid-run turns' text discarded.
         """
-        from agent.dispatcher import DispatcherContext
-        from protocol.types import (
-            AssistantMessage,
-            StopReason,
-            TextContent,
-            ThinkingContent,
-            Usage,
-        )
+        from ai.agent.dispatcher import DispatcherContext
+        from core.types import AssistantMessage, StopReason, TextContent, ThinkingContent, Usage
 
         _install_dispatcher_ctx()
 
@@ -391,7 +385,7 @@ class TestTaskToolExecute:
                 pass
 
             async def run(self, *args, **kwargs):
-                from protocol import AgentEndEvent, TurnEndEvent
+                from core import AgentEndEvent, TurnEndEvent
 
                 mid_turn = TurnEndEvent(
                     turn=1,
@@ -417,8 +411,8 @@ class TestTaskToolExecute:
         monkeypatch.setattr(_mod, "_build_subagent_system_prompt", lambda *a, **kw: "system")
         monkeypatch.setattr(_mod, "_create_subagent_session", lambda *a, **kw: _StubSession())
         monkeypatch.setattr(_mod, "_resolve_api_and_base_url", lambda *a, **kw: ("openai", None))
-        monkeypatch.setattr("agent.runtime.create_provider", lambda *a, **kw: _FakeProvider())
-        monkeypatch.setattr("agent.loop.Agent", lambda *a, **kw: _FakeSubAgent(*a, **kw))
+        monkeypatch.setattr("ai.agent.runtime.create_provider", lambda *a, **kw: _FakeProvider())
+        monkeypatch.setattr("ai.agent.loop.Agent", lambda *a, **kw: _FakeSubAgent(*a, **kw))
 
         real_ctx = DispatcherContext(
             provider=_FakeProvider(),
@@ -456,7 +450,7 @@ class TestTaskToolExecute:
 
 class TestSubagentSystemPrompt:
     def test_directive_is_appended_to_base_prompt(self):
-        from agent.dispatcher import DispatcherContext
+        from ai.agent.dispatcher import DispatcherContext
 
         ctx = DispatcherContext(
             provider=object(),
@@ -475,7 +469,7 @@ class TestSubagentSystemPrompt:
         assert "Return ONLY your final answer" in out
 
     def test_directive_added_when_spec_replaces_base(self):
-        from agent.dispatcher import DispatcherContext
+        from ai.agent.dispatcher import DispatcherContext
 
         ctx = DispatcherContext(
             provider=object(),
@@ -499,7 +493,7 @@ class TestSubagentSystemPrompt:
         assert "Return ONLY your final answer" in out
 
     def test_spec_instructions_preserved_alongside_directive(self):
-        from agent.dispatcher import DispatcherContext
+        from ai.agent.dispatcher import DispatcherContext
 
         ctx = DispatcherContext(
             provider=object(),

@@ -11,7 +11,7 @@ from typing import TYPE_CHECKING, Any
 
 from textual import on
 
-from agent.runtime import ConversationRuntime
+from ai.agent.runtime import ConversationRuntime
 from tui.autocomplete import FilePathProvider, PullRequestProvider, SlashCommandProvider
 from tui.chat import ChatLog
 from tui.floating_list import FloatingList, ListItem

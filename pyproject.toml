@@ -4,11 +4,9 @@ build-backend = "hatchling.build"
 
 [tool.hatch.build.targets.wheel]
 packages = [
-    "src/agent",
     "src/ai",
     "src/coding_agent",
-    "src/protocol",
-    "src/telemetry",
+    "src/core",
     "src/tui",
 ]
 
@@ -140,6 +138,9 @@ select = [
 
 [tool.ruff.lint.per-file-ignores]
 "src/tui/latex.py" = ["RUF001"]
+"src/ai/agent/prompts/identity.py" = ["E501"]
+"src/ai/agent/prompts/env.py" = ["E501"]
+"src/ai/agent/sdk/**/*.py" = ["N818"]
 "src/agent/prompts/identity.py" = ["E501"]
 "src/agent/prompts/env.py" = ["E501"]
 "src/agent/sdk/**/*.py" = ["N818"]

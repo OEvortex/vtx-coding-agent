@@ -1,5 +1,5 @@
-from agent.session import Session
-from protocol.types import (
+from ai.agent.session import Session
+from core.types import (
     AssistantMessage,
     FileChanges,
     TextContent,

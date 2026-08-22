@@ -8,9 +8,9 @@ from typing import Any
 import pytest
 from pydantic import BaseModel
 
-from agent.sdk import Agent, Runner, tool
-from agent.sdk.run_config import RunConfig
-from agent.sdk.sessions import InMemorySession
+from ai.agent.sdk import Agent, Runner, tool
+from ai.agent.sdk.run_config import RunConfig
+from ai.agent.sdk.sessions import InMemorySession
 
 
 def test_agent_required_name() -> None:
@@ -65,7 +65,7 @@ def test_agent_compiled_handoff_tools_default_name() -> None:
 
 
 def test_agent_compiled_handoff_tools_with_handoff_obj() -> None:
-    from agent.sdk import handoff
+    from ai.agent.sdk import handoff
 
     target = Agent(name="Target", instructions="t")
     parent = Agent(name="Parent", handoffs=[handoff(target, tool_name_override="ask_target")])
@@ -228,7 +228,7 @@ async def test_runner_with_structured_output(text_provider) -> None:
             s = LLMStream()
             s._id = "j-1"
             s._usage = None
-            from protocol.types import StopReason, StreamDone, TextPart
+            from core.types import StopReason, StreamDone, TextPart
 
             async def it():
                 yield TextPart(text='{"value": 42}')

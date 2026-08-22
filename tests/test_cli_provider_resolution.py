@@ -1,5 +1,5 @@
-from agent.runtime import default_base_url_for_api
 from ai import resolve_provider_api_type
+from ai.agent.runtime import default_base_url_for_api
 from ai.models import ApiType
 
 

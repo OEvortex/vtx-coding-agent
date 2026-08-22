@@ -42,7 +42,7 @@ class AgentCommands(CommandSupport):
             )
 
     def _reload_agents(self) -> None:
-        from agent.agents import load_all_agents
+        from ai.agent.agents import load_all_agents
 
         chat = self.query_one("#chat-log", ChatLog)
         loaded, errors = load_all_agents(cwd=self._cwd, configured=list(config.agents.files))

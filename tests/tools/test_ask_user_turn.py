@@ -12,12 +12,12 @@ from collections.abc import AsyncIterator
 
 import pytest
 
-from agent.tools.ask_user import AskUserTool
-from agent.tools.base import BaseTool
-from agent.turn import run_single_turn
+from ai.agent.tools.ask_user import AskUserTool
+from ai.agent.tools.base import BaseTool
+from ai.agent.turn import run_single_turn
 from ai.base import BaseProvider, LLMStream, ProviderConfig
-from protocol import AskUserEvent, AskUserResponse, ToolResultEvent, TurnEndEvent
-from protocol.types import (
+from core import AskUserEvent, AskUserResponse, ToolResultEvent, TurnEndEvent
+from core.types import (
     Message,
     StopReason,
     StreamDone,

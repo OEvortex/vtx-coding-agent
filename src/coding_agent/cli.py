@@ -123,7 +123,7 @@ def main() -> None:
         sub = sys.argv[1]
 
         if sub == "install":
-            from agent.extension_manager import install_extension
+            from ai.agent.extension_manager import install_extension
 
             name = sys.argv[2] if len(sys.argv) > 2 else None
             if not name:
@@ -138,7 +138,7 @@ def main() -> None:
             raise SystemExit(0)
 
         if sub == "uninstall":
-            from agent.extension_manager import uninstall_extension
+            from ai.agent.extension_manager import uninstall_extension
 
             name = sys.argv[2] if len(sys.argv) > 2 else None
             if not name:
@@ -152,7 +152,7 @@ def main() -> None:
             raise SystemExit(0)
 
         if sub == "list-extensions":
-            from agent.extension_manager import list_installed
+            from ai.agent.extension_manager import list_installed
 
             extensions = list_installed()
             if not extensions:
@@ -187,7 +187,7 @@ def main() -> None:
         config.llm.tls.insecure_skip_verify = True
 
     if args.list_agents:
-        from agent.agents import load_all_agents
+        from ai.agent.agents import load_all_agents
 
         loaded, errors = load_all_agents(cwd=os.getcwd(), configured=args.agent_files)
         if not loaded and not errors:
@@ -200,7 +200,7 @@ def main() -> None:
         raise SystemExit(0)
 
     if args.list_extensions:
-        from agent.extension_manager import list_installed
+        from ai.agent.extension_manager import list_installed
 
         extensions = list_installed()
         if not extensions:
@@ -212,7 +212,7 @@ def main() -> None:
         raise SystemExit(0)
 
     if args.prompt is not None:
-        from agent.extensions import load_for_runtime
+        from ai.agent.extensions import load_for_runtime
         from coding_agent.headless import run_headless
 
         loaded = load_for_runtime(

@@ -5,15 +5,15 @@ from typing import Any
 
 import pytest
 
-from agent.context_governance import _MAX_TOOL_RESULT_CHARS
-from agent.loop import Agent
-from agent.session import Session
-from agent.tools import BashTool, ReadTool
-from agent.turn import prepare_for_model, run_single_turn
+from ai.agent.context_governance import _MAX_TOOL_RESULT_CHARS
+from ai.agent.loop import Agent
+from ai.agent.session import Session
+from ai.agent.tools import BashTool, ReadTool
+from ai.agent.turn import prepare_for_model, run_single_turn
 from ai.base import BaseProvider, LLMStream, ProviderConfig
 from ai.providers.mock import MockProvider
 from coding_agent.config import Config, reset_config, set_config
-from protocol import (
+from core import (
     AgentEndEvent,
     AgentStartEvent,
     ErrorEvent,
@@ -34,7 +34,7 @@ from protocol import (
     TurnStartEvent,
     WarningEvent,
 )
-from protocol.types import (
+from core.types import (
     AssistantMessage,
     Message,
     StopReason,
@@ -266,7 +266,7 @@ async def test_agent_with_thinking(tools, in_memory_session, max_turns_one):
 
 @pytest.mark.asyncio
 async def test_agent_with_images(tools, in_memory_session):
-    from protocol.types import ImageContent
+    from core.types import ImageContent
 
     provider = MockProvider(scenario="simple_text")
     images = [ImageContent(data="base64data", mime_type="image/png")]
@@ -883,7 +883,7 @@ async def test_session_runtime_checkpoint_roundtrip(in_memory_session):
 @pytest.mark.asyncio
 async def test_agent_restores_checkpoint_on_resume(in_memory_session):
     """A stale active checkpoint becomes a continuation prompt on next run."""
-    from agent.loop import Agent
+    from ai.agent.loop import Agent
 
     in_memory_session.append_runtime_checkpoint(
         partial_content=[],
@@ -958,7 +958,7 @@ async def test_context_governance_budgets_oversized_result():
 @pytest.mark.asyncio
 async def test_agent_hook_lifecycle_fires(sample_messages, tools):
     """AgentHook lifecycle methods fire around a turn; finalize can rewrite."""
-    from agent.hooks.agent_hook import AgentHook, CompositeHook
+    from ai.agent.hooks.agent_hook import AgentHook, CompositeHook
 
     fired: list[str] = []
 
@@ -1003,7 +1003,7 @@ async def test_agent_hook_lifecycle_fires(sample_messages, tools):
 @pytest.mark.asyncio
 async def test_agent_hook_error_isolation(sample_messages, tools):
     """A failing hook is isolated and does not crash the turn."""
-    from agent.hooks.agent_hook import AgentHook, CompositeHook
+    from ai.agent.hooks.agent_hook import AgentHook, CompositeHook
 
     class Boom(AgentHook):
         async def before_iteration(self, ctx):
@@ -1024,8 +1024,8 @@ def test_hook_bridge_end_to_end_post_tool_use_rewrite(tmp_path):
     This is the integration contract the refactor must preserve: bus → bridge
     → command hook → turn's PostToolUse output rewrite feeds the model.
     """
-    from agent import EventBus
-    from agent.hooks.bridge import HookBridge
+    from ai.agent import EventBus
+    from ai.agent.hooks.bridge import HookBridge
 
     hooks_yml = tmp_path / "hooks.yml"
     hooks_yml.write_text(

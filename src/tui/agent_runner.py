@@ -7,11 +7,11 @@ import asyncio
 from collections import deque
 from typing import TYPE_CHECKING, Any
 
-from agent.runtime import ConversationRuntime
-from agent.tools import get_tool
-from agent.tools.bash import BashParams, BashTool
+from ai.agent.runtime import ConversationRuntime
+from ai.agent.tools import get_tool
+from ai.agent.tools.bash import BashParams, BashTool
 from coding_agent.config import config
-from protocol import (
+from core import (
     AgentEndEvent,
     AgentStartEvent,
     ApprovalResponse,
@@ -38,8 +38,8 @@ from protocol import (
     TurnStartEvent,
     WarningEvent,
 )
-from protocol.types import StopReason, ToolResultMessage
-from telemetry import NotificationEvent, notify
+from core.notify import NotificationEvent, notify
+from core.types import StopReason, ToolResultMessage
 from tui.chat import ChatLog
 from tui.widgets import InfoBar, StatusLine
 

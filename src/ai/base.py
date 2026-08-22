@@ -9,7 +9,7 @@ from urllib.parse import urlparse
 
 import httpx
 
-from protocol.types import (
+from core.types import (
     Message,
     StreamDone,
     StreamPart,
@@ -373,7 +373,7 @@ class BaseProvider(ABC):
         **kwargs: Any,
     ) -> Any:
         """Non-streaming chat completion with retry. Consumes stream internally."""
-        from protocol.types import ToolDefinition
+        from core.types import ToolDefinition
 
         converted_messages = self._convert_dict_messages(messages)
         system_prompt = None

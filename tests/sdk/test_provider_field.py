@@ -17,8 +17,8 @@ from dataclasses import fields
 
 import pytest
 
-from agent.sdk import Agent, Runner
-from agent.sdk.agent import _PROVIDER_DICT_KEYS
+from ai.agent.sdk import Agent, Runner
+from ai.agent.sdk.agent import _PROVIDER_DICT_KEYS
 from ai.providers.mock import MockProvider
 
 # ---------------------------------------------------------------------------

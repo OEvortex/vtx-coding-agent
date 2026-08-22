@@ -12,7 +12,7 @@ from textual.screen import ModalScreen
 from textual.timer import Timer
 from textual.widgets import Label
 
-from agent.git_branch import resolve_git_branch
+from ai.agent.git_branch import resolve_git_branch
 from coding_agent.config import PermissionMode, config
 from tui.chat import WITTY_ROTATE_EVERY_TICKS, WITTY_STATUS_LINES, _pick_witty_line
 from tui.formatting import format_tokens

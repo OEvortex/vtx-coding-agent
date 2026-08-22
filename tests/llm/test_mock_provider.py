@@ -3,7 +3,7 @@
 import pytest
 
 from ai.providers.mock import MockProvider
-from protocol.types import StreamDone, TextPart, ThinkPart, ToolCallDelta, ToolCallStart
+from core.types import StreamDone, TextPart, ThinkPart, ToolCallDelta, ToolCallStart
 
 
 @pytest.mark.asyncio

@@ -9,11 +9,11 @@ from textual.containers import VerticalScroll
 from textual.timer import Timer
 from textual.widgets import Label
 
-from agent.context.skills import Skill
-from agent.tools import BaseTool
+from ai.agent.context.skills import Skill
+from ai.agent.tools import BaseTool
 from coding_agent.config import config, get_agents_dir
-from protocol import ApprovalResponse
-from protocol.types import ImageContent
+from core import ApprovalResponse
+from core.types import ImageContent
 from tui.blocks import (
     ContentBlock,
     HandoffLinkBlock,

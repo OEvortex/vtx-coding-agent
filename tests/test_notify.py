@@ -4,12 +4,12 @@ from pathlib import Path
 import pytest
 
 from coding_agent.config import Config, set_config
-from telemetry import notify
+from core import notify
 
-# telemetry/__init__ re-exports the notify() function, which shadows the
-# telemetry.notify submodule for `import telemetry.notify as mod`; resolve
+# core/__init__ re-exports the notify() function, which shadows the
+# core.notify submodule for `import core.notify as mod`; resolve
 # the module explicitly instead.
-mod = importlib.import_module("telemetry.notify")
+mod = importlib.import_module("core.notify")
 
 
 @pytest.fixture(autouse=True)

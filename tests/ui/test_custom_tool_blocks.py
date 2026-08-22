@@ -10,10 +10,10 @@ from pathlib import Path
 import pytest
 from textual.app import App, ComposeResult
 
-from agent.agents.api import AgentAPI
-from agent.agents.loader import load_agent
-from agent.extensions import Extension, ExtensionAPI, ExtensionTool
-from agent.tools.base import BaseTool
+from ai.agent.agents.api import AgentAPI
+from ai.agent.agents.loader import load_agent
+from ai.agent.extensions import Extension, ExtensionAPI, ExtensionTool
+from ai.agent.tools.base import BaseTool
 from tui.blocks import ToolBlock
 from tui.chat import ChatLog
 from tui.styles import get_styles
@@ -108,7 +108,7 @@ def _noop_params():
 
 def _make_ext_api(name: str = "ext_test") -> tuple[ExtensionAPI, Extension]:
     """Build a minimal ``ExtensionAPI`` wired to a real :class:`Extension`."""
-    from agent import EventBus
+    from ai.agent import EventBus
 
     ext = Extension(name=name, path=Path(f"/{name}.py"))
     api = ExtensionAPI(ext, bus=EventBus(), cwd=".", session_file=None, config_dir=Path("/"))
@@ -167,7 +167,7 @@ class TestLocalToolUiBlock:
     def _make_agent_api(self, tmp_path: Path) -> AgentAPI:
         agent_file = tmp_path / "reviewer.py"
         agent_file.write_text(
-            "from agent.agents import AgentDef\n"
+            "from ai.agent.agents import AgentDef\n"
             "AGENT = AgentDef(name='reviewer', description='x')\n"
         )
         loaded = load_agent(agent_file, cwd=str(tmp_path), config_dir=tmp_path)

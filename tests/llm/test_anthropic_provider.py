@@ -6,7 +6,7 @@ import pytest
 
 from ai.base import ProviderConfig
 from ai.providers.anthropic_sdk import AnthropicSDKProvider
-from protocol.types import AssistantMessage, StopReason, TextContent, UserMessage
+from core.types import AssistantMessage, StopReason, TextContent, UserMessage
 
 
 @pytest.fixture
@@ -46,7 +46,7 @@ def test_convert_assistant_message(anthropic_provider):
 
 
 def test_convert_tool_result(anthropic_provider):
-    from protocol.types import ToolResultMessage
+    from core.types import ToolResultMessage
 
     msg = ToolResultMessage(
         tool_call_id="tc-1", tool_name="bash", content=[TextContent(text="output")]
@@ -58,7 +58,7 @@ def test_convert_tool_result(anthropic_provider):
 
 
 def test_convert_tools(anthropic_provider):
-    from protocol.types import ToolDefinition
+    from core.types import ToolDefinition
 
     tools = [
         ToolDefinition(

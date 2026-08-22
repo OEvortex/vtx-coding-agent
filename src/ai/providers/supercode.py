@@ -15,8 +15,8 @@ from ai.base import BaseProvider, LLMStream, ProviderConfig
 from ai.sdk.base import GenerationConfig
 from ai.sdk.base import Message as SDKMessage
 from ai.sdk.supercode import SupercodeSDK
-from protocol.errors import format_error
-from protocol.types import (
+from core.errors import format_error
+from core.types import (
     AssistantMessage,
     Message,
     StopReason,

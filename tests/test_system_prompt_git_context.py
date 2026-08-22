@@ -1,7 +1,7 @@
 import subprocess
 
-from agent.context import Context
-from agent.prompts import build_system_prompt
+from ai.agent.context import Context
+from ai.agent.prompts import build_system_prompt
 from coding_agent.config import Config, reset_config, set_config
 
 

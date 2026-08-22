@@ -9,11 +9,11 @@ from textual.message import Message
 from textual.reactive import reactive
 from textual.widget import Widget
 
-from agent.session import MessageEntry, SessionEntry, TreeNode
-from agent.tools import get_tool
-from agent.tools._tool_utils import shorten_path
+from ai.agent.session import MessageEntry, SessionEntry, TreeNode
+from ai.agent.tools import get_tool
+from ai.agent.tools._tool_utils import shorten_path
 from coding_agent.config import config
-from protocol.types import AssistantMessage, TextContent, ToolCall, ToolResultMessage, UserMessage
+from core.types import AssistantMessage, TextContent, ToolCall, ToolResultMessage, UserMessage
 
 
 @dataclass

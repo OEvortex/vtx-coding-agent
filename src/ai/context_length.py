@@ -47,7 +47,7 @@ class ContextLengthManager:
         self._lock = threading.Lock()
 
     def _get_cache_path(self) -> Path:
-        from protocol.paths import get_config_dir
+        from core.paths import get_config_dir
 
         return get_config_dir() / CACHE_FILE
 

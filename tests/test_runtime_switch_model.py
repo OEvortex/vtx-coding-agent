@@ -1,9 +1,9 @@
 import pytest
 
-from agent.runtime import ConversationRuntime, create_provider
+from ai.agent.runtime import ConversationRuntime, create_provider
 from ai.base import BaseProvider, LLMStream, ProviderConfig
 from ai.models import ApiType
-from protocol.types import Message, ToolDefinition
+from core.types import Message, ToolDefinition
 
 
 class _FakeProvider(BaseProvider):

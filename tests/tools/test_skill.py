@@ -1,6 +1,6 @@
 import pytest
 
-from agent.tools.skill import SkillParams, SkillTool
+from ai.agent.tools.skill import SkillParams, SkillTool
 
 
 @pytest.fixture

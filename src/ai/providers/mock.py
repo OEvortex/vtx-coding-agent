@@ -26,7 +26,7 @@ import asyncio
 from collections.abc import AsyncIterator
 
 from ai.base import BaseProvider, LLMStream, ProviderConfig
-from protocol.types import (
+from core.types import (
     Message,
     StopReason,
     StreamDone,

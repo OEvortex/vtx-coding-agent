@@ -1,6 +1,6 @@
 from coding_agent.config import get_config
-from protocol import AgentEndEvent, ToolApprovalEvent, TurnStartEvent
-from protocol.types import StopReason
+from core import AgentEndEvent, ToolApprovalEvent, TurnStartEvent
+from core.types import StopReason
 from tui.app import Vtx
 
 

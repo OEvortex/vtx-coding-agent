@@ -4,10 +4,10 @@ import json
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
-from agent.runtime import ConversationRuntime
-from agent.session import CompactionEntry, CustomMessageEntry, MessageEntry, Session
-from agent.tools import BaseTool, get_tool, tools_by_name
-from protocol.types import (
+from ai.agent.runtime import ConversationRuntime
+from ai.agent.session import CompactionEntry, CustomMessageEntry, MessageEntry, Session
+from ai.agent.tools import BaseTool, get_tool, tools_by_name
+from core.types import (
     AssistantMessage,
     ImageContent,
     TextContent,

@@ -1,6 +1,6 @@
-from agent.context import Context
-from agent.prompts import build_system_prompt
-from agent.tools import all_tools
+from ai.agent.context import Context
+from ai.agent.prompts import build_system_prompt
+from ai.agent.tools import all_tools
 from coding_agent.config import Config, reset_config, set_config
 
 

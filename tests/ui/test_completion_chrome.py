@@ -5,8 +5,8 @@ from typing import Any, cast
 
 import pytest
 
-from agent.runtime import ConversationRuntime
-from agent.session import SessionInfo
+from ai.agent.runtime import ConversationRuntime
+from ai.agent.session import SessionInfo
 from tui.app import Vtx
 from tui.autocomplete import (
     FilePathProvider,

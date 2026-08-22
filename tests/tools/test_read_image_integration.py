@@ -1,7 +1,7 @@
 import pytest
 
-from agent.tools.read import ReadParams, ReadTool
-from protocol.types import ImageContent
+from ai.agent.tools.read import ReadParams, ReadTool
+from core.types import ImageContent
 
 
 @pytest.fixture

@@ -3,8 +3,8 @@ from rich.text import Text
 from textual.app import App, ComposeResult
 from textual.widgets import Label
 
-from agent.diff_display import DIFF_BG_PAD_MARKER
-from protocol.types import ImageContent
+from ai.agent.diff_display import DIFF_BG_PAD_MARKER
+from core.types import ImageContent
 from tui.blocks import ToolBlock
 from tui.chat import ChatLog
 from tui.styles import get_styles

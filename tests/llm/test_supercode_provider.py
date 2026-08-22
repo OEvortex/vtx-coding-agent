@@ -14,7 +14,7 @@ import pytest
 
 from ai.base import ProviderConfig
 from ai.providers.supercode import SupercodeProvider
-from protocol.types import (
+from core.types import (
     AssistantMessage,
     StopReason,
     StreamDone,

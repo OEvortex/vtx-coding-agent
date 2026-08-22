@@ -6,7 +6,7 @@ from __future__ import annotations
 from datetime import UTC, datetime
 from pathlib import Path
 
-from agent.session import Session, SessionInfo
+from ai.agent.session import Session, SessionInfo
 from coding_agent.config import config
 from tui.chat import ChatLog
 from tui.clipboard import copy_to_clipboard

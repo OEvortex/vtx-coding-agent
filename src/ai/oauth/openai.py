@@ -18,7 +18,7 @@ from urllib.parse import parse_qs, urlencode, urlparse
 
 import aiohttp
 
-from protocol.paths import get_config_dir
+from core.paths import get_config_dir
 
 _CLIENT_ID = "app_EMoamEEZ73f0CkXaXp7hrann"
 _AUTHORIZE_URL = "https://auth.openai.com/oauth/authorize"

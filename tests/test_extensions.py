@@ -13,7 +13,7 @@ from textwrap import dedent
 
 import pytest
 
-from agent.extensions import (
+from ai.agent.extensions import (
     AGENT_END,
     AGENT_START,
     COMPACTION_END,
@@ -31,7 +31,7 @@ from agent.extensions import (
     load_all_extensions,
     load_extension,
 )
-from protocol.types import ToolResult
+from core.types import ToolResult
 
 # =============================================================================
 # EventBus
@@ -141,7 +141,7 @@ def test_emit_sync_does_not_await_async_handlers(caplog):
 
     bus.on(SESSION_START)(handler)
 
-    with caplog.at_level(logging.WARNING, logger="agent.extensions"):
+    with caplog.at_level(logging.WARNING, logger="ai.agent.extensions"):
         result = bus.emit_sync(SESSION_START)
     assert isinstance(result, dict)
     assert "returned a coroutine" in caplog.text
@@ -217,7 +217,7 @@ def test_load_extension_simple(tmp_path: Path):
     ext.write_text(
         dedent(
             """
-            from agent import AGENT_START
+            from ai.agent import AGENT_START
 
             def register(api):
                 api.on(AGENT_START, lambda event, payload: None)
@@ -270,7 +270,7 @@ def test_load_extension_registering_tool(tmp_path: Path):
     assert "greet" in loaded.tools
 
     # Execute the registered tool end-to-end
-    from agent import ExtensionTool
+    from ai.agent import ExtensionTool
 
     tool = loaded.tools["greet"]
     assert isinstance(tool, ExtensionTool)
@@ -380,7 +380,7 @@ def test_discover_extension_paths_resolves_dups(tmp_path: Path):
 
 
 def test_extension_tool_sync_execute(tmp_path: Path):
-    from agent import ExtensionTool
+    from ai.agent import ExtensionTool
 
     schema = {"type": "object", "properties": {"n": {"type": "integer"}}, "required": ["n"]}
     params_model = _json_schema_to_pydantic("double", schema)
@@ -401,7 +401,7 @@ def test_extension_tool_sync_execute(tmp_path: Path):
 
 
 def test_extension_tool_async_execute(tmp_path: Path):
-    from agent import ExtensionTool
+    from ai.agent import ExtensionTool
 
     schema = {"type": "object", "properties": {"x": {"type": "string"}}}
     params_model = _json_schema_to_pydantic("echo", schema)
@@ -432,11 +432,11 @@ async def _async_value(value):
 def test_extension_tool_override_built_in(tmp_path: Path, monkeypatch):
     """If an extension registers a tool whose name matches a built-in, the
     extension version should win in the merged list."""
-    from agent.tools import get_tools_with_extensions
+    from ai.agent.tools import get_tools_with_extensions
 
     schema = {"type": "object", "properties": {"path": {"type": "string"}}}
     params_model = _json_schema_to_pydantic("read", schema)
-    from agent import ExtensionTool
+    from ai.agent import ExtensionTool
 
     override = ExtensionTool(
         name="read",

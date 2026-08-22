@@ -1,8 +1,8 @@
 import pytest
 
-from agent.tools import BashTool, EditTool, ReadTool, WriteTool
+from ai.agent.tools import BashTool, EditTool, ReadTool, WriteTool
 from coding_agent.config import Config, set_config
-from protocol import PermissionDecision, _is_safe_bash_command, check_permission
+from core import PermissionDecision, _is_safe_bash_command, check_permission
 
 
 class TestIsSafeBashCommand:
