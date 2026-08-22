@@ -10,7 +10,8 @@ from __future__ import annotations
 from coding_agent.config import config
 from tui.chat import ChatLog
 from tui.commands.base import CommandSupport
-from tui.floating_list import FloatingList, ListItem
+from tui.floating_list import ListItem
+from tui.selection_mode import SelectionMode
 from tui.widgets import InfoBar
 
 
@@ -86,25 +87,22 @@ class AgentCommands(CommandSupport):
         items: list[ListItem] = []
         # Always offer "no agent" first.
         items.append(
-            ListItem(value=None, label="(no agent)", description="default session profile")
+            ListItem(
+                value=None,
+                label="(no agent) ✓" if active_name is None else "(no agent)",
+                description="default session profile",
+            )
         )
         for r in rows:
             label = f"{r['name']}"
             if r.get("icon"):
                 label = f"{r['icon']}  {label}"
             if r["name"] == active_name:
-                label = f"● {label}"
+                label = f"{label} ✓"
             items.append(
                 ListItem(value=r["name"], label=label, description=r.get("description") or "")
             )
-        accent = config.ui.colors.accent
-        floating = self.query_one("#completion-list", FloatingList)
-        floating.show(
-            items,
-            title="Switch agent",
-            accent_color=accent,
-            on_select=lambda item: self._on_agent_pick(item.value if item else None),
-        )
+        self._show_selection_picker(items, SelectionMode.AGENT)
 
     def _on_agent_pick(self, name: str | None) -> None:
         chat = self.query_one("#chat-log", ChatLog)

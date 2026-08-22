@@ -233,6 +233,8 @@ class CompletionUIMixin:
                 self._select_api_key_action(item.value)
             case SelectionMode.PROVIDER:
                 self._select_provider_set(item.value)
+            case SelectionMode.AGENT:
+                self._on_agent_pick(item.value)
 
         self._restore_chat_scroll_after_refresh(was_at_bottom)
 
