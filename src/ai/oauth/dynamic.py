@@ -26,9 +26,7 @@ import os
 from dataclasses import dataclass
 from pathlib import Path
 
-from ai.dynamic_models import DYNAMIC_PROVIDERS
-from ai.provider_catalog import get as get_provider_info
-from coding_agent.config import get_config_dir
+from protocol.paths import get_config_dir
 
 # Default configuration
 AUTH_FILENAME = "dynamic_auth.json"
@@ -139,10 +137,19 @@ def load_api_key(provider: str) -> str | None:
 
 def save_api_key(provider: str, key: str) -> None:
     """Persist an API key for a provider."""
+    from ai.provider_catalog import get as get_provider_info
+
     key = key.strip()
     if not key:
         raise ValueError("API key must not be empty")
-    if provider not in DYNAMIC_PROVIDERS and get_provider_info(provider) is None:
+    # Lazy import avoids circular import (dynamic_models imports provider_catalog at init)
+    try:
+        from ai.dynamic_models import DYNAMIC_PROVIDERS
+
+        in_dynamic = provider in DYNAMIC_PROVIDERS
+    except Exception:
+        in_dynamic = False
+    if not in_dynamic and get_provider_info(provider) is None:
         raise ValueError(f"Unknown provider: {provider}")
     keys = _read_all()
     keys[provider] = key
@@ -165,9 +172,16 @@ def has_api_key(provider: str) -> bool:
 
 
 def _env_var_for(provider: str) -> str | None:
-    config = DYNAMIC_PROVIDERS.get(provider)
-    if config is not None:
-        return config.env_var
+    try:
+        from ai.dynamic_models import DYNAMIC_PROVIDERS
+
+        config = DYNAMIC_PROVIDERS.get(provider)
+        if config is not None:
+            return config.env_var
+    except Exception:
+        pass
+    from ai.provider_catalog import get as get_provider_info
+
     p = get_provider_info(provider)
     return p.api_key_env if p else None
 
@@ -210,7 +224,12 @@ def get_provider_status(provider: str) -> DynamicProviderStatus | None:
     Works for both the built-in ``DYNAMIC_PROVIDERS`` (airouter, opencode,
     kilo, tokenrouter) and any provider defined in ``provider.yaml``.
     """
-    config = DYNAMIC_PROVIDERS.get(provider)
+    try:
+        from ai.dynamic_models import DYNAMIC_PROVIDERS
+
+        config = DYNAMIC_PROVIDERS.get(provider)
+    except Exception:
+        config = None
     if config is not None:
         env_var = config.env_var
         has_env = bool(env_var and os.environ.get(env_var, "").strip())
@@ -221,6 +240,8 @@ def get_provider_status(provider: str) -> DynamicProviderStatus | None:
             has_stored_key=has_api_key(provider),
             api_key_optional=config.api_key_optional,
         )
+
+    from ai.provider_catalog import get as get_provider_info
 
     p = get_provider_info(provider)
     if p is None or not p.base_url:

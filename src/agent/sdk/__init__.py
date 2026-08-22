@@ -35,6 +35,17 @@ from agent.sdk.permissions import (
     PromptApprove,
 )
 from agent.sdk.tools import FunctionTool, tool
+from telemetry.tracing import (
+    Span,
+    Trace,
+    add_trace_processor,
+    disable_tracing,
+    enable_tracing,
+    span,
+    trace,
+)
+from telemetry.tracing.exporters import ConsoleTraceProcessor, JSONLTraceProcessor
+from telemetry.tracing.processor import TraceProcessor
 
 from ._version import __version__
 from .agent import Agent, AgentOutputSchema
@@ -68,9 +79,6 @@ from .results import RunResult, Usage
 from .run_config import RunConfig
 from .runner import Runner, RunStreamed
 from .sessions import InMemorySession, JSONLSession, Session, SessionSettings
-from .tracing import Span, Trace, add_trace_processor, disable_tracing, enable_tracing, span, trace
-from .tracing.exporters import ConsoleTraceProcessor, JSONLTraceProcessor
-from .tracing.processor import TraceProcessor
 
 __all__ = [
     "Agent",

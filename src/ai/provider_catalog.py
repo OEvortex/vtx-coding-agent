@@ -261,7 +261,7 @@ def get_all_catalog_models() -> list[Model]:
 
 def custom_providers_dir() -> Path:
     """User-wide directory where custom-provider YAML files live (``~/.vtx/providers``)."""
-    from coding_agent import get_config_dir
+    from protocol.paths import get_config_dir
 
     return get_config_dir() / "providers"
 

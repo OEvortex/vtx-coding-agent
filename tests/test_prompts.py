@@ -8,9 +8,7 @@ used by the runtime and tests.
 from __future__ import annotations
 
 from agent.context import Context
-from agent.tools import all_tools
-from coding_agent.config import Config, reset_config, set_config
-from coding_agent.prompts import (
+from agent.prompts import (
     BACKGROUND_TASKS,
     CONTEXT_AWARENESS,
     DEFAULT_VTX_BASE,
@@ -30,7 +28,9 @@ from coding_agent.prompts import (
     build_system_prompt,
     build_tool_guidelines_section,
 )
-from coding_agent.prompts.identity import _compose_default_base
+from agent.prompts.identity import _compose_default_base
+from agent.tools import all_tools
+from coding_agent.config import Config, reset_config, set_config
 
 # ---------------------------------------------------------------------------
 # identity section constants

@@ -179,7 +179,7 @@ def _build_subagent_system_prompt(
     parent_ctx: DispatcherContext, spec: SubagentSpec, tools: list[Any]
 ) -> str:
     """Build the sub-agent's system prompt."""
-    from coding_agent.prompts import build_system_prompt
+    from agent.prompts import build_system_prompt
 
     extra = spec.instructions
     mode = spec.instructions_mode

@@ -9,7 +9,7 @@ from __future__ import annotations
 from collections.abc import Iterable
 from pathlib import Path
 
-from coding_agent.config import get_config_dir
+from protocol.paths import get_config_dir
 
 # Directories in priority order. Project first, global second.
 PROJECT_AGENT_DIRNAME = ".vtx"

@@ -10,7 +10,7 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from agent.context._xml import escape_xml
-from coding_agent.config import get_config_dir
+from protocol.paths import get_config_dir
 
 CONTEXT_FILE_CANDIDATES = ["AGENTS.md", "CLAUDE.md"]
 

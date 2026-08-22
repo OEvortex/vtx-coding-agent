@@ -18,8 +18,8 @@ from pathlib import Path
 from typing import Any
 
 from agent.context._xml import escape_xml
-from coding_agent.config import get_agents_dir as get_user_skills_dir
-from coding_agent.config import get_config_dir as get_vtx_config_dir
+from protocol.paths import get_agents_dir as get_user_skills_dir
+from protocol.paths import get_config_dir as get_vtx_config_dir
 
 MAX_NAME_LENGTH = 64
 MAX_DESCRIPTION_LENGTH = 1024

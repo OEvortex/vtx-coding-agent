@@ -27,11 +27,11 @@ from agent.extensions import (
     TURN_START,
     EventBus,
 )
+from agent.prompts import build_system_prompt
 from agent.session import CompactionEntry, MessageEntry, Session
 from agent.tools import BaseTool
 from ai import BaseProvider
 from coding_agent.config import config as vtx_config
-from coding_agent.prompts import build_system_prompt
 from protocol.compaction import generate_summary, is_overflow
 from protocol.errors import format_error
 from protocol.events import (

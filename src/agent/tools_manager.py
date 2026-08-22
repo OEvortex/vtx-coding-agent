@@ -14,7 +14,7 @@ from typing import Literal
 
 import aiohttp
 
-from coding_agent.config import get_config_dir
+from protocol.paths import get_config_dir
 
 ToolName = Literal["fd", "rg"]
 

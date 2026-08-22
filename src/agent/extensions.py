@@ -51,8 +51,7 @@ from typing import Any, Literal, get_args
 from pydantic import BaseModel, Field, create_model
 
 from agent.tools.base import BaseTool
-from coding_agent.config import config as vtx_config
-from coding_agent.config import get_config_dir
+from protocol.paths import get_config_dir
 from protocol.types import ImageContent, TextContent, ToolResult
 
 log = logging.getLogger("agent.extensions")
@@ -945,6 +944,8 @@ def load_for_runtime(
     """
     configured: list[str] = []
     if auto_discover:
+        from coding_agent.config import config as vtx_config
+
         configured.extend(vtx_config.extensions)
     if extra_paths:
         configured.extend(extra_paths)

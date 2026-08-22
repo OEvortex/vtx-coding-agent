@@ -1,5 +1,13 @@
 """Auto-fetch model lists from provider /models endpoints.
 
+.. deprecated::
+    ``ai.model_fetcher`` is retained for backward compatibility but its
+    logic duplicates :mod:`ai.dynamic_models`. New code should use
+    :mod:`ai.dynamic_models` and :func:`ai.provider_catalog.get_all_catalog_models`
+    instead. The module will be removed once the provider catalog no longer
+    reads its legacy cache format; until then it remains a thin shim that
+    shares the same cache directory as :mod:`ai.dynamic_models`.
+
 When a provider has ``fetch_models: true`` in provider.yaml, this module
 can fetch ``<base_url>/models``, parse the response, and cache the result
 to ``~/.vtx/models/<provider>.json`` with a configurable TTL.
@@ -41,7 +49,7 @@ class FetchedModel:
 
 
 def _get_cache_dir() -> Path:
-    from coding_agent import get_config_dir
+    from protocol.paths import get_config_dir
 
     env = os.environ.get("VTX_MODELS_CACHE_DIR")
     return Path(env) if env else get_config_dir() / CACHE_DIR

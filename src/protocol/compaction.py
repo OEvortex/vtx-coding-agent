@@ -10,7 +10,7 @@ Overflow formula:
     total_tokens >= (threshold_percent / 100) * context_window
 """
 
-from ai.base import BaseProvider
+from protocol.abc import BaseProvider
 from protocol.types import Message, TextPart, Usage, UserMessage
 
 SUMMARIZATION_PROMPT = """You are summarizing a coding conversation so that \

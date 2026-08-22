@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from coding_agent.config import get_config_dir
+from protocol.paths import get_config_dir
 
 _active_scratchpads: dict[str, Path] = {}
 

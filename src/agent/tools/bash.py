@@ -13,7 +13,6 @@ from pydantic import BaseModel, Field
 from agent.tools.base import BaseTool
 from coding_agent.config import config
 from protocol.types import ToolResult
-from tui.tool_output import truncate_tool_output_text
 
 DEFAULT_TIMEOUT = 180
 MAX_OUTPUT_BYTES = 50 * 1024
@@ -168,6 +167,8 @@ class BashTool(BaseTool):
     def _format_display(
         self, output: str, max_lines: int = 5, max_line_chars: int = 500
     ) -> tuple[str, str | None]:
+        from tui.tool_output import truncate_tool_output_text
+
         truncation_color = config.ui.colors.dim
 
         if not output:

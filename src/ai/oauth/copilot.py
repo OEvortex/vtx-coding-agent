@@ -14,7 +14,7 @@ from typing import Any
 
 import aiohttp
 
-from coding_agent.config import get_config_dir
+from protocol.paths import get_config_dir
 
 # GitHub OAuth client ID (same as VS Code Copilot extension)
 _CLIENT_ID = b64decode("SXYxLmI1MDdhMDhjODdlY2ZlOTg=").decode()

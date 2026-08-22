@@ -2,8 +2,7 @@ import shlex
 from dataclasses import dataclass
 from enum import Enum
 
-from agent.tools.base import BaseTool
-from coding_agent.config import config
+from protocol.abc import BaseTool
 
 
 class PermissionDecision(Enum):
@@ -104,8 +103,15 @@ SAFE_GIT_SUBCOMMANDS: frozenset[str] = frozenset(
 _PUNCTUATION_CHARS = frozenset(";|&()><")
 
 
-def check_permission(tool: BaseTool, arguments: dict) -> PermissionDecision:
-    if config.permissions.mode == "auto":
+def check_permission(
+    tool: BaseTool, arguments: dict, config: object | None = None
+) -> PermissionDecision:
+    if config is None:
+        from coding_agent.config import config as _config
+
+        config = _config
+    permissions = getattr(config, "permissions", None)
+    if permissions is not None and permissions.mode == "auto":
         return PermissionDecision.ALLOW
     if not tool.mutating:
         return PermissionDecision.ALLOW

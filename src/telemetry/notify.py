@@ -8,8 +8,6 @@ from importlib import resources
 from pathlib import Path
 from typing import Literal
 
-from coding_agent.config import config
-
 NotificationEvent = Literal["completion", "permission", "error"]
 
 _SOUND_FILES: dict[NotificationEvent, str] = {
@@ -94,6 +92,8 @@ def _play_windows(sound_path: Path, volume: float) -> None:
 
 
 def notify(event: NotificationEvent) -> None:
+    from coding_agent.config import config
+
     sound_path = _sound_path(event)
     volume = config.notifications.volume
     os_name = _platform()

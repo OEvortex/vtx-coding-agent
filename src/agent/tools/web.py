@@ -10,7 +10,6 @@ from pydantic import BaseModel, Field
 
 from agent.tools.base import BaseTool
 from protocol.types import ToolResult
-from tui.tool_output import escape_tool_output_text, truncate_tool_output_text
 
 # ---------------------------------------------------------------------------
 # Shared constants / helpers
@@ -26,7 +25,11 @@ def _split_for_expand(text: str) -> tuple[str, str | None]:
     Mirrors the fallback in ``SessionUIMixin._format_tool_result_text`` so the
     web tool gets the same expand/collapse affordance as bash/edit.
     """
+    from tui.tool_output import truncate_tool_output_text
+
     collapsed, truncated = truncate_tool_output_text(text)
+    from tui.tool_output import escape_tool_output_text
+
     return collapsed, escape_tool_output_text(text) if truncated else None
 
 

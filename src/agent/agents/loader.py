@@ -170,7 +170,7 @@ def load_all_agents(
     rest. Mirrors :func:`vtx.extensions.load_all_extensions`.
     """
     from agent.agents.discovery import find_agent_paths
-    from coding_agent import get_config_dir
+    from protocol.paths import get_config_dir
 
     builtins = [
         LoadedAgent(

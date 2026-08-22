@@ -9,7 +9,6 @@ from urllib.parse import urlparse
 
 import httpx
 
-from coding_agent.config import config as vtx_config
 from protocol.types import (
     Message,
     StreamDone,
@@ -146,6 +145,8 @@ def is_local_base_url(base_url: str | None) -> bool:
 
 
 def make_http_client() -> httpx.AsyncClient | None:
+    from coding_agent.config import config as vtx_config
+
     # Returns None when verify is required so the SDK uses its own default client.
     if not vtx_config.llm.tls.insecure_skip_verify:
         return None

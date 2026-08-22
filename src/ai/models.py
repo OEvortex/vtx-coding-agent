@@ -65,15 +65,13 @@ def get_model(model_id: str, provider: str | None = None) -> Model | None:
 
 
 def get_all_models() -> list[Model]:
-    from ai.dynamic_models import get_dynamic_models
     from ai.provider_catalog import get_all_catalog_models
 
-    merged: list[Model] = get_all_catalog_models()
-    merged.extend(get_dynamic_models())
-    # The catalog already includes cached dynamic models via
-    # ``get_fetched_models``, and ``get_dynamic_models`` returns the same cache,
-    # so every dynamic entry appears twice without dedup.
-    return dedupe_models(merged)
+    # ``get_all_catalog_models`` already merges the cached dynamic models via
+    # ``get_fetched_models`` (model_fetcher) and the dynamic registry. The
+    # previous implementation also appended ``get_dynamic_models()`` which
+    # duplicated every entry; we keep a single source and dedupe for safety.
+    return dedupe_models(get_all_catalog_models())
 
 
 def dedupe_models(models: list[Model]) -> list[Model]:

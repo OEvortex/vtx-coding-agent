@@ -113,15 +113,84 @@ def _build_dynamic_providers() -> dict[str, DynamicProviderConfig]:
 # Built-in dynamic providers, derived from provider.yaml. Users can register
 # more at runtime by calling :func:`register_dynamic_provider` before the first
 # model lookup.
-DYNAMIC_PROVIDERS: dict[str, DynamicProviderConfig] = _build_dynamic_providers()
+#
+# NOTE: Initialised lazily to avoid a circular import at module load time:
+# ``_build_dynamic_providers`` imports ``ai.provider_catalog`` which itself
+# imports ``ai.models``. If we built the dict eagerly, importing
+# ``ai.dynamic_models`` would trigger ``ai.provider_catalog`` before
+# ``ai.models`` is fully initialised, producing a partially-initialised module
+# cycle. Lazy initialisation keeps every ``ai.*`` module importable in any
+# order.
+_built_dynamic_providers = False
+
+
+class _LazyProviderDict(dict):  # type: ignore[type-arg]
+    """Dict that populates itself from provider.yaml on first access."""
+
+    def _ensure(self) -> None:
+        _ensure_dynamic_providers()
+
+    def __getitem__(self, key):  # type: ignore[override]
+        self._ensure()
+        return super().__getitem__(key)
+
+    def __contains__(self, key):  # type: ignore[override]
+        self._ensure()
+        return super().__contains__(key)
+
+    def get(self, key, default=None):  # type: ignore[override]
+        self._ensure()
+        return super().get(key, default)
+
+    def keys(self):  # type: ignore[override]
+        self._ensure()
+        return super().keys()
+
+    def values(self):  # type: ignore[override]
+        self._ensure()
+        return super().values()
+
+    def items(self):  # type: ignore[override]
+        self._ensure()
+        return super().items()
+
+    def __iter__(self):  # type: ignore[override]
+        self._ensure()
+        return super().__iter__()
+
+    def __len__(self):  # type: ignore[override]
+        self._ensure()
+        return super().__len__()
+
+
+DYNAMIC_PROVIDERS: dict[str, DynamicProviderConfig] = _LazyProviderDict()  # type: ignore[assignment]
+
+
+def _ensure_dynamic_providers() -> None:
+    """Populate :data:`DYNAMIC_PROVIDERS` on first use."""
+    global _built_dynamic_providers
+    if _built_dynamic_providers:
+        return
+    _built_dynamic_providers = True
+    try:
+        built = _build_dynamic_providers()
+    except Exception:
+        # During early import (e.g. pytest collection with a broken
+        # provider.yaml) we prefer an empty registry over a crash.
+        built = {}
+    # Bypass the lazy wrapper's _ensure to avoid recursion.
+    for _k, _v in built.items():
+        dict.__setitem__(DYNAMIC_PROVIDERS, _k, _v)
 
 
 def register_dynamic_provider(config: DynamicProviderConfig) -> None:
     """Register or replace a dynamic provider at runtime."""
+    _ensure_dynamic_providers()
     DYNAMIC_PROVIDERS[config.name] = config
 
 
 def get_dynamic_provider(name: str) -> DynamicProviderConfig | None:
+    _ensure_dynamic_providers()
     return DYNAMIC_PROVIDERS.get(name)
 
 
@@ -178,7 +247,7 @@ class CachedCatalog:
 
 def get_cache_dir() -> Path:
     """Return the directory where per-provider model catalogs are cached."""
-    from coding_agent import get_config_dir
+    from protocol.paths import get_config_dir
 
     base = os.environ.get("VTX_MODELS_CACHE_DIR")
     if base:
@@ -562,6 +631,7 @@ def _resolve_api_key(config: DynamicProviderConfig) -> str | None:
 
 def get_provider_models(provider: str, *, force_refresh: bool = False) -> list[DynamicModelEntry]:
     """Return the cached/fetched model list for a single provider (sync)."""
+    _ensure_dynamic_providers()
     config = DYNAMIC_PROVIDERS.get(provider)
     if config is None:
         return []
@@ -597,6 +667,7 @@ async def aget_provider_models(
     provider: str, *, force_refresh: bool = False
 ) -> list[DynamicModelEntry]:
     """Async variant of :func:`get_provider_models`."""
+    _ensure_dynamic_providers()
     config = DYNAMIC_PROVIDERS.get(provider)
     if config is None:
         return []
@@ -607,6 +678,7 @@ async def aget_provider_models(
 
 def refresh_provider(provider: str) -> int:
     """Force-refresh a single provider's cache. Returns number of models cached."""
+    _ensure_dynamic_providers()
     config = DYNAMIC_PROVIDERS.get(provider)
     if config is None:
         raise ValueError(f"Unknown dynamic provider: {provider}")
@@ -617,6 +689,7 @@ def refresh_provider(provider: str) -> int:
 
 def refresh_all_providers() -> dict[str, int]:
     """Force-refresh every known dynamic provider. Returns {name: model_count}."""
+    _ensure_dynamic_providers()
     results: dict[str, int] = {}
     for name, config in DYNAMIC_PROVIDERS.items():
         api_key = _resolve_api_key(config)
@@ -636,6 +709,7 @@ def refresh_all_providers() -> dict[str, int]:
 
 
 def _to_static_model(provider: str, entry: DynamicModelEntry) -> Model:
+    _ensure_dynamic_providers()
     config = DYNAMIC_PROVIDERS[provider]
 
     # Start with entry values
@@ -688,6 +762,7 @@ def _to_static_model(provider: str, entry: DynamicModelEntry) -> Model:
 
 def get_dynamic_models(force_refresh: bool = False) -> list[Model]:
     """Return all dynamic models converted to the static :class:`Model` shape."""
+    _ensure_dynamic_providers()
     out: list[Model] = []
     for provider in DYNAMIC_PROVIDERS:
         for entry in get_provider_models(provider, force_refresh=force_refresh):
@@ -697,6 +772,7 @@ def get_dynamic_models(force_refresh: bool = False) -> list[Model]:
 
 def find_dynamic_model(model_id: str, provider: str | None = None) -> Model | None:
     """Look up a single model in the dynamic catalog (cache-only, sync)."""
+    _ensure_dynamic_providers()
     providers: list[str]
     if provider:
         if provider not in DYNAMIC_PROVIDERS:
@@ -717,12 +793,14 @@ def find_dynamic_model(model_id: str, provider: str | None = None) -> Model | No
 
 def get_dynamic_provider_headers(provider: str) -> dict[str, str]:
     """Return the default headers a provider requires (e.g. Kilo banner)."""
+    _ensure_dynamic_providers()
     config = DYNAMIC_PROVIDERS.get(provider)
     return dict(config.headers) if config else {}
 
 
 def get_dynamic_model_ids(force_refresh: bool = False) -> dict[str, list[str]]:
     """Return ``{provider: [model_id, ...]}`` for the dynamic catalog."""
+    _ensure_dynamic_providers()
     result: dict[str, list[str]] = {}
     for provider in DYNAMIC_PROVIDERS:
         result[provider] = [
@@ -732,13 +810,21 @@ def get_dynamic_model_ids(force_refresh: bool = False) -> dict[str, list[str]]:
 
 
 def get_all_models_with_dynamic(force_refresh: bool = False) -> list[Model]:
-    """Return the catalog merged with freshly-fetched dynamic models."""
+    """Return the catalog merged with freshly-fetched dynamic models.
+
+    Historically this appended ``get_dynamic_models`` on top of
+    ``get_all_catalog_models``, duplicating every dynamic entry. The
+    duplication is now removed: ``get_all_catalog_models`` is the single
+    source of truth (it already reads the model_fetcher cache). When
+    ``force_refresh`` is requested we refresh the dynamic cache first.
+    """
     from ai.models import dedupe_models
     from ai.provider_catalog import get_all_catalog_models
 
-    merged: list[Model] = get_all_catalog_models()
-    merged.extend(get_dynamic_models(force_refresh=force_refresh))
-    return dedupe_models(merged)
+    if force_refresh:
+        # Ensure the underlying cache is fresh before reading the catalog.
+        get_dynamic_models(force_refresh=True)
+    return dedupe_models(get_all_catalog_models())
 
 
 __all__ = [

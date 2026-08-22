@@ -163,7 +163,7 @@ def test_runtime_active_commands_no_agent():
 
 
 def test_system_prompt_includes_agent_instructions(monkeypatch, tmp_path: Path):
-    from coding_agent.prompts import build_system_prompt
+    from agent.prompts import build_system_prompt
 
     prompt = build_system_prompt(
         cwd=str(tmp_path),
@@ -175,7 +175,7 @@ def test_system_prompt_includes_agent_instructions(monkeypatch, tmp_path: Path):
 
 
 def test_system_prompt_replace_mode(monkeypatch, tmp_path: Path):
-    from coding_agent.prompts import build_system_prompt
+    from agent.prompts import build_system_prompt
 
     prompt = build_system_prompt(
         cwd=str(tmp_path), extra_instructions="CUSTOM ONLY", extra_instructions_mode="replace"

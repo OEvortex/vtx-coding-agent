@@ -14,6 +14,7 @@ from agent.agents.activate import compose_active_commands
 from agent.context import Context
 from agent.extensions import EventBus, LoadedExtensions
 from agent.loop import Agent
+from agent.prompts import build_system_prompt
 from agent.session import CompactionEntry, CustomMessageEntry, MessageEntry, Session
 from agent.tools import DEFAULT_TOOLS, BaseTool, tools_by_name
 from ai import (
@@ -30,7 +31,6 @@ from ai.base import AuthMode
 from ai.dynamic_models import find_dynamic_model, get_dynamic_provider_headers
 from coding_agent.config import add_recent_model, get_last_selected, set_last_selected
 from coding_agent.config import config as vtx_config
-from coding_agent.prompts import build_system_prompt
 from protocol.compaction import generate_summary
 from protocol.handoff import generate_handoff_prompt
 from protocol.types import AssistantMessage, TextContent, UserMessage

@@ -140,8 +140,8 @@ select = [
 
 [tool.ruff.lint.per-file-ignores]
 "src/tui/latex.py" = ["RUF001"]
-"src/coding_agent/prompts/identity.py" = ["E501"]
-"src/coding_agent/prompts/env.py" = ["E501"]
+"src/agent/prompts/identity.py" = ["E501"]
+"src/agent/prompts/env.py" = ["E501"]
 "src/agent/sdk/**/*.py" = ["N818"]
 "tests/ui/test_latex.py" = ["RUF001"]
 "tests/sdk/**/*.py" = ["N818", "E501"]

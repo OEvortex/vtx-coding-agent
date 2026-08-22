@@ -3,11 +3,11 @@ from typing import Any, Literal, cast
 
 import pytest
 
+from agent.prompts import build_system_prompt
 from agent.runtime import ConversationRuntime
 from agent.session import CustomMessageEntry, Session
 from ai.base import LLMStream
 from ai.providers.mock import MockProvider
-from coding_agent.prompts import build_system_prompt
 from protocol.handoff import HANDOFF_PROMPT_TEMPLATE, generate_handoff_prompt
 from protocol.types import AssistantMessage, StopReason, TextContent, TextPart, UserMessage
 from tui.commands import CommandsMixin

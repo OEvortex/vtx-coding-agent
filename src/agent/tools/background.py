@@ -42,7 +42,7 @@ from pathlib import Path
 from typing import Any, Literal
 
 from agent.async_utils import OperationCancelledError
-from coding_agent.config import get_config_dir
+from protocol.paths import get_config_dir
 
 log = logging.getLogger("agent.tools.background")
 

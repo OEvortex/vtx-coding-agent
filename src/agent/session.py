@@ -25,7 +25,7 @@ from typing import Any, Literal
 
 from pydantic import BaseModel
 
-from coding_agent.config import get_config_dir
+from protocol.paths import get_config_dir
 from protocol.types import (
     AssistantMessage,
     Message,

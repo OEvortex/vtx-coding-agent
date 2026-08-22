@@ -19,11 +19,11 @@ from __future__ import annotations
 from typing import Any
 
 from agent.context import Context, formatted_agent_mds, formatted_git_context, formatted_skills
+from agent.prompts.env import build_env_section
+from agent.prompts.identity import DEFAULT_VTX_BASE
+from agent.prompts.tooling import build_tool_guidelines_section
 from agent.tools import BaseTool
 from coding_agent.config import config as vtx_config
-from coding_agent.prompts.env import build_env_section
-from coding_agent.prompts.identity import DEFAULT_VTX_BASE
-from coding_agent.prompts.tooling import build_tool_guidelines_section
 
 
 def _resolve_base(override: str | None) -> str:

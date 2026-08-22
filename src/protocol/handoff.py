@@ -1,4 +1,4 @@
-from ai.base import BaseProvider
+from protocol.abc import BaseProvider
 from protocol.types import Message, TextPart, UserMessage
 
 HANDOFF_PROMPT_TEMPLATE = """You are creating a handoff to a NEW focused thread.

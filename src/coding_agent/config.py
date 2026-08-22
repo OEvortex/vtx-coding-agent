@@ -54,7 +54,7 @@ def _resolve_default_system_prompt() -> str:
     Python code rather than the shipped YAML. The YAML keeps an empty
     placeholder for schema stability; this function fills it in.
     """
-    from coding_agent.prompts.identity import DEFAULT_VTX_BASE
+    from agent.prompts.identity import DEFAULT_VTX_BASE
 
     return DEFAULT_VTX_BASE
 
@@ -379,11 +379,15 @@ class Config:
 
 
 def get_config_dir() -> Path:
-    return Path.home() / f".{CONFIG_DIR_NAME}"
+    from protocol.paths import get_config_dir as _get_config_dir
+
+    return _get_config_dir()
 
 
 def get_agents_dir() -> Path:
-    return Path.home() / ".agents"
+    from protocol.paths import get_agents_dir as _get_agents_dir
+
+    return _get_agents_dir()
 
 
 def _ensure_config_file() -> Path:
