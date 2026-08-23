@@ -51,8 +51,10 @@ logger = logging.getLogger(__name__)
 # =================================================================================================
 
 CACHE_DIR_NAME = "models"
-CACHE_TTL_SECONDS = 60 * 60 * 6  # 6h; matches pi-free-models default behaviour
-FETCH_TIMEOUT_SECONDS = 10.0
+CACHE_TTL_SECONDS = 60 * 60 * 6
+FETCH_TIMEOUT_SECONDS = 7.0
+HTTP_LIMITS = httpx.Limits(max_keepalive_connections=20, max_connections=40)
+MAX_CONCURRENT_FETCHES = 10
 
 
 @dataclass(frozen=True)
@@ -363,33 +365,69 @@ def _raw_model_list(payload: Any, response_format: str) -> list[dict[str, Any]]:
 MODELS_DEV_URL = "https://models.dev/models.json"
 
 
-async def _fetch_models_dev() -> dict[str, Any]:
+_FETCH_TIMEOUT = httpx.Timeout(FETCH_TIMEOUT_SECONDS, connect=3.0)
+
+# In-memory cache for models.dev to avoid re-reading/parsing per provider.
+_models_dev_mem: dict[str, Any] | None = None
+_models_dev_mem_at: float = 0.0
+
+
+async def _fetch_models_dev(client: httpx.AsyncClient | None = None) -> dict[str, Any]:
+    global _models_dev_mem, _models_dev_mem_at
+    # Reuse in-memory cache for 1 hour to avoid repeated disk/IO in batch fetches.
+    if _models_dev_mem is not None and (time.time() - _models_dev_mem_at) < 3600:
+        return _models_dev_mem
+
     path = get_cache_dir() / "models_dev.json"
     try:
         if path.exists():
             stat = path.stat()
             # Cache for 24 hours
             if (time.time() - stat.st_mtime) < (60 * 60 * 24):
-                return json.loads(path.read_text(encoding="utf-8"))
+                data = json.loads(path.read_text(encoding="utf-8"))
+                _models_dev_mem = data
+                _models_dev_mem_at = time.time()
+                return data
     except Exception as exc:
         logger.debug("Failed to read models.dev cache: %s", exc)
 
-    try:
-        async with httpx.AsyncClient(timeout=10.0) as client:
-            response = await client.get(MODELS_DEV_URL)
+    async def _do_fetch(c: httpx.AsyncClient) -> dict[str, Any] | None:
+        try:
+            response = await c.get(MODELS_DEV_URL)
             if response.is_success:
                 data = response.json()
                 path.parent.mkdir(parents=True, exist_ok=True)
                 path.write_text(json.dumps(data, indent=2), encoding="utf-8")
+                _models_dev_mem = data
+                _models_dev_mem_at = time.time()
                 return data
-    except Exception as exc:
-        logger.debug("Failed to fetch models.dev: %s", exc)
+        except Exception as exc:
+            logger.debug("Failed to fetch models.dev: %s", exc)
+        return None
+
+    if client is not None:
+        fetched = await _do_fetch(client)
+        if fetched is not None:
+            return fetched
+    else:
+        try:
+            async with httpx.AsyncClient(timeout=_FETCH_TIMEOUT, limits=HTTP_LIMITS) as _client:
+                fetched = await _do_fetch(_client)
+                if fetched is not None:
+                    return fetched
+        except Exception as exc:
+            logger.debug("Failed to fetch models.dev: %s", exc)
 
     try:
         if path.exists():
-            return json.loads(path.read_text(encoding="utf-8"))
+            data = json.loads(path.read_text(encoding="utf-8"))
+            _models_dev_mem = data
+            _models_dev_mem_at = time.time()
+            return data
     except Exception:
         pass
+    if _models_dev_mem is not None:
+        return _models_dev_mem
     return {}
 
 
@@ -507,9 +545,17 @@ def _parse_models(
 
 
 async def _async_fetch_catalog(
-    config: DynamicProviderConfig, *, api_key: str | None, force: bool = False
+    config: DynamicProviderConfig,
+    *,
+    api_key: str | None,
+    force: bool = False,
+    client: httpx.AsyncClient | None = None,
+    models_dev: dict[str, Any] | None = None,
 ) -> CachedCatalog:
-    """Fetch the live model list for a single provider, refreshing the cache."""
+    """Fetch the live model list for a single provider, refreshing the cache.
+
+    Prefer passing a shared ``client`` and ``models_dev`` when fetching in batch.
+    """
     if not force:
         cached = _read_cache(config.name)
         if cached and (time.time() - cached.fetched_at) < CACHE_TTL_SECONDS:
@@ -531,15 +577,29 @@ async def _async_fetch_catalog(
     base = config.base_url.rstrip("/")
     url = f"{base}/models"
 
-    try:
-        async with httpx.AsyncClient(timeout=FETCH_TIMEOUT_SECONDS) as client:
-            response = await client.get(url, headers=headers)
-    except httpx.HTTPError as exc:
-        cached = _read_cache(config.name)
-        if cached:
-            logger.debug("Falling back to stale cache for %s: %s", config.name, exc)
-            return cached
-        raise RuntimeError(f"Network error fetching models for {config.name}: {exc}") from exc
+    async def _fetch(client: httpx.AsyncClient) -> httpx.Response:
+        return await client.get(url, headers=headers)
+
+    response: httpx.Response | None = None
+    if client is not None:
+        try:
+            response = await _fetch(client)
+        except httpx.HTTPError as exc:
+            cached = _read_cache(config.name)
+            if cached:
+                logger.debug("Falling back to stale cache for %s: %s", config.name, exc)
+                return cached
+            raise RuntimeError(f"Network error fetching models for {config.name}: {exc}") from exc
+    else:
+        try:
+            async with httpx.AsyncClient(timeout=_FETCH_TIMEOUT, limits=HTTP_LIMITS) as _client:
+                response = await _fetch(_client)
+        except httpx.HTTPError as exc:
+            cached = _read_cache(config.name)
+            if cached:
+                logger.debug("Falling back to stale cache for %s: %s", config.name, exc)
+                return cached
+            raise RuntimeError(f"Network error fetching models for {config.name}: {exc}") from exc
 
     if response.status_code == 401 or response.status_code == 403:
         cached = _read_cache(config.name)
@@ -601,12 +661,8 @@ async def _async_fetch_catalog(
             return cached
         raise RuntimeError(f"No models returned by {config.name} /models")
 
-    # Fetch models.dev specs cache
-    import contextlib
-
-    models_dev: dict[str, Any] | None = None
-    with contextlib.suppress(Exception):
-        models_dev = await _fetch_models_dev()
+    if models_dev is None:
+        models_dev = await _fetch_models_dev(client)
 
     catalog = CachedCatalog(
         provider=config.name, fetched_at=time.time(), models=_parse_models(raw_models, models_dev)
@@ -664,7 +720,11 @@ def get_provider_models(provider: str, *, force_refresh: bool = False) -> list[D
 
 
 async def aget_provider_models(
-    provider: str, *, force_refresh: bool = False
+    provider: str,
+    *,
+    force_refresh: bool = False,
+    client: httpx.AsyncClient | None = None,
+    models_dev: dict[str, Any] | None = None,
 ) -> list[DynamicModelEntry]:
     """Async variant of :func:`get_provider_models`."""
     _ensure_dynamic_providers()
@@ -672,7 +732,9 @@ async def aget_provider_models(
     if config is None:
         return []
     api_key = _resolve_api_key(config)
-    catalog = await _async_fetch_catalog(config, api_key=api_key, force=force_refresh)
+    catalog = await _async_fetch_catalog(
+        config, api_key=api_key, force=force_refresh, client=client, models_dev=models_dev
+    )
     return list(catalog.models)
 
 
@@ -690,17 +752,51 @@ def refresh_provider(provider: str) -> int:
 def refresh_all_providers() -> dict[str, int]:
     """Force-refresh every known dynamic provider. Returns {name: model_count}."""
     _ensure_dynamic_providers()
-    results: dict[str, int] = {}
-    for name, config in DYNAMIC_PROVIDERS.items():
-        api_key = _resolve_api_key(config)
-        try:
-            catalog = asyncio.run(_async_fetch_catalog(config, api_key=api_key, force=True))
-        except RuntimeError as exc:
-            logger.debug("Skipping %s during refresh: %s", name, exc)
-            results[name] = 0
-            continue
-        results[name] = len(catalog.models)
-    return results
+    providers = list(DYNAMIC_PROVIDERS.items())
+    if not providers:
+        return {}
+
+    async def _run() -> dict[str, int]:
+        async with httpx.AsyncClient(timeout=_FETCH_TIMEOUT, limits=HTTP_LIMITS) as client:
+            models_dev = await _fetch_models_dev(client)
+            semaphore = asyncio.Semaphore(MAX_CONCURRENT_FETCHES)
+
+            async def _one(name: str, config: DynamicProviderConfig) -> tuple[str, int]:
+                async with semaphore:
+                    api_key = _resolve_api_key(config)
+                    try:
+                        catalog = await _async_fetch_catalog(
+                            config,
+                            api_key=api_key,
+                            force=True,
+                            client=client,
+                            models_dev=models_dev,
+                        )
+                        return name, len(catalog.models)
+                    except RuntimeError as exc:
+                        logger.debug("Skipping %s during refresh: %s", name, exc)
+                        return name, 0
+
+            return dict(await asyncio.gather(*(_one(name, cfg) for name, cfg in providers)))
+
+    try:
+        asyncio.get_running_loop()
+    except RuntimeError:
+        return asyncio.run(_run())
+    else:
+        # If already in an event loop (TUI), we cannot block with `asyncio.run`.
+        # Fall back to a simpler sequential sync refresh to avoid crashing the UI.
+        results: dict[str, int] = {}
+        for name, config in providers:
+            api_key = _resolve_api_key(config)
+            try:
+                catalog = asyncio.run(_async_fetch_catalog(config, api_key=api_key, force=True))
+            except RuntimeError as exc:
+                logger.debug("Skipping %s during refresh: %s", name, exc)
+                results[name] = 0
+                continue
+            results[name] = len(catalog.models)
+        return results
 
 
 # =================================================================================================
@@ -760,14 +856,54 @@ def _to_static_model(provider: str, entry: DynamicModelEntry) -> Model:
     )
 
 
+async def _aget_all_dynamic_models(force_refresh: bool = False) -> list[Model]:
+    """Async batch fetch of all dynamic models."""
+    _ensure_dynamic_providers()
+    providers = list(DYNAMIC_PROVIDERS.keys())
+    if not providers:
+        return []
+
+    async with httpx.AsyncClient(timeout=_FETCH_TIMEOUT, limits=HTTP_LIMITS) as client:
+        models_dev = await _fetch_models_dev(client)
+        semaphore = asyncio.Semaphore(MAX_CONCURRENT_FETCHES)
+
+        async def _one(name: str) -> tuple[str, list[DynamicModelEntry]]:
+            async with semaphore:
+                try:
+                    entries = await aget_provider_models(
+                        name, force_refresh=force_refresh, client=client, models_dev=models_dev
+                    )
+                    return name, entries
+                except RuntimeError as exc:
+                    logger.debug("Skipping %s during model gather: %s", name, exc)
+                    cached = _read_cache(name)
+                    if cached:
+                        return name, list(cached.models)
+                    return name, []
+
+        results = await asyncio.gather(*(_one(name) for name in providers))
+
+    out: list[Model] = []
+    for provider, entries in results:
+        out.extend(_to_static_model(provider, e) for e in entries)
+    return out
+
+
 def get_dynamic_models(force_refresh: bool = False) -> list[Model]:
     """Return all dynamic models converted to the static :class:`Model` shape."""
-    _ensure_dynamic_providers()
-    out: list[Model] = []
-    for provider in DYNAMIC_PROVIDERS:
-        for entry in get_provider_models(provider, force_refresh=force_refresh):
-            out.append(_to_static_model(provider, entry))
-    return out
+    try:
+        asyncio.get_running_loop()
+    except RuntimeError:
+        return asyncio.run(_aget_all_dynamic_models(force_refresh=force_refresh))
+    else:
+        # In an active event loop (TUI), avoid blocking/asyncio.run.
+        # Use the existing sequential path instead, which is cache-friendly.
+        _ensure_dynamic_providers()
+        out: list[Model] = []
+        for provider in DYNAMIC_PROVIDERS:
+            for entry in get_provider_models(provider, force_refresh=force_refresh):
+                out.append(_to_static_model(provider, entry))
+        return out
 
 
 def find_dynamic_model(model_id: str, provider: str | None = None) -> Model | None:
@@ -798,15 +934,57 @@ def get_dynamic_provider_headers(provider: str) -> dict[str, str]:
     return dict(config.headers) if config else {}
 
 
+async def _aget_all_dynamic_model_ids(force_refresh: bool = False) -> dict[str, list[str]]:
+    """Async batch fetch of all dynamic model ids."""
+    _ensure_dynamic_providers()
+    providers = list(DYNAMIC_PROVIDERS.keys())
+    if not providers:
+        return {}
+
+    async with httpx.AsyncClient(timeout=_FETCH_TIMEOUT, limits=HTTP_LIMITS) as client:
+        models_dev = await _fetch_models_dev(client)
+        semaphore = asyncio.Semaphore(MAX_CONCURRENT_FETCHES)
+
+        async def _one(name: str) -> tuple[str, list[str]]:
+            async with semaphore:
+                try:
+                    entries = await aget_provider_models(
+                        name, force_refresh=force_refresh, client=client, models_dev=models_dev
+                    )
+                    return name, [m.id for m in entries]
+                except RuntimeError as exc:
+                    logger.debug("Skipping %s during id gather: %s", name, exc)
+                    cached = _read_cache(name)
+                    if cached:
+                        return name, [m.id for m in cached.models]
+                    return name, []
+
+        return dict(await asyncio.gather(*(_one(name) for name in providers)))
+
+
 def get_dynamic_model_ids(force_refresh: bool = False) -> dict[str, list[str]]:
     """Return ``{provider: [model_id, ...]}`` for the dynamic catalog."""
-    _ensure_dynamic_providers()
-    result: dict[str, list[str]] = {}
-    for provider in DYNAMIC_PROVIDERS:
-        result[provider] = [
-            m.id for m in get_provider_models(provider, force_refresh=force_refresh)
-        ]
-    return result
+    try:
+        asyncio.get_running_loop()
+    except RuntimeError:
+        return asyncio.run(_aget_all_dynamic_model_ids(force_refresh=force_refresh))
+    else:
+        _ensure_dynamic_providers()
+        result: dict[str, list[str]] = {}
+        for provider in DYNAMIC_PROVIDERS:
+            result[provider] = [
+                m.id for m in get_provider_models(provider, force_refresh=force_refresh)
+            ]
+        return result
+
+
+async def _aget_all_models_with_dynamic(force_refresh: bool = False) -> list[Model]:
+    if force_refresh:
+        await _aget_all_dynamic_models(force_refresh=True)
+    from ai.models import dedupe_models
+    from ai.provider_catalog import get_all_catalog_models
+
+    return dedupe_models(get_all_catalog_models())
 
 
 def get_all_models_with_dynamic(force_refresh: bool = False) -> list[Model]:
@@ -818,13 +996,17 @@ def get_all_models_with_dynamic(force_refresh: bool = False) -> list[Model]:
     source of truth (it already reads the model_fetcher cache). When
     ``force_refresh`` is requested we refresh the dynamic cache first.
     """
-    from ai.models import dedupe_models
-    from ai.provider_catalog import get_all_catalog_models
+    try:
+        asyncio.get_running_loop()
+    except RuntimeError:
+        return asyncio.run(_aget_all_models_with_dynamic(force_refresh=force_refresh))
+    else:
+        if force_refresh:
+            get_dynamic_models(force_refresh=True)
+        from ai.models import dedupe_models
+        from ai.provider_catalog import get_all_catalog_models
 
-    if force_refresh:
-        # Ensure the underlying cache is fresh before reading the catalog.
-        get_dynamic_models(force_refresh=True)
-    return dedupe_models(get_all_catalog_models())
+        return dedupe_models(get_all_catalog_models())
 
 
 __all__ = [
