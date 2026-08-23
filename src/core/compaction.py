@@ -85,7 +85,7 @@ async def generate_summary(
     """Send the full conversation + summarization prompt to the LLM, return summary text."""
     summary_messages: list[Message] = [*messages, UserMessage(content=SUMMARIZATION_PROMPT)]
 
-    stream = await provider.stream(summary_messages, system_prompt=system_prompt, tools=None)  # ty:ignore[invalid-argument-type]
+    stream = await provider.stream(summary_messages, system_prompt=system_prompt, tools=None)
 
     text_parts: list[str] = []
     async for part in stream:

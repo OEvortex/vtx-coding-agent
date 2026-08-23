@@ -1,6 +1,8 @@
 from collections.abc import AsyncIterator
 from typing import Protocol, runtime_checkable
 
+from core.types import Message, ToolDefinition
+
 
 @runtime_checkable
 class BaseTool(Protocol):
@@ -18,10 +20,10 @@ class BaseProvider(Protocol):
 
     async def stream(
         self,
-        messages: list[object],
+        messages: list[Message],
         *,
         system_prompt: str | None = None,
-        tools: list[object] | None = None,
+        tools: list[ToolDefinition] | None = None,
         temperature: float | None = None,
         max_tokens: int | None = None,
     ) -> AsyncIterator[object]: ...
