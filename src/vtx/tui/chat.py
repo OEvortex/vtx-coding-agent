@@ -509,10 +509,19 @@ class ChatLog(VerticalScroll):
         return block
 
     def add_handoff_link_message(
-        self, label: str, target_session_id: str, query: str, direction: Literal["back", "forward"]
+        self,
+        label: str,
+        target_session_id: str,
+        query: str,
+        direction: Literal["back", "forward"],
+        prompt: str | None = None,
     ) -> HandoffLinkBlock:
         block = HandoffLinkBlock(
-            label=label, target_session_id=target_session_id, query=query, direction=direction
+            label=label,
+            target_session_id=target_session_id,
+            query=query,
+            direction=direction,
+            prompt=prompt,
         )
         self.mount(block)
         self._scroll_if_anchored(animate=False)

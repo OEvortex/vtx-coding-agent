@@ -875,6 +875,7 @@ class HandoffLinkBlock(Static):
         target_session_id: str,
         query: str,
         direction: Literal["back", "forward"],
+        prompt: str | None = None,
         **kwargs,
     ) -> None:
         super().__init__(**kwargs)
@@ -882,19 +883,46 @@ class HandoffLinkBlock(Static):
         self._target_session_id = target_session_id
         self._query = query
         self._direction: Literal["back", "forward"] = direction
+        self._prompt = prompt
         self.add_class("handoff-link-block")
 
     def compose(self) -> ComposeResult:
-        link_text = f"{self._target_session_id[:8]} (click to open)"
-        handoff_line = f"{self._label} → {link_text}"
-        text = Text(f"[handoff]\n{handoff_line}\n\n[query]\n{self._query}")
-        stylize_badge_markers(text, ("[handoff]", "[query]"))
+        colors = config.ui.colors
+        short_id = self._target_session_id[:8]
 
-        link_start = text.plain.find(link_text)
-        if link_start != -1:
-            text.stylize(
-                f"{config.ui.colors.notice} underline", link_start, link_start + len(link_text)
-            )
+        if self._direction == "forward":
+            badge_text = "HANDOFF"
+            badge_style = f"{colors.accent} bold"
+            icon = "→"
+            icon_style = colors.accent
+            link_label = "Handoff session"
+        else:
+            badge_text = "ORIGIN"
+            badge_style = f"{colors.notice} bold"
+            icon = "←"
+            icon_style = colors.notice
+            link_label = "Origin session"
+
+        text = Text()
+        text.append(f"[{badge_text}] ", style=badge_style)
+        text.append(f"{self._label} ", style=colors.dim)
+        text.append(short_id, style=colors.muted)
+
+        text.append("\n\n", style="")
+        text.append("Query: ", style=f"{colors.dim} bold")
+        text.append(self._query, style="")
+
+        if self._prompt:
+            text.append("\n\n", style="")
+            text.append("Prompt: ", style=f"{colors.dim} bold")
+            prompt_preview = self._prompt.strip()
+            if len(prompt_preview) > 120:
+                prompt_preview = prompt_preview[:117] + "..."
+            text.append(prompt_preview, style=colors.dim)
+
+        text.append("\n\n", style="")
+        text.append(f"{icon} {link_label} ", style=icon_style)
+        text.append("(click to open)", style=colors.dim)
 
         yield Label(text)
 

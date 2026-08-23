@@ -135,7 +135,12 @@ class _FakeChat:
         return None
 
     def add_handoff_link_message(
-        self, label: str, target_session_id: str, query: str, direction: Literal["back", "forward"]
+        self,
+        label: str,
+        target_session_id: str,
+        query: str,
+        direction: Literal["back", "forward"],
+        prompt: str | None = None,
     ) -> None:
         return None
 

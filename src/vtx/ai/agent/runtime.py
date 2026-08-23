@@ -982,13 +982,13 @@ class ConversationRuntime:
             "handoff_backlink",
             f"Handoff from {source_session_id[:8]}",
             display=False,
-            details={"target_session_id": source_session_id, "query": query},
+            details={"target_session_id": source_session_id, "query": query, "prompt": prompt},
         )
         source_session.append_custom_message(
             "handoff_forward_link",
             f"Handoff to {new_session.id[:8]}",
             display=False,
-            details={"target_session_id": new_session.id, "query": query},
+            details={"target_session_id": new_session.id, "query": query, "prompt": prompt},
         )
 
         new_session.ensure_persisted()

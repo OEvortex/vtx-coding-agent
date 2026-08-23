@@ -133,21 +133,25 @@ class SessionUIMixin:
                 ).strip()
                 query = str((entry.details or {}).get("query") or "").strip()
                 if entry.custom_type == CommandsMixin.HANDOFF_BACKLINK_TYPE and target_session_id:
+                    prompt = str((entry.details or {}).get("prompt") or "").strip()
                     chat.add_handoff_link_message(
                         label="Origin session",
                         target_session_id=target_session_id,
                         query=query,
                         direction="back",
+                        prompt=prompt,
                     )
                 elif (
                     entry.custom_type == CommandsMixin.HANDOFF_FORWARD_LINK_TYPE
                     and target_session_id
                 ):
+                    prompt = str((entry.details or {}).get("prompt") or "").strip()
                     chat.add_handoff_link_message(
                         label="Handoff session",
                         target_session_id=target_session_id,
                         query=query,
                         direction="forward",
+                        prompt=prompt,
                     )
                 elif entry.custom_type == "shell_command":
                     details = entry.details or {}
