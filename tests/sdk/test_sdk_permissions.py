@@ -2,8 +2,13 @@
 
 from __future__ import annotations
 
-from vtx.sdk.permissions import AllowlistApprove, AutoApprove, PermissionDecision, PromptApprove
-from vtx.sdk.tools import tool
+from ai.agent.sdk.permissions import (
+    AllowlistApprove,
+    AutoApprove,
+    PermissionDecision,
+    PromptApprove,
+)
+from ai.agent.sdk.tools import tool
 
 
 def test_auto_approve_allows_everything() -> None:

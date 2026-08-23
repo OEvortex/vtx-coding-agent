@@ -1,4 +1,4 @@
-from vtx.core.errors import format_error
+from core.errors import format_error
 
 
 def test_format_error_prefixes_type_name():

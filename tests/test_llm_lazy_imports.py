@@ -3,8 +3,8 @@ import sys
 
 import pytest
 
-from vtx.llm import BaseProvider, get_provider_class
-from vtx.llm.models import ApiType
+from ai import BaseProvider, get_provider_class
+from ai.models import ApiType
 
 
 def _modules_loaded_after(import_target: str) -> set[str]:
@@ -17,14 +17,16 @@ def _module_loaded(loaded: set[str], module_name: str) -> bool:
     return any(name == module_name or name.startswith(f"{module_name}.") for name in loaded)
 
 
-@pytest.mark.parametrize("import_target", ["vtx.llm", "vtx.ui.app", "vtx.cli", "vtx.headless"])
+@pytest.mark.parametrize(
+    "import_target", ["ai", "tui.app", "coding_agent.cli", "coding_agent.headless"]
+)
 def test_import_does_not_load_provider_sdks(import_target):
     loaded = _modules_loaded_after(import_target)
     assert not _module_loaded(loaded, "openai")
     assert not _module_loaded(loaded, "anthropic")
 
 
-@pytest.mark.parametrize("import_target", ["vtx.cli", "vtx.headless"])
+@pytest.mark.parametrize("import_target", ["coding_agent.cli", "coding_agent.headless"])
 def test_import_does_not_load_textual(import_target):
     loaded = _modules_loaded_after(import_target)
     assert not _module_loaded(loaded, "textual")

@@ -1,72 +1,45 @@
-# Permissions
+# SDK Permissions
 
-Vtx has a permission system. The SDK exposes it via the
-`PermissionPolicy` Protocol.
+A `PermissionPolicy` decides allow/prompt per tool call before it executes — the programmatic equivalent of Vtx's `prompt`/`auto` modes.
 
-## Default policy
+```python
+from ai.agent.sdk import Agent, AutoApprove, AllowlistApprove, PromptApprove, RunConfig
 
-`PromptApprove` (the SDK default) mirrors Vtx's
-`check_permission` semantics:
-
-- `mutating=False` tools are auto-approved.
-- For mutating tools, the policy returns `PROMPT`.
-- For `bash`, safe read-only commands (e.g. `ls`, `cat`) are
-  auto-approved.
-
-When the policy returns `PROMPT`, the SDK asks the host app for a
-decision. The host app supplies a `PermissionCallback` (or implements
-its own `PermissionPolicy`).
+run_config = RunConfig(permission_policy=AutoApprove())          # run everything
+run_config = RunConfig(permission_policy=AllowlistApprove(["read", "find", "web"]))
+```
 
 ## Built-in policies
 
-```python
-from vtx.sdk import AutoApprove, AllowlistApprove, PromptApprove
+| Policy | Behaviour |
+| --- | --- |
+| `AutoApprove` | Allow everything. |
+| `AllowlistApprove(allowlist)` | Tools named in the list → `ALLOW`; everything else → `PROMPT`. |
+| `PromptApprove` | Read-only bash commands (its built-in safe list: `cat head tail ls pwd wc diff which file stat du df whoami id uname date realpath dirname basename`) auto-approve; other mutating calls prompt. |
 
-# Allow everything. Mirrors `permissions.mode=auto`.
-policy = AutoApprove()
+`PROMPT` without an approval flow surfaces as a run interruption (`ToolApprovalItem`) — combine with [approvals.md](approvals.md) to resolve it.
 
-# Allow only listed tools; prompt for everything else.
-policy = AllowlistApprove(["web"])
+## Custom policies
 
-# Default: read-only auto-approved, mutating prompts.
-policy = PromptApprove()
-```
-
-## Custom policy
+Subclass and decide yourself; sync or async both work:
 
 ```python
-from vtx.sdk import PermissionDecision, PermissionPolicy
-from vtx.tools.base import BaseTool
+from ai.agent.sdk import PermissionPolicy
 
-class WorkspaceOnlyPolicy(PermissionPolicy):
-    def decide(self, tool: BaseTool, arguments: dict) -> PermissionDecision:
-        path = arguments.get("path", "")
-        if not str(path).startswith("/workspace/"):
-            return PermissionDecision.PROMPT
-        return PermissionDecision.ALLOW
-
-agent = Agent(
-    name="Bot",
-    permission_policy=WorkspaceOnlyPolicy(),
-    ...
-)
+class BusinessHours(PermissionPolicy):
+    def decide(self, tool, arguments):
+        if tool.name == "deploy" and after_hours():
+            return "prompt"
+        return "allow"
 ```
 
-Async policies are also supported:
+Prefer a plain callback?
 
 ```python
-class AsyncPolicy(PermissionPolicy):
-    async def decide(self, tool, arguments):
-        # ask a remote service
-        return PermissionDecision.ALLOW
+from ai.agent.sdk import Agent, Runner
+from ai.agent.sdk.permissions import PermissionCallback
+
+policy = PermissionCallback(lambda tool, args: "deny" if tool.name == "bash" else "allow")
 ```
 
-## Per-run override
-
-```python
-result = await Runner.run(
-    agent,
-    input,
-    run_config=RunConfig(permission_policy=my_policy),
-)
-```
+Return values: `"allow"` / `"prompt"` (or `PermissionDecision` members).

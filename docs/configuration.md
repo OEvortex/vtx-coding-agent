@@ -1,127 +1,99 @@
 # Configuration
 
-Vtx stores all settings in a single YAML file generated automatically on first run:
+Vtx stores config in `~/.vtx/config.yml` (created with defaults on first run). Every field below is verified against `src/coding_agent/defaults/config.yml` (schema version 12).
 
-```
-~/.vtx/config.yml
-```
+## `llm`
 
-The fully-commented default is available at `src/vtx/defaults/config.yml`. Migrations run automatically when `meta.config_version` is older than the current schema version (currently `12`).
+| Field | Default | Notes |
+| --- | --- | --- |
+| `default_provider` | `"openai-codex"` | Any provider slug from [providers.md](providers.md) or a custom provider |
+| `default_model` | `"gpt-5.5"` | Model ID passed to the provider |
+| `default_base_url` | `""` | Override the provider's endpoint (local models etc.) |
+| `default_thinking_level` | `"low"` | One of the provider's supported thinking levels (`none`, `minimal`, `low`, `medium`, `high`, `xhigh`) |
+| `tool_call_idle_timeout_seconds` | `180` | Abort a stalled tool-call stream after this idle time |
+| `request_timeout_seconds` | `600` | HTTP request timeout |
+| `auth.openai_compat` | `"auto"` | `auto` / `required` / `none` — whether OpenAI-compatible endpoints need an API key |
+| `auth.anthropic_compat` | `"auto"` | Same for Anthropic-compatible endpoints |
+| `tls.insecure_skip_verify` | `false` | Skip TLS verification (self-signed certs on local providers). CLI: `--insecure-skip-verify` |
+| `system_prompt.content` | `""` | Custom base prompt; empty uses the built-in identity. Extra sections are still appended |
+| `system_prompt.git_context` | `true` | Attach a git status/diff snapshot to the system prompt |
 
-## Schema
+## `compaction`
 
-### `meta`
+| Field | Default | Notes |
+| --- | --- | --- |
+| `on_overflow` | `"continue"` | `continue` auto-compacts; `pause` stops and asks |
+| `threshold_percent` | `80` | Compact when context usage crosses this % of the window |
 
-```yaml
-meta:
-  config_version: 12
-```
+## `agent`
 
-### `llm`
+| Field | Default | Notes |
+| --- | --- | --- |
+| `max_turns` | `500` | Hard turn budget per run |
+| `default_context_window` | `200000` | Fallback when the model's window is unknown |
 
-```yaml
-llm:
-  default_provider: "openai-codex"     # provider slug
-  default_model: "gpt-5.5"             # model id
-  default_base_url: ""                 # override for local/compatible endpoints
-  default_thinking_level: "low"        # none | minimal | low | medium | high | xhigh
-  tool_call_idle_timeout_seconds: 180
-  request_timeout_seconds: 600
-  auth:
-    openai_compat: "auto"              # auto | required | none
-    anthropic_compat: "auto"
-  tls:
-    insecure_skip_verify: false        # true to trust self-signed local certs
-  system_prompt:
-    git_context: true                  # attach a git status snapshot to the system prompt
-    content: ""                        # leave blank to use the built-in system prompt
-```
+## `ui`
 
-### `compaction`
+| Field | Default | Notes |
+| --- | --- | --- |
+| `theme` | `"gruvbox-dark"` | See [theming.md](theming.md); `/settings` → themes |
+| `collapse_thinking` | `true` | Collapse reasoning blocks when done |
+| `thinking_lines` | `"1"` | Visible reasoning lines: `"1"`–`"5"` or `"none"` |
+| `colored_tool_badge` | `true` | Tint tool badges with theme colors |
+| `show_welcome_shortcuts` | `true` | Shortcut hints on the welcome panel |
+| `hidden_models` | `[]` | Model IDs hidden from `/model` |
+| `model_provider_filter` | `""` | Preselect a provider filter in `/model` |
 
-```yaml
-compaction:
-  on_overflow: "continue"              # continue (auto-compact) | pause
-  threshold_percent: 80                # auto-compact at 80% of the context window
-```
+## `permissions`
 
-### `agent`
+| Field | Default | Notes |
+| --- | --- | --- |
+| `mode` | `"prompt"` | `prompt` (approve mutations) or `auto`. Toggle live with `alt+ctrl+p`; see [permissions.md](permissions.md) |
 
-```yaml
-agent:
-  max_turns: 500                       # global safety cap per session
-  default_context_window: 200000
-```
+## `notifications`
 
-### `ui`
+| Field | Default | Notes |
+| --- | --- | --- |
+| `enabled` | `false` | Sound on completion/permission/error events |
+| `volume` | `0.5` | 0.0–1.0 |
 
-```yaml
-ui:
-  theme: "gruvbox-dark"                # see theming.md
-  collapse_thinking: true
-  thinking_lines: "1"                  # 1 | 2 | 3 | 4 | 5 | none
-  colored_tool_badge: true
-  show_welcome_shortcuts: true
-  hidden_models: []                    # "provider" hides all its models; "provider:model" hides one
-  model_provider_filter: ""            # empty = all; set a slug to scope the /model picker
-```
+## `extensions`
 
-### `permissions`
+List of extra extension paths (a `.py` file or package dir), additive to auto-discovery:
 
 ```yaml
-permissions:
-  mode: "prompt"                       # prompt | auto
+extensions:
+  - ~/.vtx/extensions/audit-logger.py
 ```
 
-### `notifications`
+Auto-discovered paths (`<cwd>/.vtx/extensions/`, `~/.vtx/agent/extensions/`) always load unless `--no-extensions` is passed. See [extensions.md](extensions.md).
 
-```yaml
-notifications:
-  enabled: false
-  volume: 0.5                          # 0.0 – 1.0
-```
-
-### `extensions`
-
-List of enabled extension module names under `~/.vtx/agent/extensions/`.
-
-```yaml
-extensions: []
-```
-
-### `agents`
-
-Switchable handoff agent profiles. See [agents.md](agents.md).
+## `agents`
 
 ```yaml
 agents:
-  default: ""
-  switch_mode: "lock"                  # lock | unlock
-  files: []
+  default: ""        # agent activated at start when --agent / VTX_AGENT unset
+  switch_mode: lock  # lock | hot
+  files: []          # extra agent files, like extensions:
 ```
 
-### `task`
+- `lock` (default): switching starts a new session JSONL preserving lineage.
+- `hot`: switching re-renders system prompt + tools in place next turn.
 
-Built-in sub-agent presets for the `task` tool. See [tools.md](tools.md).
+See [agents.md](agents.md).
 
-```yaml
-task:
-  subagent_presets:
-    - name: "general-purpose"
-      description: "Balanced sub-agent for delegating well-scoped tasks."
-      tools_allow: []
-      max_turns: 200
-    - name: "Explore"
-      description: "Read-only repository exploration agent."
-      instructions: "You are an exploration agent. You cannot modify the filesystem..."
-      tools_allow: ["read", "find", "skill", "web"]
-      max_turns: 100
-```
+## `task`
 
-## Overriding the system prompt
+Built-in sub-agent presets for the `task` tool. Each preset accepts: `description`, `instructions`, `instructions_mode` (`append`/`replace`), `tools_allow`/`tools_deny`, `model`, `thinking_level`, `max_turns`. Defaults define `general-purpose`, `Explore` and `Plan` — see [tools.md](tools.md#task).
 
-Set `llm.system_prompt.content` to a custom string to fully replace the built-in prompt. Leave it blank to use the default minimalist prompt. `git_context` toggles whether a `git status`/`git diff` snapshot is attached to the system prompt at startup.
+## Internal state
 
-## Editing safely
+`last_selected` (model/provider/thinking level/agent) and `recent_models` are written by the TUI; edit manually at your own risk.
 
-Config changes take effect on the next session (or `/new`). Invalid values fall back to built-in defaults with a warning logged to stderr.
+## Loading & migration
+
+Config is deep-merged over defaults, then migrated through versioned migrations (`meta.config_version`, currently 12). Migrations back up the old file before writing. Invalid YAML falls back to defaults with a warning shown at launch.
+
+## CLI overrides
+
+Most session-level fields have flags: `--model/-m`, `--provider`, `--api-key/-k`, `--base-url/-u`, `--openai-compat-auth`, `--anthropic-compat-auth`, `--insecure-skip-verify`, `--agent/-a`. See `vtx --help`.

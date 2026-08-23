@@ -1,51 +1,47 @@
 # Skills
 
-Skills are reusable instruction bundles that let the agent follow project- or user-specific workflows. They are directories containing a `SKILL.md` file.
+Skills are markdown workflows the agent loads on demand, keeping the base prompt lean. Implemented in `src/ai/agent/context/skills.py`.
 
-## Locations
+## Anatomy
 
-- Project: `.agents/skills/<name>/SKILL.md`
-- Global: `~/.agents/skills/<name>/SKILL.md`
-
-The model discovers these automatically and can load one with the `skill` tool (e.g. `skill action=view name=deploy`). A skill's `description` is shown to the model so it knows when to trigger it; skills in `<available_skills>` override general-purpose approaches.
-
-## SKILL.md format
+```
+.agents/skills/my-skill/
+└── SKILL.md
+```
 
 ```markdown
 ---
-name: deploy-project
-description: Instructions on how to deploy this project
-register_cmd: true
-cmd_info: Run project deployment steps
+name: my-skill
+description: One line shown to the model in the skills index.
+category: general            # optional, default "general"
+register_cmd: false          # optional: also expose as /my-skill
+cmd_info: ""                 # optional: short hint for the slash command (max 32 chars)
 ---
 
-# Deploy Project
-
-To deploy, the agent should run:
-1. `uv run python build.py`
-2. `git push origin main`
+Instructions for the agent. $ARGUMENTS is replaced by whatever the user
+typed after the skill name (or the query passed to the `skill` tool).
 ```
 
-### Frontmatter fields
+Constraints enforced at load time: name ≤ 64 chars, description ≤ 1024 chars, category ≤ 32 chars. The directory name should match `name`; mismatches produce a warning.
 
-- `name` (required) — skill identifier (lowercase, hyphens).
-- `description` (required) — when and why the skill applies. Shown to the model.
-- `register_cmd` (optional) — set `true` to register the skill as a TUI slash command (`/deploy-project`).
-- `cmd_info` (optional) — short description shown in the slash-command menu.
+## Discovery paths
 
-## The `skill` tool
+Loaded in priority order:
 
-Actions (see [tools.md](tools.md)):
+1. `<cwd>/.agents/skills/<name>/` — walked up to the git root; nearer dirs win on name collision.
+2. `~/.agents/skills/<name>/` — user-wide skills.
+3. `~/.vtx/skills/<name>/` — legacy/global vtx dir.
+4. Built-in skills bundled in the package (`coding_agent/builtin_skills/`), synced on startup.
 
-- `list` — show all loaded skills.
-- `view` — read a skill's full instructions.
-- `create` — create a new skill (`content` required; `scope` = `project` or `global`).
-- `patch` — find-and-replace within a skill file (`old_string` / `new_string`).
-- `edit` — overwrite a skill file.
-- `delete` — remove a skill folder.
+## How they trigger
 
-## Authoring tips
+- **Model-invoked**: the skills index (name + one-line description) rides along in the system prompt; the model calls the `skill` tool with a name and query. The SKILL.md body (frontmatter stripped) becomes the working instructions.
+- **User-invoked**: type `/my-skill do the thing`. With `register_cmd: true` the skill appears in slash-command autocomplete; `$ARGUMENTS` receives `do the thing`.
 
-- Keep `description` outcome-focused ("Use when deploying to production") so the model triggers it at the right moment.
-- Put long reference material in supporting files next to `SKILL.md` and reference them by path.
-- Use `register_cmd: true` for skills you want surfaced as a slash command for manual invocation.
+## Managing skills
+
+The agent can manage skills itself via the `skill` tool (`list`, `view`, `create`, `patch`, `edit`, `delete`, scope `project` or `global`) — see [tools.md](tools.md#skill). Users just edit markdown.
+
+## SDK
+
+SDK agents can load the same skills — see [sdk/skills.md](sdk/skills.md).

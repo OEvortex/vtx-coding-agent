@@ -1,41 +1,52 @@
 # Permissions
 
-Vtx gates mutating actions behind a permission system so the agent cannot silently change your files or run commands. The two mutating tools are `bash`, `edit`, and `write`; destructive commands are additionally blocked unless explicitly requested.
+Vtx gates mutating tool calls by default. Everything here is implemented in `src/core/permissions.py` and wired into the turn loop in `src/ai/agent/turn.py`.
 
 ## Modes
 
-Set in `config.yml` under `permissions.mode`:
+| Mode | Behaviour |
+| --- | --- |
+| `prompt` (default) | Non-mutating tools run freely; **mutating** tools pause for approval. |
+| `auto` | Nothing pauses; the agent runs unattended. |
 
-```yaml
-permissions:
-  mode: "prompt"   # or "auto"
+Toggle live with `alt+ctrl+p` or `/settings` → permissions. Set the default under `permissions.mode` in config.
+
+## The decision algorithm
+
+For each tool call:
+
+1. Extension/agent permission gates are consulted first (see below). A `deny` blocks, an `allow` short-circuits.
+2. If the tool is non-mutating (`read`, `find`, `grep`, `web`, `ask_user`, `task`) → **allow**.
+3. `bash`: the command is parsed and checked against the safe lists (below). A read-only command with no shell punctuation → **allow**; anything else → **prompt**.
+4. Every other mutating tool (`edit`, `write`, `skill`) → **prompt**.
+
+In `auto` mode steps 3–4 allow without asking.
+
+## Safe command lists
+
+`bash` commands auto-approve only when every pipeline segment starts with a known read-only binary and the command contains none of `; | & ( ) < >`:
+
+Safe binaries: `cat head tail ls pwd wc diff which file stat du df whoami id uname date realpath dirname basename`
+
+Safe git subcommands: `status diff log show rev-parse describe ls-files ls-tree blame shortlog`
+
+Examples: `git diff` is allowed; `git diff && git push` prompts (punctuation); `rm -rf /` prompts — and destructive commands (`rm -rf`, `git reset --hard`, force-push) are always surfaced for explicit confirmation.
+
+## The approval UI
+
+A pending mutation renders inline with a preview of what will happen. Choose approve or deny with the keyboard; `escape` denies everything pending. Denials return "Interrupted/denied" as the tool result so the model can adjust.
+
+## Agent & extension gates
+
+Handoff agents can ship declarative gates (`permission_gates` on `AgentDef`):
+
+```python
+api.permission_gate(
+    "bash",
+    when=lambda args: "push" in args.get("command", ""),
+    action="deny",          # "allow" | "deny" | "prompt"
+    reason="No pushes from this agent",
+)
 ```
 
-- **`prompt`** (default) — the TUI prompts you to approve every mutating tool call before it runs. You can allow once, allow for the session, or deny.
-- **`auto`** — mutating tools run without confirmation. Use only in trusted, sandboxed contexts.
-
-Toggle the mode at runtime in the TUI with the `/permissions` slash command or `Shift+Tab`.
-
-## How approvals work
-
-When a mutating tool call is proposed in `prompt` mode, Vtx raises an approval request. The decision flow (`src/vtx/permissions.py`):
-
-- `PermissionDecision.ALLOW` — the call proceeds.
-- `PermissionDecision.PROMPT` — the UI asks the user. The user responds with `ApprovalResponse.APPROVE` or `ApprovalResponse.DENY`.
-
-A denied or dismissed (Escape) approval cancels that tool call; the model is told the call was not permitted and can adjust its approach.
-
-## Safety guarantees
-
-Regardless of permission mode, Vtx refuses destructive operations unless you explicitly ask for them, e.g.:
-
-- `rm -rf`, forceful recursive deletes
-- `git reset --hard`, `git checkout` of branches
-- force-push (`git push --force`)
-- dropping database tables
-
-Interactive, blocking commands (`vim`, `less`, `top`) are also avoided so the loop never hangs.
-
-## Hook-based gating
-
-Extensions can intercept and pre-approve or veto tool calls via the hook lifecycle — see [extensions.md](extensions.md) and [hooks.md](hooks.md).
+Extensions register the same thing through the bus. Gates evaluate before the mode check, so an `allow` gate can whitelist a specific mutation even in `prompt` mode.

@@ -1,15 +1,20 @@
 """Tests for the /provider slash command and the /model model_provider_filter."""
 
 from contextlib import contextmanager
+from typing import TYPE_CHECKING, cast
 
 import pytest
 
-from vtx.config import get_config
-from vtx.llm import list_providers
-from vtx.ui.commands import CommandsMixin
-from vtx.ui.commands.providers import _ALL_SLUG
-from vtx.ui.floating_list import ListItem
-from vtx.ui.selection_mode import SelectionMode
+import tui.commands.models as models_module
+from ai import list_providers
+from coding_agent.config import get_config
+from tui.commands import CommandsMixin
+from tui.commands.providers import _ALL_SLUG
+from tui.floating_list import ListItem
+from tui.selection_mode import SelectionMode
+
+if TYPE_CHECKING:
+    from ai.agent.runtime import ConversationRuntime
 
 
 class FakeChat:
@@ -79,7 +84,7 @@ class FakeCommands(CommandsMixin):
         self.completion_list = FakeFloatingList()
         self.input_box = FakeInputBox()
         self._selection_mode: SelectionMode | None = None
-        self._runtime = FakeRuntime()  # type: ignore
+        self._runtime = cast("ConversationRuntime", FakeRuntime())
         self.notified: list[dict] = []
 
     @contextmanager
@@ -189,14 +194,14 @@ def test_provider_picker_ignores_unknown_arg_and_still_opens():
 
 def test_provider_setter_rejects_unknown_slug():
     """Unknown provider via the setter clears the filter rather than persisting a typo."""
-    from vtx import set_model_provider_filter
+    from coding_agent import set_model_provider_filter
 
     set_model_provider_filter("not-a-real-provider-xyz")
     assert get_config().ui.model_provider_filter == ""
 
 
 def test_model_picker_filters_to_one_provider(monkeypatch):
-    from vtx.llm import Model
+    from ai import Model
 
     fake = FakeCommands()
     fake._runtime.model = "model-a"
@@ -211,7 +216,7 @@ def test_model_picker_filters_to_one_provider(monkeypatch):
     monkeypatch.setattr(fake, "_show_selection_picker", _capture)
 
     def _stub_all_models():
-        from vtx.llm.models import ApiType
+        from ai.models import ApiType
 
         return [
             Model(
@@ -243,7 +248,7 @@ def test_model_picker_filters_to_one_provider(monkeypatch):
             ),
         ]
 
-    monkeypatch.setattr("vtx.ui.commands.models.get_all_models", _stub_all_models)
+    monkeypatch.setattr("tui.commands.models.get_all_models", _stub_all_models)
 
     fake._select_provider_set("kilo")
     fake._handle_model_command("")
@@ -260,7 +265,6 @@ def test_model_picker_filters_to_one_provider(monkeypatch):
 @pytest.mark.asyncio
 async def test_model_refresh_without_slug_refreshes_all_providers(monkeypatch):
     """`/model refresh` with no slug must refresh every provider, not just one."""
-    import vtx.ui.commands.models as models_module
 
     captured: dict[str, object] = {}
 
@@ -288,7 +292,6 @@ async def test_model_refresh_without_slug_refreshes_all_providers(monkeypatch):
 
 @pytest.mark.asyncio
 async def test_model_refresh_with_slug_refreshes_only_that_provider(monkeypatch):
-    import vtx.ui.commands.models as models_module
 
     captured: dict[str, object] = {}
 
@@ -314,7 +317,6 @@ async def test_model_refresh_with_slug_refreshes_only_that_provider(monkeypatch)
 
 @pytest.mark.asyncio
 async def test_model_refresh_unknown_slug_errors(monkeypatch):
-    import vtx.ui.commands.models as models_module
 
     monkeypatch.setattr(models_module, "refresh_all_providers", lambda: {})
     monkeypatch.setattr(models_module, "refresh_provider", lambda n: 0)

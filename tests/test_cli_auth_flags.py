@@ -1,4 +1,4 @@
-from vtx.cli import build_parser
+from coding_agent.cli import build_parser
 
 
 def test_cli_auth_flags_accept_valid_values() -> None:

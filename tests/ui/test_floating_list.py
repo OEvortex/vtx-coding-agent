@@ -1,4 +1,4 @@
-from vtx.ui.floating_list import FloatingList, ListItem
+from tui.floating_list import FloatingList, ListItem
 
 
 def _make_items(count: int) -> list[ListItem[str]]:

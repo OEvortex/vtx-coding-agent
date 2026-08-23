@@ -1,52 +1,69 @@
 # Sessions
 
-Every Vtx conversation is persisted as a JSONL file so you can resume, review, or export it.
+Sessions are append-only JSONL files with a branching tree of entries. Implemented in `src/ai/agent/session.py`.
 
-## Storage
-
-Sessions are stored per-project under your config directory:
+## Where they live
 
 ```
-~/.vtx/sessions/<safe_cwd>/<timestamp>_<session_id>.jsonl
+~/.vtx/sessions/<safe-cwd>/<id>.jsonl
 ```
 
-`<safe_cwd>` is a filesystem-safe slug of the current working directory, so each project keeps its own session history. Each line in the `.jsonl` file is one event (a message, tool call, or system event) — see the schema below.
+`<safe-cwd>` is the working directory with `/` and `\` replaced by `-`. Directories are created `0o700`.
 
-## Commands
+## File format
 
-- `vtx -c` / `--continue` — resume the most recent session for the cwd.
-- `vtx -r <id>` / `--resume <id>` — resume a specific session by id or id prefix.
-- `/resume` — interactive session-history browser in the TUI.
-- `/session` — show active session statistics and token usage.
-- `/new` — start a fresh conversation and reload project context.
-- `/handoff <query>` — summarize the current session and start a new, clean session carrying that context forward (see [agents.md](agents.md)).
-- `/export` — export the current transcript to a standalone HTML file.
+Line 1 is a header:
 
-## JSONL schema
-
-Each line is a JSON object with a `type` field. Common types:
-
-- `message` — an assistant or user message (`role`, `content`, `timestamp`).
-- `tool_call` — a tool invocation (`name`, `args`, `timestamp`).
-- `tool_result` — the output of a tool call (`name`, `success`, `result`).
-- `goal` — a goal-mode entry (`objective`, `active`).
-- `header` — session metadata (`version`, `cwd`, `model`).
-
-Older sessions that never wrote a goal entry are still readable; the loader migrates them on load.
-
-## Programmatic access
-
-```python
-from vtx.session import Session
-
-# List sessions for a project
-for info in Session.list("/path/to/project"):
-    print(info.id, info.created_at)
-
-# Load one
-session = Session.load(session_file_path)
+```json
+{"type": "header", "version": 1, "id": "...", "timestamp": "...", "cwd": "...", "system_prompt": null, "tools": null, "initial_thinking_level": "high"}
 ```
+
+Every following line is an entry with `id`, `parent_id` (the tree edge), `timestamp`, and one of:
+
+| Type | Purpose |
+| --- | --- |
+| `message` | A user, assistant, or tool-result message |
+| `thinking_level_change` | Thinking level switched mid-session |
+| `model_change` | Model/provider/base-URL switched |
+| `compaction` | Summary + `first_kept_entry_id` + token counts |
+| `custom_message` | UI notices (background-task completions, etc.) |
+| `session_info` | Session rename |
+| `leaf` | Marks the active branch tip (`move_to`) |
+| `runtime_checkpoint` | Crash-recovery snapshot of a partially streamed turn |
+
+Because entries link through `parent_id`, forking (tree navigation, handoffs, edits after resume) never rewrites history.
+
+## Session tree
+
+Every entry can branch. In the TUI:
+
+- `/tree` opens the tree selector; navigate with arrows, select with enter.
+- `left` / `right` page between branches without leaving the input.
+
+Selecting a node rewinds the conversation to that point; the old branch is kept.
+
+## Resume & continue
+
+```bash
+vtx --continue            # most recent session in this directory
+vtx --resume <id-or-prefix>
+```
+
+Or interactively: `/resume` lists sessions (cwd, message counts, tokens, first message).
+
+## Handoff
+
+`/handoff <goal>` summarizes the current conversation into a fresh focused session. Both sides store links: the TUI renders clickable back/forward links (`HandoffLinkBlock`) to jump between parent and child sessions.
 
 ## Compaction
 
-When a session approaches the model's context limit, Vtx auto-compacts older turns into a summary (controlled by `compaction.on_overflow` and `compaction.threshold_percent` in `config.yml` — see [configuration.md](configuration.md)). Use `/compact` to trigger it manually.
+When usage crosses `compaction.threshold_percent` of the context window, older turns are summarized into a single system summary and a `compaction` entry records the boundary. `compaction.on_overflow: pause` stops and asks instead. Run it manually any time with `/compact`.
+
+## Export
+
+- `/export` writes the session as styled HTML.
+- `/copy` copies the last agent response text to the clipboard.
+
+## SDK sessions
+
+The SDK exposes the same JSONL format plus an in-memory backend — see [sdk/sessions.md](sdk/sessions.md).

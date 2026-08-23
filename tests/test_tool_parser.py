@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import json
 
-from vtx.llm.tool_parser import (
+from ai.tool_parser import (
     extract_text_and_tool_calls,
     extract_tool_calls_from_text,
     has_text_tool_calls,

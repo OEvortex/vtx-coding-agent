@@ -1,7 +1,7 @@
 import sys
 from pathlib import Path
 
-from vtx.context.skills import (
+from ai.agent.context.skills import (
     Skill,
     _load_skill_from_dir,
     _parse_frontmatter,
@@ -342,7 +342,7 @@ description: Global skill
 ---
 """)
 
-        monkeypatch.setattr("vtx.context.skills.get_user_skills_dir", lambda: global_dir)
+        monkeypatch.setattr("ai.agent.context.skills.get_user_skills_dir", lambda: global_dir)
 
         result = load_skills(str(repo))
 
@@ -368,7 +368,7 @@ description: Global version
 ---
 """)
 
-        monkeypatch.setattr("vtx.context.skills.get_user_skills_dir", lambda: global_dir)
+        monkeypatch.setattr("ai.agent.context.skills.get_user_skills_dir", lambda: global_dir)
         if sys.platform == "win32":
             monkeypatch.setenv("USERPROFILE", str(tmp_path))
         else:
@@ -396,7 +396,9 @@ description: Planning-only mode
 ---
 """)
 
-        monkeypatch.setattr("vtx.context.skills.get_user_skills_dir", lambda: home_dir / ".agents")
+        monkeypatch.setattr(
+            "ai.agent.context.skills.get_user_skills_dir", lambda: home_dir / ".agents"
+        )
         monkeypatch.setenv("HOME", str(home_dir))
 
         result = load_skills(str(home_dir))
@@ -411,7 +413,7 @@ description: Planning-only mode
         repo.mkdir()
         global_dir = tmp_path / "global"
 
-        monkeypatch.setattr("vtx.context.skills.get_user_skills_dir", lambda: global_dir)
+        monkeypatch.setattr("ai.agent.context.skills.get_user_skills_dir", lambda: global_dir)
 
         result = load_skills(str(repo))
 
@@ -429,7 +431,7 @@ name: invalid-skill
 """)
 
         global_dir = tmp_path / "global"
-        monkeypatch.setattr("vtx.context.skills.get_user_skills_dir", lambda: global_dir)
+        monkeypatch.setattr("ai.agent.context.skills.get_user_skills_dir", lambda: global_dir)
 
         result = load_skills(str(repo))
 
@@ -446,7 +448,7 @@ description: Uses directory fallback
 """)
 
         global_dir = tmp_path / "global"
-        monkeypatch.setattr("vtx.context.skills.get_user_skills_dir", lambda: global_dir)
+        monkeypatch.setattr("ai.agent.context.skills.get_user_skills_dir", lambda: global_dir)
 
         result = load_skills(str(repo))
 
@@ -464,7 +466,9 @@ class TestBuiltinCommandSkills:
         assert skill.register_cmd is True
         assert skill.cmd_info == "guided AGENTS.md setup"
         assert skill.bundled is True
-        assert skill.path.replace("\\", "/").endswith("vtx/builtin_skills/setup/init/SKILL.md")
+        assert skill.path.replace("\\", "/").endswith(
+            "coding_agent/builtin_skills/setup/init/SKILL.md"
+        )
         assert result.warnings == []
 
     def test_loads_builtin_review_skill(self):
@@ -476,7 +480,7 @@ class TestBuiltinCommandSkills:
         assert skill.cmd_info == "review code changes"
         assert skill.bundled is True
         assert skill.path.replace("\\", "/").endswith(
-            "vtx/builtin_skills/code-review/review/SKILL.md"
+            "coding_agent/builtin_skills/code-review/review/SKILL.md"
         )
         assert result.warnings == []
 
@@ -487,7 +491,9 @@ class TestBuiltinCommandSkills:
         assert skill is not None
         assert skill.register_cmd is True
         assert skill.bundled is True
-        assert skill.path.replace("\\", "/").endswith("vtx/builtin_skills/general/github/SKILL.md")
+        assert skill.path.replace("\\", "/").endswith(
+            "coding_agent/builtin_skills/general/github/SKILL.md"
+        )
         assert result.warnings == []
 
 

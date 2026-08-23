@@ -1,125 +1,139 @@
 # Tools
 
-Vtx gives the model a small, predictable set of tools. They are implemented in `src/vtx/tools/` as Pydantic-validated `BaseTool` subclasses. The tool JSON schemas sent to the model are deliberately slim (no `title`/`minLength` noise, optional fields collapsed) to keep the prompt footprint small; pydantic still enforces every validation constraint on the actual call.
+Vtx ships 10 built-in tools. Nine are enabled by default; `grep` is built in but opt-in (enable it via an extension, agent `tools_allow`, or a custom tool list).
 
-## Summary
+| Tool | Does | Default |
+| --- | --- | --- |
+| `read` | Read files, list directories, view images | yes |
+| `edit` | Exact search-and-replace in a file | yes |
+| `write` | Create or overwrite a file | yes |
+| `bash` | Run shell commands | yes |
+| `find` | Glob file discovery (`fd`) | yes |
+| `skill` | Manage skill workflows | yes |
+| `web` | Web search (Exa neural) | yes |
+| `ask_user` | Ask the user a clarifying question | yes |
+| `task` | Dispatch a sub-agent | yes |
+| `grep` | Search file contents (`ripgrep`) | no |
 
-| Tool | Action | Mutating |
-|------|--------|----------|
-| `read` | Read a file or directory (pagination + images) | No |
-| `edit` | Exact text search-and-replace | **Yes** |
-| `write` | Create/overwrite a file | **Yes** |
-| `bash` | Run a shell command in the cwd | **Yes** |
-| `find` | Glob file discovery (fd) | No |
-| `grep` | Regex search over file contents (ripgrep) | No |
-| `skill` | Manage skill workflows | Depends |
-| `web` | Web search (Exa neural) | No |
-| `ask_user` | Ask a clarifying question and wait | No |
-| `task` | Dispatch a sub-agent | No |
-
-Mutating tools (`bash`, `edit`, `write`) are gated by the permission mode (`prompt` or `auto`) — see [permissions.md](permissions.md).
-
----
+All tools are `BaseTool` subclasses with Pydantic params. The `mutating` flag drives permission gating: non-mutating tools run without approval, mutating tools follow the permission mode (see [permissions.md](permissions.md)).
 
 ## read
 
-Read a file or directory. Truncates to 2000 lines / 2000 chars per line; use `offset`/`limit` to paginate large files. Supports `jpg`/`jpeg`/`png`/`gif`/`webp` images.
+Read a file or directory.
 
-Parameters:
-- `path` (string, required) — absolute path of file or directory.
-- `offset` (int, optional) — start line for large files.
-- `limit` (int, optional) — line count for large files.
+| Param | Type | Notes |
+| --- | --- | --- |
+| `path` | string, required | Absolute path of file or directory |
+| `offset` | int | Start line, for large files |
+| `limit` | int | Line count |
+
+Truncates at 2,000 lines / 2,000 chars per line. Directories render as annotated listings. Images are detected by extension and sent as vision content after downscaling (max 2,000 px / 4 MB).
 
 ## edit
 
-Replace exact text in a file. `old_string` must match exactly, including whitespace.
+Replace exact text in a file.
 
-Parameters:
-- `path` (string, required) — absolute path of file to edit.
-- `old_string` (string, required) — exact text to replace.
-- `new_string` (string, required) — replacement text (must differ).
-- `replace_all` (bool, default `false`) — replace all occurrences.
+| Param | Type | Notes |
+| --- | --- | --- |
+| `path` | string, required | Absolute path |
+| `old_string` | string, required | Must match exactly, including whitespace |
+| `new_string` | string, required | Must differ from `old_string` |
+| `replace_all` | bool | Replace every occurrence |
+
+Fails unless `old_string` matches exactly once (unless `replace_all`). Returns a unified diff preview.
 
 ## write
 
-Write a file. Creates or overwrites; makes parent directories. Use `edit` for partial changes.
+Create or overwrite a file, making parent directories as needed.
 
-Parameters:
-- `path` (string, required) — absolute path of file to write.
-- `content` (string, required) — file content.
+| Param | Type | Notes |
+| --- | --- | --- |
+| `path` | string, required | Absolute path |
+| `content` | string, required | Full file content |
 
 ## bash
 
-Run a bash command in the cwd. Output is truncated to the last 2000 lines / 50KB (full output is written to a temp file). Do not use it for file search (`find`), reading (`read`), or editing (`edit`).
+Run a command in the working directory.
 
-Parameters:
-- `command` (string, required) — the command to execute.
-- `timeout` (int, default 180) — timeout in seconds.
+| Param | Type | Notes |
+| --- | --- | --- |
+| `command` | string, required | Shell command |
+| `timeout` | int | Seconds; default 180 |
+
+Output is truncated to the last 2,000 lines / 50 KB — when truncated, the full output is written to a temp file whose path is returned. ANSI escapes are stripped. Cancelling kills the whole process tree.
 
 ## find
 
-Find files by glob using `fd`. Returns paths sorted by mtime, respects `.gitignore`, truncated to 100 results.
+Find files by glob via `fd`. Respects `.gitignore`; results are capped at 100 and sorted by modification time. Vtx auto-downloads `fd`/`rg` into `~/.vtx/bin` if missing.
 
-Parameters:
-- `pattern` (string, required) — glob, e.g. `*.py`, `**/*.json`.
-- `path` (string, optional) — directory to search (default: cwd).
+| Param | Type | Notes |
+| --- | --- | --- |
+| `pattern` | string, required | Glob pattern, e.g. `*.py`, `**/*.json` |
+| `path` | string | Directory to search (default: cwd) |
 
 ## grep
 
-Search file contents by regex using `ripgrep`. Returns matching lines with `path:line`, respects `.gitignore`, truncated to 100 matches.
+Search file contents by regex via `ripgrep`. Max 100 results / 30 KB output.
 
-Parameters:
-- `pattern` (string, required) — text or regex to search for.
-- `path` (string, optional) — dir or file to search (default: cwd).
-- `glob` (string, optional) — file filter glob, e.g. `*.py`.
+| Param | Type | Notes |
+| --- | --- | --- |
+| `pattern` | string, required | Text or regex |
+| `path` | string | Dir or file to search (default: cwd) |
+| `glob` | string | File filter glob, e.g. `*.py` |
 
 ## skill
 
-List, view, create, patch, edit, or delete skill workflows.
+List, view, create, patch, edit, or delete skills. See [skills.md](skills.md) for the format.
 
-Actions: `list`, `view`, `create`, `patch`, `edit`, `delete`.
-
-Parameters:
-- `action` (enum, default `view`)
-- `name` (string, optional) — skill name (lowercase/hyphens); required except for `list`.
-- `content` (string, optional) — full `SKILL.md` content; required for `create`/`edit`.
-- `old_string` (string, optional) — unique text to find (`patch`).
-- `new_string` (string, optional) — replacement text (`patch`).
-- `file_path` (string, optional) — supporting file to target (default: `SKILL.md`).
-- `scope` (enum, default `project`) — `project` (`.agents/skills`) or `global` (`~/.agents/skills`) for `create`.
-
-See [skills.md](skills.md).
+| Param | Type | Notes |
+| --- | --- | --- |
+| `action` | enum | `list`, `view`, `create`, `patch`, `edit`, `delete` |
+| `name` | string | Skill name; required except for `list` |
+| `content` | string | Full SKILL.md content; required for `create`/`edit` |
+| `old_string` / `new_string` | string | Find/replace pair for `patch` |
+| `file_path` | string | Supporting file to target (default: SKILL.md) |
+| `scope` | enum | `project` (`.agents/skills`) or `global` (`~/.agents/skills`) |
 
 ## web
 
-Web search tool backed by the Exa neural endpoint. Returns titles, URLs, and
-snippets. Needs internet.
+Web search through Exa's MCP endpoint. Needs internet access.
 
-Parameters:
-- `query` (string, required)
-- `num_results` (int, default 8, 1–20)
-- `search_type` (string, default `auto`) — `auto`, `neural`, or `keyword`.
-- `livecrawl` (string, default `fallback`) — `fallback`, `always`, or `never`.
+| Param | Type | Notes |
+| --- | --- | --- |
+| `query` | string, required | Search query |
+| `num_results` | int | 1–20, default 8 |
+| `search_type` | string | `auto` (default), `neural`, or `keyword` |
+| `livecrawl` | string | `fallback` (default), `always`, or `never` |
+
+An alias named `web_search` is registered for the same tool.
 
 ## ask_user
 
-Ask the user a clarifying question and wait. Pass 2–4 options for multiple choice, or omit for free text. The user can always type a custom answer.
+Ask the user a clarifying question and block on the answer. Rendered as an interactive picker in the TUI.
 
-Parameters:
-- `question` (string, required, 1–500 chars) — keep it short; put choices in `options`, not here.
-- `options` (list, optional) — 2–4 options; each has `label` (required, short unique) and `description` (optional).
-- `multi_select` (bool, default `false`) — allow multiple selections.
-- `header` (string, optional, max 12 chars) — short noun tag for the modal.
+| Param | Type | Notes |
+| --- | --- | --- |
+| `question` | string, required | Short, specific question (max 500 chars) |
+| `options` | list | 2–4 options, each `{label, description}`; omit for free text |
+| `multi_select` | bool | Allow multiple selections |
+| `header` | string | Modal title tag (max 12 chars) |
 
 ## task
 
-Dispatch a fresh sub-agent (own tools/session, cannot see this chat) for a self-contained task; returns only its final text. `background: true` returns a `task_id` and delivers the answer in the next turn. Not for trivial single-tool work.
+Dispatch a fresh sub-agent with its own tools, session and system prompt. It cannot see this conversation — put all context in `prompt`.
 
-Parameters:
-- `description` (string, required, 1–128 chars) — 3–5 word imperative label, e.g. "Find the auth bug".
-- `prompt` (string, required) — full instructions including all context.
-- `subagent_type` (string, default `general-purpose`) — `general-purpose`, `Explore`, `Plan`, or a user agent name.
-- `model` (string, optional) — model override (default: parent's).
-- `background` (bool, default `false`) — run concurrently, return `task_id` now.
+| Param | Type | Notes |
+| --- | --- | --- |
+| `description` | string, required | 3–5 word imperative label |
+| `prompt` | string, required | Full instructions incl. context |
+| `subagent_type` | string | Preset name or user agent; default `general-purpose` |
+| `model` | string | Model override (default: parent's) |
+| `background` | bool | Run concurrently; returns a task ID now, result arrives next turn |
 
-Built-in sub-agent presets are configured under `task.subagent_presets` in `config.yml` (see [configuration.md](configuration.md)).
+Built-in presets (overridable under `task.subagent_presets` in config):
+
+- **general-purpose** — full default tool set, 200-turn budget.
+- **Explore** — read-only investigation; tools limited to `read`, `find`, `skill`, `web`.
+- **Plan** — read-only planner that produces a step-by-step plan without touching files.
+
+Results are capped at 32,000 chars with the last 200 transcript lines attached.

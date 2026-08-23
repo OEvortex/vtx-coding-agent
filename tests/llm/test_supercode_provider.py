@@ -12,7 +12,9 @@ from unittest.mock import patch
 
 import pytest
 
-from vtx.core.types import (
+from ai.base import ProviderConfig
+from ai.providers.supercode import SupercodeProvider
+from core.types import (
     AssistantMessage,
     StopReason,
     StreamDone,
@@ -25,8 +27,6 @@ from vtx.core.types import (
     ToolResultMessage,
     UserMessage,
 )
-from vtx.llm.base import ProviderConfig
-from vtx.llm.providers.supercode import SupercodeProvider
 
 
 def _make_tool_definition(name: str, desc: str = "") -> ToolDefinition:

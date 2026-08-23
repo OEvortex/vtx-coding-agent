@@ -1,84 +1,89 @@
-# Extensions
+# Extensions & hooks
 
-Extensions let you customize Vtx with Python: add tools, intercept tool calls, register slash commands, and react to lifecycle events. They run in-process with the same privileges as the Vtx process — only load extensions you trust.
+Extensions are Python files that hook into Vtx at startup: register tools and slash commands, intercept lifecycle events, or gate tool calls. Implemented in `src/ai/agent/extensions.py`; the extension manager in `extension_manager.py`.
 
 ## Discovery
 
-Extensions are discovered from (later wins on name conflict):
+Loaded in this order (project wins on collision):
 
-1. Project-local `.vtx/extensions/*.py` (and `*/__init__.py` packages)
-2. Global `~/.vtx/agent/extensions/*.py`
-3. The `extensions:` list in `config.yml`
-4. `--extension PATH` CLI flag (repeatable)
+1. `<cwd>/.vtx/extensions/*.py` (walked up to the git root)
+2. `~/.vtx/agent/extensions/*.py`
+3. `extensions:` entries in config
+4. `--extension/-e PATH` CLI flags
 
-Set `--no-extensions` to skip auto-discovery (only explicit `--extension` paths load). Vtx ships **no bundled extensions** — every extension is third-party-style. Enable the `task` sub-agent dispatcher by copying `examples/extensions/task_tool.py` into your extensions directory.
+`--no-extensions` skips auto-discovery. Installed packages (below) land in the same global directory.
 
 ## Writing an extension
 
-An extension is a single `.py` file (or package) that exports a top-level `register(api)` function:
-
 ```python
-def register(api):
-    # Subscribe to lifecycle events
+# .vtx/extensions/audit.py
+def setup(api):
     @api.on("tool_call")
-    def guard(event, payload):
-        if payload["name"] == "bash" and "rm -rf" in payload["args"].get("command", ""):
-            return {"block": True, "reason": "rm -rf is not allowed"}
-        return None
+    def audit(event):
+        print("tool:", event["name"])
 
-    # Add a new tool
-    api.register_tool(
-        name="weather",
-        description="Get the current weather for a city.",
-        parameters={
-            "type": "object",
-            "properties": {
-                "city": {"type": "string", "description": "City name"}
-            },
-            "required": ["city"],
-        },
-        execute=my_weather_fn,
-        mutating=False,
+    api.register_command(
+        "audit",
+        "Toggle audit logging",
+        handler=lambda args: "audit on",
     )
 
-    # Add a slash command
-    @api.on  # placeholder; use register_command below
-    def _ignored():
-        pass
-
-    api.register_command("hello", "Say hello", lambda args: f"Hello, {args or 'world'}!")
+    api.register_tool(
+        "hello",
+        "Say hello",
+        {"name": {"type": "string", "description": "Who"}},
+        execute=lambda params, ctx=None: f"hi {params.name}",
+        mutating=False,           # non-mutating tools skip the permission gate
+    )
 ```
 
-### Tool `execute` signature
+The `ExtensionAPI`:
 
-```python
-def my_tool(args: dict, ctx: dict | None) -> ToolResult | dict | str | None:
-    ...
+| Method | Does |
+| --- | --- |
+| `on(event, handler)` | Subscribe to a lifecycle event; return `{"block": True, "reason": ...}` from `tool_call`/`tool_result` handlers to block or rewrite |
+| `register_tool(name, description, parameters, execute=..., mutating=..., label=...)` | Add an LLM-callable tool (JSON schema → pydantic) |
+| `register_local_tool(agent, ...)` | Same, but scoped to one handoff agent |
+| `register_command(name, description, handler)` | Add a `/slash` command; return a string or `CommandOutcome(output, success, exit_after)` |
+| `notify(message, level)` | Surface info/warning/error to the user |
+
+## Lifecycle events
+
+`session_start`, `session_end`, `agent_start`, `agent_end`, `turn_start`, `turn_end`, `tool_call`, `tool_result`, `compaction_start`, `compaction_end`, `agent_activated`, `agent_changed`, `tool_group_changed`.
+
+`tool_call` and `tool_result` are blocking events: handlers run before the action completes and may veto it.
+
+## YAML hooks
+
+Prefer declarative? `.vtx/hooks.yml` registers shell/HTTP handlers without Python:
+
+```yaml
+PostToolUse:
+  - matcher: bash
+    type: command
+    command: ./scripts/log-tool.sh
+    timeout: 10
+
+PreToolUse:
+  - matcher: write
+    type: http
+    url: https://ci.internal/veto
+    once: false
 ```
 
-May be sync or async. Return a `ToolResult`-like dict (`{"success": True, "result": "..."}`) or a string. Tool parameters are a JSON Schema object; Vtx synthesizes a pydantic model for validation. Set `mutating=True/False` to control whether the permission gate applies.
+Hook fields: `event`, `matcher` (tool name glob), `type` (`command` | `prompt` | `http` | `agent`), `command` / `url` / `prompt_text` / `agent_instructions`, `timeout`, `once`, `if_condition`, `enabled`. A non-zero exit or `blocking_error` in the response vetoes the action.
 
-### Commands
+Event names (30): `UserPromptSubmit`, `SessionStart`, `SessionEnd`, `TurnStart`, `TurnEnd`, `PreToolUse`, `PostToolUse`, `PostToolUseFailure`, `PermissionRequest`, `PermissionDenied`, `SubagentStart`, `SubagentStop`, `Stop`, `StopFailure`, `PreCompact`, `PostCompact`, `Notification`, `PostSampling`, `Setup`, `InstructionsLoaded`, `CwdChanged`, `FileChanged`, `WorktreeCreate`, `WorktreeRemove`, `ConfigChange`, `TaskCreated`, `TaskCompleted`, `TeammateIdle`, `Elicitation`, `ElicitationResult`.
 
-`api.register_command(name, description, handler)` registers `/name`. The `handler` receives the argument string and returns a `CommandOutcome`, a string, or `None`.
+Python code can also subclass `AgentHook` (`before_run`, `after_iteration`, `on_stream`, `finalize_content`, …) and pass instances via the runtime — that's what the SDK uses for tracing.
 
-## Events
+## Extension manager
 
-Subscribe with `api.on(event, handler)` or the `@api.on(event)` decorator. Handlers may be sync or async; exceptions are logged and never crash the loop.
+```bash
+vtx install <name>            # tries vtx-<name> then <name> on PyPI; GitHub URLs work too
+vtx install <name> --upgrade
+vtx uninstall <name>
+vtx list-extensions
+```
 
-| Event | Blocking | Payload / effect |
-|-------|----------|------------------|
-| `session_start`, `session_end` | no | session lifecycle |
-| `agent_start`, `agent_end` | no | agent run lifecycle |
-| `turn_start`, `turn_end` | no | per-turn lifecycle |
-| `tool_call` | **yes** | return `{"block": True, "reason": "..."}` to deny, or `{"args": {...}}` to rewrite args |
-| `tool_result` | **yes** | return `{"output": "..."}` to replace the text the model sees |
-| `compaction_start`, `compaction_end` | no | context compaction |
-| `agent_activated`, `agent_changed`, `tool_group_changed` | no | agent switching |
-| `goal_start`, `goal_end`, `goal_paused`, `goal_resumed` | no | goal mode (see [goal.md](goal.md)) |
-
-Blocking handlers must return a dict to take effect. The first `tool_call` handler that returns `block: True` short-circuits.
-
-## Notifications
-
-`api.notify(message, level="info"|"warning"|"error")` logs an extension message (surfaced via stderr in TUI and headless modes).
+PyPI installs go through `uv pip` into the active environment; GitHub sources are cloned. The ledger is `~/.vtx/installed_extensions.yml`.

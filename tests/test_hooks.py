@@ -5,7 +5,7 @@ from __future__ import annotations
 import asyncio
 from pathlib import Path
 
-from vtx.hooks import (
+from ai.agent.hooks import (
     HOOK_EVENTS,
     HookConfig,
     HookConfigManager,
@@ -253,7 +253,7 @@ def test_hook_context_builder_helpers_build_expected_payloads():
 
 def test_post_tool_use_command_hook_output_rewrite():
     """A command PostToolUse hook can rewrite the tool's LLM-visible output."""
-    from vtx.hooks.bridge import _make_handler_for_config
+    from ai.agent.hooks.bridge import _make_handler_for_config
 
     cfg = HookConfig(event="PostToolUse", type="command", command="echo rewritten-output")
     handler = _make_handler_for_config(cfg)
@@ -263,8 +263,8 @@ def test_post_tool_use_command_hook_output_rewrite():
 
 def test_hook_if_condition_gates_execution():
     """A hook with a false if_condition does not run."""
-    from vtx.hooks.bridge import _make_handler_for_config
-    from vtx.hooks.runtime import HookRuntime
+    from ai.agent.hooks.bridge import _make_handler_for_config
+    from ai.agent.hooks.runtime import HookRuntime
 
     registry = HookRegistry()
 
@@ -294,7 +294,7 @@ def test_hook_if_condition_gates_execution():
 
 def test_hook_prompt_and_agent_handlers():
     """prompt/agent hooks return their instruction text without executing."""
-    from vtx.hooks.bridge import _make_handler_for_config
+    from ai.agent.hooks.bridge import _make_handler_for_config
 
     prompt_cfg = HookConfig(event="PostToolUse", type="prompt", prompt_text="do-x")
     agent_cfg = HookConfig(event="PostToolUse", type="agent", agent_instructions="spawn-x")
@@ -311,7 +311,7 @@ def test_hook_prompt_and_agent_handlers():
 
 def test_hook_http_handler_requires_httpx(monkeypatch):
     """An http hook reports a clear error when httpx is unavailable."""
-    from vtx.hooks.bridge import _make_handler_for_config
+    from ai.agent.hooks.bridge import _make_handler_for_config
 
     cfg = HookConfig(event="PostToolUse", type="http", url="http://localhost/x")
     handler = _make_handler_for_config(cfg)

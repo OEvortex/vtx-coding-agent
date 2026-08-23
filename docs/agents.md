@@ -1,64 +1,60 @@
-# Switchable Handoff Agents
+# Handoff agents
 
-Vtx supports named, switchable agent profiles ("handoff agents"). Each profile is a focused system-prompt + tool surface + model configuration you can cycle between in the TUI with `Shift+Tab`. They are ideal for distinct modes like read-only review, security audit, or fast implementation.
+Agents are switchable profiles: each one bundles instructions, tool allow/deny lists, an optional model/provider override, and permission gates. Cycle them live with `shift+tab` or `/agent <name>`. Implemented in `src/ai/agent/agents/`.
 
-## Locations & discovery
+## Defining an agent
 
-Profiles are Python files defining a module-level `AGENT` constant:
-
-- Project: `<cwd>/.vtx/agent/<name>.py` (searched up to the git root; deeper wins)
-- Global: `~/.vtx/agent/<name>.py`
-
-Multiple profiles can be configured explicitly via `agents.files:` in `config.yml` or the `--agent-file` CLI flag. The default active profile is set with `agents.default:`; `agents.switch_mode` is `lock` or `unlock`.
-
-See `examples/agents/` for working profiles (`code-review.py`, `security-audit.py`, `explorer.py`, `data-engineer.py`, `yolo.py`).
-
-## Profile schema
+A Python file in `.vtx/agent/<name>.py` (project, walked up to the git root) or `~/.vtx/agent/<name>.py` (global):
 
 ```python
-AGENT = {
-    "name": "security-audit",            # required, [a-z0-9-]
-    "description": "Read-only security review.",  # required
-    "icon": "🛡",                          # optional (max 4 chars)
-    "color": "red",                       # optional theme color
+# .vtx/agent/code-review.py
+def setup(api):
+    api.on_agent_change(lambda: api.notify("review mode"))
 
-    # Model / provider overrides
-    "model": "gpt-5.5",
-    "provider": "openai-codex",
-    "base_url": None,
-    "thinking_level": "high",
-    "max_turns": 100,
-
-    # System prompt composition
-    "instructions": "You are a security auditor...",
-    "instructions_mode": "append",        # append | replace
-
-    # Tool surface (built-in tool names, or tool-group names like "read-only"/"full")
-    "tools_allow": ["read", "grep", "find"],
-    "tools_deny": [],
-
-    # Permissions
-    "permission_mode": "prompt",          # prompt | auto
-    "permission_gates": [],
-
-    # Handoffs to other profiles
-    "handoffs": ["code-review"],
-    "handoff_back": True,
-
-    # Agent-scoped extensions to load when active
-    "extensions": [],
-}
+# metadata comes from a module-level AGENT dict or the setup() registration;
+# the schema below is what vtx reads.
 ```
 
-All fields are optional except `name` and `description`.
+The schema (`AgentDef`, pydantic):
 
-## Using profiles
+| Field | Default | Notes |
+| --- | --- | --- |
+| `name` | required | lowercase-hyphen, ≤ 64 chars |
+| `description` | required | shown in `/agent` list and to the model |
+| `icon`, `color` | none | TUI badge decoration |
+| `model`, `provider`, `base_url` | parent's | per-agent model routing |
+| `thinking_level` | parent's | `none`…`xhigh` |
+| `max_turns` | unlimited | turn budget |
+| `instructions` | none | extra system-prompt text |
+| `instructions_mode` | `"append"` | or `"replace"` |
+| `tools_allow`, `tools_deny` | all tools | surface filter; deny subtracts from allow |
+| `tool_groups`, `active_tool_group` | none | named tool subsets cycled with `alt+ctrl+g` |
+| `permission_mode` | config default | `auto` / `prompt` for this agent |
+| `permission_gates` | `[]` | `{tool, when, action, reason}` rules |
+| `handoffs` | `[]` | agents this one may hand off to |
+| `handoff_back` | `true` | allow returning to the previous agent |
+| `extensions` | `[]` | extensions scoped to this agent |
+| `local_tools`, `local_commands` | — | registered via `api.local_tool()` / `api.local_command()` |
 
-- `Shift+Tab` in the TUI cycles through loaded profiles.
-- `/handoff <query>` summarizes the current session and starts a fresh session under a chosen profile, carrying the summary forward.
-- A profile's `instructions` is appended to (or replaces) the base system prompt per `instructions_mode`.
-- A profile may `handoff` to other named profiles, letting the model route work between specialists.
+## Switching
 
-## `task` sub-agents vs handoff agents
+- `shift+tab` cycles through discovered agents (`/agent` lists them).
+- `alt+ctrl+g` cycles the active agent's tool groups.
+- Start directly: `vtx --agent code-review`, or set `agents.default` / the `VTX_AGENT` env var.
 
-Handoff agents run in the **same** session and context. The `task` tool dispatches **separate** sub-agent sessions (see [tools.md](tools.md)). Use `task` for parallel, isolated work; use handoff agents for in-session persona switching.
+Switch behaviour is controlled by `agents.switch_mode`: `lock` (default) starts a new lineage-linked session; `hot` re-renders prompt + tools in place next turn.
+
+## Agent API
+
+`setup(api)` receives an `AgentAPI`:
+
+```python
+api.local_tool("deploy", "Deploy a service", {...schema...}, execute=fn)
+api.local_command("stage", "Stage the current branch", handler=fn)
+api.permission_gate("bash", when="push" in cmd, action="deny", reason="...")
+api.on("turn_start", handler)
+api.on_agent_change(handler)
+api.notify("message", level="warning")
+```
+
+Local tools/commands appear only while that agent is active. A user-defined agent always beats a built-in sub-agent preset of the same name.

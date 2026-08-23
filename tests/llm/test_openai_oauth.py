@@ -2,8 +2,8 @@ from unittest.mock import patch
 
 import pytest
 
-from vtx.llm.oauth import openai as openai_oauth
-from vtx.llm.oauth.openai import (
+from ai.oauth import openai as openai_oauth
+from ai.oauth.openai import (
     OpenAICredentials,
     get_valid_openai_credentials,
     get_valid_openai_token,
@@ -15,7 +15,7 @@ from vtx.llm.oauth.openai import (
 @pytest.mark.asyncio
 async def test_login_raises_runtime_error_when_server_fails_and_no_manual_input():
     with (
-        patch("vtx.llm.oauth.openai._start_callback_server", side_effect=OSError("port in use")),
+        patch("ai.oauth.openai._start_callback_server", side_effect=OSError("port in use")),
         pytest.raises(RuntimeError, match="could not start callback server"),
     ):
         await login(on_auth_url=None, on_manual_input=None)

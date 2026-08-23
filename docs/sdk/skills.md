@@ -1,64 +1,25 @@
-# Skills
+# SDK Skills
 
-Vtx's skills system (`.agents/skills/<name>/SKILL.md` markdown
-directories) is shared between the TUI, CLI, and SDK. The SDK ships
-helpers to load skills and surface them in your agent's instructions.
-
-## Load skills
+SDK agents can load the same markdown skills the CLI uses.
 
 ```python
-from vtx.sdk import load_vtx_skills
+from ai.agent.sdk import Agent
+from ai.agent.sdk.skills import load_vtx_skills, format_skills_for_prompt
 
-skills = load_vtx_skills()  # searches project + user skills dirs
-```
-
-The returned list is the same `Skill` objects Vtx's TUI uses.
-
-## Inject into instructions
-
-```python
-from vtx.sdk import format_skills_for_prompt
-
+skills = load_vtx_skills()          # discovers project + global skills
 agent = Agent(
-    name="Skillful bot",
-    instructions=(
-        "You are a helpful assistant.\n\n"
-        f"{format_skills_for_prompt(skills)}"
-    ),
-    ...
+    name="worker",
+    instructions="You are a coding agent.\n\n" + format_skills_for_prompt(skills),
 )
 ```
 
-The prompt section tells the model which skills are available, but
-the model can only read a skill if it has a tool that can fetch the
-file. To wire that up, use Vtx's built-in `skill` tool:
+## API
 
-```python
-from vtx.tools import SkillTool
+| Function | Does |
+| --- | --- |
+| `load_vtx_skills(cwd=None)` | Discover skills (`.agents/skills`, `~/.agents/skills`, `~/.vtx/skills`); returns `Skill` objects with `name`, `description`, `path` |
+| `format_skills_for_prompt(skills)` | Render the index block the model sees |
 
-agent = Agent(
-    name="Skillful bot",
-    instructions=...,
-    tools=[SkillTool()],
-)
-```
+The model then reads a skill's body from its file path when it decides the workflow applies — or you can inject specific skills into `instructions` yourself. `$ARGUMENTS` substitution and frontmatter rules behave exactly as documented in [../skills.md](../skills.md).
 
-Or expose a skill as a tool directly:
-
-```python
-from vtx.sdk import load_vtx_skills
-
-def make_skill_tool(skill):
-    @tool(name=f"load_{skill.name}")
-    def loader() -> str:
-        """Load the skill's instructions into the context."""
-        from pathlib import Path
-        return Path(skill.path).read_text()
-    loader.__doc__ = skill.description
-    return loader
-
-agent = Agent(
-    name="Skillful bot",
-    tools=[make_skill_tool(s) for s in load_vtx_skills()],
-)
-```
+Runnable example: [`examples/sdk/08_skills.py`](../../examples/sdk/08_skills.py).

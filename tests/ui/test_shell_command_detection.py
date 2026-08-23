@@ -2,8 +2,8 @@ from unittest.mock import AsyncMock, Mock, patch
 
 import pytest
 
-from vtx.tools.bash import BashTool
-from vtx.ui.app import Vtx
+from ai.agent.tools.bash import BashTool
+from tui.app import Vtx
 
 
 def test_handle_shell_command_execution():

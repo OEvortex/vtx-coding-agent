@@ -1,6 +1,6 @@
 import pytest
 
-from vtx.tools._read_image import IMAGE_EXTENSIONS, get_mime_type, is_image_file
+from ai.agent.tools._read_image import IMAGE_EXTENSIONS, get_mime_type, is_image_file
 
 
 @pytest.mark.parametrize(

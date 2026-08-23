@@ -1,5 +1,4 @@
-# type: ignore
-from vtx.ui.input import InputBox
+from tui.input import InputBox
 
 
 class _FakeTextArea:

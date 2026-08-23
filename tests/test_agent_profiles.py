@@ -11,7 +11,7 @@ from textwrap import dedent
 
 import pytest
 
-from vtx.agents import (
+from ai.agent.agents import (
     AGENT_ACTIVATED,
     AGENT_CHANGED,
     AgentDef,
@@ -24,10 +24,10 @@ from vtx.agents import (
     load_agent,
     load_all_agents,
 )
-from vtx.agents.schema import AGENT_NAME_RE
-from vtx.core.types import ToolResult
-from vtx.extensions import AGENT_START, EventBus, ExtensionCommand, ExtensionTool
-from vtx.tools import BaseTool
+from ai.agent.agents.schema import AGENT_NAME_RE
+from ai.agent.extensions import AGENT_START, EventBus, ExtensionCommand, ExtensionTool
+from ai.agent.tools import BaseTool
+from core.types import ToolResult
 
 # =============================================================================
 # Schema
@@ -170,7 +170,7 @@ def test_load_agent_minimal_data_only(tmp_path: Path):
     a.write_text(
         dedent(
             """
-            from vtx.agents import AgentDef
+            from ai.agent.agents import AgentDef
             AGENT = AgentDef(
                 name="code-review",
                 description="Strict review mode",
@@ -195,7 +195,7 @@ def test_load_agent_with_register_and_local_tool(tmp_path: Path):
     a.write_text(
         dedent(
             """
-            from vtx.agents import AgentDef
+            from ai.agent.agents import AgentDef
 
             AGENT = AgentDef(
                 name="code-review",
@@ -255,8 +255,8 @@ def test_load_agent_event_handler_is_wired(tmp_path: Path):
     a.write_text(
         dedent(
             """
-            from vtx.agents import AgentDef
-            from vtx.extensions import AGENT_START
+            from ai.agent.agents import AgentDef
+            from ai.agent import AGENT_START
 
             AGENT = AgentDef(name="code-review", description="x")
 
@@ -291,7 +291,7 @@ def test_load_agent_name_mismatch(tmp_path: Path):
     a.write_text(
         dedent(
             """
-            from vtx.agents import AgentDef
+            from ai.agent.agents import AgentDef
             AGENT = AgentDef(name="different-name", description="x")
             """
         ).strip()
@@ -305,7 +305,7 @@ def test_load_agent_register_raises(tmp_path: Path):
     a.write_text(
         dedent(
             """
-            from vtx.agents import AgentDef
+            from ai.agent.agents import AgentDef
             AGENT = AgentDef(name="explodes", description="x")
             def register(api):
                 raise RuntimeError("boom")
@@ -318,7 +318,7 @@ def test_load_agent_register_raises(tmp_path: Path):
 
 def test_load_all_agents_collects_errors(tmp_path: Path):
     (tmp_path / "good.py").write_text(
-        "from vtx.agents import AgentDef\nAGENT = AgentDef(name='good', description='x')\n"
+        "from ai.agent.agents import AgentDef\nAGENT = AgentDef(name='good', description='x')\n"
     )
     (tmp_path / "bad.py").write_text("def register(): pass\n")
 
@@ -405,7 +405,7 @@ def test_registry_describe():
 
 
 def _builtin_pool() -> dict[str, BaseTool]:
-    from vtx.tools import tools_by_name
+    from ai.agent.tools import tools_by_name
 
     return dict(tools_by_name)
 
@@ -458,7 +458,7 @@ def test_compose_active_tools_local_tools_bypass_allow_deny():
     """A local tool the agent contributes is never stripped by its own
     allow/deny filters. The allow/deny lists target the base pool, not
     the agent's own contributions."""
-    from vtx.extensions import _json_schema_to_pydantic
+    from ai.agent.extensions import _json_schema_to_pydantic
 
     pool = _builtin_pool()
     base = ["read", "write", "bash"]
@@ -494,7 +494,7 @@ def test_compose_active_tools_local_tools_bypass_allow_deny():
 
 
 def test_compose_active_tools_includes_local_tool():
-    from vtx.extensions import _json_schema_to_pydantic
+    from ai.agent.extensions import _json_schema_to_pydantic
 
     pool = _builtin_pool()
     base = ["read", "bash"]
@@ -522,7 +522,7 @@ def test_compose_active_tools_includes_local_tool():
 
 
 def test_compose_active_commands_merges_local():
-    from vtx.extensions import CommandOutcome
+    from ai.agent.extensions import CommandOutcome
 
     def _make_handler(s: str):
         def _h(args: str) -> CommandOutcome:
@@ -551,7 +551,7 @@ def test_compose_active_commands_merges_local():
 
 
 def test_when_predicate_matches_substring():
-    from vtx.agents.api import _when_predicate
+    from ai.agent.agents.api import _when_predicate
 
     pred = _when_predicate("command matches 'rm -rf'")
     assert pred({"command": "rm -rf /tmp"})
@@ -559,7 +559,7 @@ def test_when_predicate_matches_substring():
 
 
 def test_when_predicate_equality():
-    from vtx.agents.api import _when_predicate
+    from ai.agent.agents.api import _when_predicate
 
     pred = _when_predicate("name == 'tool_call'")
     assert pred({"name": "tool_call"})
@@ -567,7 +567,7 @@ def test_when_predicate_equality():
 
 
 def test_when_predicate_unsupported_expression_raises():
-    from vtx.agents.api import _when_predicate
+    from ai.agent.agents.api import _when_predicate
 
     with pytest.raises(ValueError, match="unsupported"):
         _when_predicate("command contains 'rm'")
@@ -580,7 +580,7 @@ def test_when_predicate_unsupported_expression_raises():
 
 def test_extension_register_local_tool(tmp_path: Path):
     """The cross-agent local_tool API in ExtensionAPI."""
-    from vtx.extensions import load_extension
+    from ai.agent.extensions import load_extension
 
     ext = tmp_path / "ext.py"
     ext.write_text(
@@ -612,7 +612,7 @@ def test_extension_register_local_tool(tmp_path: Path):
 
 
 def test_agent_events_in_all_events():
-    from vtx.extensions import ALL_EVENTS
+    from ai.agent.extensions import ALL_EVENTS
 
     assert AGENT_ACTIVATED in ALL_EVENTS
     assert AGENT_CHANGED in ALL_EVENTS
@@ -699,7 +699,7 @@ def test_load_agent_wraps_callable_tools(tmp_path: Path):
     agent_file.write_text(
         dedent(
             """
-            from vtx.agents import AgentDef
+            from ai.agent.agents import AgentDef
             def hello(name: str) -> str:
                 \"\"\"Say hello.\"\"\"
                 return f"hi {name}"
@@ -716,14 +716,14 @@ def test_load_agent_wraps_callable_tools(tmp_path: Path):
 
 def test_load_agent_wraps_basetool_tools(tmp_path: Path):
     """A pre-built BaseTool in ``AGENT.tools`` is accepted directly."""
-    from vtx.tools import ReadTool
+    from ai.agent.tools import ReadTool
 
     agent_file = tmp_path / "raw2.py"
     agent_file.write_text(
         dedent(
             """
-            from vtx.agents import AgentDef
-            from vtx.tools import ReadTool
+            from ai.agent.agents import AgentDef
+            from ai.agent.tools import ReadTool
             AGENT = AgentDef(name="raw2", description="x", tools=[ReadTool()])
             """
         ).strip()
@@ -770,6 +770,6 @@ def test_registry_tool_group_cycle_no_groups():
 
 
 def test_tool_group_changed_event_in_all_events():
-    from vtx.extensions import ALL_EVENTS, TOOL_GROUP_CHANGED
+    from ai.agent.extensions import ALL_EVENTS, TOOL_GROUP_CHANGED
 
     assert TOOL_GROUP_CHANGED in ALL_EVENTS

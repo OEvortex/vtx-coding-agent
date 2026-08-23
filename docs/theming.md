@@ -1,25 +1,27 @@
 # Theming
 
-Vtx ships 25 built-in themes. Switch them interactively with `/themes` in the TUI, or set `ui.theme` in `config.yml` (see [configuration.md](configuration.md)).
+Themes live in `src/coding_agent/themes.py`. Switch with `/settings` → themes or `ui.theme` in config.
 
-## Available themes
+## Built-in themes (25)
 
-`ayu`, `catppuccin-frappe`, `catppuccin-latte`, `catppuccin-macchiato`, `catppuccin-mocha`, `dracula`, `everforest`, `flexoki`, `github-dark`, `github-light`, `gruvbox-dark`, `gruvbox-light`, `kanagawa`, `kanagawa-dragon`, `monokai`, `nightowl`, `nord`, `one-dark`, `one-light`, `palenight`, `rosepine`, `solarized-dark`, `solarized-light`, `tokyo-day`, `tokyo-night`.
+`ayu`, `catppuccin-frappe`, `catppuccin-latte`, `catppuccin-macchiato`, `catppuccin-mocha`, `dracula`, `everforest`, `flexoki`, `github-dark`, `github-light`, `gruvbox-dark`, `gruvbox-light`, `kanagawa`, `kanagawa-dragon`, `monokai`, `nightowl`, `nord`, `one-dark`, `one-light`, `palenight`, `rosepine`, `solarized-dark`, `solarized-light`, `tokyo-day`, `tokyo-night`
 
-## Setting a theme
+Preview them all with `uv run python scripts/show_themes.py`.
 
-```yaml
-ui:
-  theme: "tokyo-night"
-```
+## Palette tokens
 
-An invalid theme name raises a config validation error. The default is `gruvbox-dark`.
+Each theme defines a `ColorsConfig`:
 
-## Color tokens
+| Token group | Tokens |
+| --- | --- |
+| Text | `fg`, `bg`, `dim`, `muted`, `title` |
+| Status | `accent`, `info`, `notice`, `error`, `selected`, `running`, `success`, `failed`, `spinner` |
+| Markdown | `markdown_heading`, `markdown_code` |
+| Diffs | `diff_added`, `diff_removed` |
+| Panels | `panel`, `panel_alt`, `panel_user`, `editor`, `border` |
+| Tool badge | `badge.bg`, `badge.label`, `tool_bg.pending/success/error` |
+| Syntax (optional) | `syntax.command/arg/option/operator/string/variable` |
 
-Each theme defines a `ColorsConfig` with semantic tokens (accent, dim, muted, border, error, warning, success, etc.) consumed across the TUI. Extensions and custom tool blocks receive these via `config.ui.colors`. Access at runtime:
+Missing tokens are derived by blending, so a minimal theme only needs the core colors. The TUI stylesheet (`tui/styles.py`) is generated from the active theme at startup; input-area colors use a matching Textual theme.
 
-```python
-from vtx import config
-colors = config.ui.colors
-```
+There is no custom-theme file format yet — add themes in Python or override single UI options under `ui:` in config.

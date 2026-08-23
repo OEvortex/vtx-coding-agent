@@ -3,8 +3,8 @@ import asyncio
 import httpx
 import pytest
 
-from vtx.config import Config, reset_config, set_config
-from vtx.llm.base import make_http_client
+from ai.base import make_http_client
+from coding_agent.config import Config, reset_config, set_config
 
 
 @pytest.fixture(autouse=True)

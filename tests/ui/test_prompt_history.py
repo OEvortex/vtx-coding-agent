@@ -4,8 +4,8 @@ import json
 
 import pytest
 
-from vtx.ui import prompt_history as ph
-from vtx.ui.prompt_history import MAX_HISTORY_ENTRIES, PromptHistory
+from tui import prompt_history as ph
+from tui.prompt_history import MAX_HISTORY_ENTRIES, PromptHistory
 
 
 @pytest.fixture(autouse=True)

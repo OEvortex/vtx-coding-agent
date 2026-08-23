@@ -1,92 +1,53 @@
-# Runner
+# SDK Runner
 
-`Runner` is the single entry point for executing agents. It owns the
-agentic loop, applies guardrails, manages sessions, and emits a typed
-event stream.
-
-## Variants
-
-| Method | Async? | Use when |
-|---|---|---|
-| `Runner.run(agent, input, ...)` | yes | The canonical entry point. |
-| `Runner.run_sync(agent, input, ...)` | no | Sync context. Runs in a worker thread. |
-| `Runner.run_streamed(agent, input, ...)` | yes | Iterate events as they arrive. |
+`Runner` executes an agent to completion. All three methods share the same parameters:
 
 ```python
-result = await Runner.run(agent, "hello")
-result = Runner.run_sync(agent, "hello")
-streamed = Runner.run_streamed(agent, "hello")
-async for event in streamed:
-    ...
-result = streamed.result
+from ai.agent.sdk import Agent, Runner, RunConfig
+
+result = await Runner.run(agent, "Draft a release note", session=ses, run_config=cfg)
+result = Runner.run_sync(agent, "...")            # sync wrapper
+streamed = Runner.run_streamed(agent, "...")      # returns immediately
 ```
 
-## Inputs
+## Parameters
 
-`input` can be a string or a list of input-item dicts (in the same
-format the `Session` Protocol uses).
-
-```python
-result = await Runner.run(
-    agent,
-    [
-        {"role": "user", "content": "Hello"},
-        {"role": "user", "content": "Are you there?"},
-    ],
-)
-```
+| Param | Notes |
+| --- | --- |
+| `starting_agent` | The `Agent` to run |
+| `input` | A `str`, or a list of input items (previous conversation) |
+| `session` | Optional session backend (see [sessions.md](sessions.md)); history is merged with input |
+| `run_config` | A `RunConfig` (below) |
+| `max_turns` | Per-run override of the turn budget |
+| `cancellation` | `asyncio.Event` to cancel cooperatively |
+| `context` | Opaque object passed to instructions callables, guardrails and tools |
 
 ## RunConfig
 
-`RunConfig` holds per-run knobs:
+| Field | Default | Notes |
+| --- | --- | --- |
+| `max_turns` | `None` | Global default turn budget |
+| `permission_policy` | `None` | See [permissions.md](permissions.md) |
+| `tracing_disabled` | `False` | Turn off tracing for this run |
+| `trace_include_sensitive_data` | `True` | Include payloads in traces |
+| `session_input_callback` | `None` | Filter/merge history before each turn |
+| `session_settings` | `None` | `SessionSettings(limit=…)` |
+| `nest_handoff_history` | `False` | Keep handoff child transcripts nested in the parent history |
+| `custom` | `{}` | Free-form bag |
 
-```python
-from vtx.sdk import RunConfig
+## Streaming
 
-result = await Runner.run(
-    agent,
-    input,
-    run_config=RunConfig(
-        max_turns=10,
-        session_input_callback=my_callback,
-        tracing_disabled=False,
-        permission_policy=my_policy,
-    ),
-)
-```
-
-| Field | Description |
-|---|---|
-| `max_turns` | Maximum model turns before the run stops. |
-| `session_input_callback` | `(history, new_input) -> final_input`. Customize how the session's stored history is merged with the new turn's input. |
-| `tracing_disabled` | Skip the default trace for this run. |
-| `trace_include_sensitive_data` | If False, LLM/tool inputs/outputs are not captured in spans. |
-| `permission_policy` | Override the SDK's default `PermissionPolicy`. |
-| `nest_handoff_history` | Opt-in: collapse the prior transcript into a single summary block when a handoff occurs. |
-| `custom` | Free-form dict for app-side bookkeeping. |
+`run_streamed` returns a `RunStreamed`. Iterate it for live events (`_TextDelta`, `_ToolCallStart`, `_ToolCallEnd`, `_ToolResult`, `_AgentStartEvent`); after exhaustion, `.result` yields the final `RunResult`.
 
 ## RunResult
 
-Every run returns a `RunResult`:
-
 ```python
-@dataclass
-class RunResult:
-    final_output: Any        # str, or output_type instance
-    new_items: list[RunItem] # typed items generated during the run
-    interruptions: list      # ToolApprovalItems that need a decision
-    state: RunState | None   # Resumable state, populated on pause
-    stop_reason: StopReason
-    usage: Usage
-    agent_name: str
+result.final_output        # last agent text, or validated output_type instance
+result.new_items           # list[RunItem]: messages, tool calls/results, handoffs
+result.interruptions       # list[ToolApprovalItem] when needs_approval paused
+result.state               # RunState — pass to approve()/reject() and re-run
+result.stop_reason         # stop | length | tool_use | error | interrupted | steer
+result.usage               # accumulated Usage
+result.agent_name          # agent that produced the final output
+result.to_input_list()     # items as plain dicts, feed back as input
 ```
-
-`result.to_input_list()` returns the conversation as a list of
-input-item dicts, ready to feed back into another run.
-
-## Stop reasons
-
-`StopReason.STOP` — natural end. `TOOL_USE` — last turn called a tool
-(only meaningful inside the loop). `LENGTH` — max turns hit.
-`ERROR` — model error. `INTERRUPTED` — user cancel. `STEER` — steer
-event fired.

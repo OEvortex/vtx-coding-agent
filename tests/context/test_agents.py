@@ -1,6 +1,6 @@
 from pathlib import Path
 
-from vtx.context.agent_mds import (
+from ai.agent.context.agent_mds import (
     ContextFile,
     _find_git_root,
     _get_stop_directory,
@@ -135,7 +135,9 @@ class TestLoadContextFileFromDir:
 
 class TestLoadAgentsFiles:
     def test_loads_from_cwd(self, tmp_path, monkeypatch):
-        monkeypatch.setattr("vtx.context.agent_mds.get_config_dir", lambda: tmp_path / "config")
+        monkeypatch.setattr(
+            "ai.agent.context.agent_mds.get_config_dir", lambda: tmp_path / "config"
+        )
 
         project = tmp_path / "project"
         project.mkdir()
@@ -148,7 +150,9 @@ class TestLoadAgentsFiles:
         assert "Project rules" in result[0].content
 
     def test_loads_from_ancestors(self, tmp_path, monkeypatch):
-        monkeypatch.setattr("vtx.context.agent_mds.get_config_dir", lambda: tmp_path / "config")
+        monkeypatch.setattr(
+            "ai.agent.context.agent_mds.get_config_dir", lambda: tmp_path / "config"
+        )
 
         root = tmp_path / "repo"
         (root / ".git").mkdir(parents=True)
@@ -168,7 +172,7 @@ class TestLoadAgentsFiles:
         config_dir = tmp_path / "config"
         config_dir.mkdir()
         (config_dir / "AGENTS.md").write_text("# Global rules")
-        monkeypatch.setattr("vtx.context.agent_mds.get_config_dir", lambda: config_dir)
+        monkeypatch.setattr("ai.agent.context.agent_mds.get_config_dir", lambda: config_dir)
 
         project = tmp_path / "project"
         project.mkdir()
@@ -184,7 +188,7 @@ class TestLoadAgentsFiles:
     def test_no_duplicates(self, tmp_path, monkeypatch):
         config_dir = tmp_path / "config"
         config_dir.mkdir()
-        monkeypatch.setattr("vtx.context.agent_mds.get_config_dir", lambda: config_dir)
+        monkeypatch.setattr("ai.agent.context.agent_mds.get_config_dir", lambda: config_dir)
 
         project = tmp_path / "project"
         project.mkdir()
@@ -197,7 +201,9 @@ class TestLoadAgentsFiles:
         assert len(paths) == len(set(paths))
 
     def test_ordering_closest_last(self, tmp_path, monkeypatch):
-        monkeypatch.setattr("vtx.context.agent_mds.get_config_dir", lambda: tmp_path / "config")
+        monkeypatch.setattr(
+            "ai.agent.context.agent_mds.get_config_dir", lambda: tmp_path / "config"
+        )
 
         root = tmp_path / "repo"
         (root / ".git").mkdir(parents=True)
@@ -219,7 +225,9 @@ class TestLoadAgentsFiles:
         assert "3-leaf" in result[2].content
 
     def test_ignores_dot_agents_context_files(self, tmp_path, monkeypatch):
-        monkeypatch.setattr("vtx.context.agent_mds.get_config_dir", lambda: tmp_path / "config")
+        monkeypatch.setattr(
+            "ai.agent.context.agent_mds.get_config_dir", lambda: tmp_path / "config"
+        )
 
         project = tmp_path / "project"
         (project / ".git").mkdir(parents=True)
@@ -231,7 +239,9 @@ class TestLoadAgentsFiles:
         assert result == []
 
     def test_empty_when_no_files(self, tmp_path, monkeypatch):
-        monkeypatch.setattr("vtx.context.agent_mds.get_config_dir", lambda: tmp_path / "config")
+        monkeypatch.setattr(
+            "ai.agent.context.agent_mds.get_config_dir", lambda: tmp_path / "config"
+        )
 
         project = tmp_path / "empty"
         project.mkdir()

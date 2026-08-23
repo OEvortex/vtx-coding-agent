@@ -1,71 +1,41 @@
-# Approvals (human-in-the-loop)
+# SDK Approvals
 
-A tool marked `needs_approval=True` will pause the run before
-executing. The SDK returns a `RunResult` with `interruptions`
-populated; you inspect the pending calls, decide, and resume with a
-`RunState`.
-
-## Marking a tool
+Pause a run when specific tools are called and decide from your own UI. Implemented with `needs_approval_tools` + run interruptions.
 
 ```python
-from vtx.sdk import tool
+from ai.agent.sdk import Agent, Runner, ToolApprovalItem
 
-@tool(needs_approval=True)
-def send_email(to: str, subject: str, body: str) -> str:
-    """Send an email on the user's behalf."""
-    return f"sent to {to}"
-```
+agent = Agent(
+    name="ops",
+    instructions="Manage deploys.",
+    tools=[deploy, rollback],
+    needs_approval_tools={"deploy"},     # only these pause
+)
 
-## Handling the pause
-
-```python
-from vtx.sdk import ApprovalDecision, Runner
-
-result = await Runner.run(agent, "Send the report to alice@example.com")
+result = await Runner.run(agent, "Ship v2 to prod")
 
 if result.interruptions:
-    state = result.state
-    for item in result.interruptions:
-        # Inspect item.tool_name, item.arguments
-        # Then approve or reject
-        state.approve(item)   # or: state.reject(item)
+    state = result.state                 # RunState: original input + pending calls
+    for item in result.interruptions:    # ToolApprovalItem
+        print(item.tool_name, item.arguments)
+        state.approve(item)              # or state.reject(item)
 
-    # Resume the same run
-    result = await Runner.run(agent, state)
+# Re-run the original input; recorded decisions gate the pending calls.
+result = await Runner.run(agent, result.state.original_input)
 ```
 
-The resumed run continues exactly where it left off. Pending
-rejections produce a `tool_result` containing the rejection reason
-that the LLM can read and act on.
+## Pieces
 
-## The state object
+| Object | Role |
+| --- | --- |
+| `ToolApprovalItem` | One paused tool call: `tool_name`, `arguments`, `call_id`, `name` |
+| `RunState` | Carries `original_input`, pending calls and decisions; `.approve(*items)`, `.reject(*items)`, `.decision_for(call_id)` |
+| `ApprovalDecision` | `approve` / `reject` enum |
 
-`RunState` is a serializable snapshot of the run:
+Rejected calls return a "denied by user" tool result so the model can pick another path.
 
-```python
-@dataclass
-class RunState:
-    original_input: Any
-    pending_tool_calls: list[ToolCall]
-    decisions: list[_PendingDecision]
-    new_items: list[RunItem]
-    metadata: dict[str, Any]
-```
+## When you just want a policy, not a UI
 
-You can serialize it (e.g. with `dataclasses.asdict`) and resume
-later in a different process — useful for long-running workflows
-where a human might take minutes or hours to approve.
+Skip interruptions entirely with a `PermissionPolicy` — see [permissions.md](permissions.md). Policies decide synchronously per call; approvals hand the decision to your code between runs.
 
-## Permissions (Vtx-specific)
-
-Approvals coexist with Vtx's permission system. The flow is:
-
-1. The SDK calls your `PermissionPolicy.decide(tool, args)`.
-2. If the policy returns `ALLOW`, the tool runs.
-3. If the policy returns `PROMPT` and the tool has
-   `needs_approval=True`, the run pauses.
-4. If the policy returns `PROMPT` and the tool does NOT have
-   `needs_approval=True`, the tool is rejected (no pause) — same as
-   Vtx's headless mode behavior.
-
-See [`permissions.md`](permissions.md) for the policy primitives.
+Runnable example: [`examples/sdk/06_approvals.py`](../../examples/sdk/06_approvals.py).

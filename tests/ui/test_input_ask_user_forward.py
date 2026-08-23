@@ -1,4 +1,3 @@
-# type: ignore
 """Tests for the chat input's _on_key forwarding to the app.
 
 Mirrors the structure of ``test_input_approval_submit.py`` but covers
@@ -10,8 +9,8 @@ and not consumed by the TextArea.
 import asyncio
 from typing import Any
 
-from vtx.permissions import AskUserOption
-from vtx.ui.input import _is_ask_user_picker_key
+from core import AskUserOption
+from tui.input import _is_ask_user_picker_key
 
 
 class FakeFuture:

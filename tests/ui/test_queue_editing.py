@@ -1,7 +1,7 @@
 from collections import deque
 from typing import Any, cast
 
-from vtx.ui.queue_ui import QueueUIMixin
+from tui.queue_ui import QueueUIMixin
 
 
 class FakeQueueDisplay:

@@ -8,21 +8,27 @@ Vtx keeps its state under a single config directory (`~/.vtx`) plus project-loca
 |------|---------|
 | `~/.vtx/config.yml` | Main configuration (see [configuration.md](configuration.md)) |
 | `~/.vtx/sessions/<safe_cwd>/*.jsonl` | Per-project conversation history (see [sessions.md](sessions.md)) |
+| `~/.vtx/copilot_auth.json` | GitHub Copilot OAuth token cache; other per-provider credential files sit alongside |
 | `~/.vtx/providers/*.yaml` | User-wide custom provider definitions (see [providers.md](providers.md)) |
+| `~/.vtx/models/` | Cached dynamic model catalogs (~6 h TTL) |
+| `~/.vtx/scratchpads/vtx-scratchpad-*` | Per-session scratch space |
 | `~/.vtx/agent/*.py` | Global handoff agent profiles (see [agents.md](agents.md)) |
 | `~/.vtx/agent/extensions/*.py` | Global extensions (see [extensions.md](extensions.md)) |
-| `~/.vtx/AGENTS.md` | User-global project guidelines (see [skills.md](skills.md)) |
-| `~/.vtx/bin/` | Downloaded bundled binaries (fd, ripgrep) |
+| `~/.vtx/skills/<name>/` | Skills in the legacy vtx location |
+| `~/.vtx/bin/` | Auto-downloaded binaries (`fd`, `rg`) |
+| `~/.vtx/hooks.yml` | Global hook config (project `.vtx/hooks.yml` takes precedence) |
+| `~/.vtx/installed_extensions.yml` | `vtx install` ledger |
 
-## Project-local (`.vtx/` and `.agents/` at repo root)
+## Project-local
 
 | Path | Purpose |
 |------|---------|
-| `.vtx/providers/*.yaml` | Project-local custom providers (highest precedence) |
-| `.vtx/agent/*.py` | Project-local handoff agent profiles |
-| `.vtx/extensions/*.py` | Project-local extensions |
+| `.vtx/providers/*.yaml` | Project custom providers (highest precedence) |
+| `.vtx/agent/*.py` | Project handoff agents, walked up to the git root |
+| `.vtx/extensions/*.py` | Project extensions |
+| `.vtx/hooks.yml` | Project hooks |
 | `AGENTS.md` / `CLAUDE.md` | Project guidelines, discovered from git root down to cwd |
-| `.agents/skills/<name>/` | Project-local skills (see [skills.md](skills.md)) |
+| `.agents/skills/<name>/` | Project skills (see [skills.md](skills.md)) |
 
 ## Global skills
 
@@ -30,10 +36,9 @@ Vtx keeps its state under a single config directory (`~/.vtx`) plus project-loca
 
 ## Session files
 
-`~/.vtx/sessions/<safe_cwd>/<timestamp>_<session_id>.jsonl` — one JSONL event per line (see [sessions.md](sessions.md)).
+One JSONL event per line; header first, then a tree of entries. Directories are created with `0o700`. See [sessions.md](sessions.md) for the entry types.
 
 ## Notes
 
-- The config dir name is `vtx` (`~/.vtx`); it is derived from `CONFIG_DIR_NAME` in `src/vtx/config.py`.
-- Session directories are created with `0o700` permissions.
-- Project-local providers/agents/extensions override global ones on name collision; nearer project files win over farther ones when walking up to the git root.
+- The config dir is `Path.home() / ".vtx"` (`core.paths.get_config_dir`).
+- Nearer files win: project beats global, cwd beats git-root when walking up.

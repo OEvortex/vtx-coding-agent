@@ -1,6 +1,6 @@
 import pytest
 
-from vtx import get_config, reset_config
+from coding_agent.config import get_config, reset_config
 
 
 def pytest_runtest_setup(item):

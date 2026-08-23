@@ -7,8 +7,9 @@ from pathlib import Path
 
 import pytest
 
-from vtx.llm.base import ProviderConfig
-from vtx.llm.oauth.dynamic import (
+import ai.oauth.dynamic as dynamic_oauth
+from ai.base import ProviderConfig
+from ai.oauth.dynamic import (
     clear_api_key,
     get_dynamic_api_key,
     get_dynamic_auth_path,
@@ -17,14 +18,12 @@ from vtx.llm.oauth.dynamic import (
     load_api_key,
     save_api_key,
 )
-from vtx.llm.providers.openai_sdk import OpenAISDKProvider
+from ai.providers.openai_sdk import OpenAISDKProvider
 
 
 @pytest.fixture(autouse=True)
 def isolated_auth(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
     """Redirect get_config_dir to a temp dir so each test has a clean auth file."""
-    import vtx.llm.oauth.dynamic as dynamic_oauth
-
     monkeypatch.setattr(dynamic_oauth, "get_config_dir", lambda: tmp_path)
 
 
