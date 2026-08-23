@@ -194,7 +194,7 @@ class SlashCommandProvider(AutocompleteProvider):
 
         items = []
         for _, cmd in scored:
-            label = f"/{cmd.name}"
+            label = f"/skill:{cmd.name}" if cmd.is_skill else f"/{cmd.name}"
             desc = cmd.description
             if cmd.shortcut:
                 desc = f"{desc} ({cmd.shortcut})"
@@ -214,8 +214,13 @@ class SlashCommandProvider(AutocompleteProvider):
         text_after = text[cursor_col:]
 
         # Replace prefix with command + space
-        new_text = text_before[:prefix_start] + f"/{cmd.name} " + text_after
-        new_cursor = prefix_start + len(cmd.name) + 2  # +2 for "/" and space
+        if cmd.is_skill:
+            inserted = f"/skill:{cmd.name} "
+            new_cursor = prefix_start + len(inserted)
+        else:
+            inserted = f"/{cmd.name} "
+            new_cursor = prefix_start + len(cmd.name) + 2  # +2 for "/" and space
+        new_text = text_before[:prefix_start] + inserted + text_after
 
         return (new_text, new_cursor)
 

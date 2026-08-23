@@ -957,6 +957,23 @@ class Vtx(
         if display_text.startswith("/") and self._handle_command(display_text):
             return
 
+        # Handle skill slash commands typed manually: /skill:<name> <query>
+        manual_skill_name = None
+        manual_skill_query = ""
+        if display_text.startswith("/skill:"):
+            skill_name, _, skill_query = display_text[len("/skill:") :].partition(" ")
+            selected_skill = next(
+                (
+                    skill
+                    for skill in self._registered_slash_skills()
+                    if skill.register_cmd and skill.name == skill_name
+                ),
+                None,
+            )
+            if selected_skill:
+                manual_skill_name = selected_skill.name
+                manual_skill_query = skill_query
+
         # Handle shell commands (! and !!)
         if display_text.startswith("!") or display_text.startswith("!!"):
             self._handle_shell_command(display_text, event.text)
@@ -964,7 +981,7 @@ class Vtx(
 
         query_text = event.query_text.strip()
 
-        selected_skill_name = event.selected_skill_name
+        selected_skill_name = event.selected_skill_name or manual_skill_name
         highlighted_skill: str | None = None
         if selected_skill_name:
             selected_skill = next(
@@ -976,7 +993,7 @@ class Vtx(
                 None,
             )
             if selected_skill:
-                skill_query = event.selected_skill_query or ""
+                skill_query = event.selected_skill_query or manual_skill_query
                 display_text = self._build_skill_trigger_message(
                     selected_skill.name, selected_skill.description, skill_query
                 )

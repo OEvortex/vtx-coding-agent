@@ -308,7 +308,7 @@ def test_slash_provider_triggers_mid_input_for_skills_only():
     assert result.prefix == "/cus"
     assert result.replace_start == text.rfind("/")
     labels = [item.label for item in result.items]
-    assert labels == ["/custom-skill"]
+    assert labels == ["/skill:custom-skill"]
 
 
 def test_slash_provider_mid_input_does_not_trigger_without_skills():
@@ -334,7 +334,7 @@ def test_slash_provider_start_shows_full_menu():
     assert result is not None
     labels = [item.label for item in result.items]
     assert "/compact" in labels
-    assert "/custom-skill" in labels
+    assert "/skill:custom-skill" in labels
 
 
 def test_slash_provider_does_not_trigger_inside_word():

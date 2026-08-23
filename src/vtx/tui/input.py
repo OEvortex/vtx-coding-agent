@@ -356,7 +356,7 @@ class InputBox(Vertical):
         return text.replace(_SKILL_TRIGGER_MARKER, "")
 
     def _extract_selected_skill_submission(self, text: str) -> tuple[str | None, str | None]:
-        pattern = re.compile(rf"{_SKILL_TRIGGER_MARKER}/([a-z0-9-]+){_SKILL_TRIGGER_MARKER}")
+        pattern = re.compile(rf"{_SKILL_TRIGGER_MARKER}/skill:([a-z0-9-]+){_SKILL_TRIGGER_MARKER}")
         match = pattern.search(text)
         if not match:
             return None, None
@@ -698,8 +698,8 @@ class InputBox(Vertical):
 
         if cmd.name not in self._selected_skill_commands:
             self._selected_skill_commands.append(cmd.name)
-        marker_wrapped = f"{_SKILL_TRIGGER_MARKER}/{cmd.name}{_SKILL_TRIGGER_MARKER} "
-        plain = f"/{cmd.name} "
+        marker_wrapped = f"{_SKILL_TRIGGER_MARKER}/skill:{cmd.name}{_SKILL_TRIGGER_MARKER} "
+        plain = f"/skill:{cmd.name} "
         if plain in new_text:
             new_text = new_text.replace(plain, marker_wrapped, 1)
 

@@ -50,7 +50,7 @@ class Skill:
     path: str
     name: str
     description: str
-    register_cmd: bool = False
+    register_cmd: bool = True
     cmd_info: str = ""
     include_in_prompt: bool = True
     bundled: bool = False
@@ -179,9 +179,14 @@ def _load_skill_from_dir(skill_dir: Path) -> tuple[Skill | None, list[SkillWarni
         parent_dir_name = skill_dir.name
         name = frontmatter.get("name") or parent_dir_name
         description = frontmatter.get("description", "")
-        register_cmd_value = str(frontmatter.get("register_cmd", "")).strip().lower()
-        cmd_only = register_cmd_value == "only"
-        register_cmd = cmd_only or _parse_bool(frontmatter.get("register_cmd"))
+        register_cmd_raw = frontmatter.get("register_cmd", True)
+        if isinstance(register_cmd_raw, str):
+            register_cmd_value = register_cmd_raw.strip().lower()
+            cmd_only = register_cmd_value == "only"
+            register_cmd = cmd_only or _parse_bool(register_cmd_raw)
+        else:
+            cmd_only = False
+            register_cmd = bool(register_cmd_raw)
         cmd_info = str(frontmatter.get("cmd_info", "")).strip()
         category_raw = str(frontmatter.get("category", "")).strip().lower()
         category = category_raw or DEFAULT_SKILL_CATEGORY

@@ -46,7 +46,7 @@ def test_load_all_agents_user_writes_global_only(tmp_path: Path):
     global_dir = tmp_path / "home" / ".vtx" / "agent"
     global_dir.mkdir(parents=True)
     (global_dir / "yolo.py").write_text(
-        'from vtx.ai.agent.agents import AgentDef\n'
+        "from vtx.ai.agent.agents import AgentDef\n"
         'AGENT = AgentDef(name="yolo", description="fast")\n'
     )
     cwd = tmp_path / "project"

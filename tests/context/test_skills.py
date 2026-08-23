@@ -282,7 +282,7 @@ description: Uses directory name
 
         assert skill is not None
         assert skill.name == "fallback-skill"
-        assert skill.register_cmd is False
+        assert skill.register_cmd is True
         assert skill.cmd_info == ""
 
     def test_register_cmd_parses_truthy_strings(self, tmp_path):
