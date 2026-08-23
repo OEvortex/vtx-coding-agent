@@ -2,8 +2,10 @@ import { useState, useEffect, lazy, Suspense } from "react";
 import Navbar from "./components/Navbar";
 import Hero from "./components/Hero";
 import LiveStats from "./components/LiveStats";
+import ProviderMarquee from "./components/ProviderMarquee";
 import Why from "./components/Why";
 import Capabilities from "./components/Capabilities";
+import Architecture from "./components/Architecture";
 import CTASection from "./components/CTASection";
 import Footer from "./components/Footer";
 import ScrollProgress from "./components/ScrollProgress";
@@ -29,8 +31,10 @@ function LandingPage() {
       <main>
         <Hero />
         <LiveStats />
+        <ProviderMarquee />
         <Why />
         <Capabilities />
+        <Architecture />
         <CTASection />
       </main>
       <Footer />

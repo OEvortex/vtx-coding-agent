@@ -747,6 +747,47 @@ pre code {
   animation: pulse-glow 2s ease-in-out infinite;
 }
 
+/* =================================================================
+   HERO EXTRAS
+   ================================================================= */
+
+/* Sheened display text: white -> zinc gradient with a moving highlight. */
+.text-sheen {
+  background: linear-gradient(
+    100deg,
+    #FAFAF9 0%,
+    #D4D4D8 38%,
+    #FAFAF9 50%,
+    #A1A1AA 62%,
+    #FAFAF9 100%
+  );
+  background-size: 220% 100%;
+  -webkit-background-clip: text;
+  background-clip: text;
+  -webkit-text-fill-color: transparent;
+  animation: sheen-slide 7s ease-in-out infinite;
+}
+@keyframes sheen-slide {
+  0%, 100% { background-position: 0% 0; }
+  50% { background-position: 100% 0; }
+}
+
+/* Terminal caret used by the animated hero demo. */
+.term-caret {
+  display: inline-block;
+  width: 7px;
+  height: 1.05em;
+  vertical-align: text-bottom;
+  background: var(--color-accent);
+  animation: cursor-blink 1s step-end infinite;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .text-sheen {
+    animation: none;
+  }
+}
+
 @media (prefers-reduced-motion: reduce) {
   .marquee-track {
     animation: none;

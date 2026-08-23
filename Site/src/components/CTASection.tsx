@@ -67,7 +67,8 @@ export default function CTASection() {
               <Reveal delay={0.1}>
                 <p className="mt-5 text-[15px] text-ink-muted max-w-[44ch] leading-[1.6]">
                   One line. No accounts. No telemetry. The whole harness is
-                  on your machine, MIT licensed, and ready in under 30 seconds.
+                  on your machine, Apache-2.0 licensed, and ready in under
+                  30 seconds.
                 </p>
               </Reveal>
             </div>

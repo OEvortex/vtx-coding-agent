@@ -6,7 +6,7 @@ const principles = [
   {
     n: "01",
     title: "Lean by default",
-    body: "Vtx runs on roughly 2,200 tokens of base prompt. Most agentic frameworks load thousands of hidden tokens per turn. We do not.",
+    body: "The whole runtime — system prompt, tool schemas, environment — is roughly 2,600 tokens. Your context window goes to your code, not boilerplate.",
   },
   {
     n: "02",

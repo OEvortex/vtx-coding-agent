@@ -20,7 +20,7 @@ const sections = [
   {
     title: "Project",
     links: [
-      { label: "MIT license", href: "https://github.com/OEvortex/vtx-coding-agent/blob/main/LICENSE" },
+      { label: "Apache-2.0 license", href: "https://github.com/OEvortex/vtx-coding-agent/blob/main/LICENSE" },
       { label: "Changelog", href: "https://github.com/OEvortex/vtx-coding-agent/blob/main/CHANGELOG.md" },
       { label: "Issues", href: "https://github.com/OEvortex/vtx-coding-agent/issues" },
       { label: "Discussions", href: "https://github.com/OEvortex/vtx-coding-agent/discussions" },
@@ -68,12 +68,12 @@ export default function Footer() {
                 Vtx
               </span>
               <span className="font-mono text-[10.5px] text-ink-faint tracking-tight">
-                v0.4.2
+                v1.0.0
               </span>
             </div>
             <p className="text-[14px] text-ink-muted leading-[1.65] max-w-[36ch]">
               A minimal, transparent agentic coding harness for the terminal.
-              Open source under the MIT license.
+              Open source under the Apache-2.0 license.
             </p>
             <a
               href="https://github.com/OEvortex/vtx-coding-agent"
@@ -116,7 +116,7 @@ export default function Footer() {
 
         {/* Bottom row */}
         <div className="pt-8 border-t border-hairline flex flex-col sm:flex-row items-center justify-between gap-4 text-[12px] text-ink-faint font-mono tracking-tight">
-          <p>© 2026 OEvortex. Released under the MIT license.</p>
+          <p>© 2026 OEvortex. Released under the Apache-2.0 license.</p>
           <button
             onClick={handleScrollTop}
             className="flex items-center gap-1.5 px-3 py-1.5 rounded-md border border-hairline hover:border-hairline-strong hover:bg-surface transition-colors text-ink-muted"

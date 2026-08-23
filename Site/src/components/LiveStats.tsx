@@ -9,9 +9,9 @@ interface Stat {
 }
 
 const stats: Stat[] = [
-  { value: 9, label: "Core tools", detail: "read, edit, write, bash, find..." },
-  { value: 11, suffix: "+", label: "LLM providers", detail: "OAuth + local model support" },
-  { value: 2.2, suffix: "k", label: "Base prompt", detail: "tokens loaded per turn" },
+  { value: 9, label: "Core tools", detail: "read, edit, write, bash, find…" },
+  { value: 50, suffix: "+", label: "LLM providers", detail: "OpenAI-compatible · local models" },
+  { value: 2.6, suffix: "k", label: "Token runtime", detail: "whole harness, per turn" },
 ];
 
 function Counter({ stat, index }: { stat: Stat; index: number }) {

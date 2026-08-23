@@ -13,11 +13,11 @@
     <meta name="title" content="Vtx - Agentic coding harness" />
     <meta
       name="description"
-      content="Vtx is an open-source agentic coding harness for developers. 5 core tools, 11+ LLM providers, TUI, headless CLI, session persistence, compaction, skills, and a full extension system."
+      content="Vtx is an open-source agentic coding harness for developers. 9 core tools, 50+ LLM providers, TUI, headless CLI, session persistence, compaction, skills, and a full extension system — on a ~2.6k-token runtime."
     />
     <meta
       name="keywords"
-      content="Vtx, AI coding agent, agentic harness, LLM, OpenAI, Anthropic, GitHub Copilot, DeepSeek, TUI, terminal UI, headless CLI, coding assistant, open source, Python"
+      content="Vtx, AI coding agent, agentic harness, LLM, OpenAI, Anthropic, GitHub Copilot, DeepSeek, Groq, Ollama, TUI, terminal UI, headless CLI, coding assistant, open source, Python"
     />
     <meta name="author" content="OEvortex" />
     <meta name="robots" content="index, follow, max-image-preview:large, max-snippet:-1, max-video-preview:-1" />
@@ -57,7 +57,7 @@
     <meta property="og:title" content="Vtx: Agentic coding harness" />
     <meta
       property="og:description"
-      content="Open-source agentic coding harness with 5 core tools, 11+ LLM providers, TUI, headless CLI, session persistence, skills, extensions."
+      content="Open-source agentic coding harness with 9 core tools, 50+ LLM providers, TUI, headless CLI, session persistence, skills, extensions — on a ~2.6k-token runtime."
     />
     <meta property="og:url" content="https://agentjarvis-v2.netlify.app/" />
     <meta property="og:image" content="https://agentjarvis-v2.netlify.app/og-image.jpg" />
@@ -74,7 +74,7 @@
     <meta name="twitter:title" content="Vtx: Agentic coding harness" />
     <meta
       name="twitter:description"
-      content="Open-source agentic coding harness for developers. 5 core tools, 11+ LLM providers, TUI, headless CLI, session persistence, skills, extensions."
+      content="Open-source agentic coding harness for developers. 9 core tools, 50+ LLM providers, TUI, headless CLI, session persistence, skills, extensions."
     />
     <meta name="twitter:image" content="https://agentjarvis-v2.netlify.app/twitter-card.jpg" />
     <meta name="twitter:image:alt" content="Vtx: Agentic coding harness" />
@@ -85,18 +85,18 @@
         "@context": "https://schema.org",
         "@type": "SoftwareApplication",
         "name": "Vtx",
-        "version": "0.4.2",
+        "version": "1.0.0",
         "applicationCategory": "DeveloperApplication",
         "applicationSubCategory": "AI Coding Assistant",
         "operatingSystem": "Linux, macOS, Windows",
-        "description": "Vtx is an open-source agentic coding harness with 5 core tools, 11+ LLM providers, TUI, headless CLI, session persistence, compaction, skills, and extensions.",
+        "description": "Vtx is an open-source agentic coding harness with 9 core tools, 50+ LLM providers, TUI, headless CLI, session persistence, compaction, skills, and extensions.",
         "url": "https://agentjarvis-v2.netlify.app/",
         "image": "https://agentjarvis-v2.netlify.app/og-image.png",
         "downloadUrl": "https://github.com/OEvortex/vtx-coding-agent",
-        "softwareVersion": "0.4.2",
+        "softwareVersion": "1.0.0",
         "datePublished": "2024-01-01",
         "dateModified": "2026-06-12",
-        "license": "https://opensource.org/licenses/MIT",
+        "license": "https://opensource.org/licenses/Apache-2.0",
         "isAccessibleForFree": true,
         "offers": {
           "@type": "Offer",
@@ -105,17 +105,21 @@
           "availability": "https://schema.org/InStock"
         },
         "featureList": [
-          "5 core tools (read, edit, write, bash, find)",
-          "11+ LLM providers (OpenAI, Anthropic, Copilot, DeepSeek, Azure, dynamic catalogs)",
+          "9 core tools (read, edit, write, bash, find, skill, web, ask_user, task)",
+          "50+ LLM providers (OpenAI, Anthropic, Copilot, DeepSeek, Azure, Groq, dynamic catalogs)",
+          "~2.6k-token runtime — system prompt + all tool definitions",
           "Textual TUI with 25 built-in themes",
           "Headless CLI mode for scripts and CI",
           "Session persistence with JSONL format",
           "Context compaction for long conversations",
           "Skills system with auto-discovery",
-          "Extension system with event hooks",
+          "Python extension API with event hooks plus declarative .vtx/hooks.yml",
+          "Extension manager: vtx install <name> from PyPI or GitHub",
           "Permission system (prompt/auto modes)",
+          "Switchable handoff agents cycled with Shift+Tab",
+          "Task sub-agents for isolated delegated work",
           "OAuth flows for OpenAI Codex and GitHub Copilot",
-          "Local model support via llama-server"
+          "Local model support via Ollama, llama.cpp, vLLM"
         ],
         "author": {
           "@type": "Organization",

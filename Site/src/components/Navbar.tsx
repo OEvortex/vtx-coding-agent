@@ -50,7 +50,7 @@ export default function Navbar() {
               Vtx
             </span>
             <span className="hidden sm:inline-block font-mono text-[10.5px] text-ink-faint tracking-tight">
-              v0.4
+              v1.0
             </span>
           </a>
 
@@ -143,7 +143,7 @@ export default function Navbar() {
               </nav>
               <div className="p-4 border-t border-hairline space-y-2">
                 <a
-                  href="https://github.com/kuutsav/vtx"
+                  href="https://github.com/OEvortex/vtx-coding-agent"
                   target="_blank"
                   rel="noopener noreferrer"
                   className="btn-primary w-full justify-center"
@@ -151,7 +151,7 @@ export default function Navbar() {
                   Install
                 </a>
                 <a
-                  href="https://github.com/kuutsav/vtx"
+                  href="https://github.com/OEvortex/vtx-coding-agent"
                   target="_blank"
                   rel="noopener noreferrer"
                   className="btn-secondary w-full justify-center"
