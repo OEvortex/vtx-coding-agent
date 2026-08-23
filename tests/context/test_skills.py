@@ -636,7 +636,7 @@ class TestFormatSkillsForPrompt:
         assert "Only proceed without loading a skill if genuinely none are relevant" in result
         assert "<available_skills>" in result
         assert "</available_skills>" in result
-        assert "- test-skill: A test skill" in result
+        assert "- test-skill" in result
         assert "  general:" in result
 
     def test_groups_skills_by_category(self):
@@ -653,15 +653,15 @@ class TestFormatSkillsForPrompt:
         review_idx = result.index("  review:")
         workflows_idx = result.index("  workflows:")
         assert review_idx < workflows_idx
-        assert "- alpha: Alpha desc" in result
-        assert "- beta: Beta desc" in result
+        assert "- alpha" in result
+        assert "- beta" in result
 
     def test_uses_general_category_when_unset(self):
         skills = [Skill(name="orphan", description="Orphan desc", path="/o/SKILL.md")]
 
         result = formatted_skills(skills)
 
-        assert "  general:\n    - orphan: Orphan desc" in result
+        assert "  general:\n    - orphan" in result
 
     def test_does_not_emit_xml_escapes_for_bracket_chars(self):
         # The new index format is plain-text, so bracket/amp chars are kept verbatim.
@@ -674,8 +674,8 @@ class TestFormatSkillsForPrompt:
         result = formatted_skills(skills)
 
         assert "&lt;angle&gt;" not in result
-        assert "<angle>" in result
-        assert "& " in result
+        assert "<angle>" not in result
+        assert "& " not in result
 
     def test_returns_empty_when_all_skills_are_cmd_only(self):
         skills = [

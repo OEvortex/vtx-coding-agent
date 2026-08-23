@@ -183,7 +183,7 @@ def test_build_system_prompt_includes_mandatory_skills_block(tmp_path):
     assert "Only proceed without loading a skill if genuinely none are relevant" in prompt
     assert "<available_skills>" in prompt
     assert "  workflows:" in prompt
-    assert "- demo: demo description" in prompt
+    assert "- demo" in prompt
     assert "</available_skills>" in prompt
 
 
@@ -194,6 +194,6 @@ def test_build_system_prompt_includes_bundled_skills(tmp_path):
 
     prompt = build_system_prompt(str(tmp_path), context=ctx, tools=all_tools)
 
-    assert "- init:" in prompt
-    assert "- review:" in prompt
-    assert "- skill-builder:" in prompt
+    assert "- init" in prompt
+    assert "- review" in prompt
+    assert "- skill-builder" in prompt

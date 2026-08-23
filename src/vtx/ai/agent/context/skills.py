@@ -461,10 +461,7 @@ def formatted_skills(skills: list[Skill]) -> str:
     for category in sorted(grouped):
         index_lines.append(f"  {category}:")
         for skill in sorted(grouped[category], key=lambda s: s.name):
-            if skill.description:
-                index_lines.append(f"    - {skill.name}: {skill.description}")
-            else:
-                index_lines.append(f"    - {skill.name}")
+            index_lines.append(f"    - {skill.name}")
 
     lines = [
         "## Skills (mandatory)",
