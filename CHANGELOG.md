@@ -5,6 +5,24 @@ All notable changes to Vtx are documented in this file. The format is based on
 adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 
+## [1.0.0] - 2026-08-23
+
+### Changed
+- **Package restructure into a mono-repo layout** — split the old single `vtx` package into four top-level packages under `src/`:
+  - `ai` — LLM providers, model catalog, dynamic fetching, OAuth, SDK bindings.
+  - `tui` — Textual UI, commands, widgets, selection mode, completion UI.
+  - `coding_agent` — headless CLI, config, built-in skills.
+  - `core` — paths, tracing, permissions, events, compaction, scratchpad.
+- **Import path migrations** — all internal imports updated from `vtx.*` / `vtx.llm.*` / `vtx.ui.*` to the new package roots (`ai.*`, `tui.*`, `coding_agent.*`, `core.*`).
+- **Removed stale artifacts** — deleted `benchmark.py`, `scripts/supercode_proxy.py`, and the obsolete `examples/` tree.
+- **Docs reorganization** — user-facing docs consolidated under `docs/` with an `docs/README.md` index; removed legacy standalone doc files from repo root.
+- **Dynamic model refresh performance** — `/model refresh` now fetches provider catalogs concurrently (shared `httpx.AsyncClient`, in-memory `models.dev` cache, semaphore-limited batch gather). Benchmark: 58-provider refresh dropped from ~57s to ~9.5s.
+- **Agent runner import modernization** — agent infrastructure imports now reference `ai.agent.*` rather than the old `vtx.agent.*` paths.
+
+### Added
+- **Built-in skills directory** — added `src/coding_agent/builtin_skills/` with bundled skill packages (cloud/modal, cloud/google-colab, general/github, meta/skill-builder, setup/init, code-review/review).
+- **`Site/bun.lock`** — added frontend dependency lockfile for the Site bundle.
+
 ## [0.2.6] - 2026-07-14
 
 ### Removed
