@@ -4,10 +4,11 @@ build-backend = "hatchling.build"
 
 [tool.hatch.build.targets.wheel]
 packages = [
-    "src/ai",
-    "src/coding_agent",
-    "src/core",
-    "src/tui",
+    "src/vtx",
+    "src/vtx/ai",
+    "src/vtx/coding_agent",
+    "src/vtx/core",
+    "src/vtx/tui",
 ]
 
 [tool.hatch.build]
@@ -117,7 +118,7 @@ dev = [
 ]
 
 [project.scripts]
-vtx = "coding_agent.cli:main"
+vtx = "vtx.coding_agent.cli:main"
 
 [tool.ruff]
 target-version = "py312"
@@ -137,13 +138,10 @@ select = [
 ]
 
 [tool.ruff.lint.per-file-ignores]
-"src/tui/latex.py" = ["RUF001"]
-"src/ai/agent/prompts/identity.py" = ["E501"]
-"src/ai/agent/prompts/env.py" = ["E501"]
-"src/ai/agent/sdk/**/*.py" = ["N818"]
-"src/agent/prompts/identity.py" = ["E501"]
-"src/agent/prompts/env.py" = ["E501"]
-"src/agent/sdk/**/*.py" = ["N818"]
+"src/vtx/tui/latex.py" = ["RUF001"]
+"src/vtx/ai/agent/prompts/identity.py" = ["E501"]
+"src/vtx/ai/agent/prompts/env.py" = ["E501"]
+"src/vtx/ai/agent/sdk/**/*.py" = ["N818"]
 "tests/ui/test_latex.py" = ["RUF001"]
 "tests/sdk/**/*.py" = ["N818", "E501"]
 

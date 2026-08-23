@@ -14,7 +14,7 @@ class Session(Protocol):
 ## Built-in backends
 
 ```python
-from ai.agent.sdk import InMemorySession, JSONLSession
+from vtx.ai.agent.sdk import InMemorySession, JSONLSession
 
 ses = InMemorySession()                        # process-local
 ses = JSONLSession()                           # memory-backed until given a path

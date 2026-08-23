@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import pytest
 
-from ai.providers.mock import MockProvider
+from vtx.ai.providers.mock import MockProvider
 
 
 @pytest.fixture

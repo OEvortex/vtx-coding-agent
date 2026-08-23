@@ -30,9 +30,9 @@ from __future__ import annotations
 
 import pytest
 
-from ai.sdk.anthropic import AnthropicSDK
-from ai.sdk.base import GenerationConfig, Message
-from ai.sdk.openai import OpenAISDK
+from vtx.ai.sdk.anthropic import AnthropicSDK
+from vtx.ai.sdk.base import GenerationConfig, Message
+from vtx.ai.sdk.openai import OpenAISDK
 
 _LEVELS = ("none", "minimal", "low", "medium", "high", "xhigh")
 _NON_NONE_LEVELS = tuple(level for level in _LEVELS if level != "none")
@@ -146,7 +146,7 @@ def test_every_openai_compat_slug_in_catalog_is_classified() -> None:
     whitelist (emits ``reasoning_effort``) or in the disabled set
     (emits nothing). No third path exists.
     """
-    from ai.provider_catalog import list_providers
+    from vtx.ai.provider_catalog import list_providers
 
     catalog_slugs = {p.slug for p in list_providers() if p.family == "openai_compat"}
     assert catalog_slugs, "provider.yaml must declare at least one openai_compat slug"

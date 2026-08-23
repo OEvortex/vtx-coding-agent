@@ -7,9 +7,9 @@ from pathlib import Path
 
 import pytest
 
-import ai.oauth.dynamic as dynamic_oauth
-from ai.base import ProviderConfig
-from ai.oauth.dynamic import (
+import vtx.ai.oauth.dynamic as dynamic_oauth
+from vtx.ai.base import ProviderConfig
+from vtx.ai.oauth.dynamic import (
     clear_api_key,
     get_dynamic_api_key,
     get_dynamic_auth_path,
@@ -18,7 +18,7 @@ from ai.oauth.dynamic import (
     load_api_key,
     save_api_key,
 )
-from ai.providers.openai_sdk import OpenAISDKProvider
+from vtx.ai.providers.openai_sdk import OpenAISDKProvider
 
 
 @pytest.fixture(autouse=True)

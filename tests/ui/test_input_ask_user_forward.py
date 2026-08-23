@@ -9,8 +9,8 @@ and not consumed by the TextArea.
 import asyncio
 from typing import Any
 
-from core import AskUserOption
-from tui.input import _is_ask_user_picker_key
+from vtx.core import AskUserOption
+from vtx.tui.input import _is_ask_user_picker_key
 
 
 class FakeFuture:

@@ -3,7 +3,7 @@ from pathlib import Path
 
 import pytest
 
-from tui.autocomplete import (
+from vtx.tui.autocomplete import (
     DEFAULT_COMMANDS,
     CompletionResult,
     FilePathProvider,

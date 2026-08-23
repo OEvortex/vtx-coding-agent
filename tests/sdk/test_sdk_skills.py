@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from ai.agent.sdk.skills import format_skills_for_prompt, load_vtx_skills
+from vtx.ai.agent.sdk.skills import format_skills_for_prompt, load_vtx_skills
 
 
 def test_load_vtx_skills_returns_list() -> None:
@@ -15,7 +15,7 @@ def test_format_skills_for_prompt_empty() -> None:
 
 
 def test_format_skills_for_prompt_basic() -> None:
-    from ai.agent.context.skills import Skill
+    from vtx.ai.agent.context.skills import Skill
 
     skills = [
         Skill(path="/tmp/a", name="alpha", description="The alpha skill."),

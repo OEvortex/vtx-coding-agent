@@ -1,4 +1,4 @@
-from tui.app import Vtx
+from vtx.tui.app import Vtx
 
 
 def _make_app() -> Vtx:

@@ -3,7 +3,7 @@
 Pause a run when specific tools are called and decide from your own UI. Implemented with `needs_approval_tools` + run interruptions.
 
 ```python
-from ai.agent.sdk import Agent, Runner, ToolApprovalItem
+from vtx.ai.agent.sdk import Agent, Runner, ToolApprovalItem
 
 agent = Agent(
     name="ops",

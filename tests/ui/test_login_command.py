@@ -2,11 +2,11 @@ from contextlib import contextmanager
 
 import pytest
 
-from ai.oauth.openai import OpenAICredentials
-from tui.commands import CommandsMixin
-from tui.commands import auth as commands
-from tui.floating_list import ListItem
-from tui.selection_mode import SelectionMode
+from vtx.ai.oauth.openai import OpenAICredentials
+from vtx.tui.commands import CommandsMixin
+from vtx.tui.commands import auth as commands
+from vtx.tui.floating_list import ListItem
+from vtx.tui.selection_mode import SelectionMode
 
 
 class FakeChat:
@@ -196,8 +196,8 @@ def test_login_picker_marks_saved_credentials_without_logged_in_checkmark(monkey
 def test_login_picker_includes_yaml_providers(monkeypatch):
     """Every provider in provider.yaml should appear in /login so users can
     store their API key for it without going through environment variables."""
-    from ai.oauth.dynamic import DynamicProviderStatus
-    from ai.provider_catalog import ProviderInfo
+    from vtx.ai.oauth.dynamic import DynamicProviderStatus
+    from vtx.ai.provider_catalog import ProviderInfo
 
     fake = FakeCommands()
     monkeypatch.setattr(commands, "has_saved_openai_credentials", lambda: False)

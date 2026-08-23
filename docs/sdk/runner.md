@@ -3,7 +3,7 @@
 `Runner` executes an agent to completion. All three methods share the same parameters:
 
 ```python
-from ai.agent.sdk import Agent, Runner, RunConfig
+from vtx.ai.agent.sdk import Agent, Runner, RunConfig
 
 result = await Runner.run(agent, "Draft a release note", session=ses, run_config=cfg)
 result = Runner.run_sync(agent, "...")            # sync wrapper

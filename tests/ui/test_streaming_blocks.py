@@ -2,10 +2,10 @@ from collections.abc import Callable
 
 from rich.text import Text
 
-from tui import blocks as blocks_module
-from tui import formatting
-from tui.blocks import ContentBlock, ThinkingBlock
-from tui.formatting import find_stable_block_boundary, format_markdown
+from vtx.tui import blocks as blocks_module
+from vtx.tui import formatting
+from vtx.tui.blocks import ContentBlock, ThinkingBlock
+from vtx.tui.formatting import find_stable_block_boundary, format_markdown
 
 MULTI_BLOCK_DOC = (
     "Intro paragraph with a `code` span.\n"

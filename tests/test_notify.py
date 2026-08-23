@@ -3,13 +3,13 @@ from pathlib import Path
 
 import pytest
 
-from coding_agent.config import Config, set_config
-from core import notify
+from vtx.coding_agent.config import Config, set_config
+from vtx.core import notify
 
 # core/__init__ re-exports the notify() function, which shadows the
-# core.notify submodule for `import core.notify as mod`; resolve
+# core.notify submodule for `import vtx.core.notify as mod`; resolve
 # the module explicitly instead.
-mod = importlib.import_module("core.notify")
+mod = importlib.import_module("vtx.core.notify")
 
 
 @pytest.fixture(autouse=True)

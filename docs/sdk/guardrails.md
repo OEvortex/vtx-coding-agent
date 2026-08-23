@@ -10,8 +10,8 @@ Guardrails run checks around the model and tools; raising a tripwire aborts the 
 | `@tool_output_guardrail` | After a tool returns | `context`, `tool_name`, `tool_result` |
 
 ```python
-from ai.agent.sdk import input_guardrail, tool_output_guardrail
-from ai.agent.sdk.guardrails.types import GuardrailFunctionOutput, ToolGuardrailFunctionOutput
+from vtx.ai.agent.sdk import input_guardrail, tool_output_guardrail
+from vtx.ai.agent.sdk.guardrails.types import GuardrailFunctionOutput, ToolGuardrailFunctionOutput
 
 @input_guardrail
 def no_secrets(ctx, agent, inp):

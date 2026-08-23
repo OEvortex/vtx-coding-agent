@@ -1,5 +1,5 @@
-from tui.app import Vtx
-from tui.blocks import LaunchWarning
+from vtx.tui.app import Vtx
+from vtx.tui.blocks import LaunchWarning
 
 
 class _StubInputBox:
@@ -54,7 +54,7 @@ def test_on_mount_continue_recent_error_shows_launch_warning(fake_chat, monkeypa
     ):
         raise ValueError("Invalid session file (no header): /tmp/bad.jsonl")
 
-    monkeypatch.setattr("tui.app.Session.continue_recent", _fail_continue_recent)
+    monkeypatch.setattr("vtx.tui.app.Session.continue_recent", _fail_continue_recent)
 
     app.on_mount()
 

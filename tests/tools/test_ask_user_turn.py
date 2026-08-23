@@ -12,12 +12,12 @@ from collections.abc import AsyncIterator
 
 import pytest
 
-from ai.agent.tools.ask_user import AskUserTool
-from ai.agent.tools.base import BaseTool
-from ai.agent.turn import run_single_turn
-from ai.base import BaseProvider, LLMStream, ProviderConfig
-from core import AskUserEvent, AskUserResponse, ToolResultEvent, TurnEndEvent
-from core.types import (
+from vtx.ai.agent.tools.ask_user import AskUserTool
+from vtx.ai.agent.tools.base import BaseTool
+from vtx.ai.agent.turn import run_single_turn
+from vtx.ai.base import BaseProvider, LLMStream, ProviderConfig
+from vtx.core import AskUserEvent, AskUserResponse, ToolResultEvent, TurnEndEvent
+from vtx.core.types import (
     Message,
     StopReason,
     StreamDone,

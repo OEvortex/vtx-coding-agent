@@ -1,11 +1,11 @@
 from contextlib import contextmanager
 from typing import Any, ClassVar, cast
 
-from ai.agent.runtime import ConversationRuntime
-from coding_agent.config import config, reset_config
-from tui.commands import CommandsMixin
-from tui.floating_list import ListItem
-from tui.selection_mode import SelectionMode
+from vtx.ai.agent.runtime import ConversationRuntime
+from vtx.coding_agent.config import config, reset_config
+from vtx.tui.commands import CommandsMixin
+from vtx.tui.floating_list import ListItem
+from vtx.tui.selection_mode import SelectionMode
 
 
 class FakeChat:

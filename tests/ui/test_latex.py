@@ -1,4 +1,4 @@
-from tui.latex import preprocess_latex
+from vtx.tui.latex import preprocess_latex
 
 
 def test_inline_dollar_math():

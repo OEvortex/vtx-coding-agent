@@ -1,6 +1,6 @@
 from pathlib import Path
 
-from coding_agent.config import get_config, reset_config
+from vtx.coding_agent.config import get_config, reset_config
 
 
 def test_notifications_disabled_by_default(tmp_path, monkeypatch):

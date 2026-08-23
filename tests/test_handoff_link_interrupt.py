@@ -2,8 +2,8 @@ import inspect
 from types import SimpleNamespace
 from typing import cast
 
-from tui.app import Vtx
-from tui.blocks import HandoffLinkBlock
+from vtx.tui.app import Vtx
+from vtx.tui.blocks import HandoffLinkBlock
 
 
 class _FakeChat:

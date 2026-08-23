@@ -7,8 +7,8 @@ import asyncio
 import pytest
 from pydantic import BaseModel
 
-from ai.agent.sdk import Agent, handoff
-from ai.agent.sdk.handoffs import Handoff, HandoffInputData
+from vtx.ai.agent.sdk import Agent, handoff
+from vtx.ai.agent.sdk.handoffs import Handoff, HandoffInputData
 
 
 def test_handoff_default_name() -> None:

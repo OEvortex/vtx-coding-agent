@@ -6,7 +6,7 @@ import sys
 
 import pytest
 
-from coding_agent.cli import build_parser
+from vtx.coding_agent.cli import build_parser
 
 
 def test_install_subcommand_parsing():
@@ -70,7 +70,7 @@ def test_option_after_bare_prompt_falls_back_to_stdin():
 def test_resume_flags_rejected_with_prompt(monkeypatch, flag):
     monkeypatch.setattr(sys, "argv", ["vtx", "-p", "x", *flag])
     with pytest.raises(SystemExit) as exc:
-        from coding_agent.cli import main
+        from vtx.coding_agent.cli import main
 
         main()
     assert exc.value.code == 2

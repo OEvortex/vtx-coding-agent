@@ -1,4 +1,4 @@
-from tui.widgets import InfoBar
+from vtx.tui.widgets import InfoBar
 
 
 class _FakeLabel:

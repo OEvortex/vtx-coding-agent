@@ -1,7 +1,7 @@
 import pytest
 
-from coding_agent.config import Config
-from coding_agent.themes import get_theme, get_theme_ids
+from vtx.coding_agent.config import Config
+from vtx.coding_agent.themes import get_theme, get_theme_ids
 
 NEW_THEME_IDS = [
     "ayu",

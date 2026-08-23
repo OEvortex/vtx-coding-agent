@@ -1,6 +1,6 @@
 from pathlib import Path
 
-from coding_agent.config import Config, consume_config_warnings, get_config, reset_config
+from vtx.coding_agent.config import Config, consume_config_warnings, get_config, reset_config
 
 
 def test_invalid_toml_falls_back_to_defaults_and_records_warning(tmp_path, monkeypatch):

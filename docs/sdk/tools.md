@@ -3,7 +3,7 @@
 Turn any function into a tool with the `@tool` decorator. Parameters come from type hints (Pydantic-validated); descriptions from the docstring.
 
 ```python
-from ai.agent.sdk import tool
+from vtx.ai.agent.sdk import tool
 
 @tool
 def get_weather(city: str) -> str:

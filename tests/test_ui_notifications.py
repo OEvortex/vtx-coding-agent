@@ -1,7 +1,7 @@
-from coding_agent.config import get_config
-from core import AgentEndEvent, ToolApprovalEvent, TurnStartEvent
-from core.types import StopReason
-from tui.app import Vtx
+from vtx.coding_agent.config import get_config
+from vtx.core import AgentEndEvent, ToolApprovalEvent, TurnStartEvent
+from vtx.core.types import StopReason
+from vtx.tui.app import Vtx
 
 
 def _make_app() -> Vtx:

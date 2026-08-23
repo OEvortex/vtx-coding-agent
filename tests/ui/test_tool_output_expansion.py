@@ -3,12 +3,12 @@ from rich.text import Text
 from textual.app import App, ComposeResult
 from textual.widgets import Label
 
-from ai.agent.diff_display import DIFF_BG_PAD_MARKER
-from core.types import ImageContent
-from tui.blocks import ToolBlock
-from tui.chat import ChatLog
-from tui.styles import get_styles
-from tui.tool_output import format_expand_hint, truncate_tool_output_text
+from vtx.ai.agent.diff_display import DIFF_BG_PAD_MARKER
+from vtx.core.types import ImageContent
+from vtx.tui.blocks import ToolBlock
+from vtx.tui.chat import ChatLog
+from vtx.tui.styles import get_styles
+from vtx.tui.tool_output import format_expand_hint, truncate_tool_output_text
 
 
 class ToolExpansionTestApp(App):

@@ -4,10 +4,10 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from ai.agent.agents import AgentDef, AgentRegistry, LoadedAgent
-from ai.agent.extensions import EventBus
-from ai.agent.runtime import ConversationRuntime
-from coding_agent.config import set_last_selected
+from vtx.ai.agent.agents import AgentDef, AgentRegistry, LoadedAgent
+from vtx.ai.agent.extensions import EventBus
+from vtx.ai.agent.runtime import ConversationRuntime
+from vtx.coding_agent.config import set_last_selected
 
 
 def _registry_with_agents(*names: str) -> AgentRegistry:
@@ -31,7 +31,7 @@ def test_action_cycle_agent_string_set(monkeypatch, tmp_path: Path):
     """
     monkeypatch.setattr("pathlib.Path.home", lambda: tmp_path / "home")
     monkeypatch.delenv("XDG_CONFIG_HOME", raising=False)
-    from coding_agent import reset_config
+    from vtx.coding_agent import reset_config
 
     reset_config()
 
@@ -69,7 +69,7 @@ def test_action_cycle_agent_string_set(monkeypatch, tmp_path: Path):
 def test_agents_command_mixin_exists():
     """The /agent command mixin is importable and exposes the expected
     methods used by the TUI."""
-    from tui.commands.agents import AgentCommands
+    from vtx.tui.commands.agents import AgentCommands
 
     assert hasattr(AgentCommands, "_handle_agent_command")
     assert hasattr(AgentCommands, "_set_active_agent")
@@ -82,7 +82,7 @@ def test_agents_command_mixin_exists():
 
 def test_agents_command_registered_in_router():
     """The /agent command is wired into the central command router."""
-    from tui.commands import CommandsMixin
+    from vtx.tui.commands import CommandsMixin
 
     src = Path(CommandsMixin._handle_command.__code__.co_filename)
     text = src.read_text()
@@ -92,7 +92,7 @@ def test_agents_command_registered_in_router():
 
 def test_app_binding_for_shift_tab_is_cycle_agent():
     """The Shift+Tab binding in the TUI app triggers the agent cycle."""
-    from tui.app import Vtx
+    from vtx.tui.app import Vtx
 
     bindings = {b.key: b.action for b in Vtx.BINDINGS if hasattr(b, "key")}
     assert "shift+tab" in bindings

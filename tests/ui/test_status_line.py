@@ -1,6 +1,6 @@
 from typing import Any, cast
 
-from tui.widgets import StatusLine
+from vtx.tui.widgets import StatusLine
 
 
 class _FakeLabel:
@@ -18,7 +18,7 @@ def test_status_line_formats_without_turn_tps(monkeypatch):
     status._start_time = 100.0
     status._tool_calls = 1
 
-    monkeypatch.setattr("tui.widgets.time.time", lambda: 104.0)
+    monkeypatch.setattr("vtx.tui.widgets.time.time", lambda: 104.0)
 
     rendered = status._format_complete_status()
     assert rendered.plain == "4s • 1x"

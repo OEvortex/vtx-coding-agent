@@ -10,13 +10,13 @@ from pathlib import Path
 import pytest
 from textual.app import App, ComposeResult
 
-from ai.agent.agents.api import AgentAPI
-from ai.agent.agents.loader import load_agent
-from ai.agent.extensions import Extension, ExtensionAPI, ExtensionTool
-from ai.agent.tools.base import BaseTool
-from tui.blocks import ToolBlock
-from tui.chat import ChatLog
-from tui.styles import get_styles
+from vtx.ai.agent.agents.api import AgentAPI
+from vtx.ai.agent.agents.loader import load_agent
+from vtx.ai.agent.extensions import Extension, ExtensionAPI, ExtensionTool
+from vtx.ai.agent.tools.base import BaseTool
+from vtx.tui.blocks import ToolBlock
+from vtx.tui.chat import ChatLog
+from vtx.tui.styles import get_styles
 
 # ---------------------------------------------------------------------------
 # A small custom block, used as a fixture
@@ -108,7 +108,7 @@ def _noop_params():
 
 def _make_ext_api(name: str = "ext_test") -> tuple[ExtensionAPI, Extension]:
     """Build a minimal ``ExtensionAPI`` wired to a real :class:`Extension`."""
-    from ai.agent import EventBus
+    from vtx.ai.agent import EventBus
 
     ext = Extension(name=name, path=Path(f"/{name}.py"))
     api = ExtensionAPI(ext, bus=EventBus(), cwd=".", session_file=None, config_dir=Path("/"))
@@ -167,7 +167,7 @@ class TestLocalToolUiBlock:
     def _make_agent_api(self, tmp_path: Path) -> AgentAPI:
         agent_file = tmp_path / "reviewer.py"
         agent_file.write_text(
-            "from ai.agent.agents import AgentDef\n"
+            "from vtx.ai.agent.agents import AgentDef\n"
             "AGENT = AgentDef(name='reviewer', description='x')\n"
         )
         loaded = load_agent(agent_file, cwd=str(tmp_path), config_dir=tmp_path)

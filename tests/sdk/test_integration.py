@@ -5,7 +5,7 @@ from __future__ import annotations
 import pytest
 from pydantic import BaseModel
 
-from ai.agent.sdk import (
+from vtx.ai.agent.sdk import (
     Agent,
     GuardrailFunctionOutput,
     JSONLSession,
@@ -70,7 +70,7 @@ async def test_session_persistence_pattern(tmp_path) -> None:
     session1 = JSONLSession(path)
     agent = Agent(name="Bot", provider=None)  # set below
 
-    from ai.providers.mock import MockProvider
+    from vtx.ai.providers.mock import MockProvider
 
     session1_provider = MockProvider(scenario="simple_text")
     agent.provider = session1_provider
@@ -91,8 +91,8 @@ async def test_structured_output_pattern() -> None:
         name: str
         date: str
 
-    from ai.base import BaseProvider, LLMStream, ProviderConfig
-    from core.types import StopReason, StreamDone, TextPart
+    from vtx.ai.base import BaseProvider, LLMStream, ProviderConfig
+    from vtx.core.types import StopReason, StreamDone, TextPart
 
     class JsonProvider(BaseProvider):
         name = "json"
@@ -128,7 +128,7 @@ async def test_input_guardrail_in_run(text_provider) -> None:
     def block(data):
         return GuardrailFunctionOutput(tripwire_triggered="bad" in (data.input or ""))
 
-    from ai.agent.sdk import InputGuardrailTripwireTriggered
+    from vtx.ai.agent.sdk import InputGuardrailTripwireTriggered
 
     agent = Agent(name="Bot", provider=text_provider, input_guardrails=[block])
     with pytest.raises(InputGuardrailTripwireTriggered):
@@ -140,7 +140,7 @@ async def test_input_guardrail_in_run(text_provider) -> None:
 @pytest.mark.asyncio
 async def test_run_sync_via_thread(text_provider) -> None:
     """``Runner.run_sync`` works from a synchronous context (or a running loop)."""
-    from ai.agent.sdk import Runner
+    from vtx.ai.agent.sdk import Runner
 
     agent = Agent(name="Bot", provider=text_provider)
     result = Runner.run_sync(agent, "hi")

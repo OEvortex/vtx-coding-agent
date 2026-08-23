@@ -1,10 +1,10 @@
 from contextlib import contextmanager
 
-from coding_agent.config import Config, reset_config, set_config
-from tui.autocomplete import DEFAULT_COMMANDS, SlashCommand
-from tui.commands import CommandsMixin
-from tui.floating_list import ListItem
-from tui.selection_mode import SelectionMode
+from vtx.coding_agent.config import Config, reset_config, set_config
+from vtx.tui.autocomplete import DEFAULT_COMMANDS, SlashCommand
+from vtx.tui.commands import CommandsMixin
+from vtx.tui.floating_list import ListItem
+from vtx.tui.selection_mode import SelectionMode
 
 
 class FakeChat:

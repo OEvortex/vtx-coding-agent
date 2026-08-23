@@ -1,6 +1,6 @@
-from tui.autocomplete import SlashCommand
-from tui.floating_list import ListItem
-from tui.input import InputBox
+from vtx.tui.autocomplete import SlashCommand
+from vtx.tui.floating_list import ListItem
+from vtx.tui.input import InputBox
 
 
 class _FakeSelection:

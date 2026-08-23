@@ -1,6 +1,6 @@
 import pytest
 
-from ai.agent.tools.skill import SkillParams, SkillTool
+from vtx.ai.agent.tools.skill import SkillParams, SkillTool
 
 
 @pytest.fixture

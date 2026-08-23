@@ -5,7 +5,7 @@ from __future__ import annotations
 from pathlib import Path
 from unittest.mock import patch
 
-from ai.agent.extension_manager import (
+from vtx.ai.agent.extension_manager import (
     InstalledExtension,
     _discover_entry_points,
     _discover_package_layout,
@@ -18,7 +18,7 @@ from ai.agent.extension_manager import (
 
 def test_installed_extensions_default_empty():
     """When no installed file exists, list_installed returns []."""
-    with patch("ai.agent.extension_manager._get_installed_path") as mock_path:
+    with patch("vtx.ai.agent.extension_manager._get_installed_path") as mock_path:
         mock_path.return_value = Path("/nonexistent/does-not-exist.yml")
         assert list_installed() == []
 
@@ -27,7 +27,7 @@ def test_save_and_load_installed(tmp_path: Path):
     """Round-trip save/load of installed extensions."""
     fake_path = tmp_path / "installed.yml"
 
-    with patch("ai.agent.extension_manager._get_installed_path", return_value=fake_path):
+    with patch("vtx.ai.agent.extension_manager._get_installed_path", return_value=fake_path):
         _save_installed(
             {
                 "crs": InstalledExtension(
@@ -48,7 +48,7 @@ def test_save_and_load_installed(tmp_path: Path):
 
 
 def test_get_installed_extension_missing():
-    with patch("ai.agent.extension_manager._load_installed", return_value={}):
+    with patch("vtx.ai.agent.extension_manager._load_installed", return_value={}):
         assert get_installed_extension("nonexistent") is None
 
 
@@ -56,9 +56,9 @@ def test_discover_entry_points(tmp_path: Path):
     """Entry point discovery reads pyproject.toml."""
     pyproject = tmp_path / "pyproject.toml"
     entry_points = (
-        '[project.entry-points."ai.agent.extensions"]\n'
+        '[project.entry-points."vtx.ai.agent.extensions"]\n'
         'crs = "vtx_crs.ext:register"\n\n'
-        '[project.entry-points."ai.agent.agents"]\n'
+        '[project.entry-points."vtx.ai.agent.agents"]\n'
         'crs = "vtx_crs.agent:AGENT"\n'
     )
     pyproject.write_text(entry_points, encoding="utf-8")

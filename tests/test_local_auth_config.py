@@ -1,6 +1,6 @@
 from pathlib import Path
 
-from coding_agent.config import get_config, reset_config
+from vtx.coding_agent.config import get_config, reset_config
 
 
 def test_default_local_auth_modes_are_auto(tmp_path, monkeypatch):

@@ -1,6 +1,6 @@
 from textual.binding import Binding
 
-from tui.app import Vtx
+from vtx.tui.app import Vtx
 
 
 def _binding_key_and_action(binding) -> tuple[str, str]:

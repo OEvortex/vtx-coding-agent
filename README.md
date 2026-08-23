@@ -141,7 +141,7 @@ Custom providers show up in the `/model` picker and auto-fetch their model catal
 ## Build agents programmatically
 
 ```python
-from ai.agent.sdk import Agent, Runner, tool
+from vtx.ai.agent.sdk import Agent, Runner, tool
 
 @tool
 def get_weather(city: str) -> str:

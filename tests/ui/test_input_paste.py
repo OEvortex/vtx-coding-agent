@@ -3,8 +3,8 @@ from typing import Protocol, cast
 import pytest
 from textual._ansi_sequences import ANSI_SEQUENCES_KEYS
 
-from tui import prompt_history as ph
-from tui.input import InputBox
+from vtx.tui import prompt_history as ph
+from vtx.tui.input import InputBox
 
 
 @pytest.fixture(autouse=True)

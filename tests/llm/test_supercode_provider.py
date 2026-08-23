@@ -12,9 +12,9 @@ from unittest.mock import patch
 
 import pytest
 
-from ai.base import ProviderConfig
-from ai.providers.supercode import SupercodeProvider
-from core.types import (
+from vtx.ai.base import ProviderConfig
+from vtx.ai.providers.supercode import SupercodeProvider
+from vtx.core.types import (
     AssistantMessage,
     StopReason,
     StreamDone,

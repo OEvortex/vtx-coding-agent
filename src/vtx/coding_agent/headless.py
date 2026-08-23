@@ -1,0 +1,247 @@
+from __future__ import annotations
+
+import os
+import sys
+from collections.abc import AsyncIterator
+from pathlib import Path
+from typing import TYPE_CHECKING, TextIO
+
+from vtx.coding_agent.config import (
+    _atomic_write_text,
+    _ensure_config_file,
+    _read_config_data,
+    _serialize_config_yaml,
+    _set_config_version,
+    config,
+    get_config,
+    get_last_selected,
+    reload_config,
+)
+from vtx.core.types import StopReason
+
+if TYPE_CHECKING:
+    from vtx.ai.agent.extensions import LoadedExtensions
+    from vtx.ai.base import AuthMode
+    from vtx.core.events import Event
+
+# NOTE: agent.* / ai.* / most protocol.* imports are deliberately deferred
+# into functions. Module-level imports here would re-enter agent.extensions
+# while it is still initializing when coding_agent is first imported from
+# deep inside the agent package (circular import).
+
+_EXIT_CODES = {StopReason.STOP: 0, StopReason.ERROR: 1, StopReason.LENGTH: 3}
+
+
+def _exit_code(stop: StopReason) -> int:
+    return _EXIT_CODES.get(stop, 1)
+
+
+def resolve_prompt(prompt_arg: str, *, stdin: TextIO) -> str:
+    if prompt_arg == "-":
+        return stdin.read().strip()
+    return prompt_arg.strip()
+
+
+async def render_run(
+    events: AsyncIterator[Event], *, out: TextIO | None = None, err: TextIO | None = None
+) -> StopReason:
+    from vtx.core.events import (
+        AgentEndEvent,
+        AskUserEvent,
+        ErrorEvent,
+        ToolApprovalEvent,
+        TurnEndEvent,
+    )
+    from vtx.core.permissions import ApprovalResponse, AskUserResponse
+    from vtx.core.types import TextContent
+
+    out = sys.stdout if out is None else out
+    err = sys.stderr if err is None else err
+    final_text = ""
+    stop = StopReason.ERROR
+    async for event in events:
+        match event:
+            case TurnEndEvent(assistant_message=msg) if msg is not None:
+                text = "".join(p.text for p in msg.content if isinstance(p, TextContent)).strip()
+                if text:
+                    final_text = text
+            case AgentEndEvent(stop_reason=stop_reason):
+                stop = stop_reason
+            case ErrorEvent(error=error):
+                print(f"error: {error}", file=err)
+            case ToolApprovalEvent(tool_name=tool_name, future=future) if future is not None:
+                future.set_result(ApprovalResponse.DENY)
+                print(
+                    f"error: {tool_name!r} requires approval, denied (non-interactive mode)",
+                    file=err,
+                )
+            case AskUserEvent(question=question, future=future) if future is not None:
+                # Headless can't surface a prompt; treat the question as
+                # unanswered. The turn runner records a skipped tool
+                # result with a hint to the LLM.
+                future.set_result(AskUserResponse())
+                print(
+                    f"error: agent asked a question in non-interactive mode: {question}", file=err
+                )
+            case _:
+                pass
+    if stop == StopReason.STOP and final_text:
+        print(final_text, file=out)
+    return stop
+
+
+def truncate(text: str, width: int = 100) -> str:
+    text = text.strip()
+    if len(text) <= width:
+        return text
+    return text[: width - 1] + "…"
+
+
+async def run_headless(
+    *,
+    prompt_arg: str,
+    model: str | None,
+    provider: str | None,
+    api_key: str | None,
+    base_url: str | None,
+    openai_compat_auth_mode: AuthMode | None,
+    anthropic_compat_auth_mode: AuthMode | None,
+    loaded_extensions: LoadedExtensions | None = None,
+    active_agent_name: str | None = None,
+    agent_files: list[str] | None = None,
+    auto_discover_agents: bool = True,
+) -> int:
+    from vtx.ai.agent.runtime import ConversationRuntime
+    from vtx.ai.agent.tools import DEFAULT_TOOLS, get_tools_with_extensions
+
+    prompt = resolve_prompt(prompt_arg, stdin=sys.stdin)
+    if not prompt:
+        print("error: empty prompt", file=sys.stderr)
+        return 2
+
+    cfg = get_config()
+    previous_permission_mode = cfg.permissions.mode
+    # Headless can't show approval prompts; force auto for this run only,
+    # without mutating the saved config or clobbering the config file.
+    previous_config_data = _read_config_data(_ensure_config_file())
+    previous_config_data.setdefault("permissions", {})["mode"] = "auto"
+    _set_config_version(previous_config_data)
+    _atomic_write_text(_ensure_config_file(), _serialize_config_yaml(previous_config_data))
+    reload_config()
+
+    try:
+        last_selected = get_last_selected()
+        initial_model = model or last_selected.model_id or config.llm.default_model
+        initial_provider = (
+            provider
+            if provider is not None
+            else (
+                last_selected.provider
+                if last_selected.provider
+                else (config.llm.default_provider if model is None else None)
+            )
+        )
+        base = base_url or config.llm.default_base_url or None
+        thinking = last_selected.thinking_level or config.llm.default_thinking_level
+        openai_auth = openai_compat_auth_mode or config.llm.auth.openai_compat
+        anthropic_auth = anthropic_compat_auth_mode or config.llm.auth.anthropic_compat
+
+        # Load agents first so the active agent's tool surface is applied.
+        from vtx.ai.agent.agents import AgentRegistry, load_all_agents
+        from vtx.ai.agent.extensions import load_for_runtime
+
+        agent_registry = AgentRegistry()
+        if auto_discover_agents or agent_files:
+            loaded_agents, agent_errors = load_all_agents(cwd=os.getcwd(), configured=agent_files)
+            for err in agent_errors:
+                print(f"agent error: {err}", file=sys.stderr)
+            agent_registry.agents = loaded_agents
+            agent_registry.errors = agent_errors
+
+        # Resolve the initial active agent: CLI > env > last_selected > config > none
+        import os as _os
+
+        from vtx.coding_agent.config import get_last_selected as _get_last_selected
+
+        ls = _get_last_selected()
+        env_agent = _os.environ.get("VTX_AGENT")
+        desired = (
+            active_agent_name or env_agent or (ls.agent or None) or (cfg.agents.default or None)
+        )
+        if desired:
+            resolved = agent_registry.set_active(desired)
+            if resolved is None:
+                print(
+                    f"warning: agent {desired!r} not found; running without an active agent",
+                    file=sys.stderr,
+                )
+
+        tools = get_tools_with_extensions(DEFAULT_TOOLS)
+
+        loaded_extensions = load_for_runtime(cwd=os.getcwd(), auto_discover=True)
+        for err in loaded_extensions.errors:
+            print(f"extension error: {err}", file=sys.stderr)
+
+        ext_tools = list(loaded_extensions.list_extension_tools())
+        if active_agent_name and agent_registry.active is not None:
+            ext_tools.extend(agent_registry.active.local_tools.values())
+            ext_tools.extend(
+                loaded_extensions.local_tools_for(agent_registry.active.definition.name)
+            )
+
+        if ext_tools:
+            tools = get_tools_with_extensions(DEFAULT_TOOLS, ext_tools)
+
+        runtime = ConversationRuntime(
+            cwd=os.getcwd(),
+            model=initial_model,
+            model_provider=initial_provider,
+            api_key=api_key,
+            base_url=base,
+            thinking_level=thinking,
+            tools=tools,
+            openai_compat_auth_mode=openai_auth,
+            anthropic_compat_auth_mode=anthropic_auth,
+            extensions=loaded_extensions.bus,
+            agent_registry=agent_registry,
+            active_agent=agent_registry.active,
+            agent_extensions=list(loaded_extensions.extensions),
+        )
+        runtime.set_loaded_extensions(loaded_extensions)
+
+        # Hook system: bridge YAML hook configs onto the extension EventBus.
+        from vtx.ai.agent.hooks.bridge import HookBridge
+
+        hook_bridge = HookBridge(
+            bus=loaded_extensions.bus,
+            project_path=Path.cwd() / ".vtx" / "hooks.yml",
+            global_path=Path.home() / ".vtx" / "hooks.yml",
+        )
+        await hook_bridge.load()
+
+        try:
+            init = runtime.initialize()
+            if init.provider_error:
+                print(f"error: {init.provider_error}", file=sys.stderr)
+                return 2
+
+            agent = runtime.prepare_for_run()
+        except Exception as e:
+            print(f"error: {e}", file=sys.stderr)
+            return 2
+
+        if agent is None:
+            print("error: agent initialization failed", file=sys.stderr)
+            return 2
+
+        try:
+            return _exit_code(await render_run(agent.run(prompt)))
+        finally:
+            await hook_bridge.unload()
+            await runtime.close()
+    finally:
+        current_config_data = _read_config_data(_ensure_config_file())
+        current_config_data.setdefault("permissions", {})["mode"] = previous_permission_mode
+        _set_config_version(current_config_data)
+        _atomic_write_text(_ensure_config_file(), _serialize_config_yaml(current_config_data))
+        reload_config()

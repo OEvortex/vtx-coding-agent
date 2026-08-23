@@ -3,8 +3,8 @@
 SDK agents can load the same markdown skills the CLI uses.
 
 ```python
-from ai.agent.sdk import Agent
-from ai.agent.sdk.skills import load_vtx_skills, format_skills_for_prompt
+from vtx.ai.agent.sdk import Agent
+from vtx.ai.agent.sdk.skills import load_vtx_skills, format_skills_for_prompt
 
 skills = load_vtx_skills()          # discovers project + global skills
 agent = Agent(

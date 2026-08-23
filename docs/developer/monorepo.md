@@ -33,7 +33,7 @@ vtx-coding-agent/
 ## Entry points
 
 - `vtx = coding_agent.cli:main` — parses flags, then dispatches to `tui.launch.run_tui` or `coding_agent.headless.run_headless`.
-- SDK consumers import `from ai.agent.sdk import Agent, Runner, tool`.
+- SDK consumers import `from vtx.ai.agent.sdk import Agent, Runner, tool`.
 
 ## Why this shape
 

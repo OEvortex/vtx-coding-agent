@@ -9,8 +9,8 @@ multi-turn round-trip from provider → ThinkingContent → wire format.
 
 from __future__ import annotations
 
-from ai.base import ProviderConfig
-from ai.phase_parser import (
+from vtx.ai.base import ProviderConfig
+from vtx.ai.phase_parser import (
     INLINE_THINK_SIGNATURE,
     ResponseDelta,
     ResponseEnd,
@@ -20,9 +20,9 @@ from ai.phase_parser import (
     ThinkingPhaseParser,
     ThinkStart,
 )
-from ai.providers.openai_sdk import OpenAISDKProvider
-from ai.sdk.openai import _openai_stream_chunks
-from core.types import AssistantMessage, TextContent, ThinkingContent
+from vtx.ai.providers.openai_sdk import OpenAISDKProvider
+from vtx.ai.sdk.openai import _openai_stream_chunks
+from vtx.core.types import AssistantMessage, TextContent, ThinkingContent
 
 # =================================================================================================
 # Test helpers

@@ -13,7 +13,7 @@ from pathlib import Path
 
 import pytest
 
-from ai.agent.tools.background import (
+from vtx.ai.agent.tools.background import (
     BackgroundTaskManager,
     get_manager,
     reset_manager,
@@ -54,7 +54,7 @@ class TestManagerContextVars:
         without an explicit reset. A leak from a sibling test would
         silently break these isolated assertions.
         """
-        from ai.agent.tools.background import reset_manager
+        from vtx.ai.agent.tools.background import reset_manager
 
         reset_manager()
         yield

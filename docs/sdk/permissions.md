@@ -3,7 +3,7 @@
 A `PermissionPolicy` decides allow/prompt per tool call before it executes — the programmatic equivalent of Vtx's `prompt`/`auto` modes.
 
 ```python
-from ai.agent.sdk import Agent, AutoApprove, AllowlistApprove, PromptApprove, RunConfig
+from vtx.ai.agent.sdk import Agent, AutoApprove, AllowlistApprove, PromptApprove, RunConfig
 
 run_config = RunConfig(permission_policy=AutoApprove())          # run everything
 run_config = RunConfig(permission_policy=AllowlistApprove(["read", "find", "web"]))
@@ -24,7 +24,7 @@ run_config = RunConfig(permission_policy=AllowlistApprove(["read", "find", "web"
 Subclass and decide yourself; sync or async both work:
 
 ```python
-from ai.agent.sdk import PermissionPolicy
+from vtx.ai.agent.sdk import PermissionPolicy
 
 class BusinessHours(PermissionPolicy):
     def decide(self, tool, arguments):
@@ -36,8 +36,8 @@ class BusinessHours(PermissionPolicy):
 Prefer a plain callback?
 
 ```python
-from ai.agent.sdk import Agent, Runner
-from ai.agent.sdk.permissions import PermissionCallback
+from vtx.ai.agent.sdk import Agent, Runner
+from vtx.ai.agent.sdk.permissions import PermissionCallback
 
 policy = PermissionCallback(lambda tool, args: "deny" if tool.name == "bash" else "allow")
 ```

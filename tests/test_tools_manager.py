@@ -3,7 +3,7 @@ from pathlib import Path
 
 import pytest
 
-from ai.agent.tools_manager import _extract_binary, get_tool_path
+from vtx.ai.agent.tools_manager import _extract_binary, get_tool_path
 
 
 def test_extract_binary_rejects_zip_path_traversal(tmp_path: Path):
@@ -24,20 +24,20 @@ def test_get_tool_path_returns_config_bin_fd(monkeypatch: pytest.MonkeyPatch, tm
     fd_path = bin_dir / "fd"
     fd_path.write_text("", encoding="utf-8")
 
-    monkeypatch.setattr("ai.agent.tools_manager._BIN_DIR", bin_dir)
-    monkeypatch.setattr("ai.agent.tools_manager._get_platform", lambda: "linux")
+    monkeypatch.setattr("vtx.ai.agent.tools_manager._BIN_DIR", bin_dir)
+    monkeypatch.setattr("vtx.ai.agent.tools_manager._get_platform", lambda: "linux")
 
     assert get_tool_path("fd") == str(fd_path)
 
 
 def test_get_tool_path_supports_system_fdfind(monkeypatch: pytest.MonkeyPatch, tmp_path: Path):
-    monkeypatch.setattr("ai.agent.tools_manager._BIN_DIR", tmp_path / "missing")
+    monkeypatch.setattr("vtx.ai.agent.tools_manager._BIN_DIR", tmp_path / "missing")
 
     def fake_which(command: str) -> str | None:
         if command == "fdfind":
             return "/usr/bin/fdfind"
         return None
 
-    monkeypatch.setattr("ai.agent.tools_manager.shutil.which", fake_which)
+    monkeypatch.setattr("vtx.ai.agent.tools_manager.shutil.which", fake_which)
 
     assert get_tool_path("fd") == "/usr/bin/fdfind"

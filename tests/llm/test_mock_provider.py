@@ -2,8 +2,8 @@
 
 import pytest
 
-from ai.providers.mock import MockProvider
-from core.types import StreamDone, TextPart, ThinkPart, ToolCallDelta, ToolCallStart
+from vtx.ai.providers.mock import MockProvider
+from vtx.core.types import StreamDone, TextPart, ThinkPart, ToolCallDelta, ToolCallStart
 
 
 @pytest.mark.asyncio
@@ -128,7 +128,7 @@ def test_mock_provider_should_retry():
 @pytest.mark.asyncio
 async def test_mock_provider_with_config():
     """Test that mock provider can be initialized with a config."""
-    from ai.base import ProviderConfig
+    from vtx.ai.base import ProviderConfig
 
     config = ProviderConfig(model="test-model", temperature=0.5)
     provider = MockProvider(config=config)

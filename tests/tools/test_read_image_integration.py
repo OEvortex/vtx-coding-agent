@@ -1,7 +1,7 @@
 import pytest
 
-from ai.agent.tools.read import ReadParams, ReadTool
-from core.types import ImageContent
+from vtx.ai.agent.tools.read import ReadParams, ReadTool
+from vtx.core.types import ImageContent
 
 
 @pytest.fixture
