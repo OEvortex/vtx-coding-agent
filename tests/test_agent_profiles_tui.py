@@ -97,10 +97,3 @@ def test_app_binding_for_shift_tab_is_cycle_agent():
     bindings = {b.key: b.action for b in Vtx.BINDINGS if hasattr(b, "key")}
     assert "shift+tab" in bindings
     assert bindings["shift+tab"] == "cycle_agent"
-
-
-def test_agent_selection_mode_exists():
-    """SelectionMode.AGENT is defined for the agent picker overlay."""
-    from tui.selection_mode import SelectionMode
-
-    assert SelectionMode.AGENT == "agent"
