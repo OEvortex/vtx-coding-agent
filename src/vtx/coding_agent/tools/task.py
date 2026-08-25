@@ -3,6 +3,7 @@ from __future__ import annotations
 import asyncio
 import contextlib
 import logging
+import time
 import uuid
 from collections.abc import Callable
 from dataclasses import dataclass, field
@@ -238,6 +239,7 @@ class SubagentRunResult:
     transcript: list[str] = field(default_factory=list)
     error: str | None = None
     session_id: str | None = None
+    duration_ms: float | None = None
 
 
 def _resolve_api_and_base_url(
@@ -318,7 +320,11 @@ async def _run_subagent(
         except Exception:
             log.exception("Task tool progress callback raised")
 
-    _emit("subagent_start", description=spec.description)
+    _emit(
+        "subagent_start", description=spec.description, model=sub_model, max_turns=spec.max_turns
+    )
+
+    started_at = time.monotonic()
 
     try:
         from vtx.core import (
@@ -354,6 +360,7 @@ async def _run_subagent(
                             if isinstance(part, TextContent):
                                 text_parts.append(part.text)
                         result.final_text = "".join(text_parts)
+                _emit("turn_end", turns=result.turns, tokens=result.usage.total_tokens)
             elif isinstance(event, AgentEndEvent):
                 result.stop_reason = event.stop_reason
             elif isinstance(event, ErrorEvent):
@@ -372,6 +379,7 @@ async def _run_subagent(
         log.exception("Task tool sub-agent run failed")
         _emit("error", error=result.error)
 
+    result.duration_ms = (time.monotonic() - started_at) * 1000
     _emit("subagent_end", turns=result.turns, stop_reason=result.stop_reason.value)
     return result
 
@@ -446,11 +454,13 @@ class TaskTool(BaseTool[TaskParams]):
             text = text[:MAX_RESULT_CHARS]
 
         ui_summary = (
-            f"{sub_result.turns} turn{'s' if sub_result.turns != 1 else ''}, "
-            f"{_format_tokens(sub_result.usage.total_tokens)}"
+            f"{sub_result.turns} turn{'s' if sub_result.turns != 1 else ''}"
+            f" · {_format_tokens(sub_result.usage.total_tokens)}"
         )
+        if sub_result.duration_ms is not None:
+            ui_summary += f" · {sub_result.duration_ms / 1000:.1f}s"
         if sub_result.error is not None:
-            ui_summary += f" — {sub_result.error[:40]}"
+            ui_summary += f" · error: {sub_result.error[:40]}"
 
         ui_details = _format_transcript(
             sub_result.transcript,
@@ -543,7 +553,10 @@ class TaskTool(BaseTool[TaskParams]):
             success=True,
             result=text,
             ui_summary=f"launched background task {record.short_id()}",
-            ui_details=None,
+            ui_details=(
+                f"⎿  Running in background (ID: {record.task_id})\n"
+                f"   {spec.name} · {params.model or spec.model or parent_ctx.model}"
+            ),
             ui_details_full=(
                 f"task_id: {record.task_id}\n"
                 f"description: {record.description}\n"

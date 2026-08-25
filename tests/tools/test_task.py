@@ -183,6 +183,7 @@ class _FakeRunResult:
     transcript: list[str] = field(default_factory=list)
     error: str | None = None
     session_id: str | None = None
+    duration_ms: float | None = None
 
     def __post_init__(self):
         if self.usage is None:
