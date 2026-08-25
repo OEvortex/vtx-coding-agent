@@ -320,8 +320,14 @@ async def _run_subagent(
         except Exception:
             log.exception("Task tool progress callback raised")
 
+    tool_counts: dict[str, int] = {}
+
     _emit(
-        "subagent_start", description=spec.description, model=sub_model, max_turns=spec.max_turns
+        "subagent_start",
+        description=spec.description,
+        model=sub_model,
+        max_turns=spec.max_turns,
+        tool_counts=dict(tool_counts),
     )
 
     started_at = time.monotonic()
@@ -341,8 +347,9 @@ async def _run_subagent(
             if isinstance(event, TextDeltaEvent):
                 _emit("text_delta", delta=event.delta)
             elif isinstance(event, ToolStartEvent):
+                tool_counts[event.tool_name] = tool_counts.get(event.tool_name, 0) + 1
                 transcript.append(f"  → {event.tool_name}")
-                _emit("tool_start", tool_name=event.tool_name)
+                _emit("tool_start", tool_name=event.tool_name, tool_counts=dict(tool_counts))
             elif isinstance(event, ToolResultEvent):
                 _emit("tool_result", tool_name=event.tool_name)
             elif isinstance(event, TurnEndEvent):
@@ -360,7 +367,12 @@ async def _run_subagent(
                             if isinstance(part, TextContent):
                                 text_parts.append(part.text)
                         result.final_text = "".join(text_parts)
-                _emit("turn_end", turns=result.turns, tokens=result.usage.total_tokens)
+                _emit(
+                    "turn_end",
+                    turns=result.turns,
+                    tokens=result.usage.total_tokens,
+                    tool_counts=dict(tool_counts),
+                )
             elif isinstance(event, AgentEndEvent):
                 result.stop_reason = event.stop_reason
             elif isinstance(event, ErrorEvent):
@@ -380,7 +392,15 @@ async def _run_subagent(
         _emit("error", error=result.error)
 
     result.duration_ms = (time.monotonic() - started_at) * 1000
-    _emit("subagent_end", turns=result.turns, stop_reason=result.stop_reason.value)
+    _emit(
+        "subagent_end",
+        turns=result.turns,
+        stop_reason=result.stop_reason.value,
+        final_text=result.final_text,
+        tool_counts=dict(tool_counts),
+        tokens=result.usage.total_tokens,
+        transcript=list(transcript),
+    )
     return result
 
 

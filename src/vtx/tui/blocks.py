@@ -1230,30 +1230,44 @@ class TaskToolBlock(ToolBlock):
         colors = config.ui.colors
         result = Text()
 
-        icon = task_ui.GLYPHS["tool_call"]
+        stats = self._task_finished or self._task_stats or {}
+        stop_label = stats.get("stop_label")
         if self._success is None:
+            icon = task_ui.GLYPHS["tool_call"]
             icon_style = colors.running
             name_style = Style(color=colors.fg, bold=True)
-        elif self._success is False:
+        elif self._success is False or stop_label == "error":
+            icon = task_ui.GLYPHS["failure"]
             icon_style = colors.failed
             name_style = Style(color=colors.failed, bold=True)
+        elif stop_label in ("interrupted", "cancelled"):
+            icon = task_ui.GLYPHS["stopped"]
+            icon_style = Style(color=colors.dim)
+            name_style = Style(color=colors.dim, bold=True)
         else:
-            icon_style = colors.muted
+            icon = task_ui.GLYPHS["success"]
+            icon_style = Style(color=colors.success)
             name_style = Style(color=colors.fg, bold=True)
 
-        subagent_name = (
-            (self._task_stats.get("subagent") if self._task_stats else None)
-            or (self._task_finished.get("subagent") if self._task_finished else None)
-            or self._name
-            or "subagent"
-        )
+        subagent_name = stats.get("subagent") or self._name or "subagent"
         desc = self._call_msg or ""
 
         result.append(f"{icon} ", style=icon_style)
-        result.append(subagent_name, style=name_style)
+        result.append(f"{task_ui.GLYPHS['badge']} {subagent_name}", style=name_style)
         if desc:
             result.append("  ")
             result.append(desc, style=Style(color=colors.dim))
+
+        if self._success is not None and self._task_finished is not None:
+            metrics: list[str] = []
+            elapsed_ms = self._current_elapsed_ms()
+            if elapsed_ms is not None:
+                metrics.append(task_ui.format_ms(elapsed_ms))
+            tokens = self._task_finished.get("tokens")
+            if tokens:
+                metrics.append(task_ui.format_tokens(tokens))
+            if metrics:
+                result.append("  " + " · ".join(metrics), style=Style(color=colors.dim))
 
         return result
 

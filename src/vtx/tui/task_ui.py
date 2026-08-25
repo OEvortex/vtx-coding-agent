@@ -12,6 +12,7 @@ Rich :class:`Text`. No timers, no widget state.
 
 from __future__ import annotations
 
+import re
 from typing import TYPE_CHECKING
 
 from rich.style import Style
@@ -33,12 +34,13 @@ GLYPHS = {
     "tool_call": "▸",
     "streaming": "◍",
     "queued": "◦",
+    "badge": "◈",
 }
 
 # Braille spinner frames for the animated running indicator.
 SPINNER = ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"]
 
-# Tool name -> human-readable action, used for live activity descriptions.
+# Tool name -> human-readable action / noun.
 TOOL_DISPLAY = {
     "read": "reading",
     "bash": "running command",
@@ -48,16 +50,33 @@ TOOL_DISPLAY = {
     "find": "finding files",
     "glob": "finding files",
     "ls": "listing",
+    "skill": "running skill",
+    "web": "searching web",
+    "ask_user": "asking user",
+}
+
+TOOL_NOUNS = {
+    "read": ("read", "reads"),
+    "bash": ("bash", "bash"),
+    "edit": ("edit", "edits"),
+    "write": ("write", "writes"),
+    "grep": ("search", "searches"),
+    "find": ("file search", "file searches"),
+    "glob": ("file search", "file searches"),
+    "ls": ("list", "lists"),
+    "skill": ("skill", "skills"),
+    "web": ("web search", "web searches"),
+    "ask_user": ("user prompt", "user prompts"),
 }
 
 
 def format_tokens(count: int) -> str:
-    """Format a token count compactly: "33.8k token", "1.2M token"."""
+    """Format a token count compactly: "33.8k tokens", "1.2M tokens"."""
     if count >= 1_000_000:
-        return f"{count / 1_000_000:.1f}M token"
+        return f"{count / 1_000_000:.1f}M tokens"
     if count >= 1_000:
-        return f"{count / 1_000:.1f}k token"
-    return f"{count} token"
+        return f"{count / 1_000:.1f}k tokens"
+    return f"{count} token{'s' if count != 1 else ''}"
 
 
 def format_turns(turns: int, max_turns: int | None = None) -> str:
@@ -75,6 +94,63 @@ def short_model(model: str | None) -> str | None:
     if not model:
         return None
     return model.rsplit("/", 1)[-1]
+
+
+def format_tool_breakdown(tool_counts: dict[str, int] | None) -> str:
+    """Format breakdown of tool calls: "8 tool calls (4 reads, 3 searches, 1 bash)"."""
+    if not tool_counts:
+        return "0 tool calls"
+    total = sum(tool_counts.values())
+    if total == 0:
+        return "0 tool calls"
+
+    parts: list[str] = []
+    for tool_name, count in tool_counts.items():
+        if count <= 0:
+            continue
+        singular, plural = TOOL_NOUNS.get(tool_name, (tool_name, f"{tool_name}s"))
+        noun = singular if count == 1 else plural
+        parts.append(f"{count} {noun}")
+
+    if not parts:
+        return f"{total} tool call{'s' if total != 1 else ''}"
+    return f"{total} tool call{'s' if total != 1 else ''} ({', '.join(parts)})"
+
+
+def extract_summary_line(text: str, max_chars: int = 90) -> str:
+    """Extract a concise 1-line summary snippet from the subagent's answer."""
+    if not text:
+        return ""
+    for raw_line in text.splitlines():
+        line = raw_line.strip()
+        if not line or line.startswith("#"):
+            continue
+        # Strip bullets / quotes / markdown formatting
+        cleaned = re.sub(r"^([*+-]\s*|>\s*|\d+\.\s*)", "", line).strip()
+        cleaned = re.sub(r"[*_`]", "", cleaned).strip()
+        if cleaned and len(cleaned) >= 5:
+            if len(cleaned) > max_chars:
+                return cleaned[: max_chars - 1].rstrip() + "…"
+            return cleaned
+    return ""
+
+
+def detect_files_referenced(text: str, transcript: list[str] | None = None) -> int:
+    """Count unique file paths referenced in output text and tool transcripts."""
+    found: set[str] = set()
+    sources = [text]
+    if transcript:
+        sources.extend(transcript)
+
+    pattern = re.compile(
+        r"(?:[\w\-./]+\.(?:py|ts|tsx|js|jsx|json|ya?ml|md|toml|rs|go|c|cpp|h|sh|css|html))\b"
+    )
+    for source in sources:
+        for match in pattern.findall(source):
+            clean = match.strip("`'\"(),;:")
+            if "/" in clean or clean.endswith((".py", ".ts", ".tsx", ".md", ".json", ".yaml")):
+                found.add(clean)
+    return len(found)
 
 
 def describe_activity(active_tool: str | None, last_text: str) -> str:
@@ -133,43 +209,93 @@ def render_finished(
     """Finished agent: outcome icon + stats, then a ⎿ status continuation."""
     colors = config.ui.colors
     stop_label = stats.get("stop_label")
-
     error_msg = stats.get("error")
-    if stop_label in ("interrupted", "cancelled"):
-        icon_style = Style(color=colors.dim)
-        icon = GLYPHS["stopped"]
-        detail = "Stopped"
-    elif success is False or stop_label == "error":
-        icon_style = Style(color=colors.failed)
-        icon = GLYPHS["failure"]
-        detail = f"Error: {error_msg}" if error_msg else "Error"
-    elif stop_label == "length":
-        icon_style = Style(color=colors.notice, bold=True)
-        icon = GLYPHS["success"]
-        detail = "Wrapped up (turn limit)"
-    else:
-        icon_style = Style(color=colors.success)
-        icon = GLYPHS["success"]
-        detail = "Done"
 
-    parts = list(stats_parts(stats))
-    if elapsed_ms is not None:
-        parts.append(format_ms(elapsed_ms))
+    if expanded:
+        text = Text()
+        icon = (
+            GLYPHS["stopped"]
+            if stop_label in ("interrupted", "cancelled")
+            else (
+                GLYPHS["failure"]
+                if (success is False or stop_label == "error")
+                else GLYPHS["success"]
+            )
+        )
+        icon_style = (
+            Style(color=colors.dim)
+            if stop_label in ("interrupted", "cancelled")
+            else (
+                Style(color=colors.failed)
+                if (success is False or stop_label == "error")
+                else Style(color=colors.success)
+            )
+        )
+        text.append(icon, style=icon_style)
+        parts = list(stats_parts(stats))
+        if elapsed_ms is not None:
+            parts.append(format_ms(elapsed_ms))
+        if parts:
+            text.append(" " + " · ".join(parts), style=Style(color=colors.dim))
 
+        full_output = result_text or stats.get("final_text", "")
+        if full_output:
+            lines = full_output.splitlines()
+            for line in lines[:60]:
+                text.append(f"\n  {line}", style=Style(color=colors.dim))
+            if len(lines) > 60:
+                text.append(
+                    "\n  ... (remaining transcript truncated)", style=Style(color=colors.muted)
+                )
+        return text
+
+    # Collapsed view: structured summary layout matching enhanced proposal
     text = Text()
-    text.append(icon, style=icon_style)
-    if parts:
-        text.append(" " + " · ".join(parts), style=Style(color=colors.dim))
+    turns = stats.get("turns") or 0
+    tool_counts = stats.get("tool_counts") or {}
+    tool_breakdown = format_tool_breakdown(tool_counts)
+    if not tool_counts and stats.get("tool_uses"):
+        tool_uses = stats.get("tool_uses")
+        tool_breakdown = f"{tool_uses} tool use{'' if tool_uses == 1 else 's'}"
 
-    if expanded and result_text:
-        lines = result_text.splitlines()
-        preview_lines = lines[:50]
-        for line in preview_lines:
-            text.append(f"\n  {line}", style=Style(color=colors.dim))
-        if len(lines) > 50:
-            text.append("\n  ... (full output truncated)", style=Style(color=colors.muted))
+    # Line 1: Turns + Tool calls breakdown
+    turns_str = f"{turns} turn{'s' if turns != 1 else ''}"
+    text.append(
+        f"  {GLYPHS['sub_line']} {GLYPHS['turns']} {turns_str} · {tool_breakdown}",
+        style=Style(color=colors.dim),
+    )
+
+    # Line 2: Summary or Error
+    if stop_label in ("interrupted", "cancelled"):
+        text.append(f"\n  {GLYPHS['sub_line']} Stopped", style=Style(color=colors.dim))
+    elif success is False or stop_label == "error":
+        msg = f"Error: {error_msg}" if error_msg else "Sub-agent encountered an error."
+        text.append(f"\n  {GLYPHS['sub_line']} {msg}", style=Style(color=colors.failed))
     else:
-        text.append(f"\n  {GLYPHS['sub_line']}  {detail}", style=Style(color=colors.dim))
+        full_output = result_text or stats.get("final_text", "")
+        summary = extract_summary_line(full_output)
+        if summary:
+            text.append(
+                f"\n  {GLYPHS['sub_line']} Summary: {summary}", style=Style(color=colors.dim)
+            )
+        else:
+            detail = "Wrapped up (turn limit)" if stop_label == "length" else "Done"
+            text.append(f"\n  {GLYPHS['sub_line']} {detail}", style=Style(color=colors.dim))
+
+    # Line 3: Output & Transcript inspection hint
+    full_output = result_text or stats.get("final_text", "")
+    transcript = stats.get("transcript") or []
+    files_count = detect_files_referenced(full_output, transcript)
+    files_prefix = (
+        f"{files_count} file{'s' if files_count != 1 else ''} referenced · "
+        if files_count > 0
+        else ""
+    )
+    text.append(
+        f"\n  {GLYPHS['sub_line']} Output: {files_prefix}[ctrl+] to inspect full transcript]",
+        style=Style(color=colors.dim),
+    )
+
     return text
 
 

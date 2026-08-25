@@ -758,15 +758,25 @@ class ChatLog(VerticalScroll):
                 "max_turns": None,
                 "turns": 0,
                 "tool_uses": 0,
+                "tool_counts": {},
                 "tokens": 0,
                 "active_tool": None,
                 "last_text": "",
+                "final_text": "",
+                "transcript": [],
                 "started": time.monotonic(),
                 "ended": False,
                 "stop_label": None,
                 "error": None,
             },
         )
+        if event.get("tool_counts"):
+            state["tool_counts"] = dict(event["tool_counts"])
+        if event.get("final_text"):
+            state["final_text"] = event["final_text"]
+        if event.get("transcript"):
+            state["transcript"] = list(event["transcript"])
+
         if kind == "subagent_start":
             state["model"] = event.get("model")
             state["max_turns"] = event.get("max_turns")

@@ -7,9 +7,34 @@ from vtx.tui import task_ui
 
 
 def test_format_tokens_compact() -> None:
-    assert task_ui.format_tokens(500) == "500 token"
-    assert task_ui.format_tokens(33_800) == "33.8k token"
-    assert task_ui.format_tokens(1_200_000) == "1.2M token"
+    assert task_ui.format_tokens(500) == "500 tokens"
+    assert task_ui.format_tokens(33_800) == "33.8k tokens"
+    assert task_ui.format_tokens(1_200_000) == "1.2M tokens"
+
+
+def test_format_tool_breakdown() -> None:
+    assert (
+        task_ui.format_tool_breakdown({"read": 4, "grep": 3, "bash": 1})
+        == "8 tool calls (4 reads, 3 searches, 1 bash)"
+    )
+    assert task_ui.format_tool_breakdown({"read": 1}) == "1 tool call (1 read)"
+    assert task_ui.format_tool_breakdown({}) == "0 tool calls"
+
+
+def test_extract_summary_line() -> None:
+    text = (
+        "## Heading\n\n- Identified 3 core dispatch layers"
+        " and mapped lifecycle.\n\nMore details..."
+    )
+    assert (
+        task_ui.extract_summary_line(text)
+        == "Identified 3 core dispatch layers and mapped lifecycle."
+    )
+
+
+def test_detect_files_referenced() -> None:
+    text = "Modified src/vtx/tui/app.py and tests/ui/test_task_ui.py."
+    assert task_ui.detect_files_referenced(text) == 2
 
 
 def test_format_turns_with_and_without_limit() -> None:
@@ -43,7 +68,7 @@ def test_stats_parts_order() -> None:
         "claude-sonnet-4-5",
         "↻3≤200",
         "1 tool use",
-        "33.8k token",
+        "33.8k tokens",
     ]
 
 
@@ -62,17 +87,26 @@ def test_render_live_contains_spinner_and_sub_line() -> None:
 
 
 def test_render_finished_success() -> None:
-    text = task_ui.render_finished(
-        {"turns": 5, "tool_uses": 7, "tokens": 33_800}, success=True, elapsed_ms=45_600
+    stats = {
+        "turns": 5,
+        "tool_counts": {"read": 4, "grep": 3, "bash": 1},
+        "tokens": 34_200,
+        "final_text": "Identified 3 core dispatch layers and mapped dependency lifecycle.",
+    }
+    text = task_ui.render_finished(stats, success=True, elapsed_ms=24_100)
+    expected_line_1 = (
+        f"{task_ui.GLYPHS['sub_line']} {task_ui.GLYPHS['turns']} 5 turns · 8 tool calls "
+        f"(4 reads, 3 searches, 1 bash)"
     )
-    assert text.plain.startswith(task_ui.GLYPHS["success"])
-    assert f"{task_ui.GLYPHS['sub_line']}  Done" in text.plain
-    assert "45.6s" in text.plain
+    assert expected_line_1 in text.plain
+    assert (
+        "Summary: Identified 3 core dispatch layers and mapped dependency lifecycle." in text.plain
+    )
+    assert "[ctrl+] to inspect full transcript]" in text.plain
 
 
 def test_render_finished_error_includes_message() -> None:
     text = task_ui.render_finished({"turns": 1, "error": "boom"}, success=False, elapsed_ms=1_000)
-    assert text.plain.startswith(task_ui.GLYPHS["failure"])
     assert "Error: boom" in text.plain
 
 
@@ -80,7 +114,6 @@ def test_render_finished_stopped_on_interrupt() -> None:
     text = task_ui.render_finished(
         {"turns": 1, "stop_label": "interrupted"}, success=False, elapsed_ms=2_000
     )
-    assert text.plain.startswith(task_ui.GLYPHS["stopped"])
     assert "Stopped" in text.plain
 
 
