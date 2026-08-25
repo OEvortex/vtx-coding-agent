@@ -97,3 +97,11 @@ def test_render_background_line() -> None:
 def test_spinner_frames_wrap(frame: int, expected: str) -> None:
     text = task_ui.render_live({"turns": 0}, frame=frame, elapsed_ms=None)
     assert expected in text.plain
+
+
+def test_render_finished_expanded() -> None:
+    text = task_ui.render_finished(
+        {"turns": 1}, success=True, elapsed_ms=1000, result_text="Line 1\nLine 2", expanded=True
+    )
+    assert "Line 1" in text.plain
+    assert "Line 2" in text.plain

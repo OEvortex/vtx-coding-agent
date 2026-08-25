@@ -95,7 +95,6 @@ from vtx.core.types import (
     ToolCall,
     ToolCallDelta,
     ToolCallStart,
-    ToolResult,
     ToolResultMessage,
     UserMessage,
 )
@@ -266,7 +265,11 @@ async def _execute_tool(
 
     try:
         params = tool.params(**tool_call.arguments)
-        result: ToolResult = await tool.execute(params, cancel_event=cancel_event)
+        execute_fn: Any = tool.execute
+        try:
+            result = await execute_fn(params, cancel_event=cancel_event, tool_call_id=tool_call.id)
+        except TypeError:
+            result = await execute_fn(params, cancel_event=cancel_event)
 
         content: list[TextContent | ImageContent] = []
         if result.result:

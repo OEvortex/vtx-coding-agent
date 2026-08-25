@@ -123,7 +123,13 @@ def render_live(stats: dict, frame: int, elapsed_ms: float | None) -> Text:
     return text
 
 
-def render_finished(stats: dict, success: bool | None, elapsed_ms: float | None) -> Text:
+def render_finished(
+    stats: dict,
+    success: bool | None,
+    elapsed_ms: float | None,
+    result_text: str = "",
+    expanded: bool = False,
+) -> Text:
     """Finished agent: outcome icon + stats, then a ⎿ status continuation."""
     colors = config.ui.colors
     stop_label = stats.get("stop_label")
@@ -154,7 +160,16 @@ def render_finished(stats: dict, success: bool | None, elapsed_ms: float | None)
     text.append(icon, style=icon_style)
     if parts:
         text.append(" " + " · ".join(parts), style=Style(color=colors.dim))
-    text.append(f"\n  {GLYPHS['sub_line']}  {detail}", style=Style(color=colors.dim))
+
+    if expanded and result_text:
+        lines = result_text.splitlines()
+        preview_lines = lines[:50]
+        for line in preview_lines:
+            text.append(f"\n  {line}", style=Style(color=colors.dim))
+        if len(lines) > 50:
+            text.append("\n  ... (full output truncated)", style=Style(color=colors.muted))
+    else:
+        text.append(f"\n  {GLYPHS['sub_line']}  {detail}", style=Style(color=colors.dim))
     return text
 
 

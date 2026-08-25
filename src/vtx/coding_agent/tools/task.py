@@ -387,7 +387,7 @@ async def _run_subagent(
 class TaskTool(BaseTool[TaskParams]):
     name = "task"
     params = TaskParams
-    tool_icon = "⊕"
+    tool_icon = "▸"
     mutating = False
 
     @property
@@ -408,7 +408,10 @@ class TaskTool(BaseTool[TaskParams]):
         return params.description
 
     async def execute(
-        self, params: TaskParams, cancel_event: asyncio.Event | None = None
+        self,
+        params: TaskParams,
+        cancel_event: asyncio.Event | None = None,
+        tool_call_id: str | None = None,
     ) -> ToolResult:
         parent_ctx = get_context()
         if parent_ctx is None:
@@ -423,9 +426,12 @@ class TaskTool(BaseTool[TaskParams]):
             )
 
         if params.background:
-            return await self._execute_background(params, parent_ctx)
+            return await self._execute_background(params, parent_ctx, tool_call_id=tool_call_id)
 
-        tool_call_id = f"task_{uuid.uuid4().hex[:12]}"
+        # Use the parent tool_call_id so progress events key to the same
+        # block the TUI created for this tool invocation. Fall back to a
+        # generated id for headless/test callers that don't pass one.
+        tool_call_id = tool_call_id or f"task_{uuid.uuid4().hex[:12]}"
 
         spec = _resolve_subagent_spec(params.subagent_type, parent_ctx.agent_registry)
         progress_cb = parent_ctx.progress_callback
@@ -482,7 +488,9 @@ class TaskTool(BaseTool[TaskParams]):
             ui_details_full=ui_details,
         )
 
-    async def _execute_background(self, params: TaskParams, parent_ctx: Any) -> ToolResult:
+    async def _execute_background(
+        self, params: TaskParams, parent_ctx: Any, tool_call_id: str | None = None
+    ) -> ToolResult:
         """Dispatch a sub-agent and return immediately with a ``task_id``.
 
         The sub-agent runs concurrently on the asyncio loop; the
@@ -511,7 +519,7 @@ class TaskTool(BaseTool[TaskParams]):
             )
 
         spec = _resolve_subagent_spec(params.subagent_type, parent_ctx.agent_registry)
-        tool_call_id = f"task_{uuid.uuid4().hex[:12]}"
+        tool_call_id = tool_call_id or f"task_{uuid.uuid4().hex[:12]}"
         progress_cb = parent_ctx.progress_callback
         parent_session_id = getattr(parent_ctx, "session_id", None)
         if parent_session_id is None and getattr(parent_ctx, "session", None) is not None:

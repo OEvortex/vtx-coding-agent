@@ -4,6 +4,7 @@ import asyncio
 import contextlib
 import logging
 import os
+from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
@@ -121,8 +122,10 @@ class ConversationRuntime:
         agent_registry: AgentRegistry | None = None,
         active_agent: LoadedAgent | None = None,
         agent_extensions: list | None = None,
+        progress_callback: Callable[[str, dict], None] | None = None,
     ) -> None:
         self.cwd = cwd
+        self._progress_callback = progress_callback
         self._background_manager = None  # installed via ensure_background_manager
         self._background_manager_token = None
 
@@ -384,6 +387,10 @@ class ConversationRuntime:
         if self.agent is not None:
             self.agent._system_prompt = new_prompt  # type: ignore[attr-defined]
 
+    def set_progress_callback(self, cb: Callable[[str, dict], None] | None) -> None:
+        self._progress_callback = cb
+        self._refresh_dispatcher_context()
+
     def _refresh_dispatcher_context(self) -> None:
         """Re-install the dispatcher context used by sub-agent tools.
 
@@ -409,7 +416,8 @@ class ConversationRuntime:
                 agent_registry=self.agent_registry,
                 cwd=self.cwd,
                 system_prompt=self.agent._system_prompt,  # type: ignore[attr-defined]
-                progress_callback=existing.progress_callback if existing else None,
+                progress_callback=self._progress_callback
+                or (existing.progress_callback if existing else None),
                 background_manager=self._background_manager,
             )
         )

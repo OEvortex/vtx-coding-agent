@@ -279,6 +279,7 @@ class Vtx(
             agent_registry=self._agent_registry,
             active_agent=self._agent_registry.active,
             agent_extensions=list(self._loaded_extensions.extensions),
+            progress_callback=self._task_progress_callback,
         )
         self._runtime.set_loaded_extensions(self._loaded_extensions)
 
@@ -429,40 +430,18 @@ class Vtx(
             parts.extend(["", "[query]", query.strip()])
         return "\n".join(parts)
 
-    def _install_task_progress_callback(self) -> None:
-        """Wire the Task tool's parent context to the chat log.
-
-        The TUI captures sub-agent events (text deltas, tool starts,
-        sub-agent end) and renders them into the parent tool block
-        after it mounts.
-        """
-        from vtx.ai.agent.dispatcher import get_context, set_context
-        from vtx.tui.chat import ChatLog
-
-        def _callback(tool_call_id: str, event: dict) -> None:
-            try:
-                chat = self.query_one("#chat-log", ChatLog)
-            except Exception:
-                # Chat log not mounted yet (early turn) — drop the event.
-                return
-            chat.apply_task_progress(tool_call_id, event)
-
-        existing = get_context()
-        if existing is None:
+    def _task_progress_callback(self, tool_call_id: str, event: dict) -> None:
+        try:
+            chat = self.query_one("#chat-log", ChatLog)
+        except Exception:
+            # Chat log not mounted yet (early turn) — drop the event.
             return
-        set_context(
-            existing.__class__(
-                provider=existing.provider,
-                model=existing.model,
-                model_provider=existing.model_provider,
-                base_url=existing.base_url,
-                thinking_level=existing.thinking_level,
-                agent_registry=existing.agent_registry,
-                cwd=existing.cwd,
-                system_prompt=existing.system_prompt,
-                progress_callback=_callback,
-            )
-        )
+        chat.apply_task_progress(tool_call_id, event)
+
+    def _install_task_progress_callback(self) -> None:
+        """Wire the Task tool's parent context to the chat log."""
+        if hasattr(self, "_runtime") and self._runtime is not None:
+            self._runtime.set_progress_callback(self._task_progress_callback)
 
     def _sync_runtime_state(self) -> None:
         # Compatibility hook for mixin/unit-test fakes. Runtime is the source of truth.

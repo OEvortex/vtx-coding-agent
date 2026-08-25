@@ -1201,7 +1201,7 @@ class TaskToolBlock(ToolBlock):
     ``ui_details_full``.
     """
 
-    LIVE_TICK_SECONDS = 0.12
+    LIVE_TICK_SECONDS = 0.08
 
     def __init__(self, **kwargs) -> None:
         super().__init__(**kwargs)
@@ -1211,6 +1211,51 @@ class TaskToolBlock(ToolBlock):
         self._task_elapsed_ms: float | None = None
         self._live_timer: Timer | None = None
         self._spinner_frame: int = 0
+
+    def on_mount(self) -> None:
+        if self._success is None and not self._awaiting_approval:
+            if self._task_started is None:
+                self._task_started = time.monotonic()
+            if self._task_stats is None:
+                self._task_stats = {
+                    "subagent": "subagent",
+                    "turns": 0,
+                    "tool_uses": 0,
+                    "tokens": 0,
+                }
+            self._ensure_live_timer()
+            self._render_result_output()
+
+    def _format_header(self, truncate: bool = True) -> Text:
+        colors = config.ui.colors
+        result = Text()
+
+        icon = task_ui.GLYPHS["tool_call"]
+        if self._success is None:
+            icon_style = colors.running
+            name_style = Style(color=colors.fg, bold=True)
+        elif self._success is False:
+            icon_style = colors.failed
+            name_style = Style(color=colors.failed, bold=True)
+        else:
+            icon_style = colors.muted
+            name_style = Style(color=colors.fg, bold=True)
+
+        subagent_name = (
+            (self._task_stats.get("subagent") if self._task_stats else None)
+            or (self._task_finished.get("subagent") if self._task_finished else None)
+            or self._name
+            or "subagent"
+        )
+        desc = self._call_msg or ""
+
+        result.append(f"{icon} ", style=icon_style)
+        result.append(subagent_name, style=name_style)
+        if desc:
+            result.append("  ")
+            result.append(desc, style=Style(color=colors.dim))
+
+        return result
 
     def set_task_progress(self, stats: dict) -> None:
         """Render a progress snapshot from :meth:`ChatLog.apply_task_progress`."""
@@ -1227,6 +1272,35 @@ class TaskToolBlock(ToolBlock):
             self._task_stats = dict(stats)
             self._ensure_live_timer()
         self._render_result_output()
+        # Update header in case subagent name resolved
+        with contextlib.suppress(Exception):
+            self.query_one("#tool-header", Label).update(self._format_header())
+
+    def set_result(
+        self,
+        ui_summary: str | None,
+        ui_details: str | None,
+        success: bool,
+        markup: bool = True,
+        ui_details_full: str | None = None,
+        images: list | None = None,
+    ) -> None:
+        if self._task_started is not None and self._task_elapsed_ms is None:
+            self._task_elapsed_ms = (time.monotonic() - self._task_started) * 1000
+        self._stop_live_timer()
+        if self._task_finished is None:
+            self._task_finished = dict(self._task_stats or {})
+            self._task_finished["ended"] = True
+            if not success and ui_summary:
+                self._task_finished["error"] = ui_summary
+        super().set_result(
+            ui_summary=None,
+            ui_details=ui_details,
+            success=success,
+            markup=markup,
+            ui_details_full=ui_details_full,
+            images=images,
+        )
 
     def _ensure_live_timer(self) -> None:
         if self._live_timer is None:
@@ -1265,19 +1339,19 @@ class TaskToolBlock(ToolBlock):
         output.update(rendered)
 
     def _render_result_output(self) -> None:
-        # Expanded view keeps VTX's full-transcript expansion semantics.
-        if self._expanded and self._ui_details_full:
-            super()._render_result_output()
-            return
-
         try:
             self.query_one("#tool-output", Label)
         except Exception:
             return
 
         if self._task_finished is not None and not self._awaiting_approval:
+            result_text = self._ui_details or self._ui_details_full or ""
             rendered = task_ui.render_finished(
-                self._task_finished, self._success, self._current_elapsed_ms()
+                self._task_finished,
+                self._success,
+                self._current_elapsed_ms(),
+                result_text=result_text,
+                expanded=self._expanded,
             )
             self._show_body(rendered, finished=True)
             return
