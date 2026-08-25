@@ -22,7 +22,7 @@ from vtx.ai.agent.agents import AgentRegistry, LoadedAgent
 from vtx.ai.agent.agents.activate import _filter as _agent_tool_filter
 from vtx.ai.agent.agents.activate import compose_active_commands
 from vtx.ai.agent.context import Context
-from vtx.ai.agent.extensions import EventBus, LoadedExtensions
+from vtx.ai.agent.extensions import MODEL_SELECT, THINKING_LEVEL_SELECT, EventBus, LoadedExtensions
 from vtx.ai.agent.loop import Agent
 from vtx.ai.agent.prompts import build_system_prompt
 from vtx.ai.agent.session import CompactionEntry, CustomMessageEntry, MessageEntry, Session
@@ -703,6 +703,7 @@ class ConversationRuntime:
         return session
 
     def switch_model(self, model: Model) -> None:
+        previous_model = self.model
         current_api_type = self._current_provider_api_type()
         current_provider = (
             self.provider.config.provider or self.model_provider
@@ -741,6 +742,23 @@ class ConversationRuntime:
         if self.agent and self.provider:
             self.agent.provider = self.provider
 
+        if self.extensions is not None:
+            try:
+                loop = asyncio.get_event_loop()
+                if loop.is_running():
+                    self._pending_agent_event_tasks = [
+                        loop.create_task(
+                            self.extensions.emit(
+                                MODEL_SELECT,
+                                model=model.id,
+                                previous_model=previous_model,
+                                source="set",
+                            )
+                        )
+                    ]
+            except RuntimeError:
+                pass
+
         # The Task tool's parent context needs a fresh snapshot whenever
         # the model changes.
         self._refresh_dispatcher_context()
@@ -754,12 +772,27 @@ class ConversationRuntime:
         add_recent_model(model.provider, model.id)
 
     def set_thinking_level(self, level: str) -> None:
+        previous_level = self.thinking_level
         if self.provider is None:
             return
         self.provider.set_thinking_level(level)
         self.thinking_level = level
         if self.session:
             self.session.set_thinking_level(level)
+
+        if self.extensions is not None:
+            try:
+                loop = asyncio.get_event_loop()
+                if loop.is_running():
+                    self._pending_agent_event_tasks = [
+                        loop.create_task(
+                            self.extensions.emit(
+                                THINKING_LEVEL_SELECT, level=level, previous_level=previous_level
+                            )
+                        )
+                    ]
+            except RuntimeError:
+                pass
 
         # Refresh the Task tool's parent context so sub-agents inherit
         # the new thinking level on the next dispatch.

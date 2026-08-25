@@ -27,4 +27,3 @@ class UpdateCommands(CommandSupport):
                 chat.add_info_message(f"{msg} Please restart vtx to apply changes.")
         else:
             chat.add_info_message(f"Update failed: {msg}", error=True)
-

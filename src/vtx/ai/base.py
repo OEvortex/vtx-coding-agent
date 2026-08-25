@@ -113,6 +113,7 @@ ENV_API_KEY_MAP: dict[str, str] = {
     "openrouter": "OPENROUTER_API_KEY",
     "zyloo": "ZYLOO_API_KEY",
     "opengateway": "OPENGATEWAY_API_KEY",
+    "cline": "CLINE_API_KEY",
 }
 
 

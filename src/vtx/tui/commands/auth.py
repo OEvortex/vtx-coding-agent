@@ -17,18 +17,22 @@ from __future__ import annotations
 
 from vtx.ai import (
     clear_api_key,
+    clear_cline_credentials,
     clear_copilot_credentials,
     clear_openai_credentials,
+    cline_login,
     copilot_login,
     get_copilot_token,
     get_dynamic_api_key,
     get_provider_info,
     get_provider_status,
+    get_valid_cline_credentials,
     get_valid_openai_credentials,
     list_providers,
     openai_login,
     save_api_key,
 )
+from vtx.ai import is_cline_logged_in as has_saved_cline_credentials
 from vtx.ai import is_copilot_logged_in as has_saved_copilot_credentials
 from vtx.ai import is_openai_logged_in as has_saved_openai_credentials
 from vtx.tui.chat import ChatLog
@@ -57,6 +61,7 @@ class AuthCommands(CommandSupport):
         providers: list[tuple[str, str, bool, str]] = [
             ("github-copilot", "GitHub Copilot", has_saved_copilot_credentials(), "oauth"),
             ("openai", "OpenAI (ChatGPT/Codex)", has_saved_openai_credentials(), "oauth"),
+            ("cline", "Cline (WorkOS)", has_saved_cline_credentials(), "oauth"),
         ]
 
         # Every provider in provider.yaml gets a key-based entry.
@@ -89,6 +94,10 @@ class AuthCommands(CommandSupport):
 
         if provider_id == "openai":
             self.run_worker(self._openai_login_flow(), exclusive=False)
+            return
+
+        if provider_id == "cline":
+            self.run_worker(self._cline_login_flow(), exclusive=False)
             return
 
         # Key-based entries for OAuth-capable providers are suffixed (e.g.
@@ -315,6 +324,48 @@ class AuthCommands(CommandSupport):
         except Exception as e:
             chat.add_info_message(f"Login failed: {e}", error=True)
 
+    async def _cline_login_flow(self) -> None:
+        import webbrowser
+
+        chat = self.query_one("#chat-log", ChatLog)
+        had_saved = has_saved_cline_credentials()
+
+        def on_user_code(url: str, code: str) -> None:
+            webbrowser.open(url)
+            self.call_later(
+                chat.add_info_message,
+                f"Opening browser to: {url}\n"
+                f"Enter this code: {code}\n\n"
+                "Waiting for authorization...",
+            )
+
+        try:
+            if await get_valid_cline_credentials():
+                chat.add_info_message("Already logged in to Cline")
+                return
+
+            if had_saved:
+                chat.add_info_message("Your saved Cline session is no longer valid.", warning=True)
+            else:
+                chat.add_info_message("Starting Cline login (WorkOS device flow)...")
+
+            # Auto-reuse native Cline CLI token if present
+            from vtx.ai.oauth.cline import load_cline_credentials
+
+            native = load_cline_credentials()
+            if native and not had_saved:
+                chat.add_info_message(
+                    "Found existing Cline CLI token, using it. Use /logout to clear."
+                )
+                return
+
+            await cline_login(on_user_code=on_user_code)
+            chat.add_info_message(
+                "Successfully logged in to Cline!\nYou can now use /model to select cline models."
+            )
+        except Exception as e:
+            chat.add_info_message(f"Login failed: {e}", error=True)
+
     def _handle_logout_command(self, args: str) -> None:
         items: list[ListItem] = []
 
@@ -322,6 +373,8 @@ class AuthCommands(CommandSupport):
             items.append(ListItem(value="github-copilot", label="GitHub Copilot", description=""))
         if has_saved_openai_credentials():
             items.append(ListItem(value="openai", label="OpenAI (ChatGPT/Codex)", description=""))
+        if has_saved_cline_credentials():
+            items.append(ListItem(value="cline", label="Cline (WorkOS)", description=""))
 
         for p in list_providers():
             status = get_provider_status(p.slug)
@@ -348,6 +401,11 @@ class AuthCommands(CommandSupport):
         if provider_id == "openai":
             clear_openai_credentials()
             chat.add_info_message("Logged out of OpenAI")
+            return
+
+        if provider_id == "cline":
+            clear_cline_credentials()
+            chat.add_info_message("Logged out of Cline")
             return
 
         if get_provider_info(provider_id) is not None:

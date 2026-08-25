@@ -47,6 +47,69 @@ The `ExtensionAPI`:
 | `register_command(name, description, handler)` | Add a `/slash` command; return a string or `CommandOutcome(output, success, exit_after)` |
 | `notify(message, level)` | Surface info/warning/error to the user |
 
+## Interactive UI (`ctx.ui`, pi parity)
+
+Handlers declared with **three** parameters — `(event, payload, ctx)` — also
+receive a context whose `ctx.ui` exposes interactive primitives, mirroring
+pi's `ctx.ui`. Two-argument handlers keep working unchanged.
+
+```python
+def setup(api):
+    @api.on("tool_call")
+    async def gate(event, payload, ctx):
+        if payload["name"] == "bash" and "rm -rf" in str(payload.get("args", {})):
+            if not await ctx.ui.confirm("Dangerous", "Allow rm -rf?"):
+                return {"block": True, "reason": "denied by user"}
+
+    @api.on("session_start")
+    async def pick(event, payload, ctx):
+        theme = await ctx.ui.select("Theme", ["dark", "light"])
+        name = await ctx.ui.input("Your name", placeholder="who")
+        ctx.ui.notify(f"hi {name}", "info")
+        ctx.ui.setStatus("theme", theme or "default")   # footer status line
+        ctx.ui.setWidget("todo", ["- one", "- two"])    # persistent widget bar
+```
+
+| Method | Does |
+| --- | --- |
+| `await confirm(title, message=None, *, timeout=None, signal=None)` | Yes/no modal dialog (`y`/`n`/Enter/Esc); returns `bool` |
+| `await select(title, options, *, timeout=None, signal=None)` | Pick-one modal list; returns the choice or `None` |
+| `await input(title, placeholder="", *, default=None, timeout=None, signal=None)` | Free-text modal prompt; returns the string or `None` |
+| `await custom(component, *, timeout=None, signal=None)` | Show a custom Textual widget/screen modally; returns whatever it dismisses with |
+| `notify(message, level="info")` | Styled line in the chat log |
+| `setStatus(key, value)` / `setWidget(key, lines)` | Persistent status/widget bar at the bottom of the screen (`None` clears) |
+
+Dialog primitives are coroutines so the same code runs in every mode: in TUI
+mode they show real modal dialogs; in headless/print mode they resolve
+immediately to safe defaults (`False` / `None`). `timeout` (seconds)
+dismisses the dialog and returns the default; `signal` is an
+`asyncio.Event`-like abort handle. Handlers that use them must be
+`async def`.
+
+### Custom components
+
+`await ctx.ui.custom(component)` shows arbitrary Textual UI modally —
+pass a widget instance, widget class, `ModalScreen` subclass/instance, or
+zero-arg callable returning either. Screens are pushed as-is; plain widgets
+are wrapped in a bordered modal (`ExtensionCustomScreen`, Escape → `None`).
+Return a value from the component with `self.screen.dismiss(result)`.
+
+```python
+from textual.containers import Vertical
+from textual.widgets import Button, Label, Static
+
+class ColorPicker(Static):
+    def on_button_pressed(self, event: Button.Pressed) -> None:
+        self.screen.dismiss(event.button.label)  # value returned to the handler
+
+def setup(api):
+    @api.on("session_start")
+    async def pick_color(event, payload, ctx):
+        color = await ctx.ui.custom(ColorPicker("Pick a theme color"))
+        if color:
+            ctx.ui.notify(f"using {color}")
+```
+
 ## Lifecycle events
 
 `session_start`, `session_end`, `agent_start`, `agent_end`, `turn_start`, `turn_end`, `tool_call`, `tool_result`, `compaction_start`, `compaction_end`, `agent_activated`, `agent_changed`, `tool_group_changed`.

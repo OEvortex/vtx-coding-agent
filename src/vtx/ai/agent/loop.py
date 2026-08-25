@@ -21,6 +21,7 @@ from vtx.ai.agent.agent_runner import AgentRunSpec, run_agent_turn
 from vtx.ai.agent.context import Context
 from vtx.ai.agent.extensions import (
     AGENT_END,
+    AGENT_SETTLED,
     AGENT_START,
     COMPACTION_END,
     COMPACTION_START,
@@ -281,6 +282,8 @@ class Agent:
                 total_turns=turn,
                 total_usage=self._run_usage,
             )
+
+            await self._extensions.emit(AGENT_SETTLED, cancel_event=cancel_event)
 
     def _effective_max_turns(self) -> int:
         return vtx_config.agent.max_turns

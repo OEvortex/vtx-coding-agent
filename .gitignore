@@ -1,3 +1,6 @@
+# Reference clone of pi for extension parity work
+ref/pi/
+
 # Python-generated files
 __pycache__/
 *.py[oc]

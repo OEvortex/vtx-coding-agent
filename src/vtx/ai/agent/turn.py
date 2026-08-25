@@ -37,7 +37,15 @@ from pydantic import ValidationError
 from vtx.ai import BaseProvider
 from vtx.ai.agent.async_utils import OperationCancelledError, await_or_cancel
 from vtx.ai.agent.context_governance import prepare_for_model
-from vtx.ai.agent.extensions import TOOL_CALL, TOOL_RESULT, EventBus
+from vtx.ai.agent.extensions import (
+    MESSAGE_END,
+    MESSAGE_START,
+    TOOL_CALL,
+    TOOL_EXECUTION_END,
+    TOOL_EXECUTION_START,
+    TOOL_RESULT,
+    EventBus,
+)
 from vtx.ai.agent.hooks.agent_hook import AgentHook, AgentHookContext, AgentRunHookContext
 from vtx.ai.agent.tools import BaseTool, get_tool, get_tool_definitions
 from vtx.ai.agent.tools.ask_user import AskUserParams
@@ -424,12 +432,21 @@ class _TurnRunner:
             if self._interrupted:
                 yield InterruptedEvent(message="Interrupted by user")
 
+            # Emit message_start for the assistant message about to be finalized.
             assistant_message = AssistantMessage(
                 content=self._content, usage=self._stream.usage, stop_reason=self._stop_reason
             )
             # finalize_content is the one flow-affecting hook: it may rewrite
             # the final assistant text.
             assistant_message = self._apply_finalize(assistant_message)
+
+            if self._extensions is not None:
+                await self._extensions.emit(
+                    MESSAGE_START, cancel_event=self._cancel_event, message=assistant_message
+                )
+                await self._extensions.emit(
+                    MESSAGE_END, cancel_event=self._cancel_event, message=assistant_message
+                )
 
             yield TurnEndEvent(
                 turn=self._turn,
@@ -997,6 +1014,16 @@ class _TurnRunner:
                     await _await_approval(future, self._cancel_event) == ApprovalResponse.APPROVE
                 )
 
+            # Emit tool_execution_start before any execution/approval gate.
+            if self._extensions is not None:
+                await self._extensions.emit(
+                    TOOL_EXECUTION_START,
+                    cancel_event=self._cancel_event,
+                    tool_call_id=pending.tool_call.id,
+                    tool_name=pending.tool_call.name,
+                    args=dict(pending.tool_call.arguments),
+                )
+
             if not approved:
                 result = _create_skipped_tool_result(
                     pending.tool_call,
@@ -1050,6 +1077,18 @@ class _TurnRunner:
                     result, file_changes = await _execute_tool(
                         pending.tool_call, pending.tool, self._cancel_event
                     )
+
+                    # Emit tool_execution_end for extension observers.
+                    if self._extensions is not None:
+                        await self._extensions.emit(
+                            TOOL_EXECUTION_END,
+                            cancel_event=self._cancel_event,
+                            tool_call_id=pending.tool_call.id,
+                            tool_name=pending.tool_call.name,
+                            args=pending.tool_call.arguments,
+                            result=result,
+                            is_error=result.is_error,
+                        )
 
                     # Run the tool_result extension hook. Handlers can return
                     # ``{"output": "..."}`` to rewrite what the LLM sees.

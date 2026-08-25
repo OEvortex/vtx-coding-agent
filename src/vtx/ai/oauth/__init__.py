@@ -1,3 +1,16 @@
+from vtx.ai.oauth.cline import (
+    ClineCredentials,
+    clear_cline_credentials,
+    get_cline_auth_path,
+    get_cline_native_path,
+    get_valid_cline_credentials,
+    get_valid_cline_token,
+    get_valid_cline_token_sync,
+    is_cline_logged_in,
+    load_cline_credentials,
+    refresh_cline_token,
+)
+from vtx.ai.oauth.cline import login as cline_login
 from vtx.ai.oauth.copilot import (
     COPILOT_HEADERS,
     CopilotCredentials,
@@ -28,6 +41,7 @@ from vtx.ai.oauth.openai import (
     is_openai_logged_in,
     load_openai_credentials,
 )
+from vtx.ai.oauth.openai import get_valid_openai_token as get_openai_token
 from vtx.ai.oauth.openai import login as openai_login
 from vtx.ai.oauth.supercode import (
     SupercodeCredentials,
@@ -38,32 +52,44 @@ from vtx.ai.oauth.supercode import (
 
 __all__ = [
     "COPILOT_HEADERS",
+    "ClineCredentials",
     "CopilotCredentials",
     "DynamicProviderStatus",
     "OpenAICredentials",
     "SupercodeCredentials",
     "clear_api_key",
+    "clear_cline_credentials",
     "clear_credentials",
     "clear_openai_credentials",
+    "cline_login",
     "get_base_url_from_token",
+    "get_cline_auth_path",
+    "get_cline_native_path",
     "get_copilot_auth_path",
     "get_dynamic_api_key",
     "get_dynamic_auth_path",
     "get_openai_auth_path",
+    "get_openai_token",
     "get_provider_status",
     "get_supercode_auth_path",
+    "get_valid_cline_credentials",
+    "get_valid_cline_token",
+    "get_valid_cline_token_sync",
     "get_valid_openai_credentials",
     "get_valid_openai_token",
     "get_valid_token",
     "has_api_key",
+    "is_cline_logged_in",
     "is_copilot_logged_in",
     "is_openai_logged_in",
     "is_supercode_logged_in",
     "load_api_key",
+    "load_cline_credentials",
     "load_credentials",
     "load_openai_credentials",
     "load_supercode_credentials",
     "login",
     "openai_login",
+    "refresh_cline_token",
     "save_api_key",
 ]

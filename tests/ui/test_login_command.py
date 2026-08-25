@@ -181,6 +181,7 @@ def test_login_picker_marks_saved_credentials_without_logged_in_checkmark(monkey
     fake = FakeCommands()
     monkeypatch.setattr(commands, "has_saved_openai_credentials", lambda: True)
     monkeypatch.setattr(commands, "has_saved_copilot_credentials", lambda: False)
+    monkeypatch.setattr(commands, "has_saved_cline_credentials", lambda: False)
     monkeypatch.setattr(commands, "list_providers", lambda: [])
 
     fake._handle_login_command("")
@@ -190,6 +191,7 @@ def test_login_picker_marks_saved_credentials_without_logged_in_checkmark(monkey
     assert rows == [
         ("github-copilot", "GitHub Copilot", "oauth login"),
         ("openai", "OpenAI (ChatGPT/Codex)", "saved credentials"),
+        ("cline", "Cline (WorkOS)", "oauth login"),
     ]
 
 

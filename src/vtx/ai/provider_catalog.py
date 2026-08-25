@@ -162,6 +162,14 @@ def detect_provider_from_env() -> ProviderInfo:
                     return p
             except Exception:
                 pass
+        if slug == "cline":
+            try:
+                from vtx.ai.oauth.cline import is_cline_logged_in
+
+                if is_cline_logged_in():
+                    return p
+            except Exception:
+                pass
 
     for slug in order:
         p = providers[slug]

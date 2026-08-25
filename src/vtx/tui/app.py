@@ -45,6 +45,7 @@ from vtx.tui.blocks import HandoffLinkBlock, LaunchWarning
 from vtx.tui.chat import ChatLog
 from vtx.tui.commands import CommandsMixin
 from vtx.tui.completion_ui import CompletionUIMixin
+from vtx.tui.extension_ui import TextualExtensionUI
 from vtx.tui.floating_list import FloatingList
 from vtx.tui.input import InputBox
 from vtx.tui.queue_ui import QueueUIMixin
@@ -280,6 +281,12 @@ class Vtx(
             agent_extensions=list(self._loaded_extensions.extensions),
         )
         self._runtime.set_loaded_extensions(self._loaded_extensions)
+
+        # Interactive UI primitives for extensions (pi ctx.ui parity):
+        # handlers declared as (event, payload, ctx) receive a context whose
+        # .ui shows real modal dialogs backed by this Textual app.
+        self._extension_ui = TextualExtensionUI(self)
+        self._loaded_extensions.bus.set_ui_context(self._extension_ui, cwd=self._cwd, mode="tui")
 
         # Hook system: bridge YAML hook configs onto the extension EventBus.
         from vtx.ai.agent.hooks.bridge import HookBridge
