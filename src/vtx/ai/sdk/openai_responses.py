@@ -1,0 +1,391 @@
+"""OpenAI Responses API adapter.
+
+Python port of pi's ``openai-responses`` protocol
+(``packages/ai/src/api/openai-responses.ts``), adapted to vtx's chunk
+vocabulary:
+
+- conversation history lowers to ``input`` items: ``{role: system}``,
+  user/assistant ``message`` items, ``function_call`` items for assistant
+  tool calls, and ``function_call_output`` items keyed by ``call_id``
+- system prompts ride as input items (pi's schema keeps them inline)
+- tools are flattened ``{"type": "function", name, description,
+  parameters}``
+- reasoning effort resolves through the shared per-model map exactly like
+  pi: clamp the requested level against the model's supported levels, look
+  up ``thinking_level_map[level] ?? level``, and emit ``reasoning:
+  {effort: ...}`` only when the model reasons and the level isn't "off"
+- ``store: false`` by default (stateless sessions)
+- SSE events follow pi's state machine: ``output_text.delta``,
+  ``reasoning_*_delta``, ``function_call_arguments.delta/.done``,
+  ``output_item.done`` (function_call -> tool_calls chunk),
+  ``response.completed/incomplete`` (usage + finish reason),
+  ``response.failed``/``error``
+"""
+
+from __future__ import annotations
+
+import json
+import logging
+import os
+from collections.abc import AsyncGenerator
+from typing import Any
+
+import httpx
+
+from vtx.ai.sdk.base import BaseLLMSDK, GenerationConfig, GenerationResponse, Message, ToolCall
+from vtx.ai.thinking import clamp_thinking_level, get_supported_thinking_levels
+
+logger = logging.getLogger(__name__)
+
+_DEFAULT_MODEL = "gpt-5"
+ADAPTER = "openai-responses"
+PATH = "/responses"
+
+
+class OpenAIResponsesSDK(BaseLLMSDK):
+    def __init__(
+        self, api_key: str, base_url: str | None = None, provider_slug: str | None = None
+    ):
+        resolved = base_url or "https://api.openai.com/v1"
+        super().__init__(api_key=api_key, base_url=resolved)
+        self._client: httpx.AsyncClient | None = None
+        self._provider_slug = (provider_slug or "").lower() or None
+
+    @property
+    def client(self) -> httpx.AsyncClient:
+        if self._client is None:
+            self._client = httpx.AsyncClient(
+                base_url=self.base_url.rstrip("/") + "/",  # ty:ignore[unresolved-attribute]
+                headers={
+                    "Authorization": f"Bearer {self.api_key}",
+                    "Content-Type": "application/json",
+                },
+                timeout=httpx.Timeout(120.0),
+            )
+        return self._client
+
+    async def aclose(self) -> None:
+        if self._client is not None:
+            await self._client.aclose()
+            self._client = None
+
+    # ------------------------------------------------------------------
+    # Request lowering (pi's fromRequest)
+    # ------------------------------------------------------------------
+
+    def _resolve_effort(self, config: GenerationConfig) -> str | None:
+        """pi's flow: clamp the level to the model's supported set, then map
+        it through ``thinking_level_map``. "off" resolves to None (omitted).
+        """
+        level = config.thinking_level
+        if not level or level == "none":
+            return None
+        supported = get_supported_thinking_levels(
+            reasoning=True, thinking_level_map=config.thinking_level_map
+        )
+        clamped = clamp_thinking_level(level, supported)
+        if clamped == "off":
+            return None
+        mapped = (config.thinking_level_map or {}).get(clamped)
+        return mapped if isinstance(mapped, str) else clamped
+
+    def _build_payload(
+        self, messages: list[Message], config: GenerationConfig, tools: list[dict] | None = None
+    ) -> dict[str, Any]:
+        input_items: list[dict[str, Any]] = []
+        for msg in messages:
+            metadata = msg.metadata or {}
+            role = msg.role
+            tool_calls = metadata.get("tool_calls")
+            if role == "assistant" and tool_calls:
+                if msg.content:
+                    input_items.append(
+                        {
+                            "role": "assistant",
+                            "content": [{"type": "output_text", "text": msg.content}],
+                        }
+                    )
+                for tc in tool_calls:
+                    # Metadata carries the OpenAI Chat shape
+                    # {id, type: "function", function: {name, arguments}}.
+                    fn = tc.get("function", {})
+                    input_items.append(
+                        {
+                            "type": "function_call",
+                            "call_id": tc.get("id", ""),
+                            "name": fn.get("name", ""),
+                            "arguments": fn.get("arguments", "{}"),
+                        }
+                    )
+                continue
+            if role == "tool":
+                input_items.append(
+                    {
+                        "type": "function_call_output",
+                        "call_id": metadata.get("tool_call_id", ""),
+                        "output": msg.content,
+                    }
+                )
+                continue
+            if role == "system":
+                input_items.append({"role": "system", "content": msg.content})
+                continue
+            input_items.append(
+                {"role": "user" if role == "user" else "assistant", "content": msg.content}
+            )
+
+        model = (
+            (config.model or "").strip() or os.getenv("VTX_MODEL", "").strip() or _DEFAULT_MODEL
+        )
+        payload: dict[str, Any] = {
+            "model": model,
+            "input": input_items,
+            "stream": True,
+            "store": False,
+        }
+
+        effort = self._resolve_effort(config)
+        if effort is not None and effort != "none":
+            payload["reasoning"] = {"effort": effort}
+
+        if config.max_tokens:
+            payload["max_output_tokens"] = config.max_tokens
+        if tools:
+            payload["tools"] = [
+                {
+                    "type": "function",
+                    "name": t["function"]["name"],
+                    "description": t["function"].get("description", ""),
+                    "parameters": t["function"].get("parameters", {}),
+                }
+                for t in tools
+            ]
+            if config.tool_choice is not None:
+                payload["tool_choice"] = config.tool_choice
+        return payload
+
+    # ------------------------------------------------------------------
+    # Stream state machine (pi's step/onOutputItemDone/etc.)
+    # ------------------------------------------------------------------
+
+    @staticmethod
+    def _new_stream_state() -> dict[str, Any]:
+        return {
+            "calls": {},  # item_id -> {"call_id", "name", "arguments"}
+            "has_function_call": False,
+            "usage": None,
+            "finish_reason": None,
+        }
+
+    def _stream_step(self, state: dict[str, Any], event: dict[str, Any]) -> list[dict[str, Any]]:
+        """Handle one SSE event; returns chunks to yield (may be empty).
+        Mirrors pi's event dispatch one-to-one."""
+        etype = event.get("type", "")
+        chunks: list[dict[str, Any]] = []
+
+        if etype == "response.output_text.delta":
+            if event.get("delta"):
+                chunks.append({"type": "text", "content": event["delta"]})
+
+        elif etype in (
+            "response.reasoning_text.delta",
+            "response.reasoning_summary.delta",
+            "response.reasoning_summary_text.delta",
+        ):
+            delta = event.get("delta") or event.get("text") or ""
+            if delta:
+                chunks.append({"type": "reasoning", "content": delta})
+
+        elif etype == "response.output_item.added":
+            item = event.get("item") or {}
+            if item.get("type") == "function_call":
+                item_id = item.get("id") or f"idx-{event.get('output_index', 0)}"
+                state["calls"][item_id] = {
+                    "call_id": item.get("call_id", ""),
+                    "name": item.get("name", ""),
+                    "arguments": "",
+                }
+                state["has_function_call"] = True
+
+        elif etype == "response.function_call_arguments.delta":
+            item_id = event.get("item_id")
+            call = state["calls"].get(item_id)
+            if call is not None and event.get("delta"):
+                call["arguments"] += event["delta"]
+
+        elif etype == "response.function_call_arguments.done":
+            item_id = event.get("item_id")
+            call = state["calls"].get(item_id)
+            if call is not None and event.get("arguments") is not None:
+                call["arguments"] = event["arguments"]
+
+        elif etype == "response.output_item.done":
+            item = event.get("item") or {}
+            if item.get("type") == "function_call":
+                item_id = item.get("id") or f"idx-{event.get('output_index', 0)}"
+                call = state["calls"].setdefault(
+                    item_id,
+                    {
+                        "call_id": item.get("call_id", ""),
+                        "name": item.get("name", ""),
+                        "arguments": item.get("arguments", "{}"),
+                    },
+                )
+                if item.get("arguments") is not None:
+                    call["arguments"] = item["arguments"]
+                chunks.append(
+                    {
+                        "type": "tool_calls",
+                        "tool_calls": [
+                            {
+                                "id": call["call_id"],
+                                "name": call["name"],
+                                "arguments": call["arguments"] or "{}",
+                            }
+                        ],
+                    }
+                )
+
+        elif etype in ("response.completed", "response.incomplete"):
+            resp_obj = event.get("response") or {}
+            usage = resp_obj.get("usage") or {}
+            state["usage"] = {
+                "prompt_tokens": usage.get("input_tokens", 0),
+                "completion_tokens": usage.get("output_tokens", 0),
+                "total_tokens": usage.get(
+                    "total_tokens", usage.get("input_tokens", 0) + usage.get("output_tokens", 0)
+                ),
+            }
+            status = resp_obj.get("status", "completed")
+            state["finish_reason"] = (
+                ("tool_calls" if state["has_function_call"] else "stop")
+                if status != "incomplete"
+                else "length"
+            )
+            # Terminal chunks are emitted in-step, like pi's Lifecycle.finish.
+            if state["usage"]:
+                chunks.append({"type": "usage", "usage": state["usage"]})
+            chunks.append({"type": "finish_reason", "finish_reason": state["finish_reason"]})
+
+        elif etype == "response.failed":
+            err = (event.get("response") or {}).get("error") or {}
+            raise RuntimeError(f"OpenAI Responses failed: {err.get('message', 'unknown error')}")
+
+        elif etype == "error":
+            err = event.get("error") or {}
+            raise RuntimeError(f"OpenAI Responses stream error: {err.get('message', 'unknown')}")
+
+        return chunks
+
+    # ------------------------------------------------------------------
+    # BaseLLMSDK interface
+    # ------------------------------------------------------------------
+
+    async def generate(
+        self, messages: list[Message], config: GenerationConfig, stream: bool = False
+    ) -> GenerationResponse | AsyncGenerator:
+        if stream:
+            return self._generate_stream(messages, config, tools=None)
+        return await self._generate_blocking(messages, config, tools=None)
+
+    async def generate_with_tools(
+        self,
+        messages: list[Message],
+        tools: list[dict],
+        config: GenerationConfig,
+        stream: bool = False,
+    ) -> GenerationResponse | AsyncGenerator:
+        if stream:
+            return self._generate_stream(messages, config, tools=tools)
+        return await self._generate_blocking(messages, config, tools=tools)
+
+    async def _generate_blocking(
+        self, messages: list[Message], config: GenerationConfig, tools: list[dict] | None
+    ) -> GenerationResponse:
+        payload = self._build_payload(messages, config, tools)
+        payload.pop("stream", None)
+        resp = await self.client.post(PATH, json=payload)
+        if resp.status_code >= 400:
+            raise RuntimeError(f"OpenAI Responses API error {resp.status_code}: {resp.text[:300]}")
+        data = resp.json()
+
+        content = ""
+        reasoning = ""
+        tool_calls: list[ToolCall] = []
+        for item in data.get("output", []):
+            item_type = item.get("type")
+            if item_type == "message":
+                for part in item.get("content", []):
+                    if part.get("type") == "output_text":
+                        content += part.get("text", "")
+            elif item_type == "reasoning":
+                for part in item.get("summary", []):
+                    if part.get("type") == "summary_text":
+                        reasoning += part.get("text", "")
+            elif item_type == "function_call":
+                tool_calls.append(
+                    ToolCall(
+                        id=item.get("call_id", ""),
+                        name=item.get("name", ""),
+                        arguments=item.get("arguments", "{}"),
+                    )
+                )
+
+        usage = data.get("usage") or {}
+        return GenerationResponse(
+            content=content,
+            model=data.get("model", payload["model"]),
+            finish_reason="tool_calls" if tool_calls else "stop",
+            usage={
+                "input_tokens": usage.get("input_tokens", 0),
+                "output_tokens": usage.get("output_tokens", 0),
+                "total_tokens": usage.get(
+                    "total_tokens", usage.get("input_tokens", 0) + usage.get("output_tokens", 0)
+                ),
+            },
+            reasoning_content=reasoning,
+        )
+
+    def _generate_stream(  # type: ignore[override]
+        self, messages: list[Message], config: GenerationConfig, tools: list[dict] | None = None
+    ) -> AsyncGenerator[dict[str, Any], None]:
+        return self._stream_response(self._build_payload(messages, config, tools))
+
+    async def _stream_response(
+        self, payload: dict[str, Any]
+    ) -> AsyncGenerator[dict[str, Any], None]:
+        state = self._new_stream_state()
+        finish_emitted = False
+        async with self.client.stream("POST", PATH, json=payload) as resp:
+            if resp.status_code >= 400:
+                body = await resp.aread()
+                raise RuntimeError(
+                    f"OpenAI Responses API error {resp.status_code}: "
+                    f"{body.decode('utf-8', errors='replace')[:300]}"
+                )
+            async for line in resp.aiter_lines():
+                line = line.strip()
+                if not line.startswith("data:"):
+                    continue
+                raw = line[len("data:") :].strip()
+                if not raw or raw == "[DONE]":
+                    continue
+                try:
+                    event = json.loads(raw)
+                except json.JSONDecodeError:
+                    continue
+
+                for chunk in self._stream_step(state, event):
+                    if chunk["type"] == "finish_reason":
+                        finish_emitted = True
+                    yield chunk
+
+        # Terminal flush (pi's Lifecycle.finish).
+        if state["usage"]:
+            yield {"type": "usage", "usage": state["usage"]}
+        if not finish_emitted:
+            reason = "tool_calls" if state["has_function_call"] else "stop"
+            yield {"type": "finish_reason", "finish_reason": reason}
+
+    def get_available_models(self) -> list[str]:
+        return []

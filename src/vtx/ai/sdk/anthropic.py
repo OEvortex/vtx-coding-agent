@@ -13,6 +13,7 @@ import httpx
 
 from vtx.ai.provider_hooks import prepare_request
 from vtx.ai.sdk.base import BaseLLMSDK, GenerationConfig, GenerationResponse, Message, ToolCall
+from vtx.ai.thinking import ANTHROPIC_MESSAGES, resolve_reasoning_params
 
 logger = logging.getLogger(__name__)
 
@@ -240,42 +241,26 @@ class AnthropicSDK(BaseLLMSDK):
     @staticmethod
     def _apply_thinking_payload(payload: dict[str, Any], config: GenerationConfig) -> None:
         """Translate ``config.thinking_level`` into the Anthropic-native
-        ``thinking`` block.
+        ``thinking`` block via the shared resolver
+        (:func:`vtx.ai.thinking.resolve_reasoning_params`).
 
-        Uses manual ``type: "enabled" + budget_tokens`` for every
-        level, which is the documented form across current Claude
-        models (Sonnet 4.5 / Opus 4.5 / Sonnet 4.6 / Opus 4.6).
-        Older models that don't accept manual thinking will return
-        400, which the user sees normally.
-
-        Level -> budget_tokens (Anthropic minimum is 1024 and
-        budget_tokens must be strictly less than max_tokens):
-          - "minimal" -> 1024
-          - "low"     -> 2048
-          - "medium"  -> 4096
-          - "high"    -> 8192
-          - "xhigh"   -> 16384
+        Uses ``type: "enabled" + budget_tokens`` — the documented form
+        across current Claude models. Budgets come from the shared
+        ``ANTHROPIC_BUDGETS`` table (minimal=1024 … xhigh=16384) and are
+        clamped to stay strictly below ``max_tokens``. Older models that
+        reject manual thinking return 400, which surfaces normally.
 
         Reference:
           https://platform.claude.com/docs/en/build-with-claude/extended-thinking
         """
-        level = config.thinking_level
-        if level is None or level == "none":
-            # Anthropic defaults to non-thinking when the field is
-            # omitted, so "none" is implemented as no field at all.
-            return
-
-        manual_budget: dict[str, int] = {
-            "minimal": 1024,
-            "low": 2048,
-            "medium": 4096,
-            "high": 8192,
-            "xhigh": 16384,
-        }
-        budget = manual_budget.get(level)
-        if budget is None:
-            return
-        payload["thinking"] = {"type": "enabled", "budget_tokens": budget}
+        payload.update(
+            resolve_reasoning_params(
+                ANTHROPIC_MESSAGES,
+                config.thinking_level,
+                level_map=config.thinking_level_map,
+                max_tokens=payload.get("max_tokens"),
+            )
+        )
 
     async def generate(
         self, messages: list[Message], config: GenerationConfig, stream: bool = False

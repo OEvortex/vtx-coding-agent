@@ -11,10 +11,13 @@ from dataclasses import dataclass
 class ApiType:
     OPENAI_COMPLETIONS = "openai-completions"
     OPENAI_SDK = "openai-sdk"
+    OPENAI_RESPONSES = "openai-responses"
     ANTHROPIC = "anthropic"
     SUPERCODE = "supercode"
 
-    _VALUES: frozenset[str] = frozenset({OPENAI_COMPLETIONS, OPENAI_SDK, ANTHROPIC, SUPERCODE})
+    _VALUES: frozenset[str] = frozenset(
+        {OPENAI_COMPLETIONS, OPENAI_SDK, OPENAI_RESPONSES, ANTHROPIC, SUPERCODE}
+    )
 
     def __init__(self, value: str):
         if value not in self._VALUES:

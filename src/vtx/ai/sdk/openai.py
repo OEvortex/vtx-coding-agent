@@ -11,6 +11,7 @@ from openai.types.chat import ChatCompletionChunk, ChatCompletionToolParam
 
 from vtx.ai.provider_hooks import prepare_request
 from vtx.ai.sdk.base import BaseLLMSDK, GenerationConfig, GenerationResponse, Message, ToolCall
+from vtx.ai.thinking import OPENAI_COMPLETIONS, resolve_reasoning_params
 
 logger = logging.getLogger(__name__)
 
@@ -252,60 +253,33 @@ class OpenAISDK(BaseLLMSDK):
         return kwargs
 
     def _apply_thinking_kwargs(self, kwargs: dict[str, Any], config: GenerationConfig) -> None:
-        """Translate ``config.thinking_level`` into the wire parameter
-        for the current provider.
+        """Translate ``config.thinking_level`` into Chat Completions wire
+        params via the shared resolver (:mod:`vtx.ai.thinking`).
 
-        The dispatch is whitelisted by slug:
+        Resolution order:
 
-        - **``openai-codex`` / ``openai-responses``**: emit bare
-          top-level ``reasoning_effort``. These are the openai family
-          slugs that route to OpenAI's API and accept the standard
-          Chat Completions parameter. The openai Python SDK's
-          ``client.chat.completions.create()`` only accepts
-          ``reasoning_effort``; the structured ``reasoning: {effort: ...}``
-          form is Responses-API-only and is rejected with
-          ``unexpected keyword argument 'reasoning'``. ``"none"`` is
-          implemented as omission (no documented Chat-Completions off
-          switch for o-series / gpt-5; the model picks its default).
-
-        - **Every other openai_compat provider**: emit nothing.
-          Gateways like openrouter / kilo / tokenrouter / deepseek /
-          zhipu etc. have provider-specific thinking controls that we
-          don't try to translate. The picker still works (the user can
-          still select a level) but the level is not sent to the wire
-          — the model uses its own default.
-
-        The Anthropic adapter has its own dispatch
-        (``AnthropicSDK._apply_thinking_payload``) and is unaffected.
-
-        Reference:
-          https://github.com/openai/openai-python/blob/main/src/openai/resources/chat/completions/completions.py
-          (the SDK signature: ``reasoning_effort: Optional[ReasoningEffort]``,
-          values ``none|minimal|low|medium|high|xhigh``)
+        1. Per-model effort map (models.dev ``reasoning_options``): when the
+           catalog verifies this model's efforts, ``reasoning_effort`` is sent
+           on any OpenAI-compatible provider. Levels explicitly mapped to
+           ``None`` are omitted; mapped strings flow through verbatim; unmapped
+           standard levels pass through unchanged.
+        2. Legacy fallback without a map: only hardcoded slugs known to accept
+           Chat Completions ``reasoning_effort`` (``openai-codex`` /
+           ``openai-responses``) send the level; other providers stay silent
+           and the model uses its own default.
         """
-        level = config.thinking_level
-        if level is None or level == "none":
+        if config.thinking_level_map is not None:
+            # Catalog-verified support: resolve through the per-model map.
+            kwargs.update(
+                resolve_reasoning_params(
+                    OPENAI_COMPLETIONS, config.thinking_level, level_map=config.thinking_level_map
+                )
+            )
             return
-
-        # Per-model effort map (models.dev reasoning_options, pi parity):
-        # when the catalog verifies this model's efforts, send
-        # ``reasoning_effort`` on any OpenAI-compatible provider. A level
-        # explicitly mapped to ``None`` is unsupported and omitted; a mapped
-        # string is sent verbatim (allows provider-specific spellings); an
-        # unmapped standard level passes through unchanged.
-        level_map = config.thinking_level_map
-        if level_map:
-            mapped = level_map.get(level, _UNSET)
-            if mapped is None:
-                return  # explicitly unsupported for this model
-            kwargs["reasoning_effort"] = mapped if isinstance(mapped, str) else level
-            return
-
-        # Legacy fallback: no verified map — only hardcoded slugs that are
-        # known to accept Chat Completions ``reasoning_effort``.
-        if self._provider_slug not in _THINKING_ENABLED_SLUGS:
-            return
-        kwargs["reasoning_effort"] = level
+        # Legacy: no verified map — only hardcoded slugs known to accept Chat
+        # Completions ``reasoning_effort`` may receive it.
+        if self._provider_slug in _THINKING_ENABLED_SLUGS:
+            kwargs.update(resolve_reasoning_params(OPENAI_COMPLETIONS, config.thinking_level))
 
     async def generate(
         self, messages: list[Message], config: GenerationConfig, stream: bool = False

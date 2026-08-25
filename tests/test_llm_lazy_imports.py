@@ -36,6 +36,7 @@ _PROVIDER_CASES = [
     (ApiType(ApiType.OPENAI_SDK), "OpenAISDKProvider"),
     (ApiType(ApiType.ANTHROPIC), "AnthropicSDKProvider"),
     (ApiType(ApiType.OPENAI_COMPLETIONS), "OpenAISDKProvider"),
+    (ApiType(ApiType.OPENAI_RESPONSES), "OpenAIResponsesSDKProvider"),
     (ApiType(ApiType.SUPERCODE), "SupercodeProvider"),
 ]
 

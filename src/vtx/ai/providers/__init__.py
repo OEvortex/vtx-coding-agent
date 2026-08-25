@@ -9,6 +9,7 @@ PROVIDER_API_BY_NAME: dict[str, ApiType] = {
     "deepseek": ApiType(ApiType.OPENAI_SDK),
     "airouter": ApiType(ApiType.OPENAI_SDK),
     "opencode": ApiType(ApiType.OPENAI_SDK),
+    "openai-responses": ApiType(ApiType.OPENAI_RESPONSES),
     "kilo": ApiType(ApiType.OPENAI_SDK),
     "tokenrouter": ApiType(ApiType.OPENAI_SDK),
     "openrouter": ApiType(ApiType.OPENAI_SDK),
@@ -46,6 +47,10 @@ def get_provider_class(api_type: ApiType, provider_slug: str = "") -> type[BaseP
             from vtx.ai.providers.openai_sdk import OpenAISDKProvider
 
             return OpenAISDKProvider
+        case ApiType.OPENAI_RESPONSES:
+            from vtx.ai.providers.openai_responses_sdk import OpenAIResponsesSDKProvider
+
+            return OpenAIResponsesSDKProvider
         case ApiType.SUPERCODE:
             from vtx.ai.providers.supercode import SupercodeProvider
 

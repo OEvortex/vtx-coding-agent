@@ -115,3 +115,99 @@ def clamp_thinking_level(level: str, supported: Iterable[str]) -> str:
         if EXTENDED_THINKING_LEVELS[i] in supported_list:
             return EXTENDED_THINKING_LEVELS[i]
     return supported_list[0]
+
+
+# =============================================================================
+# Unified wire translation — the single home for effort -> wire params
+# =============================================================================
+
+# Protocol families (mirrors pi's api layer and opencode's protocols).
+OPENAI_COMPLETIONS = "openai-completions"  # top-level ``reasoning_effort``
+OPENAI_RESPONSES = "openai-responses"  # ``reasoning: {effort: ...}``
+ANTHROPIC_MESSAGES = "anthropic-messages"  # ``thinking: {type, budget_tokens}``
+
+# Anthropic budget_tokens per level (minimum accepted is 1024; the value must
+# stay strictly below max_tokens — enforced when ``max_tokens`` is provided).
+ANTHROPIC_BUDGETS: dict[str, int] = {
+    "minimal": 1024,
+    "low": 2048,
+    "medium": 4096,
+    "high": 8192,
+    "xhigh": 16384,
+    "max": 32768,
+}
+
+_ANTHROPIC_MIN_BUDGET = 1024
+
+
+def _resolve_effort(
+    level: str,
+    *,
+    level_map: Mapping[str, str | None] | None,
+    default_when_unmapped: str | None = None,
+) -> str | None:
+    """Resolve ``level`` through the map (pi semantics).
+
+    Returns the mapped string, the level itself when unmapped, or ``None``
+    when explicitly unsupported.
+    """
+    mapped = (level_map or {}).get(level)
+    if mapped is None and level in (level_map or {}):
+        return None
+    if isinstance(mapped, str):
+        return mapped
+    return default_when_unmapped
+
+
+def resolve_reasoning_params(
+    style: str,
+    level: str | None,
+    *,
+    level_map: Mapping[str, str | None] | None = None,
+    max_tokens: int | None = None,
+) -> dict[str, Any]:
+    """Translate a thinking level into wire params for the target protocol.
+
+    This is the single translation point for every transport — the SDK
+    layers call it instead of hand-rolling their own dispatch.
+
+    - ``openai-completions``: ``{"reasoning_effort": <effort>}``
+    - ``openai-responses``:   ``{"reasoning": {"effort": <effort>}}``
+    - ``anthropic-messages``: ``{"thinking": {"type": "enabled",
+      "budget_tokens": N}}`` where N comes from the shared budget table,
+      clamped so it stays strictly below ``max_tokens``.
+
+    ``level`` of ``None``/``"none"``/``"off"`` means "model default" and
+    resolves to ``{}``. An explicit ``None`` in ``level_map`` marks the
+    level unsupported and also resolves to ``{}``.
+    """
+    if level is None or level in ("none", "off"):
+        return {}
+
+    if style == ANTHROPIC_MESSAGES:
+        # Budget-based extended thinking is the documented form across
+        # current Claude models; level_map strings don't apply here.
+        budget = ANTHROPIC_BUDGETS.get(level)
+        if budget is None:
+            return {}
+        if max_tokens:
+            budget = min(budget, max(_ANTHROPIC_MIN_BUDGET, max_tokens - _ANTHROPIC_MIN_BUDGET))
+        return {"thinking": {"type": "enabled", "budget_tokens": budget}}
+
+    effort = _resolve_effort(
+        level, level_map=level_map, default_when_unmapped=None if level == "none" else level
+    )
+    if effort is None:
+        return {}
+
+    if style == OPENAI_COMPLETIONS:
+        # Chat Completions has no documented "off"/"max" switch.
+        if effort in ("off", "max"):
+            return {}
+        return {"reasoning_effort": effort}
+    if style == OPENAI_RESPONSES:
+        if effort == "off":
+            return {}
+        return {"reasoning": {"effort": effort}}
+
+    raise ValueError(f"Unknown reasoning style: {style!r}")
