@@ -116,6 +116,34 @@ def setup(api):
 
 `tool_call` and `tool_result` are blocking events: handlers run before the action completes and may veto it.
 
+## Provider request hooks
+
+Two events let you inspect and rewrite every outgoing LLM request —
+useful for gateway tracing headers, custom auth injection, or forcing
+request parameters:
+
+```python
+def setup(api):
+    @api.on_before_provider_headers
+    def trace(event, payload):
+        payload["headers"]["x-session-id"] = "my-trace-id"
+        # payload["headers"]["X-Something"] = None  # deletes a header
+
+    @api.on_before_provider_request
+    def force_temp(event, payload, ctx):
+        return {"payload": {**payload["payload"], "temperature": 0}}
+```
+
+| Event | Payload | Return |
+| --- | --- | --- |
+| `before_provider_headers` | `provider`, `model`, `headers` (mutate in place; set a key to `None` to delete) | ignored |
+| `before_provider_request` | `provider`, `model`, `payload` (full wire payload; mutate in place) | `{"payload": {...}}` to replace |
+
+Both fire once per request after the payload is fully built and before it
+is sent, across all transports (OpenAI SDK, Anthropic HTTP, Supercode).
+Retries reuse the prepared values — handlers are not re-fired. Handlers
+run in load order and later ones chain off earlier replacements.
+
 ## YAML hooks
 
 Prefer declarative? `.vtx/hooks.yml` registers shell/HTTP handlers without Python:

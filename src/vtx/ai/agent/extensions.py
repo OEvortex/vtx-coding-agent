@@ -486,49 +486,9 @@ _EVENT_CLASS_MAP: dict[str, type[Any]] | None = None
 def _get_event_class_map() -> dict[str, type[Any]]:
     global _EVENT_CLASS_MAP
     if _EVENT_CLASS_MAP is None:
-        # Local imports to avoid circular at module load time.
-        from vtx.ai.agent.extensions import (  # noqa: I001
-            AfterProviderResponseEvent,
-            AgentActivatedEvent,
-            AgentChangedEvent,
-            AgentEndEvent,
-            AgentSettledEvent,
-            AgentStartEvent,
-            BeforeAgentStartEvent,
-            BeforeProviderHeadersEvent,
-            BeforeProviderRequestEvent,
-            CompactionEndEvent,
-            CompactionStartEvent,
-            ContextEvent,
-            InputEvent,
-            ModelSelectEvent,
-            MessageEndEvent,
-            MessageStartEvent,
-            MessageUpdateEvent,
-            ProjectTrustEvent,
-            ResourcesDiscoverEvent,
-            SessionBeforeCompactEvent,
-            SessionBeforeForkEvent,
-            SessionBeforeSwitchEvent,
-            SessionBeforeTreeEvent,
-            SessionCompactEvent,
-            SessionCompactFailedEvent,
-            SessionEndEvent,
-            SessionInfoChangedEvent,
-            SessionShutdownEvent,
-            SessionStartEvent,
-            SessionTreeEvent,
-            ThinkingLevelSelectEvent,
-            ToolCallEvent,
-            ToolExecutionEndEvent,
-            ToolExecutionStartEvent,
-            ToolExecutionUpdateEvent,
-            ToolGroupChangedEvent,
-            ToolResultEvent,
-            TurnEndEvent,
-            TurnStartEvent,
-            UserBashEvent,
-        )
+        # Agent/Turn lifecycle event objects live in vtx.core.events;
+        # all other event classes are defined in this module.
+        from vtx.core.events import AgentEndEvent, AgentStartEvent, TurnEndEvent, TurnStartEvent
 
         _EVENT_CLASS_MAP = {
             SESSION_START: SessionStartEvent,
@@ -616,6 +576,8 @@ class Extension:
     message_renderers: dict[str, Callable[..., Any]] = field(default_factory=dict)
     # Custom entry renderers by customType.
     entry_renderers: dict[str, Callable[..., Any]] = field(default_factory=dict)
+    # Event handlers registered via ``api.on``. Key is the event type name.
+    handlers: dict[str, list[Callable[..., Any]]] = field(default_factory=dict)
 
 
 @dataclass
@@ -907,7 +869,10 @@ class EventBus:
                 payload[_OUTPUT] = result[_OUTPUT]
                 merged[_OUTPUT] = result[_OUTPUT]
 
-            merged.update({k: v for k, v in result.items() if k not in (_BLOCK, _ARGS, _OUTPUT)})
+            extra = {k: v for k, v in result.items() if k not in (_BLOCK, _ARGS, _OUTPUT)}
+            merged.update(extra)
+            # Write modifications back so later handlers chain off them.
+            payload.update(extra)
 
         return merged
 
@@ -952,7 +917,10 @@ class EventBus:
                 payload[_OUTPUT] = result[_OUTPUT]
                 merged[_OUTPUT] = result[_OUTPUT]
 
-            merged.update({k: v for k, v in result.items() if k not in (_BLOCK, _ARGS, _OUTPUT)})
+            extra = {k: v for k, v in result.items() if k not in (_BLOCK, _ARGS, _OUTPUT)}
+            merged.update(extra)
+            # Write modifications back so later handlers chain off them.
+            payload.update(extra)
 
         return merged
 
@@ -1539,9 +1507,9 @@ class ExtensionRunner:
         self._error_listeners.add(listener)
         return lambda: self._error_listeners.discard(listener)
 
-    def _emit_error(self, extension_path: str, event: str, error: Exception) -> None:
+    def _emit_error(self, extension_path: str | Path, event: str, error: Exception) -> None:
         ext_error = ExtensionError(
-            extension_path=extension_path,
+            extension_path=str(extension_path),
             event=event,
             error=str(error),
             stack=getattr(error, "__traceback__", None),
@@ -1577,6 +1545,9 @@ class ExtensionRuntime:
         self.set_model: Callable[..., Any] = _not_initialized
         self.get_thinking_level: Callable[..., Any] = _not_initialized
         self.set_thinking_level: Callable[..., Any] = _not_initialized
+        self.register_provider: Callable[..., Any] = _not_initialized
+        self.register_native_provider: Callable[..., Any] = _not_initialized
+        self.unregister_provider: Callable[..., Any] = _not_initialized
         self.flag_values: dict[str, Any] = {}
         self.pending_provider_registrations: list[Any] = []
         self.pending_native_provider_registrations: list[Any] = []
@@ -1802,11 +1773,13 @@ class ExtensionAPI:
             def decorator(fn: Callable[..., Any]) -> Callable[..., Any]:
                 self._bus.on(event, fn)
                 self._extension.handler_calls[_qualname(fn)] = 0
+                self._extension.handlers.setdefault(event, []).append(fn)
                 return fn
 
             return decorator
         self._bus.on(event, handler)
         self._extension.handler_calls[_qualname(handler)] = 0
+        self._extension.handlers.setdefault(event, []).append(handler)
         return handler
 
     # ---- tool registration ----------------------------------------------
@@ -1985,9 +1958,8 @@ class ExtensionAPI:
     def get_flag(self, name: str) -> Any:
         """Get the current value of a registered flag."""
         if not self._runner:
-            return (
-                self._extension.flags.get(name).default if name in self._extension.flags else None
-            )
+            flag = self._extension.flags.get(name)
+            return flag.default if flag is not None else None
         return self._runner._runtime.flag_values.get(name)
 
     # ---- message / entry rendering ---------------------------------------
@@ -2137,6 +2109,23 @@ class ExtensionAPI:
 
     def on_user_bash(self, handler: Callable[..., Any]) -> Callable[..., Any]:
         return self.on(USER_BASH, handler)
+
+    def on_before_provider_headers(self, handler: Callable[..., Any]) -> Callable[..., Any]:
+        """Mutate outgoing HTTP headers: ``(event, payload[, ctx]) -> None``.
+
+        ``payload["headers"]`` maps header name to value; set a key to
+        ``None`` to delete it. Fired once per request; retries reuse the
+        prepared headers.
+        """
+        return self.on(BEFORE_PROVIDER_HEADERS, handler)
+
+    def on_before_provider_request(self, handler: Callable[..., Any]) -> Callable[..., Any]:
+        """Inspect/rewrite the wire payload: return ``{"payload": {...}}`` to replace.
+
+        Runs after the payload is fully built, right before the request is
+        sent. Later handlers chain off earlier replacements.
+        """
+        return self.on(BEFORE_PROVIDER_REQUEST, handler)
 
 
 # =============================================================================
@@ -2625,7 +2614,60 @@ def load_for_runtime(
                     errors.append(str(exc))
 
     runner._extensions = exts
-    return LoadedExtensions(extensions=exts, errors=errors, bus=bus, runner=runner)
+    loaded = LoadedExtensions(extensions=exts, errors=errors, bus=bus, runner=runner)
+    install_provider_bridge(bus)
+    return loaded
+
+
+# =============================================================================
+# Provider request hook bridge
+# =============================================================================
+
+_PROVIDER_BRIDGE_BUS: EventBus | None = None
+
+
+def install_provider_bridge(bus: EventBus) -> None:
+    """Expose provider-level hook points to extensions.
+
+    Wires the transport-level registry (:mod:`vtx.ai.provider_hooks`) to the
+    bus so ``before_provider_headers`` / ``before_provider_request``
+    handlers run with full ``ctx`` support right before an LLM request is
+    sent. Idempotent: only the first bus in a process is bridged (matching
+    the single active runtime).
+
+    Called automatically by :func:`load_for_runtime`.
+    """
+    global _PROVIDER_BRIDGE_BUS
+    if _PROVIDER_BRIDGE_BUS is not None:
+        return
+    _PROVIDER_BRIDGE_BUS = bus
+
+    from vtx.ai import provider_hooks
+
+    async def _on_headers(headers: dict[str, str | None], context: dict[str, Any]) -> None:
+        await bus.emit(
+            BEFORE_PROVIDER_HEADERS,
+            provider=context.get("provider", ""),
+            model=context.get("model", ""),
+            headers=headers,
+        )
+
+    async def _on_request(payload: dict[str, Any], context: dict[str, Any]) -> dict[str, Any]:
+        merged = await bus.emit(
+            BEFORE_PROVIDER_REQUEST,
+            provider=context.get("provider", ""),
+            model=context.get("model", ""),
+            payload=payload,
+        )
+        # Handlers either mutate ``payload["payload"]`` in place (already
+        # visible here, since we pass the same object) or return
+        # ``{"payload": {...}}`` (written back by the bus for chaining).
+        # Re-wrap for the registry's ``{"payload": ...}`` return convention.
+        result = merged.get("payload")
+        return {"payload": result if isinstance(result, dict) else payload}
+
+    provider_hooks.register_headers_listener(_on_headers)
+    provider_hooks.register_request_listener(_on_request)
 
 
 # Suppress "imported but unused" for the typing-only imports above.
