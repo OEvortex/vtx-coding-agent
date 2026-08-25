@@ -7,6 +7,7 @@
 - providers.py - /provider
 - agents.py   - /agent
 - switch.py   - /switch
+- update.py   - /update
 """
 
 from __future__ import annotations
@@ -20,6 +21,7 @@ from .providers import ProviderCommands
 from .sessions import SessionCommands
 from .settings import SettingsCommands, SettingsSelectionResult
 from .switch import SwitchCommands
+from .update import UpdateCommands
 
 
 class CommandsMixin(
@@ -30,6 +32,7 @@ class CommandsMixin(
     ProviderCommands,
     SwitchCommands,
     AgentCommands,
+    UpdateCommands,
 ):
     def _handle_command(self, text: str) -> bool:
         parts = text[1:].split(maxsplit=1)
@@ -102,6 +105,9 @@ class CommandsMixin(
         if cmd == "switch":
             self._handle_switch_command(args)
             return True
+        if cmd == "update":
+            self._handle_update_command()
+            return True
 
         # Extension commands take a final swing at anything the built-ins
         # did not handle. They can shadow built-in commands; this matches
@@ -151,4 +157,5 @@ __all__ = [
     "SettingsCommands",
     "SettingsSelectionResult",
     "SwitchCommands",
+    "UpdateCommands",
 ]

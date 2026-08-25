@@ -468,6 +468,7 @@ class ChatLog(VerticalScroll):
             ("/logout", "Logout from a provider"),
             ("/export", "Export session to HTML file"),
             ("/copy", "Copy last agent response text to clipboard"),
+            ("/update", "Update vtx to latest version"),
         ]
         _append_aligned_section(text, "Commands", commands, **colors)
 

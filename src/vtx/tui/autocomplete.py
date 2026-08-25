@@ -443,4 +443,5 @@ DEFAULT_COMMANDS = [
     SlashCommand("copy", "copy last agent response text"),
     SlashCommand("compact", "compact current conversation now"),
     SlashCommand("agent", "list/switch handoff agents (Shift+Tab to cycle)"),
+    SlashCommand("update", "check for and install latest vtx update"),
 ]
