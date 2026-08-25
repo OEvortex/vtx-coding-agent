@@ -100,8 +100,21 @@ def _parse_entry(entry: dict) -> ProviderInfo:
 
 
 def _load_builtin() -> dict[str, ProviderInfo]:
-    with open(_YAML_PATH, encoding="utf-8") as f:
-        data = yaml.safe_load(f)
+    # Prefer importlib.resources so the catalog works when the package is
+    # installed as a zip/uv-tool shim where __file__ may not point to a
+    # real file on disk. Fall back to the filesystem path for editable
+    # installs.
+    data = None
+    try:
+        from importlib import resources
+
+        text = resources.files("vtx.ai").joinpath("provider.yaml").read_text(encoding="utf-8")
+        data = yaml.safe_load(text)
+    except Exception:
+        pass
+    if data is None:
+        with open(_YAML_PATH, encoding="utf-8") as f:
+            data = yaml.safe_load(f)
     return {e["slug"]: _parse_entry(e) for e in data.get("providers", [])}
 
 
@@ -110,8 +123,17 @@ def _get_order() -> list[str]:
     if _order_cache is not None:
         return _order_cache
     _ensure_custom_files_loaded()
-    with open(_YAML_PATH, encoding="utf-8") as f:
-        data = yaml.safe_load(f)
+    data = None
+    try:
+        from importlib import resources
+
+        text = resources.files("vtx.ai").joinpath("provider.yaml").read_text(encoding="utf-8")
+        data = yaml.safe_load(text)
+    except Exception:
+        pass
+    if data is None:
+        with open(_YAML_PATH, encoding="utf-8") as f:
+            data = yaml.safe_load(f)
     _order_cache = [e["slug"] for e in data.get("providers", [])]
     # Append slugs of runtime-registered custom providers not already present.
     for slug in _custom_cache:
