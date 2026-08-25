@@ -1,5 +1,5 @@
-# Reference clone of pi for extension parity work
-ref/pi/
+# Vendored reference repos
+ref/
 
 # Python-generated files
 __pycache__/

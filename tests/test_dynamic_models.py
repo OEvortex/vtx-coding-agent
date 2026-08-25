@@ -548,3 +548,76 @@ def test_dedupe_models_preserves_first_occurrence():
     )
     deduped = dedupe_models([a, b, a_dup])
     assert deduped == [a, b]
+
+
+def test_legacy_cache_format_deserialization(monkeypatch: pytest.MonkeyPatch, tmp_path: Path):
+    """Ensure caches with legacy keys (context_length, etc.) load correctly."""
+    import json
+
+    from vtx.ai.dynamic_models import _read_cache
+
+    monkeypatch.setenv("VTX_MODELS_CACHE_DIR", str(tmp_path))
+    legacy_file = tmp_path / "legacyprov.json"
+    legacy_data = {
+        "fetched_at": 100.0,
+        "cooldown_minutes": 60,
+        "models": [
+            {
+                "id": "model-1",
+                "name": "Model One",
+                "context_length": 128000,
+                "max_output_tokens": 4096,
+                "supports_images": True,
+                "api_model_id": "model-1-free",
+            }
+        ],
+    }
+    legacy_file.write_text(json.dumps(legacy_data), encoding="utf-8")
+
+    cached = _read_cache("legacyprov")
+    assert cached is not None
+    assert len(cached.models) == 1
+    assert cached.models[0].id == "model-1"
+    assert cached.models[0].name == "Model One"
+    assert cached.models[0].context_window == 128000
+    assert cached.models[0].max_tokens == 4096
+    assert cached.models[0].supports_images is True
+
+
+def test_stale_cache_not_discarded_offline(monkeypatch: pytest.MonkeyPatch, tmp_path: Path):
+    """Ensure caches older than cooldown/TTL are not discarded when reading models offline."""
+    import json
+
+    from vtx.ai.model_fetcher import get_fetched_models
+    from vtx.ai.provider_catalog import ProviderInfo
+
+    monkeypatch.setenv("VTX_MODELS_CACHE_DIR", str(tmp_path))
+    cache_file = tmp_path / "oldprov.json"
+    cache_data = {
+        "fetched_at": 100.0,  # very old timestamp
+        "cooldown_minutes": 60,
+        "models": [
+            {
+                "id": "old-model",
+                "name": "Old Model",
+                "context_window": 64000,
+                "max_tokens": 2048,
+                "supports_images": False,
+            }
+        ],
+    }
+    cache_file.write_text(json.dumps(cache_data), encoding="utf-8")
+
+    prov = ProviderInfo(
+        slug="oldprov",
+        display_name="Old Prov",
+        description="",
+        family="openai_compat",
+        base_url="https://api.oldprov.com/v1",
+        fetch_models=True,
+    )
+    models = get_fetched_models(prov)
+    assert len(models) == 1
+    assert models[0].id == "old-model"
+    assert models[0].provider == "oldprov"
+    assert models[0].context_window == 64000

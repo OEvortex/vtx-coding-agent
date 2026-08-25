@@ -14,8 +14,7 @@ day it ships, so this module:
 3. Persists the result to ``~/.vtx/models/<provider>.json`` with a TTL so
    the UI stays responsive when the network is slow or offline.
 4. Falls back to the cached snapshot on network failure (stale-while-revalidate).
-5. Filters free vs. paid models using the same dual heuristic as the
-   ``@neilurk12/pi-free-models`` extension that ships with pi:
+5. Filters free vs. paid models using a dual heuristic:
 
    - For providers that expose pricing (Kilo/OpenRouter-style), a model is free
      iff ``cost.input == 0 and cost.output == 0`` (or its name contains
@@ -86,7 +85,7 @@ class DynamicProviderConfig:
     name: str
     base_url: str
     env_var: str
-    api: ApiType = field(default_factory=lambda: ApiType(ApiType.OPENAI_COMPLETIONS))
+    api: ApiType = field(default_factory=lambda: ApiType(ApiType.OPENAI_SDK))
     # Extra headers required by some gateways (e.g. Kilo's editor banner).
     headers: dict[str, str] = field(default_factory=dict)
     # If True, the provider does not check the Authorization header at all
@@ -103,7 +102,7 @@ class DynamicProviderConfig:
 
 
 _FAMILY_TO_API: dict[str, ApiType] = {
-    "openai_compat": ApiType(ApiType.OPENAI_COMPLETIONS),
+    "openai_compat": ApiType(ApiType.OPENAI_SDK),
     "anthropic": ApiType(ApiType.ANTHROPIC),
 }
 
@@ -128,7 +127,7 @@ def _build_dynamic_providers() -> dict[str, DynamicProviderConfig]:
             name=p.slug,
             base_url=p.base_url,
             env_var=p.api_key_env or "",
-            api=_FAMILY_TO_API.get(p.family, ApiType(ApiType.OPENAI_COMPLETIONS)),
+            api=_FAMILY_TO_API.get(p.family, ApiType(ApiType.OPENAI_SDK)),
             headers=dict(p.headers),
             api_key_optional=p.api_key_optional,
             openmodelendpoint=p.openmodelendpoint,
@@ -241,6 +240,29 @@ class DynamicModelEntry:
     pricing_known: bool = False  # False = name-based free detection only
     raw: dict[str, Any] = field(default_factory=dict)
 
+    @classmethod
+    def from_dict(cls, m: dict[str, Any]) -> DynamicModelEntry:
+        context_window = m.get("context_window")
+        if context_window is None:
+            context_window = m.get("context_length")
+        max_tokens = m.get("max_tokens")
+        if max_tokens is None:
+            max_tokens = m.get("max_output_tokens")
+        raw_value = m.get("raw")
+
+        return cls(
+            id=str(m.get("id", "")),
+            name=str(m.get("name", m.get("id", ""))),
+            context_window=int(context_window) if context_window is not None else None,
+            max_tokens=int(max_tokens) if max_tokens is not None else None,
+            supports_images=bool(m.get("supports_images", False)),
+            supports_thinking=bool(m.get("supports_thinking", False)),
+            thinking_level_map=m.get("thinking_level_map"),
+            is_free=bool(m.get("is_free", False)),
+            pricing_known=bool(m.get("pricing_known", False)),
+            raw=raw_value if isinstance(raw_value, dict) else {},
+        )
+
 
 @dataclass
 class CachedCatalog:
@@ -260,7 +282,11 @@ class CachedCatalog:
     @classmethod
     def from_dict(cls, data: dict[str, Any]) -> CachedCatalog:
         models_data = data.get("models", [])
-        models = [DynamicModelEntry(**m) for m in models_data if isinstance(m, dict)]
+        models = [
+            DynamicModelEntry.from_dict(m)
+            for m in models_data
+            if isinstance(m, dict) and m.get("id")
+        ]
         return cls(
             provider=data.get("provider", ""),
             fetched_at=float(data.get("fetched_at", 0.0)),
@@ -365,7 +391,7 @@ def _entry_name(raw: dict[str, Any], model_id: str) -> str:
 def _is_free_model(
     name: str, prompt_cost: float, completion_cost: float, pricing_known: bool
 ) -> bool:
-    """Dual heuristic mirroring the pi free-models extension."""
+    """Dual free-model heuristic (zero-cost pricing or "free" keyword)."""
     name_lower = name.lower()
     has_free_keyword = "free" in name_lower
     if pricing_known:
@@ -546,8 +572,8 @@ def _parse_models(
                 or "reasoning" in model_id_lower
             )
 
-        # 3b. Reasoning-effort detection (pi parity): models.dev publishes
-        # verified ``reasoning_options``; convert them into a pi-style
+        # 3b. Reasoning-effort detection: models.dev publishes
+        # verified ``reasoning_options``; convert them into a
         # thinking-level map for per-model effort support.
         thinking_level_map = None
         if spec:

@@ -46,6 +46,9 @@ class FetchedModel:
     max_output_tokens: int = 0
     supports_images: bool = False
     api_model_id: str = ""
+    supports_thinking: bool = False
+    thinking_level_map: dict[str, str | None] | None = None
+    is_free: bool = False
 
 
 def _get_cache_dir() -> Path:
@@ -59,28 +62,41 @@ def _cache_path(provider_slug: str) -> Path:
     return _get_cache_dir() / f"{provider_slug}.json"
 
 
-def _read_cache(provider_slug: str) -> list[FetchedModel] | None:
+def _read_cache(provider_slug: str, *, check_cooldown: bool = False) -> list[FetchedModel] | None:
     path = _cache_path(provider_slug)
     try:
         data = json.loads(path.read_text(encoding="utf-8"))
     except (FileNotFoundError, json.JSONDecodeError, OSError):
         return None
 
-    fetched_at = data.get("fetched_at", 0)
-    cooldown = data.get("cooldown_minutes", DEFAULT_COOLDOWN) * 60
-    if time.time() - fetched_at > cooldown:
-        return None
+    if check_cooldown:
+        fetched_at = data.get("fetched_at", 0)
+        cooldown = data.get("cooldown_minutes", DEFAULT_COOLDOWN) * 60
+        if time.time() - fetched_at > cooldown:
+            return None
 
     models = []
     for entry in data.get("models", []):
+        if not isinstance(entry, dict) or not entry.get("id"):
+            continue
+        ctx = entry.get("context_length")
+        if ctx is None:
+            ctx = entry.get("context_window", 0)
+        max_out = entry.get("max_output_tokens")
+        if max_out is None:
+            max_out = entry.get("max_tokens", 0)
+
         models.append(
             FetchedModel(
-                id=entry["id"],
-                name=entry.get("name", entry["id"]),
-                context_length=entry.get("context_length", 0),
-                max_output_tokens=entry.get("max_output_tokens", 0),
-                supports_images=entry.get("supports_images", False),
-                api_model_id=entry.get("api_model_id", ""),
+                id=str(entry["id"]),
+                name=str(entry.get("name", entry["id"])),
+                context_length=int(ctx) if ctx else 0,
+                max_output_tokens=int(max_out) if max_out else 0,
+                supports_images=bool(entry.get("supports_images", False)),
+                api_model_id=str(entry.get("api_model_id", "")),
+                supports_thinking=bool(entry.get("supports_thinking", False)),
+                thinking_level_map=entry.get("thinking_level_map"),
+                is_free=bool(entry.get("is_free", False)),
             )
         )
     return models
@@ -252,11 +268,8 @@ def refresh_all_provider_models() -> dict[str, int]:
 
 def get_fetched_models(provider) -> list[Model]:
     """Get fetched models from cache only (no network). Returns empty if not cached."""
-    if not provider.fetch_models:
-        return []
-
     cached = _read_cache(provider.slug)
-    if cached is None:
+    if not cached:
         return []
 
     family_to_api = {
@@ -286,7 +299,7 @@ def get_fetched_models(provider) -> list[Model]:
 
         max_tokens = entry.max_output_tokens or provider.max_tokens
         supports_images = entry.supports_images or provider.supports_vision
-        supports_thinking = provider.supports_thinking
+        supports_thinking = entry.supports_thinking or provider.supports_thinking
         context_window = entry.context_length or None
 
         if is_matched:
@@ -304,18 +317,19 @@ def get_fetched_models(provider) -> list[Model]:
             supports_tools = provider.supports_tools
             supports_audio = False
 
-        is_free = False
-        if provider.slug == "cline":
+        is_free = entry.is_free
+        if provider.slug == "cline" and not is_free:
             is_free = entry.id in cline_free_ids
         models.append(
             Model(
                 id=entry.id,
                 provider=provider.slug,
-                api=family_to_api[provider.family],
+                api=family_to_api.get(provider.family, ApiType(ApiType.OPENAI_SDK)),
                 base_url=provider.base_url or "",
                 max_tokens=max_tokens,
                 supports_images=supports_images,
                 supports_thinking=supports_thinking,
+                thinking_level_map=entry.thinking_level_map,
                 context_window=context_window,
                 supports_tools=supports_tools,
                 supports_audio=supports_audio,
