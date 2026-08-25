@@ -1,25 +1,26 @@
 """OpenAI Responses API adapter.
 
-Python port of pi's ``openai-responses`` protocol
-(``packages/ai/src/api/openai-responses.ts``), adapted to vtx's chunk
+Transported through the **official ``openai`` package**
+(``AsyncOpenAI().responses.create(...)``), adapted to vtx's chunk
 vocabulary:
 
 - conversation history lowers to ``input`` items: ``{role: system}``,
   user/assistant ``message`` items, ``function_call`` items for assistant
   tool calls, and ``function_call_output`` items keyed by ``call_id``
-- system prompts ride as input items (pi's schema keeps them inline)
+- system prompts ride as input items (the schema keeps them inline)
 - tools are flattened ``{"type": "function", name, description,
   parameters}``
-- reasoning effort resolves through the shared per-model map exactly like
-  pi: clamp the requested level against the model's supported levels, look
+- reasoning effort resolves through the shared per-model map:
+  clamp the requested level against the model's supported levels, look
   up ``thinking_level_map[level] ?? level``, and emit ``reasoning:
   {effort: ...}`` only when the model reasons and the level isn't "off"
 - ``store: false`` by default (stateless sessions)
-- SSE events follow pi's state machine: ``output_text.delta``,
-  ``reasoning_*_delta``, ``function_call_arguments.delta/.done``,
-  ``output_item.done`` (function_call -> tool_calls chunk),
-  ``response.completed/incomplete`` (usage + finish reason),
-  ``response.failed``/``error``
+- streaming rides the SDK's ``AsyncStream[ResponseStreamEvent]``; typed
+  events are dumped back to dicts and dispatched through the stream state
+  machine: ``output_text.delta``, ``reasoning_*_delta``,
+  ``function_call_arguments.delta/.done``, ``output_item.done``
+  (function_call -> tool_calls chunk), ``response.completed/incomplete``
+  (usage + finish reason), ``response.failed``/``error``
 """
 
 from __future__ import annotations
@@ -32,7 +33,7 @@ import os
 from collections.abc import AsyncGenerator
 from typing import Any
 
-import httpx
+from openai import AsyncOpenAI
 
 from vtx.ai.sdk.base import BaseLLMSDK, GenerationConfig, GenerationResponse, Message, ToolCall
 from vtx.ai.thinking import clamp_thinking_level, get_supported_thinking_levels
@@ -41,7 +42,6 @@ logger = logging.getLogger(__name__)
 
 _DEFAULT_MODEL = "gpt-5"
 ADAPTER = "openai-responses"
-PATH = "/responses"
 
 
 class OpenAIResponsesSDK(BaseLLMSDK):
@@ -50,33 +50,28 @@ class OpenAIResponsesSDK(BaseLLMSDK):
     ):
         resolved = base_url or "https://api.openai.com/v1"
         super().__init__(api_key=api_key, base_url=resolved)
-        self._client: httpx.AsyncClient | None = None
+        self._client: AsyncOpenAI | None = None
         self._provider_slug = (provider_slug or "").lower() or None
 
     @property
-    def client(self) -> httpx.AsyncClient:
+    def client(self) -> AsyncOpenAI:  # pyright: ignore[reportIncompatibleMethodOverride]
         if self._client is None:
-            self._client = httpx.AsyncClient(
-                base_url=self.base_url.rstrip("/") + "/",  # ty:ignore[unresolved-attribute]
-                headers={
-                    "Authorization": f"Bearer {self.api_key}",
-                    "Content-Type": "application/json",
-                },
-                timeout=httpx.Timeout(120.0),
+            self._client = AsyncOpenAI(
+                api_key=self.api_key, base_url=self.base_url, timeout=None, max_retries=3
             )
         return self._client
 
     async def aclose(self) -> None:
         if self._client is not None:
-            await self._client.aclose()
+            await self._client.close()
             self._client = None
 
     # ------------------------------------------------------------------
-    # Request lowering (pi's fromRequest)
+    # Request lowering (payload building)
     # ------------------------------------------------------------------
 
     def _resolve_effort(self, config: GenerationConfig) -> str | None:
-        """pi's flow: clamp the level to the model's supported set, then map
+        """Clamp the level to the model's supported set, then map
         it through ``thinking_level_map``. "off" resolves to None (omitted).
         """
         level = config.thinking_level
@@ -98,7 +93,7 @@ class OpenAIResponsesSDK(BaseLLMSDK):
         for msg in messages:
             metadata = msg.metadata or {}
             role = msg.role
-            # Replay encrypted reasoning items first (stateless store:false — pi parity).
+            # Replay encrypted reasoning items first (stateless store:false).
             # They arrive as serialized JSON in metadata["reasoning_items"] (see
             # _stream_step / provider ThinkPart round-trip).
             if role == "assistant" and metadata.get("reasoning_items"):
@@ -171,6 +166,11 @@ class OpenAIResponsesSDK(BaseLLMSDK):
 
         if config.max_tokens:
             payload["max_output_tokens"] = config.max_tokens
+        # Temperature rides the wire only when explicitly set (0.7 is the
+        # unset default, same convention as the Chat Completions transport);
+        # reasoning models reject it otherwise.
+        if config.temperature is not None and config.temperature != 0.7:
+            payload["temperature"] = config.temperature
         if tools:
             payload["tools"] = [
                 {
@@ -186,7 +186,7 @@ class OpenAIResponsesSDK(BaseLLMSDK):
         return payload
 
     # ------------------------------------------------------------------
-    # Stream state machine (pi's step/onOutputItemDone/etc.)
+    # Stream state machine (event dispatch)
     # ------------------------------------------------------------------
 
     @staticmethod
@@ -199,8 +199,7 @@ class OpenAIResponsesSDK(BaseLLMSDK):
         }
 
     def _stream_step(self, state: dict[str, Any], event: dict[str, Any]) -> list[dict[str, Any]]:
-        """Handle one SSE event; returns chunks to yield (may be empty).
-        Mirrors pi's event dispatch one-to-one."""
+        """Handle one SSE event; returns chunks to yield (may be empty)."""
         etype = event.get("type", "")
         chunks: list[dict[str, Any]] = []
 
@@ -241,7 +240,7 @@ class OpenAIResponsesSDK(BaseLLMSDK):
                 call["arguments"] = event["arguments"]
 
         elif etype == "response.reasoning_summary_part.done":
-            # pi appends separator between summary parts
+            # Separator between summary parts
             chunks.append({"type": "reasoning", "content": "\n\n"})
 
         elif etype == "response.output_item.done":
@@ -300,7 +299,7 @@ class OpenAIResponsesSDK(BaseLLMSDK):
                 else None
             )
             if status == "incomplete":
-                # pi: only max_output_tokens → length, everything else is error
+                # Only max_output_tokens maps to length; everything else is error
                 if incomplete_reason == "max_output_tokens":
                     state["finish_reason"] = "length"
                 else:
@@ -308,7 +307,7 @@ class OpenAIResponsesSDK(BaseLLMSDK):
                     state["error"] = incomplete_reason or "incomplete"
             else:
                 state["finish_reason"] = "tool_calls" if state["has_function_call"] else "stop"
-            # Terminal chunks are emitted in-step, like pi's Lifecycle.finish.
+            # Terminal chunks are emitted in-step.
             if state["usage"]:
                 chunks.append({"type": "usage", "usage": state["usage"]})
             chunks.append({"type": "finish_reason", "finish_reason": state["finish_reason"]})
@@ -318,8 +317,10 @@ class OpenAIResponsesSDK(BaseLLMSDK):
             raise RuntimeError(f"OpenAI Responses failed: {err.get('message', 'unknown error')}")
 
         elif etype == "error":
+            # Official SDK's ResponseErrorEvent carries a top-level message.
             err = event.get("error") or {}
-            raise RuntimeError(f"OpenAI Responses stream error: {err.get('message', 'unknown')}")
+            msg = event.get("message") or err.get("message", "unknown")
+            raise RuntimeError(f"OpenAI Responses stream error: {msg}")
 
         return chunks
 
@@ -350,10 +351,8 @@ class OpenAIResponsesSDK(BaseLLMSDK):
     ) -> GenerationResponse:
         payload = self._build_payload(messages, config, tools)
         payload.pop("stream", None)
-        resp = await self.client.post(PATH, json=payload)
-        if resp.status_code >= 400:
-            raise RuntimeError(f"OpenAI Responses API error {resp.status_code}: {resp.text[:300]}")
-        data = resp.json()
+        response = await self.client.responses.create(**payload)
+        data = response.model_dump()
 
         content = ""
         reasoning = ""
@@ -402,33 +401,22 @@ class OpenAIResponsesSDK(BaseLLMSDK):
     ) -> AsyncGenerator[dict[str, Any], None]:
         state = self._new_stream_state()
         finish_emitted = False
+        usage_emitted = False
         try:
-            async with self.client.stream("POST", PATH, json=payload) as resp:
-                if resp.status_code >= 400:
-                    body = await resp.aread()
-                    raise RuntimeError(
-                        f"OpenAI Responses API error {resp.status_code}: "
-                        f"{body.decode('utf-8', errors='replace')[:300]}"
-                    )
-                async for line in resp.aiter_lines():
-                    line = line.strip()
-                    if not line.startswith("data:"):
-                        continue
-                    raw = line[len("data:") :].strip()
-                    if not raw or raw == "[DONE]":
-                        continue
-                    try:
-                        event = json.loads(raw)
-                    except json.JSONDecodeError:
-                        continue
+            # Official SDK flow: create() with stream=True returns an
+            # AsyncStream of typed ResponseStreamEvent models.
+            stream = await self.client.responses.create(**payload)
+            async for event in stream:
+                for chunk in self._stream_step(state, event.model_dump()):
+                    if chunk["type"] == "finish_reason":
+                        finish_emitted = True
+                    elif chunk["type"] == "usage":
+                        usage_emitted = True
+                    yield chunk
 
-                    for chunk in self._stream_step(state, event):
-                        if chunk["type"] == "finish_reason":
-                            finish_emitted = True
-                        yield chunk
-
-            # Terminal flush (pi's Lifecycle.finish).
-            if state["usage"]:
+            # Terminal flush — only for streams that
+            # never sent a terminal event.
+            if state["usage"] and not usage_emitted:
                 yield {"type": "usage", "usage": state["usage"]}
             if not finish_emitted:
                 reason = "tool_calls" if state["has_function_call"] else "stop"

@@ -11,9 +11,15 @@ from vtx.ai.providers.openai_sdk import OpenAISDKProvider
 
 class OpenAIResponsesSDKProvider(OpenAISDKProvider):
     """Same conversion/processing pipeline as the Chat Completions provider,
-    but routed through the Responses-API SDK (pi ``openai-responses`` parity:
-    reasoning effort rides ``reasoning: {effort}``, tool calls use
-    ``call_id``/``function_call`` items)."""
+    but routed through the Responses-API SDK (reasoning effort rides
+    ``reasoning: {effort}``, tool calls use ``call_id``/``function_call``
+    items).
+
+    Transport is the official ``openai`` package's Responses flow
+    (``AsyncOpenAI().responses.create(..., stream=True)``); typed stream
+    events are lowered into the same chunk vocabulary the base pipeline
+    consumes.
+    """
 
     name = "openai-responses"
     thinking_levels: ClassVar[list[str]] = [
@@ -33,7 +39,7 @@ class OpenAIResponsesSDKProvider(OpenAISDKProvider):
         from vtx.ai.sdk.openai_responses import OpenAIResponsesSDK
 
         self._sdk = OpenAIResponsesSDK(
-            api_key=self._sdk.api_key if hasattr(self._sdk, "api_key") else "",
+            api_key=self._sdk.api_key,
             base_url=self.config.base_url,
             provider_slug=self.config.provider,
         )

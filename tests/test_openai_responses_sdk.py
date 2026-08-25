@@ -1,4 +1,4 @@
-"""Tests for the OpenAI Responses API adapter (pi openai-responses parity)."""
+"""Tests for the OpenAI Responses API adapter."""
 
 from __future__ import annotations
 
@@ -17,7 +17,7 @@ def _cfg(**kw) -> GenerationConfig:
 
 
 # ---------------------------------------------------------------------
-# Payload lowering (pi's fromRequest)
+# Payload lowering
 # ---------------------------------------------------------------------
 
 
@@ -63,6 +63,23 @@ def test_reasoning_omitted_for_none_level():
     sdk = _sdk()
     payload = sdk._build_payload([Message(role="user", content="hi")], _cfg(thinking_level="none"))
     assert "reasoning" not in payload
+
+
+def test_temperature_sent_when_explicitly_set():
+    sdk = _sdk()
+    payload = sdk._build_payload(
+        [Message(role="user", content="hi")], _cfg(thinking_level="none", temperature=0.3)
+    )
+    assert payload["temperature"] == 0.3
+
+
+def test_temperature_omitted_at_default():
+    sdk = _sdk()
+    # 0.7 is the unset default (mirrors the Chat Completions transport).
+    payload = sdk._build_payload(
+        [Message(role="user", content="hi")], _cfg(thinking_level="none", temperature=0.7)
+    )
+    assert "temperature" not in payload
 
 
 def test_tools_flatten_to_function_shape():
@@ -113,7 +130,7 @@ def test_assistant_tool_calls_lower_to_function_call_items():
 
 
 # ---------------------------------------------------------------------
-# Stream state machine (pi's step dispatch)
+# Stream state machine (event dispatch)
 # ---------------------------------------------------------------------
 
 
