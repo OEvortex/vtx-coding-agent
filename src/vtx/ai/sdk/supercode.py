@@ -15,6 +15,7 @@ from typing import Any
 import httpx
 
 from vtx.ai.oauth.supercode import load_supercode_credentials
+from vtx.ai.provider_hooks import prepare_request
 from vtx.ai.sdk.base import BaseLLMSDK, GenerationConfig, GenerationResponse, Message, ToolCall
 
 logger = logging.getLogger(__name__)
@@ -139,6 +140,8 @@ class SupercodeSDK(BaseLLMSDK):
                 payload["tools"] = supercode_tools
 
         headers = {"Content-Type": "application/json", "Authorization": f"Bearer {self._token}"}
+        extra_headers, payload = await prepare_request(provider="supercode", payload=payload)
+        headers.update(extra_headers)
 
         if stream:
             return self._stream_chat(payload, headers, config)

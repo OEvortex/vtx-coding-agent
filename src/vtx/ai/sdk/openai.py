@@ -9,6 +9,7 @@ from typing import Any
 from openai import AsyncOpenAI
 from openai.types.chat import ChatCompletionChunk, ChatCompletionToolParam
 
+from vtx.ai.provider_hooks import prepare_request
 from vtx.ai.sdk.base import BaseLLMSDK, GenerationConfig, GenerationResponse, Message, ToolCall
 
 logger = logging.getLogger(__name__)
@@ -296,6 +297,12 @@ class OpenAISDK(BaseLLMSDK):
             kwargs["stream"] = stream
             if stream:
                 kwargs["stream_options"] = {"include_usage": True}
+            extra_headers, kwargs = await prepare_request(
+                provider=self._provider_slug or "openai", payload=kwargs
+            )
+            if extra_headers:
+                kwargs["extra_headers"] = extra_headers
+            if stream:
                 raw_stream = await _retry_on_transient(
                     lambda: self.client.chat.completions.create(**kwargs)
                 )
@@ -348,6 +355,12 @@ class OpenAISDK(BaseLLMSDK):
             kwargs["stream"] = stream
             if stream:
                 kwargs["stream_options"] = {"include_usage": True}
+            extra_headers, kwargs = await prepare_request(
+                provider=self._provider_slug or "openai", payload=kwargs
+            )
+            if extra_headers:
+                kwargs["extra_headers"] = extra_headers
+            if stream:
                 raw_stream = await _retry_on_transient(
                     lambda: self.client.chat.completions.create(**kwargs)
                 )

@@ -11,6 +11,7 @@ from typing import Any
 
 import httpx
 
+from vtx.ai.provider_hooks import prepare_request
 from vtx.ai.sdk.base import BaseLLMSDK, GenerationConfig, GenerationResponse, Message, ToolCall
 
 logger = logging.getLogger(__name__)
@@ -290,10 +291,14 @@ class AnthropicSDK(BaseLLMSDK):
         tools: list[dict[str, Any]] | None = None,
     ) -> GenerationResponse:
         payload = self._build_payload(messages, config, tools)
+        extra_headers, payload = await prepare_request(provider="anthropic", payload=payload)
+        request_kwargs: dict[str, Any] = {"json": payload}
+        if extra_headers:
+            request_kwargs["headers"] = extra_headers
         last_exc: Exception | None = None
         for attempt in range(_MAX_RETRIES):
             try:
-                resp = await self.client.post("/v1/messages", json=payload)
+                resp = await self.client.post("/v1/messages", **request_kwargs)
                 if resp.status_code >= 400:
                     if _is_transient(
                         httpx.HTTPStatusError("err", request=resp.request, response=resp)
@@ -325,7 +330,11 @@ class AnthropicSDK(BaseLLMSDK):
     ) -> AsyncGenerator[dict[str, Any], None]:
         payload = self._build_payload(messages, config)
         payload["stream"] = True
-        async with self.client.stream("POST", "/v1/messages", json=payload) as resp:
+        extra_headers, payload = await prepare_request(provider="anthropic", payload=payload)
+        stream_kwargs: dict[str, Any] = {"json": payload}
+        if extra_headers:
+            stream_kwargs["headers"] = extra_headers
+        async with self.client.stream("POST", "/v1/messages", **stream_kwargs) as resp:
             if resp.status_code >= 400:
                 body = await resp.aread()
                 raise RuntimeError(
