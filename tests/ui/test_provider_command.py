@@ -5,6 +5,7 @@ from typing import TYPE_CHECKING, cast
 
 import pytest
 
+import vtx.ai.model_fetcher as model_fetcher_module
 import vtx.tui.commands.models as models_module
 from vtx.ai import list_providers
 from vtx.coding_agent.config import get_config
@@ -303,8 +304,16 @@ async def test_model_refresh_with_slug_refreshes_only_that_provider(monkeypatch)
         captured["called"] = ("provider", name)
         return 7
 
+    # kilo is both a dynamic and a legacy catalog provider; the command takes
+    # the max of both refreshes. Mock the legacy path too so no network call
+    # happens and the result is deterministic (7 stays the winner).
+    def fake_refresh_legacy(name):
+        captured.setdefault("legacy", []).append(name)
+        return 3
+
     monkeypatch.setattr(models_module, "refresh_all_providers", fake_refresh_all)
     monkeypatch.setattr(models_module, "refresh_provider", fake_refresh_provider)
+    monkeypatch.setattr(model_fetcher_module, "refresh_provider_models", fake_refresh_legacy)
 
     fake = FakeCommands()
     await fake._refresh_dynamic_models("kilo")
