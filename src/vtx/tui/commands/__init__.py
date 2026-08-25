@@ -110,8 +110,8 @@ class CommandsMixin(
             return True
 
         # Extension commands take a final swing at anything the built-ins
-        # did not handle. They can shadow built-in commands; this matches
-        # pi's behavior of letting extensions override the agent's UI.
+        # did not handle. They can shadow built-in commands, letting
+        # extensions override the agent's UI.
         ext_cmd = self._extension_command_lookup(cmd)
         if ext_cmd is not None:
             self._dispatch_extension_command(ext_cmd, args)

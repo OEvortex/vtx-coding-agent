@@ -1,15 +1,15 @@
 """TUI-backed interactive UI primitives for extensions.
 
 Implements :class:`vtx.ai.agent.extensions.ExtensionUIContext` on top of the
-Textual app, mirroring pi's ``ctx.ui``:
+Textual app:
 
 - ``await ctx.ui.confirm(title, message)`` — yes/no modal dialog
 - ``await ctx.ui.select(title, options)``   — pick-one modal list
 - ``await ctx.ui.input(title, placeholder)`` — free-text modal prompt
 - ``ctx.ui.notify(message, level)``          — styled line in the chat log
 - ``ctx.ui.setStatus(key, value)`` / ``ctx.ui.setWidget(key, lines)`` — a
-  persistent bar rendered at the bottom of the screen (pi-style footer
-  status/widgets)
+  persistent footer bar rendered at the bottom of the screen for
+  status/widgets
 
 Dialogs are Textual ``ModalScreen`` subclasses pushed onto the running app;
 the awaiting extension handler is resolved through an ``asyncio.Future``

@@ -1,4 +1,4 @@
-"""Tests for provider-level hooks (pi before_provider_headers/request parity).
+"""Tests for provider-level hooks (``before_provider_headers``/request).
 
 Covers the transport registry (:mod:`vtx.ai.provider_hooks`) and its bridge
 onto the extension EventBus.

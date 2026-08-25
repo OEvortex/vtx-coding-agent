@@ -171,8 +171,8 @@ class ModelCommands(CommandSupport):
                 valid_dynamic = set(DYNAMIC_PROVIDERS)
                 valid_legacy = set()
                 for p in list_catalog_providers():
-                    pi = get_provider_info(p.slug)
-                    if pi and pi.fetch_models:
+                    info = get_provider_info(p.slug)
+                    if info and info.fetch_models:
                         valid_legacy.add(p.slug)
                 valid = ", ".join(sorted(valid_dynamic | valid_legacy))
                 chat.add_info_message(

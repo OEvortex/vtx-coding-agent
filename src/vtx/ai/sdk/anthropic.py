@@ -261,7 +261,7 @@ class AnthropicSDK(BaseLLMSDK):
         model = self._resolve_model(config)
         max_tokens = config.max_tokens if config.max_tokens is not None else _DEFAULT_MAX_TOKENS
         payload: dict[str, Any] = {"model": model, "max_tokens": max_tokens, "messages": converted}
-        # System as block with cache_control (pi parity) — only for official API
+        # System as block with cache_control — only for official API
         if system:
             if _is_anthropic_api(self.base_url):
                 payload["system"] = [
@@ -270,7 +270,7 @@ class AnthropicSDK(BaseLLMSDK):
             else:
                 payload["system"] = system
         # Suppress temperature/top_p when thinking is enabled — Opus 4.7+ rejects
-        # temperature != 1 and top_p/top_k with 400 (docs + pi compat flag).
+        # temperature != 1 and top_p/top_k with 400 (per docs).
         thinking_params = resolve_reasoning_params(
             ANTHROPIC_MESSAGES,
             config.thinking_level,
@@ -287,7 +287,7 @@ class AnthropicSDK(BaseLLMSDK):
             payload["stop_sequences"] = config.stop_sequences
         anthropic_tools = _tools_to_anthropic(tools)
         if anthropic_tools:
-            # Cache the last tool definition (pi places cache_control on last tool)
+            # Place cache_control on the last tool definition
             if _is_anthropic_api(self.base_url) and anthropic_tools:
                 anthropic_tools[-1] = {
                     **anthropic_tools[-1],
@@ -299,7 +299,7 @@ class AnthropicSDK(BaseLLMSDK):
                 payload["tool_choice"] = {"type": tc}
             elif isinstance(tc, dict):
                 payload["tool_choice"] = tc
-        # Cache the last user message's last content block (pi parity)
+        # Cache the last user message's last content block
         if _is_anthropic_api(self.base_url) and payload["messages"]:
             last_msg = payload["messages"][-1]
             content = last_msg.get("content")

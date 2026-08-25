@@ -202,7 +202,7 @@ class ProviderConfig:
     openai_compat_auth_mode: AuthMode = "auto"
     anthropic_compat_auth_mode: AuthMode = "auto"
     default_headers: dict[str, str] = field(default_factory=dict)
-    # Pi-style per-model effort map (from models.dev reasoning_options).
+    # Per-model effort map (from models.dev reasoning_options).
     # When present, the OpenAI-compat SDK sends reasoning_effort for any
     # provider whose catalog verifies support — not just hardcoded slugs.
     thinking_level_map: dict[str, str | None] | None = None

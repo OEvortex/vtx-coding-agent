@@ -1,4 +1,4 @@
-"""Tests for pi-parity thinking-level / reasoning-effort detection.
+"""Tests for thinking-level / reasoning-effort detection.
 
 Covers the models.dev ``reasoning_options`` -> thinking-level-map
 conversion, per-model supported-level derivation, clamping, and the
@@ -18,7 +18,7 @@ from vtx.ai.thinking import (
 )
 
 # =============================================================================
-# parse_models_dev_reasoning_options (pi's getEffortThinkingLevelMap)
+# parse_models_dev_reasoning_options
 # =============================================================================
 
 
@@ -69,7 +69,7 @@ def test_null_and_default_values_are_ignored():
 
 
 # =============================================================================
-# get_supported_thinking_levels (pi's getSupportedThinkingLevels)
+# get_supported_thinking_levels
 # =============================================================================
 
 
@@ -118,7 +118,7 @@ def test_canonical_level_order_is_preserved():
 
 
 # =============================================================================
-# clamp_thinking_level (pi's clampThinkingLevel)
+# clamp_thinking_level
 # =============================================================================
 
 

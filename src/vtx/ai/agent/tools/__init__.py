@@ -87,8 +87,8 @@ def get_tools_with_extensions(
 ) -> list[BaseTool]:
     """Return the requested built-in tools plus any extension tools.
 
-    Extension tools with the same name as a built-in win (mirrors pi's
-    override behavior). Extension tools not in ``default_names`` are
+    Extension tools with the same name as a built-in win (override
+    behavior). Extension tools not in ``default_names`` are
     included anyway so the LLM can see and call them. ``extension_tools``
     is a no-op for backwards compatibility when no extensions are loaded.
     """

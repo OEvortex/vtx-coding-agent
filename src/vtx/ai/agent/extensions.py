@@ -20,8 +20,8 @@ Discovery happens from four places, in this order (later wins on name conflict):
 Set ``--no-extensions`` to skip auto-discovery; only explicit ``--extension``
 paths will load.
 
-Extensions run in-process with the same permissions as the vtx process. Like
-pi, this is intentional: we want extensions to be able to do everything the
+Extensions run in-process with the same permissions as the vtx process. This
+is intentional: we want extensions to be able to do everything the
 user can do. Don't load extensions from sources you don't trust.
 
 Event handlers can be sync or async. Handlers for blocking events (``tool_call``)
@@ -59,7 +59,7 @@ from vtx.core.types import ImageContent, TextContent, ToolResult
 log = logging.getLogger("agent.extensions")
 
 # Public event names an extension can subscribe to. Mirrors the vtx event stream
-# plus pi-style blocking points. Keep this set in sync with the docstring above.
+# plus blocking points. Keep this set in sync with the docstring above.
 SESSION_START = "session_start"
 SESSION_END = "session_end"
 SESSION_INFO_CHANGED = "session_info_changed"
@@ -92,7 +92,7 @@ COMPACTION_END = "compaction_end"
 AGENT_ACTIVATED = "agent_activated"
 AGENT_CHANGED = "agent_changed"
 TOOL_GROUP_CHANGED = "tool_group_changed"
-# Pi-parity events
+# Additional lifecycle events
 PROJECT_TRUST = "project_trust"
 RESOURCES_DISCOVER = "resources_discover"
 CONTEXT = "context"
@@ -557,7 +557,7 @@ class Extension:
     name: str
     path: Path
     # Tools registered via ``api.register_tool``. Key is the tool name.
-    # Replaces the built-in tool with the same name (pi's behavior).
+    # Replaces the built-in tool with the same name.
     tools: dict[str, BaseTool] = field(default_factory=dict)
     # Commands registered via ``api.register_command``. Key is the slash name
     # without the leading ``/``.
@@ -720,8 +720,7 @@ class ToolResultEvent:
 class HandlerContext:
     """Per-event context passed to extension handlers that accept a third argument.
 
-    Mirrors pi's ``(event, ctx)`` shape adapted to vtx's ``(event, payload,
-    ctx)`` convention: two-argument handlers keep working unchanged, while
+    Handler signature convention: two-argument handlers keep working unchanged, while
     handlers declared as ``(event, payload, ctx)`` receive a
     :class:`HandlerContext` whose ``ui`` exposes the interactive primitives
     (``confirm``, ``select``, ``input``, ``notify``, ...).
@@ -960,7 +959,7 @@ async def _await_coroutine(awaitable: Any) -> Any:
 class ExtensionRunner:
     """Coordinates loaded extensions, binds runtime actions, and creates contexts.
 
-    Mirrors pi's ``ExtensionRunner``: owns the shared runtime, lazily binds
+    Owns the shared runtime, lazily binds
     core/command/UI actions, tracks stale instances, and provides special emit
     methods for chained events.
     """
@@ -1067,7 +1066,7 @@ class ExtensionRunner:
             return
         self._stale_message = message or (
             "This extension ctx is stale after session replacement or reload. "
-            "Do not use a captured pi or command ctx after ctx.newSession(), "
+            "Do not use a captured agent or command ctx after ctx.newSession(), "
             "ctx.fork(), ctx.switchSession(), or ctx.reload(). For newSession, "
             "fork, and switchSession, move post-replacement work into withSession "
             "and use the ctx passed to withSession. For reload, do not use the old "
@@ -1571,7 +1570,7 @@ def _not_initialized(*args: Any, **kwargs: Any) -> Any:
 
 
 class ExtensionUIContext:
-    """UI surface for extensions, mirroring pi's ``ctx.ui``.
+    """UI surface for extensions (``ctx.ui``).
 
     The real TUI-backed implementation (:class:`vtx.tui.extension_ui.
     TextualExtensionUI`) is installed by the host via
@@ -2325,8 +2324,7 @@ def discover_extension_paths(
 ) -> list[Path]:
     """Resolve the list of extension paths to load, in priority order.
 
-    Project-local extensions come first so they can override global ones
-    (matching pi's behavior).
+    Project-local extensions come first so they can override global ones.
     """
     configured_paths: list[Path] = [Path(p).expanduser() for p in (configured or [])]
     resolved_agent_dir = agent_dir or (get_config_dir() / "agent")

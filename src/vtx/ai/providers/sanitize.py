@@ -2,7 +2,7 @@
 Sanitize text content before sending to LLM APIs.
 
 Lone Unicode surrogates (U+D800-U+DFFF) cause API errors with some providers.
-This matches pi-mono's sanitizeSurrogates() behavior.
+This matches the common sanitizeSurrogates() behavior.
 """
 
 import re

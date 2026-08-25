@@ -1,4 +1,4 @@
-"""Tests for extension UI primitives (pi ctx.ui parity).
+"""Tests for extension UI primitives.
 
 Covers:
 

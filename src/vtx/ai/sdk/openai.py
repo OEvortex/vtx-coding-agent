@@ -19,7 +19,7 @@ _DEFAULT_MODEL = "gpt-4o"
 _MAX_RETRIES = 3
 _RETRY_BASE_DELAY = 1.0
 
-# Hosts that still expect the legacy ``max_tokens`` field (pi's detectCompat list).
+# Hosts that still expect the legacy ``max_tokens`` field.
 # Every other OpenAI-compatible endpoint should use ``max_completion_tokens``
 # (required for o-series / gpt-5; ``max_tokens`` is deprecated and rejected).
 _LEGACY_MAX_TOKENS_HOSTS: frozenset[str] = frozenset(

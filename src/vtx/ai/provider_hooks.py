@@ -1,5 +1,5 @@
-"""Provider request interception — pi ``before_provider_headers`` /
-``before_provider_request`` parity, available to every transport.
+"""Provider request interception — ``before_provider_headers`` /
+``before_provider_request`` hooks, available to every transport.
 
 SDK wrappers call :func:`prepare_request` right before sending an LLM
 request. Listeners registered here can:

@@ -28,7 +28,7 @@ class GenerationConfig:
     # None means "provider default" (the model decides). The SDK layer is responsible
     # for translating this into the right wire parameter per provider family.
     thinking_level: str | None = None
-    # Per-model effort map (models.dev reasoning_options -> pi-style levels).
+    # Per-model effort map (models.dev reasoning_options -> canonical levels).
     # When set, it authorizes and translates reasoning_effort on any
     # OpenAI-compatible provider; mapped-to-None levels are omitted.
     thinking_level_map: dict[str, str | None] | None = None

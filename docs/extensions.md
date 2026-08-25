@@ -47,11 +47,11 @@ The `ExtensionAPI`:
 | `register_command(name, description, handler)` | Add a `/slash` command; return a string or `CommandOutcome(output, success, exit_after)` |
 | `notify(message, level)` | Surface info/warning/error to the user |
 
-## Interactive UI (`ctx.ui`, pi parity)
+## Interactive UI (`ctx.ui`)
 
 Handlers declared with **three** parameters — `(event, payload, ctx)` — also
-receive a context whose `ctx.ui` exposes interactive primitives, mirroring
-pi's `ctx.ui`. Two-argument handlers keep working unchanged.
+receive a context whose `ctx.ui` exposes interactive dialogs and prompts.
+Two-argument handlers keep working unchanged.
 
 ```python
 def setup(api):

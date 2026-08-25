@@ -282,7 +282,7 @@ class Vtx(
         )
         self._runtime.set_loaded_extensions(self._loaded_extensions)
 
-        # Interactive UI primitives for extensions (pi ctx.ui parity):
+        # Interactive UI primitives for extensions:
         # handlers declared as (event, payload, ctx) receive a context whose
         # .ui shows real modal dialogs backed by this Textual app.
         self._extension_ui = TextualExtensionUI(self)

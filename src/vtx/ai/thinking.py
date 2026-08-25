@@ -1,7 +1,6 @@
-"""Thinking-level / reasoning-effort detection — pi parity.
+"""Thinking-level / reasoning-effort detection.
 
-Pi derives per-model reasoning controls from the **models.dev** catalog,
-which publishes two fields per model:
+The **models.dev** catalog publishes two fields per model:
 
 - ``reasoning``: whether the model supports reasoning at all.
 - ``reasoning_options``: verified reasoning controls, e.g.
@@ -9,7 +8,7 @@ which publishes two fields per model:
   "xhigh", "max", "none", "default"]}``, ``{"type": "toggle"}`` or
   ``{"type": "budget_tokens", ...}``.
 
-This module converts those into a pi-style *thinking level map*
+This module converts those into a *thinking level map*
 (``level -> provider effort string | None`` where ``None`` marks a level
 as explicitly unsupported) and derives/clamps the levels a model
 actually supports:
@@ -27,7 +26,7 @@ from __future__ import annotations
 from collections.abc import Iterable, Mapping
 from typing import Any
 
-# Canonical level vocabulary, ordered low-to-high (pi's EXTENDED_THINKING_LEVELS).
+# Canonical level vocabulary, ordered low-to-high.
 EXTENDED_THINKING_LEVELS = ("off", "minimal", "low", "medium", "high", "xhigh", "max")
 
 _EFFORT_LEVELS = EXTENDED_THINKING_LEVELS[1:]  # minimal..max
@@ -121,7 +120,7 @@ def clamp_thinking_level(level: str, supported: Iterable[str]) -> str:
 # Unified wire translation — the single home for effort -> wire params
 # =============================================================================
 
-# Protocol families (mirrors pi's api layer and opencode's protocols).
+# Protocol families (per-API wire protocols).
 OPENAI_COMPLETIONS = "openai-completions"  # top-level ``reasoning_effort``
 OPENAI_RESPONSES = "openai-responses"  # ``reasoning: {effort: ...}``
 ANTHROPIC_MESSAGES = "anthropic-messages"  # ``thinking: {type, budget_tokens}``
@@ -146,7 +145,7 @@ def _resolve_effort(
     level_map: Mapping[str, str | None] | None,
     default_when_unmapped: str | None = None,
 ) -> str | None:
-    """Resolve ``level`` through the map (pi semantics).
+    """Resolve ``level`` through the map.
 
     Returns the mapped string, the level itself when unmapped, or ``None``
     when explicitly unsupported.
@@ -185,9 +184,9 @@ def resolve_reasoning_params(
         return {}
 
     if style == ANTHROPIC_MESSAGES:
-        # Two paths (mirrors pi):
+        # Two paths:
         # 1) Catalog-verified effort (Claude 4.6+ / 4.7+): adaptive thinking +
-        #    output_config.effort. pi maps minimal→low; xhigh/max pass through
+        #    output_config.effort. minimal maps to low; xhigh/max pass through
         #    only when the catalog verifies them (level_map contains them).
         #    Docs: platform.claude.com — thinking:{type:"adaptive"} +
         #    output_config:{effort: low|medium|high|xhigh|max} replaces the
