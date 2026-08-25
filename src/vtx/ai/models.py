@@ -49,6 +49,9 @@ class Model:
     supports_audio: bool = False
     api_model_id: str = ""
     is_free: bool = False
+    # Pi-style thinking-level map derived from models.dev reasoning_options:
+    # level -> provider effort string, or None when explicitly unsupported.
+    thinking_level_map: dict[str, str | None] | None = None
 
     @property
     def effective_id(self) -> str:

@@ -43,6 +43,7 @@ import httpx
 
 from vtx.ai.context_length import safe_max_output_tokens
 from vtx.ai.models import ApiType, Model
+from vtx.ai.thinking import parse_models_dev_reasoning_options
 
 logger = logging.getLogger(__name__)
 
@@ -235,6 +236,7 @@ class DynamicModelEntry:
     max_tokens: int | None = None
     supports_images: bool = False
     supports_thinking: bool = False
+    thinking_level_map: dict[str, str | None] | None = None
     is_free: bool = False
     pricing_known: bool = False  # False = name-based free detection only
     raw: dict[str, Any] = field(default_factory=dict)
@@ -544,6 +546,13 @@ def _parse_models(
                 or "reasoning" in model_id_lower
             )
 
+        # 3b. Reasoning-effort detection (pi parity): models.dev publishes
+        # verified ``reasoning_options``; convert them into a pi-style
+        # thinking-level map for per-model effort support.
+        thinking_level_map = None
+        if spec:
+            thinking_level_map = parse_models_dev_reasoning_options(spec.get("reasoning_options"))
+
         # 4. Supports images
         supports_images = None
         if spec:
@@ -560,6 +569,7 @@ def _parse_models(
             max_tokens=max_tokens,
             supports_images=supports_images,
             supports_thinking=supports_thinking,
+            thinking_level_map=thinking_level_map,
             is_free=_is_free_model(name, prompt_cost, completion_cost, pricing_known),
             pricing_known=pricing_known,
             raw=raw,
@@ -891,6 +901,7 @@ def _to_static_model(
         max_tokens=max_tokens,
         supports_images=supports_images,
         supports_thinking=supports_thinking,
+        thinking_level_map=entry.thinking_level_map,
         context_window=context_window,
         supports_tools=supports_tools,
         supports_audio=supports_audio,

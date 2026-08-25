@@ -822,11 +822,30 @@ class ConversationRuntime:
     @property
     def effective_thinking_levels(self) -> list[str]:
         """The set of levels the picker/cycle should offer for the current
-        model + provider. Non-thinking models collapse to ``["none"]``;
-        all other models expose the full OpenAI-style effort enum.
+        model + provider.
+
+        Detection mirrors pi: when the model carries a thinking-level map
+        (derived from models.dev ``reasoning_options``), the supported
+        levels are read from it — including opt-in ``xhigh``/``max`` tiers
+        only for models that advertise them. Non-thinking models collapse
+        to ``["none"]``; models without map data keep the provider-level
+        OpenAI-style effort enum.
         """
         if self.provider is None:
             return []
+
+        from vtx.ai.models import get_model
+        from vtx.ai.thinking import get_supported_thinking_levels
+
+        info = get_model(self.model, self.model_provider)
+        if info is not None and info.supports_thinking:
+            levels = get_supported_thinking_levels(
+                reasoning=True, thinking_level_map=getattr(info, "thinking_level_map", None)
+            )
+            if levels != ["off"]:
+                # VTX vocabulary uses "none" for the off level.
+                return ["none" if lvl == "off" else lvl for lvl in levels]
+
         if not self.model_supports_thinking:
             return ["none"]
         return list(self.provider.thinking_levels)
