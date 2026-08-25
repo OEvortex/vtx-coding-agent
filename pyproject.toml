@@ -20,7 +20,7 @@ default = true
 
 [project]
 name = "vtx-coding-agent"
-version = "1.0.0"
+version = "1.0.1"
 description = "Minimalist coding agent harness with a Textual TUI and headless CLI. Native vtx event loop; the advanced multi-channel gateway loop (agenite-claw) is a separate package (pip install agenite-claw). <1k-token system prompt, 50+ LLM providers, AGENTS.md + skills context, session tree, prompt/auto permissions."
 readme = "README.md"
 requires-python = ">=3.12"

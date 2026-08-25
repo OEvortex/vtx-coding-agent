@@ -5,6 +5,27 @@ All notable changes to Vtx are documented in this file. The format is based on
 adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 
+## [1.0.1] - 2026-08-25
+
+### Added
+- **Interactive UI primitives for extensions (`ctx.ui`)** — handlers declared as `(event, payload, ctx)` now receive a full context whose `ctx.ui` exposes pi-style dialogs: `await ctx.ui.confirm()`, `await ctx.ui.select()`, `await ctx.ui.input()` (real modal dialogs backed by the Textual TUI, safe no-op defaults in headless mode), `ctx.ui.notify()` rendered in the chat log, and `ctx.ui.setStatus()` / `ctx.ui.setWidget()` for a persistent footer bar. All dialogs support `timeout` and abort-`signal` kwargs.
+- **`await ctx.ui.custom(component)`** — show arbitrary Textual widgets or `ModalScreen`s modally from an extension and await the dismissed result.
+- **Provider request hooks** — new `before_provider_headers` and `before_provider_request` extension events fire once per outgoing LLM request across all transports (OpenAI SDK, Anthropic HTTP, Supercode). Handlers can inject/override/delete HTTP headers and inspect or fully replace the wire payload; later handlers chain off earlier replacements; retries reuse prepared values without re-firing handlers. Backed by a transport-level registry (`vtx.ai.provider_hooks`) bridged onto the extension bus automatically.
+- **Cline provider OAuth login** — Cline (WorkOS) added to `/login` with full OAuth flow, credential storage, and free-model detection reflected in model listings.
+- **`/update` command** — check for and install the latest vtx release from inside the TUI.
+- **Configurable models endpoint & unified provider refresh** — `/model refresh` now covers dynamic and legacy catalog providers through one path, with a configurable models endpoint per provider.
+
+### Changed
+- **Handoff prompt in handoff link details** — handoff link blocks now include the handoff prompt in their details view.
+- **Simplified Hatch wheel packaging configuration.**
+- **`api.notify()` routes through the TUI chat log** when a UI is installed instead of only logging.
+
+### Fixed
+- **Event class map ImportError** — `_get_event_class_map()` self-imported event classes from `vtx.ai.agent.extensions`; it now imports agent/turn lifecycle events from `vtx.core.events`, fixing crashes on first event-object lookup.
+- **Restored missing `get_valid_openai_credentials` export** from `vtx.ai` (accidentally dropped during the cline OAuth refactor; `/login` OpenAI flow depended on it).
+- **Removed duplicated `_emit_error` definition** in the extension runner.
+
+
 ## [1.0.0] - 2026-08-23
 
 ### Changed
