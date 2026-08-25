@@ -42,10 +42,6 @@ def get_provider_class(api_type: ApiType, provider_slug: str = "") -> type[BaseP
             from vtx.ai.providers.anthropic_sdk import AnthropicSDKProvider
 
             return AnthropicSDKProvider
-        case ApiType.OPENAI_COMPLETIONS:
-            from vtx.ai.providers.openai_sdk import OpenAISDKProvider
-
-            return OpenAISDKProvider
         case ApiType.OPENAI_RESPONSES:
             from vtx.ai.providers.openai_responses_sdk import OpenAIResponsesSDKProvider
 

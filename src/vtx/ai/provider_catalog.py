@@ -376,7 +376,7 @@ def _sync_dynamic_provider(info: ProviderInfo) -> None:
         from vtx.ai.dynamic_models import DynamicProviderConfig, register_dynamic_provider
 
         family_api = {
-            "openai_compat": _DynApiType(_DynApiType.OPENAI_COMPLETIONS),
+            "openai_compat": _DynApiType(_DynApiType.OPENAI_SDK),
             "anthropic": _DynApiType(_DynApiType.ANTHROPIC),
         }
         register_dynamic_provider(
@@ -384,7 +384,7 @@ def _sync_dynamic_provider(info: ProviderInfo) -> None:
                 name=info.slug,
                 base_url=info.base_url,
                 env_var=info.api_key_env or "",
-                api=family_api.get(info.family, _DynApiType(_DynApiType.OPENAI_COMPLETIONS)),
+                api=family_api.get(info.family, _DynApiType(_DynApiType.OPENAI_SDK)),
                 headers=dict(info.headers),
                 api_key_optional=info.api_key_optional,
                 openmodelendpoint=info.openmodelendpoint,

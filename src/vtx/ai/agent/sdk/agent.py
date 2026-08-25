@@ -499,7 +499,7 @@ class Agent[TContext]:
         else:
             from vtx.ai import ApiType
 
-            api_type: Any = ApiType.OPENAI_COMPLETIONS
+            api_type: Any = ApiType.OPENAI_SDK
             provider_slug = "openai"
 
         api_key_resolved = resolve_api_key(

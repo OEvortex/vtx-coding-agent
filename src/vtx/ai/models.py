@@ -9,14 +9,11 @@ from dataclasses import dataclass
 
 
 class ApiType:
-    OPENAI_COMPLETIONS = "openai-completions"
     OPENAI_SDK = "openai-sdk"
     OPENAI_RESPONSES = "openai-responses"
     ANTHROPIC = "anthropic"
 
-    _VALUES: frozenset[str] = frozenset(
-        {OPENAI_COMPLETIONS, OPENAI_SDK, OPENAI_RESPONSES, ANTHROPIC}
-    )
+    _VALUES: frozenset[str] = frozenset({OPENAI_SDK, OPENAI_RESPONSES, ANTHROPIC})
 
     def __init__(self, value: str):
         if value not in self._VALUES:
@@ -51,7 +48,7 @@ class Model:
     supports_audio: bool = False
     api_model_id: str = ""
     is_free: bool = False
-    # Pi-style thinking-level map derived from models.dev reasoning_options:
+    # Thinking-level map derived from models.dev reasoning_options:
     # level -> provider effort string, or None when explicitly unsupported.
     thinking_level_map: dict[str, str | None] | None = None
 

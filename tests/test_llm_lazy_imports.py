@@ -35,7 +35,6 @@ def test_import_does_not_load_textual(import_target):
 _PROVIDER_CASES = [
     (ApiType(ApiType.OPENAI_SDK), "OpenAISDKProvider"),
     (ApiType(ApiType.ANTHROPIC), "AnthropicSDKProvider"),
-    (ApiType(ApiType.OPENAI_COMPLETIONS), "OpenAISDKProvider"),
     (ApiType(ApiType.OPENAI_RESPONSES), "OpenAIResponsesSDKProvider"),
 ]
 

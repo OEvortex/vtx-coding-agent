@@ -39,7 +39,7 @@ log = logging.getLogger("agent.runtime")
 
 
 def default_base_url_for_api(api_type: ApiType) -> str | None:
-    if api_type == ApiType.OPENAI_COMPLETIONS or api_type == ApiType.OPENAI_SDK:
+    if api_type == ApiType.OPENAI_SDK:
         return os.environ.get("VTX_BASE_URL", "https://api.openai.com/v1")
     return None
 
@@ -828,7 +828,7 @@ class ConversationRuntime:
         """The set of levels the picker/cycle should offer for the current
         model + provider.
 
-        Detection mirrors pi: when the model carries a thinking-level map
+        When the model carries a thinking-level map
         (derived from models.dev ``reasoning_options``), the supported
         levels are read from it — including opt-in ``xhigh``/``max`` tiers
         only for models that advertise them. Non-thinking models collapse

@@ -48,13 +48,13 @@ Support modules: `background.py` (sub-agent task manager), `tools_manager.py` (a
 | `base.py` | `BaseProvider.stream()` returns an `LLMStream` of `StreamPart`s; `ProviderConfig`; env-var API key map; local-endpoint detection. |
 | `provider.yaml` / `provider_catalog.py` | 57 built-in providers plus user YAML overrides from `~/.vtx/providers/*.yaml`. |
 | `providers/openai_sdk.py`, `anthropic_sdk.py` | Streaming adapters over the official SDKs; `mock.py` for offline runs/tests; `sanitize.py` cleans provider payloads. |
-| `oauth/` | Device/code login flows for GitHub Copilot, OpenAI (Codex), Supercode, and dynamic providers. |
+| `oauth/` | Device/code login flows for GitHub Copilot, OpenAI (Codex), Cline (WorkOS), and dynamic providers. |
 | `dynamic_models.py` | Live model catalogs fetched from provider endpoints / models.dev, cached ~6 h under `~/.vtx/models/`. |
 | `context_length.py` | Context-window/output limits per model (models.dev, cached 24 h). |
 | `rate_limit.py` | Retry/backoff behaviour shared by adapters. |
 | `tool_parser.py` | Extracts tool calls embedded in plain-text responses (for models that emit XML-style calls). |
 
-Api types: `openai-completions`, `openai-sdk`, `anthropic`.
+Api types: `openai-sdk` (chat completions), `openai-responses`, `anthropic`.
 
 ## Message flow (one turn)
 
