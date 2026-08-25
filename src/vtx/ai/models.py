@@ -48,6 +48,7 @@ class Model:
     supports_tools: bool = True
     supports_audio: bool = False
     api_model_id: str = ""
+    is_free: bool = False
 
     @property
     def effective_id(self) -> str:

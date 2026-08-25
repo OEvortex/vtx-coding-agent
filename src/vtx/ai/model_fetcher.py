@@ -266,6 +266,16 @@ def get_fetched_models(provider) -> list[Model]:
 
     from vtx.ai.context_length import context_length_manager
 
+    # cline free list for is_free marking
+    cline_free_ids: set[str] = set()
+    if provider.slug == "cline":
+        try:
+            from vtx.ai.oauth.cline import get_cline_free_model_ids
+
+            cline_free_ids = get_cline_free_model_ids()
+        except Exception:
+            cline_free_ids = set()
+
     models: list[Model] = []
     for entry in cached:
         limits = context_length_manager.get_limits(entry.id)
@@ -294,6 +304,9 @@ def get_fetched_models(provider) -> list[Model]:
             supports_tools = provider.supports_tools
             supports_audio = False
 
+        is_free = False
+        if provider.slug == "cline":
+            is_free = entry.id in cline_free_ids
         models.append(
             Model(
                 id=entry.id,
@@ -307,6 +320,7 @@ def get_fetched_models(provider) -> list[Model]:
                 supports_tools=supports_tools,
                 supports_audio=supports_audio,
                 api_model_id=entry.api_model_id,
+                is_free=is_free,
             )
         )
     return models

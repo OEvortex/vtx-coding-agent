@@ -91,10 +91,13 @@ class ModelCommands(CommandSupport):
                 if not m.supports_images:
                     parts.append("[no-vision]")
                 caption = " ".join(parts)
+                is_free = getattr(m, "is_free", False)
+                free_suffix = " (free)" if is_free else ""
+                base_label = f"{m.id}{free_suffix}"
                 label = (
-                    f"{m.id} ✓"
+                    f"{base_label} ✓"
                     if m.id == self._runtime.model and m.provider == self._runtime.model_provider
-                    else m.id
+                    else base_label
                 )
                 item = ListItem(value=m, label=label, description=caption)
                 item.prefix = "↻ "
@@ -122,10 +125,13 @@ class ModelCommands(CommandSupport):
             if not m.supports_images:
                 parts.append("[no-vision]")
             caption = " ".join(parts)
+            is_free = getattr(m, "is_free", False)
+            free_suffix = " (free)" if is_free else ""
+            base_label = f"{m.id}{free_suffix}"
             label = (
-                f"{m.id} ✓"
+                f"{base_label} ✓"
                 if m.id == self._runtime.model and m.provider == self._runtime.model_provider
-                else m.id
+                else base_label
             )
             other_items.append(ListItem(value=m, label=label, description=caption))
 

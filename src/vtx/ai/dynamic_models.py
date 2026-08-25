@@ -56,6 +56,27 @@ FETCH_TIMEOUT_SECONDS = 7.0
 HTTP_LIMITS = httpx.Limits(max_keepalive_connections=20, max_connections=40)
 MAX_CONCURRENT_FETCHES = 10
 
+# In-memory cache for cline free ids to avoid per-model I/O
+_CLINE_FREE_IDS: set[str] | None = None
+_CLINE_FREE_IDS_AT: float = 0.0
+_CLINE_FREE_IDS_MEM_TTL = 60.0
+
+
+def _get_cline_free_ids() -> set[str]:
+    global _CLINE_FREE_IDS, _CLINE_FREE_IDS_AT
+    now = time.time()
+    if _CLINE_FREE_IDS is not None and now - _CLINE_FREE_IDS_AT < _CLINE_FREE_IDS_MEM_TTL:
+        return _CLINE_FREE_IDS
+    try:
+        from vtx.ai.oauth.cline import get_cline_free_model_ids
+
+        ids = get_cline_free_model_ids()
+        _CLINE_FREE_IDS = ids
+        _CLINE_FREE_IDS_AT = now
+        return ids
+    except Exception:
+        return _CLINE_FREE_IDS if _CLINE_FREE_IDS is not None else set()
+
 
 @dataclass(frozen=True)
 class DynamicProviderConfig:
@@ -811,7 +832,9 @@ def refresh_all_providers() -> dict[str, int]:
 # =================================================================================================
 
 
-def _to_static_model(provider: str, entry: DynamicModelEntry) -> Model:
+def _to_static_model(
+    provider: str, entry: DynamicModelEntry, *, cline_free_ids: set[str] | None = None
+) -> Model:
     _ensure_dynamic_providers()
     config = DYNAMIC_PROVIDERS[provider]
 
@@ -820,6 +843,17 @@ def _to_static_model(provider: str, entry: DynamicModelEntry) -> Model:
     supports_images = entry.supports_images
     supports_thinking = entry.supports_thinking
     context_window = entry.context_window
+    is_free = entry.is_free
+    # cline: free list overrides pricing heuristic (exact match)
+    # cline_free_ids is passed from the loop scope when available to avoid
+    # per-model I/O; fallback to process-wide cache.
+    if provider == "cline":
+        try:
+            free_ids = cline_free_ids if cline_free_ids is not None else _get_cline_free_ids()
+            if entry.id in free_ids:
+                is_free = True
+        except Exception:
+            pass
 
     from vtx.ai.context_length import context_length_manager
 
@@ -860,6 +894,7 @@ def _to_static_model(provider: str, entry: DynamicModelEntry) -> Model:
         context_window=context_window,
         supports_tools=supports_tools,
         supports_audio=supports_audio,
+        is_free=is_free,
     )
 
 
@@ -892,7 +927,8 @@ async def _aget_all_dynamic_models(force_refresh: bool = False) -> list[Model]:
 
     out: list[Model] = []
     for provider, entries in results:
-        out.extend(_to_static_model(provider, e) for e in entries)
+        cids = _get_cline_free_ids() if provider == "cline" else None
+        out.extend(_to_static_model(provider, e, cline_free_ids=cids) for e in entries)
     return out
 
 
@@ -908,8 +944,9 @@ def get_dynamic_models(force_refresh: bool = False) -> list[Model]:
         _ensure_dynamic_providers()
         out: list[Model] = []
         for provider in DYNAMIC_PROVIDERS:
+            cids = _get_cline_free_ids() if provider == "cline" else None
             for entry in get_provider_models(provider, force_refresh=force_refresh):
-                out.append(_to_static_model(provider, entry))
+                out.append(_to_static_model(provider, entry, cline_free_ids=cids))
         return out
 
 
@@ -928,9 +965,10 @@ def find_dynamic_model(model_id: str, provider: str | None = None) -> Model | No
         cached = _read_cache(name)
         if cached is None:
             continue
+        cids = _get_cline_free_ids() if name == "cline" else None
         for entry in cached.models:
             if entry.id == model_id:
-                return _to_static_model(name, entry)
+                return _to_static_model(name, entry, cline_free_ids=cids)
     return None
 
 

@@ -37,6 +37,9 @@ _DEVICE_TOKEN_ENDPOINT = "/user_management/authenticate"
 _REGISTER_ENDPOINT = "/api/v1/auth/register"
 _REFRESH_ENDPOINT = "/api/v1/auth/refresh"
 
+_RECOMMENDED_ENDPOINT = "/api/v1/ai/cline/recommended-models"
+_RECOMMENDED_CACHE_TTL = 60 * 60 * 6  # 6h
+
 _REFRESH_BUFFER_MS = 60_000
 _RETRY_GRACE_MS = 5 * 60_000
 _REQUEST_TIMEOUT = 30
@@ -428,3 +431,133 @@ async def login(on_user_code: Any | None = None, on_poll: Any | None = None) -> 
     creds = await _register_cline_token(workos_access, workos_refresh)
     save_cline_credentials(creds)
     return creds
+
+
+# ---------------------------------------------------------------------------
+# Free models — separate endpoint /api/v1/ai/cline/recommended-models
+# ---------------------------------------------------------------------------
+
+
+def _cline_free_cache_path() -> Path:
+    from vtx.core.paths import get_config_dir
+
+    env = os.getenv("VTX_MODELS_CACHE_DIR")
+    base = Path(env) if env else get_config_dir() / "models"
+    return base / "cline_free.json"
+
+
+def _read_cline_free_cache() -> tuple[set[str], float] | None:
+    p = _cline_free_cache_path()
+    if not p.exists():
+        return None
+    try:
+        data = json.loads(p.read_text(encoding="utf-8"))
+        ids = set(data.get("free_ids", []))
+        fetched_at = float(data.get("fetched_at", 0))
+        if time.time() - fetched_at > _RECOMMENDED_CACHE_TTL:
+            return None
+        return ids, fetched_at
+    except (OSError, json.JSONDecodeError, TypeError, ValueError):
+        return None
+
+
+def _write_cline_free_cache(ids: set[str]) -> None:
+    p = _cline_free_cache_path()
+    try:
+        p.parent.mkdir(parents=True, exist_ok=True)
+        tmp = p.with_suffix(".json.tmp")
+        tmp.write_text(
+            json.dumps({"free_ids": sorted(ids), "fetched_at": time.time()}, indent=2),
+            encoding="utf-8",
+        )
+        with contextlib.suppress(OSError):
+            tmp.chmod(0o600)
+        tmp.replace(p)
+        with contextlib.suppress(OSError):
+            p.chmod(0o600)
+    except OSError:
+        pass
+
+
+async def fetch_cline_free_model_ids() -> set[str]:
+    """Fetch free model ids from the recommended endpoint (async)."""
+    tok = get_valid_cline_token_sync()
+    headers = {"Accept": "application/json"}
+    if tok:
+        headers["Authorization"] = f"Bearer {tok}"
+    url = f"{_API_BASE}{_RECOMMENDED_ENDPOINT}"
+    try:
+        async with (
+            aiohttp.ClientSession() as session,
+            session.get(
+                url, headers=headers, timeout=aiohttp.ClientTimeout(total=_REQUEST_TIMEOUT)
+            ) as resp,
+        ):
+            if resp.status >= 400:
+                return set()
+            data = await resp.json()
+    except Exception:
+        return set()
+    free = data.get("free", []) if isinstance(data, dict) else []
+    ids: set[str] = set()
+    for entry in free:
+        if isinstance(entry, dict):
+            mid = entry.get("id")
+            if isinstance(mid, str) and mid:
+                ids.add(mid)
+    if ids:
+        _write_cline_free_cache(ids)
+    return ids
+
+
+def fetch_cline_free_model_ids_sync() -> set[str]:
+    """Sync fetch of free ids (httpx)."""
+    import httpx
+
+    tok = get_valid_cline_token_sync()
+    headers = {"Accept": "application/json"}
+    if tok:
+        headers["Authorization"] = f"Bearer {tok}"
+    url = f"{_API_BASE}{_RECOMMENDED_ENDPOINT}"
+    try:
+        with httpx.Client(timeout=10.0) as client:
+            resp = client.get(url, headers=headers)
+            if resp.status_code >= 400:
+                return set()
+            data = resp.json()
+    except Exception:
+        return set()
+    free = data.get("free", []) if isinstance(data, dict) else []
+    ids: set[str] = set()
+    for entry in free:
+        if isinstance(entry, dict):
+            mid = entry.get("id")
+            if isinstance(mid, str) and mid:
+                ids.add(mid)
+    if ids:
+        _write_cline_free_cache(ids)
+    return ids
+
+
+def get_cline_free_model_ids() -> set[str]:
+    """Return cached free ids, fetching if stale. Never raises."""
+    cached = _read_cline_free_cache()
+    if cached is not None:
+        ids, _ = cached
+        return ids
+    # try sync fetch, fall back to empty
+    try:
+        ids = fetch_cline_free_model_ids_sync()
+        if ids:
+            return ids
+    except Exception:
+        pass
+    # last resort: read stale cache even if expired
+    p = _cline_free_cache_path()
+    if p.exists():
+        try:
+            data = json.loads(p.read_text(encoding="utf-8"))
+            return set(data.get("free_ids", []))
+        except Exception:
+            pass
+    return set()
