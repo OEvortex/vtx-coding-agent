@@ -507,6 +507,7 @@ class ConversationRuntime:
         thinking_level: str | None = None,
         session_id: str | None = None,
     ) -> ProviderConfig:
+        info = get_model(model, provider)
         return ProviderConfig(
             api_key=self.api_key,
             base_url=base_url,
@@ -517,6 +518,9 @@ class ConversationRuntime:
             session_id=session_id,
             openai_compat_auth_mode=self.openai_compat_auth_mode,
             anthropic_compat_auth_mode=self.anthropic_compat_auth_mode,
+            thinking_level_map=getattr(info, "thinking_level_map", None)
+            if info is not None
+            else None,
         )
 
     def _model_api_and_base_url(

@@ -193,6 +193,7 @@ class OpenAISDKProvider(BaseProvider):
             temperature=temp or 0.7,
             max_tokens=max_tok,
             thinking_level=self.config.thinking_level,
+            thinking_level_map=self.config.thinking_level_map,
         )
 
         if sdk_tools:

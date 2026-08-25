@@ -168,3 +168,86 @@ def test_parse_models_attaches_thinking_level_map_from_models_dev():
         reasoning=entry.supports_thinking, thinking_level_map=entry.thinking_level_map
     )
     assert levels == ["off", "low", "medium", "high"]
+
+
+# =============================================================================
+# Wire path: _apply_thinking_kwargs honors the verified effort map
+# =============================================================================
+
+
+from vtx.ai.sdk.base import GenerationConfig  # noqa: E402
+from vtx.ai.sdk.openai import OpenAISDK  # noqa: E402
+
+
+def _sdk(slug):
+    return OpenAISDK(api_key="test-key", provider_slug=slug)
+
+
+def test_map_authorizes_effort_on_unwhitelisted_provider():
+    """models.dev-verified support must send reasoning_effort even when the
+    provider slug is not in the hardcoded whitelist."""
+    sdk = _sdk("kilo")
+    kwargs: dict = {}
+    sdk._apply_thinking_kwargs(
+        kwargs,
+        GenerationConfig(
+            model="m",
+            thinking_level="high",
+            thinking_level_map={"off": "none", "low": "low", "high": "high"},
+        ),
+    )
+    assert kwargs["reasoning_effort"] == "high"
+
+
+def test_map_none_value_omits_effort():
+    sdk = _sdk("kilo")
+    kwargs: dict = {}
+    sdk._apply_thinking_kwargs(
+        kwargs,
+        GenerationConfig(
+            model="m",
+            thinking_level="xhigh",
+            thinking_level_map={"off": "none", "low": "low", "xhigh": None},
+        ),
+    )
+    assert "reasoning_effort" not in kwargs
+
+
+def test_map_missing_standard_level_passes_through():
+    sdk = _sdk("kilo")
+    kwargs: dict = {}
+    sdk._apply_thinking_kwargs(
+        kwargs,
+        GenerationConfig(
+            model="m", thinking_level="low", thinking_level_map={"off": "none", "xhigh": "xhigh"}
+        ),
+    )
+    assert kwargs["reasoning_effort"] == "low"
+
+
+def test_mapped_string_is_sent_verbatim():
+    """Provider-specific spellings flow through untouched."""
+    sdk = _sdk("kilo")
+    kwargs: dict = {}
+    sdk._apply_thinking_kwargs(
+        kwargs,
+        GenerationConfig(
+            model="m", thinking_level="medium", thinking_level_map={"medium": "medium-reasoning"}
+        ),
+    )
+    assert kwargs["reasoning_effort"] == "medium-reasoning"
+
+
+def test_no_map_keeps_legacy_slug_whitelist():
+    """Without a verified map, non-whitelisted slugs stay silent (no change)."""
+    sdk = _sdk("kilo")
+    kwargs: dict = {}
+    sdk._apply_thinking_kwargs(kwargs, GenerationConfig(model="m", thinking_level="high"))
+    assert "reasoning_effort" not in kwargs
+
+
+def test_no_map_whitelisted_slug_still_sends():
+    sdk = _sdk("openai-codex")
+    kwargs: dict = {}
+    sdk._apply_thinking_kwargs(kwargs, GenerationConfig(model="m", thinking_level="high"))
+    assert kwargs["reasoning_effort"] == "high"

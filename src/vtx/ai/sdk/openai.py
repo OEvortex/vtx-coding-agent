@@ -185,6 +185,7 @@ async def _openai_stream_chunks(
 # openai_compat provider the level is intentionally not sent to the
 # wire (the picker still works, but the model uses its own default).
 _THINKING_ENABLED_SLUGS: frozenset[str] = frozenset({"openai-codex", "openai-responses"})
+_UNSET = object()  # sentinel: level absent from the effort map (= passthrough)
 
 
 class OpenAISDK(BaseLLMSDK):
@@ -285,6 +286,23 @@ class OpenAISDK(BaseLLMSDK):
         level = config.thinking_level
         if level is None or level == "none":
             return
+
+        # Per-model effort map (models.dev reasoning_options, pi parity):
+        # when the catalog verifies this model's efforts, send
+        # ``reasoning_effort`` on any OpenAI-compatible provider. A level
+        # explicitly mapped to ``None`` is unsupported and omitted; a mapped
+        # string is sent verbatim (allows provider-specific spellings); an
+        # unmapped standard level passes through unchanged.
+        level_map = config.thinking_level_map
+        if level_map:
+            mapped = level_map.get(level, _UNSET)
+            if mapped is None:
+                return  # explicitly unsupported for this model
+            kwargs["reasoning_effort"] = mapped if isinstance(mapped, str) else level
+            return
+
+        # Legacy fallback: no verified map — only hardcoded slugs that are
+        # known to accept Chat Completions ``reasoning_effort``.
         if self._provider_slug not in _THINKING_ENABLED_SLUGS:
             return
         kwargs["reasoning_effort"] = level
