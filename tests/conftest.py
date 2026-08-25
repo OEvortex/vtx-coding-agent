@@ -47,7 +47,12 @@ class FakeChat:
 
 @pytest.fixture(autouse=True)
 def isolate_user_config(monkeypatch: pytest.MonkeyPatch, tmp_path) -> None:
-    monkeypatch.setattr("pathlib.Path.home", lambda: tmp_path / "home")
+    # core.paths.get_config_dir() prefers os.environ["HOME"] over
+    # Path.home(), so both must point at the SAME isolated dir or the
+    # developer's real ~/.vtx leaks into config-dependent tests.
+    home = tmp_path / "home"
+    monkeypatch.setenv("HOME", str(home))
+    monkeypatch.setattr("pathlib.Path.home", lambda: home)
     monkeypatch.delenv("XDG_CONFIG_HOME", raising=False)
     reset_config()
 
