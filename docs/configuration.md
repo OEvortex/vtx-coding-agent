@@ -25,6 +25,8 @@ Vtx stores config in `~/.vtx/config.yml` (created with defaults on first run). E
 | `on_overflow` | `"continue"` | `continue` auto-compacts; `pause` stops and asks |
 | `threshold_percent` | `80` | Compact when context usage crosses this % of the window |
 
+The window is the active model's real context window from the catalog (e.g. 1M-class models compact at ~800k, not at the fallback). `agent.default_context_window` applies only when the model has no known window.
+
 ## `agent`
 
 | Field | Default | Notes |

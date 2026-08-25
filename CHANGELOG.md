@@ -8,6 +8,8 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 ## [1.0.1] - 2026-08-25
 
 ### Added
+- **OpenAI Responses API adapter & unified reasoning resolution** — new Responses transport adapter with unified reasoning resolution (pi parity); the Responses transport is now routed through the official `openai` SDK.
+- **Extended-thinking parity and token tracking** — per-model reasoning-effort detection from models.dev drives thinking levels on any verified provider, with stream cleanup and usage-tracking parity across transports.
 - **Interactive UI primitives for extensions (`ctx.ui`)** — handlers declared as `(event, payload, ctx)` now receive a full context whose `ctx.ui` exposes interactive dialogs: `await ctx.ui.confirm()`, `await ctx.ui.select()`, `await ctx.ui.input()` (real modal dialogs backed by the Textual TUI, safe no-op defaults in headless mode), `ctx.ui.notify()` rendered in the chat log, and `ctx.ui.setStatus()` / `ctx.ui.setWidget()` for a persistent footer bar. All dialogs support `timeout` and abort-`signal` kwargs.
 - **`await ctx.ui.custom(component)`** — show arbitrary Textual widgets or `ModalScreen`s modally from an extension and await the dismissed result.
 - **Provider request hooks** — new `before_provider_headers` and `before_provider_request` extension events fire once per outgoing LLM request across all transports (OpenAI SDK, Anthropic HTTP). Handlers can inject/override/delete HTTP headers and inspect or fully replace the wire payload; later handlers chain off earlier replacements; retries reuse prepared values without re-firing handlers. Backed by a transport-level registry (`vtx.ai.provider_hooks`) bridged onto the extension bus automatically.
@@ -16,11 +18,16 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - **Configurable models endpoint & unified provider refresh** — `/model refresh` now covers dynamic and legacy catalog providers through one path, with a configurable models endpoint per provider.
 
 ### Changed
+- **Harness/coding-agent package split** — `vtx.ai.agent` is now a product-neutral harness (loop, turn engine, session store, tool contracts, extensions/hooks, SDK); concrete built-in tools, prompt/context assembly, subagent definitions, and the runtime composition root moved to `vtx.coding_agent`. The harness no longer imports product code: system-prompt building, context loading, the tool registry, and user config knobs are injected, with harness-owned defaults mirroring user YAML.
+- **ask_user dialog extracted** — shared dialog logic moved to `vtx.tui.ask_user` with dedicated test coverage.
+- **API type unification** — duplicate `openai-completions` folded into `openai-sdk`; fetched-model cache now carries thinking/free metadata for picker rendering.
 - **Handoff prompt in handoff link details** — handoff link blocks now include the handoff prompt in their details view.
 - **Simplified Hatch wheel packaging configuration.**
 - **`api.notify()` routes through the TUI chat log** when a UI is installed instead of only logging.
 
 ### Fixed
+- **Auto-compaction honored the 200k default instead of the model's real context window** — the engine now resolves the active model's catalog context window on every agent creation and `/model` switch, so 1M-context models compact near their true limit (~800k at the default 80% threshold) instead of ~160k; unknown models still fall back to `agent.default_context_window`.
+- **Stale provider labels on resumed sessions** — sessions recorded under a wrong provider label (e.g. `openai` for a custom gateway like kilo) are healed at initialize time, keeping lookups, pricing, and context-window resolution on the right catalog entry; unknown models no longer silently relabel the provider as the engine class name.
 - **Event class map ImportError** — `_get_event_class_map()` self-imported event classes from `vtx.ai.agent.extensions`; it now imports agent/turn lifecycle events from `vtx.core.events`, fixing crashes on first event-object lookup.
 - **Restored missing `get_valid_openai_credentials` export** from `vtx.ai` (accidentally dropped during the cline OAuth refactor; `/login` OpenAI flow depended on it).
 - **Removed duplicated `_emit_error` definition** in the extension runner.
