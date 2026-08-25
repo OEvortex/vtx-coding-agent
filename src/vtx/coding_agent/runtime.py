@@ -543,7 +543,7 @@ class ConversationRuntime:
         self, provider: BaseProvider, session: Session, context: Context | None = None
     ) -> Agent:
         context = context or Context.load(self.cwd)
-        return Agent(
+        agent = Agent(
             provider=provider,
             tools=self.tools,
             session=session,
@@ -552,6 +552,48 @@ class ConversationRuntime:
             system_prompt=self.resolve_system_prompt(session, context=context),
             extensions=self.extensions,
         )
+        self._apply_model_info(agent)
+        return agent
+
+    def _lookup_model_info(self) -> Model | None:
+        """Resolve the active model, tolerating stale provider labels.
+
+        Resumed sessions can carry a provider name recorded under legacy
+        resolution (e.g. ``openai`` for a custom gateway). Retry without
+        the provider filter before giving up so the model's real context
+        window is not silently replaced by the harness default.
+        """
+        info = get_model(self.model, self.model_provider)
+        if info is None and self.model_provider:
+            info = find_dynamic_model(self.model, None)
+            if info is not None:
+                log.warning(
+                    "Model %r not found under provider %r; matched via catalog as %r",
+                    self.model,
+                    self.model_provider,
+                    info.provider,
+                )
+        return info
+
+    def _apply_model_info(self, agent: Agent) -> None:
+        """Push the active model's limits onto the agent engine config.
+
+        Called on every agent creation/reuse path so overflow compaction
+        always sees the model's true context window instead of falling
+        back to ``agent.default_context_window``.
+        """
+        info = self._lookup_model_info()
+        if info is None:
+            log.warning(
+                "No catalog entry for model %r (provider %r); using default "
+                "context window %s for compaction",
+                self.model,
+                self.model_provider,
+                agent.config.context_window or "unset",
+            )
+            return
+        agent.config.context_window = info.context_window
+        agent.config.max_output_tokens = info.max_tokens
 
     def initialize(
         self, *, resume_session: str | None = None, continue_recent: bool = False
@@ -590,6 +632,21 @@ class ConversationRuntime:
                 thinking_level = session.thinking_level
 
         self.base_url = base_url_override
+        # Self-heal stale provider labels: older sessions could record an
+        # engine class name (e.g. "openai") for a custom gateway. If the
+        # labeled provider does not know this model but the catalog does,
+        # adopt the catalog's canonical provider so lookups, pricing, and
+        # context-window resolution all target the right entry.
+        if model_provider and get_model(model, model_provider) is None:
+            healed = get_model(model) or find_dynamic_model(model, None)
+            if healed is not None and healed.provider != model_provider:
+                log.warning(
+                    "Provider %r has no model %r; using catalog provider %r instead",
+                    model_provider,
+                    model,
+                    healed.provider,
+                )
+                model_provider = healed.provider
         api_type, effective_base_url = self._model_api_and_base_url(model, model_provider)
         provider_config = self._provider_config(
             model=model,
@@ -616,11 +673,19 @@ class ConversationRuntime:
             selected_model = get_model(model, model_provider) or find_dynamic_model(
                 model, model_provider
             )
-            model_provider = (
-                selected_model.provider
-                if selected_model
-                else (provider.name if provider else model_provider)
-            )
+            if selected_model:
+                model_provider = selected_model.provider
+            elif not model_provider and provider is not None:
+                # Last resort only: ``provider.name`` is the engine class name
+                # ("openai" for every OpenAI-SDK-compatible gateway), NOT a
+                # catalog provider. Never let it overwrite a real label.
+                log.warning(
+                    "Model %r not found in catalog; keeping unlabeled provider "
+                    "as %r (engine class name)",
+                    model,
+                    provider.name,
+                )
+                model_provider = provider.name
             session = Session.create(
                 self.cwd,
                 provider=model_provider,
@@ -746,6 +811,10 @@ class ConversationRuntime:
             self.session.set_model(model.provider, model.id, model.base_url)
         if self.agent and self.provider:
             self.agent.provider = self.provider
+            # Keep the engine's limits in sync immediately (not just on the
+            # next prepare_for_run) so overflow compaction never runs with
+            # the previous model's context window.
+            self._apply_model_info(self.agent)
 
         if self.extensions is not None:
             try:
@@ -963,12 +1032,10 @@ class ConversationRuntime:
         if self.agent is None:
             self.agent = self._new_agent(self.provider, self.session)
 
-        model_info = get_model(self.model, self.model_provider)
         self.agent.provider = self.provider
         self.agent.session = self.session
         self.agent.tools = self.tools
-        self.agent.config.context_window = model_info.context_window if model_info else None
-        self.agent.config.max_output_tokens = model_info.max_tokens if model_info else None
+        self._apply_model_info(self.agent)
         return self.agent
 
     def reload_context(self) -> None:
