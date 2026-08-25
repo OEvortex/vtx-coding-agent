@@ -54,7 +54,7 @@ Support modules: `background.py` (sub-agent task manager), `tools_manager.py` (a
 | `rate_limit.py` | Retry/backoff behaviour shared by adapters. |
 | `tool_parser.py` | Extracts tool calls embedded in plain-text responses (for models that emit XML-style calls). |
 
-Api types: `openai-completions`, `openai-sdk`, `anthropic`, `supercode`.
+Api types: `openai-completions`, `openai-sdk`, `anthropic`.
 
 ## Message flow (one turn)
 

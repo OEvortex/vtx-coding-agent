@@ -21,7 +21,7 @@ src/
 tests/            # pytest suite mirroring src (tools/, ui/, sdk/, llm/, context/, extensions/)
 examples/         # runnable examples: sdk/, extensions/, agents/
 Site/             # marketing/docs website (Vite + React) that renders docs/*.md
-scripts/          # install.sh / install.ps1, show_themes.py, supercode_proxy.py
+scripts/          # install.sh / install.ps1, show_themes.py
 .agents/skills/   # repo skills incl. the tmux e2e harness
 ```
 

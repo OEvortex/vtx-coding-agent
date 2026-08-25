@@ -10,7 +10,7 @@ Highlights:
 - **Aggregators**: `openrouter`, `together`, `fireworks`, `groq`, `deepinfra`, `huggingface`, `modelscope`, `baseten`, `friendli`, `clarifai`, `vercelai`
 - **Free/community**: `pollinations`, `chutes`, `nanogpt`, `freemodel`, `blackbox`
 - **Local**: `ollama` (see [local-models.md](local-models.md))
-- **Special**: `supercode`, `opencode`, `kilo`, plus several community gateways
+- **Special**: `opencode`, `kilo`, plus several community gateways
 
 Run `vtx` and use `/provider` then `/model` to browse; `/model` auto-fetches each provider's live catalog when available.
 

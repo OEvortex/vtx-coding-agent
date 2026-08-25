@@ -13,10 +13,9 @@ class ApiType:
     OPENAI_SDK = "openai-sdk"
     OPENAI_RESPONSES = "openai-responses"
     ANTHROPIC = "anthropic"
-    SUPERCODE = "supercode"
 
     _VALUES: frozenset[str] = frozenset(
-        {OPENAI_COMPLETIONS, OPENAI_SDK, OPENAI_RESPONSES, ANTHROPIC, SUPERCODE}
+        {OPENAI_COMPLETIONS, OPENAI_SDK, OPENAI_RESPONSES, ANTHROPIC}
     )
 
     def __init__(self, value: str):

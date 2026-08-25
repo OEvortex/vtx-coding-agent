@@ -140,7 +140,7 @@ def setup(api):
 | `before_provider_request` | `provider`, `model`, `payload` (full wire payload; mutate in place) | `{"payload": {...}}` to replace |
 
 Both fire once per request after the payload is fully built and before it
-is sent, across all transports (OpenAI SDK, Anthropic HTTP, Supercode).
+is sent, across all transports (OpenAI SDK, Anthropic HTTP).
 Retries reuse the prepared values — handlers are not re-fired. Handlers
 run in load order and later ones chain off earlier replacements.
 

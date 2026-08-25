@@ -204,17 +204,6 @@ def get_dynamic_api_key(provider: str) -> str | None:
     if stored:
         return stored
 
-    # Fall back to OAuth token files for specific providers
-    if provider == "supercode":
-        try:
-            from vtx.ai.oauth.supercode import load_supercode_credentials
-
-            creds = load_supercode_credentials()
-            if creds is not None and creds.token:
-                return creds.token
-        except Exception:
-            pass
-
     if provider == "cline":
         try:
             from vtx.ai.oauth.cline import get_valid_cline_token_sync, load_cline_credentials
@@ -255,13 +244,6 @@ def get_provider_status(provider: str) -> DynamicProviderStatus | None:
                 has_stored = is_cline_logged_in()
             except Exception:
                 pass
-        if not has_stored and provider == "supercode":
-            try:
-                from vtx.ai.oauth.supercode import is_supercode_logged_in
-
-                has_stored = is_supercode_logged_in()
-            except Exception:
-                pass
         return DynamicProviderStatus(
             provider=provider,
             env_var=env_var,
@@ -280,14 +262,6 @@ def get_provider_status(provider: str) -> DynamicProviderStatus | None:
     has_stored = has_api_key(provider)
 
     # Check OAuth token files for providers that use them
-    if not has_stored and provider == "supercode":
-        try:
-            from vtx.ai.oauth.supercode import is_supercode_logged_in
-
-            has_stored = is_supercode_logged_in()
-        except Exception:
-            pass
-
     if not has_stored and provider == "cline":
         try:
             from vtx.ai.oauth.cline import is_cline_logged_in

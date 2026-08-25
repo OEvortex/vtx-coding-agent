@@ -107,7 +107,7 @@ def _resolve_api_key(provider) -> str | None:
         key = os.environ.get(provider.api_key_env)
         if key:
             return key
-    # check stored dynamic / oauth keys (cline, supercode, etc.)
+    # check stored dynamic / oauth keys (cline, etc.)
     try:
         from vtx.ai.oauth.dynamic import get_dynamic_api_key
 
