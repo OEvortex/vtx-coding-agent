@@ -713,33 +713,19 @@ class ChatLog(VerticalScroll):
             return ""
         return block.ask_user_custom_value()
 
-    def ask_user_notes_value(self, tool_id: str) -> str:
-        """Return the current value of the inline notes input."""
-        block = self._tool_blocks.get(tool_id)
-        if not block:
-            return ""
-        return block.ask_user_notes_value()
-
     def set_ask_user_custom_value(self, tool_id: str, value: str) -> None:
         """Overwrite the inline custom-answer input (e.g. Ctrl+U clearing)."""
         block = self._tool_blocks.get(tool_id)
         if block:
             block.set_ask_user_custom_value(value)
 
-    def set_ask_user_notes_value(self, tool_id: str, value: str) -> None:
-        """Overwrite the inline notes input."""
-        block = self._tool_blocks.get(tool_id)
-        if block:
-            block.set_ask_user_notes_value(value)
-
-    def focus_ask_user_input(self, tool_id: str, notes: bool = False) -> bool:
+    def focus_ask_user_input(self, tool_id: str) -> bool:
         """Focus an inline ask_user input; returns True if it was focused."""
         block = self._tool_blocks.get(tool_id)
         if not block:
             return False
         try:
-            selector = "#ask-user-notes-input" if notes else "#ask-user-input"
-            block.query_one(selector, AskUserInput).focus()
+            block.query_one("#ask-user-input", AskUserInput).focus()
             return True
         except Exception:
             return False
@@ -750,13 +736,14 @@ class ChatLog(VerticalScroll):
         Called from the Task tool's progress callback. ``event`` is the
         small dict shape produced by ``TaskTool``:
 
-        * ``kind == "subagent_start"``: opens the live tail
-        * ``kind == "text_delta"``: appends a snippet of the tail text
-        * ``kind == "tool_start"``: appends a ``→ tool`` line
-        * ``kind == "tool_result"``: marks the prior tool line as done
+        * ``kind == "subagent_start"``: opens the live view (model, max_turns)
+        * ``kind == "text_delta"``: updates the activity text snippet
+        * ``kind == "tool_start"``: counts a tool use and names the activity
+        * ``kind == "tool_result"``: clears the active-tool description
+        * ``kind == "turn_end"``: updates turn/token counters
         * ``kind == "subagent_end" / "error" / "interrupted" / "cancelled"``:
-          closes the tail; ``set_result`` will overwrite it with the
-          final transcript when the parent turn streams it back
+          freezes the view with an outcome icon; ``set_result`` then
+          finalizes the header
         """
         block = self._tool_blocks.get(tool_call_id)
         if block is None:
@@ -765,28 +752,52 @@ class ChatLog(VerticalScroll):
         kind = event.get("kind")
         state = self._task_live.setdefault(
             tool_call_id,
-            {"subagent": event.get("subagent", "subagent"), "lines": [], "last_text": ""},
+            {
+                "subagent": event.get("subagent", "subagent"),
+                "model": None,
+                "max_turns": None,
+                "turns": 0,
+                "tool_uses": 0,
+                "tokens": 0,
+                "active_tool": None,
+                "last_text": "",
+                "started": time.monotonic(),
+                "ended": False,
+                "stop_label": None,
+                "error": None,
+            },
         )
         if kind == "subagent_start":
-            state["lines"] = ["  (starting)"]
+            state["model"] = event.get("model")
+            state["max_turns"] = event.get("max_turns")
         elif kind == "text_delta":
-            delta = event.get("delta", "")
-            state["last_text"] = (state["last_text"] + delta)[-200:]
-            tail = f"  {state['last_text'][-60:]}" if state["last_text"] else ""
-            state["lines"][-1:] = [tail]
+            state["last_text"] = (state["last_text"] + event.get("delta", ""))[-400:]
         elif kind == "tool_start":
-            tool_name = event.get("tool_name", "")
-            state["lines"].append(f"  → {tool_name}")
+            state["tool_uses"] += 1
+            state["active_tool"] = event.get("tool_name")
         elif kind == "tool_result":
-            pass
-        elif kind in ("subagent_end", "error", "interrupted", "cancelled"):
-            stop = event.get("stop_reason", kind)
-            state["lines"].append(f"  ({stop})")
+            state["active_tool"] = None
+        elif kind == "turn_end":
+            state["turns"] = event.get("turns", state["turns"])
+            state["tokens"] = event.get("tokens", state["tokens"])
+        elif kind == "error":
+            state["error"] = event.get("error")
+        elif kind in ("interrupted", "cancelled"):
+            state["error"] = state["error"] or kind
+            self._end_task_state(state, stop_label=kind)
+        elif kind == "subagent_end":
+            self._end_task_state(state, stop_label=event.get("stop_reason"))
 
-        # Keep the last 12 lines and re-render.
-        live_lines = list(state["lines"])[-12:]
-        block.set_task_progress(state["subagent"], live_lines)
+        # Snapshot for the block; internal timing key stripped.
+        snapshot = {k: v for k, v in state.items() if k != "started"}
+        block.set_task_progress(snapshot)
         self._scroll_if_anchored(animate=False)
+
+    @staticmethod
+    def _end_task_state(state: dict, stop_label: str | None) -> None:
+        state["ended"] = True
+        state["stop_label"] = stop_label or state.get("stop_label")
+        state["elapsed_ms"] = (time.monotonic() - state["started"]) * 1000
 
     def end_block(self) -> None:
         # Finalize content/thinking blocks to render markdown once
@@ -803,12 +814,8 @@ class ChatLog(VerticalScroll):
 
         dim_color = config.ui.colors.dim
         token_str = f"{tokens_before:,}"
-        after_str = f"{tokens_after:,}" if tokens_after else "?"
 
-        text = Text(
-            f"[compaction] Compacted from {token_str} tokens >> {after_str} tokens",
-            style=dim_color,
-        )
+        text = Text(f"[compaction] Compacted from {token_str}", style=dim_color)
         stylize_badge_markers(text, ("[compaction]",))
 
         label = Label(text)

@@ -1,5 +1,6 @@
 import contextlib
 import textwrap
+import time
 from collections.abc import Callable, Iterable
 from dataclasses import dataclass
 from typing import Literal
@@ -9,6 +10,7 @@ from rich.text import Text
 from textual import events
 from textual.app import ComposeResult
 from textual.message import Message
+from textual.timer import Timer
 from textual.widgets import Label, Static
 
 from vtx.ai.agent.tools.base import BaseTool
@@ -16,8 +18,8 @@ from vtx.coding_agent.config import config
 from vtx.coding_agent.diff_display import DIFF_BG_PAD_MARKER
 from vtx.core import ApprovalResponse
 from vtx.core.types import ImageContent
+from vtx.tui import task_ui
 from vtx.tui.ask_user import (
-    GLOBAL_NOTE_ENTRY_LABEL,
     INCOMPLETE_WARNING_PREFIX,
     NEXT_LABEL,
     NO_INPUT_PLACEHOLDER,
@@ -51,11 +53,8 @@ CONTINUATION_INDENT = "  "
 HINT_ENTER = "enter to select"
 HINT_NAV = "↑/↓ to navigate"
 HINT_TOGGLE = "space to toggle"
-HINT_NOTES = "n to add notes"
-HINT_SUBMIT_NOTE = "n to add a note"
 HINT_TAB = "tab to switch questions"
 HINT_CANCEL = "esc to cancel"
-HINT_SAVE_NOTE = "enter to save note"
 HINT_SAVE_DRAFT = "enter to save"
 HINT_CLEAR = "ctrl+u to clear"
 HINT_COLLAPSE = "ctrl+] to collapse"
@@ -383,18 +382,12 @@ class ToolBlock(Static):
         # :class:`AskUserDialog` state machine holds; the app mutates
         # the dialog from keypresses and asks for a re-render.
         self._ask_dialog: AskUserDialog | None = None
-        # Tracks whether an inline input (custom answer / notes) is
+        # Tracks whether an inline input (custom answer) is
         # currently displayed. Used to move focus to the input on show
         # and back to the chat input box on hide, since picker keys
         # would otherwise be forwarded from the chat input and the user
         # could never type into these fields.
         self._ask_user_input_visible: bool = False
-        self._ask_user_notes_visible: bool = False
-        # Task-tool live tail. When set, the block renders a compact
-        # transcript of in-flight sub-agent activity. Cleared by
-        # ``set_result`` so the final transcript wins.
-        self._task_live_lines: list[str] | None = None
-        self._task_header: str | None = None
         self.add_class("tool-block")
         self._set_state(None)
 
@@ -402,11 +395,6 @@ class ToolBlock(Static):
         yield Label(self._format_header(), id="tool-header")
         yield Label("", id="tool-output", classes="tool-output -hidden")
         yield AskUserInput(placeholder=OTHER_DISPLAY, id="ask-user-input", classes="-hidden")
-        yield AskUserInput(
-            placeholder="Add a note for this question",
-            id="ask-user-notes-input",
-            classes="-hidden",
-        )
 
     def _format_header(self, truncate: bool = True) -> Text:
         colors = config.ui.colors
@@ -639,18 +627,9 @@ class ToolBlock(Static):
             return self.query_one("#ask-user-input", AskUserInput).value
         return ""
 
-    def ask_user_notes_value(self) -> str:
-        with contextlib.suppress(Exception):
-            return self.query_one("#ask-user-notes-input", AskUserInput).value
-        return ""
-
     def set_ask_user_custom_value(self, value: str) -> None:
         with contextlib.suppress(Exception):
             self.query_one("#ask-user-input", AskUserInput).value = value
-
-    def set_ask_user_notes_value(self, value: str) -> None:
-        with contextlib.suppress(Exception):
-            self.query_one("#ask-user-notes-input", AskUserInput).value = value
 
     def _hide_ask_user_output(self) -> None:
         try:
@@ -832,11 +811,6 @@ class ToolBlock(Static):
                 line.append(NEXT_LABEL, style=label_style)
                 lines.append(line)
 
-        if state.note:
-            first_line = state.note.splitlines()[0]
-            marker = f"✎ note: {first_line}"
-            lines.append(Text(CONTINUATION_INDENT + marker, style=Style(color=colors.notice)))
-
         if active_preview:
             lines.extend(self._format_preview_box(active_preview, width))
         return lines
@@ -891,9 +865,6 @@ class ToolBlock(Static):
             else:
                 entry.append(answer)
             lines.append(entry)
-        note = dialog.global_note_text()
-        if note:
-            lines.append(Text(f"{GLOBAL_NOTE_ENTRY_LABEL}: {note}"))
         unanswered = []
         for i, question in enumerate(dialog.questions):
             if self._question_answer_scalar(dialog, i) is None:
@@ -918,17 +889,14 @@ class ToolBlock(Static):
         colors = config.ui.colors
         if dialog.collapsed:
             parts = [HINT_EXPAND, HINT_CANCEL]
-        elif dialog.notes_open:
-            parts = [HINT_SAVE_NOTE, HINT_CANCEL]
         elif dialog.input_mode:
             parts = [HINT_SAVE_DRAFT, HINT_NAV, HINT_CLEAR, HINT_CANCEL]
         elif dialog.is_on_submit_tab():
-            parts = ["enter to confirm", HINT_NAV, HINT_SUBMIT_NOTE, HINT_CANCEL]
+            parts = ["enter to confirm", HINT_NAV, HINT_CANCEL]
         else:
             parts = [HINT_ENTER, HINT_NAV]
             if dialog.questions[min(dialog.tab, len(dialog.questions) - 1)].multi_select:
                 parts.append(HINT_TOGGLE)
-            parts.append(HINT_NOTES)
             if dialog.is_multi_question:
                 parts.append(HINT_TAB)
             parts.append(HINT_CANCEL)
@@ -938,12 +906,9 @@ class ToolBlock(Static):
     # Inline widget sync --------------------------------------------------------
 
     def _sync_ask_user_widgets(self) -> None:
-        """Show/hide + focus the inline inputs to match dialog state."""
+        """Show/hide + focus the inline input to match dialog state."""
         dialog = self._ask_dialog
-        custom_visible = bool(
-            dialog and not dialog.collapsed and dialog.input_mode and not dialog.notes_open
-        )
-        notes_visible = bool(dialog and not dialog.collapsed and dialog.notes_open)
+        custom_visible = bool(dialog and not dialog.collapsed and dialog.input_mode)
         with contextlib.suppress(Exception):
             custom_input = self.query_one("#ask-user-input", AskUserInput)
             custom_input.display = custom_visible
@@ -951,21 +916,8 @@ class ToolBlock(Static):
                 draft = dialog.current_state().draft
                 if custom_input.value != draft:
                     custom_input.value = draft
-        with contextlib.suppress(Exception):
-            notes_input = self.query_one("#ask-user-notes-input", AskUserInput)
-            notes_input.display = notes_visible
-            if notes_visible and dialog is not None:
-                if dialog.notes_for_global:
-                    existing = dialog.global_note_text()
-                else:
-                    existing = dialog.current_state().note
-                if notes_input.value != existing:
-                    notes_input.value = existing
-        focus_changed = custom_visible != self._ask_user_input_visible or (
-            notes_visible != self._ask_user_notes_visible
-        )
+        focus_changed = custom_visible != self._ask_user_input_visible
         self._ask_user_input_visible = custom_visible
-        self._ask_user_notes_visible = notes_visible
         if focus_changed:
             # Move focus after the DOM has caught up with the visibility
             # change so the user can actually type into the field.
@@ -973,9 +925,7 @@ class ToolBlock(Static):
 
     def _sync_ask_user_focus(self) -> None:
         with contextlib.suppress(Exception):
-            if self._ask_user_notes_visible:
-                self.query_one("#ask-user-notes-input", AskUserInput).focus()
-            elif self._ask_user_input_visible:
+            if self._ask_user_input_visible:
                 self.query_one("#ask-user-input", AskUserInput).focus()
             else:
                 # Return focus to the chat input box so picker keys
@@ -1003,31 +953,20 @@ class ToolBlock(Static):
         self._result_markup = markup
         self._success = success
         self._awaiting_approval = False
-        # The Task tool's live tail is now done — drop the in-progress
-        # events so the final result wins.
-        self._task_live_lines = None
         self._set_state(success)
         self._render_result_output()
         self.query_one("#tool-header", Label).update(self._format_header())
 
     # -- Task tool live progress ------------------------------------------
 
-    def set_task_progress(
-        self, subagent_name: str, live_lines: list[str], header: str | None = None
-    ) -> None:
-        """Render the Task tool's live sub-agent progress tail.
+    def set_task_progress(self, stats: dict) -> None:
+        """Forward a Task-tool sub-agent progress snapshot to the block.
 
-        ``live_lines`` is a compact transcript built by the chat log
-        (sub-agent name, recent tool calls, last text delta). Called
-        repeatedly while the sub-agent runs. ``set_result`` clears
-        the live tail and renders the final transcript instead.
+        ``stats`` is a plain data dict built by the chat log (subagent
+        name, model, turns, tool_uses, tokens, active_tool, last_text,
+        ended/stop_label/error). Blocks that don't override this simply
+        ignore it.
         """
-        self._task_live_lines = list(live_lines)
-        self._task_header = header or f"sub-agent: {subagent_name}"
-        # Force a re-render against the live data.
-        if not self._ui_details:
-            self._render_result_output()
-            self.query_one("#tool-header", Label).update(self._format_header())
 
     def set_expanded(self, expanded: bool) -> None:
         if self._expanded == expanded:
@@ -1045,22 +984,6 @@ class ToolBlock(Static):
         ui_details = (
             self._ui_details_full if self._expanded and self._ui_details_full else self._ui_details
         )
-
-        # Live Task tool tail: shown when the sub-agent is still
-        # running and the final details haven't been set yet. The
-        # tail is cleared by ``set_result``.
-        if ui_details is None and self._task_live_lines is not None:
-            lines: list[str] = []
-            if self._task_header:
-                lines.append(self._task_header)
-            lines.extend(self._task_live_lines[-12:])
-            rendered = Text("\n".join(lines))
-            self.remove_class("-compact")
-            self.add_class("-with-details")
-            output.remove_class("-hidden")
-            output.remove_class("-details")
-            output.update(rendered)
-            return
 
         if ui_details:
             rendered = (
@@ -1261,71 +1184,111 @@ class LaunchWarningsBlock(Static):
 
 
 class TaskToolBlock(ToolBlock):
-    """Custom block rendering Task tool with compact live tail and collapsed results."""
+    """Task tool block with pi-style live and finished sub-agent rendering.
 
-    def _render_result_output(self) -> None:
-        output = self.query_one("#tool-output", Label)
-        ui_details = (
-            self._ui_details_full if self._expanded and self._ui_details_full else self._ui_details
-        )
+    Running (animated ~8fps by a Textual timer, mirroring pi's 80ms widget
+    loop)::
 
-        # 1. Live Task tool tail: shown when the sub-agent is still running
-        if ui_details is None and self._task_live_lines is not None:
-            status = "working"
-            current_tool = None
-            text_snippet = None
+        ⠙ haiku · ↻2 · 3 tool uses · 12.3s
+          ⎿  reading, running command…
 
-            for line in self._task_live_lines:
-                line_str = line.strip()
-                if not line_str:
-                    continue
-                if line_str.startswith("→"):
-                    current_tool = line_str.replace("→", "").strip()
-                elif line_str.startswith("(") and line_str.endswith(")"):
-                    status = line_str[1:-1]
-                else:
-                    text_snippet = line_str
+    Finished::
 
-            parts = []
-            if self._task_header:
-                sa_name = self._task_header.replace("sub-agent:", "").strip()
-                parts.append(f"[{sa_name}]")
+        ✓ general-purpose · ↻5 · 7 tool uses · 33.8k token · 45.6s
+          ⎿  Done
 
-            if current_tool:
-                parts.append(f"Running {current_tool}...")
-            elif text_snippet:
-                parts.append(f"Streaming: {text_snippet[:50]}")
-            else:
-                parts.append(f"{status}...")
+    Expanding the block (ctrl+]) still shows the full transcript from
+    ``ui_details_full``.
+    """
 
-            rendered = Text("  " + " ".join(parts), style=config.ui.colors.running)
-            self.add_class("-compact")
-            self.remove_class("-with-details")
-            output.remove_class("-hidden")
-            output.remove_class("-details")
-            output.update(rendered)
-            return
+    LIVE_TICK_SECONDS = 0.12
 
-        # 2. Finished state with details (expanded)
-        if ui_details:
-            rendered = (
-                self._render_markup_safe(ui_details) if self._result_markup else Text(ui_details)
+    def __init__(self, **kwargs) -> None:
+        super().__init__(**kwargs)
+        self._task_stats: dict | None = None
+        self._task_finished: dict | None = None
+        self._task_started: float | None = None
+        self._task_elapsed_ms: float | None = None
+        self._live_timer: Timer | None = None
+        self._spinner_frame: int = 0
+
+    def set_task_progress(self, stats: dict) -> None:
+        """Render a progress snapshot from :meth:`ChatLog.apply_task_progress`."""
+        if self._task_started is None:
+            self._task_started = time.monotonic()
+        if stats.get("ended"):
+            elapsed = stats.get("elapsed_ms")
+            self._task_elapsed_ms = (
+                elapsed if elapsed is not None else (time.monotonic() - self._task_started) * 1000
             )
-            is_diff_output = DIFF_BG_PAD_MARKER in rendered.plain
-            rendered = self._pad_diff_backgrounds(rendered, output.size.width or self.size.width)
+            self._task_finished = dict(stats)
+            self._stop_live_timer()
+        else:
+            self._task_stats = dict(stats)
+            self._ensure_live_timer()
+        self._render_result_output()
+
+    def _ensure_live_timer(self) -> None:
+        if self._live_timer is None:
+            self._live_timer = self.set_interval(self.LIVE_TICK_SECONDS, self._on_live_tick)
+
+    def _stop_live_timer(self) -> None:
+        if self._live_timer is not None:
+            self._live_timer.stop()
+            self._live_timer = None
+
+    def _on_live_tick(self) -> None:
+        # Animate only while a sub-agent is actually in flight.
+        if self._task_finished is not None or self._task_stats is None:
+            self._stop_live_timer()
+            return
+        self._spinner_frame += 1
+        self._render_result_output()
+
+    def _current_elapsed_ms(self) -> float | None:
+        if self._task_elapsed_ms is not None:
+            return self._task_elapsed_ms
+        if self._task_started is not None:
+            return (time.monotonic() - self._task_started) * 1000
+        return None
+
+    def _show_body(self, rendered: Text, *, finished: bool) -> None:
+        output = self.query_one("#tool-output", Label)
+        if finished:
             self.remove_class("-compact")
             self.add_class("-with-details")
-            output.remove_class("-hidden")
-            output.remove_class("-details")
-            if is_diff_output:
-                output.add_class("-diff-output")
-            else:
-                output.remove_class("-diff-output")
-            output.update(rendered)
-        # 3. Finished state without details (collapsed by default)
         else:
-            output.update(Text(""))
+            self.add_class("-compact")
             self.remove_class("-with-details")
-            output.remove_class("-details")
-            output.remove_class("-diff-output")
-            output.add_class("-hidden")
+        output.remove_class("-hidden")
+        output.remove_class("-details")
+        output.update(rendered)
+
+    def _render_result_output(self) -> None:
+        # Expanded view keeps VTX's full-transcript expansion semantics.
+        if self._expanded and self._ui_details_full:
+            super()._render_result_output()
+            return
+
+        try:
+            self.query_one("#tool-output", Label)
+        except Exception:
+            return
+
+        if self._task_finished is not None and not self._awaiting_approval:
+            rendered = task_ui.render_finished(
+                self._task_finished, self._success, self._current_elapsed_ms()
+            )
+            self._show_body(rendered, finished=True)
+            return
+
+        # Live in-flight view; also resumes over an already-finalized
+        # background block so late progress stays visible.
+        if self._task_stats is not None and not self._awaiting_approval:
+            rendered = task_ui.render_live(
+                self._task_stats, self._spinner_frame, self._current_elapsed_ms()
+            )
+            self._show_body(rendered, finished=False)
+            return
+
+        super()._render_result_output()

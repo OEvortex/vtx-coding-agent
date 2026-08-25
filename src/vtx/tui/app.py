@@ -762,11 +762,7 @@ class Vtx(
 
         chat = self.query_one("#chat-log", ChatLog)
         tool_id = self._ask_user_tool_id or ""
-        consumed = dialog.handle_key(
-            event.key,
-            custom_value=chat.ask_user_custom_value(tool_id),
-            notes_value=chat.ask_user_notes_value(tool_id),
-        )
+        consumed = dialog.handle_key(event.key, custom_value=chat.ask_user_custom_value(tool_id))
         if not consumed:
             return False
 
@@ -801,7 +797,7 @@ class Vtx(
 
     @on(Input.Submitted)
     def on_ask_user_input_submitted(self, event: Input.Submitted) -> None:
-        """Commit the inline custom answer or save the open note editor."""
+        """Commit the inline custom answer."""
         dialog = self._ask_dialog
         if dialog is None or self._ask_user_future is None or self._ask_user_future.done():
             return
@@ -814,10 +810,6 @@ class Vtx(
                 self.query_one("#chat-log", ChatLog).rerender_ask_user(
                     self._ask_user_tool_id or ""
                 )
-        elif event.input.id == "ask-user-notes-input":
-            dialog.save_note(event.value)
-            event.stop()
-            self.query_one("#chat-log", ChatLog).rerender_ask_user(self._ask_user_tool_id or "")
 
     @on(Input.Changed)
     def on_ask_user_input_changed(self, event: Input.Changed) -> None:

@@ -34,14 +34,10 @@ class FakeChat:
         self.rerenders: list[str] = []
         self.hides: list[str] = []
         self.custom_value = ""
-        self.notes_value = ""
         self.cleared_custom: list[str] = []
 
     def ask_user_custom_value(self, tool_id: str) -> str:
         return self.custom_value
-
-    def ask_user_notes_value(self, tool_id: str) -> str:
-        return self.notes_value
 
     def set_ask_user_custom_value(self, tool_id: str, value: str) -> None:
         self.custom_value = value

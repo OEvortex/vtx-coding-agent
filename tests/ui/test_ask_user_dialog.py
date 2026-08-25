@@ -181,54 +181,6 @@ def test_multi_custom_answer_used_when_nothing_toggled():
 
 
 # ------------------------------------------------------------------
-# Notes
-# ------------------------------------------------------------------
-
-
-def test_n_opens_notes_editor_and_enter_saves():
-    dialog = _single()
-    dialog.handle_key("enter")  # answer with o0 first
-    dialog.tab = 0
-    dialog.handle_key("n")
-    assert dialog.notes_open is True
-    assert dialog.notes_for_global is False
-    dialog.handle_key("enter", notes_value="prefer uv")
-    assert dialog.notes_open is False
-    assert dialog.current_state().note == "prefer uv"
-    answers = dialog.build_answers()
-    assert answers[0].notes == "prefer uv"
-
-
-def test_note_alone_does_not_answer_question():
-    dialog = _single()
-    dialog.handle_key("n")
-    dialog.handle_key("enter", notes_value="thinking")
-    assert dialog.answered_indices() == []
-
-
-def test_escape_closes_notes_before_cancelling():
-    dialog = _single()
-    dialog.handle_key("n")
-    dialog.handle_key("escape", notes_value="saved note")
-    assert dialog.notes_open is False
-    assert not dialog.cancelled
-    dialog.handle_key("escape")
-    assert dialog.cancelled is True
-
-
-def test_submit_tab_n_opens_global_note():
-    dialog = _multi_question()
-    dialog.tab = dialog.submit_tab_index
-    dialog.handle_key("n")
-    assert dialog.notes_open is True
-    assert dialog.notes_for_global is True
-    dialog.save_note("overall guidance")
-    assert dialog.global_note_text() == "overall guidance"
-    response = dialog.build_response()
-    assert response.global_note == "overall guidance"
-
-
-# ------------------------------------------------------------------
 # Multi-question tabs and Submit tab
 # ------------------------------------------------------------------
 

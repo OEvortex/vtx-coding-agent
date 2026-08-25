@@ -841,14 +841,14 @@ class InputBox(Vertical):
 
 
 class AskUserInput(Input):
-    """Inline input (custom answer / notes) for the ask_user dialog.
+    """Inline input (custom answer) for the ask_user dialog.
 
     When the dialog is active and this input is the one with focus, the
     user is typing and most keys should be passed through (Enter is
     handled by Textual's ``Input.Submitted``). Exceptions:
 
-    * ``escape`` is always forwarded so the user can cancel or close
-      the notes editor and is never trapped,
+    * ``escape`` is always forwarded so the user can cancel and is
+      never trapped,
     * ``up``/``down`` are forwarded so vertical arrows leave the field
       back to row navigation (rpiv behaviour),
     * picker keys are forwarded when the input is somehow focused while
@@ -860,7 +860,7 @@ class AskUserInput(Input):
         ask_future = getattr(self.app, "_ask_user_future", None)
         if ask_future and not ask_future.done():
             # Escape always reaches the dialog: it cancels the prompt
-            # from the custom answer, closes the notes editor otherwise.
+            # from the custom answer.
             if event.key == "escape":
                 app_on_key = getattr(self.app, "on_key", None)
                 if callable(app_on_key):

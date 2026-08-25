@@ -41,15 +41,12 @@ class AskUserAnswer:
     ``kind`` mirrors the rpiv envelope: ``option`` (picked a listed
     choice, ``answer`` holds its label), ``custom`` (typed free text in
     ``answer``), or ``multi`` (``selected`` holds the checked labels).
-    ``notes`` is optional side-band commentary the user attached with
-    the ``n`` key; it never marks a question answered on its own.
     """
 
     question: str
     kind: str
     answer: str | None = None
     selected: tuple[str, ...] = ()
-    notes: str | None = None
     preview: str | None = None
 
     def scalar(self) -> str:
@@ -63,8 +60,6 @@ class AskUserAnswer:
         parts = [f'"{self.question}"="{self.scalar()}"']
         if self.preview:
             parts.append(f"selected preview: {self.preview}")
-        if self.notes:
-            parts.append(f"user notes: {self.notes}")
         return f"{'. '.join(parts)}."
 
 
@@ -80,32 +75,26 @@ class AskUserResponse:
     Two shapes share this class. The single-question picker fills the
     legacy ``selections``/``custom_text`` fields. The rpiv-style
     questionnaire fills ``answers`` (one :class:`AskUserAnswer` per
-    answered question) and optionally ``global_note``. An empty
-    response means the user dismissed the prompt (e.g. pressed Escape)
-    and the tool call should be treated as cancelled.
+    answered question). An empty response means the user dismissed the
+    prompt (e.g. pressed Escape) and the tool call should be treated as
+    cancelled.
     """
 
     selections: tuple[str, ...] = ()
     custom_text: str | None = None
     answers: tuple[AskUserAnswer, ...] = ()
-    global_note: str | None = None
 
     @property
     def is_empty(self) -> bool:
         return not (
-            self.selections
-            or (self.custom_text and self.custom_text.strip())
-            or self.answers
-            or (self.global_note and self.global_note.strip())
+            self.selections or (self.custom_text and self.custom_text.strip()) or self.answers
         )
 
     def format_for_llm(self, options: list[AskUserOption] | None = None) -> str:
         """Render the response as plain text for the LLM tool result."""
         del options  # kept for call-compatibility; the envelope is self-contained
-        if self.answers or (self.global_note and self.global_note.strip()):
+        if self.answers:
             segments = [answer.segment() for answer in self.answers]
-            if self.global_note and self.global_note.strip():
-                segments.append(f"global note: {self.global_note.strip()}.")
             if segments:
                 return f"{ENVELOPE_PREFIX} {' '.join(segments)} {ENVELOPE_SUFFIX}"
         if self.custom_text and self.custom_text.strip():

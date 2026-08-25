@@ -327,21 +327,6 @@ class TestEnvelopeFormat:
         r = AskUserResponse(answers=(self._answer(kind="custom", answer="use make"),))
         assert '"Build tool?"="use make"' in r.format_for_llm()
 
-    def test_notes_appended_to_segment(self):
-        r = AskUserResponse(answers=(self._answer(answer="uv", notes="also keep pip fallback"),))
-        text = r.format_for_llm()
-        assert "user notes: also keep pip fallback" in text
-
-    def test_global_note_is_trailing_segment(self):
-        r = AskUserResponse(answers=(self._answer(answer="uv"),), global_note="be careful")
-        text = r.format_for_llm()
-        assert "global note: be careful." in text
-
-    def test_global_note_only_still_answered(self):
-        r = AskUserResponse(global_note="just a comment")
-        assert not r.is_empty
-        assert "global note: just a comment" in r.format_for_llm()
-
     def test_decline_message_when_empty(self):
         assert AskUserResponse().format_for_llm() == "User declined to answer questions"
 

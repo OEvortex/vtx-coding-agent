@@ -2,8 +2,7 @@
 
 Pure Python, no Textual imports: the TUI layer mutates this object from
 keypresses and renders it. One dialog owns 1-4 questions, an optional
-Submit review tab, per-question notes, a global note, and a collapsed
-mode.
+Submit review tab, and a collapsed mode.
 
 Row model per question tab:
 
@@ -20,15 +19,14 @@ Keyboard contract:
 
 * ``↑``/``↓`` (``k``/``j``) move between rows, wrapping at both ends.
 * ``Enter`` confirms the focused option (single-select), toggles a
-  checkbox (multi-select), commits typed text, closes the notes editor,
-  or activates the focused Submit-picker row.
+  checkbox (multi-select), commits typed text, or activates the focused
+  Submit-picker row.
 * ``Space`` toggles the focused checkbox (multi-select).
 * ``Tab``/``Shift+Tab`` (``→``/``←``) switch tabs, wrapping.
-* ``n`` opens the notes editor (the global note editor on the Submit tab).
 * ``Ctrl+U`` clears the current custom-answer draft.
 * ``Ctrl+]`` collapses/expands the dialog; while collapsed only
   ``Ctrl+]`` and ``Esc`` act.
-* ``Esc`` cancels the whole questionnaire (closes notes first).
+* ``Esc`` cancels the whole questionnaire.
 * Digits jump straight to a row.
 """
 
@@ -45,7 +43,6 @@ SUBMIT_PICK_CANCEL = "Cancel"
 REVIEW_HEADING = "Review your answers"
 INCOMPLETE_WARNING_PREFIX = "⚠ Answer remaining questions before submitting:"
 NO_INPUT_PLACEHOLDER = "(no input)"
-GLOBAL_NOTE_ENTRY_LABEL = "Note"
 
 # Keys that collapse/expand the dialog. Terminals differ in how Ctrl+]
 # is reported; accept both spellings.
@@ -61,7 +58,6 @@ class _QuestionState:
     toggled: set[int] = field(default_factory=set)  # multi-select checked indices
     draft: str = ""  # live custom-answer text while editing/browsing
     custom: str = ""  # committed custom answer
-    note: str = ""
 
 
 class AskUserDialog:
@@ -75,15 +71,10 @@ class AskUserDialog:
         # tab (multi-question dialogs only) sits at index len(questions).
         self.tab = 0
         self.submit_row = 0  # 0 = Submit answers, 1 = Cancel
-        self.notes_open = False
-        self.notes_for_global = False
         self.input_mode = False  # custom-answer inline input focused
         self.collapsed = False
         self.finished = False
         self.cancelled = False
-        # Note covering the whole questionnaire (Submit tab). Lives
-        # outside per-question state on purpose.
-        self._global_note = ""
         # Side effects the app applies after handle_key returns.
         self.pending_clear_draft = False
 
@@ -136,9 +127,6 @@ class AskUserDialog:
         answered = set(self.answered_indices())
         return [q.question for i, q in enumerate(self.questions) if i not in answered]
 
-    def global_note_text(self) -> str:
-        return self._global_note.strip()
-
     def build_answers(self) -> tuple[AskUserAnswer, ...]:
         """Resolved answers in question order; unanswered questions are omitted."""
         answers: list[AskUserAnswer] = []
@@ -169,40 +157,35 @@ class AskUserDialog:
                 answer = state.custom.strip()
             else:
                 continue
-            notes = state.note.strip() or None
             answers.append(
                 AskUserAnswer(
                     question=question.question,
                     kind=kind,
                     answer=answer,
                     selected=selected,
-                    notes=notes,
                     preview=preview,
                 )
             )
         return tuple(answers)
 
     def build_response(self) -> AskUserResponse:
-        return AskUserResponse(answers=self.build_answers(), global_note=self._global_note or None)
+        return AskUserResponse(answers=self.build_answers())
 
     def has_outstanding_content(self) -> bool:
-        """True when anything (answers, drafts, notes) would be lost."""
+        """True when anything (answers, drafts) would be lost."""
         if self.answered_indices():
             return True
-        return any(s.draft.strip() or s.note.strip() for s in self._states) or bool(
-            self._global_note.strip()
-        )
+        return any(bool(s.draft.strip()) for s in self._states)
 
     # ------------------------------------------------------------------
     # Key handling
     # ------------------------------------------------------------------
 
-    def handle_key(self, key: str, *, custom_value: str = "", notes_value: str = "") -> bool:
+    def handle_key(self, key: str, *, custom_value: str = "") -> bool:
         """Apply a keypress; returns True when the key was consumed.
 
-        ``custom_value``/``notes_value`` carry the live text of the
-        inline inputs so the state machine can persist drafts when
-        focus moves away.
+        ``custom_value`` carries the live text of the inline input so
+        the state machine can persist drafts when focus moves away.
         """
         if key in COLLAPSE_KEYS:
             self.collapsed = not self.collapsed
@@ -214,15 +197,6 @@ class AskUserDialog:
             if key == "escape":
                 self.cancelled = True
                 self.finished = True
-                return True
-            return False
-
-        if self.notes_open:
-            if key == "enter":
-                self._close_notes(notes_value)
-                return True
-            if key == "escape":
-                self._close_notes(notes_value)
                 return True
             return False
 
@@ -276,11 +250,6 @@ class AskUserDialog:
                 return True
             return False
 
-        if key == "n":
-            self.notes_open = True
-            self.notes_for_global = False
-            return True
-
         if key == "ctrl+u":
             state.draft = ""
             state.custom = ""
@@ -311,10 +280,6 @@ class AskUserDialog:
             return self._switch_tab(1)
         if key in ("shift+tab", "left"):
             return self._switch_tab(-1)
-        if key == "n":
-            self.notes_open = True
-            self.notes_for_global = True
-            return True
         if key == "enter":
             self._activate_submit_row()
             return True
@@ -399,15 +364,3 @@ class AskUserDialog:
             return
         if self.tab < self.submit_tab_index:
             self.tab += 1
-
-    def save_note(self, text: str) -> None:
-        """Close the notes editor, keeping what was written."""
-        self._close_notes(text)
-
-    def _close_notes(self, text: str) -> None:
-        cleaned = text.strip()
-        if self.notes_for_global:
-            self._global_note = cleaned
-        else:
-            self.current_state().note = cleaned
-        self.notes_open = False

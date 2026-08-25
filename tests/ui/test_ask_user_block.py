@@ -132,12 +132,6 @@ class TestDialogBoxRendering:
         plain = block.format_ask_user_dialog().plain
         assert "half typed" in plain
 
-    def test_note_marker_renders(self):
-        dialog = AskUserDialog([_q()])
-        dialog.current_state().note = "check with design first"
-        block = _block_with_dialog(dialog)
-        assert "✎ note: check with design first" in block.format_ask_user_dialog().plain
-
 
 class TestTabBarAndSubmitTab:
     def test_tab_bar_lists_headers_and_submit(self):
@@ -180,7 +174,6 @@ class TestHintFooter:
         plain = block.format_ask_user_dialog().plain
         assert "↑/↓ to navigate" in plain
         assert "esc to cancel" in plain
-        assert "n to add notes" in plain
 
     def test_multi_tab_hint_mentions_switching(self):
         # Start on the multi-select tab: the toggle hint belongs to it.
@@ -247,27 +240,3 @@ async def test_custom_input_focuses_when_input_mode_starts():
 
         assert custom_input.display is False
         assert chat_textarea.has_focus
-
-
-@pytest.mark.asyncio
-async def test_notes_input_focuses_when_notes_open():
-    async with _AskUserFocusApp().run_test() as pilot:
-        chat = pilot.app.query_one("#chat-log", ChatLog)
-        block = chat.start_tool("ask_user", "tool-1")
-        dialog = AskUserDialog([_q()])
-        chat.show_ask_user("tool-1", dialog=dialog)
-        await pilot.pause()
-
-        notes_input = block.query_one("#ask-user-notes-input", AskUserInput)
-        dialog.handle_key("n")
-        chat.rerender_ask_user("tool-1")
-        await pilot.pause()
-
-        assert notes_input.display is True
-        assert notes_input.has_focus
-
-        dialog.save_note(notes_input.value)
-        chat.rerender_ask_user("tool-1")
-        await pilot.pause()
-
-        assert notes_input.display is False
