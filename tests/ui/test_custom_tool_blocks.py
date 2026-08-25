@@ -10,10 +10,10 @@ from pathlib import Path
 import pytest
 from textual.app import App, ComposeResult
 
-from vtx.ai.agent.agents.api import AgentAPI
-from vtx.ai.agent.agents.loader import load_agent
 from vtx.ai.agent.extensions import Extension, ExtensionAPI, ExtensionTool
 from vtx.ai.agent.tools.base import BaseTool
+from vtx.coding_agent.agents.api import AgentAPI
+from vtx.coding_agent.agents.loader import load_agent
 from vtx.tui.blocks import ToolBlock
 from vtx.tui.chat import ChatLog
 from vtx.tui.styles import get_styles
@@ -167,7 +167,7 @@ class TestLocalToolUiBlock:
     def _make_agent_api(self, tmp_path: Path) -> AgentAPI:
         agent_file = tmp_path / "reviewer.py"
         agent_file.write_text(
-            "from vtx.ai.agent.agents import AgentDef\n"
+            "from vtx.coding_agent.agents import AgentDef\n"
             "AGENT = AgentDef(name='reviewer', description='x')\n"
         )
         loaded = load_agent(agent_file, cwd=str(tmp_path), config_dir=tmp_path)

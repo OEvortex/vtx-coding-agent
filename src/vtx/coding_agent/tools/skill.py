@@ -6,13 +6,13 @@ from typing import Literal
 
 from pydantic import BaseModel, Field, model_validator
 
-from vtx.ai.agent.context.skills import (
+from vtx.ai.agent.tools.base import BaseTool, ToolResult
+from vtx.coding_agent.context.skills import (
     get_user_skills_dir,
     load_builtin_cmd_skills,
     load_skills,
     merge_registered_skills,
 )
-from vtx.ai.agent.tools.base import BaseTool, ToolResult
 
 
 class SkillParams(BaseModel):
@@ -92,7 +92,7 @@ class SkillTool(BaseTool):
         # Helper to find skill directory
         def find_skill_dir(name: str) -> tuple[Path | None, bool]:
             # 1. Project skills
-            from vtx.ai.agent.context.skills import _project_skill_dirs
+            from vtx.coding_agent.context.skills import _project_skill_dirs
 
             project_dirs = _project_skill_dirs(Path(cwd))
             for skills_dir in project_dirs:

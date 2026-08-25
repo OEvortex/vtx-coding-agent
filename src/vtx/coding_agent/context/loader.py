@@ -9,8 +9,8 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 
-from vtx.ai.agent.context.agent_mds import ContextFile, load_agent_mds
-from vtx.ai.agent.context.skills import (
+from vtx.coding_agent.context.agent_mds import ContextFile, load_agent_mds
+from vtx.coding_agent.context.skills import (
     Skill,
     load_builtin_cmd_skills,
     load_skills,

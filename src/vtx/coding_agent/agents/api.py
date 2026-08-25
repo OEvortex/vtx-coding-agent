@@ -15,8 +15,8 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Literal
 
-from vtx.ai.agent.agents.schema import AgentDef, PermissionAction, PermissionGate
 from vtx.ai.agent.tools.base import BaseTool
+from vtx.coding_agent.agents.schema import AgentDef, PermissionAction, PermissionGate
 
 # ``CommandOutcome``, ``ExtensionTool``, and ``_json_schema_to_pydantic``
 # come from :mod:`vtx.extensions`, but importing them at module load

@@ -1,6 +1,6 @@
 from vtx.ai import resolve_provider_api_type
-from vtx.ai.agent.runtime import default_base_url_for_api
 from vtx.ai.models import ApiType
+from vtx.coding_agent.runtime import default_base_url_for_api
 
 
 def test_resolve_provider_api_type_known_provider():

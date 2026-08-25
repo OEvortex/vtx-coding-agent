@@ -5,10 +5,14 @@ from pathlib import Path
 import aiofiles
 from pydantic import BaseModel, Field
 
-from vtx.ai.agent.tools._read_image import is_image_file, read_and_process_image
-from vtx.ai.agent.tools._tool_utils import ToolCancelledError, communicate_or_cancel, shorten_path
 from vtx.ai.agent.tools.base import BaseTool, ToolResult
 from vtx.ai.agent.tools_manager import ensure_tool
+from vtx.coding_agent.tools._read_image import is_image_file, read_and_process_image
+from vtx.coding_agent.tools._tool_utils import (
+    ToolCancelledError,
+    communicate_or_cancel,
+    shorten_path,
+)
 from vtx.core.types import ImageContent
 
 MAX_CHARS_PER_LINE = 2000

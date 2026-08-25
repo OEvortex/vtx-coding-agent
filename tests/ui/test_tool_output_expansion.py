@@ -3,7 +3,7 @@ from rich.text import Text
 from textual.app import App, ComposeResult
 from textual.widgets import Label
 
-from vtx.ai.agent.diff_display import DIFF_BG_PAD_MARKER
+from vtx.coding_agent.diff_display import DIFF_BG_PAD_MARKER
 from vtx.core.types import ImageContent
 from vtx.tui.blocks import ToolBlock
 from vtx.tui.chat import ChatLog

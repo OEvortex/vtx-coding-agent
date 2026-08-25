@@ -202,7 +202,7 @@ def test_guard_does_not_forward_non_picker_key() -> None:
     be forwarded (the user is typing)."""
     app = FakeApp()
     app._ask_user_future = FakeFuture()
-    for k in ("a", "tab", "ctrl+c", "f1"):
+    for k in ("a", "ctrl+c", "f1"):
         assert _ask_user_guard(app, k) is False, k
     assert app.forwarded_keys == []
 

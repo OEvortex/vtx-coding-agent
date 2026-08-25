@@ -36,6 +36,7 @@ from pydantic import ValidationError
 
 from vtx.ai import BaseProvider
 from vtx.ai.agent.async_utils import OperationCancelledError, await_or_cancel
+from vtx.ai.agent.config import get_harness_config
 from vtx.ai.agent.context_governance import prepare_for_model
 from vtx.ai.agent.extensions import (
     MESSAGE_END,
@@ -47,10 +48,8 @@ from vtx.ai.agent.extensions import (
     EventBus,
 )
 from vtx.ai.agent.hooks.agent_hook import AgentHook, AgentHookContext, AgentRunHookContext
-from vtx.ai.agent.tools import BaseTool, get_tool, get_tool_definitions
-from vtx.ai.agent.tools.ask_user import AskUserParams
+from vtx.ai.agent.tools import BaseTool, get_tool_definitions, lookup_default_tool
 from vtx.ai.base import LLMStream
-from vtx.coding_agent.config import config as vtx_config
 from vtx.core.errors import format_error
 from vtx.core.events import (
     AskUserEvent,
@@ -76,6 +75,7 @@ from vtx.core.events import (
 from vtx.core.permissions import (
     ApprovalResponse,
     AskUserOption,
+    AskUserQuestion,
     AskUserResponse,
     PermissionDecision,
     check_permission,
@@ -170,7 +170,7 @@ async def _close_stream(stream: LLMStream) -> None:
 
 
 def tool_call_idle_timeout_seconds() -> float | None:
-    timeout = vtx_config.llm.tool_call_idle_timeout_seconds
+    timeout = get_harness_config().tool_call_idle_timeout_seconds
     return None if timeout <= 0 else timeout
 
 
@@ -225,7 +225,7 @@ def _finalize_tool_call_data(tool_call_data: dict, tools: list[BaseTool]) -> Pen
     # global registry only knows about the built-in tools. Without the
     # primary lookup, every @tool call would surface as "Unknown tool".
     _by_name = {t.name: t for t in tools}
-    tool = _by_name.get(tool_call.name) or get_tool(tool_call.name)
+    tool = _by_name.get(tool_call.name) or lookup_default_tool(tool_call.name)
     display = ""
     approval_preview = ""
     if tool and preflight_error is None:
@@ -313,13 +313,11 @@ async def _await_ask_user(
         return None
 
 
-def _build_ask_user_result(
-    tool_call: ToolCall, response: AskUserResponse, options: list[AskUserOption]
-) -> ToolResultMessage:
+def _build_ask_user_result(tool_call: ToolCall, response: AskUserResponse) -> ToolResultMessage:
     return ToolResultMessage(
         tool_call_id=tool_call.id,
         tool_name=tool_call.name,
-        content=[TextContent(text=response.format_for_llm(options))],
+        content=[TextContent(text=response.format_for_llm())],
         ui_summary=response.ui_summary(),
     )
 
@@ -1144,7 +1142,10 @@ class _TurnRunner:
         # ``pending.tool`` is guaranteed non-None by the caller
         assert pending.tool is not None
         try:
-            params = AskUserParams(**pending.tool_call.arguments)
+            # Validate against the bound tool's own params model; interactive
+            # tools (e.g. ask_user) expose extra helpers on their params, so
+            # keep this loosely typed.
+            params: Any = pending.tool.params(**pending.tool_call.arguments)
         except Exception as exc:  # ValidationError or similar
             result = ToolResultMessage(
                 tool_call_id=pending.tool_call.id,
@@ -1161,21 +1162,25 @@ class _TurnRunner:
             )
             return
 
-        options = [
-            AskUserOption(label=o.label, description=o.description) for o in (params.options or [])
+        questions = [
+            AskUserQuestion(
+                question=q.question,
+                header=q.header or "",
+                options=[
+                    AskUserOption(
+                        label=o.label, description=o.description, preview=o.preview or ""
+                    )
+                    for o in (q.options or [])
+                ],
+                multi_select=q.multi_select,
+            )
+            for q in params.normalized_questions()
         ]
 
         loop = asyncio.get_running_loop()
         future: asyncio.Future[AskUserResponse] = loop.create_future()
 
-        yield AskUserEvent(
-            tool_call_id=pending.tool_call.id,
-            question=params.question,
-            header=params.header or "",
-            options=options,
-            multi_select=params.multi_select,
-            future=future,
-        )
+        yield AskUserEvent(tool_call_id=pending.tool_call.id, questions=questions, future=future)
 
         response = await _await_ask_user(future, self._cancel_event)
 
@@ -1189,7 +1194,7 @@ class _TurnRunner:
                 ),
             )
         else:
-            result = _build_ask_user_result(pending.tool_call, response, options)
+            result = _build_ask_user_result(pending.tool_call, response)
 
         self._tool_results.append(result)
         yield ToolResultEvent(

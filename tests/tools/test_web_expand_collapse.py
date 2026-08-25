@@ -13,7 +13,7 @@ from unittest.mock import AsyncMock, patch
 
 import pytest
 
-from vtx.ai.agent.tools.web import SearchParams, WebSearchTool
+from vtx.coding_agent.tools.web import SearchParams, WebSearchTool
 
 
 def _sse_payload(text: str) -> str:

@@ -18,17 +18,17 @@ from __future__ import annotations
 
 from typing import Any
 
-from vtx.ai.agent.context import (
+from vtx.ai.agent.tools import BaseTool
+from vtx.coding_agent.config import config as vtx_config
+from vtx.coding_agent.context import (
     Context,
     formatted_agent_mds,
     formatted_git_context,
     formatted_skills,
 )
-from vtx.ai.agent.prompts.env import build_env_section
-from vtx.ai.agent.prompts.identity import DEFAULT_VTX_BASE
-from vtx.ai.agent.prompts.tooling import build_tool_guidelines_section
-from vtx.ai.agent.tools import BaseTool
-from vtx.coding_agent.config import config as vtx_config
+from vtx.coding_agent.prompts.env import build_env_section
+from vtx.coding_agent.prompts.identity import DEFAULT_VTX_BASE
+from vtx.coding_agent.prompts.tooling import build_tool_guidelines_section
 
 
 def _resolve_base(override: str | None) -> str:

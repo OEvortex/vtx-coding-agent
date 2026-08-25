@@ -62,8 +62,20 @@ class ModelCommands(CommandSupport):
             )
             return
 
-        hidden_providers, hidden_combos = _parse_hidden_entries(get_config().ui.hidden_models)
-        all_models = get_all_models()
+        # Cache-only read - never block on network here. Any exception is
+        # surfaced as a chat message so a broken install (fresh `pip install`
+        # with empty ~/.vtx/models/) does not appear as a silent no-op.
+        # This is the user-visible symptom when installed via `uv tool`/`pip`
+        # with a `model_provider_filter` pointing at a provider whose
+        # `known_models` is empty and no cache has been fetched yet - the
+        # picker would otherwise show "No models configured" with no guidance.
+        try:
+            hidden_providers, hidden_combos = _parse_hidden_entries(get_config().ui.hidden_models)
+            all_models = get_all_models()
+        except Exception as exc:
+            chat = self.query_one("#chat-log", ChatLog)
+            chat.add_info_message(f"Failed to load model catalog: {exc}", error=True)
+            return
         # Filter out hidden models, but always keep the currently active model
         # so its selection state is visible in the picker.
         if hidden_providers or hidden_combos:
@@ -74,7 +86,14 @@ class ModelCommands(CommandSupport):
                 or (m.id == self._runtime.model and m.provider == self._runtime.model_provider)
             ]
         if not all_models:
-            self.notify("No models configured", title="Models", timeout=3, severity="warning")
+            chat = self.query_one("#chat-log", ChatLog)
+            # No cached models at all - fresh pip/uv-tool install or corrupted cache.
+            # Guide the user to refresh instead of a bare toast.
+            chat.add_info_message(
+                "No models configured — cache is empty. Run /model refresh to fetch "
+                "the model catalog (or /model refresh <provider> for a single provider).",
+                error=True,
+            )
             return
 
         # --- Recent models section (top 5, always shown regardless of provider filter) ---
@@ -110,10 +129,43 @@ class ModelCommands(CommandSupport):
 
         # --- Rest of models, filtered by provider ---
         filter_slug = get_config().ui.model_provider_filter
+        filtered_by_provider = False
         if filter_slug:
-            all_models = [m for m in all_models if m.provider == filter_slug]
+            filtered = [m for m in all_models if m.provider == filter_slug]
+            # If the filter yields nothing but we had models before filtering,
+            # the filter + empty cache is the culprit (e.g. fresh pip install
+            # with filter=kilo/opencode where known_models is empty).
+            if not filtered:
+                filtered_by_provider = True
+                all_models = filtered
+            else:
+                all_models = filtered
         if not all_models and not recent_items:
-            self.notify("No models configured", title="Models", timeout=3, severity="warning")
+            chat = self.query_one("#chat-log", ChatLog)
+            if filtered_by_provider:
+                from vtx.ai.provider_catalog import get as get_provider_info
+
+                info = get_provider_info(filter_slug)
+                fetchable = bool(info and info.fetch_models)
+                if fetchable:
+                    chat.add_info_message(
+                        f"No cached models for provider '{filter_slug}'. "
+                        f"Run /model refresh {filter_slug} to fetch, or /provider "
+                        f"to clear the filter and see all providers.",
+                        error=True,
+                    )
+                else:
+                    chat.add_info_message(
+                        f"No models for provider '{filter_slug}' (filter active). "
+                        f"Clear the filter with /provider to see all providers.",
+                        error=True,
+                    )
+            else:
+                chat.add_info_message(
+                    "No models configured — cache is empty. Run /model refresh to fetch "
+                    "the model catalog (or /model refresh <provider> for a single provider).",
+                    error=True,
+                )
             return
 
         other_items: list[ListItem] = []

@@ -7,15 +7,16 @@ import asyncio
 from collections import deque
 from typing import TYPE_CHECKING, Any
 
-from vtx.ai.agent.runtime import ConversationRuntime
-from vtx.ai.agent.tools import get_tool
-from vtx.ai.agent.tools.bash import BashParams, BashTool
 from vtx.coding_agent.config import config
+from vtx.coding_agent.runtime import ConversationRuntime
+from vtx.coding_agent.tools import get_tool
+from vtx.coding_agent.tools.bash import BashParams, BashTool
 from vtx.core import (
     AgentEndEvent,
     AgentStartEvent,
     ApprovalResponse,
     AskUserEvent,
+    AskUserQuestion,
     AskUserResponse,
     BackgroundTaskCompletedEvent,
     CompactionEndEvent,
@@ -40,6 +41,7 @@ from vtx.core import (
 )
 from vtx.core.notify import NotificationEvent, notify
 from vtx.core.types import StopReason, ToolResultMessage
+from vtx.tui.ask_user import AskUserDialog
 from vtx.tui.chat import ChatLog
 from vtx.tui.widgets import InfoBar, StatusLine
 
@@ -66,10 +68,7 @@ class AgentRunnerMixin:
     # owns the data and the app's on_key can read/write it.
     _ask_user_future: asyncio.Future[AskUserResponse] | None
     _ask_user_tool_id: str | None
-    _ask_user_options: list
-    _ask_user_multi: bool
-    _ask_user_highlight: int
-    _ask_user_toggled: set[str]
+    _ask_dialog: AskUserDialog | None
 
     if TYPE_CHECKING:
         app: Any
@@ -256,10 +255,8 @@ class AgentRunnerMixin:
                 self._approval_future = f
                 self._approval_tool_id = id
 
-            case AskUserEvent(
-                tool_call_id=id, question=q, header=hdr, options=opts, multi_select=ms, future=f
-            ):
-                self._handle_ask_user(chat, id, q, hdr, opts, ms, f)
+            case AskUserEvent(tool_call_id=id, questions=questions, future=f):
+                self._handle_ask_user(chat, id, questions, f)
 
             case ToolResultEvent(tool_call_id=id, result=r, file_changes=fc):
                 self._approval_future = None
@@ -340,33 +337,26 @@ class AgentRunnerMixin:
         self,
         chat: ChatLog,
         tool_call_id: str,
-        question: str,
-        header: str,
-        options: list,
-        multi_select: bool,
+        questions: list[AskUserQuestion],
         future: asyncio.Future[AskUserResponse] | None,
     ) -> None:
-        """Show the inline ask_user picker and resolve ``future`` with the answer.
+        """Show the inline ask_user questionnaire and resolve ``future``.
 
-        The picker is rendered inside the existing ``ask_user`` tool
-        block (matching the approval style), so the user sees the
-        question + options inline in the chat. Direct number keys,
-        arrows, space, enter, and escape are handled by the app's
-        ``on_key`` and routed back to the future.
+        The dialog renders inside the existing ``ask_user`` tool block
+        (matching the approval style): a bordered questionnaire with a
+        tab strip for multi-question calls and a Submit review tab.
+        Keys are handled by the app's ``on_key`` and routed into the
+        :class:`AskUserDialog` state machine.
         """
         if future is None:
             return
 
-        # Render the picker into the tool block; the app's on_key will
-        # read/write the per-block state we stash on the chat.
-        chat.show_ask_user(tool_call_id, options=list(options), multi_select=multi_select)
+        dialog = AskUserDialog(questions)
+        chat.show_ask_user(tool_call_id, dialog=dialog)
 
         self._ask_user_future = future
         self._ask_user_tool_id = tool_call_id
-        self._ask_user_options = list(options)
-        self._ask_user_multi = multi_select
-        self._ask_user_highlight = 0
-        self._ask_user_toggled = set()
+        self._ask_dialog = dialog
         self.app.bell()
 
     def _handle_shell_command(self, display_text: str, original_text: str) -> None:

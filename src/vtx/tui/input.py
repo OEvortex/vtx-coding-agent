@@ -63,7 +63,23 @@ _TEXTAREA_THEME = "vtx-input"
 # keys are matched separately (single digit) so we can accept "1" but
 # not multi-digit input.
 _ASK_USER_PICKER_KEYS: frozenset[str] = frozenset(
-    {"up", "down", "left", "right", "j", "k", "space", "enter", "escape"}
+    {
+        "up",
+        "down",
+        "left",
+        "right",
+        "j",
+        "k",
+        "space",
+        "enter",
+        "escape",
+        "tab",
+        "shift+tab",
+        "n",
+        "ctrl+u",
+        "ctrl+]",
+        "ctrl+right_square_bracket",
+    }
 )
 
 
@@ -825,33 +841,44 @@ class InputBox(Vertical):
 
 
 class AskUserInput(Input):
-    """Inline Other input for the ask_user picker.
+    """Inline input (custom answer / notes) for the ask_user dialog.
 
-    When the picker is active and this input is the one with focus, the
-    user is typing a custom answer and most keys should be passed
-    through (Enter is handled by Textual's ``Input.Submitted``). The
-    two exceptions are ``escape`` (always forwarded so the user can
-    cancel the prompt) and the digit/arrow/j/k/space picker keys when
-    the input is somehow focused while hidden (a safety net so the
-    keys can never be silently swallowed by a hidden widget).
+    When the dialog is active and this input is the one with focus, the
+    user is typing and most keys should be passed through (Enter is
+    handled by Textual's ``Input.Submitted``). Exceptions:
+
+    * ``escape`` is always forwarded so the user can cancel or close
+      the notes editor and is never trapped,
+    * ``up``/``down`` are forwarded so vertical arrows leave the field
+      back to row navigation (rpiv behaviour),
+    * picker keys are forwarded when the input is somehow focused while
+      hidden — a safety net so keys never disappear into a hidden
+      widget.
     """
 
     async def _on_key(self, event: events.Key) -> None:
         ask_future = getattr(self.app, "_ask_user_future", None)
         if ask_future and not ask_future.done():
-            # Escape always cancels the ask_user prompt, even when the
-            # Other input has focus, so the user is never trapped.
+            # Escape always reaches the dialog: it cancels the prompt
+            # from the custom answer, closes the notes editor otherwise.
             if event.key == "escape":
+                app_on_key = getattr(self.app, "on_key", None)
+                if callable(app_on_key):
+                    app_on_key(event)
+                    return
+            # Vertical arrows move focus back out of the field so row
+            # navigation keeps working without reaching for Esc.
+            if event.key in ("up", "down"):
                 app_on_key = getattr(self.app, "on_key", None)
                 if callable(app_on_key):
                     app_on_key(event)
                     return
             # Safety net: if the input is focused while hidden, picker
             # keys would otherwise disappear into the void. Forward
-            # them to the app so the picker keeps responding.
+            # them to the app so the dialog keeps responding.
             if not self.has_focus and _is_ask_user_picker_key(event.key):
                 # Enter is handled by Input.Submitted — let the default
-                # Input behavior fire so the custom text gets submitted.
+                # Input behavior fire so the text gets committed.
                 if event.key == "enter":
                     await super()._on_key(event)
                     return

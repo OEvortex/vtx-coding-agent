@@ -9,9 +9,9 @@ from textual.containers import VerticalScroll
 from textual.timer import Timer
 from textual.widgets import Label
 
-from vtx.ai.agent.context.skills import Skill
 from vtx.ai.agent.tools import BaseTool
 from vtx.coding_agent.config import config, get_agents_dir
+from vtx.coding_agent.context.skills import Skill
 from vtx.core import ApprovalResponse
 from vtx.core.types import ImageContent
 from vtx.tui.blocks import (
@@ -688,18 +688,17 @@ class ChatLog(VerticalScroll):
             block.hide_approval()
             self._scroll_if_anchored(animate=False)
 
-    def show_ask_user(self, tool_id: str, options: list, multi_select: bool) -> None:
+    def show_ask_user(self, tool_id: str, dialog) -> None:
         block = self._tool_blocks.get(tool_id)
         if block:
-            block.show_ask_user(options=options, multi_select=multi_select)
+            block.show_ask_user(dialog=dialog)
             self._scroll_if_anchored(animate=False)
 
-    def update_ask_user_selection(
-        self, tool_id: str, highlight: int, toggled: set[str] | None = None
-    ) -> None:
+    def rerender_ask_user(self, tool_id: str) -> None:
         block = self._tool_blocks.get(tool_id)
         if block:
-            block.update_ask_user_selection(highlight=highlight, toggled=toggled)
+            block.rerender_ask_user()
+            self._scroll_if_anchored(animate=False)
 
     def hide_ask_user(self, tool_id: str) -> None:
         block = self._tool_blocks.get(tool_id)
@@ -707,23 +706,40 @@ class ChatLog(VerticalScroll):
             block.hide_ask_user()
             self._scroll_if_anchored(animate=False)
 
-    def ask_user_input_value(self, tool_id: str) -> str:
-        """Return the current value of the inline Other-input for the block."""
+    def ask_user_custom_value(self, tool_id: str) -> str:
+        """Return the current value of the inline custom-answer input."""
         block = self._tool_blocks.get(tool_id)
         if not block:
             return ""
-        try:
-            return block.query_one("#ask-user-input", AskUserInput).value
-        except Exception:
-            return ""
+        return block.ask_user_custom_value()
 
-    def focus_ask_user_input(self, tool_id: str) -> bool:
-        """Focus the inline Other-input; returns True if it was focused."""
+    def ask_user_notes_value(self, tool_id: str) -> str:
+        """Return the current value of the inline notes input."""
+        block = self._tool_blocks.get(tool_id)
+        if not block:
+            return ""
+        return block.ask_user_notes_value()
+
+    def set_ask_user_custom_value(self, tool_id: str, value: str) -> None:
+        """Overwrite the inline custom-answer input (e.g. Ctrl+U clearing)."""
+        block = self._tool_blocks.get(tool_id)
+        if block:
+            block.set_ask_user_custom_value(value)
+
+    def set_ask_user_notes_value(self, tool_id: str, value: str) -> None:
+        """Overwrite the inline notes input."""
+        block = self._tool_blocks.get(tool_id)
+        if block:
+            block.set_ask_user_notes_value(value)
+
+    def focus_ask_user_input(self, tool_id: str, notes: bool = False) -> bool:
+        """Focus an inline ask_user input; returns True if it was focused."""
         block = self._tool_blocks.get(tool_id)
         if not block:
             return False
         try:
-            block.query_one("#ask-user-input", AskUserInput).focus()
+            selector = "#ask-user-notes-input" if notes else "#ask-user-input"
+            block.query_one(selector, AskUserInput).focus()
             return True
         except Exception:
             return False

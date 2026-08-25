@@ -9,7 +9,7 @@ Discovers AGENTS.md (or CLAUDE.md) files from:
 from dataclasses import dataclass
 from pathlib import Path
 
-from vtx.ai.agent.context._xml import escape_xml
+from vtx.coding_agent.context._xml import escape_xml
 from vtx.core.paths import get_config_dir
 
 CONTEXT_FILE_CANDIDATES = ["AGENTS.md", "CLAUDE.md"]

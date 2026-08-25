@@ -24,22 +24,23 @@ from textual.binding import Binding
 from textual.widgets import Input
 
 from vtx.ai import BaseProvider
-from vtx.ai.agent.context.skills import (
+from vtx.ai.agent.extensions import load_for_runtime
+from vtx.ai.agent.session import Session
+from vtx.ai.agent.tools_manager import get_tool_path
+from vtx.ai.base import AuthMode
+from vtx.coding_agent.config import config, consume_config_warnings, get_last_selected
+from vtx.coding_agent.context.skills import (
     load_builtin_cmd_skills,
     load_skills,
     merge_registered_skills,
     render_skill_prompt,
 )
-from vtx.ai.agent.extensions import load_for_runtime
-from vtx.ai.agent.runtime import ConversationRuntime
-from vtx.ai.agent.session import Session
-from vtx.ai.agent.tools import DEFAULT_TOOLS, get_tools_with_extensions
-from vtx.ai.agent.tools_manager import get_tool_path
-from vtx.ai.base import AuthMode
-from vtx.coding_agent.config import config, consume_config_warnings, get_last_selected
+from vtx.coding_agent.runtime import ConversationRuntime
+from vtx.coding_agent.tools import DEFAULT_TOOLS, get_tools_with_extensions
 from vtx.coding_agent.version import VERSION, format_version
-from vtx.core import ApprovalResponse, AskUserOption, AskUserResponse
+from vtx.core import ApprovalResponse, AskUserResponse
 from vtx.tui.agent_runner import AgentRunnerMixin
+from vtx.tui.ask_user import AskUserDialog
 from vtx.tui.autocomplete import DEFAULT_COMMANDS, SlashCommand
 from vtx.tui.blocks import HandoffLinkBlock, LaunchWarning
 from vtx.tui.chat import ChatLog
@@ -170,13 +171,12 @@ class Vtx(
         self._approval_tool_id: str | None = None
         self._approval_selection: ApprovalResponse = ApprovalResponse.APPROVE
         # ask_user state — mirrors the approval fields so the app's
-        # on_key can route keypresses to the right future.
+        # on_key can route keypresses to the right future. The dialog
+        # object owns the questionnaire; the app just dispatches keys
+        # into it and resolves the future when it finishes.
         self._ask_user_future: asyncio.Future[AskUserResponse] | None = None
         self._ask_user_tool_id: str | None = None
-        self._ask_user_options: list[AskUserOption] = []
-        self._ask_user_multi: bool = False
-        self._ask_user_highlight: int = 0
-        self._ask_user_toggled: set[str] = set()
+        self._ask_dialog: AskUserDialog | None = None
         self._hide_thinking = False
         self._fd_path: str | None = None
         self._selection_mode: SelectionMode | None = None
@@ -207,7 +207,7 @@ class Vtx(
         # fire tool_call / tool_result / agent_* hooks through.
         self._loaded_extensions = load_for_runtime(
             cwd=self._cwd,
-            extra_paths=extra_extension_paths,
+            extra_paths=[*config.extensions, *(extra_extension_paths or [])],
             auto_discover=auto_discover_extensions,
         )
         for err in self._loaded_extensions.errors:
@@ -216,7 +216,7 @@ class Vtx(
         # Load handoff agents (project-local, global, plus the caller's
         # extra paths). Agent-scoped local tools + commands are merged
         # into the active tool set when an agent is active.
-        from vtx.ai.agent.agents import AgentRegistry, load_all_agents
+        from vtx.coding_agent.agents import AgentRegistry, load_all_agents
 
         self._agent_registry = AgentRegistry()
         if auto_discover_agents or extra_agent_paths:
@@ -749,161 +749,87 @@ class Vtx(
         return False
 
     def _handle_ask_user_key(self, event: events.Key) -> bool:
-        """Handle a keypress while an ask_user picker is active.
+        """Handle a keypress while an ask_user questionnaire is active.
 
         Returns True if the key was consumed (caller should stop
-        propagation). Mirrors the approval flow's on_key contract.
+        propagation). All interaction logic lives in the
+        :class:`AskUserDialog` state machine; this only feeds it the
+        live input values and applies its side effects.
         """
-        if self._ask_user_future is None or self._ask_user_future.done():
+        dialog = self._ask_dialog
+        if self._ask_user_future is None or self._ask_user_future.done() or dialog is None:
             return False
 
-        key = event.key
-        max_index = len(self._ask_user_options)  # +1 for "Other"
-        total = max_index + 1
-
-        # Number keys 1..N: pick that option directly. 1-indexed for
-        # human readability; the last index is "Other".
-        if key.isdigit() and len(key) == 1:
-            n = int(key)
-            if 1 <= n <= total:
-                self._ask_user_pick(n - 1)
-                event.prevent_default()
-                event.stop()
-                return True
+        chat = self.query_one("#chat-log", ChatLog)
+        tool_id = self._ask_user_tool_id or ""
+        consumed = dialog.handle_key(
+            event.key,
+            custom_value=chat.ask_user_custom_value(tool_id),
+            notes_value=chat.ask_user_notes_value(tool_id),
+        )
+        if not consumed:
             return False
 
-        if key in ("up", "k"):
-            self._ask_user_move(-1)
-            event.prevent_default()
-            event.stop()
-            return True
-        if key in ("down", "j"):
-            self._ask_user_move(1)
-            event.prevent_default()
-            event.stop()
-            return True
-        if key == " " and self._ask_user_multi:
-            self._ask_user_toggle_highlight()
-            event.prevent_default()
-            event.stop()
-            return True
-        if key == "enter":
-            self._ask_user_submit_highlighted()
-            event.prevent_default()
-            event.stop()
-            return True
-        if key == "escape":
-            self._ask_user_cancel()
-            event.prevent_default()
-            event.stop()
-            return True
-        return False
-
-    def _ask_user_move(self, delta: int) -> None:
-        total = len(self._ask_user_options) + 1
-        self._ask_user_highlight = (self._ask_user_highlight + delta) % total
-        self._refresh_ask_user_visual()
-
-    def _ask_user_toggle_highlight(self) -> None:
-        idx = self._ask_user_highlight
-        if idx >= len(self._ask_user_options):
-            # Toggling the "Other" row toggles the synthetic label; not
-            # useful on its own, so ignore.
-            return
-        label = self._ask_user_options[idx].label
-        if label in self._ask_user_toggled:
-            self._ask_user_toggled.discard(label)
+        if dialog.pending_clear_draft:
+            dialog.pending_clear_draft = False
+            chat.set_ask_user_custom_value(tool_id, "")
+        if dialog.finished:
+            self._resolve_ask_user_future(dialog)
         else:
-            self._ask_user_toggled.add(label)
-        self._refresh_ask_user_visual()
+            chat.rerender_ask_user(tool_id)
+        event.prevent_default()
+        event.stop()
+        return True
 
-    def _ask_user_pick(self, index: int) -> None:
-        """Pick a specific row by 0-based index (user-options + 1 for Other)."""
-        if self._ask_user_multi:
-            # Multi-select: number toggles a single option and Enter
-            # submits. Single-click picks don't make sense here.
-            self._ask_user_highlight = index
-            label = (
-                self._ask_user_options[index].label
-                if index < len(self._ask_user_options)
-                else None
-            )
-            if label is not None:
-                if label in self._ask_user_toggled:
-                    self._ask_user_toggled.discard(label)
-                else:
-                    self._ask_user_toggled.add(label)
-            self._refresh_ask_user_visual()
-            return
-
-        # Single-select: 1..N submits immediately
-        self._ask_user_highlight = index
-        self._ask_user_submit_highlighted()
-
-    def _ask_user_submit_highlighted(self) -> None:
-        if self._ask_user_future is None or self._ask_user_future.done():
-            return
-
-        idx = self._ask_user_highlight
-        if idx >= len(self._ask_user_options):
-            # "Other" — submit the inline input value
-            chat = self.query_one("#chat-log", ChatLog)
-            text = chat.ask_user_input_value(self._ask_user_tool_id or "").strip()
-            if not text:
-                return  # empty custom answer: ignore
-            self._ask_user_future.set_result(AskUserResponse(custom_text=text))
-        elif self._ask_user_multi:
-            # If the user hasn't toggled anything, fall back to the
-            # highlighted option.
-            if not self._ask_user_toggled:
-                label = self._ask_user_options[idx].label
-                self._ask_user_future.set_result(AskUserResponse(selections=(label,)))
-            else:
-                self._ask_user_future.set_result(
-                    AskUserResponse(selections=tuple(sorted(self._ask_user_toggled)))
-                )
-        else:
-            label = self._ask_user_options[idx].label
-            self._ask_user_future.set_result(AskUserResponse(selections=(label,)))
-
-        self._clear_ask_user_state()
-
-    def _ask_user_cancel(self) -> None:
-        if self._ask_user_future and not self._ask_user_future.done():
-            self._ask_user_future.set_result(AskUserResponse())
+    def _resolve_ask_user_future(self, dialog: AskUserDialog) -> None:
+        """Hand the questionnaire's answers back to the turn runner."""
+        future = self._ask_user_future
+        if future is not None and not future.done():
+            future.set_result(AskUserResponse() if dialog.cancelled else dialog.build_response())
         self._clear_ask_user_state()
 
     def _clear_ask_user_state(self) -> None:
         if self._ask_user_tool_id is not None:
-            chat = self.query_one("#chat-log", ChatLog)
-            chat.hide_ask_user(self._ask_user_tool_id)
+            try:
+                chat = self.query_one("#chat-log", ChatLog)
+                chat.hide_ask_user(self._ask_user_tool_id)
+            except Exception:
+                pass
         self._ask_user_future = None
         self._ask_user_tool_id = None
-        self._ask_user_options = []
-        self._ask_user_toggled = set()
-        self._ask_user_highlight = 0
-
-    def _refresh_ask_user_visual(self) -> None:
-        if self._ask_user_tool_id is None:
-            return
-        chat = self.query_one("#chat-log", ChatLog)
-        chat.update_ask_user_selection(
-            self._ask_user_tool_id, self._ask_user_highlight, set(self._ask_user_toggled)
-        )
+        self._ask_dialog = None
 
     @on(Input.Submitted)
     def on_ask_user_input_submitted(self, event: Input.Submitted) -> None:
-        """Submit the inline 'Other' input as a custom-text answer."""
-        if event.input.id != "ask-user-input":
+        """Commit the inline custom answer or save the open note editor."""
+        dialog = self._ask_dialog
+        if dialog is None or self._ask_user_future is None or self._ask_user_future.done():
             return
-        if self._ask_user_future is None or self._ask_user_future.done():
+        if event.input.id == "ask-user-input":
+            dialog.commit_custom(event.value)
+            event.stop()
+            if dialog.finished:
+                self._resolve_ask_user_future(dialog)
+            else:
+                self.query_one("#chat-log", ChatLog).rerender_ask_user(
+                    self._ask_user_tool_id or ""
+                )
+        elif event.input.id == "ask-user-notes-input":
+            dialog.save_note(event.value)
+            event.stop()
+            self.query_one("#chat-log", ChatLog).rerender_ask_user(self._ask_user_tool_id or "")
+
+    @on(Input.Changed)
+    def on_ask_user_input_changed(self, event: Input.Changed) -> None:
+        """Mirror the custom-answer draft into the state machine so it
+        stays visible in the ``Type something.`` row while browsing."""
+        dialog = self._ask_dialog
+        if dialog is None or event.input.id != "ask-user-input":
             return
-        text = event.value.strip()
-        if not text:
+        if dialog.is_on_submit_tab():
             return
-        self._ask_user_future.set_result(AskUserResponse(custom_text=text))
-        self._clear_ask_user_state()
-        event.stop()
+        dialog.current_state().draft = event.value
+        self.query_one("#chat-log", ChatLog).rerender_ask_user(self._ask_user_tool_id or "")
 
     def on_key(self, event: events.Key) -> None:
         # ask_user takes priority over approval since its picker is

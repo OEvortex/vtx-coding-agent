@@ -103,8 +103,12 @@ def test_picker_key_actions() -> None:
 
 
 def test_picker_key_rejects_letters() -> None:
-    for k in ("a", "y", "n", "Z", "tab"):
+    # "n" and "tab" are picker keys now (notes / tab switching); other
+    # letters must still fall through to the text input.
+    for k in ("a", "y", "Z"):
         assert _is_ask_user_picker_key(k) is False, k
+    for k in ("n", "tab", "shift+tab", "ctrl+u", "ctrl+]"):
+        assert _is_ask_user_picker_key(k) is True, k
 
 
 def test_picker_key_rejects_multidigit() -> None:

@@ -2,7 +2,7 @@ from unittest.mock import AsyncMock, Mock, patch
 
 import pytest
 
-from vtx.ai.agent.tools.bash import BashTool
+from vtx.coding_agent.tools.bash import BashTool
 from vtx.tui.app import Vtx
 
 

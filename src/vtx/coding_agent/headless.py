@@ -75,14 +75,13 @@ async def render_run(
                     f"error: {tool_name!r} requires approval, denied (non-interactive mode)",
                     file=err,
                 )
-            case AskUserEvent(question=question, future=future) if future is not None:
-                # Headless can't surface a prompt; treat the question as
-                # unanswered. The turn runner records a skipped tool
+            case AskUserEvent(questions=questions, future=future) if future is not None:
+                # Headless can't surface a dialog; treat the questions
+                # as unanswered. The turn runner records a skipped tool
                 # result with a hint to the LLM.
                 future.set_result(AskUserResponse())
-                print(
-                    f"error: agent asked a question in non-interactive mode: {question}", file=err
-                )
+                asked = "; ".join(q.question for q in questions)
+                print(f"error: agent asked a question in non-interactive mode: {asked}", file=err)
             case _:
                 pass
     if stop == StopReason.STOP and final_text:
@@ -111,8 +110,8 @@ async def run_headless(
     agent_files: list[str] | None = None,
     auto_discover_agents: bool = True,
 ) -> int:
-    from vtx.ai.agent.runtime import ConversationRuntime
-    from vtx.ai.agent.tools import DEFAULT_TOOLS, get_tools_with_extensions
+    from vtx.coding_agent.runtime import ConversationRuntime
+    from vtx.coding_agent.tools import DEFAULT_TOOLS, get_tools_with_extensions
 
     prompt = resolve_prompt(prompt_arg, stdin=sys.stdin)
     if not prompt:
@@ -147,8 +146,8 @@ async def run_headless(
         anthropic_auth = anthropic_compat_auth_mode or config.llm.auth.anthropic_compat
 
         # Load agents first so the active agent's tool surface is applied.
-        from vtx.ai.agent.agents import AgentRegistry, load_all_agents
         from vtx.ai.agent.extensions import load_for_runtime
+        from vtx.coding_agent.agents import AgentRegistry, load_all_agents
 
         agent_registry = AgentRegistry()
         if auto_discover_agents or agent_files:
@@ -178,7 +177,9 @@ async def run_headless(
 
         tools = get_tools_with_extensions(DEFAULT_TOOLS)
 
-        loaded_extensions = load_for_runtime(cwd=os.getcwd(), auto_discover=True)
+        loaded_extensions = load_for_runtime(
+            cwd=os.getcwd(), extra_paths=list(config.extensions), auto_discover=True
+        )
         for err in loaded_extensions.errors:
             print(f"extension error: {err}", file=sys.stderr)
 

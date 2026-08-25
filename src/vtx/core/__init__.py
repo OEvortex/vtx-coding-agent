@@ -30,7 +30,9 @@ from .events import (
 from .notify import NotificationEvent, notify
 from .permissions import (
     ApprovalResponse,
+    AskUserAnswer,
     AskUserOption,
+    AskUserQuestion,
     AskUserResponse,
     PermissionDecision,
     _is_safe_bash_command,
@@ -65,8 +67,10 @@ __all__ = [
     "AgentEndEvent",
     "AgentStartEvent",
     "ApprovalResponse",
+    "AskUserAnswer",
     "AskUserEvent",
     "AskUserOption",
+    "AskUserQuestion",
     "AskUserResponse",
     "AssistantMessage",
     "BackgroundTaskCompletedEvent",

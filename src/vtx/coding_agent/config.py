@@ -13,6 +13,7 @@ from typing import Any, Literal, get_args
 import yaml
 from pydantic import BaseModel, Field, ValidationError, field_validator, model_validator
 
+from vtx.ai.agent.config import apply_harness_settings
 from vtx.coding_agent.themes import ColorsConfig, get_theme, get_theme_ids
 
 CONFIG_DIR_NAME: str = "vtx"
@@ -54,7 +55,7 @@ def _resolve_default_system_prompt() -> str:
     Python code rather than the shipped YAML. The YAML keeps an empty
     placeholder for schema stability; this function fills it in.
     """
-    from vtx.ai.agent.prompts.identity import DEFAULT_VTX_BASE
+    from vtx.coding_agent.prompts.identity import DEFAULT_VTX_BASE
 
     return DEFAULT_VTX_BASE
 
@@ -825,19 +826,33 @@ def get_config() -> Config:
     if cfg is None:
         cfg = _load_config()
         _config_var.set(cfg)
+        _sync_harness_settings(cfg)
     return cfg
 
 
 def set_config(config: Config) -> None:
     """Set the config instance (useful for testing)."""
     _config_var.set(config)
+    _sync_harness_settings(config)
 
 
 def reload_config() -> Config:
     """Reload config from file and update the context variable."""
     cfg = _load_config()
     _config_var.set(cfg)
+    _sync_harness_settings(cfg)
     return cfg
+
+
+def _sync_harness_settings(cfg: Config) -> None:
+    """Mirror user-facing knobs into the product-neutral harness engine."""
+    apply_harness_settings(
+        max_turns=cfg.agent.max_turns,
+        default_context_window=cfg.agent.default_context_window,
+        compaction_threshold_percent=cfg.compaction.threshold_percent,
+        compaction_on_overflow=cfg.compaction.on_overflow,
+        tool_call_idle_timeout_seconds=cfg.llm.tool_call_idle_timeout_seconds,
+    )
 
 
 def _set_config_version(data: dict[str, Any]) -> None:

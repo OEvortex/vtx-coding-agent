@@ -14,10 +14,10 @@ from collections.abc import Callable
 from pathlib import Path
 from typing import Any
 
-from vtx.ai.agent.agents.api import AgentAPI, LoadedAgent
-from vtx.ai.agent.agents.schema import AgentDef
 from vtx.ai.agent.extensions import AGENT_CHANGED
 from vtx.ai.agent.tools.base import BaseTool
+from vtx.coding_agent.agents.api import AgentAPI, LoadedAgent
+from vtx.coding_agent.agents.schema import AgentDef
 
 log = logging.getLogger("agent.agents")
 
@@ -169,7 +169,7 @@ def load_all_agents(
     Errors are collected, not raised: one bad agent should not block the
     rest. Mirrors :func:`vtx.extensions.load_all_extensions`.
     """
-    from vtx.ai.agent.agents.discovery import find_agent_paths
+    from vtx.coding_agent.agents.discovery import find_agent_paths
     from vtx.core.paths import get_config_dir
 
     builtins = [

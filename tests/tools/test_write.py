@@ -1,6 +1,6 @@
 import pytest
 
-from vtx.ai.agent.tools.write import WriteParams, WriteTool
+from vtx.coding_agent.tools.write import WriteParams, WriteTool
 
 
 @pytest.fixture

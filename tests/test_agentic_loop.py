@@ -8,11 +8,11 @@ import pytest
 from vtx.ai.agent.context_governance import _MAX_TOOL_RESULT_CHARS
 from vtx.ai.agent.loop import Agent
 from vtx.ai.agent.session import Session
-from vtx.ai.agent.tools import BashTool, ReadTool
 from vtx.ai.agent.turn import prepare_for_model, run_single_turn
 from vtx.ai.base import BaseProvider, LLMStream, ProviderConfig
 from vtx.ai.providers.mock import MockProvider
 from vtx.coding_agent.config import Config, reset_config, set_config
+from vtx.coding_agent.tools import BashTool, ReadTool
 from vtx.core import (
     AgentEndEvent,
     AgentStartEvent,

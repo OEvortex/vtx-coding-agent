@@ -10,7 +10,7 @@ import contextlib
 from dataclasses import dataclass, field
 from pathlib import Path
 
-from vtx.ai.agent.agents.api import LoadedAgent
+from vtx.coding_agent.agents.api import LoadedAgent
 
 
 @dataclass

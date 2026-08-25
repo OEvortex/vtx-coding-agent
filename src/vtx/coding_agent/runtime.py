@@ -18,19 +18,20 @@ from vtx.ai import (
     get_provider_class,
     resolve_provider_api_type,
 )
-from vtx.ai.agent.agents import AgentRegistry, LoadedAgent
-from vtx.ai.agent.agents.activate import _filter as _agent_tool_filter
-from vtx.ai.agent.agents.activate import compose_active_commands
-from vtx.ai.agent.context import Context
 from vtx.ai.agent.extensions import MODEL_SELECT, THINKING_LEVEL_SELECT, EventBus, LoadedExtensions
 from vtx.ai.agent.loop import Agent
-from vtx.ai.agent.prompts import build_system_prompt
 from vtx.ai.agent.session import CompactionEntry, CustomMessageEntry, MessageEntry, Session
-from vtx.ai.agent.tools import DEFAULT_TOOLS, BaseTool, tools_by_name
+from vtx.ai.agent.tools import BaseTool
 from vtx.ai.base import AuthMode
 from vtx.ai.dynamic_models import find_dynamic_model, get_dynamic_provider_headers
+from vtx.coding_agent.agents import AgentRegistry, LoadedAgent
+from vtx.coding_agent.agents.activate import _filter as _agent_tool_filter
+from vtx.coding_agent.agents.activate import compose_active_commands
 from vtx.coding_agent.config import add_recent_model, get_last_selected, set_last_selected
 from vtx.coding_agent.config import config as vtx_config
+from vtx.coding_agent.context import Context
+from vtx.coding_agent.prompts import build_system_prompt
+from vtx.coding_agent.tools import DEFAULT_TOOLS, tools_by_name
 from vtx.core.compaction import generate_summary
 from vtx.core.handoff import generate_handoff_prompt
 from vtx.core.types import AssistantMessage, TextContent, UserMessage
@@ -421,7 +422,7 @@ class ConversationRuntime:
         so the :class:`TaskTool` can schedule background sub-agents.
         """
         if self._background_manager is None:
-            from vtx.ai.agent.tools.background import BackgroundTaskManager, set_manager
+            from vtx.coding_agent.tools.background import BackgroundTaskManager, set_manager
 
             self._background_manager = BackgroundTaskManager()
             self._background_manager_token = set_manager(self._background_manager)
@@ -449,7 +450,7 @@ class ConversationRuntime:
             if self.agent is not None:
                 self.agent._background_manager = None
         if self._background_manager_token is not None:
-            from vtx.ai.agent.tools.background import reset_manager
+            from vtx.coding_agent.tools.background import reset_manager
 
             try:
                 reset_manager(self._background_manager_token)

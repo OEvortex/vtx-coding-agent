@@ -2549,8 +2549,9 @@ def load_for_runtime(
 ) -> LoadedExtensions:
     """Convenience entry point used by ``runtime.py`` and the TUI launch path.
 
-    ``extra_paths`` are added on top of ``config.extensions`` and the
-    auto-discovered directories. ``auto_discover=False`` skips the
+    ``extra_paths`` (e.g. the user's ``config.extensions`` entries, passed
+    by product callers) are loaded on top of the auto-discovered
+    directories. ``auto_discover=False`` skips the
     ``.vtx/extensions`` and ``~/.vtx/agent/extensions`` directories; the
     user-supplied paths still load.
 
@@ -2561,10 +2562,6 @@ def load_for_runtime(
     ``.vtx/extensions/``).
     """
     configured: list[str] = []
-    if auto_discover:
-        from vtx.coding_agent.config import config as vtx_config
-
-        configured.extend(vtx_config.extensions)
     if extra_paths:
         configured.extend(extra_paths)
 

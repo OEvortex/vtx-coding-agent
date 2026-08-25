@@ -14,13 +14,12 @@ Same formula for commands.
 
 from __future__ import annotations
 
-from vtx.ai.agent.agents.api import LoadedAgent
-from vtx.ai.agent.agents.registry import AgentRegistry
-
 # ``ExtensionCommand`` is imported lazily in :func:`compose_active_commands`
 # to avoid a circular import at module load (extensions -> tools -> agents
 # -> activate -> extensions).
 from vtx.ai.agent.tools import BaseTool
+from vtx.coding_agent.agents.api import LoadedAgent
+from vtx.coding_agent.agents.registry import AgentRegistry
 
 
 def _filter(

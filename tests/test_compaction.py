@@ -4,10 +4,10 @@ from typing import cast
 import pytest
 
 from vtx.ai.agent.loop import Agent, AgentConfig
-from vtx.ai.agent.runtime import ConversationRuntime
 from vtx.ai.agent.session import CompactionEntry, Session
 from vtx.ai.providers.mock import MockProvider
 from vtx.coding_agent.config import Config
+from vtx.coding_agent.runtime import ConversationRuntime
 from vtx.core.compaction import is_overflow
 from vtx.core.types import (
     AssistantMessage,
@@ -378,7 +378,7 @@ class TestCompactionUsageBacktracking:
         async def _fake_summary(*args, **kwargs):
             return "summary"
 
-        monkeypatch.setattr("vtx.ai.agent.runtime.generate_summary", _fake_summary)
+        monkeypatch.setattr("vtx.coding_agent.runtime.generate_summary", _fake_summary)
 
         await app._do_compact()
 

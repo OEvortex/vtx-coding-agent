@@ -1,7 +1,7 @@
-from vtx.ai.agent.context import Context
-from vtx.ai.agent.prompts import build_system_prompt
-from vtx.ai.agent.tools import all_tools
 from vtx.coding_agent.config import Config, reset_config, set_config
+from vtx.coding_agent.context import Context
+from vtx.coding_agent.prompts import build_system_prompt
+from vtx.coding_agent.tools import all_tools
 
 
 def test_system_prompt_includes_guidelines():

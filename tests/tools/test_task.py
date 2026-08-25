@@ -16,8 +16,8 @@ from typing import Any
 import pytest
 from pydantic import ValidationError
 
-import vtx.ai.agent.tools.task as _mod
-from vtx.ai.agent.tools.task import (
+import vtx.coding_agent.tools.task as _mod
+from vtx.coding_agent.tools.task import (
     MAX_RESULT_CHARS,
     SubagentSpec,
     TaskParams,
@@ -79,7 +79,7 @@ class TestTaskParamsValidation:
 
 class TestResolveSubagentSpec:
     def test_user_defined_agent_wins(self):
-        from vtx.ai.agent.agents import AgentDef, AgentRegistry, LoadedAgent
+        from vtx.coding_agent.agents import AgentDef, AgentRegistry, LoadedAgent
 
         loaded = LoadedAgent(
             definition=AgentDef(name="reviewer", description="Custom reviewer"), path=Path("/r.py")
@@ -418,7 +418,7 @@ class TestTaskToolExecute:
         monkeypatch.setattr(_mod, "_create_subagent_session", lambda *a, **kw: _StubSession())
         monkeypatch.setattr(_mod, "_resolve_api_and_base_url", lambda *a, **kw: ("openai", None))
         monkeypatch.setattr(
-            "vtx.ai.agent.runtime.create_provider", lambda *a, **kw: _FakeProvider()
+            "vtx.coding_agent.runtime.create_provider", lambda *a, **kw: _FakeProvider()
         )
         monkeypatch.setattr("vtx.ai.agent.loop.Agent", lambda *a, **kw: _FakeSubAgent(*a, **kw))
 

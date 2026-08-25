@@ -432,7 +432,7 @@ async def _async_value(value):
 def test_extension_tool_override_built_in(tmp_path: Path, monkeypatch):
     """If an extension registers a tool whose name matches a built-in, the
     extension version should win in the merged list."""
-    from vtx.ai.agent.tools import get_tools_with_extensions
+    from vtx.coding_agent.tools import get_tools_with_extensions
 
     schema = {"type": "object", "properties": {"path": {"type": "string"}}}
     params_model = _json_schema_to_pydantic("read", schema)

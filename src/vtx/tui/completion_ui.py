@@ -11,7 +11,7 @@ from typing import TYPE_CHECKING, Any
 
 from textual import on
 
-from vtx.ai.agent.runtime import ConversationRuntime
+from vtx.coding_agent.runtime import ConversationRuntime
 from vtx.tui.autocomplete import FilePathProvider, PullRequestProvider, SlashCommandProvider
 from vtx.tui.chat import ChatLog
 from vtx.tui.floating_list import FloatingList, ListItem

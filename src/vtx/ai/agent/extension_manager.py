@@ -22,7 +22,7 @@ import tempfile
 from dataclasses import dataclass, field
 from pathlib import Path
 
-from vtx.coding_agent.config import get_config_dir
+from vtx.core.paths import get_config_dir
 
 log = logging.getLogger("agent.extension_manager")
 
@@ -163,7 +163,12 @@ def _discover_entry_points(package_location: Path) -> tuple[list[str], list[str]
             for key in ("agent.extensions", "ai.agent.extensions", "vtx.ai.agent.extensions"):
                 for mod_path in eps.get(key, {}).values():
                     extensions.append(mod_path)
-            for key in ("agent.agents", "ai.agent.agents", "vtx.ai.agent.agents"):
+            for key in (
+                "agent.agents",
+                "ai.agent.agents",
+                "vtx.ai.agent.agents",
+                "vtx.coding_agent.agents",
+            ):
                 for mod_path in eps.get(key, {}).values():
                     agents.append(mod_path)
     except Exception:

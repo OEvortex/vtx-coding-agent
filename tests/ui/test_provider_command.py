@@ -15,7 +15,7 @@ from vtx.tui.floating_list import ListItem
 from vtx.tui.selection_mode import SelectionMode
 
 if TYPE_CHECKING:
-    from vtx.ai.agent.runtime import ConversationRuntime
+    from vtx.coding_agent.runtime import ConversationRuntime
 
 
 class FakeChat:

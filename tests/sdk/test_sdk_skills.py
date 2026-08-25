@@ -15,7 +15,7 @@ def test_format_skills_for_prompt_empty() -> None:
 
 
 def test_format_skills_for_prompt_basic() -> None:
-    from vtx.ai.agent.context.skills import Skill
+    from vtx.coding_agent.context.skills import Skill
 
     skills = [
         Skill(path="/tmp/a", name="alpha", description="The alpha skill."),

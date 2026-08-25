@@ -53,7 +53,8 @@ MAX_PERSISTED_RESULT_CHARS = 200_000
 # Tag used to mark synthetic completion messages injected between
 # turns. The model is told in its system prompt that any message
 # containing this tag is a system event, not a user instruction.
-BACKGROUND_NOTIFICATION_TAG = "vtx:background-task-completion"
+# Defined in the harness (vtx.ai.agent.background) and re-exported here.
+from vtx.ai.agent.background import BACKGROUND_NOTIFICATION_TAG  # noqa: E402
 
 _BACKGROUND_MANAGER_VAR: contextvars.ContextVar[BackgroundTaskManager | None] = (
     contextvars.ContextVar("vtx_background_manager", default=None)

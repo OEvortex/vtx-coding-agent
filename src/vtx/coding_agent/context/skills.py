@@ -17,7 +17,7 @@ from importlib import resources
 from pathlib import Path
 from typing import Any
 
-from vtx.ai.agent.context._xml import escape_xml
+from vtx.coding_agent.context._xml import escape_xml
 from vtx.core.paths import get_agents_dir as get_user_skills_dir
 from vtx.core.paths import get_config_dir as get_vtx_config_dir
 

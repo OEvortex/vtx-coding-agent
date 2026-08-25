@@ -10,9 +10,9 @@ from textual.reactive import reactive
 from textual.widget import Widget
 
 from vtx.ai.agent.session import MessageEntry, SessionEntry, TreeNode
-from vtx.ai.agent.tools import get_tool
-from vtx.ai.agent.tools._tool_utils import shorten_path
 from vtx.coding_agent.config import config
+from vtx.coding_agent.tools import get_tool
+from vtx.coding_agent.tools._tool_utils import shorten_path
 from vtx.core.types import AssistantMessage, TextContent, ToolCall, ToolResultMessage, UserMessage
 
 

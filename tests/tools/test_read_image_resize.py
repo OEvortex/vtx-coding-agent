@@ -3,7 +3,7 @@ import io
 
 from PIL import Image
 
-from vtx.ai.agent.tools._read_image import MAX_DIMENSION, read_and_process_image
+from vtx.coding_agent.tools._read_image import MAX_DIMENSION, read_and_process_image
 
 
 def _write_image(path, size: tuple[int, int], color: str = "red") -> None:

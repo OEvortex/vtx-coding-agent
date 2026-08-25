@@ -187,7 +187,7 @@ def main() -> None:
         config.llm.tls.insecure_skip_verify = True
 
     if args.list_agents:
-        from vtx.ai.agent.agents import load_all_agents
+        from vtx.coding_agent.agents import load_all_agents
 
         loaded, errors = load_all_agents(cwd=os.getcwd(), configured=args.agent_files)
         if not loaded and not errors:
@@ -216,7 +216,9 @@ def main() -> None:
         from vtx.coding_agent.headless import run_headless
 
         loaded = load_for_runtime(
-            cwd=os.getcwd(), extra_paths=args.extension_paths, auto_discover=not args.no_extensions
+            cwd=os.getcwd(),
+            extra_paths=[*config.extensions, *args.extension_paths],
+            auto_discover=not args.no_extensions,
         )
         for err in loaded.errors:
             print(f"extension error: {err}", file=sys.stderr)

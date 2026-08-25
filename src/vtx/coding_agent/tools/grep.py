@@ -3,14 +3,14 @@ import os
 
 from pydantic import BaseModel, Field
 
-from vtx.ai.agent.tools._tool_utils import (
+from vtx.ai.agent.tools.base import BaseTool
+from vtx.ai.agent.tools_manager import ensure_tool
+from vtx.coding_agent.tools._tool_utils import (
     ToolCancelledError,
     communicate_or_cancel,
     shorten_path,
     truncate_lines_by_bytes,
 )
-from vtx.ai.agent.tools.base import BaseTool
-from vtx.ai.agent.tools_manager import ensure_tool
 from vtx.core.types import ToolResult
 
 MAX_RESULTS = 100

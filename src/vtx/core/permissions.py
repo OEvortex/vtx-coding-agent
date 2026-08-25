@@ -1,5 +1,5 @@
 import shlex
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from enum import Enum
 
 from vtx.core.abc import BaseTool
@@ -21,36 +21,116 @@ class AskUserOption:
 
     label: str
     description: str = ""
+    preview: str = ""
+
+
+@dataclass(frozen=True)
+class AskUserQuestion:
+    """One question inside an ``ask_user`` questionnaire."""
+
+    question: str
+    header: str = ""
+    options: list[AskUserOption] = field(default_factory=list)
+    multi_select: bool = False
+
+
+@dataclass(frozen=True)
+class AskUserAnswer:
+    """The user's resolved answer to a single question of a questionnaire.
+
+    ``kind`` mirrors the rpiv envelope: ``option`` (picked a listed
+    choice, ``answer`` holds its label), ``custom`` (typed free text in
+    ``answer``), or ``multi`` (``selected`` holds the checked labels).
+    ``notes`` is optional side-band commentary the user attached with
+    the ``n`` key; it never marks a question answered on its own.
+    """
+
+    question: str
+    kind: str
+    answer: str | None = None
+    selected: tuple[str, ...] = ()
+    notes: str | None = None
+    preview: str | None = None
+
+    def scalar(self) -> str:
+        """The answer as one flat string (for the LLM envelope)."""
+        if self.kind == "multi":
+            return ", ".join(self.selected) if self.selected else ""
+        return self.answer or ""
+
+    def segment(self) -> str:
+        """Render this answer as one `"question"="answer"` envelope segment."""
+        parts = [f'"{self.question}"="{self.scalar()}"']
+        if self.preview:
+            parts.append(f"selected preview: {self.preview}")
+        if self.notes:
+            parts.append(f"user notes: {self.notes}")
+        return f"{'. '.join(parts)}."
+
+
+DECLINE_MESSAGE = "User declined to answer questions"
+ENVELOPE_PREFIX = "User has answered your questions:"
+ENVELOPE_SUFFIX = "You can now continue with the user's answers in mind."
 
 
 @dataclass(frozen=True)
 class AskUserResponse:
     """The user's answer to an ``ask_user`` tool call.
 
-    ``selections`` holds the labels of the options the user picked (in
-    order). When the user types free text instead, ``custom_text`` is
-    set and ``selections`` is empty. An empty response means the user
-    dismissed the prompt (e.g. pressed Escape) and the tool call should
-    be treated as cancelled.
+    Two shapes share this class. The single-question picker fills the
+    legacy ``selections``/``custom_text`` fields. The rpiv-style
+    questionnaire fills ``answers`` (one :class:`AskUserAnswer` per
+    answered question) and optionally ``global_note``. An empty
+    response means the user dismissed the prompt (e.g. pressed Escape)
+    and the tool call should be treated as cancelled.
     """
 
     selections: tuple[str, ...] = ()
     custom_text: str | None = None
+    answers: tuple[AskUserAnswer, ...] = ()
+    global_note: str | None = None
 
     @property
     def is_empty(self) -> bool:
-        return not self.selections and not (self.custom_text and self.custom_text.strip())
+        return not (
+            self.selections
+            or (self.custom_text and self.custom_text.strip())
+            or self.answers
+            or (self.global_note and self.global_note.strip())
+        )
 
-    def format_for_llm(self, options: list[AskUserOption]) -> str:
+    def format_for_llm(self, options: list[AskUserOption] | None = None) -> str:
         """Render the response as plain text for the LLM tool result."""
+        del options  # kept for call-compatibility; the envelope is self-contained
+        if self.answers or (self.global_note and self.global_note.strip()):
+            segments = [answer.segment() for answer in self.answers]
+            if self.global_note and self.global_note.strip():
+                segments.append(f"global note: {self.global_note.strip()}.")
+            if segments:
+                return f"{ENVELOPE_PREFIX} {' '.join(segments)} {ENVELOPE_SUFFIX}"
         if self.custom_text and self.custom_text.strip():
             return f"User answered with custom text: {self.custom_text.strip()}"
         if not self.selections:
-            return "User did not provide an answer."
+            return DECLINE_MESSAGE
         return f"User selected: {', '.join(self.selections)}"
 
     def ui_summary(self) -> str:
-        """Short summary for the tool block header (e.g. "(option A, option B)")."""
+        """Short summary for the tool block header (e.g. "(option A, option B)").
+
+        Questionnaire responses compress to ``Header: answer`` pairs so a
+        four-question dialog still fits on one header line.
+        """
+        if self.answers:
+            parts: list[str] = []
+            for answer in self.answers[:4]:
+                text = answer.scalar()
+                if len(text) > 30:
+                    text = text[:27] + "..."
+                parts.append(f"{text}")
+            summary = "; ".join(parts)
+            if len(summary) > 60:
+                summary = summary[:57] + "..."
+            return f"[dim]→ {summary}[/dim]"
         if self.custom_text and self.custom_text.strip():
             text = self.custom_text.strip()
             if len(text) > 40:
