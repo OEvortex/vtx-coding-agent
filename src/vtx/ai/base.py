@@ -1,3 +1,4 @@
+import asyncio
 import json
 import os
 from abc import ABC, abstractmethod
@@ -8,6 +9,15 @@ from typing import Any, ClassVar, Literal, cast
 from urllib.parse import urlparse
 
 import httpx
+
+# Apply httpcore GeneratorExit patch as early as possible so streaming
+# SDKs pick up the fixed ``safe_async_iterate``.
+try:
+    from vtx.ai._httpcore_patch import apply_patch as _apply_httpcore_patch
+
+    _apply_httpcore_patch()
+except Exception:
+    pass
 
 from vtx.core.types import (
     Message,
@@ -239,7 +249,25 @@ class LLMStream(AsyncIterator["StreamPart"]):
             return
         close = getattr(self._iterator, "aclose", None)
         if close is not None:
-            await close()
+            try:
+                await close()
+            except (
+                RuntimeError,
+                GeneratorExit,
+                StopAsyncIteration,
+                StopIteration,
+                asyncio.CancelledError,
+            ):
+                # httpcore 1.0.9 (and the vendored httpcore2 copy) has a bug
+                # where closing a streaming response that was not fully
+                # consumed raises "generator didn't stop after athrow()".
+                # Suppress it — the connection will be discarded anyway and
+                # the error is otherwise noisy (shown as "an error occurred
+                # during closing of asynchronous generator ...").
+                pass
+            except BaseException:
+                # Any other close error is non-fatal.
+                pass
 
     @property
     def usage(self) -> Usage | None:

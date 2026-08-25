@@ -136,6 +136,7 @@ select = [
 "src/vtx/ai/agent/prompts/identity.py" = ["E501"]
 "src/vtx/ai/agent/prompts/env.py" = ["E501"]
 "src/vtx/ai/agent/sdk/**/*.py" = ["N818"]
+"src/vtx/ai/_httpcore_patch.py" = ["N806", "N812", "SIM117", "RUF002", "RUF003", "B009", "E501"]
 "tests/ui/test_latex.py" = ["RUF001"]
 "tests/sdk/**/*.py" = ["N818", "E501"]
 

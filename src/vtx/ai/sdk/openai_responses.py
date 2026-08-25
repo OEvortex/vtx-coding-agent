@@ -24,6 +24,8 @@ vocabulary:
 
 from __future__ import annotations
 
+import asyncio
+import contextlib
 import json
 import logging
 import os
@@ -96,6 +98,17 @@ class OpenAIResponsesSDK(BaseLLMSDK):
         for msg in messages:
             metadata = msg.metadata or {}
             role = msg.role
+            # Replay encrypted reasoning items first (stateless store:false — pi parity).
+            # They arrive as serialized JSON in metadata["reasoning_items"] (see
+            # _stream_step / provider ThinkPart round-trip).
+            if role == "assistant" and metadata.get("reasoning_items"):
+                for item_json in metadata["reasoning_items"]:
+                    try:
+                        item = json.loads(item_json) if isinstance(item_json, str) else item_json
+                    except Exception:
+                        continue
+                    if isinstance(item, dict) and item.get("type") == "reasoning":
+                        input_items.append(item)
             tool_calls = metadata.get("tool_calls")
             if role == "assistant" and tool_calls:
                 if msg.content:
@@ -130,6 +143,10 @@ class OpenAIResponsesSDK(BaseLLMSDK):
             if role == "system":
                 input_items.append({"role": "system", "content": msg.content})
                 continue
+            # For plain assistant messages that already replayed reasoning_items,
+            # avoid double-adding empty content when the turn was reasoning-only.
+            if role == "assistant" and metadata.get("reasoning_items") and not msg.content:
+                continue
             input_items.append(
                 {"role": "user" if role == "user" else "assistant", "content": msg.content}
             )
@@ -147,6 +164,10 @@ class OpenAIResponsesSDK(BaseLLMSDK):
         effort = self._resolve_effort(config)
         if effort is not None and effort != "none":
             payload["reasoning"] = {"effort": effort}
+            # Include encrypted reasoning so stateless turns can replay it
+            # (store:false already default; encrypted_content populated by default
+            # on ZDR/store:false per docs, but include keeps compat with older APIs)
+            payload["include"] = ["reasoning.encrypted_content"]
 
         if config.max_tokens:
             payload["max_output_tokens"] = config.max_tokens
@@ -183,7 +204,7 @@ class OpenAIResponsesSDK(BaseLLMSDK):
         etype = event.get("type", "")
         chunks: list[dict[str, Any]] = []
 
-        if etype == "response.output_text.delta":
+        if etype in ("response.output_text.delta", "response.refusal.delta"):
             if event.get("delta"):
                 chunks.append({"type": "text", "content": event["delta"]})
 
@@ -219,6 +240,10 @@ class OpenAIResponsesSDK(BaseLLMSDK):
             if call is not None and event.get("arguments") is not None:
                 call["arguments"] = event["arguments"]
 
+        elif etype == "response.reasoning_summary_part.done":
+            # pi appends separator between summary parts
+            chunks.append({"type": "reasoning", "content": "\n\n"})
+
         elif etype == "response.output_item.done":
             item = event.get("item") or {}
             if item.get("type") == "function_call":
@@ -245,23 +270,44 @@ class OpenAIResponsesSDK(BaseLLMSDK):
                         ],
                     }
                 )
+            elif item.get("type") == "reasoning":
+                # Preserve full reasoning item for stateless replay (encrypted_content)
+                with contextlib.suppress(Exception):
+                    chunks.append({"type": "reasoning_item", "item": json.dumps(item)})
 
         elif etype in ("response.completed", "response.incomplete"):
             resp_obj = event.get("response") or {}
             usage = resp_obj.get("usage") or {}
-            state["usage"] = {
+            usage_dict: dict[str, Any] = {
                 "prompt_tokens": usage.get("input_tokens", 0),
                 "completion_tokens": usage.get("output_tokens", 0),
                 "total_tokens": usage.get(
                     "total_tokens", usage.get("input_tokens", 0) + usage.get("output_tokens", 0)
                 ),
             }
+            # Surface cached/reasoning token details
+            itd = usage.get("input_tokens_details") or {}
+            otd = usage.get("output_tokens_details") or {}
+            if itd.get("cached_tokens"):
+                usage_dict["cached_tokens"] = itd["cached_tokens"]
+            if otd.get("reasoning_tokens"):
+                usage_dict["reasoning_tokens"] = otd["reasoning_tokens"]
+            state["usage"] = usage_dict
             status = resp_obj.get("status", "completed")
-            state["finish_reason"] = (
-                ("tool_calls" if state["has_function_call"] else "stop")
-                if status != "incomplete"
-                else "length"
+            incomplete_reason = (
+                resp_obj.get("incomplete_details", {}).get("reason")
+                if status == "incomplete"
+                else None
             )
+            if status == "incomplete":
+                # pi: only max_output_tokens → length, everything else is error
+                if incomplete_reason == "max_output_tokens":
+                    state["finish_reason"] = "length"
+                else:
+                    state["finish_reason"] = "error"
+                    state["error"] = incomplete_reason or "incomplete"
+            else:
+                state["finish_reason"] = "tool_calls" if state["has_function_call"] else "stop"
             # Terminal chunks are emitted in-step, like pi's Lifecycle.finish.
             if state["usage"]:
                 chunks.append({"type": "usage", "usage": state["usage"]})
@@ -356,36 +402,39 @@ class OpenAIResponsesSDK(BaseLLMSDK):
     ) -> AsyncGenerator[dict[str, Any], None]:
         state = self._new_stream_state()
         finish_emitted = False
-        async with self.client.stream("POST", PATH, json=payload) as resp:
-            if resp.status_code >= 400:
-                body = await resp.aread()
-                raise RuntimeError(
-                    f"OpenAI Responses API error {resp.status_code}: "
-                    f"{body.decode('utf-8', errors='replace')[:300]}"
-                )
-            async for line in resp.aiter_lines():
-                line = line.strip()
-                if not line.startswith("data:"):
-                    continue
-                raw = line[len("data:") :].strip()
-                if not raw or raw == "[DONE]":
-                    continue
-                try:
-                    event = json.loads(raw)
-                except json.JSONDecodeError:
-                    continue
+        try:
+            async with self.client.stream("POST", PATH, json=payload) as resp:
+                if resp.status_code >= 400:
+                    body = await resp.aread()
+                    raise RuntimeError(
+                        f"OpenAI Responses API error {resp.status_code}: "
+                        f"{body.decode('utf-8', errors='replace')[:300]}"
+                    )
+                async for line in resp.aiter_lines():
+                    line = line.strip()
+                    if not line.startswith("data:"):
+                        continue
+                    raw = line[len("data:") :].strip()
+                    if not raw or raw == "[DONE]":
+                        continue
+                    try:
+                        event = json.loads(raw)
+                    except json.JSONDecodeError:
+                        continue
 
-                for chunk in self._stream_step(state, event):
-                    if chunk["type"] == "finish_reason":
-                        finish_emitted = True
-                    yield chunk
+                    for chunk in self._stream_step(state, event):
+                        if chunk["type"] == "finish_reason":
+                            finish_emitted = True
+                        yield chunk
 
-        # Terminal flush (pi's Lifecycle.finish).
-        if state["usage"]:
-            yield {"type": "usage", "usage": state["usage"]}
-        if not finish_emitted:
-            reason = "tool_calls" if state["has_function_call"] else "stop"
-            yield {"type": "finish_reason", "finish_reason": reason}
+            # Terminal flush (pi's Lifecycle.finish).
+            if state["usage"]:
+                yield {"type": "usage", "usage": state["usage"]}
+            if not finish_emitted:
+                reason = "tool_calls" if state["has_function_call"] else "stop"
+                yield {"type": "finish_reason", "finish_reason": reason}
+        except (GeneratorExit, asyncio.CancelledError):
+            return
 
     def get_available_models(self) -> list[str]:
         return []

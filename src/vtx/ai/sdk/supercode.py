@@ -6,6 +6,7 @@ Supercode CLI's ``login`` command).
 
 from __future__ import annotations
 
+import asyncio
 import json
 import logging
 import time
@@ -178,10 +179,13 @@ class SupercodeSDK(BaseLLMSDK):
     ) -> AsyncGenerator[dict[str, Any], None]:
         """Stream from Supercode and yield Vtx-compatible chunks."""
         url = f"{self._base_url}{_CHAT_ENDPOINT}"
-        async with httpx.AsyncClient(timeout=120) as client:
-            try:
-                async with client.stream("POST", url, json=payload, headers=headers) as response:
-                    response.raise_for_status()
+        try:
+            async with httpx.AsyncClient(timeout=120) as client:
+                try:
+                    async with client.stream(
+                        "POST", url, json=payload, headers=headers
+                    ) as response:
+                        response.raise_for_status()
                     finish_reason: str | None = None
                     tool_calls_acc: dict[int, dict[str, Any]] = {}
 
@@ -235,12 +239,14 @@ class SupercodeSDK(BaseLLMSDK):
 
                     if finish_reason is None:
                         yield {"type": "finish_reason", "finish_reason": "stop"}
-            except httpx.HTTPStatusError as e:
-                body = await e.response.aread()
-                raise RuntimeError(
-                    f"Supercode API error {e.response.status_code}: "
-                    f"{body.decode(errors='replace')}"
-                ) from e
+                except httpx.HTTPStatusError as e:
+                    body = await e.response.aread()
+                    raise RuntimeError(
+                        f"Supercode API error {e.response.status_code}: "
+                        f"{body.decode(errors='replace')}"
+                    ) from e
+        except (GeneratorExit, asyncio.CancelledError):
+            return
 
     async def _non_streaming_chat(
         self, payload: dict[str, Any], headers: dict[str, str], config: GenerationConfig

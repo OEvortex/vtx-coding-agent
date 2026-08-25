@@ -19,6 +19,38 @@ _DEFAULT_MODEL = "gpt-4o"
 _MAX_RETRIES = 3
 _RETRY_BASE_DELAY = 1.0
 
+# Hosts that still expect the legacy ``max_tokens`` field (pi's detectCompat list).
+# Every other OpenAI-compatible endpoint should use ``max_completion_tokens``
+# (required for o-series / gpt-5; ``max_tokens`` is deprecated and rejected).
+_LEGACY_MAX_TOKENS_HOSTS: frozenset[str] = frozenset(
+    {
+        "chutes.ai",
+        "api.deepseek.com",
+        "api.moonshot.cn",
+        "api.moonshot.ai",
+        "api.cloudflare.ai",
+        "api.together.xyz",
+        "api.nvidia.com",
+        "api.z.ai",
+        "api.anthropic.com",  # not used here but harmless
+    }
+)
+
+
+def _max_tokens_field(base_url: str | None) -> str:
+    if not base_url:
+        return "max_completion_tokens"
+    lower = base_url.lower()
+    for host in _LEGACY_MAX_TOKENS_HOSTS:
+        if host in lower:
+            return "max_tokens"
+    # OpenRouter / generic gateways with compat quirks also use max_tokens
+    if "openrouter" in lower:
+        # OpenRouter documents max_completion_tokens as preferred now, but
+        # still accepts max_tokens; keep the modern field.
+        return "max_completion_tokens"
+    return "max_completion_tokens"
+
 
 def _is_transient_error(e: Exception) -> bool:
     msg = str(e).lower()
@@ -94,8 +126,10 @@ async def _openai_stream_chunks(
             if choice.finish_reason:
                 finish_reason = choice.finish_reason
             delta = choice.delta
-            reasoning_delta = getattr(delta, "reasoning_content", None) or getattr(
-                delta, "reasoning", None
+            reasoning_delta = (
+                getattr(delta, "reasoning_content", None)
+                or getattr(delta, "reasoning", None)
+                or getattr(delta, "reasoning_text", None)
             )
             if reasoning_delta:
                 yield {
@@ -170,13 +204,15 @@ async def _openai_stream_chunks(
             }
         if finish_reason:
             yield {"type": "finish_reason", "finish_reason": finish_reason}
+    except (GeneratorExit, asyncio.CancelledError):
+        return
     finally:
         if hasattr(stream, "close"):
             try:
                 from typing import cast as typing_cast
 
                 await typing_cast(Any, stream).close()
-            except Exception:
+            except BaseException:
                 pass
 
 
@@ -226,7 +262,8 @@ class OpenAISDK(BaseLLMSDK):
         if config.temperature is not None and config.temperature != 0.7:
             kwargs["temperature"] = config.temperature
         if config.max_tokens is not None:
-            kwargs["max_tokens"] = config.max_tokens
+            field = _max_tokens_field(self.base_url)
+            kwargs[field] = config.max_tokens
         if config.top_p is not None:
             kwargs["top_p"] = config.top_p
         if config.frequency_penalty is not None and config.frequency_penalty != 0.0:
@@ -311,22 +348,35 @@ class OpenAISDK(BaseLLMSDK):
                 msg = choice.message
                 content = msg.content or ""
                 reasoning = (
-                    getattr(msg, "reasoning_content", None) or getattr(msg, "reasoning", "") or ""
+                    getattr(msg, "reasoning_content", None)
+                    or getattr(msg, "reasoning", None)
+                    or getattr(msg, "reasoning_text", None)
+                    or ""
                 )
                 usage = completion.usage
+                # Surface cached/reasoning token details when present (OpenAI
+                # prompt_tokens_details.cached_tokens, completion_tokens_details.reasoning_tokens)
+                usage_dict: dict[str, Any] | None = None
+                if usage:
+                    usage_dict = {
+                        "input_tokens": usage.prompt_tokens,
+                        "output_tokens": usage.completion_tokens,
+                        "total_tokens": usage.total_tokens,
+                    }
+                    try:
+                        ptd = getattr(usage, "prompt_tokens_details", None)
+                        if ptd and getattr(ptd, "cached_tokens", None):
+                            usage_dict["cached_tokens"] = ptd.cached_tokens
+                        ctd = getattr(usage, "completion_tokens_details", None)
+                        if ctd and getattr(ctd, "reasoning_tokens", None):
+                            usage_dict["reasoning_tokens"] = ctd.reasoning_tokens
+                    except Exception:
+                        pass
                 return GenerationResponse(
                     content=content,
                     model=completion.model,
                     finish_reason=choice.finish_reason,
-                    usage=(
-                        {
-                            "input_tokens": usage.prompt_tokens if usage else 0,
-                            "output_tokens": usage.completion_tokens if usage else 0,
-                            "total_tokens": usage.total_tokens if usage else 0,
-                        }
-                        if usage
-                        else None
-                    ),
+                    usage=usage_dict,
                     reasoning_content=reasoning,
                 )
         except Exception as e:
@@ -369,7 +419,10 @@ class OpenAISDK(BaseLLMSDK):
                 msg = choice.message
                 content = msg.content or ""
                 reasoning = (
-                    getattr(msg, "reasoning_content", None) or getattr(msg, "reasoning", "") or ""
+                    getattr(msg, "reasoning_content", None)
+                    or getattr(msg, "reasoning", None)
+                    or getattr(msg, "reasoning_text", None)
+                    or ""
                 )
                 tool_calls = []
                 if msg.tool_calls:
@@ -380,20 +433,28 @@ class OpenAISDK(BaseLLMSDK):
                             )
                         )
                 usage = completion.usage
+                usage_dict2: dict[str, Any] | None = None
+                if usage:
+                    usage_dict2 = {
+                        "input_tokens": usage.prompt_tokens,
+                        "output_tokens": usage.completion_tokens,
+                        "total_tokens": usage.total_tokens,
+                    }
+                    try:
+                        ptd = getattr(usage, "prompt_tokens_details", None)
+                        if ptd and getattr(ptd, "cached_tokens", None):
+                            usage_dict2["cached_tokens"] = ptd.cached_tokens
+                        ctd = getattr(usage, "completion_tokens_details", None)
+                        if ctd and getattr(ctd, "reasoning_tokens", None):
+                            usage_dict2["reasoning_tokens"] = ctd.reasoning_tokens
+                    except Exception:
+                        pass
                 return GenerationResponse(
                     content=content,
                     model=completion.model,
                     finish_reason=choice.finish_reason,
                     tool_calls=tool_calls or None,
-                    usage=(
-                        {
-                            "input_tokens": usage.prompt_tokens if usage else 0,
-                            "output_tokens": usage.completion_tokens if usage else 0,
-                            "total_tokens": usage.total_tokens if usage else 0,
-                        }
-                        if usage
-                        else None
-                    ),
+                    usage=usage_dict2,
                     reasoning_content=reasoning,
                 )
         except Exception as e:

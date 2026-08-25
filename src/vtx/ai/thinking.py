@@ -185,8 +185,26 @@ def resolve_reasoning_params(
         return {}
 
     if style == ANTHROPIC_MESSAGES:
-        # Budget-based extended thinking is the documented form across
-        # current Claude models; level_map strings don't apply here.
+        # Two paths (mirrors pi):
+        # 1) Catalog-verified effort (Claude 4.6+ / 4.7+): adaptive thinking +
+        #    output_config.effort. pi maps minimal→low; xhigh/max pass through
+        #    only when the catalog verifies them (level_map contains them).
+        #    Docs: platform.claude.com — thinking:{type:"adaptive"} +
+        #    output_config:{effort: low|medium|high|xhigh|max} replaces the
+        #    deprecated budget_tokens form (400 on 4.7+).
+        # 2) Legacy budget path: thinking:{type:"enabled", budget_tokens:N}
+        #    when no catalog map is present (keeps existing tests passing).
+        if level_map is not None and level in level_map:
+            mapped_val = level_map[level]
+            if mapped_val is None:
+                return {}
+            if isinstance(mapped_val, str):
+                effort = mapped_val
+                if effort == "minimal":
+                    effort = "low"
+                if effort in ("low", "medium", "high", "xhigh", "max"):
+                    return {"thinking": {"type": "adaptive"}, "output_config": {"effort": effort}}
+                # Unknown mapped string — fall through to budget path
         budget = ANTHROPIC_BUDGETS.get(level)
         if budget is None:
             return {}
@@ -201,8 +219,11 @@ def resolve_reasoning_params(
         return {}
 
     if style == OPENAI_COMPLETIONS:
-        # Chat Completions has no documented "off"/"max" switch.
-        if effort in ("off", "max"):
+        # Chat Completions: reasoning_effort supports none|minimal|low|medium|high|xhigh|max
+        # (docs: platform.openai.com/docs/api-reference/chat/create). "off"/"none" already
+        # returned {} above; every other verified effort passes through. "max" is now valid
+        # for gpt-5.6 family (was previously dropped).
+        if effort in ("off",):
             return {}
         return {"reasoning_effort": effort}
     if style == OPENAI_RESPONSES:

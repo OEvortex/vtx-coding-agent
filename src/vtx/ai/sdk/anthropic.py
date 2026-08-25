@@ -21,6 +21,14 @@ ANTHROPIC_API_ROOT = "https://api.anthropic.com"
 ANTHROPIC_VERSION = "2023-06-01"
 _RETRY_BASE_DELAY = 1.0
 _MAX_RETRIES = 3
+_DEFAULT_MAX_TOKENS = 16384
+
+
+def _is_anthropic_api(base_url: str | None) -> bool:
+    if not base_url:
+        return True
+    lower = base_url.lower()
+    return "api.anthropic.com" in lower
 
 
 def _is_transient(exc: Exception) -> bool:
@@ -100,12 +108,38 @@ def _messages_to_anthropic(messages: list[Message]) -> tuple[str | None, list[di
                     }
                 )
             continue
-        converted.append(
-            {
-                "role": role,
-                "content": _content_to_anthropic(m.content if m.content is not None else ""),
-            }
-        )
+        # Assistant: replay thinking blocks (with signatures) before text content
+        # so tool-use continuity is preserved across turns (Anthropic requires
+        # thinking blocks to be replayed verbatim when thinking is enabled).
+        thinking_blocks: list[dict[str, Any]] = []
+        if role == "assistant" and m.metadata and m.metadata.get("thinking_blocks"):
+            for tb in m.metadata["thinking_blocks"]:
+                if not isinstance(tb, dict):
+                    continue
+                if tb.get("type") == "redacted_thinking":
+                    thinking_blocks.append(
+                        {"type": "redacted_thinking", "data": tb.get("data", "")}
+                    )
+                elif tb.get("type") == "thinking":
+                    block: dict[str, Any] = {
+                        "type": "thinking",
+                        "thinking": tb.get("thinking", ""),
+                    }
+                    sig = tb.get("signature")
+                    if sig:
+                        block["signature"] = sig
+                    thinking_blocks.append(block)
+        anthropic_content = _content_to_anthropic(m.content if m.content is not None else "")
+        if thinking_blocks:
+            if isinstance(anthropic_content, str):
+                anthropic_content = (
+                    [{"type": "text", "text": anthropic_content}] if anthropic_content else []
+                )
+            # thinking blocks must come first
+            anthropic_content = thinking_blocks + (
+                anthropic_content if isinstance(anthropic_content, list) else []
+            )
+        converted.append({"role": role, "content": anthropic_content})
     merged: list[dict[str, Any]] = []
     for msg in converted:
         if merged and merged[-1]["role"] == msg["role"]:
@@ -162,19 +196,30 @@ def _parse_anthropic_response(data: dict[str, Any], model: str) -> GenerationRes
             )
         elif kind == "thinking":
             thinking_parts.append(block.get("thinking", ""))
-    usage = data.get("usage", {})
+        elif kind == "redacted_thinking":
+            thinking_parts.append("[Reasoning redacted]")
+    usage = data.get("usage", {}) or {}
+    usage_dict: dict[str, Any] | None = None
+    if usage:
+        usage_dict = {
+            "input_tokens": usage.get("input_tokens", 0),
+            "output_tokens": usage.get("output_tokens", 0),
+            "total_tokens": usage.get("input_tokens", 0) + usage.get("output_tokens", 0),
+        }
+        if usage.get("cache_creation_input_tokens"):
+            usage_dict["cache_write_tokens"] = usage["cache_creation_input_tokens"]
+        if usage.get("cache_read_input_tokens"):
+            usage_dict["cache_read_tokens"] = usage["cache_read_input_tokens"]
+        # Newer SDK nests cache_creation.ephemeral_*
+        cc = usage.get("cache_creation") or {}
+        if isinstance(cc, dict) and cc.get("ephemeral_1h_input_tokens"):
+            usage_dict["cache_write_tokens"] = cc["ephemeral_1h_input_tokens"]
     return GenerationResponse(
         content="\n".join(text_parts),
         model=model,
         finish_reason=data.get("stop_reason"),
         tool_calls=tool_calls or None,
-        usage={
-            "prompt_tokens": usage.get("input_tokens", 0),
-            "completion_tokens": usage.get("output_tokens", 0),
-            "total_tokens": usage.get("input_tokens", 0) + usage.get("output_tokens", 0),
-        }
-        if usage
-        else None,
+        usage=usage_dict,
         reasoning_content="\n".join(thinking_parts),
     )
 
@@ -214,28 +259,56 @@ class AnthropicSDK(BaseLLMSDK):
     ) -> dict[str, Any]:
         system, converted = _messages_to_anthropic(messages)
         model = self._resolve_model(config)
-        payload: dict[str, Any] = {
-            "model": model,
-            "max_tokens": config.max_tokens,
-            "messages": converted,
-        }
+        max_tokens = config.max_tokens if config.max_tokens is not None else _DEFAULT_MAX_TOKENS
+        payload: dict[str, Any] = {"model": model, "max_tokens": max_tokens, "messages": converted}
+        # System as block with cache_control (pi parity) — only for official API
         if system:
-            payload["system"] = system
-        if config.temperature is not None:
-            payload["temperature"] = config.temperature
-        if config.top_p is not None:
-            payload["top_p"] = config.top_p
+            if _is_anthropic_api(self.base_url):
+                payload["system"] = [
+                    {"type": "text", "text": system, "cache_control": {"type": "ephemeral"}}
+                ]
+            else:
+                payload["system"] = system
+        # Suppress temperature/top_p when thinking is enabled — Opus 4.7+ rejects
+        # temperature != 1 and top_p/top_k with 400 (docs + pi compat flag).
+        thinking_params = resolve_reasoning_params(
+            ANTHROPIC_MESSAGES,
+            config.thinking_level,
+            level_map=config.thinking_level_map,
+            max_tokens=config.max_tokens,
+        )
+        has_thinking = bool(thinking_params.get("thinking"))
+        if not has_thinking:
+            if config.temperature is not None:
+                payload["temperature"] = config.temperature
+            if config.top_p is not None:
+                payload["top_p"] = config.top_p
         if config.stop_sequences:
             payload["stop_sequences"] = config.stop_sequences
         anthropic_tools = _tools_to_anthropic(tools)
         if anthropic_tools:
+            # Cache the last tool definition (pi places cache_control on last tool)
+            if _is_anthropic_api(self.base_url) and anthropic_tools:
+                anthropic_tools[-1] = {
+                    **anthropic_tools[-1],
+                    "cache_control": {"type": "ephemeral"},
+                }
             payload["tools"] = anthropic_tools
             tc = config.tool_choice
             if isinstance(tc, str) and tc in ("auto", "any", "none"):
                 payload["tool_choice"] = {"type": tc}
             elif isinstance(tc, dict):
                 payload["tool_choice"] = tc
-        self._apply_thinking_payload(payload, config)
+        # Cache the last user message's last content block (pi parity)
+        if _is_anthropic_api(self.base_url) and payload["messages"]:
+            last_msg = payload["messages"][-1]
+            content = last_msg.get("content")
+            if isinstance(content, list) and content:
+                last_block = content[-1]
+                if isinstance(last_block, dict) and "cache_control" not in last_block:
+                    last_block["cache_control"] = {"type": "ephemeral"}
+        # Apply thinking last so it can override max_tokens-derived budget
+        payload.update(thinking_params)
         return payload
 
     @staticmethod
@@ -311,92 +384,43 @@ class AnthropicSDK(BaseLLMSDK):
         raise RuntimeError("unreachable")
 
     async def _generate_stream(
-        self, messages: list[Message], config: GenerationConfig
+        self,
+        messages: list[Message],
+        config: GenerationConfig,
+        tools: list[dict[str, Any]] | None = None,
     ) -> AsyncGenerator[dict[str, Any], None]:
-        payload = self._build_payload(messages, config)
+        payload = self._build_payload(messages, config, tools)
         payload["stream"] = True
         extra_headers, payload = await prepare_request(provider="anthropic", payload=payload)
         stream_kwargs: dict[str, Any] = {"json": payload}
         if extra_headers:
             stream_kwargs["headers"] = extra_headers
-        async with self.client.stream("POST", "/v1/messages", **stream_kwargs) as resp:
-            if resp.status_code >= 400:
-                body = await resp.aread()
-                raise RuntimeError(
-                    f"Anthropic API error {resp.status_code}: "
-                    f"{body.decode('utf-8', errors='replace')[:300]}"
-                )
-            content_buf: list[str] = []
-            tool_calls: dict[int, dict[str, Any]] = {}
-            input_tokens = 0
-            output_tokens = 0
-            current_block: dict[str, Any] | None = None
-            async for line in resp.aiter_lines():
-                if not line:
-                    continue
-                if line.startswith("data: "):
-                    raw = line[len("data: ") :]
-                    if raw.strip() == "[DONE]":
-                        break
+        try:
+            async with self.client.stream("POST", "/v1/messages", **stream_kwargs) as resp:
+                if resp.status_code >= 400:
+                    body = await resp.aread()
+                    raise RuntimeError(
+                        f"Anthropic API error {resp.status_code}: "
+                        f"{body.decode('utf-8', errors='replace')[:300]}"
+                    )
+                # Passthrough raw SSE events — the provider layer (AnthropicSDKProvider)
+                # owns the StreamPart mapping (TextPart/ThinkPart/ToolCall*), including
+                # thinking_delta / signature_delta / redacted_thinking handling.
+                async for line in resp.aiter_lines():
+                    if not line:
+                        continue
+                    if not line.startswith("data: "):
+                        continue
+                    raw = line[len("data: ") :].strip()
+                    if not raw or raw == "[DONE]":
+                        continue
                     try:
                         ev = json.loads(raw)
                     except json.JSONDecodeError:
                         continue
-                    et = ev.get("type", "")
-                    if et == "message_start":
-                        usage = (ev.get("message") or {}).get("usage") or {}
-                        input_tokens = usage.get("input_tokens", 0)
-                    elif et == "content_block_start":
-                        current_block = ev.get("content_block", {})
-                    elif et == "content_block_delta":
-                        delta = ev.get("delta", {})
-                        if delta.get("type") == "text_delta":
-                            text = delta.get("text", "")
-                            content_buf.append(text)
-                            yield {"type": "content", "content": text}
-                        elif delta.get("type") == "input_json_delta":
-                            idx = ev.get("index", 0)
-                            tc = tool_calls.setdefault(
-                                idx,
-                                {
-                                    "id": (current_block or {}).get("id", ""),
-                                    "name": (current_block or {}).get("name", ""),
-                                    "arguments": "",
-                                },
-                            )
-                            tc["arguments"] += delta.get("partial_json", "")
-                    elif et == "content_block_stop":
-                        if current_block and current_block.get("type") == "tool_use":
-                            idx = ev.get("index", 0)
-                            tool_calls.setdefault(
-                                idx,
-                                {
-                                    "id": current_block.get("id", ""),
-                                    "name": current_block.get("name", ""),
-                                    "arguments": "",
-                                },
-                            )
-                    elif et == "message_delta":
-                        usage = ev.get("usage", {})
-                        output_tokens = usage.get("output_tokens", 0)
-                    elif et == "message_stop":
-                        break
-                    current_block = None
-        if tool_calls:
-            calls = [
-                ToolCall(id=tc["id"], name=tc["name"], arguments=tc["arguments"] or "{}")
-                for tc in tool_calls.values()
-            ]
-            yield {"type": "tool_calls", "tool_calls": calls}
-        if input_tokens or output_tokens:
-            yield {
-                "type": "usage",
-                "usage": {
-                    "prompt_tokens": input_tokens,
-                    "completion_tokens": output_tokens,
-                    "total_tokens": input_tokens + output_tokens,
-                },
-            }
+                    yield ev
+        except (GeneratorExit, asyncio.CancelledError):
+            return
 
     async def generate_with_tools(
         self,
@@ -405,6 +429,8 @@ class AnthropicSDK(BaseLLMSDK):
         config: GenerationConfig,
         stream: bool = False,
     ) -> GenerationResponse | AsyncGenerator:
+        if stream:
+            return self._generate_stream(messages, config, tools=tools)
         return await self._generate_blocking(messages, config, tools=tools)
 
     def get_available_models(self) -> list[str]:

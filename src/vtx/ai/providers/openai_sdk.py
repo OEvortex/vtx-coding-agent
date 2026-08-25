@@ -128,6 +128,18 @@ class OpenAISDKProvider(BaseProvider):
                     content_parts.append(f"<think>{item.thinking}</think>")
                 elif item.signature == "reasoning_content":
                     metadata["reasoning_content"] = item.thinking
+                elif item.signature and item.signature.strip().startswith("{"):
+                    # Responses API encrypted reasoning item (JSON serialized).
+                    # Store verbatim for stateless replay via OpenAIResponsesSDK.
+                    try:
+                        obj = json.loads(item.signature)
+                        if isinstance(obj, dict) and obj.get("type") == "reasoning":
+                            metadata.setdefault("reasoning_items", []).append(item.signature)
+                            continue
+                    except Exception:
+                        pass
+                    # Fallback: treat as generic signature
+                    metadata.setdefault("reasoning_items", []).append(item.signature)
             elif isinstance(item, ToolCall):
                 tool_calls.append(
                     {
@@ -223,12 +235,22 @@ class OpenAISDKProvider(BaseProvider):
                         or usage_data.get("input_tokens", 0),
                         output_tokens=usage_data.get("completion_tokens", 0)
                         or usage_data.get("output_tokens", 0),
+                        cache_read_tokens=usage_data.get("cached_tokens", 0)
+                        or usage_data.get("cache_read_tokens", 0),
+                        cache_write_tokens=usage_data.get("cache_write_tokens", 0),
+                        reasoning_tokens=usage_data.get("reasoning_tokens", 0),
                     )
                 elif chunk_type == "reasoning":
                     yield ThinkPart(
                         think=chunk.get("content", ""),
                         signature=chunk.get("signature", "reasoning_content"),
                     )
+                elif chunk_type == "reasoning_item":
+                    # Encrypted reasoning for stateless replay — signature-only ThinkPart
+                    # (agent loop stores _think_signature without opening a UI block)
+                    item = chunk.get("item", "")
+                    if item:
+                        yield ThinkPart(think="", signature=item)
                 elif chunk_type == "text" or chunk_type == "content":
                     yield TextPart(text=chunk.get("content", ""))
                 elif chunk_type == "tool_calls":
@@ -251,8 +273,10 @@ class OpenAISDKProvider(BaseProvider):
                 return StopReason.STOP
             case "length" | "max_tokens":
                 return StopReason.LENGTH
-            case "tool_calls":
+            case "tool_calls" | "tool_use":
                 return StopReason.TOOL_USE
+            case "error":
+                return StopReason.ERROR
             case _:
                 return StopReason.STOP
 

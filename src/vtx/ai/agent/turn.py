@@ -165,7 +165,7 @@ async def _cancel_and_reap(task: asyncio.Task) -> None:
 
 
 async def _close_stream(stream: LLMStream) -> None:
-    with contextlib.suppress(Exception):
+    with contextlib.suppress(BaseException):
         await stream.aclose()
 
 
