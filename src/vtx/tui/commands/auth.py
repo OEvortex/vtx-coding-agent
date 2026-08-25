@@ -219,20 +219,37 @@ class AuthCommands(CommandSupport):
         import asyncio
 
         from vtx.ai import DYNAMIC_PROVIDERS, refresh_provider
+        from vtx.ai.model_fetcher import refresh_provider_models as refresh_legacy
+        from vtx.ai.provider_catalog import get as get_provider_info
 
         chat = self.query_one("#chat-log", ChatLog)
 
-        if provider_id not in DYNAMIC_PROVIDERS:
+        info = get_provider_info(provider_id)
+        uses_dynamic = provider_id in DYNAMIC_PROVIDERS
+        uses_legacy = bool(info and info.fetch_models)
+
+        if not uses_dynamic and not uses_legacy:
             chat.add_info_message("Use /model to pick a model for this provider.", error=False)
             return
 
         chat.add_info_message(f"Fetching models for {provider_id}...")
 
         def _run() -> int | str:
-            try:
-                return refresh_provider(provider_id)
-            except Exception as exc:
-                return str(exc)
+            best = 0
+            last_err: str | None = None
+            if uses_dynamic:
+                try:
+                    best = max(best, int(refresh_provider(provider_id)))
+                except Exception as exc:
+                    last_err = str(exc)
+            if uses_legacy:
+                try:
+                    best = max(best, int(refresh_legacy(provider_id)))
+                except Exception as exc:
+                    last_err = str(exc)
+            if best == 0 and last_err:
+                return last_err
+            return best
 
         try:
             result = await asyncio.to_thread(_run)

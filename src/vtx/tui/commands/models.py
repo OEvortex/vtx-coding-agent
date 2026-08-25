@@ -153,29 +153,74 @@ class ModelCommands(CommandSupport):
     async def _refresh_dynamic_models(self, provider: str | None) -> None:
         chat = self.query_one("#chat-log", ChatLog)
 
-        if provider is not None and get_dynamic_provider(provider) is None:
-            valid = ", ".join(sorted(DYNAMIC_PROVIDERS))
-            chat.add_info_message(
-                f"Unknown provider: {provider}. Dynamic providers: {valid}", error=True
-            )
-            return
+        from vtx.ai.model_fetcher import refresh_provider_models as refresh_legacy
+        from vtx.ai.provider_catalog import get as get_provider_info
+        from vtx.ai.provider_catalog import list_providers as list_catalog_providers
 
-        if provider is None:
+        if provider is not None:
+            is_dynamic = get_dynamic_provider(provider) is not None
+            info = get_provider_info(provider)
+            is_legacy = bool(info and info.fetch_models)
+            if not is_dynamic and not is_legacy:
+                valid_dynamic = set(DYNAMIC_PROVIDERS)
+                valid_legacy = set()
+                for p in list_catalog_providers():
+                    pi = get_provider_info(p.slug)
+                    if pi and pi.fetch_models:
+                        valid_legacy.add(p.slug)
+                valid = ", ".join(sorted(valid_dynamic | valid_legacy))
+                chat.add_info_message(
+                    f"Unknown provider: {provider}. Providers: {valid}", error=True
+                )
+                return
+            chat.add_info_message(f"Refreshing {provider}...")
+        else:
             if not DYNAMIC_PROVIDERS:
                 chat.add_info_message("No providers to refresh", error=True)
                 return
             chat.add_info_message(f"Refreshing all {len(DYNAMIC_PROVIDERS)} providers...")
-        else:
-            chat.add_info_message(f"Refreshing {provider}...")
 
         def _run() -> dict[str, int | str]:
             if provider is not None:
-                try:
-                    count = refresh_provider(provider)
-                except Exception as exc:
-                    return {provider: -1, "_error": str(exc)}
-                return {provider: count}
-            return dict(refresh_all_providers())
+                best = 0
+                last_err: str | None = None
+                if is_dynamic:
+                    try:
+                        best = max(best, int(refresh_provider(provider)))
+                    except Exception as exc:
+                        last_err = str(exc)
+                if is_legacy:
+                    try:
+                        best = max(best, int(refresh_legacy(provider)))
+                    except Exception as exc:
+                        last_err = str(exc)
+                if best == 0 and last_err:
+                    return {provider: -1, "_error": last_err}
+                return {provider: best}
+            # all providers: refresh both systems and merge
+            try:
+                dyn = dict(refresh_all_providers())
+            except Exception as exc:
+                dyn = {"_error": str(exc)}
+            try:
+                from vtx.ai.model_fetcher import refresh_all_provider_models
+
+                leg = dict(refresh_all_provider_models())
+            except Exception:
+                leg = {}
+            merged: dict[str, int | str] = {}
+            for k, v in dyn.items():
+                if k == "_error":
+                    continue
+                dyn_val = int(v) if isinstance(v, int) else 0
+                leg_val = int(leg.get(k, 0)) if isinstance(leg.get(k), int) else 0
+                merged[k] = max(dyn_val, leg_val)
+            for k, v in leg.items():
+                if k not in merged:
+                    merged[k] = v
+            if "_error" in dyn:
+                merged["_error"] = dyn["_error"]
+            return merged
 
         try:
             result = await asyncio.to_thread(_run)

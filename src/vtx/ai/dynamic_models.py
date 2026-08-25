@@ -74,6 +74,8 @@ class DynamicProviderConfig:
     # accessible (no key required for discovery). Inference still needs a
     # real key; this only relaxes the auth gate for the catalog fetch.
     openmodelendpoint: bool = False
+    # Path appended to base_url for the catalog (default "/models").
+    models_endpoint: str = "/models"
     # Some gateways return a bare JSON array instead of ``{"data": [...]}``.
     response_format: str = "openai"  # "openai" | "bare_array"
 
@@ -108,6 +110,7 @@ def _build_dynamic_providers() -> dict[str, DynamicProviderConfig]:
             headers=dict(p.headers),
             api_key_optional=p.api_key_optional,
             openmodelendpoint=p.openmodelendpoint,
+            models_endpoint=p.models_endpoint or "/models",
         )
     return out
 
@@ -575,7 +578,11 @@ async def _async_fetch_catalog(
         headers["Authorization"] = f"Bearer {api_key}"
 
     base = config.base_url.rstrip("/")
-    url = f"{base}/models"
+    endpoint = config.models_endpoint or "/models"
+    # ensure leading slash
+    if not endpoint.startswith("/"):
+        endpoint = "/" + endpoint
+    url = f"{base}{endpoint}"
 
     async def _fetch(client: httpx.AsyncClient) -> httpx.Response:
         return await client.get(url, headers=headers)
