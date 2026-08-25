@@ -16,6 +16,7 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - **Cline provider OAuth login** — Cline (WorkOS) added to `/login` with full OAuth flow, credential storage, and free-model detection reflected in model listings.
 - **`/update` command** — check for and install the latest vtx release from inside the TUI.
 - **Configurable models endpoint & unified provider refresh** — `/model refresh` now covers dynamic and legacy catalog providers through one path, with a configurable models endpoint per provider.
+- **Task tool UI/UX parity with `pi-subagents`** — redesigned the Task tool block rendering to match `pi-subagents` 1:1: `▸ <subagent_name> <description>` header formatting, live 80ms braille spinner animation with turn count (`↻5≤30`), active tool/text activity line (`⎿ reading…`), token metrics, execution duration tracking, and collapsible/expandable output formatting.
 
 ### Changed
 - **Harness/coding-agent package split** — `vtx.ai.agent` is now a product-neutral harness (loop, turn engine, session store, tool contracts, extensions/hooks, SDK); concrete built-in tools, prompt/context assembly, subagent definitions, and the runtime composition root moved to `vtx.coding_agent`. The harness no longer imports product code: system-prompt building, context loading, the tool registry, and user config knobs are injected, with harness-owned defaults mirroring user YAML.
