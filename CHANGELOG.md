@@ -34,6 +34,7 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Removed
 - **Supercode provider** — removed the Supercode proxy provider, its OAuth flow (`vtx.ai.oauth.supercode`), SDK adapter (`vtx.ai.sdk.supercode`), provider implementation (`vtx.ai.providers.supercode`), associated tests, and catalog/docs references.
+- **Notes in `ask_user` dialog** — removed the per-question note input editor (`n` key shortcut, note input widget, and note markers) and questionnaire global note handling across the TUI dialog, data envelopes, and models.
 
 
 ## [1.0.0] - 2026-08-23
