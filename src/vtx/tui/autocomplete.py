@@ -432,6 +432,7 @@ DEFAULT_COMMANDS = [
     SlashCommand("model", "change model"),
     SlashCommand("provider", "filter /model by provider"),
     SlashCommand("settings", "themes, permissions, thinking, notifications"),
+    SlashCommand("ponytail", "toggle or set ponytail mode (on/off)"),
     SlashCommand("new", "start new conversation"),
     SlashCommand("handoff", "start focused handoff in new session", submit_on_select=False),
     SlashCommand("resume", "resume a session"),

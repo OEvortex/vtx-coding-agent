@@ -110,6 +110,7 @@ class UIConfig(BaseModel):
 class SystemPromptConfig(BaseModel):
     content: str
     git_context: bool = False
+    ponytail: bool = False
 
 
 class AuthConfig(BaseModel):
@@ -957,6 +958,27 @@ def set_git_context(enabled: bool) -> Config:
         llm["system_prompt"] = system_prompt
 
     system_prompt["git_context"] = enabled
+    _set_config_version(data)
+
+    _atomic_write_text(config_file, _serialize_config_yaml(data))
+    return reload_config()
+
+
+def set_ponytail(enabled: bool) -> Config:
+    config_file = _ensure_config_file()
+    data = _read_config_data(config_file)
+
+    llm = data.get("llm")
+    if not isinstance(llm, dict):
+        llm = {}
+        data["llm"] = llm
+
+    system_prompt = llm.get("system_prompt")
+    if not isinstance(system_prompt, dict):
+        system_prompt = {}
+        llm["system_prompt"] = system_prompt
+
+    system_prompt["ponytail"] = enabled
     _set_config_version(data)
 
     _atomic_write_text(config_file, _serialize_config_yaml(data))

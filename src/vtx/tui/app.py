@@ -16,7 +16,7 @@ import os
 import time
 from collections import deque
 from pathlib import Path
-from typing import ClassVar
+from typing import Any, ClassVar
 
 from textual import events, on
 from textual.app import App, ComposeResult
@@ -28,13 +28,19 @@ from vtx.ai.agent.extensions import load_for_runtime
 from vtx.ai.agent.session import Session
 from vtx.ai.agent.tools_manager import get_tool_path
 from vtx.ai.base import AuthMode
-from vtx.coding_agent.config import config, consume_config_warnings, get_last_selected
+from vtx.coding_agent.config import (
+    config,
+    consume_config_warnings,
+    get_last_selected,
+    set_ponytail,
+)
 from vtx.coding_agent.context.skills import (
     load_builtin_cmd_skills,
     load_skills,
     merge_registered_skills,
     render_skill_prompt,
 )
+from vtx.coding_agent.prompts import is_deactivation_command
 from vtx.coding_agent.runtime import ConversationRuntime
 from vtx.coding_agent.tools import DEFAULT_TOOLS, get_tools_with_extensions
 from vtx.coding_agent.version import VERSION, format_version
@@ -294,7 +300,78 @@ class Vtx(
         self._extension_ui = TextualExtensionUI(self)
         self._loaded_extensions.bus.set_ui_context(self._extension_ui, cwd=self._cwd, mode="tui")
 
-        # Hook system: bridge YAML hook configs onto the extension EventBus.
+        # Wire extension runtime actions so handlers can call
+        # api.set_session_name(), api.set_model(), etc.
+        from vtx.ai.agent.extensions import (
+            ExtensionActions,
+            ExtensionCommandContextActions,
+            ExtensionContextActions,
+            ExtensionProviderActions,
+        )
+
+        def _extension_set_model(model_id: Any) -> bool:
+            """Resolve a model id to catalog info and apply it via switch_model."""
+            from vtx.ai.dynamic_models import find_dynamic_model
+            from vtx.ai.models import get_model
+
+            info = get_model(str(model_id), None)
+            if info is None:
+                info = find_dynamic_model(str(model_id), None)
+            if info is None:
+                return False
+            self._runtime.switch_model(info)
+            return True
+
+        runner = self._loaded_extensions.runner
+        assert runner is not None
+        runner.bind_core(
+            actions=ExtensionActions(
+                send_message=lambda *a, **kw: None,
+                send_user_message=lambda *a, **kw: None,
+                append_entry=lambda *a, **kw: None,
+                set_session_name=self._runtime.set_session_name,
+                get_session_name=self._runtime.get_session_name,
+                set_label=lambda *a, **kw: None,
+                get_active_tools=lambda: self._runtime.tools,
+                get_all_tools=lambda: self._runtime.tools,
+                set_active_tools=lambda *a, **kw: None,
+                refresh_tools=lambda: None,
+                get_commands=lambda: {},
+                set_model=_extension_set_model,
+                get_thinking_level=lambda: self._runtime.thinking_level,
+                set_thinking_level=self._runtime.set_thinking_level,
+            ),
+            context_actions=ExtensionContextActions(
+                get_model=lambda: self._runtime.model,
+                get_scoped_models=lambda: [],
+                is_idle=lambda: not self._is_running,
+                is_project_trusted=lambda: False,
+                get_signal=lambda: self._cancel_event,
+                abort=lambda: self._request_interrupt(),
+                has_pending_messages=lambda: False,
+                shutdown=lambda: None,
+                get_context_usage=lambda: None,
+                compact=lambda options: None,
+                get_system_prompt=lambda: self._runtime.resolve_system_prompt(),
+            ),
+            provider_actions=ExtensionProviderActions(
+                register_provider=lambda *a, **kw: None,
+                register_native_provider=lambda *a, **kw: None,
+                unregister_provider=lambda *a, **kw: None,
+            ),
+        )
+        runner.bind_command_context(
+            actions=ExtensionCommandContextActions(
+                wait_for_idle=lambda: asyncio.ensure_future(asyncio.sleep(0)),
+                new_session=lambda *a, **kw: asyncio.ensure_future(asyncio.sleep(0)),
+                fork=lambda *a, **kw: asyncio.ensure_future(asyncio.sleep(0)),
+                navigate_tree=lambda *a, **kw: asyncio.ensure_future(asyncio.sleep(0)),
+                switch_session=lambda *a, **kw: asyncio.ensure_future(asyncio.sleep(0)),
+                reload=lambda: asyncio.ensure_future(asyncio.sleep(0)),
+            )
+        )
+
+        # Hook system: bridge YAML hook configs onto the EventBus.
         from vtx.ai.agent.hooks.bridge import HookBridge
 
         self._hook_bridge = HookBridge(
@@ -941,7 +1018,13 @@ class Vtx(
 
         # Handle shell commands (! and !!)
         if display_text.startswith("!") or display_text.startswith("!!"):
-            self._handle_shell_command(display_text, event.text)
+            self._handle_shell_command(display_text)
+            return
+
+        if config.llm.system_prompt.ponytail and is_deactivation_command(display_text):
+            set_ponytail(False)
+            chat = self.query_one("#chat-log", ChatLog)
+            chat.show_status("Ponytail mode turned off")
             return
 
         query_text = event.query_text.strip()

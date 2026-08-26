@@ -53,10 +53,6 @@ _PROVIDER_DICT_KEYS = frozenset(
     }
 )
 
-# Avoid an import cycle with .runner: type-hint the runner.
-if False:  # pragma: no cover
-    pass
-
 TContext = TypeVar("TContext")
 
 

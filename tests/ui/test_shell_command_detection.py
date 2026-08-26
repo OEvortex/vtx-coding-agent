@@ -19,7 +19,7 @@ def test_handle_shell_command_execution():
     app.run_worker = Mock()
 
     # Test single ! command
-    Vtx._handle_shell_command(app, "!ls -la", "!ls -la")
+    Vtx._handle_shell_command(app, "!ls -la")
 
     # Verify chat message was added
     mock_chat.add_user_message.assert_called_once_with("!ls -la")
@@ -49,7 +49,7 @@ def test_handle_shell_command_history_mode():
     app.run_worker = Mock()
 
     # Test double !! command
-    Vtx._handle_shell_command(app, "!!git status", "!!git status")
+    Vtx._handle_shell_command(app, "!!git status")
 
     # Verify chat message was added
     mock_chat.add_user_message.assert_called_once_with("!!git status")
@@ -74,7 +74,7 @@ def test_handle_shell_command_when_running():
     app.run_worker = Mock()
 
     # Call the handler
-    Vtx._handle_shell_command(app, "!ls -la", "!ls -la")
+    Vtx._handle_shell_command(app, "!ls -la")
 
     # Verify no chat message was added (should return early)
     mock_chat.add_user_message.assert_not_called()

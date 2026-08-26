@@ -33,12 +33,6 @@ def _colors() -> ColorsConfig:
     return config.ui.colors
 
 
-def progress_bar(pct: int, width: int = 8) -> str:
-    width = max(4, min(width, 24))
-    filled = round(pct * width / 100)
-    return "█" * filled + "░" * (width - filled)
-
-
 def format_usage(record: GoalRecord) -> str:
     total_ms = record.usage.elapsed_ms
     tokens = record.usage.total_tokens()
@@ -90,6 +84,37 @@ def status_style(status: str) -> str:
     return styles.get(status, colors.fg)
 
 
+def progress_bar_text(pct: int, width: int = 8) -> Text:
+    """Theme-aware two-tone bar: filled segment in accent/success, track in border."""
+    width = max(4, min(width, 24))
+    filled = round(pct * width / 100)
+    c = _colors()
+    out = Text()
+    out.append("█" * filled, style=Style(color=c.accent if pct < 100 else c.success, bold=True))
+    out.append("░" * (width - filled), style=Style(color=c.border))
+    return out
+
+
+def status_dot(status: str) -> Text:
+    """Colored ● indicating goal status, driven by the active theme."""
+    return Text("● ", style=Style(color=status_style(status), bold=True))
+
+
+def title_chip(label: str = "vtx-goal") -> Text:
+    """Badge-style label chip using the theme's badge colors."""
+    c = _colors()
+    return Text(f" {label} ", style=Style(color=c.badge.label, bgcolor=c.badge.bg, bold=True))
+
+
+def section_header(title: str, color: str | None = None) -> Text:
+    """Modern `◆ Title` section marker for the expanded dashboard."""
+    c = _colors()
+    out = Text()
+    out.append("◆ ", style=Style(color=color or c.accent, bold=True))
+    out.append(title, style=Style(color=color or c.title, bold=True))
+    return out
+
+
 # ---------------------------------------------------------------------------
 # Compact widget
 # ---------------------------------------------------------------------------
@@ -107,48 +132,55 @@ def render_compact(
     open_extra = len(service.pool()) - 1
 
     text = Text()
-    # Header row: ╭─ vtx-goal ─ <objective>
+    # Header row: ╭─ [vtx-goal] ─ <objective>
     text.append("╭─ ", style=Style(color=c.border))
-    text.append("vtx-goal", style=Style(color=c.accent, bold=True))
-    text.append(f" ─ {title} ", style=Style(color=c.title))
-    text.append("╮\n", style=Style(color=c.border))
+    text.append(title_chip())
+    text.append(" ─ ", style=Style(color=c.border))
+    text.append(title, style=Style(color=c.title))
+    text.append(" ╮\n", style=Style(color=c.border))
 
-    # Status row: goal: running [12m47s 18.2K] (+2 open)
+    # Status row: ● running [12m47s 18.2K] (+2 open)
     status_text = Text()
-    status_text.append("goal: ", style=Style(color=c.dim))
+    status_text.append(status_dot(record.status))
     status_text.append(record.label(), style=Style(color=status_style(record.status)))
     usage = format_usage(record)
     if usage:
         status_text.append(f" [{usage}]", style=Style(color=c.dim))
     if open_extra > 0:
-        status_text.append(f" (+{open_extra} open)", style=Style(color=c.muted))
+        status_text.append(f"  +{open_extra} open", style=Style(color=c.muted))
     text.append(Text("│ ", style=Style(color=c.border)))
     text.append(status_text)
     text.append("\n", style=Style(color=c.border))
 
+    active = current_task(record)
+
     if total > 0:
-        # Tasks header with progress bar
+        # Tasks header with two-tone progress bar
         sub_done, sub_total = _subtask_progress(record)
         header = Text()
         header.append("Tasks ", style=Style(color=c.dim))
-        header.append(f"· ✓{done}/{total}", style=Style(color=c.fg))
-        header.append(" ", style=Style(color=c.dim))
-        bar = progress_bar(pct)
-        header.append(bar, style=Style(color=c.accent))
+        header.append(f"✓{done}/{total}", style=Style(color=c.success))
+        header.append("  ", style=Style(color=c.dim))
+        header.append(progress_bar_text(pct))
+        header.append(f" {pct}%", style=Style(color=c.accent, bold=True))
         if sub_total > 0:
-            header.append(f" · Sub {sub_done}/{sub_total}", style=Style(color=c.dim))
+            header.append(f"  · sub {sub_done}/{sub_total}", style=Style(color=c.dim))
         text.append(Text("├─ ", style=Style(color=c.border)))
         text.append(header)
         text.append(" ┤\n", style=Style(color=c.border))
 
         for line in _task_lines_window(record):
             mark = line[0]
-            text.append("│ ", style=Style(color=c.border))
-            text.append(mark, style=Style(color=mark_color(mark)))
-            text.append(line[1:], style=Style(color=c.fg))
+            is_current = active is not None and f"{active.id}" in line
+            body = Text()
+            body.append(mark, style=Style(color=mark_color(mark), bold=is_current))
+            body.append(
+                line[1:], style=Style(color=c.accent if is_current else c.fg, bold=is_current)
+            )
+            text.append(Text("│ ", style=Style(color=c.border)))
+            text.append(body)
             text.append("\n", style=Style(color=c.border))
 
-    active = current_task(record)
     rows: list[tuple[str, str]] = []
     if active is not None:
         rows.append(("Current", f"{active.id} · {objective_title(active.title, 46)}"))
@@ -163,7 +195,8 @@ def render_compact(
         text.append("│ ", style=Style(color=c.border))
         text.append(label.ljust(label_width), style=Style(color=c.dim))
         text.append("  ", style=Style(color=c.dim))
-        text.append(value, style=Style(color=c.fg))
+        value_color = c.fg if label != "File" else c.muted
+        text.append(value, style=Style(color=value_color))
         text.append("\n", style=Style(color=c.border))
 
     footer = f"Esc: pause goal   {expanded_hint}: expand tasks"
@@ -292,29 +325,32 @@ def render_expanded(service: GoalService, record: GoalRecord, *, activity_limit:
     pct = round(done * 100 / total) if total else 0
 
     text = Text()
-    text.append("vtx-goal", style=Style(color=c.accent, bold=True))
+    text.append(title_chip())
     text.append(" ─ ", style=Style(color=c.dim))
     text.append(objective_title(record.objective, 70), style=Style(color=c.title))
     text.append("\n")
-    text.append("Status ", style=Style(color=c.dim))
+    text.append(status_dot(record.status))
     text.append(record.label(), style=Style(color=status_style(record.status)))
     usage = format_usage(record)
-    text.append(
-        f" · [{usage}] · id {record.id} · mode {record.mode}"
-        if usage
-        else f" · id {record.id} · mode {record.mode}",
-        style=Style(color=c.dim),
-    )
+    meta = Text()
+    meta.append("  ", style=Style(color=c.dim))
+    if usage:
+        meta.append(f"[{usage}] · ", style=Style(color=c.dim))
+    meta.append(f"id {record.id} · mode {record.mode}", style=Style(color=c.muted))
+    text.append(meta)
 
     # Progress
-    text.append(f"\n\n{'─' * 3} Progress ", style=Style(color=c.border))
-    text.append(
-        f"\n[{progress_bar(pct, 12)}] {done}/{top_level_total(record)} tasks · {pct}%",
-        style=Style(color=c.accent),
-    )
+    text.append("\n\n")
+    text.append(section_header("Progress"))
+    bar_row = Text("\n")
+    bar_row.append(progress_bar_text(pct, 12))
+    bar_row.append(f"  {done}/{top_level_total(record)} tasks", style=Style(color=c.fg))
+    bar_row.append(f"  {pct}%", style=Style(color=c.accent, bold=True))
+    text.append(bar_row)
 
     # Tasks
-    text.append(f"\n\n{'─' * 3} Tasks ", style=Style(color=c.border))
+    text.append("\n\n")
+    text.append(section_header("Tasks"))
     if record.tasks:
         text.append("\n")
         text.append(_task_tree_text(record))
@@ -323,17 +359,18 @@ def render_expanded(service: GoalService, record: GoalRecord, *, activity_limit:
 
     # Current task block
     active = current_task(record)
-    text.append(f"\n{'─' * 3} Current task ", style=Style(color=c.border))
+    text.append("\n\n")
+    text.append(section_header("Current task"))
     if active is not None:
         subs = [t for t in record.tasks if t.parent_id == active.id]
-        text.append(f"\n[{active.id}] {active.title}", style=Style(color=c.fg))
+        text.append(f"\n[{active.id}] ", style=Style(color=c.accent, bold=True))
+        text.append(active.title, style=Style(color=c.fg))
         if subs:
             sub_done = sum(1 for t in subs if t.status == "complete")
             spct = round(sub_done * 100 / len(subs))
-            text.append(
-                f"\nSubtasks [{progress_bar(spct)}] {sub_done}/{len(subs)} · {spct}%",
-                style=Style(color=c.accent),
-            )
+            text.append("\nSubtasks ", style=Style(color=c.dim))
+            text.append(progress_bar_text(spct))
+            text.append(f" {sub_done}/{len(subs)} · {spct}%", style=Style(color=c.accent))
         contract = _task_contract(active)
         if contract:
             text.append("\nContract: ", style=Style(color=c.dim))
@@ -347,7 +384,8 @@ def render_expanded(service: GoalService, record: GoalRecord, *, activity_limit:
         )
 
     # Goal verification
-    text.append(f"\n\n{'─' * 3} Verification ", style=Style(color=c.border))
+    text.append("\n\n")
+    text.append(section_header("Verification", color=c.notice))
     if record.verification.strip():
         text.append(f"\n{record.verification.strip()}", style=Style(color=c.notice))
     else:
@@ -356,20 +394,25 @@ def render_expanded(service: GoalService, record: GoalRecord, *, activity_limit:
         )
 
     if record.review_feedback:
-        text.append(f"\n\n{'─' * 3} Auditor feedback ", style=Style(color=c.failed))
+        text.append("\n\n")
+        text.append(section_header("Auditor feedback", color=c.failed))
         text.append(f"\n{record.review_feedback.strip()}", style=Style(color=c.failed))
 
     # Recent activity
     activity = recent_activity(service.cwd, record.id, limit=activity_limit)
-    text.append(f"\n\n{'─' * 3} Activity ", style=Style(color=c.border))
+    text.append("\n\n")
+    text.append(section_header("Activity"))
     if activity:
-        for line in activity:
-            text.append(f"\n{line}", style=Style(color=c.dim))
+        for i, line in enumerate(activity):
+            connector = "╰ " if i == len(activity) - 1 else "├ "
+            text.append("\n" + connector, style=Style(color=c.border))
+            text.append(line, style=Style(color=c.dim))
     else:
         text.append("\n(no recorded activity yet)", style=Style(color=c.dim))
 
     file_path = _file_label(service.cwd, record.id)
-    text.append(f"\n\nFile: {file_path}", style=Style(color=c.muted))
+    text.append(Text("\nFile: ", style=Style(color=c.muted)))
+    text.append(file_path, style=Style(color=c.border))
     return text
 
 
@@ -387,14 +430,16 @@ def _task_contract(task) -> str:
 def _task_tree_text(record: GoalRecord) -> Text:
     c = _colors()
     active = current_task(record)
+    top = [t for t in record.tasks if not t.parent_id]
     out = Text()
 
-    def emit(task, depth: int) -> None:
+    def emit(task, depth: int, last: bool) -> None:
         mark = task_mark(record, task.id)
         is_current = active is not None and active.id == task.id
-        style = Style(color=c.accent, bold=is_current)
-        out.append("  " * depth)
-        out.append(mark + " ", style=Style(color=mark_color(mark)))
+        style = Style(color=c.accent if is_current else c.fg, bold=is_current)
+        if depth > 0:
+            out.append("└ " if last else "├ ", style=Style(color=c.border))
+        out.append(mark + " ", style=Style(color=mark_color(mark), bold=is_current))
         out.append(task.id.ljust(5), style=style)
         out.append(task.title, style=style)
         if task.status == "complete" and task.evidence:
@@ -403,8 +448,9 @@ def _task_tree_text(record: GoalRecord) -> Text:
             out.append(f"  — skipped: {objective_title(task.note, 40)}", style=Style(color=c.dim))
         out.append("\n")
 
-    for task in [t for t in record.tasks if not t.parent_id]:
-        emit(task, 0)
-        for sub in [t for t in record.tasks if t.parent_id == task.id]:
-            emit(sub, 1)
+    for task in top:
+        subs = [t for t in record.tasks if t.parent_id == task.id]
+        emit(task, 0, last=False)
+        for j, sub in enumerate(subs):
+            emit(sub, 1, last=j == len(subs) - 1)
     return out

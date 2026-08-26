@@ -420,7 +420,7 @@ class AgentRunnerMixin:
         self._ask_dialog = dialog
         self.app.bell()
 
-    def _handle_shell_command(self, display_text: str, original_text: str) -> None:
+    def _handle_shell_command(self, display_text: str) -> None:
         """Handle shell commands prefixed with ! or !!"""
         if self._is_running:
             return

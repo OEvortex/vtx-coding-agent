@@ -887,6 +887,18 @@ class ConversationRuntime:
             agent=self.active_agent.definition.name if self.active_agent else None,
         )
 
+    def set_session_name(self, name: str) -> None:
+        if self.session is not None:
+            self.session.set_name(name)
+
+    def get_session_name(self) -> str | None:
+        if self.session is not None:
+            return self.session.name
+        return None
+
+    def set_model(self, model: str) -> None:
+        self.model = model
+
     @property
     def model_supports_thinking(self) -> bool:
         """Whether the currently selected model advertises reasoning/thinking

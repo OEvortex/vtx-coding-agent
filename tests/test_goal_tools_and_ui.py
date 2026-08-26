@@ -10,7 +10,7 @@ from vtx.ai.agent.dispatcher import DispatcherContext, set_context
 from vtx.coding_agent.goal import storage
 from vtx.coding_agent.goal.service import GoalService
 from vtx.coding_agent.goal.tools import GoalParams, GoalTool
-from vtx.tui.goal_ui import format_usage, progress_bar, render_compact, render_expanded
+from vtx.tui.goal_ui import format_usage, render_compact, render_expanded
 
 
 @pytest.fixture()
@@ -36,12 +36,6 @@ def _install_dispatcher(cwd: Path) -> None:
 # ---------------------------------------------------------------------------
 # pure renderers
 # ---------------------------------------------------------------------------
-
-
-def test_progress_bar_bounds() -> None:
-    assert progress_bar(0) == "░" * 8
-    assert progress_bar(100) == "█" * 8
-    assert len(progress_bar(50)) == 8
 
 
 def test_render_compact_and_expanded(goal_cwd: Path) -> None:

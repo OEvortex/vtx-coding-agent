@@ -74,6 +74,9 @@ class CommandsMixin(
         if cmd == "notifications":
             self._handle_notifications_command(args)
             return True
+        if cmd == "ponytail":
+            self._handle_ponytail_command(args)
+            return True
         if cmd == "handoff":
             self._handle_handoff_command(args)
             return True

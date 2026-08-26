@@ -18,6 +18,7 @@ llm:
 
   system_prompt:
     git_context: true
+    ponytail: false
     # Base identity + general rules. Defaults to vtx.prompts.identity.DEFAULT_VTX_BASE
     # (sourced from Python). Set a custom string here to override the base prompt;
     # extra sections (tool guidelines, AGENTS.md, skills, git, env) are still

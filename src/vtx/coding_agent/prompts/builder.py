@@ -28,6 +28,7 @@ from vtx.coding_agent.context import (
 )
 from vtx.coding_agent.prompts.env import build_env_section
 from vtx.coding_agent.prompts.identity import DEFAULT_VTX_BASE
+from vtx.coding_agent.prompts.ponytail import build_ponytail_section
 from vtx.coding_agent.prompts.tooling import build_tool_guidelines_section
 
 
@@ -45,6 +46,12 @@ def _resolve_git_flag(include_git: bool | None) -> bool:
     return vtx_config.llm.system_prompt.git_context
 
 
+def _resolve_ponytail_flag(include_ponytail: bool | None) -> bool:
+    if include_ponytail is not None:
+        return include_ponytail
+    return getattr(vtx_config.llm.system_prompt, "ponytail", False)
+
+
 def build_system_prompt(
     cwd: str,
     context: Context | None = None,
@@ -52,6 +59,7 @@ def build_system_prompt(
     *,
     base_content: str | None = None,
     include_git_context: bool | None = None,
+    include_ponytail: bool | None = None,
     extra_instructions: str | None = None,
     extra_instructions_mode: str = "append",
     skills: list[Any] | None = None,
@@ -86,6 +94,9 @@ def build_system_prompt(
 
     if extra_instructions and extra_instructions_mode == "append":
         sections.append(extra_instructions)
+
+    if _resolve_ponytail_flag(include_ponytail):
+        sections.append(build_ponytail_section())
 
     tool_section = build_tool_guidelines_section(tools)
     if tool_section:

@@ -411,6 +411,10 @@ class Session:
         self._append_entry(entry)
         return entry.id
 
+    def set_name(self, name: str) -> None:
+        """Set the session name by appending a SessionInfoEntry."""
+        self.append_session_info(name)
+
     def append_runtime_checkpoint(
         self,
         partial_content: builtins.list[dict[str, Any]],
