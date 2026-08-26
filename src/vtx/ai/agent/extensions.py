@@ -81,6 +81,8 @@ MESSAGE_UPDATE = "message_update"
 MESSAGE_END = "message_end"
 TOOL_CALL = "tool_call"
 TOOL_RESULT = "tool_result"
+PERMISSION_REQUEST = "permission_request"
+PERMISSION_DENIED = "permission_denied"
 TOOL_EXECUTION_START = "tool_execution_start"
 TOOL_EXECUTION_UPDATE = "tool_execution_update"
 TOOL_EXECUTION_END = "tool_execution_end"
@@ -127,6 +129,8 @@ ALL_EVENTS: tuple[str, ...] = (
     MESSAGE_END,
     TOOL_CALL,
     TOOL_RESULT,
+    PERMISSION_REQUEST,
+    PERMISSION_DENIED,
     TOOL_EXECUTION_START,
     TOOL_EXECUTION_UPDATE,
     TOOL_EXECUTION_END,

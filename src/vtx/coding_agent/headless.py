@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import contextlib
 import os
 import sys
 from collections.abc import AsyncIterator
@@ -236,8 +237,21 @@ async def run_headless(
             return 2
 
         try:
+            # Fire session lifecycle events so YAML hooks (SessionStart /
+            # SessionEnd) and extensions see headless runs too.
+            await loaded_extensions.bus.emit(
+                "session_start",
+                cwd=str(Path.cwd()),
+                session_id=runtime.session.id if runtime.session else "",
+            )
             return _exit_code(await render_run(agent.run(prompt)))
         finally:
+            with contextlib.suppress(Exception):
+                await loaded_extensions.bus.emit(
+                    "session_end",
+                    cwd=str(Path.cwd()),
+                    session_id=runtime.session.id if runtime.session else "",
+                )
             await hook_bridge.unload()
             await runtime.close()
     finally:

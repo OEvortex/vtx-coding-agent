@@ -41,6 +41,8 @@ from vtx.ai.agent.context_governance import prepare_for_model
 from vtx.ai.agent.extensions import (
     MESSAGE_END,
     MESSAGE_START,
+    PERMISSION_DENIED,
+    PERMISSION_REQUEST,
     TOOL_CALL,
     TOOL_EXECUTION_END,
     TOOL_EXECUTION_START,
@@ -1005,6 +1007,15 @@ class _TurnRunner:
             if self._needs_approval(pending):
                 loop = asyncio.get_running_loop()
                 future: asyncio.Future[ApprovalResponse] = loop.create_future()
+                if self._extensions is not None:
+                    await self._extensions.emit(
+                        PERMISSION_REQUEST,
+                        cancel_event=self._cancel_event,
+                        permission="tool",
+                        tool_name=pending.tool_call.name,
+                        arguments=dict(pending.tool_call.arguments),
+                        tool_call_id=pending.tool_call.id,
+                    )
                 yield ToolApprovalEvent(
                     tool_call_id=pending.tool_call.id,
                     tool_name=pending.tool_call.name,
@@ -1014,6 +1025,15 @@ class _TurnRunner:
                 approved = (
                     await _await_approval(future, self._cancel_event) == ApprovalResponse.APPROVE
                 )
+                if not approved and self._extensions is not None:
+                    await self._extensions.emit(
+                        PERMISSION_DENIED,
+                        cancel_event=self._cancel_event,
+                        permission="tool",
+                        tool_name=pending.tool_call.name,
+                        arguments=dict(pending.tool_call.arguments),
+                        tool_call_id=pending.tool_call.id,
+                    )
 
             # Emit tool_execution_start before any execution/approval gate.
             if self._extensions is not None:
@@ -1101,6 +1121,7 @@ class _TurnRunner:
                             tool_call_id=pending.tool_call.id,
                             args=pending.tool_call.arguments,
                             result=result,
+                            is_error=result.is_error,
                         )
                         new_output = _hook_rewritten_output(hook_result)
                         if new_output is not None:
