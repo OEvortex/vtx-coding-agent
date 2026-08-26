@@ -436,6 +436,19 @@ class Vtx(
             parts.extend(["", "[query]", query.strip()])
         return "\n".join(parts)
 
+    def _inject_lazy_tools(self, tool_names: list[str]) -> None:
+        """Inject lazily-available tools into the runtime for the active turn."""
+        from vtx.coding_agent.tools import tools_by_name
+
+        for name in tool_names:
+            tool = tools_by_name.get(name)
+            if tool is None or tool in self._runtime.tools:
+                continue
+            self._runtime.tools.append(tool)
+
+        if self._runtime.agent is not None:
+            self._runtime._rebuild_system_prompt()
+
     def _task_progress_callback(self, tool_call_id: str, event: dict) -> None:
         try:
             chat = self.query_one("#chat-log", ChatLog)
@@ -891,13 +904,28 @@ class Vtx(
             self._submit_api_key(event.text)
             return
 
-        if display_text.startswith("/") and self._handle_command(display_text):
-            return
-
-        # Handle skill slash commands typed manually: /skill:<name> <query>
+        # Route registered skill commands typed as /<name> before hardcoded
+        # commands so skills like /goal work through the skill system.
         manual_skill_name = None
         manual_skill_query = ""
-        if display_text.startswith("/skill:"):
+        if display_text.startswith("/") and not display_text.startswith("/skill:"):
+            parts = display_text[1:].split(maxsplit=1)
+            cmd_name = parts[0]
+            cmd_args = parts[1] if len(parts) > 1 else ""
+            skill = next(
+                (
+                    s
+                    for s in self._registered_slash_skills()
+                    if s.register_cmd and s.name == cmd_name
+                ),
+                None,
+            )
+            if skill:
+                manual_skill_name = skill.name
+                manual_skill_query = cmd_args
+            elif self._handle_command(display_text):
+                return
+        elif display_text.startswith("/skill:"):
             skill_name, _, skill_query = display_text[len("/skill:") :].partition(" ")
             selected_skill = next(
                 (
@@ -936,6 +964,10 @@ class Vtx(
                 )
                 query_text = render_skill_prompt(selected_skill, skill_query)
                 highlighted_skill = selected_skill.name
+
+        # Lazily inject tools for registered skills that need them.
+        if selected_skill_name == "goal":
+            self._inject_lazy_tools(["goal"])
 
         if self._is_running:
             if event.steer:

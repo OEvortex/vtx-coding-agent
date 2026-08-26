@@ -113,48 +113,6 @@ class CommandsMixin(
         if cmd == "update":
             self._handle_update_command()
             return True
-        if cmd == "goal":
-            self._handle_goal_command(args)
-            return True
-        if cmd == "goal-direct":
-            self._create_direct(args, mode="regular")
-            return True
-        if cmd == "sisyphus":
-            self._handle_sisyphus_command(args)
-            return True
-        if cmd == "sisyphus-direct":
-            self._create_direct(args, mode="sisyphus")
-            return True
-        if cmd == "goal-list":
-            self._handle_goal_list()
-            return True
-        if cmd == "goal-status":
-            self._handle_goal_status(args)
-            return True
-        if cmd == "goal-focus":
-            self._handle_goal_focus()
-            return True
-        if cmd == "goal-unfocus":
-            self._handle_goal_unfocus()
-            return True
-        if cmd == "goal-tweak":
-            self._handle_goal_tweak(args)
-            return True
-        if cmd == "goal-pause":
-            self._handle_goal_pause()
-            return True
-        if cmd == "goal-resume":
-            self._handle_goal_resume()
-            return True
-        if cmd == "goal-clear":
-            self._handle_goal_clear()
-            return True
-        if cmd == "goal-cancel":
-            self._handle_goal_cancel()
-            return True
-        if cmd == "goal-settings":
-            self._handle_goal_settings()
-            return True
 
         # Extension commands take a final swing at anything the built-ins
         # did not handle. They can shadow built-in commands, letting

@@ -36,7 +36,6 @@ __all__ = [
     "BashTool",
     "EditTool",
     "FindTool",
-    "GoalTool",
     "GrepTool",
     "ReadTool",
     "SkillTool",
@@ -64,10 +63,12 @@ all_tools: list[BaseTool] = [
     WebTool(),
     AskUserTool(),
     TaskTool(),
-    GoalTool(),
 ]
 
 tools_by_name: dict[str, BaseTool] = {tool.name: tool for tool in all_tools}
+# Lazily-available built-in tools: not in the default set, but resolvable
+# by name so skills/UI can inject them on demand.
+tools_by_name["goal"] = GoalTool()
 DEFAULT_TOOLS: list[str] = [
     "read",
     "edit",
@@ -78,13 +79,12 @@ DEFAULT_TOOLS: list[str] = [
     "web",
     "ask_user",
     "task",
-    "goal",
 ]
 
 # Tools that only the top-level session may call: sub-agents never dispatch
 # sub-agents and never own goal lifecycle state (focus is user-owned and
 # session-scoped).
-PARENT_ONLY_TOOLS: frozenset[str] = frozenset({"task", "goal"})
+PARENT_ONLY_TOOLS: frozenset[str] = frozenset({"task"})
 
 
 def get_tools(names: list[str]) -> list[BaseTool]:

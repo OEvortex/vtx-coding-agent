@@ -139,7 +139,7 @@ class WebTool(BaseTool):
 
 
 # ===========================================================================
-# Backward-compatible alias (used by agenite_claw and legacy tests)
+# Backward-compatible alias (used by legacy tests)
 # ===========================================================================
 
 

@@ -4,7 +4,7 @@ Two modes share one presentation model, so they can never disagree:
 
 - compact: always visible above the editor while a goal is focused
 - expanded: full task tree + verification + recent activity, rendered
-  into the chat log via /goal-status or Ctrl+Shift+G
+  into the chat log via Ctrl+Shift+G
 
 Render functions are pure (data in, Rich Text out), matching the
 convention in :mod:`vtx.tui.task_ui`.

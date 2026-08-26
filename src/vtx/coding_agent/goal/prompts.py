@@ -137,7 +137,7 @@ def drafting_prompt(
 UNFOCUSED_BANNER = (
     "<vtx-goal-unfocused>"
     "This project has open goals but no session focus. Tell the user to pick "
-    "one with /goal-focus before working toward any of them."
+    "one before working toward any of them."
     "</vtx-goal-unfocused>"
 )
 

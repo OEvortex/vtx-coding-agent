@@ -34,9 +34,6 @@ from vtx.core.types import (
 DEFAULT_THINKING_LEVELS: list[str] = ["none", "minimal", "low", "medium", "high", "xhigh"]
 
 # Provider-agnostic request/response types.
-# Defined here (not in agenite_claw) so vtx core and the agenite-claw gateway
-# share a single source of truth without a circular import once agenite_claw
-# becomes a separate package.
 
 
 @dataclass(slots=True)

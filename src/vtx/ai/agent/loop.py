@@ -109,10 +109,10 @@ class Agent:
         self._extensions = extensions
         self._run_usage = Usage()
         self._background_manager = background_manager
-        # In-process hooks (agenite_claw-style AgentHook). Wired into the engine in
-        # P6; unused until then and default-empty so callers are unaffected.
+        # In-process hooks (AgentHook). Wired into the engine in P6; unused
+        # until then and default-empty so callers are unaffected.
         self._hooks: list[Any] = list(hooks or [])
-        # Mid-turn follow-up queue (agenite_claw-style pending queue). Populated by
+        # Mid-turn follow-up queue. Populated by
         # callers via :meth:`queue_follow_up`; drained by the engine mid-turn so
         # sub-agent/queued results reach the model without ending the turn.
         self._pending_queue: deque[UserMessage] = deque()
