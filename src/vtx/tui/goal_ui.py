@@ -103,71 +103,74 @@ def render_compact(
     done, total = count_tasks(record.tasks)
     pct = round(done * 100 / total) if total else 0
 
-    title = objective_title(record.objective, max_chars=48)
+    title = objective_title(record.objective, max_chars=52)
     open_extra = len(service.pool()) - 1
 
     text = Text()
-    # Header: ◈ vtx-goal: <objective> ── [████████░░] 75% (3/4)
-    text.append("◈ ", style=Style(color=c.accent, bold=True))
+    # Header row: ╭─ vtx-goal ─ <objective>
+    text.append("╭─ ", style=Style(color=c.border))
     text.append("vtx-goal", style=Style(color=c.accent, bold=True))
-    text.append(f" ─ {title} ", style=Style(color=c.title, bold=True))
+    text.append(f" ─ {title} ", style=Style(color=c.title))
+    text.append("╮\n", style=Style(color=c.border))
 
-    if total > 0:
-        bar = progress_bar(pct, width=10)
-        text.append(f"── [{bar}] {pct}% ({done}/{total})", style=Style(color=c.accent))
-    text.append("\n")
-
-    # Status / subtask line
+    # Status row: goal: running [12m47s 18.2K] (+2 open)
     status_text = Text()
     status_text.append("goal: ", style=Style(color=c.dim))
-    status_text.append(record.label(), style=Style(color=status_style(record.status), bold=True))
+    status_text.append(record.label(), style=Style(color=status_style(record.status)))
     usage = format_usage(record)
     if usage:
         status_text.append(f" [{usage}]", style=Style(color=c.dim))
     if open_extra > 0:
         status_text.append(f" (+{open_extra} open)", style=Style(color=c.muted))
+    text.append(Text("│ ", style=Style(color=c.border)))
     text.append(status_text)
-    text.append("\n\n")
+    text.append("\n", style=Style(color=c.border))
 
     if total > 0:
+        # Tasks header with progress bar
+        sub_done, sub_total = _subtask_progress(record)
+        header = Text()
+        header.append("Tasks ", style=Style(color=c.dim))
+        header.append(f"· ✓{done}/{total}", style=Style(color=c.fg))
+        header.append(" ", style=Style(color=c.dim))
+        bar = progress_bar(pct)
+        header.append(bar, style=Style(color=c.accent))
+        if sub_total > 0:
+            header.append(f" · Sub {sub_done}/{sub_total}", style=Style(color=c.dim))
+        text.append(Text("├─ ", style=Style(color=c.border)))
+        text.append(header)
+        text.append(" ┤\n", style=Style(color=c.border))
+
         for line in _task_lines_window(record):
-            if not line:
-                continue
             mark = line[0]
-            if mark in TASK_MARKS.values():
-                text.append(mark, style=Style(color=mark_color(mark), bold=True))
-                text.append(line[1:], style=Style(color=c.fg))
-            else:
-                text.append(line, style=Style(color=c.dim, italic=True))
-            text.append("\n")
-        text.append("\n")
+            text.append("│ ", style=Style(color=c.border))
+            text.append(mark, style=Style(color=mark_color(mark)))
+            text.append(line[1:], style=Style(color=c.fg))
+            text.append("\n", style=Style(color=c.border))
 
     active = current_task(record)
-    active_val = (
-        f"{active.id} · {objective_title(active.title, 36)}"
-        if active
-        else ("all tasks complete" if done == total else "none")
-    )
-    verify_val = (
-        objective_title(record.verification.strip(), 36) if record.verification.strip() else "none"
-    )
-    file_val = _file_label(service.cwd, record.id)
+    rows: list[tuple[str, str]] = []
+    if active is not None:
+        rows.append(("Current", f"{active.id} · {objective_title(active.title, 46)}"))
+    elif total > 0 and done == total:
+        rows.append(("Current", "all tasks complete"))
+    if record.verification.strip():
+        rows.append(("Verify", objective_title(record.verification.strip(), 48)))
+    rows.append(("File", _file_label(service.cwd, record.id)))
 
-    footer_row1 = Text()
-    footer_row1.append("Current ", style=Style(color=c.dim))
-    footer_row1.append(active_val.ljust(40), style=Style(color=c.fg))
-    footer_row1.append(" Verify  ", style=Style(color=c.dim))
-    footer_row1.append(verify_val, style=Style(color=c.fg))
-    text.append(footer_row1)
-    text.append("\n")
+    label_width = max(len(label) for label, _ in rows)
+    for label, value in rows:
+        text.append("│ ", style=Style(color=c.border))
+        text.append(label.ljust(label_width), style=Style(color=c.dim))
+        text.append("  ", style=Style(color=c.dim))
+        text.append(value, style=Style(color=c.fg))
+        text.append("\n", style=Style(color=c.border))
 
-    footer_row2 = Text()
-    footer_row2.append("File    ", style=Style(color=c.dim))
-    footer_row2.append(file_val.ljust(40), style=Style(color=c.muted))
-    footer_row2.append(" Hints   ", style=Style(color=c.dim))
-    footer_row2.append(f"Esc: pause · {expanded_hint}: expand", style=Style(color=c.dim))
-    text.append(footer_row2)
-
+    footer = f"Esc: pause goal   {expanded_hint}: expand tasks"
+    pad = max(0, _content_width(text) - len(footer) - 2)
+    text.append("╰─ ", style=Style(color=c.border))
+    text.append(footer, style=Style(color=c.dim))
+    text.append(" " * pad + "╯", style=Style(color=c.border))
     return text
 
 
@@ -193,7 +196,10 @@ def _task_lines_window(record: GoalRecord, limit: int = 5) -> list[str]:
     def fmt(task, indent: bool) -> str:
         mark = task_mark(record, task.id)
         prefix = "  " if indent else ""
-        return f"{prefix}{mark} {task.id}  {task.title}"
+        flag = ""
+        if task.status == "complete" and task.evidence:
+            flag = " ☑"
+        return f"{prefix}{mark} {task.id}  {task.title}{flag}"
 
     for task in window:
         lines.append(fmt(task, indent=False))
@@ -226,8 +232,8 @@ def _file_label(cwd: str, goal_id: str) -> str:
     except ValueError:
         return str(path)
     text = str(rel)
-    if len(text) > 36:
-        return "…" + text[-35:]
+    if len(text) > 52:
+        return "…" + text[-51:]
     return text
 
 
@@ -241,11 +247,8 @@ class GoalWidget(Static):
     DEFAULT_CSS = """
     GoalWidget {
         display: none;
-        padding: 1 2;
-        margin: 0 1 1 1;
-        border: round $primary;
-        background: $panel;
-        height: auto;
+        padding: 0 1;
+        margin: 0 1;
     }
     GoalWidget.-visible {
         display: block;
