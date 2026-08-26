@@ -16,6 +16,7 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - **Witty-line rotation cadence** — `WITTY_ROTATE_EVERY_TICKS` raised from `12` to `20` (3s instead of 1.8s at 0.15s/tick) in both the chat spinner and the bottom status line.
 
 ### Fixed
+- **Sub-agent context-window wiring** — Task-tool sub-agents now apply the active model's real context window and max output tokens (same catalog lookup as the main agent), so overflow auto-compaction triggers at the correct threshold instead of the harness default. Fixes sub-agent runs dying with `context_length_exceeded` (e.g. a 414k-token request against a 262k window) on models whose window differs from the default.
 - **Goal completion auditor freeze & provider resolution** — resolved an issue where models could get stuck when completing goals (`goal(action="update", status="complete")`). The completion auditor now reuses the session's active provider instance directly, correctly resolves dynamic models and custom base URLs, clamps reasoning/thinking levels to supported values, and parses multi-turn auditor verdict markers reliably.
 
 ## [1.1.0] - 2026-08-26
