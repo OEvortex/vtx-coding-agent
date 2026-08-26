@@ -391,6 +391,10 @@ class ToolBlock(Static):
         self.add_class("tool-block")
         self._set_state(None)
 
+    @property
+    def name(self) -> str:
+        return self._name
+
     def compose(self) -> ComposeResult:
         yield Label(self._format_header(), id="tool-header")
         yield Label("", id="tool-output", classes="tool-output -hidden")

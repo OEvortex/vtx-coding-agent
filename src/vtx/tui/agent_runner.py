@@ -264,12 +264,13 @@ class AgentRunnerMixin:
 
         match event:
             case AgentStartEvent():
-                pass
+                status.set_agent_state("general")
 
             case TurnStartEvent():
-                pass
+                status.set_agent_state("thinking")
 
             case ThinkingStartEvent():
+                status.set_agent_state("thinking")
                 if self._current_block_type != "thinking":
                     if self._current_block_type:
                         chat.end_block()
@@ -285,6 +286,7 @@ class AgentRunnerMixin:
                 pass
 
             case TextStartEvent():
+                status.set_agent_state("general")
                 if self._current_block_type != "content":
                     if self._current_block_type:
                         chat.end_block()
@@ -304,6 +306,7 @@ class AgentRunnerMixin:
                 icon = tool.tool_icon if tool else "→"
                 chat.start_tool(name, id, "", icon=icon, tool=tool)
                 self._current_block_type = "tool_call"
+                status.set_active_tool(name)
                 status.increment_tool_calls()
                 status.set_streaming_tokens(0)  # Reset token count for new tool
 
@@ -315,6 +318,7 @@ class AgentRunnerMixin:
 
             case ToolApprovalEvent(tool_call_id=id, tool_name=name, display=disp, future=f):
                 self.app.bell()
+                status.set_agent_state("approval")
                 self._approval_selection = ApprovalResponse.APPROVE
                 chat.show_tool_approval(
                     id, preview=disp or None, selected=self._approval_selection
@@ -328,6 +332,8 @@ class AgentRunnerMixin:
             case ToolResultEvent(tool_call_id=id, result=r, file_changes=fc):
                 self._approval_future = None
                 self._approval_tool_id = None
+                tool_block = chat._tool_blocks.get(id)
+                tool_name = (tool_block.name if tool_block else None) or "default"
                 if r:
                     markup = True
                     ui_summary = r.ui_summary
@@ -336,6 +342,8 @@ class AgentRunnerMixin:
                     if ui_summary is None and ui_details is None and r.content:
                         ui_details, ui_details_full = self._format_tool_result_text(r)
                     success = not r.is_error
+                    if not success:
+                        status.show_tool_error(tool_name)
                     chat.set_tool_result(
                         id,
                         ui_summary,
@@ -344,6 +352,7 @@ class AgentRunnerMixin:
                         markup=markup,
                         ui_details_full=ui_details_full,
                     )
+                status.set_active_tool(None)
                 if fc:
                     info_bar.update_file_changes(fc.path, fc.added, fc.removed)
 
@@ -367,7 +376,8 @@ class AgentRunnerMixin:
                 if self._current_block_type:
                     chat.end_block()
                     self._current_block_type = None
-                chat.show_spinner_status("Auto-compacting...")
+                status.set_agent_state("compacting")
+                chat.show_spinner_status(state="compacting")
 
             case CompactionEndEvent(tokens_before=tb, tokens_after=ta, aborted=ab, reason=why):
                 if ab:
@@ -397,6 +407,8 @@ class AgentRunnerMixin:
                 if self._current_block_type:
                     chat.end_block()
                 self._current_block_type = None
+                status.set_active_tool(None)
+                status.set_agent_state(None)
 
         return was_interrupted
 

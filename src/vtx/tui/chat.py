@@ -1,4 +1,3 @@
-import random
 import time
 from pathlib import Path
 from typing import Literal
@@ -26,65 +25,17 @@ from vtx.tui.blocks import (
     stylize_badge_markers,
 )
 from vtx.tui.input import AskUserInput
+from vtx.tui.status_lines import WITTY_STATUS_LINES, pick_witty_line
+
+__all__ = ["MAX_CHILDREN", "PRUNE_TO", "WITTY_ROTATE_EVERY_TICKS", "WITTY_STATUS_LINES", "ChatLog"]
 
 MAX_CHILDREN = 300
 PRUNE_TO = 200
 
-WITTY_STATUS_LINES: tuple[str, ...] = (
-    "Thinking really hard...",
-    "Consulting the oracle...",
-    "Untangling the spaghetti...",
-    "Brewing fresh pixels...",
-    "Polishing the bits...",
-    "Whispering to the electrons...",
-    "Defrosting the GPU...",
-    "Convincing the LLM...",
-    "Reading the tea leaves...",
-    "Spinning up the hamster wheel...",
-    "Tickling the transistors...",
-    "Sharpening the pencils...",
-    "Pondering the imponderables...",
-    "Crunching the numbers...",
-    "Herding the cats...",
-    "Brewing a fresh pot of logic...",
-    "Asking the magic 8-ball...",
-    "Bending the spoon...",
-    "Calibrating the flux capacitor...",
-    "Reticulating splines...",
-    "Summoning the bit gnomes...",
-    "Charging the warp drive...",
-    "Aligning the planets...",
-    "Stirring the primordial soup...",
-    "Crossing the streams...",
-    "Tuning the antennae...",
-    "Decoding the matrix...",
-    "Feeding the hamsters...",
-    "Polishing the crystal ball...",
-    "Bribing the compiler...",
-    "Sacrificing a rubber duck...",
-    "Reading the source code of reality...",
-    "Brewing a storm of ideas...",
-    "Tickling the algorithm...",
-    "Pinning the tail on the donkey...",
-    "Counting to infinity... twice...",
-)
-
 # How many spinner ticks (0.15s each) before rotating to a new witty line.
 WITTY_ROTATE_EVERY_TICKS = 12
 
-
-def _pick_witty_line(exclude: str | None = None) -> str:
-    """Pick a random witty spinner line, avoiding ``exclude`` if possible."""
-    if not WITTY_STATUS_LINES:
-        return ""
-    if len(WITTY_STATUS_LINES) <= 1:
-        return WITTY_STATUS_LINES[0]  # pyright: ignore[reportGeneralTypeIssues]
-    choice = random.choice(WITTY_STATUS_LINES)
-    if exclude is None or choice != exclude:
-        return choice
-    # Avoid an immediate repeat when the pool is small enough that
-    # random.choice may have landed on the excluded line.
-    return random.choice(WITTY_STATUS_LINES)
+_pick_witty_line = pick_witty_line
 
 
 def _format_skill_label(skill: Skill) -> str:
@@ -226,11 +177,18 @@ class ChatLog(VerticalScroll):
         self._last_status_label = label
         self._scroll_if_anchored(animate=False)
 
-    def show_spinner_status(self, message: str) -> None:
+    def show_spinner_status(
+        self, message: str | None = None, *, tool_name: str | None = None, state: str | None = None
+    ) -> None:
         self._stop_spinner()
         self._spinner = Spinner("dots")
         self._spinner_ticks = 0
-        self._spinner_line = _pick_witty_line()
+        self._spinner_tool = tool_name
+        self._spinner_state = state
+        if message:
+            self._spinner_line = message
+        else:
+            self._spinner_line = _pick_witty_line(tool_name=tool_name, state=state)
         self._spinner_label = Label(self._render_spinner_text(self._spinner_line))
         self._spinner_label.add_class("info-message")
         self.mount(self._spinner_label)
@@ -252,7 +210,9 @@ class ChatLog(VerticalScroll):
         self._spinner_ticks += 1
         if self._spinner_ticks >= WITTY_ROTATE_EVERY_TICKS:
             self._spinner_ticks = 0
-            self._spinner_line = _pick_witty_line(exclude=self._spinner_line)
+            self._spinner_line = _pick_witty_line(
+                exclude=self._spinner_line, tool_name=self._spinner_tool, state=self._spinner_state
+            )
         self._spinner_label.update(self._render_spinner_text(self._spinner_line))
 
     def _stop_spinner(self) -> None:
@@ -261,6 +221,8 @@ class ChatLog(VerticalScroll):
             self._spinner_timer = None
         self._spinner = None
         self._spinner_label = None
+        self._spinner_tool = None
+        self._spinner_state = None
 
     def add_session_info(self, version: str) -> None:
         info_text = Text()

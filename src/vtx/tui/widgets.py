@@ -14,8 +14,10 @@ from textual.widgets import Label
 
 from vtx.coding_agent.config import PermissionMode, config
 from vtx.coding_agent.git_branch import resolve_git_branch
-from vtx.tui.chat import WITTY_ROTATE_EVERY_TICKS, WITTY_STATUS_LINES, _pick_witty_line
+from vtx.tui.chat import WITTY_ROTATE_EVERY_TICKS
 from vtx.tui.formatting import format_tokens
+from vtx.tui.status_lines import WITTY_STATUS_LINES
+from vtx.tui.status_lines import pick_witty_line as _pick_witty_line
 
 
 def format_path(path: str) -> str:
@@ -456,6 +458,8 @@ class StatusLine(Horizontal):
         self._streaming_token_count = 0
         self._status_label: Label | None = None
         self._hint_label: Label | None = None
+        self._active_tool: str | None = None
+        self._agent_state: str | None = None
         # Mirrors ChatLog's witty-line rotation so the bottom status
         # line shows the same flavor of random working messages as the
         # chat-area spinner. Pick a fresh line on each run-start so the
@@ -523,7 +527,34 @@ class StatusLine(Horizontal):
             self._witty_ticks += 1
             if self._witty_ticks >= WITTY_ROTATE_EVERY_TICKS and WITTY_STATUS_LINES:
                 self._witty_ticks = 0
-                self._witty_line = _pick_witty_line(exclude=self._witty_line)
+                self._witty_line = _pick_witty_line(
+                    exclude=self._witty_line, tool_name=self._active_tool, state=self._agent_state
+                )
+            self._status_text.update(self._render_spinner(), layout=False)
+
+    def set_active_tool(self, tool_name: str | None) -> None:
+        """Update the currently active tool for context-aware status lines."""
+        self._active_tool = tool_name
+        self._witty_ticks = 0
+        if self._status != "idle":
+            self._witty_line = _pick_witty_line(
+                exclude=self._witty_line, tool_name=self._active_tool, state=self._agent_state
+            )
+            self._status_text.update(self._render_spinner(), layout=False)
+
+    def set_agent_state(self, state: str | None) -> None:
+        """Update current agent/model state (e.g. 'thinking', 'reasoning', 'compacting')."""
+        self._agent_state = state
+        self._witty_ticks = 0
+        if self._status != "idle" and self._active_tool is None:
+            self._witty_line = _pick_witty_line(exclude=self._witty_line, state=self._agent_state)
+            self._status_text.update(self._render_spinner(), layout=False)
+
+    def show_tool_error(self, tool_name: str) -> None:
+        """Display a tool-specific error status line."""
+        self._witty_ticks = 0
+        self._witty_line = _pick_witty_line(tool_name=tool_name, is_error=True)
+        if self._status != "idle":
             self._status_text.update(self._render_spinner(), layout=False)
 
     def set_status(self, status: str) -> None:
@@ -533,6 +564,8 @@ class StatusLine(Horizontal):
         if status == "idle":
             self._stop_spinner_timer()
             self._streaming_token_count = 0
+            self._active_tool = None
+            self._agent_state = None
             if old_status != "idle" and self._start_time is not None:
                 self._status_text.update(self._format_complete_status(), layout=False)
             elif old_status == "idle" and self._start_time is None:
@@ -542,11 +575,13 @@ class StatusLine(Horizontal):
                 self._start_time = time.time()
                 self._tool_calls = 0
                 self._streaming_token_count = 0
-                # Fresh run: pick a new witty line so consecutive runs
-                # don't always start on the same message.
                 self._witty_ticks = 0
                 if WITTY_STATUS_LINES:
-                    self._witty_line = _pick_witty_line(exclude=self._witty_line)
+                    self._witty_line = _pick_witty_line(
+                        exclude=self._witty_line,
+                        tool_name=self._active_tool,
+                        state=self._agent_state,
+                    )
             self._start_spinner_timer()
             self._status_text.update(self._render_spinner(), layout=False)
 
