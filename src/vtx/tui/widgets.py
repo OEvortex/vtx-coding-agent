@@ -522,6 +522,14 @@ class StatusLine(Horizontal):
             self._timer.stop()
             self._timer = None
 
+    def _animate_witty_line(self) -> None:
+        """Subtle fade effect when the witty line changes."""
+        try:
+            self._status_text.styles.animate("opacity", 0.5, duration=0.1)
+            self._status_text.styles.animate("opacity", 1.0, duration=0.2)
+        except Exception:
+            pass
+
     def _update_spinner(self) -> None:
         if self._status != "idle":
             self._witty_ticks += 1
@@ -530,6 +538,7 @@ class StatusLine(Horizontal):
                 self._witty_line = _pick_witty_line(
                     exclude=self._witty_line, tool_name=self._active_tool, state=self._agent_state
                 )
+                self._animate_witty_line()
             self._status_text.update(self._render_spinner(), layout=False)
 
     def set_active_tool(self, tool_name: str | None) -> None:
@@ -540,6 +549,7 @@ class StatusLine(Horizontal):
             self._witty_line = _pick_witty_line(
                 exclude=self._witty_line, tool_name=self._active_tool, state=self._agent_state
             )
+            self._animate_witty_line()
             self._status_text.update(self._render_spinner(), layout=False)
 
     def set_agent_state(self, state: str | None) -> None:
@@ -548,12 +558,14 @@ class StatusLine(Horizontal):
         self._witty_ticks = 0
         if self._status != "idle" and self._active_tool is None:
             self._witty_line = _pick_witty_line(exclude=self._witty_line, state=self._agent_state)
+            self._animate_witty_line()
             self._status_text.update(self._render_spinner(), layout=False)
 
     def show_tool_error(self, tool_name: str) -> None:
         """Display a tool-specific error status line."""
         self._witty_ticks = 0
         self._witty_line = _pick_witty_line(tool_name=tool_name, is_error=True)
+        self._animate_witty_line()
         if self._status != "idle":
             self._status_text.update(self._render_spinner(), layout=False)
 
@@ -582,6 +594,7 @@ class StatusLine(Horizontal):
                         tool_name=self._active_tool,
                         state=self._agent_state,
                     )
+                    self._animate_witty_line()
             self._start_spinner_timer()
             self._status_text.update(self._render_spinner(), layout=False)
 

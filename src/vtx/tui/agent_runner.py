@@ -307,6 +307,7 @@ class AgentRunnerMixin:
                 chat.start_tool(name, id, "", icon=icon, tool=tool)
                 self._current_block_type = "tool_call"
                 status.set_active_tool(name)
+                chat.set_spinner_tool(name)
                 status.increment_tool_calls()
                 status.set_streaming_tokens(0)  # Reset token count for new tool
 
@@ -315,6 +316,7 @@ class AgentRunnerMixin:
 
             case ToolEndEvent(tool_call_id=id, display=display):
                 chat.update_tool_call_msg(id, display)
+                chat.set_spinner_tool(None)
 
             case ToolApprovalEvent(tool_call_id=id, tool_name=name, display=disp, future=f):
                 self.app.bell()

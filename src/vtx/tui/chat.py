@@ -33,7 +33,7 @@ MAX_CHILDREN = 300
 PRUNE_TO = 200
 
 # How many spinner ticks (0.15s each) before rotating to a new witty line.
-WITTY_ROTATE_EVERY_TICKS = 12
+WITTY_ROTATE_EVERY_TICKS = 20
 
 _pick_witty_line = pick_witty_line
 
@@ -203,6 +203,22 @@ class ChatLog(VerticalScroll):
         result.append(str(spinner_text), style=info_color)
         result.append(f" {line}", style=info_color)
         return result
+
+    def set_spinner_tool(self, tool_name: str | None, state: str | None = None) -> None:
+        """Immediately refresh the active spinner line for a new tool/state.
+
+        Bypasses the normal ``_tick_spinner`` cooldown so tool changes show
+        context-aware witty lines instantly.
+        """
+        if self._spinner_label is None or self._spinner is None:
+            return
+        self._spinner_tool = tool_name
+        self._spinner_state = state
+        self._spinner_ticks = 0
+        self._spinner_line = _pick_witty_line(
+            exclude=self._spinner_line, tool_name=tool_name, state=state
+        )
+        self._spinner_label.update(self._render_spinner_text(self._spinner_line))
 
     def _tick_spinner(self) -> None:
         if self._spinner_label is None or self._spinner is None:

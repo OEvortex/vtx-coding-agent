@@ -6,6 +6,15 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 
 
+## [1.1.1] - 2026-08-26
+
+### Added
+- **Tool-aware chat spinner refresh** — `ChatLog.set_spinner_tool()` bypasses the normal `_tick_spinner` cooldown so the chat-area spinner picks a context-aware witty line instantly when a tool starts or ends, wired through `agent_runner.py` on `ToolStartEvent` / `ToolEndEvent`.
+- **Subtle witty-line fade** — `StatusLine._animate_witty_line()` adds a quick opacity pulse when the bottom status line rotates to a new witty status.
+
+### Changed
+- **Witty-line rotation cadence** — `WITTY_ROTATE_EVERY_TICKS` raised from `12` to `20` (3s instead of 1.8s at 0.15s/tick) in both the chat spinner and the bottom status line.
+
 ## [1.1.0] - 2026-08-26
 
 ### Added
