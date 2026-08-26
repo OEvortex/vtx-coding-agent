@@ -42,7 +42,7 @@ from vtx.core import (
     WarningEvent,
 )
 from vtx.core.notify import NotificationEvent, notify
-from vtx.core.types import StopReason, ToolResultMessage
+from vtx.core.types import ImageContent, StopReason, ToolResultMessage
 from vtx.tui.ask_user import AskUserDialog
 from vtx.tui.chat import ChatLog
 from vtx.tui.widgets import InfoBar, StatusLine
@@ -63,8 +63,8 @@ class AgentRunnerMixin:
     _approval_selection: ApprovalResponse
     _pending_session_switch_id: str | None
     _shell_tool_counter: int
-    _pending_queue: deque[tuple[str, str]]
-    _steer_queue: deque[tuple[str, str]]
+    _pending_queue: deque[tuple[str, str, list[ImageContent] | None]]
+    _steer_queue: deque[tuple[str, str, list[ImageContent] | None]]
     _runtime: ConversationRuntime
     # ask_user state (mirrors _approval_*). Lives here so agent_runner
     # owns the data and the app's on_key can read/write it.
@@ -116,7 +116,7 @@ class AgentRunnerMixin:
             return None
         return None
 
-    async def _run_agent(self, prompt: str) -> None:
+    async def _run_agent(self, prompt: str, images: list[ImageContent] | None = None) -> None:
         chat = self.query_one("#chat-log", ChatLog)
         status = self.query_one("#status-line", StatusLine)
         info_bar = self.query_one("#info-bar", InfoBar)
@@ -128,6 +128,7 @@ class AgentRunnerMixin:
             return
         self._dismiss_recap()
         current_prompt = prompt
+        current_images = images
 
         while True:
             was_interrupted = False
@@ -153,7 +154,10 @@ class AgentRunnerMixin:
 
             try:
                 async for event in agent.run(
-                    outgoing_prompt, cancel_event=self._cancel_event, steer_event=self._steer_event
+                    outgoing_prompt,
+                    images=current_images,
+                    cancel_event=self._cancel_event,
+                    steer_event=self._steer_event,
                 ):
                     notification_event = self._notification_event_type(event)
                     if notification_event:
@@ -196,11 +200,13 @@ class AgentRunnerMixin:
                     display, checkpoint_query = checkpoint
                     chat.show_status(f"◈ {display}")
                     current_prompt = checkpoint_query
+                    current_images = None
                     continue
                 break
-            next_display, next_query = queued
+            next_display, next_query, next_images = queued
             chat.add_user_message(next_display)
             current_prompt = next_query
+            current_images = next_images
 
         self._is_running = False
         self._arm_recap_timer()
@@ -212,7 +218,7 @@ class AgentRunnerMixin:
 
         self._show_pending_update_notice_if_idle()
 
-    def _dequeue_next_prompt(self) -> tuple[str, str] | None:
+    def _dequeue_next_prompt(self) -> tuple[str, str, list[ImageContent] | None] | None:
         # Steer messages take priority — drain steer queue first
         if self._steer_queue:
             queued = self._steer_queue.popleft()

@@ -45,6 +45,7 @@ from vtx.coding_agent.runtime import ConversationRuntime
 from vtx.coding_agent.tools import DEFAULT_TOOLS, get_tools_with_extensions
 from vtx.coding_agent.version import VERSION, format_version
 from vtx.core import ApprovalResponse, AskUserResponse
+from vtx.core.types import ImageContent
 from vtx.tui.agent_runner import AgentRunnerMixin
 from vtx.tui.ask_user import AskUserDialog
 from vtx.tui.autocomplete import DEFAULT_COMMANDS, SlashCommand
@@ -196,8 +197,12 @@ class Vtx(
         self._shell_tool_counter = 0
         self._init_recap_state()
 
-        self._pending_queue: deque[tuple[str, str]] = deque(maxlen=QueueDisplay.MAX_QUEUE)
-        self._steer_queue: deque[tuple[str, str]] = deque(maxlen=QueueDisplay.MAX_QUEUE)
+        self._pending_queue: deque[tuple[str, str, list[ImageContent] | None]] = deque(
+            maxlen=QueueDisplay.MAX_QUEUE
+        )
+        self._steer_queue: deque[tuple[str, str, list[ImageContent] | None]] = deque(
+            maxlen=QueueDisplay.MAX_QUEUE
+        )
         self._queue_selection: tuple[bool, int] | None = None
         self._queue_editing: tuple[bool, int, tuple[str, str]] | None = None
         self._steer_event: asyncio.Event | None = None
@@ -563,11 +568,16 @@ class Vtx(
         self.run_worker(self._check_for_updates(), exclusive=False)
         self.run_worker(self._ensure_models_dev(), exclusive=False)
 
-        # Fire session_start on the extension bus. Sync-only emit because
-        # on_mount is itself a sync Textual method; async handlers are
-        # skipped with a warning logged by the bus.
+        # Fire session_start on the extension bus via an async worker so
+        # async handlers (e.g. YAML hook handlers registered by HookBridge)
+        # are awaited; emit_sync would skip them.
         if self._loaded_extensions.bus.handler_count("session_start"):
-            self._loaded_extensions.bus.emit_sync("session_start", cwd=self._cwd, session_id="")
+            self.run_worker(
+                lambda: self._loaded_extensions.bus.emit(
+                    "session_start", cwd=self._cwd, session_id=""
+                ),
+                exclusive=False,
+            )
 
         # Load YAML hook configs onto the EventBus so hook handlers fire
         # alongside extension event handlers.  Done after session_start
@@ -1057,14 +1067,14 @@ class Vtx(
                 if len(self._steer_queue) >= QueueDisplay.MAX_QUEUE:
                     self.notify("Steer queue full (max 5)", severity="warning", timeout=2)
                     return
-                self._steer_queue.append((display_text, query_text))
+                self._steer_queue.append((display_text, query_text, event.images))
                 if self._steer_event:
                     self._steer_event.set()
             else:
                 if len(self._pending_queue) >= QueueDisplay.MAX_QUEUE:
                     self.notify("Queue full (max 5)", severity="warning", timeout=2)
                     return
-                self._pending_queue.append((display_text, query_text))
+                self._pending_queue.append((display_text, query_text, event.images))
             self._update_queue_display()
             return
 
@@ -1072,4 +1082,4 @@ class Vtx(
         chat.add_user_message(display_text, highlighted_skill=highlighted_skill)
 
         self._is_running = True
-        self.run_worker(self._run_agent(query_text), exclusive=True)
+        self.run_worker(self._run_agent(query_text, images=event.images), exclusive=True)
