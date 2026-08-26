@@ -306,6 +306,26 @@ async def _run_subagent(
         system_prompt=system_prompt,
     )
 
+    # Same model-limit wiring ConversationRuntime._apply_model_info does for
+    # the main agent, so the sub-agent's overflow compaction sees the model's
+    # true context window instead of the harness default.
+    from vtx.ai import get_model
+    from vtx.ai.dynamic_models import find_dynamic_model
+
+    model_info = get_model(sub_model, parent_ctx.model_provider)
+    if model_info is None and parent_ctx.model_provider:
+        model_info = find_dynamic_model(sub_model, None)
+    if model_info is not None:
+        sub_agent.config.context_window = model_info.context_window
+        sub_agent.config.max_output_tokens = model_info.max_tokens
+    else:
+        log.warning(
+            "No catalog entry for sub-agent model %r (provider %r); compaction "
+            "uses the default context window",
+            sub_model,
+            parent_ctx.model_provider,
+        )
+
     result = SubagentRunResult(session_id=session.id)
     transcript = result.transcript
 
