@@ -1,6 +1,7 @@
 from collections import deque
 from typing import Any, cast
 
+from vtx.core.types import ImageContent
 from vtx.tui.queue_ui import QueueUIMixin
 
 
@@ -39,10 +40,12 @@ class FakeInputBox:
 
 class FakeVtx:
     def __init__(self) -> None:
-        self._pending_queue: deque[tuple[str, str]] = deque()
-        self._steer_queue: deque[tuple[str, str]] = deque()
+        self._pending_queue: deque[tuple[str, str, list[ImageContent] | None]] = deque()
+        self._steer_queue: deque[tuple[str, str, list[ImageContent] | None]] = deque()
         self._queue_selection: tuple[bool, int] | None = None
-        self._queue_editing: tuple[bool, int, tuple[str, str]] | None = None
+        self._queue_editing: (
+            tuple[bool, int, tuple[str, str, list[ImageContent] | None]] | None
+        ) = None
         self.queue_display = FakeQueueDisplay()
         self.input_box = FakeInputBox()
 
@@ -78,8 +81,8 @@ class FakeVtx:
         return QueueUIMixin.delete_selected_queue_item(cast(QueueUIMixin, self))
 
 
-def _queue(*items: str) -> deque[tuple[str, str]]:
-    return deque((f"display {item}", f"query {item}") for item in items)
+def _queue(*items: str) -> deque[tuple[str, str, list[ImageContent] | None]]:
+    return deque((f"display {item}", f"query {item}", None) for item in items)
 
 
 def test_editing_last_queue_item_keeps_visible_editing_placeholder() -> None:
@@ -89,7 +92,10 @@ def test_editing_last_queue_item_keeps_visible_editing_placeholder() -> None:
 
     assert app.start_queue_edit() is True
 
-    assert list(app._pending_queue) == [("display one", "query one"), ("display two", "query two")]
+    assert list(app._pending_queue) == [
+        ("display one", "query one", None),
+        ("display two", "query two", None),
+    ]
     assert app.input_box.text == "query three"
     assert app.input_box.focused is True
     assert app.queue_display.items == [
@@ -110,9 +116,9 @@ def test_finish_queue_edit_restores_updated_item_at_original_position() -> None:
     assert app.finish_queue_edit("display updated", "query updated") is True
 
     assert list(app._pending_queue) == [
-        ("display one", "query one"),
-        ("display two", "query two"),
-        ("display updated", "query updated"),
+        ("display one", "query one", None),
+        ("display two", "query two", None),
+        ("display updated", "query updated", None),
     ]
     assert app._queue_editing is None
     assert app._queue_selection == (False, 2)
@@ -130,9 +136,9 @@ def test_cancel_queue_edit_restores_original_item_and_clears_editor() -> None:
     assert app.cancel_queue_edit() is True
 
     assert list(app._pending_queue) == [
-        ("display one", "query one"),
-        ("display two", "query two"),
-        ("display three", "query three"),
+        ("display one", "query one", None),
+        ("display two", "query two", None),
+        ("display three", "query three", None),
     ]
     assert app.input_box.text == ""
     assert app._queue_editing is None
@@ -147,8 +153,8 @@ def test_ctrl_d_delete_removes_selected_queue_item() -> None:
     assert app.delete_selected_queue_item() is True
 
     assert list(app._pending_queue) == [
-        ("display one", "query one"),
-        ("display three", "query three"),
+        ("display one", "query one", None),
+        ("display three", "query three", None),
     ]
     assert app.queue_display.items == [("display one", False), ("display three", False)]
     assert app.queue_display.selected == 1

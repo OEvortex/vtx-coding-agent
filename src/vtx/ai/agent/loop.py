@@ -152,8 +152,13 @@ class Agent:
         self._run_usage = Usage()
 
         if images:
-            user_content: list[TextContent | ImageContent] = [TextContent(text=query), *images]
-            user_message = UserMessage(content=user_content)
+            # Images precede text (better grounding); text is optional for
+            # image-only submissions.
+            parts: list[TextContent | ImageContent] = []
+            if query:
+                parts.append(TextContent(text=query))
+            parts.extend(images)
+            user_message = UserMessage(content=parts)
         else:
             user_message = UserMessage(content=query)
 

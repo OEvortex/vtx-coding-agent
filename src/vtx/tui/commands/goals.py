@@ -12,6 +12,7 @@ from typing import TYPE_CHECKING, Any
 from vtx.coding_agent.goal.record import objective_title
 from vtx.coding_agent.goal.service import GoalError, get_service
 from vtx.coding_agent.goal.storage import find_goal_file
+from vtx.core.types import ImageContent
 from vtx.tui.chat import ChatLog
 from vtx.tui.commands.base import CommandSupport
 
@@ -27,7 +28,7 @@ class GoalCommands(CommandSupport):
 
     if TYPE_CHECKING:
 
-        def _run_agent(self, prompt: str) -> Any: ...
+        def _run_agent(self, prompt: str, images: list[ImageContent] | None = None) -> Any: ...
         def _update_queue_display(self) -> None: ...
 
     # ------------------------------------------------------------------
@@ -123,6 +124,7 @@ class GoalCommands(CommandSupport):
         if session is not None and session.entries:
             self._restore_goal_state(session)
         else:
+            service.focused_id = None
             self._resolve_startup_focus(service)
 
     def _resolve_startup_focus(self, service) -> None:

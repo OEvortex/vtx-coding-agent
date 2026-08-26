@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import asyncio
+import base64
 import os
 import re
 from collections.abc import Callable
@@ -17,6 +19,8 @@ from textual.widgets import Input, Label, TextArea
 from textual.widgets.text_area import TextAreaTheme
 
 from vtx.coding_agent.config import config
+from vtx.coding_agent.tools._read_image import resize_image
+from vtx.core.types import ImageContent
 from vtx.tui.autocomplete import (
     DEFAULT_COMMANDS,
     AutocompleteProvider,
@@ -25,6 +29,7 @@ from vtx.tui.autocomplete import (
     SlashCommand,
     SlashCommandProvider,
 )
+from vtx.tui.clipboard import read_clipboard_image
 from vtx.tui.floating_list import ListItem
 from vtx.tui.path_complete import PathComplete
 from vtx.tui.prompt_history import PromptHistory
@@ -53,6 +58,8 @@ cast("dict[str, Any]", ANSI_SEQUENCES_KEYS).update(
 _PASTE_LINE_THRESHOLD = 5
 _PASTE_CHAR_THRESHOLD = 500
 _PASTE_MARKER_RE = re.compile(r"\[paste #(\d+)(?: (\+\d+ lines|\d+ chars))?\]")
+_IMAGE_MARKER_RE = re.compile(r"\[image #(\d+)\]")
+_MAX_ATTACHED_IMAGES = 5
 _SKILL_TRIGGER_MARKER = "\u2063"
 _SHELL_COMMAND_CLASS = "-shell-command"
 _TEXTAREA_THEME = "vtx-input"
@@ -180,6 +187,7 @@ class InputBox(Vertical):
         Binding("enter", "submit", "Send", priority=True),
         Binding("ctrl+j,shift+enter", "newline", "New line", priority=True),
         Binding("alt+enter", "steer_submit", "Steer", priority=True),
+        Binding("ctrl+v", "paste_image", "Paste image", priority=True),
         Binding("escape", "cancel", "Cancel", priority=False),  # Lower priority so Shift+Enter win
         Binding("up", "cursor_up", "Up", priority=True),
         Binding("down", "cursor_down", "Down", priority=True),
@@ -257,6 +265,11 @@ class InputBox(Vertical):
         self._pastes: dict[int, str] = {}
         self._paste_counter: int = 0
 
+        # Attached images (ctrl+v), referenced inline via [image #N] markers
+        self._images: dict[int, ImageContent] = {}
+        self._image_counter: int = 0
+        self._loading_image: bool = False
+
         # Skill command triggers selected from slash autocomplete
         self._selected_skill_commands: list[str] = []
 
@@ -303,6 +316,7 @@ class InputBox(Vertical):
         self._sync_shell_command_style()
         if reset_pastes:
             self._reset_pastes()
+            self._reset_images()
 
     def insert(self, text: str) -> None:
         self.query_one("#input-textarea", TextArea).insert(text)
@@ -367,6 +381,81 @@ class InputBox(Vertical):
     def _reset_pastes(self) -> None:
         self._pastes.clear()
         self._paste_counter = 0
+
+    def action_paste_image(self) -> None:
+        """Attach the clipboard image at the cursor via a [image #N] marker."""
+        # Don't hijack ctrl+v while a modal picker owns the conversation.
+        ask_future = getattr(self.app, "_ask_user_future", None)
+        approval_future = getattr(self.app, "_approval_future", None)
+        if (ask_future and not ask_future.done()) or (
+            approval_future and not approval_future.done() and not self.text
+        ):
+            return
+        if self._loading_image:
+            return
+        self.run_worker(self._do_paste_image(), exclusive=True)
+
+    async def _do_paste_image(self) -> None:
+        self._loading_image = True
+        try:
+            grabbed = await asyncio.to_thread(read_clipboard_image)
+            if grabbed is None:
+                self.notify("No image found on clipboard", severity="warning", timeout=2)
+                return
+
+            data, mime_type = grabbed
+            if len(self._images) >= _MAX_ATTACHED_IMAGES:
+                self.notify(
+                    f"Image limit reached ({_MAX_ATTACHED_IMAGES} per message)",
+                    severity="warning",
+                    timeout=2,
+                )
+                return
+            data, mime_type, _ = await asyncio.to_thread(resize_image, data, mime_type)
+
+            self._image_counter += 1
+            image_id = self._image_counter
+            self._images[image_id] = ImageContent(
+                data=base64.b64encode(data).decode("utf-8"), mime_type=mime_type
+            )
+
+            textarea = self.query_one("#input-textarea", TextArea)
+            self._suppress_autocomplete = 1
+            textarea.insert(f"[image #{image_id}] ")
+        finally:
+            self._loading_image = False
+
+    def _extract_attached_images(self, text: str) -> tuple[str, str, list[ImageContent]]:
+        """Split text around [image #N] markers.
+
+        Returns (display, plain, images): display keeps an ``[image]``
+        placeholder where each attached image sat (so the sent user box
+        still shows the attachment), plain drops the markers entirely
+        (the model receives the actual image content parts). Unresolved
+        ids are left untouched.
+        """
+        images: list[ImageContent] = []
+        display_parts: list[str] = []
+        plain_parts: list[str] = []
+        cursor = 0
+        for match in _IMAGE_MARKER_RE.finditer(text):
+            image = self._images.get(int(match.group(1)))
+            if image is None:
+                continue
+            segment = text[cursor : match.start()]
+            display_parts.append(segment)
+            plain_parts.append(segment)
+            display_parts.append("[image]")
+            images.append(image)
+            cursor = match.end()
+        tail = text[cursor:]
+        display_parts.append(tail)
+        plain_parts.append(tail)
+        return "".join(display_parts), "".join(plain_parts), images
+
+    def _reset_images(self) -> None:
+        self._images.clear()
+        self._image_counter = 0
 
     def _strip_skill_markers(self, text: str) -> str:
         return text.replace(_SKILL_TRIGGER_MARKER, "")
@@ -485,15 +574,18 @@ class InputBox(Vertical):
 
     def _do_submit(self, steer: bool = False) -> None:
         raw_text = self.text.strip()
-        if not raw_text:
+        display_base, plain_text, images = self._extract_attached_images(raw_text)
+        if not display_base.strip() and not images:
             return
-        query_text = self._expand_paste_markers(raw_text)
+        display_text = display_base.strip() or "[image]"
+        query_text = self._expand_paste_markers(plain_text.strip())
         selected_skill_name, selected_skill_query = self._extract_selected_skill_submission(
             query_text
         )
-        display_text = self._strip_skill_markers(raw_text)
+        display_text = self._strip_skill_markers(display_text)
         query_text = self._strip_skill_markers(query_text)
-        self._add_to_history(query_text)
+        if query_text:
+            self._add_to_history(query_text)
         try:
             if getattr(self.app, "finish_queue_edit", lambda _display, _query: False)(
                 display_text, query_text
@@ -506,6 +598,7 @@ class InputBox(Vertical):
             self.Submitted(
                 display_text,
                 query_text=query_text,
+                images=images,
                 selected_skill_name=selected_skill_name,
                 selected_skill_query=selected_skill_query,
                 steer=steer,
@@ -807,6 +900,7 @@ class InputBox(Vertical):
             self,
             text: str,
             query_text: str | None = None,
+            images: list[ImageContent] | None = None,
             selected_skill_name: str | None = None,
             selected_skill_query: str | None = None,
             steer: bool = False,
@@ -814,6 +908,7 @@ class InputBox(Vertical):
             super().__init__()
             self.text = text
             self.query_text = query_text if query_text is not None else text
+            self.images = images
             self.selected_skill_name = selected_skill_name
             self.selected_skill_query = selected_skill_query
             self.steer = steer

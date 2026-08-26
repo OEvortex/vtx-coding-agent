@@ -289,6 +289,25 @@ async def test_agent_with_images(tools, in_memory_session):
 
 
 @pytest.mark.asyncio
+async def test_agent_with_image_only_prompt_omits_empty_text(tools, in_memory_session):
+    from vtx.core.types import ImageContent, TextContent
+
+    provider = MockProvider(scenario="simple_text")
+    images = [ImageContent(data="base64data", mime_type="image/png")]
+
+    agent = Agent(provider, tools, in_memory_session)
+
+    async for _ in agent.run("", images=images):
+        pass
+
+    user_msg = in_memory_session.messages[0]
+    assert isinstance(user_msg, UserMessage)
+    assert isinstance(user_msg.content, list)
+    assert user_msg.content == images  # no empty text part, image first
+    assert all(not isinstance(part, TextContent) for part in user_msg.content)
+
+
+@pytest.mark.asyncio
 async def test_agent_custom_cwd(tools):
     provider = MockProvider(scenario="simple_text")
     session = Session.in_memory(cwd="/custom/path")
