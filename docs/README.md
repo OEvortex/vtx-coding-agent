@@ -14,8 +14,9 @@ This folder is the reference companion to the top-level [README](../README.md). 
 | Doc | What it covers |
 | --- | --- |
 | [tools.md](tools.md) | The built-in tools — parameters, mutating flag, and worked examples |
+| [goals.md](goals.md) | Persistent goals — guided drafts, task trees, auto-continue, completion audit, dashboard |
 | [permissions.md](permissions.md) | The `prompt`/`auto` modes, safe-command allowlist, and the approval decision flow |
-| [sessions.md](sessions.md) | JSONL session format, session tree, resume, handoff, `/export`, compaction |
+| [sessions.md](sessions.md) | JSONL session format, session tree, resume, handoff, `/export`, compaction, idle recap |
 | [skills.md](skills.md) | Authoring skills — frontmatter, `$ARGUMENTS`, `register_cmd`, discovery paths |
 | [agents.md](agents.md) | Switchable handoff agents — `.vtx/agent/<name>.py`, `Shift+Tab` cycling |
 | [extensions.md](extensions.md) | Python extensions, the `ExtensionAPI`, lifecycle events, YAML hooks |

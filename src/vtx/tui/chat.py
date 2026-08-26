@@ -132,6 +132,8 @@ class ChatLog(VerticalScroll):
         self._spinner_ticks: int = 0
         self._spinner_line: str = ""
         self._scroll_pending: bool = False
+        # Session recap block (header + body labels), tracked for removal.
+        self._recap_labels: list[Label] = []
         # Task tool live state: per-tool-call transcript + last text
         # delta, updated by ``apply_task_progress``. Keyed by tool call
         # id; the block for that id must already exist (mounted when
@@ -188,6 +190,7 @@ class ChatLog(VerticalScroll):
         self._tool_output_expanded = False
         self._current_block = None
         self._last_status_label = None
+        self._recap_labels = []
 
     def on_click(self, event) -> None:
         event.stop()
@@ -839,6 +842,42 @@ class ChatLog(VerticalScroll):
         text = Text(message, style=error_color)
         label = Label(text)
         label.add_class("aborted-message")
+        self.mount(label)
+        self._scroll_if_anchored(animate=False)
+
+    def clear_trailing_status(self) -> None:
+        """Remove the trailing spinner/status label if it is still last."""
+        self._stop_spinner()
+        if self._is_last_child_status() and self._last_status_label is not None:
+            self._last_status_label.remove()
+            self._last_status_label = None
+
+    def show_recap(self, text: str) -> None:
+        """Render a session recap block (header + dim body) into the log."""
+        self.clear_trailing_status()
+        colors = config.ui.colors
+        header = Label(Text("✦ recap", style=colors.accent))
+        body = Label(Text(text, style=colors.dim))
+        header.add_class("recap-message", "-header")
+        body.add_class("recap-message")
+        self._recap_labels = [header, body]
+        self.mount(header)
+        self.mount(body)
+        self._scroll_if_anchored(animate=False)
+
+    def remove_recap(self) -> None:
+        labels, self._recap_labels = self._recap_labels, []
+        for label in labels:
+            # Labels may already be pruned with old children.
+            if label in self.children:
+                label.remove()
+
+    def add_rich_message(self, renderable, *, error: bool = False) -> None:
+        """Mount a pre-rendered rich renderable as an info-level log line."""
+        label = Label(renderable)
+        label.add_class("info-message")
+        if error:
+            label.add_class("-error")
         self.mount(label)
         self._scroll_if_anchored(animate=False)
 

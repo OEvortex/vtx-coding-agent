@@ -135,16 +135,12 @@ def _spec_from_preset(preset: Any) -> SubagentSpec:
 
 def _build_subagent_tool_list(parent_ctx: DispatcherContext, spec: SubagentSpec) -> list[Any]:
     """Build the sub-agent's tool list from its spec."""
-    from vtx.coding_agent.tools import DEFAULT_TOOLS, tools_by_name
+    from vtx.coding_agent.tools import DEFAULT_TOOLS, PARENT_ONLY_TOOLS, tools_by_name
 
-    base_pool: dict[str, Any] = dict(tools_by_name)
-    base_names: list[str] = list(DEFAULT_TOOLS)
-
-    # Avoid recursive dispatch by denying the task tool to sub-agents
-    if "task" in base_pool:
-        base_pool.pop("task")
-    if "task" in base_names:
-        base_names.remove("task")
+    base_pool: dict[str, Any] = {
+        name: tool for name, tool in tools_by_name.items() if name not in PARENT_ONLY_TOOLS
+    }
+    base_names: list[str] = [n for n in DEFAULT_TOOLS if n not in PARENT_ONLY_TOOLS]
 
     extension_tools: list[Any] = []
 

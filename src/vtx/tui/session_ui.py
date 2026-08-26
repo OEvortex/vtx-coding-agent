@@ -41,6 +41,7 @@ class SessionUIMixin:
     # Methods from other mixins/main class
     def _sync_runtime_state(self) -> None: ...
     def _apply_thinking_level_style(self, level: str) -> None: ...
+    def _restore_goal_state(self, session: Session) -> None: ...
 
     def _resolve_system_prompt(self, session: Session | None = None) -> str:
         return self._runtime.resolve_system_prompt(session)
@@ -236,5 +237,9 @@ class SessionUIMixin:
             )
 
         self._render_session_entries(session)
+        # Goal focus is session-scoped: re-apply it from persisted entries.
+        self._goal_charged_totals = None
+        if callable(getattr(self, "_restore_goal_state", None)):
+            self._restore_goal_state(session)
         chat.add_info_message("Resumed session")
         input_box.focus()

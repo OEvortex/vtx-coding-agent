@@ -49,6 +49,9 @@ class CompletionUIMixin:
         def _select_api_key_action(self, action: str) -> None: ...
         def _render_session_entries(self, session) -> None: ...
         async def _load_session(self, session_path) -> None: ...
+        def _select_goal_focus(self, goal_id: str) -> None: ...
+        def _confirm_goal_clear(self, choice: str) -> None: ...
+        def _apply_goal_setting(self, key: str) -> None: ...
 
     def _is_chat_at_bottom(self) -> bool:
         chat = self.query_one("#chat-log", ChatLog)
@@ -233,6 +236,12 @@ class CompletionUIMixin:
                 self._select_api_key_action(item.value)
             case SelectionMode.PROVIDER:
                 self._select_provider_set(item.value)
+            case SelectionMode.GOAL_FOCUS:
+                self._select_goal_focus(item.value)
+            case SelectionMode.GOAL_CLEAR:
+                self._confirm_goal_clear(item.value)
+            case SelectionMode.GOAL_SETTINGS:
+                self._apply_goal_setting(item.value)
 
         self._restore_chat_scroll_after_refresh(was_at_bottom)
 

@@ -152,6 +152,13 @@ class NotificationsConfig(BaseModel):
     volume: float = Field(default=0.5, ge=0.0, le=1.0)
 
 
+class RecapConfig(BaseModel):
+    """Automatic idle session recap (drafted by the current model)."""
+
+    enabled: bool = True
+    idle_seconds: float = Field(default=30, ge=5)
+
+
 class LastSelectedConfig(BaseModel):
     model_id: str | None = None
     provider: str | None = None
@@ -248,6 +255,7 @@ class ConfigSchema(BaseModel):
     agent: AgentConfig
     permissions: PermissionsConfig
     notifications: NotificationsConfig = NotificationsConfig()
+    recap: RecapConfig = RecapConfig()
     last_selected: LastSelectedConfig = LastSelectedConfig()
     recent_models: RecentModelsConfig = RecentModelsConfig()
     # User-configured extension paths (file or package). Auto-discovered
@@ -356,6 +364,10 @@ class Config:
     @property
     def notifications(self) -> NotificationsConfig:
         return self._parsed.notifications
+
+    @property
+    def recap(self) -> RecapConfig:
+        return self._parsed.recap
 
     @property
     def binaries(self) -> _BinariesConfig:

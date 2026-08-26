@@ -59,6 +59,10 @@ Or interactively: `/resume` lists sessions (cwd, message counts, tokens, first m
 
 When usage crosses `compaction.threshold_percent` of the context window, older turns are summarized into a single system summary and a `compaction` entry records the boundary. `compaction.on_overflow: pause` stops and asks instead. Run it manually any time with `/compact`.
 
+## Recap
+
+After a run finishes (or when you resume a session) and you stay idle for `recap.idle_seconds`, vtx drafts a short "where you left off" summary — high-level task plus the concrete next step — using the current model, and shows it in the chat log. Typing or sending a prompt clears it. Disable with `recap.enabled: false`; run one on demand with `/recap`.
+
 ## Export
 
 - `/export` writes the session as styled HTML.

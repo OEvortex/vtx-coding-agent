@@ -7,6 +7,7 @@ harness at :mod:`vtx.ai.agent.tools`.
 
 from vtx.ai.agent.tools import BaseTool, get_tool_definitions, set_default_tool_lookup
 
+from ..goal.tools import GoalTool
 from .ask_user import AskUserTool
 from .background import BackgroundTaskManager, BackgroundTaskRecord, get_manager, set_manager
 from .bash import BashTool
@@ -28,12 +29,14 @@ from .write import WriteTool
 
 __all__ = [
     "DEFAULT_TOOLS",
+    "PARENT_ONLY_TOOLS",
     "AskUserTool",
     "BackgroundTaskManager",
     "BackgroundTaskRecord",
     "BashTool",
     "EditTool",
     "FindTool",
+    "GoalTool",
     "GrepTool",
     "ReadTool",
     "SkillTool",
@@ -61,6 +64,7 @@ all_tools: list[BaseTool] = [
     WebTool(),
     AskUserTool(),
     TaskTool(),
+    GoalTool(),
 ]
 
 tools_by_name: dict[str, BaseTool] = {tool.name: tool for tool in all_tools}
@@ -74,7 +78,13 @@ DEFAULT_TOOLS: list[str] = [
     "web",
     "ask_user",
     "task",
+    "goal",
 ]
+
+# Tools that only the top-level session may call: sub-agents never dispatch
+# sub-agents and never own goal lifecycle state (focus is user-owned and
+# session-scoped).
+PARENT_ONLY_TOOLS: frozenset[str] = frozenset({"task", "goal"})
 
 
 def get_tools(names: list[str]) -> list[BaseTool]:

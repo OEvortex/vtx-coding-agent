@@ -217,6 +217,16 @@ Screen {{
     margin-top: 1;
 }}
 
+/* Session recap block: full-width labels so long summaries wrap */
+.recap-message {{
+    width: 100%;
+    padding: 0 1;
+}}
+
+.recap-message.-header {{
+    margin-top: 1;
+}}
+
 /* Loaded resources should not add extra top margin */
 .info-message.loaded-resources {{
     margin-top: 0;

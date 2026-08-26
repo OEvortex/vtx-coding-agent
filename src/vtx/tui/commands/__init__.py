@@ -16,6 +16,7 @@ from ..chat import ChatLog
 from .agents import AgentCommands
 from .auth import AuthCommands
 from .base import CommandSupport
+from .goals import GoalCommands
 from .models import ModelCommands
 from .providers import ProviderCommands
 from .sessions import SessionCommands
@@ -33,6 +34,7 @@ class CommandsMixin(
     SwitchCommands,
     AgentCommands,
     UpdateCommands,
+    GoalCommands,
 ):
     def _handle_command(self, text: str) -> bool:
         parts = text[1:].split(maxsplit=1)
@@ -99,6 +101,9 @@ class CommandsMixin(
         if cmd == "compact":
             self._handle_compact_command()
             return True
+        if cmd == "recap":
+            self._handle_recap_command()
+            return True
         if cmd == "agent":
             self._handle_agent_command(args)
             return True
@@ -107,6 +112,48 @@ class CommandsMixin(
             return True
         if cmd == "update":
             self._handle_update_command()
+            return True
+        if cmd == "goal":
+            self._handle_goal_command(args)
+            return True
+        if cmd == "goal-direct":
+            self._create_direct(args, mode="regular")
+            return True
+        if cmd == "sisyphus":
+            self._handle_sisyphus_command(args)
+            return True
+        if cmd == "sisyphus-direct":
+            self._create_direct(args, mode="sisyphus")
+            return True
+        if cmd == "goal-list":
+            self._handle_goal_list()
+            return True
+        if cmd == "goal-status":
+            self._handle_goal_status(args)
+            return True
+        if cmd == "goal-focus":
+            self._handle_goal_focus()
+            return True
+        if cmd == "goal-unfocus":
+            self._handle_goal_unfocus()
+            return True
+        if cmd == "goal-tweak":
+            self._handle_goal_tweak(args)
+            return True
+        if cmd == "goal-pause":
+            self._handle_goal_pause()
+            return True
+        if cmd == "goal-resume":
+            self._handle_goal_resume()
+            return True
+        if cmd == "goal-clear":
+            self._handle_goal_clear()
+            return True
+        if cmd == "goal-cancel":
+            self._handle_goal_cancel()
+            return True
+        if cmd == "goal-settings":
+            self._handle_goal_settings()
             return True
 
         # Extension commands take a final swing at anything the built-ins
@@ -151,6 +198,7 @@ __all__ = [
     "AuthCommands",
     "CommandSupport",
     "CommandsMixin",
+    "GoalCommands",
     "ModelCommands",
     "ProviderCommands",
     "SessionCommands",

@@ -17,3 +17,6 @@ class SelectionMode(StrEnum):
     TREE = "tree"
     API_KEY = "api_key"
     API_KEY_ACTION = "api_key_action"
+    GOAL_FOCUS = "goal_focus"
+    GOAL_CLEAR = "goal_clear"
+    GOAL_SETTINGS = "goal_settings"

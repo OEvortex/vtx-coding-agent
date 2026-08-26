@@ -59,6 +59,15 @@ The window is the active model's real context window from the catalog (e.g. 1M-c
 | `enabled` | `false` | Sound on completion/permission/error events |
 | `volume` | `0.5` | 0.0–1.0 |
 
+## `recap`
+
+Automatic session recap. After an agent run finishes and you haven't typed for a while (or when you resume a session), vtx drafts a 1–3 sentence "where you left off" summary using the current model and renders it in the chat log. Cleared on the next prompt; also available any time via `/recap`.
+
+| Field | Default | Notes |
+| --- | --- | --- |
+| `enabled` | `true` | Set to `false` to disable automatic recaps (`/recap` still works) |
+| `idle_seconds` | `30` | Idle time after a run before a recap is drafted (minimum 5) |
+
 ## `extensions`
 
 List of extra extension paths (a `.py` file or package dir), additive to auto-discovery:

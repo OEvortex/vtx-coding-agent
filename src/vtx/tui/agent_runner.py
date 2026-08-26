@@ -4,6 +4,8 @@ commands typed at the prompt."""
 from __future__ import annotations
 
 import asyncio
+import contextlib
+import time
 from collections import deque
 from typing import TYPE_CHECKING, Any
 
@@ -79,6 +81,11 @@ class AgentRunnerMixin:
         def _update_queue_display(self) -> None: ...
         def _clear_approval_state(self) -> None: ...
         def _show_pending_update_notice_if_idle(self) -> None: ...
+        def _goal_context_block(self) -> str: ...
+        def _goal_auto_continue_prompt(self) -> tuple[str, str] | None: ...
+        def _charge_goal_usage(
+            self, *, input_tokens: int, output_tokens: int, elapsed_ms: float
+        ) -> None: ...
         def _format_tool_result_text(
             self, message: ToolResultMessage
         ) -> tuple[str, str | None]: ...
@@ -118,6 +125,7 @@ class AgentRunnerMixin:
             chat.add_info_message("Agent not initialized")
             self._is_running = False
             return
+        self._dismiss_recap()
         current_prompt = prompt
 
         while True:
@@ -131,10 +139,20 @@ class AgentRunnerMixin:
                 self._cancel_event.set()
 
             status.set_status("working")
+            turn_started = time.monotonic()
+
+            # Goal state rides along with every user prompt (pi-goal-x
+            # injects once per turn; here the block prepends to the query).
+            goal_block = ""
+            try:
+                goal_block = self._goal_context_block()
+            except Exception:
+                goal_block = ""
+            outgoing_prompt = f"{goal_block}\n\n{current_prompt}" if goal_block else current_prompt
 
             try:
                 async for event in agent.run(
-                    current_prompt, cancel_event=self._cancel_event, steer_event=self._steer_event
+                    outgoing_prompt, cancel_event=self._cancel_event, steer_event=self._steer_event
                 ):
                     notification_event = self._notification_event_type(event)
                     if notification_event:
@@ -145,6 +163,8 @@ class AgentRunnerMixin:
 
             except Exception as e:
                 chat.add_info_message(str(e), error=True)
+
+            self._charge_goal_turn_usage((time.monotonic() - turn_started) * 1000.0)
 
             if was_interrupted and not self._abort_shown:
                 chat.add_aborted_message("Interrupted by user")
@@ -164,12 +184,25 @@ class AgentRunnerMixin:
 
             queued = self._dequeue_next_prompt()
             if queued is None:
+                # Auto-continue: a focused active goal schedules the next
+                # checkpoint turn instead of returning control to the user.
+                checkpoint = None
+                try:
+                    checkpoint = self._goal_auto_continue_prompt()
+                except Exception:
+                    checkpoint = None
+                if checkpoint is not None and not self._pending_session_switch_id:
+                    display, checkpoint_query = checkpoint
+                    chat.show_status(f"◈ {display}")
+                    current_prompt = checkpoint_query
+                    continue
                 break
             next_display, next_query = queued
             chat.add_user_message(next_display)
             current_prompt = next_query
 
         self._is_running = False
+        self._arm_recap_timer()
 
         if self._pending_session_switch_id:
             session_id = self._pending_session_switch_id
@@ -188,6 +221,33 @@ class AgentRunnerMixin:
             return None
         self._update_queue_display()
         return queued
+
+    def _charge_goal_turn_usage(self, elapsed_ms: float) -> None:
+        """Charge this turn's token delta to the focused goal (best-effort).
+
+        Session totals are cumulative; only the difference since the last
+        charge is billed so a goal never double-charges an interval.
+        """
+        charge = getattr(self, "_charge_goal_usage", None)
+        if not callable(charge):
+            return
+        input_tokens = output_tokens = 0
+        session = getattr(self._runtime, "session", None)
+        if session is not None:
+            totals = session.token_totals()
+            input_tokens = totals.input_tokens
+            output_tokens = totals.output_tokens
+        previous = getattr(self, "_goal_charged_totals", None)
+        if previous is None:
+            self._goal_charged_totals = (input_tokens, output_tokens)
+            return
+        delta_in = max(0, input_tokens - previous[0])
+        delta_out = max(0, output_tokens - previous[1])
+        self._goal_charged_totals = (input_tokens, output_tokens)
+        if delta_in <= 0 and delta_out <= 0:
+            return
+        with contextlib.suppress(Exception):
+            charge(input_tokens=delta_in, output_tokens=delta_out, elapsed_ms=max(0.0, elapsed_ms))
 
     async def _render_agent_event(
         self, event: object, chat: ChatLog, status: StatusLine, info_bar: InfoBar
@@ -463,3 +523,4 @@ class AgentRunnerMixin:
             self._interrupt_requested = False
             self._cancel_event = None
             status.set_status("idle")
+            self._arm_recap_timer()

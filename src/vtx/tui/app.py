@@ -48,8 +48,10 @@ from vtx.tui.commands import CommandsMixin
 from vtx.tui.completion_ui import CompletionUIMixin
 from vtx.tui.extension_ui import TextualExtensionUI
 from vtx.tui.floating_list import FloatingList
+from vtx.tui.goal_ui import GoalWidget
 from vtx.tui.input import InputBox
 from vtx.tui.queue_ui import QueueUIMixin
+from vtx.tui.recap import RecapMixin
 from vtx.tui.selection_mode import SelectionMode
 from vtx.tui.session_ui import SessionUIMixin
 from vtx.tui.startup import StartupMixin
@@ -65,6 +67,7 @@ class Vtx(
     SessionUIMixin,
     QueueUIMixin,
     CompletionUIMixin,
+    RecapMixin,
     AgentRunnerMixin,
     StartupMixin,
     App[None],
@@ -80,6 +83,7 @@ class Vtx(
         ("escape", "interrupt_agent", "Interrupt"),
         Binding("left", "tree_page_up", "Tree page up", priority=True),
         Binding("right", "tree_page_down", "Tree page down", priority=True),
+        Binding("ctrl+shift+g", "toggle_goal_dashboard", "Toggle goal dashboard", priority=True),
         ("ctrl+t", "cycle_thinking_level", "Cycle thinking level"),
         Binding("ctrl+o", "toggle_tool_output", "Toggle tool output", priority=True),
         Binding("ctrl+shift+t", "toggle_thinking", "Toggle thinking", priority=True),
@@ -184,6 +188,7 @@ class Vtx(
         self._pending_api_key_provider: str | None = None
         self._settings_selected_value: str | None = None
         self._shell_tool_counter = 0
+        self._init_recap_state()
 
         self._pending_queue: deque[tuple[str, str]] = deque(maxlen=QueueDisplay.MAX_QUEUE)
         self._steer_queue: deque[tuple[str, str]] = deque(maxlen=QueueDisplay.MAX_QUEUE)
@@ -306,6 +311,7 @@ class Vtx(
 
     def compose(self) -> ComposeResult:
         yield ChatLog(id="chat-log")
+        yield GoalWidget(id="goal-widget")
         yield QueueDisplay(id="queue-display")
         yield StatusLine(id="status-line")
         yield InputBox(cwd=self._cwd, id="input-box")
@@ -535,8 +541,21 @@ class Vtx(
             )
             info_bar.set_file_changes(self._runtime.session.file_changes_summary())
             chat.add_info_message("Resumed session")
+            self._arm_recap_timer()
 
         self.set_interval(_GIT_BRANCH_REFRESH_INTERVAL_SECONDS, self._refresh_git_branch)
+
+        # Goal system: bind focus persistence, restore/resolve focus, mount
+        # the above-editor beacon, and refresh it periodically for elapsed
+        # time / token accounting display.
+        try:
+            self._init_goal_state()
+        except Exception as exc:
+            chat.add_info_message(f"Goal system init failed: {exc}", error=True)
+        goal_widget = self.query_one("#goal-widget", GoalWidget)
+        goal_widget.set_cwd(self._cwd)
+        goal_widget.refresh_goal(self._cwd)
+        self.set_interval(5.0, lambda: goal_widget.refresh_goal())
 
         self._startup_complete = True
         self._show_pending_update_notice_if_idle()
@@ -559,6 +578,7 @@ class Vtx(
             await self._hook_bridge.unload()
         with contextlib.suppress(Exception):
             await self._runtime.close()
+        self._cancel_recap_timer()
 
     # -------------------------------------------------------------------------
     # Key bindings
@@ -635,6 +655,10 @@ class Vtx(
             self.query_one("#tree-selector", TreeSelector).action_cancel()
             return
         if self._is_running:
+            # pi-goal-x parity: pressing Esc during active work pauses the
+            # focused goal so auto-continue does not immediately restart it.
+            if callable(getattr(self, "_pause_goal_on_interrupt", None)):
+                self._pause_goal_on_interrupt()
             self._request_interrupt()
 
     def _request_interrupt(self, status_message: str | None = "Interrupting...") -> None:
@@ -802,6 +826,12 @@ class Vtx(
         dialog.current_state().draft = event.value
         self.query_one("#chat-log", ChatLog).rerender_ask_user(self._ask_user_tool_id or "")
 
+    @on(Input.Changed)
+    def on_input_changed_reset_recap(self) -> None:
+        # Any typing in the editor counts as activity: push the idle recap
+        # timer back. Harmless when the event came from the ask-user dialog.
+        self._reset_recap_timer()
+
     def on_key(self, event: events.Key) -> None:
         # ask_user takes priority over approval since its picker is
         # more elaborate (number keys, arrows, space, etc.).
@@ -851,6 +881,9 @@ class Vtx(
         display_text = event.text.strip()
         if not display_text:
             return
+
+        # New activity: drop any pending/idle recap state.
+        self._dismiss_recap()
 
         # Intercept API-key entry: the user is in the middle of /login <provider>
         # and is typing the key. Route it to the auth command instead of the agent.
