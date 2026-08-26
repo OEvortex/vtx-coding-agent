@@ -82,15 +82,17 @@ def test_claim_once_hooks_only_fires_once():
 
     async def drive():
         await registry.register(
-            "Setup", HookConfig(event="Setup", command="echo setup", once=True), handler=handler
+            "SessionStart",
+            HookConfig(event="SessionStart", command="echo setup", once=True),
+            handler=handler,
         )
-        first = await registry.claim_once_hooks("Setup")
-        await run_hook_handlers(first, {"event": "Setup"})
-        return await registry.claim_once_hooks("Setup")
+        first = await registry.claim_once_hooks("SessionStart")
+        await run_hook_handlers(first, {"event": "SessionStart"})
+        return await registry.claim_once_hooks("SessionStart")
 
     remaining = asyncio.run(drive())
     assert remaining == []
-    assert seen == ["Setup"]
+    assert seen == ["SessionStart"]
 
 
 def test_hook_snapshot_detects_added_and_removed_hooks():
@@ -116,15 +118,22 @@ def test_hook_config_manager_loads_yaml(tmp_path: Path):
     hooks_path = tmp_path / ".vtx" / "hooks.yml"
     hooks_path.parent.mkdir(parents=True)
     hooks_path.write_text(
-        "\n".join(["setup:", "  - event: Setup", "    type: command", "    command: echo setup"])
+        "\n".join(
+            [
+                "session_start:",
+                "  - event: SessionStart",
+                "    type: command",
+                "    command: echo setup",
+            ]
+        )
         + "\n",
         encoding="utf-8",
     )
 
     registry = HookRegistry()
     snapshot = asyncio.run(_load_snapshot(registry, hooks_path))
-    assert snapshot.events["Setup"][0].command == "echo setup"
-    hooks = asyncio.run(registry.get_hooks("Setup"))
+    assert snapshot.events["SessionStart"][0].command == "echo setup"
+    hooks = asyncio.run(registry.get_hooks("SessionStart"))
     assert len(hooks) == 1
 
 

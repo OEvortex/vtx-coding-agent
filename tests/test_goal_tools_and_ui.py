@@ -205,3 +205,42 @@ async def test_goal_tool_complete_does_not_pause_goal(goal_cwd: Path) -> None:
     assert archived is not None
     assert archived.status == "complete"
     assert archived.paused_reason is None
+
+
+@pytest.mark.asyncio
+async def test_run_completion_audit_verdict_parsing(goal_cwd: Path) -> None:
+    from unittest.mock import MagicMock
+
+    from vtx.ai.base import ProviderConfig
+    from vtx.coding_agent.goal.auditor import run_completion_audit
+    from vtx.coding_agent.goal.record import GoalRecord
+    from vtx.core import TurnEndEvent
+    from vtx.core.types import AssistantMessage, TextContent
+
+    record = GoalRecord(id="test-goal", mode="regular", status="active", objective="Fix bug")
+    mock_provider = MagicMock()
+    mock_provider.config = ProviderConfig(
+        provider="openai",
+        thinking_level="high",
+        api_key="test",
+        base_url="https://api.openai.com/v1",
+        default_headers={},
+    )
+
+    msg = AssistantMessage(content=[TextContent(text="Looks good.\n<approved/>")])
+    event = TurnEndEvent(turn=1, assistant_message=msg, tool_results=[])
+
+    async def fake_run(*args, **kwargs):
+        yield event
+
+    with pytest.MonkeyPatch.context() as mp:
+        mp.setattr("vtx.ai.agent.loop.Agent.run", fake_run)
+        res = await run_completion_audit(
+            record,
+            cwd=str(goal_cwd),
+            provider=mock_provider,
+            model="gpt-4o",
+            model_provider="openai",
+        )
+        assert res.approved is True
+        assert "<approved/>" in res.summary

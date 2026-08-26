@@ -15,6 +15,9 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 ### Changed
 - **Witty-line rotation cadence** — `WITTY_ROTATE_EVERY_TICKS` raised from `12` to `20` (3s instead of 1.8s at 0.15s/tick) in both the chat spinner and the bottom status line.
 
+### Fixed
+- **Goal completion auditor freeze & provider resolution** — resolved an issue where models could get stuck when completing goals (`goal(action="update", status="complete")`). The completion auditor now reuses the session's active provider instance directly, correctly resolves dynamic models and custom base URLs, clamps reasoning/thinking levels to supported values, and parses multi-turn auditor verdict markers reliably.
+
 ## [1.1.0] - 2026-08-26
 
 ### Added

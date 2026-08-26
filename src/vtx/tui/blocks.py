@@ -392,7 +392,7 @@ class ToolBlock(Static):
         self._set_state(None)
 
     @property
-    def name(self) -> str:
+    def name(self) -> str | None:
         return self._name
 
     def compose(self) -> ComposeResult:
