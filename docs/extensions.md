@@ -164,7 +164,7 @@ PreToolUse:
 
 Hook fields: `event`, `matcher` (tool name glob), `type` (`command` | `prompt` | `http` | `agent`), `command` / `url` / `prompt_text` / `agent_instructions`, `timeout`, `once`, `if_condition`, `enabled`. A non-zero exit or `blocking_error` in the response vetoes the action.
 
-Event names (30): `UserPromptSubmit`, `SessionStart`, `SessionEnd`, `TurnStart`, `TurnEnd`, `PreToolUse`, `PostToolUse`, `PostToolUseFailure`, `PermissionRequest`, `PermissionDenied`, `SubagentStart`, `SubagentStop`, `Stop`, `StopFailure`, `PreCompact`, `PostCompact`, `Notification`, `PostSampling`, `Setup`, `InstructionsLoaded`, `CwdChanged`, `FileChanged`, `WorktreeCreate`, `WorktreeRemove`, `ConfigChange`, `TaskCreated`, `TaskCompleted`, `TeammateIdle`, `Elicitation`, `ElicitationResult`.
+Event names (11): `SessionStart`, `SessionEnd`, `TurnStart`, `TurnEnd`, `PreToolUse`, `PostToolUse`, `PostToolUseFailure`, `PermissionRequest`, `PermissionDenied`, `PreCompact`, `PostCompact`.
 
 Python code can also subclass `AgentHook` (`before_run`, `after_iteration`, `on_stream`, `finalize_content`, …) and pass instances via the runtime — that's what the SDK uses for tracing.
 
