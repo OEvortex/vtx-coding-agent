@@ -5,6 +5,16 @@ All notable changes to Vtx are documented in this file. The format is based on
 adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 
+## [Unreleased]
+
+### Changed
+- **Idle session recap styling & prompt refinement** — rewritten recap prompt to draft a concise 1–2 sentence summary focused on progress and current state (Claude Code style) without prescriptive next-step instructions. Upgraded TUI presentation with a bold accent `✦ Recap` header and indented dimmed body.
+- **Enhanced `/goal` skill command** — expanded `meta/goal` built-in skill with comprehensive action schemas (`create`, `get`, `set_tasks`, `update_task`, `update`), multi-phase workflow directives (ingestion, continuous execution, independent audit), and best practices ensuring agents maintain active goal tracking throughout long-running tasks.
+
+### Fixed
+- **Goal completion pause & auditor deadlock** — fixed an issue where `goal(action="update", status="complete")` erroneously marked the goal status as `paused` during the completion review.
+- **Subagent & auditor approval handling** — auditor and task subagent loops now automatically resolve `ToolApprovalEvent` and `AskUserEvent` futures, preventing sub-agents and completion audits from hanging indefinitely on approval gates.
+
 ## [1.0.1] - 2026-08-25
 
 ### Added

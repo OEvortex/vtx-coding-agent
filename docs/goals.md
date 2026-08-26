@@ -14,28 +14,26 @@ Goals give the agent a persistent, file-backed objective with visible progress a
 /goal add structured logging to the authentication module
 ```
 
-`/goal [seed]` and `/sisyphus [seed]` start a guided draft: the agent asks focused questions (via `ask_user`), investigates the workspace, proposes an objective plus task plan, and creates the goal only after you confirm.
+`/goal` starts a guided draft: the agent asks focused questions (via `ask_user`), investigates the workspace, proposes an objective plus task plan, and creates the goal only after you confirm.
 
-Use `/goal-direct <objective>` or `/sisyphus-direct <objective>` when the objective is already complete — this creates and focuses the goal immediately without drafting.
+Use `/goal <objective>` when the objective is already clear — this creates and focuses the goal immediately.
 
 The model can also create goals through the single [`goal` tool](tools.md#goal) after an explicit request.
 
 ## Managing goals
 
-| Command | Does |
-| --- | --- |
-| `/goal-list` | List open goals (id, mode, status, progress, path) |
-| `/goal-status` | Render the full dashboard into the chat log (`verbose`, `health` variants) |
-| `/goal-focus` | Pick which open goal this session focuses on |
-| `/goal-unfocus` | Clear the session focus; the goal stays open |
-| `/goal-tweak <change>` | Guided revision of the focused objective / plan |
-| `/goal-pause` | Pause the focused goal |
-| `/goal-resume` | Resume a paused or blocked goal |
-| `/goal-clear` | Archive the focused goal (asks for confirmation) |
-| `/goal-cancel` | Discard an unconfirmed guided draft |
-| `/goal-settings` | Toggle goal behaviour settings |
+Goals are managed through the `/goal` skill. After creating a goal, the agent uses the `goal` tool to update tasks, track progress, and complete the objective.
 
-A project can hold several open goals; each session focuses on at most one. Focus is session-scoped — `/goal-unfocus` detaches this session without touching the shared goal.
+| Action | How |
+| --- | --- |
+| List open goals | Ask the agent to show open goals |
+| View dashboard | Press `Ctrl+Shift+G` to post the expanded dashboard to the chat log |
+| Focus a goal | Ask the agent to focus a specific goal |
+| Pause / resume | Ask the agent to pause or resume the focused goal |
+| Archive | Ask the agent to archive the focused goal |
+| Settings | Ask the agent to adjust goal behaviour settings |
+
+A project can hold several open goals; each session focuses on at most one. Focus is session-scoped — unfocusing detaches this session without touching the shared goal.
 
 ## Status widget
 
@@ -54,15 +52,15 @@ While a goal is focused, a compact beacon renders above the editor:
 ╰─ Esc: pause goal   ctrl+shift+g: expand tasks ──────╯
 ```
 
-Press `Ctrl+Shift+G` to post the expanded dashboard to the chat log: progress bar, full task tree with subtasks, the current task's contract and evidence, the goal-level verification contract, and recent activity from the durable ledger. `/goal-status` renders the same view.
+Press `Ctrl+Shift+G` to post the expanded dashboard to the chat log: progress bar, full task tree with subtasks, the current task's contract and evidence, the goal-level verification contract, and recent activity from the durable ledger.
 
 Task markers: `✓` complete, `▸` current, `~` skipped, `·` pending.
 
 ## Auto-continue
 
-While a focused goal is active, vtx keeps working instead of returning control after every turn: when the agent stops short of the objective, a small checkpoint turn is scheduled that points it at the next step. Pressing `Esc` pauses the goal, so auto-continue never runs away from you. `/goal-resume` restarts it.
+While a focused goal is active, vtx keeps working instead of returning control after every turn: when the agent stops short of the objective, a small checkpoint turn is scheduled that points it at the next step. Pressing `Esc` pauses the goal, so auto-continue never runs away from you. Ask the agent to resume to restart it.
 
-Disable with `/goal-settings → autoContinue`.
+Disable auto-continue by asking the agent to adjust goal settings.
 
 ## Completion review
 
@@ -70,7 +68,7 @@ Finishing is explicit: the agent calls `goal(action="update", status="complete")
 
 Approved goals are archived as complete under `.vtx/goals/archived/`. If changes are required, the goal stays open with the auditor's feedback attached, and it surfaces in every following turn until addressed.
 
-Turn the auditor off with `/goal-settings → auditorEnabled` (completions then archive without independent approval).
+Turn the auditor off by asking the agent to adjust goal settings (completions then archive without independent approval).
 
 ## Verification contracts
 
@@ -82,7 +80,7 @@ Goals and individual tasks can carry plain-text completion requirements, e.g. `R
 .vtx/goals/active_goal_<timestamp>_<id>.md   open goals
 .vtx/goals/archived/<same-name>.md            completed / cleared goals
 .vtx/goals/ledger.jsonl                       append-only activity ledger
-.vtx/goals/settings.json                      toggles (/goal-settings)
+.vtx/goals/settings.json                      toggles (via /goal skill)
 ```
 
 Goal files are markdown with an embedded JSON metadata block; the `# Goal Prompt` section is user-editable and re-read from disk before every focused action.

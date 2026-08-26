@@ -61,7 +61,7 @@ When usage crosses `compaction.threshold_percent` of the context window, older t
 
 ## Recap
 
-After a run finishes (or when you resume a session) and you stay idle for `recap.idle_seconds`, vtx drafts a short "where you left off" summary — high-level task plus the concrete next step — using the current model, and shows it in the chat log. Typing or sending a prompt clears it. Disable with `recap.enabled: false`; run one on demand with `/recap`.
+After a run finishes (or when you resume a session) and you stay idle for `recap.idle_seconds`, vtx drafts a concise "where you left off" summary of the task and progress so far using the current model, styled in the chat log with a distinct accent header and indented summary body. Typing or sending a prompt clears it. Disable with `recap.enabled: false`; run one on demand with `/recap`.
 
 ## Export
 

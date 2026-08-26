@@ -161,4 +161,4 @@ One action-dispatched tool for the persistent goal system (see [goals.md](goals.
 | `note` | string | `update_task`: skip reason or note |
 | `subtasks` | list | `update_task`: attach subtasks under the target |
 
-`status="complete"` records the claim, then runs an independent auditor sub-agent over the workspace; the goal archives on `<approved/>` and stays open with feedback otherwise. The tool is non-mutating for permission purposes — archiving is user-owned via `/goal-clear`.
+`status="complete"` records the claim, then runs an independent auditor sub-agent over the workspace; the goal archives on `<approved/>` and stays open with feedback otherwise. The tool is non-mutating for permission purposes — archiving requires explicit user confirmation.
