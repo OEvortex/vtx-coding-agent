@@ -6,7 +6,7 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 
 
-## [1.0.1] - 2026-08-25
+## [1.1.0] - 2026-08-26
 
 ### Added
 - **Clipboard image paste** — `ctrl+v` pastes images from the system clipboard into the input as `[image #N]` placeholders (up to 5 per message); queued and steer messages carry their attached images through editing and replay.
