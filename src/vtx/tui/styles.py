@@ -40,12 +40,14 @@ Screen {{
     color: {colors.fg};
 }}
 
-/* Thinking block - dim italic */
+/* Thinking block - elegant left-accent bordered card */
 .thinking-block {{
     color: {colors.dim};
     text-style: italic;
-    padding: 0 1 0 1;
+    padding: 0 1 0 2;
     margin: 1 0 0 0;
+    border-left: wide {colors.accent};
+    background: {colors.panel};
 }}
 
 .thinking-block.-hidden {{
@@ -237,6 +239,20 @@ Screen {{
 /* Loaded resources should not add extra top margin */
 .info-message.loaded-resources {{
     margin-top: 0;
+}}
+
+/* Goal beacon widget */
+GoalWidget {{
+    display: none;
+    padding: 1 2;
+    margin: 0 1 1 1;
+    border: round {colors.accent};
+    background: {colors.panel};
+    height: auto;
+}}
+
+GoalWidget.-visible {{
+    display: block;
 }}
 
 /* Queue display - shown above status line when messages are queued */
