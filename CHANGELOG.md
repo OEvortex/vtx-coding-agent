@@ -42,6 +42,8 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Fixed
 - **Auto-compaction honored the 200k default instead of the model's real context window** — the engine now resolves the active model's catalog context window on every agent creation and `/model` switch, so 1M-context models compact near their true limit (~800k at the default 80% threshold) instead of ~160k; unknown models still fall back to `agent.default_context_window`.
+- **`/model` picker now shows the last-selected model** — the last-selected model is now remembered across sessions and pre-selected in the `/model` picker; if the last-selected model is no longer available, the default model is selected instead.
+- **ctrl+t now properlly cycles between thinking levels** — the `ctrl+t` shortcut now cycles between models thinking levels, and the current level is displayed in the status bar.
 - **Stale provider labels on resumed sessions** — sessions recorded under a wrong provider label (e.g. `openai` for a custom gateway like kilo) are healed at initialize time, keeping lookups, pricing, and context-window resolution on the right catalog entry; unknown models no longer silently relabel the provider as the engine class name.
 - **Event class map ImportError** — `_get_event_class_map()` self-imported event classes from `vtx.ai.agent.extensions`; it now imports agent/turn lifecycle events from `vtx.core.events`, fixing crashes on first event-object lookup.
 - **Restored missing `get_valid_openai_credentials` export** from `vtx.ai` (accidentally dropped during the cline OAuth refactor; `/login` OpenAI flow depended on it).

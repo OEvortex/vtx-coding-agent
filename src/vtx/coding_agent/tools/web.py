@@ -88,10 +88,18 @@ async def _call_exa(payload: dict) -> tuple[str | None, str | None]:
 
 
 class SearchParams(BaseModel):
-    query: str = Field(description="Search query")
-    num_results: int = Field(default=8, ge=1, le=20, description="Number of results")
-    search_type: str = Field(default="auto", description="'auto', 'neural', or 'keyword'")
-    livecrawl: str = Field(default="fallback", description="'fallback', 'always', or 'never'")
+    query: str = Field(description="Search query string or question")
+    num_results: int = Field(
+        default=8, ge=1, le=20, description="Number of results (1-20, default: 8)"
+    )
+    search_type: str = Field(
+        default="auto",
+        description="'auto' (hybrid), 'neural' (concept matching), or 'keyword' (exact text)",
+    )
+    livecrawl: str = Field(
+        default="fallback",
+        description="'fallback' (cached/live), 'always' (fresh crawl), or 'never' (cached only)",
+    )
 
 
 class WebTool(BaseTool):
@@ -101,7 +109,10 @@ class WebTool(BaseTool):
     tool_icon = "🔍"
     params = SearchParams
     mutating = False
-    description = "Web search (Exa neural). Returns titles, URLs, snippets. Needs internet."
+    description = (
+        "Search the web using neural semantic search (Exa). "
+        "Returns ranked page titles, URLs, and relevant text snippets. Requires internet access."
+    )
     prompt_guidelines = ()
 
     def format_call(self, params: SearchParams) -> str:

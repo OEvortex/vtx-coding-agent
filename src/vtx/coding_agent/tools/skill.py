@@ -25,22 +25,30 @@ class SkillParams(BaseModel):
         return data
 
     action: Literal["list", "view", "create", "patch", "edit", "delete"] = Field(
-        description="list, view, create, patch (find-replace), edit (overwrite), delete",
+        description=(
+            "Action: 'list' (discover), 'view' (read), 'create' (new skill), "
+            "'patch' (find-replace), 'edit' (overwrite), or 'delete'"
+        ),
         default="view",
     )
     name: str | None = Field(
-        description="Skill name (lowercase/hyphens). Required except for 'list'.", default=None
+        description="Skill name (lowercase/hyphens, e.g. 'review'). Required except for 'list'.",
+        default=None,
     )
     content: str | None = Field(
-        description="Full SKILL.md content. Required for create/edit.", default=None
+        description="Full SKILL.md content (required for 'create' and 'edit')", default=None
     )
-    old_string: str | None = Field(description="Unique text to find (patch)", default=None)
-    new_string: str | None = Field(description="Replacement text (patch)", default=None)
+    old_string: str | None = Field(
+        description="Unique exact text to replace (required for 'patch')", default=None
+    )
+    new_string: str | None = Field(
+        description="Replacement text (required for 'patch')", default=None
+    )
     file_path: str | None = Field(
-        description="Supporting file to target (default: SKILL.md)", default=None
+        description="Supporting file to target (defaults to 'SKILL.md')", default=None
     )
     scope: Literal["project", "global"] = Field(
-        description="create: project (.agents/skills) or global (~/.agents/skills)",
+        description="Target scope for create: 'project' (.agents/skills) or 'global'",
         default="project",
     )
 
@@ -51,7 +59,11 @@ class SkillTool(BaseTool):
     params = SkillParams
     mutating = True  # Can modify skills, though list/view are read-only
     prompt_guidelines = ()
-    description = "List, view, create, patch, edit, or delete skill workflows."
+    description = (
+        "Inspect and manage skill workflows. Use 'list' to discover available skills, "
+        "'view' to read instructions, 'create'/'edit' to author full SKILL.md files, "
+        "'patch' for targeted replacements, or 'delete' to remove a skill."
+    )
 
     def format_call(self, params: SkillParams) -> str:
         name_str = f" name={params.name}" if params.name else ""

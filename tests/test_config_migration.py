@@ -142,7 +142,6 @@ def test_current_version_config_is_not_rewritten(tmp_path, monkeypatch):
     cfg = get_config()
 
     assert cfg.llm.default_model == "custom-model"
-    assert cfg.llm.system_prompt.content == "custom prompt"
     assert config_file.read_text(encoding="utf-8") == original_text
     # Only check for backup files if the file already exists
     if config_file.exists():
@@ -179,15 +178,11 @@ llm:
     reset_config()
     cfg = get_config()
 
-    assert cfg.llm.system_prompt.content.startswith("You are Vtx, an expert coding agent.")
-    assert "# Tool usage" not in cfg.llm.system_prompt.content
-    assert "Old tool instruction" not in cfg.llm.system_prompt.content
-    assert "~/.agents/skills" in cfg.llm.system_prompt.content
     assert cfg.llm.system_prompt.git_context is True
 
     updated = yaml.safe_load(config_file.read_text(encoding="utf-8"))
     assert updated["meta"]["config_version"] == CURRENT_CONFIG_VERSION
-    assert updated["llm"]["system_prompt"]["content"] == cfg.llm.system_prompt.content
+    assert "content" not in updated["llm"]["system_prompt"]
     assert updated["llm"]["system_prompt"]["git_context"] is True
     # Only check for backup files if the file already exists
     if config_file.exists():
@@ -220,13 +215,11 @@ llm:
     cfg = get_config()
 
     assert cfg.llm.default_model == "legacy-model"
-    assert cfg.llm.system_prompt.content.startswith("You are Vtx, an expert coding agent.")
-    assert "legacy prompt" not in cfg.llm.system_prompt.content
     assert cfg.llm.system_prompt.git_context is True
 
     updated = yaml.safe_load(config_file.read_text(encoding="utf-8"))
     assert updated["meta"]["config_version"] == CURRENT_CONFIG_VERSION
-    assert updated["llm"]["system_prompt"]["content"] == cfg.llm.system_prompt.content
+    assert "content" not in updated["llm"]["system_prompt"]
     assert updated["llm"]["system_prompt"]["git_context"] is True
 
     warnings = consume_config_warnings()

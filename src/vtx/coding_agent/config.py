@@ -48,18 +48,6 @@ _DEFAULT_CONFIG_DATA = _load_default_config_yaml()
 CURRENT_CONFIG_VERSION = int(_DEFAULT_CONFIG_DATA.get("meta", {}).get("config_version", 1))
 
 
-def _resolve_default_system_prompt() -> str:
-    """Return the default base identity string.
-
-    Pulled from :mod:`vtx.prompts.identity` so the prompt is owned by
-    Python code rather than the shipped YAML. The YAML keeps an empty
-    placeholder for schema stability; this function fills it in.
-    """
-    from vtx.coding_agent.prompts.identity import DEFAULT_VTX_BASE
-
-    return DEFAULT_VTX_BASE
-
-
 _config_var: ContextVar["Config | None"] = ContextVar("vtx_config", default=None)
 _config_warnings: list[str] = []
 
@@ -108,7 +96,7 @@ class UIConfig(BaseModel):
 
 
 class SystemPromptConfig(BaseModel):
-    content: str
+    content: str = ""
     git_context: bool = False
     ponytail: bool = False
 
@@ -295,6 +283,12 @@ class _BinariesConfig:
         return "gh" in self._binaries
 
 
+def _resolve_default_system_prompt() -> str:
+    from vtx.coding_agent.prompts.identity import DEFAULT_VTX_BASE
+
+    return DEFAULT_VTX_BASE
+
+
 class Config:
     def __init__(self, data: dict[str, Any]) -> None:
         merged = self.merge_with_defaults(data)
@@ -319,7 +313,7 @@ class Config:
         if isinstance(llm, dict):
             legacy_prompt = llm.get("system_prompt")
             if isinstance(legacy_prompt, str):
-                llm["system_prompt"] = {"content": legacy_prompt}
+                llm["system_prompt"] = {}
 
             legacy_git_context = llm.pop("system_prompt_git_context", None)
             if isinstance(legacy_git_context, bool):
@@ -328,12 +322,6 @@ class Config:
                     system_prompt = {}
                     llm["system_prompt"] = system_prompt
                 system_prompt.setdefault("git_context", legacy_git_context)
-
-            # Fill the default base identity from Python when the YAML left
-            # the placeholder empty (or did not include it at all).
-            system_prompt = llm.get("system_prompt")
-            if isinstance(system_prompt, dict) and not system_prompt.get("content"):
-                system_prompt["content"] = _resolve_default_system_prompt()
 
         return normalized_data
 
@@ -541,9 +529,6 @@ def _migrate_v5_to_v6(data: dict[str, Any]) -> dict[str, Any]:
         system_prompt = {}
         llm["system_prompt"] = system_prompt
 
-    # Pull the default identity from Python so the YAML placeholder
-    # remains a single source of truth.
-    system_prompt["content"] = _resolve_default_system_prompt()
     system_prompt["git_context"] = _DEFAULT_CONFIG_DATA["llm"]["system_prompt"]["git_context"]
 
     meta = migrated.get("meta")

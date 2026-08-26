@@ -109,57 +109,66 @@ class GoalTaskItem(BaseModel):
 class GoalParams(BaseModel):
     action: str = Field(
         description=(
-            "create | get | update | set_tasks | update_task — which goal operation to run"
+            "Operation to perform: 'create', 'get', 'update', 'set_tasks', or 'update_task'"
         )
     )
     # create
     objective: str | None = Field(
         default=None,
         max_length=4000,
-        description="create: complete outcome for the agent to achieve (1-4000 chars)",
+        description="create / update(revise): complete goal objective and outcome to achieve",
     )
     mode: str | None = Field(
         default=None,
-        description="create: regular (open-ended) or sisyphus (strictly ordered steps)",
+        description="create: 'regular' (open-ended) or 'sisyphus' (strict sequential tasks)",
     )
     verification: str | None = Field(
         default=None,
-        description="create: completion contract, e.g. 'Run npm test with zero failures.'",
+        description="create: completion contract or test command required for verification",
     )
     token_budget: int | None = Field(
-        default=None,
-        description="create: total-token budget; goal becomes budget_limited at the cap",
+        default=None, description="create: optional total-token budget ceiling for the goal"
     )
     # update
     status: str | None = Field(
-        default=None, description="update: complete | blocked | paused | active (resume) | revise"
+        default=None,
+        description="update: status — 'complete', 'blocked', 'paused', 'active', or 'revise'",
     )
     reason: str | None = Field(
-        default=None, description="update: required for blocked/paused; change notes for revise"
+        default=None,
+        description="update: explanation required for 'blocked', 'paused', or revision notes",
     )
     completion_summary: str | None = Field(
-        default=None, description="update+complete: short claim of satisfaction (auditor-checked)"
+        default=None,
+        description="update (complete): concise summary of completed work submitted for audit",
     )
     review_feedback: str | None = Field(
         default=None, description="update: auditor changes-required feedback to record"
     )
     # set_tasks
     tasks: list[GoalTaskItem] | None = Field(
-        default=None, description="set_tasks: flat parent-linked task list replacing the plan"
+        default=None,
+        description="set_tasks: structured task list replacing the current execution plan",
     )
     # update_task
-    task_id: str | None = Field(default=None, description="update_task: target task id")
+    task_id: str | None = Field(
+        default=None, description="update_task: target task identifier (e.g. 't1')"
+    )
     task_status: str | None = Field(
-        default=None, description="update_task: start | complete | skipped | pending (reopen)"
+        default=None,
+        description="update_task: new status — 'start', 'complete', 'skipped', or 'pending'",
     )
     evidence: str | None = Field(
-        default=None, description="update_task: required when completing a contracted task"
+        default=None,
+        description="update_task: test output or verification evidence proving task completion",
     )
     note: str | None = Field(
-        default=None, max_length=500, description="update_task: skip reason or note"
+        default=None,
+        max_length=500,
+        description="update_task: optional note or explanation for skipping",
     )
     subtasks: list[GoalTaskItem] | None = Field(
-        default=None, description="update_task: attach these subtasks under the target task"
+        default=None, description="update_task: list of subtasks to attach under the target task"
     )
 
 
@@ -178,9 +187,9 @@ class GoalTool(BaseTool):
         "confirmed proposal",
     )
     description = (
-        "Persistent project goals: create/get/update the focused goal, replace "
-        "its task tree (set_tasks), or update one task (update_task). Completing "
-        "triggers an independent completion audit before archiving."
+        "Manage persistent, multi-turn project goals and task trees. "
+        "Track progress with 'create', 'get', 'set_tasks', 'update_task', or 'update'. "
+        "Marking a goal complete triggers an independent auditor verification step."
     )
 
     def format_call(self, params: GoalParams) -> str:

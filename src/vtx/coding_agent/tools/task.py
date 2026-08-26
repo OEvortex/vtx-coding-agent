@@ -31,21 +31,24 @@ class TaskParams(BaseModel):
     description: str = Field(
         min_length=1,
         max_length=128,
-        description="3-5 word imperative label, e.g. 'Find the auth bug'",
+        description="Concise 3-5 word imperative label (e.g. 'Find the auth bug')",
     )
     prompt: str = Field(
         min_length=1,
-        description="Full instructions incl. all context (sub-agent can't see this conversation)",
+        description="Detailed task instructions and context (sub-agent cannot see this chat)",
     )
     subagent_type: str = Field(
         default="general-purpose",
-        description="Preset (general-purpose, Explore, Plan) or user agent name",
+        description="Sub-agent preset ('general-purpose', 'Explore', 'Plan') or custom agent name",
     )
-    model: str | None = Field(default=None, description="Model override (default: parent's)")
+    model: str | None = Field(
+        default=None, description="Optional model override (defaults to parent agent model)"
+    )
     background: bool = Field(
         default=False,
         description=(
-            "Run concurrently, return a task_id now; answer arrives next turn. Don't poll."
+            "Run concurrently in the background and return a task_id immediately. "
+            "Completion arrives next turn; do NOT busy-wait or poll."
         ),
     )
 
@@ -423,9 +426,9 @@ class TaskTool(BaseTool[TaskParams]):
         return TaskToolBlock
 
     description = (
-        "Dispatch a fresh sub-agent (own tools/session, can't see this chat) for a "
-        "self-contained task; returns only its final text. background: true returns "
-        "a task_id and delivers the answer next turn. Not for trivial single-tool calls."
+        "Dispatch an isolated sub-agent (own tools and session, cannot see this chat) for a "
+        "self-contained task; returns only its final text. Set background: true to return "
+        "a task_id immediately and receive the result next turn without blocking."
     )
 
     prompt_guidelines = ()

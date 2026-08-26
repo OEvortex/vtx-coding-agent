@@ -135,7 +135,7 @@ def _write_full_output_to_temp(output: str) -> str:
 
 
 class BashParams(BaseModel):
-    command: str = Field(description="Bash command to execute")
+    command: str = Field(description="Command line string to execute")
     timeout: int = Field(
         description=f"Timeout in seconds (default {DEFAULT_TIMEOUT})", default=DEFAULT_TIMEOUT
     )
@@ -147,8 +147,9 @@ class BashTool(BaseTool):
     params = BashParams
     prompt_guidelines = ("bash for git/builds/tests/scripts (not file read/search/edit)",)
     description = (
-        "Run a bash command in the cwd. Output truncated to last "
-        f"{MAX_OUTPUT_LINES} lines/{MAX_OUTPUT_BYTES // 1024}KB (full saved to temp file). "
+        "Execute a shell command in the current working directory. Use for build scripts, "
+        "tests, package managers, and git commands. Output is truncated to the last "
+        f"{MAX_OUTPUT_LINES} lines/{MAX_OUTPUT_BYTES // 1024}KB (full saved to temp log). "
         "Do NOT use for file search (find), reading (read), or editing (edit)."
     )
 

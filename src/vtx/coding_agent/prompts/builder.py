@@ -33,11 +33,10 @@ from vtx.coding_agent.prompts.tooling import build_tool_guidelines_section
 
 
 def _resolve_base(override: str | None) -> str:
-    """Pick the user override, the config value, or the Python default."""
+    """Return the hardcoded base identity prompt."""
     if override is not None:
         return override
-    configured = vtx_config.llm.system_prompt.content
-    return configured if configured else DEFAULT_VTX_BASE
+    return DEFAULT_VTX_BASE
 
 
 def _resolve_git_flag(include_git: bool | None) -> bool:
@@ -71,8 +70,7 @@ def build_system_prompt(
         context: Pre-loaded :class:`Context`. Loaded from ``cwd`` when omitted.
         tools: Active tool set; contributes the ``# Tool usage`` section.
         base_content: Override for the base identity/rules string. When
-            ``None`` the function falls back to ``vtx_config.llm.system_prompt.content``
-            and finally :data:`vtx.prompts.identity.DEFAULT_VTX_BASE`.
+            ``None`` the function uses :data:`vtx.prompts.identity.DEFAULT_VTX_BASE`.
         include_git_context: Force the git section on/off. When ``None``
             the value is read from config.
         extra_instructions: Optional extra instructions appended to (or

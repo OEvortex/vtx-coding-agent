@@ -11,8 +11,10 @@ from vtx.core.types import FileChanges
 
 
 class WriteParams(BaseModel):
-    path: str = Field(description="Absolute path of file to write")
-    content: str = Field(description="File content")
+    path: str = Field(
+        description="Path of the file to write (creates parent directories automatically)"
+    )
+    content: str = Field(description="Full file contents to write")
 
 
 class WriteTool(BaseTool):
@@ -21,7 +23,9 @@ class WriteTool(BaseTool):
     params = WriteParams
     prompt_guidelines = ("write for new files/rewrites (not echo >/heredoc)",)
     description = (
-        "Write a file (creates or overwrites; makes parent dirs). Use edit for partial changes."
+        "Create a new file or completely overwrite an existing one. "
+        "Creates parent directories automatically. "
+        "Do NOT use for partial modifications; use edit instead."
     )
 
     def format_call(self, params: WriteParams) -> str:

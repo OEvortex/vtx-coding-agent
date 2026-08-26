@@ -18,9 +18,14 @@ MAX_OUTPUT_BYTES = 30 * 1024
 
 
 class GrepParams(BaseModel):
-    pattern: str = Field(description="Text or regex to search for")
-    path: str | None = Field(description="Dir or file to search (default: cwd)", default=None)
-    glob: str | None = Field(description="File filter glob, e.g. '*.py'", default=None)
+    pattern: str = Field(description="Regular expression or literal text to search for")
+    path: str | None = Field(
+        description="Directory or file path to search (defaults to current working directory)",
+        default=None,
+    )
+    glob: str | None = Field(
+        description="Optional file filter glob (e.g. '*.py', '!*.min.js')", default=None
+    )
 
 
 class GrepTool(BaseTool[GrepParams]):
@@ -30,8 +35,8 @@ class GrepTool(BaseTool[GrepParams]):
     mutating = False
     prompt_guidelines = ("grep for text in files (not bash grep/rg)",)
     description = (
-        "Search file contents by regex (ripgrep). Returns matching lines with path:line, "
-        f"respects .gitignore, truncated to {MAX_RESULTS}."
+        "Search file contents using regular expressions (ripgrep). "
+        f"Respects .gitignore, returns matching lines with path:line, truncated to {MAX_RESULTS}."
     )
 
     def format_call(self, params: GrepParams) -> str:

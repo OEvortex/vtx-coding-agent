@@ -91,7 +91,7 @@ class Vtx(
         Binding("left", "tree_page_up", "Tree page up", priority=True),
         Binding("right", "tree_page_down", "Tree page down", priority=True),
         Binding("ctrl+shift+g", "toggle_goal_dashboard", "Toggle goal dashboard", priority=True),
-        ("ctrl+t", "cycle_thinking_level", "Cycle thinking level"),
+        Binding("ctrl+t", "cycle_thinking_level", "Cycle thinking level", priority=True),
         Binding("ctrl+o", "toggle_tool_output", "Toggle tool output", priority=True),
         Binding("ctrl+shift+t", "toggle_thinking", "Toggle thinking", priority=True),
         # Shift+Tab cycles handoff agents (was: cycle_permission_mode).
