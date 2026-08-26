@@ -21,7 +21,7 @@ from vtx.core.recap import (
     generate_recap,
     has_meaningful_activity,
 )
-from vtx.core.types import UserMessage
+from vtx.core.types import TextContent, UserMessage
 from vtx.tui.chat import ChatLog
 
 if TYPE_CHECKING:
@@ -98,7 +98,9 @@ class RecapMixin:
             content = (
                 message.content
                 if isinstance(message.content, str)
-                else "\n".join(part.text for part in message.content)
+                else "\n".join(
+                    part.text for part in message.content if isinstance(part, TextContent)
+                )
             )
             initial_task = content.strip() or None
             break
