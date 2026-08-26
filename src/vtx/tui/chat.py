@@ -853,13 +853,13 @@ class ChatLog(VerticalScroll):
             self._last_status_label = None
 
     def show_recap(self, text: str) -> None:
-        """Render a session recap block (header + dim body) into the log."""
+        """Render a session recap block (header + styled body) into the log."""
         self.clear_trailing_status()
         colors = config.ui.colors
-        header = Label(Text("✦ recap", style=colors.accent))
+        header = Label(Text("✦ Recap", style=f"{colors.accent} bold"))
         body = Label(Text(text, style=colors.dim))
         header.add_class("recap-message", "-header")
-        body.add_class("recap-message")
+        body.add_class("recap-message", "-body")
         self._recap_labels = [header, body]
         self.mount(header)
         self.mount(body)

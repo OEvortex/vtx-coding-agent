@@ -225,6 +225,13 @@ Screen {{
 
 .recap-message.-header {{
     margin-top: 1;
+    color: {colors.accent};
+    text-style: bold;
+}}
+
+.recap-message.-body {{
+    color: {colors.dim};
+    padding: 0 1 0 2;
 }}
 
 /* Loaded resources should not add extra top margin */

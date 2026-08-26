@@ -2,7 +2,7 @@
 
 After an agent run finishes the idle timer is armed (default 30s); any typing
 resets it. When it fires (and the user hasn't interacted), a cheap one-off LLM
-call over the recent conversation drafts a 1-3 sentence "where you left off"
+call over the recent conversation drafts a concise "where you left off"
 summary that is rendered into the chat log and cleared on the next prompt.
 """
 

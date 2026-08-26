@@ -3,7 +3,7 @@ has been idle or resumes a session.
 
 The recap is a cheap one-off LLM call over a trimmed view of the recent
 conversation (same pattern as compaction's ``generate_summary``), rendered as
-1-3 sentences: high-level task, then the concrete next step.
+a concise 1-2 sentence summary of the high-level task and progress so far.
 """
 
 from __future__ import annotations
@@ -28,10 +28,10 @@ TOOL_RESULT_EDGE_CHARS = 2000
 INITIAL_TASK_EDGE_CHARS = 4000
 
 RECAP_PROMPT = (
-    "The user stepped away and is coming back. Write exactly 1-3 short "
-    "sentences. Start by stating the high-level task — what they are building "
-    "or debugging, not implementation details. Next: the concrete next step. "
-    "Skip status reports and commit recaps."
+    "The user stepped away and is coming back. Write a concise 1-2 sentence "
+    "summary of the high-level task and what has been done so far. "
+    "Focus only on summarizing progress and current state. "
+    "Do not suggest next steps, headers, bullet points, or commit recaps."
 )
 
 
