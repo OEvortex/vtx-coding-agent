@@ -12,7 +12,7 @@ from collections.abc import Sequence
 from dataclasses import dataclass
 from functools import lru_cache
 
-from vtx.ai.agent.gh_cli import PullRequest, is_available, list_pull_requests
+from vtx.coding_agent.gh_cli import PullRequest, is_available, list_pull_requests
 from vtx.tui.floating_list import ListItem
 
 
@@ -432,6 +432,7 @@ DEFAULT_COMMANDS = [
     SlashCommand("model", "change model"),
     SlashCommand("provider", "filter /model by provider"),
     SlashCommand("settings", "themes, permissions, thinking, notifications"),
+    SlashCommand("ponytail", "toggle or set ponytail mode (on/off)"),
     SlashCommand("new", "start new conversation"),
     SlashCommand("handoff", "start focused handoff in new session", submit_on_select=False),
     SlashCommand("resume", "resume a session"),
@@ -442,5 +443,7 @@ DEFAULT_COMMANDS = [
     SlashCommand("export", "export session to HTML"),
     SlashCommand("copy", "copy last agent response text"),
     SlashCommand("compact", "compact current conversation now"),
+    SlashCommand("recap", "summarize where the session left off"),
     SlashCommand("agent", "list/switch handoff agents (Shift+Tab to cycle)"),
+    SlashCommand("update", "check for and install latest vtx update"),
 ]

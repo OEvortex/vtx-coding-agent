@@ -5,6 +5,65 @@ All notable changes to Vtx are documented in this file. The format is based on
 adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 
+
+## [1.0.1] - 2026-08-25
+
+### Added
+- **Clipboard image paste** — `ctrl+v` pastes images from the system clipboard into the input as `[image #N]` placeholders (up to 5 per message); queued and steer messages carry their attached images through editing and replay.
+- **Image-aware submissions** — images are ordered before text in user messages for better grounding, text is optional for image-only submissions, and the welcome-screen shortcut list documents `ctrl+v`.
+- **`vtx.core.bytes_util`** — shared byte-size formatting/parsing helpers (`format_bytes`, `parse_bytes`) with dedicated tests.
+- **Persistent goal system (`vtx-goal`)** — durable, file-backed objectives for long-running work, ported from the pi-goal-x workflow. `/goal [seed]` and `/sisyphus [seed]` run a guided draft (clarify → propose → confirm) while `/goal-direct` / `/sisyphus-direct` create immediately; goals live as editable markdown under `.vtx/goals/` with an append-only activity ledger and survive across sessions (session-scoped focus via `/goal-focus`, multiple open goals per project). The agent drives everything through a single action-based `goal` tool (`create | get | update | set_tasks | update_task`) with id-stable parent-linked task trees and per-task verification contracts. An above-editor status beacon shows live progress (status · elapsed/tokens · task window · current task · contract · file), `Ctrl+Shift+G` posts the expanded dashboard, auto-continue checkpoint turns keep the agent working toward an active goal until it genuinely finishes — pressing `Esc` pauses — and completion runs an independent auditor sub-agent that inspects the workspace before archiving (`<approved/>` archives; changes-required feedback stays attached). Manage with `/goal-list`, `/goal-status [verbose|health]`, `/goal-unfocus`, `/goal-tweak`, `/goal-pause`, `/goal-resume`, `/goal-clear`, `/goal-cancel`, and `/goal-settings`. See [docs/goals.md](docs/goals.md).
+- **Idle session recap** — after an agent run finishes and you stay idle (`recap.idle_seconds`, default 30s), or when you resume a session, vtx drafts a 1–3 sentence "where you left off" summary using the current model and renders it in the chat log; typing clears it. New `/recap` slash command drafts one on demand, and `recap.enabled: false` opts out.
+- **OpenAI Responses API adapter & unified reasoning resolution** — new Responses transport adapter with unified reasoning-effort resolution; the Responses transport is now routed through the official `openai` SDK.
+- **Extended-thinking parity and token tracking** — per-model reasoning-effort detection from models.dev drives thinking levels on any verified provider, with stream cleanup and usage-tracking parity across transports.
+- **Interactive UI primitives for extensions (`ctx.ui`)** — handlers declared as `(event, payload, ctx)` now receive a full context whose `ctx.ui` exposes interactive dialogs: `await ctx.ui.confirm()`, `await ctx.ui.select()`, `await ctx.ui.input()` (real modal dialogs backed by the Textual TUI, safe no-op defaults in headless mode), `ctx.ui.notify()` rendered in the chat log, and `ctx.ui.setStatus()` / `ctx.ui.setWidget()` for a persistent footer bar. All dialogs support `timeout` and abort-`signal` kwargs.
+- **`await ctx.ui.custom(component)`** — show arbitrary Textual widgets or `ModalScreen`s modally from an extension and await the dismissed result.
+- **Provider request hooks** — new `before_provider_headers` and `before_provider_request` extension events fire once per outgoing LLM request across all transports (OpenAI SDK, Anthropic HTTP). Handlers can inject/override/delete HTTP headers and inspect or fully replace the wire payload; later handlers chain off earlier replacements; retries reuse prepared values without re-firing handlers. Backed by a transport-level registry (`vtx.ai.provider_hooks`) bridged onto the extension bus automatically.
+- **Cline provider OAuth login** — Cline (WorkOS) added to `/login` with full OAuth flow, credential storage, and free-model detection reflected in model listings.
+- **`/update` command** — check for and install the latest vtx release from inside the TUI.
+- **Configurable models endpoint & unified provider refresh** — `/model refresh` now covers dynamic and legacy catalog providers through one path, with a configurable models endpoint per provider.
+- **Task tool UI/UX parity** — redesigned the Task tool block rendering with `▸ <subagent_name> <description>` header formatting, live 80ms braille spinner animation with turn count (`↻5≤30`), active tool/text activity line (`⎿ reading…`), token metrics, execution duration tracking, and collapsible/expandable output formatting.
+
+- **Idle session recap styling & prompt refinement** — rewritten recap prompt to draft a concise 1–2 sentence summary focused on progress and current state (Claude Code style) without prescriptive next-step instructions. Upgraded TUI presentation with a bold accent `✦ Recap` header and indented dimmed body.
+- **Enhanced `/goal` skill command** — expanded `meta/goal` built-in skill with comprehensive action schemas (`create`, `get`, `set_tasks`, `update_task`, `update`), multi-phase workflow directives (ingestion, continuous execution, independent audit), and best practices ensuring agents maintain active goal tracking throughout long-running tasks.
+- **Modernized `vtx-goal` UI** — fully theme-driven redesign of both the above-editor beacon and the expanded dashboard: badge-style `vtx-goal` title chip using theme badge colors, colored status dot (`● running/paused/blocked`), two-tone progress bars (accent fill → success at 100%, border track) with bold percentage readouts, highlighted current task line, `◆` section markers, tree connectors (`├`/`└`) for tasks and activity, and muted file rows. Every color resolves from the active theme via `ColorsConfig`; no hardcoded colors.
+- **Faster test suite runs** — test commands now use `uv run --no-sync ... -p no:cacheprovider` (skip env re-sync + cache writes), with `-n auto` (pytest-xdist) for multi-file/full-suite runs (~30% faster full-suite wall time). AGENTS.md testing section updated.
+### Changed
+- **Harness/coding-agent package split** — `vtx.ai.agent` is now a product-neutral harness (loop, turn engine, session store, tool contracts, extensions/hooks, SDK); concrete built-in tools, prompt/context assembly, subagent definitions, and the runtime composition root moved to `vtx.coding_agent`. The harness no longer imports product code: system-prompt building, context loading, the tool registry, and user config knobs are injected, with harness-owned defaults mirroring user YAML.
+- **ask_user dialog extracted** — shared dialog logic moved to `vtx.tui.ask_user` with dedicated test coverage.
+- **API type unification** — duplicate `openai-completions` folded into `openai-sdk`; fetched-model cache now carries thinking/free metadata for picker rendering.
+- **Handoff prompt in handoff link details** — handoff link blocks now include the handoff prompt in their details view.
+- **Simplified Hatch wheel packaging configuration.**
+- **`api.notify()` routes through the TUI chat log** when a UI is installed instead of only logging.
+- **Idle session recap styling & prompt refinement** — rewritten recap prompt to draft a concise 1–2 sentence summary focused on progress and current state (Claude Code style) without prescriptive next-step instructions. Upgraded TUI presentation with a bold accent `✦ Recap` header and indented dimmed body.
+- **Enhanced `/goal` skill command** — expanded `meta/goal` built-in skill with comprehensive action schemas (`create`, `get`, `set_tasks`, `update_task`, `update`), multi-phase workflow directives (ingestion, continuous execution, independent audit), and best practices ensuring agents maintain active goal tracking throughout long-running tasks.
+- **Modernized `vtx-goal` UI** — fully theme-driven redesign of both the above-editor beacon and the expanded dashboard: badge-style `vtx-goal` title chip using theme badge colors, colored status dot (`● running/paused/blocked`), two-tone progress bars (accent fill → success at 100%, border track) with bold percentage readouts, highlighted current task line, `◆` section markers, tree connectors (`├`/`└`) for tasks and activity, and muted file rows. Every color resolves from the active theme via `ColorsConfig`; no hardcoded colors.
+- **Faster test suite runs** — test commands now use `uv run --no-sync ... -p no:cacheprovider` (skip env re-sync + cache writes), with `-n auto` (pytest-xdist) for multi-file/full-suite runs (~30% faster full-suite wall time). AGENTS.md testing section updated.
+
+### Fixed
+- **Auto-compaction honored the 200k default instead of the model's real context window** — the engine now resolves the active model's catalog context window on every agent creation and `/model` switch, so 1M-context models compact near their true limit (~800k at the default 80% threshold) instead of ~160k; unknown models still fall back to `agent.default_context_window`.
+- **`/model` picker now shows the last-selected model** — the last-selected model is now remembered across sessions and pre-selected in the `/model` picker; if the last-selected model is no longer available, the default model is selected instead.
+- **ctrl+t now properlly cycles between thinking levels** — the `ctrl+t` shortcut now cycles between models thinking levels, and the current level is displayed in the status bar.
+- **Stale provider labels on resumed sessions** — sessions recorded under a wrong provider label (e.g. `openai` for a custom gateway like kilo) are healed at initialize time, keeping lookups, pricing, and context-window resolution on the right catalog entry; unknown models no longer silently relabel the provider as the engine class name.
+- **Event class map ImportError** — `_get_event_class_map()` self-imported event classes from `vtx.ai.agent.extensions`; it now imports agent/turn lifecycle events from `vtx.core.events`, fixing crashes on first event-object lookup.
+- **Restored missing `get_valid_openai_credentials` export** from `vtx.ai` (accidentally dropped during the cline OAuth refactor; `/login` OpenAI flow depended on it).
+- **Removed duplicated `_emit_error` definition** in the extension runner.
+- **Goal completion pause & auditor deadlock** — fixed an issue where `goal(action="update", status="complete")` erroneously marked the goal status as `paused` during the completion review.
+- **Subagent & auditor approval handling** — auditor and task subagent loops now automatically resolve `ToolApprovalEvent` and `AskUserEvent` futures, preventing sub-agents and completion audits from hanging indefinitely on approval gates.
+- **Session-start hooks/extensions never fired in the TUI** — `session_start` was emitted with the sync-only bus emit, which silently skips async handlers; it now emits through an async worker so YAML hooks (`SessionStart`) and async extension handlers run.
+- **Headless runs never emitted session lifecycle events** — `vtx -p ...` now fires `session_start` / `session_end` on the extension EventBus, so `SessionStart`/`SessionEnd` hooks work in non-interactive mode too.
+- **`PostToolUseFailure` and permission hooks were unreachable** — the tool-result bus event now also dispatches `PostToolUseFailure` (only when the tool errored), and the approval gate emits new `permission_request` / `permission_denied` bus events so `PermissionRequest` / `PermissionDenied` YAML hooks fire.
+- **Type-checker diagnostics in extension wiring** — `find_dynamic_model` imported from its actual module (`vtx.ai.dynamic_models`), narrowed `api_type` to `ApiType` in the session-title extension, asserted the non-None `ExtensionRunner` before binding actions, and replaced the nonexistent `runtime.set_model` reference with a catalog-resolving adapter over `ConversationRuntime.switch_model`.
+- **Stale goal focus on session resume** — starting a fresh session after resuming one without goal state now clears the previous focused-goal id instead of silently keeping it active.
+
+### Removed
+- **Placeholder hook events** — trimmed `HOOK_EVENTS` from 30 to the 11 events vtx actually implements (`UserPromptSubmit`, `SubagentStart/Stop`, `Stop/StopFailure`, `Notification`, `PostSampling`, `Setup`, `InstructionsLoaded`, `CwdChanged`, `FileChanged`, `Worktree*`, `ConfigChange`, `Task*`, `TeammateIdle`, `Elicitation*` removed); configs using unsupported events are now rejected at load instead of being silently ignored. Docs updated.
+- **Dead code cleanup** — unused `original_text` parameter of `_handle_shell_command` (callers/tests updated), a no-op `if False: pass` block in the SDK agent module, and the string-based `progress_bar()` helper superseded by the themed `progress_bar_text()`.
+- **Supercode provider** — removed the Supercode proxy provider, its OAuth flow (`vtx.ai.oauth.supercode`), SDK adapter (`vtx.ai.sdk.supercode`), provider implementation (`vtx.ai.providers.supercode`), associated tests, and catalog/docs references.
+- **Notes in `ask_user` dialog** — removed the per-question note input editor (`n` key shortcut, note input widget, and note markers) and questionnaire global note handling across the TUI dialog, data envelopes, and models.
+
+
+- **Dead code cleanup** — unused `original_text` parameter of `_handle_shell_command` (callers/tests updated), a no-op `if False: pass` block in the SDK agent module, and the string-based `progress_bar()` helper superseded by the themed `progress_bar_text()`.
 ## [1.0.0] - 2026-08-23
 
 ### Changed
@@ -21,12 +80,17 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - **Built-in skills directory** — added `src/vtx/coding_agent/builtin_skills/` with bundled skill packages (cloud/modal, cloud/google-colab, general/github, meta/skill-builder, setup/init, code-review/review).
 - **`Site/bun.lock`** — added frontend dependency lockfile for the Site bundle.
 
+- **Idle session recap styling & prompt refinement** — rewritten recap prompt to draft a concise 1–2 sentence summary focused on progress and current state (Claude Code style) without prescriptive next-step instructions. Upgraded TUI presentation with a bold accent `✦ Recap` header and indented dimmed body.
+- **Enhanced `/goal` skill command** — expanded `meta/goal` built-in skill with comprehensive action schemas (`create`, `get`, `set_tasks`, `update_task`, `update`), multi-phase workflow directives (ingestion, continuous execution, independent audit), and best practices ensuring agents maintain active goal tracking throughout long-running tasks.
+- **Modernized `vtx-goal` UI** — fully theme-driven redesign of both the above-editor beacon and the expanded dashboard: badge-style `vtx-goal` title chip using theme badge colors, colored status dot (`● running/paused/blocked`), two-tone progress bars (accent fill → success at 100%, border track) with bold percentage readouts, highlighted current task line, `◆` section markers, tree connectors (`├`/`└`) for tasks and activity, and muted file rows. Every color resolves from the active theme via `ColorsConfig`; no hardcoded colors.
+- **Faster test suite runs** — test commands now use `uv run --no-sync ... -p no:cacheprovider` (skip env re-sync + cache writes), with `-n auto` (pytest-xdist) for multi-file/full-suite runs (~30% faster full-suite wall time). AGENTS.md testing section updated.
 ## [0.2.6] - 2026-07-14
 
 ### Removed
 - **`/goal` command** — removed the entire goal feature: `/goal` slash command, `--goal` CLI flag, `GoalManager`, evaluator loop, `GoalEntry` session persistence, goal config section (`goal.enabled`, `goal.max_turns`, `goal.max_objective_chars`, `goal.evaluator_provider`, `goal.evaluator_model`), all `Goal*Event` event types, and the InfoBar goal badge.
 - **Web fetch tool** — removed the `fetch_webpage` / `web_fetch` web-fetch capability from both the `vtx` package (`vtx.tools.web`) and `agenite_claw` (`agenite_claw.agent.tools.web`). Removed `WebFetchTool`, `FetchParams`, `WebFetchConfig`, and the `WebToolsConfig.fetch` field, plus all related references in prompts, context governance, tool hints, runtime lookup throttling, and docs.
 
+- **Dead code cleanup** — unused `original_text` parameter of `_handle_shell_command` (callers/tests updated), a no-op `if False: pass` block in the SDK agent module, and the string-based `progress_bar()` helper superseded by the themed `progress_bar_text()`.
 ### Changed
 - **Unified web tool** — merged the previously separate `fetch_webpage` and `web_search` vtx tools into a single `web` tool (search-only after the fetch removal above). `agenite_claw`'s `WebSearchTool` now delegates to the search-only `vtx.tools.web.WebSearchTool`.
 
@@ -36,10 +100,21 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - **Meta AI provider** — registered Meta AI as a new OpenAI-compatible provider (slug `meta`) with base URL `https://api.meta.ai/v1`, resolving `META_API_KEY` from the environment, and fetching its Llama model catalog from `/models`.
 - **AGENTS.md codebase search** — replaced the CodeBase Search section with `vortexa` CLI usage (`resolve` / `search --hybrid` / `explain`) so the agent prefers a semantic index over grep/rg for code search.
 
+- **Idle session recap styling & prompt refinement** — rewritten recap prompt to draft a concise 1–2 sentence summary focused on progress and current state (Claude Code style) without prescriptive next-step instructions. Upgraded TUI presentation with a bold accent `✦ Recap` header and indented dimmed body.
+- **Enhanced `/goal` skill command** — expanded `meta/goal` built-in skill with comprehensive action schemas (`create`, `get`, `set_tasks`, `update_task`, `update`), multi-phase workflow directives (ingestion, continuous execution, independent audit), and best practices ensuring agents maintain active goal tracking throughout long-running tasks.
+- **Modernized `vtx-goal` UI** — fully theme-driven redesign of both the above-editor beacon and the expanded dashboard: badge-style `vtx-goal` title chip using theme badge colors, colored status dot (`● running/paused/blocked`), two-tone progress bars (accent fill → success at 100%, border track) with bold percentage readouts, highlighted current task line, `◆` section markers, tree connectors (`├`/`└`) for tasks and activity, and muted file rows. Every color resolves from the active theme via `ColorsConfig`; no hardcoded colors.
+- **Faster test suite runs** — test commands now use `uv run --no-sync ... -p no:cacheprovider` (skip env re-sync + cache writes), with `-n auto` (pytest-xdist) for multi-file/full-suite runs (~30% faster full-suite wall time). AGENTS.md testing section updated.
 ### Fixed
 - **Typing** — widened `_slim_schema()` parameter and return types from `object` to `Any` in `src/vtx/tools/__init__.py` to satisfy `ty`.
 - **System-prompt migration tests** — updated stale assertions from "You are Vtx, an expert coding assistant." to "You are Vtx, an expert coding agent." in `tests/test_config_migration.py`.
 
+- **Goal completion pause & auditor deadlock** — fixed an issue where `goal(action="update", status="complete")` erroneously marked the goal status as `paused` during the completion review.
+- **Subagent & auditor approval handling** — auditor and task subagent loops now automatically resolve `ToolApprovalEvent` and `AskUserEvent` futures, preventing sub-agents and completion audits from hanging indefinitely on approval gates.
+- **Session-start hooks/extensions never fired in the TUI** — `session_start` was emitted with the sync-only bus emit, which silently skips async handlers; it now emits through an async worker so YAML hooks (`SessionStart`) and async extension handlers run.
+- **Headless runs never emitted session lifecycle events** — `vtx -p ...` now fires `session_start` / `session_end` on the extension EventBus, so `SessionStart`/`SessionEnd` hooks work in non-interactive mode too.
+- **`PostToolUseFailure` and permission hooks were unreachable** — the tool-result bus event now also dispatches `PostToolUseFailure` (only when the tool errored), and the approval gate emits new `permission_request` / `permission_denied` bus events so `PermissionRequest` / `PermissionDenied` YAML hooks fire.
+- **Type-checker diagnostics in extension wiring** — `find_dynamic_model` imported from its actual module (`vtx.ai.dynamic_models`), narrowed `api_type` to `ApiType` in the session-title extension, asserted the non-None `ExtensionRunner` before binding actions, and replaced the nonexistent `runtime.set_model` reference with a catalog-resolving adapter over `ConversationRuntime.switch_model`.
+- **Stale goal focus on session resume** — starting a fresh session after resuming one without goal state now clears the previous focused-goal id instead of silently keeping it active.
 ## [0.2.4] - 2026-07-11
 
 ### Added
@@ -49,6 +124,10 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - **Fix shortcut labels** — `Shift+Tab` now correctly labelled "switch agent" in the TUI welcome and session-info shortcuts (it cycles handoff agents; permission mode is `Alt+Ctrl+P` or `/permissions`). Fixed the README to match.
 - **Editable build indicator** — when vtx is installed as an editable package (`pip install -e .`), the TUI now displays `v-editable` instead of a release version number. Detection uses the installed distribution's `direct_url.json` `dir_info.editable` flag.
 
+- **Idle session recap styling & prompt refinement** — rewritten recap prompt to draft a concise 1–2 sentence summary focused on progress and current state (Claude Code style) without prescriptive next-step instructions. Upgraded TUI presentation with a bold accent `✦ Recap` header and indented dimmed body.
+- **Enhanced `/goal` skill command** — expanded `meta/goal` built-in skill with comprehensive action schemas (`create`, `get`, `set_tasks`, `update_task`, `update`), multi-phase workflow directives (ingestion, continuous execution, independent audit), and best practices ensuring agents maintain active goal tracking throughout long-running tasks.
+- **Modernized `vtx-goal` UI** — fully theme-driven redesign of both the above-editor beacon and the expanded dashboard: badge-style `vtx-goal` title chip using theme badge colors, colored status dot (`● running/paused/blocked`), two-tone progress bars (accent fill → success at 100%, border track) with bold percentage readouts, highlighted current task line, `◆` section markers, tree connectors (`├`/`└`) for tasks and activity, and muted file rows. Every color resolves from the active theme via `ColorsConfig`; no hardcoded colors.
+- **Faster test suite runs** — test commands now use `uv run --no-sync ... -p no:cacheprovider` (skip env re-sync + cache writes), with `-n auto` (pytest-xdist) for multi-file/full-suite runs (~30% faster full-suite wall time). AGENTS.md testing section updated.
 ### Changed
 - **Minimalist system prompt** — drastically reduced the model context footprint:
   - Rewrote the system prompt sections to be terse while preserving all behavioral guidance.
@@ -69,6 +148,10 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - Full `provider.yaml` schema support for custom entries (all fields: `family`, `base_url`, `api_key_env`, `known_models`, `fetch_models`, `models_endpoint`, `openmodelendpoint`, `headers`, `model_parser`, etc.).
 - README "Custom Providers" section with a fully-annotated example `provider.yaml` entry.
 
+- **Idle session recap styling & prompt refinement** — rewritten recap prompt to draft a concise 1–2 sentence summary focused on progress and current state (Claude Code style) without prescriptive next-step instructions. Upgraded TUI presentation with a bold accent `✦ Recap` header and indented dimmed body.
+- **Enhanced `/goal` skill command** — expanded `meta/goal` built-in skill with comprehensive action schemas (`create`, `get`, `set_tasks`, `update_task`, `update`), multi-phase workflow directives (ingestion, continuous execution, independent audit), and best practices ensuring agents maintain active goal tracking throughout long-running tasks.
+- **Modernized `vtx-goal` UI** — fully theme-driven redesign of both the above-editor beacon and the expanded dashboard: badge-style `vtx-goal` title chip using theme badge colors, colored status dot (`● running/paused/blocked`), two-tone progress bars (accent fill → success at 100%, border track) with bold percentage readouts, highlighted current task line, `◆` section markers, tree connectors (`├`/`└`) for tasks and activity, and muted file rows. Every color resolves from the active theme via `ColorsConfig`; no hardcoded colors.
+- **Faster test suite runs** — test commands now use `uv run --no-sync ... -p no:cacheprovider` (skip env re-sync + cache writes), with `-n auto` (pytest-xdist) for multi-file/full-suite runs (~30% faster full-suite wall time). AGENTS.md testing section updated.
 ### Changed
 - Refactored the catalog loader to share a single `_parse_entry()` path between built-in and custom providers.
 - Custom-provider loading is lazy (on first catalog access) and invalid entries are skipped with a clear warning rather than crashing startup.
@@ -98,6 +181,10 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 #### User profile during onboarding
 - New `_configure_quick_start_profile()` step collects user name, timezone, language, role, and projects, then writes them to `USER.md` in the workspace.
 
+- **Idle session recap styling & prompt refinement** — rewritten recap prompt to draft a concise 1–2 sentence summary focused on progress and current state (Claude Code style) without prescriptive next-step instructions. Upgraded TUI presentation with a bold accent `✦ Recap` header and indented dimmed body.
+- **Enhanced `/goal` skill command** — expanded `meta/goal` built-in skill with comprehensive action schemas (`create`, `get`, `set_tasks`, `update_task`, `update`), multi-phase workflow directives (ingestion, continuous execution, independent audit), and best practices ensuring agents maintain active goal tracking throughout long-running tasks.
+- **Modernized `vtx-goal` UI** — fully theme-driven redesign of both the above-editor beacon and the expanded dashboard: badge-style `vtx-goal` title chip using theme badge colors, colored status dot (`● running/paused/blocked`), two-tone progress bars (accent fill → success at 100%, border track) with bold percentage readouts, highlighted current task line, `◆` section markers, tree connectors (`├`/`└`) for tasks and activity, and muted file rows. Every color resolves from the active theme via `ColorsConfig`; no hardcoded colors.
+- **Faster test suite runs** — test commands now use `uv run --no-sync ... -p no:cacheprovider` (skip env re-sync + cache writes), with `-n auto` (pytest-xdist) for multi-file/full-suite runs (~30% faster full-suite wall time). AGENTS.md testing section updated.
 ### Changed
 - WebSocket password prompt now explains why the password is needed (protects local WebUI access) instead of silently rejecting empty input.
 - Quick Start summary panel now shows LLM provider, API key status, WebUI URL, enabled channels, and exact next-step commands.
@@ -105,6 +192,13 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 ### Fixed
 - Fixed `UnboundLocalError` when `api_key` was unset for local providers (e.g., Ollama) in the Quick Start flow.
 
+- **Goal completion pause & auditor deadlock** — fixed an issue where `goal(action="update", status="complete")` erroneously marked the goal status as `paused` during the completion review.
+- **Subagent & auditor approval handling** — auditor and task subagent loops now automatically resolve `ToolApprovalEvent` and `AskUserEvent` futures, preventing sub-agents and completion audits from hanging indefinitely on approval gates.
+- **Session-start hooks/extensions never fired in the TUI** — `session_start` was emitted with the sync-only bus emit, which silently skips async handlers; it now emits through an async worker so YAML hooks (`SessionStart`) and async extension handlers run.
+- **Headless runs never emitted session lifecycle events** — `vtx -p ...` now fires `session_start` / `session_end` on the extension EventBus, so `SessionStart`/`SessionEnd` hooks work in non-interactive mode too.
+- **`PostToolUseFailure` and permission hooks were unreachable** — the tool-result bus event now also dispatches `PostToolUseFailure` (only when the tool errored), and the approval gate emits new `permission_request` / `permission_denied` bus events so `PermissionRequest` / `PermissionDenied` YAML hooks fire.
+- **Type-checker diagnostics in extension wiring** — `find_dynamic_model` imported from its actual module (`vtx.ai.dynamic_models`), narrowed `api_type` to `ApiType` in the session-title extension, asserted the non-None `ExtensionRunner` before binding actions, and replaced the nonexistent `runtime.set_model` reference with a catalog-resolving adapter over `ConversationRuntime.switch_model`.
+- **Stale goal focus on session resume** — starting a fresh session after resuming one without goal state now clears the previous focused-goal id instead of silently keeping it active.
 ## [0.2.0] - 2026-07-03 — Hook System, Gitlawb Opengateway Provider, System Prompt & Tool Configuration, Recent Model Tracking
 
 ### Added
@@ -214,6 +308,10 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - Added an index in `docs/README.md` so users browsing the docs folder can
   quickly navigate to the gateway documentation.
 
+- **Idle session recap styling & prompt refinement** — rewritten recap prompt to draft a concise 1–2 sentence summary focused on progress and current state (Claude Code style) without prescriptive next-step instructions. Upgraded TUI presentation with a bold accent `✦ Recap` header and indented dimmed body.
+- **Enhanced `/goal` skill command** — expanded `meta/goal` built-in skill with comprehensive action schemas (`create`, `get`, `set_tasks`, `update_task`, `update`), multi-phase workflow directives (ingestion, continuous execution, independent audit), and best practices ensuring agents maintain active goal tracking throughout long-running tasks.
+- **Modernized `vtx-goal` UI** — fully theme-driven redesign of both the above-editor beacon and the expanded dashboard: badge-style `vtx-goal` title chip using theme badge colors, colored status dot (`● running/paused/blocked`), two-tone progress bars (accent fill → success at 100%, border track) with bold percentage readouts, highlighted current task line, `◆` section markers, tree connectors (`├`/`└`) for tasks and activity, and muted file rows. Every color resolves from the active theme via `ColorsConfig`; no hardcoded colors.
+- **Faster test suite runs** — test commands now use `uv run --no-sync ... -p no:cacheprovider` (skip env re-sync + cache writes), with `-n auto` (pytest-xdist) for multi-file/full-suite runs (~30% faster full-suite wall time). AGENTS.md testing section updated.
 ### Changed
 - Agent runtime supports custom system prompt builder strategies.
 - System prompt is now messaging-platform-aware with concise formatting guidance.
@@ -276,6 +374,13 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - Reverted `default_context_window` back to `200000` for gateway
   compatibility and updated compaction tests accordingly.
 
+- **Goal completion pause & auditor deadlock** — fixed an issue where `goal(action="update", status="complete")` erroneously marked the goal status as `paused` during the completion review.
+- **Subagent & auditor approval handling** — auditor and task subagent loops now automatically resolve `ToolApprovalEvent` and `AskUserEvent` futures, preventing sub-agents and completion audits from hanging indefinitely on approval gates.
+- **Session-start hooks/extensions never fired in the TUI** — `session_start` was emitted with the sync-only bus emit, which silently skips async handlers; it now emits through an async worker so YAML hooks (`SessionStart`) and async extension handlers run.
+- **Headless runs never emitted session lifecycle events** — `vtx -p ...` now fires `session_start` / `session_end` on the extension EventBus, so `SessionStart`/`SessionEnd` hooks work in non-interactive mode too.
+- **`PostToolUseFailure` and permission hooks were unreachable** — the tool-result bus event now also dispatches `PostToolUseFailure` (only when the tool errored), and the approval gate emits new `permission_request` / `permission_denied` bus events so `PermissionRequest` / `PermissionDenied` YAML hooks fire.
+- **Type-checker diagnostics in extension wiring** — `find_dynamic_model` imported from its actual module (`vtx.ai.dynamic_models`), narrowed `api_type` to `ApiType` in the session-title extension, asserted the non-None `ExtensionRunner` before binding actions, and replaced the nonexistent `runtime.set_model` reference with a catalog-resolving adapter over `ConversationRuntime.switch_model`.
+- **Stale goal focus on session resume** — starting a fresh session after resuming one without goal state now clears the previous focused-goal id instead of silently keeping it active.
 ## [0.1.9] - 2026-06-29 — Fix Context Length Overflow & Remove Hardcoded Token Defaults
 
 ### Fixed
@@ -320,6 +425,13 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - Fixed `_apply_active_agent_to_runtime()` using `self.tools` (already filtered by the previous agent's `tools_allow`) as the baseline for recomputing the new agent's tools. This caused tools from a restrictive profile (e.g. plan's `grep`, `find`) to leak into subsequent agents that shouldn't have them.
 - Changed the baseline to `DEFAULT_TOOLS`, so every agent switch starts from the full default tool set and applies its own `tools_allow`/`tools_deny` cleanly.
 
+- **Goal completion pause & auditor deadlock** — fixed an issue where `goal(action="update", status="complete")` erroneously marked the goal status as `paused` during the completion review.
+- **Subagent & auditor approval handling** — auditor and task subagent loops now automatically resolve `ToolApprovalEvent` and `AskUserEvent` futures, preventing sub-agents and completion audits from hanging indefinitely on approval gates.
+- **Session-start hooks/extensions never fired in the TUI** — `session_start` was emitted with the sync-only bus emit, which silently skips async handlers; it now emits through an async worker so YAML hooks (`SessionStart`) and async extension handlers run.
+- **Headless runs never emitted session lifecycle events** — `vtx -p ...` now fires `session_start` / `session_end` on the extension EventBus, so `SessionStart`/`SessionEnd` hooks work in non-interactive mode too.
+- **`PostToolUseFailure` and permission hooks were unreachable** — the tool-result bus event now also dispatches `PostToolUseFailure` (only when the tool errored), and the approval gate emits new `permission_request` / `permission_denied` bus events so `PermissionRequest` / `PermissionDenied` YAML hooks fire.
+- **Type-checker diagnostics in extension wiring** — `find_dynamic_model` imported from its actual module (`vtx.ai.dynamic_models`), narrowed `api_type` to `ApiType` in the session-title extension, asserted the non-None `ExtensionRunner` before binding actions, and replaced the nonexistent `runtime.set_model` reference with a catalog-resolving adapter over `ConversationRuntime.switch_model`.
+- **Stale goal focus on session resume** — starting a fresh session after resuming one without goal state now clears the previous focused-goal id instead of silently keeping it active.
 ### Added
 
 #### Kimchi OpenAI compatible provider support
@@ -338,6 +450,10 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - Updated `_apply_active_agent_to_runtime()` to respect `tool_groups` (group allow list overrides `tools_allow`) and `_rebuild_system_prompt()` to filter skills per profile.
 - Added example `examples/agents/data-engineer.py` demonstrating the new fields.
 
+- **Idle session recap styling & prompt refinement** — rewritten recap prompt to draft a concise 1–2 sentence summary focused on progress and current state (Claude Code style) without prescriptive next-step instructions. Upgraded TUI presentation with a bold accent `✦ Recap` header and indented dimmed body.
+- **Enhanced `/goal` skill command** — expanded `meta/goal` built-in skill with comprehensive action schemas (`create`, `get`, `set_tasks`, `update_task`, `update`), multi-phase workflow directives (ingestion, continuous execution, independent audit), and best practices ensuring agents maintain active goal tracking throughout long-running tasks.
+- **Modernized `vtx-goal` UI** — fully theme-driven redesign of both the above-editor beacon and the expanded dashboard: badge-style `vtx-goal` title chip using theme badge colors, colored status dot (`● running/paused/blocked`), two-tone progress bars (accent fill → success at 100%, border track) with bold percentage readouts, highlighted current task line, `◆` section markers, tree connectors (`├`/`└`) for tasks and activity, and muted file rows. Every color resolves from the active theme via `ColorsConfig`; no hardcoded colors.
+- **Faster test suite runs** — test commands now use `uv run --no-sync ... -p no:cacheprovider` (skip env re-sync + cache writes), with `-n auto` (pytest-xdist) for multi-file/full-suite runs (~30% faster full-suite wall time). AGENTS.md testing section updated.
 ## [0.1.8] - 2026-06-26 — Provider API Key Resolution Fix
 
 ### Fixed
@@ -346,6 +462,13 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - Fixed `OpenAISDKProvider` always checking `OPENAI_API_KEY` instead of the correct env var for each provider (e.g. `ZYLOO_API_KEY` for Zyloo).
 - Stored API keys from `/login` now work for all dynamic providers with a `base_url`, not just a hardcoded subset (airouter, opencode, kilo, tokenrouter).
 
+- **Goal completion pause & auditor deadlock** — fixed an issue where `goal(action="update", status="complete")` erroneously marked the goal status as `paused` during the completion review.
+- **Subagent & auditor approval handling** — auditor and task subagent loops now automatically resolve `ToolApprovalEvent` and `AskUserEvent` futures, preventing sub-agents and completion audits from hanging indefinitely on approval gates.
+- **Session-start hooks/extensions never fired in the TUI** — `session_start` was emitted with the sync-only bus emit, which silently skips async handlers; it now emits through an async worker so YAML hooks (`SessionStart`) and async extension handlers run.
+- **Headless runs never emitted session lifecycle events** — `vtx -p ...` now fires `session_start` / `session_end` on the extension EventBus, so `SessionStart`/`SessionEnd` hooks work in non-interactive mode too.
+- **`PostToolUseFailure` and permission hooks were unreachable** — the tool-result bus event now also dispatches `PostToolUseFailure` (only when the tool errored), and the approval gate emits new `permission_request` / `permission_denied` bus events so `PermissionRequest` / `PermissionDenied` YAML hooks fire.
+- **Type-checker diagnostics in extension wiring** — `find_dynamic_model` imported from its actual module (`vtx.ai.dynamic_models`), narrowed `api_type` to `ApiType` in the session-title extension, asserted the non-None `ExtensionRunner` before binding actions, and replaced the nonexistent `runtime.set_model` reference with a catalog-resolving adapter over `ConversationRuntime.switch_model`.
+- **Stale goal focus on session resume** — starting a fresh session after resuming one without goal state now clears the previous focused-goal id instead of silently keeping it active.
 ## [0.1.7] - 2026-06-26 — Zyloo OpenAI Compatible Provider
 
 Add Zyloo OpenAI compatible provider:
@@ -357,6 +480,10 @@ Add Zyloo OpenAI compatible provider:
 - Added mapping to resolve `ZYLOO_API_KEY` from environment variables.
 - Configured auto-fetching of model lists from the provider's `/models` endpoint.
 
+- **Idle session recap styling & prompt refinement** — rewritten recap prompt to draft a concise 1–2 sentence summary focused on progress and current state (Claude Code style) without prescriptive next-step instructions. Upgraded TUI presentation with a bold accent `✦ Recap` header and indented dimmed body.
+- **Enhanced `/goal` skill command** — expanded `meta/goal` built-in skill with comprehensive action schemas (`create`, `get`, `set_tasks`, `update_task`, `update`), multi-phase workflow directives (ingestion, continuous execution, independent audit), and best practices ensuring agents maintain active goal tracking throughout long-running tasks.
+- **Modernized `vtx-goal` UI** — fully theme-driven redesign of both the above-editor beacon and the expanded dashboard: badge-style `vtx-goal` title chip using theme badge colors, colored status dot (`● running/paused/blocked`), two-tone progress bars (accent fill → success at 100%, border track) with bold percentage readouts, highlighted current task line, `◆` section markers, tree connectors (`├`/`└`) for tasks and activity, and muted file rows. Every color resolves from the active theme via `ColorsConfig`; no hardcoded colors.
+- **Faster test suite runs** — test commands now use `uv run --no-sync ... -p no:cacheprovider` (skip env re-sync + cache writes), with `-n auto` (pytest-xdist) for multi-file/full-suite runs (~30% faster full-suite wall time). AGENTS.md testing section updated.
 ## [0.1.6] - 2026-06-25 — Goal Command for Autonomous Multi-Turn Objectives
 
 Add comprehensive goal functionality for autonomous multi-turn objectives:
@@ -383,6 +510,10 @@ Add comprehensive goal functionality for autonomous multi-turn objectives:
   prints status transitions to stderr so scripts can still pipe stdout.
 - See [docs/goal.md](docs/goal.md).
 
+- **Idle session recap styling & prompt refinement** — rewritten recap prompt to draft a concise 1–2 sentence summary focused on progress and current state (Claude Code style) without prescriptive next-step instructions. Upgraded TUI presentation with a bold accent `✦ Recap` header and indented dimmed body.
+- **Enhanced `/goal` skill command** — expanded `meta/goal` built-in skill with comprehensive action schemas (`create`, `get`, `set_tasks`, `update_task`, `update`), multi-phase workflow directives (ingestion, continuous execution, independent audit), and best practices ensuring agents maintain active goal tracking throughout long-running tasks.
+- **Modernized `vtx-goal` UI** — fully theme-driven redesign of both the above-editor beacon and the expanded dashboard: badge-style `vtx-goal` title chip using theme badge colors, colored status dot (`● running/paused/blocked`), two-tone progress bars (accent fill → success at 100%, border track) with bold percentage readouts, highlighted current task line, `◆` section markers, tree connectors (`├`/`└`) for tasks and activity, and muted file rows. Every color resolves from the active theme via `ColorsConfig`; no hardcoded colors.
+- **Faster test suite runs** — test commands now use `uv run --no-sync ... -p no:cacheprovider` (skip env re-sync + cache writes), with `-n auto` (pytest-xdist) for multi-file/full-suite runs (~30% faster full-suite wall time). AGENTS.md testing section updated.
 ### Changed
 
 #### Background tasks now deliver results automatically
@@ -425,6 +556,10 @@ Internal rate-limit manager with exponential backoff, safe max-output token limi
   user-global and package built-in locations, ensuring the model's `view`
   action resolves to the synced copy on disk.
 
+- **Idle session recap styling & prompt refinement** — rewritten recap prompt to draft a concise 1–2 sentence summary focused on progress and current state (Claude Code style) without prescriptive next-step instructions. Upgraded TUI presentation with a bold accent `✦ Recap` header and indented dimmed body.
+- **Enhanced `/goal` skill command** — expanded `meta/goal` built-in skill with comprehensive action schemas (`create`, `get`, `set_tasks`, `update_task`, `update`), multi-phase workflow directives (ingestion, continuous execution, independent audit), and best practices ensuring agents maintain active goal tracking throughout long-running tasks.
+- **Modernized `vtx-goal` UI** — fully theme-driven redesign of both the above-editor beacon and the expanded dashboard: badge-style `vtx-goal` title chip using theme badge colors, colored status dot (`● running/paused/blocked`), two-tone progress bars (accent fill → success at 100%, border track) with bold percentage readouts, highlighted current task line, `◆` section markers, tree connectors (`├`/`└`) for tasks and activity, and muted file rows. Every color resolves from the active theme via `ColorsConfig`; no hardcoded colors.
+- **Faster test suite runs** — test commands now use `uv run --no-sync ... -p no:cacheprovider` (skip env re-sync + cache writes), with `-n auto` (pytest-xdist) for multi-file/full-suite runs (~30% faster full-suite wall time). AGENTS.md testing section updated.
 ### Changed
 
 - Removed `RateLimitError` from `should_retry_for_error()` in OpenAI and
@@ -450,6 +585,13 @@ Internal rate-limit manager with exponential backoff, safe max-output token limi
   `"file_path": "None"` which evaluated as truthy, causing the tool to construct
   paths like `.../review/None` instead of falling back to `"SKILL.md"`.
 
+- **Goal completion pause & auditor deadlock** — fixed an issue where `goal(action="update", status="complete")` erroneously marked the goal status as `paused` during the completion review.
+- **Subagent & auditor approval handling** — auditor and task subagent loops now automatically resolve `ToolApprovalEvent` and `AskUserEvent` futures, preventing sub-agents and completion audits from hanging indefinitely on approval gates.
+- **Session-start hooks/extensions never fired in the TUI** — `session_start` was emitted with the sync-only bus emit, which silently skips async handlers; it now emits through an async worker so YAML hooks (`SessionStart`) and async extension handlers run.
+- **Headless runs never emitted session lifecycle events** — `vtx -p ...` now fires `session_start` / `session_end` on the extension EventBus, so `SessionStart`/`SessionEnd` hooks work in non-interactive mode too.
+- **`PostToolUseFailure` and permission hooks were unreachable** — the tool-result bus event now also dispatches `PostToolUseFailure` (only when the tool errored), and the approval gate emits new `permission_request` / `permission_denied` bus events so `PermissionRequest` / `PermissionDenied` YAML hooks fire.
+- **Type-checker diagnostics in extension wiring** — `find_dynamic_model` imported from its actual module (`vtx.ai.dynamic_models`), narrowed `api_type` to `ApiType` in the session-title extension, asserted the non-None `ExtensionRunner` before binding actions, and replaced the nonexistent `runtime.set_model` reference with a catalog-resolving adapter over `ConversationRuntime.switch_model`.
+- **Stale goal focus on session resume** — starting a fresh session after resuming one without goal state now clears the previous focused-goal id instead of silently keeping it active.
 ## [0.1.4] - 2026-06-18 — Handoff Agents, Background Tasks & Subagents
 
 Switchable handoff agents, a built-in `Task` tool for Claude Code-style subagents, background concurrent task execution, a `grep` tool, custom TUI blocks for extension tools, and a context-length safety cap for gateway providers.
@@ -465,6 +607,13 @@ Switchable handoff agents, a built-in `Task` tool for Claude Code-style subagent
   The cap reserves 8K for large context windows (>= 32K) and 4K for smaller ones,
   with a floor of `context_window // 2`.
 
+- **Goal completion pause & auditor deadlock** — fixed an issue where `goal(action="update", status="complete")` erroneously marked the goal status as `paused` during the completion review.
+- **Subagent & auditor approval handling** — auditor and task subagent loops now automatically resolve `ToolApprovalEvent` and `AskUserEvent` futures, preventing sub-agents and completion audits from hanging indefinitely on approval gates.
+- **Session-start hooks/extensions never fired in the TUI** — `session_start` was emitted with the sync-only bus emit, which silently skips async handlers; it now emits through an async worker so YAML hooks (`SessionStart`) and async extension handlers run.
+- **Headless runs never emitted session lifecycle events** — `vtx -p ...` now fires `session_start` / `session_end` on the extension EventBus, so `SessionStart`/`SessionEnd` hooks work in non-interactive mode too.
+- **`PostToolUseFailure` and permission hooks were unreachable** — the tool-result bus event now also dispatches `PostToolUseFailure` (only when the tool errored), and the approval gate emits new `permission_request` / `permission_denied` bus events so `PermissionRequest` / `PermissionDenied` YAML hooks fire.
+- **Type-checker diagnostics in extension wiring** — `find_dynamic_model` imported from its actual module (`vtx.ai.dynamic_models`), narrowed `api_type` to `ApiType` in the session-title extension, asserted the non-None `ExtensionRunner` before binding actions, and replaced the nonexistent `runtime.set_model` reference with a catalog-resolving adapter over `ConversationRuntime.switch_model`.
+- **Stale goal focus on session resume** — starting a fresh session after resuming one without goal state now clears the previous focused-goal id instead of silently keeping it active.
 ### Added
 
 #### Built-in `plan` Agent Profile and `grep` Tool
@@ -602,6 +751,10 @@ Switchable handoff agents, a built-in `Task` tool for Claude Code-style subagent
   modes, CLI, TUI, events, configuration, and the cross-agent extension
   pattern.
 
+- **Idle session recap styling & prompt refinement** — rewritten recap prompt to draft a concise 1–2 sentence summary focused on progress and current state (Claude Code style) without prescriptive next-step instructions. Upgraded TUI presentation with a bold accent `✦ Recap` header and indented dimmed body.
+- **Enhanced `/goal` skill command** — expanded `meta/goal` built-in skill with comprehensive action schemas (`create`, `get`, `set_tasks`, `update_task`, `update`), multi-phase workflow directives (ingestion, continuous execution, independent audit), and best practices ensuring agents maintain active goal tracking throughout long-running tasks.
+- **Modernized `vtx-goal` UI** — fully theme-driven redesign of both the above-editor beacon and the expanded dashboard: badge-style `vtx-goal` title chip using theme badge colors, colored status dot (`● running/paused/blocked`), two-tone progress bars (accent fill → success at 100%, border track) with bold percentage readouts, highlighted current task line, `◆` section markers, tree connectors (`├`/`└`) for tasks and activity, and muted file rows. Every color resolves from the active theme via `ColorsConfig`; no hardcoded colors.
+- **Faster test suite runs** — test commands now use `uv run --no-sync ... -p no:cacheprovider` (skip env re-sync + cache writes), with `-n auto` (pytest-xdist) for multi-file/full-suite runs (~30% faster full-suite wall time). AGENTS.md testing section updated.
 ### Changed
 
 - `Shift+Tab` now cycles handoff agents. Permission-mode cycling moved
@@ -625,6 +778,13 @@ Switchable handoff agents, a built-in `Task` tool for Claude Code-style subagent
   (e.g. `pr_summary` was dropped from the active tool list when the
   `code-review` agent's `tools_allow` didn't include it).
 
+- **Goal completion pause & auditor deadlock** — fixed an issue where `goal(action="update", status="complete")` erroneously marked the goal status as `paused` during the completion review.
+- **Subagent & auditor approval handling** — auditor and task subagent loops now automatically resolve `ToolApprovalEvent` and `AskUserEvent` futures, preventing sub-agents and completion audits from hanging indefinitely on approval gates.
+- **Session-start hooks/extensions never fired in the TUI** — `session_start` was emitted with the sync-only bus emit, which silently skips async handlers; it now emits through an async worker so YAML hooks (`SessionStart`) and async extension handlers run.
+- **Headless runs never emitted session lifecycle events** — `vtx -p ...` now fires `session_start` / `session_end` on the extension EventBus, so `SessionStart`/`SessionEnd` hooks work in non-interactive mode too.
+- **`PostToolUseFailure` and permission hooks were unreachable** — the tool-result bus event now also dispatches `PostToolUseFailure` (only when the tool errored), and the approval gate emits new `permission_request` / `permission_denied` bus events so `PermissionRequest` / `PermissionDenied` YAML hooks fire.
+- **Type-checker diagnostics in extension wiring** — `find_dynamic_model` imported from its actual module (`vtx.ai.dynamic_models`), narrowed `api_type` to `ApiType` in the session-title extension, asserted the non-None `ExtensionRunner` before binding actions, and replaced the nonexistent `runtime.set_model` reference with a catalog-resolving adapter over `ConversationRuntime.switch_model`.
+- **Stale goal focus on session resume** — starting a fresh session after resuming one without goal state now clears the previous focused-goal id instead of silently keeping it active.
 ## [0.1.3] - 2026-06-17 — VTX Agentic SDK
 
 Introduces `vtx.sdk`, a programmatic, multi-agent interface built on top of
@@ -699,6 +859,10 @@ a `/provider` filter that scopes the `/model` picker to one gateway.
   available from the SDK via the `tool` decorator). Surfaces in the TUI as
   an `AskUserView` with arrow-key / number-key selection and Enter to confirm.
 
+- **Idle session recap styling & prompt refinement** — rewritten recap prompt to draft a concise 1–2 sentence summary focused on progress and current state (Claude Code style) without prescriptive next-step instructions. Upgraded TUI presentation with a bold accent `✦ Recap` header and indented dimmed body.
+- **Enhanced `/goal` skill command** — expanded `meta/goal` built-in skill with comprehensive action schemas (`create`, `get`, `set_tasks`, `update_task`, `update`), multi-phase workflow directives (ingestion, continuous execution, independent audit), and best practices ensuring agents maintain active goal tracking throughout long-running tasks.
+- **Modernized `vtx-goal` UI** — fully theme-driven redesign of both the above-editor beacon and the expanded dashboard: badge-style `vtx-goal` title chip using theme badge colors, colored status dot (`● running/paused/blocked`), two-tone progress bars (accent fill → success at 100%, border track) with bold percentage readouts, highlighted current task line, `◆` section markers, tree connectors (`├`/`└`) for tasks and activity, and muted file rows. Every color resolves from the active theme via `ColorsConfig`; no hardcoded colors.
+- **Faster test suite runs** — test commands now use `uv run --no-sync ... -p no:cacheprovider` (skip env re-sync + cache writes), with `-n auto` (pytest-xdist) for multi-file/full-suite runs (~30% faster full-suite wall time). AGENTS.md testing section updated.
 ### Changed
 - Restructured `builtin_skills/` to use category folders (`cloud/`, `code-review/`,
   `general/`, `meta/`, `setup/`). Skill discovery now recursively scans up to 2
@@ -734,12 +898,18 @@ a `/provider` filter that scopes the `/model` picker to one gateway.
   while it is hidden, and `escape` is always forwarded so the user can
   still cancel the prompt.
 
+- **Goal completion pause & auditor deadlock** — fixed an issue where `goal(action="update", status="complete")` erroneously marked the goal status as `paused` during the completion review.
+- **Subagent & auditor approval handling** — auditor and task subagent loops now automatically resolve `ToolApprovalEvent` and `AskUserEvent` futures, preventing sub-agents and completion audits from hanging indefinitely on approval gates.
+- **Session-start hooks/extensions never fired in the TUI** — `session_start` was emitted with the sync-only bus emit, which silently skips async handlers; it now emits through an async worker so YAML hooks (`SessionStart`) and async extension handlers run.
+- **Headless runs never emitted session lifecycle events** — `vtx -p ...` now fires `session_start` / `session_end` on the extension EventBus, so `SessionStart`/`SessionEnd` hooks work in non-interactive mode too.
+- **`PostToolUseFailure` and permission hooks were unreachable** — the tool-result bus event now also dispatches `PostToolUseFailure` (only when the tool errored), and the approval gate emits new `permission_request` / `permission_denied` bus events so `PermissionRequest` / `PermissionDenied` YAML hooks fire.
+- **Type-checker diagnostics in extension wiring** — `find_dynamic_model` imported from its actual module (`vtx.ai.dynamic_models`), narrowed `api_type` to `ApiType` in the session-title extension, asserted the non-None `ExtensionRunner` before binding actions, and replaced the nonexistent `runtime.set_model` reference with a catalog-resolving adapter over `ConversationRuntime.switch_model`.
+- **Stale goal focus on session resume** — starting a fresh session after resuming one without goal state now clears the previous focused-goal id instead of silently keeping it active.
 ## [0.1.2] - 2026-06-16 — Extension System
 
 Adds a first-class extension API that lets users add new LLM-callable tools,
 intercept and modify tool calls, react to lifecycle events, and register new
-slash commands — all without forking vtx. Modeled on the pi agent's extension
-hooks, but native to vtx's Python stack.
+slash commands — all without forking vtx, native to vtx's Python stack.
 
 ### Added
 
@@ -798,6 +968,10 @@ hooks, but native to vtx's Python stack.
 - `commands.__init__` routes `/<name>` to extension-registered commands after
   built-ins get a chance to handle them.
 
+- **Idle session recap styling & prompt refinement** — rewritten recap prompt to draft a concise 1–2 sentence summary focused on progress and current state (Claude Code style) without prescriptive next-step instructions. Upgraded TUI presentation with a bold accent `✦ Recap` header and indented dimmed body.
+- **Enhanced `/goal` skill command** — expanded `meta/goal` built-in skill with comprehensive action schemas (`create`, `get`, `set_tasks`, `update_task`, `update`), multi-phase workflow directives (ingestion, continuous execution, independent audit), and best practices ensuring agents maintain active goal tracking throughout long-running tasks.
+- **Modernized `vtx-goal` UI** — fully theme-driven redesign of both the above-editor beacon and the expanded dashboard: badge-style `vtx-goal` title chip using theme badge colors, colored status dot (`● running/paused/blocked`), two-tone progress bars (accent fill → success at 100%, border track) with bold percentage readouts, highlighted current task line, `◆` section markers, tree connectors (`├`/`└`) for tasks and activity, and muted file rows. Every color resolves from the active theme via `ColorsConfig`; no hardcoded colors.
+- **Faster test suite runs** — test commands now use `uv run --no-sync ... -p no:cacheprovider` (skip env re-sync + cache writes), with `-n auto` (pytest-xdist) for multi-file/full-suite runs (~30% faster full-suite wall time). AGENTS.md testing section updated.
 ## [0.1.1] - 2026-06-15 — Initial Public Release
 
 The first public release of Vtx, a minimalist, developer-first coding agent
@@ -897,6 +1071,10 @@ to keep the model's context window free for what matters.
 - Auto-discovers `fd` and `rg` on `PATH` (or in `~/.vtx/bin/`); falls back
   to `pathlib` / `re` walks when missing.
 
+- **Idle session recap styling & prompt refinement** — rewritten recap prompt to draft a concise 1–2 sentence summary focused on progress and current state (Claude Code style) without prescriptive next-step instructions. Upgraded TUI presentation with a bold accent `✦ Recap` header and indented dimmed body.
+- **Enhanced `/goal` skill command** — expanded `meta/goal` built-in skill with comprehensive action schemas (`create`, `get`, `set_tasks`, `update_task`, `update`), multi-phase workflow directives (ingestion, continuous execution, independent audit), and best practices ensuring agents maintain active goal tracking throughout long-running tasks.
+- **Modernized `vtx-goal` UI** — fully theme-driven redesign of both the above-editor beacon and the expanded dashboard: badge-style `vtx-goal` title chip using theme badge colors, colored status dot (`● running/paused/blocked`), two-tone progress bars (accent fill → success at 100%, border track) with bold percentage readouts, highlighted current task line, `◆` section markers, tree connectors (`├`/`└`) for tasks and activity, and muted file rows. Every color resolves from the active theme via `ColorsConfig`; no hardcoded colors.
+- **Faster test suite runs** — test commands now use `uv run --no-sync ... -p no:cacheprovider` (skip env re-sync + cache writes), with `-n auto` (pytest-xdist) for multi-file/full-suite runs (~30% faster full-suite wall time). AGENTS.md testing section updated.
 ### Packaging and distribution
 - Python 3.12+ (CI-tested on 3.12, 3.13, 3.14).
 - Managed with [uv](https://docs.astral.sh/uv/); installed as a global tool

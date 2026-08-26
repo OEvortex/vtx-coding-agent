@@ -1,9 +1,9 @@
 import pytest
 
 from vtx.ai.agent.loop import Agent
-from vtx.ai.agent.runtime import ConversationRuntime
 from vtx.ai.agent.session import Session
 from vtx.ai.providers.mock import MockProvider
+from vtx.coding_agent.runtime import ConversationRuntime
 from vtx.core.types import AssistantMessage, TextContent
 from vtx.tui.session_ui import SessionUIMixin
 

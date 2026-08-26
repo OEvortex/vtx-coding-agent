@@ -460,6 +460,19 @@ wheels = [
 ]
 
 [[package]]
+name = "cito"
+version = "0.3.0"
+source = { registry = "https://pypi.org/simple" }
+sdist = { url = "https://files.pythonhosted.org/packages/e7/67/86747b5b94114e98db6042b901a9c549bd23b8fa1d15c76e6609cb7428d0/cito-0.3.0.tar.gz", hash = "sha256:c4dd383ca756c5c462820420bc57fa45844478f8509cd5a5ee85b1ca9a49358b", size = 94284, upload-time = "2026-07-13T07:54:57.948Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/d6/b2/accff5b6c9409f03da87a7ade0b3c59985118564e8615d30439568dcb74a/cito-0.3.0-py3-none-macosx_10_12_x86_64.whl", hash = "sha256:19fa148c7a37e207d80cabd7ed28e3e64a062397e917fc5132c95d7e76ccbf93", size = 2034260, upload-time = "2026-07-13T07:54:48.098Z" },
+    { url = "https://files.pythonhosted.org/packages/b0/7c/f3435576a597c30881bc4a3d71673ae07253f5f99df7f4dec545ce47d337/cito-0.3.0-py3-none-macosx_11_0_arm64.whl", hash = "sha256:601ddf558b9063698058d5bccbba6598321ba8ba34aba143e1ba3e07bd26f717", size = 1933472, upload-time = "2026-07-13T07:54:49.972Z" },
+    { url = "https://files.pythonhosted.org/packages/9b/62/e84d9d4be81cce0b2c358feee3d0c2aa5c8fac82303abf2a6c42c5513e33/cito-0.3.0-py3-none-manylinux_2_17_aarch64.manylinux2014_aarch64.whl", hash = "sha256:28d177ebbd3a453732e222f658b63fcbea887a0ed3102a3dc340d4746aeed835", size = 1997918, upload-time = "2026-07-13T07:54:51.764Z" },
+    { url = "https://files.pythonhosted.org/packages/d3/f2/6f93fd9676c11f7b81175354f5f349c24e088754c6f28b82be12c4862572/cito-0.3.0-py3-none-manylinux_2_17_x86_64.manylinux2014_x86_64.whl", hash = "sha256:50254218629f29af5bedf14b717b9b90a28c22e67e7885c6e8849e98547e80bc", size = 2124659, upload-time = "2026-07-13T07:54:53.602Z" },
+    { url = "https://files.pythonhosted.org/packages/9a/bd/1c6f8b7beb2b454332841e176912b46a8293826b03aa646f0d13ec16c93d/cito-0.3.0-py3-none-win_amd64.whl", hash = "sha256:960e75d921929d4617b3f1f756bea410533aa9e0e826e8554b82aa8e3b91b921", size = 2100788, upload-time = "2026-07-13T07:54:55.368Z" },
+]
+
+[[package]]
 name = "colorama"
 version = "0.4.6"
 source = { registry = "https://pypi.org/simple" }
@@ -2876,7 +2889,7 @@ wheels = [
 
 [[package]]
 name = "vtx-coding-agent"
-version = "1.0.0"
+version = "1.0.1"
 source = { editable = "." }
 dependencies = [
     { name = "aiofiles" },
@@ -2956,6 +2969,7 @@ whatsapp = [
 
 [package.dev-dependencies]
 dev = [
+    { name = "cito" },
     { name = "pyright" },
     { name = "pytest" },
     { name = "pytest-asyncio" },
@@ -3019,6 +3033,7 @@ provides-extras = ["api", "azure", "wecom", "weixin", "msteams", "matrix", "disc
 
 [package.metadata.requires-dev]
 dev = [
+    { name = "cito", specifier = ">=0.3.0" },
     { name = "pyright", specifier = ">=1.1.408" },
     { name = "pytest", specifier = ">=9.0.2" },
     { name = "pytest-asyncio", specifier = ">=1.3.0" },

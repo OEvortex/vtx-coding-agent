@@ -1,0 +1,129 @@
+"""Concrete built-in tools of the Vtx coding agent.
+
+The registry below assembles the default tool set. Generic tool
+infrastructure (:class:`BaseTool`, schema slimming) comes from the
+harness at :mod:`vtx.ai.agent.tools`.
+"""
+
+from vtx.ai.agent.tools import BaseTool, get_tool_definitions, set_default_tool_lookup
+
+from ..goal.tools import GoalTool
+from .ask_user import AskUserTool
+from .background import BackgroundTaskManager, BackgroundTaskRecord, get_manager, set_manager
+from .bash import BashTool
+from .edit import EditTool
+from .find import FindTool
+from .grep import GrepTool
+from .read import ReadTool
+from .skill import SkillTool
+from .task import TaskTool
+from .web import WebSearchTool, WebTool
+from .write import WriteTool
+
+# Note: Sub-agent dispatching is shipped as a default tool in vtx.
+# The generic dispatcher context (provider, model, cwd, …) that
+# the tool reads lives in :mod:`vtx.ai.agent.dispatcher`; the runtime
+# populates it on every state change. Background sub-agents are
+# managed by :mod:`vtx.coding_agent.tools.background`, and their results are
+# delivered automatically via completion notifications.
+
+__all__ = [
+    "DEFAULT_TOOLS",
+    "PARENT_ONLY_TOOLS",
+    "AskUserTool",
+    "BackgroundTaskManager",
+    "BackgroundTaskRecord",
+    "BashTool",
+    "EditTool",
+    "FindTool",
+    "GrepTool",
+    "ReadTool",
+    "SkillTool",
+    "TaskTool",
+    "WebSearchTool",
+    "WebTool",
+    "WriteTool",
+    "get_manager",
+    "get_tool",
+    "get_tool_definitions",
+    "get_tools",
+    "get_tools_with_extensions",
+    "set_manager",
+    "tools_by_name",
+]
+
+all_tools: list[BaseTool] = [
+    ReadTool(),
+    EditTool(),
+    WriteTool(),
+    BashTool(),
+    FindTool(),
+    GrepTool(),
+    SkillTool(),
+    WebTool(),
+    AskUserTool(),
+    TaskTool(),
+    GoalTool(),
+]
+
+tools_by_name: dict[str, BaseTool] = {tool.name: tool for tool in all_tools}
+DEFAULT_TOOLS: list[str] = [
+    "read",
+    "edit",
+    "write",
+    "bash",
+    "find",
+    "skill",
+    "web",
+    "ask_user",
+    "task",
+    "goal",
+]
+
+# Tools that only the top-level session may call: sub-agents never dispatch
+# sub-agents and never own goal lifecycle state (focus is user-owned and
+# session-scoped).
+PARENT_ONLY_TOOLS: frozenset[str] = frozenset({"task", "goal"})
+
+
+def get_tools(names: list[str]) -> list[BaseTool]:
+    return [tool for tool in all_tools if tool.name in names]
+
+
+def get_tool(tool_name: str) -> BaseTool | None:
+    return tools_by_name.get(tool_name)
+
+
+def get_tools_with_extensions(
+    default_names: list[str], extension_tools: list[BaseTool] | None = None
+) -> list[BaseTool]:
+    """Return the requested built-in tools plus any extension tools.
+
+    Extension tools with the same name as a built-in win (override
+    behavior). Extension tools not in ``default_names`` are
+    included anyway so the LLM can see and call them. ``extension_tools``
+    is a no-op for backwards compatibility when no extensions are loaded.
+    """
+    ext_list = list(extension_tools or [])
+    result: list[BaseTool] = []
+    overrides: dict[str, BaseTool] = {t.name: t for t in ext_list}
+
+    for name in default_names:
+        if name in overrides:
+            result.append(overrides.pop(name))
+        else:
+            builtin = tools_by_name.get(name)
+            if builtin is not None:
+                result.append(builtin)
+
+    for tool in ext_list:
+        if tool.name in {t.name for t in result}:
+            continue
+        result.append(tool)
+
+    return result
+
+
+# Expose the built-in registry to the harness as a name-resolution
+# fallback (e.g. the turn engine resolving a tool call by name).
+set_default_tool_lookup(tools_by_name.get)

@@ -7,8 +7,8 @@ vtx-coding-agent/
 ├── src/
 │   ├── ai/             # LLM layer + agent harness
 │   │   ├── providers/  #   openai_sdk, anthropic_sdk, mock, sanitize
-│   │   ├── sdk/        #   thin LLM SDK adapters (openai, anthropic, supercode)
-│   │   ├── oauth/      #   copilot, openai, supercode, dynamic logins
+│   │   ├── sdk/        #   thin LLM SDK adapters (openai, anthropic)
+│   │   ├── oauth/      #   copilot, openai, dynamic logins
 │   │   └── agent/      #   the harness: loop, turn, runtime, session,
 │   │       │           #   tools/, prompts/, context/, extensions/,
 │   │       │           #   agents/ (handoff profiles), hooks/

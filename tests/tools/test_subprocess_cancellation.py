@@ -2,8 +2,8 @@ import asyncio
 
 import pytest
 
-from vtx.ai.agent.tools.bash import BashParams, BashTool
-from vtx.ai.agent.tools.read import ReadParams, ReadTool
+from vtx.coding_agent.tools.bash import BashParams, BashTool
+from vtx.coding_agent.tools.read import ReadParams, ReadTool
 
 
 class FakeProcess:
@@ -45,7 +45,7 @@ async def test_read_directory_cancellation_waits_for_communicate_cleanup(tmp_pat
     async def mock_ensure_tool(tool, silent=False):
         return "fd"
 
-    monkeypatch.setattr("vtx.ai.agent.tools.read.ensure_tool", mock_ensure_tool)
+    monkeypatch.setattr("vtx.coding_agent.tools.read.ensure_tool", mock_ensure_tool)
     monkeypatch.setattr(asyncio, "create_subprocess_exec", mock_create_subprocess_exec)
 
     cancel_event = asyncio.Event()
@@ -74,7 +74,7 @@ async def test_bash_cancellation_waits_for_communicate_cleanup(monkeypatch):
 
     monkeypatch.setattr(asyncio, "create_subprocess_shell", mock_create_subprocess_shell)
     monkeypatch.setattr(asyncio, "create_subprocess_exec", mock_create_subprocess_shell)
-    monkeypatch.setattr("vtx.ai.agent.tools.bash._kill_process_tree", mock_kill_process_tree)
+    monkeypatch.setattr("vtx.coding_agent.tools.bash._kill_process_tree", mock_kill_process_tree)
 
     cancel_event = asyncio.Event()
     cancel_event.set()

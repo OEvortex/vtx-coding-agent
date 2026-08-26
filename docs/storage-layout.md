@@ -27,6 +27,7 @@ Vtx keeps its state under a single config directory (`~/.vtx`) plus project-loca
 | `.vtx/agent/*.py` | Project handoff agents, walked up to the git root |
 | `.vtx/extensions/*.py` | Project extensions |
 | `.vtx/hooks.yml` | Project hooks |
+| `.vtx/goals/active_goal_*.md`, `archived/`, `ledger.jsonl`, `settings.json` | Persistent goal system (see [goals.md](goals.md)) |
 | `AGENTS.md` / `CLAUDE.md` | Project guidelines, discovered from git root down to cwd |
 | `.agents/skills/<name>/` | Project skills (see [skills.md](skills.md)) |
 

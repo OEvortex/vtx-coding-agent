@@ -12,10 +12,10 @@ from collections.abc import AsyncIterator
 
 import pytest
 
-from vtx.ai.agent.tools.ask_user import AskUserTool
 from vtx.ai.agent.tools.base import BaseTool
 from vtx.ai.agent.turn import run_single_turn
 from vtx.ai.base import BaseProvider, LLMStream, ProviderConfig
+from vtx.coding_agent.tools.ask_user import AskUserTool
 from vtx.core import AskUserEvent, AskUserResponse, ToolResultEvent, TurnEndEvent
 from vtx.core.types import (
     Message,
@@ -115,10 +115,12 @@ async def test_ask_user_with_options_yields_event_and_records_selection():
     ask_events = [e for e in events if isinstance(e, AskUserEvent)]
     assert len(ask_events) == 1
     ask = ask_events[0]
-    assert ask.question == "Pick a package manager"
-    assert ask.multi_select is False
-    assert ask.header == "Pkg mgr"
-    assert [o.label for o in ask.options] == ["npm", "pnpm"]
+    assert len(ask.questions) == 1
+    question = ask.questions[0]
+    assert question.question == "Pick a package manager"
+    assert question.multi_select is False
+    assert question.header == "Pkg mgr"
+    assert [o.label for o in question.options] == ["npm", "pnpm"]
 
     # ToolResultEvent should carry the user's answer
     result_events = [e for e in events if isinstance(e, ToolResultEvent)]

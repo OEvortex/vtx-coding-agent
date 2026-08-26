@@ -1,6 +1,6 @@
 # Tools
 
-Vtx ships 10 built-in tools. Nine are enabled by default; `grep` is built in but opt-in (enable it via an extension, agent `tools_allow`, or a custom tool list).
+Vtx ships 11 built-in tools. Ten are enabled by default; `grep` is built in but opt-in (enable it via an extension, agent `tools_allow`, or a custom tool list).
 
 | Tool | Does | Default |
 | --- | --- | --- |
@@ -13,6 +13,7 @@ Vtx ships 10 built-in tools. Nine are enabled by default; `grep` is built in but
 | `web` | Web search (Exa neural) | yes |
 | `ask_user` | Ask the user a clarifying question | yes |
 | `task` | Dispatch a sub-agent | yes |
+| `goal` | Persistent project goals: create, track tasks, complete with audit | yes |
 | `grep` | Search file contents (`ripgrep`) | no |
 
 All tools are `BaseTool` subclasses with Pydantic params. The `mutating` flag drives permission gating: non-mutating tools run without approval, mutating tools follow the permission mode (see [permissions.md](permissions.md)).
@@ -137,3 +138,27 @@ Built-in presets (overridable under `task.subagent_presets` in config):
 - **Plan** — read-only planner that produces a step-by-step plan without touching files.
 
 Results are capped at 32,000 chars with the last 200 transcript lines attached.
+
+## goal
+
+One action-dispatched tool for the persistent goal system (see [goals.md](goals.md)). All actions operate on the focused goal; only the top-level session has this tool.
+
+| Param | Type | Notes |
+| --- | --- | --- |
+| `action` | enum, required | `create`, `get`, `update`, `set_tasks`, `update_task` |
+| `objective` | string | `create`: complete outcome (1–4000 chars) |
+| `mode` | string | `create`: `regular` (default) or `sisyphus` |
+| `verification` | string | `create`: completion contract text |
+| `token_budget` | int | `create`: total-token budget; goal becomes `budget_limited` at the cap |
+| `status` | string | `update`: `complete`, `blocked`, `paused`, `active` (resume), `revise` |
+| `reason` | string | `update`: required for `blocked`; change notes for `revise` |
+| `completion_summary` | string | `update` + `complete`: short claim of satisfaction (auditor-checked) |
+| `review_feedback` | string | `update`: auditor changes-required feedback to record |
+| `tasks` | list | `set_tasks`: flat parent-linked items `{title, id?, parent_id?, note?}` |
+| `task_id` | string | `update_task`: target task id, e.g. `t3.2` |
+| `task_status` | string | `update_task`: `start`, `complete`, `skipped`, `pending` (reopen) |
+| `evidence` | string | `update_task`: required when completing a task with a `Contract:` note |
+| `note` | string | `update_task`: skip reason or note |
+| `subtasks` | list | `update_task`: attach subtasks under the target |
+
+`status="complete"` records the claim, then runs an independent auditor sub-agent over the workspace; the goal archives on `<approved/>` and stays open with feedback otherwise. The tool is non-mutating for permission purposes — archiving requires explicit user confirmation.

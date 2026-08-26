@@ -25,6 +25,8 @@ Vtx stores config in `~/.vtx/config.yml` (created with defaults on first run). E
 | `on_overflow` | `"continue"` | `continue` auto-compacts; `pause` stops and asks |
 | `threshold_percent` | `80` | Compact when context usage crosses this % of the window |
 
+The window is the active model's real context window from the catalog (e.g. 1M-class models compact at ~800k, not at the fallback). `agent.default_context_window` applies only when the model has no known window.
+
 ## `agent`
 
 | Field | Default | Notes |
@@ -56,6 +58,15 @@ Vtx stores config in `~/.vtx/config.yml` (created with defaults on first run). E
 | --- | --- | --- |
 | `enabled` | `false` | Sound on completion/permission/error events |
 | `volume` | `0.5` | 0.0–1.0 |
+
+## `recap`
+
+Automatic session recap. After an agent run finishes and you haven't typed for a while (or when you resume a session), vtx drafts a 1–3 sentence "where you left off" summary using the current model and renders it in the chat log. Cleared on the next prompt; also available any time via `/recap`.
+
+| Field | Default | Notes |
+| --- | --- | --- |
+| `enabled` | `true` | Set to `false` to disable automatic recaps (`/recap` still works) |
+| `idle_seconds` | `30` | Idle time after a run before a recap is drafted (minimum 5) |
 
 ## `extensions`
 

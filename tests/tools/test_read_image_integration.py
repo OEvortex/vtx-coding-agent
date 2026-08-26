@@ -1,6 +1,6 @@
 import pytest
 
-from vtx.ai.agent.tools.read import ReadParams, ReadTool
+from vtx.coding_agent.tools.read import ReadParams, ReadTool
 from vtx.core.types import ImageContent
 
 

@@ -5,6 +5,7 @@ from __future__ import annotations
 from collections import deque
 from typing import TYPE_CHECKING, Any
 
+from vtx.core.types import ImageContent
 from vtx.tui.input import InputBox
 from vtx.tui.widgets import QueueDisplay
 
@@ -12,10 +13,10 @@ from vtx.tui.widgets import QueueDisplay
 class QueueUIMixin:
     """Manages the two message queues: steer (injected mid-run) and pending (run next)."""
 
-    _pending_queue: deque[tuple[str, str]]
-    _steer_queue: deque[tuple[str, str]]
+    _pending_queue: deque[tuple[str, str, list[ImageContent] | None]]
+    _steer_queue: deque[tuple[str, str, list[ImageContent] | None]]
     _queue_selection: tuple[bool, int] | None
-    _queue_editing: tuple[bool, int, tuple[str, str]] | None
+    _queue_editing: tuple[bool, int, tuple[str, str, list[ImageContent] | None]] | None
 
     if TYPE_CHECKING:
         query_one: Any
@@ -23,11 +24,11 @@ class QueueUIMixin:
     def _queue_items(self) -> list[tuple[bool, int, str, str]]:
         steer = [
             (True, index, display, query)
-            for index, (display, query) in enumerate(self._steer_queue)
+            for index, (display, query, _) in enumerate(self._steer_queue)
         ]
         pending = [
             (False, index, display, query)
-            for index, (display, query) in enumerate(self._pending_queue)
+            for index, (display, query, _) in enumerate(self._pending_queue)
         ]
         return steer + pending
 
@@ -50,8 +51,8 @@ class QueueUIMixin:
 
     def _update_queue_display(self) -> None:
         queue_display = self.query_one("#queue-display", QueueDisplay)
-        steer_items = [(display, True) for display, _ in self._steer_queue]
-        normal_items = [(display, False) for display, _ in self._pending_queue]
+        steer_items = [(display, True) for display, _, _ in self._steer_queue]
+        normal_items = [(display, False) for display, _, _ in self._pending_queue]
         selected = self._selected_queue_flat_index()
         editing = None
 
@@ -121,7 +122,7 @@ class QueueUIMixin:
             return False
         is_steer, index, _ = self._queue_editing
         queue = self._steer_queue if is_steer else self._pending_queue
-        queue.insert(min(index, len(queue)), (display_text, query_text))
+        queue.insert(min(index, len(queue)), (display_text, query_text, None))
         self._queue_editing = None
         self._queue_selection = (is_steer, min(index, len(queue) - 1))
         self._update_queue_display()

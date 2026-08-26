@@ -12,6 +12,7 @@ from vtx.core import (
     AgentEndEvent,
     ApprovalResponse,
     AskUserEvent,
+    AskUserQuestion,
     AskUserResponse,
     ErrorEvent,
     ToolApprovalEvent,
@@ -125,7 +126,7 @@ async def test_render_run_composition_stream_error():
 async def test_run_headless_prints_and_restores_permissions(monkeypatch, capsys):
     get_config().permissions.mode = "prompt"
     monkeypatch.setattr(
-        "vtx.ai.agent.runtime.create_provider",
+        "vtx.coding_agent.runtime.create_provider",
         lambda api_type, config: MockProvider(config, scenario="simple_text"),
     )
     code = await _run_headless("hi")
@@ -138,7 +139,7 @@ async def test_run_headless_prints_and_restores_permissions(monkeypatch, capsys)
 async def test_run_headless_sets_auto_during_run_and_restores(monkeypatch):
     get_config().permissions.mode = "prompt"
     monkeypatch.setattr(
-        "vtx.ai.agent.runtime.create_provider",
+        "vtx.coding_agent.runtime.create_provider",
         lambda api_type, config: MockProvider(config, scenario="simple_text"),
     )
 
@@ -202,9 +203,7 @@ async def test_render_run_records_unanswered_ask_user():
         [
             AskUserEvent(
                 tool_call_id="t1",
-                question="Pick a package manager",
-                options=[],
-                multi_select=False,
+                questions=[AskUserQuestion(question="Pick a package manager")],
                 future=future,
             ),
             AgentEndEvent(stop_reason=StopReason.STOP),

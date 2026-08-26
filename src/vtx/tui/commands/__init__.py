@@ -7,6 +7,7 @@
 - providers.py - /provider
 - agents.py   - /agent
 - switch.py   - /switch
+- update.py   - /update
 """
 
 from __future__ import annotations
@@ -15,11 +16,13 @@ from ..chat import ChatLog
 from .agents import AgentCommands
 from .auth import AuthCommands
 from .base import CommandSupport
+from .goals import GoalCommands
 from .models import ModelCommands
 from .providers import ProviderCommands
 from .sessions import SessionCommands
 from .settings import SettingsCommands, SettingsSelectionResult
 from .switch import SwitchCommands
+from .update import UpdateCommands
 
 
 class CommandsMixin(
@@ -30,6 +33,8 @@ class CommandsMixin(
     ProviderCommands,
     SwitchCommands,
     AgentCommands,
+    UpdateCommands,
+    GoalCommands,
 ):
     def _handle_command(self, text: str) -> bool:
         parts = text[1:].split(maxsplit=1)
@@ -69,6 +74,9 @@ class CommandsMixin(
         if cmd == "notifications":
             self._handle_notifications_command(args)
             return True
+        if cmd == "ponytail":
+            self._handle_ponytail_command(args)
+            return True
         if cmd == "handoff":
             self._handle_handoff_command(args)
             return True
@@ -96,16 +104,22 @@ class CommandsMixin(
         if cmd == "compact":
             self._handle_compact_command()
             return True
+        if cmd == "recap":
+            self._handle_recap_command()
+            return True
         if cmd == "agent":
             self._handle_agent_command(args)
             return True
         if cmd == "switch":
             self._handle_switch_command(args)
             return True
+        if cmd == "update":
+            self._handle_update_command()
+            return True
 
         # Extension commands take a final swing at anything the built-ins
-        # did not handle. They can shadow built-in commands; this matches
-        # pi's behavior of letting extensions override the agent's UI.
+        # did not handle. They can shadow built-in commands, letting
+        # extensions override the agent's UI.
         ext_cmd = self._extension_command_lookup(cmd)
         if ext_cmd is not None:
             self._dispatch_extension_command(ext_cmd, args)
@@ -145,10 +159,12 @@ __all__ = [
     "AuthCommands",
     "CommandSupport",
     "CommandsMixin",
+    "GoalCommands",
     "ModelCommands",
     "ProviderCommands",
     "SessionCommands",
     "SettingsCommands",
     "SettingsSelectionResult",
     "SwitchCommands",
+    "UpdateCommands",
 ]

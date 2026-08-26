@@ -50,12 +50,13 @@ Vtx is also **modular**: a keyboard-driven TUI, a headless CLI, a Python SDK, an
 ## Features
 
 - **Lean by design** — ~2,600-token runtime; no hidden prompt bloat.
-- **9 surgical default tools** — `read`, `edit`, `write`, `bash`, `find`, `skill`, `web`, `ask_user`, `task`. (`grep` is a built-in but not enabled by default.)
+- **10 surgical default tools** — `read`, `edit`, `write`, `bash`, `find`, `skill`, `web`, `ask_user`, `task`, `goal`. (`grep` is a built-in but not enabled by default.)
 - **TUI & CLI** — a Textual-powered terminal UI, plus a non-interactive headless mode for scripts and CI.
 - **Any model, any endpoint** — 50+ built-in providers (OpenAI, Anthropic, Azure, DeepSeek, Copilot, Zhipu, Groq, Mistral, Together, Ollama, …) plus OpenAI/Anthropic-compatible custom providers and local models (Ollama, llama.cpp, vLLM).
 - **Dynamic context** — auto-loads `AGENTS.md`/`CLAUDE.md` guidelines and triggers modular `Skills`.
 - **Switchable handoff agents** — named profiles (review, security audit, fast impl) cycled live with `Shift+Tab`, or activated with `/agent <name>`.
 - **Task sub-agents** — delegate self-contained work to isolated sessions that stream progress back.
+- **Persistent goals** — give the agent a durable, file-backed objective with a task tree, live status widget, auto-continue checkpoints, and an independent completion audit. See [docs/goals.md](docs/goals.md).
 - **Safe by default** — `prompt` permission mode gates mutating tools; destructive commands are blocked.
 - **Self-extensible** — drop a Python file to add tools, intercept calls, register slash commands, or hook lifecycle events.
 - **YAML hooks** — declarative `.vtx/hooks.yml` for shell and HTTP lifecycle automation.
@@ -95,7 +96,7 @@ vtx -p "Write unit tests for src/ai/agent/tools/task.py"
 | `edit` | Precise search-and-replace | `ask_user` | Ask a clarifying question |
 | `write` | Create/overwrite files | `task` | Dispatch a sub-agent |
 | `find` | Glob file discovery | `skill` | Manage skill workflows |
-| `bash` | Run shell commands | | |
+| `bash` | Run shell commands | `goal` | Persistent goals: plan, track, complete w/ audit |
 
 See [docs/tools.md](docs/tools.md) for full parameter specs.
 

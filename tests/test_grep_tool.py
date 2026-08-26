@@ -3,7 +3,7 @@ from pathlib import Path
 
 import pytest
 
-from vtx.ai.agent.tools.grep import GrepParams, GrepTool
+from vtx.coding_agent.tools.grep import GrepParams, GrepTool
 
 
 @pytest.mark.asyncio
@@ -12,7 +12,7 @@ async def test_grep_tool_python_fallback(tmp_path: Path, monkeypatch):
     async def mock_ensure_tool(*args, **kwargs):
         return None
 
-    monkeypatch.setattr("vtx.ai.agent.tools.grep.ensure_tool", mock_ensure_tool)
+    monkeypatch.setattr("vtx.coding_agent.tools.grep.ensure_tool", mock_ensure_tool)
     monkeypatch.setattr(shutil, "which", lambda cmd: None)
 
     # Create dummy files
@@ -41,7 +41,7 @@ async def test_grep_tool_python_fallback_glob(tmp_path: Path, monkeypatch):
     async def mock_ensure_tool(*args, **kwargs):
         return None
 
-    monkeypatch.setattr("vtx.ai.agent.tools.grep.ensure_tool", mock_ensure_tool)
+    monkeypatch.setattr("vtx.coding_agent.tools.grep.ensure_tool", mock_ensure_tool)
     monkeypatch.setattr(shutil, "which", lambda cmd: None)
 
     dir_path = tmp_path / "src"

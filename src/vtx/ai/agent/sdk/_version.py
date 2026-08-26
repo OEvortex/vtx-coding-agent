@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from vtx.coding_agent.version import VERSION
+from vtx.ai.agent.version import VERSION
 
 __version__ = VERSION
 

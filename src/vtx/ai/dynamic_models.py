@@ -14,8 +14,7 @@ day it ships, so this module:
 3. Persists the result to ``~/.vtx/models/<provider>.json`` with a TTL so
    the UI stays responsive when the network is slow or offline.
 4. Falls back to the cached snapshot on network failure (stale-while-revalidate).
-5. Filters free vs. paid models using the same dual heuristic as the
-   ``@neilurk12/pi-free-models`` extension that ships with pi:
+5. Filters free vs. paid models using a dual heuristic:
 
    - For providers that expose pricing (Kilo/OpenRouter-style), a model is free
      iff ``cost.input == 0 and cost.output == 0`` (or its name contains
@@ -43,6 +42,7 @@ import httpx
 
 from vtx.ai.context_length import safe_max_output_tokens
 from vtx.ai.models import ApiType, Model
+from vtx.ai.thinking import parse_models_dev_reasoning_options
 
 logger = logging.getLogger(__name__)
 
@@ -56,6 +56,27 @@ FETCH_TIMEOUT_SECONDS = 7.0
 HTTP_LIMITS = httpx.Limits(max_keepalive_connections=20, max_connections=40)
 MAX_CONCURRENT_FETCHES = 10
 
+# In-memory cache for cline free ids to avoid per-model I/O
+_CLINE_FREE_IDS: set[str] | None = None
+_CLINE_FREE_IDS_AT: float = 0.0
+_CLINE_FREE_IDS_MEM_TTL = 60.0
+
+
+def _get_cline_free_ids() -> set[str]:
+    global _CLINE_FREE_IDS, _CLINE_FREE_IDS_AT
+    now = time.time()
+    if _CLINE_FREE_IDS is not None and now - _CLINE_FREE_IDS_AT < _CLINE_FREE_IDS_MEM_TTL:
+        return _CLINE_FREE_IDS
+    try:
+        from vtx.ai.oauth.cline import get_cline_free_model_ids
+
+        ids = get_cline_free_model_ids()
+        _CLINE_FREE_IDS = ids
+        _CLINE_FREE_IDS_AT = now
+        return ids
+    except Exception:
+        return _CLINE_FREE_IDS if _CLINE_FREE_IDS is not None else set()
+
 
 @dataclass(frozen=True)
 class DynamicProviderConfig:
@@ -64,7 +85,7 @@ class DynamicProviderConfig:
     name: str
     base_url: str
     env_var: str
-    api: ApiType = field(default_factory=lambda: ApiType(ApiType.OPENAI_COMPLETIONS))
+    api: ApiType = field(default_factory=lambda: ApiType(ApiType.OPENAI_SDK))
     # Extra headers required by some gateways (e.g. Kilo's editor banner).
     headers: dict[str, str] = field(default_factory=dict)
     # If True, the provider does not check the Authorization header at all
@@ -74,12 +95,14 @@ class DynamicProviderConfig:
     # accessible (no key required for discovery). Inference still needs a
     # real key; this only relaxes the auth gate for the catalog fetch.
     openmodelendpoint: bool = False
+    # Path appended to base_url for the catalog (default "/models").
+    models_endpoint: str = "/models"
     # Some gateways return a bare JSON array instead of ``{"data": [...]}``.
     response_format: str = "openai"  # "openai" | "bare_array"
 
 
 _FAMILY_TO_API: dict[str, ApiType] = {
-    "openai_compat": ApiType(ApiType.OPENAI_COMPLETIONS),
+    "openai_compat": ApiType(ApiType.OPENAI_SDK),
     "anthropic": ApiType(ApiType.ANTHROPIC),
 }
 
@@ -104,10 +127,11 @@ def _build_dynamic_providers() -> dict[str, DynamicProviderConfig]:
             name=p.slug,
             base_url=p.base_url,
             env_var=p.api_key_env or "",
-            api=_FAMILY_TO_API.get(p.family, ApiType(ApiType.OPENAI_COMPLETIONS)),
+            api=_FAMILY_TO_API.get(p.family, ApiType(ApiType.OPENAI_SDK)),
             headers=dict(p.headers),
             api_key_optional=p.api_key_optional,
             openmodelendpoint=p.openmodelendpoint,
+            models_endpoint=p.models_endpoint or "/models",
         )
     return out
 
@@ -211,9 +235,33 @@ class DynamicModelEntry:
     max_tokens: int | None = None
     supports_images: bool = False
     supports_thinking: bool = False
+    thinking_level_map: dict[str, str | None] | None = None
     is_free: bool = False
     pricing_known: bool = False  # False = name-based free detection only
     raw: dict[str, Any] = field(default_factory=dict)
+
+    @classmethod
+    def from_dict(cls, m: dict[str, Any]) -> DynamicModelEntry:
+        context_window = m.get("context_window")
+        if context_window is None:
+            context_window = m.get("context_length")
+        max_tokens = m.get("max_tokens")
+        if max_tokens is None:
+            max_tokens = m.get("max_output_tokens")
+        raw_value = m.get("raw")
+
+        return cls(
+            id=str(m.get("id", "")),
+            name=str(m.get("name", m.get("id", ""))),
+            context_window=int(context_window) if context_window is not None else None,
+            max_tokens=int(max_tokens) if max_tokens is not None else None,
+            supports_images=bool(m.get("supports_images", False)),
+            supports_thinking=bool(m.get("supports_thinking", False)),
+            thinking_level_map=m.get("thinking_level_map"),
+            is_free=bool(m.get("is_free", False)),
+            pricing_known=bool(m.get("pricing_known", False)),
+            raw=raw_value if isinstance(raw_value, dict) else {},
+        )
 
 
 @dataclass
@@ -234,7 +282,11 @@ class CachedCatalog:
     @classmethod
     def from_dict(cls, data: dict[str, Any]) -> CachedCatalog:
         models_data = data.get("models", [])
-        models = [DynamicModelEntry(**m) for m in models_data if isinstance(m, dict)]
+        models = [
+            DynamicModelEntry.from_dict(m)
+            for m in models_data
+            if isinstance(m, dict) and m.get("id")
+        ]
         return cls(
             provider=data.get("provider", ""),
             fetched_at=float(data.get("fetched_at", 0.0)),
@@ -339,7 +391,7 @@ def _entry_name(raw: dict[str, Any], model_id: str) -> str:
 def _is_free_model(
     name: str, prompt_cost: float, completion_cost: float, pricing_known: bool
 ) -> bool:
-    """Dual heuristic mirroring the pi free-models extension."""
+    """Dual free-model heuristic (zero-cost pricing or "free" keyword)."""
     name_lower = name.lower()
     has_free_keyword = "free" in name_lower
     if pricing_known:
@@ -520,6 +572,13 @@ def _parse_models(
                 or "reasoning" in model_id_lower
             )
 
+        # 3b. Reasoning-effort detection: models.dev publishes
+        # verified ``reasoning_options``; convert them into a
+        # thinking-level map for per-model effort support.
+        thinking_level_map = None
+        if spec:
+            thinking_level_map = parse_models_dev_reasoning_options(spec.get("reasoning_options"))
+
         # 4. Supports images
         supports_images = None
         if spec:
@@ -536,6 +595,7 @@ def _parse_models(
             max_tokens=max_tokens,
             supports_images=supports_images,
             supports_thinking=supports_thinking,
+            thinking_level_map=thinking_level_map,
             is_free=_is_free_model(name, prompt_cost, completion_cost, pricing_known),
             pricing_known=pricing_known,
             raw=raw,
@@ -575,7 +635,11 @@ async def _async_fetch_catalog(
         headers["Authorization"] = f"Bearer {api_key}"
 
     base = config.base_url.rstrip("/")
-    url = f"{base}/models"
+    endpoint = config.models_endpoint or "/models"
+    # ensure leading slash
+    if not endpoint.startswith("/"):
+        endpoint = "/" + endpoint
+    url = f"{base}{endpoint}"
 
     async def _fetch(client: httpx.AsyncClient) -> httpx.Response:
         return await client.get(url, headers=headers)
@@ -804,7 +868,9 @@ def refresh_all_providers() -> dict[str, int]:
 # =================================================================================================
 
 
-def _to_static_model(provider: str, entry: DynamicModelEntry) -> Model:
+def _to_static_model(
+    provider: str, entry: DynamicModelEntry, *, cline_free_ids: set[str] | None = None
+) -> Model:
     _ensure_dynamic_providers()
     config = DYNAMIC_PROVIDERS[provider]
 
@@ -813,6 +879,17 @@ def _to_static_model(provider: str, entry: DynamicModelEntry) -> Model:
     supports_images = entry.supports_images
     supports_thinking = entry.supports_thinking
     context_window = entry.context_window
+    is_free = entry.is_free
+    # cline: free list overrides pricing heuristic (exact match)
+    # cline_free_ids is passed from the loop scope when available to avoid
+    # per-model I/O; fallback to process-wide cache.
+    if provider == "cline":
+        try:
+            free_ids = cline_free_ids if cline_free_ids is not None else _get_cline_free_ids()
+            if entry.id in free_ids:
+                is_free = True
+        except Exception:
+            pass
 
     from vtx.ai.context_length import context_length_manager
 
@@ -850,9 +927,11 @@ def _to_static_model(provider: str, entry: DynamicModelEntry) -> Model:
         max_tokens=max_tokens,
         supports_images=supports_images,
         supports_thinking=supports_thinking,
+        thinking_level_map=entry.thinking_level_map,
         context_window=context_window,
         supports_tools=supports_tools,
         supports_audio=supports_audio,
+        is_free=is_free,
     )
 
 
@@ -885,7 +964,8 @@ async def _aget_all_dynamic_models(force_refresh: bool = False) -> list[Model]:
 
     out: list[Model] = []
     for provider, entries in results:
-        out.extend(_to_static_model(provider, e) for e in entries)
+        cids = _get_cline_free_ids() if provider == "cline" else None
+        out.extend(_to_static_model(provider, e, cline_free_ids=cids) for e in entries)
     return out
 
 
@@ -901,8 +981,9 @@ def get_dynamic_models(force_refresh: bool = False) -> list[Model]:
         _ensure_dynamic_providers()
         out: list[Model] = []
         for provider in DYNAMIC_PROVIDERS:
+            cids = _get_cline_free_ids() if provider == "cline" else None
             for entry in get_provider_models(provider, force_refresh=force_refresh):
-                out.append(_to_static_model(provider, entry))
+                out.append(_to_static_model(provider, entry, cline_free_ids=cids))
         return out
 
 
@@ -921,9 +1002,10 @@ def find_dynamic_model(model_id: str, provider: str | None = None) -> Model | No
         cached = _read_cache(name)
         if cached is None:
             continue
+        cids = _get_cline_free_ids() if name == "cline" else None
         for entry in cached.models:
             if entry.id == model_id:
-                return _to_static_model(name, entry)
+                return _to_static_model(name, entry, cline_free_ids=cids)
     return None
 
 

@@ -46,6 +46,7 @@ Screen {{
     text-style: italic;
     padding: 0 1 0 1;
     margin: 1 0 0 0;
+    width: 100%;
 }}
 
 .thinking-block.-hidden {{
@@ -64,6 +65,7 @@ Screen {{
 .content-block {{
     padding: 0 1;
     margin-top: 1;
+    width: 100%;
 }}
 
 /* Ensure text wraps in all blocks */
@@ -82,6 +84,7 @@ Screen {{
     padding: 1 1;
     margin: 1 0 0 0;
     background: {colors.editor};
+    width: 100%;
 }}
 
 .user-block.skill-trigger-message {{
@@ -94,6 +97,7 @@ Screen {{
     margin: 1 0 0 0;
     border-top: solid {colors.notice};
     border-bottom: solid {colors.notice};
+    width: 100%;
 }}
 
 /* Launch warnings */
@@ -102,11 +106,13 @@ Screen {{
     margin: 1 0 0 0;
     border-top: solid {colors.notice};
     border-bottom: solid {colors.notice};
+    width: 100%;
 }}
 
 /* Session info */
 .session-info {{
     padding: 1;
+    width: 100%;
 }}
 
 /* Tool block */
@@ -114,6 +120,7 @@ Screen {{
     padding: 0 1;
     margin-top: 1;
     background: transparent;
+    width: 100%;
 }}
 
 .tool-block.-compact {{
@@ -197,6 +204,11 @@ Screen {{
     width: 100%;
 }}
 
+/* Agent details */
+.agent-details {{
+    width: 100%;
+}}
+
 /* Handoff link */
 .handoff-link-block {{
     background: {colors.panel};
@@ -209,12 +221,31 @@ Screen {{
 .aborted-message {{
     padding: 0 1;
     margin-top: 1;
+    width: 100%;
 }}
 
 /* Info message */
 .info-message {{
     padding: 0 1;
     margin-top: 1;
+    width: 100%;
+}}
+
+/* Session recap block: full-width labels so long summaries wrap */
+.recap-message {{
+    width: 100%;
+    padding: 0 1;
+}}
+
+.recap-message.-header {{
+    margin-top: 1;
+    color: {colors.accent};
+    text-style: bold;
+}}
+
+.recap-message.-body {{
+    color: {colors.dim};
+    padding: 0 1 0 2;
 }}
 
 /* Loaded resources should not add extra top margin */

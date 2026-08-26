@@ -4,11 +4,11 @@ from ..models import ApiType
 PROVIDER_API_BY_NAME: dict[str, ApiType] = {
     "openai": ApiType(ApiType.OPENAI_SDK),
     "anthropic": ApiType(ApiType.ANTHROPIC),
-    "supercode": ApiType(ApiType.SUPERCODE),
     "zhipu": ApiType(ApiType.OPENAI_SDK),
     "deepseek": ApiType(ApiType.OPENAI_SDK),
     "airouter": ApiType(ApiType.OPENAI_SDK),
     "opencode": ApiType(ApiType.OPENAI_SDK),
+    "openai-responses": ApiType(ApiType.OPENAI_RESPONSES),
     "kilo": ApiType(ApiType.OPENAI_SDK),
     "tokenrouter": ApiType(ApiType.OPENAI_SDK),
     "openrouter": ApiType(ApiType.OPENAI_SDK),
@@ -42,14 +42,10 @@ def get_provider_class(api_type: ApiType, provider_slug: str = "") -> type[BaseP
             from vtx.ai.providers.anthropic_sdk import AnthropicSDKProvider
 
             return AnthropicSDKProvider
-        case ApiType.OPENAI_COMPLETIONS:
-            from vtx.ai.providers.openai_sdk import OpenAISDKProvider
+        case ApiType.OPENAI_RESPONSES:
+            from vtx.ai.providers.openai_responses_sdk import OpenAIResponsesSDKProvider
 
-            return OpenAISDKProvider
-        case ApiType.SUPERCODE:
-            from vtx.ai.providers.supercode import SupercodeProvider
-
-            return SupercodeProvider
+            return OpenAIResponsesSDKProvider
     raise ValueError(f"Unsupported API type: {api_type.value}")
 
 

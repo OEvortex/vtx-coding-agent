@@ -7,6 +7,7 @@ import time
 
 from rich.console import Console
 
+from vtx.ai.agent.extensions import SESSION_SHUTDOWN
 from vtx.coding_agent.config import config
 from vtx.tui.app import Vtx
 
@@ -103,6 +104,15 @@ def run_tui(args: argparse.Namespace) -> None:
     if app._loaded_extensions.bus.handler_count("session_end"):
         app._loaded_extensions.bus.emit_sync(
             "session_end", cwd=app._cwd, session_id=app._session.id if app._session else ""
+        )
+
+    # Fire session_shutdown after session_end so extensions can clean up.
+    if app._loaded_extensions.bus.handler_count(SESSION_SHUTDOWN):
+        app._loaded_extensions.bus.emit_sync(
+            SESSION_SHUTDOWN,
+            cwd=app._cwd,
+            session_id=app._session.id if app._session else "",
+            reason="quit",
         )
 
     hints = list(app._exit_hints)

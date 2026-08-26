@@ -3,6 +3,7 @@ from typing import Protocol, cast
 import pytest
 from textual._ansi_sequences import ANSI_SEQUENCES_KEYS
 
+from vtx.core.types import ImageContent
 from vtx.tui import prompt_history as ph
 from vtx.tui.input import InputBox
 
@@ -116,3 +117,44 @@ def test_legacy_esc_cr_remains_shift_enter_mapping() -> None:
 
 def test_alt_enter_uses_csi_u_mapping() -> None:
     assert _sequence_value("\x1b[13;3u") == "alt+enter"
+
+
+def test_submit_with_attached_image_carries_images() -> None:
+    input_box = _TestableInputBox("what is this [image #1] showing")
+    input_box._images[1] = ImageContent(data="abc", mime_type="image/png")
+    input_box._image_counter = 1
+
+    input_box._do_submit()
+
+    assert len(input_box.posted_messages) == 1
+    message = input_box.posted_messages[0]
+    assert message.images == [ImageContent(data="abc", mime_type="image/png")]
+    # Display keeps an [image] placeholder where the attachment sat
+    assert message.text == "what is this [image] showing"
+    # Query text sent to the model drops the marker (image arrives as content)
+    assert message.query_text == "what is this  showing"
+    assert "[image #1]" not in message.query_text
+    assert input_box._fake_textarea.cleared is True
+    assert input_box._images == {}
+    assert input_box._image_counter == 0
+
+
+def test_image_only_submit_allowed_with_placeholder_display() -> None:
+    input_box = _TestableInputBox("[image #1]")
+    input_box._images[1] = ImageContent(data="xyz", mime_type="image/jpeg")
+    input_box._image_counter = 1
+
+    input_box._do_submit()
+
+    message = input_box.posted_messages[0]
+    assert len(message.images) == 1
+    assert message.text == "[image]"
+    assert message.query_text == ""
+
+
+def test_empty_submit_without_images_still_ignored() -> None:
+    input_box = _TestableInputBox("   ")
+
+    input_box._do_submit()
+
+    assert input_box.posted_messages == []

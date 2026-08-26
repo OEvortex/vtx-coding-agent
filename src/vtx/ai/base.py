@@ -1,3 +1,4 @@
+import asyncio
 import json
 import os
 from abc import ABC, abstractmethod
@@ -8,6 +9,15 @@ from typing import Any, ClassVar, Literal, cast
 from urllib.parse import urlparse
 
 import httpx
+
+# Apply httpcore GeneratorExit patch as early as possible so streaming
+# SDKs pick up the fixed ``safe_async_iterate``.
+try:
+    from vtx.ai._httpcore_patch import apply_patch as _apply_httpcore_patch
+
+    _apply_httpcore_patch()
+except Exception:
+    pass
 
 from vtx.core.types import (
     Message,
@@ -24,9 +34,6 @@ from vtx.core.types import (
 DEFAULT_THINKING_LEVELS: list[str] = ["none", "minimal", "low", "medium", "high", "xhigh"]
 
 # Provider-agnostic request/response types.
-# Defined here (not in agenite_claw) so vtx core and the agenite-claw gateway
-# share a single source of truth without a circular import once agenite_claw
-# becomes a separate package.
 
 
 @dataclass(slots=True)
@@ -113,6 +120,7 @@ ENV_API_KEY_MAP: dict[str, str] = {
     "openrouter": "OPENROUTER_API_KEY",
     "zyloo": "ZYLOO_API_KEY",
     "opengateway": "OPENGATEWAY_API_KEY",
+    "cline": "CLINE_API_KEY",
 }
 
 
@@ -191,6 +199,10 @@ class ProviderConfig:
     openai_compat_auth_mode: AuthMode = "auto"
     anthropic_compat_auth_mode: AuthMode = "auto"
     default_headers: dict[str, str] = field(default_factory=dict)
+    # Per-model effort map (from models.dev reasoning_options).
+    # When present, the OpenAI-compat SDK sends reasoning_effort for any
+    # provider whose catalog verifies support — not just hardcoded slugs.
+    thinking_level_map: dict[str, str | None] | None = None
 
 
 class LLMStream(AsyncIterator["StreamPart"]):
@@ -234,7 +246,25 @@ class LLMStream(AsyncIterator["StreamPart"]):
             return
         close = getattr(self._iterator, "aclose", None)
         if close is not None:
-            await close()
+            try:
+                await close()
+            except (
+                RuntimeError,
+                GeneratorExit,
+                StopAsyncIteration,
+                StopIteration,
+                asyncio.CancelledError,
+            ):
+                # httpcore 1.0.9 (and the vendored httpcore2 copy) has a bug
+                # where closing a streaming response that was not fully
+                # consumed raises "generator didn't stop after athrow()".
+                # Suppress it — the connection will be discarded anyway and
+                # the error is otherwise noisy (shown as "an error occurred
+                # during closing of asynchronous generator ...").
+                pass
+            except BaseException:
+                # Any other close error is non-fatal.
+                pass
 
     @property
     def usage(self) -> Usage | None:

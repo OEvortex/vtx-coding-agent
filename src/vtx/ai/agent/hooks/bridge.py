@@ -38,7 +38,9 @@ _EVENT_MAP: dict[str, list[str]] = {
     "turn_start": ["TurnStart"],
     "turn_end": ["TurnEnd"],
     "tool_call": ["PreToolUse"],
-    "tool_result": ["PostToolUse"],
+    "tool_result": ["PostToolUse", "PostToolUseFailure"],
+    "permission_request": ["PermissionRequest"],
+    "permission_denied": ["PermissionDenied"],
     "compaction_start": ["PreCompact"],
     "compaction_end": ["PostCompact"],
 }
@@ -113,6 +115,12 @@ class HookBridge:
         self, hook_event: str, ext_event: str, payload: dict[str, Any]
     ) -> dict[str, Any]:
         """Dispatch a hook event, running all matching handlers."""
+        if hook_event == "PostToolUseFailure" and not (
+            payload.get("is_error") or getattr(payload.get("result"), "is_error", False)
+        ):
+            # Only fire the failure variant for errored tool results.
+            return {}
+
         tool_name = payload.get("tool_name")
         ctx = self._build_context(hook_event, payload)
 

@@ -1,6 +1,6 @@
 import pytest
 
-from vtx.ai.agent.tools.edit import EditParams, EditTool
+from vtx.coding_agent.tools.edit import EditParams, EditTool
 
 
 @pytest.fixture

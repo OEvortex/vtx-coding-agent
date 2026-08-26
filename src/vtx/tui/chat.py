@@ -9,9 +9,9 @@ from textual.containers import VerticalScroll
 from textual.timer import Timer
 from textual.widgets import Label
 
-from vtx.ai.agent.context.skills import Skill
 from vtx.ai.agent.tools import BaseTool
 from vtx.coding_agent.config import config, get_agents_dir
+from vtx.coding_agent.context.skills import Skill
 from vtx.core import ApprovalResponse
 from vtx.core.types import ImageContent
 from vtx.tui.blocks import (
@@ -132,6 +132,8 @@ class ChatLog(VerticalScroll):
         self._spinner_ticks: int = 0
         self._spinner_line: str = ""
         self._scroll_pending: bool = False
+        # Session recap block (header + body labels), tracked for removal.
+        self._recap_labels: list[Label] = []
         # Task tool live state: per-tool-call transcript + last text
         # delta, updated by ``apply_task_progress``. Keyed by tool call
         # id; the block for that id must already exist (mounted when
@@ -188,6 +190,7 @@ class ChatLog(VerticalScroll):
         self._tool_output_expanded = False
         self._current_block = None
         self._last_status_label = None
+        self._recap_labels = []
 
     def on_click(self, event) -> None:
         event.stop()
@@ -468,6 +471,7 @@ class ChatLog(VerticalScroll):
             ("/logout", "Logout from a provider"),
             ("/export", "Export session to HTML file"),
             ("/copy", "Copy last agent response text to clipboard"),
+            ("/update", "Update vtx to latest version"),
         ]
         _append_aligned_section(text, "Commands", commands, **colors)
 
@@ -509,10 +513,19 @@ class ChatLog(VerticalScroll):
         return block
 
     def add_handoff_link_message(
-        self, label: str, target_session_id: str, query: str, direction: Literal["back", "forward"]
+        self,
+        label: str,
+        target_session_id: str,
+        query: str,
+        direction: Literal["back", "forward"],
+        prompt: str | None = None,
     ) -> HandoffLinkBlock:
         block = HandoffLinkBlock(
-            label=label, target_session_id=target_session_id, query=query, direction=direction
+            label=label,
+            target_session_id=target_session_id,
+            query=query,
+            direction=direction,
+            prompt=prompt,
         )
         self.mount(block)
         self._scroll_if_anchored(animate=False)
@@ -678,18 +691,17 @@ class ChatLog(VerticalScroll):
             block.hide_approval()
             self._scroll_if_anchored(animate=False)
 
-    def show_ask_user(self, tool_id: str, options: list, multi_select: bool) -> None:
+    def show_ask_user(self, tool_id: str, dialog) -> None:
         block = self._tool_blocks.get(tool_id)
         if block:
-            block.show_ask_user(options=options, multi_select=multi_select)
+            block.show_ask_user(dialog=dialog)
             self._scroll_if_anchored(animate=False)
 
-    def update_ask_user_selection(
-        self, tool_id: str, highlight: int, toggled: set[str] | None = None
-    ) -> None:
+    def rerender_ask_user(self, tool_id: str) -> None:
         block = self._tool_blocks.get(tool_id)
         if block:
-            block.update_ask_user_selection(highlight=highlight, toggled=toggled)
+            block.rerender_ask_user()
+            self._scroll_if_anchored(animate=False)
 
     def hide_ask_user(self, tool_id: str) -> None:
         block = self._tool_blocks.get(tool_id)
@@ -697,18 +709,21 @@ class ChatLog(VerticalScroll):
             block.hide_ask_user()
             self._scroll_if_anchored(animate=False)
 
-    def ask_user_input_value(self, tool_id: str) -> str:
-        """Return the current value of the inline Other-input for the block."""
+    def ask_user_custom_value(self, tool_id: str) -> str:
+        """Return the current value of the inline custom-answer input."""
         block = self._tool_blocks.get(tool_id)
         if not block:
             return ""
-        try:
-            return block.query_one("#ask-user-input", AskUserInput).value
-        except Exception:
-            return ""
+        return block.ask_user_custom_value()
+
+    def set_ask_user_custom_value(self, tool_id: str, value: str) -> None:
+        """Overwrite the inline custom-answer input (e.g. Ctrl+U clearing)."""
+        block = self._tool_blocks.get(tool_id)
+        if block:
+            block.set_ask_user_custom_value(value)
 
     def focus_ask_user_input(self, tool_id: str) -> bool:
-        """Focus the inline Other-input; returns True if it was focused."""
+        """Focus an inline ask_user input; returns True if it was focused."""
         block = self._tool_blocks.get(tool_id)
         if not block:
             return False
@@ -724,13 +739,14 @@ class ChatLog(VerticalScroll):
         Called from the Task tool's progress callback. ``event`` is the
         small dict shape produced by ``TaskTool``:
 
-        * ``kind == "subagent_start"``: opens the live tail
-        * ``kind == "text_delta"``: appends a snippet of the tail text
-        * ``kind == "tool_start"``: appends a ``→ tool`` line
-        * ``kind == "tool_result"``: marks the prior tool line as done
+        * ``kind == "subagent_start"``: opens the live view (model, max_turns)
+        * ``kind == "text_delta"``: updates the activity text snippet
+        * ``kind == "tool_start"``: counts a tool use and names the activity
+        * ``kind == "tool_result"``: clears the active-tool description
+        * ``kind == "turn_end"``: updates turn/token counters
         * ``kind == "subagent_end" / "error" / "interrupted" / "cancelled"``:
-          closes the tail; ``set_result`` will overwrite it with the
-          final transcript when the parent turn streams it back
+          freezes the view with an outcome icon; ``set_result`` then
+          finalizes the header
         """
         block = self._tool_blocks.get(tool_call_id)
         if block is None:
@@ -739,28 +755,62 @@ class ChatLog(VerticalScroll):
         kind = event.get("kind")
         state = self._task_live.setdefault(
             tool_call_id,
-            {"subagent": event.get("subagent", "subagent"), "lines": [], "last_text": ""},
+            {
+                "subagent": event.get("subagent", "subagent"),
+                "model": None,
+                "max_turns": None,
+                "turns": 0,
+                "tool_uses": 0,
+                "tool_counts": {},
+                "tokens": 0,
+                "active_tool": None,
+                "last_text": "",
+                "final_text": "",
+                "transcript": [],
+                "started": time.monotonic(),
+                "ended": False,
+                "stop_label": None,
+                "error": None,
+            },
         )
-        if kind == "subagent_start":
-            state["lines"] = ["  (starting)"]
-        elif kind == "text_delta":
-            delta = event.get("delta", "")
-            state["last_text"] = (state["last_text"] + delta)[-200:]
-            tail = f"  {state['last_text'][-60:]}" if state["last_text"] else ""
-            state["lines"][-1:] = [tail]
-        elif kind == "tool_start":
-            tool_name = event.get("tool_name", "")
-            state["lines"].append(f"  → {tool_name}")
-        elif kind == "tool_result":
-            pass
-        elif kind in ("subagent_end", "error", "interrupted", "cancelled"):
-            stop = event.get("stop_reason", kind)
-            state["lines"].append(f"  ({stop})")
+        if event.get("tool_counts"):
+            state["tool_counts"] = dict(event["tool_counts"])
+        if event.get("final_text"):
+            state["final_text"] = event["final_text"]
+        if event.get("transcript"):
+            state["transcript"] = list(event["transcript"])
 
-        # Keep the last 12 lines and re-render.
-        live_lines = list(state["lines"])[-12:]
-        block.set_task_progress(state["subagent"], live_lines)
+        if kind == "subagent_start":
+            state["model"] = event.get("model")
+            state["max_turns"] = event.get("max_turns")
+        elif kind == "text_delta":
+            state["last_text"] = (state["last_text"] + event.get("delta", ""))[-400:]
+        elif kind == "tool_start":
+            state["tool_uses"] += 1
+            state["active_tool"] = event.get("tool_name")
+        elif kind == "tool_result":
+            state["active_tool"] = None
+        elif kind == "turn_end":
+            state["turns"] = event.get("turns", state["turns"])
+            state["tokens"] = event.get("tokens", state["tokens"])
+        elif kind == "error":
+            state["error"] = event.get("error")
+        elif kind in ("interrupted", "cancelled"):
+            state["error"] = state["error"] or kind
+            self._end_task_state(state, stop_label=kind)
+        elif kind == "subagent_end":
+            self._end_task_state(state, stop_label=event.get("stop_reason"))
+
+        # Snapshot for the block; internal timing key stripped.
+        snapshot = {k: v for k, v in state.items() if k != "started"}
+        block.set_task_progress(snapshot)
         self._scroll_if_anchored(animate=False)
+
+    @staticmethod
+    def _end_task_state(state: dict, stop_label: str | None) -> None:
+        state["ended"] = True
+        state["stop_label"] = stop_label or state.get("stop_label")
+        state["elapsed_ms"] = (time.monotonic() - state["started"]) * 1000
 
     def end_block(self) -> None:
         # Finalize content/thinking blocks to render markdown once
@@ -777,12 +827,8 @@ class ChatLog(VerticalScroll):
 
         dim_color = config.ui.colors.dim
         token_str = f"{tokens_before:,}"
-        after_str = f"{tokens_after:,}" if tokens_after else "?"
 
-        text = Text(
-            f"[compaction] Compacted from {token_str} tokens >> {after_str} tokens",
-            style=dim_color,
-        )
+        text = Text(f"[compaction] Compacted from {token_str}", style=dim_color)
         stylize_badge_markers(text, ("[compaction]",))
 
         label = Label(text)
@@ -796,6 +842,42 @@ class ChatLog(VerticalScroll):
         text = Text(message, style=error_color)
         label = Label(text)
         label.add_class("aborted-message")
+        self.mount(label)
+        self._scroll_if_anchored(animate=False)
+
+    def clear_trailing_status(self) -> None:
+        """Remove the trailing spinner/status label if it is still last."""
+        self._stop_spinner()
+        if self._is_last_child_status() and self._last_status_label is not None:
+            self._last_status_label.remove()
+            self._last_status_label = None
+
+    def show_recap(self, text: str) -> None:
+        """Render a session recap block (header + styled body) into the log."""
+        self.clear_trailing_status()
+        colors = config.ui.colors
+        header = Label(Text("✦ Recap", style=f"{colors.accent} bold"))
+        body = Label(Text(text, style=colors.dim))
+        header.add_class("recap-message", "-header")
+        body.add_class("recap-message", "-body")
+        self._recap_labels = [header, body]
+        self.mount(header)
+        self.mount(body)
+        self._scroll_if_anchored(animate=False)
+
+    def remove_recap(self) -> None:
+        labels, self._recap_labels = self._recap_labels, []
+        for label in labels:
+            # Labels may already be pruned with old children.
+            if label in self.children:
+                label.remove()
+
+    def add_rich_message(self, renderable, *, error: bool = False) -> None:
+        """Mount a pre-rendered rich renderable as an info-level log line."""
+        label = Label(renderable)
+        label.add_class("info-message")
+        if error:
+            label.add_class("-error")
         self.mount(label)
         self._scroll_if_anchored(animate=False)
 

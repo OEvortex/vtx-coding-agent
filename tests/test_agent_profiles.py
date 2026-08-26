@@ -11,7 +11,9 @@ from textwrap import dedent
 
 import pytest
 
-from vtx.ai.agent.agents import (
+from vtx.ai.agent.extensions import AGENT_START, EventBus, ExtensionCommand, ExtensionTool
+from vtx.ai.agent.tools import BaseTool
+from vtx.coding_agent.agents import (
     AGENT_ACTIVATED,
     AGENT_CHANGED,
     AgentDef,
@@ -24,9 +26,7 @@ from vtx.ai.agent.agents import (
     load_agent,
     load_all_agents,
 )
-from vtx.ai.agent.agents.schema import AGENT_NAME_RE
-from vtx.ai.agent.extensions import AGENT_START, EventBus, ExtensionCommand, ExtensionTool
-from vtx.ai.agent.tools import BaseTool
+from vtx.coding_agent.agents.schema import AGENT_NAME_RE
 from vtx.core.types import ToolResult
 
 # =============================================================================
@@ -170,7 +170,7 @@ def test_load_agent_minimal_data_only(tmp_path: Path):
     a.write_text(
         dedent(
             """
-            from vtx.ai.agent.agents import AgentDef
+            from vtx.coding_agent.agents import AgentDef
             AGENT = AgentDef(
                 name="code-review",
                 description="Strict review mode",
@@ -195,7 +195,7 @@ def test_load_agent_with_register_and_local_tool(tmp_path: Path):
     a.write_text(
         dedent(
             """
-            from vtx.ai.agent.agents import AgentDef
+            from vtx.coding_agent.agents import AgentDef
 
             AGENT = AgentDef(
                 name="code-review",
@@ -255,7 +255,7 @@ def test_load_agent_event_handler_is_wired(tmp_path: Path):
     a.write_text(
         dedent(
             """
-            from vtx.ai.agent.agents import AgentDef
+            from vtx.coding_agent.agents import AgentDef
             from vtx.ai.agent import AGENT_START
 
             AGENT = AgentDef(name="code-review", description="x")
@@ -291,7 +291,7 @@ def test_load_agent_name_mismatch(tmp_path: Path):
     a.write_text(
         dedent(
             """
-            from vtx.ai.agent.agents import AgentDef
+            from vtx.coding_agent.agents import AgentDef
             AGENT = AgentDef(name="different-name", description="x")
             """
         ).strip()
@@ -305,7 +305,7 @@ def test_load_agent_register_raises(tmp_path: Path):
     a.write_text(
         dedent(
             """
-            from vtx.ai.agent.agents import AgentDef
+            from vtx.coding_agent.agents import AgentDef
             AGENT = AgentDef(name="explodes", description="x")
             def register(api):
                 raise RuntimeError("boom")
@@ -318,7 +318,7 @@ def test_load_agent_register_raises(tmp_path: Path):
 
 def test_load_all_agents_collects_errors(tmp_path: Path):
     (tmp_path / "good.py").write_text(
-        "from vtx.ai.agent.agents import AgentDef\n"
+        "from vtx.coding_agent.agents import AgentDef\n"
         "AGENT = AgentDef(name='good', description='x')\n"
     )
     (tmp_path / "bad.py").write_text("def register(): pass\n")
@@ -406,7 +406,7 @@ def test_registry_describe():
 
 
 def _builtin_pool() -> dict[str, BaseTool]:
-    from vtx.ai.agent.tools import tools_by_name
+    from vtx.coding_agent.tools import tools_by_name
 
     return dict(tools_by_name)
 
@@ -552,7 +552,7 @@ def test_compose_active_commands_merges_local():
 
 
 def test_when_predicate_matches_substring():
-    from vtx.ai.agent.agents.api import _when_predicate
+    from vtx.coding_agent.agents.api import _when_predicate
 
     pred = _when_predicate("command matches 'rm -rf'")
     assert pred({"command": "rm -rf /tmp"})
@@ -560,7 +560,7 @@ def test_when_predicate_matches_substring():
 
 
 def test_when_predicate_equality():
-    from vtx.ai.agent.agents.api import _when_predicate
+    from vtx.coding_agent.agents.api import _when_predicate
 
     pred = _when_predicate("name == 'tool_call'")
     assert pred({"name": "tool_call"})
@@ -568,7 +568,7 @@ def test_when_predicate_equality():
 
 
 def test_when_predicate_unsupported_expression_raises():
-    from vtx.ai.agent.agents.api import _when_predicate
+    from vtx.coding_agent.agents.api import _when_predicate
 
     with pytest.raises(ValueError, match="unsupported"):
         _when_predicate("command contains 'rm'")
@@ -700,7 +700,7 @@ def test_load_agent_wraps_callable_tools(tmp_path: Path):
     agent_file.write_text(
         dedent(
             """
-            from vtx.ai.agent.agents import AgentDef
+            from vtx.coding_agent.agents import AgentDef
             def hello(name: str) -> str:
                 \"\"\"Say hello.\"\"\"
                 return f"hi {name}"
@@ -717,14 +717,14 @@ def test_load_agent_wraps_callable_tools(tmp_path: Path):
 
 def test_load_agent_wraps_basetool_tools(tmp_path: Path):
     """A pre-built BaseTool in ``AGENT.tools`` is accepted directly."""
-    from vtx.ai.agent.tools import ReadTool
+    from vtx.coding_agent.tools import ReadTool
 
     agent_file = tmp_path / "raw2.py"
     agent_file.write_text(
         dedent(
             """
-            from vtx.ai.agent.agents import AgentDef
-            from vtx.ai.agent.tools import ReadTool
+            from vtx.coding_agent.agents import AgentDef
+            from vtx.coding_agent.tools import ReadTool
             AGENT = AgentDef(name="raw2", description="x", tools=[ReadTool()])
             """
         ).strip()

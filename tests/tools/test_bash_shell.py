@@ -9,8 +9,8 @@ import os
 
 import pytest
 
-from vtx.ai.agent.tools import bash
-from vtx.ai.agent.tools.bash import BashParams, BashTool, _get_shell, _get_spawn_argv
+from vtx.coding_agent.tools import bash
+from vtx.coding_agent.tools.bash import BashParams, BashTool, _get_shell, _get_spawn_argv
 
 # Built with os.path.join so the expected separators match the host the test
 # runs on; the space in "Program Files" is what the regression is about.

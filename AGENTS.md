@@ -8,9 +8,14 @@
 
 ## Testing
 
-- After making breaking changes, run only the tests relevant to those changes using `uv run python -m pytest path/to/test_file.py`
+- After making breaking changes, run only the tests relevant to those changes using:
+  `uv run --no-sync python -m pytest -p no:cacheprovider path/to/test_file.py`
+  (`--no-sync` skips the env re-sync check, `-p no:cacheprovider` skips lock-file writes)
+- For larger runs (multiple files or the full suite), add `-n auto` to parallelize with
+  pytest-xdist: `uv run --no-sync python -m pytest -q -n auto`. Don't use `-n auto` for a
+  single small test file — worker startup costs more than it saves there.
 - If the user asks for e2e tests then run the vtx-tmux e2e test if available
-- Never run the full test suite unless the user explicitly asks for it. It can take a long time to run and is not always necessary.
+- Never run the full test suite unless the user explicitly asks for it. It is slow and resource intensive.
 
 ## Skills
 

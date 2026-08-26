@@ -13,6 +13,7 @@ from typing import Any, Literal, get_args
 import yaml
 from pydantic import BaseModel, Field, ValidationError, field_validator, model_validator
 
+from vtx.ai.agent.config import apply_harness_settings
 from vtx.coding_agent.themes import ColorsConfig, get_theme, get_theme_ids
 
 CONFIG_DIR_NAME: str = "vtx"
@@ -45,18 +46,6 @@ def _load_default_config_yaml() -> dict[str, Any]:
 
 _DEFAULT_CONFIG_DATA = _load_default_config_yaml()
 CURRENT_CONFIG_VERSION = int(_DEFAULT_CONFIG_DATA.get("meta", {}).get("config_version", 1))
-
-
-def _resolve_default_system_prompt() -> str:
-    """Return the default base identity string.
-
-    Pulled from :mod:`vtx.prompts.identity` so the prompt is owned by
-    Python code rather than the shipped YAML. The YAML keeps an empty
-    placeholder for schema stability; this function fills it in.
-    """
-    from vtx.ai.agent.prompts.identity import DEFAULT_VTX_BASE
-
-    return DEFAULT_VTX_BASE
 
 
 _config_var: ContextVar["Config | None"] = ContextVar("vtx_config", default=None)
@@ -107,8 +96,8 @@ class UIConfig(BaseModel):
 
 
 class SystemPromptConfig(BaseModel):
-    content: str
     git_context: bool = False
+    ponytail: bool = False
 
 
 class AuthConfig(BaseModel):
@@ -149,6 +138,13 @@ class PermissionsConfig(BaseModel):
 class NotificationsConfig(BaseModel):
     enabled: bool = False
     volume: float = Field(default=0.5, ge=0.0, le=1.0)
+
+
+class RecapConfig(BaseModel):
+    """Automatic idle session recap (drafted by the current model)."""
+
+    enabled: bool = True
+    idle_seconds: float = Field(default=30, ge=5)
 
 
 class LastSelectedConfig(BaseModel):
@@ -247,6 +243,7 @@ class ConfigSchema(BaseModel):
     agent: AgentConfig
     permissions: PermissionsConfig
     notifications: NotificationsConfig = NotificationsConfig()
+    recap: RecapConfig = RecapConfig()
     last_selected: LastSelectedConfig = LastSelectedConfig()
     recent_models: RecentModelsConfig = RecentModelsConfig()
     # User-configured extension paths (file or package). Auto-discovered
@@ -309,7 +306,7 @@ class Config:
         if isinstance(llm, dict):
             legacy_prompt = llm.get("system_prompt")
             if isinstance(legacy_prompt, str):
-                llm["system_prompt"] = {"content": legacy_prompt}
+                llm["system_prompt"] = {}
 
             legacy_git_context = llm.pop("system_prompt_git_context", None)
             if isinstance(legacy_git_context, bool):
@@ -318,12 +315,6 @@ class Config:
                     system_prompt = {}
                     llm["system_prompt"] = system_prompt
                 system_prompt.setdefault("git_context", legacy_git_context)
-
-            # Fill the default base identity from Python when the YAML left
-            # the placeholder empty (or did not include it at all).
-            system_prompt = llm.get("system_prompt")
-            if isinstance(system_prompt, dict) and not system_prompt.get("content"):
-                system_prompt["content"] = _resolve_default_system_prompt()
 
         return normalized_data
 
@@ -355,6 +346,10 @@ class Config:
     @property
     def notifications(self) -> NotificationsConfig:
         return self._parsed.notifications
+
+    @property
+    def recap(self) -> RecapConfig:
+        return self._parsed.recap
 
     @property
     def binaries(self) -> _BinariesConfig:
@@ -527,9 +522,7 @@ def _migrate_v5_to_v6(data: dict[str, Any]) -> dict[str, Any]:
         system_prompt = {}
         llm["system_prompt"] = system_prompt
 
-    # Pull the default identity from Python so the YAML placeholder
-    # remains a single source of truth.
-    system_prompt["content"] = _resolve_default_system_prompt()
+    system_prompt.pop("content", None)
     system_prompt["git_context"] = _DEFAULT_CONFIG_DATA["llm"]["system_prompt"]["git_context"]
 
     meta = migrated.get("meta")
@@ -825,19 +818,33 @@ def get_config() -> Config:
     if cfg is None:
         cfg = _load_config()
         _config_var.set(cfg)
+        _sync_harness_settings(cfg)
     return cfg
 
 
 def set_config(config: Config) -> None:
     """Set the config instance (useful for testing)."""
     _config_var.set(config)
+    _sync_harness_settings(config)
 
 
 def reload_config() -> Config:
     """Reload config from file and update the context variable."""
     cfg = _load_config()
     _config_var.set(cfg)
+    _sync_harness_settings(cfg)
     return cfg
+
+
+def _sync_harness_settings(cfg: Config) -> None:
+    """Mirror user-facing knobs into the product-neutral harness engine."""
+    apply_harness_settings(
+        max_turns=cfg.agent.max_turns,
+        default_context_window=cfg.agent.default_context_window,
+        compaction_threshold_percent=cfg.compaction.threshold_percent,
+        compaction_on_overflow=cfg.compaction.on_overflow,
+        tool_call_idle_timeout_seconds=cfg.llm.tool_call_idle_timeout_seconds,
+    )
 
 
 def _set_config_version(data: dict[str, Any]) -> None:
@@ -930,6 +937,27 @@ def set_git_context(enabled: bool) -> Config:
         llm["system_prompt"] = system_prompt
 
     system_prompt["git_context"] = enabled
+    _set_config_version(data)
+
+    _atomic_write_text(config_file, _serialize_config_yaml(data))
+    return reload_config()
+
+
+def set_ponytail(enabled: bool) -> Config:
+    config_file = _ensure_config_file()
+    data = _read_config_data(config_file)
+
+    llm = data.get("llm")
+    if not isinstance(llm, dict):
+        llm = {}
+        data["llm"] = llm
+
+    system_prompt = llm.get("system_prompt")
+    if not isinstance(system_prompt, dict):
+        system_prompt = {}
+        llm["system_prompt"] = system_prompt
+
+    system_prompt["ponytail"] = enabled
     _set_config_version(data)
 
     _atomic_write_text(config_file, _serialize_config_yaml(data))

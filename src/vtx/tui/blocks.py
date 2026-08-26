@@ -1,4 +1,6 @@
 import contextlib
+import textwrap
+import time
 from collections.abc import Callable, Iterable
 from dataclasses import dataclass
 from typing import Literal
@@ -8,13 +10,25 @@ from rich.text import Text
 from textual import events
 from textual.app import ComposeResult
 from textual.message import Message
+from textual.timer import Timer
 from textual.widgets import Label, Static
 
-from vtx.ai.agent.diff_display import DIFF_BG_PAD_MARKER
 from vtx.ai.agent.tools.base import BaseTool
 from vtx.coding_agent.config import config
-from vtx.core import ApprovalResponse, AskUserOption
+from vtx.coding_agent.diff_display import DIFF_BG_PAD_MARKER
+from vtx.core import ApprovalResponse
 from vtx.core.types import ImageContent
+from vtx.tui import task_ui
+from vtx.tui.ask_user import (
+    INCOMPLETE_WARNING_PREFIX,
+    NEXT_LABEL,
+    NO_INPUT_PLACEHOLDER,
+    OTHER_DISPLAY,
+    REVIEW_HEADING,
+    SUBMIT_PICK_CANCEL,
+    SUBMIT_PICK_LABEL,
+    AskUserDialog,
+)
 from vtx.tui.formatting import (
     find_stable_block_boundary,
     format_bash_command,
@@ -27,11 +41,28 @@ from vtx.tui.input import AskUserInput
 
 _UPDATE_COMMAND = "uv tool upgrade vtx-coding-agent"
 
-# Sentinel label for the synthetic "Other" row in the ask_user picker.
-# Stored as a plain string so it round-trips through AskUserOption's
-# label type and never collides with a real option the LLM supplied.
-ASK_USER_OTHER_LABEL = "\u0000__vtx_ask_user_other__\u0000"
-ASK_USER_OTHER_DISPLAY = "Other (type your own answer)"
+ACTIVE_POINTER = "❯ "  # noqa: RUF001 - intentional pointer glyph
+INACTIVE_POINTER = "  "
+CHECKED_BOX = "[✔]"
+UNCHECKED_BOX = "[ ]"
+CONFIRMED_MARK = " ✔"
+NUMBER_SEPARATOR = ". "
+CONTINUATION_INDENT = "  "
+
+# Footer hint fragments; joined with " · " into the footer line.
+HINT_ENTER = "enter to select"
+HINT_NAV = "↑/↓ to navigate"
+HINT_TOGGLE = "space to toggle"
+HINT_TAB = "tab to switch questions"
+HINT_CANCEL = "esc to cancel"
+HINT_SAVE_DRAFT = "enter to save"
+HINT_CLEAR = "ctrl+u to clear"
+HINT_COLLAPSE = "ctrl+] to collapse"
+HINT_EXPAND = "ctrl+] to expand"
+
+# Snug box width bounds for the bordered questionnaire.
+MIN_DIALOG_WIDTH = 48
+MAX_DIALOG_WIDTH = 100
 
 
 @dataclass(frozen=True)
@@ -347,37 +378,23 @@ class ToolBlock(Static):
         self._awaiting_approval: bool = False
         self._approval_preview: str | None = None
         self._approval_selection: ApprovalResponse = ApprovalResponse.APPROVE
-        # ask_user state. ``_ask_user_options`` is the user-supplied
-        # options; the synthetic "Other" entry is implicit at index
-        # ``len(_ask_user_options)``. When ``_ask_user_highlight`` points
-        # at "Other" the inline input is shown and any non-empty text +
-        # Enter submits custom text.
-        self._ask_user_options: list[AskUserOption] = []
-        self._ask_user_multi: bool = False
-        self._ask_user_toggled: set[str] = set()
-        self._ask_user_highlight: int = 0
-        # Tracks whether the inline Other input is currently displayed.
-        # Used to move focus to the input on show and back to the chat
-        # input box on hide, since the picker keys would otherwise be
-        # forwarded from the chat input and the user could never type
-        # into the Other field.
+        # ask_user questionnaire. The block renders whatever the
+        # :class:`AskUserDialog` state machine holds; the app mutates
+        # the dialog from keypresses and asks for a re-render.
+        self._ask_dialog: AskUserDialog | None = None
+        # Tracks whether an inline input (custom answer) is
+        # currently displayed. Used to move focus to the input on show
+        # and back to the chat input box on hide, since picker keys
+        # would otherwise be forwarded from the chat input and the user
+        # could never type into these fields.
         self._ask_user_input_visible: bool = False
-        # Task-tool live tail. When set, the block renders a compact
-        # transcript of in-flight sub-agent activity. Cleared by
-        # ``set_result`` so the final transcript wins.
-        self._task_live_lines: list[str] | None = None
-        self._task_header: str | None = None
         self.add_class("tool-block")
         self._set_state(None)
 
     def compose(self) -> ComposeResult:
         yield Label(self._format_header(), id="tool-header")
         yield Label("", id="tool-output", classes="tool-output -hidden")
-        yield AskUserInput(
-            placeholder="Type a custom answer, then press Enter",
-            id="ask-user-input",
-            classes="-hidden",
-        )
+        yield AskUserInput(placeholder=OTHER_DISPLAY, id="ask-user-input", classes="-hidden")
 
     def _format_header(self, truncate: bool = True) -> Text:
         colors = config.ui.colors
@@ -569,52 +586,50 @@ class ToolBlock(Static):
 
     @property
     def is_awaiting_ask_user(self) -> bool:
-        return bool(self._ask_user_options) or self.has_class("-ask-user")
+        return self._ask_dialog is not None or self.has_class("-ask-user")
 
-    def show_ask_user(self, options: list[AskUserOption], multi_select: bool) -> None:
-        """Render the ask_user picker into the tool block body.
-
-        ``options`` is the LLM-supplied list; the synthetic "Other" row
-        is appended implicitly. The first row is highlighted by default.
+    def show_ask_user(self, dialog: AskUserDialog) -> None:
+        """Attach the questionnaire dialog and render it into the block.
 
         Safe to call before the widget is mounted — the DOM updates
         become no-ops, which keeps unit tests from needing a live app.
         """
-        self._ask_user_options = list(options)
-        self._ask_user_multi = multi_select
-        self._ask_user_toggled = set()
-        self._ask_user_highlight = 0
+        self._ask_dialog = dialog
         self.add_class("-ask-user")
         self._set_state(None)
         self._safe_update(
             lambda: self.query_one("#tool-header", Label).update(self._format_header())
         )
         self._safe_update(self._render_ask_user_output)
-        self._set_ask_user_input_visible(False)
+        self._sync_ask_user_widgets()
 
-    def update_ask_user_selection(self, highlight: int, toggled: set[str] | None = None) -> None:
-        if not self.is_awaiting_ask_user:
+    def rerender_ask_user(self) -> None:
+        """Re-render the dialog from current state machine contents."""
+        if self._ask_dialog is None:
             return
-        max_idx = len(self._ask_user_options)  # +1 for "Other"
-        self._ask_user_highlight = max(0, min(highlight, max_idx))
-        if toggled is not None:
-            self._ask_user_toggled = set(toggled)
         self._safe_update(self._render_ask_user_output)
-        # Reveal the inline input only when the user picked "Other".
-        self._set_ask_user_input_visible(self._highlight_is_other())
+        self._sync_ask_user_widgets()
 
     def hide_ask_user(self) -> None:
-        self._ask_user_options = []
-        self._ask_user_toggled = set()
-        self._ask_user_highlight = 0
-        self._ask_user_multi = False
+        self._ask_dialog = None
         self.remove_class("-ask-user")
-        self._set_ask_user_input_visible(False)
         self._set_state(None)
         self._safe_update(
             lambda: self.query_one("#tool-header", Label).update(self._format_header())
         )
+        self._sync_ask_user_widgets()
         self._safe_update(self._hide_ask_user_output)
+
+    # Inline input accessors used by the app layer -----------------------------
+
+    def ask_user_custom_value(self) -> str:
+        with contextlib.suppress(Exception):
+            return self.query_one("#ask-user-input", AskUserInput).value
+        return ""
+
+    def set_ask_user_custom_value(self, value: str) -> None:
+        with contextlib.suppress(Exception):
+            self.query_one("#ask-user-input", AskUserInput).value = value
 
     def _hide_ask_user_output(self) -> None:
         try:
@@ -631,92 +646,282 @@ class ToolBlock(Static):
         with contextlib.suppress(Exception):
             fn()
 
-    def _highlight_is_other(self) -> bool:
-        return self._ask_user_highlight == len(self._ask_user_options)
-
     def _render_ask_user_output(self) -> None:
         try:
             output = self.query_one("#tool-output", Label)
         except Exception:
             return
+        if self._ask_dialog is None:
+            return
         self.remove_class("-with-details")
         output.remove_class("-hidden")
         output.remove_class("-details")
-        content = self._format_ask_user_options()
-        content.append("\n")
-        content.append_text(self._format_ask_user_hint())
-        output.update(content)
+        output.update(self.format_ask_user_dialog())
 
-    def _format_ask_user_options(self) -> Text:
-        text = Text()
-        for idx, opt in enumerate(self._ask_user_options):
-            text.append_text(self._format_ask_user_row(idx, opt.label, opt.description))
-            text.append("\n")
-        # Synthetic "Other" row
-        text.append_text(
-            self._format_ask_user_row(len(self._ask_user_options), ASK_USER_OTHER_DISPLAY, "")
+    # Dialog drawing ------------------------------------------------------------
+
+    def _dialog_width(self) -> int:
+        try:
+            term_width = self.app.size.width
+        except Exception:
+            term_width = 0
+        if term_width <= 0:
+            return 96
+        return max(MIN_DIALOG_WIDTH, min(MAX_DIALOG_WIDTH, term_width - 4))
+
+    def format_ask_user_dialog(self) -> Text:
+        """The bordered questionnaire (or its collapsed hint row)."""
+        assert self._ask_dialog is not None
+        colors = config.ui.colors
+        if self._ask_dialog.collapsed:
+            return Text(f"  {HINT_EXPAND} · {HINT_CANCEL}", style=Style(color=colors.dim))
+
+        width = self._dialog_width()
+        body = self._build_dialog_body(self._ask_dialog, width)
+        inner = max(line.cell_len for line in body)
+
+        result = Text()
+        result.append(f"╭{'─' * (inner + 2)}╮\n", style=Style(color=colors.accent))
+        for line in body:
+            result.append("│ ")
+            result.append_text(line)
+            padding = inner - line.cell_len
+            if padding > 0:
+                result.append(" " * padding)
+            result.append(" │\n", style=Style(color=colors.accent))
+        result.append(f"╰{'─' * (inner + 2)}╯", style=Style(color=colors.accent))
+
+        hints = self._format_hint_line(self._ask_dialog)
+        if hints.plain.strip():
+            result.append("\n  ")
+            result.append_text(hints)
+        return result
+
+    def _build_dialog_body(self, dialog: AskUserDialog, width: int) -> list[Text]:
+        lines: list[Text] = []
+        if dialog.is_multi_question:
+            lines.append(self._format_tab_bar(dialog))
+            lines.append(Text())
+        if dialog.is_on_submit_tab():
+            lines.extend(self._format_submit_body(dialog))
+        else:
+            lines.extend(self._format_question_body(dialog, width))
+        lines.append(Text())
+        return lines
+
+    def _format_tab_bar(self, dialog: AskUserDialog) -> Text:
+        colors = config.ui.colors
+        answered = set(dialog.answered_indices())
+        row = Text()
+        row.append(" ← ", style=Style(color=colors.dim))
+        for i, question in enumerate(dialog.questions):
+            label = question.header or f"Q{i + 1}"
+            box = "■" if i in answered else "□"
+            if i == dialog.tab:
+                style: Style | str = Style(bgcolor=colors.accent, color=colors.bg, bold=True)
+            elif i in answered:
+                style = Style(color=colors.success)
+            else:
+                style = Style(color=colors.muted)
+            row.append(f" {box} {label} ", style=style)
+            row.append(" ", style=Style(color=colors.dim))
+        all_answered = len(answered) == len(dialog.questions)
+        on_submit = dialog.is_on_submit_tab()
+        submit_style: Style | str = (
+            Style(bgcolor=colors.accent, color=colors.bg, bold=True)
+            if on_submit
+            else Style(color=colors.success if all_answered else colors.dim)
         )
-        return text
+        row.append(" ✓ Submit ", style=submit_style)
+        row.append(" → ", style=Style(color=colors.dim))
+        return row
 
-    def _format_ask_user_row(self, idx: int, label: str, description: str) -> Text:
+    def _format_question_body(self, dialog: AskUserDialog, width: int) -> list[Text]:
         colors = config.ui.colors
-        is_highlight = idx == self._ask_user_highlight
-        is_toggled = label in self._ask_user_toggled
+        question = dialog.questions[dialog.tab]
+        state = dialog.current_state()
+        content_width = max(20, width - 6)
 
-        # Highlight style: match the approval pattern — selected row
-        # uses accent bg + bg fg, unselected uses panel_alt bg + dim fg.
-        if is_highlight:
-            chip_style = Style(bgcolor=colors.accent, color=colors.bg, bold=True)
-            body_style = Style(color=colors.bg, bold=True)
-            desc_style = Style(color=colors.bg)
-        else:
-            chip_style = Style(bgcolor=colors.panel_alt, color=colors.fg)
-            body_style = Style(color=colors.fg)
-            desc_style = Style(color=colors.dim)
+        lines: list[Text] = []
+        for segment in textwrap.wrap(question.question, content_width) or [""]:
+            lines.append(Text(segment, style=Style(color=colors.fg, bold=True)))
+        lines.append(Text())
 
-        text = Text()
-        prefix = " "
-        if self._ask_user_multi:
-            prefix = "✓ " if is_toggled else "○ "
-        if is_highlight:
-            prefix = "▶ " + (prefix[2:] if len(prefix) > 2 else prefix.lstrip())
-        # Number key
-        text.append(f"  [{idx + 1}]", style=chip_style)
-        text.append(" ")
-        # Label + description
-        text.append(prefix, style=body_style)
-        text.append(label, style=body_style)
-        if description:
-            text.append("  ")
-            text.append(description, style=desc_style)
-        return text
+        rows = dialog.rows()
+        number_width = len(str(len(rows)))
+        active_preview: str | None = None
 
-    def _format_ask_user_hint(self) -> Text:
+        for row_index, (kind, option_index) in enumerate(rows):
+            is_active = row_index == state.row
+            pointer = ACTIVE_POINTER if is_active else INACTIVE_POINTER
+            number = f"{row_index + 1}{NUMBER_SEPARATOR}".rjust(number_width + 2)
+
+            if kind == "option":
+                option = question.options[option_index]
+                checked = option_index in state.toggled
+                confirmed = not question.multi_select and state.selected == option_index
+                label_style = Style(color=colors.accent, bold=True) if is_active else Style()
+                line = Text()
+                line.append(pointer, style=label_style if is_active else Style(color=colors.dim))
+                line.append(number, style=label_style if is_active else Style(color=colors.fg))
+                if question.multi_select:
+                    box = CHECKED_BOX if checked else UNCHECKED_BOX
+                    line.append(
+                        box + " ", style=Style(color=colors.accent if checked else colors.muted)
+                    )
+                line.append(
+                    option.label + (CONFIRMED_MARK if confirmed else ""), style=label_style
+                )
+                lines.append(line)
+                if option.description:
+                    for segment in textwrap.wrap(option.description, content_width - 2) or [""]:
+                        lines.append(
+                            Text(CONTINUATION_INDENT + segment, style=Style(color=colors.dim))
+                        )
+                if is_active and option.preview:
+                    active_preview = option.preview
+            elif kind == "other":
+                draft = state.draft.strip()
+                if draft:
+                    # A fresh draft shows unconfirmed; a draft equal to
+                    # the committed answer keeps its ✔ mark below.
+                    label = draft
+                    confirmed_custom = bool(state.custom.strip()) and draft == state.custom.strip()
+                else:
+                    label = OTHER_DISPLAY
+                    confirmed_custom = False
+                label_style = (
+                    Style(color=colors.accent, bold=True) if is_active else Style(color=colors.fg)
+                )
+                line = Text()
+                line.append(pointer, style=label_style if is_active else Style(color=colors.dim))
+                line.append(number, style=label_style if is_active else Style(color=colors.fg))
+                if question.multi_select:
+                    line.append(UNCHECKED_BOX + " ", style=Style(color=colors.muted))
+                line.append(
+                    label + (CONFIRMED_MARK if confirmed_custom else ""), style=label_style
+                )
+                lines.append(line)
+            else:  # next — commit row for multi-select questions
+                label_style = (
+                    Style(color=colors.accent, bold=True) if is_active else Style(color=colors.fg)
+                )
+                line = Text()
+                line.append(pointer, style=label_style if is_active else Style(color=colors.dim))
+                line.append(NEXT_LABEL, style=label_style)
+                lines.append(line)
+
+        if active_preview:
+            lines.extend(self._format_preview_box(active_preview, width))
+        return lines
+
+    def _format_preview_box(self, preview: str, width: int) -> list[Text]:
         colors = config.ui.colors
-        text = Text()
-        if self._ask_user_multi:
-            text.append("  (1-", style=colors.dim)
-            text.append(str(len(self._ask_user_options) + 1), style=colors.dim)
-            text.append(" to toggle · space to confirm · esc cancel)", style=colors.dim)
-        else:
-            text.append("  (1-", style=colors.dim)
-            text.append(str(len(self._ask_user_options) + 1), style=colors.dim)
-            text.append(" to pick · ↑↓ to move · enter to submit · esc cancel)", style=colors.dim)
-        return text
+        border_style = Style(color=colors.dim)
+        inner_width = max(16, min(72, width - 10))
+        wrapped: list[str] = []
+        for raw_line in preview.splitlines() or [""]:
+            wrapped.extend(textwrap.wrap(raw_line, inner_width) or [""])
+            if len(wrapped) >= 12:
+                break
+        if len(wrapped) >= 12:
+            wrapped = wrapped[:12]
+            if wrapped:
+                wrapped[-1] = wrapped[-1][: max(0, inner_width - 1)] + "…"
+        lines = [Text("  ┌" + "─" * (inner_width + 2) + "┐", style=border_style)]
+        for segment in wrapped:
+            pad = " " * (inner_width - len(segment))
+            lines.append(Text("  │ " + segment + pad + " │", style=Style(color=colors.muted)))
+        lines.append(Text("  └" + "─" * (inner_width + 2) + "┘", style=border_style))
+        return lines
 
-    def _set_ask_user_input_visible(self, visible: bool) -> None:
+    def _question_answer_scalar(self, dialog: AskUserDialog, index: int) -> str | None:
+        question = dialog.questions[index]
+        state = dialog._states[index]
+        if question.multi_select:
+            if state.toggled:
+                ordered = sorted(state.toggled)
+                return ", ".join(question.options[j].label for j in ordered)
+            if state.custom.strip():
+                return state.custom.strip()
+            return None
+        if state.selected is not None:
+            return question.options[state.selected].label
+        if state.custom.strip():
+            return state.custom.strip()
+        return None
+
+    def _format_submit_body(self, dialog: AskUserDialog) -> list[Text]:
+        colors = config.ui.colors
+        lines: list[Text] = [Text(REVIEW_HEADING, style=Style(color=colors.fg, bold=True)), Text()]
+        for i, question in enumerate(dialog.questions):
+            header = question.header or question.question
+            if len(header) > 32:
+                header = header[:29] + "..."
+            answer = self._question_answer_scalar(dialog, i)
+            entry = Text(f"{header}: ")
+            if answer is None:
+                entry.append(NO_INPUT_PLACEHOLDER, style=Style(color=colors.dim))
+            else:
+                entry.append(answer)
+            lines.append(entry)
+        unanswered = []
+        for i, question in enumerate(dialog.questions):
+            if self._question_answer_scalar(dialog, i) is None:
+                unanswered.append(question.header or question.question)
+        if unanswered:
+            warning = Text(INCOMPLETE_WARNING_PREFIX, style=Style(color=colors.notice))
+            warning.append(" " + ", ".join(unanswered), style=Style(color=colors.notice))
+            lines.append(warning)
+        lines.append(Text())
+        for i, label in enumerate((SUBMIT_PICK_LABEL, SUBMIT_PICK_CANCEL)):
+            active = dialog.submit_row == i
+            pointer = ACTIVE_POINTER if active else INACTIVE_POINTER
+            style = Style(color=colors.accent, bold=True) if active else Style(color=colors.fg)
+            line = Text()
+            line.append(pointer, style=style)
+            line.append(f"{i + 1}{NUMBER_SEPARATOR}", style=style)
+            line.append(label, style=style)
+            lines.append(line)
+        return lines
+
+    def _format_hint_line(self, dialog: AskUserDialog) -> Text:
+        colors = config.ui.colors
+        if dialog.collapsed:
+            parts = [HINT_EXPAND, HINT_CANCEL]
+        elif dialog.input_mode:
+            parts = [HINT_SAVE_DRAFT, HINT_NAV, HINT_CLEAR, HINT_CANCEL]
+        elif dialog.is_on_submit_tab():
+            parts = ["enter to confirm", HINT_NAV, HINT_CANCEL]
+        else:
+            parts = [HINT_ENTER, HINT_NAV]
+            if dialog.questions[min(dialog.tab, len(dialog.questions) - 1)].multi_select:
+                parts.append(HINT_TOGGLE)
+            if dialog.is_multi_question:
+                parts.append(HINT_TAB)
+            parts.append(HINT_CANCEL)
+            parts.append(HINT_COLLAPSE)
+        return Text("  " + " · ".join(parts), style=Style(color=colors.dim))
+
+    # Inline widget sync --------------------------------------------------------
+
+    def _sync_ask_user_widgets(self) -> None:
+        """Show/hide + focus the inline input to match dialog state."""
+        dialog = self._ask_dialog
+        custom_visible = bool(dialog and not dialog.collapsed and dialog.input_mode)
         with contextlib.suppress(Exception):
-            self.query_one("#ask-user-input", AskUserInput).display = visible
-        if visible == self._ask_user_input_visible:
-            return
-        self._ask_user_input_visible = visible
-        # Move focus when the inline input is shown or hidden so the
-        # user can actually type into it. Picker keys (digits, arrows,
-        # j/k, space, enter) would otherwise be forwarded from the
-        # chat input and the user could never reach the Other field.
-        # Use call_after_refresh so the DOM has caught up with the
-        # visibility change before we steal focus.
-        self.call_after_refresh(self._sync_ask_user_focus)
+            custom_input = self.query_one("#ask-user-input", AskUserInput)
+            custom_input.display = custom_visible
+            if custom_visible and dialog is not None:
+                draft = dialog.current_state().draft
+                if custom_input.value != draft:
+                    custom_input.value = draft
+        focus_changed = custom_visible != self._ask_user_input_visible
+        self._ask_user_input_visible = custom_visible
+        if focus_changed:
+            # Move focus after the DOM has caught up with the visibility
+            # change so the user can actually type into the field.
+            self.call_after_refresh(self._sync_ask_user_focus)
 
     def _sync_ask_user_focus(self) -> None:
         with contextlib.suppress(Exception):
@@ -725,7 +930,7 @@ class ToolBlock(Static):
             else:
                 # Return focus to the chat input box so picker keys
                 # (digits/arrows) keep working after the user navigates
-                # away from the Other row.
+                # away from an inline field.
                 self.app.query_one("#input-box").focus()
 
     def update_call_msg(self, call_msg: str) -> None:
@@ -748,31 +953,20 @@ class ToolBlock(Static):
         self._result_markup = markup
         self._success = success
         self._awaiting_approval = False
-        # The Task tool's live tail is now done — drop the in-progress
-        # events so the final result wins.
-        self._task_live_lines = None
         self._set_state(success)
         self._render_result_output()
         self.query_one("#tool-header", Label).update(self._format_header())
 
     # -- Task tool live progress ------------------------------------------
 
-    def set_task_progress(
-        self, subagent_name: str, live_lines: list[str], header: str | None = None
-    ) -> None:
-        """Render the Task tool's live sub-agent progress tail.
+    def set_task_progress(self, stats: dict) -> None:
+        """Forward a Task-tool sub-agent progress snapshot to the block.
 
-        ``live_lines`` is a compact transcript built by the chat log
-        (sub-agent name, recent tool calls, last text delta). Called
-        repeatedly while the sub-agent runs. ``set_result`` clears
-        the live tail and renders the final transcript instead.
+        ``stats`` is a plain data dict built by the chat log (subagent
+        name, model, turns, tool_uses, tokens, active_tool, last_text,
+        ended/stop_label/error). Blocks that don't override this simply
+        ignore it.
         """
-        self._task_live_lines = list(live_lines)
-        self._task_header = header or f"sub-agent: {subagent_name}"
-        # Force a re-render against the live data.
-        if not self._ui_details:
-            self._render_result_output()
-            self.query_one("#tool-header", Label).update(self._format_header())
 
     def set_expanded(self, expanded: bool) -> None:
         if self._expanded == expanded:
@@ -790,22 +984,6 @@ class ToolBlock(Static):
         ui_details = (
             self._ui_details_full if self._expanded and self._ui_details_full else self._ui_details
         )
-
-        # Live Task tool tail: shown when the sub-agent is still
-        # running and the final details haven't been set yet. The
-        # tail is cleared by ``set_result``.
-        if ui_details is None and self._task_live_lines is not None:
-            lines: list[str] = []
-            if self._task_header:
-                lines.append(self._task_header)
-            lines.extend(self._task_live_lines[-12:])
-            rendered = Text("\n".join(lines))
-            self.remove_class("-compact")
-            self.add_class("-with-details")
-            output.remove_class("-hidden")
-            output.remove_class("-details")
-            output.update(rendered)
-            return
 
         if ui_details:
             rendered = (
@@ -875,6 +1053,7 @@ class HandoffLinkBlock(Static):
         target_session_id: str,
         query: str,
         direction: Literal["back", "forward"],
+        prompt: str | None = None,
         **kwargs,
     ) -> None:
         super().__init__(**kwargs)
@@ -882,19 +1061,46 @@ class HandoffLinkBlock(Static):
         self._target_session_id = target_session_id
         self._query = query
         self._direction: Literal["back", "forward"] = direction
+        self._prompt = prompt
         self.add_class("handoff-link-block")
 
     def compose(self) -> ComposeResult:
-        link_text = f"{self._target_session_id[:8]} (click to open)"
-        handoff_line = f"{self._label} → {link_text}"
-        text = Text(f"[handoff]\n{handoff_line}\n\n[query]\n{self._query}")
-        stylize_badge_markers(text, ("[handoff]", "[query]"))
+        colors = config.ui.colors
+        short_id = self._target_session_id[:8]
 
-        link_start = text.plain.find(link_text)
-        if link_start != -1:
-            text.stylize(
-                f"{config.ui.colors.notice} underline", link_start, link_start + len(link_text)
-            )
+        if self._direction == "forward":
+            badge_text = "HANDOFF"
+            badge_style = f"{colors.accent} bold"
+            icon = "→"
+            icon_style = colors.accent
+            link_label = "Handoff session"
+        else:
+            badge_text = "ORIGIN"
+            badge_style = f"{colors.notice} bold"
+            icon = "←"
+            icon_style = colors.notice
+            link_label = "Origin session"
+
+        text = Text()
+        text.append(f"[{badge_text}] ", style=badge_style)
+        text.append(f"{self._label} ", style=colors.dim)
+        text.append(short_id, style=colors.muted)
+
+        text.append("\n\n", style="")
+        text.append("Query: ", style=f"{colors.dim} bold")
+        text.append(self._query, style="")
+
+        if self._prompt:
+            text.append("\n\n", style="")
+            text.append("Prompt: ", style=f"{colors.dim} bold")
+            prompt_preview = self._prompt.strip()
+            if len(prompt_preview) > 120:
+                prompt_preview = prompt_preview[:117] + "..."
+            text.append(prompt_preview, style=colors.dim)
+
+        text.append("\n\n", style="")
+        text.append(f"{icon} {link_label} ", style=icon_style)
+        text.append("(click to open)", style=colors.dim)
 
         yield Label(text)
 
@@ -978,71 +1184,198 @@ class LaunchWarningsBlock(Static):
 
 
 class TaskToolBlock(ToolBlock):
-    """Custom block rendering Task tool with compact live tail and collapsed results."""
+    """Task tool block with live and finished sub-agent rendering.
 
-    def _render_result_output(self) -> None:
-        output = self.query_one("#tool-output", Label)
-        ui_details = (
-            self._ui_details_full if self._expanded and self._ui_details_full else self._ui_details
+    Running (animated ~8fps by a Textual timer)::
+
+        ⠙ haiku · ↻2 · 3 tool uses · 12.3s
+          ⎿  reading, running command…
+
+    Finished::
+
+        ✓ general-purpose · ↻5 · 7 tool uses · 33.8k token · 45.6s
+          ⎿  Done
+
+    Expanding the block (ctrl+]) still shows the full transcript from
+    ``ui_details_full``.
+    """
+
+    LIVE_TICK_SECONDS = 0.08
+
+    def __init__(self, **kwargs) -> None:
+        super().__init__(**kwargs)
+        self._task_stats: dict | None = None
+        self._task_finished: dict | None = None
+        self._task_started: float | None = None
+        self._task_elapsed_ms: float | None = None
+        self._live_timer: Timer | None = None
+        self._spinner_frame: int = 0
+
+    def on_mount(self) -> None:
+        if self._success is None and not self._awaiting_approval:
+            if self._task_started is None:
+                self._task_started = time.monotonic()
+            if self._task_stats is None:
+                self._task_stats = {
+                    "subagent": "subagent",
+                    "turns": 0,
+                    "tool_uses": 0,
+                    "tokens": 0,
+                }
+            self._ensure_live_timer()
+            self._render_result_output()
+
+    def _format_header(self, truncate: bool = True) -> Text:
+        colors = config.ui.colors
+        result = Text()
+
+        stats = self._task_finished or self._task_stats or {}
+        stop_label = stats.get("stop_label")
+        if self._success is None:
+            icon = task_ui.GLYPHS["tool_call"]
+            icon_style = colors.running
+            name_style = Style(color=colors.fg, bold=True)
+        elif self._success is False or stop_label == "error":
+            icon = task_ui.GLYPHS["failure"]
+            icon_style = colors.failed
+            name_style = Style(color=colors.failed, bold=True)
+        elif stop_label in ("interrupted", "cancelled"):
+            icon = task_ui.GLYPHS["stopped"]
+            icon_style = Style(color=colors.dim)
+            name_style = Style(color=colors.dim, bold=True)
+        else:
+            icon = task_ui.GLYPHS["success"]
+            icon_style = Style(color=colors.success)
+            name_style = Style(color=colors.fg, bold=True)
+
+        subagent_name = stats.get("subagent") or self._name or "subagent"
+        desc = self._call_msg or ""
+
+        result.append(f"{icon} ", style=icon_style)
+        result.append(f"{task_ui.GLYPHS['badge']} {subagent_name}", style=name_style)
+        if desc:
+            result.append("  ")
+            result.append(desc, style=Style(color=colors.dim))
+
+        if self._success is not None and self._task_finished is not None:
+            metrics: list[str] = []
+            elapsed_ms = self._current_elapsed_ms()
+            if elapsed_ms is not None:
+                metrics.append(task_ui.format_ms(elapsed_ms))
+            tokens = self._task_finished.get("tokens")
+            if tokens:
+                metrics.append(task_ui.format_tokens(tokens))
+            if metrics:
+                result.append("  " + " · ".join(metrics), style=Style(color=colors.dim))
+
+        return result
+
+    def set_task_progress(self, stats: dict) -> None:
+        """Render a progress snapshot from :meth:`ChatLog.apply_task_progress`."""
+        if self._task_started is None:
+            self._task_started = time.monotonic()
+        if stats.get("ended"):
+            elapsed = stats.get("elapsed_ms")
+            self._task_elapsed_ms = (
+                elapsed if elapsed is not None else (time.monotonic() - self._task_started) * 1000
+            )
+            self._task_finished = dict(stats)
+            self._stop_live_timer()
+        else:
+            self._task_stats = dict(stats)
+            self._ensure_live_timer()
+        self._render_result_output()
+        # Update header in case subagent name resolved
+        with contextlib.suppress(Exception):
+            self.query_one("#tool-header", Label).update(self._format_header())
+
+    def set_result(
+        self,
+        ui_summary: str | None,
+        ui_details: str | None,
+        success: bool,
+        markup: bool = True,
+        ui_details_full: str | None = None,
+        images: list | None = None,
+    ) -> None:
+        if self._task_started is not None and self._task_elapsed_ms is None:
+            self._task_elapsed_ms = (time.monotonic() - self._task_started) * 1000
+        self._stop_live_timer()
+        if self._task_finished is None:
+            self._task_finished = dict(self._task_stats or {})
+            self._task_finished["ended"] = True
+            if not success and ui_summary:
+                self._task_finished["error"] = ui_summary
+        super().set_result(
+            ui_summary=None,
+            ui_details=ui_details,
+            success=success,
+            markup=markup,
+            ui_details_full=ui_details_full,
+            images=images,
         )
 
-        # 1. Live Task tool tail: shown when the sub-agent is still running
-        if ui_details is None and self._task_live_lines is not None:
-            status = "working"
-            current_tool = None
-            text_snippet = None
+    def _ensure_live_timer(self) -> None:
+        if self._live_timer is None:
+            self._live_timer = self.set_interval(self.LIVE_TICK_SECONDS, self._on_live_tick)
 
-            for line in self._task_live_lines:
-                line_str = line.strip()
-                if not line_str:
-                    continue
-                if line_str.startswith("→"):
-                    current_tool = line_str.replace("→", "").strip()
-                elif line_str.startswith("(") and line_str.endswith(")"):
-                    status = line_str[1:-1]
-                else:
-                    text_snippet = line_str
+    def _stop_live_timer(self) -> None:
+        if self._live_timer is not None:
+            self._live_timer.stop()
+            self._live_timer = None
 
-            parts = []
-            if self._task_header:
-                sa_name = self._task_header.replace("sub-agent:", "").strip()
-                parts.append(f"[{sa_name}]")
-
-            if current_tool:
-                parts.append(f"Running {current_tool}...")
-            elif text_snippet:
-                parts.append(f"Streaming: {text_snippet[:50]}")
-            else:
-                parts.append(f"{status}...")
-
-            rendered = Text("  " + " ".join(parts), style=config.ui.colors.running)
-            self.add_class("-compact")
-            self.remove_class("-with-details")
-            output.remove_class("-hidden")
-            output.remove_class("-details")
-            output.update(rendered)
+    def _on_live_tick(self) -> None:
+        # Animate only while a sub-agent is actually in flight.
+        if self._task_finished is not None or self._task_stats is None:
+            self._stop_live_timer()
             return
+        self._spinner_frame += 1
+        self._render_result_output()
 
-        # 2. Finished state with details (expanded)
-        if ui_details:
-            rendered = (
-                self._render_markup_safe(ui_details) if self._result_markup else Text(ui_details)
-            )
-            is_diff_output = DIFF_BG_PAD_MARKER in rendered.plain
-            rendered = self._pad_diff_backgrounds(rendered, output.size.width or self.size.width)
+    def _current_elapsed_ms(self) -> float | None:
+        if self._task_elapsed_ms is not None:
+            return self._task_elapsed_ms
+        if self._task_started is not None:
+            return (time.monotonic() - self._task_started) * 1000
+        return None
+
+    def _show_body(self, rendered: Text, *, finished: bool) -> None:
+        output = self.query_one("#tool-output", Label)
+        if finished:
             self.remove_class("-compact")
             self.add_class("-with-details")
-            output.remove_class("-hidden")
-            output.remove_class("-details")
-            if is_diff_output:
-                output.add_class("-diff-output")
-            else:
-                output.remove_class("-diff-output")
-            output.update(rendered)
-        # 3. Finished state without details (collapsed by default)
         else:
-            output.update(Text(""))
+            self.add_class("-compact")
             self.remove_class("-with-details")
-            output.remove_class("-details")
-            output.remove_class("-diff-output")
-            output.add_class("-hidden")
+        output.remove_class("-hidden")
+        output.remove_class("-details")
+        output.update(rendered)
+
+    def _render_result_output(self) -> None:
+        try:
+            self.query_one("#tool-output", Label)
+        except Exception:
+            return
+
+        if self._task_finished is not None and not self._awaiting_approval:
+            result_text = self._ui_details or self._ui_details_full or ""
+            rendered = task_ui.render_finished(
+                self._task_finished,
+                self._success,
+                self._current_elapsed_ms(),
+                result_text=result_text,
+                expanded=self._expanded,
+            )
+            self._show_body(rendered, finished=True)
+            return
+
+        # Live in-flight view; also resumes over an already-finalized
+        # background block so late progress stays visible.
+        if self._task_stats is not None and not self._awaiting_approval:
+            rendered = task_ui.render_live(
+                self._task_stats, self._spinner_frame, self._current_elapsed_ms()
+            )
+            self._show_body(rendered, finished=False)
+            return
+
+        super()._render_result_output()

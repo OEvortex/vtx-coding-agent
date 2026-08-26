@@ -92,20 +92,39 @@ class AnthropicSDKProvider(BaseProvider):
     def _convert_assistant_message(self, msg: AssistantMessage) -> SDKMessage:
         content_parts: list[str] = []
         tool_calls: list[dict[str, Any]] = []
+        thinking_blocks: list[dict[str, Any]] = []
 
         for item in msg.content:
             if isinstance(item, TextContent):
                 if item.text.strip():
                     content_parts.append(sanitize_surrogates(item.text))
             elif isinstance(item, ThinkingContent):
-                pass
+                # Preserve thinking with signatures for replay (required for tool-use
+                # continuity when extended thinking is enabled). Redacted thinking
+                # is stored as type redacted_thinking.
+                if item.thinking == "[Reasoning redacted]" or (
+                    not item.thinking and item.signature
+                ):
+                    thinking_blocks.append(
+                        {"type": "redacted_thinking", "data": item.signature or ""}
+                    )
+                else:
+                    blk: dict[str, Any] = {"type": "thinking", "thinking": item.thinking}
+                    if item.signature:
+                        blk["signature"] = item.signature
+                    thinking_blocks.append(blk)
             elif isinstance(item, ToolCall):
                 tool_calls.append({"id": item.id, "name": item.name, "arguments": item.arguments})
 
+        metadata: dict[str, Any] = {}
+        if tool_calls:
+            metadata["tool_calls"] = tool_calls
+        if thinking_blocks:
+            metadata["thinking_blocks"] = thinking_blocks
         return SDKMessage(
             role="assistant",
             content="".join(content_parts) if content_parts else "",
-            metadata={"tool_calls": tool_calls} if tool_calls else None,
+            metadata=metadata or None,
         )
 
     def _convert_tool_result(self, msg: ToolResultMessage) -> SDKMessage:
@@ -157,6 +176,7 @@ class AnthropicSDKProvider(BaseProvider):
             temperature=temp if temp is not None else 0.7,
             max_tokens=max_tok,
             thinking_level=self.config.thinking_level,
+            thinking_level_map=self.config.thinking_level_map,
         )
 
         response = await self._sdk.generate_with_tools(
@@ -179,12 +199,19 @@ class AnthropicSDKProvider(BaseProvider):
                 event_type = event.get("type", "")
 
                 if event_type == "message_start":
-                    if event.get("id"):
-                        llm_stream._id = event["id"]
-                    usage = event.get("usage") or {}
+                    # Anthropic nests id inside message object
+                    msg_obj = event.get("message") or {}
+                    mid = event.get("id") or msg_obj.get("id")
+                    if mid:
+                        llm_stream._id = mid
+                    usage = msg_obj.get("usage") or event.get("usage") or {}
                     llm_stream._usage = Usage(
                         input_tokens=usage.get("input_tokens", 0),
                         output_tokens=usage.get("output_tokens", 0),
+                        cache_write_tokens=usage.get("cache_creation_input_tokens", 0)
+                        or (usage.get("cache_creation") or {}).get("ephemeral_5m_input_tokens", 0)
+                        or (usage.get("cache_creation") or {}).get("ephemeral_1h_input_tokens", 0),
+                        cache_read_tokens=usage.get("cache_read_input_tokens", 0),
                     )
                 elif event_type == "content_block_start":
                     block = event.get("content_block", {})
@@ -224,11 +251,22 @@ class AnthropicSDKProvider(BaseProvider):
                         stop_reason = self._map_stop_reason(delta["stop_reason"])
                     usage = event.get("usage") or {}
                     if usage and llm_stream._usage:
+                        # Anthropic streams usage cumulatively; merge non-null fields
+                        out_tok = usage.get("output_tokens")
                         llm_stream._usage = Usage(
                             input_tokens=llm_stream._usage.input_tokens,
-                            output_tokens=usage.get("output_tokens", 0),
-                            cache_read_tokens=llm_stream._usage.cache_read_tokens,
-                            cache_write_tokens=llm_stream._usage.cache_write_tokens,
+                            output_tokens=out_tok
+                            if out_tok is not None
+                            else llm_stream._usage.output_tokens,
+                            cache_read_tokens=usage.get(
+                                "cache_read_input_tokens", llm_stream._usage.cache_read_tokens
+                            ),
+                            cache_write_tokens=usage.get(
+                                "cache_creation_input_tokens", llm_stream._usage.cache_write_tokens
+                            )
+                            or (usage.get("cache_creation") or {}).get(
+                                "ephemeral_5m_input_tokens", llm_stream._usage.cache_write_tokens
+                            ),
                         )
 
             yield StreamDone(stop_reason=stop_reason)

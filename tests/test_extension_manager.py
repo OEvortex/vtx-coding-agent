@@ -58,7 +58,7 @@ def test_discover_entry_points(tmp_path: Path):
     entry_points = (
         '[project.entry-points."vtx.ai.agent.extensions"]\n'
         'crs = "vtx_crs.ext:register"\n\n'
-        '[project.entry-points."vtx.ai.agent.agents"]\n'
+        '[project.entry-points."vtx.coding_agent.agents"]\n'
         'crs = "vtx_crs.agent:AGENT"\n'
     )
     pyproject.write_text(entry_points, encoding="utf-8")

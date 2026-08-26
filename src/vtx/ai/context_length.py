@@ -118,7 +118,20 @@ class ContextLengthManager:
             if self._loaded:
                 return
             if not self._load_from_cache():
-                self._fetch_and_parse()
+                # Avoid blocking the Textual UI thread on fresh pip/uv-tool
+                # installs where no cache exists yet. The TUI calls
+                # get_limits() synchronously from _handle_model_command which
+                # runs on the event loop; a 10s urlopen there freezes the
+                # picker and looks like "/model does not work" while
+                # "/model refresh" (which runs in a worker thread) succeeds.
+                # Defer network fetch to the background refresh path.
+                try:
+                    import asyncio
+
+                    asyncio.get_running_loop()
+                    # Inside TUI - skip network, load remains empty.
+                except RuntimeError:
+                    self._fetch_and_parse()
             self._loaded = True
 
     def get_limits(self, model: str) -> TokenLimits:

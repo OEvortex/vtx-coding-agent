@@ -62,8 +62,20 @@ class ModelCommands(CommandSupport):
             )
             return
 
-        hidden_providers, hidden_combos = _parse_hidden_entries(get_config().ui.hidden_models)
-        all_models = get_all_models()
+        # Cache-only read - never block on network here. Any exception is
+        # surfaced as a chat message so a broken install (fresh `pip install`
+        # with empty ~/.vtx/models/) does not appear as a silent no-op.
+        # This is the user-visible symptom when installed via `uv tool`/`pip`
+        # with a `model_provider_filter` pointing at a provider whose
+        # `known_models` is empty and no cache has been fetched yet - the
+        # picker would otherwise show "No models configured" with no guidance.
+        try:
+            hidden_providers, hidden_combos = _parse_hidden_entries(get_config().ui.hidden_models)
+            all_models = get_all_models()
+        except Exception as exc:
+            chat = self.query_one("#chat-log", ChatLog)
+            chat.add_info_message(f"Failed to load model catalog: {exc}", error=True)
+            return
         # Filter out hidden models, but always keep the currently active model
         # so its selection state is visible in the picker.
         if hidden_providers or hidden_combos:
@@ -74,7 +86,14 @@ class ModelCommands(CommandSupport):
                 or (m.id == self._runtime.model and m.provider == self._runtime.model_provider)
             ]
         if not all_models:
-            self.notify("No models configured", title="Models", timeout=3, severity="warning")
+            chat = self.query_one("#chat-log", ChatLog)
+            # No cached models at all - fresh pip/uv-tool install or corrupted cache.
+            # Guide the user to refresh instead of a bare toast.
+            chat.add_info_message(
+                "No models configured — cache is empty. Run /model refresh to fetch "
+                "the model catalog (or /model refresh <provider> for a single provider).",
+                error=True,
+            )
             return
 
         # --- Recent models section (top 5, always shown regardless of provider filter) ---
@@ -91,10 +110,13 @@ class ModelCommands(CommandSupport):
                 if not m.supports_images:
                     parts.append("[no-vision]")
                 caption = " ".join(parts)
+                is_free = getattr(m, "is_free", False)
+                free_suffix = " (free)" if is_free else ""
+                base_label = f"{m.id}{free_suffix}"
                 label = (
-                    f"{m.id} ✓"
+                    f"{base_label} ✓"
                     if m.id == self._runtime.model and m.provider == self._runtime.model_provider
-                    else m.id
+                    else base_label
                 )
                 item = ListItem(value=m, label=label, description=caption)
                 item.prefix = "↻ "
@@ -107,10 +129,43 @@ class ModelCommands(CommandSupport):
 
         # --- Rest of models, filtered by provider ---
         filter_slug = get_config().ui.model_provider_filter
+        filtered_by_provider = False
         if filter_slug:
-            all_models = [m for m in all_models if m.provider == filter_slug]
+            filtered = [m for m in all_models if m.provider == filter_slug]
+            # If the filter yields nothing but we had models before filtering,
+            # the filter + empty cache is the culprit (e.g. fresh pip install
+            # with filter=kilo/opencode where known_models is empty).
+            if not filtered:
+                filtered_by_provider = True
+                all_models = filtered
+            else:
+                all_models = filtered
         if not all_models and not recent_items:
-            self.notify("No models configured", title="Models", timeout=3, severity="warning")
+            chat = self.query_one("#chat-log", ChatLog)
+            if filtered_by_provider:
+                from vtx.ai.provider_catalog import get as get_provider_info
+
+                info = get_provider_info(filter_slug)
+                fetchable = bool(info and info.fetch_models)
+                if fetchable:
+                    chat.add_info_message(
+                        f"No cached models for provider '{filter_slug}'. "
+                        f"Run /model refresh {filter_slug} to fetch, or /provider "
+                        f"to clear the filter and see all providers.",
+                        error=True,
+                    )
+                else:
+                    chat.add_info_message(
+                        f"No models for provider '{filter_slug}' (filter active). "
+                        f"Clear the filter with /provider to see all providers.",
+                        error=True,
+                    )
+            else:
+                chat.add_info_message(
+                    "No models configured — cache is empty. Run /model refresh to fetch "
+                    "the model catalog (or /model refresh <provider> for a single provider).",
+                    error=True,
+                )
             return
 
         other_items: list[ListItem] = []
@@ -122,10 +177,13 @@ class ModelCommands(CommandSupport):
             if not m.supports_images:
                 parts.append("[no-vision]")
             caption = " ".join(parts)
+            is_free = getattr(m, "is_free", False)
+            free_suffix = " (free)" if is_free else ""
+            base_label = f"{m.id}{free_suffix}"
             label = (
-                f"{m.id} ✓"
+                f"{base_label} ✓"
                 if m.id == self._runtime.model and m.provider == self._runtime.model_provider
-                else m.id
+                else base_label
             )
             other_items.append(ListItem(value=m, label=label, description=caption))
 
@@ -153,29 +211,74 @@ class ModelCommands(CommandSupport):
     async def _refresh_dynamic_models(self, provider: str | None) -> None:
         chat = self.query_one("#chat-log", ChatLog)
 
-        if provider is not None and get_dynamic_provider(provider) is None:
-            valid = ", ".join(sorted(DYNAMIC_PROVIDERS))
-            chat.add_info_message(
-                f"Unknown provider: {provider}. Dynamic providers: {valid}", error=True
-            )
-            return
+        from vtx.ai.model_fetcher import refresh_provider_models as refresh_legacy
+        from vtx.ai.provider_catalog import get as get_provider_info
+        from vtx.ai.provider_catalog import list_providers as list_catalog_providers
 
-        if provider is None:
+        if provider is not None:
+            is_dynamic = get_dynamic_provider(provider) is not None
+            info = get_provider_info(provider)
+            is_legacy = bool(info and info.fetch_models)
+            if not is_dynamic and not is_legacy:
+                valid_dynamic = set(DYNAMIC_PROVIDERS)
+                valid_legacy = set()
+                for p in list_catalog_providers():
+                    info = get_provider_info(p.slug)
+                    if info and info.fetch_models:
+                        valid_legacy.add(p.slug)
+                valid = ", ".join(sorted(valid_dynamic | valid_legacy))
+                chat.add_info_message(
+                    f"Unknown provider: {provider}. Providers: {valid}", error=True
+                )
+                return
+            chat.add_info_message(f"Refreshing {provider}...")
+        else:
             if not DYNAMIC_PROVIDERS:
                 chat.add_info_message("No providers to refresh", error=True)
                 return
             chat.add_info_message(f"Refreshing all {len(DYNAMIC_PROVIDERS)} providers...")
-        else:
-            chat.add_info_message(f"Refreshing {provider}...")
 
         def _run() -> dict[str, int | str]:
             if provider is not None:
-                try:
-                    count = refresh_provider(provider)
-                except Exception as exc:
-                    return {provider: -1, "_error": str(exc)}
-                return {provider: count}
-            return dict(refresh_all_providers())
+                best = 0
+                last_err: str | None = None
+                if is_dynamic:
+                    try:
+                        best = max(best, int(refresh_provider(provider)))
+                    except Exception as exc:
+                        last_err = str(exc)
+                if is_legacy:
+                    try:
+                        best = max(best, int(refresh_legacy(provider)))
+                    except Exception as exc:
+                        last_err = str(exc)
+                if best == 0 and last_err:
+                    return {provider: -1, "_error": last_err}
+                return {provider: best}
+            # all providers: refresh both systems and merge
+            try:
+                dyn = dict(refresh_all_providers())
+            except Exception as exc:
+                dyn = {"_error": str(exc)}
+            try:
+                from vtx.ai.model_fetcher import refresh_all_provider_models
+
+                leg = dict(refresh_all_provider_models())
+            except Exception:
+                leg = {}
+            merged: dict[str, int | str] = {}
+            for k, v in dyn.items():
+                if k == "_error":
+                    continue
+                dyn_val = int(v) if isinstance(v, int) else 0
+                leg_val = int(leg.get(k, 0)) if isinstance(leg.get(k), int) else 0
+                merged[k] = max(dyn_val, leg_val)
+            for k, v in leg.items():
+                if k not in merged:
+                    merged[k] = v
+            if "_error" in dyn:
+                merged["_error"] = dyn["_error"]
+            return merged
 
         try:
             result = await asyncio.to_thread(_run)

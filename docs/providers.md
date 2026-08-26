@@ -10,7 +10,7 @@ Highlights:
 - **Aggregators**: `openrouter`, `together`, `fireworks`, `groq`, `deepinfra`, `huggingface`, `modelscope`, `baseten`, `friendli`, `clarifai`, `vercelai`
 - **Free/community**: `pollinations`, `chutes`, `nanogpt`, `freemodel`, `blackbox`
 - **Local**: `ollama` (see [local-models.md](local-models.md))
-- **Special**: `supercode`, `opencode`, `kilo`, plus several community gateways
+- **Special**: `opencode`, `kilo`, plus several community gateways
 
 Run `vtx` and use `/provider` then `/model` to browse; `/model` auto-fetches each provider's live catalog when available.
 
@@ -44,7 +44,7 @@ Built-in login flows (`src/ai/oauth/`):
 
 - **GitHub Copilot** — `vtx` → `/login` → copilot; device flow, token refresh handled automatically.
 - **OpenAI (Codex)** — ChatGPT-style OAuth used by the default `openai-codex` provider.
-- **Supercode** — hosted gateway with its own token flow.
+- **Cline (WorkOS)** — OAuth login for the Cline provider with token refresh and free-model detection.
 - **Dynamic providers** — any catalog provider flagged for OAuth gets a generated login via `/login`.
 
 `/logout <provider>` clears stored credentials.
@@ -87,4 +87,4 @@ vtx --provider openai --base-url http://localhost:8080/v1 \
 
 ## Thinking levels
 
-Levels cycle with `ctrl+t`: `none`, `minimal`, `low`, `medium`, `high`, `xhigh` — the provider advertises which subset it supports; unsupported requests fall back to its default.
+Levels cycle with `ctrl+t`: `none`, `minimal`, `low`, `medium`, `high`, `xhigh` — the provider/model advertises which subset it supports (detected per-model from [models.dev](https://models.dev) reasoning options); unsupported requests fall back to the provider's default.

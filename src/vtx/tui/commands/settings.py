@@ -16,6 +16,7 @@ from vtx.coding_agent.config import (
     set_git_context,
     set_notifications_enabled,
     set_permissions_mode,
+    set_ponytail,
     set_show_welcome_shortcuts,
     set_theme,
     set_thinking_lines,
@@ -184,6 +185,7 @@ class SettingsCommands(CommandSupport):
         thinking_lines_status = config.ui.thinking_lines
         colored_badge_status = "on" if config.ui.colored_tool_badge else "off"
         git_context_status = "on" if config.llm.system_prompt.git_context else "off"
+        ponytail_status = "on" if config.llm.system_prompt.ponytail else "off"
         return [
             ListItem(
                 value="colored-tool-badge",
@@ -194,6 +196,7 @@ class SettingsCommands(CommandSupport):
             ListItem(
                 value="notifications", label="notifications", description=notification_status
             ),
+            ListItem(value="ponytail", label="ponytail", description=ponytail_status),
             ListItem(value="show-shortcuts", label="show-shortcuts", description=shortcut_status),
             ListItem(
                 value="permissions", label="permissions", description=config.permissions.mode
@@ -215,6 +218,34 @@ class SettingsCommands(CommandSupport):
 
     def _handle_settings_command(self) -> None:
         self._show_settings_picker()
+
+    def _handle_ponytail_command(self, args: str) -> None:
+        chat = self.query_one("#chat-log", ChatLog)
+        arg = args.strip().lower()
+        if arg in ("on", "true", "1", "enable"):
+            set_ponytail(True)
+            chat.show_status("Ponytail mode turned on")
+            chat.add_info_message(
+                "Ponytail mode change applies on new conversations (use /new) or on vtx restart.",
+                warning=True,
+            )
+        elif arg in ("off", "false", "0", "disable"):
+            set_ponytail(False)
+            chat.show_status("Ponytail mode turned off")
+        elif not arg:
+            current = config.llm.system_prompt.ponytail
+            new_val = not current
+            set_ponytail(new_val)
+            mode = "on" if new_val else "off"
+            chat.show_status(f"Ponytail mode turned {mode}")
+            if new_val:
+                chat.add_info_message(
+                    "Ponytail mode change applies on new conversations (use /new) "
+                    "or on vtx restart.",
+                    warning=True,
+                )
+        else:
+            chat.add_info_message("Usage: /ponytail [on|off]", error=True)
 
     def _handle_settings_select(self, item_value: str) -> SettingsSelectionResult:
         if item_value == "notifications":
@@ -281,6 +312,19 @@ class SettingsCommands(CommandSupport):
             chat.show_status(f"Git context turned {mode}")
             chat.add_info_message(
                 "Git context change applies on new conversations (use /new) or on vtx restart.",
+                warning=True,
+            )
+            self._show_settings_picker(selected_value=item_value)
+            return "reopened-picker"
+
+        elif item_value == "ponytail":
+            ponytail_current = config.llm.system_prompt.ponytail
+            set_ponytail(not ponytail_current)
+            mode = "on" if not ponytail_current else "off"
+            chat = self.query_one("#chat-log", ChatLog)
+            chat.show_status(f"Ponytail mode turned {mode}")
+            chat.add_info_message(
+                "Ponytail mode change applies on new conversations (use /new) or on vtx restart.",
                 warning=True,
             )
             self._show_settings_picker(selected_value=item_value)

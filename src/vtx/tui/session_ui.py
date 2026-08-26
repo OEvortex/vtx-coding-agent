@@ -4,9 +4,10 @@ import json
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
-from vtx.ai.agent.runtime import ConversationRuntime
 from vtx.ai.agent.session import CompactionEntry, CustomMessageEntry, MessageEntry, Session
-from vtx.ai.agent.tools import BaseTool, get_tool, tools_by_name
+from vtx.ai.agent.tools import BaseTool
+from vtx.coding_agent.runtime import ConversationRuntime
+from vtx.coding_agent.tools import get_tool, tools_by_name
 from vtx.core.types import (
     AssistantMessage,
     ImageContent,
@@ -40,6 +41,7 @@ class SessionUIMixin:
     # Methods from other mixins/main class
     def _sync_runtime_state(self) -> None: ...
     def _apply_thinking_level_style(self, level: str) -> None: ...
+    def _restore_goal_state(self, session: Session) -> None: ...
 
     def _resolve_system_prompt(self, session: Session | None = None) -> str:
         return self._runtime.resolve_system_prompt(session)
@@ -133,21 +135,25 @@ class SessionUIMixin:
                 ).strip()
                 query = str((entry.details or {}).get("query") or "").strip()
                 if entry.custom_type == CommandsMixin.HANDOFF_BACKLINK_TYPE and target_session_id:
+                    prompt = str((entry.details or {}).get("prompt") or "").strip()
                     chat.add_handoff_link_message(
                         label="Origin session",
                         target_session_id=target_session_id,
                         query=query,
                         direction="back",
+                        prompt=prompt,
                     )
                 elif (
                     entry.custom_type == CommandsMixin.HANDOFF_FORWARD_LINK_TYPE
                     and target_session_id
                 ):
+                    prompt = str((entry.details or {}).get("prompt") or "").strip()
                     chat.add_handoff_link_message(
                         label="Handoff session",
                         target_session_id=target_session_id,
                         query=query,
                         direction="forward",
+                        prompt=prompt,
                     )
                 elif entry.custom_type == "shell_command":
                     details = entry.details or {}
@@ -231,5 +237,9 @@ class SessionUIMixin:
             )
 
         self._render_session_entries(session)
+        # Goal focus is session-scoped: re-apply it from persisted entries.
+        self._goal_charged_totals = None
+        if callable(getattr(self, "_restore_goal_state", None)):
+            self._restore_goal_state(session)
         chat.add_info_message("Resumed session")
         input_box.focus()

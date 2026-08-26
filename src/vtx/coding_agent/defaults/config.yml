@@ -18,11 +18,7 @@ llm:
 
   system_prompt:
     git_context: true
-    # Base identity + general rules. Defaults to vtx.prompts.identity.DEFAULT_VTX_BASE
-    # (sourced from Python). Set a custom string here to override the base prompt;
-    # extra sections (tool guidelines, AGENTS.md, skills, git, env) are still
-    # appended automatically.
-    content: ""
+    ponytail: false
 
 compaction:
   on_overflow: "continue"
@@ -45,6 +41,13 @@ permissions:
 notifications:
   enabled: false
   volume: 0.5
+
+# Idle session recap: after an agent run finishes and you haven't typed for a
+# while (or when you resume a session), vtx drafts a 1-3 sentence "where you
+# left off" summary using the current model. Disable to opt out.
+recap:
+  enabled: true
+  idle_seconds: 30
 
 # Extensions: Python files or packages that hook into vtx at startup.
 # Each entry is a path to a ``.py`` file or a package directory containing

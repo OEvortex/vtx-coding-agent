@@ -4,18 +4,21 @@ commands typed at the prompt."""
 from __future__ import annotations
 
 import asyncio
+import contextlib
+import time
 from collections import deque
 from typing import TYPE_CHECKING, Any
 
-from vtx.ai.agent.runtime import ConversationRuntime
-from vtx.ai.agent.tools import get_tool
-from vtx.ai.agent.tools.bash import BashParams, BashTool
 from vtx.coding_agent.config import config
+from vtx.coding_agent.runtime import ConversationRuntime
+from vtx.coding_agent.tools import get_tool
+from vtx.coding_agent.tools.bash import BashParams, BashTool
 from vtx.core import (
     AgentEndEvent,
     AgentStartEvent,
     ApprovalResponse,
     AskUserEvent,
+    AskUserQuestion,
     AskUserResponse,
     BackgroundTaskCompletedEvent,
     CompactionEndEvent,
@@ -39,7 +42,8 @@ from vtx.core import (
     WarningEvent,
 )
 from vtx.core.notify import NotificationEvent, notify
-from vtx.core.types import StopReason, ToolResultMessage
+from vtx.core.types import ImageContent, StopReason, ToolResultMessage
+from vtx.tui.ask_user import AskUserDialog
 from vtx.tui.chat import ChatLog
 from vtx.tui.widgets import InfoBar, StatusLine
 
@@ -59,27 +63,30 @@ class AgentRunnerMixin:
     _approval_selection: ApprovalResponse
     _pending_session_switch_id: str | None
     _shell_tool_counter: int
-    _pending_queue: deque[tuple[str, str]]
-    _steer_queue: deque[tuple[str, str]]
+    _pending_queue: deque[tuple[str, str, list[ImageContent] | None]]
+    _steer_queue: deque[tuple[str, str, list[ImageContent] | None]]
     _runtime: ConversationRuntime
     # ask_user state (mirrors _approval_*). Lives here so agent_runner
     # owns the data and the app's on_key can read/write it.
     _ask_user_future: asyncio.Future[AskUserResponse] | None
     _ask_user_tool_id: str | None
-    _ask_user_options: list
-    _ask_user_multi: bool
-    _ask_user_highlight: int
-    _ask_user_toggled: set[str]
+    _ask_dialog: AskUserDialog | None
 
     if TYPE_CHECKING:
         app: Any
         query_one: Any
         run_worker: Any
-        push_screen: Any
 
+        def _dismiss_recap(self) -> None: ...
+        def _arm_recap_timer(self) -> None: ...
         def _update_queue_display(self) -> None: ...
         def _clear_approval_state(self) -> None: ...
         def _show_pending_update_notice_if_idle(self) -> None: ...
+        def _goal_context_block(self) -> str: ...
+        def _goal_auto_continue_prompt(self) -> tuple[str, str] | None: ...
+        def _charge_goal_usage(
+            self, *, input_tokens: int, output_tokens: int, elapsed_ms: float
+        ) -> None: ...
         def _format_tool_result_text(
             self, message: ToolResultMessage
         ) -> tuple[str, str | None]: ...
@@ -109,7 +116,7 @@ class AgentRunnerMixin:
             return None
         return None
 
-    async def _run_agent(self, prompt: str) -> None:
+    async def _run_agent(self, prompt: str, images: list[ImageContent] | None = None) -> None:
         chat = self.query_one("#chat-log", ChatLog)
         status = self.query_one("#status-line", StatusLine)
         info_bar = self.query_one("#info-bar", InfoBar)
@@ -119,7 +126,9 @@ class AgentRunnerMixin:
             chat.add_info_message("Agent not initialized")
             self._is_running = False
             return
+        self._dismiss_recap()
         current_prompt = prompt
+        current_images = images
 
         while True:
             was_interrupted = False
@@ -132,10 +141,23 @@ class AgentRunnerMixin:
                 self._cancel_event.set()
 
             status.set_status("working")
+            turn_started = time.monotonic()
+
+            # Goal state rides along with every user prompt (pi-goal-x
+            # injects once per turn; here the block prepends to the query).
+            goal_block = ""
+            try:
+                goal_block = self._goal_context_block()
+            except Exception:
+                goal_block = ""
+            outgoing_prompt = f"{goal_block}\n\n{current_prompt}" if goal_block else current_prompt
 
             try:
                 async for event in agent.run(
-                    current_prompt, cancel_event=self._cancel_event, steer_event=self._steer_event
+                    outgoing_prompt,
+                    images=current_images,
+                    cancel_event=self._cancel_event,
+                    steer_event=self._steer_event,
                 ):
                     notification_event = self._notification_event_type(event)
                     if notification_event:
@@ -146,6 +168,8 @@ class AgentRunnerMixin:
 
             except Exception as e:
                 chat.add_info_message(str(e), error=True)
+
+            self._charge_goal_turn_usage((time.monotonic() - turn_started) * 1000.0)
 
             if was_interrupted and not self._abort_shown:
                 chat.add_aborted_message("Interrupted by user")
@@ -165,12 +189,27 @@ class AgentRunnerMixin:
 
             queued = self._dequeue_next_prompt()
             if queued is None:
+                # Auto-continue: a focused active goal schedules the next
+                # checkpoint turn instead of returning control to the user.
+                checkpoint = None
+                try:
+                    checkpoint = self._goal_auto_continue_prompt()
+                except Exception:
+                    checkpoint = None
+                if checkpoint is not None and not self._pending_session_switch_id:
+                    display, checkpoint_query = checkpoint
+                    chat.show_status(f"◈ {display}")
+                    current_prompt = checkpoint_query
+                    current_images = None
+                    continue
                 break
-            next_display, next_query = queued
+            next_display, next_query, next_images = queued
             chat.add_user_message(next_display)
             current_prompt = next_query
+            current_images = next_images
 
         self._is_running = False
+        self._arm_recap_timer()
 
         if self._pending_session_switch_id:
             session_id = self._pending_session_switch_id
@@ -179,7 +218,7 @@ class AgentRunnerMixin:
 
         self._show_pending_update_notice_if_idle()
 
-    def _dequeue_next_prompt(self) -> tuple[str, str] | None:
+    def _dequeue_next_prompt(self) -> tuple[str, str, list[ImageContent] | None] | None:
         # Steer messages take priority — drain steer queue first
         if self._steer_queue:
             queued = self._steer_queue.popleft()
@@ -189,6 +228,33 @@ class AgentRunnerMixin:
             return None
         self._update_queue_display()
         return queued
+
+    def _charge_goal_turn_usage(self, elapsed_ms: float) -> None:
+        """Charge this turn's token delta to the focused goal (best-effort).
+
+        Session totals are cumulative; only the difference since the last
+        charge is billed so a goal never double-charges an interval.
+        """
+        charge = getattr(self, "_charge_goal_usage", None)
+        if not callable(charge):
+            return
+        input_tokens = output_tokens = 0
+        session = getattr(self._runtime, "session", None)
+        if session is not None:
+            totals = session.token_totals()
+            input_tokens = totals.input_tokens
+            output_tokens = totals.output_tokens
+        previous = getattr(self, "_goal_charged_totals", None)
+        if previous is None:
+            self._goal_charged_totals = (input_tokens, output_tokens)
+            return
+        delta_in = max(0, input_tokens - previous[0])
+        delta_out = max(0, output_tokens - previous[1])
+        self._goal_charged_totals = (input_tokens, output_tokens)
+        if delta_in <= 0 and delta_out <= 0:
+            return
+        with contextlib.suppress(Exception):
+            charge(input_tokens=delta_in, output_tokens=delta_out, elapsed_ms=max(0.0, elapsed_ms))
 
     async def _render_agent_event(
         self, event: object, chat: ChatLog, status: StatusLine, info_bar: InfoBar
@@ -256,10 +322,8 @@ class AgentRunnerMixin:
                 self._approval_future = f
                 self._approval_tool_id = id
 
-            case AskUserEvent(
-                tool_call_id=id, question=q, header=hdr, options=opts, multi_select=ms, future=f
-            ):
-                self._handle_ask_user(chat, id, q, hdr, opts, ms, f)
+            case AskUserEvent(tool_call_id=id, questions=questions, future=f):
+                self._handle_ask_user(chat, id, questions, f)
 
             case ToolResultEvent(tool_call_id=id, result=r, file_changes=fc):
                 self._approval_future = None
@@ -340,36 +404,29 @@ class AgentRunnerMixin:
         self,
         chat: ChatLog,
         tool_call_id: str,
-        question: str,
-        header: str,
-        options: list,
-        multi_select: bool,
+        questions: list[AskUserQuestion],
         future: asyncio.Future[AskUserResponse] | None,
     ) -> None:
-        """Show the inline ask_user picker and resolve ``future`` with the answer.
+        """Show the inline ask_user questionnaire and resolve ``future``.
 
-        The picker is rendered inside the existing ``ask_user`` tool
-        block (matching the approval style), so the user sees the
-        question + options inline in the chat. Direct number keys,
-        arrows, space, enter, and escape are handled by the app's
-        ``on_key`` and routed back to the future.
+        The dialog renders inside the existing ``ask_user`` tool block
+        (matching the approval style): a bordered questionnaire with a
+        tab strip for multi-question calls and a Submit review tab.
+        Keys are handled by the app's ``on_key`` and routed into the
+        :class:`AskUserDialog` state machine.
         """
         if future is None:
             return
 
-        # Render the picker into the tool block; the app's on_key will
-        # read/write the per-block state we stash on the chat.
-        chat.show_ask_user(tool_call_id, options=list(options), multi_select=multi_select)
+        dialog = AskUserDialog(questions)
+        chat.show_ask_user(tool_call_id, dialog=dialog)
 
         self._ask_user_future = future
         self._ask_user_tool_id = tool_call_id
-        self._ask_user_options = list(options)
-        self._ask_user_multi = multi_select
-        self._ask_user_highlight = 0
-        self._ask_user_toggled = set()
+        self._ask_dialog = dialog
         self.app.bell()
 
-    def _handle_shell_command(self, display_text: str, original_text: str) -> None:
+    def _handle_shell_command(self, display_text: str) -> None:
         """Handle shell commands prefixed with ! or !!"""
         if self._is_running:
             return
@@ -473,3 +530,4 @@ class AgentRunnerMixin:
             self._interrupt_requested = False
             self._cancel_event = None
             status.set_status("idle")
+            self._arm_recap_timer()

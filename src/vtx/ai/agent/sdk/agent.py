@@ -53,10 +53,6 @@ _PROVIDER_DICT_KEYS = frozenset(
     }
 )
 
-# Avoid an import cycle with .runner: type-hint the runner.
-if False:  # pragma: no cover
-    pass
-
 TContext = TypeVar("TContext")
 
 
@@ -499,7 +495,7 @@ class Agent[TContext]:
         else:
             from vtx.ai import ApiType
 
-            api_type: Any = ApiType.OPENAI_COMPLETIONS
+            api_type: Any = ApiType.OPENAI_SDK
             provider_slug = "openai"
 
         api_key_resolved = resolve_api_key(

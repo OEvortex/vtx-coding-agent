@@ -2,7 +2,7 @@ import asyncio
 from dataclasses import dataclass, field
 from typing import Any, Literal
 
-from vtx.core.permissions import ApprovalResponse, AskUserOption, AskUserResponse
+from vtx.core.permissions import ApprovalResponse, AskUserQuestion, AskUserResponse
 from vtx.core.types import AssistantMessage, FileChanges, StopReason, ToolResultMessage, Usage
 
 # =================================================================================================
@@ -156,19 +156,17 @@ class ToolApprovalEvent:
 class AskUserEvent:
     """Yielded when the agent invokes the ``ask_user`` tool.
 
-    The UI is expected to display the question to the user, collect an
-    answer, and set the future's result. The turn runner awaits the
-    future and feeds the response back to the agent as a normal tool
-    result. ``options`` is empty when the question is open-ended and
-    only free text is accepted.
+    Carries a 1-4 question questionnaire (rpiv-style). The UI displays
+    the tabbed dialog, collects answers, and sets the future's result.
+    The turn runner awaits the future and feeds the response back to
+    the agent as a normal tool result. A single-question call still
+    arrives as a one-entry ``questions`` list; ``options`` is empty for
+    open-ended questions where only free text applies.
     """
 
     type: Literal["ask_user"] = "ask_user"
     tool_call_id: str = ""
-    question: str = ""
-    header: str = ""
-    options: list[AskUserOption] = field(default_factory=list)
-    multi_select: bool = False
+    questions: list[AskUserQuestion] = field(default_factory=list)
     future: asyncio.Future[AskUserResponse] | None = None
 
 

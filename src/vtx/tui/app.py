@@ -16,7 +16,7 @@ import os
 import time
 from collections import deque
 from pathlib import Path
-from typing import ClassVar
+from typing import Any, ClassVar
 
 from textual import events, on
 from textual.app import App, ComposeResult
@@ -24,30 +24,41 @@ from textual.binding import Binding
 from textual.widgets import Input
 
 from vtx.ai import BaseProvider
-from vtx.ai.agent.context.skills import (
+from vtx.ai.agent.extensions import load_for_runtime
+from vtx.ai.agent.session import Session
+from vtx.ai.agent.tools_manager import get_tool_path
+from vtx.ai.base import AuthMode
+from vtx.coding_agent.config import (
+    config,
+    consume_config_warnings,
+    get_last_selected,
+    set_ponytail,
+)
+from vtx.coding_agent.context.skills import (
     load_builtin_cmd_skills,
     load_skills,
     merge_registered_skills,
     render_skill_prompt,
 )
-from vtx.ai.agent.extensions import load_for_runtime
-from vtx.ai.agent.runtime import ConversationRuntime
-from vtx.ai.agent.session import Session
-from vtx.ai.agent.tools import DEFAULT_TOOLS, get_tools_with_extensions
-from vtx.ai.agent.tools_manager import get_tool_path
-from vtx.ai.base import AuthMode
-from vtx.coding_agent.config import config, consume_config_warnings, get_last_selected
+from vtx.coding_agent.prompts import is_deactivation_command
+from vtx.coding_agent.runtime import ConversationRuntime
+from vtx.coding_agent.tools import DEFAULT_TOOLS, get_tools_with_extensions
 from vtx.coding_agent.version import VERSION, format_version
-from vtx.core import ApprovalResponse, AskUserOption, AskUserResponse
+from vtx.core import ApprovalResponse, AskUserResponse
+from vtx.core.types import ImageContent
 from vtx.tui.agent_runner import AgentRunnerMixin
+from vtx.tui.ask_user import AskUserDialog
 from vtx.tui.autocomplete import DEFAULT_COMMANDS, SlashCommand
 from vtx.tui.blocks import HandoffLinkBlock, LaunchWarning
 from vtx.tui.chat import ChatLog
 from vtx.tui.commands import CommandsMixin
 from vtx.tui.completion_ui import CompletionUIMixin
+from vtx.tui.extension_ui import TextualExtensionUI
 from vtx.tui.floating_list import FloatingList
+from vtx.tui.goal_ui import GoalWidget
 from vtx.tui.input import InputBox
 from vtx.tui.queue_ui import QueueUIMixin
+from vtx.tui.recap import RecapMixin
 from vtx.tui.selection_mode import SelectionMode
 from vtx.tui.session_ui import SessionUIMixin
 from vtx.tui.startup import StartupMixin
@@ -63,6 +74,7 @@ class Vtx(
     SessionUIMixin,
     QueueUIMixin,
     CompletionUIMixin,
+    RecapMixin,
     AgentRunnerMixin,
     StartupMixin,
     App[None],
@@ -78,7 +90,8 @@ class Vtx(
         ("escape", "interrupt_agent", "Interrupt"),
         Binding("left", "tree_page_up", "Tree page up", priority=True),
         Binding("right", "tree_page_down", "Tree page down", priority=True),
-        ("ctrl+t", "cycle_thinking_level", "Cycle thinking level"),
+        Binding("ctrl+shift+g", "toggle_goal_dashboard", "Toggle goal dashboard", priority=True),
+        Binding("ctrl+t", "cycle_thinking_level", "Cycle thinking level", priority=True),
         Binding("ctrl+o", "toggle_tool_output", "Toggle tool output", priority=True),
         Binding("ctrl+shift+t", "toggle_thinking", "Toggle thinking", priority=True),
         # Shift+Tab cycles handoff agents (was: cycle_permission_mode).
@@ -169,13 +182,12 @@ class Vtx(
         self._approval_tool_id: str | None = None
         self._approval_selection: ApprovalResponse = ApprovalResponse.APPROVE
         # ask_user state — mirrors the approval fields so the app's
-        # on_key can route keypresses to the right future.
+        # on_key can route keypresses to the right future. The dialog
+        # object owns the questionnaire; the app just dispatches keys
+        # into it and resolves the future when it finishes.
         self._ask_user_future: asyncio.Future[AskUserResponse] | None = None
         self._ask_user_tool_id: str | None = None
-        self._ask_user_options: list[AskUserOption] = []
-        self._ask_user_multi: bool = False
-        self._ask_user_highlight: int = 0
-        self._ask_user_toggled: set[str] = set()
+        self._ask_dialog: AskUserDialog | None = None
         self._hide_thinking = False
         self._fd_path: str | None = None
         self._selection_mode: SelectionMode | None = None
@@ -183,9 +195,14 @@ class Vtx(
         self._pending_api_key_provider: str | None = None
         self._settings_selected_value: str | None = None
         self._shell_tool_counter = 0
+        self._init_recap_state()
 
-        self._pending_queue: deque[tuple[str, str]] = deque(maxlen=QueueDisplay.MAX_QUEUE)
-        self._steer_queue: deque[tuple[str, str]] = deque(maxlen=QueueDisplay.MAX_QUEUE)
+        self._pending_queue: deque[tuple[str, str, list[ImageContent] | None]] = deque(
+            maxlen=QueueDisplay.MAX_QUEUE
+        )
+        self._steer_queue: deque[tuple[str, str, list[ImageContent] | None]] = deque(
+            maxlen=QueueDisplay.MAX_QUEUE
+        )
         self._queue_selection: tuple[bool, int] | None = None
         self._queue_editing: tuple[bool, int, tuple[str, str]] | None = None
         self._steer_event: asyncio.Event | None = None
@@ -206,7 +223,7 @@ class Vtx(
         # fire tool_call / tool_result / agent_* hooks through.
         self._loaded_extensions = load_for_runtime(
             cwd=self._cwd,
-            extra_paths=extra_extension_paths,
+            extra_paths=[*config.extensions, *(extra_extension_paths or [])],
             auto_discover=auto_discover_extensions,
         )
         for err in self._loaded_extensions.errors:
@@ -215,7 +232,7 @@ class Vtx(
         # Load handoff agents (project-local, global, plus the caller's
         # extra paths). Agent-scoped local tools + commands are merged
         # into the active tool set when an agent is active.
-        from vtx.ai.agent.agents import AgentRegistry, load_all_agents
+        from vtx.coding_agent.agents import AgentRegistry, load_all_agents
 
         self._agent_registry = AgentRegistry()
         if auto_discover_agents or extra_agent_paths:
@@ -278,10 +295,88 @@ class Vtx(
             agent_registry=self._agent_registry,
             active_agent=self._agent_registry.active,
             agent_extensions=list(self._loaded_extensions.extensions),
+            progress_callback=self._task_progress_callback,
         )
         self._runtime.set_loaded_extensions(self._loaded_extensions)
 
-        # Hook system: bridge YAML hook configs onto the extension EventBus.
+        # Interactive UI primitives for extensions:
+        # handlers declared as (event, payload, ctx) receive a context whose
+        # .ui shows real modal dialogs backed by this Textual app.
+        self._extension_ui = TextualExtensionUI(self)
+        self._loaded_extensions.bus.set_ui_context(self._extension_ui, cwd=self._cwd, mode="tui")
+
+        # Wire extension runtime actions so handlers can call
+        # api.set_session_name(), api.set_model(), etc.
+        from vtx.ai.agent.extensions import (
+            ExtensionActions,
+            ExtensionCommandContextActions,
+            ExtensionContextActions,
+            ExtensionProviderActions,
+        )
+
+        def _extension_set_model(model_id: Any) -> bool:
+            """Resolve a model id to catalog info and apply it via switch_model."""
+            from vtx.ai.dynamic_models import find_dynamic_model
+            from vtx.ai.models import get_model
+
+            info = get_model(str(model_id), None)
+            if info is None:
+                info = find_dynamic_model(str(model_id), None)
+            if info is None:
+                return False
+            self._runtime.switch_model(info)
+            return True
+
+        runner = self._loaded_extensions.runner
+        assert runner is not None
+        runner.bind_core(
+            actions=ExtensionActions(
+                send_message=lambda *a, **kw: None,
+                send_user_message=lambda *a, **kw: None,
+                append_entry=lambda *a, **kw: None,
+                set_session_name=self._runtime.set_session_name,
+                get_session_name=self._runtime.get_session_name,
+                set_label=lambda *a, **kw: None,
+                get_active_tools=lambda: self._runtime.tools,
+                get_all_tools=lambda: self._runtime.tools,
+                set_active_tools=lambda *a, **kw: None,
+                refresh_tools=lambda: None,
+                get_commands=lambda: {},
+                set_model=_extension_set_model,
+                get_thinking_level=lambda: self._runtime.thinking_level,
+                set_thinking_level=self._runtime.set_thinking_level,
+            ),
+            context_actions=ExtensionContextActions(
+                get_model=lambda: self._runtime.model,
+                get_scoped_models=lambda: [],
+                is_idle=lambda: not self._is_running,
+                is_project_trusted=lambda: False,
+                get_signal=lambda: self._cancel_event,
+                abort=lambda: self._request_interrupt(),
+                has_pending_messages=lambda: False,
+                shutdown=lambda: None,
+                get_context_usage=lambda: None,
+                compact=lambda options: None,
+                get_system_prompt=lambda: self._runtime.resolve_system_prompt(),
+            ),
+            provider_actions=ExtensionProviderActions(
+                register_provider=lambda *a, **kw: None,
+                register_native_provider=lambda *a, **kw: None,
+                unregister_provider=lambda *a, **kw: None,
+            ),
+        )
+        runner.bind_command_context(
+            actions=ExtensionCommandContextActions(
+                wait_for_idle=lambda: asyncio.ensure_future(asyncio.sleep(0)),
+                new_session=lambda *a, **kw: asyncio.ensure_future(asyncio.sleep(0)),
+                fork=lambda *a, **kw: asyncio.ensure_future(asyncio.sleep(0)),
+                navigate_tree=lambda *a, **kw: asyncio.ensure_future(asyncio.sleep(0)),
+                switch_session=lambda *a, **kw: asyncio.ensure_future(asyncio.sleep(0)),
+                reload=lambda: asyncio.ensure_future(asyncio.sleep(0)),
+            )
+        )
+
+        # Hook system: bridge YAML hook configs onto the EventBus.
         from vtx.ai.agent.hooks.bridge import HookBridge
 
         self._hook_bridge = HookBridge(
@@ -298,6 +393,7 @@ class Vtx(
 
     def compose(self) -> ComposeResult:
         yield ChatLog(id="chat-log")
+        yield GoalWidget(id="goal-widget")
         yield QueueDisplay(id="queue-display")
         yield StatusLine(id="status-line")
         yield InputBox(cwd=self._cwd, id="input-box")
@@ -422,40 +518,31 @@ class Vtx(
             parts.extend(["", "[query]", query.strip()])
         return "\n".join(parts)
 
-    def _install_task_progress_callback(self) -> None:
-        """Wire the Task tool's parent context to the chat log.
+    def _inject_lazy_tools(self, tool_names: list[str]) -> None:
+        """Inject lazily-available tools into the runtime for the active turn."""
+        from vtx.coding_agent.tools import tools_by_name
 
-        The TUI captures sub-agent events (text deltas, tool starts,
-        sub-agent end) and renders them into the parent tool block
-        after it mounts.
-        """
-        from vtx.ai.agent.dispatcher import get_context, set_context
-        from vtx.tui.chat import ChatLog
+        for name in tool_names:
+            tool = tools_by_name.get(name)
+            if tool is None or tool in self._runtime.tools:
+                continue
+            self._runtime.tools.append(tool)
 
-        def _callback(tool_call_id: str, event: dict) -> None:
-            try:
-                chat = self.query_one("#chat-log", ChatLog)
-            except Exception:
-                # Chat log not mounted yet (early turn) — drop the event.
-                return
-            chat.apply_task_progress(tool_call_id, event)
+        if self._runtime.agent is not None:
+            self._runtime._rebuild_system_prompt()
 
-        existing = get_context()
-        if existing is None:
+    def _task_progress_callback(self, tool_call_id: str, event: dict) -> None:
+        try:
+            chat = self.query_one("#chat-log", ChatLog)
+        except Exception:
+            # Chat log not mounted yet (early turn) — drop the event.
             return
-        set_context(
-            existing.__class__(
-                provider=existing.provider,
-                model=existing.model,
-                model_provider=existing.model_provider,
-                base_url=existing.base_url,
-                thinking_level=existing.thinking_level,
-                agent_registry=existing.agent_registry,
-                cwd=existing.cwd,
-                system_prompt=existing.system_prompt,
-                progress_callback=_callback,
-            )
-        )
+        chat.apply_task_progress(tool_call_id, event)
+
+    def _install_task_progress_callback(self) -> None:
+        """Wire the Task tool's parent context to the chat log."""
+        if hasattr(self, "_runtime") and self._runtime is not None:
+            self._runtime.set_progress_callback(self._task_progress_callback)
 
     def _sync_runtime_state(self) -> None:
         # Compatibility hook for mixin/unit-test fakes. Runtime is the source of truth.
@@ -481,11 +568,16 @@ class Vtx(
         self.run_worker(self._check_for_updates(), exclusive=False)
         self.run_worker(self._ensure_models_dev(), exclusive=False)
 
-        # Fire session_start on the extension bus. Sync-only emit because
-        # on_mount is itself a sync Textual method; async handlers are
-        # skipped with a warning logged by the bus.
+        # Fire session_start on the extension bus via an async worker so
+        # async handlers (e.g. YAML hook handlers registered by HookBridge)
+        # are awaited; emit_sync would skip them.
         if self._loaded_extensions.bus.handler_count("session_start"):
-            self._loaded_extensions.bus.emit_sync("session_start", cwd=self._cwd, session_id="")
+            self.run_worker(
+                lambda: self._loaded_extensions.bus.emit(
+                    "session_start", cwd=self._cwd, session_id=""
+                ),
+                exclusive=False,
+            )
 
         # Load YAML hook configs onto the EventBus so hook handlers fire
         # alongside extension event handlers.  Done after session_start
@@ -549,8 +641,21 @@ class Vtx(
             )
             info_bar.set_file_changes(self._runtime.session.file_changes_summary())
             chat.add_info_message("Resumed session")
+            self._arm_recap_timer()
 
         self.set_interval(_GIT_BRANCH_REFRESH_INTERVAL_SECONDS, self._refresh_git_branch)
+
+        # Goal system: bind focus persistence, restore/resolve focus, mount
+        # the above-editor beacon, and refresh it periodically for elapsed
+        # time / token accounting display.
+        try:
+            self._init_goal_state()
+        except Exception as exc:
+            chat.add_info_message(f"Goal system init failed: {exc}", error=True)
+        goal_widget = self.query_one("#goal-widget", GoalWidget)
+        goal_widget.set_cwd(self._cwd)
+        goal_widget.refresh_goal(self._cwd)
+        self.set_interval(5.0, lambda: goal_widget.refresh_goal())
 
         self._startup_complete = True
         self._show_pending_update_notice_if_idle()
@@ -573,6 +678,7 @@ class Vtx(
             await self._hook_bridge.unload()
         with contextlib.suppress(Exception):
             await self._runtime.close()
+        self._cancel_recap_timer()
 
     # -------------------------------------------------------------------------
     # Key bindings
@@ -649,6 +755,10 @@ class Vtx(
             self.query_one("#tree-selector", TreeSelector).action_cancel()
             return
         if self._is_running:
+            # pi-goal-x parity: pressing Esc during active work pauses the
+            # focused goal so auto-continue does not immediately restart it.
+            if callable(getattr(self, "_pause_goal_on_interrupt", None)):
+                self._pause_goal_on_interrupt()
             self._request_interrupt()
 
     def _request_interrupt(self, status_message: str | None = "Interrupting...") -> None:
@@ -742,161 +852,85 @@ class Vtx(
         return False
 
     def _handle_ask_user_key(self, event: events.Key) -> bool:
-        """Handle a keypress while an ask_user picker is active.
+        """Handle a keypress while an ask_user questionnaire is active.
 
         Returns True if the key was consumed (caller should stop
-        propagation). Mirrors the approval flow's on_key contract.
+        propagation). All interaction logic lives in the
+        :class:`AskUserDialog` state machine; this only feeds it the
+        live input values and applies its side effects.
         """
-        if self._ask_user_future is None or self._ask_user_future.done():
+        dialog = self._ask_dialog
+        if self._ask_user_future is None or self._ask_user_future.done() or dialog is None:
             return False
 
-        key = event.key
-        max_index = len(self._ask_user_options)  # +1 for "Other"
-        total = max_index + 1
-
-        # Number keys 1..N: pick that option directly. 1-indexed for
-        # human readability; the last index is "Other".
-        if key.isdigit() and len(key) == 1:
-            n = int(key)
-            if 1 <= n <= total:
-                self._ask_user_pick(n - 1)
-                event.prevent_default()
-                event.stop()
-                return True
+        chat = self.query_one("#chat-log", ChatLog)
+        tool_id = self._ask_user_tool_id or ""
+        consumed = dialog.handle_key(event.key, custom_value=chat.ask_user_custom_value(tool_id))
+        if not consumed:
             return False
 
-        if key in ("up", "k"):
-            self._ask_user_move(-1)
-            event.prevent_default()
-            event.stop()
-            return True
-        if key in ("down", "j"):
-            self._ask_user_move(1)
-            event.prevent_default()
-            event.stop()
-            return True
-        if key == " " and self._ask_user_multi:
-            self._ask_user_toggle_highlight()
-            event.prevent_default()
-            event.stop()
-            return True
-        if key == "enter":
-            self._ask_user_submit_highlighted()
-            event.prevent_default()
-            event.stop()
-            return True
-        if key == "escape":
-            self._ask_user_cancel()
-            event.prevent_default()
-            event.stop()
-            return True
-        return False
-
-    def _ask_user_move(self, delta: int) -> None:
-        total = len(self._ask_user_options) + 1
-        self._ask_user_highlight = (self._ask_user_highlight + delta) % total
-        self._refresh_ask_user_visual()
-
-    def _ask_user_toggle_highlight(self) -> None:
-        idx = self._ask_user_highlight
-        if idx >= len(self._ask_user_options):
-            # Toggling the "Other" row toggles the synthetic label; not
-            # useful on its own, so ignore.
-            return
-        label = self._ask_user_options[idx].label
-        if label in self._ask_user_toggled:
-            self._ask_user_toggled.discard(label)
+        if dialog.pending_clear_draft:
+            dialog.pending_clear_draft = False
+            chat.set_ask_user_custom_value(tool_id, "")
+        if dialog.finished:
+            self._resolve_ask_user_future(dialog)
         else:
-            self._ask_user_toggled.add(label)
-        self._refresh_ask_user_visual()
+            chat.rerender_ask_user(tool_id)
+        event.prevent_default()
+        event.stop()
+        return True
 
-    def _ask_user_pick(self, index: int) -> None:
-        """Pick a specific row by 0-based index (user-options + 1 for Other)."""
-        if self._ask_user_multi:
-            # Multi-select: number toggles a single option and Enter
-            # submits. Single-click picks don't make sense here.
-            self._ask_user_highlight = index
-            label = (
-                self._ask_user_options[index].label
-                if index < len(self._ask_user_options)
-                else None
-            )
-            if label is not None:
-                if label in self._ask_user_toggled:
-                    self._ask_user_toggled.discard(label)
-                else:
-                    self._ask_user_toggled.add(label)
-            self._refresh_ask_user_visual()
-            return
-
-        # Single-select: 1..N submits immediately
-        self._ask_user_highlight = index
-        self._ask_user_submit_highlighted()
-
-    def _ask_user_submit_highlighted(self) -> None:
-        if self._ask_user_future is None or self._ask_user_future.done():
-            return
-
-        idx = self._ask_user_highlight
-        if idx >= len(self._ask_user_options):
-            # "Other" — submit the inline input value
-            chat = self.query_one("#chat-log", ChatLog)
-            text = chat.ask_user_input_value(self._ask_user_tool_id or "").strip()
-            if not text:
-                return  # empty custom answer: ignore
-            self._ask_user_future.set_result(AskUserResponse(custom_text=text))
-        elif self._ask_user_multi:
-            # If the user hasn't toggled anything, fall back to the
-            # highlighted option.
-            if not self._ask_user_toggled:
-                label = self._ask_user_options[idx].label
-                self._ask_user_future.set_result(AskUserResponse(selections=(label,)))
-            else:
-                self._ask_user_future.set_result(
-                    AskUserResponse(selections=tuple(sorted(self._ask_user_toggled)))
-                )
-        else:
-            label = self._ask_user_options[idx].label
-            self._ask_user_future.set_result(AskUserResponse(selections=(label,)))
-
-        self._clear_ask_user_state()
-
-    def _ask_user_cancel(self) -> None:
-        if self._ask_user_future and not self._ask_user_future.done():
-            self._ask_user_future.set_result(AskUserResponse())
+    def _resolve_ask_user_future(self, dialog: AskUserDialog) -> None:
+        """Hand the questionnaire's answers back to the turn runner."""
+        future = self._ask_user_future
+        if future is not None and not future.done():
+            future.set_result(AskUserResponse() if dialog.cancelled else dialog.build_response())
         self._clear_ask_user_state()
 
     def _clear_ask_user_state(self) -> None:
         if self._ask_user_tool_id is not None:
-            chat = self.query_one("#chat-log", ChatLog)
-            chat.hide_ask_user(self._ask_user_tool_id)
+            try:
+                chat = self.query_one("#chat-log", ChatLog)
+                chat.hide_ask_user(self._ask_user_tool_id)
+            except Exception:
+                pass
         self._ask_user_future = None
         self._ask_user_tool_id = None
-        self._ask_user_options = []
-        self._ask_user_toggled = set()
-        self._ask_user_highlight = 0
-
-    def _refresh_ask_user_visual(self) -> None:
-        if self._ask_user_tool_id is None:
-            return
-        chat = self.query_one("#chat-log", ChatLog)
-        chat.update_ask_user_selection(
-            self._ask_user_tool_id, self._ask_user_highlight, set(self._ask_user_toggled)
-        )
+        self._ask_dialog = None
 
     @on(Input.Submitted)
     def on_ask_user_input_submitted(self, event: Input.Submitted) -> None:
-        """Submit the inline 'Other' input as a custom-text answer."""
-        if event.input.id != "ask-user-input":
+        """Commit the inline custom answer."""
+        dialog = self._ask_dialog
+        if dialog is None or self._ask_user_future is None or self._ask_user_future.done():
             return
-        if self._ask_user_future is None or self._ask_user_future.done():
+        if event.input.id == "ask-user-input":
+            dialog.commit_custom(event.value)
+            event.stop()
+            if dialog.finished:
+                self._resolve_ask_user_future(dialog)
+            else:
+                self.query_one("#chat-log", ChatLog).rerender_ask_user(
+                    self._ask_user_tool_id or ""
+                )
+
+    @on(Input.Changed)
+    def on_ask_user_input_changed(self, event: Input.Changed) -> None:
+        """Mirror the custom-answer draft into the state machine so it
+        stays visible in the ``Type something.`` row while browsing."""
+        dialog = self._ask_dialog
+        if dialog is None or event.input.id != "ask-user-input":
             return
-        text = event.value.strip()
-        if not text:
+        if dialog.is_on_submit_tab():
             return
-        self._ask_user_future.set_result(AskUserResponse(custom_text=text))
-        self._clear_ask_user_state()
-        event.stop()
+        dialog.current_state().draft = event.value
+        self.query_one("#chat-log", ChatLog).rerender_ask_user(self._ask_user_tool_id or "")
+
+    @on(Input.Changed)
+    def on_input_changed_reset_recap(self) -> None:
+        # Any typing in the editor counts as activity: push the idle recap
+        # timer back. Harmless when the event came from the ask-user dialog.
+        self._reset_recap_timer()
 
     def on_key(self, event: events.Key) -> None:
         # ask_user takes priority over approval since its picker is
@@ -948,19 +982,37 @@ class Vtx(
         if not display_text:
             return
 
+        # New activity: drop any pending/idle recap state.
+        self._dismiss_recap()
+
         # Intercept API-key entry: the user is in the middle of /login <provider>
         # and is typing the key. Route it to the auth command instead of the agent.
         if self._selection_mode == SelectionMode.API_KEY:
             self._submit_api_key(event.text)
             return
 
-        if display_text.startswith("/") and self._handle_command(display_text):
-            return
-
-        # Handle skill slash commands typed manually: /skill:<name> <query>
+        # Route registered skill commands typed as /<name> before hardcoded
+        # commands so skills like /goal work through the skill system.
         manual_skill_name = None
         manual_skill_query = ""
-        if display_text.startswith("/skill:"):
+        if display_text.startswith("/") and not display_text.startswith("/skill:"):
+            parts = display_text[1:].split(maxsplit=1)
+            cmd_name = parts[0]
+            cmd_args = parts[1] if len(parts) > 1 else ""
+            skill = next(
+                (
+                    s
+                    for s in self._registered_slash_skills()
+                    if s.register_cmd and s.name == cmd_name
+                ),
+                None,
+            )
+            if skill:
+                manual_skill_name = skill.name
+                manual_skill_query = cmd_args
+            elif self._handle_command(display_text):
+                return
+        elif display_text.startswith("/skill:"):
             skill_name, _, skill_query = display_text[len("/skill:") :].partition(" ")
             selected_skill = next(
                 (
@@ -976,7 +1028,13 @@ class Vtx(
 
         # Handle shell commands (! and !!)
         if display_text.startswith("!") or display_text.startswith("!!"):
-            self._handle_shell_command(display_text, event.text)
+            self._handle_shell_command(display_text)
+            return
+
+        if config.llm.system_prompt.ponytail and is_deactivation_command(display_text):
+            set_ponytail(False)
+            chat = self.query_one("#chat-log", ChatLog)
+            chat.show_status("Ponytail mode turned off")
             return
 
         query_text = event.query_text.strip()
@@ -1000,19 +1058,23 @@ class Vtx(
                 query_text = render_skill_prompt(selected_skill, skill_query)
                 highlighted_skill = selected_skill.name
 
+        # Lazily inject tools for registered skills that need them.
+        if selected_skill_name == "goal":
+            self._inject_lazy_tools(["goal"])
+
         if self._is_running:
             if event.steer:
                 if len(self._steer_queue) >= QueueDisplay.MAX_QUEUE:
                     self.notify("Steer queue full (max 5)", severity="warning", timeout=2)
                     return
-                self._steer_queue.append((display_text, query_text))
+                self._steer_queue.append((display_text, query_text, event.images))
                 if self._steer_event:
                     self._steer_event.set()
             else:
                 if len(self._pending_queue) >= QueueDisplay.MAX_QUEUE:
                     self.notify("Queue full (max 5)", severity="warning", timeout=2)
                     return
-                self._pending_queue.append((display_text, query_text))
+                self._pending_queue.append((display_text, query_text, event.images))
             self._update_queue_display()
             return
 
@@ -1020,4 +1082,4 @@ class Vtx(
         chat.add_user_message(display_text, highlighted_skill=highlighted_skill)
 
         self._is_running = True
-        self.run_worker(self._run_agent(query_text), exclusive=True)
+        self.run_worker(self._run_agent(query_text, images=event.images), exclusive=True)

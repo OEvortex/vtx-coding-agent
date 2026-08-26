@@ -204,14 +204,17 @@ def get_dynamic_api_key(provider: str) -> str | None:
     if stored:
         return stored
 
-    # Fall back to OAuth token files for specific providers
-    if provider == "supercode":
+    if provider == "cline":
         try:
-            from vtx.ai.oauth.supercode import load_supercode_credentials
+            from vtx.ai.oauth.cline import get_valid_cline_token_sync, load_cline_credentials
 
-            creds = load_supercode_credentials()
-            if creds is not None and creds.token:
-                return creds.token
+            token = get_valid_cline_token_sync()
+            if token:
+                return token
+            # fallback: try loading without env check
+            creds = load_cline_credentials()
+            if creds is not None and creds.access:
+                return creds.access
         except Exception:
             pass
 
@@ -233,11 +236,19 @@ def get_provider_status(provider: str) -> DynamicProviderStatus | None:
     if config is not None:
         env_var = config.env_var
         has_env = bool(env_var and os.environ.get(env_var, "").strip())
+        has_stored = has_api_key(provider)
+        if not has_stored and provider == "cline":
+            try:
+                from vtx.ai.oauth.cline import is_cline_logged_in
+
+                has_stored = is_cline_logged_in()
+            except Exception:
+                pass
         return DynamicProviderStatus(
             provider=provider,
             env_var=env_var,
             has_env_key=has_env,
-            has_stored_key=has_api_key(provider),
+            has_stored_key=has_stored,
             api_key_optional=config.api_key_optional,
         )
 
@@ -251,11 +262,11 @@ def get_provider_status(provider: str) -> DynamicProviderStatus | None:
     has_stored = has_api_key(provider)
 
     # Check OAuth token files for providers that use them
-    if not has_stored and provider == "supercode":
+    if not has_stored and provider == "cline":
         try:
-            from vtx.ai.oauth.supercode import is_supercode_logged_in
+            from vtx.ai.oauth.cline import is_cline_logged_in
 
-            has_stored = is_supercode_logged_in()
+            has_stored = is_cline_logged_in()
         except Exception:
             pass
 

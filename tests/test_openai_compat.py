@@ -1,7 +1,7 @@
-from vtx.ai.agent.runtime import default_base_url_for_provider
 from vtx.ai.base import is_local_base_url, resolve_api_key
 from vtx.ai.models import ApiType
 from vtx.ai.providers import PROVIDER_API_BY_NAME, get_provider_class, resolve_provider_api_type
+from vtx.coding_agent.runtime import default_base_url_for_provider
 
 
 def test_resolve_provider_api_type_openai():

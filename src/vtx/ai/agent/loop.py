@@ -18,9 +18,11 @@ from typing import Any
 
 from vtx.ai import BaseProvider
 from vtx.ai.agent.agent_runner import AgentRunSpec, run_agent_turn
-from vtx.ai.agent.context import Context
+from vtx.ai.agent.background import BACKGROUND_NOTIFICATION_TAG
+from vtx.ai.agent.config import get_harness_config
 from vtx.ai.agent.extensions import (
     AGENT_END,
+    AGENT_SETTLED,
     AGENT_START,
     COMPACTION_END,
     COMPACTION_START,
@@ -28,10 +30,8 @@ from vtx.ai.agent.extensions import (
     TURN_START,
     EventBus,
 )
-from vtx.ai.agent.prompts import build_system_prompt
 from vtx.ai.agent.session import CompactionEntry, MessageEntry, Session
 from vtx.ai.agent.tools import BaseTool
-from vtx.coding_agent.config import config as vtx_config
 from vtx.core.compaction import generate_summary, is_overflow
 from vtx.core.errors import format_error
 from vtx.core.events import (
@@ -58,7 +58,7 @@ from vtx.core.types import (
 )
 
 # Re-exported so existing callers (runtime, tests) keep working.
-__all__ = ["Agent", "AgentConfig", "build_system_prompt"]
+__all__ = ["Agent", "AgentConfig"]
 
 log = logging.getLogger("agent.loop")
 
@@ -76,35 +76,49 @@ class Agent:
         tools: list[BaseTool],
         session: Session,
         cwd: str | None = None,
-        context: Context | None = None,
+        context: Any | None = None,
         system_prompt: str | None = None,
         config: AgentConfig | None = None,
         extensions: EventBus | None = None,
         background_manager: Any = None,
         hooks: list[Any] | None = None,
+        context_loader: Any = None,
+        prompt_builder: Any = None,
     ):
+        """Create an agent engine.
+
+        The harness is product-agnostic: ``context`` is an opaque object
+        produced by ``context_loader(cwd)`` and rendered by
+        ``prompt_builder(cwd, context, tools=tools)``. Products (e.g. the
+        coding agent) inject both; without them only a static
+        ``system_prompt`` is used.
+        """
         self.provider = provider
         self.tools = tools
         self.session = session
         self.config = config or AgentConfig()
         self._cwd = cwd or os.getcwd()
-        self._context = context or Context.load(self._cwd)
-        self._system_prompt = system_prompt or build_system_prompt(
-            self._cwd, self._context, tools=tools
-        )
+        self._context_loader = context_loader
+        self._prompt_builder = prompt_builder
+        if context is None and context_loader is not None:
+            context = context_loader(self._cwd)
+        self._context = context
+        if system_prompt is None and prompt_builder is not None:
+            system_prompt = prompt_builder(self._cwd, self._context, tools=tools)
+        self._system_prompt = system_prompt or ""
         self._extensions = extensions
         self._run_usage = Usage()
         self._background_manager = background_manager
-        # In-process hooks (agenite_claw-style AgentHook). Wired into the engine in
-        # P6; unused until then and default-empty so callers are unaffected.
+        # In-process hooks (AgentHook). Wired into the engine in P6; unused
+        # until then and default-empty so callers are unaffected.
         self._hooks: list[Any] = list(hooks or [])
-        # Mid-turn follow-up queue (agenite_claw-style pending queue). Populated by
+        # Mid-turn follow-up queue. Populated by
         # callers via :meth:`queue_follow_up`; drained by the engine mid-turn so
         # sub-agent/queued results reach the model without ending the turn.
         self._pending_queue: deque[UserMessage] = deque()
 
     @property
-    def context(self) -> Context:
+    def context(self) -> Any:
         return self._context
 
     @property
@@ -112,8 +126,10 @@ class Agent:
         return self._system_prompt
 
     def reload_context(self) -> None:
-        self._context = Context.load(self._cwd)
-        self._system_prompt = build_system_prompt(self._cwd, self._context, tools=self.tools)
+        if self._context_loader is not None:
+            self._context = self._context_loader(self._cwd)
+        if self._prompt_builder is not None:
+            self._system_prompt = self._prompt_builder(self._cwd, self._context, tools=self.tools)
 
     @property
     def messages(self) -> list[Message]:
@@ -136,8 +152,13 @@ class Agent:
         self._run_usage = Usage()
 
         if images:
-            user_content: list[TextContent | ImageContent] = [TextContent(text=query), *images]
-            user_message = UserMessage(content=user_content)
+            # Images precede text (better grounding); text is optional for
+            # image-only submissions.
+            parts: list[TextContent | ImageContent] = []
+            if query:
+                parts.append(TextContent(text=query))
+            parts.extend(images)
+            user_message = UserMessage(content=parts)
         else:
             user_message = UserMessage(content=query)
 
@@ -248,7 +269,7 @@ class Agent:
                     if isinstance(compaction_event, CompactionEndEvent):
                         did_compact = True
                 if did_compact:
-                    if vtx_config.compaction.on_overflow == "pause":
+                    if get_harness_config().compaction_on_overflow == "pause":
                         break
                     # Continue mode: synthetic user message was injected, continue loop
                     continue
@@ -282,8 +303,10 @@ class Agent:
                 total_usage=self._run_usage,
             )
 
+            await self._extensions.emit(AGENT_SETTLED, cancel_event=cancel_event)
+
     def _effective_max_turns(self) -> int:
-        return vtx_config.agent.max_turns
+        return get_harness_config().max_turns
 
     def _drain_background_notifications(self) -> list[Event]:
         """Pull finished background tasks from the manager.
@@ -303,8 +326,6 @@ class Agent:
         once even if the parent does nothing in response
         (anthropics/claude-code#20679).
         """
-        from vtx.ai.agent.tools.background import BACKGROUND_NOTIFICATION_TAG
-
         if self._background_manager is None:
             return []
 
@@ -437,8 +458,9 @@ class Agent:
         if last_usage is None:
             return
 
-        context_window = self.config.context_window or vtx_config.agent.default_context_window
-        threshold_percent = vtx_config.compaction.threshold_percent
+        harness_cfg = get_harness_config()
+        context_window = self.config.context_window or harness_cfg.default_context_window
+        threshold_percent = harness_cfg.compaction_threshold_percent
 
         if not is_overflow(last_usage, context_window, threshold_percent):
             return
@@ -488,7 +510,7 @@ class Agent:
 
             # In continue mode, inject synthetic continue message that
             # reinforces the active task rather than offering an exit.
-            if vtx_config.compaction.on_overflow == "continue":
+            if harness_cfg.compaction_on_overflow == "continue":
                 continue_msg = UserMessage(
                     content=(
                         "[context compacted — summary above preserves conversation state]\n"

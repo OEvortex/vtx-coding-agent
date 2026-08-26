@@ -1,207 +1,202 @@
-"""Tests for the inline ask_user rendering on the ToolBlock.
+"""Tests for the rpiv-style ask_user rendering on the ToolBlock.
 
-These tests don't spin up a Textual app — they exercise the data-shaping
-and rendering helpers directly, plus the public show/update/hide API
-that the agent runner calls. The end-to-end flow is covered by the
-turn-runner tests in ``tests/tools/test_ask_user_turn.py``.
+These tests don't spin up a Textual app unless focus behaviour needs
+one — they exercise the data-shaping and rendering helpers directly,
+plus the public show/rerender/hide API that the agent runner calls.
 """
 
 import pytest
 from textual.app import App, ComposeResult
 
-from vtx.core import AskUserOption
-from vtx.tui.blocks import ASK_USER_OTHER_DISPLAY, ASK_USER_OTHER_LABEL, ToolBlock
+from vtx.core import AskUserOption, AskUserQuestion
+from vtx.tui.ask_user import (
+    NEXT_LABEL,
+    OTHER_DISPLAY,
+    REVIEW_HEADING,
+    SUBMIT_PICK_CANCEL,
+    SUBMIT_PICK_LABEL,
+    AskUserDialog,
+)
+from vtx.tui.blocks import ToolBlock
 from vtx.tui.chat import ChatLog
 from vtx.tui.input import AskUserInput
 from vtx.tui.styles import get_styles
 
 
-def _options(n: int = 2) -> list[AskUserOption]:
-    return [AskUserOption(label=f"option-{i}", description=f"desc {i}") for i in range(n)]
+def _q(
+    question: str = "Which task are we planning?",
+    header: str = "Feature Type",
+    multi: bool = False,
+    previews: bool = False,
+) -> AskUserQuestion:
+    return AskUserQuestion(
+        question=question,
+        header=header,
+        options=[
+            AskUserOption(
+                label=f"option-{i}",
+                description=f"desc {i}",
+                preview=f"preview {i}" if previews else "",
+            )
+            for i in range(2)
+        ],
+        multi_select=multi,
+    )
 
 
-class TestAskUserOptionConstants:
-    def test_other_label_is_a_sentinel(self):
-        # The sentinel must not collide with any plausible user label.
-        # Wrapped in NUL bytes so the LLM can't realistically produce
-        # the same string.
-        assert ASK_USER_OTHER_LABEL.startswith("\x00")
-        assert ASK_USER_OTHER_LABEL.endswith("\x00")
-
-    def test_other_display_is_human_readable(self):
-        assert "Other" in ASK_USER_OTHER_DISPLAY
+def _block_with_dialog(dialog: AskUserDialog) -> ToolBlock:
+    block = ToolBlock(name="ask_user", call_msg="question")
+    block.show_ask_user(dialog=dialog)
+    return block
 
 
 class TestToolBlockAskUserState:
     def test_initial_state_is_idle(self):
         block = ToolBlock(name="ask_user", call_msg="question")
-        assert block._ask_user_options == []
-        assert block._ask_user_toggled == set()
-        assert block._ask_user_highlight == 0
-        assert block._ask_user_multi is False
+        assert block._ask_dialog is None
         assert block.is_awaiting_ask_user is False
         assert not block.has_class("-ask-user")
 
     def test_show_ask_user_marks_block(self):
-        block = ToolBlock(name="ask_user", call_msg="question")
-        block.show_ask_user(options=_options(2), multi_select=False)
+        dialog = AskUserDialog([_q()])
+        block = _block_with_dialog(dialog)
         assert block.is_awaiting_ask_user is True
         assert block.has_class("-ask-user")
-        assert block._ask_user_options is not _options(2)  # copied
-        assert len(block._ask_user_options) == 2
-        assert block._ask_user_multi is False
-        assert block._ask_user_highlight == 0
+        assert block._ask_dialog is dialog
 
     def test_hide_ask_user_clears_state(self):
-        block = ToolBlock(name="ask_user", call_msg="question")
-        block.show_ask_user(options=_options(2), multi_select=True)
-        block._ask_user_toggled.add("option-0")
+        block = _block_with_dialog(AskUserDialog([_q()]))
         block.hide_ask_user()
         assert block.is_awaiting_ask_user is False
         assert not block.has_class("-ask-user")
-        assert block._ask_user_options == []
-        assert block._ask_user_toggled == set()
-        assert block._ask_user_highlight == 0
-        assert block._ask_user_multi is False
+        assert block._ask_dialog is None
 
 
-class TestToolBlockAskUserHighlight:
-    def test_move_wraps(self):
-        block = ToolBlock(name="ask_user", call_msg="q")
-        block.show_ask_user(options=_options(2), multi_select=False)
-        # total rows = 2 user options + 1 Other = 3
-        assert block._ask_user_highlight == 0
-        block.update_ask_user_selection(highlight=1)
-        assert block._ask_user_highlight == 1
-        block.update_ask_user_selection(highlight=2)
-        assert block._ask_user_highlight == 2  # Other
-        block.update_ask_user_selection(highlight=3)
-        # update_ask_user_selection clamps rather than wrapping; the
-        # app layer is responsible for wrapping.
-        assert block._ask_user_highlight == 2
-
-    def test_move_clamps_under_update(self):
-        block = ToolBlock(name="ask_user", call_msg="q")
-        block.show_ask_user(options=_options(2), multi_select=False)
-        block.update_ask_user_selection(highlight=99)
-        # Index past the last row is clamped.
-        assert block._ask_user_highlight == 2  # clamped to Other
-
-    def test_move_clamps_negative(self):
-        block = ToolBlock(name="ask_user", call_msg="q")
-        block.show_ask_user(options=_options(2), multi_select=False)
-        block.update_ask_user_selection(highlight=-5)
-        assert block._ask_user_highlight == 0
-
-    def test_update_can_replace_toggled_set(self):
-        block = ToolBlock(name="ask_user", call_msg="q")
-        block.show_ask_user(options=_options(3), multi_select=True)
-        block.update_ask_user_selection(highlight=0, toggled={"option-0", "option-2"})
-        assert block._ask_user_toggled == {"option-0", "option-2"}
-
-    def test_update_keeps_toggled_when_omitted(self):
-        block = ToolBlock(name="ask_user", call_msg="q")
-        block.show_ask_user(options=_options(2), multi_select=True)
-        block._ask_user_toggled.add("option-0")
-        block.update_ask_user_selection(highlight=1)
-        assert "option-0" in block._ask_user_toggled
-
-
-class TestToolBlockAskUserToggle:
-    """The block stores toggled state; the app's key handler is what
-    mutates it via ``update_ask_user_selection(toggled=...)``.
-    """
-
-    def test_toggled_state_starts_empty(self):
-        block = ToolBlock(name="ask_user", call_msg="q")
-        block.show_ask_user(options=_options(2), multi_select=True)
-        assert block._ask_user_toggled == set()
-
-    def test_update_sets_toggled_state(self):
-        block = ToolBlock(name="ask_user", call_msg="q")
-        block.show_ask_user(options=_options(3), multi_select=True)
-        block.update_ask_user_selection(highlight=1, toggled={"option-1"})
-        assert block._ask_user_toggled == {"option-1"}
-
-    def test_update_can_toggle_multiple(self):
-        block = ToolBlock(name="ask_user", call_msg="q")
-        block.show_ask_user(options=_options(3), multi_select=True)
-        block.update_ask_user_selection(highlight=0, toggled={"option-0"})
-        block.update_ask_user_selection(highlight=1, toggled={"option-0", "option-1"})
-        assert block._ask_user_toggled == {"option-0", "option-1"}
-
-
-class TestToolBlockAskUserRendering:
-    """The format helpers return Rich Text — exercise them without
-    composing the widget into a real app.
-    """
-
-    def test_options_includes_other_row(self):
-        block = ToolBlock(name="ask_user", call_msg="q")
-        block.show_ask_user(options=_options(2), multi_select=False)
-        text = block._format_ask_user_options()
+class TestDialogBoxRendering:
+    def test_box_borders_present(self):
+        block = _block_with_dialog(AskUserDialog([_q()]))
+        text = block.format_ask_user_dialog()
         plain = text.plain
-        # Both user options appear
+        assert plain.startswith("╭")
+        assert "╰" in plain
+        assert "│" in plain
+
+    def test_question_and_options_render(self):
+        block = _block_with_dialog(AskUserDialog([_q()]))
+        plain = block.format_ask_user_dialog().plain
+        assert "Which task are we planning?" in plain
         assert "option-0" in plain
-        assert "option-1" in plain
-        # And the synthetic "Other" row
-        assert "Other" in plain
+        assert "desc 1" in plain
 
-    def test_highlighted_row_includes_number_chip(self):
-        block = ToolBlock(name="ask_user", call_msg="q")
-        block.show_ask_user(options=_options(3), multi_select=False)
-        block._ask_user_highlight = 1
-        text = block._format_ask_user_options()
-        plain = text.plain
-        # Each row is prefixed with [1], [2], [3]
-        assert "[1]" in plain
-        assert "[2]" in plain
-        assert "[3]" in plain
+    def test_type_something_row_appended(self):
+        block = _block_with_dialog(AskUserDialog([_q()]))
+        plain = block.format_ask_user_dialog().plain
+        assert OTHER_DISPLAY in plain
 
-    def test_multi_select_shows_toggle_markers(self):
-        block = ToolBlock(name="ask_user", call_msg="q")
-        block.show_ask_user(options=_options(2), multi_select=True)
-        block._ask_user_toggled.add("option-0")
-        text = block._format_ask_user_options()
-        plain = text.plain
-        # Checkmark for toggled, circle for un-toggled
-        assert "✓" in plain
-        assert "○" in plain
+    def test_active_row_pointer(self):
+        block = _block_with_dialog(AskUserDialog([_q()]))
+        plain = block.format_ask_user_dialog().plain
+        assert "❯" in plain  # noqa: RUF001 - intentional rpiv pointer glyph
 
-    def test_single_select_hides_toggle_markers(self):
-        block = ToolBlock(name="ask_user", call_msg="q")
-        block.show_ask_user(options=_options(2), multi_select=False)
-        text = block._format_ask_user_options()
-        plain = text.plain
-        assert "✓" not in plain
-        assert "○" not in plain
+    def test_confirmed_mark_on_committed_option(self):
+        dialog = AskUserDialog([_q()])
+        dialog.current_state().selected = 0
+        block = _block_with_dialog(dialog)
+        assert "✔" in block.format_ask_user_dialog().plain
 
-    def test_hint_includes_total_count(self):
-        block = ToolBlock(name="ask_user", call_msg="q")
-        block.show_ask_user(options=_options(3), multi_select=False)
-        hint = block._format_ask_user_hint()
-        # 3 options + 1 Other = 4
-        assert "4" in hint.plain
+    def test_multi_select_checkboxes(self):
+        dialog = AskUserDialog([_q(multi=True)])
+        dialog.current_state().toggled.add(0)
+        block = _block_with_dialog(dialog)
+        plain = block.format_ask_user_dialog().plain
+        assert "[✔]" in plain
+        assert "[ ]" in plain
+        assert OTHER_DISPLAY in plain
+        assert NEXT_LABEL in plain
 
-    def test_multi_select_hint_mentions_space(self):
-        block = ToolBlock(name="ask_user", call_msg="q")
-        block.show_ask_user(options=_options(2), multi_select=True)
-        hint = block._format_ask_user_hint()
-        assert "space" in hint.plain
+    def test_single_select_has_no_checkboxes_or_next(self):
+        block = _block_with_dialog(AskUserDialog([_q(multi=False)]))
+        plain = block.format_ask_user_dialog().plain
+        assert "[ ]" not in plain
+        assert NEXT_LABEL not in plain
 
-    def test_single_select_hint_mentions_arrows(self):
-        block = ToolBlock(name="ask_user", call_msg="q")
-        block.show_ask_user(options=_options(2), multi_select=False)
-        hint = block._format_ask_user_hint()
-        assert "↑↓" in hint.plain
-        assert "enter" in hint.plain
+    def test_preview_renders_for_active_option(self):
+        block = _block_with_dialog(AskUserDialog([_q(previews=True)]))
+        plain = block.format_ask_user_dialog().plain
+        assert "preview 0" in plain
+
+    def test_draft_shown_in_other_row_while_browsing(self):
+        dialog = AskUserDialog([_q()])
+        dialog.current_state().draft = "half typed"
+        block = _block_with_dialog(dialog)
+        plain = block.format_ask_user_dialog().plain
+        assert "half typed" in plain
+
+
+class TestTabBarAndSubmitTab:
+    def test_tab_bar_lists_headers_and_submit(self):
+        dialog = AskUserDialog([_q(header="One"), _q(header="Two", multi=True)])
+        block = _block_with_dialog(dialog)
+        plain = block.format_ask_user_dialog().plain
+        assert "←" in plain and "→" in plain
+        assert "□ One" in plain or "■ One" in plain
+        assert "✓ Submit" in plain
+
+    def test_answered_tab_shows_filled_box(self):
+        dialog = AskUserDialog([_q(header="One"), _q(header="Two")])
+        dialog.current_state().selected = 0
+        block = _block_with_dialog(dialog)
+        assert "■ One" in block.format_ask_user_dialog().plain
+
+    def test_submit_tab_review_list(self):
+        dialog = AskUserDialog([_q(header="Build"), _q(header="Test")])
+        dialog.current_state().selected = 1
+        dialog.tab = dialog.submit_tab_index
+        block = _block_with_dialog(dialog)
+        plain = block.format_ask_user_dialog().plain
+        assert REVIEW_HEADING in plain
+        assert "Build:" in plain
+        assert SUBMIT_PICK_LABEL in plain
+        assert SUBMIT_PICK_CANCEL in plain
+
+    def test_submit_tab_warning_for_unanswered(self):
+        dialog = AskUserDialog([_q(header="Build"), _q(header="Test")])
+        dialog.tab = dialog.submit_tab_index
+        block = _block_with_dialog(dialog)
+        plain = block.format_ask_user_dialog().plain
+        assert "⚠ Answer remaining questions before submitting:" in plain
+        assert "Build" in plain and "Test" in plain
+
+
+class TestHintFooter:
+    def test_browsing_hint_mentions_navigation(self):
+        block = _block_with_dialog(AskUserDialog([_q()]))
+        plain = block.format_ask_user_dialog().plain
+        assert "↑/↓ to navigate" in plain
+        assert "esc to cancel" in plain
+
+    def test_multi_tab_hint_mentions_switching(self):
+        # Start on the multi-select tab: the toggle hint belongs to it.
+        dialog = AskUserDialog([_q(multi=True), _q(multi=True)])
+        dialog.tab = 1
+        block = _block_with_dialog(dialog)
+        plain = block.format_ask_user_dialog().plain
+        assert "tab to switch questions" in plain
+        assert "space to toggle" in plain
+
+    def test_collapsed_hint_only(self):
+        dialog = AskUserDialog([_q()])
+        dialog.collapsed = True
+        block = _block_with_dialog(dialog)
+        plain = block.format_ask_user_dialog().plain
+        assert "ctrl+] to expand" in plain
+        assert "esc to cancel" in plain
+        assert "option-0" not in plain
 
 
 class _AskUserFocusApp(App):
-    """Minimal app that hosts a ChatLog with one tool block and an
-    input-box, so we can verify focus moves between them when the
-    inline Other input is shown/hidden.
-    """
+    """Minimal app hosting a ChatLog with one tool block and an
+    input-box, so we can verify focus moves when inline inputs appear."""
 
     CSS = get_styles()
 
@@ -213,67 +208,35 @@ class _AskUserFocusApp(App):
 
 
 @pytest.mark.asyncio
-async def test_inline_input_is_focused_when_other_is_highlighted():
+async def test_custom_input_focuses_when_input_mode_starts():
     async with _AskUserFocusApp().run_test() as pilot:
         chat = pilot.app.query_one("#chat-log", ChatLog)
         block = chat.start_tool("ask_user", "tool-1")
-        block.show_ask_user(
-            options=[AskUserOption(label="yes"), AskUserOption(label="no")], multi_select=False
-        )
-        # Focus the chat input textarea so we can verify focus moves
-        # between the chat input and the inline Other input.
+        dialog = AskUserDialog([_q()])
+        chat.show_ask_user("tool-1", dialog=dialog)
         chat_textarea = pilot.app.query_one("#input-box").query_one("#input-textarea")
         chat_textarea.focus()
         await pilot.pause()
 
-        other_input = block.query_one("#ask-user-input", AskUserInput)
-
-        # Default highlight is 0 (first option). The Other input is
-        # hidden and focus is on the chat input.
-        assert other_input.display is False
-        assert not other_input.has_focus
+        custom_input = block.query_one("#ask-user-input", AskUserInput)
+        assert custom_input.display is False
         assert chat_textarea.has_focus
 
-        # Move highlight to "Other" (index 2 for 2 options + Other).
-        chat.update_ask_user_selection("tool-1", highlight=2)
+        # Focus the Type something. row (2 options + other = row 2).
+        dialog.handle_key("down")
+        dialog.handle_key("down")
+        dialog.handle_key("enter")
+        chat.rerender_ask_user("tool-1")
         await pilot.pause()
 
-        # The Other input is now visible and should have focus so the
-        # user can actually type into it.
-        assert other_input.display is True
-        assert other_input.has_focus
+        assert custom_input.display is True
+        assert custom_input.has_focus
         assert not chat_textarea.has_focus
 
-        # Navigate back to a real option.
-        chat.update_ask_user_selection("tool-1", highlight=0)
+        # Navigate away: input hides, focus returns to the chat box.
+        dialog.handle_key("up", custom_value=custom_input.value)
+        chat.rerender_ask_user("tool-1")
         await pilot.pause()
 
-        # The Other input is hidden again and focus is back on the
-        # chat input so the picker keys (digits, arrows) keep working.
-        assert other_input.display is False
-        assert not other_input.has_focus
-        assert chat_textarea.has_focus
-
-
-@pytest.mark.asyncio
-async def test_inline_input_loses_focus_on_hide_ask_user():
-    async with _AskUserFocusApp().run_test() as pilot:
-        chat = pilot.app.query_one("#chat-log", ChatLog)
-        block = chat.start_tool("ask_user", "tool-1")
-        block.show_ask_user(options=[AskUserOption(label="yes")], multi_select=False)
-        chat_textarea = pilot.app.query_one("#input-box").query_one("#input-textarea")
-        chat_textarea.focus()
-        await pilot.pause()
-
-        chat.update_ask_user_selection("tool-1", highlight=1)  # Other
-        await pilot.pause()
-
-        other_input = block.query_one("#ask-user-input", AskUserInput)
-        assert other_input.has_focus
-
-        chat.hide_ask_user("tool-1")
-        await pilot.pause()
-
-        assert other_input.display is False
-        assert not other_input.has_focus
+        assert custom_input.display is False
         assert chat_textarea.has_focus

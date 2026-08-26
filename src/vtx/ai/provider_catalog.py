@@ -100,8 +100,21 @@ def _parse_entry(entry: dict) -> ProviderInfo:
 
 
 def _load_builtin() -> dict[str, ProviderInfo]:
-    with open(_YAML_PATH, encoding="utf-8") as f:
-        data = yaml.safe_load(f)
+    # Prefer importlib.resources so the catalog works when the package is
+    # installed as a zip/uv-tool shim where __file__ may not point to a
+    # real file on disk. Fall back to the filesystem path for editable
+    # installs.
+    data = None
+    try:
+        from importlib import resources
+
+        text = resources.files("vtx.ai").joinpath("provider.yaml").read_text(encoding="utf-8")
+        data = yaml.safe_load(text)
+    except Exception:
+        pass
+    if data is None:
+        with open(_YAML_PATH, encoding="utf-8") as f:
+            data = yaml.safe_load(f)
     return {e["slug"]: _parse_entry(e) for e in data.get("providers", [])}
 
 
@@ -110,8 +123,17 @@ def _get_order() -> list[str]:
     if _order_cache is not None:
         return _order_cache
     _ensure_custom_files_loaded()
-    with open(_YAML_PATH, encoding="utf-8") as f:
-        data = yaml.safe_load(f)
+    data = None
+    try:
+        from importlib import resources
+
+        text = resources.files("vtx.ai").joinpath("provider.yaml").read_text(encoding="utf-8")
+        data = yaml.safe_load(text)
+    except Exception:
+        pass
+    if data is None:
+        with open(_YAML_PATH, encoding="utf-8") as f:
+            data = yaml.safe_load(f)
     _order_cache = [e["slug"] for e in data.get("providers", [])]
     # Append slugs of runtime-registered custom providers not already present.
     for slug in _custom_cache:
@@ -154,11 +176,11 @@ def detect_provider_from_env() -> ProviderInfo:
         p = providers[slug]
         if p.is_local:
             continue
-        if slug == "supercode":
+        if slug == "cline":
             try:
-                from vtx.ai.oauth.supercode import is_supercode_logged_in
+                from vtx.ai.oauth.cline import is_cline_logged_in
 
-                if is_supercode_logged_in():
+                if is_cline_logged_in():
                     return p
             except Exception:
                 pass
@@ -183,7 +205,6 @@ def _provider_info_to_model(p: ProviderInfo, model_id: str) -> Model:
     family_to_api = {
         "openai_compat": ApiType(ApiType.OPENAI_SDK),
         "anthropic": ApiType(ApiType.ANTHROPIC),
-        "supercode": ApiType(ApiType.SUPERCODE),
     }
     from vtx.ai.context_length import context_length_manager
 
@@ -328,10 +349,9 @@ def register_custom_provider(
     :func:`detect_provider_from_env`, and the dynamic model fetcher.
     """
     global _cache
-    if family not in ("openai_compat", "anthropic", "supercode"):
+    if family not in ("openai_compat", "anthropic"):
         raise ValueError(
-            f"Unsupported family {family!r}; expected "
-            "'openai_compat', 'anthropic', or 'supercode'."
+            f"Unsupported family {family!r}; expected 'openai_compat' or 'anthropic'."
         )
     parser_data = model_parser or {}
     info = ProviderInfo(
@@ -378,16 +398,15 @@ def _sync_dynamic_provider(info: ProviderInfo) -> None:
         from vtx.ai.dynamic_models import DynamicProviderConfig, register_dynamic_provider
 
         family_api = {
-            "openai_compat": _DynApiType(_DynApiType.OPENAI_COMPLETIONS),
+            "openai_compat": _DynApiType(_DynApiType.OPENAI_SDK),
             "anthropic": _DynApiType(_DynApiType.ANTHROPIC),
-            "supercode": _DynApiType(_DynApiType.SUPERCODE),
         }
         register_dynamic_provider(
             DynamicProviderConfig(
                 name=info.slug,
                 base_url=info.base_url,
                 env_var=info.api_key_env or "",
-                api=family_api.get(info.family, _DynApiType(_DynApiType.OPENAI_COMPLETIONS)),
+                api=family_api.get(info.family, _DynApiType(_DynApiType.OPENAI_SDK)),
                 headers=dict(info.headers),
                 api_key_optional=info.api_key_optional,
                 openmodelendpoint=info.openmodelendpoint,
