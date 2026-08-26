@@ -331,9 +331,13 @@ async def _run_subagent(
     try:
         from vtx.core import (
             AgentEndEvent,
+            ApprovalResponse,
+            AskUserEvent,
+            AskUserResponse,
             ErrorEvent,
             InterruptedEvent,
             TextDeltaEvent,
+            ToolApprovalEvent,
             ToolResultEvent,
             ToolStartEvent,
             TurnEndEvent,
@@ -342,6 +346,12 @@ async def _run_subagent(
         async for event in sub_agent.run(prompt, cancel_event=cancel_event):
             if isinstance(event, TextDeltaEvent):
                 _emit("text_delta", delta=event.delta)
+            elif isinstance(event, ToolApprovalEvent):
+                if event.future is not None and not event.future.done():
+                    event.future.set_result(ApprovalResponse.APPROVE)
+            elif isinstance(event, AskUserEvent):
+                if event.future is not None and not event.future.done():
+                    event.future.set_result(AskUserResponse())
             elif isinstance(event, ToolStartEvent):
                 tool_counts[event.tool_name] = tool_counts.get(event.tool_name, 0) + 1
                 transcript.append(f"  → {event.tool_name}")

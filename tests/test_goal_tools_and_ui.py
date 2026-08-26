@@ -182,3 +182,32 @@ async def test_goal_tool_conflict_when_already_focused(goal_cwd: Path) -> None:
     conflict = await GoalTool().execute(GoalParams(action="create", objective="second"))
     assert not conflict.success
     assert "already focuses" in conflict.result
+
+
+@pytest.mark.asyncio
+async def test_goal_tool_complete_does_not_pause_goal(goal_cwd: Path) -> None:
+    _install_dispatcher(goal_cwd)
+    from vtx.coding_agent.goal.service import get_service
+
+    service = get_service(str(goal_cwd))
+    service.focused_id = None
+    service.update_settings(auditorEnabled=False)
+
+    created = await GoalTool().execute(
+        GoalParams(action="create", objective="Test completion", verification="pass")
+    )
+    assert created.success
+    record = service.focused()
+    assert record is not None
+    assert record.status == "active"
+
+    # Complete goal
+    res = await GoalTool().execute(
+        GoalParams(action="update", status="complete", completion_summary="done")
+    )
+    assert res.success
+    # Archived record should have status="complete", not "paused"
+    archived = service._read_any(record.id)
+    assert archived is not None
+    assert archived.status == "complete"
+    assert archived.paused_reason is None

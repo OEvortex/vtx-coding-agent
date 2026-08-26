@@ -53,10 +53,7 @@ def _service() -> GoalService:
 def _require_focused(service: GoalService) -> GoalRecord:
     record = service.focused()
     if record is None:
-        raise GoalError(
-            "No focused open goal. The user chooses focus with /goal-focus; "
-            "create one only after an explicit user request."
-        )
+        raise GoalError("No focused open goal. Create one only after an explicit user request.")
     return record
 
 
@@ -171,8 +168,8 @@ class GoalTool(BaseTool):
     tool_icon = "◈"
     params = GoalParams
     # Lifecycle bookkeeping on a project-local markdown file: safe to run
-    # without approval prompts (pi-goal-x parity). Destructive archiving is
-    # user-owned via /goal-clear, which confirms in the UI.
+    # without approval prompts. Destructive archiving requires explicit user
+    # confirmation.
     mutating = False
     prompt_guidelines = (
         'goal(action="get") for the focused-goal snapshot; '
@@ -307,8 +304,8 @@ class GoalTool(BaseTool):
             return ToolResult(
                 success=True,
                 result=(
-                    "Goal marked blocked. It stays open; the user can resume with "
-                    "/goal-resume.\n" + _snapshot_text(updated, service)
+                    "Goal marked blocked. It stays open; the user can resume it.\n"
+                    + _snapshot_text(updated, service)
                 ),
                 ui_summary=updated.label(),
             )
@@ -351,8 +348,13 @@ class GoalTool(BaseTool):
         settings = service.settings
         done, total, pct = goal_progress(record)
 
-        # Record the claim first so the auditor can read it from the file.
-        service.set_status(record.id, "paused", reason="completion audit")
+        # Record completion summary if provided so the auditor and archive have it.
+        if summary:
+
+            def apply_summary(r: GoalRecord) -> None:
+                r.completion_summary = summary[:2000]
+
+            service.mutate(record.id, apply_summary)
 
         if not settings.get("auditorEnabled", True):
             archived = service.archive(record.id)
@@ -371,7 +373,6 @@ class GoalTool(BaseTool):
 
         ctx = get_context()
         if ctx is None or ctx.provider is None:
-            service.set_status(record.id, "active")
             return _err(GoalError("no provider available to run the completion auditor"))
 
         from .auditor import run_completion_audit

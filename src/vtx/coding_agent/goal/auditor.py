@@ -97,25 +97,40 @@ async def run_completion_audit(
     error: str | None = None
     turns = 0
     try:
+        from vtx.core import (
+            ApprovalResponse,
+            AskUserEvent,
+            AskUserResponse,
+            ErrorEvent,
+            InterruptedEvent,
+            TextDeltaEvent,
+            TextEndEvent,
+            ToolApprovalEvent,
+            TurnEndEvent,
+        )
+
         async for event in agent.run(auditor_prompt(record), cancel_event=cancel_event):
-            kind = type(event).__name__
-            if kind == "TextDeltaEvent":
+            if isinstance(event, TextDeltaEvent | TextEndEvent):
                 continue
-            if kind == "TextEndEvent":
-                pass
-            elif kind == "TurnEndEvent":
+            if isinstance(event, ToolApprovalEvent):
+                if event.future is not None and not event.future.done():
+                    event.future.set_result(ApprovalResponse.APPROVE)
+            elif isinstance(event, AskUserEvent):
+                if event.future is not None and not event.future.done():
+                    event.future.set_result(AskUserResponse())
+            elif isinstance(event, TurnEndEvent):
                 turns += 1
-                message = getattr(event, "assistant_message", None)
+                message = event.assistant_message
                 if message is not None:
                     from vtx.core.types import TextContent
 
                     text = "".join(p.text for p in message.content if isinstance(p, TextContent))
                     if text.strip():
                         final_text = text
-            elif kind == "InterruptedEvent":
+            elif isinstance(event, InterruptedEvent):
                 return AuditResult(approved=False, summary="", error="aborted", turns=turns)
-            elif kind == "ErrorEvent":
-                error = str(getattr(event, "error", "auditor error"))
+            elif isinstance(event, ErrorEvent):
+                error = str(event.error) if event.error else "auditor error"
     except asyncio.CancelledError:
         raise
     except Exception as exc:
