@@ -1,4 +1,4 @@
-"""Tests for the pi-style Task tool UI renderers (vtx.tui.task_ui)."""
+"""Tests for the Task tool UI renderers (vtx.tui.task_ui)."""
 
 import pytest
 from rich.text import Text

@@ -1,10 +1,8 @@
-"""Pi-style glyphs, formatters, and renderers for the Task tool UI.
+"""Glyphs, formatters, and renderers for the Task tool UI.
 
-Ported from gotgenes/pi-packages ``pi-subagents`` (``ui/glyphs.ts``,
-``ui/display.ts``, ``tools/result-renderer.ts``) so VTX's Task tool block
-renders running/finished sub-agents with the same visual vocabulary:
-braille spinners, ``↻`` turn counts, ``·``-separated stats, and ``⎿``
-continuation lines.
+Renders VTX's Task tool block showing running/finished sub-agents with a
+visual vocabulary of braille spinners, ``↻`` turn counts, ``·``-separated
+stats, and ``⎿`` continuation lines.
 
 All render functions are pure: they take plain data dicts and return
 Rich :class:`Text`. No timers, no widget state.
@@ -23,7 +21,7 @@ from vtx.coding_agent.config import config
 if TYPE_CHECKING:
     from vtx.coding_agent.config import ColorsConfig
 
-# Semantic indicator glyphs (see ref/pi-packages .../src/ui/glyphs.ts).
+# Semantic indicator glyphs.
 GLYPHS = {
     "turns": "↻",
     "compactions": "⇊",

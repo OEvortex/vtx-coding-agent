@@ -1184,10 +1184,9 @@ class LaunchWarningsBlock(Static):
 
 
 class TaskToolBlock(ToolBlock):
-    """Task tool block with pi-style live and finished sub-agent rendering.
+    """Task tool block with live and finished sub-agent rendering.
 
-    Running (animated ~8fps by a Textual timer, mirroring pi's 80ms widget
-    loop)::
+    Running (animated ~8fps by a Textual timer)::
 
         ⠙ haiku · ↻2 · 3 tool uses · 12.3s
           ⎿  reading, running command…

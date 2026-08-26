@@ -8,7 +8,7 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 ## [1.0.1] - 2026-08-25
 
 ### Added
-- **OpenAI Responses API adapter & unified reasoning resolution** — new Responses transport adapter with unified reasoning resolution (pi parity); the Responses transport is now routed through the official `openai` SDK.
+- **OpenAI Responses API adapter & unified reasoning resolution** — new Responses transport adapter with unified reasoning-effort resolution; the Responses transport is now routed through the official `openai` SDK.
 - **Extended-thinking parity and token tracking** — per-model reasoning-effort detection from models.dev drives thinking levels on any verified provider, with stream cleanup and usage-tracking parity across transports.
 - **Interactive UI primitives for extensions (`ctx.ui`)** — handlers declared as `(event, payload, ctx)` now receive a full context whose `ctx.ui` exposes interactive dialogs: `await ctx.ui.confirm()`, `await ctx.ui.select()`, `await ctx.ui.input()` (real modal dialogs backed by the Textual TUI, safe no-op defaults in headless mode), `ctx.ui.notify()` rendered in the chat log, and `ctx.ui.setStatus()` / `ctx.ui.setWidget()` for a persistent footer bar. All dialogs support `timeout` and abort-`signal` kwargs.
 - **`await ctx.ui.custom(component)`** — show arbitrary Textual widgets or `ModalScreen`s modally from an extension and await the dismissed result.
@@ -16,7 +16,7 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - **Cline provider OAuth login** — Cline (WorkOS) added to `/login` with full OAuth flow, credential storage, and free-model detection reflected in model listings.
 - **`/update` command** — check for and install the latest vtx release from inside the TUI.
 - **Configurable models endpoint & unified provider refresh** — `/model refresh` now covers dynamic and legacy catalog providers through one path, with a configurable models endpoint per provider.
-- **Task tool UI/UX parity with `pi-subagents`** — redesigned the Task tool block rendering to match `pi-subagents` 1:1: `▸ <subagent_name> <description>` header formatting, live 80ms braille spinner animation with turn count (`↻5≤30`), active tool/text activity line (`⎿ reading…`), token metrics, execution duration tracking, and collapsible/expandable output formatting.
+- **Task tool UI/UX parity** — redesigned the Task tool block rendering with `▸ <subagent_name> <description>` header formatting, live 80ms braille spinner animation with turn count (`↻5≤30`), active tool/text activity line (`⎿ reading…`), token metrics, execution duration tracking, and collapsible/expandable output formatting.
 
 ### Changed
 - **Harness/coding-agent package split** — `vtx.ai.agent` is now a product-neutral harness (loop, turn engine, session store, tool contracts, extensions/hooks, SDK); concrete built-in tools, prompt/context assembly, subagent definitions, and the runtime composition root moved to `vtx.coding_agent`. The harness no longer imports product code: system-prompt building, context loading, the tool registry, and user config knobs are injected, with harness-owned defaults mirroring user YAML.
