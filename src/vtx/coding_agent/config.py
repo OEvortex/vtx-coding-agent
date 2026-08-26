@@ -96,7 +96,6 @@ class UIConfig(BaseModel):
 
 
 class SystemPromptConfig(BaseModel):
-    content: str = ""
     git_context: bool = False
     ponytail: bool = False
 
@@ -281,12 +280,6 @@ class _BinariesConfig:
     @property
     def gh(self) -> bool:
         return "gh" in self._binaries
-
-
-def _resolve_default_system_prompt() -> str:
-    from vtx.coding_agent.prompts.identity import DEFAULT_VTX_BASE
-
-    return DEFAULT_VTX_BASE
 
 
 class Config:
@@ -529,6 +522,7 @@ def _migrate_v5_to_v6(data: dict[str, Any]) -> dict[str, Any]:
         system_prompt = {}
         llm["system_prompt"] = system_prompt
 
+    system_prompt.pop("content", None)
     system_prompt["git_context"] = _DEFAULT_CONFIG_DATA["llm"]["system_prompt"]["git_context"]
 
     meta = migrated.get("meta")
