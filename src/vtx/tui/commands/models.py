@@ -262,8 +262,18 @@ class ModelCommands(CommandSupport):
                 dyn = {"_error": str(exc)}
             try:
                 from vtx.ai.model_fetcher import refresh_all_provider_models
+                from vtx.ai.provider_catalog import list_providers
 
-                leg = dict(refresh_all_provider_models())
+                dynamic_slugs = set(DYNAMIC_PROVIDERS.keys())
+                # Only legacy-refresh providers not already covered by the
+                # dynamic fetcher; the legacy path is O(n) sequential and
+                # would otherwise duplicate the concurrent dynamic sweep.
+                legacy_only = [
+                    p.slug
+                    for p in list_providers()
+                    if p.fetch_models and p.slug not in dynamic_slugs
+                ]
+                leg = dict(refresh_all_provider_models(legacy_only)) if legacy_only else {}
             except Exception:
                 leg = {}
             merged: dict[str, int | str] = {}

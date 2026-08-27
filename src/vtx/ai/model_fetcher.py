@@ -253,13 +253,21 @@ def refresh_provider_models(slug: str) -> int:
     return len(models)
 
 
-def refresh_all_provider_models() -> dict[str, int]:
-    """Force-refresh all providers. Returns {slug: model_count}."""
+def refresh_all_provider_models(provider_slugs: list[str] | None = None) -> dict[str, int]:
+    """Force-refresh providers. Returns {slug: model_count}.
+
+    When ``provider_slugs`` is provided, only those providers are refreshed.
+    This allows callers to skip providers already covered by the dynamic
+    fetcher and avoid duplicate sequential network I/O.
+    """
     from vtx.ai.provider_catalog import list_providers
 
+    allowed = set(provider_slugs) if provider_slugs is not None else None
     results: dict[str, int] = {}
     for p in list_providers():
         if not p.fetch_models:
+            continue
+        if allowed is not None and p.slug not in allowed:
             continue
         models = _fetch_models_sync(p)
         results[p.slug] = len(models)
