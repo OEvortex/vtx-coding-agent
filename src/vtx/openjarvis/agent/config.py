@@ -1,4 +1,4 @@
-"""OpenJarvis agent config — Hermes/OpenClaw inspired, VTX-native."""
+"""OpenJarvis agent config — VTX-native."""
 
 from __future__ import annotations
 

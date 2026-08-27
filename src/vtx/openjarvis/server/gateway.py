@@ -1,6 +1,6 @@
 """Minimal multiplexed gateway — WS control/RPC + HTTP API on one port.
 
-Implements OpenClaw wire protocol subset:
+Implements gateway wire protocol subset:
   connect -> hello-ok -> req/res + events (agent, chat, presence, tick, cron)
 Pairing is device-based via vtx.openjarvis.pairing.store.
 """
@@ -42,7 +42,7 @@ class OpenJarvisGateway:
         )
 
     async def handle_models(self, request: web.Request) -> web.Response:
-        # Agent-first like OpenClaw /v1/models
+        # Agent-first /v1/models
         return web.json_response(
             {
                 "data": [
@@ -173,7 +173,7 @@ class OpenJarvisGateway:
         app.router.add_post("/v1/chat/completions", self.handle_chat_completions)
         app.router.add_post("/v1/responses", self.handle_chat_completions)
         app.router.add_get("/ws", self.handle_ws)
-        # Also serve WS at root for OpenClaw compatibility
+        # Also serve WS at root for gateway compatibility
         app.router.add_get("/", self.handle_ws)
         self._app = app
         return app

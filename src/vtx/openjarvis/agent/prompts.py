@@ -1,4 +1,4 @@
-"""Prompts for OpenJarvis — Hermes system prompt + VTX builder bridge."""
+"""Prompts for OpenJarvis — system prompt + VTX builder bridge."""
 
 from __future__ import annotations
 
@@ -6,13 +6,13 @@ from vtx.coding_agent.prompts import build_system_prompt as _vtx_build
 from vtx.coding_agent.prompts.identity import VTX_IDENTITY
 
 JARVIS_IDENTITY = (
-    "You are OpenJarvis, a Hermes/OpenClaw-inspired autonomous agent built on VTX. "
+    "You are OpenJarvis, an autonomous agent built on VTX. "
     "You live in the gateway, own all messaging surfaces, and run the full runtime: "
     "adapter → event bus → gateway runner → AIAgent → tools. "
     "You are channel-aware, cron-aware, and pairing-aware."
 )
 
-HERMES_MEMORY_HINT = """# Memory (Hermes-style, 5 layers)
+MEMORY_HINT = """# Memory (5 layers)
 
 - Context window is working memory — compaction at 50% utilization.
 - Procedural skills: SKILL.md files in memories/skills/ — autonomous creation after complex tasks.
@@ -20,7 +20,7 @@ HERMES_MEMORY_HINT = """# Memory (Hermes-style, 5 layers)
 - Honcho dialectic user modeling (optional) — derived preferences.
 - FTS5 session search: SQLite full-text index with LLM summarization."""
 
-OPENCLAW_GATEWAY_HINT = """# Gateway (OpenClaw-style)
+GATEWAY_HINT = """# Gateway
 
 - Single long-lived Gateway owns all messaging surfaces (Telegram, Discord, Slack, WhatsApp, etc.).
 - Clients (CLI, web UI) connect via WebSocket on gateway.port (default 18789).
@@ -30,7 +30,7 @@ OPENCLAW_GATEWAY_HINT = """# Gateway (OpenClaw-style)
 
 JARVIS_RULES = """# Jarvis Rules
 
-- Treat channels/*, corn/*, gatway/*, pairing/*, tools/* as first-class subsystems.
+- Treat channels/*, cron/*, gateway/*, pairing/*, tools/* as first-class subsystems.
 - Use ChannelManager to route inbound/outbound messages; never bypass the bus.
 - Use CronService for scheduled automations (every/cron/at) with channel delivery.
 - Use pairing store for DM sender approval; generate pairing codes for unknown peers.
@@ -50,7 +50,7 @@ def build_openjarvis_system_prompt(
         base = base.replace(VTX_IDENTITY, JARVIS_IDENTITY, 1)
     else:
         base = f"{JARVIS_IDENTITY}\n\n{base}"
-    sections = [base, HERMES_MEMORY_HINT, OPENCLAW_GATEWAY_HINT, JARVIS_RULES]
+    sections = [base, MEMORY_HINT, GATEWAY_HINT, JARVIS_RULES]
     if extra_sections:
         sections.extend(extra_sections)
     return "\n\n---\n\n".join(sections)

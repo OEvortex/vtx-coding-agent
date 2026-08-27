@@ -1,4 +1,4 @@
-"""Gateway server — single multiplexed WS + HTTP on one port (OpenClaw-style)."""
+"""Gateway server — single multiplexed WS + HTTP on one port."""
 
 from .gateway import OpenJarvisGateway
 

@@ -1,4 +1,4 @@
-"""Hermes 5-layer memory for OpenJarvis — local-first, VTX-backed."""
+"""5-layer memory for OpenJarvis — local-first, VTX-backed."""
 
 from __future__ import annotations
 
@@ -12,7 +12,7 @@ from vtx.core.paths import get_config_dir
 
 
 class SkillStore:
-    """Procedural skill documents — autonomous SKILL.md creation (Hermes Layer 2)."""
+    """Procedural skill documents — autonomous SKILL.md creation (Layer 2)."""
 
     def __init__(self, base: Path | None = None) -> None:
         self.base = base or (get_config_dir() / "openjarvis" / "skills")
@@ -43,7 +43,7 @@ class SkillStore:
 
 
 class FTS5Store:
-    """Full-text search over past sessions — SQLite FTS5 (Hermes Layer 5)."""
+    """Full-text search over past sessions — SQLite FTS5 (Layer 5)."""
 
     def __init__(self, db_path: Path | None = None) -> None:
         self.db_path = db_path or (get_config_dir() / "openjarvis" / "fts5.db")
@@ -78,7 +78,7 @@ class FTS5Store:
 
 
 class OpenJarvisMemory:
-    """Facade for all 5 Hermes layers."""
+    """Facade for all 5 memory layers."""
 
     def __init__(self) -> None:
         self.skills = SkillStore()

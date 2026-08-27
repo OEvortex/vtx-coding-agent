@@ -1,4 +1,4 @@
-"""OpenJarvis TUI — Textual interface for the Hermes/OpenClaw-inspired agent."""
+"""OpenJarvis TUI — Textual interface for OpenJarvis."""
 
 from .app import OpenJarvisApp
 

@@ -3,8 +3,6 @@
 Uses the ilinkai.weixin.qq.com API for personal WeChat messaging.
 No WebSocket, no local WeChat client needed — just HTTP requests with a
 bot token obtained via QR code login.
-
-Protocol reverse-engineered from ``@tencent-weixin/openclaw-weixin`` v1.0.3.
 """
 
 from __future__ import annotations
@@ -36,7 +34,7 @@ from vtx.openjarvis.utils.helpers import split_message
 from vtx.openjarvis.utils.paths import get_media_dir, get_runtime_subdir
 
 # ---------------------------------------------------------------------------
-# Protocol constants (from openclaw-weixin types.ts)
+# Protocol constants (from weixin channel types)
 # ---------------------------------------------------------------------------
 
 # MessageItemType
@@ -81,7 +79,7 @@ ERRCODE_SESSION_EXPIRED = -14
 SESSION_PAUSE_DURATION_S = 60 * 60
 
 # iLink context_token is observed to expire server-side after ~90-160s of
-# agent inactivity (openclaw/openclaw#61174). Proactively refresh before
+# agent inactivity. Proactively refresh before
 # sending if the cached token is older than this threshold.
 CONTEXT_TOKEN_MAX_AGE_S = 60
 
@@ -1286,7 +1284,7 @@ class WeixinChannel(BaseChannel):
     async def _send_media_file(self, to_user_id: str, media_path: str, context_token: str) -> None:
         """Upload a local file to WeChat CDN and send it as a media message.
 
-        Follows the exact protocol from ``@tencent-weixin/openclaw-weixin`` v1.0.3:
+        Follows the WeChat CDN upload protocol:
         1. Generate a random 16-byte AES key (client-side).
         2. Call ``getuploadurl`` with file metadata + hex-encoded AES key.
         3. AES-128-ECB encrypt the file and POST to CDN (``{cdnBaseUrl}/upload``).

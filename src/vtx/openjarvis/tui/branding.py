@@ -37,7 +37,7 @@ def _patched_add_session_info(self: _chat.ChatLog, version: str) -> None:
         if i == len(logo_lines) - 1:
             info_text.append(f" openjarvis v{_VERSION}", style=dim)
         info_text.append("\n")
-    info_text.append("  Hermes + OpenClaw • VTX-native", style=dim)
+    info_text.append("  Autonomous Agent • VTX-native", style=dim)
     info_text.append("\n")
     info_text.append("  [", style=dim)
     info_text.append("●", style=config.ui.colors.success)

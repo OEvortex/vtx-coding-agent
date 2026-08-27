@@ -7,10 +7,10 @@ import asyncio
 import typer
 from rich.console import Console
 
-app = typer.Typer(help="OpenJarvis — Hermes/OpenClaw-inspired agent on VTX", no_args_is_help=False)
+app = typer.Typer(help="OpenJarvis — autonomous agent on VTX", no_args_is_help=False)
 console = Console()
 
-gateway_app = typer.Typer(help="Gateway control (OpenClaw-style single WS port)")
+gateway_app = typer.Typer(help="Gateway control (single WS port)")
 app.add_typer(gateway_app, name="gateway")
 
 channels_app = typer.Typer(help="Channels")
@@ -186,7 +186,7 @@ def tui_cmd(
     model: str = typer.Option(None, help="Model override (provider/model)"),
     cwd: str = typer.Option(None, help="Workspace path"),
 ):
-    """Launch the OpenJarvis TUI (Hermes-style terminal interface)."""
+    """Launch the OpenJarvis TUI (terminal interface)."""
     from vtx.openjarvis.tui.app import OpenJarvisApp
 
     tui = OpenJarvisApp(cwd=cwd, model=model)

@@ -1,13 +1,13 @@
 """OpenJarvis runtime — GatewayRunner + AIAgent + VTX harness.
 
-Hermes layer mapping:
+Architecture layer mapping:
   Adapter  -> ChannelManager (per-session_key routing)
   EventBus -> vtx.core.events + openjarvis.bus.queue.MessageBus (optional)
   GatewayRunner -> OpenJarvisRuntime (ThreadPool, agent_cache, session store)
   AIAgent  -> vtx.ai.agent.loop.Agent (VTX-native ReAct)
   Tools    -> vtx.openjarvis.tools + vtx.coding_agent.tools
 
-OpenClaw mapping:
+Gateway mapping:
   Single long-lived Gateway owns all surfaces, WS 18789, pairing device-based,
   multiplexed port (WS control/RPC + HTTP API).
 """
@@ -81,7 +81,7 @@ class OpenJarvisRuntime:
         self._channel_manager = None
         self._cron_service = None
 
-    # ---- session / agent caching (Hermes agent_cache + session store) ----
+    # ---- session / agent caching (agent_cache + session store) ----
 
     def _session_key_for(self, channel: str, peer: str, scope: str | None = None) -> str:
         scope = scope or self.config.session.dm_scope
@@ -150,7 +150,7 @@ class OpenJarvisRuntime:
         images: list | None = None,
         cancel_event: asyncio.Event | None = None,
     ) -> AsyncIterator[Any]:
-        """Run one turn — single active run per session_key (Hermes single-run invariant)."""
+        """Run one turn — single active run per session_key (single-run invariant)."""
         session_key = self._session_key_for(channel, peer)
         session = self.get_or_create_session(session_key)
         agent = self.get_agent(session)

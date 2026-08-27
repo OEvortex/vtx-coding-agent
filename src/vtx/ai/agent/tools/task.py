@@ -13,7 +13,6 @@ from typing import TYPE_CHECKING, Any
 from pydantic import BaseModel, Field
 
 from vtx.ai.agent.agents.schema import AgentDef, InstructionsMode, ThinkingLevel
-from vtx.ai.agent.background import get_manager
 from vtx.ai.agent.dispatcher import DispatcherContext, get_context
 from vtx.ai.agent.tools.base import BaseTool
 from vtx.core.types import StopReason, TextContent, ToolResult, Usage
@@ -546,7 +545,12 @@ class TaskTool(BaseTool[TaskParams]):
     async def _execute_background(
         self, params: TaskParams, parent_ctx: Any, tool_call_id: str | None = None
     ) -> ToolResult:
-        manager = parent_ctx.background_manager or get_manager()
+        try:
+            from vtx.coding_agent.tools.background import get_manager
+
+            manager = parent_ctx.background_manager or get_manager()
+        except ImportError:
+            manager = getattr(parent_ctx, "background_manager", None)
         if manager is None:
             return ToolResult(
                 success=False,
