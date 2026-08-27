@@ -9,10 +9,9 @@ import time
 from collections import deque
 from typing import TYPE_CHECKING, Any
 
-from vtx.coding_agent.config import config
-from vtx.coding_agent.runtime import ConversationRuntime
-from vtx.coding_agent.tools import get_tool
-from vtx.coding_agent.tools.bash import BashParams, BashTool
+from vtx.ai.agent.runtime import ConversationRuntime
+from vtx.ai.agent.tools import lookup_default_tool as get_tool
+from vtx.ai.config import config
 from vtx.core import (
     AgentEndEvent,
     AgentStartEvent,
@@ -470,7 +469,11 @@ class AgentRunnerMixin:
 
         try:
             # Create bash tool instance
-            bash_tool = BashTool()
+            bash_tool = get_tool("bash")
+            if bash_tool is None:
+                from vtx.coding_agent.tools.bash import BashTool
+
+                bash_tool = BashTool()
 
             # Create cancellation event for this command
             cancel_event = asyncio.Event()
@@ -480,8 +483,12 @@ class AgentRunnerMixin:
             status.set_status("running")
             # Manual shell output should render like regular bash tool output:
             # collapsed preview with ctrl+o expansion when details are available.
+            params_cls = getattr(bash_tool, "params", None)
+            params = params_cls(command=command) if params_cls else {"command": command}
             result = await bash_tool.execute(
-                BashParams(command=command), cancel_event=cancel_event, inline_output=False
+                params,
+                cancel_event=cancel_event,
+                inline_output=False,  # ty:ignore[unknown-argument]
             )
 
             # Persist the command and its output so session resume and /export

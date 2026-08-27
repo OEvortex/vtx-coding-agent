@@ -9,9 +9,9 @@ import os
 from typing import TYPE_CHECKING, Any, Literal
 
 from vtx.ai.agent.tools_manager import ensure_tools
-from vtx.coding_agent.config import update_available_binaries
-from vtx.coding_agent.version import PACKAGE_NAME, VERSION
+from vtx.ai.config import update_available_binaries
 from vtx.core.update_check import get_newer_pypi_version
+from vtx.core.version import PACKAGE_NAME, VERSION
 from vtx.tui.blocks import LaunchWarning
 from vtx.tui.chat import ChatLog
 from vtx.tui.input import InputBox

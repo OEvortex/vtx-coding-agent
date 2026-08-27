@@ -18,8 +18,8 @@ from textual.message import Message
 from textual.widgets import Input, Label, TextArea
 from textual.widgets.text_area import TextAreaTheme
 
-from vtx.coding_agent.config import config
-from vtx.coding_agent.tools._read_image import resize_image
+from vtx.ai.config import config
+from vtx.core.image import resize_image
 from vtx.core.types import ImageContent
 from vtx.tui.autocomplete import (
     DEFAULT_COMMANDS,

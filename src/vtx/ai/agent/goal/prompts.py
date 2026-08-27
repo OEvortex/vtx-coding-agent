@@ -1,4 +1,8 @@
-"""Bounded prompt builders for goal steering."""
+"""Bounded prompt builders for goal steering.
+
+All prompts are intentionally compact: the full state lives in the goal
+file, and these blocks only orient the agent for the current turn.
+"""
 
 from __future__ import annotations
 
@@ -183,16 +187,3 @@ def auditor_prompt(record: GoalRecord) -> str:
         "<approved/> or <disapproved/>."
     )
     return "\n".join(parts)
-
-
-__all__ = [
-    "AUDITOR_SYSTEM_PROMPT",
-    "CONTINUATION_TEMPLATE",
-    "DRAFTING_TEMPLATE",
-    "UNFOCUSED_BANNER",
-    "auditor_prompt",
-    "continuation_prompt",
-    "drafting_prompt",
-    "goal_context_block",
-    "status_line",
-]

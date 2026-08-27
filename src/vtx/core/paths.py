@@ -65,3 +65,14 @@ def get_agents_dir() -> Path:
     except Exception:
         pass
     return Path.cwd() / ".agents"
+
+
+def shorten_path(path: str) -> str:
+    """Shorten path for display (replace $HOME with ~)."""
+    try:
+        home = str(Path.home())
+        if path.startswith(home):
+            return "~" + path[len(home) :]
+    except Exception:
+        pass
+    return path

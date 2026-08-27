@@ -7,7 +7,7 @@ cycle through the registry.
 
 from __future__ import annotations
 
-from vtx.coding_agent.config import config
+from vtx.ai.config import config
 from vtx.tui.chat import ChatLog
 from vtx.tui.commands.base import CommandSupport
 from vtx.tui.floating_list import FloatingList, ListItem
@@ -42,7 +42,7 @@ class AgentCommands(CommandSupport):
             )
 
     def _reload_agents(self) -> None:
-        from vtx.coding_agent.agents import load_all_agents
+        from vtx.ai.agent.agents import load_all_agents
 
         chat = self.query_one("#chat-log", ChatLog)
         loaded, errors = load_all_agents(cwd=self._cwd, configured=list(config.agents.files))

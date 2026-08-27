@@ -1,7 +1,7 @@
 from rich.markup import escape
 from rich.text import Text
 
-from vtx.coding_agent.config import config
+from vtx.ai.config import config
 
 
 def format_expand_hint(hidden_lines: int) -> Text:

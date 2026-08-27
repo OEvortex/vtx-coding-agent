@@ -16,10 +16,10 @@ from typing import TYPE_CHECKING
 from rich.style import Style
 from rich.text import Text
 
-from vtx.coding_agent.config import config
+from vtx.ai.config import config
 
 if TYPE_CHECKING:
-    from vtx.coding_agent.config import ColorsConfig
+    from vtx.tui.themes import ColorsConfig
 
 # Semantic indicator glyphs.
 GLYPHS = {

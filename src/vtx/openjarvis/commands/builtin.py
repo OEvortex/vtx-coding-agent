@@ -9,12 +9,11 @@ import time
 from contextlib import suppress
 from dataclasses import dataclass
 
-from vtx.openjarvis.version import VERSION as __version__
-
 from vtx.openjarvis.bus.events import OutboundMessage
 from vtx.openjarvis.commands.router import CommandContext, CommandRouter
 from vtx.openjarvis.utils.helpers import build_status_content
 from vtx.openjarvis.utils.restart import set_restart_notice_to_env
+from vtx.openjarvis.version import VERSION as __version__
 
 
 @dataclass(frozen=True)

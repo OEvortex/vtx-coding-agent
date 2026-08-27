@@ -1,4 +1,10 @@
-"""Independent completion audit."""
+"""Independent completion audit.
+
+When the executor reports a goal complete, a separate sub-agent re-checks
+the objective, task evidence, and verification contract against the real
+workspace using read-only tools, then ends with ``<approved/>`` or
+``<disapproved/>``.
+"""
 
 from __future__ import annotations
 
@@ -56,77 +62,63 @@ async def run_completion_audit(
     """Run the independent auditor sub-agent and parse its verdict."""
     from dataclasses import replace as dc_replace
 
-    from vtx.ai import get_max_tokens, get_provider_class, resolve_provider_api_type
+    from vtx.ai import get_max_tokens
     from vtx.ai.agent.loop import Agent
+    from vtx.ai.agent.runtime import create_provider, default_base_url_for_provider
     from vtx.ai.agent.session import Session
-    from vtx.ai.dynamic_models import find_dynamic_model
-    from vtx.core.types import StopReason, TextContent
+
+    if provider is None:
+        return AuditResult(approved=False, summary="", error="no provider for auditor")
 
     tools = _build_auditor_tools(cwd)
     session = Session.create(
         cwd=cwd,
-        provider=model_provider,
+        provider=model_provider or getattr(provider.config, "provider", None),
         model_id=model,
-        thinking_level=thinking_level or "low",
-        system_prompt=AUDITOR_SYSTEM_PROMPT,
-        tools=tools,
+        thinking_level=thinking_level or "high",
+        system_prompt=None,
+        tools=None,
     )
 
-    parent_cfg = getattr(provider, "config", None)
-    if parent_cfg is not None:
-        auditor_config = dc_replace(
-            parent_cfg,
-            model=model,
-            thinking_level=thinking_level or "low",
-            max_tokens=get_max_tokens(model),
-            session_id=session.id,
-        )
-        if base_url:
-            auditor_config = dc_replace(auditor_config, base_url=base_url)
-        auditor_provider = type(provider)(auditor_config)
-    else:
-        api_type = resolve_provider_api_type(model_provider)
-        dynamic = find_dynamic_model(model, model_provider)
-        if dynamic and dynamic.base_url and not base_url:
-            base_url = dynamic.base_url
+    config = dc_replace(
+        provider.config,
+        model=model,
+        thinking_level=thinking_level or provider.config.thinking_level,
+        max_tokens=get_max_tokens(model),
+        session_id=session.id,
+    )
+    effective_base_url = base_url or default_base_url_for_provider(model_provider)
+    if effective_base_url:
+        config = dc_replace(config, base_url=effective_base_url)
+    audit_provider = create_provider(_resolve_api_type(model, model_provider), config)
 
-        from vtx.ai import ProviderConfig
-
-        auditor_config = ProviderConfig(
-            model=model,
-            provider=model_provider or "openai",
-            base_url=base_url or "",
-            thinking_level=thinking_level or "low",
-            session_id=session.id,
-        )
-        cls = get_provider_class(api_type)
-        auditor_provider = cls(auditor_config)
-
-    auditor_agent = Agent(
-        provider=auditor_provider,
+    agent = Agent(
+        provider=audit_provider,
         tools=tools,
         session=session,
         cwd=cwd,
         system_prompt=AUDITOR_SYSTEM_PROMPT,
     )
 
-    prompt = auditor_prompt(record)
-    turns = 0
     final_text = ""
-
-    from vtx.core import (
-        AgentEndEvent,
-        ApprovalResponse,
-        AskUserEvent,
-        AskUserResponse,
-        ErrorEvent,
-        InterruptedEvent,
-        ToolApprovalEvent,
-        TurnEndEvent,
-    )
-
+    error: str | None = None
+    turns = 0
     try:
-        async for event in auditor_agent.run(prompt, cancel_event=cancel_event):
+        from vtx.core import (
+            ApprovalResponse,
+            AskUserEvent,
+            AskUserResponse,
+            ErrorEvent,
+            InterruptedEvent,
+            TextDeltaEvent,
+            TextEndEvent,
+            ToolApprovalEvent,
+            TurnEndEvent,
+        )
+
+        async for event in agent.run(auditor_prompt(record), cancel_event=cancel_event):
+            if isinstance(event, TextDeltaEvent | TextEndEvent):
+                continue
             if isinstance(event, ToolApprovalEvent):
                 if event.future is not None and not event.future.done():
                     event.future.set_result(ApprovalResponse.APPROVE)
@@ -135,67 +127,35 @@ async def run_completion_audit(
                     event.future.set_result(AskUserResponse())
             elif isinstance(event, TurnEndEvent):
                 turns += 1
-                if event.assistant_message is not None:
-                    msg = event.assistant_message
-                    if msg.stop_reason != StopReason.TOOL_USE:
-                        text_parts: list[str] = []
-                        for part in msg.content:
-                            if isinstance(part, TextContent):
-                                text_parts.append(part.text)
-                        final_text = "".join(text_parts)
-                if turns >= MAX_AUDIT_TURNS:
-                    break
-            elif isinstance(event, (AgentEndEvent, InterruptedEvent)):
-                break
+                message = event.assistant_message
+                if message is not None:
+                    from vtx.core.types import TextContent
+
+                    text = "".join(p.text for p in message.content if isinstance(p, TextContent))
+                    if text.strip():
+                        final_text = text
+            elif isinstance(event, InterruptedEvent):
+                return AuditResult(approved=False, summary="", error="aborted", turns=turns)
             elif isinstance(event, ErrorEvent):
-                return AuditResult(
-                    approved=False,
-                    summary=f"Auditor failed: {event.error}",
-                    error=event.error,
-                    turns=turns,
-                )
+                error = str(event.error) if event.error else "auditor error"
     except asyncio.CancelledError:
-        return AuditResult(
-            approved=False, summary="Audit cancelled", error="Cancelled", turns=turns
-        )
+        raise
     except Exception as exc:
-        log.exception("Completion audit run failed")
+        log.exception("completion audit failed")
+        return AuditResult(approved=False, summary="", error=str(exc), turns=turns)
+
+    approved = "<approved/>" in final_text and "<disapproved/>" not in final_text
+    if not final_text.strip():
         return AuditResult(
-            approved=False, summary=f"Audit raised: {exc}", error=str(exc), turns=turns
+            approved=False, summary="", error=error or "auditor produced no verdict", turns=turns
         )
-
-    return _parse_verdict(final_text, turns)
-
-
-def _parse_verdict(text: str, turns: int) -> AuditResult:
-    clean = text.strip()
-    has_approved = "<approved/>" in clean or "<approved />" in clean
-    has_disapproved = "<disapproved/>" in clean or "<disapproved />" in clean
-
-    cleaned_summary = (
-        clean.replace("<approved/>", "")
-        .replace("<approved />", "")
-        .replace("<disapproved/>", "")
-        .replace("<disapproved />", "")
-        .strip()
-    )
-
-    if has_approved and not has_disapproved:
-        return AuditResult(
-            approved=True, summary=cleaned_summary or "Auditor approved completion.", turns=turns
-        )
-    if has_disapproved and not has_approved:
-        return AuditResult(
-            approved=False,
-            summary=cleaned_summary or "Auditor found unresolved requirements.",
-            turns=turns,
-        )
-    return AuditResult(
-        approved=False,
-        summary=cleaned_summary or "Auditor reply lacked a conclusive verdict marker.",
-        error="ambiguous_verdict",
-        turns=turns,
-    )
+    return AuditResult(approved=approved, summary=final_text.strip(), turns=turns)
 
 
-__all__ = ["AUDIT_TOOLS", "MAX_AUDIT_TURNS", "AuditResult", "run_completion_audit"]
+def _resolve_api_type(model: str, model_provider: str | None) -> Any:
+    from vtx.ai import get_model, resolve_provider_api_type
+
+    info = get_model(model, model_provider)
+    if info is not None:
+        return info.api
+    return resolve_provider_api_type(model_provider)

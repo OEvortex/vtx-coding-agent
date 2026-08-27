@@ -4,10 +4,10 @@ import json
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
+from vtx.ai.agent.runtime import ConversationRuntime
 from vtx.ai.agent.session import CompactionEntry, CustomMessageEntry, MessageEntry, Session
 from vtx.ai.agent.tools import BaseTool
-from vtx.coding_agent.runtime import ConversationRuntime
-from vtx.coding_agent.tools import get_tool, tools_by_name
+from vtx.ai.agent.tools import lookup_default_tool as get_tool
 from vtx.core.types import (
     AssistantMessage,
     ImageContent,
@@ -60,7 +60,7 @@ class SessionUIMixin:
         return "".join(parts).strip() or "(no content)"
 
     def _format_tool_call(self, tool_call: ToolCall) -> str:
-        tool = tools_by_name.get(tool_call.name)
+        tool = get_tool(tool_call.name)
         if not tool:
             return json.dumps(tool_call.arguments) if tool_call.arguments else ""
 

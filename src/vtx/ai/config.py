@@ -21,7 +21,7 @@ if TYPE_CHECKING:
 
 def _get_theme_ids() -> tuple[str, ...]:
     try:
-        from vtx.coding_agent.themes import get_theme_ids
+        from vtx.tui.themes import get_theme_ids
 
         return get_theme_ids()
     except Exception:
@@ -29,9 +29,12 @@ def _get_theme_ids() -> tuple[str, ...]:
 
 
 def _get_theme(name: str) -> Any:
-    from vtx.coding_agent.themes import get_theme
+    try:
+        from vtx.tui.themes import get_theme
 
-    return get_theme(name)
+        return get_theme(name)
+    except Exception:
+        return None
 
 
 CONFIG_DIR_NAME: str = "vtx"
@@ -52,16 +55,7 @@ NOTIFICATION_MODES: tuple[NotificationMode, ...] = get_args(NotificationMode)
 def _load_default_config_yaml() -> dict[str, Any]:
     import yaml
 
-    try:
-        content = (
-            resources.files("vtx.ai.defaults").joinpath("config.yml").read_text(encoding="utf-8")
-        )
-    except Exception:
-        content = (
-            resources.files("vtx.coding_agent.defaults")
-            .joinpath("config.yml")
-            .read_text(encoding="utf-8")
-        )
+    content = resources.files("vtx.ai.defaults").joinpath("config.yml").read_text(encoding="utf-8")
     return yaml.safe_load(content) or {}
 
 
@@ -72,7 +66,7 @@ CURRENT_CONFIG_VERSION = int(_DEFAULT_CONFIG_DATA.get("meta", {}).get("config_ve
 _config_var: ContextVar["Config | None"] = ContextVar("vtx_config", default=None)
 _config_warnings: list[str] = []
 
-log = logging.getLogger("coding_agent.config")
+log = logging.getLogger("ai.config")
 
 
 class MetaConfig(BaseModel):

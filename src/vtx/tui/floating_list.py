@@ -18,7 +18,7 @@ from textual import events
 from textual.reactive import reactive
 from textual.widget import Widget
 
-from vtx.coding_agent.config import config
+from vtx.ai.config import config
 
 T = TypeVar("T")
 

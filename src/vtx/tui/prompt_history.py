@@ -3,7 +3,7 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
-from vtx.coding_agent.config import get_config_dir
+from vtx.core.paths import get_config_dir
 
 MAX_HISTORY_ENTRIES = 50
 

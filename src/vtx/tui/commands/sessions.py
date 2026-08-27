@@ -7,7 +7,7 @@ from datetime import UTC, datetime
 from pathlib import Path
 
 from vtx.ai.agent.session import Session, SessionInfo
-from vtx.coding_agent.config import config
+from vtx.ai.config import config
 from vtx.tui.chat import ChatLog
 from vtx.tui.clipboard import copy_to_clipboard
 from vtx.tui.commands.base import CommandSupport

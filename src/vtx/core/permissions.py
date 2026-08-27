@@ -176,9 +176,12 @@ def check_permission(
     tool: BaseTool, arguments: dict, config: object | None = None
 ) -> PermissionDecision:
     if config is None:
-        from vtx.coding_agent.config import config as _config
+        try:
+            from vtx.ai.config import config as _config
 
-        config = _config
+            config = _config
+        except Exception:
+            config = None
     permissions = getattr(config, "permissions", None)
     if permissions is not None and permissions.mode == "auto":
         return PermissionDecision.ALLOW

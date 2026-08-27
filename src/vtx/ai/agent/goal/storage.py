@@ -1,4 +1,16 @@
-"""Goal persistence: markdown goal files plus an append-only JSONL ledger."""
+"""Goal persistence: markdown goal files plus an append-only JSONL ledger.
+
+Layout::
+
+    .vtx/goals/active_goal_<ts>_<id>.md    open goals
+    .vtx/goals/archived/<same-name>.md     completed / cleared goals
+    .vtx/goals/ledger.jsonl                durable activity ledger
+    .vtx/goals/settings.json               user settings
+
+The markdown file embeds the authoritative metadata as a JSON block in an
+HTML comment; human-editable sections (# Objective, # Verification,
+# Goal Prompt) are re-merged from disk on read so user edits survive.
+"""
 
 from __future__ import annotations
 
@@ -128,6 +140,7 @@ def parse(text: str) -> GoalRecord | None:
     verification_body = _extract_section(text, "Verification")
 
     record = GoalRecord.from_meta(meta, prompt_body=prompt_body, objective_body=objective_body)
+    # Human edits to the verification section win over stale metadata.
     if verification_body and not record.verification:
         record.verification = verification_body
     return record
@@ -145,7 +158,11 @@ def _extract_section(text: str, heading: str) -> str:
 
 
 def read_active_pool(cwd: str) -> dict[str, GoalRecord]:
-    """Scan the goals directory and return open records keyed by id."""
+    """Scan the goals directory and return open records keyed by id.
+
+    Invalid files are skipped; completed records are dropped (they belong
+    in the archive). Results are ordered oldest-first by filename.
+    """
     pool: dict[str, GoalRecord] = {}
     directory = goals_dir(cwd)
     try:
@@ -190,6 +207,11 @@ def archive(cwd: str, record: GoalRecord) -> Path:
         except OSError:
             log.warning("goal %s: could not remove active copy %s", record.id, source)
     return dest
+
+
+# ---------------------------------------------------------------------------
+# Ledger
+# ---------------------------------------------------------------------------
 
 
 def append_ledger(cwd: str, event_type: str, goal_id: str | None = None, **detail) -> bool:
@@ -271,6 +293,10 @@ def recent_activity(cwd: str, goal_id: str | None = None, limit: int = 8) -> lis
     return out
 
 
+# ---------------------------------------------------------------------------
+# Settings
+# ---------------------------------------------------------------------------
+
 DEFAULT_SETTINGS: dict = {
     "disabled": False,
     "autoContinue": True,
@@ -312,29 +338,3 @@ def format_file_timestamp(name: str) -> str:
     except ValueError:
         return ""
     return dt.strftime("%Y-%m-%d %H:%M")
-
-
-__all__ = [
-    "ACTIVITY_VERBS",
-    "DEFAULT_SETTINGS",
-    "META_BEGIN",
-    "META_END",
-    "append_ledger",
-    "archive",
-    "archived_dir",
-    "find_goal_file",
-    "format_file_timestamp",
-    "goal_filename",
-    "goals_dir",
-    "ledger_path",
-    "load_settings",
-    "parse",
-    "read_active_pool",
-    "read_ledger",
-    "recent_activity",
-    "render_tasks_markdown",
-    "save_settings",
-    "serialize",
-    "settings_path",
-    "write_active",
-]

@@ -1,4 +1,18 @@
-"""The single LLM-facing goal tool."""
+"""The single LLM-facing goal tool.
+
+One ``goal`` tool with an ``action`` parameter covers the whole lifecycle
+(mirrors the ``skill`` tool's action-based design)::
+
+    goal(action="create",      objective=..., mode=..., verification=..., token_budget=...)
+    goal(action="get")
+    goal(action="update",      status=..., reason=..., completion_summary=..., ...)
+    goal(action="set_tasks",   tasks=[{title, id?, parent_id?}, ...])
+    goal(action="update_task", task_id=..., task_status=..., evidence=..., ...)
+
+All actions operate on the focused goal (focus is user-owned; no tool can
+switch it) through the
+:class:`~vtx.coding_agent.goal.service.GoalService` mutation boundary.
+"""
 
 from __future__ import annotations
 
@@ -47,320 +61,334 @@ def _goal_file_hint(cwd: str, goal_id: str) -> str:
     from .storage import find_goal_file
 
     path = find_goal_file(cwd, goal_id)
-    if path is not None:
-        try:
-            return str(path.relative_to(cwd))
-        except ValueError:
-            return str(path)
-    return f".vtx/goals/active_goal_*_{goal_id}.md"
+    if path is None:
+        return f".vtx/goals/active_goal_*_{goal_id}.md"
+    try:
+        return str(path.relative_to(cwd))
+    except ValueError:
+        return str(path)
 
 
-class GoalTaskInput(BaseModel):
-    title: str = Field(min_length=1, max_length=300, description="Imperative task description")
-    id: str | None = Field(default=None, description="Optional custom id like 't1', 't1.1'")
-    parent_id: str | None = Field(default=None, description="Parent task id for nesting")
-    note: str | None = Field(default=None, max_length=500, description="Optional notes or hints")
+def _snapshot_text(record: GoalRecord, service: GoalService) -> str:
+    done, total = count_tasks(record.tasks)
+    lines = [
+        f"Goal {record.id} ({record.mode})",
+        f"Objective: {objective_title(record.objective, 200)}",
+        f"Status: {status_line(service, record)}",
+        f"Tasks: {done}/{total}",
+    ]
+    task = current_task(record)
+    if task:
+        lines.append(f"Current: [{task.id}] {task.title}")
+    if record.review_feedback:
+        lines.append(f"Auditor feedback: {record.review_feedback}")
+    lines.append(f"File: {_goal_file_hint(service.cwd, record.id)}")
+    return "\n".join(lines)
 
 
-GoalTaskItem = GoalTaskInput
+def _err(exc: GoalError) -> ToolResult:
+    return ToolResult(success=False, result=str(exc), ui_summary=f"[red]{exc}[/red]")
+
+
+def _short(text: str, limit: int = 300) -> str:
+    text = (text or "").strip()
+    for marker in ("<approved/>", "<disapproved/>"):
+        text = text.replace(marker, "").strip()
+    if len(text) > limit:
+        return text[: limit - 1].rstrip() + "…"
+    return text
+
+
+class GoalTaskItem(BaseModel):
+    title: str = Field(min_length=1, max_length=300)
+    id: str | None = Field(default=None, description="Stable id like t1 or t1.1")
+    parent_id: str | None = Field(default=None, description="Parent task id for subtasks")
+    note: str | None = Field(default="", max_length=500)
 
 
 class GoalParams(BaseModel):
     action: str = Field(
-        description="One of: 'create', 'get', 'update', 'set_tasks', 'update_task'"
+        description=(
+            "Operation to perform: 'create', 'get', 'update', 'set_tasks', or 'update_task'"
+        )
     )
+    # create
     objective: str | None = Field(
         default=None,
         max_length=4000,
-        description="The measurable goal to achieve. Required for create; required for revise.",
+        description="create / update(revise): complete goal objective and outcome to achieve",
     )
     mode: str | None = Field(
         default=None,
-        description="'regular' (flexible task order) or 'sisyphus' (strict ordered dependencies)",
+        description="create: 'regular' (open-ended) or 'sisyphus' (strict sequential tasks)",
     )
     verification: str | None = Field(
         default=None,
-        description="Contract explaining how completion will be proven (tests, commands, outputs)",
+        description="create: completion contract or test command required for verification",
     )
     token_budget: int | None = Field(
-        default=None,
-        ge=1000,
-        description="Optional token budget ceiling. Warning state triggers when exceeded.",
+        default=None, description="create: optional total-token budget ceiling for the goal"
     )
-    tasks: list[GoalTaskInput] | None = Field(
-        default=None, description="List of tasks for 'set_tasks' or initial tasks on 'create'"
-    )
+    # update
     status: str | None = Field(
         default=None,
-        description=(
-            "Target status for 'update'. Options: 'active', 'paused', 'blocked', "
-            "'complete', 'revise'"
-        ),
+        description="update: status — 'complete', 'blocked', 'paused', 'active', or 'revise'",
     )
     reason: str | None = Field(
-        default=None, description="Explanation for status change. Required when status='blocked'."
+        default=None,
+        description="update: explanation required for 'blocked', 'paused', or revision notes",
     )
     completion_summary: str | None = Field(
         default=None,
-        description="Final summary when status='complete'. Submitted to the auditor agent.",
+        description="update (complete): concise summary of completed work submitted for audit",
     )
+    review_feedback: str | None = Field(
+        default=None, description="update: auditor changes-required feedback to record"
+    )
+    # set_tasks
+    tasks: list[GoalTaskItem] | None = Field(
+        default=None,
+        description="set_tasks: structured task list replacing the current execution plan",
+    )
+    # update_task
     task_id: str | None = Field(
-        default=None, description="Target task id for 'update_task' (e.g. 't1', 't1.2')"
+        default=None, description="update_task: target task identifier (e.g. 't1')"
     )
     task_status: str | None = Field(
         default=None,
-        description="New task status for 'update_task': 'pending', 'complete', or 'skipped'",
-    )
-    task_title: str | None = Field(
-        default=None, max_length=300, description="Optional new title for 'update_task'"
+        description="update_task: new status — 'start', 'complete', 'skipped', or 'pending'",
     )
     evidence: str | None = Field(
         default=None,
-        description="Concrete proof the task is done (test output, diff summary, file path)",
+        description="update_task: test output or verification evidence proving task completion",
     )
     note: str | None = Field(
         default=None,
         max_length=500,
-        description="Reason for skipping or extra task notes on 'update_task'",
+        description="update_task: optional note or explanation for skipping",
+    )
+    subtasks: list[GoalTaskItem] | None = Field(
+        default=None, description="update_task: list of subtasks to attach under the target task"
     )
 
 
-class GoalTool(BaseTool[GoalParams]):
+class GoalTool(BaseTool):
     name = "goal"
-    tool_icon = "◆"
+    tool_icon = "◈"
     params = GoalParams
-    mutating = True
-
-    description = (
-        "Track durable, multi-turn goals. All actions operate on the focused goal (focus is "
-        "user-owned). Actions: 'create' (objective, mode, verification), 'get', 'update' (status: "
-        "'active'|'paused'|'blocked'|'complete'|'revise'), 'set_tasks' (list of tasks), "
-        "'update_task' (task_id, task_status: 'pending'|'complete'|'skipped', evidence)."
-    )
-
+    # Lifecycle bookkeeping on a project-local markdown file: safe to run
+    # without approval prompts. Destructive archiving requires explicit user
+    # confirmation.
+    mutating = False
     prompt_guidelines = (
-        "Never create a goal proactively: draft and confirm with the user first.",
-        (
-            "After creating a goal, always call `goal(action='set_tasks')` to provide a "
-            "realistic task breakdown."
-        ),
-        (
-            "Mark tasks complete as you finish them with `goal(action='update_task', "
-            "task_id=..., task_status='complete', evidence=...)`."
-        ),
-        (
-            "When the objective is genuinely achieved, call `goal(action='update', "
-            "status='complete', completion_summary=...)` to trigger the completion audit."
-        ),
-        (
-            "If you are genuinely blocked after multiple attempts, call `goal(action='update', "
-            "status='blocked', reason=...)` instead of pretending you succeeded."
-        ),
+        'goal(action="get") for the focused-goal snapshot; '
+        'goal(action="update", status="complete") only when the objective is '
+        "genuinely satisfied; create only after an explicit user request or "
+        "confirmed proposal",
+    )
+    description = (
+        "Manage persistent, multi-turn project goals and task trees. "
+        "Track progress with 'create', 'get', 'set_tasks', 'update_task', or 'update'. "
+        "Marking a goal complete triggers an independent auditor verification step."
     )
 
     def format_call(self, params: GoalParams) -> str:
-        act = (params.action or "").strip()
-        if act == "create":
-            title = objective_title(params.objective or "")
-            mode_part = f" [{params.mode}]" if params.mode else ""
-            return f"create{mode_part}: {title}"
-        if act == "get":
-            return "get"
-        if act == "update":
-            return f"update → {params.status or 'status'}"
-        if act == "set_tasks":
-            n = len(params.tasks or [])
-            return f"set_tasks ({n} item{'s' if n != 1 else ''})"
-        if act == "update_task":
-            st = f" → {params.task_status}" if params.task_status else ""
-            return f"update_task [{params.task_id or '?'}{st}]"
-        return act or "goal"
+        detail = ""
+        if params.action == "create" and params.objective:
+            detail = objective_title(params.objective, 60)
+        elif params.action == "update":
+            extra = params.reason or params.completion_summary or ""
+            detail = (params.status or "") + (f" · {objective_title(extra, 50)}" if extra else "")
+        elif params.action == "set_tasks":
+            detail = f"{len(params.tasks or [])} tasks"
+        elif params.action == "update_task":
+            detail = f"{params.task_id} → {params.task_status}"
+            extra = params.evidence or params.note or ""
+            if extra:
+                detail += f" · {objective_title(extra, 40)}"
+        return params.action + (f" · {detail}" if detail else "")
 
     async def execute(
-        self,
-        params: GoalParams,
-        cancel_event: asyncio.Event | None = None,
-        tool_call_id: str | None = None,
+        self, params: GoalParams, cancel_event: asyncio.Event | None = None
     ) -> ToolResult:
-        act = (params.action or "").strip()
-        if not act or act not in GOAL_ACTIONS:
-            return ToolResult(
-                success=False,
-                result=f"Unknown goal action {act!r}. Must be one of: {', '.join(GOAL_ACTIONS)}",
-            )
-        service = _service()
-        try:
-            if act == "create":
-                return await self._create(service, params)
-            if act == "get":
-                return await self._get(service)
-            if act == "update":
-                return await self._update(service, params, cancel_event=cancel_event)
-            if act == "set_tasks":
-                return await self._set_tasks(service, params)
-            if act == "update_task":
-                return await self._update_task(service, params)
-        except GoalError as exc:
-            return ToolResult(success=False, result=f"Goal error: {exc}")
-        except Exception as exc:
-            log.exception("GoalTool.%s failed", act)
-            return ToolResult(success=False, result=f"Goal operation failed: {exc}")
-        return ToolResult(success=False, result="Unhandled action")
+        action = (params.action or "").strip().lower()
+        if action not in GOAL_ACTIONS:
+            return _err(GoalError(f"action must be one of {GOAL_ACTIONS}"))
+        handler = {
+            "create": self._create,
+            "get": self._get,
+            "update": self._update,
+            "set_tasks": self._set_tasks,
+            "update_task": self._update_task,
+        }[action]
+        return await handler(params, cancel_event)
 
-    async def _create(self, service: GoalService, params: GoalParams) -> ToolResult:
-        if not params.objective or not params.objective.strip():
-            raise GoalError("Objective is required to create a goal")
+    # ------------------------------------------------------------------
+    # create
+    # ------------------------------------------------------------------
+
+    async def _create(self, params: GoalParams, cancel_event: asyncio.Event | None) -> ToolResult:
+        del cancel_event
+        service = _service()
+        if service.settings.get("disabled"):
+            return _err(GoalError("The goal system is disabled in settings"))
         mode = params.mode or "regular"
         if mode not in GOAL_MODES:
-            raise GoalError(f"Unknown mode {mode!r}. Options: {', '.join(GOAL_MODES)}")
-        raw_tasks = [t.model_dump() for t in params.tasks] if params.tasks else None
-        record = service.create(
-            params.objective,
-            mode=mode,
-            verification=params.verification or "",
-            token_budget=params.token_budget,
-            tasks=raw_tasks,
-            auto_focus=True,
-        )
-        file_hint = _goal_file_hint(service.cwd, record.id)
-        out = [
-            f"Created and focused goal {record.id} ({record.mode}):",
-            f"  objective: {record.objective.strip()}",
-            f"  status: {status_line(service, record)}",
-            f"  file: {file_hint}",
-        ]
-        if record.verification:
-            out.append(f"  verification: {record.verification}")
-        if record.tasks:
-            done, total = count_tasks(record.tasks)
-            out.append(f"  tasks: {done}/{total} complete ({len(record.tasks)} total nodes)")
-        return ToolResult(
-            success=True,
-            result="\n".join(out),
-            ui_summary=f"created goal {record.id}",
-            ui_details=f"Focused: {objective_title(record.objective)}",
-        )
-
-    async def _get(self, service: GoalService) -> ToolResult:
-        record = service.focused()
-        if record is None:
-            pool = service.pool()
-            if not pool:
-                return ToolResult(
-                    success=True,
-                    result="No open goals in this project.",
-                    ui_summary="no open goals",
+            return _err(GoalError(f"mode must be one of {GOAL_MODES}"))
+        if not (params.objective or "").strip():
+            return _err(GoalError("create requires an objective"))
+        if service.focused() is not None:
+            focused = service.focused()
+            title = objective_title(focused.objective, 60) if focused else ""
+            return _err(
+                GoalError(
+                    f"This session already focuses on an open goal: {title!r}. "
+                    "Finish it or ask the user to archive/unfocus first."
                 )
-            rows = [
-                f"- [{r.id}] ({r.mode}, {r.label()}): {objective_title(r.objective)}"
-                for r in pool.values()
-            ]
-            return ToolResult(
-                success=True,
-                result="No goal is currently focused. Open goals in this project:\n"
-                + "\n".join(rows),
-                ui_summary=f"{len(pool)} open goal{'s' if len(pool) != 1 else ''} (unfocused)",
             )
+        try:
+            record = service.create(
+                params.objective or "",
+                mode=mode,
+                verification=params.verification or "",
+                token_budget=params.token_budget,
+                source="goal-tool",
+            )
+        except (GoalError, ValueError) as exc:
+            return _err(exc if isinstance(exc, GoalError) else GoalError(str(exc)))
+        text = (
+            "Goal created and focused.\n"
+            + _snapshot_text(record, service)
+            + "\nBegin working toward the objective now."
+        )
+        return ToolResult(success=True, result=text, ui_summary=objective_title(record.objective))
+
+    # ------------------------------------------------------------------
+    # get
+    # ------------------------------------------------------------------
+
+    async def _get(self, params: GoalParams, cancel_event: asyncio.Event | None) -> ToolResult:
+        del params, cancel_event
+        service = _service()
+        try:
+            record = _require_focused(service)
+        except GoalError as exc:
+            return _err(exc)
         from .storage import render_tasks_markdown
 
-        done, total, pct = goal_progress(record)
-        lines = [
-            f"Focused goal {record.id} ({record.mode}):",
-            f"  status: {status_line(service, record)}",
-            f"  objective: {record.objective.strip()}",
+        parts = [
+            _snapshot_text(record, service),
+            "",
+            f"Full objective:\n{record.objective.strip()}",
         ]
-        if record.verification:
-            lines.append(f"  verification: {record.verification}")
-        if record.blocked_reason:
-            lines.append(f"  blocked_reason: {record.blocked_reason}")
-        if record.review_feedback:
-            lines.append(f"  review_feedback: {record.review_feedback}")
-        lines.append(f"  progress: {done}/{total} top-level tasks ({pct}%)")
+        if record.verification.strip():
+            parts.append(f"\nVerification contract:\n{record.verification.strip()}")
         if record.tasks:
-            lines.append("\nTasks:\n" + render_tasks_markdown(record))
-        return ToolResult(
-            success=True,
-            result="\n".join(lines),
-            ui_summary=f"goal {record.id} ({done}/{total} {pct}%)",
-        )
+            parts.append("\nTasks:\n" + render_tasks_markdown(record))
+        return ToolResult(success=True, result="\n".join(parts), ui_summary=record.label())
 
-    async def _update(
-        self, service: GoalService, params: GoalParams, cancel_event: asyncio.Event | None = None
-    ) -> ToolResult:
-        record = _require_focused(service)
-        target = (params.status or "").strip().lower()
-        if not target:
-            raise GoalError("status is required for update")
-        if target == "revise":
-            if not params.objective or not params.objective.strip():
-                raise GoalError("objective is required when status='revise'")
-            updated = service.tweak(
-                record.id,
-                objective=params.objective,
-                verification=params.verification,
-                token_budget=params.token_budget,
-                change_summary=params.reason or "Revised via tool",
-            )
-            return ToolResult(
-                success=True,
-                result=f"Goal {updated.id} revised. New objective:\n{updated.objective}",
-                ui_summary="revised objective",
-            )
+    # ------------------------------------------------------------------
+    # update
+    # ------------------------------------------------------------------
 
-        if target == "complete":
-            return await self._handle_complete(service, record, params, cancel_event=cancel_event)
+    async def _update(self, params: GoalParams, cancel_event: asyncio.Event | None) -> ToolResult:
+        service = _service()
+        if service.settings.get("disabled"):
+            return _err(GoalError("The goal system is disabled in settings"))
+        try:
+            record = _require_focused(service)
+        except GoalError as exc:
+            return _err(exc)
 
-        if target in ("active", "paused", "blocked"):
-            updated = service.update_status(
-                record.id,
-                target,
-                reason=params.reason,
-                completion_summary=params.completion_summary,
-            )
+        status = (params.status or "").strip().lower()
+        summary = (params.completion_summary or "").strip()
+        reason = (params.reason or "").strip()
+
+        if status == "complete":
+            return await self._complete(service, record, summary, cancel_event)
+        if status == "blocked":
+            if not reason:
+                return _err(GoalError("blocked requires a reason"))
+            updated = service.set_status(record.id, "blocked", reason=reason)
             return ToolResult(
                 success=True,
                 result=(
-                    f"Goal {updated.id} status updated to {updated.status} "
-                    f"({status_line(service, updated)})."
+                    "Goal marked blocked. It stays open; the user can resume it.\n"
+                    + _snapshot_text(updated, service)
                 ),
-                ui_summary=f"status → {updated.status}",
+                ui_summary=updated.label(),
             )
-        raise GoalError(
-            f"Unsupported update status {target!r}. Use: active, paused, blocked, complete, revise"
-        )
+        if status == "paused":
+            updated = service.set_status(record.id, "paused", reason=reason or "paused by agent")
+            return ToolResult(
+                success=True,
+                result="Goal paused.\n" + _snapshot_text(updated, service),
+                ui_summary=updated.label(),
+            )
+        if status == "active":
+            updated = service.set_status(
+                record.id, "active", review_feedback=params.review_feedback
+            )
+            return ToolResult(
+                success=True,
+                result="Goal active (resumed).\n" + _snapshot_text(updated, service),
+                ui_summary=updated.label(),
+            )
+        if status == "revise":
+            if not params.objective and not reason:
+                return _err(GoalError("revise requires objective= or reason=change notes"))
+            updated = service.tweak(
+                record.id, reason or params.objective or "revised", new_objective=params.objective
+            )
+            return ToolResult(
+                success=True,
+                result="Goal revised.\n" + _snapshot_text(updated, service),
+                ui_summary=objective_title(updated.objective),
+            )
+        return _err(GoalError("status must be complete | blocked | paused | active | revise"))
 
-    async def _handle_complete(
+    async def _complete(
         self,
         service: GoalService,
         record: GoalRecord,
-        params: GoalParams,
-        cancel_event: asyncio.Event | None = None,
+        summary: str,
+        cancel_event: asyncio.Event | None,
     ) -> ToolResult:
         settings = service.settings
-        summary = params.completion_summary or params.reason or "Completed"
+        done, total, pct = goal_progress(record)
+
+        # Record completion summary if provided so the auditor and archive have it.
+        if summary:
+
+            def apply_summary(r: GoalRecord) -> None:
+                r.completion_summary = summary[:2000]
+
+            service.mutate(record.id, apply_summary)
 
         if not settings.get("auditorEnabled", True):
-            service.record_audit_verdict(record.id, approved=True, summary=summary)
-            return ToolResult(
-                success=True,
-                result=f"Goal {record.id} marked complete and archived (auditor disabled).",
-                ui_summary="completed (no audit)",
+            archived = service.archive(record.id)
+            from .storage import append_ledger
+
+            append_ledger(service.cwd, "audit_skipped", archived.id)
+            path_hint = _archive_path_text(service, archived)
+            text = (
+                "Completion recorded without independent audit (auditor disabled). "
+                "This completion is NOT independently approved.\n"
+                f"Archived: {path_hint}"
             )
+            return ToolResult(success=True, result=text, ui_summary="archived (no audit)")
 
         from vtx.ai.agent.dispatcher import get_context
 
         ctx = get_context()
-        if ctx is None:
-            raise GoalError("No dispatcher context available to run the completion audit")
-
-        # Save completion summary claim onto the record first
-        staged = service.tweak(record.id, change_summary="Staging completion claim for audit")
-        staged.completion_summary = summary
+        if ctx is None or ctx.provider is None:
+            return _err(GoalError("no provider available to run the completion auditor"))
 
         from .auditor import run_completion_audit
 
+        fresh = service.get(record.id) or record
         audit = await run_completion_audit(
-            staged,
+            fresh,
             cwd=service.cwd,
             provider=ctx.provider,
             model=ctx.model,
@@ -369,75 +397,118 @@ class GoalTool(BaseTool[GoalParams]):
             thinking_level=ctx.thinking_level,
             cancel_event=cancel_event,
         )
+        if cancel_event is not None and cancel_event.is_set():
+            service.set_status(record.id, "active")
+            return ToolResult(
+                success=False,
+                result="Audit aborted by user; goal remains open.",
+                ui_summary="[yellow]audit aborted[/yellow]",
+            )
+        if audit.error and not audit.summary:
+            service.set_status(record.id, "active")
+            return _err(GoalError(f"completion audit failed: {audit.error}"))
+
+        from .storage import append_ledger
 
         if audit.approved:
-            archived = service.record_audit_verdict(
-                record.id, approved=True, summary=audit.summary or summary
+            archived = service.archive(record.id)
+            append_ledger(
+                service.cwd, "audit_approved", archived.id, summary=_short(audit.summary)
             )
-            return ToolResult(
-                success=True,
-                result=(
-                    f"Goal {archived.id} passed completion audit and was archived.\n"
-                    f"Auditor summary: {audit.summary}\n"
-                    f"File moved to .vtx/goals/archived/"
-                ),
-                ui_summary="completed (audit approved)",
+            text = (
+                "Independent audit APPROVED — goal archived as complete.\n"
+                f"{_archive_path_text(service, archived)}\n\n"
+                f"Auditor summary:\n{_short(audit.summary, 1200)}"
             )
+            return ToolResult(success=True, result=text, ui_summary="audit approved ✓")
 
-        updated = service.record_audit_verdict(
-            record.id, approved=False, feedback=audit.summary, summary=summary
+        feedback = _short(audit.summary, 1500) or "Requirements not met."
+        service.set_status(record.id, "active", review_feedback=feedback)
+        append_ledger(service.cwd, "audit_changes_required", record.id, summary=_short(feedback))
+        tasks_note = f" Task progress was {done}/{total} ({pct}%)." if total else ""
+        text = (
+            "Independent audit requires more work — goal stays open with feedback.\n"
+            f"{tasks_note}\nAuditor notes:\n{feedback}"
         )
-        return ToolResult(
-            success=False,
-            result=(
-                f"Completion audit did NOT approve goal {updated.id}.\n"
-                f"Auditor feedback:\n{audit.summary}\n\n"
-                "The goal remains open. Address the feedback and request completion again."
-            ),
-            ui_summary="audit changes required",
-        )
+        return ToolResult(success=False, result=text, ui_summary="changes required ✗")
 
-    async def _set_tasks(self, service: GoalService, params: GoalParams) -> ToolResult:
-        record = _require_focused(service)
-        if params.tasks is None:
-            raise GoalError("tasks parameter is required for set_tasks")
-        raw = [t.model_dump() for t in params.tasks]
-        updated = service.set_tasks(record.id, raw)
-        done, total, pct = goal_progress(updated)
-        cur = current_task(updated)
-        cur_text = f"Current task: [{cur.id}] {cur.title}" if cur else "All tasks complete."
+    # ------------------------------------------------------------------
+    # set_tasks
+    # ------------------------------------------------------------------
+
+    async def _set_tasks(
+        self, params: GoalParams, cancel_event: asyncio.Event | None
+    ) -> ToolResult:
+        del cancel_event
+        service = _service()
+        if service.settings.get("disableTasks"):
+            return _err(GoalError("Task lists are disabled in settings"))
+        items = [item.model_dump(exclude_none=True) for item in (params.tasks or [])]
+        if not items:
+            return _err(GoalError("set_tasks requires a non-empty tasks list"))
+        try:
+            record = _require_focused(service)
+            updated = service.replace_tasks(record.id, items)
+        except GoalError as exc:
+            return _err(exc)
+        done, total = count_tasks(updated.tasks)
+        listing = "\n".join(
+            f"  [{t.id}]{' (sub)' if t.parent_id else ''} {t.title}" for t in updated.tasks[:40]
+        )
         return ToolResult(
             success=True,
             result=(
-                f"Task list updated for goal {updated.id}: {done}/{total} complete ({pct}%).\n"
-                f"{cur_text}"
+                f"Task list set: {total} top-level tasks ({done} already complete).\n" + listing
             ),
-            ui_summary=f"set {len(updated.tasks)} tasks",
+            ui_summary=f"{done}/{total} done",
         )
 
-    async def _update_task(self, service: GoalService, params: GoalParams) -> ToolResult:
-        record = _require_focused(service)
-        if not params.task_id:
-            raise GoalError("task_id is required for update_task")
-        updated, task = service.update_task(
-            record.id,
-            params.task_id,
-            status=params.task_status,
-            title=params.task_title,
-            evidence=params.evidence,
-            note=params.note,
-        )
+    # ------------------------------------------------------------------
+    # update_task
+    # ------------------------------------------------------------------
+
+    async def _update_task(
+        self, params: GoalParams, cancel_event: asyncio.Event | None
+    ) -> ToolResult:
+        del cancel_event
+        service = _service()
+        if service.settings.get("disableTasks"):
+            return _err(GoalError("Task lists are disabled in settings"))
+        task_id = (params.task_id or "").strip()
+        task_status = (params.task_status or "").strip().lower()
+        if not task_id:
+            return _err(GoalError("update_task requires task_id"))
+        try:
+            record = _require_focused(service)
+            updated = service.update_task(
+                record.id,
+                task_id,
+                task_status,
+                evidence=params.evidence or "",
+                note=params.note or "",
+                subtasks=[item.model_dump(exclude_none=True) for item in (params.subtasks or [])]
+                or None,
+            )
+        except GoalError as exc:
+            return _err(exc)
         done, total, pct = goal_progress(updated)
-        cur = current_task(updated)
-        next_hint = f"\nNext task: [{cur.id}] {cur.title}" if cur and cur.id != task.id else ""
+        task = next((t for t in updated.tasks if t.id == task_id), None)
+        detail = f"[{task_id}] {task.title} → {task_status}" if task else ""
+        active = current_task(updated)
+        tail = (
+            f"\nCurrent task now: [{active.id}] {active.title}"
+            if active is not None
+            else "\nNo pending tasks remain."
+        )
         return ToolResult(
             success=True,
-            result=(
-                f"Task [{task.id}] updated ({task.status}). "
-                f"Goal progress: {done}/{total} ({pct}%).{next_hint}"
-            ),
-            ui_summary=f"task {task.id} → {task.status}",
+            result=(f"Task updated: {detail}\nProgress: {done}/{total} ({pct}%)" + tail),
+            ui_summary=f"{done}/{total} done",
         )
 
 
-__all__ = ["GOAL_ACTIONS", "GoalParams", "GoalTaskInput", "GoalTaskItem", "GoalTool"]
+def _archive_path_text(service: GoalService, record: GoalRecord) -> str:
+    from .storage import find_goal_file
+
+    path = find_goal_file(service.cwd, record.id)
+    return str(path) if path else ".vtx/goals/archived/"

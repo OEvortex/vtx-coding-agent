@@ -18,12 +18,12 @@ from rich.style import Style
 from rich.text import Text
 from textual.widgets import Static
 
-from vtx.coding_agent.config import config
-from vtx.coding_agent.goal.record import GoalRecord, count_tasks, current_task, objective_title
-from vtx.coding_agent.goal.service import GoalService, get_service
+from vtx.ai.agent.goal.record import GoalRecord, count_tasks, current_task, objective_title
+from vtx.ai.agent.goal.service import GoalService, get_service
+from vtx.ai.config import config
 
 if TYPE_CHECKING:
-    from vtx.coding_agent.config import ColorsConfig
+    from vtx.tui.themes import ColorsConfig
 
 # Task markers: ✓ complete · ▸ current · ~ skipped · · pending
 TASK_MARKS = {"complete": "✓", "current": "▸", "skipped": "~", "pending": "·"}
@@ -255,7 +255,7 @@ def _task_lines_window(record: GoalRecord, limit: int = 5) -> list[str]:
 
 
 def _file_label(cwd: str, goal_id: str) -> str:
-    from vtx.coding_agent.goal.storage import find_goal_file
+    from vtx.ai.agent.goal.storage import find_goal_file
 
     path = find_goal_file(cwd, goal_id)
     if path is None:
@@ -318,7 +318,7 @@ class GoalWidget(Static):
 
 def render_expanded(service: GoalService, record: GoalRecord, *, activity_limit: int = 6) -> Text:
     """Full unified dashboard: progress, task tree, contracts, activity."""
-    from vtx.coding_agent.goal.storage import recent_activity
+    from vtx.ai.agent.goal.storage import recent_activity
 
     c = _colors()
     done, total = count_tasks(record.tasks)

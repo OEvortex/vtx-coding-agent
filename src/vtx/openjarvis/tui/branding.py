@@ -10,8 +10,6 @@ try:
 except (ModuleNotFoundError, ImportError):
     try:
         import vtx.ui.chat as _chat  # type: ignore
-        import vtx.ui.styles as _styles  # type: ignore
-        from vtx.ui.blocks import ToolBlock as _ToolBlock  # type: ignore
         from vtx.config import get_config  # type: ignore
 
         config = get_config()

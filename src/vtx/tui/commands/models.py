@@ -12,7 +12,7 @@ from vtx.ai import (
     refresh_all_providers,
     refresh_provider,
 )
-from vtx.coding_agent.config import get_config, get_recent_models
+from vtx.ai.config import get_config, get_recent_models
 from vtx.tui.chat import ChatLog
 from vtx.tui.commands.base import CommandSupport
 from vtx.tui.floating_list import ListItem

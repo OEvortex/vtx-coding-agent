@@ -71,7 +71,7 @@ class SubagentSpec:
         """Lift the spec into an :class:`AgentDef` for the tool composer."""
         from typing import cast
 
-        from vtx.coding_agent.agents.schema import AgentDef, InstructionsMode, ThinkingLevel
+        from vtx.ai.agent.agents.schema import AgentDef, InstructionsMode, ThinkingLevel
 
         safe_name = self.name.lower().replace(" ", "-")
         return AgentDef(
@@ -138,17 +138,22 @@ def _spec_from_preset(preset: Any) -> SubagentSpec:
 
 def _build_subagent_tool_list(parent_ctx: DispatcherContext, spec: SubagentSpec) -> list[Any]:
     """Build the sub-agent's tool list from its spec."""
-    from vtx.coding_agent.tools import DEFAULT_TOOLS, PARENT_ONLY_TOOLS, tools_by_name
+    base_pool: dict[str, Any] = {}
+    base_names: list[str] = []
+    try:
+        from vtx.coding_agent.tools import DEFAULT_TOOLS, PARENT_ONLY_TOOLS, tools_by_name
 
-    base_pool: dict[str, Any] = {
-        name: tool for name, tool in tools_by_name.items() if name not in PARENT_ONLY_TOOLS
-    }
-    base_names: list[str] = [n for n in DEFAULT_TOOLS if n not in PARENT_ONLY_TOOLS]
+        base_pool = {
+            name: tool for name, tool in tools_by_name.items() if name not in PARENT_ONLY_TOOLS
+        }
+        base_names = [n for n in DEFAULT_TOOLS if n not in PARENT_ONLY_TOOLS]
+    except Exception:
+        pass
 
     extension_tools: list[Any] = []
 
-    from vtx.coding_agent.agents.activate import compose_active_tools
-    from vtx.coding_agent.agents.api import LoadedAgent
+    from vtx.ai.agent.agents.activate import compose_active_tools
+    from vtx.ai.agent.agents.api import LoadedAgent
 
     loaded_stub = LoadedAgent(definition=spec.to_agentdef(), path=Path("<task-subagent>"))
     return compose_active_tools(
@@ -179,7 +184,7 @@ def _build_subagent_system_prompt(
     parent_ctx: DispatcherContext, spec: SubagentSpec, tools: list[Any]
 ) -> str:
     """Build the sub-agent's system prompt."""
-    from vtx.coding_agent.prompts import build_system_prompt
+    from vtx.ai.agent.prompts import build_system_prompt
 
     extra = spec.instructions
     mode = spec.instructions_mode
@@ -209,7 +214,7 @@ def _build_subagent_system_prompt(
 def _create_subagent_session(parent_ctx: DispatcherContext) -> Session:
     """Create a fresh, persisted :class:`Session` for the sub-agent."""
     from vtx.ai.agent.session import Session
-    from vtx.coding_agent import get_config_dir
+    from vtx.core.paths import get_config_dir
 
     safe_cwd = parent_ctx.cwd.replace("/", "-").replace("\\", "-").strip("-") or "root"
     tasks_dir = get_config_dir() / "tasks" / safe_cwd
@@ -246,8 +251,8 @@ def _resolve_api_and_base_url(
 ) -> tuple[Any, str | None]:
     """Resolve ``(api_type, effective_base_url)`` for a model + provider."""
     from vtx.ai import get_model, resolve_provider_api_type
+    from vtx.ai.agent.runtime import default_base_url_for_api, default_base_url_for_provider
     from vtx.ai.dynamic_models import find_dynamic_model
-    from vtx.coding_agent.runtime import default_base_url_for_api, default_base_url_for_provider
 
     model_info = get_model(model, provider)
     if model_info:
@@ -274,7 +279,15 @@ async def _run_subagent(
 
     from vtx.ai import get_max_tokens
     from vtx.ai.agent.loop import Agent
-    from vtx.coding_agent.runtime import create_provider
+
+    try:
+        import vtx.coding_agent.runtime as _ca_runtime
+
+        create_provider = getattr(_ca_runtime, "create_provider", None)
+        if create_provider is None:
+            from vtx.ai.agent.runtime import create_provider
+    except Exception:
+        from vtx.ai.agent.runtime import create_provider
 
     tools = _build_subagent_tool_list(parent_ctx, spec)
     system_prompt = _build_subagent_system_prompt(parent_ctx, spec, tools)

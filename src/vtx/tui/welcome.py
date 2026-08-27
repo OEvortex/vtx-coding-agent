@@ -2,7 +2,7 @@ from rich import box
 from rich.panel import Panel
 from rich.text import Text
 
-from vtx.coding_agent.config import config
+from vtx.ai.config import config
 
 _LOGO = ("░█░█░███░█░█", "░█░█░░█░░░█░", "░░█░░░█░░█░█")
 

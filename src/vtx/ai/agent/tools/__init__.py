@@ -29,11 +29,27 @@ __all__ = [
     "WebSearchTool",
     "WebTool",
     "get_tool_definitions",
+    "get_tools_with_extensions",
     "lookup_default_tool",
     "set_default_tool_lookup",
 ]
 
 _default_tool_lookup: Any = None
+
+
+def get_tools_with_extensions(
+    base_tools: list[str] | None = None, extension_tools: list[BaseTool] | None = None
+) -> list[BaseTool]:
+    """Assemble the active tool list from base tool names + extension tools."""
+    tools: list[BaseTool] = []
+    if base_tools is not None:
+        for name in base_tools:
+            tool = lookup_default_tool(name)
+            if tool is not None:
+                tools.append(tool)
+    if extension_tools:
+        tools.extend(extension_tools)
+    return tools
 
 
 def set_default_tool_lookup(lookup: Any) -> None:

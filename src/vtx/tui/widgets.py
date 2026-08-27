@@ -12,8 +12,8 @@ from textual.screen import ModalScreen
 from textual.timer import Timer
 from textual.widgets import Label
 
-from vtx.coding_agent.config import PermissionMode, config
-from vtx.coding_agent.git_branch import resolve_git_branch
+from vtx.ai.config import PermissionMode, config
+from vtx.core.git_branch import resolve_git_branch
 from vtx.tui.chat import WITTY_ROTATE_EVERY_TICKS
 from vtx.tui.formatting import format_tokens
 from vtx.tui.status_lines import WITTY_STATUS_LINES

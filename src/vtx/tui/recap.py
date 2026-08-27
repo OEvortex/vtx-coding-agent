@@ -14,7 +14,7 @@ from typing import TYPE_CHECKING, Any
 
 from textual.timer import Timer
 
-from vtx.coding_agent.config import config
+from vtx.ai.config import config
 from vtx.core.recap import (
     RecapContext,
     build_recap_context,

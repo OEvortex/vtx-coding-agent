@@ -1,7 +1,7 @@
 """Goal record model: statuses, task tree helpers, and record lifecycle.
 
 A :class:`GoalRecord` is the in-memory form of one goal file. Storage
-(:mod:`vtx.ai.agent.goal.storage`) serializes it to markdown with an
+(:mod:`vtx.coding_agent.goal.storage`) serializes it to markdown with an
 embedded JSON metadata block; the service layer mutates clones of records
 so the live object only ever changes through a successful disk write.
 """
@@ -168,7 +168,12 @@ def current_task(record: GoalRecord) -> TaskRecord | None:
 
 
 def normalize_task_ids(items: list[dict]) -> list[TaskRecord]:
-    """Build a flat parent-linked task tree from loose dicts."""
+    """Build a flat parent-linked task tree from loose dicts.
+
+    Ids are stable: provided ids are kept (and subtasks derive ``parent.n``
+    suffixes when omitted); missing ids are assigned sequentially. Parent
+    links pointing at unknown ids are dropped.
+    """
     tasks: list[TaskRecord] = []
     seen: set[str] = set()
     counters: dict[str, int] = {}
@@ -282,6 +287,7 @@ class GoalRecord:
             token_budget=int(meta["token_budget"]) if meta.get("token_budget") else None,
             usage=GoalUsage.from_dict(meta.get("usage")),
         )
+        # Older files stored the objective only in the markdown body.
         if not record.objective and objective_body:
             record.objective = objective_body
         return record

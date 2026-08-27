@@ -24,28 +24,29 @@ from textual.binding import Binding
 from textual.widgets import Input
 
 from vtx.ai import BaseProvider
-from vtx.ai.agent.extensions import load_for_runtime
-from vtx.ai.agent.session import Session
-from vtx.ai.agent.tools_manager import get_tool_path
-from vtx.ai.base import AuthMode
-from vtx.coding_agent.config import (
-    config,
-    consume_config_warnings,
-    get_last_selected,
-    set_ponytail,
-)
-from vtx.coding_agent.context.skills import (
+from vtx.ai.agent.agents import AgentRegistry, load_all_agents
+from vtx.ai.agent.context.skills import (
     load_builtin_cmd_skills,
     load_skills,
     merge_registered_skills,
     render_skill_prompt,
 )
-from vtx.coding_agent.prompts import is_deactivation_command
-from vtx.coding_agent.runtime import ConversationRuntime
-from vtx.coding_agent.tools import DEFAULT_TOOLS, get_tools_with_extensions
-from vtx.coding_agent.version import VERSION, format_version
+from vtx.ai.agent.extensions import load_for_runtime
+from vtx.ai.agent.prompts import is_deactivation_command
+from vtx.ai.agent.runtime import ConversationRuntime
+from vtx.ai.agent.session import Session
+from vtx.ai.agent.tools import get_tools_with_extensions, lookup_default_tool
+from vtx.ai.agent.tools_manager import get_tool_path
+from vtx.ai.base import AuthMode
+from vtx.ai.config import config, consume_config_warnings, get_last_selected, set_ponytail
 from vtx.core import ApprovalResponse, AskUserResponse
 from vtx.core.types import ImageContent
+from vtx.core.version import VERSION, format_version
+
+try:
+    from vtx.coding_agent.tools import DEFAULT_TOOLS
+except Exception:
+    DEFAULT_TOOLS = None
 from vtx.tui.agent_runner import AgentRunnerMixin
 from vtx.tui.ask_user import AskUserDialog
 from vtx.tui.autocomplete import DEFAULT_COMMANDS, SlashCommand
@@ -232,8 +233,6 @@ class Vtx(
         # Load handoff agents (project-local, global, plus the caller's
         # extra paths). Agent-scoped local tools + commands are merged
         # into the active tool set when an agent is active.
-        from vtx.coding_agent.agents import AgentRegistry, load_all_agents
-
         self._agent_registry = AgentRegistry()
         if auto_discover_agents or extra_agent_paths:
             configured_agents: list[str] = list(extra_agent_paths or [])
@@ -520,10 +519,15 @@ class Vtx(
 
     def _inject_lazy_tools(self, tool_names: list[str]) -> None:
         """Inject lazily-available tools into the runtime for the active turn."""
-        from vtx.coding_agent.tools import tools_by_name
-
         for name in tool_names:
-            tool = tools_by_name.get(name)
+            tool = lookup_default_tool(name)
+            if tool is None:
+                try:
+                    from vtx.coding_agent.tools import tools_by_name
+
+                    tool = tools_by_name.get(name)
+                except Exception:
+                    pass
             if tool is None or tool in self._runtime.tools:
                 continue
             self._runtime.tools.append(tool)

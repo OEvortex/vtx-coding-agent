@@ -5,8 +5,8 @@ from __future__ import annotations
 from collections.abc import Callable, Mapping, Sequence
 from typing import TYPE_CHECKING, Any, TypeVar, cast
 
+from vtx.ai.agent.runtime import ConversationRuntime
 from vtx.ai.agent.session import Session
-from vtx.coding_agent.runtime import ConversationRuntime
 from vtx.tui.chat import ChatLog
 from vtx.tui.floating_list import ListItem
 from vtx.tui.input import InputBox

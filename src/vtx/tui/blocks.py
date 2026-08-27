@@ -14,8 +14,7 @@ from textual.timer import Timer
 from textual.widgets import Label, Static
 
 from vtx.ai.agent.tools.base import BaseTool
-from vtx.coding_agent.config import config
-from vtx.coding_agent.diff_display import DIFF_BG_PAD_MARKER
+from vtx.ai.config import config
 from vtx.core import ApprovalResponse
 from vtx.core.types import ImageContent
 from vtx.tui import task_ui
@@ -29,6 +28,7 @@ from vtx.tui.ask_user import (
     SUBMIT_PICK_LABEL,
     AskUserDialog,
 )
+from vtx.tui.diff_display import DIFF_BG_PAD_MARKER
 from vtx.tui.formatting import (
     find_stable_block_boundary,
     format_bash_command,

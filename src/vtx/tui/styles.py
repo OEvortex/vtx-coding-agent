@@ -1,6 +1,6 @@
 """TUI styles for vtx."""
 
-from vtx.coding_agent.config import config
+from vtx.ai.config import config
 
 
 def _blend_hex(base: str, overlay: str, overlay_weight: float) -> str:
