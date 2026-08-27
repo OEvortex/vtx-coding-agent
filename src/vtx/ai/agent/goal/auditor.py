@@ -182,9 +182,7 @@ def _parse_verdict(text: str, turns: int) -> AuditResult:
 
     if has_approved and not has_disapproved:
         return AuditResult(
-            approved=True,
-            summary=cleaned_summary or "Auditor approved completion.",
-            turns=turns,
+            approved=True, summary=cleaned_summary or "Auditor approved completion.", turns=turns
         )
     if has_disapproved and not has_approved:
         return AuditResult(
@@ -200,10 +198,4 @@ def _parse_verdict(text: str, turns: int) -> AuditResult:
     )
 
 
-__all__ = [
-    "AUDIT_TOOLS",
-    "MAX_AUDIT_TURNS",
-    "AuditResult",
-    "run_completion_audit",
-]
-
+__all__ = ["AUDIT_TOOLS", "MAX_AUDIT_TURNS", "AuditResult", "run_completion_audit"]

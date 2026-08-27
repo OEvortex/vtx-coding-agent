@@ -14,7 +14,7 @@ from pydantic import BaseModel, Field
 
 from vtx.ai.agent.dispatcher import DispatcherContext, get_context
 from vtx.ai.agent.tools.base import BaseTool
-from vtx.coding_agent.config import config as vtx_config
+from vtx.ai.config import config as vtx_config
 from vtx.core.types import StopReason, TextContent, ToolResult, Usage
 
 if TYPE_CHECKING:

@@ -8,13 +8,31 @@ from copy import deepcopy
 from datetime import datetime
 from importlib import resources
 from pathlib import Path
-from typing import Any, Literal, get_args
+from typing import TYPE_CHECKING, Any, Literal, get_args
 
 import yaml
 from pydantic import BaseModel, Field, ValidationError, field_validator, model_validator
 
 from vtx.ai.agent.config import apply_harness_settings
-from vtx.coding_agent.themes import ColorsConfig, get_theme, get_theme_ids
+
+if TYPE_CHECKING:
+    pass
+
+
+def _get_theme_ids() -> tuple[str, ...]:
+    try:
+        from vtx.coding_agent.themes import get_theme_ids
+
+        return get_theme_ids()
+    except Exception:
+        return ()
+
+
+def _get_theme(name: str) -> Any:
+    from vtx.coding_agent.themes import get_theme
+
+    return get_theme(name)
+
 
 CONFIG_DIR_NAME: str = "vtx"
 
@@ -34,14 +52,17 @@ NOTIFICATION_MODES: tuple[NotificationMode, ...] = get_args(NotificationMode)
 def _load_default_config_yaml() -> dict[str, Any]:
     import yaml
 
-    return (
-        yaml.safe_load(
+    try:
+        content = (
+            resources.files("vtx.ai.defaults").joinpath("config.yml").read_text(encoding="utf-8")
+        )
+    except Exception:
+        content = (
             resources.files("vtx.coding_agent.defaults")
             .joinpath("config.yml")
             .read_text(encoding="utf-8")
         )
-        or {}
-    )
+    return yaml.safe_load(content) or {}
 
 
 _DEFAULT_CONFIG_DATA = _load_default_config_yaml()
@@ -86,13 +107,14 @@ class UIConfig(BaseModel):
     @field_validator("theme")
     @classmethod
     def _validate_theme(cls, value: str) -> str:
-        if value not in get_theme_ids():
+        valid_ids = _get_theme_ids()
+        if valid_ids and value not in valid_ids:
             raise ValueError(f"Unknown theme: {value}")
         return value
 
     @property
-    def colors(self) -> ColorsConfig:
-        return get_theme(self.theme).colors
+    def colors(self) -> Any:
+        return _get_theme(self.theme).colors
 
 
 class SystemPromptConfig(BaseModel):
@@ -856,7 +878,7 @@ def _set_config_version(data: dict[str, Any]) -> None:
 
 
 def set_theme(theme: str) -> Config:
-    get_theme(theme)
+    _get_theme(theme)
 
     config_file = _ensure_config_file()
     data = _read_config_data(config_file)

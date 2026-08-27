@@ -62,6 +62,9 @@ class GoalTaskInput(BaseModel):
     note: str | None = Field(default=None, max_length=500, description="Optional notes or hints")
 
 
+GoalTaskItem = GoalTaskInput
+
+
 class GoalParams(BaseModel):
     action: str = Field(
         description="One of: 'create', 'get', 'update', 'set_tasks', 'update_task'"
@@ -437,4 +440,4 @@ class GoalTool(BaseTool[GoalParams]):
         )
 
 
-__all__ = ["GOAL_ACTIONS", "GoalParams", "GoalTaskInput", "GoalTool"]
+__all__ = ["GOAL_ACTIONS", "GoalParams", "GoalTaskInput", "GoalTaskItem", "GoalTool"]

@@ -285,4 +285,3 @@ class GoalRecord:
         if not record.objective and objective_body:
             record.objective = objective_body
         return record
-

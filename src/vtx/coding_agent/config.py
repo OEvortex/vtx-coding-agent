@@ -5,53 +5,13 @@ Re-exports configuration primitives and schema from :mod:`vtx.ai.config`.
 
 from __future__ import annotations
 
-from vtx.ai.config import *  # noqa: F403
-from vtx.ai.config import (  # noqa: F401
-    CONFIG_DIR_NAME,
-    CURRENT_CONFIG_VERSION,
-    NOTIFICATION_MODES,
-    PERMISSION_MODES,
-    AgentConfig,
-    AnthropicCompatConfig,
-    AuthMode,
-    ColorsConfig,
-    Config,
-    DiffConfig,
-    ExecConfig,
-    GeneralConfig,
-    HooksConfig,
-    InteractionsConfig,
-    LLMAuthPolicy,
-    LLMConfig,
-    McpConfig,
-    MetaConfig,
-    NotificationMode,
-    NotificationsConfig,
-    OnOverflowMode,
-    OpenAICompatConfig,
-    PermissionMode,
-    PermissionsConfig,
-    ProfileConfig,
-    ReadConfig,
-    SubagentPreset,
-    TaskConfig,
-    TuiConfig,
-    UIConfig,
-    apply_profile,
-    config,
-    get_config,
-    get_config_dir,
-    get_config_path,
-    get_config_warnings,
-    get_effective_model,
-    get_effective_provider,
-    get_mcp_servers,
-    get_project_config_path,
-    load_config,
-    reload_config,
-    reset_config,
-    save_config,
-    set_config,
-    update_config,
-    validate_model_provider_compatibility,
-)
+import sys
+import vtx.ai.config as _cfg
+
+# Populate this module's namespace with everything from vtx.ai.config (including private helpers)
+_current_module = sys.modules[__name__]
+for _attr in dir(_cfg):
+    setattr(_current_module, _attr, getattr(_cfg, _attr))
+
+__all__ = [name for name in dir(_cfg) if not name.startswith("__")]
+

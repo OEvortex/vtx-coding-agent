@@ -44,4 +44,3 @@ __all__ = [
     "objective_title",
     "progress_percent",
 ]
-

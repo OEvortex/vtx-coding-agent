@@ -338,4 +338,3 @@ __all__ = [
     "settings_path",
     "write_active",
 ]
-
