@@ -9,12 +9,7 @@ import time
 from contextlib import suppress
 from dataclasses import dataclass
 
-try:
-    from importlib.metadata import version as _pkg_version
-
-    __version__ = _pkg_version("vtx-coding-agent")
-except Exception:
-    __version__ = "0.2.0"
+from vtx.openjarvis.version import VERSION as __version__
 
 from vtx.openjarvis.bus.events import OutboundMessage
 from vtx.openjarvis.commands.router import CommandContext, CommandRouter

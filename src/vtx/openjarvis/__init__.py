@@ -9,11 +9,6 @@ Subpackages:
     utils     — shared helpers
 """
 
-from importlib.metadata import version as _pkg_version
-
-try:
-    __version__ = _pkg_version("vtx-coding-agent")
-except Exception:
-    __version__ = "0.2.0"
+from vtx.openjarvis.version import VERSION as __version__
 
 __all__ = ["__version__"]
