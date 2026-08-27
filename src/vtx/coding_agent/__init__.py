@@ -1,5 +1,6 @@
 from vtx.ai.agent.context.skills import register_skills_package
 
+from . import tools as _tools  # noqa: F401
 from .config import (
     AVAILABLE_BINARIES,
     CONFIG_DIR_NAME,

@@ -7,6 +7,7 @@ from collections.abc import AsyncIterator
 from pathlib import Path
 from typing import TYPE_CHECKING, TextIO
 
+import vtx.coding_agent.tools  # noqa: F401
 from vtx.coding_agent.config import (
     _atomic_write_text,
     _ensure_config_file,

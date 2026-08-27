@@ -3,6 +3,8 @@ import asyncio
 import os
 import sys
 
+import vtx.coding_agent
+import vtx.coding_agent.tools  # noqa: F401
 from vtx.ai import PROVIDER_API_BY_NAME
 from vtx.coding_agent.config import config
 from vtx.coding_agent.version import VERSION
