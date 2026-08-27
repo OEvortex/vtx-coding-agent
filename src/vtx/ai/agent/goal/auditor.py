@@ -31,18 +31,11 @@ class AuditResult:
 
 
 def _build_auditor_tools(cwd: str) -> list[Any]:
-    from vtx.ai.agent.tools import lookup_default_tool
+    from vtx.ai.agent.tools import get_tool
 
     tools: list[Any] = []
     for name in AUDIT_TOOLS:
-        tool = lookup_default_tool(name)
-        if tool is None:
-            try:
-                from vtx.coding_agent.tools import tools_by_name
-
-                tool = tools_by_name.get(name)
-            except Exception:
-                pass
+        tool = get_tool(name)
         if tool is not None:
             tools.append(tool)
     return tools

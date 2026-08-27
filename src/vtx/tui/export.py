@@ -14,12 +14,8 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any
 
+from vtx.ai.agent.tools import get_tool
 from vtx.core.paths import get_config_dir
-
-try:
-    from vtx.coding_agent.tools import tools_by_name
-except Exception:
-    tools_by_name = {}
 
 MAX_RESULT_LINES = 10
 
@@ -422,7 +418,7 @@ def _schema_param_lines(schema: dict[str, Any] | None) -> list[str]:
 
 def _tool_definition_parts(tool_item: Any) -> tuple[str, str | None, list[str]]:
     if isinstance(tool_item, str):
-        tool = tools_by_name.get(tool_item)
+        tool = get_tool(tool_item)
         if tool:
             return (
                 tool_item,
@@ -442,7 +438,7 @@ def _tool_definition_parts(tool_item: Any) -> tuple[str, str | None, list[str]]:
     if desc or param_lines:
         return name, desc, param_lines
 
-    tool = tools_by_name.get(name)
+    tool = get_tool(name)
     if tool:
         return name, tool.description, _schema_param_lines(tool.params.model_json_schema())
     return name, None, []

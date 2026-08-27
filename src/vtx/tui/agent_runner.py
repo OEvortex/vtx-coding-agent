@@ -465,15 +465,14 @@ class AgentRunnerMixin:
     async def _execute_shell_command(self, command: str, send_to_llm: bool) -> None:
         """Execute a shell command and display the result"""
         chat = self.query_one("#chat-log", ChatLog)
-        status = self.query_one("#status-line", StatusLine)
+        # Look up bash tool dynamically
+        bash_tool = get_tool("bash")
+        if bash_tool is None:
+            chat.add_message("System", "[red]No shell tool registered in harness.[/red]")
+            return
 
         try:
-            # Create bash tool instance
-            bash_tool = get_tool("bash")
-            if bash_tool is None:
-                from vtx.coding_agent.tools.bash import BashTool
-
-                bash_tool = BashTool()
+            status = self.query_one("#status-line", StatusLine)
 
             # Create cancellation event for this command
             cancel_event = asyncio.Event()

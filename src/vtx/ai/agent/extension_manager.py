@@ -148,6 +148,32 @@ def _find_package_location(package: str) -> Path | None:
     return None
 
 
+_EXTENSION_ENTRYPOINT_KEYS: list[str] = [
+    "vtx.ai.agent.extensions",
+    "vtx.extensions",
+    "ai.agent.extensions",
+    "agent.extensions",
+]
+_AGENT_ENTRYPOINT_KEYS: list[str] = [
+    "vtx.ai.agent.agents",
+    "vtx.agents",
+    "ai.agent.agents",
+    "agent.agents",
+]
+
+
+def register_extension_entrypoint_key(key: str) -> None:
+    """Register a custom entrypoint group name for discovering extensions."""
+    if key not in _EXTENSION_ENTRYPOINT_KEYS:
+        _EXTENSION_ENTRYPOINT_KEYS.append(key)
+
+
+def register_agent_entrypoint_key(key: str) -> None:
+    """Register a custom entrypoint group name for discovering agents."""
+    if key not in _AGENT_ENTRYPOINT_KEYS:
+        _AGENT_ENTRYPOINT_KEYS.append(key)
+
+
 def _discover_entry_points(package_location: Path) -> tuple[list[str], list[str]]:
     """Discover extension and agent entry points from a package."""
     extensions: list[str] = []
@@ -159,18 +185,17 @@ def _discover_entry_points(package_location: Path) -> tuple[list[str], list[str]
         if pyproject.exists():
             data = tomllib.loads(pyproject.read_text(encoding="utf-8"))
             eps = data.get("project", {}).get("entry-points", {})
-            # Support legacy ``agent.*`` / ``ai.agent.*`` and new ``vtx.*`` entry points.
-            for key in ("agent.extensions", "ai.agent.extensions", "vtx.ai.agent.extensions"):
-                for mod_path in eps.get(key, {}).values():
-                    extensions.append(mod_path)
-            for key in (
-                "agent.agents",
-                "ai.agent.agents",
-                "vtx.ai.agent.agents",
-                "vtx.coding_agent.agents",
-            ):
-                for mod_path in eps.get(key, {}).values():
-                    agents.append(mod_path)
+            for key, group in eps.items():
+                if not isinstance(group, dict):
+                    continue
+                if key in _EXTENSION_ENTRYPOINT_KEYS or key.endswith(".extensions"):
+                    for mod_path in group.values():
+                        if mod_path not in extensions:
+                            extensions.append(mod_path)
+                elif key in _AGENT_ENTRYPOINT_KEYS or key.endswith(".agents"):
+                    for mod_path in group.values():
+                        if mod_path not in agents:
+                            agents.append(mod_path)
     except Exception:
         pass
     return extensions, agents

@@ -35,18 +35,13 @@ from vtx.ai.agent.extensions import load_for_runtime
 from vtx.ai.agent.prompts import is_deactivation_command
 from vtx.ai.agent.runtime import ConversationRuntime
 from vtx.ai.agent.session import Session
-from vtx.ai.agent.tools import get_tools_with_extensions, lookup_default_tool
+from vtx.ai.agent.tools import get_tool, get_tools_with_extensions
 from vtx.ai.agent.tools_manager import get_tool_path
 from vtx.ai.base import AuthMode
 from vtx.ai.config import config, consume_config_warnings, get_last_selected, set_ponytail
 from vtx.core import ApprovalResponse, AskUserResponse
 from vtx.core.types import ImageContent
 from vtx.core.version import VERSION, format_version
-
-try:
-    from vtx.coding_agent.tools import DEFAULT_TOOLS
-except Exception:
-    DEFAULT_TOOLS = None
 from vtx.tui.agent_runner import AgentRunnerMixin
 from vtx.tui.ask_user import AskUserDialog
 from vtx.tui.autocomplete import DEFAULT_COMMANDS, SlashCommand
@@ -216,7 +211,7 @@ class Vtx(
         self._git_branch_refresh_inflight = False
         self._launch_warnings: list[LaunchWarning] = []
 
-        self._tools = get_tools_with_extensions(DEFAULT_TOOLS)
+        self._tools = get_tools_with_extensions()
 
         # Load extensions (project-local, global, config, plus anything the
         # caller passed via ``extra_extension_paths``). Extension tools get
@@ -275,10 +270,11 @@ class Vtx(
             ext_tools.extend(active.local_tools.values())
             ext_tools.extend(self._loaded_extensions.local_tools_for(active.definition.name))
 
-        if ext_tools:
-            self._tools = get_tools_with_extensions(DEFAULT_TOOLS, ext_tools)
-        else:
-            self._tools = get_tools_with_extensions(DEFAULT_TOOLS)
+        self._tools = (
+            get_tools_with_extensions(None, ext_tools)
+            if ext_tools
+            else get_tools_with_extensions()
+        )
 
         self._runtime = ConversationRuntime(
             cwd=self._cwd,
@@ -520,14 +516,7 @@ class Vtx(
     def _inject_lazy_tools(self, tool_names: list[str]) -> None:
         """Inject lazily-available tools into the runtime for the active turn."""
         for name in tool_names:
-            tool = lookup_default_tool(name)
-            if tool is None:
-                try:
-                    from vtx.coding_agent.tools import tools_by_name
-
-                    tool = tools_by_name.get(name)
-                except Exception:
-                    pass
+            tool = get_tool(name)
             if tool is None or tool in self._runtime.tools:
                 continue
             self._runtime.tools.append(tool)

@@ -137,18 +137,11 @@ def _spec_from_preset(preset: Any) -> SubagentSpec:
 
 
 def _build_subagent_tool_list(parent_ctx: DispatcherContext, spec: SubagentSpec) -> list[Any]:
-    """Build the sub-agent's tool list from its spec."""
-    base_pool: dict[str, Any] = {}
-    base_names: list[str] = []
-    try:
-        from vtx.coding_agent.tools import DEFAULT_TOOLS, PARENT_ONLY_TOOLS, tools_by_name
+    from vtx.ai.agent.tools import get_all_tools, get_default_tools, get_parent_only_tools
 
-        base_pool = {
-            name: tool for name, tool in tools_by_name.items() if name not in PARENT_ONLY_TOOLS
-        }
-        base_names = [n for n in DEFAULT_TOOLS if n not in PARENT_ONLY_TOOLS]
-    except Exception:
-        pass
+    parent_only = get_parent_only_tools()
+    base_pool = {name: tool for name, tool in get_all_tools().items() if name not in parent_only}
+    base_names = [n for n in get_default_tools() if n not in parent_only]
 
     extension_tools: list[Any] = []
 

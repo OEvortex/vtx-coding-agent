@@ -1,3 +1,5 @@
+from vtx.ai.agent.context.skills import register_skills_package
+
 from .config import (
     AVAILABLE_BINARIES,
     CONFIG_DIR_NAME,
@@ -28,6 +30,9 @@ from .config import (
 )
 from .headless import _exit_code, render_run, resolve_prompt, run_headless
 from .version import PACKAGE_NAME, VERSION, format_version
+
+# Register coding agent skills package into harness
+register_skills_package("vtx.coding_agent")
 
 __all__ = [
     "AVAILABLE_BINARIES",

@@ -289,15 +289,10 @@ class ConversationRuntime:
     def _apply_active_agent_to_runtime(self) -> None:
         """Recompute the active tool set + system prompt for the new agent."""
         active = self.active_agent
-        base_pool: dict[str, BaseTool] = {}
-        base_names: list[str] = []
-        try:
-            from vtx.coding_agent.tools import DEFAULT_TOOLS, tools_by_name
+        from vtx.ai.agent.tools import get_all_tools, get_default_tools
 
-            base_pool = dict(tools_by_name)
-            base_names = list(DEFAULT_TOOLS)
-        except Exception:
-            pass
+        base_pool: dict[str, BaseTool] = get_all_tools()
+        base_names: list[str] = get_default_tools()
 
         # Build the extension-tools list: session-global + per-agent local.
         ext_tools: list[BaseTool] = []

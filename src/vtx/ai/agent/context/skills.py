@@ -301,29 +301,57 @@ def _project_skill_dirs(cwd: Path) -> list[Path]:
     return dirs
 
 
-def sync_builtin_skills(package_name: str = "vtx.coding_agent") -> None:
-    """Copy built-in skills from the package to ~/.vtx/skills/ for filesystem access."""
+_REGISTERED_SKILL_PACKAGES: list[str] = []
+
+
+def register_skills_package(package_name: str) -> None:
+    """Register a Python package name containing a `builtin_skills` directory."""
+    if package_name not in _REGISTERED_SKILL_PACKAGES:
+        _REGISTERED_SKILL_PACKAGES.append(package_name)
+
+
+def unregister_skills_package(package_name: str) -> None:
+    """Unregister a skills package."""
+    if package_name in _REGISTERED_SKILL_PACKAGES:
+        _REGISTERED_SKILL_PACKAGES.remove(package_name)
+
+
+def get_registered_skills_packages() -> list[str]:
+    """Return all registered skills packages."""
+    return list(_REGISTERED_SKILL_PACKAGES)
+
+
+def sync_builtin_skills(package_names: str | list[str] | None = None) -> None:
+    """Copy built-in skills from registered packages to ~/.vtx/skills/ for filesystem access."""
+    if package_names is None:
+        pkgs = get_registered_skills_packages()
+    elif isinstance(package_names, str):
+        pkgs = [package_names]
+    else:
+        pkgs = list(package_names)
+
     dst_root = (get_vtx_config_dir() / "skills").resolve(strict=False)
-    try:
-        builtin_resource = resources.files(package_name).joinpath("builtin_skills")
-        with resources.as_file(builtin_resource) as src_root:
-            if not src_root.is_dir():
-                return
-            dst_root.mkdir(parents=True, exist_ok=True)
-            for entry in src_root.iterdir():
-                if not entry.is_dir():
+    for pkg in pkgs:
+        try:
+            builtin_resource = resources.files(pkg).joinpath("builtin_skills")
+            with resources.as_file(builtin_resource) as src_root:
+                if not src_root.is_dir():
                     continue
-                for skill_dir in entry.iterdir():
-                    if not skill_dir.is_dir() or skill_dir.name.startswith("."):
+                dst_root.mkdir(parents=True, exist_ok=True)
+                for entry in src_root.iterdir():
+                    if not entry.is_dir():
                         continue
-                    if not (skill_dir / "SKILL.md").is_file():
-                        continue
-                    dst = dst_root / skill_dir.name
-                    if dst.exists():
-                        shutil.rmtree(dst)
-                    shutil.copytree(skill_dir, dst)
-    except Exception:
-        pass
+                    for skill_dir in entry.iterdir():
+                        if not skill_dir.is_dir() or skill_dir.name.startswith("."):
+                            continue
+                        if not (skill_dir / "SKILL.md").is_file():
+                            continue
+                        dst = dst_root / skill_dir.name
+                        if dst.exists():
+                            shutil.rmtree(dst)
+                        shutil.copytree(skill_dir, dst)
+        except Exception:
+            pass
 
 
 def load_skills(cwd: str | None = None) -> LoadSkillsResult:
@@ -375,29 +403,41 @@ def load_skills(cwd: str | None = None) -> LoadSkillsResult:
     return LoadSkillsResult(skills=list(skill_map.values()), warnings=all_warnings)
 
 
-def load_builtin_cmd_skills(package_name: str = "vtx.coding_agent") -> LoadSkillsResult:
-    try:
-        builtin_resource = resources.files(package_name).joinpath("builtin_skills")
-        with resources.as_file(builtin_resource) as builtin_root:
-            result = _load_skills_recursive(builtin_root)
-            return LoadSkillsResult(
-                skills=[
-                    Skill(
-                        path=skill.path,
-                        name=skill.name,
-                        description=skill.description,
-                        register_cmd=skill.register_cmd,
-                        cmd_info=skill.cmd_info,
-                        include_in_prompt=skill.include_in_prompt,
-                        bundled=True,
-                        category=skill.category,
-                    )
-                    for skill in result.skills
-                ],
-                warnings=result.warnings,
-            )
-    except Exception:
-        return LoadSkillsResult(skills=[], warnings=[])
+def load_builtin_cmd_skills(package_names: str | list[str] | None = None) -> LoadSkillsResult:
+    """Load built-in registered slash command skills from registered packages."""
+    if package_names is None:
+        pkgs = get_registered_skills_packages()
+    elif isinstance(package_names, str):
+        pkgs = [package_names]
+    else:
+        pkgs = list(package_names)
+
+    all_skills: list[Skill] = []
+    all_warnings: list[SkillWarning] = []
+    for pkg in pkgs:
+        try:
+            builtin_resource = resources.files(pkg).joinpath("builtin_skills")
+            with resources.as_file(builtin_resource) as builtin_root:
+                result = _load_skills_recursive(builtin_root)
+                all_skills.extend(
+                    [
+                        Skill(
+                            path=skill.path,
+                            name=skill.name,
+                            description=skill.description,
+                            register_cmd=skill.register_cmd,
+                            cmd_info=skill.cmd_info,
+                            include_in_prompt=skill.include_in_prompt,
+                            bundled=True,
+                            category=skill.category,
+                        )
+                        for skill in result.skills
+                    ]
+                )
+                all_warnings.extend(result.warnings)
+        except Exception:
+            pass
+    return LoadSkillsResult(skills=all_skills, warnings=all_warnings)
 
 
 def strip_frontmatter(content: str) -> str:
