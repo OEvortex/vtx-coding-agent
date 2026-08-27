@@ -1,22 +1,37 @@
-"""Harness-level tool infrastructure.
+"""Harness-level tool infrastructure and built-in harness tools.
 
-Only generic, product-agnostic pieces live here: the :class:`BaseTool`
-contract and schema shaping for LLM tool definitions. Concrete built-in
-tools and the default registry belong to the coding agent
-(:mod:`vtx.coding_agent.tools`).
+Provides the :class:`BaseTool` contract, schema shaping for LLM tool
+definitions, and core harness tools (:class:`AskUserTool`, :class:`TaskTool`,
+:class:`WebTool`, :class:`GoalTool`).
 """
 
 from typing import Any
 
 from vtx.core.types import ToolDefinition
 
+from ..goal.tools import GoalParams, GoalTool
+from .ask_user import AskUserParams, AskUserTool
 from .base import BaseTool
+from .task import SubagentSpec, TaskParams, TaskTool
+from .web import SearchParams, WebSearchTool, WebTool
 
-__all__ = ["BaseTool", "get_tool_definitions", "lookup_default_tool", "set_default_tool_lookup"]
+__all__ = [
+    "AskUserParams",
+    "AskUserTool",
+    "BaseTool",
+    "GoalParams",
+    "GoalTool",
+    "SearchParams",
+    "SubagentSpec",
+    "TaskParams",
+    "TaskTool",
+    "WebSearchTool",
+    "WebTool",
+    "get_tool_definitions",
+    "lookup_default_tool",
+    "set_default_tool_lookup",
+]
 
-# Optional resolver for "well-known" tool names outside the explicitly
-# provided tool list. The coding agent registers its built-in registry
-# here at import time; the bare harness stays dependency-free.
 _default_tool_lookup: Any = None
 
 
@@ -36,9 +51,7 @@ _SCHEMA_DROP_KEYS = frozenset({"title", "minLength", "maxLength", "minItems", "m
 
 
 def _slim_schema(node: Any) -> Any:
-    """Shrink pydantic JSON schema for the LLM: drop ``title`` and length
-    constraints (still enforced by pydantic on the actual call) and collapse
-    ``anyOf: [T, null]`` optional unions down to ``T``."""
+    """Shrink pydantic JSON schema for the LLM."""
     if isinstance(node, dict):
         any_of = node.get("anyOf")
         if isinstance(any_of, list):

@@ -153,6 +153,6 @@ skip-magic-trailing-comma = true
 
 [tool.pytest.ini_options]
 addopts = "--import-mode=importlib"
-testpaths = ["tests"]
+testpaths = ["tests", "src/vtx/openjarvis/tests"]
 python_files = ["test_*.py"]
 python_functions = ["test_*"]

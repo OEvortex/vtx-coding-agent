@@ -1,9 +1,9 @@
+"""Web search tool for vtx via the Exa MCP endpoint (no API key needed)."""
+
 from __future__ import annotations
 
 import asyncio
-import os
-import re
-from typing import Any
+import json
 
 import httpx
 from pydantic import BaseModel, Field
@@ -11,129 +11,133 @@ from pydantic import BaseModel, Field
 from vtx.ai.agent.tools.base import BaseTool
 from vtx.core.types import ToolResult
 
-MAX_SEARCH_RESULTS = 10
-EXA_SEARCH_ENDPOINT = "https://api.exa.ai/search"
-DEFAULT_FETCH_TEXT_LIMIT = 5000
+_MCP_URL = "https://mcp.exa.ai/mcp"
+_TIMEOUT = 25.0
+
+
+def _split_for_expand(text: str) -> tuple[str, str | None]:
+    try:
+        from vtx.tui.tool_output import escape_tool_output_text, truncate_tool_output_text
+
+        collapsed, truncated = truncate_tool_output_text(text)
+        return collapsed, escape_tool_output_text(text) if truncated else None
+    except Exception:
+        return text, None
+
+
+def _extract_text(data: dict) -> str | None:
+    content = data.get("result", {}).get("content", [])
+    if content and isinstance(content, list):
+        return content[0].get("text")
+    return None
+
+
+async def _call_exa(payload: dict) -> tuple[str | None, str | None]:
+    """POST a JSON-RPC call to the Exa MCP endpoint."""
+    headers = {"Accept": "application/json, text/event-stream", "Content-Type": "application/json"}
+    try:
+        async with httpx.AsyncClient(timeout=_TIMEOUT) as client:
+            resp = await client.post(_MCP_URL, headers=headers, json=payload)
+            resp.raise_for_status()
+    except httpx.TimeoutException:
+        return None, f"Exa timed out after {_TIMEOUT}s"
+    except httpx.HTTPStatusError as e:
+        return None, f"Exa API error {e.response.status_code}"
+    except Exception as e:
+        return None, f"Exa request failed: {e}"
+
+    # SSE-streamed response: find the first data line with content.
+    for line in resp.text.splitlines():
+        if not line.startswith("data: "):
+            continue
+        try:
+            data = json.loads(line[6:])
+        except json.JSONDecodeError:
+            continue
+        text = _extract_text(data)
+        if text:
+            return text, None
+
+    # Fallback: parse the whole body as a single JSON object.
+    try:
+        text = _extract_text(resp.json())
+        if text:
+            return text, None
+    except Exception:
+        pass
+
+    return None, "No results returned from Exa API"
 
 
 class SearchParams(BaseModel):
-    query: str = Field(min_length=1, description="Search query string")
-    max_results: int = Field(
-        default=5,
-        ge=1,
-        le=MAX_SEARCH_RESULTS,
-        description="Maximum number of search results to return (1-10)",
+    query: str = Field(description="Search query string or question")
+    num_results: int = Field(
+        default=8, ge=1, le=20, description="Number of results (1-20, default: 8)"
     )
-    fetch_content: bool = Field(
-        default=False, description="Whether to fetch full text content for the top results"
+    search_type: str = Field(
+        default="auto",
+        description="'auto' (hybrid), 'neural' (concept matching), or 'keyword' (exact text)",
+    )
+    livecrawl: str = Field(
+        default="fallback",
+        description="'fallback' (cached/live), 'always' (fresh crawl), or 'never' (cached only)",
     )
 
 
-class WebTool(BaseTool[SearchParams]):
+class WebTool(BaseTool):
+    """Web search via Exa MCP endpoint (no API key required)."""
+
     name = "web"
+    tool_icon = "🔍"
     params = SearchParams
-    tool_icon = "🌐"
     mutating = False
-
     description = (
-        "Search the web using Exa neural search. Returns titles, URLs, and snippets. "
-        "Can optionally fetch page text contents. Requires EXA_API_KEY."
+        "Search the web using neural semantic search (Exa). "
+        "Returns ranked page titles, URLs, and relevant text snippets. Requires internet access."
     )
-
-    prompt_guidelines = (
-        (
-            "Use `web` to find current documentation, library APIs, blog posts, "
-            "or real-time info outside the codebase."
-        ),
-    )
+    prompt_guidelines = ()
 
     def format_call(self, params: SearchParams) -> str:
-        return params.query
+        return f'"{params.query}"'
 
     async def execute(
-        self,
-        params: SearchParams,
-        cancel_event: asyncio.Event | None = None,
-        tool_call_id: str | None = None,
+        self, params: SearchParams, cancel_event: asyncio.Event | None = None
     ) -> ToolResult:
-        api_key = os.environ.get("EXA_API_KEY")
-        if not api_key:
-            return ToolResult(
-                success=False,
-                result=(
-                    "EXA_API_KEY environment variable is not set. "
-                    "Web search requires an Exa API key."
-                ),
-                ui_summary="missing EXA_API_KEY",
-            )
-
-        headers = {"x-api-key": api_key, "Content-Type": "application/json"}
-
-        payload: dict[str, Any] = {
-            "query": params.query,
-            "numResults": params.max_results,
-            "type": "neural",
-            "useAutoprompt": True,
+        payload = {
+            "jsonrpc": "2.0",
+            "id": 1,
+            "method": "tools/call",
+            "params": {
+                "name": "web_search_exa",
+                "arguments": {
+                    "query": params.query,
+                    "type": params.search_type,
+                    "numResults": params.num_results,
+                    "livecrawl": params.livecrawl,
+                },
+            },
         }
-
-        if params.fetch_content:
-            payload["contents"] = {"text": {"maxCharacters": DEFAULT_FETCH_TEXT_LIMIT}}
-
-        try:
-            async with httpx.AsyncClient(timeout=15.0) as client:
-                response = await client.post(EXA_SEARCH_ENDPOINT, json=payload, headers=headers)
-                response.raise_for_status()
-                data = response.json()
-
-            results = data.get("results", [])
-            if not results:
-                return ToolResult(
-                    success=True,
-                    result=f"No web results found for query: {params.query!r}",
-                    ui_summary="no results",
-                )
-
-            formatted_results: list[str] = []
-            for i, item in enumerate(results, 1):
-                title = item.get("title") or "Untitled"
-                url = item.get("url") or ""
-                text = item.get("text", "").strip()
-
-                entry = [f"### {i}. {title}", f"URL: {url}"]
-                if text:
-                    cleaned_text = re.sub(r"\s+", " ", text)[:DEFAULT_FETCH_TEXT_LIMIT]
-                    entry.append(f"Content:\n{cleaned_text}")
-                elif "highlights" in item:
-                    highlights = "\n".join(f"- {h}" for h in item.get("highlights", []))
-                    entry.append(f"Highlights:\n{highlights}")
-
-                formatted_results.append("\n".join(entry))
-
-            ui_summary = f"{len(results)} results for {params.query!r}"
-            return ToolResult(
-                success=True, result="\n\n---\n\n".join(formatted_results), ui_summary=ui_summary
-            )
-
-        except httpx.HTTPStatusError as e:
-            return ToolResult(
-                success=False,
-                result=(
-                    f"Exa search failed with status {e.response.status_code}: {e.response.text}"
-                ),
-                ui_summary=f"HTTP {e.response.status_code}",
-            )
-        except Exception as e:
-            return ToolResult(success=False, result=f"Web search error: {e}", ui_summary="error")
+        text, err = await _call_exa(payload)
+        if err:
+            return ToolResult(success=False, result=err, ui_summary=f"[red]{err}[/red]")
+        assert text is not None
+        ui_details, ui_details_full = _split_for_expand(text)
+        return ToolResult(
+            success=True,
+            result=text,
+            ui_summary=f"[dim]exa: {params.query!r}[/dim]",
+            ui_details=ui_details,
+            ui_details_full=ui_details_full,
+        )
 
 
-# Alias for backward compatibility
-WebSearchTool = WebTool
+class WebSearchTool(WebTool):
+    """Web search via Exa MCP endpoint (no API key required)."""
 
-__all__ = [
-    "DEFAULT_FETCH_TEXT_LIMIT",
-    "EXA_SEARCH_ENDPOINT",
-    "MAX_SEARCH_RESULTS",
-    "SearchParams",
-    "WebSearchTool",
-    "WebTool",
-]
+    name = "web_search"
+    tool_icon = "🔍"
+    params = SearchParams
+    description = "Web search (Exa neural). Returns titles, URLs, snippets. Needs internet."
+
+
+__all__ = ["SearchParams", "WebSearchTool", "WebTool"]

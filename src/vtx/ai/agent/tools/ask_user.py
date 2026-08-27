@@ -1,242 +1,229 @@
+"""The ``ask_user`` tool.
+
+Lets the agent ask the user clarifying questions mid-turn as an
+rpiv-style questionnaire:
+
+* **1-4 questions** arrive in a single tabbed dialog (``questions``),
+  each with a short ``header`` chip for the tab strip.
+* **Multiple choice** — each question carries 2-4 ``options`` (each
+  with a ``label``, a one-line ``description``, and an optional
+  markdown ``preview``). The user picks one, or several when
+  ``multi_select`` is true.
+* **Open-ended** — omit ``options`` and the user types free text.
+
+A "Type something." row is appended to every question so the user can
+always answer in their own words, even for multiple-choice questions.
+
+The turn runner intercepts this tool (``turn.py:_run_ask_user``) and
+yields an :class:`~vtx.events.AskUserEvent` rather than calling
+``execute()``. ``execute()`` is kept for direct invocation and unit
+tests; it raises so the intent is loud if interception regresses.
+"""
+
 from __future__ import annotations
 
 import asyncio
-from typing import Any
 
-from pydantic import BaseModel, Field, field_validator
+from pydantic import BaseModel, Field, field_validator, model_validator
 
 from vtx.ai.agent.tools.base import BaseTool
-from vtx.core import AskUserEvent, AskUserOption, AskUserQuestion, AskUserResponse
 from vtx.core.types import ToolResult
 
-MAX_QUESTIONS = 5
-MIN_QUESTIONS = 1
-MAX_OPTIONS = 5
 MIN_OPTIONS = 2
-MAX_HEADER_CHARS = 12
-MAX_QUESTION_CHARS = 200
-MAX_LABEL_CHARS = 60
-MAX_DESCRIPTION_CHARS = 120
-MAX_PREVIEW_CHARS = 240
+MAX_OPTIONS = 4
+MAX_QUESTIONS = 4
+MIN_QUESTIONS = 1
+MAX_QUESTION_CHARS = 500
+MAX_LABEL_CHARS = 80
+MAX_DESCRIPTION_CHARS = 300
+MAX_PREVIEW_CHARS = 4000
+MAX_HEADER_CHARS = 16
 
-RESERVED_OPTION_LABELS = {
-    "other",
-    "other...",
-    "custom",
-    "custom...",
-    "type something else",
-    "type something else...",
-    "none of the above",
-}
-
-
-def validate_option_labels(
-    options: list[AskUserOptionParam], question_idx: int | None = None
-) -> list[str]:
-    errors: list[str] = []
-    seen: set[str] = set()
-    prefix = f"Question {question_idx + 1}: " if question_idx is not None else ""
-
-    for opt_idx, opt in enumerate(options):
-        cleaned = opt.label.strip()
-        lower = cleaned.lower()
-
-        if lower in RESERVED_OPTION_LABELS:
-            errors.append(
-                f"{prefix}Option {opt_idx + 1} has reserved label {opt.label!r}. "
-                "Do not include 'Other' options; the UI provides custom write-in automatically."
-            )
-
-        if lower in seen:
-            errors.append(f"{prefix}Duplicate option label {opt.label!r}.")
-        seen.add(lower)
-
-    return errors
+# Labels the dialog appends itself (or wants to keep unambiguous); the
+# model may not author options that collide with them.
+RESERVED_OPTION_LABELS = ("Other", "Type something.", "Next")
 
 
 class AskUserOptionParam(BaseModel):
-    label: str = Field(
-        min_length=1,
-        max_length=MAX_LABEL_CHARS,
-        description=(
-            "The selectable text displayed to the user (e.g. 'Use uv (Recommended)'). "
-            "Keep concise."
-        ),
+    label: str = Field(min_length=1, max_length=MAX_LABEL_CHARS, description="Short unique label")
+    description: str = Field(
+        default="", max_length=MAX_DESCRIPTION_CHARS, description="Optional one-line explanation"
     )
-    description: str | None = Field(
+    preview: str | None = Field(
         default=None,
-        max_length=MAX_DESCRIPTION_CHARS,
-        description="Optional brief subtitle explaining what this option means or its trade-offs.",
+        max_length=MAX_PREVIEW_CHARS,
+        description="Optional markdown artifact (code, mockup, config) shown beside this option",
     )
+
+
+def validate_option_labels(options: list[AskUserOptionParam]) -> None:
+    """Reject reserved or duplicate labels; raises ``ValueError``."""
+    seen: set[str] = set()
+    for opt in options:
+        if opt.label in RESERVED_OPTION_LABELS:
+            raise ValueError(
+                f"option label {opt.label!r} is reserved by the dialog UI; pick another"
+            )
+        if opt.label in seen:
+            raise ValueError(f"option labels must be unique (duplicate: {opt.label!r})")
+        seen.add(opt.label)
 
 
 class AskUserQuestionParam(BaseModel):
     question: str = Field(
         min_length=1,
         max_length=MAX_QUESTION_CHARS,
-        description="The question prompt displayed to the user. State clearly and concisely.",
+        description="Short, specific question (put choices in options, not here)",
     )
     header: str | None = Field(
         default=None,
         max_length=MAX_HEADER_CHARS,
-        description=(
-            "Optional short category tag shown as a chip/badge "
-            "(e.g. 'Auth', 'Database', 'Scope'). Max 12 chars."
-        ),
+        description=f"Short noun tag for the question's tab (max {MAX_HEADER_CHARS} chars)",
     )
-    options: list[AskUserOptionParam] = Field(
-        min_length=MIN_OPTIONS,
-        max_length=MAX_OPTIONS,
-        description=(
-            f"Selectable choices ({MIN_OPTIONS}-{MAX_OPTIONS}). "
-            "Do NOT include an 'Other' option; the UI provides a write-in field automatically."
-        ),
+    options: list[AskUserOptionParam] | None = Field(
+        default=None, description=f"2-{MAX_OPTIONS} options; omit for free text"
     )
-    multi_select: bool = Field(
-        default=False,
+    multi_select: bool = Field(default=False, description="Allow multiple selections")
+
+    @field_validator("options")
+    @classmethod
+    def _validate_options(
+        cls, value: list[AskUserOptionParam] | None
+    ) -> list[AskUserOptionParam] | None:
+        if value is None:
+            return None
+        if len(value) < MIN_OPTIONS or len(value) > MAX_OPTIONS:
+            raise ValueError(
+                f"options must contain between {MIN_OPTIONS} and {MAX_OPTIONS} items "
+                f"(got {len(value)})."
+            )
+        validate_option_labels(value)
+        return value
+
+    @model_validator(mode="after")
+    def _validate_previews(self) -> AskUserQuestionParam:
+        # Multi-select tabs render checkbox rows; previews only fit the
+        # single-select layout.
+        if self.multi_select and self.options and any(opt.preview for opt in self.options):
+            raise ValueError("preview is only supported on single-select questions")
+        return self
+
+
+class AskUserParams(BaseModel):
+    question: str | None = Field(
+        default=None,
+        min_length=1,
+        max_length=MAX_QUESTION_CHARS,
+        description="Short, specific single question (legacy shape; prefer `questions`)",
+    )
+    options: list[AskUserOptionParam] | None = Field(
+        default=None, description=f"2-{MAX_OPTIONS} options; omit for free text"
+    )
+    multi_select: bool = Field(default=False, description="Allow multiple selections")
+    header: str | None = Field(
+        default=None,
+        max_length=MAX_HEADER_CHARS,
+        description=f"Short noun tag for the modal (max {MAX_HEADER_CHARS} chars)",
+    )
+    questions: list[AskUserQuestionParam] | None = Field(
+        default=None,
         description=(
-            "Set to true if multiple options can be chosen simultaneously with checkboxes."
+            f"1-{MAX_QUESTIONS} questions asked together in one tabbed dialog; "
+            "use instead of the single-question fields when asking several things at once"
         ),
     )
 
     @field_validator("options")
     @classmethod
-    def check_options(cls, v: list[AskUserOptionParam]) -> list[AskUserOptionParam]:
-        errors = validate_option_labels(v)
-        if errors:
-            raise ValueError("; ".join(errors))
-        return v
+    def _validate_options(
+        cls, value: list[AskUserOptionParam] | None
+    ) -> list[AskUserOptionParam] | None:
+        if value is None:
+            return None
+        if len(value) < MIN_OPTIONS or len(value) > MAX_OPTIONS:
+            raise ValueError(
+                f"options must contain between {MIN_OPTIONS} and {MAX_OPTIONS} items "
+                f"(got {len(value)})."
+            )
+        validate_option_labels(value)
+        return value
+
+    @field_validator("questions")
+    @classmethod
+    def _validate_questions(
+        cls, value: list[AskUserQuestionParam] | None
+    ) -> list[AskUserQuestionParam] | None:
+        if value is None:
+            return None
+        if len(value) < MIN_QUESTIONS or len(value) > MAX_QUESTIONS:
+            raise ValueError(
+                f"questions must contain between {MIN_QUESTIONS} and {MAX_QUESTIONS} "
+                f"items (got {len(value)})."
+            )
+        texts = [q.question.strip() for q in value]
+        if len(set(texts)) != len(texts):
+            raise ValueError("questions must be unique (two questions have identical text)")
+        return value
+
+    def normalized_questions(self) -> list[AskUserQuestionParam]:
+        """Return the questionnaire as a list, wrapping legacy fields.
+
+        The flat single-question fields (``question``/``options``/...)
+        remain supported; they normalize into a one-entry list so the
+        rest of the pipeline only ever deals with ``questions``.
+        """
+        if self.questions:
+            return list(self.questions)
+        return [
+            AskUserQuestionParam(
+                question=self.question or "",
+                header=self.header,
+                options=list(self.options) if self.options else None,
+                multi_select=self.multi_select,
+            )
+        ]
 
 
-class AskUserParams(BaseModel):
-    questions: list[AskUserQuestionParam] = Field(
-        min_length=MIN_QUESTIONS,
-        max_length=MAX_QUESTIONS,
-        description=(
-            f"List of {MIN_QUESTIONS} to {MAX_QUESTIONS} structured questions "
-            "to present to the user."
-        ),
-    )
-
-
-class AskUserTool(BaseTool[AskUserParams]):
+class AskUserTool(BaseTool):
     name = "ask_user"
-    params = AskUserParams
     tool_icon = "?"
+    params = AskUserParams
     mutating = False
-
+    prompt_guidelines = ()
     description = (
-        "Ask the user 1-5 structured questions with predefined options to clarify requirements, "
-        "confirm architecture decisions, or resolve ambiguities before taking action. "
-        "The user sees an interactive modal with clickable cards, multi-select checkboxes, "
-        "and a freeform write-in option. Execution pauses until the user responds."
-    )
-
-    prompt_guidelines = (
-        (
-            "Use `ask_user` when requirements are genuinely ambiguous, high-impact "
-            "architectural choices need user buy-in, or multiple valid approaches exist."
-        ),
-        (
-            "Do NOT call `ask_user` for trivial clarifications that can be inferred from "
-            "context, for routine next steps, or just to say hello/confirm you are starting."
-        ),
-        ("Do NOT add an 'Other' option — the UI always provides a write-in input by default."),
-        (
-            "Structure each question with 2-5 distinct, concrete choices. Put your "
-            "recommended option first and prefix its label with '(Recommended)'."
-        ),
+        "Ask the user clarifying questions via an interactive questionnaire dialog. "
+        f"Pass a `questions` array of 1-{MAX_QUESTIONS} questions, each with 2-{MAX_OPTIONS} "
+        "`options` (label and explanation), an optional `multi_select`, and an optional markdown "
+        "`preview`. Omit options to prompt for free-form text. "
+        "Use whenever critical requirements or architecture decisions are ambiguous."
     )
 
     def format_call(self, params: AskUserParams) -> str:
-        n = len(params.questions)
-        if n == 1:
-            q = params.questions[0]
-            header_prefix = f"[{q.header}] " if q.header else ""
-            preview = f"{header_prefix}{q.question}"
-            if len(preview) > MAX_PREVIEW_CHARS:
-                preview = preview[: MAX_PREVIEW_CHARS - 3] + "..."
-            return preview
-        return f"{n} questions"
+        questions = params.normalized_questions()
+        if len(questions) == 1:
+            q = questions[0]
+            question = q.question.strip()
+            prefix = f"[{q.header}] " if q.header else ""
+            if q.options is not None:
+                labels = [opt.label for opt in q.options]
+                choices = " / ".join(labels) if len(labels) <= 2 else f"{len(labels)} options"
+            else:
+                choices = "free text"
+            return f"{prefix}{question} ({choices})"
+        parts = [f"[{q.header or '?'}]" for q in questions]
+        return f"{len(questions)} questions ({' '.join(parts)})"
 
     async def execute(
-        self,
-        params: AskUserParams,
-        cancel_event: asyncio.Event | None = None,
-        tool_call_id: str | None = None,
+        self, params: AskUserParams, cancel_event: asyncio.Event | None = None
     ) -> ToolResult:
-        core_questions = [
-            AskUserQuestion(
-                question=_q.question,
-                header=_q.header,
-                options=[
-                    AskUserOption(label=opt.label, description=opt.description)
-                    for opt in _q.options
-                ],
-                multi_select=_q.multi_select,
-            )
-            for _q in params.questions
-        ]
-
-        loop = asyncio.get_running_loop()
-        future: asyncio.Future[AskUserResponse] = loop.create_future()
-        event = AskUserEvent(questions=core_questions, future=future, tool_call_id=tool_call_id)
-
-        from vtx.ai.agent.loop import current_event_queue
-
-        queue = current_event_queue.get()
-        if queue is None:
-            return ToolResult(
-                success=False,
-                result="ask_user tool executed outside of an active agent turn (no event queue).",
-            )
-
-        await queue.put(event)
-
-        if cancel_event is not None:
-            cancel_task = asyncio.create_task(cancel_event.wait())
-            done, _ = await asyncio.wait(
-                [asyncio.create_task(future), cancel_task], return_when=asyncio.FIRST_COMPLETED
-            )
-            if cancel_task in done and not future.done():
-                future.cancel()
-                return ToolResult(success=False, result="User cancelled interaction.")
-            cancel_task.cancel()
-
-        response: AskUserResponse = await future
-
-        if response.cancelled:
-            return ToolResult(
-                success=False,
-                result="The user dismissed the question dialog without answering.",
-                ui_summary="cancelled by user",
-            )
-
-        answers = response.answers
-        lines: list[str] = []
-        for i, q in enumerate(params.questions):
-            ans = answers.get(i)
-            header_prefix = f"[{q.header}] " if q.header else ""
-            if ans is None:
-                lines.append(f"{header_prefix}{q.question}\nAnswer: (skipped)")
-            elif isinstance(ans, list):
-                lines.append(f"{header_prefix}{q.question}\nAnswer: {', '.join(ans)}")
-            else:
-                lines.append(f"{header_prefix}{q.question}\nAnswer: {ans}")
-
-        result_text = "\n\n".join(lines)
-
-        summary_parts: list[str] = []
-        for i, _q in enumerate(params.questions):
-            ans = answers.get(i)
-            if ans:
-                val = ", ".join(ans) if isinstance(ans, list) else str(ans)
-                if len(val) > 30:
-                    val = val[:27] + "..."
-                summary_parts.append(val)
-        ui_summary = " · ".join(summary_parts) if summary_parts else "answered"
-
-        return ToolResult(success=True, result=result_text, ui_summary=ui_summary)
+        # The turn runner intercepts ask_user before reaching execute().
+        # If we got here, the tool was invoked outside the agent loop
+        # (e.g. from a unit test or extension). Surface that loudly
+        # instead of pretending the question was answered.
+        raise NotImplementedError(
+            "ask_user must be invoked through the turn runner so the user "
+            "can be prompted. Use AskUserEvent directly when testing."
+        )
 
 
 __all__ = [

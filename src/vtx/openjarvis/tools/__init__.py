@@ -136,13 +136,38 @@ class _OpenJarvisBaseToolAdapter:
         return None
 
 
+# Curated set of OpenJarvis tools exposed to the agent. Every other
+# OpenJarvis tool (edit_file, read_file, write_file, list_dir, find_files,
+# grep, web_search, ...) is dropped so the model only sees this surface.
+OPENJARVIS_KEEP_TOOLS = frozenset(
+    {"exec", "apply_patch", "list_exec_sessions", "write_stdin", "message"}
+)
+
+# Final ordered tool list handed to the OpenJarvis agent. ``exec`` replaces
+# ``bash``; ``find``/``skill`` are retained from VTX's built-ins.
+OPENJARVIS_DEFAULT_TOOLS = [
+    "read",
+    "edit",
+    "write",
+    "exec",
+    "apply_patch",
+    "find",
+    "skill",
+    "web",
+    "ask_user",
+    "task",
+    "goal",
+    "list_exec_sessions",
+    "write_stdin",
+    "message",
+]
+
+
 def register_with_vtx() -> None:
     """Register OpenJarvis tools into vtx.coding_agent + vtx.tui.
 
-    Merges OpenJarvis tools on top of VTX's so the TUI shows a single
-    Tools block (no dupe) with both surfaces available. VTX's built-ins
-    (read/edit/write/bash/find/skill/web/ask_user/task/goal) remain,
-    plus OpenJarvis's cron/message/mcp/long_task etc.
+    Only the curated subset in :data:`OPENJARVIS_KEEP_TOOLS` is exposed; all
+    other OpenJarvis tools are dropped. ``exec`` replaces VTX's ``bash`` built-in.
     """
     import vtx.coding_agent.tools as vtx_tools
 
@@ -153,38 +178,40 @@ def register_with_vtx() -> None:
 
     from vtx.ai.agent.tools import BaseTool
 
-    # Wrap OpenJarvis tools into the VTX harness BaseTool interface so the
-    # agent can call them (it expects ``.params`` + ``execute(params, ...)``).
+    # Wrap only the kept OpenJarvis tools into the VTX harness BaseTool interface
+    # (it expects ``.params`` + ``execute(params, ...)``). Others are discarded.
     wrapped: dict[str, BaseTool] = {}
     for name, tool in tools_by_name.items():
+        if name not in OPENJARVIS_KEEP_TOOLS:
+            continue
         if isinstance(tool, BaseTool):
             wrapped[name] = tool
         else:
             wrapped[name] = _OpenJarvisBaseToolAdapter(tool)
 
-    # Merge tool dicts — OpenJarvis wins on name collision
-    merged = dict(vtx_tools.tools_by_name)
+    # Restrict the merged registry to exactly the curated tool set (plus the
+    # wrapped OpenJarvis tools); everything else — including VTX's ``bash`` and
+    # ``grep`` — is dropped in favour of ``exec`` and the curated list.
+    keep_names = set(OPENJARVIS_DEFAULT_TOOLS)
+    merged = {n: t for n, t in vtx_tools.tools_by_name.items() if n in keep_names}
     merged.update(wrapped)
     vtx_tools.tools_by_name = merged
     # Also update the tui's reference if it has its own copy
     if hasattr(vtx_app, "tools_by_name"):
         vtx_app.tools_by_name = merged
 
-    # Expose wrapped tools to the agent's default tool list so they appear in
-    # the LLM schema and are returned by get_tools().
+    # Expose only the curated tools on the agent's tool list.
+    vtx_tools.all_tools = [t for t in vtx_tools.all_tools if t.name in keep_names]
+    vtx_tools.all_tools_set = {t.name for t in vtx_tools.all_tools}
     for name in wrapped:
         if name not in vtx_tools.all_tools_set:
             vtx_tools.all_tools.append(wrapped[name])
             vtx_tools.all_tools_set.add(name)
 
-    # Merge DEFAULT_TOOLS — keep VTX's order, then append OpenJarvis's not already there
-    merged_defaults = list(vtx_tools.DEFAULT_TOOLS)
-    for name in DEFAULT_TOOLS:
-        if name not in merged_defaults:
-            merged_defaults.append(name)
-    vtx_tools.DEFAULT_TOOLS = merged_defaults
+    # Set the curated default tool list (idempotent).
+    vtx_tools.DEFAULT_TOOLS = list(OPENJARVIS_DEFAULT_TOOLS)
     if hasattr(vtx_app, "DEFAULT_TOOLS"):
-        vtx_app.DEFAULT_TOOLS = merged_defaults
+        vtx_app.DEFAULT_TOOLS = list(OPENJARVIS_DEFAULT_TOOLS)
 
     # Also patch the harness-level tool lookup so headless runs resolve OpenJarvis tools
     try:
