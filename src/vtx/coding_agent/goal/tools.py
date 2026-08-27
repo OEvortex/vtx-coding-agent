@@ -2,6 +2,6 @@
 
 from __future__ import annotations
 
-from vtx.ai.agent.goal.tools import GOAL_ACTIONS, GoalParams, GoalTaskInput, GoalTool
+from vtx.ai.agent.goal.tools import GOAL_ACTIONS, GoalParams, GoalTaskItem, GoalTool
 
-__all__ = ["GOAL_ACTIONS", "GoalParams", "GoalTaskInput", "GoalTool"]
+__all__ = ["GOAL_ACTIONS", "GoalParams", "GoalTaskItem", "GoalTool"]

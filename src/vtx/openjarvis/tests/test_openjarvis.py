@@ -4,15 +4,9 @@ from __future__ import annotations
 
 import asyncio
 
-import pytest
-
-from vtx.openjarvis.version import VERSION
+from vtx.openjarvis.tools import OPENJARVIS_DEFAULT_TOOLS, OPENJARVIS_KEEP_TOOLS, register_with_vtx
 from vtx.openjarvis.tools.apply_patch import ApplyPatchTool
-from vtx.openjarvis.tools import (
-    OPENJARVIS_DEFAULT_TOOLS,
-    OPENJARVIS_KEEP_TOOLS,
-    register_with_vtx,
-)
+from vtx.openjarvis.version import VERSION
 
 
 def test_version_is_0_2_0() -> None:
@@ -38,7 +32,7 @@ def test_openjarvis_default_tools_are_curatted() -> None:
     ]
     assert list(OPENJARVIS_DEFAULT_TOOLS) == expected
     # The kept OpenJarvis-specific tools must be a subset of the default list.
-    assert OPENJARVIS_KEEP_TOOLS <= set(OPENJARVIS_DEFAULT_TOOLS)
+    assert set(OPENJARVIS_DEFAULT_TOOLS) >= OPENJARVIS_KEEP_TOOLS
 
 
 def test_register_with_vtx_exposes_only_curatted_tools() -> None:
@@ -51,7 +45,14 @@ def test_register_with_vtx_exposes_only_curatted_tools() -> None:
     assert "bash" not in tools_by_name
     assert "grep" not in tools_by_name
     # OpenJarvis extras are dropped.
-    for dropped in ("edit_file", "read_file", "write_file", "list_dir", "find_files", "web_search"):
+    for dropped in (
+        "edit_file",
+        "read_file",
+        "write_file",
+        "list_dir",
+        "find_files",
+        "web_search",
+    ):
         assert dropped not in tools_by_name
 
 
@@ -61,10 +62,7 @@ def test_adapter_builds_params_for_openjarvis_tool() -> None:
 
     tool = tools_by_name["apply_patch"]
     # The adapter exposes the BaseTool-style params model the agent expects.
-    model = tool.params(
-        edits=[{"path": "x.txt", "action": "add", "new_text": "hi"}],
-        dry_run=True,
-    )
+    model = tool.params(edits=[{"path": "x.txt", "action": "add", "new_text": "hi"}], dry_run=True)
     assert model.edits[0]["path"] == "x.txt"
     assert model.dry_run is True
 
@@ -81,9 +79,7 @@ def _run(tool: ApplyPatchTool, **kwargs: object) -> str:
 def test_apply_patch_add_new_file(tmp_path) -> None:
     tool = ApplyPatchTool(workspace=tmp_path)
     out = _run(
-        tool,
-        edits=[{"path": "a.txt", "action": "add", "new_text": "hello\n"}],
-        dry_run=False,
+        tool, edits=[{"path": "a.txt", "action": "add", "new_text": "hello\n"}], dry_run=False
     )
     assert "Patch applied" in out
     assert (tmp_path / "a.txt").read_text() == "hello\n"
@@ -104,9 +100,7 @@ def test_apply_patch_replace_text(tmp_path) -> None:
 def test_apply_patch_dry_run_does_not_write(tmp_path) -> None:
     tool = ApplyPatchTool(workspace=tmp_path)
     out = _run(
-        tool,
-        edits=[{"path": "a.txt", "action": "add", "new_text": "hello\n"}],
-        dry_run=True,
+        tool, edits=[{"path": "a.txt", "action": "add", "new_text": "hello\n"}], dry_run=True
     )
     assert "dry-run" in out
     assert not (tmp_path / "a.txt").exists()

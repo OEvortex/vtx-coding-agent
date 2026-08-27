@@ -12,11 +12,9 @@ from typing import TYPE_CHECKING, Any
 
 from pydantic import BaseModel, Field
 
-from vtx.ai.agent.agents.schema import AgentDef, InstructionsMode, ThinkingLevel
-from vtx.ai.agent.background import get_manager
 from vtx.ai.agent.dispatcher import DispatcherContext, get_context
 from vtx.ai.agent.tools.base import BaseTool
-from vtx.core.paths import get_config_dir
+from vtx.coding_agent.config import config as vtx_config
 from vtx.core.types import StopReason, TextContent, ToolResult, Usage
 
 if TYPE_CHECKING:
@@ -73,6 +71,8 @@ class SubagentSpec:
         """Lift the spec into an :class:`AgentDef` for the tool composer."""
         from typing import cast
 
+        from vtx.coding_agent.agents.schema import AgentDef, InstructionsMode, ThinkingLevel
+
         safe_name = self.name.lower().replace(" ", "-")
         return AgentDef(
             name=safe_name,
@@ -85,15 +85,6 @@ class SubagentSpec:
             thinking_level=cast(ThinkingLevel, self.thinking_level),
             max_turns=self.max_turns,
         )
-
-
-def _get_configured_presets() -> list[Any]:
-    try:
-        from vtx.coding_agent.config import config as vtx_config
-
-        return list(getattr(getattr(vtx_config, "task", None), "subagent_presets", []))
-    except Exception:
-        return []
 
 
 def _resolve_subagent_spec(subagent_type: str, registry: Any) -> SubagentSpec:
@@ -116,8 +107,7 @@ def _resolve_subagent_spec(subagent_type: str, registry: Any) -> SubagentSpec:
                 max_turns=d.max_turns,
             )
 
-    configured_presets = _get_configured_presets()
-    presets = {p.name: p for p in configured_presets}
+    presets = {p.name: p for p in vtx_config.task.subagent_presets}
     preset = presets.get(cleaned)
     if preset is not None:
         return _spec_from_preset(preset)
@@ -148,21 +138,17 @@ def _spec_from_preset(preset: Any) -> SubagentSpec:
 
 def _build_subagent_tool_list(parent_ctx: DispatcherContext, spec: SubagentSpec) -> list[Any]:
     """Build the sub-agent's tool list from its spec."""
-    try:
-        from vtx.coding_agent.tools import DEFAULT_TOOLS, PARENT_ONLY_TOOLS, tools_by_name
+    from vtx.coding_agent.tools import DEFAULT_TOOLS, PARENT_ONLY_TOOLS, tools_by_name
 
-        base_pool: dict[str, Any] = {
-            name: tool for name, tool in tools_by_name.items() if name not in PARENT_ONLY_TOOLS
-        }
-        base_names: list[str] = [n for n in DEFAULT_TOOLS if n not in PARENT_ONLY_TOOLS]
-    except Exception:
-        base_pool = {}
-        base_names = []
+    base_pool: dict[str, Any] = {
+        name: tool for name, tool in tools_by_name.items() if name not in PARENT_ONLY_TOOLS
+    }
+    base_names: list[str] = [n for n in DEFAULT_TOOLS if n not in PARENT_ONLY_TOOLS]
 
     extension_tools: list[Any] = []
 
-    from vtx.ai.agent.agents.activate import compose_active_tools
-    from vtx.ai.agent.agents.api import LoadedAgent
+    from vtx.coding_agent.agents.activate import compose_active_tools
+    from vtx.coding_agent.agents.api import LoadedAgent
 
     loaded_stub = LoadedAgent(definition=spec.to_agentdef(), path=Path("<task-subagent>"))
     return compose_active_tools(
@@ -193,32 +179,27 @@ def _build_subagent_system_prompt(
     parent_ctx: DispatcherContext, spec: SubagentSpec, tools: list[Any]
 ) -> str:
     """Build the sub-agent's system prompt."""
-    try:
-        from vtx.coding_agent.prompts import build_system_prompt
-    except Exception:
-        build_system_prompt = None
+    from vtx.coding_agent.prompts import build_system_prompt
 
     extra = spec.instructions
     mode = spec.instructions_mode
     if mode == "replace":
-        if build_system_prompt:
-            return (
-                build_system_prompt(
-                    parent_ctx.cwd,
-                    context=None,
-                    tools=tools,
-                    extra_instructions=extra,
-                    extra_instructions_mode="replace",
-                )
-                + "\n\n"
-                + SUBAGENT_FINAL_ANSWER_DIRECTIVE
+        return (
+            build_system_prompt(
+                parent_ctx.cwd,
+                context=None,
+                tools=tools,
+                extra_instructions=extra,
+                extra_instructions_mode="replace",
             )
-        return (extra or "") + "\n\n" + SUBAGENT_FINAL_ANSWER_DIRECTIVE
+            + "\n\n"
+            + SUBAGENT_FINAL_ANSWER_DIRECTIVE
+        )
 
-    base = parent_ctx.system_prompt
-    if not base and build_system_prompt:
-        base = build_system_prompt(parent_ctx.cwd, context=None, tools=tools)
-    parts = [base.rstrip()] if base else []
+    base = parent_ctx.system_prompt or build_system_prompt(
+        parent_ctx.cwd, context=None, tools=tools
+    )
+    parts = [base.rstrip()]
     if extra:
         parts.append(extra.strip())
     parts.append(SUBAGENT_FINAL_ANSWER_DIRECTIVE)
@@ -228,6 +209,7 @@ def _build_subagent_system_prompt(
 def _create_subagent_session(parent_ctx: DispatcherContext) -> Session:
     """Create a fresh, persisted :class:`Session` for the sub-agent."""
     from vtx.ai.agent.session import Session
+    from vtx.coding_agent import get_config_dir
 
     safe_cwd = parent_ctx.cwd.replace("/", "-").replace("\\", "-").strip("-") or "root"
     tasks_dir = get_config_dir() / "tasks" / safe_cwd
@@ -265,18 +247,7 @@ def _resolve_api_and_base_url(
     """Resolve ``(api_type, effective_base_url)`` for a model + provider."""
     from vtx.ai import get_model, resolve_provider_api_type
     from vtx.ai.dynamic_models import find_dynamic_model
-
-    try:
-        from vtx.coding_agent.runtime import (
-            default_base_url_for_api,
-            default_base_url_for_provider,
-        )
-
-        provider_default = default_base_url_for_provider(provider)
-        api_fallback = default_base_url_for_api
-    except Exception:
-        provider_default = None
-        api_fallback = lambda a: None  # noqa: E731
+    from vtx.coding_agent.runtime import default_base_url_for_api, default_base_url_for_provider
 
     model_info = get_model(model, provider)
     if model_info:
@@ -285,7 +256,8 @@ def _resolve_api_and_base_url(
     if dynamic is not None:
         return dynamic.api, parent_base_url or dynamic.base_url
     api_type = resolve_provider_api_type(provider)
-    return (api_type, parent_base_url or provider_default or api_fallback(api_type))
+    provider_default = default_base_url_for_provider(provider)
+    return (api_type, parent_base_url or provider_default or default_base_url_for_api(api_type))
 
 
 async def _run_subagent(
@@ -300,8 +272,9 @@ async def _run_subagent(
     """Run a single sub-agent to completion."""
     from dataclasses import replace as dc_replace
 
-    from vtx.ai import get_max_tokens, get_provider_class
+    from vtx.ai import get_max_tokens
     from vtx.ai.agent.loop import Agent
+    from vtx.coding_agent.runtime import create_provider
 
     tools = _build_subagent_tool_list(parent_ctx, spec)
     system_prompt = _build_subagent_system_prompt(parent_ctx, spec, tools)
@@ -323,9 +296,7 @@ async def _run_subagent(
     )
     if effective_base_url:
         sub_config = dc_replace(sub_config, base_url=effective_base_url)
-
-    cls = get_provider_class(api_type)
-    provider = cls(sub_config)
+    provider = create_provider(api_type, sub_config)
 
     sub_agent = Agent(
         provider=provider,
@@ -334,23 +305,6 @@ async def _run_subagent(
         cwd=parent_ctx.cwd,
         system_prompt=system_prompt,
     )
-
-    from vtx.ai import get_model
-    from vtx.ai.dynamic_models import find_dynamic_model
-
-    model_info = get_model(sub_model, parent_ctx.model_provider)
-    if model_info is None and parent_ctx.model_provider:
-        model_info = find_dynamic_model(sub_model, None)
-    if model_info is not None:
-        sub_agent.config.context_window = model_info.context_window
-        sub_agent.config.max_output_tokens = model_info.max_tokens
-    else:
-        log.warning(
-            "No catalog entry for sub-agent model %r (provider %r); compaction "
-            "uses the default context window",
-            sub_model,
-            parent_ctx.model_provider,
-        )
 
     result = SubagentRunResult(session_id=session.id)
     transcript = result.transcript
@@ -467,12 +421,9 @@ class TaskTool(BaseTool[TaskParams]):
 
     @property
     def ui_block(self) -> type | None:  # type: ignore[override]
-        try:
-            from vtx.tui.blocks import TaskToolBlock
+        from vtx.tui.blocks import TaskToolBlock
 
-            return TaskToolBlock
-        except Exception:
-            return None
+        return TaskToolBlock
 
     description = (
         "Dispatch an isolated sub-agent (own tools and session, cannot see this chat) for a "
@@ -506,12 +457,28 @@ class TaskTool(BaseTool[TaskParams]):
         if params.background:
             return await self._execute_background(params, parent_ctx, tool_call_id=tool_call_id)
 
+        # Use the parent tool_call_id so progress events key to the same
+        # block the TUI created for this tool invocation. Fall back to a
+        # generated id for headless/test callers that don't pass one.
         tool_call_id = tool_call_id or f"task_{uuid.uuid4().hex[:12]}"
 
         spec = _resolve_subagent_spec(params.subagent_type, parent_ctx.agent_registry)
         progress_cb = parent_ctx.progress_callback
 
-        sub_result = await _run_subagent(
+        # Support backwards-compatible monkeypatching on vtx.coding_agent.tools.task
+        runner = _run_subagent
+        try:
+            import vtx.coding_agent.tools.task as _cat
+
+            if (
+                getattr(_cat, "_run_subagent", None) is not None
+                and _cat._run_subagent is not _run_subagent
+            ):
+                runner = _cat._run_subagent
+        except Exception:
+            pass
+
+        sub_result = await runner(
             parent_ctx=parent_ctx,
             spec=spec,
             prompt=params.prompt,
@@ -566,7 +533,21 @@ class TaskTool(BaseTool[TaskParams]):
     async def _execute_background(
         self, params: TaskParams, parent_ctx: Any, tool_call_id: str | None = None
     ) -> ToolResult:
-        """Dispatch a sub-agent and return immediately with a ``task_id``."""
+        """Dispatch a sub-agent and return immediately with a ``task_id``.
+
+        The sub-agent runs concurrently on the asyncio loop; the
+        parent turn is unblocked. Completion is reported via a
+        :class:`~vtx.events.BackgroundTaskCompletedEvent` yielded
+        between parent turns by :meth:`vtx.loop.Agent.run`, and the
+        final answer is delivered automatically via a synthetic message.
+
+        Cancellation contract: a background task is not cancelled
+        when the parent's ``cancel_event`` fires (the call has
+        already returned). It is only cancelled by an explicit
+        stop or by :meth:`vtx.runtime.ConversationRuntime.close`.
+        """
+        from vtx.ai.agent.background import get_manager
+
         manager = parent_ctx.background_manager or get_manager()
         if manager is None:
             return ToolResult(
@@ -587,7 +568,19 @@ class TaskTool(BaseTool[TaskParams]):
             parent_session_id = parent_ctx.session.id
 
         async def _factory() -> Any:
-            return await _run_subagent(
+            runner = _run_subagent
+            try:
+                import vtx.coding_agent.tools.task as _cat
+
+                if (
+                    getattr(_cat, "_run_subagent", None) is not None
+                    and _cat._run_subagent is not _run_subagent
+                ):
+                    runner = _cat._run_subagent
+            except Exception:
+                pass
+
+            return await runner(
                 parent_ctx=parent_ctx,
                 spec=spec,
                 prompt=params.prompt,
@@ -655,6 +648,3 @@ def _format_transcript(transcript: list[str], header: str | None = None) -> str:
     else:
         lines.extend(transcript)
     return "\n".join(lines)
-
-
-__all__ = ["SubagentSpec", "TaskParams", "TaskTool"]

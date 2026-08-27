@@ -23,7 +23,7 @@ from .record import (
     progress_percent,
 )
 from .service import GoalService, get_service
-from .tools import GoalParams, GoalTool
+from .tools import GoalParams, GoalTaskItem, GoalTool
 
 __all__ = [
     "GOAL_MODES",
@@ -32,6 +32,7 @@ __all__ = [
     "GoalParams",
     "GoalRecord",
     "GoalService",
+    "GoalTaskItem",
     "GoalTool",
     "GoalUsage",
     "TaskRecord",
@@ -43,3 +44,4 @@ __all__ = [
     "objective_title",
     "progress_percent",
 ]
+

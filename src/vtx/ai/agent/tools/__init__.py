@@ -9,7 +9,7 @@ from typing import Any
 
 from vtx.core.types import ToolDefinition
 
-from ..goal.tools import GoalParams, GoalTool
+from ..goal.tools import GoalParams, GoalTaskItem, GoalTool
 from .ask_user import AskUserParams, AskUserTool
 from .base import BaseTool
 from .task import SubagentSpec, TaskParams, TaskTool
@@ -20,6 +20,7 @@ __all__ = [
     "AskUserTool",
     "BaseTool",
     "GoalParams",
+    "GoalTaskItem",
     "GoalTool",
     "SearchParams",
     "SubagentSpec",
