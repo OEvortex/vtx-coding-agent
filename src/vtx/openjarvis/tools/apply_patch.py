@@ -7,9 +7,9 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
-from agenite_claw.agent.tools.base import tool_parameters
-from agenite_claw.agent.tools.filesystem import _FsTool
-from agenite_claw.agent.tools.schema import (
+from vtx.openjarvis.tools.base import tool_parameters
+from vtx.openjarvis.tools.filesystem import _FsTool
+from vtx.openjarvis.tools.schema import (
     ArraySchema,
     BooleanSchema,
     ObjectSchema,

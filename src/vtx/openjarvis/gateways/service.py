@@ -12,7 +12,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Literal
 
-from agenite_claw.gateway import GatewayStartOptions, build_gateway_command
+from vtx.openjarvis.gateway import GatewayStartOptions, build_gateway_command
 
 ServiceManagerKind = Literal["auto", "systemd", "launchd"]
 
@@ -22,7 +22,7 @@ class GatewayServiceOptions:
     """Inputs used to render one system service."""
 
     start: GatewayStartOptions
-    name: str = "agenite_claw-gateway"
+    name: str = "vtx.openjarvis-gateway"
     manager: ServiceManagerKind = "auto"
     enable: bool = True
     start_now: bool = True
@@ -68,7 +68,7 @@ class GatewayServiceInstaller:
     def uninstall(
         self,
         *,
-        name: str = "agenite_claw-gateway",
+        name: str = "vtx.openjarvis-gateway",
         manager: ServiceManagerKind = "auto",
         dry_run: bool = False,
     ) -> GatewayServiceResult:
@@ -232,17 +232,17 @@ def _systemd_unit_name(name: str) -> str:
 
 
 def _launchd_label(name: str) -> str:
-    if name.startswith("ai.agenite_claw."):
+    if name.startswith("ai.openjarvis."):
         return name
-    suffix = _safe_service_name(name).removeprefix("agenite_claw-").replace("-", ".")
-    return f"ai.agenite_claw.{suffix}"
+    suffix = _safe_service_name(name).removeprefix("vtx.openjarvis-").replace("-", ".")
+    return f"ai.openjarvis.{suffix}"
 
 
 def _safe_service_name(name: str) -> str:
     value = name.strip().lower()
     value = re.sub(r"[^a-z0-9_.-]+", "-", value)
     value = value.strip(".-")
-    return value or "agenite_claw-gateway"
+    return value or "vtx.openjarvis-gateway"
 
 
 def _launchd_domain() -> str:

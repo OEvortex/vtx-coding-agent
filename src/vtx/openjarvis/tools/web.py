@@ -5,16 +5,16 @@ from __future__ import annotations
 from typing import Any
 
 from pydantic import Field
-from vtx.tools.web import WebSearchTool as _VtxWebSearchTool
 
-from agenite_claw.agent.tools.base import Tool, tool_parameters
-from agenite_claw.agent.tools.schema import (
+from vtx.coding_agent.tools.web import WebSearchTool as _VtxWebSearchTool
+from vtx.openjarvis.config_base import Base
+from vtx.openjarvis.tools.base import Tool, tool_parameters
+from vtx.openjarvis.tools.schema import (
     BooleanSchema,
     IntegerSchema,
     StringSchema,
     tool_parameters_schema,
 )
-from agenite_claw.config_base import Base
 
 # Single source of truth for selectable search providers (CLI wizard + WebUI).
 # "credential" describes what each provider needs: none / api_key / base_url /

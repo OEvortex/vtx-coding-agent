@@ -7,17 +7,17 @@ import importlib.util
 import os
 import re
 from collections import OrderedDict
-from pathlib import Path
 from collections.abc import Callable
+from pathlib import Path
 from typing import Any, cast
 
 from pydantic import Field
 
-from agenite_claw.bus.events import OutboundMessage
-from agenite_claw.bus.queue import MessageBus
-from agenite_claw.channels.base import BaseChannel
-from agenite_claw.config.paths import get_media_dir
-from agenite_claw.config.schema import Base
+from vtx.openjarvis.bus.events import OutboundMessage
+from vtx.openjarvis.bus.queue import MessageBus
+from vtx.openjarvis.channels.base import BaseChannel
+from vtx.openjarvis.config.schema import Base
+from vtx.openjarvis.utils.paths import get_media_dir
 
 WECOM_AVAILABLE = importlib.util.find_spec("wecom_aibot_sdk") is not None
 
@@ -119,13 +119,16 @@ class WecomChannel(BaseChannel):
 
         # Create WebSocket client
         self._client = WSClient(
-            cast(Any, {
-                "bot_id": self.config.bot_id,
-                "secret": self.config.secret,
-                "reconnect_interval": 1000,
-                "max_reconnect_attempts": -1,  # Infinite reconnect
-                "heartbeat_interval": 30000,
-            }),
+            cast(
+                Any,
+                {
+                    "bot_id": self.config.bot_id,
+                    "secret": self.config.secret,
+                    "reconnect_interval": 1000,
+                    "max_reconnect_attempts": -1,  # Infinite reconnect
+                    "heartbeat_interval": 30000,
+                },
+            )
         )
 
         # Register event handlers

@@ -5,7 +5,8 @@ from typing import Any, ClassVar
 
 from openai import APIConnectionError, APIError, APIStatusError
 
-from vtx.ai.base import ENV_API_KEY_MAP, BaseProvider, LLMStream, ProviderConfig, resolve_api_key
+from vtx.ai.base import BaseProvider, LLMStream, ProviderConfig, resolve_api_key
+from vtx.ai.provider_catalog import get as get_provider_info
 from vtx.ai.providers.sanitize import sanitize_surrogates
 from vtx.ai.sdk.base import GenerationConfig
 from vtx.ai.sdk.base import Message as SDKMessage
@@ -43,7 +44,8 @@ class OpenAISDKProvider(BaseProvider):
         super().__init__(config)
 
         provider = (config.provider or "").lower()
-        provider_env_var = ENV_API_KEY_MAP.get(provider, "OPENAI_API_KEY")
+        p = get_provider_info(provider)
+        provider_env_var = (p.api_key_env if p and p.api_key_env else None) or "OPENAI_API_KEY"
 
         api_key = resolve_api_key(
             config.api_key,
@@ -61,7 +63,10 @@ class OpenAISDKProvider(BaseProvider):
             )
 
         self._sdk = OpenAISDK(
-            api_key=api_key, base_url=config.base_url, provider_slug=config.provider
+            api_key=api_key,
+            base_url=config.base_url,
+            provider_slug=config.provider,
+            default_headers=config.default_headers,
         )
 
     @staticmethod

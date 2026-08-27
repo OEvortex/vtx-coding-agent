@@ -114,6 +114,8 @@ dev = [
 
 [project.scripts]
 vtx = "vtx.coding_agent.cli:main"
+vtx-jarvis = "vtx.openjarvis.agent.cli:main"
+openjarvis = "vtx.openjarvis.agent.cli:main"
 
 [tool.ruff]
 target-version = "py312"

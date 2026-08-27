@@ -108,26 +108,6 @@ class GenerationSettings:
 LOCAL_API_KEY_PLACEHOLDER = "vtx-local"
 AuthMode = Literal["auto", "required", "none"]
 
-ENV_API_KEY_MAP: dict[str, str] = {
-    "openai": "OPENAI_API_KEY",
-    "anthropic": "ANTHROPIC_API_KEY",
-    "deepseek": "DEEPSEEK_API_KEY",
-    "zhipu": "ZAI_API_KEY",
-    "airouter": "AIROUTER_API_KEY",
-    "opencode": "OPENCODE_API_KEY",
-    "kilo": "KILO_API_KEY",
-    "tokenrouter": "TOKENROUTER_API_KEY",
-    "openrouter": "OPENROUTER_API_KEY",
-    "zyloo": "ZYLOO_API_KEY",
-    "opengateway": "OPENGATEWAY_API_KEY",
-    "cline": "CLINE_API_KEY",
-}
-
-
-def get_env_api_key(provider: str) -> str | None:
-    env_var = ENV_API_KEY_MAP.get(provider)
-    return os.environ.get(env_var) if env_var else None
-
 
 def is_local_base_url(base_url: str | None) -> bool:
     if not base_url:

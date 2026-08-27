@@ -7,13 +7,13 @@ from typing import Any
 
 from loguru import logger
 
-from agenite_claw.agent.tools.base import Tool, tool_parameters
-from agenite_claw.agent.tools.context import ContextAware, RequestContext
-from agenite_claw.agent.tools.path_utils import resolve_workspace_path
-from agenite_claw.agent.tools.schema import ArraySchema, StringSchema, tool_parameters_schema
-from agenite_claw.bus.events import OutboundMessage
-from agenite_claw.config.paths import get_workspace_path
-from agenite_claw.security.workspace_access import current_tool_workspace
+from vtx.openjarvis.bus.events import OutboundMessage
+from vtx.openjarvis.security.workspace_access import current_tool_workspace
+from vtx.openjarvis.tools.base import Tool, tool_parameters
+from vtx.openjarvis.tools.context import ContextAware, RequestContext
+from vtx.openjarvis.tools.path_utils import resolve_workspace_path
+from vtx.openjarvis.tools.schema import ArraySchema, StringSchema, tool_parameters_schema
+from vtx.openjarvis.utils.paths import get_workspace_path
 
 
 @tool_parameters(
@@ -63,7 +63,8 @@ class MessageTool(Tool, ContextAware):
             "message_default_message_id", default=default_message_id
         )
         self._default_metadata: ContextVar[dict[str, Any]] = ContextVar(
-            "message_default_metadata", default={}  # noqa
+            "message_default_metadata",
+            default={},  # noqa
         )
         self._sent_in_turn_var: ContextVar[bool] = ContextVar(
             "message_sent_in_turn", default=False
@@ -171,7 +172,7 @@ class MessageTool(Tool, ContextAware):
         buttons: list[list[str]] | None = None,
         **kwargs: Any,
     ) -> str:
-        from agenite_claw.utils.helpers import strip_think
+        from vtx.openjarvis.utils.helpers import strip_think
 
         content = strip_think(content)
 

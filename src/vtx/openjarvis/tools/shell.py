@@ -15,9 +15,15 @@ from typing import Any
 from loguru import logger
 from pydantic import Field
 
-from agenite_claw.agent.tools.base import Tool, tool_parameters
-from agenite_claw.agent.tools.context import current_request_session_key
-from agenite_claw.agent.tools.exec_session import (
+from vtx.openjarvis.config_base import Base
+from vtx.openjarvis.security.workspace_access import (
+    current_scope_allows_loopback,
+    current_tool_workspace,
+)
+from vtx.openjarvis.security.workspace_policy import is_path_within
+from vtx.openjarvis.tools.base import Tool, tool_parameters
+from vtx.openjarvis.tools.context import current_request_session_key
+from vtx.openjarvis.tools.exec_session import (
     DEFAULT_EXEC_SESSION_MANAGER,
     DEFAULT_MAX_OUTPUT_CHARS,
     DEFAULT_YIELD_MS,
@@ -26,20 +32,14 @@ from agenite_claw.agent.tools.exec_session import (
     clamp_session_int,
     format_session_poll,
 )
-from agenite_claw.agent.tools.sandbox import wrap_command
-from agenite_claw.agent.tools.schema import (
+from vtx.openjarvis.tools.sandbox import wrap_command
+from vtx.openjarvis.tools.schema import (
     BooleanSchema,
     IntegerSchema,
     StringSchema,
     tool_parameters_schema,
 )
-from agenite_claw.config.paths import get_media_dir
-from agenite_claw.config_base import Base
-from agenite_claw.security.workspace_access import (
-    current_scope_allows_loopback,
-    current_tool_workspace,
-)
-from agenite_claw.security.workspace_policy import is_path_within
+from vtx.openjarvis.utils.paths import get_media_dir
 
 _IS_WINDOWS = sys.platform == "win32"
 
@@ -166,7 +166,7 @@ class ExecTool(Tool):
                 r">\s*/dev/sd",  # write to disk
                 r"\b(shutdown|reboot|poweroff)\b",  # system power
                 r":\(\)\s*\{.*\};\s*:",  # fork bomb
-                # Block writes to agenite_claw internal state files (#2989).
+                # Block writes to openjarvis internal state files (#2989).
                 # history.jsonl / .dream_cursor are managed by append_history();
                 # direct writes corrupt the cursor format and crash /dream.
                 r">>?\s*\S*(?:history\.jsonl|\.dream_cursor)",  # > / >> redirect
@@ -582,7 +582,7 @@ class ExecTool(Tool):
             if self.allow_patterns:
                 return "Error: Command blocked by allowlist filter (not in allowlist)"
 
-        from agenite_claw.security.network import contains_internal_url
+        from vtx.openjarvis.security.network import contains_internal_url
 
         if contains_internal_url(
             cmd,

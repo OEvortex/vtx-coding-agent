@@ -11,9 +11,8 @@ from contextlib import suppress
 from pathlib import Path, PurePosixPath
 from typing import Any, TypeVar
 
-from vtx.tools_manager import get_tool_path
-
-from agenite_claw.agent.tools.filesystem import ListDirTool, _FsTool
+from vtx.ai.agent.tools_manager import get_tool_path
+from vtx.openjarvis.tools.filesystem import ListDirTool, _FsTool
 
 _DEFAULT_HEAD_LIMIT = 250
 _DEFAULT_FILE_HEAD_LIMIT = 200

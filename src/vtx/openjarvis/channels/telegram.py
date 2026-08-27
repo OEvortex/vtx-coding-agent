@@ -7,8 +7,8 @@ import re
 import time
 import unicodedata
 from contextlib import suppress
-from datetime import timedelta
 from dataclasses import dataclass
+from datetime import timedelta
 from pathlib import Path
 from typing import Any, Literal
 from urllib.parse import urlparse
@@ -27,14 +27,14 @@ from telegram.error import BadRequest, NetworkError, TimedOut
 from telegram.ext import Application, CallbackQueryHandler, ContextTypes, MessageHandler, filters
 from telegram.request import HTTPXRequest
 
-from agenite_claw.bus.events import OutboundMessage
-from agenite_claw.bus.queue import MessageBus
-from agenite_claw.channels.base import BaseChannel
-from agenite_claw.command.builtin import build_help_text
-from agenite_claw.config.paths import get_media_dir
-from agenite_claw.config.schema import Base
-from agenite_claw.security.network import validate_url_target
-from agenite_claw.utils.helpers import split_message
+from vtx.openjarvis.bus.events import OutboundMessage
+from vtx.openjarvis.bus.queue import MessageBus
+from vtx.openjarvis.channels.base import BaseChannel
+from vtx.openjarvis.commands.builtin import build_help_text
+from vtx.openjarvis.config.schema import Base
+from vtx.openjarvis.security.network import validate_url_target
+from vtx.openjarvis.utils.helpers import split_message
+from vtx.openjarvis.utils.paths import get_media_dir
 
 TELEGRAM_MAX_MESSAGE_LEN = 4000  # Telegram message character limit
 # Telegram's actual API limit is 4096; we split raw markdown at 4000 as a
@@ -486,7 +486,7 @@ class TelegramChannel(BaseChannel):
 
     @staticmethod
     def _normalize_telegram_command(content: str) -> str:
-        """Map Telegram-safe command aliases back to canonical agenite_claw commands."""
+        """Map Telegram-safe command aliases back to canonical openjarvis commands."""
         if not content.startswith("/"):
             return content
         if content == "/dream_log" or content.startswith("/dream_log "):
@@ -602,7 +602,7 @@ class TelegramChannel(BaseChannel):
         if _app is None:
             return
         if self.config.mode == "webhook":
-            await getattr(_app, "updater").start_webhook(
+            await _app.updater.start_webhook(
                 listen=self.config.webhook_listen_host,
                 port=self.config.webhook_listen_port,
                 url_path=self.config.webhook_path.lstrip("/"),
@@ -614,7 +614,7 @@ class TelegramChannel(BaseChannel):
             )
         else:
             # Start polling (this runs until stopped)
-            await getattr(_app, "updater").start_polling(
+            await _app.updater.start_polling(
                 allowed_updates=allowed_updates,
                 drop_pending_updates=False,  # Process pending messages on startup
                 error_callback=self._on_polling_error,
@@ -645,7 +645,7 @@ class TelegramChannel(BaseChannel):
         _app = self._app
         if _app:
             self.logger.info("Stopping bot...")
-            await getattr(_app, "updater").stop()
+            await _app.updater.stop()
             await _app.stop()
             await _app.shutdown()
             self._app = None
@@ -1191,7 +1191,7 @@ class TelegramChannel(BaseChannel):
             await self._send_pairing_code_if_private(sender_id, update.message, user)
             return
         await update.message.reply_text(
-            f"👋 Hi {user.first_name}! I'm agenite_claw.\n\n"
+            f"👋 Hi {user.first_name}! I'm openjarvis.\n\n"
             "Send me a message and I'll respond!\n"
             "Type /help to see available commands."
         )
@@ -1410,7 +1410,7 @@ class TelegramChannel(BaseChannel):
 
     @staticmethod
     def _queue_key_for_message(message) -> str:
-        """Return the final agenite_claw session key used for ordered Telegram ingress."""
+        """Return the final openjarvis session key used for ordered Telegram ingress."""
         return TelegramChannel._derive_topic_session_key(message) or f"telegram:{message.chat_id}"
 
     @staticmethod

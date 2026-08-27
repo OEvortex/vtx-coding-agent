@@ -1,6 +1,6 @@
 """Cron service for scheduled agent tasks."""
 
-from agenite_claw.cron.types import CronJob, CronSchedule
+from vtx.openjarvis.cron.types import CronJob, CronSchedule
 
 __all__ = ["CronJob", "CronSchedule", "CronService"]
 

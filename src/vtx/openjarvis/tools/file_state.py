@@ -143,7 +143,7 @@ class FileStateStore:
 
 
 _current_file_states: ContextVar[FileStates | None] = ContextVar(
-    "agenite_claw_file_states", default=None
+    "vtx.openjarvis_file_states", default=None
 )
 
 

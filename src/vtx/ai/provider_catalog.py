@@ -141,9 +141,62 @@ def _load_raw_yaml() -> dict:
     return {}
 
 
+def _get_builtin_oauth_providers() -> dict[str, ProviderInfo]:
+    copilot_headers = {
+        "User-Agent": "GitHubCopilotChat/0.35.0",
+        "Editor-Version": "vscode/1.107.0",
+        "Editor-Plugin-Version": "copilot-chat/0.35.0",
+        "Copilot-Integration-Id": "vscode-chat",
+    }
+    return {
+        "github-copilot": ProviderInfo(
+            slug="github-copilot",
+            display_name="GitHub Copilot",
+            description="GitHub Copilot OAuth provider.",
+            family="openai_compat",
+            base_url="https://api.individual.githubcopilot.com",
+            api_key_env="GITHUB_TOKEN",
+            known_models=(
+                "gpt-4o",
+                "gpt-4o-mini",
+                "claude-3.5-sonnet",
+                "claude-3.7-sonnet",
+                "o1",
+                "o1-mini",
+                "o3-mini",
+            ),
+            supports_tools=True,
+            supports_vision=True,
+            supports_thinking=True,
+            fetch_models=True,
+            models_endpoint="/models",
+            headers=copilot_headers,
+        ),
+        "cline": ProviderInfo(
+            slug="cline",
+            display_name="Cline",
+            description="Cline (WorkOS) OAuth provider.",
+            family="openai_compat",
+            base_url="https://api.cline.bot/v1",
+            api_key_env="CLINE_API_KEY",
+            known_models=(),
+            supports_tools=True,
+            supports_vision=True,
+            supports_thinking=True,
+            fetch_models=True,
+            models_endpoint="/models",
+            headers={},
+        ),
+    }
+
+
 def _load_builtin() -> dict[str, ProviderInfo]:
     data = _load_raw_yaml()
-    return {e["slug"]: _parse_entry(e) for e in data.get("providers", [])}
+    providers = {e["slug"]: _parse_entry(e) for e in data.get("providers", [])}
+    for slug, info in _get_builtin_oauth_providers().items():
+        if slug not in providers:
+            providers[slug] = info
+    return providers
 
 
 def _get_order() -> list[str]:
@@ -153,6 +206,9 @@ def _get_order() -> list[str]:
     _ensure_custom_files_loaded()
     data = _load_raw_yaml()
     _order_cache = [e["slug"] for e in data.get("providers", [])]
+    for slug in _get_builtin_oauth_providers():
+        if slug not in _order_cache:
+            _order_cache.append(slug)
     # Append slugs of runtime-registered custom providers not already present.
     for slug in _custom_cache:
         if slug not in _order_cache:
@@ -202,6 +258,22 @@ def detect_provider_from_env() -> ProviderInfo:
                     return p
             except Exception:
                 pass
+        elif slug in ("github-copilot", "copilot"):
+            try:
+                from vtx.ai.oauth.copilot import is_copilot_logged_in
+
+                if is_copilot_logged_in():
+                    return p
+            except Exception:
+                pass
+        elif slug in ("openai", "codex"):
+            try:
+                from vtx.ai.oauth.codex import is_codex_logged_in
+
+                if is_codex_logged_in():
+                    return p
+            except Exception:
+                pass
 
     for slug in order:
         p = providers[slug]
@@ -214,9 +286,35 @@ def detect_provider_from_env() -> ProviderInfo:
 def is_provider_configured(p: ProviderInfo) -> bool:
     if p.api_key_optional:
         return True
-    if p.api_key_env is None:
+    if p.api_key_env and os.getenv(p.api_key_env):
         return True
-    return bool(os.getenv(p.api_key_env))
+    if p.slug == "cline":
+        try:
+            from vtx.ai.oauth.cline import is_cline_logged_in
+
+            return is_cline_logged_in()
+        except Exception:
+            return False
+    if p.slug in ("github-copilot", "copilot"):
+        try:
+            from vtx.ai.oauth.copilot import is_copilot_logged_in
+
+            return is_copilot_logged_in()
+        except Exception:
+            return False
+    if p.slug in ("openai", "codex"):
+        try:
+            from vtx.ai.oauth.codex import is_codex_logged_in
+
+            if is_codex_logged_in():
+                return True
+        except Exception:
+            pass
+    from vtx.ai.oauth.dynamic import has_api_key
+
+    if has_api_key(p.slug):
+        return True
+    return p.api_key_env is None
 
 
 def _provider_info_to_model(p: ProviderInfo, model_id: str) -> Model:

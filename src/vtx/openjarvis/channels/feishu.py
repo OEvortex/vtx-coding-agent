@@ -21,13 +21,13 @@ from rich.markup import escape
 from rich.panel import Panel
 from rich.text import Text
 
-from agenite_claw.bus.events import OutboundMessage
-from agenite_claw.bus.queue import MessageBus
-from agenite_claw.channels.base import BaseChannel
-from agenite_claw.config.paths import get_media_dir
-from agenite_claw.config.schema import Base
-from agenite_claw.utils.helpers import safe_filename
-from agenite_claw.utils.logging_bridge import redirect_lib_logging
+from vtx.openjarvis.bus.events import OutboundMessage
+from vtx.openjarvis.bus.queue import MessageBus
+from vtx.openjarvis.channels.base import BaseChannel
+from vtx.openjarvis.config.schema import Base
+from vtx.openjarvis.utils.helpers import safe_filename
+from vtx.openjarvis.utils.logging_bridge import redirect_lib_logging
+from vtx.openjarvis.utils.paths import get_media_dir
 
 if TYPE_CHECKING:
     from lark_oapi.api.im.v1.model import MentionEvent, P2ImMessageReceiveV1
@@ -60,7 +60,7 @@ def _load_lark_runtime() -> tuple[Any, str, str]:
             and not import_loop.is_closed()
         ):
             import_loop.close()
-        setattr(lark_ws_client, 'loop', None)
+        lark_ws_client.loop = None
         with suppress(Exception):
             asyncio.set_event_loop(None)
 
@@ -621,14 +621,14 @@ class FeishuChannel(BaseChannel):
             return True
 
         _LOGIN_CONSOLE.print(
-            "Authorize with the mobile app. agenite_claw will save the new bot credentials.\n"
+            "Authorize with the mobile app. openjarvis will save the new bot credentials.\n"
         )
 
         result = qr_register(initial_domain=self.config.domain or "feishu")
         if not result:
             _LOGIN_CONSOLE.print(
                 "[yellow]Login was not completed.[/yellow] "
-                "Run 'agenite_claw channels login feishu --force' to retry."
+                "Run 'vtx.openjarvis channels login feishu --force' to retry."
             )
             return False
 
@@ -637,7 +637,7 @@ class FeishuChannel(BaseChannel):
         self.config.domain = result.get("domain", "feishu")
 
         # Write credentials back to config.json
-        from agenite_claw.config.loader import load_config, save_config
+        from vtx.openjarvis.config.loader import load_config, save_config
 
         full_config = load_config()
         feishu_cfg = getattr(full_config.channels, "feishu", None) or {}
@@ -646,7 +646,7 @@ class FeishuChannel(BaseChannel):
             feishu_cfg["appSecret"] = result["app_secret"]
             feishu_cfg["domain"] = result.get("domain", "feishu")
             feishu_cfg["enabled"] = True
-            setattr(full_config.channels, 'feishu', feishu_cfg)
+            full_config.channels.feishu = feishu_cfg
         save_config(full_config)
 
         _LOGIN_CONSOLE.print("\n[green]Feishu/Lark login complete.[/green]")
@@ -669,7 +669,7 @@ class FeishuChannel(BaseChannel):
         if not self.config.app_id or not self.config.app_secret:
             self.logger.error(
                 "app_id and app_secret not configured. "
-                "Run 'agenite_claw channels login feishu' to set up via QR code."
+                "Run 'vtx.openjarvis channels login feishu' to set up via QR code."
             )
             return
 
@@ -751,7 +751,7 @@ class FeishuChannel(BaseChannel):
                         time.sleep(5)
             finally:
                 if getattr(_lark_ws_client, "loop", None) is ws_loop:
-                    setattr(_lark_ws_client, 'loop', previous_loop)
+                    _lark_ws_client.loop = previous_loop
                 with suppress(Exception):
                     asyncio.set_event_loop(None)
                 ws_loop.close()
@@ -2141,7 +2141,9 @@ class FeishuChannel(BaseChannel):
                 return
 
             # Add reaction (non-blocking — tracked background task)
-            task = asyncio.create_task(self._add_reaction(str(message_id), self.config.react_emoji))
+            task = asyncio.create_task(
+                self._add_reaction(str(message_id), self.config.react_emoji)
+            )
             self._background_tasks.add(task)
             task.add_done_callback(self._on_background_task_done)
             task.add_done_callback(lambda t: self._on_reaction_added(str(message_id), t))

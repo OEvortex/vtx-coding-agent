@@ -1,4 +1,4 @@
-"""MCP client: connects to MCP servers and wraps their tools as native agenite_claw tools."""
+"""MCP client: connects to MCP servers and wraps their tools as native openjarvis tools."""
 
 import asyncio
 import json
@@ -14,15 +14,15 @@ from weakref import WeakKeyDictionary
 import httpx
 from loguru import logger
 
-from agenite_claw.agent.tools.base import Tool
-from agenite_claw.agent.tools.registry import ToolRegistry
-from agenite_claw.bus.events import (
+from vtx.openjarvis.bus.events import (
     INBOUND_META_RUNTIME_CONTROL,
     RUNTIME_CONTROL_ACK,
     RUNTIME_CONTROL_MCP_RELOAD,
     InboundMessage,
 )
-from agenite_claw.security.network import validate_url_target
+from vtx.openjarvis.security.network import validate_url_target
+from vtx.openjarvis.tools.base import Tool
+from vtx.openjarvis.tools.registry import ToolRegistry
 
 # Transient connection errors that warrant a single retry.
 # These typically happen when an MCP server restarts or a network
@@ -357,7 +357,7 @@ def _mcp_image_tool_result(text_parts: list[str], artifacts: list[dict[str, Any]
 
 
 class MCPToolWrapper(_MCPWrapperBase):
-    """Wraps a single MCP server tool as a agenite_claw Tool."""
+    """Wraps a single MCP server tool as a openjarvis Tool."""
 
     _plugin_discoverable = False
 
@@ -465,7 +465,7 @@ class MCPToolWrapper(_MCPWrapperBase):
         self, data_url: str, arguments: Mapping[str, Any]
     ) -> dict[str, Any] | None:
         """Persist one image data URL as an artifact; return its metadata or None."""
-        from agenite_claw.utils.artifacts import ArtifactError, store_generated_image_artifact
+        from vtx.openjarvis.utils.artifacts import ArtifactError, store_generated_image_artifact
 
         try:
             return store_generated_image_artifact(
@@ -483,7 +483,7 @@ class MCPToolWrapper(_MCPWrapperBase):
 
 
 class MCPResourceWrapper(_MCPWrapperBase):
-    """Wraps an MCP resource URI as a read-only agenite_claw Tool."""
+    """Wraps an MCP resource URI as a read-only openjarvis Tool."""
 
     _plugin_discoverable = False
 
@@ -572,7 +572,7 @@ class MCPResourceWrapper(_MCPWrapperBase):
 
 
 class MCPPromptWrapper(_MCPWrapperBase):
-    """Wraps an MCP prompt as a read-only agenite_claw Tool."""
+    """Wraps an MCP prompt as a read-only openjarvis Tool."""
 
     _plugin_discoverable = False
 
@@ -857,7 +857,7 @@ async def connect_mcp_servers(
                     for resource in resources_result.resources:
                         wrapper = MCPResourceWrapper(
                             session, name, resource, resource_timeout=cfg.tool_timeout
-                         )  # type: ignore[assignment]
+                        )  # type: ignore[assignment]
                         registry.register(wrapper)
                         registered_count += 1
                         logger.debug(
@@ -871,7 +871,7 @@ async def connect_mcp_servers(
                     for prompt in prompts_result.prompts:
                         wrapper = MCPPromptWrapper(
                             session, name, prompt, prompt_timeout=cfg.tool_timeout
-                         )  # type: ignore[assignment]
+                        )  # type: ignore[assignment]
                         registry.register(wrapper)
                         registered_count += 1
                         logger.debug(
@@ -971,7 +971,7 @@ def runtime_lines(
                 f"@{raw_name} ({display}; transport={transport}) is configured in WebUI Settings, "
                 "but this gateway has not loaded the latest MCP settings yet. "
                 f"Tools with prefix `{prefix}` may not be available yet; if they are missing, "
-                "tell the user to restart agenite_claw."
+                "tell the user to restart openjarvis."
             )
             continue
         if connected_server_names is not None and raw_name not in connected_server_names:
@@ -980,7 +980,7 @@ def runtime_lines(
                 f"@{raw_name} ({display}; transport={transport}) is configured, "
                 "but its MCP connection is not currently live. "
                 f"Tools with prefix `{prefix}` may be unavailable; tell the user to open Settings, "  # noqa: E501
-                "run the preset test, and restart agenite_claw only if hot reload is unavailable."
+                "run the preset test, and restart openjarvis only if hot reload is unavailable."
             )
             continue
         lines.append(
@@ -1023,7 +1023,7 @@ async def reload_servers(state: Any, registry: ToolRegistry) -> dict[str, Any]:
     """Reconcile live MCP connections with the current config file."""
     async with _reload_lock(state):
         try:
-            from agenite_claw.config.loader import load_config, resolve_config_env_vars
+            from vtx.openjarvis.config.loader import load_config, resolve_config_env_vars
 
             config = resolve_config_env_vars(load_config())
             next_servers = dict(config.tools.mcp_servers)
@@ -1031,7 +1031,7 @@ async def reload_servers(state: Any, registry: ToolRegistry) -> dict[str, Any]:
             logger.warning("MCP hot reload could not read config: {}", exc)
             return {
                 "ok": False,
-                "message": "Could not reload MCP config. Restart agenite_claw to pick up changes.",
+                "message": "Could not reload MCP config. Restart openjarvis to pick up changes.",
                 "requires_restart": True,
                 "error": str(exc),
             }
@@ -1075,9 +1075,9 @@ async def reload_servers(state: Any, registry: ToolRegistry) -> dict[str, Any]:
         elif unchanged:
             message = "MCP config is already live."
         elif retry_missing and not added and not changed and not removed:
-            message = "MCP connections refreshed without restarting agenite_claw."
+            message = "MCP connections refreshed without restarting openjarvis."
         else:
-            message = "MCP config reloaded without restarting agenite_claw."
+            message = "MCP config reloaded without restarting openjarvis."
 
         logger.info(
             "MCP hot reload: added={} changed={} removed={} retried={} connected={} failed={} tools_removed={}",  # noqa: E501
@@ -1125,7 +1125,7 @@ async def request_mcp_reload(bus: Any, *, timeout: float = 15.0) -> dict[str, An
     except TimeoutError:
         return {
             "ok": False,
-            "message": "MCP hot reload timed out. Restart agenite_claw to pick up changes.",
+            "message": "MCP hot reload timed out. Restart openjarvis to pick up changes.",
             "requires_restart": True,
         }
     return (
@@ -1152,7 +1152,7 @@ async def handle_runtime_control(state: Any, msg: InboundMessage, registry: Tool
         logger.exception("MCP hot reload failed")
         result = {
             "ok": False,
-            "message": "MCP hot reload failed. Restart agenite_claw to pick up changes.",
+            "message": "MCP hot reload failed. Restart openjarvis to pick up changes.",
             "requires_restart": True,
             "error": str(exc),
         }

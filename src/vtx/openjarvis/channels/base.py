@@ -8,9 +8,9 @@ from typing import Any
 
 from loguru import logger
 
-from agenite_claw.bus.events import InboundMessage, OutboundMessage
-from agenite_claw.bus.queue import MessageBus
-from agenite_claw.pairing import (
+from vtx.openjarvis.bus.events import InboundMessage, OutboundMessage
+from vtx.openjarvis.bus.queue import MessageBus
+from vtx.openjarvis.pairing import (
     PAIRING_CODE_META_KEY,
     format_pairing_reply,
     generate_code,
@@ -23,7 +23,7 @@ class BaseChannel(ABC):
     Abstract base class for chat channel implementations.
 
     Each channel (Telegram, Discord, etc.) should implement this interface
-    to integrate with the agenite_claw message bus.
+    to integrate with the openjarvis message bus.
     """
 
     name: str = "base"
@@ -48,11 +48,11 @@ class BaseChannel(ABC):
     async def transcribe_audio(self, file_path: str | Path) -> str:
         """Transcribe an audio file via Whisper (OpenAI or Groq). Returns empty string on failure."""  # noqa: E501
         try:
-            from agenite_claw.audio.transcription import (
+            from vtx.openjarvis.audio.transcription import (
                 resolve_transcription_config,
                 transcribe_audio_file,
             )
-            from agenite_claw.config.loader import load_config
+            from vtx.openjarvis.config.loader import load_config
 
             return await transcribe_audio_file(
                 file_path, resolve_transcription_config(load_config())

@@ -3,7 +3,7 @@
 import json
 from typing import Any
 
-from agenite_claw.agent.tools.base import Tool
+from vtx.openjarvis.tools.base import Tool
 
 
 class ToolRegistry:

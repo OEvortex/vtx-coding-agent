@@ -8,12 +8,12 @@ import time
 import uuid
 from typing import Any, Protocol
 
-from agenite_claw.agent.tools.cron import CronTool
-from agenite_claw.bus.events import InboundMessage, OutboundMessage
-from agenite_claw.cron.session_delivery import origin_delivery_context
-from agenite_claw.cron.session_turns import CRON_DEFER_UNTIL_IDLE_META, CRON_TRIGGER_META
-from agenite_claw.cron.types import CronJob
-from agenite_claw.utils.prompt_templates import render_template
+from vtx.openjarvis.bus.events import InboundMessage, OutboundMessage
+from vtx.openjarvis.cron.session_delivery import origin_delivery_context
+from vtx.openjarvis.cron.session_turns import CRON_DEFER_UNTIL_IDLE_META, CRON_TRIGGER_META
+from vtx.openjarvis.cron.types import CronJob
+from vtx.openjarvis.tools.cron import CronTool
+from vtx.openjarvis.utils.prompt_templates import render_template
 
 
 class BoundCronAgent(Protocol):

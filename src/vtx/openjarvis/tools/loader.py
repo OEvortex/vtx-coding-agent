@@ -9,8 +9,8 @@ from typing import Any
 
 from loguru import logger
 
-from agenite_claw.agent.tools.base import Tool
-from agenite_claw.agent.tools.registry import ToolRegistry
+from vtx.openjarvis.tools.base import Tool
+from vtx.openjarvis.tools.registry import ToolRegistry
 
 _SKIP_MODULES = frozenset(
     {
@@ -32,7 +32,7 @@ _SKIP_MODULES = frozenset(
 class ToolLoader:
     def __init__(self, package: Any = None, *, test_classes: list[type[Tool]] | None = None):
         if package is None:
-            import agenite_claw.agent.tools as _pkg
+            import vtx.openjarvis.tools as _pkg
 
             package = _pkg
         self._package = package
@@ -78,7 +78,7 @@ class ToolLoader:
             return self._plugins
         plugins: dict[str, type[Tool]] = {}
         try:
-            eps = entry_points(group="agenite_claw.tools")
+            eps = entry_points(group="vtx.openjarvis.tools")
         except Exception:
             return plugins
         for ep in eps:

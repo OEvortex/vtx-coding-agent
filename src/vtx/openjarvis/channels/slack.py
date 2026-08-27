@@ -13,13 +13,13 @@ from slack_sdk.socket_mode.websockets import SocketModeClient
 from slack_sdk.web.async_client import AsyncWebClient
 from slackify_markdown import slackify_markdown
 
-from agenite_claw.bus.events import OutboundMessage
-from agenite_claw.bus.queue import MessageBus
-from agenite_claw.channels.base import BaseChannel
-from agenite_claw.config.paths import get_media_dir
-from agenite_claw.config.schema import Base
-from agenite_claw.pairing import is_approved
-from agenite_claw.utils.helpers import safe_filename, split_message
+from vtx.openjarvis.bus.events import OutboundMessage
+from vtx.openjarvis.bus.queue import MessageBus
+from vtx.openjarvis.channels.base import BaseChannel
+from vtx.openjarvis.config.schema import Base
+from vtx.openjarvis.pairing import is_approved
+from vtx.openjarvis.utils.helpers import safe_filename, split_message
+from vtx.openjarvis.utils.paths import get_media_dir
 
 
 class SlackDMConfig(Base):
@@ -105,9 +105,7 @@ class SlackChannel(BaseChannel):
             app_token=self.config.app_token, web_client=self._web_client
         )
 
-        self._socket_client.socket_mode_request_listeners.append(
-            self._on_socket_request
-        )
+        self._socket_client.socket_mode_request_listeners.append(self._on_socket_request)
 
         # Resolve bot user ID for mention handling
         try:
@@ -485,7 +483,7 @@ class SlackChannel(BaseChannel):
     @staticmethod
     def _download_failure_marker(marker_type: str, name: str, reason: str) -> str:
         return (
-            f"[{marker_type}: {name}: {reason}; not available to agenite_claw. "
+            f"[{marker_type}: {name}: {reason}; not available to openjarvis. "
             "Check Slack files:read scope, reinstall the Slack app, and ensure the bot can access the file.]"  # noqa: E501
         )
 

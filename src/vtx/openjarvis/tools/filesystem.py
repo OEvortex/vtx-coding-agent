@@ -7,18 +7,18 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
-from agenite_claw.agent.tools.base import Tool, tool_parameters
-from agenite_claw.agent.tools.file_state import FileStates, _hash_file, current_file_states
-from agenite_claw.agent.tools.path_utils import resolve_workspace_path
-from agenite_claw.agent.tools.schema import (
+from vtx.openjarvis.config_base import Base
+from vtx.openjarvis.security.workspace_access import current_tool_workspace
+from vtx.openjarvis.tools.base import Tool, tool_parameters
+from vtx.openjarvis.tools.file_state import FileStates, _hash_file, current_file_states
+from vtx.openjarvis.tools.path_utils import resolve_workspace_path
+from vtx.openjarvis.tools.schema import (
     BooleanSchema,
     IntegerSchema,
     StringSchema,
     tool_parameters_schema,
 )
-from agenite_claw.config_base import Base
-from agenite_claw.security.workspace_access import current_tool_workspace
-from agenite_claw.utils.helpers import build_image_content_blocks, detect_image_mime
+from vtx.openjarvis.utils.helpers import build_image_content_blocks, detect_image_mime
 
 
 class FileToolsConfig(Base):
@@ -76,7 +76,7 @@ class _FsTool(Tool):
 
     @classmethod
     def create(cls, ctx: Any) -> Tool:
-        from agenite_claw.agent.skills import BUILTIN_SKILLS_DIR
+        from vtx.openjarvis.agent.skills import BUILTIN_SKILLS_DIR
 
         restrict = ctx.config.restrict_to_workspace or ctx.config.exec.sandbox
         sandbox_restricts = bool(ctx.config.exec.sandbox)
@@ -423,7 +423,7 @@ class ReadFileTool(_FsTool):
         return result
 
     def _read_office_doc(self, fp: Path) -> str:
-        from agenite_claw.utils.document import extract_text
+        from vtx.openjarvis.utils.document import extract_text
 
         result = extract_text(fp)
 

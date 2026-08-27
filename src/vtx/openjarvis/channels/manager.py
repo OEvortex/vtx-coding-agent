@@ -10,17 +10,17 @@ from typing import TYPE_CHECKING, Any
 
 from loguru import logger
 
-from agenite_claw.bus.events import OutboundMessage
-from agenite_claw.bus.queue import MessageBus
-from agenite_claw.channels.base import BaseChannel
-from agenite_claw.config.schema import Config
-from agenite_claw.utils.restart import (
+from vtx.openjarvis.bus.events import OutboundMessage
+from vtx.openjarvis.bus.queue import MessageBus
+from vtx.openjarvis.channels.base import BaseChannel
+from vtx.openjarvis.config.schema import Config
+from vtx.openjarvis.utils.restart import (
     consume_restart_notice_from_env,
     format_restart_completed_message,
 )
 
 if TYPE_CHECKING:
-    from agenite_claw.session.manager import SessionManager
+    from vtx.openjarvis.session.manager import SessionManager
 
 
 def _default_webui_dist() -> Path | None:
@@ -68,7 +68,7 @@ class ChannelManager:
 
     def _init_channels(self) -> None:
         """Initialize channels discovered via pkgutil scan + entry_points plugins."""
-        from agenite_claw.channels.registry import discover_channel_names, discover_enabled
+        from vtx.openjarvis.channels.registry import discover_channel_names, discover_enabled
 
         # Collect enabled module names first, then only import those.
         # Channel configs live in ChannelsConfig's extra fields (via
@@ -98,7 +98,7 @@ class ChannelManager:
             try:
                 kwargs: dict[str, Any] = {}
                 if cls.name == "websocket":
-                    from agenite_claw.channels.websocket import (
+                    from vtx.openjarvis.channels.websocket import (
                         WebSocketConfig,
                         build_gateway_services,
                     )

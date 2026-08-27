@@ -1,6 +1,6 @@
 """Pairing module for DM sender approval."""
 
-from agenite_claw.pairing.store import (
+from vtx.openjarvis.pairing.store import (
     approve_code,
     deny_code,
     format_expiry,

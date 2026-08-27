@@ -1,10 +1,10 @@
-"""JSON Schema fragment types: all subclass :class:`~agenite_claw.agent.tools.base.Schema` for descriptions and constraints on tool parameters.  # noqa: E501
+"""JSON Schema fragment types: all subclass :class:`~openjarvis.agent.tools.base.Schema` for descriptions and constraints on tool parameters.  # noqa: E501
 
-- ``to_json_schema()``: returns a dict compatible with :meth:`~agenite_claw.agent.tools.base.Schema.validate_json_schema_value` /  # noqa: E501
-  :class:`~agenite_claw.agent.tools.base.Tool`.
+- ``to_json_schema()``: returns a dict compatible with :meth:`~openjarvis.agent.tools.base.Schema.validate_json_schema_value` /  # noqa: E501
+  :class:`~openjarvis.agent.tools.base.Tool`.
 - ``validate_value(value, path)``: validates a single value against this schema; returns a list of error messages (empty means valid).  # noqa: E501
 
-Shared validation and fragment normalization are on the class methods of :class:`~agenite_claw.agent.tools.base.Schema`.  # noqa: E501
+Shared validation and fragment normalization are on the class methods of :class:`~openjarvis.agent.tools.base.Schema`.  # noqa: E501
 
 Note: Python does not allow subclassing ``bool``, so booleans use :class:`BooleanSchema`.
 """
@@ -14,7 +14,7 @@ from __future__ import annotations
 from collections.abc import Mapping
 from typing import Any
 
-from agenite_claw.agent.tools.base import Schema
+from vtx.openjarvis.tools.base import Schema
 
 
 class StringSchema(Schema):

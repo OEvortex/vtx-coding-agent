@@ -1,4 +1,4 @@
-"""WebSocket server channel: agenite_claw acts as a WebSocket server and serves connected clients."""
+"""WebSocket server channel: openjarvis acts as a WebSocket server and serves connected clients."""
 
 from __future__ import annotations
 
@@ -18,17 +18,17 @@ from websockets.asyncio.server import ServerConnection, serve, unix_serve
 from websockets.exceptions import ConnectionClosed
 from websockets.http11 import Request as WsRequest
 
-from agenite_claw.bus.events import OUTBOUND_META_AGENT_UI, OutboundMessage
-from agenite_claw.bus.queue import MessageBus
-from agenite_claw.channels.base import BaseChannel
-from agenite_claw.config.paths import get_media_dir
-from agenite_claw.config.schema import Base
-from agenite_claw.security.workspace_access import (
+from vtx.openjarvis.bus.events import OUTBOUND_META_AGENT_UI, OutboundMessage
+from vtx.openjarvis.bus.queue import MessageBus
+from vtx.openjarvis.channels.base import BaseChannel
+from vtx.openjarvis.config.schema import Base
+from vtx.openjarvis.security.workspace_access import (
     WORKSPACE_SCOPE_METADATA_KEY,
     WorkspaceScopeError,
 )
-from agenite_claw.session.goal_state import goal_state_ws_blob
-from agenite_claw.utils.media_decode import FileSizeExceeded, save_base64_data_url
+from vtx.openjarvis.session.goal_state import goal_state_ws_blob
+from vtx.openjarvis.utils.media_decode import FileSizeExceeded, save_base64_data_url
+from vtx.openjarvis.utils.paths import get_media_dir
 
 
 class WebSocketConfig(Base):
@@ -41,7 +41,7 @@ class WebSocketConfig(Base):
     - ``token_issue_path``: If non-empty, **GET** (HTTP/1.1) to this path returns JSON
       ``{"token": "...", "expires_in": <seconds>}``; use ``?token=...`` when opening the WebSocket.
       Must differ from ``path`` (the WS upgrade path). If the client runs in the **same process** as
-      agenite_claw and shares the asyncio loop, use a thread or async HTTP client for GET—do not call
+      openjarvis and shares the asyncio loop, use a thread or async HTTP client for GET—do not call
       blocking ``urllib`` or synchronous ``httpx`` from inside a coroutine.
     - ``token_issue_secret``: If non-empty, token requests must send ``Authorization: Bearer <secret>`` or
       ``X-AgeniteClaw-Auth: <secret>``.
@@ -207,14 +207,14 @@ class _WorkspaceController:
         self._restrict_to_workspace = restrict_to_workspace
 
     def default_scope(self) -> Any:
-        from agenite_claw.security.workspace_access import default_workspace_scope
+        from vtx.openjarvis.security.workspace_access import default_workspace_scope
 
         return default_workspace_scope(
             self._default_workspace or Path("."), restrict_to_workspace=self._restrict_to_workspace
         )
 
     def scope_for_new_chat(self, envelope: dict, **kwargs: Any) -> Any:
-        from agenite_claw.security.workspace_access import WorkspaceScope
+        from vtx.openjarvis.security.workspace_access import WorkspaceScope
 
         return WorkspaceScope(
             project_path=Path("."),
@@ -224,7 +224,7 @@ class _WorkspaceController:
         )
 
     def scope_for_set_request(self, envelope: dict, **kwargs: Any) -> Any:
-        from agenite_claw.security.workspace_access import WorkspaceScope
+        from vtx.openjarvis.security.workspace_access import WorkspaceScope
 
         return WorkspaceScope(
             project_path=Path("."),
@@ -234,7 +234,7 @@ class _WorkspaceController:
         )
 
     def scope_for_message(self, envelope: dict, **kwargs: Any) -> Any:
-        from agenite_claw.security.workspace_access import WorkspaceScope
+        from vtx.openjarvis.security.workspace_access import WorkspaceScope
 
         return WorkspaceScope(
             project_path=Path("."),
@@ -600,7 +600,7 @@ class WebSocketChannel(BaseChannel):
     # -- Server lifecycle and connection ingress ---------------------------
 
     async def start(self) -> None:
-        from agenite_claw.utils.logging_bridge import redirect_lib_logging
+        from vtx.openjarvis.utils.logging_bridge import redirect_lib_logging
 
         redirect_lib_logging("websockets", level="WARNING")
         ws_logger = _websockets_server_logger()

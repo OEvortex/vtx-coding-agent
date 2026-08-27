@@ -2,8 +2,8 @@
 
 from pathlib import Path
 
-from agenite_claw.config.paths import get_media_dir
-from agenite_claw.security.workspace_policy import is_path_within, resolve_allowed_path
+from vtx.openjarvis.security.workspace_policy import is_path_within, resolve_allowed_path
+from vtx.openjarvis.utils.paths import get_media_dir
 
 
 def is_under(path: Path, directory: Path) -> bool:

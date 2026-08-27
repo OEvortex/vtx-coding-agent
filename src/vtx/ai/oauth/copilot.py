@@ -356,3 +356,19 @@ async def login(
     await enable_all_copilot_models(copilot_token, enterprise_domain)
 
     return creds
+
+
+def get_valid_copilot_token_sync() -> str | None:
+    """Sync fallback for model catalog / provider init (no async refresh).
+
+    Returns a token from env or saved Copilot OAuth credentials.
+    """
+    import os
+
+    env = os.getenv("GITHUB_TOKEN", "").strip()
+    if env:
+        return env
+    creds = load_credentials()
+    if creds and creds.copilot_token:
+        return creds.copilot_token
+    return None

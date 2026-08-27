@@ -20,13 +20,13 @@ from pydantic import Field
 from websockets.asyncio.client import ClientConnection
 from websockets.asyncio.client import connect as ws_connect
 
-from agenite_claw.bus.events import OutboundMessage
-from agenite_claw.bus.queue import MessageBus
-from agenite_claw.channels.base import BaseChannel
-from agenite_claw.config.paths import get_media_dir
-from agenite_claw.config.schema import Base
-from agenite_claw.security.network import validate_url_target
-from agenite_claw.utils.helpers import safe_filename
+from vtx.openjarvis.bus.events import OutboundMessage
+from vtx.openjarvis.bus.queue import MessageBus
+from vtx.openjarvis.channels.base import BaseChannel
+from vtx.openjarvis.config.schema import Base
+from vtx.openjarvis.security.network import validate_url_target
+from vtx.openjarvis.utils.helpers import safe_filename
+from vtx.openjarvis.utils.paths import get_media_dir
 
 _DOWNLOAD_TIMEOUT = aiohttp.ClientTimeout(total=60)
 _ACTION_TIMEOUT = 20.0
@@ -450,7 +450,7 @@ class NapcatChannel(BaseChannel):
                 return None
             return {"type": "image", "data": {"file": ref}}
         # Local path → base64 so it works even when napcat runs on a
-        # different host/container than agenite_claw.
+        # different host/container than openjarvis.
         path = Path(os.path.expanduser(ref)).resolve()
         if not path.is_file():
             logger.warning("napcat: local image not found: {}", path)

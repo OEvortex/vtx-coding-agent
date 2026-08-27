@@ -15,8 +15,8 @@ from typing import Any, Literal
 from filelock import FileLock
 from loguru import logger
 
-from agenite_claw.cron.session_turns import is_bound_cron_job
-from agenite_claw.cron.types import (
+from vtx.openjarvis.cron.session_turns import is_bound_cron_job
+from vtx.openjarvis.cron.types import (
     CronJob,
     CronJobState,
     CronPayload,
@@ -447,7 +447,7 @@ class CronService:
 
         Uses a temp-file + ``os.replace`` + ``fsync`` pattern so a crash or
         SIGKILL mid-write cannot leave the destination truncated or invalid.
-        Mirrors ``agenite_claw.session.manager.SessionManager.save`` (see
+        Mirrors ``openjarvis.session.manager.SessionManager.save`` (see
         commit 512bf59, ``fix(session): fsync sessions on graceful shutdown
         to prevent data loss``).  Without this, ``jobs.json`` could be
         corrupted on container shutdown and silently re-created empty on

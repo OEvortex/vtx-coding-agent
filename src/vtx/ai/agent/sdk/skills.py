@@ -2,9 +2,6 @@
 
 The SDK shares Vtx's existing skill loader so that project, user, and
 built-in skills all work the same way they do in the coding agent's TUI.
-The loader lives in the coding-agent layer
-(:mod:`vtx.coding_agent.context.skills`) and is imported lazily to keep
-the harness import-graph clean.
 """
 
 from __future__ import annotations
@@ -12,35 +9,32 @@ from __future__ import annotations
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
-    from vtx.coding_agent.context.skills import Skill
+    from vtx.ai.agent.skills import Skill
 
 
 def load_vtx_skills(cwd: str | None = None) -> list[Skill]:
     """Load all Vtx-format skills from the project and user scopes.
 
-    Returns a deduplicated list of :class:`vtx.coding_agent.context.skills.Skill`
+    Returns a deduplicated list of :class:`vtx.ai.agent.skills.Skill`
     objects. Pass the returned skills to :meth:`Agent.set_skills` (or
     inject them into your system prompt manually).
     """
-    from vtx.coding_agent.context.skills import load_skills
+    from vtx.ai.agent.skills import load_skills
 
-    result = load_skills(cwd=cwd)
-    return list(result.skills)
+    result = load_skills(cwd)
+    return result.skills
 
 
-def format_skills_for_prompt(skills: list[Skill]) -> str:
-    """Render a list of skills as a compact prompt section.
+def load_builtin_vtx_skills() -> list[Skill]:
+    """Load built-in skills bundled with the Vtx distribution.
 
-    Useful for adding to your agent's ``instructions`` if you want the
-    LLM to know which skills are available without using the file-based
-    skill loader tool.
+    These are the fallback skills (e.g. ``coding``, ``vtx-config``) that
+    ship with the package.
     """
-    if not skills:
-        return ""
-    lines = ["# Available skills", ""]
-    for skill in skills:
-        lines.append(f"- {skill.name}: {skill.description}")
-    return "\n".join(lines)
+    from vtx.ai.agent.skills import load_builtin_cmd_skills
+
+    result = load_builtin_cmd_skills()
+    return result.skills
 
 
-__all__ = ["Skill", "format_skills_for_prompt", "load_vtx_skills"]
+__all__ = ["load_builtin_vtx_skills", "load_vtx_skills"]

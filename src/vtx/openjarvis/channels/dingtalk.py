@@ -14,11 +14,11 @@ from urllib.parse import unquote, urljoin, urlparse
 import httpx
 from pydantic import Field
 
-from agenite_claw.bus.events import OutboundMessage
-from agenite_claw.bus.queue import MessageBus
-from agenite_claw.channels.base import BaseChannel
-from agenite_claw.config.schema import Base
-from agenite_claw.security.network import validate_resolved_url, validate_url_target
+from vtx.openjarvis.bus.events import OutboundMessage
+from vtx.openjarvis.bus.queue import MessageBus
+from vtx.openjarvis.channels.base import BaseChannel
+from vtx.openjarvis.config.schema import Base
+from vtx.openjarvis.security.network import validate_resolved_url, validate_url_target
 
 DINGTALK_MAX_REMOTE_MEDIA_BYTES = 20 * 1024 * 1024
 DINGTALK_MAX_REMOTE_MEDIA_REDIRECTS = 3
@@ -727,7 +727,7 @@ class DingTalkChannel(BaseChannel):
         self, download_code: str, filename: str, sender_id: str
     ) -> str | None:
         """Download a DingTalk file to the media directory, return local path."""
-        from agenite_claw.config.paths import get_media_dir
+        from vtx.openjarvis.utils.paths import get_media_dir
 
         try:
             token = await self._get_access_token()

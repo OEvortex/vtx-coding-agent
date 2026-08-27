@@ -7,31 +7,31 @@ from typing import TYPE_CHECKING, Any
 
 from pydantic import Field
 
-from agenite_claw.agent.tools.base import Tool, tool_parameters
-from agenite_claw.agent.tools.schema import (
+from vtx.openjarvis.config_base import Base
+from vtx.openjarvis.providers.image_generation import (
+    ImageGenerationError,
+    ImageGenerationProvider,
+    get_image_gen_provider,
+)
+from vtx.openjarvis.security.workspace_access import current_tool_workspace
+from vtx.openjarvis.security.workspace_policy import WorkspaceBoundaryError, resolve_allowed_path
+from vtx.openjarvis.tools.base import Tool, tool_parameters
+from vtx.openjarvis.tools.schema import (
     ArraySchema,
     IntegerSchema,
     StringSchema,
     tool_parameters_schema,
 )
-from agenite_claw.config.paths import get_media_dir
-from agenite_claw.config_base import Base
-from agenite_claw.providers.image_generation import (
-    ImageGenerationError,
-    ImageGenerationProvider,
-    get_image_gen_provider,
-)
-from agenite_claw.security.workspace_access import current_tool_workspace
-from agenite_claw.security.workspace_policy import WorkspaceBoundaryError, resolve_allowed_path
-from agenite_claw.utils.artifacts import (
+from vtx.openjarvis.utils.artifacts import (
     ArtifactError,
     generated_image_tool_result,
     store_generated_image_artifact,
 )
-from agenite_claw.utils.helpers import detect_image_mime
+from vtx.openjarvis.utils.helpers import detect_image_mime
+from vtx.openjarvis.utils.paths import get_media_dir
 
 if TYPE_CHECKING:
-    from agenite_claw.config.schema import ProviderConfig
+    from vtx.openjarvis.config.schema import ProviderConfig
 
 
 class ImageGenerationToolConfig(Base):
@@ -117,7 +117,7 @@ class ImageGenerationTool(Tool):
         cls = get_image_gen_provider(self.config.provider)
         if cls is None:
             return None
-        from agenite_claw.config.schema import ProviderConfig as _PC  # noqa
+        from vtx.openjarvis.config.schema import ProviderConfig as _PC  # noqa
 
         provider_cfg: _PC | None = provider
         return cls(
@@ -140,7 +140,7 @@ class ImageGenerationTool(Tool):
             )
         except WorkspaceBoundaryError as exc:
             raise ImageGenerationError(
-                "reference_images must be inside the workspace or agenite_claw media directory"
+                "reference_images must be inside the workspace or openjarvis media directory"
             ) from exc
         except OSError as exc:
             raise ImageGenerationError(f"reference image not found: {value}") from exc

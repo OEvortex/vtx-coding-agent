@@ -4,16 +4,16 @@ import asyncio
 import json
 import mimetypes
 import time
+from collections.abc import Awaitable, Callable, Coroutine
 from contextlib import suppress
 from dataclasses import dataclass
 from pathlib import Path
-from collections.abc import Awaitable, Callable, Coroutine
 from typing import Any, Literal, cast
 from urllib.parse import quote, urlparse
 
 from pydantic import Field
 
-from agenite_claw.security.workspace_policy import is_path_within
+from vtx.openjarvis.security.workspace_policy import is_path_within
 
 try:
     import aiohttp
@@ -52,13 +52,13 @@ except ImportError as e:
         "Matrix dependencies not installed. Run: pip install agenite-claw[matrix]"
     ) from e
 
-from agenite_claw.bus.events import OutboundMessage
-from agenite_claw.bus.queue import MessageBus
-from agenite_claw.channels.base import BaseChannel
-from agenite_claw.config.paths import get_data_dir, get_media_dir
-from agenite_claw.config.schema import Base
-from agenite_claw.utils.helpers import safe_filename
-from agenite_claw.utils.logging_bridge import redirect_lib_logging
+from vtx.openjarvis.bus.events import OutboundMessage
+from vtx.openjarvis.bus.queue import MessageBus
+from vtx.openjarvis.channels.base import BaseChannel
+from vtx.openjarvis.config.schema import Base
+from vtx.openjarvis.utils.helpers import safe_filename
+from vtx.openjarvis.utils.logging_bridge import redirect_lib_logging
+from vtx.openjarvis.utils.paths import get_data_dir, get_media_dir
 
 TYPING_NOTICE_TIMEOUT_MS = 30_000
 # Must stay below TYPING_NOTICE_TIMEOUT_MS so the indicator doesn't expire mid-processing.
@@ -669,16 +669,13 @@ class MatrixChannel(BaseChannel):
     def _register_response_callbacks(self) -> None:
         assert self.client is not None
         self.client.add_response_callback(
-            cast(Coroutine[Any, Any, Response], self._on_sync_error),
-            SyncError,
+            cast(Coroutine[Any, Any, Response], self._on_sync_error), SyncError
         )
         self.client.add_response_callback(
-            cast(Coroutine[Any, Any, Response], self._on_join_error),
-            JoinError,
+            cast(Coroutine[Any, Any, Response], self._on_join_error), JoinError
         )
         self.client.add_response_callback(
-            cast(Coroutine[Any, Any, Response], self._on_send_error),
-            RoomSendError,
+            cast(Coroutine[Any, Any, Response], self._on_send_error), RoomSendError
         )
 
     def _is_sas_sender_allowed(self, sender: str) -> bool:

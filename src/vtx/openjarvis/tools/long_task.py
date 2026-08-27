@@ -6,7 +6,7 @@ from the skills listing (path shown there) before composing ``long_task.goal`` t
 
 ``long_task`` registers an objective on the session (JSON-serializable metadata).
 Active objectives are mirrored each turn into the Runtime Context block (see
-``agenite_claw.session.goal_state.goal_state_runtime_lines``) so compaction cannot hide them.
+``openjarvis.session.goal_state.goal_state_runtime_lines``) so compaction cannot hide them.
 Work proceeds in ordinary agent turns (same runner, compaction as configured).
 Call ``complete_goal`` when the sustained objective should stop being tracked:
 finished successfully, or cancelled / superseded / redirected—in every case the recap should match reality.  # noqa: E501
@@ -20,19 +20,23 @@ from contextvars import ContextVar
 from datetime import datetime
 from typing import TYPE_CHECKING, Any
 
-from agenite_claw.agent.tools.base import Tool, tool_parameters
-from agenite_claw.agent.tools.context import ContextAware, RequestContext
-from agenite_claw.agent.tools.schema import StringSchema, tool_parameters_schema
-from agenite_claw.bus.runtime_events import GoalStateChanged, RuntimeEventBus, RuntimeEventContext
-from agenite_claw.session.goal_state import (
+from vtx.openjarvis.bus.runtime_events import (
+    GoalStateChanged,
+    RuntimeEventBus,
+    RuntimeEventContext,
+)
+from vtx.openjarvis.session.goal_state import (
     GOAL_STATE_KEY,
     discard_legacy_goal_state_key,
     goal_state_raw,
     parse_goal_state,
 )
+from vtx.openjarvis.tools.base import Tool, tool_parameters
+from vtx.openjarvis.tools.context import ContextAware, RequestContext
+from vtx.openjarvis.tools.schema import StringSchema, tool_parameters_schema
 
 if TYPE_CHECKING:
-    from agenite_claw.session.manager import SessionManager
+    from vtx.openjarvis.session.manager import SessionManager
 
 
 def _iso_now() -> str:

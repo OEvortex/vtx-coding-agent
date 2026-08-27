@@ -1,6 +1,6 @@
 """Pairing store for DM sender approval.
 
-Persistent storage at ``~/.agenite_claw/pairing.json`` keeps approved senders
+Persistent storage at ``~/.openjarvis/pairing.json`` keeps approved senders
 and pending pairing codes per channel.  The store is designed for
 private-assistant scale: small JSON file, simple locking, no external DB.
 """
@@ -17,8 +17,8 @@ from typing import Any
 
 from loguru import logger
 
-from agenite_claw.config.paths import get_data_dir
-from agenite_claw.utils.helpers import _write_text_atomic
+from vtx.openjarvis.utils.helpers import _write_text_atomic
+from vtx.openjarvis.utils.paths import get_data_dir
 
 # threading.Lock is used so store functions remain callable from both sync CLI
 # and async channel handlers.  At private-assistant scale (small JSON file,

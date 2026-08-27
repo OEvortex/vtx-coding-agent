@@ -6,12 +6,12 @@ from contextvars import ContextVar
 from datetime import datetime
 from typing import Any
 
-from agenite_claw.agent.tools.base import Tool, tool_parameters
-from agenite_claw.agent.tools.context import ContextAware, RequestContext
-from agenite_claw.agent.tools.schema import IntegerSchema, StringSchema, tool_parameters_schema
-from agenite_claw.cron.service import CronService
-from agenite_claw.cron.types import CronJob, CronJobState, CronSchedule
-from agenite_claw.session.keys import UNIFIED_SESSION_KEY
+from vtx.openjarvis.cron.service import CronService
+from vtx.openjarvis.cron.types import CronJob, CronJobState, CronSchedule
+from vtx.openjarvis.session.keys import UNIFIED_SESSION_KEY
+from vtx.openjarvis.tools.base import Tool, tool_parameters
+from vtx.openjarvis.tools.context import ContextAware, RequestContext
+from vtx.openjarvis.tools.schema import IntegerSchema, StringSchema, tool_parameters_schema
 
 _CRON_PARAMETERS = tool_parameters_schema(
     action=StringSchema("Action", enum=["add", "list", "remove"]),

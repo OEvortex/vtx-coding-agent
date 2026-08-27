@@ -17,13 +17,13 @@ from typing import Any
 import httpx
 from pydantic import Field, computed_field, field_validator
 
-from agenite_claw.bus.events import InboundMessage, OutboundMessage
-from agenite_claw.bus.queue import MessageBus
-from agenite_claw.channels.base import BaseChannel
-from agenite_claw.config.paths import get_media_dir
-from agenite_claw.config.schema import Base
-from agenite_claw.pairing import is_approved
-from agenite_claw.utils.helpers import safe_filename, split_message
+from vtx.openjarvis.bus.events import InboundMessage, OutboundMessage
+from vtx.openjarvis.bus.queue import MessageBus
+from vtx.openjarvis.channels.base import BaseChannel
+from vtx.openjarvis.config.schema import Base
+from vtx.openjarvis.pairing import is_approved
+from vtx.openjarvis.utils.helpers import safe_filename, split_message
+from vtx.openjarvis.utils.paths import get_media_dir
 
 
 @dataclass

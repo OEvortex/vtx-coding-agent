@@ -28,12 +28,12 @@ import httpx
 from loguru import logger
 from pydantic import Field
 
-from agenite_claw.bus.events import OutboundMessage
-from agenite_claw.bus.queue import MessageBus
-from agenite_claw.channels.base import BaseChannel
-from agenite_claw.config.paths import get_media_dir, get_runtime_subdir
-from agenite_claw.config.schema import Base
-from agenite_claw.utils.helpers import split_message
+from vtx.openjarvis.bus.events import OutboundMessage
+from vtx.openjarvis.bus.queue import MessageBus
+from vtx.openjarvis.channels.base import BaseChannel
+from vtx.openjarvis.config.schema import Base
+from vtx.openjarvis.utils.helpers import split_message
+from vtx.openjarvis.utils.paths import get_media_dir, get_runtime_subdir
 
 # ---------------------------------------------------------------------------
 # Protocol constants (from openclaw-weixin types.ts)
@@ -131,7 +131,7 @@ class WeixinConfig(Base):
     cdn_base_url: str = "https://novac2c.cdn.weixin.qq.com/c2c"
     route_tag: str | int | None = None
     token: str = ""  # Manually set token, or obtained via QR login
-    state_dir: str = ""  # Default: ~/.agenite_claw/weixin/
+    state_dir: str = ""  # Default: ~/.openjarvis/weixin/
     poll_timeout: int = DEFAULT_LONG_POLL_TIMEOUT_S  # seconds for long-poll
 
 
@@ -472,7 +472,7 @@ class WeixinChannel(BaseChannel):
             self._token = self.config.token
         elif not self._load_state() and not await self._qr_login():
             self.logger.error(
-                "login failed. Run 'agenite_claw channels login weixin' to authenticate."
+                "login failed. Run 'vtx.openjarvis channels login weixin' to authenticate."
             )
             self._running = False
             return
@@ -1229,7 +1229,7 @@ class WeixinChannel(BaseChannel):
                 pass
 
         task = asyncio.create_task(keepalive())
-        setattr(task, '_typing_stop_event', stop_event)
+        task._typing_stop_event = stop_event
         self._typing_tasks[chat_id] = task
 
     async def _stop_typing(self, chat_id: str, *, clear_remote: bool) -> None:
@@ -1255,7 +1255,7 @@ class WeixinChannel(BaseChannel):
 
     async def _send_text(self, to_user_id: str, text: str, context_token: str) -> None:
         """Send a text message matching the exact protocol from send.ts."""
-        client_id = f"agenite_claw-{uuid.uuid4().hex[:12]}"
+        client_id = f"vtx.openjarvis-{uuid.uuid4().hex[:12]}"
 
         item_list: list[dict] = []
         if text:
@@ -1402,7 +1402,7 @@ class WeixinChannel(BaseChannel):
             media_item["len"] = str(raw_size)
 
         # Send each media item as its own message (matching reference plugin)
-        client_id = f"agenite_claw-{uuid.uuid4().hex[:12]}"
+        client_id = f"vtx.openjarvis-{uuid.uuid4().hex[:12]}"
         item_list: list[dict] = [{"type": item_type, item_key: media_item}]
 
         weixin_msg: dict[str, Any] = {

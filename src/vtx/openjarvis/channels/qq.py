@@ -34,15 +34,15 @@ import aiohttp
 from loguru import logger
 from pydantic import Field
 
-from agenite_claw.bus.events import OutboundMessage
-from agenite_claw.bus.queue import MessageBus
-from agenite_claw.channels.base import BaseChannel
-from agenite_claw.config.schema import Base
-from agenite_claw.security.network import validate_url_target
-from agenite_claw.utils.logging_bridge import redirect_lib_logging
+from vtx.openjarvis.bus.events import OutboundMessage
+from vtx.openjarvis.bus.queue import MessageBus
+from vtx.openjarvis.channels.base import BaseChannel
+from vtx.openjarvis.config.schema import Base
+from vtx.openjarvis.security.network import validate_url_target
+from vtx.openjarvis.utils.logging_bridge import redirect_lib_logging
 
 try:
-    from agenite_claw.config.paths import get_media_dir
+    from vtx.openjarvis.utils.paths import get_media_dir
 except Exception:  # pragma: no cover
     get_media_dir = None  # type: ignore
 
@@ -99,7 +99,7 @@ def _make_bot_class(channel: QQChannel) -> type[botpy.Client]:
 
     class _Bot(botpy.Client):
         def __init__(self):
-            # Disable botpy's file log -- agenite_claw uses loguru; default "botpy.log" fails on read-only fs  # noqa: E501
+            # Disable botpy's file log -- openjarvis uses loguru; default "botpy.log" fails on read-only fs  # noqa: E501
             super().__init__(intents=intents, ext_handlers=False)
 
         async def on_ready(self):
@@ -127,7 +127,7 @@ class QQConfig(Base):
     msg_format: Literal["plain", "markdown"] = "plain"
     ack_message: str = "⏳ Processing..."
 
-    # Optional: directory to save inbound attachments. If empty, use agenite_claw get_media_dir("qq").  # noqa: E501
+    # Optional: directory to save inbound attachments. If empty, use openjarvis get_media_dir("qq").  # noqa: E501
     media_dir: str = ""
 
     # Download tuning

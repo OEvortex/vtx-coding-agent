@@ -8,7 +8,7 @@ from dataclasses import dataclass, field
 from typing import Any, Protocol, runtime_checkable
 
 _CURRENT_REQUEST_CONTEXT: ContextVar[RequestContext | None] = ContextVar(
-    "agenite_claw_tool_request_context", default=None
+    "vtx.openjarvis_tool_request_context", default=None
 )
 
 

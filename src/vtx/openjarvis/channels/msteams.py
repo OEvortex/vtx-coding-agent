@@ -34,11 +34,11 @@ except ImportError:  # pragma: no cover
 import httpx
 from pydantic import Field
 
-from agenite_claw.bus.events import OutboundMessage
-from agenite_claw.bus.queue import MessageBus
-from agenite_claw.channels.base import BaseChannel
-from agenite_claw.config.paths import get_workspace_path
-from agenite_claw.config.schema import Base
+from vtx.openjarvis.bus.events import OutboundMessage
+from vtx.openjarvis.bus.queue import MessageBus
+from vtx.openjarvis.channels.base import BaseChannel
+from vtx.openjarvis.config.schema import Base
+from vtx.openjarvis.utils.paths import get_workspace_path
 
 MSTEAMS_AVAILABLE = (
     importlib.util.find_spec("jwt") is not None
@@ -216,7 +216,7 @@ class MSTeamsChannel(BaseChannel):
         server = ThreadingHTTPServer((self.config.host, self.config.port), Handler)
         self._server = server
         self._server_thread = threading.Thread(
-            target=self._server.serve_forever, name="agenite_claw-msteams", daemon=True
+            target=self._server.serve_forever, name="vtx.openjarvis-msteams", daemon=True
         )
         self._server_thread.start()
 

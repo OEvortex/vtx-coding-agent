@@ -7,17 +7,17 @@ from typing import Any
 
 from pydantic import Field
 
-from agenite_claw.agent.tools.base import Tool, tool_parameters
-from agenite_claw.agent.tools.schema import (
+from vtx.openjarvis.apps.cli import CliAppError, CliAppManager, CliAppsRuntimeConfig
+from vtx.openjarvis.config_base import Base
+from vtx.openjarvis.security.workspace_access import current_tool_workspace
+from vtx.openjarvis.tools.base import Tool, tool_parameters
+from vtx.openjarvis.tools.schema import (
     ArraySchema,
     BooleanSchema,
     IntegerSchema,
     StringSchema,
     tool_parameters_schema,
 )
-from agenite_claw.apps.cli import CliAppError, CliAppManager, CliAppsRuntimeConfig
-from agenite_claw.config_base import Base
-from agenite_claw.security.workspace_access import current_tool_workspace
 
 
 class CliAppsToolConfig(Base):

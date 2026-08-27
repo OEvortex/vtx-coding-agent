@@ -357,18 +357,6 @@ providers:
     model_parser:
       cooldown_minutes: 10
 
-  - slug: cline
-    display_name: Cline
-    description: Cline AI assistant.
-    family: openai_compat
-    base_url: https://api.cline.bot/api/v1
-    api_key_env: CLINE_API_KEY
-    openmodelendpoint: true
-    fetch_models: true
-    models_endpoint: /ai/cline/models
-    model_parser:
-      cooldown_minutes: 10
-
   - slug: chutes
     display_name: Chutes AI
     description: Chutes AI gateway.

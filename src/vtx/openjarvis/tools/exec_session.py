@@ -9,9 +9,9 @@ from contextlib import suppress
 from dataclasses import dataclass
 from typing import Any
 
-from agenite_claw.agent.tools.base import Tool, tool_parameters
-from agenite_claw.agent.tools.context import current_request_session_key
-from agenite_claw.agent.tools.schema import (
+from vtx.openjarvis.tools.base import Tool, tool_parameters
+from vtx.openjarvis.tools.context import current_request_session_key
+from vtx.openjarvis.tools.schema import (
     BooleanSchema,
     IntegerSchema,
     StringSchema,
@@ -292,7 +292,7 @@ class ExecSessionManager:
     async def _spawn(
         self, command: str, cwd: str, env: dict[str, str], shell_program: str | None, login: bool
     ) -> asyncio.subprocess.Process:
-        from agenite_claw.agent.tools.shell import ExecTool
+        from vtx.openjarvis.tools.shell import ExecTool
 
         return await ExecTool._spawn(
             command, cwd, env, shell_program, login, stdin=asyncio.subprocess.PIPE
@@ -378,7 +378,7 @@ class WriteStdinTool(Tool):
 
     @classmethod
     def config_cls(cls):
-        from agenite_claw.agent.tools.shell import ExecToolConfig
+        from vtx.openjarvis.tools.shell import ExecToolConfig
 
         return ExecToolConfig
 
@@ -504,7 +504,7 @@ class ListExecSessionsTool(Tool):
 
     @classmethod
     def config_cls(cls):
-        from agenite_claw.agent.tools.shell import ExecToolConfig
+        from vtx.openjarvis.tools.shell import ExecToolConfig
 
         return ExecToolConfig
 

@@ -5,13 +5,13 @@ from __future__ import annotations
 from contextvars import ContextVar
 from typing import TYPE_CHECKING, Any
 
-from agenite_claw.agent.tools.base import Tool, tool_parameters
-from agenite_claw.agent.tools.context import ContextAware, RequestContext
-from agenite_claw.agent.tools.schema import NumberSchema, StringSchema, tool_parameters_schema
-from agenite_claw.security.workspace_access import current_workspace_scope
+from vtx.openjarvis.security.workspace_access import current_workspace_scope
+from vtx.openjarvis.tools.base import Tool, tool_parameters
+from vtx.openjarvis.tools.context import ContextAware, RequestContext
+from vtx.openjarvis.tools.schema import NumberSchema, StringSchema, tool_parameters_schema
 
 if TYPE_CHECKING:
-    from agenite_claw.agent.subagent import SubagentManager
+    from vtx.openjarvis.agent.subagent import SubagentManager
 
 
 @tool_parameters(

@@ -22,12 +22,12 @@ from typing import Any, Literal
 from loguru import logger
 from pydantic import Field
 
-from agenite_claw.bus.events import OutboundMessage
-from agenite_claw.bus.queue import MessageBus
-from agenite_claw.channels.base import BaseChannel
-from agenite_claw.config.paths import get_media_dir
-from agenite_claw.config.schema import Base
-from agenite_claw.utils.helpers import safe_filename
+from vtx.openjarvis.bus.events import OutboundMessage
+from vtx.openjarvis.bus.queue import MessageBus
+from vtx.openjarvis.channels.base import BaseChannel
+from vtx.openjarvis.config.schema import Base
+from vtx.openjarvis.utils.helpers import safe_filename
+from vtx.openjarvis.utils.paths import get_media_dir
 
 
 class EmailConfig(Base):
@@ -195,9 +195,7 @@ class EmailChannel(BaseChannel):
                     post_actions_uids.update(skipped_uids)
 
                 if post_actions_uids:
-                    await asyncio.to_thread(
-                        lambda uids: None, sorted(post_actions_uids)
-                    )
+                    await asyncio.to_thread(lambda uids: None, sorted(post_actions_uids))
             except Exception:
                 self.logger.exception("Polling error")
                 if not self._running:
@@ -237,7 +235,7 @@ class EmailChannel(BaseChannel):
             self.logger.info("Skip automatic reply to {}: auto_reply_enabled is false", to_addr)
             return
 
-        base_subject = self._last_subject_by_chat.get(to_addr, "agenite_claw reply")
+        base_subject = self._last_subject_by_chat.get(to_addr, "vtx.openjarvis reply")
         subject = self._reply_subject(base_subject)
         if msg.metadata and isinstance(msg.metadata.get("subject"), str):
             override = msg.metadata["subject"].strip()
@@ -892,7 +890,7 @@ class EmailChannel(BaseChannel):
         return html.unescape(text)
 
     def _reply_subject(self, base_subject: str) -> str:
-        subject = (base_subject or "").strip() or "agenite_claw reply"
+        subject = (base_subject or "").strip() or "vtx.openjarvis reply"
         prefix = self.config.subject_prefix or "Re: "
         if subject.lower().startswith("re:"):
             return subject

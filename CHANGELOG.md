@@ -6,14 +6,6 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
-### Fixed
-- **Resilient `provider.yaml` loading** — `_load_builtin()` and `_get_order()` in `vtx.ai.provider_catalog` now safely attempt `importlib.resources` lookups for both `vtx.ai` and `vtx.llm` and verify fallback filesystem candidates prior to opening. Prevents unhandled `FileNotFoundError` when running under mocked/compat namespaces or non-standard package structures.
-- **`/model refresh` latency** — all-provider refresh was invoking both the concurrent dynamic sweep and the sequential legacy `refresh_all_provider_models()` sweep. Since every dynamic provider also has `fetch_models: true`, the legacy path re-fetched the same providers serially, turning a ~5s concurrent refresh into a multi-minute one. The all-providers path now only legacy-refreshes providers not already covered by the dynamic fetcher; single-provider refresh is unchanged.
-
-
-## [1.1.1] - 2026-08-26
-
-### Added
 - **Tool-aware chat spinner refresh** — `ChatLog.set_spinner_tool()` bypasses the normal `_tick_spinner` cooldown so the chat-area spinner picks a context-aware witty line instantly when a tool starts or ends, wired through `agent_runner.py` on `ToolStartEvent` / `ToolEndEvent`.
 - **Subtle witty-line fade** — `StatusLine._animate_witty_line()` adds a quick opacity pulse when the bottom status line rotates to a new witty status.
 

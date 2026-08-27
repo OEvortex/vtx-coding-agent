@@ -204,6 +204,19 @@ def get_dynamic_api_key(provider: str) -> str | None:
     if stored:
         return stored
 
+    if provider in ("github-copilot", "copilot"):
+        try:
+            from vtx.ai.oauth.copilot import get_valid_copilot_token_sync, load_credentials
+
+            token = get_valid_copilot_token_sync()
+            if token:
+                return token
+            creds = load_credentials()
+            if creds is not None and creds.copilot_token:
+                return creds.copilot_token
+        except Exception:
+            pass
+
     if provider == "cline":
         try:
             from vtx.ai.oauth.cline import get_valid_cline_token_sync, load_cline_credentials
@@ -211,14 +224,51 @@ def get_dynamic_api_key(provider: str) -> str | None:
             token = get_valid_cline_token_sync()
             if token:
                 return token
-            # fallback: try loading without env check
             creds = load_cline_credentials()
             if creds is not None and creds.access:
                 return creds.access
         except Exception:
             pass
 
+    if provider in ("openai", "codex", "openai-codex"):
+        try:
+            from vtx.ai.oauth.codex import get_valid_codex_token_sync, load_codex_credentials
+
+            token = get_valid_codex_token_sync()
+            if token:
+                return token
+            creds = load_codex_credentials()
+            if creds is not None and creds.access:
+                return creds.access
+        except Exception:
+            pass
+
     return None
+
+
+def _check_oauth_stored(provider: str) -> bool:
+    if provider in ("github-copilot", "copilot"):
+        try:
+            from vtx.ai.oauth.copilot import is_copilot_logged_in
+
+            return is_copilot_logged_in()
+        except Exception:
+            return False
+    if provider == "cline":
+        try:
+            from vtx.ai.oauth.cline import is_cline_logged_in
+
+            return is_cline_logged_in()
+        except Exception:
+            return False
+    if provider in ("openai", "codex", "openai-codex"):
+        try:
+            from vtx.ai.oauth.codex import is_codex_logged_in
+
+            return is_codex_logged_in()
+        except Exception:
+            return False
+    return False
 
 
 def get_provider_status(provider: str) -> DynamicProviderStatus | None:
@@ -236,14 +286,7 @@ def get_provider_status(provider: str) -> DynamicProviderStatus | None:
     if config is not None:
         env_var = config.env_var
         has_env = bool(env_var and os.environ.get(env_var, "").strip())
-        has_stored = has_api_key(provider)
-        if not has_stored and provider == "cline":
-            try:
-                from vtx.ai.oauth.cline import is_cline_logged_in
-
-                has_stored = is_cline_logged_in()
-            except Exception:
-                pass
+        has_stored = has_api_key(provider) or _check_oauth_stored(provider)
         return DynamicProviderStatus(
             provider=provider,
             env_var=env_var,
@@ -259,16 +302,7 @@ def get_provider_status(provider: str) -> DynamicProviderStatus | None:
         return None
     env_var = p.api_key_env
     has_env = bool(env_var and os.environ.get(env_var, "").strip())
-    has_stored = has_api_key(provider)
-
-    # Check OAuth token files for providers that use them
-    if not has_stored and provider == "cline":
-        try:
-            from vtx.ai.oauth.cline import is_cline_logged_in
-
-            has_stored = is_cline_logged_in()
-        except Exception:
-            pass
+    has_stored = has_api_key(provider) or _check_oauth_stored(provider)
 
     return DynamicProviderStatus(
         provider=provider,

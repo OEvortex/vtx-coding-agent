@@ -1,5 +1,4 @@
 """Switchable handoff agents (``.vtx/agent/<name>.py``).
-
 A user-facing "agent" is a named, switchable bundle of:
 
 * system-prompt instructions (appended or replacing the base identity)
@@ -13,7 +12,6 @@ The discovery, loader, and registry mirror :mod:`vtx.extensions`. The
 single active :class:`LoadedAgent`; the active agent's tool/command set
 replaces the runtime defaults when the runtime is set up.
 """
-
 from __future__ import annotations
 
 # Public surface. Note: ``AGENT_ACTIVATED`` and ``AGENT_CHANGED`` are
@@ -35,8 +33,6 @@ from .registry import AgentRegistry
 from .schema import AGENT_NAME_RE, MAX_AGENT_NAME_LEN, AgentDef, PermissionAction, PermissionGate
 
 __all__ = [
-    "AGENT_ACTIVATED",
-    "AGENT_CHANGED",
     "AGENT_NAME_RE",
     "MAX_AGENT_NAME_LEN",
     "TOOL_GROUP_CHANGED",
@@ -59,7 +55,6 @@ __all__ = [
 
 def __getattr__(name: str) -> str:
     # Re-export the agent event-name constants from ``vtx.extensions``
-    # lazily so importing this module doesn't trigger
     # ``vtx.extensions`` -> ``vtx.tools`` -> ``vtx.tools.task`` ->
     # ``vtx.agents`` -> back to ``vtx.extensions`` (partially
     # initialized) at module load.

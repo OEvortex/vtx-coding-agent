@@ -7,13 +7,13 @@ from typing import TYPE_CHECKING, Any
 
 from loguru import logger
 
-from agenite_claw.agent.tools.base import Tool
-from agenite_claw.agent.tools.context import ContextAware, RequestContext
-from agenite_claw.agent.tools.runtime_state import RuntimeState
-from agenite_claw.config_base import Base
+from vtx.openjarvis.config_base import Base
+from vtx.openjarvis.tools.base import Tool
+from vtx.openjarvis.tools.context import ContextAware, RequestContext
+from vtx.openjarvis.tools.runtime_state import RuntimeState
 
 if TYPE_CHECKING:
-    from agenite_claw.agent.subagent import SubagentStatus
+    from vtx.openjarvis.agent.subagent import SubagentStatus
 
 
 class MyToolConfig(Base):
@@ -34,7 +34,7 @@ def _has_real_attr(obj: Any, key: str) -> bool:
 
 
 def _is_subagent_status(value: Any) -> bool:
-    from agenite_claw.agent.subagent import SubagentStatus
+    from vtx.openjarvis.agent.subagent import SubagentStatus
 
     return isinstance(value, SubagentStatus)
 

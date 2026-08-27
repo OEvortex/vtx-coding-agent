@@ -14,11 +14,11 @@ from typing import Any, Literal, NamedTuple
 
 from pydantic import Field
 
-from agenite_claw.bus.events import OutboundMessage
-from agenite_claw.bus.queue import MessageBus
-from agenite_claw.channels.base import BaseChannel
-from agenite_claw.config.paths import get_media_dir, get_runtime_subdir
-from agenite_claw.config.schema import Base
+from vtx.openjarvis.bus.events import OutboundMessage
+from vtx.openjarvis.bus.queue import MessageBus
+from vtx.openjarvis.channels.base import BaseChannel
+from vtx.openjarvis.config.schema import Base
+from vtx.openjarvis.utils.paths import get_media_dir, get_runtime_subdir
 
 
 class WhatsAppConfig(Base):
@@ -284,7 +284,7 @@ class WhatsAppChannel(BaseChannel):
         if legacy_bridge_fields:
             self.logger.warning(
                 "Ignoring deprecated WhatsApp bridge config fields: {}. "
-                "Run 'agenite_claw channels login whatsapp' to create a neonize session.",
+                "Run 'vtx.openjarvis channels login whatsapp' to create a neonize session.",
                 ", ".join(legacy_bridge_fields),
             )
         self._client: Any | None = None

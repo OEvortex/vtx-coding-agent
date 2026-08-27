@@ -34,25 +34,37 @@ _SUCCESS_HTML = """<!doctype html>
 
 
 @dataclass
-class OpenAICredentials:
+class CodexCredentials:
     refresh: str
     access: str
     expires: int
     account_id: str
 
 
-def get_openai_auth_path() -> Path:
-    return get_config_dir() / "openai_auth.json"
+OpenAICredentials = CodexCredentials
 
 
-def load_openai_credentials() -> OpenAICredentials | None:
-    path = get_openai_auth_path()
+def get_codex_auth_path() -> Path:
+    preferred = get_config_dir() / "codex_auth.json"
+    if preferred.exists():
+        return preferred
+    legacy = get_config_dir() / "openai_auth.json"
+    if legacy.exists():
+        return legacy
+    return preferred
+
+
+get_openai_auth_path = get_codex_auth_path
+
+
+def load_codex_credentials() -> CodexCredentials | None:
+    path = get_codex_auth_path()
     if not path.exists():
         return None
 
     try:
         data = json.loads(path.read_text())
-        return OpenAICredentials(
+        return CodexCredentials(
             refresh=data["refresh"],
             access=data["access"],
             expires=data["expires"],
@@ -62,8 +74,11 @@ def load_openai_credentials() -> OpenAICredentials | None:
         return None
 
 
-def save_openai_credentials(creds: OpenAICredentials) -> None:
-    path = get_openai_auth_path()
+load_openai_credentials = load_codex_credentials
+
+
+def save_codex_credentials(creds: CodexCredentials) -> None:
+    path = get_config_dir() / "codex_auth.json"
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(
         json.dumps(
@@ -79,14 +94,24 @@ def save_openai_credentials(creds: OpenAICredentials) -> None:
     path.chmod(0o600)
 
 
-def clear_openai_credentials() -> None:
-    path = get_openai_auth_path()
-    if path.exists():
-        path.unlink()
+save_openai_credentials = save_codex_credentials
 
 
-def is_openai_logged_in() -> bool:
-    return load_openai_credentials() is not None
+def clear_codex_credentials() -> None:
+    for filename in ("codex_auth.json", "openai_auth.json"):
+        path = get_config_dir() / filename
+        if path.exists():
+            path.unlink()
+
+
+clear_openai_credentials = clear_codex_credentials
+
+
+def is_codex_logged_in() -> bool:
+    return load_codex_credentials() is not None
+
+
+is_openai_logged_in = is_codex_logged_in
 
 
 def _base64url_encode(data: bytes) -> str:
@@ -187,48 +212,6 @@ async def _exchange_code_for_tokens(code: str, verifier: str) -> OpenAICredentia
         expires=int(time.time() * 1000) + expires_in * 1000,
         account_id=account_id,
     )
-
-
-async def refresh_openai_token(creds: OpenAICredentials) -> OpenAICredentials:
-    async with (
-        aiohttp.ClientSession() as session,
-        session.post(
-            _TOKEN_URL,
-            headers={"Content-Type": "application/x-www-form-urlencoded"},
-            data={
-                "grant_type": "refresh_token",
-                "refresh_token": creds.refresh,
-                "client_id": _CLIENT_ID,
-            },
-        ) as response,
-    ):
-        if response.status >= 400:
-            text = await response.text()
-            raise RuntimeError(f"OpenAI OAuth token refresh failed ({response.status}): {text}")
-        data = await response.json()
-
-    access = data.get("access_token")
-    refresh = data.get("refresh_token")
-    expires_in = data.get("expires_in")
-    if (
-        not isinstance(access, str)
-        or not isinstance(refresh, str)
-        or not isinstance(expires_in, int)
-    ):
-        raise RuntimeError("OpenAI OAuth refresh response missing required fields")
-
-    account_id = _extract_account_id(access)
-    if not account_id:
-        raise RuntimeError("Failed to extract chatgpt_account_id from OpenAI OAuth token")
-
-    refreshed = OpenAICredentials(
-        access=access,
-        refresh=refresh,
-        expires=int(time.time() * 1000) + expires_in * 1000,
-        account_id=account_id,
-    )
-    save_openai_credentials(refreshed)
-    return refreshed
 
 
 async def _start_callback_server(state: str) -> tuple[asyncio.AbstractServer, asyncio.Future[str]]:
@@ -367,7 +350,7 @@ async def login(
             )
 
         creds = await _exchange_code_for_tokens(code, verifier)
-        save_openai_credentials(creds)
+        save_codex_credentials(creds)
         return creds
 
     finally:
@@ -381,20 +364,96 @@ async def login(
                 await server.wait_closed()
 
 
-async def get_valid_openai_credentials() -> OpenAICredentials | None:
-    creds = load_openai_credentials()
+codex_login = login
+openai_login = login
+
+
+async def refresh_codex_token(creds: CodexCredentials) -> CodexCredentials:
+    async with (
+        aiohttp.ClientSession() as session,
+        session.post(
+            _TOKEN_URL,
+            headers={"Content-Type": "application/x-www-form-urlencoded"},
+            data={
+                "grant_type": "refresh_token",
+                "refresh_token": creds.refresh,
+                "client_id": _CLIENT_ID,
+            },
+        ) as response,
+    ):
+        if response.status >= 400:
+            text = await response.text()
+            raise RuntimeError(
+                f"OpenAI Codex OAuth token refresh failed ({response.status}): {text}"
+            )
+        data = await response.json()
+
+    access = data.get("access_token")
+    refresh = data.get("refresh_token")
+    expires_in = data.get("expires_in")
+    if (
+        not isinstance(access, str)
+        or not isinstance(refresh, str)
+        or not isinstance(expires_in, int)
+    ):
+        raise RuntimeError("OpenAI Codex OAuth refresh response missing required fields")
+
+    account_id = _extract_account_id(access)
+    if not account_id:
+        raise RuntimeError("Failed to extract chatgpt_account_id from OpenAI Codex OAuth token")
+
+    refreshed = CodexCredentials(
+        access=access,
+        refresh=refresh,
+        expires=int(time.time() * 1000) + expires_in * 1000,
+        account_id=account_id,
+    )
+    save_codex_credentials(refreshed)
+    return refreshed
+
+
+refresh_openai_token = refresh_codex_token
+
+
+async def get_valid_codex_credentials() -> CodexCredentials | None:
+    creds = load_codex_credentials()
     if not creds:
         return None
 
     if time.time() * 1000 >= creds.expires - 60_000:
         try:
-            creds = await refresh_openai_token(creds)
+            creds = await refresh_codex_token(creds)
         except Exception:
             return None
 
     return creds
 
 
-async def get_valid_openai_token() -> str | None:
-    creds = await get_valid_openai_credentials()
+get_valid_openai_credentials = get_valid_codex_credentials
+
+
+async def get_valid_codex_token() -> str | None:
+    creds = await get_valid_codex_credentials()
     return creds.access if creds else None
+
+
+get_valid_openai_token = get_valid_codex_token
+
+
+def get_valid_codex_token_sync() -> str | None:
+    """Sync fallback for model catalog / provider init (no async refresh).
+
+    Returns a token from env or saved OpenAI Codex OAuth credentials.
+    """
+    import os
+
+    env = os.getenv("OPENAI_API_KEY", "").strip()
+    if env:
+        return env
+    creds = load_codex_credentials()
+    if creds and creds.access:
+        return creds.access
+    return None
+
+
+get_valid_openai_token_sync = get_valid_codex_token_sync

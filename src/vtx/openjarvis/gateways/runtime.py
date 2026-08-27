@@ -21,7 +21,7 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
-from agenite_claw.config.paths import get_data_dir
+from vtx.openjarvis.utils.paths import get_data_dir
 
 
 @dataclass(frozen=True)
@@ -62,7 +62,7 @@ def build_gateway_command(python_executable: str, options: GatewayStartOptions) 
     command = [
         python_executable,
         "-m",
-        "agenite_claw",
+        "vtx.openjarvis",
         "gateway",
         "--foreground",
         "--port",

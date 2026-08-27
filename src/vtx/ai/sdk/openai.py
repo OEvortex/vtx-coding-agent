@@ -19,38 +19,6 @@ _DEFAULT_MODEL = "gpt-4o"
 _MAX_RETRIES = 3
 _RETRY_BASE_DELAY = 1.0
 
-# Hosts that still expect the legacy ``max_tokens`` field.
-# Every other OpenAI-compatible endpoint should use ``max_completion_tokens``
-# (required for o-series / gpt-5; ``max_tokens`` is deprecated and rejected).
-_LEGACY_MAX_TOKENS_HOSTS: frozenset[str] = frozenset(
-    {
-        "chutes.ai",
-        "api.deepseek.com",
-        "api.moonshot.cn",
-        "api.moonshot.ai",
-        "api.cloudflare.ai",
-        "api.together.xyz",
-        "api.nvidia.com",
-        "api.z.ai",
-        "api.anthropic.com",  # not used here but harmless
-    }
-)
-
-
-def _max_tokens_field(base_url: str | None) -> str:
-    if not base_url:
-        return "max_completion_tokens"
-    lower = base_url.lower()
-    for host in _LEGACY_MAX_TOKENS_HOSTS:
-        if host in lower:
-            return "max_tokens"
-    # OpenRouter / generic gateways with compat quirks also use max_tokens
-    if "openrouter" in lower:
-        # OpenRouter documents max_completion_tokens as preferred now, but
-        # still accepts max_tokens; keep the modern field.
-        return "max_completion_tokens"
-    return "max_completion_tokens"
-
 
 def _is_transient_error(e: Exception) -> bool:
     msg = str(e).lower()
@@ -232,6 +200,7 @@ class OpenAISDK(BaseLLMSDK):
         base_url: str | None = None,
         rate_limit_hook=None,
         provider_slug: str | None = None,
+        default_headers: dict[str, str] | None = None,
     ):
         resolved_url = base_url or "https://api.openai.com/v1"
         if resolved_url.startswith("http://"):
@@ -240,13 +209,20 @@ class OpenAISDK(BaseLLMSDK):
         self._async_client: AsyncOpenAI | None = None
         self._rate_limit_hook = rate_limit_hook
         self._provider_slug = (provider_slug or "").lower() or None
+        self._default_headers = default_headers
 
     @property
     def client(self) -> AsyncOpenAI:  # pyright: ignore[reportIncompatibleMethodOverride]
         if self._async_client is None:
-            self._async_client = AsyncOpenAI(
-                api_key=self.api_key, base_url=self.base_url, timeout=None, max_retries=3
-            )
+            kwargs: dict[str, Any] = {
+                "api_key": self.api_key,
+                "base_url": self.base_url,
+                "timeout": None,
+                "max_retries": 3,
+            }
+            if self._default_headers:
+                kwargs["default_headers"] = self._default_headers
+            self._async_client = AsyncOpenAI(**kwargs)
         return self._async_client
 
     def _build_kwargs(
@@ -262,8 +238,7 @@ class OpenAISDK(BaseLLMSDK):
         if config.temperature is not None and config.temperature != 0.7:
             kwargs["temperature"] = config.temperature
         if config.max_tokens is not None:
-            field = _max_tokens_field(self.base_url)
-            kwargs[field] = config.max_tokens
+            kwargs["max_completion_tokens"] = config.max_tokens
         if config.top_p is not None:
             kwargs["top_p"] = config.top_p
         if config.frequency_penalty is not None and config.frequency_penalty != 0.0:

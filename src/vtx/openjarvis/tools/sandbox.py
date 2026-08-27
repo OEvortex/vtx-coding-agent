@@ -8,7 +8,7 @@ and register it in _BACKENDS below.
 import shlex
 from pathlib import Path
 
-from agenite_claw.config.paths import get_media_dir
+from vtx.openjarvis.utils.paths import get_media_dir
 
 
 def _bwrap(command: str, workspace: str, cwd: str) -> str:
