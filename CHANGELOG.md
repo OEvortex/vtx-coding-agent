@@ -7,14 +7,18 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 ## [Unreleased]
 
 ### Added
+- **Dynamic Tool & Skills Registries** — `vtx.ai.agent.tools` now provides a full runtime registry API (`register_tool`, `register_tools`, `unregister_tool`, `get_tool`, `get_all_tools`, `get_default_tools`, `get_parent_only_tools`) and `vtx.ai.agent.context.skills` provides a package registry API (`register_skills_package`, `unregister_skills_package`, `get_registered_skills_packages`), enabling extensions and custom agents to register tools and skills without hardcoding package names.
+- **Dynamic Entrypoint Discovery** — `vtx.ai.agent.extension_manager` now supports registering custom entry-point groups (`register_extension_entrypoint_key`, `register_agent_entrypoint_key`) and automatically discovers package entrypoints matching `*.extensions` and `*.agents`.
 - **New LLM providers** — added TokenHarbor (`https://tokenharbor.ai/v1`), Sarvam AI (`https://api.sarvam.ai/v1`), and B.ai (`https://api.b.ai/v1`) to the provider catalog.
 - **Tool-aware chat spinner refresh** — `ChatLog.set_spinner_tool()` bypasses the normal `_tick_spinner` cooldown so the chat-area spinner picks a context-aware witty line instantly when a tool starts or ends, wired through `agent_runner.py` on `ToolStartEvent` / `ToolEndEvent`.
 - **Subtle witty-line fade** — `StatusLine._animate_witty_line()` adds a quick opacity pulse when the bottom status line rotates to a new witty status.
 
 ### Changed
+- **General Harness & TUI Architecture Decoupling** — `vtx.ai`, `vtx.core`, and `vtx.tui` are completely decoupled from `vtx.coding_agent`. Built-in coding tools, prompts, and coding skills now reside exclusively in `vtx.coding_agent`, while `vtx.ai` provides the general agent harness (runtime, background task manager, dynamic tool registry, goal system, and skills sync engine).
 - **Witty-line rotation cadence** — `WITTY_ROTATE_EVERY_TICKS` raised from `12` to `20` (3s instead of 1.8s at 0.15s/tick) in both the chat spinner and the bottom status line.
 
 ### Fixed
+- **Coding agent startup tool resolution** — fixed an issue where starting `vtx` only loaded harness-builtin tools by ensuring `vtx.coding_agent` auto-registers its concrete coding tools (`read`, `edit`, `write`, `bash`, `find`, `grep`, `skill`) into the harness tool registry on package and CLI entrypoint initialization.
 - **Sub-agent context-window wiring** — Task-tool sub-agents now apply the active model's real context window and max output tokens (same catalog lookup as the main agent), so overflow auto-compaction triggers at the correct threshold instead of the harness default. Fixes sub-agent runs dying with `context_length_exceeded` (e.g. a 414k-token request against a 262k window) on models whose window differs from the default.
 - **Goal completion auditor freeze & provider resolution** — resolved an issue where models could get stuck when completing goals (`goal(action="update", status="complete")`). The completion auditor now reuses the session's active provider instance directly, correctly resolves dynamic models and custom base URLs, clamps reasoning/thinking levels to supported values, and parses multi-turn auditor verdict markers reliably.
 
