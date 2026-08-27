@@ -344,4 +344,3 @@ class AgentAPI:
 
 
 __all__ = ["AgentAPI", "LoadedAgent", "NotifyLevel", "_when_predicate"]
-

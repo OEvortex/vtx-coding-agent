@@ -514,4 +514,3 @@ __all__ = [
     "strip_frontmatter",
     "sync_builtin_skills",
 ]
-

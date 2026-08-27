@@ -154,4 +154,3 @@ __all__ = [
     "compose_active_commands",
     "compose_active_tools",
 ]
-

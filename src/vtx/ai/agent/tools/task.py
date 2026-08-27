@@ -637,4 +637,3 @@ def _format_transcript(transcript: list[str], header: str | None = None) -> str:
 
 
 __all__ = ["SubagentSpec", "TaskParams", "TaskTool"]
-

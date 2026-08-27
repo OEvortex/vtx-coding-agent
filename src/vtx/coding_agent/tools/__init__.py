@@ -67,6 +67,7 @@ all_tools: list[BaseTool] = [
 ]
 
 tools_by_name: dict[str, BaseTool] = {tool.name: tool for tool in all_tools}
+all_tools_set: set[str] = {tool.name for tool in all_tools}
 DEFAULT_TOOLS: list[str] = [
     "read",
     "edit",

@@ -6,6 +6,8 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Added
+- **New LLM providers** — added TokenHarbor (`https://tokenharbor.ai/v1`), Sarvam AI (`https://api.sarvam.ai/v1`), and B.ai (`https://api.b.ai/v1`) to the provider catalog.
 - **Tool-aware chat spinner refresh** — `ChatLog.set_spinner_tool()` bypasses the normal `_tick_spinner` cooldown so the chat-area spinner picks a context-aware witty line instantly when a tool starts or ends, wired through `agent_runner.py` on `ToolStartEvent` / `ToolEndEvent`.
 - **Subtle witty-line fade** — `StatusLine._animate_witty_line()` adds a quick opacity pulse when the bottom status line rotates to a new witty status.
 

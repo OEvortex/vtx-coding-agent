@@ -716,3 +716,37 @@ providers:
     models_endpoint: /models
     model_parser:
       cooldown_minutes: 60
+
+  - slug: tokenharbor
+    display_name: TokenHarbor
+    description: TokenHarbor AI gateway.
+    family: openai_compat
+    base_url: https://tokenharbor.ai/v1
+    api_key_env: TOKENHARBOR_API_KEY
+    fetch_models: true
+    models_endpoint: /models
+    model_parser:
+      cooldown_minutes: 60
+
+  - slug: sarvam
+    display_name: Sarvam AI
+    description: Sarvam AI models.
+    family: openai_compat
+    base_url: https://api.sarvam.ai/v1
+    api_key_env: SARVAM_API_KEY
+    fetch_models: true
+    models_endpoint: /models
+    model_parser:
+      cooldown_minutes: 60
+
+  - slug: bai
+    display_name: B.ai
+    description: B.ai gateway.
+    family: openai_compat
+    base_url: https://api.b.ai/v1
+    api_key_env: BAI_API_KEY
+    fetch_models: true
+    models_endpoint: /models
+    model_parser:
+      cooldown_minutes: 60
+

@@ -2,6 +2,14 @@
 
 from __future__ import annotations
 
+import asyncio
+import importlib
+
+# Discover OpenJarvis tools dynamically — any Tool subclass in vtx.openjarvis.tools
+import pkgutil
+from typing import Any
+
+import vtx.openjarvis.tools as _pkg
 from vtx.openjarvis.tools.base import Schema, Tool, tool_parameters
 from vtx.openjarvis.tools.context import ToolContext
 from vtx.openjarvis.tools.loader import ToolLoader
@@ -16,15 +24,8 @@ from vtx.openjarvis.tools.schema import (
     tool_parameters_schema,
 )
 
-# Discover OpenJarvis tools dynamically — any Tool subclass in vtx.openjarvis.tools
-import pkgutil
-import importlib
-
-import vtx.openjarvis.tools as _pkg
-from vtx.openjarvis.tools.base import Tool
-
 OPENJARVIS_TOOLS: list[Tool] = []
-for _, modname, ispkg in pkgutil.iter_modules(_pkg.__path__):
+for _, modname, _ispkg in pkgutil.iter_modules(_pkg.__path__):
     if modname in (
         "base",
         "context",
@@ -67,13 +68,13 @@ DEFAULT_TOOLS = [t.name for t in OPENJARVIS_TOOLS if hasattr(t, "name")]
 
 # Keep VTX's filesystem etc. as fallback — will be merged
 __all__ = [
+    "DEFAULT_TOOLS",
+    "OPENJARVIS_TOOLS",
     "ArraySchema",
     "BooleanSchema",
-    "DEFAULT_TOOLS",
     "ImageGenerationTool",
     "IntegerSchema",
     "NumberSchema",
-    "OPENJARVIS_TOOLS",
     "ObjectSchema",
     "Schema",
     "StringSchema",
@@ -81,11 +82,58 @@ __all__ = [
     "ToolContext",
     "ToolLoader",
     "ToolRegistry",
-    "tools_by_name",
+    "register_with_vtx",
     "tool_parameters",
     "tool_parameters_schema",
-    "register_with_vtx",
+    "tools_by_name",
 ]
+
+
+class _OpenJarvisBaseToolAdapter:
+    """Adapt an OpenJarvis :class:`Tool` to the VTX harness ``BaseTool`` interface.
+
+    OpenJarvis tools expose ``parameters`` (a JSON Schema) and an
+    ``execute(**kwargs) -> str`` method, whereas the VTX agent expects a
+    ``BaseTool`` with a pydantic ``params`` model and an
+    ``execute(params, ...) -> ToolResult`` method. This wrapper bridges the
+    two so OpenJarvis tools can be called by the VTX agent (e.g. when the
+    model invokes ``apply_patch``).
+    """
+
+    def __init__(self, oj_tool: Tool) -> None:
+        from vtx.ai.agent.extensions import _json_schema_to_pydantic
+        from vtx.core.types import ToolResult
+
+        self._oj_tool = oj_tool
+        self._tool_result = ToolResult
+        self.name = oj_tool.name
+        self.description = oj_tool.description
+        self.params = _json_schema_to_pydantic(oj_tool.name, oj_tool.parameters)
+        self.mutating = not oj_tool.read_only
+        self.read_only = oj_tool.read_only
+        self.prompt_guidelines = tuple(getattr(oj_tool, "prompt_guidelines", []) or [])
+
+    async def execute(
+        self,
+        params: Any,
+        cancel_event: asyncio.Event | None = None,
+        tool_call_id: str | None = None,
+    ) -> Any:
+        kwargs = params.model_dump(exclude_none=True)
+        result = await self._oj_tool.execute(**kwargs)
+        if isinstance(result, str):
+            success = not result.startswith("Error")
+            return self._tool_result(success=success, result=result)
+        return self._tool_result(success=True, result=str(result))
+
+    def format_call(self, params: Any) -> str:
+        data = params.model_dump(exclude_none=True)
+        if not data:
+            return ""
+        return " / ".join(f"{k}={v}" for k, v in data.items())
+
+    def format_preview(self, params: Any) -> str | None:
+        return None
 
 
 def register_with_vtx() -> None:
@@ -103,13 +151,31 @@ def register_with_vtx() -> None:
     except ImportError:
         import vtx.ui.app as vtx_app  # type: ignore
 
+    from vtx.ai.agent.tools import BaseTool
+
+    # Wrap OpenJarvis tools into the VTX harness BaseTool interface so the
+    # agent can call them (it expects ``.params`` + ``execute(params, ...)``).
+    wrapped: dict[str, BaseTool] = {}
+    for name, tool in tools_by_name.items():
+        if isinstance(tool, BaseTool):
+            wrapped[name] = tool
+        else:
+            wrapped[name] = _OpenJarvisBaseToolAdapter(tool)
+
     # Merge tool dicts — OpenJarvis wins on name collision
     merged = dict(vtx_tools.tools_by_name)
-    merged.update(tools_by_name)
+    merged.update(wrapped)
     vtx_tools.tools_by_name = merged
     # Also update the tui's reference if it has its own copy
     if hasattr(vtx_app, "tools_by_name"):
         vtx_app.tools_by_name = merged
+
+    # Expose wrapped tools to the agent's default tool list so they appear in
+    # the LLM schema and are returned by get_tools().
+    for name in wrapped:
+        if name not in vtx_tools.all_tools_set:
+            vtx_tools.all_tools.append(wrapped[name])
+            vtx_tools.all_tools_set.add(name)
 
     # Merge DEFAULT_TOOLS — keep VTX's order, then append OpenJarvis's not already there
     merged_defaults = list(vtx_tools.DEFAULT_TOOLS)

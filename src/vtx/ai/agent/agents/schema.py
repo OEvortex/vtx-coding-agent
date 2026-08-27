@@ -170,4 +170,3 @@ __all__ = [
     "PermissionGate",
     "ThinkingLevel",
 ]
-

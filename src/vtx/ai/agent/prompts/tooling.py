@@ -34,4 +34,3 @@ def build_tool_guidelines_section(tools: list[BaseTool] | None) -> str:
 
 
 __all__ = ["TOOL_USAGE_HEADER", "build_tool_guidelines_section"]
-

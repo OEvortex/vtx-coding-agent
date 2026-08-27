@@ -25,8 +25,7 @@ class SearchParams(BaseModel):
         description="Maximum number of search results to return (1-10)",
     )
     fetch_content: bool = Field(
-        default=False,
-        description="Whether to fetch full text content for the top results",
+        default=False, description="Whether to fetch full text content for the top results"
     )
 
 
@@ -68,10 +67,7 @@ class WebTool(BaseTool[SearchParams]):
                 ui_summary="missing EXA_API_KEY",
             )
 
-        headers = {
-            "x-api-key": api_key,
-            "Content-Type": "application/json",
-        }
+        headers = {"x-api-key": api_key, "Content-Type": "application/json"}
 
         payload: dict[str, Any] = {
             "query": params.query,
@@ -81,9 +77,7 @@ class WebTool(BaseTool[SearchParams]):
         }
 
         if params.fetch_content:
-            payload["contents"] = {
-                "text": {"maxCharacters": DEFAULT_FETCH_TEXT_LIMIT},
-            }
+            payload["contents"] = {"text": {"maxCharacters": DEFAULT_FETCH_TEXT_LIMIT}}
 
         try:
             async with httpx.AsyncClient(timeout=15.0) as client:
@@ -117,9 +111,7 @@ class WebTool(BaseTool[SearchParams]):
 
             ui_summary = f"{len(results)} results for {params.query!r}"
             return ToolResult(
-                success=True,
-                result="\n\n---\n\n".join(formatted_results),
-                ui_summary=ui_summary,
+                success=True, result="\n\n---\n\n".join(formatted_results), ui_summary=ui_summary
             )
 
         except httpx.HTTPStatusError as e:
@@ -131,11 +123,7 @@ class WebTool(BaseTool[SearchParams]):
                 ui_summary=f"HTTP {e.response.status_code}",
             )
         except Exception as e:
-            return ToolResult(
-                success=False,
-                result=f"Web search error: {e}",
-                ui_summary="error",
-            )
+            return ToolResult(success=False, result=f"Web search error: {e}", ui_summary="error")
 
 
 # Alias for backward compatibility
@@ -149,4 +137,3 @@ __all__ = [
     "WebSearchTool",
     "WebTool",
 ]
-

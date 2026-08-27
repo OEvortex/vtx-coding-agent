@@ -110,7 +110,9 @@ class AgentRegistry:
 
     def switch(self, name_or_agent: str | LoadedAgent | None) -> bool:
         """Make an agent active by name or instance."""
-        target_name = name_or_agent.name if isinstance(name_or_agent, LoadedAgent) else name_or_agent
+        target_name = (
+            name_or_agent.name if isinstance(name_or_agent, LoadedAgent) else name_or_agent
+        )
         if name_or_agent is None:
             if self._active is None:
                 return False
@@ -198,4 +200,3 @@ def _collect_extensions_for(agent: LoadedAgent, all_extensions) -> list:
 
 
 __all__ = ["AgentRegistry", "_collect_extensions_for"]
-

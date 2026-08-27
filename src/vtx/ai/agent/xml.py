@@ -14,4 +14,3 @@ def escape_xml(text: str) -> str:
 
 
 __all__ = ["escape_xml"]
-

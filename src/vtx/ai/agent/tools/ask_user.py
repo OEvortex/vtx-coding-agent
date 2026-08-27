@@ -141,9 +141,7 @@ class AskUserTool(BaseTool[AskUserParams]):
             "Do NOT call `ask_user` for trivial clarifications that can be inferred from "
             "context, for routine next steps, or just to say hello/confirm you are starting."
         ),
-        (
-            "Do NOT add an 'Other' option — the UI always provides a write-in input by default."
-        ),
+        ("Do NOT add an 'Other' option — the UI always provides a write-in input by default."),
         (
             "Structure each question with 2-5 distinct, concrete choices. Put your "
             "recommended option first and prefix its label with '(Recommended)'."
@@ -182,11 +180,7 @@ class AskUserTool(BaseTool[AskUserParams]):
 
         loop = asyncio.get_running_loop()
         future: asyncio.Future[AskUserResponse] = loop.create_future()
-        event = AskUserEvent(
-            questions=core_questions,
-            future=future,
-            tool_call_id=tool_call_id,
-        )
+        event = AskUserEvent(questions=core_questions, future=future, tool_call_id=tool_call_id)
 
         from vtx.ai.agent.loop import current_event_queue
 
@@ -202,8 +196,7 @@ class AskUserTool(BaseTool[AskUserParams]):
         if cancel_event is not None:
             cancel_task = asyncio.create_task(cancel_event.wait())
             done, _ = await asyncio.wait(
-                [asyncio.create_task(future), cancel_task],
-                return_when=asyncio.FIRST_COMPLETED,
+                [asyncio.create_task(future), cancel_task], return_when=asyncio.FIRST_COMPLETED
             )
             if cancel_task in done and not future.done():
                 future.cancel()
@@ -243,11 +236,7 @@ class AskUserTool(BaseTool[AskUserParams]):
                 summary_parts.append(val)
         ui_summary = " · ".join(summary_parts) if summary_parts else "answered"
 
-        return ToolResult(
-            success=True,
-            result=result_text,
-            ui_summary=ui_summary,
-        )
+        return ToolResult(success=True, result=result_text, ui_summary=ui_summary)
 
 
 __all__ = [
@@ -267,4 +256,3 @@ __all__ = [
     "AskUserTool",
     "validate_option_labels",
 ]
-
