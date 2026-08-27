@@ -12,6 +12,7 @@ The discovery, loader, and registry mirror :mod:`vtx.extensions`. The
 single active :class:`LoadedAgent`; the active agent's tool/command set
 replaces the runtime defaults when the runtime is set up.
 """
+
 from __future__ import annotations
 
 # Public surface. Note: ``AGENT_ACTIVATED`` and ``AGENT_CHANGED`` are
