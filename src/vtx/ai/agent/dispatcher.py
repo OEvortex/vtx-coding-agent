@@ -37,7 +37,7 @@ from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any
 
 if TYPE_CHECKING:
-    from vtx.coding_agent.tools.background import BackgroundTaskManager
+    from vtx.ai.agent.background import BackgroundTaskManager
 
 
 @dataclass

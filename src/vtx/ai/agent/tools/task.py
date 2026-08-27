@@ -546,7 +546,7 @@ class TaskTool(BaseTool[TaskParams]):
         self, params: TaskParams, parent_ctx: Any, tool_call_id: str | None = None
     ) -> ToolResult:
         try:
-            from vtx.coding_agent.tools.background import get_manager
+            from vtx.ai.agent.background import get_manager
 
             manager = parent_ctx.background_manager or get_manager()
         except ImportError:

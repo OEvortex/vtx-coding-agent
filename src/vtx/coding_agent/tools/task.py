@@ -553,7 +553,7 @@ class TaskTool(BaseTool[TaskParams]):
         already returned). It is only cancelled by an explicit
         stop or by :meth:`vtx.runtime.ConversationRuntime.close`.
         """
-        from vtx.coding_agent.tools.background import get_manager
+        from vtx.ai.agent.background import get_manager
 
         manager = parent_ctx.background_manager or get_manager()
         if manager is None:
