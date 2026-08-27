@@ -19,4 +19,4 @@ PACKAGE_NAME = _get_package_name()
 try:
     VERSION = version(PACKAGE_NAME)
 except PackageNotFoundError:
-    VERSION = "1.1.1"
+    VERSION = "0.2.0"

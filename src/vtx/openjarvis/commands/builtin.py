@@ -14,7 +14,7 @@ try:
 
     __version__ = _pkg_version("vtx-coding-agent")
 except Exception:
-    __version__ = "0.0.0"
+    __version__ = "0.2.0"
 
 from vtx.openjarvis.bus.events import OutboundMessage
 from vtx.openjarvis.commands.router import CommandContext, CommandRouter
