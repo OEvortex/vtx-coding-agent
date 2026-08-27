@@ -99,22 +99,50 @@ def _parse_entry(entry: dict) -> ProviderInfo:
     )
 
 
-def _load_builtin() -> dict[str, ProviderInfo]:
-    # Prefer importlib.resources so the catalog works when the package is
-    # installed as a zip/uv-tool shim where __file__ may not point to a
-    # real file on disk. Fall back to the filesystem path for editable
-    # installs.
-    data = None
+def _load_raw_yaml() -> dict:
+    # 1. Try importlib.resources (handles zip/uv-tool/installed packages)
     try:
         from importlib import resources
 
         text = resources.files("vtx.ai").joinpath("provider.yaml").read_text(encoding="utf-8")
         data = yaml.safe_load(text)
+        if isinstance(data, dict) and "providers" in data:
+            return data
     except Exception:
         pass
-    if data is None:
-        with open(_YAML_PATH, encoding="utf-8") as f:
-            data = yaml.safe_load(f)
+
+    # 2. Try importlib.resources under legacy vtx.llm
+    try:
+        from importlib import resources
+
+        text = resources.files("vtx.llm").joinpath("provider.yaml").read_text(encoding="utf-8")
+        data = yaml.safe_load(text)
+        if isinstance(data, dict) and "providers" in data:
+            return data
+    except Exception:
+        pass
+
+    # 3. Try relative to __file__ and sibling/parent dirs
+    candidates = [
+        _YAML_PATH,
+        Path(__file__).parent.parent / "llm" / "provider.yaml",
+        Path(__file__).parent.parent / "ai" / "provider.yaml",
+    ]
+    for p in candidates:
+        try:
+            if p.is_file():
+                with open(p, encoding="utf-8") as f:
+                    data = yaml.safe_load(f)
+                if isinstance(data, dict) and "providers" in data:
+                    return data
+        except Exception:
+            pass
+
+    return {}
+
+
+def _load_builtin() -> dict[str, ProviderInfo]:
+    data = _load_raw_yaml()
     return {e["slug"]: _parse_entry(e) for e in data.get("providers", [])}
 
 
@@ -123,17 +151,7 @@ def _get_order() -> list[str]:
     if _order_cache is not None:
         return _order_cache
     _ensure_custom_files_loaded()
-    data = None
-    try:
-        from importlib import resources
-
-        text = resources.files("vtx.ai").joinpath("provider.yaml").read_text(encoding="utf-8")
-        data = yaml.safe_load(text)
-    except Exception:
-        pass
-    if data is None:
-        with open(_YAML_PATH, encoding="utf-8") as f:
-            data = yaml.safe_load(f)
+    data = _load_raw_yaml()
     _order_cache = [e["slug"] for e in data.get("providers", [])]
     # Append slugs of runtime-registered custom providers not already present.
     for slug in _custom_cache:
