@@ -154,27 +154,63 @@ def format_preview(name: str, data: dict[str, Any]) -> str | None:
     return call
 
 
-def build_result_ui(result: str, success: bool) -> dict[str, str | None]:
-    """Split a raw tool result into ``ui_summary`` / ``ui_details`` / ``ui_details_full``.
+def render_tree(lines: list[str], max_lines: int = 10) -> str:
+    """Boxless pi-style card: ``├─`` rows with a ``└─`` tail and a `… N more` hint.
 
-    The summary is the first meaningful line (error line first on failure); the
-    details carry the remaining body so the header stays one clean line.
+    Structure survives without color — plain tree prefixes carry the shape.
+    """
+    if not lines:
+        return ""
+    extra = max(len(lines) - max_lines, 0)
+    shown = lines[:max_lines] if extra else lines
+    rows: list[str] = []
+    for i, line in enumerate(shown):
+        last_visible = i == len(shown) - 1 and not extra
+        rows.append(f"{'└─' if last_visible else '├─'} {line}")
+    if extra:
+        rows.append(f"   … +{extra} lines (ctrl+o to expand)")
+    return "\n".join(rows)
+
+
+def build_result_ui(
+    result: str, success: bool, elapsed_s: float | None = None
+) -> dict[str, str | None]:
+    """Split a raw tool result into pi-style UI fields.
+
+    - ``ui_summary``: first meaningful line (one clean header line; ``✗``
+      prefix on failure).
+    - ``ui_details``: boxless tree card of the remaining output plus a
+      metrics tail (``╰─ ⏱ 0.8s · 12 lines``); single-line results stay
+      header-only.
+    - ``ui_details_full``: the complete output for ctrl+o expansion.
     """
     if not result:
         return {"ui_summary": None, "ui_details": None, "ui_details_full": None}
-    lines = [line for line in result.splitlines()]
+    lines = result.replace("\r\n", "\n").split("\n")
     while lines and not lines[0].strip():
         lines.pop(0)
+    while lines and not lines[-1].strip():
+        lines.pop()
     if not lines:
         return {"ui_summary": None, "ui_details": None, "ui_details_full": None}
 
     first = lines[0].strip()
-    rest = "\n".join(lines[1:]).strip()
     if not success:
         first = f"✗ {first}" if not first.startswith("Error") else first
     summary = _trunc(first)
-    details = _trunc(rest, 800) if rest else None
-    full = rest if rest else None
+
+    if len(lines) == 1:
+        return {"ui_summary": summary, "ui_details": None, "ui_details_full": None}
+
+    metrics_bits: list[str] = []
+    if elapsed_s is not None:
+        metrics_bits.append(f"⏱ {elapsed_s:.1f}s")
+    metrics_bits.append(f"{len(lines)} lines")
+    metrics = "╰─ " + " · ".join(metrics_bits)
+
+    body = render_tree(lines[1:])
+    details = f"{body}\n{metrics}" if body else metrics
+    full = "\n".join(lines[1:])
     return {"ui_summary": summary, "ui_details": details, "ui_details_full": full}
 
 
@@ -184,5 +220,6 @@ __all__ = [
     "build_result_ui",
     "format_call",
     "format_preview",
+    "render_tree",
     "tool_icon",
 ]

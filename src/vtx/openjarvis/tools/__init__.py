@@ -124,14 +124,18 @@ class _OpenJarvisBaseToolAdapter:
         cancel_event: asyncio.Event | None = None,
         tool_call_id: str | None = None,
     ) -> Any:
+        import time
+
         from vtx.openjarvis.tui.tool_ui import build_result_ui
 
         kwargs = params.model_dump(exclude_none=True)
+        started = time.monotonic()
         result = await self._oj_tool.execute(**kwargs)
+        elapsed = time.monotonic() - started
         if not isinstance(result, str):
             result = str(result)
         success = not result.startswith("Error")
-        ui = build_result_ui(result, success)
+        ui = build_result_ui(result, success, elapsed_s=elapsed)
         return self._tool_result(
             success=success,
             result=result,
