@@ -104,6 +104,7 @@ class _OpenJarvisBaseToolAdapter:
     def __init__(self, oj_tool: Tool) -> None:
         from vtx.ai.agent.extensions import _json_schema_to_pydantic
         from vtx.core.types import ToolResult
+        from vtx.openjarvis.tui.tool_ui import tool_icon
 
         self._oj_tool = oj_tool
         self._tool_result = ToolResult
@@ -112,7 +113,7 @@ class _OpenJarvisBaseToolAdapter:
         self.params = _json_schema_to_pydantic(oj_tool.name, oj_tool.parameters)
         self.mutating = not oj_tool.read_only
         self.read_only = oj_tool.read_only
-        self.tool_icon = getattr(oj_tool, "tool_icon", None) or "→"
+        self.tool_icon = tool_icon(oj_tool.name, oj_tool)
         self.needs_approval = False
         self.ui_block = None
         self.prompt_guidelines = tuple(getattr(oj_tool, "prompt_guidelines", []) or [])
@@ -123,21 +124,36 @@ class _OpenJarvisBaseToolAdapter:
         cancel_event: asyncio.Event | None = None,
         tool_call_id: str | None = None,
     ) -> Any:
+        from vtx.openjarvis.tui.tool_ui import build_result_ui
+
         kwargs = params.model_dump(exclude_none=True)
         result = await self._oj_tool.execute(**kwargs)
-        if isinstance(result, str):
-            success = not result.startswith("Error")
-            return self._tool_result(success=success, result=result)
-        return self._tool_result(success=True, result=str(result))
+        if not isinstance(result, str):
+            result = str(result)
+        success = not result.startswith("Error")
+        ui = build_result_ui(result, success)
+        return self._tool_result(
+            success=success,
+            result=result,
+            ui_summary=ui["ui_summary"],
+            ui_details=ui["ui_details"],
+            ui_details_full=ui["ui_details_full"],
+        )
 
     def format_call(self, params: Any) -> str:
         data = params.model_dump(exclude_none=True)
-        if not data:
-            return ""
-        return " / ".join(f"{k}={v}" for k, v in data.items())
+        return self._call_text(self.name, data)
+
+    @staticmethod
+    def _call_text(name: str, data: dict[str, Any]) -> str:
+        from vtx.openjarvis.tui.tool_ui import format_call as _format_call
+
+        return _format_call(name, data)
 
     def format_preview(self, params: Any) -> str | None:
-        return None
+        from vtx.openjarvis.tui.tool_ui import format_preview as _format_preview
+
+        return _format_preview(self.name, params.model_dump(exclude_none=True))
 
 
 def adapt_tool(tool: Tool) -> Any:
