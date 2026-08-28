@@ -1,9 +1,7 @@
-"""Re-export tooling prompt helpers from vtx.ai.agent.prompts.tooling."""
+"""Re-export tool guideline helpers from vtx.ai.agent.prompts.tooling."""
 
 from __future__ import annotations
 
-import sys
+from vtx.ai.agent.prompts.tooling import build_tool_guidelines_section
 
-from vtx.ai.agent.prompts import tooling as _impl
-
-sys.modules[__name__] = _impl
+__all__ = ["build_tool_guidelines_section"]

@@ -9,22 +9,20 @@ from vtx.tui.themes import (
     BadgeColorConfig,
     ColorsConfig,
     SyntaxColorConfig,
-    Theme,
+    ThemeConfig,
     ToolBgConfig,
     get_theme,
     get_theme_ids,
-    get_themes,
-    register_theme,
+    get_theme_options,
 )
 
 __all__ = [
     "BadgeColorConfig",
     "ColorsConfig",
     "SyntaxColorConfig",
-    "Theme",
+    "ThemeConfig",
     "ToolBgConfig",
     "get_theme",
     "get_theme_ids",
-    "get_themes",
-    "register_theme",
+    "get_theme_options",
 ]

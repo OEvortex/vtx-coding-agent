@@ -2,8 +2,6 @@
 
 from __future__ import annotations
 
-import sys
+from vtx.ai.agent.prompts.env import build_env_section
 
-from vtx.ai.agent.prompts import env as _impl
-
-sys.modules[__name__] = _impl
+__all__ = ["build_env_section"]
