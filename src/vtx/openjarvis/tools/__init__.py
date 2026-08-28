@@ -112,6 +112,9 @@ class _OpenJarvisBaseToolAdapter:
         self.params = _json_schema_to_pydantic(oj_tool.name, oj_tool.parameters)
         self.mutating = not oj_tool.read_only
         self.read_only = oj_tool.read_only
+        self.tool_icon = getattr(oj_tool, "tool_icon", None) or "→"
+        self.needs_approval = False
+        self.ui_block = None
         self.prompt_guidelines = tuple(getattr(oj_tool, "prompt_guidelines", []) or [])
 
     async def execute(
