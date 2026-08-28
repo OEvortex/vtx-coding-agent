@@ -28,6 +28,7 @@ def test_openjarvis_default_tools_are_curatted() -> None:
         "ask_user",
         "task",
         "goal",
+        "cron",
         "list_exec_sessions",
         "write_stdin",
         "message",

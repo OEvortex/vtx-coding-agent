@@ -153,7 +153,7 @@ def adapt_tool(tool: Tool) -> Any:
 # OpenJarvis tool (edit_file, read_file, write_file, list_dir, find_files,
 # grep, web_search, ...) is dropped so the model only sees this surface.
 OPENJARVIS_KEEP_TOOLS = frozenset(
-    {"exec", "apply_patch", "list_exec_sessions", "write_stdin", "message"}
+    {"exec", "apply_patch", "list_exec_sessions", "write_stdin", "message", "cron"}
 )
 
 # OpenJarvis-native duplicates of VTX built-ins (read_file vs read, grep vs
@@ -176,6 +176,7 @@ OPENJARVIS_DEFAULT_TOOLS = [
     "ask_user",
     "task",
     "goal",
+    "cron",
     "list_exec_sessions",
     "write_stdin",
     "message",
@@ -207,6 +208,23 @@ def register_with_vtx() -> None:
             wrapped[name] = tool
         else:
             wrapped[name] = _OpenJarvisBaseToolAdapter(tool)
+
+    # ``cron`` needs a CronService so it can't be auto-discovered; wire a
+    # default one backed by the global config store so the TUI/headless get it.
+    if "cron" in OPENJARVIS_DEFAULT_TOOLS and "cron" not in wrapped:
+        try:
+            from pathlib import Path
+
+            from vtx.core.paths import get_config_dir
+            from vtx.openjarvis.cron.service import CronService
+            from vtx.openjarvis.tools.cron import CronTool
+
+            cron_service = CronService(
+                store_path=Path(get_config_dir()) / "openjarvis" / "cron.json"
+            )
+            wrapped["cron"] = _OpenJarvisBaseToolAdapter(CronTool(cron_service=cron_service))
+        except Exception:
+            pass
 
     # Restrict the merged registry to exactly the curated tool set (plus the
     # wrapped OpenJarvis tools); everything else — including VTX's ``bash`` and

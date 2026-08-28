@@ -190,12 +190,21 @@ class OpenJarvisRuntime:
         except Exception:
             return tools
         for name in registry.tool_names:
-            if name in present or name in OPENJARVIS_DROP_TOOLS:
+            if name in OPENJARVIS_DROP_TOOLS:
                 continue
             tool = registry.get(name)
-            if tool is not None:
-                tools.append(adapt_tool(tool))
-                present.add(name)
+            if tool is None:
+                continue
+            adapted = adapt_tool(tool)
+            if name in present:
+                # Prefer the runtime-wired instance (e.g. cron bound to this
+                # runtime's CronService with its on_job callback) over the
+                # generic default registered by register_with_vtx().
+                if name == "cron":
+                    tools = [adapted if t.name == name else t for t in tools]
+                continue
+            tools.append(adapted)
+            present.add(name)
         return tools
 
     def get_agent(self, session: Session, model: str | None = None) -> VtxAgent:
