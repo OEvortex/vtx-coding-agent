@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import time
-from typing import TYPE_CHECKING, Any
+from typing import Any
 
 from loguru import logger
 
@@ -11,9 +11,6 @@ from vtx.openjarvis.config_base import Base
 from vtx.openjarvis.tools.base import Tool
 from vtx.openjarvis.tools.context import ContextAware, RequestContext
 from vtx.openjarvis.tools.runtime_state import RuntimeState
-
-if TYPE_CHECKING:
-    from vtx.openjarvis.agent.subagent import SubagentStatus
 
 
 class MyToolConfig(Base):
@@ -34,9 +31,8 @@ def _has_real_attr(obj: Any, key: str) -> bool:
 
 
 def _is_subagent_status(value: Any) -> bool:
-    from vtx.openjarvis.agent.subagent import SubagentStatus
-
-    return isinstance(value, SubagentStatus)
+    """Match the live VTX harness subagent status objects (duck-typed)."""
+    return hasattr(value, "task_id") and hasattr(value, "tool_events")
 
 
 class MyTool(Tool, ContextAware):
@@ -261,38 +257,41 @@ class MyTool(Tool, ContextAware):
     # ------------------------------------------------------------------
 
     @staticmethod
-    def _format_status(st: SubagentStatus, indent: str = "  ") -> str:
-        elapsed = time.monotonic() - st.started_at
+    def _format_status(st: Any, indent: str = "  ") -> str:
+        started_at = getattr(st, "started_at", None)
+        elapsed = time.monotonic() - started_at if started_at is not None else 0.0
         tool_summary = (
             ", ".join(f"{e.get('name', '?')}({e.get('status', '?')})" for e in st.tool_events[-5:])
             or "none"
         )
         lines = [
-            f"{indent}phase: {st.phase}, iteration: {st.iteration}, elapsed: {elapsed:.1f}s",
+            f"{indent}phase: {getattr(st, 'phase', '?')}, "
+            f"iteration: {getattr(st, 'iteration', '?')}, elapsed: {elapsed:.1f}s",
             f"{indent}tools: {tool_summary}",
-            f"{indent}usage: {st.usage or 'n/a'}",
+            f"{indent}usage: {getattr(st, 'usage', None) or 'n/a'}",
         ]
-        if st.error:
+        if getattr(st, "error", None):
             lines.append(f"{indent}error: {st.error}")
-        if st.stop_reason:
+        if getattr(st, "stop_reason", None):
             lines.append(f"{indent}stop_reason: {st.stop_reason}")
         return "\n".join(lines)
 
     @staticmethod
     def _format_value(val: Any, key: str = "") -> str:
         if _is_subagent_status(val):
-            header = f"Subagent [{val.task_id}] '{val.label}'"
+            header = f"Subagent [{val.task_id}] '{getattr(val, 'label', '')}'"
             detail = MyTool._format_status(val, "  ")
-            return f"{header}\n  task: {val.task_description}\n{detail}"
-        # SubagentManager: delegate to its _task_statuses dict
-        if hasattr(val, "_task_statuses") and isinstance(val._task_statuses, dict):
-            return MyTool._format_value(val._task_statuses, key)
+            return f"{header}\n  task: {getattr(val, 'task_description', '')}\n{detail}"
+        # Subagent manager: delegate to its task-statuses mapping
+        statuses = getattr(val, "_task_statuses", None)
+        if isinstance(statuses, dict):
+            return MyTool._format_value(statuses, key)
         if isinstance(val, dict) and val and _is_subagent_status(next(iter(val.values()))):
             prefix = f"{key}: " if key else ""
             lines = [f"{prefix}{len(val)} subagent(s):"]
             for tid, st in val.items():
                 detail = MyTool._format_status(st, "    ")
-                lines.append(f"  [{tid}] '{st.label}'\n{detail}")
+                lines.append(f"  [{tid}] '{getattr(st, 'label', '')}'\n{detail}")
             return "\n".join(lines)
         if hasattr(val, "tool_names"):
             return f"tools: {len(val.tool_names)} registered — {val.tool_names}"
