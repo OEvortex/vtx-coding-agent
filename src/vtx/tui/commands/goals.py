@@ -179,7 +179,7 @@ class GoalCommands(CommandSupport):
 
         return goal_context_block(service, record)
 
-    def goal_continuation_prompt(self) -> str | None:
+    def goal_continuation_prompt(self) -> tuple[str, str] | None:
         """The continuation prompt injected into auto-continue turns."""
         service = self._goal_service()
         record = service.focused()

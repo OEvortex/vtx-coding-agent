@@ -104,7 +104,7 @@ class ChannelManager:
                     )
 
                     parsed = WebSocketConfig.model_validate(section)
-                    workspace = Path(self.config.workspace_path)
+                    workspace = Path(self.config.workspace)
                     gateway = build_gateway_services(
                         config=parsed,
                         bus=self.bus,
@@ -115,13 +115,13 @@ class ChannelManager:
                     kwargs["gateway"] = gateway
                 channel = cls(section, self.bus, **kwargs)
                 channel.send_progress = self._resolve_bool_override(
-                    section, "send_progress", self.config.channels.send_progress
+                    section, "send_progress", self.config.channels.get("send_progress", True)
                 )
                 channel.send_tool_hints = self._resolve_bool_override(
-                    section, "send_tool_hints", self.config.channels.send_tool_hints
+                    section, "send_tool_hints", self.config.channels.get("send_tool_hints", True)
                 )
                 channel.show_reasoning = self._resolve_bool_override(
-                    section, "show_reasoning", self.config.channels.show_reasoning
+                    section, "show_reasoning", self.config.channels.get("show_reasoning", True)
                 )
                 self.channels[name] = channel
                 logger.info("{} channel enabled", cls.display_name)
@@ -432,7 +432,7 @@ class ChannelManager:
 
         Note: CancelledError is re-raised to allow graceful shutdown.
         """
-        max_attempts = max(self.config.channels.send_max_retries, 1)
+        max_attempts = max(self.config.channels.get("send_max_retries", 2), 1)
 
         for attempt in range(max_attempts):
             try:

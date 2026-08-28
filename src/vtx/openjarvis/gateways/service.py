@@ -12,7 +12,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Literal
 
-from vtx.openjarvis.gateway import GatewayStartOptions, build_gateway_command
+from vtx.openjarvis.gateways.runtime import GatewayStartOptions, build_gateway_command
 
 ServiceManagerKind = Literal["auto", "systemd", "launchd"]
 

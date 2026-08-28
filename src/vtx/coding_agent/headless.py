@@ -8,17 +8,14 @@ from pathlib import Path
 from typing import TYPE_CHECKING, TextIO
 
 import vtx.coding_agent.tools  # noqa: F401
-from vtx.coding_agent.config import (
+from vtx.ai.config import (
     _atomic_write_text,
     _ensure_config_file,
     _read_config_data,
     _serialize_config_yaml,
     _set_config_version,
-    config,
-    get_config,
-    get_last_selected,
-    reload_config,
 )
+from vtx.coding_agent.config import config, get_config, get_last_selected, reload_config
 from vtx.core.types import StopReason
 
 if TYPE_CHECKING:
@@ -149,7 +146,7 @@ async def run_headless(
 
         # Load agents first so the active agent's tool surface is applied.
         from vtx.ai.agent.extensions import load_for_runtime
-        from vtx.coding_agent.agents import AgentRegistry, load_all_agents
+        from vtx.ai.agent.agents import AgentRegistry, load_all_agents
 
         agent_registry = AgentRegistry()
         if auto_discover_agents or agent_files:

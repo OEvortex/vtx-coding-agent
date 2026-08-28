@@ -601,8 +601,12 @@ class TelegramChannel(BaseChannel):
         _app = self._app
         if _app is None:
             return
+        updater = _app.updater
+        if updater is None:
+            self.logger.error("Telegram updater is not initialised; cannot start")
+            return
         if self.config.mode == "webhook":
-            await _app.updater.start_webhook(
+            await updater.start_webhook(
                 listen=self.config.webhook_listen_host,
                 port=self.config.webhook_listen_port,
                 url_path=self.config.webhook_path.lstrip("/"),
@@ -614,7 +618,7 @@ class TelegramChannel(BaseChannel):
             )
         else:
             # Start polling (this runs until stopped)
-            await _app.updater.start_polling(
+            await updater.start_polling(
                 allowed_updates=allowed_updates,
                 drop_pending_updates=False,  # Process pending messages on startup
                 error_callback=self._on_polling_error,
@@ -645,7 +649,8 @@ class TelegramChannel(BaseChannel):
         _app = self._app
         if _app:
             self.logger.info("Stopping bot...")
-            await _app.updater.stop()
+            if _app.updater is not None:
+                await _app.updater.stop()
             await _app.stop()
             await _app.shutdown()
             self._app = None

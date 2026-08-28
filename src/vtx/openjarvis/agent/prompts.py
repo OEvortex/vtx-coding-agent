@@ -2,8 +2,13 @@
 
 from __future__ import annotations
 
+from typing import TYPE_CHECKING
+
 from vtx.coding_agent.prompts import build_system_prompt as _vtx_build
 from vtx.coding_agent.prompts.identity import VTX_IDENTITY
+
+if TYPE_CHECKING:
+    from vtx.coding_agent.context import Context
 
 JARVIS_IDENTITY = (
     "You are OpenJarvis, an autonomous agent built on VTX. "
@@ -40,11 +45,15 @@ JARVIS_RULES = """# Jarvis Rules
 
 def build_openjarvis_system_prompt(
     cwd: str,
-    context: object | None = None,
+    context: Context | None = None,
     tools: list | None = None,
     extra_sections: list[str] | None = None,
 ) -> str:
-    base = _vtx_build(cwd, context, tools=tools) if context is not None else VTX_IDENTITY
+    base = (
+        _vtx_build(cwd, context, tools=tools)  # ty: ignore[invalid-argument-type]
+        if context is not None
+        else VTX_IDENTITY
+    )
     # Replace identity prefix with Jarvis identity but keep VTX capabilities
     if base.startswith(VTX_IDENTITY):
         base = base.replace(VTX_IDENTITY, JARVIS_IDENTITY, 1)

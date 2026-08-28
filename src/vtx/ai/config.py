@@ -19,13 +19,13 @@ if TYPE_CHECKING:
     pass
 
 
-def _get_theme_ids() -> tuple[str, ...]:
+def _get_theme_ids() -> list[str]:
     try:
         from vtx.tui.themes import get_theme_ids
 
         return get_theme_ids()
     except Exception:
-        return ()
+        return []
 
 
 def _get_theme(name: str) -> Any:

@@ -13,6 +13,24 @@ class Base(BaseModel):
     model_config = ConfigDict(extra="allow")
 
 
+class ProviderConfig(Base):
+    """A single provider entry (API credentials and defaults)."""
+
+    name: str = ""
+    api_key: str | None = None
+    api_base: str | None = None
+    model: str | None = None
+    extra_headers: dict[str, str] = {}
+    extra_body: dict[str, Any] = {}
+
+
+class ToolsConfig(Base):
+    """Tool-level settings (workspace restriction + MCP servers)."""
+
+    restrict_to_workspace: bool = False
+    mcp_servers: dict[str, Any] = {}
+
+
 class Config(Base):
     """VTX-native config — wraps OpenJarvisConfig for channel compatibility."""
 
@@ -21,6 +39,11 @@ class Config(Base):
     cron: dict[str, Any] = {}
     session: dict[str, Any] = {}
     workspace: str = ""
+    tools: ToolsConfig = ToolsConfig()
+
+    @property
+    def workspace_path(self) -> str:
+        return self.workspace
 
     @classmethod
     def from_openjarvis(cls, oj: OpenJarvisConfig) -> Config:

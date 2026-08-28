@@ -4,6 +4,8 @@ from __future__ import annotations
 
 import asyncio
 
+from typing import Any
+
 from vtx.openjarvis.tools import OPENJARVIS_DEFAULT_TOOLS, OPENJARVIS_KEEP_TOOLS, register_with_vtx
 from vtx.openjarvis.tools.apply_patch import ApplyPatchTool
 from vtx.openjarvis.version import VERSION
@@ -72,8 +74,8 @@ def test_adapter_builds_params_for_openjarvis_tool() -> None:
 # ---------------------------------------------------------------------------
 
 
-def _run(tool: ApplyPatchTool, **kwargs: object) -> str:
-    return asyncio.run(tool.execute(**kwargs))  # type: ignore[arg-type]
+def _run(tool: ApplyPatchTool, **kwargs: Any) -> str:
+    return asyncio.run(tool.execute(**kwargs))
 
 
 def test_apply_patch_add_new_file(tmp_path) -> None:

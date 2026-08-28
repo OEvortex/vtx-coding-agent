@@ -25,6 +25,14 @@ class MessageBus:
     async def consume_outbound(self) -> OutboundMessage:
         return await self._outbound.get()
 
+    @property
+    def inbound(self) -> asyncio.Queue[InboundMessage]:
+        return self._inbound
+
+    @property
+    def outbound(self) -> asyncio.Queue[OutboundMessage]:
+        return self._outbound
+
     def inbound_nowait(self) -> InboundMessage | None:
         try:
             return self._inbound.get_nowait()

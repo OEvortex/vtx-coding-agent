@@ -60,7 +60,7 @@ def _load_lark_runtime() -> tuple[Any, str, str]:
             and not import_loop.is_closed()
         ):
             import_loop.close()
-        lark_ws_client.loop = None
+        lark_ws_client.loop = None  # ty: ignore[invalid-assignment]
         with suppress(Exception):
             asyncio.set_event_loop(None)
 
@@ -640,13 +640,13 @@ class FeishuChannel(BaseChannel):
         from vtx.openjarvis.config.loader import load_config, save_config
 
         full_config = load_config()
-        feishu_cfg = getattr(full_config.channels, "feishu", None) or {}
+        feishu_cfg = full_config.channels.get("feishu") or {}
         if isinstance(feishu_cfg, dict):
             feishu_cfg["appId"] = result["app_id"]
             feishu_cfg["appSecret"] = result["app_secret"]
             feishu_cfg["domain"] = result.get("domain", "feishu")
             feishu_cfg["enabled"] = True
-            full_config.channels.feishu = feishu_cfg
+            full_config.channels["feishu"] = feishu_cfg
         save_config(full_config)
 
         _LOGIN_CONSOLE.print("\n[green]Feishu/Lark login complete.[/green]")
@@ -751,7 +751,7 @@ class FeishuChannel(BaseChannel):
                         time.sleep(5)
             finally:
                 if getattr(_lark_ws_client, "loop", None) is ws_loop:
-                    _lark_ws_client.loop = previous_loop
+                    _lark_ws_client.loop = previous_loop  # ty: ignore[invalid-assignment]
                 with suppress(Exception):
                     asyncio.set_event_loop(None)
                 ws_loop.close()

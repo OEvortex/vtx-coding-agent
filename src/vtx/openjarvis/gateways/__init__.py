@@ -1,6 +1,6 @@
 """Lightweight background runtime for the agenite-claw gateway."""
 
-from vtx.openjarvis.gateway.runtime import (
+from vtx.openjarvis.gateways.runtime import (
     GatewayRuntime,
     GatewayRuntimePaths,
     GatewayStartOptions,

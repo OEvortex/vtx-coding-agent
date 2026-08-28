@@ -80,4 +80,4 @@ def _patched_add_session_info(self: _chat.ChatLog, version: str) -> None:
     self.mount(info_label, before=0)
 
 
-_chat.ChatLog.add_session_info = _patched_add_session_info  # type: ignore[method-assign]
+_chat.ChatLog.add_session_info = _patched_add_session_info  # type: ignore

@@ -318,7 +318,7 @@ def tool_parameters(schema: dict[str, Any]) -> Callable[[type[_ToolT]], type[_To
         def _parameters_impl(self: Any) -> dict[str, Any]:
             return deepcopy(frozen)
 
-        cls.parameters = property(_parameters_impl)
+        cls.parameters = property(_parameters_impl)  # ty: ignore[invalid-assignment]
 
         abstract = getattr(cls, "__abstractmethods__", None)
         if abstract is not None and "parameters" in abstract:

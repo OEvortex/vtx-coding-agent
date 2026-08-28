@@ -82,6 +82,7 @@ __all__ = [
     "ToolContext",
     "ToolLoader",
     "ToolRegistry",
+    "adapt_tool",
     "register_with_vtx",
     "tool_parameters",
     "tool_parameters_schema",
@@ -136,11 +137,29 @@ class _OpenJarvisBaseToolAdapter:
         return None
 
 
+def adapt_tool(tool: Tool) -> Any:
+    """Wrap an OpenJarvis :class:`Tool` for the VTX harness ``BaseTool`` interface.
+
+    VTX harness tools pass through unchanged.
+    """
+    from vtx.ai.agent.tools import BaseTool
+
+    if isinstance(tool, BaseTool):
+        return tool
+    return _OpenJarvisBaseToolAdapter(tool)
+
+
 # Curated set of OpenJarvis tools exposed to the agent. Every other
 # OpenJarvis tool (edit_file, read_file, write_file, list_dir, find_files,
 # grep, web_search, ...) is dropped so the model only sees this surface.
 OPENJARVIS_KEEP_TOOLS = frozenset(
     {"exec", "apply_patch", "list_exec_sessions", "write_stdin", "message"}
+)
+
+# OpenJarvis-native duplicates of VTX built-ins (read_file vs read, grep vs
+# grep, ...). Dropped from the agent surface; the VTX versions are kept.
+OPENJARVIS_DROP_TOOLS = frozenset(
+    {"read_file", "write_file", "edit_file", "list_dir", "find_files", "grep", "web_search"}
 )
 
 # Final ordered tool list handed to the OpenJarvis agent. ``exec`` replaces
@@ -180,7 +199,7 @@ def register_with_vtx() -> None:
 
     # Wrap only the kept OpenJarvis tools into the VTX harness BaseTool interface
     # (it expects ``.params`` + ``execute(params, ...)``). Others are discarded.
-    wrapped: dict[str, BaseTool] = {}
+    wrapped: dict[str, Any] = {}
     for name, tool in tools_by_name.items():
         if name not in OPENJARVIS_KEEP_TOOLS:
             continue

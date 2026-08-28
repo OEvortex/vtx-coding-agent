@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import contextlib
+import shutil as _shutil
 import sqlite3
 import time
 from pathlib import Path
@@ -75,6 +76,43 @@ class FTS5Store:
             )
             rows = cur.fetchall()
             return [{"id": r[0], "snippet": r[1]} for r in rows]
+
+
+class MemoryStore:
+    """Static helpers for the Dream consolidation flow (session bookkeeping)."""
+
+    @staticmethod
+    def dream_session_key() -> str:
+        """Session key used for ephemeral dream consolidation turns."""
+        return "dream:consolidation"
+
+    @staticmethod
+    def dream_run_completed(resp: Any) -> bool:
+        """Heuristic: a dream run completed when it produced a non-empty reply."""
+        content = getattr(resp, "content", resp) if resp is not None else None
+        return bool(content and str(content).strip())
+
+    @staticmethod
+    def build_dream_commit_message(label: str, resp: Any) -> str:
+        """Compose a git commit message for a dream consolidation run."""
+        return f"{label} ({MemoryStore.dream_session_key()})"
+
+    @staticmethod
+    def prune_dream_sessions(sessions_dir: Path, *, keep: int = 10) -> int:
+        """Delete old ephemeral dream sessions; returns the number removed."""
+        removed = 0
+        try:
+            dream_dirs = sorted(
+                (p for p in Path(sessions_dir).glob("*dream*") if p.is_dir()),
+                key=lambda p: p.stat().st_mtime,
+                reverse=True,
+            )
+            for stale in dream_dirs[keep:]:
+                _shutil.rmtree(stale, ignore_errors=True)
+                removed += 1
+        except Exception:
+            pass
+        return removed
 
 
 class OpenJarvisMemory:

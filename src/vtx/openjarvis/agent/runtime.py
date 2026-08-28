@@ -26,7 +26,7 @@ from typing import Any
 from vtx.ai import get_provider_class, resolve_provider_api_type
 from vtx.ai.agent.loop import Agent as VtxAgent
 from vtx.ai.agent.session import Session
-from vtx.coding_agent.tools import DEFAULT_TOOLS, get_tools
+from vtx.coding_agent.tools import get_tools
 
 from .config import OpenJarvisConfig
 from .context import OpenJarvisContext
@@ -66,6 +66,24 @@ class RuntimeResult:
     ok: bool
     message: str
     session_id: str | None = None
+
+
+@dataclass
+class _ToolConfigView:
+    """Per-tool config sections exposed to the openjarvis tool loader.
+
+    Mirrors the attribute access tools perform on ``ctx.config`` (e.g.
+    ``ctx.config.exec.enable``); values are the tools' own pydantic config
+    models built from ``OpenJarvisConfig.tools``.
+    """
+
+    restrict_to_workspace: bool = False
+    exec: Any = None
+    file: Any = None
+    web: Any = None
+    my: Any = None
+    image_generation: Any = None
+    cli_apps: Any = None
 
 
 class OpenJarvisRuntime:
@@ -108,27 +126,88 @@ class OpenJarvisRuntime:
         self._sessions[session_key] = sess
         return sess
 
+    # ---- tool wiring (openjarvis-native tools, not the coding-agent set) ----
+
+    def _tool_config_view(self) -> _ToolConfigView:
+        """Build the per-tool config view the openjarvis tool loader expects.
+
+        Sections come from ``OpenJarvisConfig.tools`` (openjarvis.json ``tools``
+        key) with sensible defaults, e.g. ``{"exec": {"sandbox": ""}}``.
+        """
+        from vtx.openjarvis.tools.cli_apps import CliAppsToolConfig
+        from vtx.openjarvis.tools.filesystem import FileToolsConfig
+        from vtx.openjarvis.tools.image_generation import ImageGenerationToolConfig
+        from vtx.openjarvis.tools.self import MyToolConfig
+        from vtx.openjarvis.tools.shell import ExecToolConfig
+        from vtx.openjarvis.tools.web import WebToolsConfig
+
+        raw = dict(getattr(self.config, "tools", None) or {})
+        return _ToolConfigView(
+            restrict_to_workspace=bool(raw.get("restrict_to_workspace", False)),
+            exec=ExecToolConfig(**(raw.get("exec") or {})),
+            file=FileToolsConfig(**(raw.get("file") or {})),
+            web=WebToolsConfig(**(raw.get("web") or {})),
+            my=MyToolConfig(**(raw.get("my") or {})),
+            image_generation=ImageGenerationToolConfig(**(raw.get("image_generation") or {})),
+            cli_apps=CliAppsToolConfig(**(raw.get("cli_apps") or {})),
+        )
+
+    def build_tools(self) -> list[Any]:
+        """Assemble the agent tool list: openjarvis's curated set + its own tools.
+
+        1. Register openjarvis's tools into the VTX harness (``register_with_vtx``)
+           so ``exec``, ``apply_patch``, ``message`` etc. replace the coding-agent
+           built-ins.
+        2. Load the remaining openjarvis-native tools (cron, my, run_cli_app,
+           long_task, ...) via the :class:`ToolLoader` with a proper
+           :class:`ToolContext`, and wrap them for the harness.
+        """
+        from vtx.openjarvis.tools import (
+            OPENJARVIS_DEFAULT_TOOLS,
+            OPENJARVIS_DROP_TOOLS,
+            ToolLoader,
+            ToolRegistry,
+            adapt_tool,
+            register_with_vtx,
+        )
+        from vtx.openjarvis.tools.context import ToolContext
+
+        register_with_vtx()
+        tools = get_tools(OPENJARVIS_DEFAULT_TOOLS)
+        present = {t.name for t in tools}
+
+        channel_manager = self.channel_manager()
+        tctx = ToolContext(
+            config=self._tool_config_view(),
+            workspace=self.cwd,
+            bus=getattr(channel_manager, "bus", None) if channel_manager else None,
+            cron_service=self.cron_service(),
+            sessions=self._sessions,
+        )
+        registry = ToolRegistry()
+        try:
+            ToolLoader().load(tctx, registry)
+        except Exception:
+            return tools
+        for name in registry.tool_names:
+            if name in present or name in OPENJARVIS_DROP_TOOLS:
+                continue
+            tool = registry.get(name)
+            if tool is not None:
+                tools.append(adapt_tool(tool))
+                present.add(name)
+        return tools
+
     def get_agent(self, session: Session, model: str | None = None) -> VtxAgent:
         key = session.id
         if key in self._agent_cache:
             return self._agent_cache[key]
         ctx = OpenJarvisContext.load(self.cwd, gateway_port=self.config.gateway.port)
-        system_prompt = build_openjarvis_system_prompt(
-            self.cwd, ctx.vtx, tools=get_tools(DEFAULT_TOOLS)
-        )
+        tools = self.build_tools()
+        system_prompt = build_openjarvis_system_prompt(self.cwd, ctx.vtx, tools=tools)
         provider = _make_provider(
             model or self.config.model, self.config.model_provider, None, None
         )
-        tools = get_tools(DEFAULT_TOOLS)
-        # Extend with openjarvis tools (cron, shell wrappers) if available
-        try:
-            from vtx.openjarvis.tools import ToolRegistry  # noqa: F401
-
-            # Tools already include generic VTX tools; openjarvis-specific tools are
-            # available via openjarvis bus and are injected lazily per turn.
-            pass
-        except Exception:
-            pass
         agent = VtxAgent(
             provider=provider,
             tools=tools,
@@ -201,9 +280,12 @@ class OpenJarvisRuntime:
         if self._cron_service is not None:
             return self._cron_service
         try:
+            from vtx.core.paths import get_config_dir
             from vtx.openjarvis.cron.service import CronService
 
-            self._cron_service = CronService()
+            self._cron_service = CronService(
+                store_path=Path(get_config_dir()) / "openjarvis" / "cron.json"
+            )
         except Exception:
             self._cron_service = None
         return self._cron_service
@@ -218,7 +300,7 @@ class OpenJarvisRuntime:
 
     def gateway_runtime(self):
         try:
-            from vtx.openjarvis.gateway.runtime import GatewayRuntime, GatewayStartOptions
+            from vtx.openjarvis.gateways.runtime import GatewayRuntime, GatewayStartOptions
 
             return GatewayRuntime, GatewayStartOptions
         except Exception:

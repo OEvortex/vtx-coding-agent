@@ -64,6 +64,9 @@ class OpenJarvisConfig(BaseModel):
     workspace: str = Field(default_factory=lambda: str(Path.cwd()))
     model: str | None = None
     model_provider: str | None = None
+    # Per-tool configuration consumed by the openjarvis tool loader, e.g.
+    # {"exec": {"sandbox": ""}, "web": {"enable": false}}.
+    tools: dict = Field(default_factory=dict)
 
     @classmethod
     def load(cls) -> OpenJarvisConfig:
