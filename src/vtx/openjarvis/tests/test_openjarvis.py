@@ -58,6 +58,18 @@ def test_register_with_vtx_exposes_only_curatted_tools() -> None:
         assert dropped not in tools_by_name
 
 
+def test_register_with_vtx_patches_harness_registry() -> None:
+    """The TUI/headless assemble tools from the harness registry — it must be patched."""
+    register_with_vtx()
+    from vtx.ai.agent.tools import get_default_tools, get_tools_with_extensions
+
+    assert set(get_default_tools()) == set(OPENJARVIS_DEFAULT_TOOLS)
+    names = [t.name for t in get_tools_with_extensions()]
+    assert set(names) == set(OPENJARVIS_DEFAULT_TOOLS)
+    assert "bash" not in names
+    assert "grep" not in names
+
+
 def test_adapter_builds_params_for_openjarvis_tool() -> None:
     register_with_vtx()
     from vtx.coding_agent.tools import tools_by_name

@@ -242,3 +242,20 @@ def register_with_vtx() -> None:
         set_default_tool_lookup(_lookup)
     except Exception:
         pass
+
+    # Patch the harness-level registry itself — the TUI and headless runtimes
+    # assemble their tool list via ``vtx.ai.agent.tools.get_tools_with_extensions()``
+    # which reads the harness defaults, not ``vtx.coding_agent.tools``.
+    try:
+        import vtx.ai.agent.tools as _harness
+
+        parent_only = _harness.get_parent_only_tools()
+        for name in list(_harness.get_all_tools()):
+            if name not in keep_names:
+                _harness.unregister_tool(name)
+        for name in OPENJARVIS_DEFAULT_TOOLS:
+            tool = merged.get(name) or _harness.get_all_tools().get(name)
+            if tool is not None:
+                _harness.register_tool(tool, is_default=True, parent_only=name in parent_only)
+    except Exception:
+        pass
