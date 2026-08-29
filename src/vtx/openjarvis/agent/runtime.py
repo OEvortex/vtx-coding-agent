@@ -26,7 +26,6 @@ from typing import Any
 from vtx.ai import get_provider_class, resolve_provider_api_type
 from vtx.ai.agent.loop import Agent as VtxAgent
 from vtx.ai.agent.session import Session
-from vtx.coding_agent.tools import get_tools
 
 from .config import OpenJarvisConfig
 from .context import OpenJarvisContext
@@ -153,27 +152,35 @@ class OpenJarvisRuntime:
         )
 
     def build_tools(self) -> list[Any]:
-        """Assemble the agent tool list: openjarvis's curated set + its own tools.
+        """Assemble the agent tool list WITHOUT monkey-patching VTX globals.
 
-        1. Register openjarvis's tools into the VTX harness (``register_with_vtx``)
-           so ``exec``, ``apply_patch``, ``message`` etc. replace the coding-agent
-           built-ins.
-        2. Load the remaining openjarvis-native tools (cron, my, run_cli_app,
-           long_task, ...) via the :class:`ToolLoader` with a proper
+        1. Build the curated OpenJarvis set via :func:`get_openjarvis_tool_map`
+           (read-only from ``vtx.coding_agent.tools`` + OpenJarvis KEEP).
+        2. Load the remaining openjarvis-native tools (my, run_cli_app,
+           long_task, ...) via :class:`ToolLoader` with a proper
            :class:`ToolContext`, and wrap them for the harness.
+           ``cron`` is already in the curated map (via ``get_openjarvis_tool_map``)
+           with the runtime's ``CronService``; the loader's ``cron`` is ignored
+           if already present.
         """
         from vtx.openjarvis.tools import (
-            OPENJARVIS_DEFAULT_TOOLS,
             OPENJARVIS_DROP_TOOLS,
             ToolLoader,
             ToolRegistry,
             adapt_tool,
-            register_with_vtx,
+            get_openjarvis_tool_map,
         )
         from vtx.openjarvis.tools.context import ToolContext
 
-        register_with_vtx()
-        tools = get_tools(OPENJARVIS_DEFAULT_TOOLS)
+        # No global mutation — read-only curated map.
+        merged = get_openjarvis_tool_map(cron_service=self.cron_service())
+        tools = [merged[name] for name in merged]
+        # Preserve curated ordering defined in OPENJARVIS_DEFAULT_TOOLS.
+        # ``get_openjarvis_tool_map`` already respects that order but returns
+        # a dict; re-order explicitly for stability.
+        from vtx.openjarvis.tools import OPENJARVIS_DEFAULT_TOOLS as _CURATED
+
+        tools = [merged[n] for n in _CURATED if n in merged]
         present = {t.name for t in tools}
 
         channel_manager = self.channel_manager()
@@ -213,7 +220,7 @@ class OpenJarvisRuntime:
             return self._agent_cache[key]
         ctx = OpenJarvisContext.load(self.cwd, gateway_port=self.config.gateway.port)
         tools = self.build_tools()
-        system_prompt = build_openjarvis_system_prompt(self.cwd, ctx.vtx, tools=tools)
+        system_prompt = build_openjarvis_system_prompt(self.cwd, ctx, tools=tools)
         provider = _make_provider(
             model or self.config.model, self.config.model_provider, None, None
         )

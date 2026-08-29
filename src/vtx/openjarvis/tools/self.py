@@ -38,7 +38,7 @@ def _is_subagent_status(value: Any) -> bool:
 class MyTool(Tool, ContextAware):
     """Check and set the agent loop's runtime configuration."""
 
-    _plugin_discoverable = False  # Requires AgentLoop reference; registered manually
+    _plugin_discoverable = True  # OpenJarvis: discoverable via ToolLoader (shim state)
     config_key = "my"
 
     @classmethod
@@ -47,7 +47,61 @@ class MyTool(Tool, ContextAware):
 
     @classmethod
     def enabled(cls, ctx: Any) -> bool:
-        return ctx.config.my.enable
+        return getattr(getattr(ctx, "config", None), "my", None) is None or bool(
+            ctx.config.my.enable
+        )
+
+    @classmethod
+    def create(cls, ctx: Any) -> Tool:
+        # VTX harness passes AgentLoop as runtime_state; OpenJarvis passes ToolContext
+        # with no runtime_state — build a minimal shim so `my` works in gateway.
+        runtime_state = getattr(ctx, "runtime_state", None)
+        if runtime_state is None:
+            # Check if ctx itself looks like a RuntimeState (VTX case)
+            if hasattr(ctx, "model") and hasattr(ctx, "_runtime_vars"):
+                runtime_state = ctx
+            else:
+                runtime_state = cls._build_shim(ctx)
+        # Respect allow_set from config; default False for safety in gateway.
+        cfg = getattr(getattr(ctx, "config", None), "my", None)
+        allow_set = bool(getattr(cfg, "allow_set", False)) if cfg else False
+        return cls(runtime_state=runtime_state, modify_allowed=allow_set)
+
+    @classmethod
+    def _build_shim(cls, ctx: Any) -> RuntimeState:
+        """Minimal RuntimeState for OpenJarvis gateway (no AgentLoop)."""
+
+        class _Shim:
+            def __init__(self, c: Any) -> None:
+                self._ctx = c
+                self._runtime_vars: dict[str, Any] = {}
+                self._last_usage: Any = None
+                self._active_preset: str | None = None
+                # Pull from ctx/config where possible
+                raw_cfg = getattr(c, "config", None)
+                # OpenJarvisConfig lives one level up from ToolContext.config
+                # but we expose sensible defaults.
+                self.model: str = getattr(raw_cfg, "model", None) or "openjarvis"
+                self.max_iterations: int = 50
+                self.context_window_tokens: int = 128000
+                self.workspace: str = str(getattr(c, "workspace", "") or "")
+                self.provider_retry_mode: str = "default"
+                self.max_tool_result_chars: int = 20000
+                self.current_iteration: int = 0
+                self.tool_names: list[str] = []
+                self.web_config: Any = getattr(raw_cfg, "web", None)
+                self.exec_config: Any = getattr(raw_cfg, "exec", None)
+                self.workspace_sandbox: Any = getattr(raw_cfg, "restrict_to_workspace", False)
+                self.subagents: Any = {}
+                self.model_preset: str | None = None
+
+            def _sync_subagent_runtime_limits(self) -> None:
+                return None
+
+            def _sync_replay_max_messages(self) -> None:
+                return None
+
+        return _Shim(ctx)  # type: ignore[return-value]
 
     BLOCKED = frozenset(
         {

@@ -5,6 +5,8 @@ VTX builtin_skills isolation:
   google-colab, review, github, skill-builder, goal, init). Those are VTX-
   specific. OpenJarvis loads only project/user skills + its own
   ``src/vtx/openjarvis/agent/skills/`` bundle, via ``load_openjarvis_skills``.
+  This module does NOT monkey-patch VTX's ``VtxContext`` — it keeps VTX's
+  context intact and stores OpenJarvis-isolated skills in its own fields.
 """
 
 from __future__ import annotations
@@ -19,6 +21,11 @@ from vtx.coding_agent.context.loader import Context as VtxContext
 class OpenJarvisContext:
     cwd: str
     vtx: VtxContext = field(default_factory=lambda: VtxContext.load(str(Path.cwd())))
+    # OpenJarvis-isolated skills (never includes VTX builtin_skills).
+    # ``vtx`` is kept unmodified for agents_files / git context; prompt
+    # building uses ``self.skills`` explicitly via ``skills=`` override.
+    skills: list = field(default_factory=list)
+    skill_warnings: list[tuple[str, str]] = field(default_factory=list)
     gateway_port: int = 18789
     channels_enabled: list[str] = field(default_factory=list)
     cron_jobs: list[str] = field(default_factory=list)
@@ -27,30 +34,28 @@ class OpenJarvisContext:
     @classmethod
     def load(cls, cwd: str, gateway_port: int = 18789) -> OpenJarvisContext:
         vtx = VtxContext.load(cwd)
-        # --- isolate from VTX builtin_skills ---------------------------------
-        # VtxContext.load merges VTX builtins (bundled=True) via:
-        #   load_skills(cwd) [includes ~/.vtx/skills] + load_builtin_cmd_skills()
-        # OpenJarvis must not expose those. Replace vtx.skills with an
-        # isolated set that excludes bundled VTX skills.
+        # Load OpenJarvis-isolated skills WITHOUT mutating ``vtx``.
+        # VTX's ``vtx.skills`` keeps its builtins; we store the isolated
+        # view in ``self.skills`` and pass it explicitly to the prompt
+        # builder via ``skills=`` (see prompts.py).
+        isolated_skills: list = []
+        isolated_warnings: list[tuple[str, str]] = []
         try:
             from vtx.openjarvis.agent.skills import load_openjarvis_skills
 
             isolated = load_openjarvis_skills(cwd)
-            # Keep VTX context's agents_files, but swap skills to isolated view.
-            # Preserve warnings from isolated loader; drop bundled warnings.
-            vtx.skills = isolated.skills
-            vtx.skill_warnings = [(w.path, w.message) for w in isolated.warnings]
+            isolated_skills = isolated.skills
+            isolated_warnings = [(w.path, w.message) for w in isolated.warnings]
         except Exception:
-            # Fallback: at least strip bundled flag if isolated loader fails.
             try:
                 from vtx.openjarvis.agent.skills import filter_bundled_skills
 
-                vtx.skills = filter_bundled_skills(vtx.skills)
-                vtx.skill_warnings = [
-                    w for w in vtx.skill_warnings if "bundled" not in w[0].lower()
+                isolated_skills = filter_bundled_skills(list(vtx.skills))
+                isolated_warnings = [
+                    w for w in list(vtx.skill_warnings) if "bundled" not in w[0].lower()
                 ]
             except Exception:
-                vtx.skills = [s for s in vtx.skills if not getattr(s, "bundled", False)]
+                isolated_skills = [s for s in list(vtx.skills) if not getattr(s, "bundled", False)]
         # Probe enabled channels via discovery without importing heavy SDKs
         try:
             from vtx.openjarvis.channels.registry import discover_channel_names
@@ -67,7 +72,22 @@ class OpenJarvisContext:
             _ = PathLib(get_config_dir() / "openjarvis.json")
         except Exception:
             pass
-        return cls(cwd=cwd, vtx=vtx, gateway_port=gateway_port, channels_enabled=enabled)
+        return cls(
+            cwd=cwd,
+            vtx=vtx,
+            skills=isolated_skills,
+            skill_warnings=isolated_warnings,
+            gateway_port=gateway_port,
+            channels_enabled=enabled,
+        )
 
     def reload(self) -> None:
         self.vtx.reload()
+        try:
+            from vtx.openjarvis.agent.skills import load_openjarvis_skills
+
+            isolated = load_openjarvis_skills(self.cwd)
+            self.skills = isolated.skills
+            self.skill_warnings = [(w.path, w.message) for w in isolated.warnings]
+        except Exception:
+            pass

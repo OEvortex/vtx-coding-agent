@@ -127,6 +127,8 @@ class _OpenJarvisBaseToolAdapter:
         params: Any,
         cancel_event: asyncio.Event | None = None,
         tool_call_id: str | None = None,
+        on_output: Any = None,
+        **extra: Any,
     ) -> Any:
         import time
 
@@ -150,6 +152,8 @@ class _OpenJarvisBaseToolAdapter:
                 call_kwargs["cancel_event"] = cancel_event
             if "tool_call_id" in sig.parameters:
                 call_kwargs["tool_call_id"] = tool_call_id
+            if "on_output" in sig.parameters and on_output is not None:
+                call_kwargs["on_output"] = on_output
 
             raw_res = await self._raw_tool.execute(params, **call_kwargs)
             elapsed = time.monotonic() - started
@@ -162,6 +166,8 @@ class _OpenJarvisBaseToolAdapter:
                 result_str = str(raw_res)
                 success = not result_str.startswith("Error")
         else:
+            if on_output is not None:
+                kwargs["on_output"] = on_output
             raw_res = await self._raw_tool.execute(**kwargs)
             elapsed = time.monotonic() - started
             result_str = str(raw_res) if not isinstance(raw_res, str) else raw_res
@@ -246,8 +252,65 @@ OPENJARVIS_DEFAULT_TOOLS = [
 ]
 
 
+def _build_openjarvis_merged(cron_service: Any | None = None) -> dict[str, Any]:
+    """Build OpenJarvis curated tool map WITHOUT mutating VTX globals.
+
+    Read-only from ``vtx.coding_agent.tools.tools_by_name`` and
+    ``tools_by_name`` (OpenJarvis native). Used by ``OpenJarvisRuntime``.
+    """
+    import vtx.coding_agent.tools as vtx_tools
+
+    wrapped: dict[str, Any] = {}
+    for name, tool in tools_by_name.items():
+        if name not in OPENJARVIS_KEEP_TOOLS:
+            continue
+        wrapped[name] = _OpenJarvisBaseToolAdapter(tool)
+
+    if "cron" in OPENJARVIS_DEFAULT_TOOLS and "cron" not in wrapped:
+        try:
+            from pathlib import Path as _Path
+
+            from vtx.core.paths import get_config_dir as _get_config_dir
+            from vtx.openjarvis.cron.service import CronService as _CronService
+            from vtx.openjarvis.tools.cron import CronTool as _CronTool
+
+            svc = cron_service
+            if svc is None:
+                svc = _CronService(
+                    store_path=_Path(_get_config_dir()) / "openjarvis" / "cron.json"
+                )
+            wrapped["cron"] = _OpenJarvisBaseToolAdapter(_CronTool(cron_service=svc))
+        except Exception:
+            pass
+
+    merged: dict[str, Any] = {}
+    for name in OPENJARVIS_DEFAULT_TOOLS:
+        raw = wrapped.get(name) or vtx_tools.tools_by_name.get(name)
+        if raw is not None:
+            merged[name] = adapt_tool(raw)
+    return merged
+
+
+def get_openjarvis_tools(cron_service: Any | None = None) -> list[Any]:
+    """Curated OpenJarvis tool list for ``VtxAgent`` — no global side-effects."""
+    merged = _build_openjarvis_merged(cron_service=cron_service)
+    return [merged[name] for name in OPENJARVIS_DEFAULT_TOOLS if name in merged]
+
+
+def get_openjarvis_tool_map(cron_service: Any | None = None) -> dict[str, Any]:
+    """Curated tool map (name -> adapted tool) — read-only, no VTX mutation."""
+    return _build_openjarvis_merged(cron_service=cron_service)
+
+
 def register_with_vtx() -> None:
-    """Register OpenJarvis tools into vtx.coding_agent + vtx.tui with full pi-style UX."""
+    """Legacy: Register OpenJarvis tools into VTX globals (monkey-patch).
+
+    .. deprecated::
+        OpenJarvis runtime no longer calls this. It mutates
+        ``vtx.coding_agent.tools`` and ``vtx.ai.agent.tools`` globals.
+        Prefer :func:`get_openjarvis_tools` / :func:`get_openjarvis_tool_map`
+        which are side-effect free. Kept for tests and backwards compat.
+    """
     import vtx.coding_agent.tools as vtx_tools
 
     try:
@@ -255,51 +318,19 @@ def register_with_vtx() -> None:
     except ImportError:
         import vtx.ui.app as vtx_app  # type: ignore
 
-    # Wrapped OpenJarvis tools
-    wrapped: dict[str, Any] = {}
-    for name, tool in tools_by_name.items():
-        if name not in OPENJARVIS_KEEP_TOOLS:
-            continue
-        wrapped[name] = _OpenJarvisBaseToolAdapter(tool)
-
-    # ``cron`` needs a CronService so it can't be auto-discovered
-    if "cron" in OPENJARVIS_DEFAULT_TOOLS and "cron" not in wrapped:
-        try:
-            from pathlib import Path
-
-            from vtx.core.paths import get_config_dir
-            from vtx.openjarvis.cron.service import CronService
-            from vtx.openjarvis.tools.cron import CronTool
-
-            cron_service = CronService(
-                store_path=Path(get_config_dir()) / "openjarvis" / "cron.json"
-            )
-            wrapped["cron"] = _OpenJarvisBaseToolAdapter(CronTool(cron_service=cron_service))
-        except Exception:
-            pass
-
-    # Restrict and adapt every tool in the curated list with pi-style UX
+    merged = _build_openjarvis_merged()
     keep_names = set(OPENJARVIS_DEFAULT_TOOLS)
-    merged: dict[str, Any] = {}
-    for name in OPENJARVIS_DEFAULT_TOOLS:
-        raw = wrapped.get(name) or vtx_tools.tools_by_name.get(name)
-        if raw is not None:
-            merged[name] = adapt_tool(raw)
 
     vtx_tools.tools_by_name = merged
     if hasattr(vtx_app, "tools_by_name"):
         vtx_app.tools_by_name = merged
 
-    # Expose only the curated tools on the agent's tool list.
     vtx_tools.all_tools = [merged[name] for name in OPENJARVIS_DEFAULT_TOOLS if name in merged]
     vtx_tools.all_tools_set = {t.name for t in vtx_tools.all_tools}
-
-    # Set the curated default tool list (idempotent).
     vtx_tools.DEFAULT_TOOLS = list(OPENJARVIS_DEFAULT_TOOLS)
     if hasattr(vtx_app, "DEFAULT_TOOLS"):
         vtx_app.DEFAULT_TOOLS = list(OPENJARVIS_DEFAULT_TOOLS)
 
-    # Also patch the harness-level tool lookup so headless runs resolve OpenJarvis tools
     try:
         from vtx.ai.agent.tools import set_default_tool_lookup
 
@@ -310,7 +341,6 @@ def register_with_vtx() -> None:
     except Exception:
         pass
 
-    # Patch the harness-level registry itself
     try:
         import vtx.ai.agent.tools as _harness
 

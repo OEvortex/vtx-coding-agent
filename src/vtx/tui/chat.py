@@ -593,6 +593,13 @@ class ChatLog(VerticalScroll):
             self._current_block.set_content(text)
             self._request_scroll()
 
+    def append_tool_output(self, tool_id: str, delta: str) -> None:
+        """Stream incremental output to a running tool block in real-time."""
+        block = self._tool_blocks.get(tool_id)
+        if block and hasattr(block, "append_live_output"):
+            block.append_live_output(delta)
+            self._scroll_if_anchored(animate=False)
+
     def set_tool_result(
         self,
         tool_id: str,

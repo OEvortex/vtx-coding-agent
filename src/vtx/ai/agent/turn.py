@@ -69,6 +69,7 @@ from vtx.core.events import (
     ToolArgsDeltaEvent,
     ToolArgsTokenUpdateEvent,
     ToolEndEvent,
+    ToolOutputDeltaEvent,
     ToolResultEvent,
     ToolStartEvent,
     TurnEndEvent,
@@ -255,7 +256,10 @@ def _finalize_tool_call_data(tool_call_data: dict, tools: list[BaseTool]) -> Pen
 
 
 async def _execute_tool(
-    tool_call: ToolCall, tool: BaseTool | None, cancel_event: asyncio.Event | None = None
+    tool_call: ToolCall,
+    tool: BaseTool | None,
+    cancel_event: asyncio.Event | None = None,
+    on_output: Callable[[str], None] | None = None,
 ) -> tuple[ToolResultMessage, FileChanges | None]:
     if not tool:
         return ToolResultMessage(
@@ -268,10 +272,28 @@ async def _execute_tool(
     try:
         params = tool.params(**tool_call.arguments)
         execute_fn: Any = tool.execute
+        call_kwargs: dict[str, Any] = {}
+        if cancel_event is not None:
+            call_kwargs["cancel_event"] = cancel_event
+        if tool_call.id:
+            call_kwargs["tool_call_id"] = tool_call.id
+        if on_output is not None:
+            call_kwargs["on_output"] = on_output
+
+        import inspect
+
+        sig = inspect.signature(execute_fn)
+        filtered_kwargs = {k: v for k, v in call_kwargs.items() if k in sig.parameters}
+
         try:
-            result = await execute_fn(params, cancel_event=cancel_event, tool_call_id=tool_call.id)
+            result = await execute_fn(params, **filtered_kwargs)
         except TypeError:
-            result = await execute_fn(params, cancel_event=cancel_event)
+            try:
+                result = await execute_fn(
+                    params, cancel_event=cancel_event, tool_call_id=tool_call.id
+                )
+            except TypeError:
+                result = await execute_fn(params, cancel_event=cancel_event)
 
         content: list[TextContent | ImageContent] = []
         if result.result:
@@ -1095,9 +1117,42 @@ class _TurnRunner:
                                 )
                                 return
 
-                    result, file_changes = await _execute_tool(
-                        pending.tool_call, pending.tool, self._cancel_event
+                    output_queue: asyncio.Queue[str] = asyncio.Queue()
+
+                    def _on_tool_output(delta: str) -> None:
+                        output_queue.put_nowait(delta)
+
+                    exec_task = asyncio.create_task(
+                        _execute_tool(
+                            pending.tool_call,
+                            pending.tool,
+                            self._cancel_event,
+                            on_output=_on_tool_output,
+                        )
                     )
+
+                    while not exec_task.done():
+                        try:
+                            delta = await asyncio.wait_for(output_queue.get(), timeout=0.03)
+                            if delta:
+                                yield ToolOutputDeltaEvent(
+                                    tool_call_id=pending.tool_call.id,
+                                    tool_name=pending.tool_call.name,
+                                    delta=delta,
+                                )
+                        except TimeoutError:
+                            continue
+
+                    while not output_queue.empty():
+                        delta = output_queue.get_nowait()
+                        if delta:
+                            yield ToolOutputDeltaEvent(
+                                tool_call_id=pending.tool_call.id,
+                                tool_name=pending.tool_call.name,
+                                delta=delta,
+                            )
+
+                    result, file_changes = await exec_task
 
                     # Emit tool_execution_end for extension observers.
                     if self._extensions is not None:

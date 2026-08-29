@@ -1,14 +1,16 @@
-"""Prompts for OpenJarvis — system prompt + VTX builder bridge."""
+"""Prompts for OpenJarvis — system prompt + VTX builder bridge.
+
+This module does NOT monkey-patch VTX's ``build_system_prompt`` globals.
+It forwards to VTX's builder with an explicit ``skills=`` override so
+OpenJarvis's isolated skills are used without mutating ``VtxContext``.
+"""
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING
+from typing import Any
 
 from vtx.coding_agent.prompts import build_system_prompt as _vtx_build
 from vtx.coding_agent.prompts.identity import VTX_IDENTITY
-
-if TYPE_CHECKING:
-    from vtx.coding_agent.context import Context
 
 JARVIS_IDENTITY = (
     "You are OpenJarvis, an autonomous agent built on VTX. "
@@ -43,15 +45,32 @@ JARVIS_RULES = """# Jarvis Rules
 - When asked for system status, report gateway, channels, cron, and memory layers."""
 
 
+def _is_openjarvis_context(ctx: Any) -> bool:
+    return hasattr(ctx, "vtx") and hasattr(ctx, "skills") and hasattr(ctx, "cwd")
+
+
 def build_openjarvis_system_prompt(
     cwd: str,
-    context: Context | None = None,
+    context: Any | None = None,
     tools: list | None = None,
     extra_sections: list[str] | None = None,
 ) -> str:
+    # OpenJarvisContext isolation: forward VTX's context + isolated skills
+    # explicitly via ``skills=`` so VTX's global ``VtxContext.skills`` is
+    # never mutated. VTX's builder uses ``skills if not None else context.skills``.
+    vtx_ctx: Any | None = None
+    isolated_skills: list[Any] | None = None
+    if context is not None:
+        if _is_openjarvis_context(context):
+            vtx_ctx = context.vtx
+            isolated_skills = list(getattr(context, "skills", []) or [])
+        else:
+            vtx_ctx = context
+            isolated_skills = None
+
     base = (
-        _vtx_build(cwd, context, tools=tools)  # ty: ignore[invalid-argument-type]
-        if context is not None
+        _vtx_build(cwd, vtx_ctx, tools=tools, skills=isolated_skills)  # ty: ignore[invalid-argument-type]
+        if vtx_ctx is not None or isolated_skills is not None
         else VTX_IDENTITY
     )
     # Replace identity prefix with Jarvis identity but keep VTX capabilities

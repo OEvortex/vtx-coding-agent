@@ -34,6 +34,7 @@ from vtx.core import (
     ToolApprovalEvent,
     ToolArgsTokenUpdateEvent,
     ToolEndEvent,
+    ToolOutputDeltaEvent,
     ToolResultEvent,
     ToolStartEvent,
     TurnEndEvent,
@@ -316,6 +317,9 @@ class AgentRunnerMixin:
             case ToolEndEvent(tool_call_id=id, display=display):
                 chat.update_tool_call_msg(id, display)
                 chat.set_spinner_tool(None)
+
+            case ToolOutputDeltaEvent(tool_call_id=id, delta=d):
+                chat.append_tool_output(id, d)
 
             case ToolApprovalEvent(tool_call_id=id, tool_name=name, display=disp, future=f):
                 self.app.bell()

@@ -388,6 +388,7 @@ class ToolBlock(Static):
         # would otherwise be forwarded from the chat input and the user
         # could never type into these fields.
         self._ask_user_input_visible: bool = False
+        self._live_output: str = ""
         self.add_class("tool-block")
         self._set_state(None)
 
@@ -941,6 +942,48 @@ class ToolBlock(Static):
         self._call_msg = call_msg
         self.query_one("#tool-header", Label).update(self._format_header())
 
+    def append_live_output(self, delta: str) -> None:
+        """Stream incremental stdout/stderr chunk into the tool block in real-time."""
+        if not delta:
+            return
+        self._live_output += delta
+        if len(self._live_output) > 20000:
+            lines = self._live_output.split("\n")
+            if len(lines) > 100:
+                self._live_output = "\n".join(lines[-100:])
+        self._render_live_output()
+
+    def set_live_output(self, text: str) -> None:
+        self._live_output = text
+        self._render_live_output()
+
+    def _render_live_output(self) -> None:
+        try:
+            output = self.query_one("#tool-output", Label)
+        except Exception:
+            return
+        if not self._live_output:
+            return
+
+        lines = self._live_output.rstrip().split("\n")
+        max_live_lines = 16
+        if len(lines) > max_live_lines:
+            visible_lines = lines[-max_live_lines:]
+            prefix = f"  ... ({len(lines) - max_live_lines} earlier lines)\n"
+        else:
+            visible_lines = lines
+            prefix = ""
+
+        formatted_body = "\n".join(f"  │ {line}" for line in visible_lines)
+        rendered = Text(prefix + formatted_body, style=config.ui.colors.dim)
+
+        self.remove_class("-compact")
+        self.add_class("-with-details")
+        output.remove_class("-hidden")
+        output.remove_class("-details")
+        output.remove_class("-diff-output")
+        output.update(rendered)
+
     def set_result(
         self,
         ui_summary: str | None,
@@ -950,6 +993,7 @@ class ToolBlock(Static):
         ui_details_full: str | None = None,
         images: list[ImageContent] | None = None,
     ) -> None:
+        self._live_output = ""
         self._ui_summary = ui_summary
         self._ui_details = ui_details
         self._ui_details_full = ui_details_full
@@ -959,7 +1003,9 @@ class ToolBlock(Static):
         self._awaiting_approval = False
         self._set_state(success)
         self._render_result_output()
-        self.query_one("#tool-header", Label).update(self._format_header())
+        self._safe_update(
+            lambda: self.query_one("#tool-header", Label).update(self._format_header())
+        )
 
     # -- Task tool live progress ------------------------------------------
 
@@ -984,7 +1030,10 @@ class ToolBlock(Static):
             self._render_result_output()
 
     def _render_result_output(self) -> None:
-        output = self.query_one("#tool-output", Label)
+        try:
+            output = self.query_one("#tool-output", Label)
+        except Exception:
+            return
         ui_details = (
             self._ui_details_full if self._expanded and self._ui_details_full else self._ui_details
         )

@@ -127,20 +127,28 @@ def _patched_add_session_info(self: _chat.ChatLog, version: str) -> None:
         if row_idx == 0:
             info_text.append("   ■ openjarvis", style=f"bold {accent}")
         elif row_idx == 1:
-            info_text.append("   / commands · ! bash", style=dim)
+            info_text.append("   [MODE] EDITOR · REALTIME STREAM", style=f"bold {muted}")
         elif row_idx == 2:
             info_text.append("   ")
             info_text.append("●", style=f"bold {success}")
             info_text.append(" ready", style=muted)
+            info_text.append(" · / commands · ! bash", style=dim)
         elif row_idx == 3:
-            info_text.append(f"   openjarvis v{_VERSION} · VTX-native", style=dim)
+            info_text.append(f"   v{_VERSION} · VTX-native code engine", style=dim)
 
         info_text.append("\n")
 
-    # 2. New session started badge
+    # 2. Editor workspace breadcrumb
     info_text.append("\n")
+    info_text.append("╭─ [EDITOR WORKSPACE] ", style=f"bold {accent}")
+    info_text.append("─" * 38, style=dim)
+    info_text.append("\n")
+    info_text.append("│ ", style=dim)
     info_text.append("✦ ", style=accent)
-    info_text.append("New session started", style=f"{accent}")
+    info_text.append("Editor Session Ready", style=f"bold {accent}")
+    info_text.append(" · realtime tool output streaming enabled\n", style=dim)
+    info_text.append("╰", style=dim)
+    info_text.append("─" * 60, style=dim)
     info_text.append("\n")
 
     info_text.rstrip()

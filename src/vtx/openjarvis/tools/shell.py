@@ -240,6 +240,8 @@ class ExecTool(Tool):
         if yield_time_ms is not None:
             return await self._execute_session(prepared, yield_time_ms, max_output_chars)
 
+        on_output = kwargs.get("on_output")
+
         try:
             process = await self._spawn(
                 prepared.command,
@@ -249,9 +251,29 @@ class ExecTool(Tool):
                 prepared.login,
             )
 
+            stdout_chunks: list[str] = []
+            stderr_chunks: list[str] = []
+
+            async def _read_stream(reader: asyncio.StreamReader | None, dest: list[str]) -> None:
+                if not reader:
+                    return
+                while True:
+                    line_bytes = await reader.readline()
+                    if not line_bytes:
+                        break
+                    text = line_bytes.decode("utf-8", errors="replace")
+                    dest.append(text)
+                    if on_output and callable(on_output):
+                        with suppress(Exception):
+                            on_output(text)
+
             try:
-                stdout, stderr = await asyncio.wait_for(
-                    process.communicate(), timeout=prepared.timeout
+                readers = [
+                    asyncio.create_task(_read_stream(process.stdout, stdout_chunks)),
+                    asyncio.create_task(_read_stream(process.stderr, stderr_chunks)),
+                ]
+                await asyncio.wait_for(
+                    asyncio.gather(process.wait(), *readers), timeout=prepared.timeout
                 )
             except TimeoutError:
                 await self._kill_process(process)
@@ -261,14 +283,14 @@ class ExecTool(Tool):
                 raise
 
             output_parts = []
+            stdout_text = "".join(stdout_chunks)
+            stderr_text = "".join(stderr_chunks)
 
-            if stdout:
-                output_parts.append(stdout.decode("utf-8", errors="replace"))
+            if stdout_text:
+                output_parts.append(stdout_text)
 
-            if stderr:
-                stderr_text = stderr.decode("utf-8", errors="replace")
-                if stderr_text.strip():
-                    output_parts.append(f"STDERR:\n{stderr_text}")
+            if stderr_text.strip():
+                output_parts.append(f"STDERR:\n{stderr_text}")
 
             output_parts.append(f"\nExit code: {process.returncode}")
 

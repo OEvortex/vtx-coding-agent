@@ -6,7 +6,9 @@ import signal
 import subprocess
 import sys
 import tempfile
+from collections.abc import Callable
 from pathlib import Path
+from typing import Any
 
 from pydantic import BaseModel, Field
 
@@ -206,6 +208,8 @@ class BashTool(BaseTool):
         params: BashParams,
         cancel_event: asyncio.Event | None = None,
         inline_output: bool = False,
+        on_output: Callable[[str], None] | None = None,
+        **kwargs: Any,
     ) -> ToolResult:
         if not params.command.strip():
             msg = "Command cannot be empty"
@@ -241,7 +245,42 @@ class BashTool(BaseTool):
                     start_new_session=not _IS_WINDOWS,
                 )
 
-            comm_task = asyncio.create_task(proc.communicate())
+            if (
+                hasattr(proc, "stdout")
+                and hasattr(proc, "stderr")
+                and proc.stdout is not None
+                and proc.stderr is not None
+            ):
+                stdout_chunks: list[bytes] = []
+                stderr_chunks: list[bytes] = []
+
+                async def _stream_pipe(
+                    reader: asyncio.StreamReader | None, dest: list[bytes]
+                ) -> None:
+                    if not reader:
+                        return
+                    while True:
+                        chunk = await reader.readline()
+                        if not chunk:
+                            break
+                        dest.append(chunk)
+                        if on_output and callable(on_output):
+                            with contextlib.suppress(Exception):
+                                text = _sanitize_output(chunk.decode("utf-8", errors="replace"))
+                                if text:
+                                    on_output(text)
+
+                async def _stream_all() -> tuple[bytes, bytes]:
+                    await asyncio.gather(
+                        _stream_pipe(proc.stdout, stdout_chunks),
+                        _stream_pipe(proc.stderr, stderr_chunks),
+                        proc.wait(),
+                    )
+                    return b"".join(stdout_chunks), b"".join(stderr_chunks)
+
+                comm_task = asyncio.create_task(_stream_all())
+            else:
+                comm_task = asyncio.create_task(proc.communicate())
 
             try:
                 if cancel_event:

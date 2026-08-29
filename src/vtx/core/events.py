@@ -135,6 +135,16 @@ class ToolEndEvent:
 
 
 @dataclass
+class ToolOutputDeltaEvent:
+    """Incremental output delta emitted in real-time during tool execution."""
+
+    type: Literal["tool_output_delta"] = "tool_output_delta"
+    tool_call_id: str = ""
+    tool_name: str = ""
+    delta: str = ""
+
+
+@dataclass
 class ToolResultEvent:
     type: Literal["tool_result"] = "tool_result"
     tool_call_id: str = ""
@@ -269,6 +279,7 @@ StreamEvent = (
     | ToolArgsDeltaEvent
     | ToolArgsTokenUpdateEvent
     | ToolEndEvent
+    | ToolOutputDeltaEvent
     | ToolResultEvent
     | ToolApprovalEvent
     | AskUserEvent
