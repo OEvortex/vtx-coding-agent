@@ -420,7 +420,9 @@ def register_with_vtx() -> None:
     keep_names = set(OPENJARVIS_DEFAULT_TOOLS)
     extras_sorted = sorted(k for k in merged if k not in keep_names)
 
-    vtx_tools.tools_by_name = {name: merged[name] for name in OPENJARVIS_DEFAULT_TOOLS if name in merged}
+    vtx_tools.tools_by_name = {
+        name: merged[name] for name in OPENJARVIS_DEFAULT_TOOLS if name in merged
+    }
     if hasattr(vtx_app, "tools_by_name"):
         vtx_app.tools_by_name = vtx_tools.tools_by_name
 
