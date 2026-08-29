@@ -55,14 +55,14 @@ def load_openjarvis_skills(cwd: str | None = None) -> LoadSkillsResult:
                 skill_map[skill.name] = skill
             else:
                 # Keep first-seen (project > global > openjarvis-bundled)
-                all_warnings.append(
-                    type(result.warnings[0])(
-                        skill.path,
-                        f'name collision: "{skill.name}" already loaded from {skill_map[skill.name].path}',
+                if result.warnings:
+                    all_warnings.append(
+                        type(result.warnings[0])(
+                            skill.path,
+                            f'name collision: "{skill.name}" already loaded '
+                            f"from {skill_map[skill.name].path}",
+                        )
                     )
-                    if result.warnings
-                    else type("W", (), {"path": skill.path, "message": ""})()
-                )
 
     # Project + user global only — no VTX synced dir.
     for skills_dir in _project_skill_dirs(resolved_cwd):

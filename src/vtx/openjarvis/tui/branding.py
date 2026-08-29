@@ -209,7 +209,7 @@ _chat.ChatLog.add_loaded_resources = _patched_add_loaded_resources  # type: igno
 try:
     from vtx.tui.blocks import ToolBlock as _ToolBlock
 except Exception:
-    _ToolBlock = None
+    _ToolBlock = None  # ty:ignore[invalid-assignment]
 
 if _ToolBlock is not None:
     _ORIGINAL_FORMAT_HEADER = _ToolBlock._format_header

@@ -213,8 +213,10 @@ def adapt_tool(tool: Any) -> Any:
 # Curated set of OpenJarvis tools exposed to the agent. Every other
 # OpenJarvis tool (edit_file, read_file, write_file, list_dir, find_files,
 # grep, web_search, ...) is dropped so the model only sees this surface.
+# ``skill`` is OpenJarvis-isolated (hides VTX builtin_skills at
+# src/vtx/coding_agent/builtin_skills/ — modal, review, etc.).
 OPENJARVIS_KEEP_TOOLS = frozenset(
-    {"exec", "apply_patch", "list_exec_sessions", "write_stdin", "message", "cron"}
+    {"exec", "apply_patch", "list_exec_sessions", "write_stdin", "message", "cron", "skill"}
 )
 
 # OpenJarvis-native duplicates of VTX built-ins (read_file vs read, grep vs

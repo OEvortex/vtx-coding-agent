@@ -524,21 +524,34 @@ def build_result_ui(
             "ui_details_full": full,
         }
 
-    # 7. Read / Read file -> Quiet tool representation
+    # 7. Read / Read file -> Quiet tool representation matching reference image
     if name_lower in ("read", "read_file"):
         path = data.get("path") or data.get("file_path") or data.get("AbsolutePath") or ""
         offset = data.get("offset") or data.get("StartLine")
         limit = data.get("limit") or data.get("EndLine")
         range_str = f":{offset}-{limit}" if (offset or limit) else ""
         elapsed_str = f" · {elapsed_s:.2f}s" if elapsed_s is not None else ""
+
+        # Check if result is a directory listing
+        is_dir_list = (
+            not offset
+            and not limit
+            and any(line.strip().startswith(("-", "d", "total ")) for line in raw_lines[:3])
+        )
+        if is_dir_list:
+            files = [
+                line.strip().split()[-1] if line.strip().startswith(("-", "d")) else line.strip()
+                for line in raw_lines
+                if line.strip() and not line.strip().startswith("total")
+            ]
+            header = f"Q List: {len(files)} files · in {path or '.'}"
+            collapsed_tree, full_tree = _render_file_tree(header, files)
+            return {"ui_summary": None, "ui_details": collapsed_tree, "ui_details_full": full_tree}
+
+        # Single file read: quiet inline line
         summary = f"● Read {path}{range_str}{elapsed_str}"
-        body = render_tree(raw_lines, max_lines=6)
         full = "\n".join(raw_lines)
-        return {
-            "ui_summary": summary,
-            "ui_details": body if body else None,
-            "ui_details_full": full,
-        }
+        return {"ui_summary": summary, "ui_details": None, "ui_details_full": full}
 
     # 8. Skill
     if name_lower == "skill":
