@@ -2,7 +2,7 @@ from contextlib import contextmanager
 
 import pytest
 
-from vtx.ai.oauth.openai import OpenAICredentials
+from vtx.ai.oauth.codex import OpenAICredentials
 from vtx.tui.commands import CommandsMixin
 from vtx.tui.commands import auth as commands
 from vtx.tui.floating_list import ListItem
@@ -177,7 +177,7 @@ def test_select_login_provider_schedules_login_workers():
     assert fake.chat.infos == []
 
 
-def test_login_picker_marks_saved_credentials_without_logged_in_checkmark(monkeypatch):
+def test_login_picker_shows_auth_method_choices(monkeypatch):
     fake = FakeCommands()
     monkeypatch.setattr(commands, "has_saved_openai_credentials", lambda: True)
     monkeypatch.setattr(commands, "has_saved_copilot_credentials", lambda: False)
@@ -185,6 +185,20 @@ def test_login_picker_marks_saved_credentials_without_logged_in_checkmark(monkey
     monkeypatch.setattr(commands, "list_providers", lambda: [])
 
     fake._handle_login_command("")
+
+    assert fake._selection_mode == SelectionMode.LOGIN_METHOD
+    rows = [(item.value, item.label) for item in fake.completion_list.items]
+    assert rows == [("oauth", "OAuth"), ("apikey", "API Key")]
+    assert "GitHub Copilot" in fake.completion_list.items[0].description
+
+
+def test_login_method_oauth_shows_only_oauth_providers(monkeypatch):
+    fake = FakeCommands()
+    monkeypatch.setattr(commands, "has_saved_openai_credentials", lambda: True)
+    monkeypatch.setattr(commands, "has_saved_copilot_credentials", lambda: False)
+    monkeypatch.setattr(commands, "has_saved_cline_credentials", lambda: False)
+
+    fake._select_login_method("oauth")
 
     assert fake._selection_mode == SelectionMode.LOGIN
     rows = [(item.value, item.label, item.description) for item in fake.completion_list.items]
@@ -196,14 +210,12 @@ def test_login_picker_marks_saved_credentials_without_logged_in_checkmark(monkey
 
 
 def test_login_picker_includes_yaml_providers(monkeypatch):
-    """Every provider in provider.yaml should appear in /login so users can
-    store their API key for it without going through environment variables."""
+    """Every provider in provider.yaml should appear in the API-key sub-picker
+    so users can store their key without going through environment variables."""
     from vtx.ai.oauth.dynamic import DynamicProviderStatus
     from vtx.ai.provider_catalog import ProviderInfo
 
     fake = FakeCommands()
-    monkeypatch.setattr(commands, "has_saved_openai_credentials", lambda: False)
-    monkeypatch.setattr(commands, "has_saved_copilot_credentials", lambda: False)
     monkeypatch.setattr(
         commands,
         "list_providers",
@@ -248,8 +260,52 @@ def test_login_picker_includes_yaml_providers(monkeypatch):
         }.get(slug),
     )
 
-    fake._handle_login_command("")
+    fake._select_login_method("apikey")
 
+    assert fake._selection_mode == SelectionMode.LOGIN_API_KEY
     rows = [(item.value, item.label, item.description) for item in fake.completion_list.items]
-    assert ("anthropic", "Anthropic", "key required") in rows
-    assert ("ollama", "Ollama (local)", "no key needed") in rows
+    assert rows == [
+        ("anthropic", "Anthropic", "key required"),
+        ("ollama", "Ollama (local)", "no key needed"),
+    ]
+
+
+def test_select_apikey_provider_prompts_for_key(monkeypatch):
+    from vtx.ai.oauth.dynamic import DynamicProviderStatus
+    from vtx.ai.provider_catalog import ProviderInfo
+
+    fake = FakeCommands()
+    monkeypatch.setattr(
+        commands,
+        "get_provider_info",
+        lambda slug: ProviderInfo(
+            slug=slug,
+            display_name="Anthropic",
+            description="Direct Anthropic API.",
+            family="anthropic",
+            base_url="https://api.anthropic.com",
+            api_key_env="ANTHROPIC_API_KEY",
+        ),
+    )
+    monkeypatch.setattr(
+        commands,
+        "get_provider_status",
+        lambda slug: DynamicProviderStatus(
+            provider=slug,
+            env_var="ANTHROPIC_API_KEY",
+            has_env_key=False,
+            has_stored_key=False,
+            api_key_optional=False,
+        ),
+    )
+    monkeypatch.setattr(commands, "get_dynamic_api_key", lambda slug: None)
+    monkeypatch.setattr(
+        commands.AuthCommands,
+        "_prompt_for_api_key",
+        lambda self, provider_id: fake.chat.infos.append(f"prompting {provider_id}"),
+    )
+
+    fake._select_apikey_provider("anthropic")
+
+    assert fake.chat.infos == ["prompting anthropic"]
+    assert fake._pending_api_key_provider is None

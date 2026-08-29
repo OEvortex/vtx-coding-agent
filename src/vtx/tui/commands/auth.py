@@ -56,21 +56,23 @@ def _status_label(provider: str) -> str:
     return "key required"
 
 
+def _oauth_login_providers() -> list[tuple[str, str, bool]]:
+    """OAuth entries, one per login flow in src/vtx/ai/oauth."""
+    return [
+        ("github-copilot", "GitHub Copilot", has_saved_copilot_credentials()),
+        ("openai", "OpenAI (ChatGPT/Codex)", has_saved_openai_credentials()),
+        ("cline", "Cline (WorkOS)", has_saved_cline_credentials()),
+    ]
+
+
 class AuthCommands(CommandSupport):
     def _handle_login_command(self, args: str) -> None:
-        # OAuth entries come from src/vtx/ai/oauth (copilot, codex/openai, cline).
-        self._oauth_login_providers: list[tuple[str, str, bool]] = [
-            ("github-copilot", "GitHub Copilot", has_saved_copilot_credentials()),
-            ("openai", "OpenAI (ChatGPT/Codex)", has_saved_openai_credentials()),
-            ("cline", "Cline (WorkOS)", has_saved_cline_credentials()),
-        ]
-
+        oauth = _oauth_login_providers()
         items = [
             ListItem(
                 value="oauth",
                 label="OAuth",
-                description="browser login: "
-                + ", ".join(name for _, name, _ in self._oauth_login_providers),
+                description="browser login: " + ", ".join(name for _, name, _ in oauth),
             ),
             ListItem(
                 value="apikey",
@@ -89,7 +91,7 @@ class AuthCommands(CommandSupport):
                     label=name,
                     description="saved credentials" if has_oauth else "oauth login",
                 )
-                for provider_id, name, has_oauth in self._oauth_login_providers
+                for provider_id, name, has_oauth in _oauth_login_providers()
             ]
             self._show_selection_picker(items, SelectionMode.LOGIN)
         elif method == "apikey":
