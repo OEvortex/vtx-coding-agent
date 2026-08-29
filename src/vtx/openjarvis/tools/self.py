@@ -77,29 +77,63 @@ class MyTool(Tool, ContextAware):
                 self._runtime_vars: dict[str, Any] = {}
                 self._last_usage: Any = None
                 self._active_preset: str | None = None
-                # Pull from ctx/config where possible
                 raw_cfg = getattr(c, "config", None)
-                # OpenJarvisConfig lives one level up from ToolContext.config
-                # but we expose sensible defaults.
-                self.model: str = getattr(raw_cfg, "model", None) or "openjarvis"
-                self.max_iterations: int = 50
-                self.context_window_tokens: int = 128000
+
+                # Resolve model from the most specific source first.
+                model: str | None = None
+                if raw_cfg is not None:
+                    model = getattr(raw_cfg, "model", None)
+                if not model:
+                    try:
+                        from vtx.openjarvis.agent.config import OpenJarvisConfig
+
+                        model = getattr(OpenJarvisConfig.load(), "model", None)
+                    except Exception:
+                        pass
+                if not model:
+                    try:
+                        from vtx.coding_agent.config import get_config
+
+                        llm = getattr(get_config(), "llm", None)
+                        model = getattr(llm, "default_model", None) if llm else None
+                    except Exception:
+                        pass
+                self.model: str = model or "openjarvis"
+
+                # Values that require a real AgentLoop; resolve what we can,
+                # otherwise leave as None so the tool reports real absence
+                # instead of fake hardcoded defaults.
+                self.max_iterations: int | None = None
+                self.context_window_tokens: int | None = None
+                self.provider_retry_mode: str | None = None
+                self.max_tool_result_chars: int | None = None
+
+                try:
+                    from vtx.coding_agent.config import get_config as _get_vtx_config
+
+                    vtx_cfg = _get_vtx_config()
+                    agent_cfg = getattr(vtx_cfg, "agent", None)
+                    if self.context_window_tokens is None:
+                        self.context_window_tokens = getattr(
+                            agent_cfg, "default_context_window", None
+                        )
+                except Exception:
+                    pass
+
                 self.workspace: str = str(getattr(c, "workspace", "") or "")
-                self.provider_retry_mode: str = "default"
-                self.max_tool_result_chars: int = 20000
-                self.current_iteration: int = 0
-                self.tool_names: list[str] = []
                 self.web_config: Any = getattr(raw_cfg, "web", None)
                 self.exec_config: Any = getattr(raw_cfg, "exec", None)
                 self.workspace_sandbox: Any = getattr(raw_cfg, "restrict_to_workspace", False)
+                self.current_iteration: int = 0
+                self.tool_names: list[str] = []
                 self.subagents: Any = {}
                 self.model_preset: str | None = None
 
-            def _sync_subagent_runtime_limits(self) -> None:
-                return None
+                def _sync_subagent_runtime_limits(self) -> None:
+                    return None
 
-            def _sync_replay_max_messages(self) -> None:
-                return None
+                def _sync_replay_max_messages(self) -> None:
+                    return None
 
         return _Shim(ctx)  # type: ignore[return-value]
 

@@ -68,6 +68,7 @@ def _oauth_login_providers() -> list[tuple[str, str, bool]]:
 class AuthCommands(CommandSupport):
     def _handle_login_command(self, args: str) -> None:
         oauth = _oauth_login_providers()
+        keyless = [p for p in list_providers() if p.api_key_optional]
         items = [
             ListItem(
                 value="oauth",
@@ -77,7 +78,12 @@ class AuthCommands(CommandSupport):
             ListItem(
                 value="apikey",
                 label="API Key",
-                description=f"paste a key for any of the {len(list_providers())} providers",
+                description=f"paste a key for any of the {len(list_providers()) - len(keyless)} providers",
+            ),
+            ListItem(
+                value="keyless",
+                label="Local / Keyless",
+                description="no key needed: " + ", ".join(p.display_name for p in keyless),
             ),
         ]
 
@@ -98,11 +104,27 @@ class AuthCommands(CommandSupport):
             self._show_selection_picker(
                 [
                     ListItem(
-                        value=p.slug, label=p.display_name, description=_status_label(p.slug)
+                        value=p.slug,
+                        label=p.display_name,
+                        description=_status_label(p.slug),
                     )
                     for p in list_providers()
+                    if not p.api_key_optional
                 ],
                 SelectionMode.LOGIN_API_KEY,
+            )
+        elif method == "keyless":
+            self._show_selection_picker(
+                [
+                    ListItem(
+                        value=p.slug,
+                        label=p.display_name,
+                        description="local" if p.is_local else "no key needed",
+                    )
+                    for p in list_providers()
+                    if p.api_key_optional
+                ],
+                SelectionMode.LOGIN_KEYLESS,
             )
 
     def _select_login_provider(self, provider_id: str) -> None:
@@ -121,6 +143,12 @@ class AuthCommands(CommandSupport):
     def _select_apikey_provider(self, provider_id: str) -> None:
         if get_provider_info(provider_id) is not None:
             self._prompt_for_api_key(provider_id)
+
+    def _select_keyless_provider(self, provider_id: str) -> None:
+        """Keyless providers need no credential - just pull their model list."""
+        chat = self.query_one("#chat-log", ChatLog)
+        chat.add_info_message(f"Fetching models for {provider_id}...")
+        self.run_worker(self._refresh_after_api_key(provider_id), exclusive=False)
 
     def _prompt_for_api_key(self, provider_id: str) -> None:
         """Show a single-line input that captures the API key and stores it."""

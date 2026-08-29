@@ -171,11 +171,11 @@ def format_diff_display(diff: str) -> str:
 
         if parsed and parsed[0] == "-":
             sign, line_num, content_part = parsed
-            content = f"[{colors.diff_removed}]{sign} {escape(line_num)}  {escape(content_part)}[/{colors.diff_removed}]"
+            content = f"[{colors.diff_removed}]{escape(line_num)}  {escape(content_part)}[/{colors.diff_removed}]"
             formatted.append(f"[on {bg_removed}]{content}{DIFF_BG_PAD_MARKER}[/]")
         elif parsed and parsed[0] == "+":
             sign, line_num, content_part = parsed
-            content = f"[{colors.diff_added}]{sign} {escape(line_num)}  {escape(content_part)}[/{colors.diff_added}]"
+            content = f"[{colors.diff_added}]{escape(line_num)}  {escape(content_part)}[/{colors.diff_added}]"
             formatted.append(f"[on {bg_added}]{content}{DIFF_BG_PAD_MARKER}[/]")
         elif "\u22ef" in line:
             escaped = escape(line)

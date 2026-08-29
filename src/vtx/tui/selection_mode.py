@@ -8,6 +8,7 @@ class SelectionMode(StrEnum):
     LOGIN = "login"
     LOGIN_METHOD = "login_method"
     LOGIN_API_KEY = "login_api_key"
+    LOGIN_KEYLESS = "login_keyless"
     LOGOUT = "logout"
     PERMISSIONS = "permissions"
     THINKING = "thinking"

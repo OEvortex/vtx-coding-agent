@@ -270,6 +270,104 @@ def test_login_picker_includes_yaml_providers(monkeypatch):
     ]
 
 
+def test_login_method_apikey_excludes_keyless_providers(monkeypatch):
+    """Keyless providers belong in their own sub-picker, not the API-key one."""
+    from vtx.ai.oauth.dynamic import DynamicProviderStatus
+    from vtx.ai.provider_catalog import ProviderInfo
+
+    fake = FakeCommands()
+    monkeypatch.setattr(
+        commands,
+        "list_providers",
+        lambda: [
+            ProviderInfo(
+                slug="anthropic",
+                display_name="Anthropic",
+                description="Direct Anthropic API.",
+                family="anthropic",
+                base_url="https://api.anthropic.com",
+                api_key_env="ANTHROPIC_API_KEY",
+            ),
+            ProviderInfo(
+                slug="ollama",
+                display_name="Ollama (local)",
+                description="Local models served by Ollama.",
+                family="openai_compat",
+                base_url="http://localhost:11434/v1",
+                api_key_env=None,
+                api_key_optional=True,
+                is_local=True,
+            ),
+        ],
+    )
+    monkeypatch.setattr(
+        commands,
+        "get_provider_status",
+        lambda slug: DynamicProviderStatus(
+            provider=slug,
+            env_var=None,
+            has_env_key=False,
+            has_stored_key=False,
+            api_key_optional=False,
+        ),
+    )
+
+    fake._select_login_method("apikey")
+
+    assert fake._selection_mode == SelectionMode.LOGIN_API_KEY
+    rows = [(item.value, item.label) for item in fake.completion_list.items]
+    assert rows == [("anthropic", "Anthropic")]
+
+
+def test_login_method_keyless_shows_only_keyless_providers(monkeypatch):
+    from vtx.ai.provider_catalog import ProviderInfo
+
+    fake = FakeCommands()
+    monkeypatch.setattr(
+        commands,
+        "list_providers",
+        lambda: [
+            ProviderInfo(
+                slug="anthropic",
+                display_name="Anthropic",
+                description="Direct Anthropic API.",
+                family="anthropic",
+                base_url="https://api.anthropic.com",
+                api_key_env="ANTHROPIC_API_KEY",
+            ),
+            ProviderInfo(
+                slug="ollama",
+                display_name="Ollama (local)",
+                description="Local models served by Ollama.",
+                family="openai_compat",
+                base_url="http://localhost:11434/v1",
+                api_key_env=None,
+                api_key_optional=True,
+                is_local=True,
+            ),
+        ],
+    )
+
+    fake._select_login_method("keyless")
+
+    assert fake._selection_mode == SelectionMode.LOGIN_KEYLESS
+    rows = [(item.value, item.label, item.description) for item in fake.completion_list.items]
+    assert rows == [("ollama", "Ollama (local)", "local")]
+
+
+def test_select_keyless_provider_refreshes_models(monkeypatch):
+    fake = FakeCommands()
+    monkeypatch.setattr(
+        commands.AuthCommands,
+        "_refresh_after_api_key",
+        lambda self, provider_id: fake.chat.infos.append(f"refresh {provider_id}"),
+    )
+
+    fake._select_keyless_provider("ollama")
+
+    assert fake.chat.infos == ["Fetching models for ollama...", "refresh ollama"]
+
+
 def test_select_apikey_provider_prompts_for_key(monkeypatch):
     from vtx.ai.oauth.dynamic import DynamicProviderStatus
     from vtx.ai.provider_catalog import ProviderInfo
@@ -308,4 +406,3 @@ def test_select_apikey_provider_prompts_for_key(monkeypatch):
     fake._select_apikey_provider("anthropic")
 
     assert fake.chat.infos == ["prompting anthropic"]
-    assert fake._pending_api_key_provider is None

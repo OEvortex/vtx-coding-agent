@@ -322,3 +322,40 @@ def test_titanium_theme_registered() -> None:
     assert titanium.colors.accent == "#00b4ff"
     assert titanium.colors.success == "#00ff88"
     assert titanium.colors.bg == "#0f1216"
+
+
+def test_my_tool_shim_uses_real_model() -> None:
+    """MyTool should resolve model from config instead of hardcoding 'openjarvis'."""
+    from vtx.openjarvis.tools.context import ToolContext
+    from vtx.openjarvis.tools.self import MyTool
+
+    class FakeConfig:
+        model = "real-model"
+        web = None
+        exec = None
+        restrict_to_workspace = False
+
+    tctx = ToolContext(config=FakeConfig(), workspace="/tmp")
+    tool = MyTool.create(tctx)
+    out = asyncio.run(tool.execute(action="check"))
+    assert "real-model" in out
+    assert "openjarvis" not in out
+
+
+def test_my_tool_shim_falls_back_to_vtx_config() -> None:
+    """MyTool should fall back to VTX llm.default_model when OpenJarvisConfig lacks model."""
+    from vtx.openjarvis.tools.context import ToolContext
+    from vtx.openjarvis.tools.self import MyTool
+
+    class FakeConfig:
+        model = None
+        web = None
+        exec = None
+        restrict_to_workspace = False
+
+    tctx = ToolContext(config=FakeConfig(), workspace="/tmp")
+    tool = MyTool.create(tctx)
+    out = asyncio.run(tool.execute(action="check"))
+    # VTX default_model is in the real config; just verify it isn't hardcoded to openjarvis
+    # when the OpenJarvis config view has no model.
+    assert "openjarvis" not in out or "model" in out

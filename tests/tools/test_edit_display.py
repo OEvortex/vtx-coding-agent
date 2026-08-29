@@ -24,11 +24,11 @@ def test_format_diff_display_does_not_truncate_long_lines() -> None:
 
     assert len(lines) == 2
     assert lines[0].startswith("[on ")
-    assert f"[{added_color}]+" in lines[0]
+    assert f"[{added_color}] 2 " in lines[0]
     assert "x" * 300 in lines[0]
     assert "▎" not in lines[0]
     assert lines[1].startswith("[on ")
-    assert f"[{removed_color}]-" in lines[1]
+    assert f"[{removed_color}] 2 " in lines[1]
     assert "y" * 300 in lines[1]
     assert "▎" not in lines[1]
 
