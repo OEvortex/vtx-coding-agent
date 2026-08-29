@@ -23,7 +23,7 @@ class EditParams(BaseModel):
 
 
 def _ellipsis(line_num_width: int, skipped: int) -> str:
-    return f" {''.rjust(line_num_width)} \u22ef {skipped} lines \u22ef"  # ⋯ N lines ⋯
+    return f" {''.rjust(line_num_width)} \u22ef {skipped} unchanged lines hidden"
 
 
 def generate_diff(
@@ -36,10 +36,10 @@ def generate_diff(
         tuple: (diff_string, added_count, removed_count)
 
     Format:
-        " 42   context line"    (space, num, three spaces = empty change marker)
-        " 42 - removed line"    (space, num, space-minus-space = removed)
-        " 42 + added line"      (space, num, space-plus-space = added)
-        "    ⋯ N lines ⋯"       (ellipsis = skipped lines with count)
+        "- 42   removed line"    (minus, num, two spaces = removed)
+        "+ 42   added line"      (plus, num, two spaces = added)
+        " 42   context line"     (space, num, two spaces = context)
+        "⋯ N unchanged lines hidden"  (ellipsis = skipped lines with count)
     """
     old_lines = old_content.splitlines()
     new_lines = new_content.splitlines()
@@ -105,25 +105,25 @@ def generate_diff(
         elif tag == "replace":
             for idx, line in enumerate(old_lines[i1:i2]):
                 line_num = i1 + idx + 1
-                output.append(f" {_num(line_num)} - {line}")
+                output.append(f"- {_num(line_num)}   {line}")
                 removed += 1
             for idx, line in enumerate(new_lines[j1:j2]):
                 line_num = j1 + idx + 1
-                output.append(f" {_num(line_num)} + {line}")
+                output.append(f"+ {_num(line_num)}   {line}")
                 added += 1
             last_was_change = True
 
         elif tag == "delete":
             for idx, line in enumerate(old_lines[i1:i2]):
                 line_num = i1 + idx + 1
-                output.append(f" {_num(line_num)} - {line}")
+                output.append(f"- {_num(line_num)}   {line}")
                 removed += 1
             last_was_change = True
 
         elif tag == "insert":
             for idx, line in enumerate(new_lines[j1:j2]):
                 line_num = j1 + idx + 1
-                output.append(f" {_num(line_num)} + {line}")
+                output.append(f"+ {_num(line_num)}   {line}")
                 added += 1
             last_was_change = True
 
@@ -131,24 +131,28 @@ def generate_diff(
 
 
 def _parse_diff_line(line: str) -> tuple[str, str, str] | None:
-    """Parse a formatted diff line into (line_number_part, sign, content_part)."""
-    num_start = next((i for i, char in enumerate(line) if char.isdigit()), -1)
+    """Parse a formatted diff line into (sign, line_number_part, content_part)."""
+    if not line:
+        return None
+
+    sign = line[0]
+    if sign not in ("-", "+", " "):
+        return None
+
+    rest = line[1:]
+    num_start = next((i for i, char in enumerate(rest) if char.isdigit()), -1)
     if num_start == -1:
         return None
 
     num_end = num_start
-    while num_end < len(line) and line[num_end].isdigit():
+    while num_end < len(rest) and rest[num_end].isdigit():
         num_end += 1
 
-    sign_index = num_end + 1
-    if sign_index >= len(line):
-        return None
-
-    # Includes leading padding and the separator space after the line number.
-    line_number_part = line[:sign_index]
-    sign = line[sign_index]
-    content_part = line[sign_index + 1 :]
-    return line_number_part, sign, content_part
+    line_number_part = rest[:num_end]
+    content_part = (
+        rest[num_end + 2 :] if num_end + 1 < len(rest) and rest[num_end] == " " else rest[num_end:]
+    )
+    return sign, line_number_part, content_part
 
 
 def format_diff_display(diff: str) -> str:
@@ -156,36 +160,29 @@ def format_diff_display(diff: str) -> str:
     lines = diff.split("\n")
     formatted = []
 
-    bg_added = blend_hex(colors.diff_added, colors.bg)
-    bg_removed = blend_hex(colors.diff_removed, colors.bg)
+    bg_added = blend_hex(colors.diff_added, colors.bg, alpha=0.24)
+    bg_removed = blend_hex(colors.diff_removed, colors.bg, alpha=0.12)
 
     for line in lines:
         if not line:
             continue
 
-        truncated = line[:200] + "\u2026" if len(line) > 203 else line  # … ellipsis
-        parsed = _parse_diff_line(truncated)
+        parsed = _parse_diff_line(line)
 
-        if parsed and parsed[1] == "-":
-            line_num, sign, content_part = parsed
-            content = (
-                f"  [{colors.dim}]{escape(line_num)}[/{colors.dim}]"
-                f"[{colors.diff_removed}]{sign}{escape(content_part)}[/{colors.diff_removed}]"
-            )
+        if parsed and parsed[0] == "-":
+            sign, line_num, content_part = parsed
+            content = f"[{colors.diff_removed}]{sign} {escape(line_num)}  {escape(content_part)}[/{colors.diff_removed}]"
             formatted.append(f"[on {bg_removed}]{content}{DIFF_BG_PAD_MARKER}[/]")
-        elif parsed and parsed[1] == "+":
-            line_num, sign, content_part = parsed
-            content = (
-                f"  [{colors.dim}]{escape(line_num)}[/{colors.dim}]"
-                f"[{colors.diff_added}]{sign}{escape(content_part)}[/{colors.diff_added}]"
-            )
+        elif parsed and parsed[0] == "+":
+            sign, line_num, content_part = parsed
+            content = f"[{colors.diff_added}]{sign} {escape(line_num)}  {escape(content_part)}[/{colors.diff_added}]"
             formatted.append(f"[on {bg_added}]{content}{DIFF_BG_PAD_MARKER}[/]")
         elif "\u22ef" in line:
-            escaped = escape(truncated)
+            escaped = escape(line)
             formatted.append(f"[{colors.dim}]{escaped}[/{colors.dim}]")
         else:
-            escaped = escape(truncated)
-            formatted.append(f"[{colors.dim}]  {escaped}[/{colors.dim}]")
+            escaped = escape(line)
+            formatted.append(f"[{colors.dim}]{escaped}[/{colors.dim}]")
 
     return "\n".join(formatted)
 
@@ -237,8 +234,9 @@ class EditTool(BaseTool):
         diff_full_display = format_diff_display(diff_full)
 
         colors = config.ui.colors
-        result = f"Updated {file_path} +{added} -{removed}"
+        result = f"Diff · +{added} -{removed}"
         ui_summary = (
+            f"[{colors.dim}]Diff ·[/{colors.dim}] "
             f"[{colors.diff_added}]+{added}[/{colors.diff_added}] "
             f"[{colors.diff_removed}]-{removed}[/{colors.diff_removed}]"
         )

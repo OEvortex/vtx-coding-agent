@@ -252,11 +252,18 @@ OPENJARVIS_DEFAULT_TOOLS = [
 ]
 
 
-def _build_openjarvis_merged(cron_service: Any | None = None) -> dict[str, Any]:
+def _build_openjarvis_merged(
+    cron_service: Any | None = None, *, include_extras: bool = True
+) -> dict[str, Any]:
     """Build OpenJarvis curated tool map WITHOUT mutating VTX globals.
 
     Read-only from ``vtx.coding_agent.tools.tools_by_name`` and
     ``tools_by_name`` (OpenJarvis native). Used by ``OpenJarvisRuntime``.
+    When ``include_extras`` is True (default), also loads OpenJarvis-native
+    extras (my, run_cli_app, long_task, generate_image, complete_goal, and
+    any future user-added tools) via :class:`ToolLoader`, matching
+    ``OpenJarvisRuntime.build_tools``. This keeps the TUI (register_with_vtx)
+    and gateway in sync.
     """
     import vtx.coding_agent.tools as vtx_tools
 
@@ -288,18 +295,107 @@ def _build_openjarvis_merged(cron_service: Any | None = None) -> dict[str, Any]:
         raw = wrapped.get(name) or vtx_tools.tools_by_name.get(name)
         if raw is not None:
             merged[name] = adapt_tool(raw)
+
+    if include_extras:
+        try:
+            from pathlib import Path as _Path2
+
+            from vtx.openjarvis.tools.context import ToolContext
+            from vtx.openjarvis.tools.loader import ToolLoader
+            from vtx.openjarvis.tools.registry import ToolRegistry
+
+            # Build a minimal ToolContext for discovery (mirrors runtime._tool_config_view)
+            tctx = None
+            try:
+                from vtx.openjarvis.agent.runtime import _ToolConfigView
+                from vtx.openjarvis.tools.cli_apps import CliAppsToolConfig
+                from vtx.openjarvis.tools.filesystem import FileToolsConfig
+                from vtx.openjarvis.tools.image_generation import ImageGenerationToolConfig
+                from vtx.openjarvis.tools.self import MyToolConfig
+                from vtx.openjarvis.tools.shell import ExecToolConfig
+                from vtx.openjarvis.tools.web import WebToolsConfig
+
+                try:
+                    from vtx.openjarvis.agent.config import OpenJarvisConfig
+
+                    cfg = OpenJarvisConfig.load()
+                    raw = dict(getattr(cfg, "tools", None) or {})
+                except Exception:
+                    raw = {}
+                view = _ToolConfigView(
+                    restrict_to_workspace=bool(raw.get("restrict_to_workspace", False)),
+                    exec=ExecToolConfig(**(raw.get("exec") or {})),
+                    file=FileToolsConfig(**(raw.get("file") or {})),
+                    web=WebToolsConfig(**(raw.get("web") or {})),
+                    my=MyToolConfig(**(raw.get("my") or {})),
+                    image_generation=ImageGenerationToolConfig(
+                        **(raw.get("image_generation") or {})
+                    ),
+                    cli_apps=CliAppsToolConfig(**(raw.get("cli_apps") or {})),
+                )
+                tctx = ToolContext(
+                    config=view,
+                    workspace=str(_Path2.cwd()),
+                    bus=None,
+                    cron_service=cron_service,
+                    sessions={},
+                )
+            except Exception:
+                # Fallback: minimal ctx with dummy config that enables everything
+                class _DummyCfg:
+                    restrict_to_workspace = False
+                    exec = type("o", (), {"enable": True})()
+                    file = type("o", (), {"enable": True})()
+                    web = type("o", (), {"enable": True})()
+                    my = type("o", (), {"enable": True, "allow_set": False})()
+                    image_generation = type("o", (), {"enabled": False})()
+                    cli_apps = type("o", (), {"enable": True})()
+
+                tctx = ToolContext(
+                    config=_DummyCfg(),  # type: ignore[arg-type]
+                    workspace=str(_Path2.cwd()),
+                    bus=None,
+                    cron_service=cron_service,
+                    sessions={},
+                )
+            registry = ToolRegistry()
+            try:
+                ToolLoader().load(tctx, registry)
+            except Exception:
+                registry = ToolRegistry()
+            present = set(merged.keys())
+            for name in registry.tool_names:
+                if name in OPENJARVIS_DROP_TOOLS:
+                    continue
+                if name in present:
+                    # Keep the runtime-wired cron if present
+                    if name == "cron" and "cron" in merged:
+                        # prefer merged's cron (already wired) — skip
+                        continue
+                    continue
+                tool = registry.get(name)
+                if tool is None:
+                    continue
+                merged[name] = adapt_tool(tool)
+                present.add(name)
+        except Exception:
+            pass
     return merged
 
 
 def get_openjarvis_tools(cron_service: Any | None = None) -> list[Any]:
     """Curated OpenJarvis tool list for ``VtxAgent`` — no global side-effects."""
-    merged = _build_openjarvis_merged(cron_service=cron_service)
-    return [merged[name] for name in OPENJARVIS_DEFAULT_TOOLS if name in merged]
+    merged = _build_openjarvis_merged(cron_service=cron_service, include_extras=True)
+    # Preserve curated ordering for DEFAULT, then append extras in sorted order for determinism.
+    ordered = [merged[name] for name in OPENJARVIS_DEFAULT_TOOLS if name in merged]
+    extras = [v for k, v in merged.items() if k not in set(OPENJARVIS_DEFAULT_TOOLS)]
+    extras.sort(key=lambda t: t.name)
+    return ordered + extras
 
 
 def get_openjarvis_tool_map(cron_service: Any | None = None) -> dict[str, Any]:
     """Curated tool map (name -> adapted tool) — read-only, no VTX mutation."""
-    return _build_openjarvis_merged(cron_service=cron_service)
+    return _build_openjarvis_merged(cron_service=cron_service, include_extras=True)
 
 
 def register_with_vtx() -> None:
@@ -318,15 +414,20 @@ def register_with_vtx() -> None:
     except ImportError:
         import vtx.ui.app as vtx_app  # type: ignore
 
-    merged = _build_openjarvis_merged()
-    keep_names = set(OPENJARVIS_DEFAULT_TOOLS)
+    merged = _build_openjarvis_merged(include_extras=True)
+    # Keep both curated DEFAULT and loader-discovered extras (my, run_cli_app, …).
+    keep_names = set(merged.keys())
+    extras_sorted = sorted(k for k in merged if k not in set(OPENJARVIS_DEFAULT_TOOLS))
 
     vtx_tools.tools_by_name = merged
     if hasattr(vtx_app, "tools_by_name"):
         vtx_app.tools_by_name = merged
 
-    vtx_tools.all_tools = [merged[name] for name in OPENJARVIS_DEFAULT_TOOLS if name in merged]
+    ordered = [merged[name] for name in OPENJARVIS_DEFAULT_TOOLS if name in merged]
+    extras = [merged[name] for name in extras_sorted]
+    vtx_tools.all_tools = ordered + extras
     vtx_tools.all_tools_set = {t.name for t in vtx_tools.all_tools}
+    # DEFAULT_TOOLS stays curated (15); all_tools carries the full set (20).
     vtx_tools.DEFAULT_TOOLS = list(OPENJARVIS_DEFAULT_TOOLS)
     if hasattr(vtx_app, "DEFAULT_TOOLS"):
         vtx_app.DEFAULT_TOOLS = list(OPENJARVIS_DEFAULT_TOOLS)
@@ -348,9 +449,11 @@ def register_with_vtx() -> None:
         for name in list(_harness.get_all_tools()):
             if name not in keep_names:
                 _harness.unregister_tool(name)
-        for name in OPENJARVIS_DEFAULT_TOOLS:
+        for name in list(merged.keys()):
             tool = merged.get(name) or _harness.get_all_tools().get(name)
             if tool is not None:
-                _harness.register_tool(tool, is_default=True, parent_only=name in parent_only)
+                # Only DEFAULT tools are marked is_default; extras are opt-in.
+                is_def = name in set(OPENJARVIS_DEFAULT_TOOLS)
+                _harness.register_tool(tool, is_default=is_def, parent_only=name in parent_only)
     except Exception:
         pass

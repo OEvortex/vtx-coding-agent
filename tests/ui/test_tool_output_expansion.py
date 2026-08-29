@@ -73,7 +73,7 @@ async def test_start_tool_uses_expanded_state_before_mount():
 
 
 @pytest.mark.asyncio
-async def test_diff_tool_output_is_clipped_instead_of_wrapped():
+async def test_diff_tool_output_wraps_naturally():
     async with ToolExpansionTestApp().run_test() as pilot:
         chat = pilot.app.query_one("#chat-log", ChatLog)
         block = chat.start_tool("edit", "tool-1", "~/file.py")
@@ -86,8 +86,7 @@ async def test_diff_tool_output_is_clipped_instead_of_wrapped():
 
         output = block.query_one("#tool-output", Label)
         assert output.has_class("-diff-output")
-        assert output.styles.text_wrap == "nowrap"
-        assert output.styles.text_overflow == "clip"
+        assert output.styles.text_wrap == "wrap"
 
 
 @pytest.mark.asyncio

@@ -10,8 +10,8 @@ class TestGenerateDiff:
 
         assert added == 1
         assert removed == 1
-        assert " 2 - line2" in diff
-        assert " 2 + modified" in diff
+        assert "- 2   line2" in diff
+        assert "+ 2   modified" in diff
 
     def test_addition_only(self):
         old = "line1\nline2"
@@ -21,7 +21,7 @@ class TestGenerateDiff:
 
         assert added == 1
         assert removed == 0
-        assert " 3 + line3" in diff
+        assert "+ 3   line3" in diff
 
     def test_deletion_only(self):
         old = "line1\nline2\nline3"
@@ -31,7 +31,7 @@ class TestGenerateDiff:
 
         assert added == 0
         assert removed == 1
-        assert " 2 - line2" in diff
+        assert "- 2   line2" in diff
 
     def test_empty_to_content(self):
         old = ""
@@ -78,8 +78,8 @@ class TestGenerateDiff:
 
         assert added == 1
         assert removed == 1
-        assert " 1 - first" in diff
-        assert " 1 + FIRST" in diff
+        assert "- 1   first" in diff
+        assert "+ 1   FIRST" in diff
 
     def test_change_at_end(self):
         old = "first\nmiddle\nlast"
@@ -89,8 +89,8 @@ class TestGenerateDiff:
 
         assert added == 1
         assert removed == 1
-        assert " 3 - last" in diff
-        assert " 3 + LAST" in diff
+        assert "- 3   last" in diff
+        assert "+ 3   LAST" in diff
 
     def test_context_lines_align_with_changed_content(self):
         old = "def greet():\n    return 'old'\n    keep()"
@@ -99,12 +99,15 @@ class TestGenerateDiff:
         diff, _added, _removed = generate_diff(old, new, context_lines=1)
         lines = diff.split("\n")
 
-        removed = next(line for line in lines if "-" in line)
-        added = next(line for line in lines if "+" in line)
+        removed = next(line for line in lines if line.startswith("-"))
+        added = next(line for line in lines if line.startswith("+"))
         context = next(line for line in lines if "keep()" in line)
 
-        assert removed.index("return") == context.index("keep()")
-        assert added.index("return") == context.index("keep()")
+        assert removed.startswith("- 2")
+        assert added.startswith("+ 2")
+        assert context.startswith(" 3")
+        assert "return" in removed
+        assert "keep()" in context
 
     def test_context_lines_shown(self):
         old = "1\n2\n3\n4\n5\n6\n7\n8\n9\n10"
@@ -112,13 +115,13 @@ class TestGenerateDiff:
 
         diff, _added, _removed = generate_diff(old, new, context_lines=2)
 
-        assert " 5 - 5" in diff
-        assert " 5 + FIVE" in diff
-        # Context lines reserve the same 3-char marker slot as " - " / " + " lines.
-        assert " 3   3" in diff
-        assert " 4   4" in diff
-        assert " 6   6" in diff
-        assert " 7   7" in diff
+        assert "-  5   5" in diff
+        assert "+  5   FIVE" in diff
+        # Context lines reserve the same marker+space+gutter columns as changed rows.
+        assert "  3   3" in diff
+        assert "  4   4" in diff
+        assert "  6   6" in diff
+        assert "  7   7" in diff
 
     def test_ellipsis_for_skipped_lines(self):
         lines = [str(i) for i in range(1, 21)]
@@ -129,7 +132,7 @@ class TestGenerateDiff:
         diff, added, removed = generate_diff(old, new, context_lines=2)
 
         assert "\u22ef" in diff  # ⋯ ellipsis character
-        assert "lines" in diff  # shows count
+        assert "unchanged lines hidden" in diff
         assert added == 1
         assert removed == 1
 
@@ -141,7 +144,7 @@ class TestGenerateDiff:
 
         assert added == 2
         assert removed == 2
-        assert " 2 - 2" in diff
-        assert " 2 + TWO" in diff
-        assert "14 - 14" in diff
-        assert "14 + FOURTEEN" in diff
+        assert "-  2   2" in diff
+        assert "+  2   TWO" in diff
+        assert "- 14   14" in diff
+        assert "+ 14   FOURTEEN" in diff

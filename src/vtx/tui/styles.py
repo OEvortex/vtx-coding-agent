@@ -183,8 +183,7 @@ Screen {{
 }}
 
 #tool-output.-diff-output {{
-    text-wrap: nowrap;
-    text-overflow: clip;
+    padding: 0 0 0 2;
 }}
 
 .tool-block.-with-details {{

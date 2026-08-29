@@ -72,13 +72,22 @@ class WriteTool(BaseTool):
 
         n_lines = params.content.count("\n") + 1
         diff_added = config.ui.colors.diff_added
+        colors = config.ui.colors
 
         if file_existed:
-            result = f"Overwrote {file_path} +{n_lines}"
-            display = f"[{diff_added}]+{n_lines}[/{diff_added}]"
+            result = f"Diff · +{n_lines} -{old_line_count}"
+            display = (
+                f"[{colors.dim}]Diff ·[/{colors.dim}] "
+                f"[{diff_added}]+{n_lines}[/{diff_added}] "
+                f"[{colors.diff_removed}]-{old_line_count}[/{colors.diff_removed}]"
+            )
         else:
-            result = f"Created {file_path} +{n_lines}"
-            display = f"[{diff_added}]+{n_lines}[/{diff_added}]"
+            result = f"Diff · +{n_lines} -0"
+            display = (
+                f"[{colors.dim}]Diff ·[/{colors.dim}] "
+                f"[{diff_added}]+{n_lines}[/{diff_added}] "
+                f"[{colors.diff_removed}]-0[/{colors.diff_removed}]"
+            )
 
         return ToolResult(
             success=True,

@@ -154,64 +154,67 @@ class OpenJarvisRuntime:
     def build_tools(self) -> list[Any]:
         """Assemble the agent tool list WITHOUT monkey-patching VTX globals.
 
-        1. Build the curated OpenJarvis set via :func:`get_openjarvis_tool_map`
-           (read-only from ``vtx.coding_agent.tools`` + OpenJarvis KEEP).
-        2. Load the remaining openjarvis-native tools (my, run_cli_app,
-           long_task, ...) via :class:`ToolLoader` with a proper
-           :class:`ToolContext`, and wrap them for the harness.
-           ``cron`` is already in the curated map (via ``get_openjarvis_tool_map``)
-           with the runtime's ``CronService``; the loader's ``cron`` is ignored
-           if already present.
+        Delegates to :func:`get_openjarvis_tools` which already merges the
+        curated VTX set (``OPENJARVIS_DEFAULT_TOOLS``) with all
+        OpenJarvis-native extras discovered via :class:`ToolLoader`.  We then
+        ensure the runtime's ``CronService``/``ToolContext`` wiring takes
+        precedence (so ``cron`` is bound to this runtime, not a default
+        instance). This keeps ``OpenJarvisRuntime`` and ``register_with_vtx``
+        (TUI) in sync — any user-added tool in ``src/vtx/openjarvis/tools/``
+        appears in both surfaces.
         """
-        from vtx.openjarvis.tools import (
-            OPENJARVIS_DROP_TOOLS,
-            ToolLoader,
-            ToolRegistry,
-            adapt_tool,
-            get_openjarvis_tool_map,
-        )
-        from vtx.openjarvis.tools.context import ToolContext
+        from vtx.openjarvis.tools import get_openjarvis_tools
 
-        # No global mutation — read-only curated map.
-        merged = get_openjarvis_tool_map(cron_service=self.cron_service())
-        tools = [merged[name] for name in merged]
-        # Preserve curated ordering defined in OPENJARVIS_DEFAULT_TOOLS.
-        # ``get_openjarvis_tool_map`` already respects that order but returns
-        # a dict; re-order explicitly for stability.
-        from vtx.openjarvis.tools import OPENJARVIS_DEFAULT_TOOLS as _CURATED
-
-        tools = [merged[n] for n in _CURATED if n in merged]
-        present = {t.name for t in tools}
-
-        channel_manager = self.channel_manager()
-        tctx = ToolContext(
-            config=self._tool_config_view(),
-            workspace=self.cwd,
-            bus=getattr(channel_manager, "bus", None) if channel_manager else None,
-            cron_service=self.cron_service(),
-            sessions=self._sessions,
-        )
-        registry = ToolRegistry()
+        # get_openjarvis_tools already does the full merge (curated + extras)
+        # with a properly wired CronService when we pass it in. For full
+        # parity with the TUI path, just delegate.
+        tools = get_openjarvis_tools(cron_service=self.cron_service())
+        # Ensure channel-aware ToolContext wiring for this runtime (bus/sessions).
+        # get_openjarvis_tools used a minimal bus=None context; re-load with the
+        # runtime's real bus so MessageTool etc. see the live bus.
+        # We do a lightweight re-load only if the bus differs.
         try:
-            ToolLoader().load(tctx, registry)
+            channel_manager = self.channel_manager()
+            real_bus = getattr(channel_manager, "bus", None) if channel_manager else None
+            if real_bus is not None:
+                from vtx.openjarvis.tools import (
+                    OPENJARVIS_DROP_TOOLS,
+                    ToolLoader,
+                    ToolRegistry,
+                    adapt_tool,
+                )
+                from vtx.openjarvis.tools.context import ToolContext
+
+                tctx = ToolContext(
+                    config=self._tool_config_view(),
+                    workspace=self.cwd,
+                    bus=real_bus,
+                    cron_service=self.cron_service(),
+                    sessions=self._sessions,
+                )
+                registry = ToolRegistry()
+                try:
+                    ToolLoader().load(tctx, registry)
+                except Exception:
+                    return tools
+                # Re-wrap any tools that need the real bus (message, etc.) and
+                # append any newly discovered extras not yet in the list.
+                present = {t.name for t in tools}
+                for name in registry.tool_names:
+                    if name in OPENJARVIS_DROP_TOOLS:
+                        continue
+                    tool = registry.get(name)
+                    if tool is None:
+                        continue
+                    adapted = adapt_tool(tool)
+                    if name in present:
+                        # Prefer bus-wired instance for message/cron.
+                        if name in ("cron", "message"):
+                            tools = [adapted if t.name == name else t for t in tools]
+                        continue
+                    tools.append(adapted)
         except Exception:
-            return tools
-        for name in registry.tool_names:
-            if name in OPENJARVIS_DROP_TOOLS:
-                continue
-            tool = registry.get(name)
-            if tool is None:
-                continue
-            adapted = adapt_tool(tool)
-            if name in present:
-                # Prefer the runtime-wired instance (e.g. cron bound to this
-                # runtime's CronService with its on_job callback) over the
-                # generic default registered by register_with_vtx().
-                if name == "cron":
-                    tools = [adapted if t.name == name else t for t in tools]
-                continue
-            tools.append(adapted)
-            present.add(name)
+            pass
         return tools
 
     def get_agent(self, session: Session, model: str | None = None) -> VtxAgent:
