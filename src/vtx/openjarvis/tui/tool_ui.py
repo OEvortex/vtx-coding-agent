@@ -1,4 +1,4 @@
-"""Jarvis-style tool UI metadata for OpenJarvis tools.
+"""Jarvis-style tool UI metadata and renderers for OpenJarvis tools.
 
 Central place for how OpenJarvis tools present themselves in the TUI:
 per-tool icons, human-friendly call formatting, approval previews,
@@ -38,6 +38,7 @@ TOOL_ICONS: dict[str, str] = {
     "my": "✦",
     "skill": "λ",
     "web": "🌐",
+    "web_search": "🌐",
     "ask_user": "❓",
 }
 
@@ -74,7 +75,13 @@ def format_call(name: str, data: dict[str, Any]) -> str:
         return _trunc(cmd, 160)
 
     if name in ("apply_patch", "edit", "edit_file"):
-        path = data.get("path") or data.get("file_path") or data.get("TargetFile") or ""
+        path = (
+            data.get("path")
+            or data.get("file_path")
+            or data.get("TargetFile")
+            or data.get("filepath")
+            or ""
+        )
         edits = data.get("edits") or []
         if isinstance(edits, dict):
             edits = [edits]
@@ -96,6 +103,10 @@ def format_call(name: str, data: dict[str, Any]) -> str:
             bits.append("dry-run")
         return " · ".join(bits) if bits else str(path)
 
+    if name in ("write", "write_file"):
+        path = data.get("path") or data.get("file_path") or data.get("TargetFile") or ""
+        return str(path)
+
     if name in ("read", "read_file"):
         path = data.get("path") or data.get("file_path") or data.get("AbsolutePath") or ""
         offset = data.get("offset") or data.get("StartLine")
@@ -115,6 +126,21 @@ def format_call(name: str, data: dict[str, Any]) -> str:
         query = data.get("query") or data.get("Query") or data.get("pattern") or ""
         path = data.get("path") or data.get("SearchPath") or "."
         return f"{query} · in {path}" if query else str(path)
+
+    if name in ("web", "web_search"):
+        query = data.get("query") or data.get("q") or ""
+        return _trunc(query, 120)
+
+    if name == "skill":
+        name_val = data.get("name") or data.get("skill_name") or ""
+        return str(name_val)
+
+    if name == "ask_user":
+        questions = data.get("questions") or []
+        if questions and isinstance(questions, list) and isinstance(questions[0], dict):
+            return _trunc(questions[0].get("question", ""), 120)
+        q = data.get("question") or data.get("prompt") or ""
+        return _trunc(q, 120)
 
     if name == "cron":
         bits = [str(data.get("action", "?"))]
@@ -261,6 +287,114 @@ def _render_boxed_card(
     return _build_frame(collapsed_resp), _build_frame(clean_resp)
 
 
+def _render_edit_card(
+    path: str,
+    diff_lines: list[str],
+    success: bool = True,
+    elapsed_s: float | None = None,
+    width: int = _BOX_DEFAULT_WIDTH,
+    max_body_lines: int = 12,
+) -> tuple[str, str]:
+    """Render a rounded pi-style boxed diff/edit card."""
+    inner_width = max(40, width - 4)
+    state_mark = "✓" if success else "✗"
+    path_str = _trunc(path, 40)
+    header_left = f"╭─ ➔ Edit {state_mark} · {path_str} "
+    header_dashes = max(2, width - len(header_left) - 1)
+    top_border = f"{header_left}{'─' * header_dashes}╮"
+
+    additions = sum(1 for line in diff_lines if line.strip().startswith("+"))
+    deletions = sum(1 for line in diff_lines if line.strip().startswith("-"))
+    diff_info = (
+        f"+{additions} -{deletions}" if (additions or deletions) else f"{len(diff_lines)} lines"
+    )
+
+    divider_left = f"├─ Diff · {diff_info} "
+    divider_right = " Ctrl+O more ┤"
+    needed_divider_dashes = width - len(divider_left) - len(divider_right)
+    if needed_divider_dashes < 2:
+        divider = f"{divider_left}{'─' * 2}┤"
+    else:
+        divider = f"{divider_left}{'─' * needed_divider_dashes}{divider_right}"
+
+    elapsed_str = f" · {elapsed_s:.2f}s" if elapsed_s is not None else ""
+    footer_left = f"╰─ 1 file · {diff_info}{elapsed_str} "
+    footer_dashes = max(2, width - len(footer_left) - 1)
+    bottom_border = f"{footer_left}{'─' * footer_dashes}╯"
+
+    def _build_frame(lines_to_show: list[str]) -> str:
+        body: list[str] = [top_border, divider]
+        for line in lines_to_show:
+            truncated = line[:inner_width] if len(line) > inner_width else line
+            body.append(f"│ {truncated.ljust(inner_width)} │")
+        body.append(bottom_border)
+        return "\n".join(body)
+
+    clean_lines = [line.rstrip() for line in diff_lines if line.strip()]
+    if not clean_lines:
+        clean_lines = ["(no textual differences)"]
+
+    if len(clean_lines) > max_body_lines:
+        collapsed_lines = clean_lines[:max_body_lines]
+        collapsed_lines.append(f"… ({len(clean_lines) - max_body_lines} more lines hidden)")
+    else:
+        collapsed_lines = clean_lines
+
+    return _build_frame(collapsed_lines), _build_frame(clean_lines)
+
+
+def _render_write_card(
+    path: str,
+    content_lines: list[str],
+    success: bool = True,
+    elapsed_s: float | None = None,
+    width: int = _BOX_DEFAULT_WIDTH,
+    max_body_lines: int = 10,
+) -> tuple[str, str]:
+    """Render a rounded pi-style boxed file write card."""
+    inner_width = max(40, width - 4)
+    state_mark = "✓" if success else "✗"
+    path_str = _trunc(path, 40)
+    header_left = f"╭─ ✎ Write {state_mark} · {path_str} "
+    header_dashes = max(2, width - len(header_left) - 1)
+    top_border = f"{header_left}{'─' * header_dashes}╮"
+
+    line_count = len(content_lines)
+    divider_left = f"├─ Written {line_count} lines "
+    divider_right = " Ctrl+O more ┤"
+    needed_divider_dashes = width - len(divider_left) - len(divider_right)
+    if needed_divider_dashes < 2:
+        divider = f"{divider_left}{'─' * 2}┤"
+    else:
+        divider = f"{divider_left}{'─' * needed_divider_dashes}{divider_right}"
+
+    elapsed_str = f" · {elapsed_s:.2f}s" if elapsed_s is not None else ""
+    footer_left = f"╰─ 1 file · {line_count} lines{elapsed_str} "
+    footer_dashes = max(2, width - len(footer_left) - 1)
+    bottom_border = f"{footer_left}{'─' * footer_dashes}╯"
+
+    def _build_frame(lines_to_show: list[str]) -> str:
+        body: list[str] = [top_border, divider]
+        for idx, line in enumerate(lines_to_show, start=1):
+            numbered = f"{idx:>3}  {line}"
+            truncated = numbered[:inner_width] if len(numbered) > inner_width else numbered
+            body.append(f"│ {truncated.ljust(inner_width)} │")
+        body.append(bottom_border)
+        return "\n".join(body)
+
+    clean_lines = [line.rstrip() for line in content_lines]
+    if not clean_lines:
+        clean_lines = ["(empty file)"]
+
+    if len(clean_lines) > max_body_lines:
+        collapsed_lines = clean_lines[:max_body_lines]
+        collapsed_lines.append(f"… ({len(clean_lines) - max_body_lines} more lines hidden)")
+    else:
+        collapsed_lines = clean_lines
+
+    return _build_frame(collapsed_lines), _build_frame(clean_lines)
+
+
 def _render_file_tree(header: str, files: list[str], max_shown: int = 6) -> tuple[str, str]:
     """Boxless file tree matching List / Glob output from the reference image."""
     rows: list[str] = [header]
@@ -324,7 +458,31 @@ def build_result_ui(
         )
         return {"ui_summary": None, "ui_details": collapsed_box, "ui_details_full": full_box}
 
-    # 2. Find / List Dir / LS -> Boxless output tree
+    # 2. Edit / Apply Patch -> Boxed diff card
+    if name_lower in ("edit", "edit_file", "apply_patch"):
+        path = (
+            data.get("path")
+            or data.get("file_path")
+            or data.get("TargetFile")
+            or data.get("filepath")
+            or "file"
+        )
+        collapsed_box, full_box = _render_edit_card(
+            path=str(path), diff_lines=raw_lines, success=success, elapsed_s=elapsed_s
+        )
+        return {"ui_summary": None, "ui_details": collapsed_box, "ui_details_full": full_box}
+
+    # 3. Write -> Boxed file write card
+    if name_lower in ("write", "write_file"):
+        path = data.get("path") or data.get("file_path") or data.get("TargetFile") or "file"
+        content = data.get("content") or data.get("CodeContent") or result
+        content_lines = content.splitlines() if isinstance(content, str) else raw_lines
+        collapsed_box, full_box = _render_write_card(
+            path=str(path), content_lines=content_lines, success=success, elapsed_s=elapsed_s
+        )
+        return {"ui_summary": None, "ui_details": collapsed_box, "ui_details_full": full_box}
+
+    # 4. Find / List Dir / LS -> Boxless output tree
     if name_lower in ("find", "find_files", "list_dir", "ls"):
         path = data.get("path") or data.get("SearchDirectory") or data.get("dir_path") or "."
         pattern = data.get("pattern") or data.get("Pattern")
@@ -336,7 +494,29 @@ def build_result_ui(
         collapsed_tree, full_tree = _render_file_tree(header, raw_lines)
         return {"ui_summary": None, "ui_details": collapsed_tree, "ui_details_full": full_tree}
 
-    # 3. Read / Read file -> Quiet tool representation
+    # 5. Grep -> Boxless grep tree
+    if name_lower == "grep":
+        query = data.get("query") or data.get("Query") or data.get("pattern") or ""
+        path = data.get("path") or data.get("SearchPath") or "."
+        count = len(raw_lines)
+        header = f"Q Grep: '{query}' {count} matches · in {path}"
+        collapsed_tree, full_tree = _render_file_tree(header, raw_lines)
+        return {"ui_summary": None, "ui_details": collapsed_tree, "ui_details_full": full_tree}
+
+    # 6. Web / Web Search -> Boxless tree
+    if name_lower in ("web", "web_search"):
+        query = data.get("query") or data.get("q") or ""
+        elapsed_str = f" · {elapsed_s:.2f}s" if elapsed_s is not None else ""
+        header = f"🌐 Web: {query} ({len(raw_lines)} results){elapsed_str}"
+        body = render_tree(raw_lines, max_lines=6)
+        full = "\n".join(raw_lines)
+        return {
+            "ui_summary": header,
+            "ui_details": body if body else None,
+            "ui_details_full": full,
+        }
+
+    # 7. Read / Read file -> Quiet tool representation
     if name_lower in ("read", "read_file"):
         path = data.get("path") or data.get("file_path") or data.get("AbsolutePath") or ""
         offset = data.get("offset") or data.get("StartLine")
@@ -352,7 +532,58 @@ def build_result_ui(
             "ui_details_full": full,
         }
 
-    # 4. Standard / Fallback tree parsing
+    # 8. Skill
+    if name_lower == "skill":
+        name_val = data.get("name") or data.get("skill_name") or ""
+        elapsed_str = f" · {elapsed_s:.2f}s" if elapsed_s is not None else ""
+        summary = f"λ Skill · {name_val}{elapsed_str}"
+        body = render_tree(raw_lines, max_lines=6)
+        full = "\n".join(raw_lines)
+        return {
+            "ui_summary": summary,
+            "ui_details": body if body else None,
+            "ui_details_full": full,
+        }
+
+    # 9. Task / Long task / Goal
+    if name_lower in ("task", "long_task", "goal", "complete_goal"):
+        goal_text = (
+            data.get("goal")
+            or data.get("objective")
+            or data.get("recap")
+            or data.get("Prompt")
+            or raw_lines[0]
+        )
+        icon = "◈" if "task" in name_lower else "◉"
+        elapsed_str = f" · {elapsed_s:.2f}s" if elapsed_s is not None else ""
+        summary = f"{icon} {_trunc(goal_text, 80)}{elapsed_str}"
+        body = render_tree(raw_lines, max_lines=6)
+        full = "\n".join(raw_lines)
+        return {
+            "ui_summary": summary,
+            "ui_details": body if body else None,
+            "ui_details_full": full,
+        }
+
+    # 10. Cron / Message / Stdin / Exec sessions
+    if name_lower in ("cron", "message", "write_stdin", "list_exec_sessions"):
+        icon = tool_icon(name_lower)
+        call_info = format_call(name_lower, data)
+        elapsed_str = f" · {elapsed_s:.2f}s" if elapsed_s is not None else ""
+        summary = (
+            f"{icon} {name_lower.capitalize()}: {call_info}{elapsed_str}"
+            if call_info
+            else f"{icon} {name_lower.capitalize()}{elapsed_str}"
+        )
+        body = render_tree(raw_lines, max_lines=6)
+        full = "\n".join(raw_lines)
+        return {
+            "ui_summary": summary,
+            "ui_details": body if body else None,
+            "ui_details_full": full,
+        }
+
+    # Standard / Fallback tree parsing
     first = raw_lines[0].strip()
     if not success:
         first = f"✗ {first}" if not first.startswith("Error") else first

@@ -205,6 +205,81 @@ def test_pi_style_tool_ui_read_summary() -> None:
     assert "● Read ROADMAP.md:1-60 · 0.05s" in res["ui_summary"]
 
 
+def test_pi_style_tool_ui_edit_card() -> None:
+    from vtx.openjarvis.tui.tool_ui import build_result_ui
+
+    res = build_result_ui(
+        result="  context line\n- old line\n+ new line",
+        success=True,
+        elapsed_s=0.08,
+        tool_name="edit",
+        tool_data={"path": "src/config.py"},
+    )
+    assert res["ui_details"] is not None
+    assert "╭─ ➔ Edit ✓ · src/config.py" in res["ui_details"]
+    assert "├─ Diff · +1 -1" in res["ui_details"]
+    assert "╰─ 1 file · +1 -1 · 0.08s" in res["ui_details"]
+
+
+def test_pi_style_tool_ui_write_card() -> None:
+    from vtx.openjarvis.tui.tool_ui import build_result_ui
+
+    res = build_result_ui(
+        result="def hello():\n    return 42",
+        success=True,
+        elapsed_s=0.03,
+        tool_name="write",
+        tool_data={"path": "src/new.py", "content": "def hello():\n    return 42"},
+    )
+    assert res["ui_details"] is not None
+    assert "╭─ ✎ Write ✓ · src/new.py" in res["ui_details"]
+    assert "├─ Written 2 lines" in res["ui_details"]
+    assert "╰─ 1 file · 2 lines · 0.03s" in res["ui_details"]
+
+
+def test_pi_style_tool_ui_web_tree() -> None:
+    from vtx.openjarvis.tui.tool_ui import build_result_ui
+
+    res = build_result_ui(
+        result="Python Docs - https://docs.python.org\nReal Python - https://realpython.com",
+        success=True,
+        elapsed_s=0.45,
+        tool_name="web",
+        tool_data={"query": "python async"},
+    )
+    assert res["ui_summary"] is not None
+    assert "🌐 Web: python async (2 results) · 0.45s" in res["ui_summary"]
+    assert res["ui_details"] is not None
+    assert "  ├─ Python Docs" in res["ui_details"]
+    assert "  └─ Real Python" in res["ui_details"]
+
+
+def test_pi_style_tool_ui_services() -> None:
+    from vtx.openjarvis.tui.tool_ui import build_result_ui
+
+    # Cron
+    cron_res = build_result_ui(
+        result="Cron task created successfully",
+        success=True,
+        elapsed_s=0.01,
+        tool_name="cron",
+        tool_data={"action": "add", "name": "backup", "every_seconds": 3600},
+    )
+    assert cron_res["ui_summary"] is not None
+    assert "⏱ Cron: add 'backup' every 3600s · 0.01s" in cron_res["ui_summary"]
+
+    # Message
+    msg_res = build_result_ui(
+        result="Message sent",
+        success=True,
+        elapsed_s=0.02,
+        tool_name="message",
+        tool_data={"channel": "slack", "message": "hello team"},
+    )
+    assert msg_res["ui_summary"] is not None
+    assert "✉ Message: slack → hello team · 0.02s" in msg_res["ui_summary"]
+
+
 def test_titanium_theme_registered() -> None:
     from vtx.tui.themes import get_theme, get_theme_ids
 

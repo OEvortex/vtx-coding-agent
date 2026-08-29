@@ -91,32 +91,36 @@ __all__ = [
 
 
 class _OpenJarvisBaseToolAdapter:
-    """Adapt an OpenJarvis :class:`Tool` to the VTX harness ``BaseTool`` interface.
+    """Adapt OpenJarvis or VTX tools to the unified pi-style interface.
 
-    OpenJarvis tools expose ``parameters`` (a JSON Schema) and an
-    ``execute(**kwargs) -> str`` method, whereas the VTX agent expects a
-    ``BaseTool`` with a pydantic ``params`` model and an
-    ``execute(params, ...) -> ToolResult`` method. This wrapper bridges the
-    two so OpenJarvis tools can be called by the VTX agent (e.g. when the
-    model invokes ``apply_patch``).
+    Bridges tool schemas, tool icons, formatted calls, previews, and pi-style
+    result cards for all tools used within OpenJarvis.
     """
 
-    def __init__(self, oj_tool: Tool) -> None:
+    def __init__(self, raw_tool: Any) -> None:
         from vtx.ai.agent.extensions import _json_schema_to_pydantic
+        from vtx.ai.agent.tools.base import BaseTool
         from vtx.core.types import ToolResult
         from vtx.openjarvis.tui.tool_ui import tool_icon
 
-        self._oj_tool = oj_tool
+        self._raw_tool = raw_tool
+        self._is_vtx_tool = isinstance(raw_tool, BaseTool)
         self._tool_result = ToolResult
-        self.name = oj_tool.name
-        self.description = oj_tool.description
-        self.params = _json_schema_to_pydantic(oj_tool.name, oj_tool.parameters)
-        self.mutating = not oj_tool.read_only
-        self.read_only = oj_tool.read_only
-        self.tool_icon = tool_icon(oj_tool.name, oj_tool)
-        self.needs_approval = False
-        self.ui_block = None
-        self.prompt_guidelines = tuple(getattr(oj_tool, "prompt_guidelines", []) or [])
+        self.name = raw_tool.name
+        self.description = getattr(raw_tool, "description", "")
+        if hasattr(raw_tool, "params") and raw_tool.params is not None:
+            self.params = raw_tool.params
+        elif hasattr(raw_tool, "parameters"):
+            self.params = _json_schema_to_pydantic(raw_tool.name, raw_tool.parameters)
+        else:
+            self.params = getattr(raw_tool, "params", None)
+
+        self.mutating = getattr(raw_tool, "mutating", not getattr(raw_tool, "read_only", False))
+        self.read_only = getattr(raw_tool, "read_only", not self.mutating)
+        self.tool_icon = tool_icon(raw_tool.name, raw_tool)
+        self.needs_approval = getattr(raw_tool, "needs_approval", False)
+        self.ui_block = getattr(raw_tool, "ui_block", None)
+        self.prompt_guidelines = tuple(getattr(raw_tool, "prompt_guidelines", []) or [])
 
     async def execute(
         self,
@@ -128,48 +132,73 @@ class _OpenJarvisBaseToolAdapter:
 
         from vtx.openjarvis.tui.tool_ui import build_result_ui
 
-        kwargs = params.model_dump(exclude_none=True)
+        kwargs = (
+            params.model_dump(exclude_none=True)
+            if hasattr(params, "model_dump")
+            else (params if isinstance(params, dict) else {})
+        )
         started = time.monotonic()
-        result = await self._oj_tool.execute(**kwargs)
-        elapsed = time.monotonic() - started
-        if not isinstance(result, str):
-            result = str(result)
-        success = not result.startswith("Error")
+
+        images = None
+        file_changes = None
+        if self._is_vtx_tool:
+            raw_res = await self._raw_tool.execute(
+                params, cancel_event=cancel_event, tool_call_id=tool_call_id
+            )
+            elapsed = time.monotonic() - started
+            if hasattr(raw_res, "result"):
+                result_str = str(raw_res.result)
+                success = getattr(raw_res, "success", True)
+                images = getattr(raw_res, "images", None)
+                file_changes = getattr(raw_res, "file_changes", None)
+            else:
+                result_str = str(raw_res)
+                success = not result_str.startswith("Error")
+        else:
+            raw_res = await self._raw_tool.execute(**kwargs)
+            elapsed = time.monotonic() - started
+            result_str = str(raw_res) if not isinstance(raw_res, str) else raw_res
+            success = not result_str.startswith("Error")
+
         ui = build_result_ui(
-            result, success, elapsed_s=elapsed, tool_name=self.name, tool_data=kwargs
+            result_str, success, elapsed_s=elapsed, tool_name=self.name, tool_data=kwargs
         )
         return self._tool_result(
             success=success,
-            result=result,
+            result=result_str,
             ui_summary=ui["ui_summary"],
             ui_details=ui["ui_details"],
             ui_details_full=ui["ui_details_full"],
+            images=images,
+            file_changes=file_changes,
         )
 
     def format_call(self, params: Any) -> str:
-        data = params.model_dump(exclude_none=True)
-        return self._call_text(self.name, data)
-
-    @staticmethod
-    def _call_text(name: str, data: dict[str, Any]) -> str:
         from vtx.openjarvis.tui.tool_ui import format_call as _format_call
 
-        return _format_call(name, data)
+        data = params.model_dump(exclude_none=True) if hasattr(params, "model_dump") else {}
+        custom = _format_call(self.name, data)
+        if custom:
+            return custom
+        if hasattr(self._raw_tool, "format_call"):
+            return self._raw_tool.format_call(params)
+        return ""
 
     def format_preview(self, params: Any) -> str | None:
         from vtx.openjarvis.tui.tool_ui import format_preview as _format_preview
 
-        return _format_preview(self.name, params.model_dump(exclude_none=True))
+        data = params.model_dump(exclude_none=True) if hasattr(params, "model_dump") else {}
+        custom = _format_preview(self.name, data)
+        if custom is not None:
+            return custom
+        if hasattr(self._raw_tool, "format_preview"):
+            return self._raw_tool.format_preview(params)
+        return None
 
 
-def adapt_tool(tool: Tool) -> Any:
-    """Wrap an OpenJarvis :class:`Tool` for the VTX harness ``BaseTool`` interface.
-
-    VTX harness tools pass through unchanged.
-    """
-    from vtx.ai.agent.tools import BaseTool
-
-    if isinstance(tool, BaseTool):
+def adapt_tool(tool: Any) -> Any:
+    """Wrap any OpenJarvis or VTX tool for unified pi-style interface."""
+    if isinstance(tool, _OpenJarvisBaseToolAdapter):
         return tool
     return _OpenJarvisBaseToolAdapter(tool)
 
@@ -209,11 +238,7 @@ OPENJARVIS_DEFAULT_TOOLS = [
 
 
 def register_with_vtx() -> None:
-    """Register OpenJarvis tools into vtx.coding_agent + vtx.tui.
-
-    Only the curated subset in :data:`OPENJARVIS_KEEP_TOOLS` is exposed; all
-    other OpenJarvis tools are dropped. ``exec`` replaces VTX's ``bash`` built-in.
-    """
+    """Register OpenJarvis tools into vtx.coding_agent + vtx.tui with full pi-style UX."""
     import vtx.coding_agent.tools as vtx_tools
 
     try:
@@ -221,21 +246,14 @@ def register_with_vtx() -> None:
     except ImportError:
         import vtx.ui.app as vtx_app  # type: ignore
 
-    from vtx.ai.agent.tools import BaseTool
-
-    # Wrap only the kept OpenJarvis tools into the VTX harness BaseTool interface
-    # (it expects ``.params`` + ``execute(params, ...)``). Others are discarded.
+    # Wrapped OpenJarvis tools
     wrapped: dict[str, Any] = {}
     for name, tool in tools_by_name.items():
         if name not in OPENJARVIS_KEEP_TOOLS:
             continue
-        if isinstance(tool, BaseTool):
-            wrapped[name] = tool
-        else:
-            wrapped[name] = _OpenJarvisBaseToolAdapter(tool)
+        wrapped[name] = _OpenJarvisBaseToolAdapter(tool)
 
-    # ``cron`` needs a CronService so it can't be auto-discovered; wire a
-    # default one backed by the global config store so the TUI/headless get it.
+    # ``cron`` needs a CronService so it can't be auto-discovered
     if "cron" in OPENJARVIS_DEFAULT_TOOLS and "cron" not in wrapped:
         try:
             from pathlib import Path
@@ -251,24 +269,21 @@ def register_with_vtx() -> None:
         except Exception:
             pass
 
-    # Restrict the merged registry to exactly the curated tool set (plus the
-    # wrapped OpenJarvis tools); everything else — including VTX's ``bash`` and
-    # ``grep`` — is dropped in favour of ``exec`` and the curated list.
+    # Restrict and adapt every tool in the curated list with pi-style UX
     keep_names = set(OPENJARVIS_DEFAULT_TOOLS)
-    merged = {n: t for n, t in vtx_tools.tools_by_name.items() if n in keep_names}
-    merged.update(wrapped)
+    merged: dict[str, Any] = {}
+    for name in OPENJARVIS_DEFAULT_TOOLS:
+        raw = wrapped.get(name) or vtx_tools.tools_by_name.get(name)
+        if raw is not None:
+            merged[name] = adapt_tool(raw)
+
     vtx_tools.tools_by_name = merged
-    # Also update the tui's reference if it has its own copy
     if hasattr(vtx_app, "tools_by_name"):
         vtx_app.tools_by_name = merged
 
     # Expose only the curated tools on the agent's tool list.
-    vtx_tools.all_tools = [t for t in vtx_tools.all_tools if t.name in keep_names]
+    vtx_tools.all_tools = [merged[name] for name in OPENJARVIS_DEFAULT_TOOLS if name in merged]
     vtx_tools.all_tools_set = {t.name for t in vtx_tools.all_tools}
-    for name in wrapped:
-        if name not in vtx_tools.all_tools_set:
-            vtx_tools.all_tools.append(wrapped[name])
-            vtx_tools.all_tools_set.add(name)
 
     # Set the curated default tool list (idempotent).
     vtx_tools.DEFAULT_TOOLS = list(OPENJARVIS_DEFAULT_TOOLS)
@@ -286,9 +301,7 @@ def register_with_vtx() -> None:
     except Exception:
         pass
 
-    # Patch the harness-level registry itself — the TUI and headless runtimes
-    # assemble their tool list via ``vtx.ai.agent.tools.get_tools_with_extensions()``
-    # which reads the harness defaults, not ``vtx.coding_agent.tools``.
+    # Patch the harness-level registry itself
     try:
         import vtx.ai.agent.tools as _harness
 
