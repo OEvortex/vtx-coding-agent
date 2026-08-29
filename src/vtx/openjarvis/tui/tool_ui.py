@@ -266,7 +266,6 @@ def _render_boxed_card(
     # Stats footer
     exit_code = 0 if success else 1
     elapsed_str = f"{elapsed_s:.2f}s" if elapsed_s is not None else "0.04s"
-    word_count = sum(len(line_text.split()) for line_text in response_lines)
     word_count = sum(len(line_text.split()) for line_text in clean_resp)
     footer_left = f"╰─ Exit {exit_code} · {elapsed_str} · ~{word_count} words "
     hint_right = " Ctrl+O for more ╯"
@@ -287,7 +286,6 @@ def _render_boxed_card(
         body.append(bottom_border)
         return "\n".join(body)
 
-    clean_resp = [line_text.rstrip() for line_text in response_lines]
     if len(clean_resp) > max_body_lines:
         collapsed_resp = clean_resp[:max_body_lines]
         collapsed_resp.append(f"… ({len(clean_resp) - max_body_lines} more lines hidden)")

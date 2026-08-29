@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import asyncio
-
 from typing import Any
 
 from vtx.openjarvis.tools import OPENJARVIS_DEFAULT_TOOLS, OPENJARVIS_KEEP_TOOLS, register_with_vtx
