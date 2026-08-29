@@ -151,3 +151,68 @@ def test_apply_patch_validation_errors() -> None:
     assert "each edit must be an object" in _run(tool, edits=[["not", "an", "object"]])
     assert "path required" in _run(tool, edits=[{"action": "add"}])
     assert "action required" in _run(tool, edits=[{"path": "a.txt"}])
+
+
+# ---------------------------------------------------------------------------
+# pi-style TUI formatting & theme tests
+# ---------------------------------------------------------------------------
+
+
+def test_pi_style_tool_ui_boxed_exec() -> None:
+    from vtx.openjarvis.tui.tool_ui import build_result_ui
+
+    res = build_result_ui(
+        result="v0.1.4\nfeat: strict boxed tool-card\nExit 0",
+        success=True,
+        elapsed_s=0.04,
+        tool_name="exec",
+        tool_data={"command": "git log --oneline -15"},
+    )
+    assert res["ui_details"] is not None
+    assert "╭─ ➔ Exec ✓" in res["ui_details"]
+    assert "$ git log --oneline -15" in res["ui_details"]
+    assert "├─ Response" in res["ui_details"]
+    assert "╰─ Exit 0 · 0.04s" in res["ui_details"]
+
+
+def test_pi_style_tool_ui_file_tree() -> None:
+    from vtx.openjarvis.tui.tool_ui import build_result_ui
+
+    res = build_result_ui(
+        result=".git/\n.github/\n.gitignore\nREADME.md",
+        success=True,
+        elapsed_s=0.01,
+        tool_name="find",
+        tool_data={"path": "src", "pattern": "*.py"},
+    )
+    assert res["ui_details"] is not None
+    assert "Q Glob: *.py 4 files · in src" in res["ui_details"]
+    assert "  A .git/" in res["ui_details"]
+    assert "  * .gitignore" in res["ui_details"]
+
+
+def test_pi_style_tool_ui_read_summary() -> None:
+    from vtx.openjarvis.tui.tool_ui import build_result_ui
+
+    res = build_result_ui(
+        result="def hello():\n    print('world')",
+        success=True,
+        elapsed_s=0.05,
+        tool_name="read",
+        tool_data={"path": "ROADMAP.md", "offset": 1, "limit": 60},
+    )
+    assert res["ui_summary"] is not None
+    assert "● Read ROADMAP.md:1-60 · 0.05s" in res["ui_summary"]
+
+
+def test_titanium_theme_registered() -> None:
+    from vtx.tui.themes import get_theme, get_theme_ids
+
+    theme_ids = get_theme_ids()
+    assert "titanium" in theme_ids
+    assert "titanium-light" in theme_ids
+
+    titanium = get_theme("titanium")
+    assert titanium.colors.accent == "#00b4ff"
+    assert titanium.colors.success == "#00ff88"
+    assert titanium.colors.bg == "#0f1216"

@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import contextlib
+
 try:
     from vtx.tui.app import Vtx as _Vtx  # legacy
 except (ModuleNotFoundError, ImportError):
@@ -11,10 +13,8 @@ from vtx.openjarvis.tools import register_with_vtx
 from vtx.openjarvis.version import VERSION
 
 # Apply branding after _Vtx is imported (like vtx_crs does)
-try:
+with contextlib.suppress(Exception):
     from vtx.openjarvis.tui import branding  # noqa: F401
-except Exception:
-    pass
 
 
 class OpenJarvisApp(_Vtx):
@@ -22,5 +22,11 @@ class OpenJarvisApp(_Vtx):
     VERSION = VERSION
 
     def __init__(self, *args, **kwargs):
+        from vtx.ai.config import config
+
+        # Default OpenJarvis to the titanium pi-style theme if on default
+        if config.ui.theme == "gruvbox-dark":
+            config.ui.theme = "titanium"
+
         register_with_vtx()
         super().__init__(*args, **kwargs)

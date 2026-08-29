@@ -135,7 +135,9 @@ class _OpenJarvisBaseToolAdapter:
         if not isinstance(result, str):
             result = str(result)
         success = not result.startswith("Error")
-        ui = build_result_ui(result, success, elapsed_s=elapsed)
+        ui = build_result_ui(
+            result, success, elapsed_s=elapsed, tool_name=self.name, tool_data=kwargs
+        )
         return self._tool_result(
             success=success,
             result=result,

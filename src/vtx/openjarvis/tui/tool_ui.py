@@ -1,34 +1,51 @@
 """Jarvis-style tool UI metadata for OpenJarvis tools.
 
 Central place for how OpenJarvis tools present themselves in the TUI:
-per-tool icons, human-friendly call formatting, approval previews, and
-result summaries. Used by the harness adapter (tool blocks) and the
-welcome/loaded-resources banner (branding).
+per-tool icons, human-friendly call formatting, approval previews,
+boxed execution frames, and output trees matching the pi-style aesthetic.
 """
 
 from __future__ import annotations
 
 from typing import Any
 
-# Per-tool glyphs shown next to tool calls in the TUI.
+# Per-tool glyphs matching the pi-style visual language
 TOOL_ICONS: dict[str, str] = {
-    "exec": "❯",  # noqa: RUF001
-    "apply_patch": "✎",
+    "exec": "➔",
+    "bash": "➔",
+    "apply_patch": "➔",
+    "edit": "➔",
+    "edit_file": "➔",
+    "write": "✎",
+    "write_file": "✎",
+    "read": "●",
+    "read_file": "●",
+    "find": "Q",
+    "find_files": "Q",
+    "list_dir": "Q",
+    "ls": "Q",
+    "grep": "Q",
     "cron": "⏱",
     "message": "✉",
     "list_exec_sessions": "▦",
     "write_stdin": "↳",
     "long_task": "◈",
+    "task": "◈",
     "complete_goal": "◉",
+    "goal": "◉",
     "run_cli_app": "▣",
     "generate_image": "✧",
     "my": "✦",
+    "skill": "λ",
+    "web": "🌐",
+    "ask_user": "❓",
 }
 
-DEFAULT_ICON = "→"
+DEFAULT_ICON = "➔"
 
 _SUMMARY_MAX_CHARS = 140
 _CALL_MAX_CHARS = 160
+_BOX_DEFAULT_WIDTH = 84
 
 
 def tool_icon(name: str, oj_tool: Any = None) -> str:
@@ -47,34 +64,28 @@ def _trunc(value: Any, limit: int = _SUMMARY_MAX_CHARS) -> str:
     return text
 
 
-def _first(data: dict, *keys: str) -> Any:
-    for key in keys:
-        value = data.get(key)
-        if value:
-            return value
-    return None
-
-
 def format_call(name: str, data: dict[str, Any]) -> str:
     """Human-friendly one-line call text shown on the tool header."""
     if not isinstance(data, dict):
         return _trunc(data)
 
-    if name == "exec":
-        return _trunc(data.get("command"), 160)
+    if name in ("exec", "bash"):
+        cmd = data.get("command") or data.get("cmd") or ""
+        return _trunc(cmd, 160)
 
-    if name == "apply_patch":
+    if name in ("apply_patch", "edit", "edit_file"):
+        path = data.get("path") or data.get("file_path") or data.get("TargetFile") or ""
         edits = data.get("edits") or []
         if isinstance(edits, dict):
             edits = [edits]
         actions: list[str] = []
-        paths: list[str] = []
+        paths: list[str] = [str(path)] if path else []
         for edit in edits if isinstance(edits, list) else []:
             if isinstance(edit, dict):
                 actions.append(str(edit.get("action", "?")))
-                path = edit.get("path")
-                if path:
-                    paths.append(str(path))
+                p = edit.get("path")
+                if p:
+                    paths.append(str(p))
         bits = []
         if paths:
             shown = ", ".join(paths[:3]) + (f" +{len(paths) - 3}" if len(paths) > 3 else "")
@@ -83,7 +94,27 @@ def format_call(name: str, data: dict[str, Any]) -> str:
             bits.append(f"{len(actions)} edit(s)")
         if data.get("dry_run"):
             bits.append("dry-run")
-        return " · ".join(bits)
+        return " · ".join(bits) if bits else str(path)
+
+    if name in ("read", "read_file"):
+        path = data.get("path") or data.get("file_path") or data.get("AbsolutePath") or ""
+        offset = data.get("offset") or data.get("StartLine")
+        limit = data.get("limit") or data.get("EndLine")
+        if offset is not None or limit is not None:
+            return f"{path}:{offset or 1}-{limit or ''}"
+        return str(path)
+
+    if name in ("find", "find_files", "list_dir", "ls"):
+        path = data.get("path") or data.get("dir_path") or data.get("SearchDirectory") or "."
+        pattern = data.get("pattern") or data.get("Pattern") or ""
+        if pattern:
+            return f"{pattern} · in {path}"
+        return str(path)
+
+    if name == "grep":
+        query = data.get("query") or data.get("Query") or data.get("pattern") or ""
+        path = data.get("path") or data.get("SearchPath") or "."
+        return f"{query} · in {path}" if query else str(path)
 
     if name == "cron":
         bits = [str(data.get("action", "?"))]
@@ -119,11 +150,11 @@ def format_call(name: str, data: dict[str, Any]) -> str:
             bits.append(f"({', '.join(flags)})")
         return " ".join(bits)
 
-    if name == "long_task":
-        return _trunc(data.get("goal") or data.get("objective"), 120)
+    if name in ("long_task", "task"):
+        return _trunc(data.get("goal") or data.get("objective") or data.get("Prompt"), 120)
 
-    if name == "complete_goal":
-        return _trunc(data.get("recap"), 120)
+    if name in ("complete_goal", "goal"):
+        return _trunc(data.get("recap") or data.get("title"), 120)
 
     if name == "run_cli_app":
         bits = [str(data.get("app") or data.get("name") or "?")]
@@ -138,10 +169,7 @@ def format_call(name: str, data: dict[str, Any]) -> str:
     # Generic fallback: skip noisy keys, join the rest.
     skip = {"dry_run", "timeout", "yield_time_ms", "json", "working_dir"}
     parts = [f"{k}={_trunc(v, 60)}" for k, v in data.items() if k not in skip and v is not None]
-    return " / ".join(parts)[:_CALL_MAX]
-
-
-_CALL_MAX = 200
+    return " / ".join(parts)[:200]
 
 
 def format_preview(name: str, data: dict[str, Any]) -> str | None:
@@ -149,68 +177,199 @@ def format_preview(name: str, data: dict[str, Any]) -> str | None:
     call = format_call(name, data)
     if not call:
         return None
-    if name == "exec":
+    if name in ("exec", "bash"):
         return f"$ {call}"
     return call
 
 
-def render_tree(lines: list[str], max_lines: int = 10) -> str:
-    """Boxless pi-style card: ``├─`` rows with a ``└─`` tail and a `… N more` hint.
-
-    Structure survives without color — plain tree prefixes carry the shape.
-    """
+def render_tree(lines: list[str], max_lines: int = 8) -> str:
+    """Boxless pi-style tree card: ``├─`` rows with a ``└─`` tail and a `… N more` hint."""
     if not lines:
         return ""
-    extra = max(len(lines) - max_lines, 0)
-    shown = lines[:max_lines] if extra else lines
+    clean_lines = [line_text for line_text in lines if line_text.strip()]
+    if not clean_lines:
+        return ""
+    extra = max(len(clean_lines) - max_lines, 0)
+    shown = clean_lines[:max_lines] if extra else clean_lines
     rows: list[str] = []
     for i, line in enumerate(shown):
         last_visible = i == len(shown) - 1 and not extra
-        rows.append(f"{'└─' if last_visible else '├─'} {line}")
+        rows.append(f"{'  └─' if last_visible else '  ├─'} {line}")
     if extra:
-        rows.append(f"   … +{extra} lines (ctrl+o to expand)")
+        rows.append(f"  … +{extra} lines (Ctrl+O to expand)")
     return "\n".join(rows)
 
 
+def _render_boxed_card(
+    title: str,
+    command: str,
+    response_lines: list[str],
+    success: bool = True,
+    elapsed_s: float | None = None,
+    width: int = _BOX_DEFAULT_WIDTH,
+    max_body_lines: int = 10,
+) -> tuple[str, str]:
+    """Render a rounded pi-style boxed tool execution card.
+
+    Returns (collapsed_card, full_card).
+    """
+    inner_width = max(40, width - 4)
+    state_mark = "✓" if success else "✗"
+    header_left = f"╭─ ➔ {title} {state_mark} "
+    header_dashes = max(2, width - len(header_left) - 1)
+    top_border = f"{header_left}{'─' * header_dashes}╮"
+
+    # Command line
+    cmd_text = f"$ {command}"
+    if len(cmd_text) > inner_width:
+        cmd_text = cmd_text[: inner_width - 1] + "…"
+
+    divider_left = "├─ Response "
+    divider_dashes = max(2, width - len(divider_left) - 1)
+    divider = f"{divider_left}{'─' * divider_dashes}┤"
+
+    # Stats footer
+    exit_code = 0 if success else 1
+    elapsed_str = f"{elapsed_s:.2f}s" if elapsed_s is not None else "0.04s"
+    word_count = sum(len(line_text.split()) for line_text in response_lines)
+    footer_left = f"╰─ Exit {exit_code} · {elapsed_str} · ~{word_count} words "
+    hint_right = " Ctrl+O for more ╯"
+    needed_dashes = width - len(footer_left) - len(hint_right)
+    if needed_dashes < 2:
+        footer_dashes = 2
+        bottom_border = f"{footer_left}{'─' * footer_dashes}╯"
+    else:
+        bottom_border = f"{footer_left}{'─' * needed_dashes}{hint_right}"
+
+    def _build_frame(lines_to_show: list[str]) -> str:
+        body: list[str] = [top_border, f"│ {cmd_text.ljust(inner_width)} │"]
+        if lines_to_show:
+            body.append(divider)
+            for line in lines_to_show:
+                truncated = line[:inner_width] if len(line) > inner_width else line
+                body.append(f"│ {truncated.ljust(inner_width)} │")
+        body.append(bottom_border)
+        return "\n".join(body)
+
+    clean_resp = [line_text.rstrip() for line_text in response_lines]
+    if len(clean_resp) > max_body_lines:
+        collapsed_resp = clean_resp[:max_body_lines]
+        collapsed_resp.append(f"… ({len(clean_resp) - max_body_lines} more lines hidden)")
+    else:
+        collapsed_resp = clean_resp
+
+    return _build_frame(collapsed_resp), _build_frame(clean_resp)
+
+
+def _render_file_tree(header: str, files: list[str], max_shown: int = 6) -> tuple[str, str]:
+    """Boxless file tree matching List / Glob output from the reference image."""
+    rows: list[str] = [header]
+    clean_files = [f.strip() for f in files if f.strip()]
+    if not clean_files:
+        return header, header
+
+    for file in clean_files[:max_shown]:
+        prefix = "  A " if file.endswith("/") else "  * "
+        rows.append(f"{prefix}{file}")
+
+    if len(clean_files) > max_shown:
+        rows.append(f"  … {len(clean_files) - max_shown} more files")
+
+    full_rows = [header] + [f"{'  A ' if f.endswith('/') else '  * '}{f}" for f in clean_files]
+    return "\n".join(rows), "\n".join(full_rows)
+
+
 def build_result_ui(
-    result: str, success: bool, elapsed_s: float | None = None
+    result: str,
+    success: bool,
+    elapsed_s: float | None = None,
+    tool_name: str = "",
+    tool_data: dict[str, Any] | None = None,
 ) -> dict[str, str | None]:
     """Split a raw tool result into pi-style UI fields.
 
-    - ``ui_summary``: first meaningful line (one clean header line; ``✗``
-      prefix on failure).
-    - ``ui_details``: boxless tree card of the remaining output plus a
-      metrics tail (``╰─ ⏱ 0.8s · 12 lines``); single-line results stay
-      header-only.
-    - ``ui_details_full``: the complete output for ctrl+o expansion.
+    - ``ui_summary``: Header line or None if the card itself carries the header.
+    - ``ui_details``: Rendered collapsed card or boxless tree.
+    - ``ui_details_full``: Full output for Ctrl+O expansion.
     """
     if not result:
         return {"ui_summary": None, "ui_details": None, "ui_details_full": None}
-    lines = result.replace("\r\n", "\n").split("\n")
-    while lines and not lines[0].strip():
-        lines.pop(0)
-    while lines and not lines[-1].strip():
-        lines.pop()
-    if not lines:
+
+    raw_lines = result.replace("\r\n", "\n").split("\n")
+    while raw_lines and not raw_lines[0].strip():
+        raw_lines.pop(0)
+    while raw_lines and not raw_lines[-1].strip():
+        raw_lines.pop()
+
+    if not raw_lines:
         return {"ui_summary": None, "ui_details": None, "ui_details_full": None}
 
-    first = lines[0].strip()
+    data = tool_data or {}
+    name_lower = tool_name.lower()
+
+    # 1. Exec / Bash -> Boxed command frame
+    if name_lower in ("exec", "bash", "run_cli_app"):
+        cmd = (
+            data.get("command")
+            or data.get("cmd")
+            or (data.get("app", "") + " " + " ".join(str(a) for a in data.get("args", [])))
+            or "command"
+        )
+        collapsed_box, full_box = _render_boxed_card(
+            title="Bash" if name_lower == "bash" else "Exec",
+            command=str(cmd),
+            response_lines=raw_lines,
+            success=success,
+            elapsed_s=elapsed_s,
+        )
+        return {"ui_summary": None, "ui_details": collapsed_box, "ui_details_full": full_box}
+
+    # 2. Find / List Dir / LS -> Boxless output tree
+    if name_lower in ("find", "find_files", "list_dir", "ls"):
+        path = data.get("path") or data.get("SearchDirectory") or data.get("dir_path") or "."
+        pattern = data.get("pattern") or data.get("Pattern")
+        count = len(raw_lines)
+        if pattern:
+            header = f"Q Glob: {pattern} {count} files · in {path}"
+        else:
+            header = f"Q List: {count} files · in {path}"
+        collapsed_tree, full_tree = _render_file_tree(header, raw_lines)
+        return {"ui_summary": None, "ui_details": collapsed_tree, "ui_details_full": full_tree}
+
+    # 3. Read / Read file -> Quiet tool representation
+    if name_lower in ("read", "read_file"):
+        path = data.get("path") or data.get("file_path") or data.get("AbsolutePath") or ""
+        offset = data.get("offset") or data.get("StartLine")
+        limit = data.get("limit") or data.get("EndLine")
+        range_str = f":{offset}-{limit}" if (offset or limit) else ""
+        elapsed_str = f" · {elapsed_s:.2f}s" if elapsed_s is not None else ""
+        summary = f"● Read {path}{range_str}{elapsed_str}"
+        body = render_tree(raw_lines, max_lines=6)
+        full = "\n".join(raw_lines)
+        return {
+            "ui_summary": summary,
+            "ui_details": body if body else None,
+            "ui_details_full": full,
+        }
+
+    # 4. Standard / Fallback tree parsing
+    first = raw_lines[0].strip()
     if not success:
         first = f"✗ {first}" if not first.startswith("Error") else first
     summary = _trunc(first)
 
-    if len(lines) == 1:
+    if len(raw_lines) == 1:
         return {"ui_summary": summary, "ui_details": None, "ui_details_full": None}
 
     metrics_bits: list[str] = []
     if elapsed_s is not None:
-        metrics_bits.append(f"⏱ {elapsed_s:.1f}s")
-    metrics_bits.append(f"{len(lines)} lines")
-    metrics = "╰─ " + " · ".join(metrics_bits)
+        metrics_bits.append(f"⏱ {elapsed_s:.2f}s")
+    metrics_bits.append(f"{len(raw_lines)} lines")
+    metrics = "  ╰─ " + " · ".join(metrics_bits)
 
-    body = render_tree(lines[1:])
+    body = render_tree(raw_lines[1:])
     details = f"{body}\n{metrics}" if body else metrics
-    full = "\n".join(lines[1:])
+    full = "\n".join(raw_lines[1:])
     return {"ui_summary": summary, "ui_details": details, "ui_details_full": full}
 
 

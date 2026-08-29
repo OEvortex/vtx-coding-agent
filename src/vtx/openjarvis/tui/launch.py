@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import argparse
+import contextlib
 
 from rich.console import Console
 
@@ -34,7 +35,5 @@ def run_tui(args: argparse.Namespace) -> None:
     app = OpenJarvisApp(cwd=getattr(args, "cwd", None), model=getattr(args, "model", None))
     app.run()
     hints: list[str] = []
-    try:
+    with contextlib.suppress(Exception):
         _print_exit(hints, None, None)
-    except Exception:
-        pass
