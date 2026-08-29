@@ -142,9 +142,16 @@ class _OpenJarvisBaseToolAdapter:
         images = None
         file_changes = None
         if self._is_vtx_tool:
-            raw_res = await self._raw_tool.execute(
-                params, cancel_event=cancel_event, tool_call_id=tool_call_id
-            )
+            import inspect
+
+            sig = inspect.signature(self._raw_tool.execute)
+            call_kwargs = {}
+            if "cancel_event" in sig.parameters:
+                call_kwargs["cancel_event"] = cancel_event
+            if "tool_call_id" in sig.parameters:
+                call_kwargs["tool_call_id"] = tool_call_id
+
+            raw_res = await self._raw_tool.execute(params, **call_kwargs)
             elapsed = time.monotonic() - started
             if hasattr(raw_res, "result"):
                 result_str = str(raw_res.result)

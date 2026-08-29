@@ -201,3 +201,46 @@ def _patched_add_loaded_resources(
 
 _chat.ChatLog.add_session_info = _patched_add_session_info  # type: ignore
 _chat.ChatLog.add_loaded_resources = _patched_add_loaded_resources  # type: ignore
+
+# ---------------------------------------------------------------------------
+# Monkey-patch ToolBlock for seamless pi-style boxed and quiet tool rendering
+# ---------------------------------------------------------------------------
+
+try:
+    from vtx.tui.blocks import ToolBlock as _ToolBlock
+except Exception:
+    _ToolBlock = None
+
+if _ToolBlock is not None:
+    _ORIGINAL_FORMAT_HEADER = _ToolBlock._format_header
+    _ORIGINAL_RENDER_RESULT_OUTPUT = _ToolBlock._render_result_output
+
+    def _patched_format_header(self: _ToolBlock, truncate: bool = True) -> Text:
+        # 1. If result is a boxed card (starts with ╭─), the boxed card carries
+        # its own title, state, command, and top border; suppress outer text header.
+        if self._ui_details and self._ui_details.lstrip().startswith("╭─"):
+            return Text("")
+
+        # 2. If ui_summary is already a full formatted header (e.g. "● Read ..."),
+        # render it directly without prepending the raw tool name / icon.
+        if self._ui_summary:
+            first_ch = self._ui_summary.strip()[:1]
+            if first_ch in ("●", "Q", "🌐", "λ", "◈", "◉", "⏱", "✉", "↳", "▦", "?", "✓", "✗"):
+                return self._render_markup_safe(self._ui_summary)
+
+        return _ORIGINAL_FORMAT_HEADER(self, truncate=truncate)
+
+    def _patched_render_result_output(self: _ToolBlock) -> None:
+        _ORIGINAL_RENDER_RESULT_OUTPUT(self)
+        # If output is a full boxed card, hide the redundant header label
+        try:
+            header_label = self.query_one("#tool-header", Label)
+            if self._ui_details and self._ui_details.lstrip().startswith("╭─"):
+                header_label.add_class("-hidden")
+            else:
+                header_label.remove_class("-hidden")
+        except Exception:
+            pass
+
+    _ToolBlock._format_header = _patched_format_header  # type: ignore
+    _ToolBlock._render_result_output = _patched_render_result_output  # type: ignore

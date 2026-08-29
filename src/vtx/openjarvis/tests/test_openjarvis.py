@@ -280,6 +280,37 @@ def test_pi_style_tool_ui_services() -> None:
     assert "✉ Message: slack → hello team · 0.02s" in msg_res["ui_summary"]
 
 
+def test_adapted_vtx_read_tool_execution(tmp_path) -> None:
+    from vtx.coding_agent.tools.read import ReadParams, ReadTool
+    from vtx.openjarvis.tools import adapt_tool
+
+    test_file = tmp_path / "test.txt"
+    test_file.write_text("line 1\nline 2\nline 3\n")
+
+    tool = adapt_tool(ReadTool())
+    # Should accept and safely execute even when tool_call_id is passed
+    params = ReadParams(path=str(test_file))
+    res = asyncio.run(tool.execute(params, tool_call_id="call_123"))
+    assert res.success is True
+    assert "line 1" in res.result
+    assert "● Read" in (res.ui_summary or "")
+
+
+def test_tool_block_header_suppression_with_boxed_card() -> None:
+    import vtx.openjarvis.tui.branding  # noqa: F401
+    from vtx.tui.blocks import ToolBlock
+
+    block = ToolBlock(name="exec", call_msg="ls -la")
+    # Before result, regular header with call_msg
+    header_text = block._format_header().plain
+    assert "exec" in header_text or "ls -la" in header_text
+
+    # After boxed result, outer header is suppressed
+    block._ui_details = "╭─ ➔ Exec ✓ ─────────────────────────╮\n│ $ ls -la │\n╰─ Exit 0 ─╯"
+    header_text_boxed = block._format_header().plain
+    assert header_text_boxed == ""
+
+
 def test_titanium_theme_registered() -> None:
     from vtx.tui.themes import get_theme, get_theme_ids
 

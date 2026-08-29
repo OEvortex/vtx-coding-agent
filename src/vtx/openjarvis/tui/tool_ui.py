@@ -254,10 +254,20 @@ def _render_boxed_card(
     divider_dashes = max(2, width - len(divider_left) - 1)
     divider = f"{divider_left}{'─' * divider_dashes}┤"
 
+    # Clean response lines
+    clean_resp = [line_text.rstrip() for line_text in response_lines]
+    while clean_resp and not clean_resp[-1].strip():
+        clean_resp.pop()
+    if clean_resp and clean_resp[-1].strip().lower().startswith("exit code:"):
+        clean_resp.pop()
+    while clean_resp and not clean_resp[-1].strip():
+        clean_resp.pop()
+
     # Stats footer
     exit_code = 0 if success else 1
     elapsed_str = f"{elapsed_s:.2f}s" if elapsed_s is not None else "0.04s"
     word_count = sum(len(line_text.split()) for line_text in response_lines)
+    word_count = sum(len(line_text.split()) for line_text in clean_resp)
     footer_left = f"╰─ Exit {exit_code} · {elapsed_str} · ~{word_count} words "
     hint_right = " Ctrl+O for more ╯"
     needed_dashes = width - len(footer_left) - len(hint_right)
