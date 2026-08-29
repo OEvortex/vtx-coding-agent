@@ -1,16 +1,21 @@
 """/login and /logout commands - provider authentication flows.
 
-There are two kinds of "logins" in vtx:
+There are three kinds of "logins" in vtx, each a sub-picker under /login:
 
-- **OAuth flows** for GitHub Copilot and OpenAI Codex, where the user is sent
-  to a browser to authorize and we store long-lived tokens.
-- **API-key entries** for every provider in ``src/vtx/llm/provider.yaml``.
-  These don't need OAuth; the user pastes an API key and we store it in
-  ``~/.vtx/dynamic_auth.json`` (mode 0600).
+- **OAuth flows** from ``src/vtx/ai/oauth`` (GitHub Copilot, OpenAI/Codex,
+  Cline), where the user is sent to a browser to authorize and we store
+  long-lived tokens.
+- **API-key entries** for every keyed provider in
+  ``src/vtx/ai/provider.yaml``. These don't need OAuth; the user pastes an
+  API key and we store it in the key file (``~/vtx/dynamic_auth.yml``,
+  plain text, mode 0600 - see :mod:`vtx.ai.oauth.dynamic` for the exact
+  path resolution).
+- **Keyless/local providers** (``api_key_optional: true`` in provider.yaml,
+  e.g. Ollama) that need no credential at all - selecting one just fetches
+  its model list.
 
-Both kinds are reachable from the ``/login`` picker, which first asks for an
-auth method (OAuth vs API key). Adding a new provider to ``provider.yaml``
-automatically makes it appear in the API-key sub-picker.
+Adding a new provider to ``provider.yaml`` automatically makes it appear in
+the matching sub-picker.
 """
 
 from __future__ import annotations
@@ -57,7 +62,7 @@ def _status_label(provider: str) -> str:
 
 
 def _oauth_login_providers() -> list[tuple[str, str, bool]]:
-    """OAuth entries, one per login flow in src/vtx/ai/oauth."""
+    """(provider_id, display_name, has_saved_credentials) per OAuth flow in src/vtx/ai/oauth."""
     return [
         ("github-copilot", "GitHub Copilot", has_saved_copilot_credentials()),
         ("openai", "OpenAI (ChatGPT/Codex)", has_saved_openai_credentials()),
@@ -69,6 +74,7 @@ class AuthCommands(CommandSupport):
     def _handle_login_command(self, args: str) -> None:
         oauth = _oauth_login_providers()
         keyless = [p for p in list_providers() if p.api_key_optional]
+        keyed_count = len(list_providers()) - len(keyless)
         items = [
             ListItem(
                 value="oauth",
@@ -78,7 +84,7 @@ class AuthCommands(CommandSupport):
             ListItem(
                 value="apikey",
                 label="API Key",
-                description=f"paste a key for any of the {len(list_providers()) - len(keyless)} providers",
+                description=f"paste a key for any of the {keyed_count} providers",
             ),
             ListItem(
                 value="keyless",
@@ -103,11 +109,7 @@ class AuthCommands(CommandSupport):
         elif method == "apikey":
             self._show_selection_picker(
                 [
-                    ListItem(
-                        value=p.slug,
-                        label=p.display_name,
-                        description=_status_label(p.slug),
-                    )
+                    ListItem(value=p.slug, label=p.display_name, description=_status_label(p.slug))
                     for p in list_providers()
                     if not p.api_key_optional
                 ],
@@ -151,7 +153,8 @@ class AuthCommands(CommandSupport):
         self.run_worker(self._refresh_after_api_key(provider_id), exclusive=False)
 
     def _prompt_for_api_key(self, provider_id: str) -> None:
-        """Show a single-line input that captures the API key and stores it."""
+        """Put the input box in API_KEY mode so the next submission is treated
+        as this provider's key (stored by _submit_api_key)."""
         status = get_provider_status(provider_id)
         chat = self.query_one("#chat-log", ChatLog)
 
@@ -219,8 +222,6 @@ class AuthCommands(CommandSupport):
 
     def _submit_api_key(self, raw: str) -> None:
         """Called by the input layer when the user submits a key in API_KEY mode."""
-        from vtx.tui.input import InputBox
-
         provider_id = getattr(self, "_pending_api_key_provider", None)
         chat = self.query_one("#chat-log", ChatLog)
         # Reset state immediately so a later error doesn't leave us stuck.
@@ -255,7 +256,8 @@ class AuthCommands(CommandSupport):
         self.run_worker(self._refresh_after_api_key(provider_id), exclusive=False)
 
     async def _refresh_after_api_key(self, provider_id: str) -> None:
-        """Refresh the model catalog for a provider after its API key was saved."""
+        """Fetch a provider's model catalog; used after a key is saved and
+        when a keyless provider is picked from /login."""
         import asyncio
 
         from vtx.ai import DYNAMIC_PROVIDERS, refresh_provider

@@ -7,6 +7,7 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 ## [Unreleased]
 
 ### Added
+- **`/login` two-level auth picker** — `/login` now first asks for an auth method, then drills into a sub-picker: **OAuth** lists only the browser flows from `vtx.ai.oauth` (GitHub Copilot, OpenAI/Codex, Cline); **API Key** lists keyed `provider.yaml` providers; **Local / Keyless** lists `api_key_optional: true` providers (e.g. Ollama) and just fetches their model catalog on selection instead of asking for a credential. New providers added to `provider.yaml` land in the matching sub-picker automatically.
 - **Dynamic Tool & Skills Registries** — `vtx.ai.agent.tools` now provides a full runtime registry API (`register_tool`, `register_tools`, `unregister_tool`, `get_tool`, `get_all_tools`, `get_default_tools`, `get_parent_only_tools`) and `vtx.ai.agent.context.skills` provides a package registry API (`register_skills_package`, `unregister_skills_package`, `get_registered_skills_packages`), enabling extensions and custom agents to register tools and skills without hardcoding package names.
 - **Dynamic Entrypoint Discovery** — `vtx.ai.agent.extension_manager` now supports registering custom entry-point groups (`register_extension_entrypoint_key`, `register_agent_entrypoint_key`) and automatically discovers package entrypoints matching `*.extensions` and `*.agents`.
 - **New LLM providers** — added TokenHarbor (`https://tokenharbor.ai/v1`), Sarvam AI (`https://api.sarvam.ai/v1`), and B.ai (`https://api.b.ai/v1`) to the provider catalog.

@@ -6,8 +6,8 @@ not need an OAuth flow — they just need an API key. Users can set one of three
 ways, in priority order:
 
 1. The provider's ``<NAME>_API_KEY`` environment variable (e.g. ``KILO_API_KEY``).
-2. The encrypted-on-disk key file at the configured location (mode 0600),
-   written by the in-app ``/login`` command.
+2. The plaintext key file at the configured location (mode 0600, no
+   encryption), written by the in-app ``/login`` command.
 3. None — for providers that support a free tier (airouter, kilo), vtx will
    fall back to a placeholder key.
 

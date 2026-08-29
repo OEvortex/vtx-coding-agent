@@ -188,7 +188,7 @@ def test_login_picker_shows_auth_method_choices(monkeypatch):
 
     assert fake._selection_mode == SelectionMode.LOGIN_METHOD
     rows = [(item.value, item.label) for item in fake.completion_list.items]
-    assert rows == [("oauth", "OAuth"), ("apikey", "API Key")]
+    assert rows == [("oauth", "OAuth"), ("apikey", "API Key"), ("keyless", "Local / Keyless")]
     assert "GitHub Copilot" in fake.completion_list.items[0].description
 
 
@@ -206,67 +206,6 @@ def test_login_method_oauth_shows_only_oauth_providers(monkeypatch):
         ("github-copilot", "GitHub Copilot", "oauth login"),
         ("openai", "OpenAI (ChatGPT/Codex)", "saved credentials"),
         ("cline", "Cline (WorkOS)", "oauth login"),
-    ]
-
-
-def test_login_picker_includes_yaml_providers(monkeypatch):
-    """Every provider in provider.yaml should appear in the API-key sub-picker
-    so users can store their key without going through environment variables."""
-    from vtx.ai.oauth.dynamic import DynamicProviderStatus
-    from vtx.ai.provider_catalog import ProviderInfo
-
-    fake = FakeCommands()
-    monkeypatch.setattr(
-        commands,
-        "list_providers",
-        lambda: [
-            ProviderInfo(
-                slug="anthropic",
-                display_name="Anthropic",
-                description="Direct Anthropic API.",
-                family="anthropic",
-                base_url="https://api.anthropic.com",
-                api_key_env="ANTHROPIC_API_KEY",
-            ),
-            ProviderInfo(
-                slug="ollama",
-                display_name="Ollama (local)",
-                description="Local models served by Ollama.",
-                family="openai_compat",
-                base_url="http://localhost:11434/v1",
-                api_key_env=None,
-                api_key_optional=True,
-            ),
-        ],
-    )
-    monkeypatch.setattr(
-        commands,
-        "get_provider_status",
-        lambda slug: {
-            "anthropic": DynamicProviderStatus(
-                provider="anthropic",
-                env_var="ANTHROPIC_API_KEY",
-                has_env_key=False,
-                has_stored_key=False,
-                api_key_optional=False,
-            ),
-            "ollama": DynamicProviderStatus(
-                provider="ollama",
-                env_var=None,
-                has_env_key=False,
-                has_stored_key=False,
-                api_key_optional=True,
-            ),
-        }.get(slug),
-    )
-
-    fake._select_login_method("apikey")
-
-    assert fake._selection_mode == SelectionMode.LOGIN_API_KEY
-    rows = [(item.value, item.label, item.description) for item in fake.completion_list.items]
-    assert rows == [
-        ("anthropic", "Anthropic", "key required"),
-        ("ollama", "Ollama (local)", "no key needed"),
     ]
 
 
@@ -356,11 +295,15 @@ def test_login_method_keyless_shows_only_keyless_providers(monkeypatch):
 
 
 def test_select_keyless_provider_refreshes_models(monkeypatch):
+    class FakeCoro:
+        def close(self) -> None:
+            pass
+
     fake = FakeCommands()
     monkeypatch.setattr(
         commands.AuthCommands,
         "_refresh_after_api_key",
-        lambda self, provider_id: fake.chat.infos.append(f"refresh {provider_id}"),
+        lambda self, provider_id: fake.chat.infos.append(f"refresh {provider_id}") or FakeCoro(),
     )
 
     fake._select_keyless_provider("ollama")
