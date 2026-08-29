@@ -32,17 +32,17 @@ _ORIGINAL_ADD_SESSION_INFO = _chat.ChatLog.add_session_info
 _ORIGINAL_ADD_LOADED_RESOURCES = _chat.ChatLog.add_loaded_resources
 _SKILL_LABEL = getattr(_chat, "_format_skill_label", None) or (lambda skill: skill.name)
 
-# 9-line block-art logo (Pi / Jarvis symbol)
+# 9-line block-art logo (OpenJarvis OJ symbol)
 _LOGO_LINES = (
-    "████████████╗",
-    "████████████║",
-    "████╔═══████║",
-    "████║   ████║",
-    "████████╬═══████╗",
-    "████████║   ████║",
-    "████╔═══╝   ████║",
-    "████║       ████║",
-    "╚═══╝       ╚═══╝",
+    "██████████╗   ██████████╗",
+    "██████████║   ╚═════████║",
+    "████╔══████╗        ████║",
+    "████║  ████║        ████║",
+    "████║  ████║        ████║",
+    "████║  ████║        ████║",
+    "████║  ████║  ████╗ ████║",
+    "████╚══████║  ████╚═████║",
+    "╚██████████╝  ╚████████╔╝",
 )
 
 
@@ -98,6 +98,11 @@ def _sample_gradient(palette: list[tuple[int, int, int]], pos: float) -> str:
 
 
 def _patched_add_session_info(self: _chat.ChatLog, version: str) -> None:
+    # Clear any previous session-info to avoid duplicate logos
+    for child in list(self.children):
+        if hasattr(child, "has_class") and child.has_class("session-info"):
+            child.remove()
+
     info_text = Text()
     accent = config.ui.colors.accent
     dim = config.ui.colors.dim
@@ -150,6 +155,11 @@ def _patched_add_loaded_resources(
     """Jarvis-style resource banner: iconified tools, clean sections."""
     if not context_paths and not skills and not tools:
         return
+
+    # Clear any previous loaded-resources
+    for child in list(self.children):
+        if hasattr(child, "has_class") and child.has_class("loaded-resources"):
+            child.remove()
 
     dim = config.ui.colors.dim
     muted = config.ui.colors.muted
