@@ -31,6 +31,7 @@ def test_openjarvis_default_tools_are_curatted() -> None:
         "list_exec_sessions",
         "write_stdin",
         "message",
+        "my",
     ]
     assert list(OPENJARVIS_DEFAULT_TOOLS) == expected
     # The kept OpenJarvis-specific tools must be a subset of the default list.

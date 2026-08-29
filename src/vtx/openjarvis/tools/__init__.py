@@ -249,6 +249,7 @@ OPENJARVIS_DEFAULT_TOOLS = [
     "list_exec_sessions",
     "write_stdin",
     "message",
+    "my",
 ]
 
 
@@ -415,19 +416,19 @@ def register_with_vtx() -> None:
         import vtx.ui.app as vtx_app  # type: ignore
 
     merged = _build_openjarvis_merged(include_extras=True)
-    # Keep both curated DEFAULT and loader-discovered extras (my, run_cli_app, …).
-    keep_names = set(merged.keys())
-    extras_sorted = sorted(k for k in merged if k not in set(OPENJARVIS_DEFAULT_TOOLS))
+    # Curated defaults only on the public surface; extras stay in all_tools.
+    keep_names = set(OPENJARVIS_DEFAULT_TOOLS)
+    extras_sorted = sorted(k for k in merged if k not in keep_names)
 
-    vtx_tools.tools_by_name = merged
+    vtx_tools.tools_by_name = {name: merged[name] for name in OPENJARVIS_DEFAULT_TOOLS if name in merged}
     if hasattr(vtx_app, "tools_by_name"):
-        vtx_app.tools_by_name = merged
+        vtx_app.tools_by_name = vtx_tools.tools_by_name
 
     ordered = [merged[name] for name in OPENJARVIS_DEFAULT_TOOLS if name in merged]
     extras = [merged[name] for name in extras_sorted]
     vtx_tools.all_tools = ordered + extras
     vtx_tools.all_tools_set = {t.name for t in vtx_tools.all_tools}
-    # DEFAULT_TOOLS stays curated (15); all_tools carries the full set (20).
+    # DEFAULT_TOOLS stays curated (16); all_tools carries the full set (21).
     vtx_tools.DEFAULT_TOOLS = list(OPENJARVIS_DEFAULT_TOOLS)
     if hasattr(vtx_app, "DEFAULT_TOOLS"):
         vtx_app.DEFAULT_TOOLS = list(OPENJARVIS_DEFAULT_TOOLS)
@@ -436,7 +437,7 @@ def register_with_vtx() -> None:
         from vtx.ai.agent.tools import set_default_tool_lookup
 
         def _lookup(name: str):
-            return merged.get(name)
+            return merged.get(name) if name in keep_names else None
 
         set_default_tool_lookup(_lookup)
     except Exception:

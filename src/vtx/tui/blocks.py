@@ -491,17 +491,12 @@ class ToolBlock(Static):
             if marker_pos != -1:
                 line = line.copy()
                 marker_end = marker_pos + len(DIFF_BG_PAD_MARKER)
-                marker_spans = [span for span in line.spans if span.start <= marker_pos < span.end]
-                marker_style = marker_spans[0].style if marker_spans else None
                 line.plain = line.plain[:marker_pos] + line.plain[marker_end:]
                 line.spans = [
                     span
                     for span in line.spans
                     if not (span.start >= marker_pos and span.end <= marker_end)
                 ]
-                padding = max(0, width - len(line.plain))
-                if padding:
-                    line.append(" " * padding, style=marker_style)
             if index > 0:
                 result.append("\n")
             result.append_text(line)
