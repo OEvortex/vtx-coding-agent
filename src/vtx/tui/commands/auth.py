@@ -8,9 +8,9 @@ There are two kinds of "logins" in vtx:
   These don't need OAuth; the user pastes an API key and we store it in
   ``~/.vtx/dynamic_auth.json`` (mode 0600).
 
-Both kinds show up together in the ``/login`` picker so the user has a single
-place to manage credentials. Adding a new provider to ``provider.yaml``
-automatically makes it appear in the picker.
+Both kinds are reachable from the ``/login`` picker, which first asks for an
+auth method (OAuth vs API key). Adding a new provider to ``provider.yaml``
+automatically makes it appear in the API-key sub-picker.
 """
 
 from __future__ import annotations
@@ -58,34 +58,50 @@ def _status_label(provider: str) -> str:
 
 class AuthCommands(CommandSupport):
     def _handle_login_command(self, args: str) -> None:
-        providers: list[tuple[str, str, bool, str]] = [
-            ("github-copilot", "GitHub Copilot", has_saved_copilot_credentials(), "oauth"),
-            ("openai", "OpenAI (ChatGPT/Codex)", has_saved_openai_credentials(), "oauth"),
-            ("cline", "Cline (WorkOS)", has_saved_cline_credentials(), "oauth"),
+        # OAuth entries come from src/vtx/ai/oauth (copilot, codex/openai, cline).
+        self._oauth_login_providers: list[tuple[str, str, bool]] = [
+            ("github-copilot", "GitHub Copilot", has_saved_copilot_credentials()),
+            ("openai", "OpenAI (ChatGPT/Codex)", has_saved_openai_credentials()),
+            ("cline", "Cline (WorkOS)", has_saved_cline_credentials()),
         ]
 
-        # Every provider in provider.yaml gets a key-based entry.
-        # Providers that also have an OAuth entry above get a suffixed value
-        # so both flows are reachable from the picker.
-        oauth_slugs = {pid for pid, _, _, kind in providers if kind == "oauth"}
-        for p in list_providers():
-            value = f"{p.slug}-key" if p.slug in oauth_slugs else p.slug
-            providers.append((value, p.display_name, False, "key"))
+        items = [
+            ListItem(
+                value="oauth",
+                label="OAuth",
+                description="browser login: "
+                + ", ".join(name for _, name, _ in self._oauth_login_providers),
+            ),
+            ListItem(
+                value="apikey",
+                label="API Key",
+                description=f"paste a key for any of the {len(list_providers())} providers",
+            ),
+        ]
 
-        items: list[ListItem] = []
-        for provider_id, name, has_oauth, kind in providers:
-            if kind == "oauth":
-                description = "saved credentials" if has_oauth else "oauth login"
-            else:
-                slug = (
-                    provider_id.removesuffix("-key")
-                    if provider_id.endswith("-key")
-                    else provider_id
+        self._show_selection_picker(items, SelectionMode.LOGIN_METHOD)
+
+    def _select_login_method(self, method: str) -> None:
+        if method == "oauth":
+            items = [
+                ListItem(
+                    value=provider_id,
+                    label=name,
+                    description="saved credentials" if has_oauth else "oauth login",
                 )
-                description = _status_label(slug)
-            items.append(ListItem(value=provider_id, label=name, description=description))
-
-        self._show_selection_picker(items, SelectionMode.LOGIN)
+                for provider_id, name, has_oauth in self._oauth_login_providers
+            ]
+            self._show_selection_picker(items, SelectionMode.LOGIN)
+        elif method == "apikey":
+            self._show_selection_picker(
+                [
+                    ListItem(
+                        value=p.slug, label=p.display_name, description=_status_label(p.slug)
+                    )
+                    for p in list_providers()
+                ],
+                SelectionMode.LOGIN_API_KEY,
+            )
 
     def _select_login_provider(self, provider_id: str) -> None:
         if provider_id == "github-copilot":
@@ -100,15 +116,9 @@ class AuthCommands(CommandSupport):
             self.run_worker(self._cline_login_flow(), exclusive=False)
             return
 
-        # Key-based entries for OAuth-capable providers are suffixed (e.g.
-        # "openai-key") so both flows are reachable. Strip the suffix to get
-        # the real provider slug.
-        if provider_id.endswith("-key"):
-            provider_id = provider_id.removesuffix("-key")
-
+    def _select_apikey_provider(self, provider_id: str) -> None:
         if get_provider_info(provider_id) is not None:
             self._prompt_for_api_key(provider_id)
-            return
 
     def _prompt_for_api_key(self, provider_id: str) -> None:
         """Show a single-line input that captures the API key and stores it."""

@@ -6,6 +6,8 @@ class SelectionMode(StrEnum):
     MODEL = "model"
     THEME = "theme"
     LOGIN = "login"
+    LOGIN_METHOD = "login_method"
+    LOGIN_API_KEY = "login_api_key"
     LOGOUT = "logout"
     PERMISSIONS = "permissions"
     THINKING = "thinking"
