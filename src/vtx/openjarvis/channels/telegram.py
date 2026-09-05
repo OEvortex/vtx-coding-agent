@@ -10,7 +10,7 @@ from contextlib import suppress
 from dataclasses import dataclass
 from datetime import timedelta
 from pathlib import Path
-from typing import Any, Literal
+from typing import Any, ClassVar, Literal
 from urllib.parse import urlparse
 
 from pydantic import Field, field_validator, model_validator
@@ -419,7 +419,7 @@ class TelegramChannel(BaseChannel):
     display_name = "Telegram"
 
     # Commands registered with Telegram's command menu
-    BOT_COMMANDS = [
+    BOT_COMMANDS: ClassVar[list[BotCommand]] = [
         BotCommand("start", "Start the bot"),
         BotCommand("new", "Start a new conversation"),
         BotCommand("stop", "Stop the current task"),
@@ -900,7 +900,8 @@ class TelegramChannel(BaseChannel):
                 )
 
     async def _call_with_retry(self, fn, *args, **kwargs):
-        """Call an async Telegram API function with retry on pool/network timeout and RetryAfter."""
+        """Call an async Telegram API function with retry on pool/network timeout
+        and RetryAfter."""
         from telegram.error import RetryAfter
 
         for attempt in range(1, _SEND_MAX_RETRIES + 1):
@@ -1299,7 +1300,10 @@ class TelegramChannel(BaseChannel):
     async def _download_message_media(
         self, msg, *, add_failure_content: bool = False
     ) -> tuple[list[str], list[str]]:
-        """Download media from a message (current or reply). Returns (media_paths, content_parts)."""
+        """Download media from a message (current or reply).
+
+        Returns (media_paths, content_parts).
+        """
         media_file = None
         media_type = None
         if getattr(msg, "photo", None):
@@ -1782,7 +1786,8 @@ class TelegramChannel(BaseChannel):
 
     @staticmethod
     def _safe_callback_data(label: str) -> str:
-        # Telegram caps callback_data at 64 bytes UTF-8; truncate at a char boundary so the keyboard still sends.
+        # Telegram caps callback_data at 64 bytes UTF-8; truncate at a char boundary
+        # so the keyboard still sends.
         encoded = label.encode("utf-8")
         if len(encoded) <= 64:
             return label
@@ -1790,7 +1795,8 @@ class TelegramChannel(BaseChannel):
 
     @staticmethod
     def _buttons_as_text(buttons: list[list[str]]) -> str:
-        # Buttons are semantic options; when we can't render a keyboard, the user still needs to see them.
+        # Buttons are semantic options; when we can't render a keyboard, the user
+        # still needs to see them.
         return "\n".join(" ".join(f"[{label}]" for label in row) for row in buttons if row)
 
     async def _on_callback_query(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:

@@ -129,13 +129,13 @@ class MyTool(Tool, ContextAware):
                 self.subagents: Any = {}
                 self.model_preset: str | None = None
 
-                def _sync_subagent_runtime_limits(self) -> None:
-                    return None
+            def _sync_subagent_runtime_limits(self) -> None:
+                return None
 
-                def _sync_replay_max_messages(self) -> None:
-                    return None
+            def _sync_replay_max_messages(self) -> None:
+                return None
 
-        return _Shim(ctx)  # type: ignore[return-value]
+        return _Shim(ctx)
 
     BLOCKED = frozenset(
         {

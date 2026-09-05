@@ -34,21 +34,28 @@ from vtx.openjarvis.utils.paths import get_media_dir
 class WebSocketConfig(Base):
     """WebSocket server channel configuration.
 
-    Clients connect with URLs like ``ws://{host}:{port}{path}?client_id=...&token=...``.
-    - ``client_id``: Used for ``allow_from`` authorization; if omitted, a value is generated and logged.
-    - ``token``: If non-empty, the ``token`` query param may match this static secret; short-lived tokens
-      from ``token_issue_path`` are also accepted.
-    - ``token_issue_path``: If non-empty, **GET** (HTTP/1.1) to this path returns JSON
-      ``{"token": "...", "expires_in": <seconds>}``; use ``?token=...`` when opening the WebSocket.
-      Must differ from ``path`` (the WS upgrade path). If the client runs in the **same process** as
-      openjarvis and shares the asyncio loop, use a thread or async HTTP client for GET—do not call
-      blocking ``urllib`` or synchronous ``httpx`` from inside a coroutine.
-    - ``token_issue_secret``: If non-empty, token requests must send ``Authorization: Bearer <secret>`` or
-      ``X-AgeniteClaw-Auth: <secret>``.
-    - ``websocket_requires_token``: If True, the handshake must include a valid token (static or issued and not expired).
-    - Each connection has its own session: a unique ``chat_id`` maps to the agent session internally.
-    - ``media`` field in outbound messages contains local filesystem paths; remote clients need a
-      shared filesystem or an HTTP file server to access these files.
+    Clients connect with URLs like
+    ``ws://{host}:{port}{path}?client_id=...&token=...``.
+    - ``client_id``: Used for ``allow_from`` authorization; if omitted, a
+      value is generated and logged.
+    - ``token``: If non-empty, the ``token`` query param may match this static
+      secret; short-lived tokens from ``token_issue_path`` are also accepted.
+    - ``token_issue_path``: If non-empty, **GET** (HTTP/1.1) to this path
+      returns JSON ``{"token": "...", "expires_in": <seconds>}``; use
+      ``?token=...`` when opening the WebSocket.  Must differ from ``path``
+      (the WS upgrade path). If the client runs in the **same process** as
+      openjarvis and shares the asyncio loop, use a thread or async HTTP
+      client for GET—do not call blocking ``urllib`` or synchronous ``httpx``
+      from inside a coroutine.
+    - ``token_issue_secret``: If non-empty, token requests must send
+      ``Authorization: Bearer <secret>`` or ``X-AgeniteClaw-Auth: <secret>``.
+    - ``websocket_requires_token``: If True, the handshake must include a
+      valid token (static or issued and not expired).
+    - Each connection has its own session: a unique ``chat_id`` maps to the
+      agent session internally.
+    - ``media`` field in outbound messages contains local filesystem paths;
+      remote clients need a shared filesystem or an HTTP file server to
+      access these files.
     """
 
     enabled: bool = False

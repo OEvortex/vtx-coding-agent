@@ -7,21 +7,21 @@ def test_footer_shows_auto_permission_mode_before_file_changes():
     try:
         footer = CompactFooter()
         footer._file_changes = {"a.txt": (2, 1)}
-        _, _, line3 = footer._compute_lines()
+        _, line2 = footer._compute_lines()
     finally:
         reset_config()
 
-    assert "✓ auto" in line3.plain
-    assert "+2" in line3.plain
-    assert "-1" in line3.plain
+    assert "✓ auto" in line2.plain
+    assert "+2" in line2.plain
+    assert "-1" in line2.plain
 
 
 def test_footer_shows_prompt_permission_mode_without_file_changes():
     footer = CompactFooter()
     footer._permission_mode = "prompt"
-    _, _, line3 = footer._compute_lines()
+    _, line2 = footer._compute_lines()
 
-    assert "⏹ prompt" in line3.plain
+    assert "⏹ prompt" in line2.plain
 
 
 def test_footer_updates_permission_mode_without_layout():

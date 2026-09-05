@@ -483,7 +483,7 @@ class Agent[TContext]:
                 thinking_level=thinking_level,
                 provider=name or sdk,
                 default_headers=default_headers or {},
-                thinking_level_map=getattr(info, "thinking_level_map", None) if info else None,
+                thinking_level_map=None,
             )
             return get_provider_class(api_type, name or sdk)(config)  # type: ignore[arg-type]
 

@@ -25,7 +25,7 @@ WECOM_AVAILABLE = importlib.util.find_spec("wecom_aibot_sdk") is not None
 WECOM_UPLOAD_MAX_BYTES = 1024 * 1024 * 200  # 200MB
 
 # Replace unsafe characters with "_", keep Chinese and common safe punctuation.
-_SAFE_NAME_RE = re.compile(r"[^\w.\-()\[\]（）【】\u4e00-\u9fff]+", re.UNICODE)
+_SAFE_NAME_RE = re.compile(r"[^\w.\-()\(\)\[\]【】\u4e00-\u9fff]+", re.UNICODE)
 
 
 def _sanitize_filename(name: str) -> str:
@@ -406,7 +406,7 @@ class WecomChannel(BaseChannel):
         ``client._ws_manager.send_reply()``:
 
           ``aibot_upload_media_init``   → upload_id
-          ``aibot_upload_media_chunk`` × N  (≤512 KB raw per chunk, base64)
+          ``aibot_upload_media_chunk`` x N  (≤512 KB raw per chunk, base64)
           ``aibot_upload_media_finish`` → media_id
 
         Returns (media_id, media_type) on success, (None, None) on failure.

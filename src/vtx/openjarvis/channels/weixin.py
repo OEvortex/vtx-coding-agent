@@ -527,7 +527,8 @@ class WeixinChannel(BaseChannel):
         if remaining > 0:
             remaining_min = max((remaining + 59) // 60, 1)
             raise RuntimeError(
-                f"WeChat session paused, {remaining_min} min remaining (errcode {ERRCODE_SESSION_EXPIRED})"
+                f"WeChat session paused, {remaining_min} min remaining "
+                f"(errcode {ERRCODE_SESSION_EXPIRED})"
             )
 
     async def _poll_once(self) -> None:
@@ -622,7 +623,8 @@ class WeixinChannel(BaseChannel):
 
             if not ctx_token:
                 self.logger.warning(
-                    "Access denied for sender {}; cannot send WeChat pairing code without context_token",
+                    "Access denied for sender {}; cannot send WeChat pairing "
+                    "code without context_token",
                     from_user_id,
                 )
                 return
@@ -883,7 +885,8 @@ class WeixinChannel(BaseChannel):
                     )
                     if should_fallback:
                         self.logger.warning(
-                            "media download failed via full_url, falling back to encrypt_query_param: type={} err={}",
+                            "media download failed via full_url, falling back to "
+                            "encrypt_query_param: type={} err={}",
                             media_type,
                             e,
                         )

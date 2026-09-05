@@ -48,7 +48,8 @@ class TaskParams(BaseModel):
         default=False,
         description=(
             "Run concurrently in the background and return a task_id immediately. "
-            "Completion arrives next turn; do NOT busy-wait or poll."
+            "Completion arrives next turn; do NOT busy-wait or poll. You can pause and "
+            "wait for completion."
         ),
     )
 

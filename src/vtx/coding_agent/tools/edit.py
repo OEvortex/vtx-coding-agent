@@ -170,7 +170,7 @@ def format_diff_display(diff: str) -> str:
         parsed = _parse_diff_line(line)
 
         if parsed and parsed[0] == "-":
-            sign, line_num, content_part = parsed
+            _sign, line_num, content_part = parsed
             content = (
                 f"[{colors.diff_removed}]{escape(line_num)}  "
                 f"{escape(content_part)}[/{colors.diff_removed}]"

@@ -1,12 +1,18 @@
-"""JSON Schema fragment types: all subclass :class:`~openjarvis.agent.tools.base.Schema` for descriptions and constraints on tool parameters.  # noqa: E501
+"""JSON Schema fragment types: all subclass
+:class:`~openjarvis.agent.tools.base.Schema` for descriptions and constraints
+on tool parameters.
 
-- ``to_json_schema()``: returns a dict compatible with :meth:`~openjarvis.agent.tools.base.Schema.validate_json_schema_value` /  # noqa: E501
+- ``to_json_schema()``: returns a dict compatible with
+  :meth:`~openjarvis.agent.tools.base.Schema.validate_json_schema_value` /
   :class:`~openjarvis.agent.tools.base.Tool`.
-- ``validate_value(value, path)``: validates a single value against this schema; returns a list of error messages (empty means valid).  # noqa: E501
+- ``validate_value(value, path)``: validates a single value against this schema;
+  returns a list of error messages (empty means valid).
 
-Shared validation and fragment normalization are on the class methods of :class:`~openjarvis.agent.tools.base.Schema`.  # noqa: E501
+Shared validation and fragment normalization are on the class methods of
+:class:`~openjarvis.agent.tools.base.Schema`.
 
-Note: Python does not allow subclassing ``bool``, so booleans use :class:`BooleanSchema`.
+Note: Python does not allow subclassing ``bool``, so booleans use
+:class:`BooleanSchema`.
 """
 
 from __future__ import annotations
@@ -52,7 +58,8 @@ class StringSchema(Schema):
 
 
 class IntegerSchema(Schema):
-    """Integer parameter: optional placeholder int (legacy ctor signature), description, and bounds."""
+    """Integer parameter: optional placeholder int (legacy ctor signature),
+    description, and bounds."""
 
     def __init__(
         self,
@@ -178,7 +185,8 @@ class ArraySchema(Schema):
 
 
 class ObjectSchema(Schema):
-    """Object parameter: ``properties`` or keyword args are field names; values are child Schema or JSON Schema dicts."""
+    """Object parameter: ``properties`` or keyword args are field names;
+    values are child Schema or JSON Schema dicts."""
 
     def __init__(
         self,
@@ -218,7 +226,8 @@ def tool_parameters_schema(
     additional_properties: bool | dict[str, Any] | None = False,
     **properties: Any,
 ) -> dict[str, Any]:
-    """Build root tool parameters ``{"type": "object", "properties": ...}`` for :meth:`Tool.parameters`.  # noqa: E501
+    """Build root tool parameters ``{"type": "object", "properties": ...}`` for
+    :meth:`Tool.parameters`.
 
     Built-in tools default to strict parameter objects so misspelled tool-call
     arguments are reported before execution instead of being silently ignored.

@@ -114,10 +114,11 @@ def runner_wall_llm_timeout_s(
 ) -> float | None:
     """Wall-clock cap for :class:`~openjarvis.agent.runner.AgentRunner` when streaming an LLM.
 
-    Returns ``0.0`` to disable ``asyncio.wait_for`` around the request when this is a
-    sustained-goal turn; ``None`` means use ``AGENITE_CLAW_LLM_TIMEOUT_S``. Pass in-memory
-    ``metadata`` when the caller already holds :attr:`~openjarvis.session.manager.Session.metadata`  # noqa: E501
-    for this turn.
+    Returns ``0.0`` to disable ``asyncio.wait_for`` around the request
+    when this is a sustained-goal turn; ``None`` means use
+    ``AGENITE_CLAW_LLM_TIMEOUT_S``.  Pass in-memory ``metadata`` when the
+    caller already holds
+    :attr:`~openjarvis.session.manager.Session.metadata` for this turn.
     """
     meta: Mapping[str, Any] | None = metadata
     if meta is None and session_key:

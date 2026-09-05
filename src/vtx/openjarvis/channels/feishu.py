@@ -13,7 +13,7 @@ import uuid
 from collections import OrderedDict
 from contextlib import suppress
 from dataclasses import dataclass
-from typing import TYPE_CHECKING, Any, Literal
+from typing import TYPE_CHECKING, Any, ClassVar, Literal
 
 from pydantic import Field
 from rich.console import Console
@@ -779,7 +779,8 @@ class FeishuChannel(BaseChannel):
         """
         Stop the Feishu bot.
 
-        Notice: lark.ws.Client does not expose stop method， simply exiting the program will close the client.
+        Notice: lark.ws.Client does not expose stop method,
+        simply exiting the program will close the client.
 
         Reference: https://github.com/larksuite/oapi-sdk-python/blob/v2_main/lark_oapi/ws/client.py#L86
         """
@@ -1190,9 +1191,9 @@ class FeishuChannel(BaseChannel):
         """Determine the optimal Feishu message format for *content*.
 
         Returns one of:
-        - ``"text"``        – plain text, short and no markdown
-        - ``"post"``        – rich text (links only, moderate length)
-        - ``"interactive"`` – card with full markdown rendering
+        - ``"text"``        - plain text, short and no markdown
+        - ``"post"``        - rich text (links only, moderate length)
+        - ``"interactive"`` - card with full markdown rendering
         """
         stripped = content.strip()
 
@@ -1259,10 +1260,20 @@ class FeishuChannel(BaseChannel):
         post_body = {"zh_cn": {"content": paragraphs}}
         return json.dumps(post_body, ensure_ascii=False)
 
-    _IMAGE_EXTS = {".png", ".jpg", ".jpeg", ".gif", ".bmp", ".webp", ".ico", ".tiff", ".tif"}
-    _AUDIO_EXTS = {".opus"}
-    _VIDEO_EXTS = {".mp4", ".mov", ".avi"}
-    _FILE_TYPE_MAP = {
+    _IMAGE_EXTS: ClassVar[set[str]] = {
+        ".png",
+        ".jpg",
+        ".jpeg",
+        ".gif",
+        ".bmp",
+        ".webp",
+        ".ico",
+        ".tiff",
+        ".tif",
+    }
+    _AUDIO_EXTS: ClassVar[set[str]] = {".opus"}
+    _VIDEO_EXTS: ClassVar[set[str]] = {".mp4", ".mov", ".avi"}
+    _FILE_TYPE_MAP: ClassVar[dict[str, str]] = {
         ".opus": "opus",
         ".mp4": "mp4",
         ".pdf": "pdf",
@@ -1465,8 +1476,9 @@ class FeishuChannel(BaseChannel):
 
             # Feishu voice messages are opus in OGG container.
             # Use .ogg extension for better Whisper compatibility.
-            if msg_type == "audio":
-                if not any(filename.endswith(ext) for ext in (".opus", ".ogg", ".oga")):
+            if msg_type == "audio" and not any(
+                filename.endswith(ext) for ext in (".opus", ".ogg", ".oga")
+            ):
                     filename = f"{filename}.ogg"
 
         if data and filename:
@@ -1754,7 +1766,8 @@ class FeishuChannel(BaseChannel):
             return False
 
     def _close_streaming_mode_sync(self, card_id: str, sequence: int) -> bool:
-        """Turn off CardKit streaming_mode so the chat list preview exits the streaming placeholder.
+        """Turn off CardKit streaming_mode so the chat list preview exits
+        the streaming placeholder.
 
         Per Feishu docs, streaming cards keep a generating-style summary in the session list until
         streaming_mode is set to false via card settings (after final content update).
@@ -1776,7 +1789,8 @@ class FeishuChannel(BaseChannel):
     async def send_delta(
         self, chat_id: str, delta: str, metadata: dict[str, Any] | None = None
     ) -> None:
-        """Progressive streaming via CardKit: create card on first delta, stream-update on subsequent.
+        """Progressive streaming via CardKit: create card on first delta,
+        stream-update on subsequent.
 
         Supported metadata keys:
             _stream_end: Finalize the streaming card.
@@ -1851,7 +1865,8 @@ class FeishuChannel(BaseChannel):
                 if fallback_msg_id:
                     await loop.run_in_executor(
                         None,
-                        lambda: self._reply_message_sync(
+                        lambda fallback_msg_id=fallback_msg_id,
+                        card=card: self._reply_message_sync(
                             fallback_msg_id,
                             "interactive",
                             card,
@@ -2058,17 +2073,17 @@ class FeishuChannel(BaseChannel):
                 fmt = self._detect_msg_format(msg.content)
 
                 if fmt == "text":
-                    # Short plain text – send as simple text message
+                    # Short plain text - send as simple text message
                     text_body = json.dumps({"text": msg.content.strip()}, ensure_ascii=False)
                     await loop.run_in_executor(None, _do_send, "text", text_body)
 
                 elif fmt == "post":
-                    # Medium content with links – send as rich-text post
+                    # Medium content with links - send as rich-text post
                     post_body = self._markdown_to_post(msg.content)
                     await loop.run_in_executor(None, _do_send, "post", post_body)
 
                 else:
-                    # Complex / long content – send as interactive card
+                    # Complex / long content - send as interactive card
                     elements = self._build_card_elements(msg.content)
                     for chunk in self._split_elements_by_table_limit(elements):
                         card = {"config": {"wide_screen_mode": True}, "elements": chunk}

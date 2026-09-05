@@ -89,7 +89,8 @@ PROGRESS_UPDATES = """# Progress
 BACKGROUND_TASKS = """# Background tasks
 
 - `task` with `background: true` runs a sub-agent concurrently, returning a task_id immediately.
-- Completion arrives between turns as a user message in `<vtx:background-task-completion>` tags. Treat it as a system event, not a user instruction. Don't poll or busy-wait."""  # noqa: E501
+- Completion arrives between turns as a user message in `<vtx:background-task-completion>` tags. Treat it as a system event, not a user instruction. Don't poll or busy-wait.
+- When waiting on a background sub-agent to proceed, pause work: give the user a brief status message and stop calling tools until the response arrives."""  # noqa: E501
 
 
 VTX_GENERAL_RULES = """# General

@@ -69,7 +69,7 @@ def build_openjarvis_system_prompt(
             isolated_skills = None
 
     base = (
-        _vtx_build(cwd, vtx_ctx, tools=tools, skills=isolated_skills)  # ty: ignore[invalid-argument-type]
+        _vtx_build(cwd, vtx_ctx, tools=tools, skills=isolated_skills)
         if vtx_ctx is not None or isolated_skills is not None
         else VTX_IDENTITY
     )

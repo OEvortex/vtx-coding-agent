@@ -321,7 +321,8 @@ class MatrixChannel(BaseChannel):
         if self.config.password:
             if self.config.access_token or self.config.device_id:
                 self.logger.warning(
-                    "Password-based login active; access_token and device_id fields will be ignored."
+                    "Password-based login active; access_token and device_id fields will"
+                    " be ignored."
                 )
 
             create_new_session = True
@@ -365,7 +366,8 @@ class MatrixChannel(BaseChannel):
 
         else:
             self.logger.warning(
-                "Unable to load a session due to missing password, access_token, or device_id; encryption may not work"
+                "Unable to load a session due to missing password, access_token, or"
+                " device_id; encryption may not work"
             )
             return
 
@@ -502,7 +504,10 @@ class MatrixChannel(BaseChannel):
     async def _upload_and_send_attachment(
         self, room_id: str, path: Path, limit_bytes: int, relates_to: dict[str, Any] | None = None
     ) -> str | None:
-        """Upload one local file to Matrix and send it as a media message. Returns failure marker or None."""
+        """Upload one local file to Matrix and send it as a media message.
+
+        Returns failure marker or None.
+        """
         if not self.client:
             return _ATTACH_UPLOAD_FAILED.format(path.name or _DEFAULT_ATTACH_NAME)
 
@@ -635,10 +640,10 @@ class MatrixChannel(BaseChannel):
                 )
                 response = await self._send_room_content(chat_id, content)
                 buf.last_edit = now
-                if not buf.event_id:
-                    # we are editing the same message all the time, so only the first time the event id needs to be set
-                    if isinstance(response, RoomSendResponse):
-                        buf.event_id = response.event_id
+                if not buf.event_id and isinstance(response, RoomSendResponse):
+                    # we are editing the same message all the time, so only the first time
+                    # the event id needs to be set
+                    buf.event_id = response.event_id
             except Exception:
                 self.logger.error("Stream send/edit failed for chat_id=%s", chat_id, exc_info=True)
                 await self._stop_typing_keepalive(chat_id, clear_typing=True)
@@ -926,9 +931,8 @@ class MatrixChannel(BaseChannel):
 
     def _event_filename(self, event: MatrixMediaEvent, attachment_type: str) -> str:
         body = getattr(event, "body", None)
-        if isinstance(body, str) and body.strip():
-            if candidate := safe_filename(Path(body).name):
-                return candidate
+        if isinstance(body, str) and body.strip() and (candidate := safe_filename(Path(body).name)):
+            return candidate
         return _DEFAULT_ATTACH_NAME if attachment_type == "file" else attachment_type
 
     def _build_attachment_path(
@@ -936,9 +940,8 @@ class MatrixChannel(BaseChannel):
     ) -> Path:
         safe_name = safe_filename(Path(filename).name) or _DEFAULT_ATTACH_NAME
         suffix = Path(safe_name).suffix
-        if not suffix and mime:
-            if guessed := mimetypes.guess_extension(mime, strict=False):
-                safe_name, suffix = f"{safe_name}{guessed}", guessed
+        if not suffix and mime and (guessed := mimetypes.guess_extension(mime, strict=False)):
+            safe_name, suffix = f"{safe_name}{guessed}", guessed
         stem = (Path(safe_name).stem or attachment_type)[:72]
         suffix = suffix[:16]
         event_id = safe_filename(str(getattr(event, "event_id", "") or "evt").lstrip("$"))
@@ -965,8 +968,10 @@ class MatrixChannel(BaseChannel):
         timeout = aiohttp.ClientTimeout(total=None)
 
         try:
-            async with aiohttp.ClientSession(timeout=timeout, headers=headers) as session:
-                async with session.get(media_url, params={"allow_remote": "true"}) as response:
+            async with (
+                aiohttp.ClientSession(timeout=timeout, headers=headers) as session,
+                session.get(media_url, params={"allow_remote": "true"}) as response,
+            ):
                     if response.status >= 400:
                         self.logger.warning(
                             "download failed for {}: HTTP {}", mxc_url, response.status

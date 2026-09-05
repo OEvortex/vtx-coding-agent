@@ -4,12 +4,14 @@ Follow the built-in **long-goal** skill for lifecycle rules and how to phrase
 objectives (especially **idempotent**, compaction-safe goals). Load that skill
 from the skills listing (path shown there) before composing ``long_task.goal`` text.
 
-``long_task`` registers an objective on the session (JSON-serializable metadata).
-Active objectives are mirrored each turn into the Runtime Context block (see
-``openjarvis.session.goal_state.goal_state_runtime_lines``) so compaction cannot hide them.
-Work proceeds in ordinary agent turns (same runner, compaction as configured).
-Call ``complete_goal`` when the sustained objective should stop being tracked:
-finished successfully, or cancelled / superseded / redirected—in every case the recap should match reality.  # noqa: E501
+``long_task`` registers an objective on the session (JSON-serializable
+metadata). Active objectives are mirrored each turn into the Runtime
+Context block (see ``openjarvis.session.goal_state.goal_state_runtime_lines``)
+so compaction cannot hide them. Work proceeds in ordinary agent turns
+(same runner, compaction as configured). Call ``complete_goal`` when the
+sustained objective should stop being tracked: finished successfully, or
+cancelled / superseded / redirected—in every case the recap should match
+reality.
 
 There is **no** sub-agent orchestrator and **no** special WebSocket ``agent_ui`` stream.
 """

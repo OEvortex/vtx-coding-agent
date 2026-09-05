@@ -1000,7 +1000,10 @@ Prefer machine-readable output when the CLI supports `--json`.
         note = f"""{marker}
 ## AgeniteClaw execution
 
-Use the `run_cli_app` tool with `name="{name}"` for command execution. Do not invoke this CLI through shell unless the user explicitly asks. Prefer this skill when Runtime Context mentions `@{name}` as a CLI App Attachment.  # noqa: E501
+Use the `run_cli_app` tool with `name="{name}"` for command execution.
+Do not invoke this CLI through shell unless the user explicitly asks.
+Prefer this skill when Runtime Context mentions `@{name}` as a CLI App
+Attachment.
 """
         lines = content.splitlines(keepends=True)
         if lines and lines[0].strip() == "---":

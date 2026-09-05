@@ -560,7 +560,8 @@ class SignalChannel(BaseChannel):
                     raise RuntimeError(f"signal-cli send failed: {response['error']}")
                 else:
                     self.logger.debug(
-                        f"Signal message sent, timestamp: {response.get('result', {}).get('timestamp')}"
+                        f"Signal message sent, timestamp: "
+                        f"{response.get('result', {}).get('timestamp')}"
                     )
 
         except Exception:
@@ -1175,7 +1176,8 @@ class SignalChannel(BaseChannel):
 
         Args:
             message_text: The message text content
-            mentions: List of mentions from Signal (format: [{"number": "+1234567890", "start": 0, "length": 10}])  # noqa: E501
+            mentions: List of mentions from Signal (format:
+            [{"number": "+1234567890", "start": 0, "length": 10}])
 
         Returns:
             True if bot should respond, False otherwise

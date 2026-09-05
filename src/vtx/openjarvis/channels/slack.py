@@ -201,7 +201,6 @@ class SlackChannel(BaseChannel):
         if not self._web_client:
             return target
 
-        web_client = self._web_client
         target = target.strip()
         if not target:
             return target

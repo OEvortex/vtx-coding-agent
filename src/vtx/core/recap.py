@@ -128,7 +128,7 @@ def has_meaningful_activity(messages: list[Message]) -> bool:
     trigger a recap) or at least 3 tool invocations (so a single lookup
     doesn't trigger one).
     """
-    MIN_TOOL_CALLS = 3
+    min_tool_calls = 3
     min_assistant_chars = 150
     last_user_idx = -1
     for i in range(len(messages) - 1, -1, -1):
@@ -147,9 +147,9 @@ def has_meaningful_activity(messages: list[Message]) -> bool:
             )
         elif isinstance(message, ToolResultMessage):
             tool_call_count += 1
-        if tool_call_count >= MIN_TOOL_CALLS:
+        if tool_call_count >= min_tool_calls:
             return True
-    return assistant_chars >= MIN_ASSISTANT_CHARS
+    return assistant_chars >= min_assistant_chars
 
 
 async def generate_recap(context: RecapContext, provider: BaseProvider) -> str | None:

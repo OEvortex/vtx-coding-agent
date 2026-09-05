@@ -524,7 +524,7 @@ class CompactFooter(Static):
             return f"{m}m {s}s"
         return f"{s}s"
 
-    def _compute_lines(self) -> tuple[Text, Text, Text]:
+    def _compute_lines(self) -> tuple[Text, Text]:
         dim = config.ui.colors.dim
         accent = config.ui.colors.accent
         badge_label = config.ui.colors.badge.label
@@ -533,7 +533,7 @@ class CompactFooter(Static):
         diff_removed = config.ui.colors.diff_removed
         fg = config.ui.colors.fg
 
-        # --- line 1: identity + extensions ---
+        # --- line 1: identity + extensions (left) | metrics (right) ---
         identity = Text()
         cwd_text = self._cwd or "."
         identity.append(cwd_text, style=fg)
@@ -549,6 +549,28 @@ class CompactFooter(Static):
             if v:
                 ext_parts.append(Text(f"{k}: {v}", style="cyan"))
 
+        metrics = Text()
+        up = self._format_tokens(self._input_tokens)
+        down = self._format_tokens(self._output_tokens)
+        metrics.append(f"↑{up} ", style=dim)
+        metrics.append("↓", style=fg)
+        metrics.append(f"{down}", style=dim)
+
+        if self._context_tokens and self._context_window:
+            ctx_pct = min(100.0, (self._context_tokens / self._context_window) * 100)
+            metrics.append(" ◔", style=fg)
+            metrics.append(f"{ctx_pct:.0f}%", style=dim)
+
+        prompt_total = self._input_tokens + self._cache_read_tokens + self._cache_write_tokens
+        if prompt_total > 0 and self._cache_read_tokens > 0:
+            cache_rate = (self._cache_read_tokens / prompt_total) * 100
+            metrics.append(" ↺", style=fg)
+            metrics.append(f"{cache_rate:.0f}%", style=dim)
+
+        if self._tps is not None:
+            metrics.append(" ⚡", style=fg)
+            metrics.append(f"{self._tps:.0f}", style=dim)
+
         line1 = Text()
         line1.append_text(identity)
         if ext_parts:
@@ -557,91 +579,56 @@ class CompactFooter(Static):
                 if i:
                     line1.append("  ", style=dim)
                 line1.append_text(part)
+        line1.append("    ", style=dim)
+        line1.append_text(metrics)
 
-        # --- line 2: metrics cluster + model/thinking ---
-        metrics = Text()
-        sep = " · "
-
-        # Input/output tokens
-        up = self._format_tokens(self._input_tokens)
-        down = self._format_tokens(self._output_tokens)
-        metrics.append(f"↑{up} ", style=dim)
-        metrics.append("↓", style=fg)
-        metrics.append(f"{down}", style=dim)
-
-        # Context %
-        if self._context_tokens and self._context_window:
-            ctx_pct = min(100.0, (self._context_tokens / self._context_window) * 100)
-            metrics.append(sep, style=dim)
-            metrics.append("◔", style=fg)
-            metrics.append(f"{ctx_pct:.0f}%", style=dim)
-
-        # Cache hit rate
-        prompt_total = self._input_tokens + self._cache_read_tokens + self._cache_write_tokens
-        if prompt_total > 0 and self._cache_read_tokens > 0:
-            cache_rate = (self._cache_read_tokens / prompt_total) * 100
-            metrics.append(sep, style=dim)
-            metrics.append("↺", style=fg)
-            metrics.append(f"{cache_rate:.0f}%", style=dim)
-
-        # TPS (tokens per second)
-        if self._tps is not None:
-            metrics.append(sep, style=dim)
-            metrics.append("⚡", style=fg)
-            metrics.append(f"{self._tps:.0f} t/s", style=dim)
-
-        # Cost estimate (if we had pricing)
-        # Skipping for now
-
+        # --- line 2: model + thinking (left) | status + runtime (right) ---
         model_line = Text()
         model_text = self._model or "no-model"
         if self._model_provider:
             model_text = f"({self._model_provider}) {model_text}"
         model_line.append(model_text, style=dim)
-        model_line.append(f" • {self._thinking_level}", style=dim)
+        model_line.append(f" · {self._thinking_level}", style=dim)
 
-        line2 = Text()
-        line2.append_text(metrics)
-        line2.append("    ", style=dim)
-        line2.append_text(model_line)
-
-        # --- line 3: status + runtime ---
-        left3 = Text()
+        status = Text()
         if self._permission_mode == "auto":
-            left3.append("✓ auto", style=badge_label)
+            status.append("✓ auto", style=badge_label)
         else:
-            left3.append("⏹ prompt", style=notice)
+            status.append("⏹ prompt", style=notice)
 
         if self._file_changes:
             n = len(self._file_changes)
             a = sum(a for a, _ in self._file_changes.values())
             r = sum(r for _, r in self._file_changes.values())
-            left3.append(" · ", style=dim)
-            self._file_changes_text_start = len(left3.plain)
-            left3.append(f"{n} file{'s' if n != 1 else ''}")
-            left3.append(f" +{a}", style=diff_added)
-            left3.append(f" -{r}", style=diff_removed)
+            status.append(" · ", style=dim)
+            self._file_changes_text_start = len(status.plain)
+            status.append(f"{n} file{'s' if n != 1 else ''}")
+            status.append(f" +{a}", style=diff_added)
+            status.append(f" -{r}", style=diff_removed)
         else:
             self._file_changes_text_start = None
 
         runtime = Text()
         runtime.append(f"◷ {self._format_duration(self._elapsed_seconds)}", style=dim)
 
-        line3 = Text()
-        line3.append_text(left3)
-        line3.append("    ", style=dim)
-        line3.append_text(runtime)
+        right2 = Text()
+        right2.append_text(status)
+        right2.append(" · ", style=dim)
+        right2.append_text(runtime)
 
-        return line1, line2, line3
+        line2 = Text()
+        line2.append_text(model_line)
+        line2.append("    ", style=dim)
+        line2.append_text(right2)
+
+        return line1, line2
 
     def _update_content(self, layout: bool = True) -> None:
-        line1, line2, line3 = self._compute_lines()
+        line1, line2 = self._compute_lines()
         out = Text()
         out.append_text(line1)
         out.append("\n")
         out.append_text(line2)
-        out.append("\n")
-        out.append_text(line3)
         with contextlib.suppress(Exception):
             self.update(out, layout=layout)
 

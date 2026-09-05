@@ -336,15 +336,18 @@ class CronService:
         return
 
     def _load_store(self) -> CronStore | None:
-        """Load jobs from disk. Reloads automatically if file was modified externally.
-        - Reload every time because it needs to merge operations on the jobs object from other instances.  # noqa: E501
-        - During _on_timer execution, return the existing store to prevent concurrent
-          _load_store calls (e.g. from list_jobs polling) from replacing it mid-execution.
+        """Load jobs from disk. Reloads automatically if file was modified
+        externally.
+        - Reload every time because it needs to merge operations on the
+          jobs object from other instances.
+        - During _on_timer execution, return the existing store to prevent
+          concurrent _load_store calls (e.g. from list_jobs polling) from
+          replacing it mid-execution.
         - When the on-disk store exists but is unreadable: keep using the
           previous in-memory ``self._store`` if we already have one (so a
           transient corruption does not drop live jobs); only the very first
-          load (during ``start``) can return ``None`` to signal an unrecoverable
-          state to the caller.
+          load (during ``start``) can return ``None`` to signal an
+          unrecoverable state to the caller.
         """
         if self._timer_active and self._store:
             return self._store

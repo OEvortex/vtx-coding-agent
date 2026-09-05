@@ -13,7 +13,9 @@ from vtx.openjarvis.bus.events import OutboundMessage
 from vtx.openjarvis.commands.router import CommandContext, CommandRouter
 from vtx.openjarvis.utils.helpers import build_status_content
 from vtx.openjarvis.utils.restart import set_restart_notice_to_env
-from vtx.openjarvis.version import VERSION as __version__
+from vtx.openjarvis.version import VERSION
+
+__version__ = VERSION
 
 
 @dataclass(frozen=True)
@@ -375,9 +377,11 @@ def _format_dream_no_input_message() -> str:
             ),
             "",
             "Next steps:",
-            "- Enable `agents.defaults.idleCompactAfterMinutes` so completed chats become Dream input automatically.",
+            "- Enable `agents.defaults.idleCompactAfterMinutes` so completed "
+            "chats become Dream input automatically.",
             "- Compact the current chat into memory once that manual action is available.",
-            "- If you expected history to exist, check whether `memory/history.jsonl` has new entries after the Dream cursor.",
+            "- If you expected history to exist, check whether "
+            "`memory/history.jsonl` has new entries after the Dream cursor.",
         ]
     )
 
@@ -547,7 +551,8 @@ async def cmd_dream_restore(ctx: CommandContext) -> OutboundMessage:
         else:
             content = (
                 f"Couldn't restore Dream change `{sha}`.\n\n"
-                "It may not exist, or it may be the first saved version with no earlier state to restore."
+                "It may not exist, or it may be the first saved version "
+                "with no earlier state to restore."
             )
     return OutboundMessage(
         channel=ctx.msg.channel,
@@ -624,7 +629,13 @@ async def cmd_history(ctx: CommandContext) -> OutboundMessage:
 
 _GOAL_PROMPT_TEMPLATE = """The user declared a sustained objective for this thread.
 
-Inspect or clarify if needed, then call `long_task` with the refined objective (and optional short ui_summary). Work proceeds as normal assistant turns using your usual tools. When the objective is fully done and verified, call `complete_goal` with a brief recap. If the user later cancels or changes direction, still call `complete_goal` with an honest recap (then `long_task` again only after there is no active goal). Do not use `long_task` / `complete_goal` for trivial one-shot answers.  # noqa: E501
+Inspect or clarify if needed, then call `long_task` with the refined
+objective (and optional short ui_summary). Work proceeds as normal
+assistant turns using your usual tools. When the objective is fully done
+and verified, call `complete_goal` with a brief recap. If the user later
+cancels or changes direction, still call `complete_goal` with an honest
+recap (then `long_task` again only after there is no active goal). Do not
+use `long_task` / `complete_goal` for trivial one-shot answers.
 
 Goal:
 {goal}

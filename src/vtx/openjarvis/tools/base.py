@@ -31,12 +31,14 @@ class Schema(ABC):
 
     Concrete types live in :mod:`openjarvis.agent.tools.schema`; all implement
     :meth:`to_json_schema` and :meth:`validate_value`. Class methods
-    :meth:`validate_json_schema_value` and :meth:`fragment` are the shared validation and normalization entry points.  # noqa: E501
+    :meth:`validate_json_schema_value` and :meth:`fragment` are the shared
+    validation and normalization entry points.
     """
 
     @staticmethod
     def resolve_json_schema_type(t: Any) -> str | None:
-        """Resolve the non-null type name from JSON Schema ``type`` (e.g. ``['string','null']`` -> ``'string'``)."""
+        """Resolve the non-null type name from JSON Schema ``type``
+        (e.g. ``['string','null']`` -> ``'string'``)."""
         if isinstance(t, list):
             return next((x for x in t if x != "null"), None)
         return t  # type: ignore[return-value]
@@ -47,7 +49,8 @@ class Schema(ABC):
 
     @staticmethod
     def validate_json_schema_value(val: Any, schema: dict[str, Any], path: str = "") -> list[str]:
-        """Validate ``val`` against a JSON Schema fragment; returns error messages (empty means valid).  # noqa: E501
+        """Validate ``val`` against a JSON Schema fragment;
+        returns error messages (empty means valid).
 
         Used by :class:`Tool` and each concrete Schema's :meth:`validate_value`.
         """
@@ -119,7 +122,8 @@ class Schema(ABC):
     @staticmethod
     def fragment(value: Any) -> dict[str, Any]:
         """Normalize a Schema instance or an existing JSON Schema dict to a fragment dict."""
-        # Try to_json_schema first: Schema instances must be distinguished from dicts that are already JSON Schema
+        # Try to_json_schema first: Schema instances must be distinguished from
+        # dicts that are already JSON Schema
         to_js = getattr(value, "to_json_schema", None)
         if callable(to_js):
             return to_js()
@@ -133,7 +137,10 @@ class Schema(ABC):
         ...
 
     def validate_value(self, value: Any, path: str = "") -> list[str]:
-        """Validate a single value; returns error messages (empty means pass). Subclasses may override for extra rules."""
+        """Validate a single value; returns error messages (empty means pass).
+
+        Subclasses may override for extra rules.
+        """
         return Schema.validate_json_schema_value(value, self.to_json_schema(), path)
 
 
