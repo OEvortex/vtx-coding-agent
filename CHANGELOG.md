@@ -9,12 +9,15 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 ### Added
 - **Thinking-level mapping on model limits** — `TokenLimits` now carries `thinking_level_map`, populated from `models.dev` `reasoning_options` during catalog fetch, so supported reasoning efforts are available alongside context/output limits.
 - **Nested provider/model lookup in dynamic models** — `find_dynamic_model` now inspects nested `provider.models` structures and matches model IDs case-insensitively, improving catalog lookups for providers that expose models in nested payloads.
-- **Experiential Labs provider** — registered `experientiallabs` as a new OpenAI-compatible provider with base URL `https://api.experientiallabs.ai`, resolving `EXPERIENTIALLABS_API_KEY` from the environment, and auto-fetching its model catalog from `/models`.
+- **Experiential Labs provider** — registered `experientiallabs` as a new OpenAI-compatible provider with base URL `https://api.experientiallabs.ai`, resolving `EXPERIENTIALLABS_API_KEY` from the environment.
 - **Thinking-level propagation tests** — added coverage for `reasoning_options` parsing into `TokenLimits.thinking_level_map` and for propagating that map through provider catalog/model construction.
 
 ### Changed
 - **Reasoning metadata flows through model resolution** — `ContextLengthManager`, `provider_catalog`, and `model_fetcher` now preserve `thinking_level_map` from token limits into resolved `Model` objects, using limit-derived values when provider entries omit them.
 - **OpenAI-family thinking enablement** — expanded OpenAI SDK thinking support to include the base `openai` provider slug alongside `openai-codex` and `openai-responses`, aligning wire-parameter behavior with provider resolution.
+
+### Fixed
+- **ExperientialLabs model discovery** — corrected the provider to use `/api/models` instead of `/models`, and added `flatten_field: model` parser support so `_parse_models` unwraps nested response objects before extracting `id`, `name`, `context_length`, and `max_output_tokens`. Restores live model fetching for providers whose `/models` payload wraps each entry in a nested object.
 
 ## [1.1.0] - 2026-08-26
 
