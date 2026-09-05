@@ -26,7 +26,7 @@ from vtx.tui.themes import get_theme_options
 from ..chat import ChatLog
 from ..floating_list import FloatingList, ListItem
 from ..selection_mode import SelectionMode
-from ..widgets import InfoBar
+from ..widgets import CompactFooter
 from .base import CommandSupport
 
 SettingsSelectionResult = Literal["reopened-picker", "closed"]
@@ -78,7 +78,7 @@ class SettingsCommands(CommandSupport):
 
     def _select_permission_mode(self, mode: PermissionMode) -> None:
         set_permissions_mode(mode)
-        info_bar = self.query_one("#info-bar", InfoBar)
+        info_bar = self.query_one("#compact-footer", CompactFooter)
         info_bar.set_permission_mode(mode)
         chat = self.query_one("#chat-log", ChatLog)
         chat.show_status(f"Permission mode changed to {mode}")
@@ -120,7 +120,7 @@ class SettingsCommands(CommandSupport):
         self._runtime.set_thinking_level(level)
         self._sync_runtime_state()
 
-        info_bar = self.query_one("#info-bar", InfoBar)
+        info_bar = self.query_one("#compact-footer", CompactFooter)
         info_bar.set_thinking_level(level)
         self._apply_thinking_level_style(level)
 
@@ -270,7 +270,7 @@ class SettingsCommands(CommandSupport):
             current: PermissionMode = config.permissions.mode
             new_mode: PermissionMode = "auto" if current == "prompt" else "prompt"
             set_permissions_mode(new_mode)
-            info_bar = self.query_one("#info-bar", InfoBar)
+            info_bar = self.query_one("#compact-footer", CompactFooter)
             info_bar.set_permission_mode(new_mode)
             chat = self.query_one("#chat-log", ChatLog)
             chat.show_status(f"Permission mode changed to {new_mode}")

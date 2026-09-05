@@ -18,7 +18,7 @@ from vtx.tui.floating_list import FloatingList, ListItem
 from vtx.tui.input import InputBox
 from vtx.tui.selection_mode import SelectionMode
 from vtx.tui.tree import TreeSelector
-from vtx.tui.widgets import InfoBar, StatusLine, format_path
+from vtx.tui.widgets import CompactFooter, StatusLine, format_path
 
 
 class CompletionUIMixin:
@@ -74,7 +74,7 @@ class CompletionUIMixin:
         self.call_after_refresh(lambda: self._restore_chat_scroll_if_needed(was_at_bottom))
 
     def _set_bottom_info_displaced(self, displaced: bool) -> None:
-        info_bar = self.query_one("#info-bar", InfoBar)
+        info_bar = self.query_one("#compact-footer", CompactFooter)
         if displaced:
             info_bar.add_class("-completion-hidden")
         else:
@@ -91,10 +91,10 @@ class CompletionUIMixin:
         self._set_bottom_info_displaced(True)
         completion_list.show(items, searchable=searchable, max_label_width=max_label_width)
 
-    def _hide_completion_list(self, *, restore_info_bar: bool = True) -> None:
+    def _hide_completion_list(self, *, restore_footer: bool = True) -> None:
         completion_list = self.query_one("#completion-list", FloatingList)
         completion_list.hide()
-        if restore_info_bar:
+        if restore_footer:
             self._set_bottom_info_displaced(False)
 
     @on(InputBox.CompletionUpdate)
@@ -120,7 +120,7 @@ class CompletionUIMixin:
             if self._selection_mode is not None:
                 # If we were in a sub-picker from settings, go back to settings
                 if self._settings_active:
-                    self._hide_completion_list(restore_info_bar=False)
+                    self._hide_completion_list(restore_footer=False)
                     self._settings_active = False
                     self._show_settings_picker()
                     self._restore_chat_scroll_after_refresh(was_at_bottom)
@@ -187,7 +187,7 @@ class CompletionUIMixin:
             and self._settings_active
         )
         with self.batch_update():
-            self._hide_completion_list(restore_info_bar=not keeps_info_bar_displaced)
+            self._hide_completion_list(restore_footer=not keeps_info_bar_displaced)
             self._selection_mode = None
             input_box.clear()
             input_box.set_autocomplete_enabled(True)
@@ -287,7 +287,7 @@ class CompletionUIMixin:
         selector = self.query_one("#tree-selector", TreeSelector)
         input_box = self.query_one("#input-box", InputBox)
         chat = self.query_one("#chat-log", ChatLog)
-        info_bar = self.query_one("#info-bar", InfoBar)
+        info_bar = self.query_one("#compact-footer", CompactFooter)
         status = self.query_one("#status-line", StatusLine)
         try:
             result = self._runtime.navigate_tree(event.entry_id)

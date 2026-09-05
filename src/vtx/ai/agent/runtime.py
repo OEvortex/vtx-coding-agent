@@ -76,6 +76,7 @@ def create_provider(api_type: ApiType, config: ProviderConfig) -> BaseProvider:
             openai_compat_auth_mode=config.openai_compat_auth_mode,
             anthropic_compat_auth_mode=config.anthropic_compat_auth_mode,
             default_headers=merged_headers,
+            thinking_level_map=config.thinking_level_map,
         )
     )
     return get_provider_class(api_type)(final_config)
@@ -812,6 +813,7 @@ class ConversationRuntime:
             self.provider.config.base_url = model.base_url
             self.provider.config.max_tokens = get_max_tokens(model.id)
             self.provider.config.provider = model.provider
+            self.provider.config.thinking_level_map = getattr(model, "thinking_level_map", None)
 
         self.model = model.id
         self.model_provider = model.provider
@@ -1003,6 +1005,9 @@ class ConversationRuntime:
             self.provider.config.max_tokens = get_max_tokens(model)
             self.provider.config.provider = model_provider
             self.provider.config.session_id = session.id
+            self.provider.config.thinking_level_map = getattr(
+                model_info, "thinking_level_map", None
+            )
 
         if self.provider:
             self.provider.set_thinking_level(thinking_level)

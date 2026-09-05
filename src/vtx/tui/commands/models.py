@@ -17,7 +17,7 @@ from vtx.tui.chat import ChatLog
 from vtx.tui.commands.base import CommandSupport
 from vtx.tui.floating_list import ListItem
 from vtx.tui.selection_mode import SelectionMode
-from vtx.tui.widgets import InfoBar
+from vtx.tui.widgets import CompactFooter
 
 
 def _parse_hidden_entries(entries: list[str]) -> tuple[set[str], set[tuple[str, str]]]:
@@ -195,7 +195,7 @@ class ModelCommands(CommandSupport):
 
     def _select_model(self, model) -> None:
         chat = self.query_one("#chat-log", ChatLog)
-        info_bar = self.query_one("#info-bar", InfoBar)
+        info_bar = self.query_one("#compact-footer", CompactFooter)
 
         try:
             self._runtime.switch_model(model)

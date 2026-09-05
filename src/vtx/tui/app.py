@@ -60,7 +60,7 @@ from vtx.tui.session_ui import SessionUIMixin
 from vtx.tui.startup import StartupMixin
 from vtx.tui.styles import get_styles
 from vtx.tui.tree import TreeSelector
-from vtx.tui.widgets import InfoBar, QueueDisplay, StatusLine, format_path
+from vtx.tui.widgets import CompactFooter, QueueDisplay, StatusLine, format_path
 
 _GIT_BRANCH_REFRESH_INTERVAL_SECONDS = 1.0
 
@@ -397,15 +397,13 @@ class Vtx(
         active_name = (
             self._runtime.active_agent.definition.name if self._runtime.active_agent else ""
         )
-        info_bar = InfoBar(
-            cwd=self._cwd,
-            model=self._runtime.model,
-            thinking_level=self._runtime.thinking_level,
-            hide_thinking=self._hide_thinking,
-            id="info-bar",
-        )
-        info_bar._active_agent = active_name
-        yield info_bar
+        footer = CompactFooter(id="compact-footer")
+        footer._cwd = format_path(self._cwd)
+        footer._model = self._runtime.model
+        footer._model_provider = self._runtime.model_provider
+        footer._thinking_level = self._runtime.thinking_level
+        footer._active_agent = active_name
+        yield footer
 
     @staticmethod
     def _thinking_level_class(level: str) -> str:
@@ -613,7 +611,7 @@ class Vtx(
 
         self._flush_launch_warnings(chat)
 
-        info_bar = self.query_one("#info-bar", InfoBar)
+        info_bar = self.query_one("#compact-footer", CompactFooter)
         info_bar.set_model(self._runtime.model, self._runtime.model_provider)
         info_bar.set_thinking_level(self._runtime.thinking_level)
         self._apply_thinking_level_style(self._runtime.thinking_level)
@@ -785,9 +783,7 @@ class Vtx(
     def action_toggle_thinking(self) -> None:
         self._hide_thinking = not self._hide_thinking
         chat = self.query_one("#chat-log", ChatLog)
-        info_bar = self.query_one("#info-bar", InfoBar)
-
-        info_bar.set_thinking_visibility(self._hide_thinking)
+        info_bar = self.query_one("#compact-footer", CompactFooter)
 
         for block in chat.query(".thinking-block"):
             if self._hide_thinking:

@@ -15,7 +15,7 @@ from vtx.tui.floating_list import FloatingList, ListItem
 from vtx.tui.input import InputBox
 from vtx.tui.selection_mode import SelectionMode
 from vtx.tui.tree import TreeSelector
-from vtx.tui.widgets import InfoBar, StatusLine, format_path
+from vtx.tui.widgets import CompactFooter, StatusLine, format_path
 
 
 class SessionCommands(CommandSupport):
@@ -26,7 +26,7 @@ class SessionCommands(CommandSupport):
         if self._runtime.session:
             self._runtime.new_session()
             self._sync_runtime_state()
-            info_bar = self.query_one("#info-bar", InfoBar)
+            info_bar = self.query_one("#compact-footer", CompactFooter)
             info_bar.set_tokens(0, 0, 0, 0)
             info_bar.set_file_changes({})
         chat = self.query_one("#chat-log", ChatLog)
@@ -37,7 +37,7 @@ class SessionCommands(CommandSupport):
         self._sync_runtime_state()
 
         chat = self.query_one("#chat-log", ChatLog)
-        info_bar = self.query_one("#info-bar", InfoBar)
+        info_bar = self.query_one("#compact-footer", CompactFooter)
         status = self.query_one("#status-line", StatusLine)
 
         self.run_worker(self._do_new_conversation(chat, info_bar, status), exclusive=False)
@@ -107,7 +107,7 @@ class SessionCommands(CommandSupport):
 
     async def _do_handoff(self, query: str) -> None:
         chat = self.query_one("#chat-log", ChatLog)
-        info_bar = self.query_one("#info-bar", InfoBar)
+        info_bar = self.query_one("#compact-footer", CompactFooter)
         status = self.query_one("#status-line", StatusLine)
         input_box = self.query_one("#input-box", InputBox)
 

@@ -15,7 +15,7 @@ from vtx.core.version import PACKAGE_NAME, VERSION
 from vtx.tui.blocks import LaunchWarning
 from vtx.tui.chat import ChatLog
 from vtx.tui.input import InputBox
-from vtx.tui.widgets import InfoBar
+from vtx.tui.widgets import CompactFooter
 
 _CHANGELOG_URL = "https://github.com/OEvortex/vtx-coding-agent/blob/main/CHANGELOG.md"
 
@@ -40,7 +40,7 @@ class StartupMixin:
             return
         self._git_branch_refresh_inflight = True
         try:
-            info_bar = self.query_one("#info-bar", InfoBar)
+            info_bar = self.query_one("#compact-footer", CompactFooter)
             await info_bar.refresh_git_branch()
         finally:
             self._git_branch_refresh_inflight = False

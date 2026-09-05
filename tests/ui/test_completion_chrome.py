@@ -35,7 +35,7 @@ class FakeChat:
         self.scrolled_to_end = True
 
 
-class FakeInfoBar:
+class CompactFooter:
     def __init__(self) -> None:
         self.classes: set[str] = set()
         self.removed_classes: list[str] = []
@@ -138,7 +138,7 @@ class FakeVtx:
         self, selected_item: ListItem | None = None, *, completion_visible: bool | None = None
     ) -> None:
         self.chat = FakeChat()
-        self.info_bar = FakeInfoBar()
+        self.footer = CompactFooter()
         self.completion_list = FakeCompletionList(selected_item, visible=completion_visible)
         self.input_box = FakeInputBox()
         self._runtime = ConversationRuntime(
@@ -162,8 +162,8 @@ class FakeVtx:
     def query_one(self, selector: str, widget_type: object | None = None) -> Any:
         if selector == "#chat-log":
             return self.chat
-        if selector == "#info-bar":
-            return self.info_bar
+        if selector == "#compact-footer":
+            return self.footer
         if selector == "#completion-list":
             return self.completion_list
         if selector == "#input-box":
@@ -215,8 +215,8 @@ class FakeVtx:
             self._vtx(), items, searchable=searchable, max_label_width=max_label_width
         )
 
-    def _hide_completion_list(self, *, restore_info_bar: bool = True) -> None:
-        Vtx._hide_completion_list(self._vtx(), restore_info_bar=restore_info_bar)
+    def _hide_completion_list(self, *, restore_footer: bool = True) -> None:
+        Vtx._hide_completion_list(self._vtx(), restore_footer=restore_footer)
 
     def on_completion_update(self, event: InputBox.CompletionUpdate) -> None:
         Vtx.on_completion_update(self._vtx(), event)
@@ -299,62 +299,62 @@ def test_completion_list_is_configured_for_ten_rows() -> None:
     assert floating_list._window_size == 10
 
 
-def test_show_completion_list_displaces_info_bar() -> None:
+def test_show_completion_list_displaces_footer() -> None:
     app = FakeVtx()
     items = [ListItem(value="one", label="one")]
 
     app._show_completion_list(items, searchable=True, max_label_width=40)
 
-    assert "-completion-hidden" in app.info_bar.classes
+    assert "-completion-hidden" in app.footer.classes
     assert app.completion_list.items == items
     assert app.completion_list.searchable is True
     assert app.completion_list.max_label_width == 40
 
 
-def test_show_selection_picker_displaces_info_bar_and_restores_scroll() -> None:
+def test_show_selection_picker_displaces_footer_and_restores_scroll() -> None:
     app = FakeVtx()
     item = ListItem(value="one", label="one")
 
     app._show_selection_picker([item], SelectionMode.PERMISSIONS)
 
-    assert "-completion-hidden" in app.info_bar.classes
+    assert "-completion-hidden" in app.footer.classes
     assert app.completion_list.hidden is False
     assert app.completion_list.items == [item]
     assert app._selection_mode == SelectionMode.PERMISSIONS
     assert app.chat.scrolled_to_end is True
 
 
-def test_completion_update_displaces_info_bar_for_visible_list() -> None:
+def test_completion_update_displaces_footer_for_visible_list() -> None:
     app = FakeVtx(completion_visible=True)
     items = [ListItem(value="one", label="one")]
 
     app.on_completion_update(InputBox.CompletionUpdate(items))
 
-    assert "-completion-hidden" in app.info_bar.classes
+    assert "-completion-hidden" in app.footer.classes
     assert app.completion_list.updated_items == items
     assert app.chat.scrolled_to_end is True
 
 
 @pytest.mark.parametrize(
-    ("restore_info_bar", "expected_hidden_class"), [(True, False), (False, True)]
+    ("restore_footer", "expected_hidden_class"), [(True, False), (False, True)]
 )
-def test_hide_completion_list_controls_info_bar_restore(
-    restore_info_bar: bool, expected_hidden_class: bool
+def test_hide_completion_list_controls_footer_restore(
+    restore_footer: bool, expected_hidden_class: bool
 ) -> None:
     app = FakeVtx()
-    app.info_bar.classes.add("-completion-hidden")
+    app.footer.classes.add("-completion-hidden")
 
-    app._hide_completion_list(restore_info_bar=restore_info_bar)
+    app._hide_completion_list(restore_footer=restore_footer)
 
     assert app.completion_list.hidden is True
-    assert ("-completion-hidden" in app.info_bar.classes) is expected_hidden_class
+    assert ("-completion-hidden" in app.footer.classes) is expected_hidden_class
 
 
 @pytest.mark.parametrize("case", ["no-item", "tab", "slash", "file"])
-def test_completion_select_terminal_paths_restore_info_bar(case: str) -> None:
+def test_completion_select_terminal_paths_restore_footer(case: str) -> None:
     item = None if case == "no-item" else ListItem(value="value", label="value")
     app = FakeVtx(selected_item=item, completion_visible=True)
-    app.info_bar.classes.add("-completion-hidden")
+    app.footer.classes.add("-completion-hidden")
 
     if case == "tab":
         app.input_box.is_tab_completing = True
@@ -368,7 +368,7 @@ def test_completion_select_terminal_paths_restore_info_bar(case: str) -> None:
     app.on_completion_select(InputBox.CompletionSelect())
 
     assert app.completion_list.hidden is True
-    assert "-completion-hidden" not in app.info_bar.classes
+    assert "-completion-hidden" not in app.footer.classes
     assert app.chat.scrolled_to_end is True
 
     if case == "no-item":
@@ -384,15 +384,15 @@ def test_completion_select_terminal_paths_restore_info_bar(case: str) -> None:
         assert app.input_box.completing is False
 
 
-def test_completion_select_final_selection_mode_restores_info_bar() -> None:
+def test_completion_select_final_selection_mode_restores_footer() -> None:
     app = FakeVtx(selected_item=ListItem(value="auto", label="auto"))
-    app.info_bar.classes.add("-completion-hidden")
+    app.footer.classes.add("-completion-hidden")
     app._selection_mode = SelectionMode.PERMISSIONS
 
     app.on_completion_select(InputBox.CompletionSelect())
 
     assert app.completion_list.hidden is True
-    assert "-completion-hidden" not in app.info_bar.classes
+    assert "-completion-hidden" not in app.footer.classes
     assert app._selection_mode is None
     assert app.input_box.cleared is True
     assert app.input_box.autocomplete_enabled is True
@@ -401,30 +401,30 @@ def test_completion_select_final_selection_mode_restores_info_bar() -> None:
     assert app.chat.scrolled_to_end is True
 
 
-def test_completion_select_settings_themes_keeps_info_bar_displaced() -> None:
+def test_completion_select_settings_themes_keeps_footer_displaced() -> None:
     app = FakeVtx(selected_item=ListItem(value="themes", label="themes"))
-    app.info_bar.classes.add("-completion-hidden")
+    app.footer.classes.add("-completion-hidden")
     app._selection_mode = SelectionMode.SETTINGS
 
     app.on_completion_select(InputBox.CompletionSelect())
 
-    assert "-completion-hidden" not in app.info_bar.removed_classes
-    assert "-completion-hidden" in app.info_bar.classes
+    assert "-completion-hidden" not in app.footer.removed_classes
+    assert "-completion-hidden" in app.footer.classes
     assert app.completion_list.hidden is False
     assert app._selection_mode == SelectionMode.THEME
     assert app._settings_active is True
     assert app.chat.scrolled_to_end is True
 
 
-def test_completion_select_settings_thinking_without_provider_restores_info_bar() -> None:
+def test_completion_select_settings_thinking_without_provider_restores_footer() -> None:
     app = FakeVtx(selected_item=ListItem(value="thinking", label="thinking"))
-    app.info_bar.classes.add("-completion-hidden")
+    app.footer.classes.add("-completion-hidden")
     app._selection_mode = SelectionMode.SETTINGS
 
     app.on_completion_select(InputBox.CompletionSelect())
 
     assert app.completion_list.hidden is True
-    assert "-completion-hidden" not in app.info_bar.classes
+    assert "-completion-hidden" not in app.footer.classes
     assert app._selection_mode is None
     assert app._settings_active is False
     assert app.chat.errors == ["Agent not initialized"]
@@ -433,14 +433,14 @@ def test_completion_select_settings_thinking_without_provider_restores_info_bar(
 
 def test_completion_hide_from_settings_subpicker_reopens_settings_and_restores_scroll() -> None:
     app = FakeVtx(completion_visible=True)
-    app.info_bar.classes.add("-completion-hidden")
+    app.footer.classes.add("-completion-hidden")
     app._selection_mode = SelectionMode.THEME
     app._settings_active = True
 
     app.on_completion_hide(InputBox.CompletionHide())
 
     assert app.completion_list.hidden is False
-    assert "-completion-hidden" in app.info_bar.classes
+    assert "-completion-hidden" in app.footer.classes
     assert app._selection_mode == SelectionMode.SETTINGS
     assert app._settings_active is False
     assert app.chat.scrolled_to_end is True
@@ -450,14 +450,14 @@ def test_resume_delete_no_remaining_sessions_hides_picker_and_restores_scroll(tm
     session_path = tmp_path / "deleted.jsonl"
     session_path.write_text("{}\n")
     app = FakeVtx(selected_item=_make_session_item(session_path))
-    app.info_bar.classes.add("-completion-hidden")
+    app.footer.classes.add("-completion-hidden")
     app._selection_mode = SelectionMode.SESSION
 
     app._delete_selected_resume_session()
 
     assert session_path.exists() is False
     assert app.completion_list.hidden is True
-    assert "-completion-hidden" not in app.info_bar.classes
+    assert "-completion-hidden" not in app.footer.classes
     assert app.input_box.autocomplete_enabled is True
     assert app.input_box.completing is False
     assert app._selection_mode is None
@@ -488,7 +488,7 @@ def test_resume_delete_remaining_sessions_updates_picker_and_restores_scroll(tmp
 
 def test_completion_select_settings_subpicker_reopens_settings_and_restores_scroll() -> None:
     app = FakeVtx(selected_item=ListItem(value="textual-dark", label="textual-dark"))
-    app.info_bar.classes.add("-completion-hidden")
+    app.footer.classes.add("-completion-hidden")
     app._selection_mode = SelectionMode.THEME
     app._settings_active = True
 
@@ -496,7 +496,7 @@ def test_completion_select_settings_subpicker_reopens_settings_and_restores_scro
 
     assert app.selected_themes == ["textual-dark"]
     assert app.completion_list.hidden is False
-    assert "-completion-hidden" in app.info_bar.classes
+    assert "-completion-hidden" in app.footer.classes
     assert app._selection_mode == SelectionMode.SETTINGS
     assert app._settings_active is False
     assert app.chat.scrolled_to_end is True

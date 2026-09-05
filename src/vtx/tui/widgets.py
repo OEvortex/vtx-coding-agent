@@ -1,7 +1,7 @@
 import asyncio
 import os
 import time
-from typing import ClassVar
+from typing import Any, ClassVar
 
 from rich.spinner import Spinner
 from rich.text import Text
@@ -10,7 +10,7 @@ from textual.app import ComposeResult
 from textual.containers import Horizontal, Vertical
 from textual.screen import ModalScreen
 from textual.timer import Timer
-from textual.widgets import Label
+from textual.widgets import Label, Static
 
 from vtx.ai.config import PermissionMode, config
 from vtx.core.git_branch import resolve_git_branch
@@ -361,6 +361,271 @@ class InfoBar(Vertical):
             event.stop()
             self.app.push_screen(FileChangesModal(self._file_changes))
 
+
+
+class CompactFooter(Static):
+    """Pi-footer-style compact 3-line text footer."""
+
+    DEFAULT_CSS = """
+    CompactFooter {
+        height: auto;
+        padding: 0 1;
+        color: $text-muted;
+    }
+
+    CompactFooter.-completion-hidden {
+        display: none;
+        height: 0;
+    }
+    """
+
+    def __init__(self, **kwargs: Any) -> None:
+        super().__init__("", **kwargs)
+        self._cwd = ""
+        self._git_branch = ""
+        self._model = ""
+        self._model_provider = ""
+        self._thinking_level = ""
+        self._active_agent = ""
+        self._permission_mode = "auto"
+        self._file_changes: dict[str, tuple[int, int]] = {}
+        self._input_tokens = 0
+        self._output_tokens = 0
+        self._cache_read_tokens = 0
+        self._cache_write_tokens = 0
+        self._context_tokens: int | None = None
+        self._context_window: int | None = None
+        self._extension_statuses: dict[str, str] = {}
+        self._elapsed_seconds = 0
+        self._elapsed_timer: Timer | None = None
+        self._file_changes_text_start: int | None = None
+
+    # ---- public API ----------------------------------------------------------
+
+    def set_tokens(
+        self,
+        input_tokens: int,
+        output_tokens: int,
+        cache_read_tokens: int = 0,
+        cache_write_tokens: int = 0,
+    ) -> None:
+        self._input_tokens = input_tokens
+        self._output_tokens = output_tokens
+        self._cache_read_tokens = cache_read_tokens
+        self._cache_write_tokens = cache_write_tokens
+        self._context_tokens = (
+            input_tokens + output_tokens + cache_read_tokens + cache_write_tokens
+        )
+        self._update_content()
+
+    def set_model(self, model: str, provider: str | None = None) -> None:
+        self._model = model
+        self._model_provider = provider
+        self._update_content()
+
+    def set_thinking_level(self, thinking_level: str) -> None:
+        self._thinking_level = thinking_level
+        self._update_content()
+
+    def set_permission_mode(self, mode: str) -> None:
+        self._permission_mode = mode
+        self._update_content()
+
+    def set_file_changes(self, file_changes: dict[str, tuple[int, int]]) -> None:
+        self._file_changes = file_changes
+        self._update_content()
+
+    def set_agent(self, agent: str) -> None:
+        self._active_agent = agent
+        self._update_content()
+
+    def set_git_branch(self, branch: str) -> None:
+        self._git_branch = branch
+        self._update_content()
+
+    async def refresh_git_branch(self) -> None:
+        self.set_git_branch(await asyncio.to_thread(get_git_branch, self._cwd))
+
+    def set_extension_statuses(self, statuses: dict[str, str]) -> None:
+        self._extension_statuses = statuses
+        self._update_content()
+
+    def set_elapsed(self, seconds: float) -> None:
+        self._elapsed_seconds = seconds
+        self._update_content()
+
+    def update_file_changes(self, path: str, added: int, removed: int) -> None:
+        prev_added, prev_removed = self._file_changes.get(path, (0, 0))
+        self._file_changes[path] = (prev_added + added, prev_removed + removed)
+        self._update_content()
+
+    def update_tokens(
+        self,
+        input_tokens: int,
+        output_tokens: int,
+        cache_read_tokens: int = 0,
+        cache_write_tokens: int = 0,
+    ) -> None:
+        self._input_tokens += input_tokens
+        self._output_tokens += output_tokens
+        self._cache_read_tokens += cache_read_tokens
+        self._cache_write_tokens += cache_write_tokens
+        self._context_tokens = (
+            self._input_tokens
+            + self._output_tokens
+            + self._cache_read_tokens
+            + self._cache_write_tokens
+        )
+        self._update_content()
+
+    # ---- lifecycle -----------------------------------------------------------
+
+    def on_mount(self) -> None:
+        self._elapsed_timer = self.set_interval(1, self._tick_elapsed)
+
+    def on_unmount(self) -> None:
+        if self._elapsed_timer is not None:
+            self._elapsed_timer.stop()
+            self._elapsed_timer = None
+
+    def _tick_elapsed(self) -> None:
+        self._elapsed_seconds += 1
+        self._update_content(layout=False)
+
+    # ---- rendering -----------------------------------------------------------
+
+    def _format_tokens(self, count: int) -> str:
+        if count >= 1_000_000:
+            return f"{count / 1_000_000:.1f}M"
+        if count >= 1_000:
+            return f"{count / 1_000:.1f}k"
+        return str(count)
+
+    def _format_duration(self, seconds: float) -> str:
+        total = int(seconds)
+        h = total // 3600
+        m = (total % 3600) // 60
+        s = total % 60
+        if h:
+            return f"{h}h {m}m {s}s"
+        if m:
+            return f"{m}m {s}s"
+        return f"{s}s"
+
+    def _compute_lines(self) -> tuple[Text, Text, Text]:
+        dim = config.ui.colors.dim
+        accent = config.ui.colors.accent
+        badge_label = config.ui.colors.badge.label
+        notice = config.ui.colors.notice
+        diff_added = config.ui.colors.diff_added
+        diff_removed = config.ui.colors.diff_removed
+
+        # --- line 1: identity + extensions ---
+        identity = Text()
+        cwd_text = self._cwd or "."
+        identity.append(cwd_text)
+        if self._git_branch:
+            identity.append(" ")
+            identity.append(f"(⌥ {self._git_branch})", style=accent)
+        if self._active_agent:
+            identity.append(" ")
+            identity.append(f"@ {self._active_agent}", style=accent)
+
+        ext_parts = [
+            Text(f"{k}: {v}", style="cyan")
+            for k, v in self._extension_statuses.items()
+            if v
+        ]
+        line1 = Text()
+        line1.append_text(identity)
+        if ext_parts:
+            line1.append("    ")
+            for i, part in enumerate(ext_parts):
+                if i:
+                    line1.append("  ")
+                line1.append_text(part)
+
+        # --- line 2: usage + model/thinking ---
+        usage = Text()
+        up = self._format_tokens(self._input_tokens)
+        down = self._format_tokens(self._output_tokens)
+        usage.append(f"↑{up} ↓{down}", style=dim)
+        if self._cache_read_tokens or self._cache_write_tokens:
+            cache_parts = []
+            if self._cache_read_tokens:
+                cache_parts.append(f"R{self._format_tokens(self._cache_read_tokens)}")
+            if self._cache_write_tokens:
+                cache_parts.append(f"W{self._format_tokens(self._cache_write_tokens)}")
+            usage.append(" " + " ".join(cache_parts), style=dim)
+
+        model_line = Text()
+        model_text = self._model or "no-model"
+        if self._model_provider:
+            model_text = f"({self._model_provider}) {model_text}"
+        model_line.append(model_text, style=dim)
+        model_line.append(f" • {self._thinking_level}", style=dim)
+
+        line2 = Text()
+        line2.append_text(usage)
+        line2.append("    ", style=dim)
+        line2.append_text(model_line)
+
+        # --- line 3: permission/file-changes + runtime ---
+        left3 = Text()
+        if self._permission_mode == "auto":
+            left3.append("✓ auto", style=badge_label)
+        else:
+            left3.append("⏹ prompt", style=notice)
+
+        if self._file_changes:
+            n = len(self._file_changes)
+            a = sum(a for a, _ in self._file_changes.values())
+            r = sum(r for _, r in self._file_changes.values())
+            left3.append(" • ", style=dim)
+            self._file_changes_text_start = len(left3.plain)
+            left3.append(f"{n} file{'s' if n != 1 else ''}")
+            left3.append(f" +{a}", style=diff_added)
+            left3.append(f" -{r}", style=diff_removed)
+        else:
+            self._file_changes_text_start = None
+
+        runtime = Text()
+        runtime.append(f"◷ {self._format_duration(self._elapsed_seconds)}", style=dim)
+
+        line3 = Text()
+        line3.append_text(left3)
+        line3.append("    ", style=dim)
+        line3.append_text(runtime)
+
+        return line1, line2, line3
+
+    def _update_content(self, layout: bool = True) -> None:
+        line1, line2, line3 = self._compute_lines()
+        out = Text()
+        out.append_text(line1)
+        out.append("\n")
+        out.append_text(line2)
+        out.append("\n")
+        out.append_text(line3)
+        try:
+            self.update(out, layout=layout)
+        except Exception:
+            pass
+
+    # ---- click handling (preserve InfoBar file-changes modal) -----------------
+
+    def _is_file_changes_click(self, widget: object, x: int) -> bool:
+        return (
+            bool(self._file_changes)
+            and self._file_changes_text_start is not None
+            and x >= self._file_changes_text_start
+        )
+
+    def on_click(self, event: events.Click) -> None:
+        widget, _ = self.screen.get_widget_at(event.screen_x, event.screen_y)
+        if self._is_file_changes_click(widget, event.x):
+            event.stop()
+            self.app.push_screen(FileChangesModal(self._file_changes))
 
 class QueueDisplay(Vertical):
     MAX_QUEUE = 5

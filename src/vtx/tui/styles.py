@@ -341,35 +341,16 @@ Screen {{
     padding: 0 1;
 }}
 
-/* Info bar - vtx style tmux-like bottom bar with two rows */
-.info-bar {{
-    height: 2;
-    color: {colors.dim};
+/* Compact footer - pi-footer-style 3-line text footer */
+CompactFooter {{
+    height: auto;
+    padding: 0 1;
+    color: $text-muted;
 }}
 
-.info-bar.-completion-hidden {{
+CompactFooter.-completion-hidden {{
     display: none;
     height: 0;
-}}
-
-#info-row-1, #info-row-2 {{
-    height: 1;
-}}
-
-#info-cwd {{
-    width: 1fr;
-    padding: 0 1;
-}}
-
-#info-row2-left {{
-    width: 1fr;
-    padding: 0 1;
-}}
-
-#info-row1-right, #info-row2-right {{
-    width: auto;
-    padding: 0 1;
-    text-align: right;
 }}
 
 /* Notifications */
