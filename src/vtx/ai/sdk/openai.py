@@ -189,7 +189,7 @@ async def _openai_stream_chunks(
 # dispatch is whitelisted to these slugs only — for every other
 # openai_compat provider the level is intentionally not sent to the
 # wire (the picker still works, but the model uses its own default).
-_THINKING_ENABLED_SLUGS: frozenset[str] = frozenset({"openai-codex", "openai-responses"})
+_THINKING_ENABLED_SLUGS: frozenset[str] = frozenset({"openai", "openai-codex", "openai-responses"})
 _UNSET = object()  # sentinel: level absent from the effort map (= passthrough)
 
 

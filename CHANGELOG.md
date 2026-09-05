@@ -7,24 +7,13 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 ## [Unreleased]
 
 ### Added
-- **`/login` two-level auth picker** — `/login` now first asks for an auth method, then drills into a sub-picker: **OAuth** lists only the browser flows from `vtx.ai.oauth` (GitHub Copilot, OpenAI/Codex, Cline); **API Key** lists keyed `provider.yaml` providers; **Local / Keyless** lists `api_key_optional: true` providers (e.g. Ollama) and just fetches their model catalog on selection instead of asking for a credential. New providers added to `provider.yaml` land in the matching sub-picker automatically.
-- **Dynamic Tool & Skills Registries** — `vtx.ai.agent.tools` now provides a full runtime registry API (`register_tool`, `register_tools`, `unregister_tool`, `get_tool`, `get_all_tools`, `get_default_tools`, `get_parent_only_tools`) and `vtx.ai.agent.context.skills` provides a package registry API (`register_skills_package`, `unregister_skills_package`, `get_registered_skills_packages`), enabling extensions and custom agents to register tools and skills without hardcoding package names.
-- **Dynamic Entrypoint Discovery** — `vtx.ai.agent.extension_manager` now supports registering custom entry-point groups (`register_extension_entrypoint_key`, `register_agent_entrypoint_key`) and automatically discovers package entrypoints matching `*.extensions` and `*.agents`.
-- **New LLM providers** — added TokenHarbor (`https://tokenharbor.ai/v1`), Sarvam AI (`https://api.sarvam.ai/v1`), and B.ai (`https://api.b.ai/v1`) to the provider catalog.
-- **Tool-aware chat spinner refresh** — `ChatLog.set_spinner_tool()` bypasses the normal `_tick_spinner` cooldown so the chat-area spinner picks a context-aware witty line instantly when a tool starts or ends, wired through `agent_runner.py` on `ToolStartEvent` / `ToolEndEvent`.
-- **Subtle witty-line fade** — `StatusLine._animate_witty_line()` adds a quick opacity pulse when the bottom status line rotates to a new witty status.
+- **Thinking-level mapping on model limits** — `TokenLimits` now carries `thinking_level_map`, populated from `models.dev` `reasoning_options` during catalog fetch, so supported reasoning efforts are available alongside context/output limits.
+- **Nested provider/model lookup in dynamic models** — `find_dynamic_model` now inspects nested `provider.models` structures and matches model IDs case-insensitively, improving catalog lookups for providers that expose models in nested payloads.
+- **Thinking-level propagation tests** — added coverage for `reasoning_options` parsing into `TokenLimits.thinking_level_map` and for propagating that map through provider catalog/model construction.
 
 ### Changed
-- **General Harness & TUI Architecture Decoupling** — `vtx.ai`, `vtx.core`, and `vtx.tui` are completely decoupled from `vtx.coding_agent`. Built-in coding tools, prompts, and coding skills now reside exclusively in `vtx.coding_agent`, while `vtx.ai` provides the general agent harness (runtime, background task manager, dynamic tool registry, goal system, and skills sync engine).
-- **Witty-line rotation cadence** — `WITTY_ROTATE_EVERY_TICKS` raised from `12` to `20` (3s instead of 1.8s at 0.15s/tick) in both the chat spinner and the bottom status line.
-- **Gitlawb Opengateway dynamic model fetching** — removed hardcoded `known_models` from the `opengateway` provider and enabled `openmodelendpoint: true` so its model catalog is fetched dynamically from `https://opengateway.gitlawb.com/v1/models`.
-
-### Fixed
-- **Coding agent startup tool resolution** — fixed an issue where starting `vtx` only loaded harness-builtin tools by ensuring `vtx.coding_agent` auto-registers its concrete coding tools (`read`, `edit`, `write`, `bash`, `find`, `grep`, `skill`) into the harness tool registry on package and CLI entrypoint initialization.
-- **Sub-agent context-window wiring** — Task-tool sub-agents now apply the active model's real context window and max output tokens (same catalog lookup as the main agent), so overflow auto-compaction triggers at the correct threshold instead of the harness default. Fixes sub-agent runs dying with `context_length_exceeded` (e.g. a 414k-token request against a 262k window) on models whose window differs from the default.
-- **Goal completion auditor freeze & provider resolution** — resolved an issue where models could get stuck when completing goals (`goal(action="update", status="complete")`). The completion auditor now reuses the session's active provider instance directly, correctly resolves dynamic models and custom base URLs, clamps reasoning/thinking levels to supported values, and parses multi-turn auditor verdict markers reliably.
-- **Recap throttling** — idle session recaps now require at least 3 tool calls before drafting a summary, preventing noisy recaps after trivial single-tool lookups.
-- **Recap witty status lines** — the recap spinner now uses a dedicated pool of witty context-aware lines instead of a static `Drafting recap...` string.
+- **Reasoning metadata flows through model resolution** — `ContextLengthManager`, `provider_catalog`, and `model_fetcher` now preserve `thinking_level_map` from token limits into resolved `Model` objects, using limit-derived values when provider entries omit them.
+- **OpenAI-family thinking enablement** — expanded OpenAI SDK thinking support to include the base `openai` provider slug alongside `openai-codex` and `openai-responses`, aligning wire-parameter behavior with provider resolution.
 
 ## [1.1.0] - 2026-08-26
 

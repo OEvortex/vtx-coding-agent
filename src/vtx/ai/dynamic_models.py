@@ -490,12 +490,33 @@ def _read_models_dev_sync() -> dict[str, Any]:
             return json.loads(path.read_text(encoding="utf-8"))
     except Exception:
         pass
+    try:
+        from vtx.core.paths import get_config_dir
+
+        limits_path = get_config_dir() / "models_dev_limits.json"
+        if limits_path.exists():
+            return json.loads(limits_path.read_text(encoding="utf-8"))
+    except Exception:
+        pass
     return {}
 
 
 def _find_spec_in_models_dev(model_id: str, models_dev: dict[str, Any]) -> dict[str, Any] | None:
     model_id_lower = model_id.lower()
     for key, spec in models_dev.items():
+        if not isinstance(spec, dict):
+            continue
+        # Check nested provider structure: {provider: {"models": {model_id: spec}}}
+        models_sub = spec.get("models")
+        if isinstance(models_sub, dict):
+            for sub_id, sub_spec in models_sub.items():
+                if isinstance(sub_spec, dict):
+                    sub_id_lower = sub_id.lower()
+                    if sub_id_lower == model_id_lower:
+                        return sub_spec
+                    if "/" in sub_id_lower and sub_id_lower.split("/", 1)[1] == model_id_lower:
+                        return sub_spec
+
         key_lower = key.lower()
         if key_lower == model_id_lower:
             return spec
@@ -913,11 +934,13 @@ def _to_static_model(
 
         supports_tools = limits.supports_tools
         supports_audio = limits.supports_audio
+        thinking_level_map = entry.thinking_level_map or limits.thinking_level_map
     else:
         if context_window and max_tokens and context_window - max_tokens <= 8192:
             max_tokens = safe_max_output_tokens(context_window)
         supports_tools = True
         supports_audio = False
+        thinking_level_map = entry.thinking_level_map
 
     return Model(
         id=entry.id,
@@ -927,7 +950,7 @@ def _to_static_model(
         max_tokens=max_tokens,
         supports_images=supports_images,
         supports_thinking=supports_thinking,
-        thinking_level_map=entry.thinking_level_map,
+        thinking_level_map=thinking_level_map,
         context_window=context_window,
         supports_tools=supports_tools,
         supports_audio=supports_audio,

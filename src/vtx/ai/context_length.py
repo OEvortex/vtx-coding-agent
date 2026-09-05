@@ -38,6 +38,7 @@ class TokenLimits:
     supports_vision: bool = False
     supports_tools: bool = False
     supports_audio: bool = False
+    thinking_level_map: dict[str, str | None] | None = None
 
 
 class ContextLengthManager:
@@ -84,6 +85,8 @@ class ContextLengthManager:
             logger.debug("Failed to fetch model limits: %s", exc)
 
     def _parse_limits(self, data: dict[str, Any]) -> None:
+        from vtx.ai.thinking import parse_models_dev_reasoning_options
+
         for _provider_name, provider_data in data.items():
             if not isinstance(provider_data, dict):
                 continue
@@ -102,6 +105,9 @@ class ContextLengthManager:
                     modalities = model_info.get("modalities", {})
                     input_mods = modalities.get("input", [])
                     output_mods = modalities.get("output", [])
+                    thinking_level_map = parse_models_dev_reasoning_options(
+                        model_info.get("reasoning_options")
+                    )
                     self._limits[model_id] = TokenLimits(
                         context=context,
                         output=output,
@@ -109,6 +115,7 @@ class ContextLengthManager:
                         supports_vision="image" in input_mods,
                         supports_tools=bool(model_info.get("tool_call", False)),
                         supports_audio="audio" in input_mods or "audio" in output_mods,
+                        thinking_level_map=thinking_level_map,
                     )
 
     def ensure_loaded(self) -> None:

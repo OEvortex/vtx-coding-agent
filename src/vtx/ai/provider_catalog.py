@@ -337,6 +337,7 @@ def _provider_info_to_model(p: ProviderInfo, model_id: str) -> Model:
         context_window = limits.context
         supports_tools = limits.supports_tools
         supports_audio = limits.supports_audio
+        thinking_level_map = limits.thinking_level_map
     else:
         max_tokens = p.max_tokens
         supports_images = p.supports_vision
@@ -344,6 +345,7 @@ def _provider_info_to_model(p: ProviderInfo, model_id: str) -> Model:
         context_window = limits.context
         supports_tools = p.supports_tools
         supports_audio = False
+        thinking_level_map = None
 
     return Model(
         id=model_id,
@@ -356,6 +358,7 @@ def _provider_info_to_model(p: ProviderInfo, model_id: str) -> Model:
         context_window=context_window,
         supports_tools=supports_tools,
         supports_audio=supports_audio,
+        thinking_level_map=thinking_level_map,
     )
 
 

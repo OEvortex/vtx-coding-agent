@@ -321,9 +321,11 @@ def get_fetched_models(provider) -> list[Model]:
                 supports_images = limits.supports_vision
             supports_tools = limits.supports_tools
             supports_audio = limits.supports_audio
+            thinking_level_map = entry.thinking_level_map or limits.thinking_level_map
         else:
             supports_tools = provider.supports_tools
             supports_audio = False
+            thinking_level_map = entry.thinking_level_map
 
         is_free = entry.is_free
         if provider.slug == "cline" and not is_free:
@@ -337,7 +339,7 @@ def get_fetched_models(provider) -> list[Model]:
                 max_tokens=max_tokens,
                 supports_images=supports_images,
                 supports_thinking=supports_thinking,
-                thinking_level_map=entry.thinking_level_map,
+                thinking_level_map=thinking_level_map,
                 context_window=context_window,
                 supports_tools=supports_tools,
                 supports_audio=supports_audio,

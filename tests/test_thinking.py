@@ -251,3 +251,57 @@ def test_no_map_whitelisted_slug_still_sends():
     kwargs: dict = {}
     sdk._apply_thinking_kwargs(kwargs, GenerationConfig(model="m", thinking_level="high"))
     assert kwargs["reasoning_effort"] == "high"
+
+
+def test_token_limits_stores_thinking_level_map():
+    from vtx.ai.context_length import ContextLengthManager
+
+    mgr = ContextLengthManager()
+    data = {
+        "openai": {
+            "models": {
+                "o1": {
+                    "reasoning": True,
+                    "reasoning_options": [{"type": "effort", "values": ["low", "medium", "high"]}],
+                    "limit": {"context": 200000, "output": 100000},
+                }
+            }
+        }
+    }
+    mgr._parse_limits(data)
+    limits = mgr.get_limits("o1")
+    assert limits.supports_reasoning is True
+    assert limits.thinking_level_map == {
+        "off": None,
+        "minimal": None,
+        "low": "low",
+        "medium": "medium",
+        "high": "high",
+        "xhigh": None,
+        "max": None,
+    }
+
+
+def test_provider_info_to_model_attaches_thinking_level_map():
+    from vtx.ai.context_length import context_length_manager
+    from vtx.ai.provider_catalog import _provider_info_to_model, get
+
+    p = get("openai")
+    assert p is not None
+    # Register test model in context_length_manager
+    context_length_manager._limits["test-reasoning-model"] = context_length_manager._limits.get(
+        "o1",
+        type(context_length_manager.get_limits("test-model"))(
+            context=128000,
+            output=8192,
+            supports_reasoning=True,
+            thinking_level_map={"off": "none", "high": "high"},
+        ),
+    )
+    # Ensure thinking_level_map is set
+    context_length_manager._limits["test-reasoning-model"].thinking_level_map = {
+        "off": "none",
+        "high": "high",
+    }
+    model = _provider_info_to_model(p, "test-reasoning-model")
+    assert model.thinking_level_map == {"off": "none", "high": "high"}

@@ -37,9 +37,8 @@ from vtx.ai.sdk.openai import OpenAISDK
 _LEVELS = ("none", "minimal", "low", "medium", "high", "xhigh")
 _NON_NONE_LEVELS = tuple(level for level in _LEVELS if level != "none")
 
-_THINKING_ENABLED_SLUGS = ("openai-codex", "openai-responses")
+_THINKING_ENABLED_SLUGS = ("openai", "openai-codex", "openai-responses")
 _DISABLED_SLUGS = (
-    "openai",
     "openrouter",
     "kilo",
     "tokenrouter",
