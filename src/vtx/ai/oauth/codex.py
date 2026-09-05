@@ -24,6 +24,7 @@ from urllib.parse import parse_qs, urlencode, urlparse
 
 import aiohttp
 
+from vtx.ai.provider_hooks import register_headers_listener
 from vtx.core.paths import get_config_dir
 
 _CLIENT_ID = os.getenv("CODEX_APP_SERVER_LOGIN_CLIENT_ID", "app_EMoamEEZ73f0CkXaXp7hrann")
@@ -406,23 +407,25 @@ codex_login = login
 
 
 async def _request_device_code() -> dict[str, Any]:
-    async with aiohttp.ClientSession() as session:
-        async with session.post(
+    async with (
+        aiohttp.ClientSession() as session,
+        session.post(
             _DEVICE_CODE_URL,
             headers={"Content-Type": "application/json"},
             json={"client_id": _CLIENT_ID},
-        ) as response:
-            if response.status == 404:
-                raise RuntimeError(
-                    "Device code login is not enabled for this Codex server. "
-                    "Use the browser login or verify the server URL."
-                )
-            if response.status >= 400:
-                text = await response.text()
-                raise RuntimeError(
-                    f"OpenAI Codex device code request failed ({response.status}): {text}"
-                )
-            return await response.json()
+        ) as response,
+    ):
+        if response.status == 404:
+            raise RuntimeError(
+                "Device code login is not enabled for this Codex server. "
+                "Use the browser login or verify the server URL."
+            )
+        if response.status >= 400:
+            text = await response.text()
+            raise RuntimeError(
+                f"OpenAI Codex device code request failed ({response.status}): {text}"
+            )
+        return await response.json()
 
 
 async def _poll_device_token(device_auth_id: str, user_code: str, interval: int) -> dict[str, Any]:
@@ -457,7 +460,7 @@ async def login_with_device_code(
 ) -> CodexCredentials:
     originator = originator or os.getenv("CODEX_INTERNAL_ORIGINATOR_OVERRIDE", _DEFAULT_ORIGINATOR)
     device = await _request_device_code()
-    verification_url = f"https://auth.openai.com/codex/device"
+    verification_url = "https://auth.openai.com/codex/device"
     user_code = device.get("user_code") or device.get("usercode", "")
     device_auth_id = device.get("device_auth_id")
     interval = int(device.get("interval", 5))
@@ -562,3 +565,11 @@ def get_valid_codex_token_sync() -> str | None:
     if creds and creds.access:
         return creds.access
     return None
+
+
+@register_headers_listener
+def _add_codex_originator_header(headers: dict[str, str | None], context: dict[str, Any]) -> None:
+    if context.get("provider") == "codex":
+        headers["originator"] = os.getenv(
+            "CODEX_INTERNAL_ORIGINATOR_OVERRIDE", _DEFAULT_ORIGINATOR
+        )

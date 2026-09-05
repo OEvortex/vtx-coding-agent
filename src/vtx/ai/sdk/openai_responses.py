@@ -35,6 +35,7 @@ from typing import Any
 
 from openai import AsyncOpenAI
 
+from vtx.ai.provider_hooks import prepare_request
 from vtx.ai.sdk.base import BaseLLMSDK, GenerationConfig, GenerationResponse, Message, ToolCall
 from vtx.ai.thinking import clamp_thinking_level, get_supported_thinking_levels
 
@@ -351,6 +352,11 @@ class OpenAIResponsesSDK(BaseLLMSDK):
     ) -> GenerationResponse:
         payload = self._build_payload(messages, config, tools)
         payload.pop("stream", None)
+        extra_headers, payload = await prepare_request(
+            provider=self._provider_slug or "openai", payload=payload
+        )
+        if extra_headers:
+            payload["extra_headers"] = extra_headers
         response = await self.client.responses.create(**payload)
         data = response.model_dump()
 
@@ -391,10 +397,17 @@ class OpenAIResponsesSDK(BaseLLMSDK):
             reasoning_content=reasoning,
         )
 
-    def _generate_stream(  # type: ignore[override]
+    async def _generate_stream(  # type: ignore[override]
         self, messages: list[Message], config: GenerationConfig, tools: list[dict] | None = None
     ) -> AsyncGenerator[dict[str, Any], None]:
-        return self._stream_response(self._build_payload(messages, config, tools))
+        payload = self._build_payload(messages, config, tools)
+        extra_headers, payload = await prepare_request(
+            provider=self._provider_slug or "openai", payload=payload
+        )
+        if extra_headers:
+            payload["extra_headers"] = extra_headers
+        async for chunk in self._stream_response(payload):
+            yield chunk
 
     async def _stream_response(
         self, payload: dict[str, Any]
