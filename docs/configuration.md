@@ -66,7 +66,7 @@ Automatic session recap. After an agent run finishes and you haven't typed for a
 | Field | Default | Notes |
 | --- | --- | --- |
 | `enabled` | `true` | Set to `false` to disable automatic recaps (`/recap` still works) |
-| `idle_seconds` | `30` | Idle time after a run before a recap is drafted (minimum 5) |
+| `idle_seconds` | `60` | Idle time after a run before a recap is drafted (minimum 5) |
 
 ## `extensions`
 

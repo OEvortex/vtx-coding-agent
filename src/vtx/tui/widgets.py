@@ -1,4 +1,5 @@
 import asyncio
+import contextlib
 import os
 import time
 from typing import Any, ClassVar
@@ -457,6 +458,10 @@ class CompactFooter(Static):
         self._elapsed_seconds = seconds
         self._update_content()
 
+    def set_context_window(self, context_window: int | None) -> None:
+        self._context_window = context_window
+        self._update_content()
+
     def set_tps(self, tps: float | None) -> None:
         self._tps = tps
         self._update_content()
@@ -543,7 +548,7 @@ class CompactFooter(Static):
         for k, v in self._extension_statuses.items():
             if v:
                 ext_parts.append(Text(f"{k}: {v}", style="cyan"))
-        
+
         line1 = Text()
         line1.append_text(identity)
         if ext_parts:
@@ -556,21 +561,21 @@ class CompactFooter(Static):
         # --- line 2: metrics cluster + model/thinking ---
         metrics = Text()
         sep = " · "
-        
+
         # Input/output tokens
         up = self._format_tokens(self._input_tokens)
         down = self._format_tokens(self._output_tokens)
         metrics.append(f"↑{up} ", style=dim)
         metrics.append("↓", style=fg)
         metrics.append(f"{down}", style=dim)
-        
+
         # Context %
         if self._context_tokens and self._context_window:
             ctx_pct = min(100.0, (self._context_tokens / self._context_window) * 100)
             metrics.append(sep, style=dim)
             metrics.append("◔", style=fg)
             metrics.append(f"{ctx_pct:.0f}%", style=dim)
-        
+
         # Cache hit rate
         prompt_total = self._input_tokens + self._cache_read_tokens + self._cache_write_tokens
         if prompt_total > 0 and self._cache_read_tokens > 0:
@@ -578,16 +583,16 @@ class CompactFooter(Static):
             metrics.append(sep, style=dim)
             metrics.append("↺", style=fg)
             metrics.append(f"{cache_rate:.0f}%", style=dim)
-        
+
         # TPS (tokens per second)
         if self._tps is not None:
             metrics.append(sep, style=dim)
             metrics.append("⚡", style=fg)
             metrics.append(f"{self._tps:.0f} t/s", style=dim)
-        
+
         # Cost estimate (if we had pricing)
         # Skipping for now
-        
+
         model_line = Text()
         model_text = self._model or "no-model"
         if self._model_provider:
@@ -637,10 +642,8 @@ class CompactFooter(Static):
         out.append_text(line2)
         out.append("\n")
         out.append_text(line3)
-        try:
+        with contextlib.suppress(Exception):
             self.update(out, layout=layout)
-        except Exception:
-            pass
 
     # ---- click handling (preserve InfoBar file-changes modal) -----------------
 

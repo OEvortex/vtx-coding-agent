@@ -160,7 +160,7 @@ class RecapConfig(BaseModel):
     """Automatic idle session recap (drafted by the current model)."""
 
     enabled: bool = True
-    idle_seconds: float = Field(default=30, ge=5)
+    idle_seconds: float = Field(default=60, ge=5)
 
 
 class LastSelectedConfig(BaseModel):

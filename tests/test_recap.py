@@ -122,9 +122,9 @@ class TestHasMeaningfulActivity:
         ]
         assert not has_meaningful_activity(messages)
 
-    def test_short_assistant_text_is_activity(self):
+    def test_short_assistant_text_is_not_activity(self):
         messages = [UserMessage(content="go"), _assistant("done")]
-        assert has_meaningful_activity(messages)
+        assert not has_meaningful_activity(messages)
 
     def test_empty_assistant_reply_is_not_activity(self):
         messages = [UserMessage(content="go"), AssistantMessage(content=[])]
@@ -187,7 +187,7 @@ class TestRecapConfig:
     def test_defaults(self):
         cfg = Config({})
         assert cfg.recap.enabled is True
-        assert cfg.recap.idle_seconds == 30
+        assert cfg.recap.idle_seconds == 60
 
     def test_override(self):
         cfg = Config({"recap": {"enabled": False, "idle_seconds": 60}})

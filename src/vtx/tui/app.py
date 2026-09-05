@@ -783,7 +783,6 @@ class Vtx(
     def action_toggle_thinking(self) -> None:
         self._hide_thinking = not self._hide_thinking
         chat = self.query_one("#chat-log", ChatLog)
-        footer = self.query_one("#compact-footer", CompactFooter)
 
         for block in chat.query(".thinking-block"):
             if self._hide_thinking:

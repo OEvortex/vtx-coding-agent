@@ -47,7 +47,7 @@ notifications:
 # left off" summary using the current model. Disable to opt out.
 recap:
   enabled: true
-  idle_seconds: 30
+  idle_seconds: 60
 
 # Extensions: Python files or packages that hook into vtx at startup.
 # Each entry is a path to a ``.py`` file or a package directory containing

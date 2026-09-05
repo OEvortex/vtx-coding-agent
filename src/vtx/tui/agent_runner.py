@@ -268,6 +268,7 @@ class AgentRunnerMixin:
 
             case TurnStartEvent():
                 status.set_agent_state("thinking")
+                self._turn_started = time.monotonic()
 
             case ThinkingStartEvent():
                 status.set_agent_state("thinking")
@@ -370,6 +371,13 @@ class AgentRunnerMixin:
                         usage.cache_read_tokens,
                         usage.cache_write_tokens,
                     )
+                    # Calculate TPS
+                    if self._turn_started is not None:
+                        elapsed = time.monotonic() - self._turn_started
+                        if elapsed > 0:
+                            tps = usage.output_tokens / elapsed
+                            info_bar.set_tps(tps)
+                        self._turn_started = None
 
             case InterruptedEvent():
                 was_interrupted = True
