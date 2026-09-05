@@ -132,6 +132,7 @@ class InfoBar(Vertical):
         context_window: int | None = None,
         thinking_level: str | None = None,
         hide_thinking: bool = False,
+        model_provider: str | None = None,
         **kwargs,
     ) -> None:
         super().__init__(**kwargs)
@@ -139,7 +140,7 @@ class InfoBar(Vertical):
         self._cwd = format_path(cwd)
         self._git_branch = get_git_branch(cwd)
         self._model = model
-        self._model_provider = kwargs.get("model_provider")
+        self._model_provider = model_provider
         if context_window is None:
             from vtx.ai.models import get_model
 
