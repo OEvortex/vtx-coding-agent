@@ -398,6 +398,7 @@ class CompactFooter(Static):
         self._elapsed_seconds = 0
         self._elapsed_timer: Timer | None = None
         self._file_changes_text_start: int | None = None
+        self._tps: float | None = None
 
     # ---- public API ----------------------------------------------------------
 
@@ -454,6 +455,10 @@ class CompactFooter(Static):
 
     def set_elapsed(self, seconds: float) -> None:
         self._elapsed_seconds = seconds
+        self._update_content()
+
+    def set_tps(self, tps: float | None) -> None:
+        self._tps = tps
         self._update_content()
 
     def update_file_changes(self, path: str, added: int, removed: int) -> None:
@@ -521,43 +526,68 @@ class CompactFooter(Static):
         notice = config.ui.colors.notice
         diff_added = config.ui.colors.diff_added
         diff_removed = config.ui.colors.diff_removed
+        fg = config.ui.colors.fg
 
         # --- line 1: identity + extensions ---
         identity = Text()
         cwd_text = self._cwd or "."
-        identity.append(cwd_text)
+        identity.append(cwd_text, style=fg)
         if self._git_branch:
-            identity.append(" ")
-            identity.append(f"(⌥ {self._git_branch})", style=accent)
+            identity.append(" ", style=dim)
+            identity.append(f"⌥ {self._git_branch}", style=accent)
         if self._active_agent:
-            identity.append(" ")
+            identity.append(" ", style=dim)
             identity.append(f"@ {self._active_agent}", style=accent)
 
-        ext_parts = [
-            Text(f"{k}: {v}", style="cyan") for k, v in self._extension_statuses.items() if v
-        ]
+        ext_parts = []
+        for k, v in self._extension_statuses.items():
+            if v:
+                ext_parts.append(Text(f"{k}: {v}", style="cyan"))
+        
         line1 = Text()
         line1.append_text(identity)
         if ext_parts:
-            line1.append("    ")
+            line1.append("    ", style=dim)
             for i, part in enumerate(ext_parts):
                 if i:
-                    line1.append("  ")
+                    line1.append("  ", style=dim)
                 line1.append_text(part)
 
-        # --- line 2: usage + model/thinking ---
-        usage = Text()
+        # --- line 2: metrics cluster + model/thinking ---
+        metrics = Text()
+        sep = " · "
+        
+        # Input/output tokens
         up = self._format_tokens(self._input_tokens)
         down = self._format_tokens(self._output_tokens)
-        usage.append(f"↑{up} ↓{down}", style=dim)
-        if self._cache_read_tokens or self._cache_write_tokens:
-            cache_parts = []
-            if self._cache_read_tokens:
-                cache_parts.append(f"R{self._format_tokens(self._cache_read_tokens)}")
-            if self._cache_write_tokens:
-                cache_parts.append(f"W{self._format_tokens(self._cache_write_tokens)}")
-            usage.append(" " + " ".join(cache_parts), style=dim)
-
+        metrics.append(f"↑{up} ", style=dim)
+        metrics.append("↓", style=fg)
+        metrics.append(f"{down}", style=dim)
+        
+        # Context %
+        if self._context_tokens and self._context_window:
+            ctx_pct = min(100.0, (self._context_tokens / self._context_window) * 100)
+            metrics.append(sep, style=dim)
+            metrics.append("◔", style=fg)
+            metrics.append(f"{ctx_pct:.0f}%", style=dim)
+        
+        # Cache hit rate
+        prompt_total = self._input_tokens + self._cache_read_tokens + self._cache_write_tokens
+        if prompt_total > 0 and self._cache_read_tokens > 0:
+            cache_rate = (self._cache_read_tokens / prompt_total) * 100
+            metrics.append(sep, style=dim)
+            metrics.append("↺", style=fg)
+            metrics.append(f"{cache_rate:.0f}%", style=dim)
+        
+        # TPS (tokens per second)
+        if self._tps is not None:
+            metrics.append(sep, style=dim)
+            metrics.append("⚡", style=fg)
+            metrics.append(f"{self._tps:.0f} t/s", style=dim)
+        
+        # Cost estimate (if we had pricing)
+        # Skipping for now
+        
         model_line = Text()
         model_text = self._model or "no-model"
         if self._model_provider:
@@ -566,11 +596,11 @@ class CompactFooter(Static):
         model_line.append(f" • {self._thinking_level}", style=dim)
 
         line2 = Text()
-        line2.append_text(usage)
+        line2.append_text(metrics)
         line2.append("    ", style=dim)
         line2.append_text(model_line)
 
-        # --- line 3: permission/file-changes + runtime ---
+        # --- line 3: status + runtime ---
         left3 = Text()
         if self._permission_mode == "auto":
             left3.append("✓ auto", style=badge_label)
@@ -581,7 +611,7 @@ class CompactFooter(Static):
             n = len(self._file_changes)
             a = sum(a for a, _ in self._file_changes.values())
             r = sum(r for _, r in self._file_changes.values())
-            left3.append(" • ", style=dim)
+            left3.append(" · ", style=dim)
             self._file_changes_text_start = len(left3.plain)
             left3.append(f"{n} file{'s' if n != 1 else ''}")
             left3.append(f" +{a}", style=diff_added)
