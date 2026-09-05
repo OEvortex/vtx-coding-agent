@@ -16,10 +16,10 @@ def test_approval_background_blends_terminal_bg_with_accent():
     assert "background: #3c3836;" not in approval_block
 
 
-def test_completion_hidden_info_bar_collapses_fixed_row():
+def test_completion_hidden_footer_collapses_fixed_row():
     styles = get_styles()
 
-    info_bar_hidden_block = styles.split(".info-bar.-completion-hidden {")[1].split("}", 1)[0]
+    footer_hidden_block = styles.split("CompactFooter.-completion-hidden {")[1].split("}", 1)[0]
 
-    assert "display: none;" in info_bar_hidden_block
-    assert "height: 0;" in info_bar_hidden_block
+    assert "display: none;" in footer_hidden_block
+    assert "height: 0;" in footer_hidden_block

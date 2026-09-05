@@ -94,7 +94,7 @@ class _TestSessionApp(SessionUIMixin):
         self._runtime.session = self._session
         self._runtime.agent = self._agent
         self._chat = _FakeChat()
-        self._info_bar = _FakeInfoBar()
+        self._footer = CompactFooter()
         self._status_line = _FakeStatusLine()
         self._input_box = _FakeInputBox()
         self.rendered_session: Session | None = None
@@ -103,8 +103,8 @@ class _TestSessionApp(SessionUIMixin):
     def query_one(self, selector: str, cls=None):
         if selector == "#chat-log":
             return self._chat
-        if selector == "#info-bar":
-            return self._info_bar
+        if selector == "#compact-footer":
+            return self._footer
         if selector == "#status-line":
             return self._status_line
         if selector == "#input-box":

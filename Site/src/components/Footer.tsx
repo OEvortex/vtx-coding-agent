@@ -1,130 +1,111 @@
-import { ArrowUp, GithubLogo } from "@phosphor-icons/react";
+import { ArrowUp, GithubLogo, Lightning, Copy, Check } from "@phosphor-icons/react";
+import { useState } from "react";
 
-const sections = [
+const cols = [
   {
-    title: "Product",
+    title: "HARNESS",
     links: [
-      { label: "Why Vtx", href: "#why" },
-      { label: "Capabilities", href: "#capabilities" },
+      { label: "The Arsenal", href: "#arsenal" },
+      { label: "Token War", href: "#install" },
+      { label: "Install", href: "#install" },
     ],
   },
   {
-    title: "Resources",
+    title: "RESOURCES",
     links: [
       { label: "Documentation", href: "/docs/" },
       { label: "Full feature list", href: "/features/" },
-      { label: "GitHub", href: "https://github.com/OEvortex/vtx-coding-agent" },
       { label: "PyPI package", href: "https://pypi.org/project/vtx-coding-agent/" },
     ],
   },
   {
-    title: "Project",
+    title: "PROJECT",
     links: [
-      { label: "Apache-2.0 license", href: "https://github.com/OEvortex/vtx-coding-agent/blob/main/LICENSE" },
-      { label: "Changelog", href: "https://github.com/OEvortex/vtx-coding-agent/blob/main/CHANGELOG.md" },
+      { label: "GitHub", href: "https://github.com/OEvortex/vtx-coding-agent" },
       { label: "Issues", href: "https://github.com/OEvortex/vtx-coding-agent/issues" },
-      { label: "Discussions", href: "https://github.com/OEvortex/vtx-coding-agent/discussions" },
+      { label: "Changelog", href: "https://github.com/OEvortex/vtx-coding-agent/blob/main/CHANGELOG.md" },
     ],
   },
 ];
 
 export default function Footer() {
-  const handleScrollTop = () => {
-    window.scrollTo({ top: 0, behavior: "smooth" });
+  const [copied, setCopied] = useState(false);
+  const cmd = "uv tool install vtx-coding-agent";
+  const copy = async () => {
+    try {
+      await navigator.clipboard.writeText(cmd);
+    } catch { /* noop */ }
+    setCopied(true);
+    setTimeout(() => setCopied(false), 1400);
   };
 
   return (
-    <footer className="bg-canvas border-t border-hairline pt-16 pb-8 px-5 sm:px-7 relative">
-      <div
-        className="absolute inset-0 pointer-events-none"
-        aria-hidden="true"
-        style={{
-          background:
-            "radial-gradient(ellipse at 50% 100%, rgba(163, 230, 53, 0.02) 0%, transparent 50%)",
-        }}
-      />
-      <div className="relative max-w-[1400px] mx-auto space-y-12">
-        {/* Top row: brand + columns */}
-        <div className="grid grid-cols-1 lg:grid-cols-12 gap-10">
-          <div className="lg:col-span-4 space-y-5">
-            <div className="flex items-center gap-2.5">
-              <span className="grid place-items-center w-8 h-8 rounded-lg bg-accent text-[#0A0A0B]">
-                <svg
-                  width="16"
-                  height="16"
-                  viewBox="0 0 24 24"
-                  fill="none"
-                  stroke="currentColor"
-                  strokeWidth="2.5"
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                  aria-hidden="true"
-                >
-                  <polyline points="4 17 10 11 4 5" />
-                  <line x1="12" y1="19" x2="20" y2="19" />
-                </svg>
-              </span>
-              <span className="text-[16px] font-semibold tracking-tight text-ink">
-                Vtx
-              </span>
-              <span className="font-mono text-[10.5px] text-ink-faint tracking-tight">
-                v1.0.0
-              </span>
-            </div>
-            <p className="text-[14px] text-ink-muted leading-[1.65] max-w-[36ch]">
-              A minimal, transparent agentic coding harness for the terminal.
-              Open source under the Apache-2.0 license.
-            </p>
-            <a
-              href="https://github.com/OEvortex/vtx-coding-agent"
-              target="_blank"
-              rel="noopener noreferrer"
-              className="inline-flex items-center gap-2 text-[13px] text-ink-muted hover:text-ink transition-colors"
-            >
-              <GithubLogo size={14} weight="regular" />
-              <span>github.com/OEvortex/vtx-coding-agent</span>
-            </a>
+    <footer className="footer-rave">
+      {/* giant CTA */}
+      <div className="mx-auto max-w-[1440px] px-4 sm:px-8 pt-16 sm:pt-24">
+        <div className="footer-cta">
+          <div className="flex items-center gap-2 font-mono text-[11px] tracking-[0.2em] text-lime-300">
+            <Lightning size={13} weight="fill" /> LAST CALL — JOIN THE LEAN SIDE
           </div>
-
-          <div className="lg:col-span-8 grid grid-cols-2 sm:grid-cols-3 gap-8">
-            {sections.map((section) => (
-              <div key={section.title} className="space-y-4">
-                <span className="font-mono text-[10.5px] tracking-[0.18em] text-ink-faint uppercase block">
-                  {section.title}
-                </span>
-                <ul className="space-y-3">
-                  {section.links.map((link) => (
-                    <li key={link.label}>
-                      <a
-                        href={link.href}
-                        target={link.href.startsWith("http") ? "_blank" : undefined}
-                        rel={link.href.startsWith("http") ? "noopener noreferrer" : undefined}
-                        className="text-[13.5px] text-ink-muted hover:text-ink transition-colors inline-flex items-center gap-1.5 group/link"
-                      >
-                        {link.label}
-                        {link.href.startsWith("http") && (
-                          <ArrowUp size={10} weight="bold" className="opacity-0 group-hover/link:opacity-100 transition-opacity" />
-                        )}
-                      </a>
-                    </li>
-                  ))}
-                </ul>
-              </div>
-            ))}
+          <h2 className="footer-h2">STOP FEEDING<br />THE BLOAT<span className="text-lime-400">.</span></h2>
+          <div className="mt-6 flex flex-wrap items-center gap-3">
+            <button onClick={copy} className="footer-copy">
+              <span className="text-lime-300">$</span>
+              <code>{cmd}</code>
+              {copied ? <Check size={15} className="text-lime-300" /> : <Copy size={15} className="text-zinc-500" />}
+            </button>
+            <a className="btn-mega" href="https://github.com/OEvortex/vtx-coding-agent" target="_blank" rel="noreferrer">
+              <GithubLogo size={16} weight="fill" /> STAR ON GITHUB
+            </a>
           </div>
         </div>
 
-        {/* Bottom row */}
-        <div className="pt-8 border-t border-hairline flex flex-col sm:flex-row items-center justify-between gap-4 text-[12px] text-ink-faint font-mono tracking-tight">
-          <p>© 2026 OEvortex. Released under the Apache-2.0 license.</p>
-          <button
-            onClick={handleScrollTop}
-            className="flex items-center gap-1.5 px-3 py-1.5 rounded-md border border-hairline hover:border-hairline-strong hover:bg-surface transition-colors text-ink-muted"
-            aria-label="Back to top of page"
-          >
-            <span>Back to top</span>
-            <ArrowUp size={12} weight="bold" />
-          </button>
+        {/* link grid */}
+        <div className="mt-14 grid grid-cols-2 md:grid-cols-5 gap-8 border-t border-white/10 pt-10">
+          <div className="col-span-2">
+            <div className="flex items-center gap-2">
+              <span className="nav-logo"><Lightning size={15} weight="fill" /></span>
+              <span className="font-black text-lg tracking-tighter">VTX</span>
+              <span className="font-mono text-[10px] text-zinc-600">v1.1.1 · apache-2.0</span>
+            </div>
+            <p className="mt-3 max-w-[32ch] text-[13.5px] leading-relaxed text-zinc-500">
+              Minimalist coding-agent harness. ~2.6k-token loop. TUI + headless CLI + Python SDK. Your context stays yours.
+            </p>
+            <div className="mt-4 inline-flex items-center gap-2 rounded-full border border-lime-400/25 bg-lime-400/5 px-3 py-1.5 font-mono text-[11px] text-lime-300">
+              <span className="dot-pulse" /> all systems lean
+            </div>
+          </div>
+          {cols.map((c) => (
+            <div key={c.title}>
+              <div className="font-mono text-[10px] tracking-[0.22em] text-zinc-600">{c.title}</div>
+              <ul className="mt-3 space-y-2.5">
+                {c.links.map((l) => (
+                  <li key={l.label}>
+                    <a href={l.href} className="footer-link">{l.label}</a>
+                  </li>
+                ))}
+              </ul>
+            </div>
+          ))}
+        </div>
+      </div>
+
+      {/* giant outline */}
+      <div className="footer-giant" aria-hidden="true">VTX—VTX—VTX</div>
+
+      <div className="relative border-t border-white/10">
+        <div className="mx-auto max-w-[1440px] px-4 sm:px-8 py-5 flex flex-col sm:flex-row items-center justify-between gap-3 font-mono text-[11px] text-zinc-600">
+          <span>© 2026 OEVORTEX · BUILT LEAN · SHIPPED MEAN</span>
+          <div className="flex items-center gap-3">
+            <span className="hidden sm:inline">python 3.12+ · linux/mac/win</span>
+            <button
+              onClick={() => window.scrollTo({ top: 0, behavior: "smooth" })}
+              className="inline-flex items-center gap-1.5 rounded-lg border border-white/10 px-3 py-1.5 text-zinc-400 hover:text-black hover:bg-lime-400 hover:border-lime-400 transition-all"
+              aria-label="Back to top"
+            >
+              TOP <ArrowUp size={12} weight="bold" />
+            </button>
+          </div>
         </div>
       </div>
     </footer>

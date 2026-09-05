@@ -4,6 +4,7 @@ from typing import Any, ClassVar, cast
 from vtx.coding_agent.config import config, reset_config
 from vtx.coding_agent.runtime import ConversationRuntime
 from vtx.tui.commands import CommandsMixin
+from vtx.tui.widgets import CompactFooter
 from vtx.tui.floating_list import ListItem
 from vtx.tui.selection_mode import SelectionMode
 
@@ -79,7 +80,7 @@ class FakeSession:
 class FakeCommands(CommandsMixin):
     def __init__(self) -> None:
         self.chat = FakeChat()
-        self.info_bar = FakeInfoBar()
+        self.footer = CompactFooter()
         self.completion_list = FakeFloatingList()
         self.input_box = FakeInputBox()
         self._provider = cast(Any, FakeProvider())
@@ -106,8 +107,8 @@ class FakeCommands(CommandsMixin):
     def query_one(self, selector, widget_type):
         if selector == "#chat-log":
             return self.chat
-        if selector == "#info-bar":
-            return self.info_bar
+        if selector == "#compact-footer":
+            return self.footer
         if selector == "#completion-list":
             return self.completion_list
         if selector == "#input-box":
@@ -149,7 +150,7 @@ def test_thinking_command_with_argument_updates_current_session_only():
     assert provider.thinking_level == "high"
     assert fake._thinking_level == "high"
     assert session.thinking_levels == ["high"]
-    assert fake.info_bar.thinking_levels == ["high"]
+    assert fake.footer._thinking_level == "high"
     assert fake.applied_thinking_levels == ["high"]
     assert fake.chat.statuses == ["Thinking level changed to high"]
 

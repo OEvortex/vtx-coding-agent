@@ -1,12 +1,10 @@
 import { useState, useEffect, lazy, Suspense } from "react";
 import Navbar from "./components/Navbar";
-import Hero from "./components/Hero";
-import LiveStats from "./components/LiveStats";
-import ProviderMarquee from "./components/ProviderMarquee";
-import Why from "./components/Why";
-import Capabilities from "./components/Capabilities";
-import Architecture from "./components/Architecture";
-import CTASection from "./components/CTASection";
+import HeroInsane from "./components/HeroInsane";
+import ToolArsenal from "./components/ToolArsenal";
+import TokenWar from "./components/TokenWar";
+import ProviderWall from "./components/ProviderWall";
+import InstallRave from "./components/InstallRave";
 import Footer from "./components/Footer";
 import ScrollProgress from "./components/ScrollProgress";
 import NotFound from "./components/NotFound";
@@ -29,13 +27,11 @@ function LandingPage() {
       <ScrollProgress />
       <Navbar />
       <main>
-        <Hero />
-        <LiveStats />
-        <ProviderMarquee />
-        <Why />
-        <Capabilities />
-        <Architecture />
-        <CTASection />
+        <HeroInsane />
+        <ToolArsenal />
+        <TokenWar />
+        <ProviderWall />
+        <InstallRave />
       </main>
       <Footer />
     </div>
