@@ -201,3 +201,50 @@ def test_notifications_command_without_argument_opens_picker(tmp_path, monkeypat
         ("on", "on", "play notification sounds"),
         ("off", "off ✓", "disable notification sounds"),
     ]
+
+
+def test_thinking_command_unmapped_reasoning_model_shows_only_default(monkeypatch):
+    from vtx.ai.models import ApiType, Model
+
+    fake = FakeCommands()
+    fake._runtime.model = "reasoning-unmapped"
+    fake._runtime.model_provider = "fake"
+    test_model = Model(
+        id="reasoning-unmapped",
+        provider="fake",
+        api=ApiType(ApiType.OPENAI_SDK),
+        base_url="https://api.example.com",
+        max_tokens=4096,
+        supports_images=False,
+        supports_thinking=True,
+        thinking_level_map=None,
+    )
+    monkeypatch.setattr("vtx.ai.agent.runtime.get_model", lambda *args, **kwargs: test_model)
+
+    assert fake._runtime.effective_thinking_levels == ["default"]
+    fake._handle_thinking_command("")
+    assert [(item.value, item.label) for item in fake.completion_list.items] == [
+        ("default", "default")
+    ]
+
+
+def test_thinking_command_non_thinking_model_shows_only_none(monkeypatch):
+    from vtx.ai.models import ApiType, Model
+
+    fake = FakeCommands()
+    fake._runtime.model = "non-reasoning"
+    fake._runtime.model_provider = "fake"
+    test_model = Model(
+        id="non-reasoning",
+        provider="fake",
+        api=ApiType(ApiType.OPENAI_SDK),
+        base_url="https://api.example.com",
+        max_tokens=4096,
+        supports_images=False,
+        supports_thinking=False,
+    )
+    monkeypatch.setattr("vtx.ai.agent.runtime.get_model", lambda *args, **kwargs: test_model)
+
+    assert fake._runtime.effective_thinking_levels == ["none"]
+    fake._handle_thinking_command("")
+    assert [(item.value, item.label) for item in fake.completion_list.items] == [("none", "none")]

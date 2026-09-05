@@ -21,7 +21,6 @@ from vtx.ai import (
     get_provider_status,
     get_valid_codex_token_sync,
     get_valid_copilot_token_sync,
-    get_valid_openai_token_sync,
     list_providers,
 )
 from vtx.ai.provider_catalog import is_provider_configured
@@ -46,6 +45,7 @@ def test_oauth_providers_in_catalog():
     slugs = {p.slug for p in providers}
     assert "github-copilot" in slugs
     assert "cline" in slugs
+    assert "codex" in slugs
     assert "openai" in slugs
 
     copilot = get_provider_info("github-copilot")
@@ -61,10 +61,17 @@ def test_oauth_providers_in_catalog():
     assert cline.display_name == "Cline"
     assert cline.base_url == "https://api.cline.bot/v1"
 
+    codex = get_provider_info("codex")
+    assert codex is not None
+    assert codex.slug == "codex"
+    assert codex.display_name == "OpenAI Codex"
+    assert codex.base_url == "https://api.openai.com/v1"
+
 
 def test_oauth_providers_in_dynamic_providers():
     assert "github-copilot" in DYNAMIC_PROVIDERS
     assert "cline" in DYNAMIC_PROVIDERS
+    assert "codex" in DYNAMIC_PROVIDERS
 
     copilot_cfg = DYNAMIC_PROVIDERS["github-copilot"]
     assert copilot_cfg.base_url == "https://api.individual.githubcopilot.com"
@@ -72,6 +79,9 @@ def test_oauth_providers_in_dynamic_providers():
 
     cline_cfg = DYNAMIC_PROVIDERS["cline"]
     assert cline_cfg.base_url == "https://api.cline.bot/v1"
+
+    codex_cfg = DYNAMIC_PROVIDERS["codex"]
+    assert codex_cfg.base_url == "https://api.openai.com/v1"
 
 
 def test_copilot_dynamic_api_key_and_status(tmp_path: Path):
@@ -144,15 +154,18 @@ def test_codex_oauth_dynamic_api_key_and_status(tmp_path: Path, monkeypatch):
 
     token = get_valid_codex_token_sync()
     assert token == "codex-oauth-access-token"
-    assert get_valid_openai_token_sync() == "codex-oauth-access-token"
 
-    dyn_token = get_dynamic_api_key("openai")
+    dyn_token = get_dynamic_api_key("codex")
     assert dyn_token == "codex-oauth-access-token"
 
-    status = get_provider_status("openai")
+    status = get_provider_status("codex")
     assert status is not None
     assert status.has_stored_key is True
     assert status.is_configured is True
+
+    codex_info = get_provider_info("codex")
+    assert codex_info is not None
+    assert is_provider_configured(codex_info) is True
 
 
 def test_detect_provider_from_env_with_copilot_oauth(tmp_path: Path, monkeypatch):
@@ -193,6 +206,28 @@ def test_detect_provider_from_env_with_cline_oauth(tmp_path: Path, monkeypatch):
 
     detected = detect_provider_from_env()
     assert detected.slug == "cline"
+
+
+def test_detect_provider_from_env_with_codex_oauth(tmp_path: Path, monkeypatch):
+    monkeypatch.delenv("VTX_PROVIDER", raising=False)
+    monkeypatch.delenv("OPENAI_API_KEY", raising=False)
+    monkeypatch.delenv("ANTHROPIC_API_KEY", raising=False)
+    monkeypatch.delenv("DEEPSEEK_API_KEY", raising=False)
+
+    creds_file = tmp_path / "codex_auth.json"
+    creds_file.write_text(
+        json.dumps(
+            {
+                "access": "codex-access",
+                "refresh": "codex-refresh",
+                "expires": 9999999999000,
+                "account_id": "acc-123",
+            }
+        )
+    )
+
+    detected = detect_provider_from_env()
+    assert detected.slug == "codex"
 
 
 def test_openai_sdk_provider_with_copilot(tmp_path: Path, monkeypatch):

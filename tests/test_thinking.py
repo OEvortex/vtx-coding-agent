@@ -253,6 +253,14 @@ def test_no_map_whitelisted_slug_still_sends():
     assert kwargs["reasoning_effort"] == "high"
 
 
+def test_default_level_omits_reasoning_effort():
+    sdk = _sdk("openai-codex")
+    kwargs: dict = {}
+    sdk._apply_thinking_kwargs(kwargs, GenerationConfig(model="m", thinking_level="default"))
+    assert "reasoning_effort" not in kwargs
+    assert "reasoning" not in kwargs
+
+
 def test_token_limits_stores_thinking_level_map():
     from vtx.ai.context_length import ContextLengthManager
 

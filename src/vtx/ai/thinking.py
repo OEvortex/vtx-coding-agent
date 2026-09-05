@@ -178,9 +178,11 @@ def resolve_reasoning_params(
 
     ``level`` of ``None``/``"none"``/``"off"`` means "model default" and
     resolves to ``{}``. An explicit ``None`` in ``level_map`` marks the
+    ``level`` of ``None``/``"none"``/``"off"``/``"default"`` means "model default"
+    and resolves to ``{}``. An explicit ``None`` in ``level_map`` marks the
     level unsupported and also resolves to ``{}``.
     """
-    if level is None or level in ("none", "off"):
+    if level is None or level in ("none", "off", "default"):
         return {}
 
     if style == ANTHROPIC_MESSAGES:

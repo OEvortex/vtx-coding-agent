@@ -187,6 +187,21 @@ def _get_builtin_oauth_providers() -> dict[str, ProviderInfo]:
             models_endpoint="/models",
             headers={},
         ),
+        "codex": ProviderInfo(
+            slug="codex",
+            display_name="OpenAI Codex",
+            description="OpenAI Codex OAuth provider.",
+            family="openai_compat",
+            base_url="https://api.openai.com/v1",
+            api_key_env="OPENAI_API_KEY",
+            known_models=(),
+            supports_tools=True,
+            supports_vision=True,
+            supports_thinking=True,
+            fetch_models=True,
+            models_endpoint="/models",
+            headers={},
+        ),
     }
 
 
@@ -266,7 +281,7 @@ def detect_provider_from_env() -> ProviderInfo:
                     return p
             except Exception:
                 pass
-        elif slug in ("openai", "codex"):
+        elif slug == "codex":
             try:
                 from vtx.ai.oauth.codex import is_codex_logged_in
 
@@ -302,14 +317,13 @@ def is_provider_configured(p: ProviderInfo) -> bool:
             return is_copilot_logged_in()
         except Exception:
             return False
-    if p.slug in ("openai", "codex"):
+    if p.slug == "codex":
         try:
             from vtx.ai.oauth.codex import is_codex_logged_in
 
-            if is_codex_logged_in():
-                return True
+            return is_codex_logged_in()
         except Exception:
-            pass
+            return False
     from vtx.ai.oauth.dynamic import has_api_key
 
     if has_api_key(p.slug):

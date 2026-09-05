@@ -41,3 +41,4 @@ indexes the current directory (or pass --root <dir>).
   vortexa explain "<file>:<line>|<symbol>"   # deep dive into a known location
 
 Install: pip install vortexa  (add [full] for tree-sitter AST chunking).
+query should always be a deatiled NLP query, not a simple string. For example, "functions that call `foo` and are called by `bar`" is a good query, while "foo" is not.

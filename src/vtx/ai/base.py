@@ -267,7 +267,7 @@ class BaseProvider(ABC):
         return self.config.thinking_level
 
     def set_thinking_level(self, level: str) -> None:
-        if level not in self.thinking_levels:
+        if level not in self.thinking_levels and level != "default":
             raise ValueError(
                 f"Invalid thinking level '{level}' for {self.name}. "
                 f"Valid levels: {self.thinking_levels}"

@@ -927,6 +927,9 @@ class ConversationRuntime:
         only for models that advertise them. Non-thinking models collapse
         to ``["none"]``; models without map data keep the provider-level
         OpenAI-style effort enum.
+        only for models that advertise them. If the model supports thinking
+        but no effort options are declared, only ``["default"]`` is valid.
+        Non-thinking models collapse to ``["none"]``.
         """
         if self.provider is None:
             return []
@@ -942,6 +945,16 @@ class ConversationRuntime:
             if levels != ["off"]:
                 # VTX vocabulary uses "none" for the off level.
                 return ["none" if lvl == "off" else lvl for lvl in levels]
+            level_map = getattr(info, "thinking_level_map", None)
+            if level_map:
+                levels = get_supported_thinking_levels(
+                    reasoning=True, thinking_level_map=level_map
+                )
+                if levels != ["off"]:
+                    # VTX vocabulary uses "none" for the off level.
+                    return ["none" if lvl == "off" else lvl for lvl in levels]
+            # Thinking model with no explicit effort levels defined: default only.
+            return ["default"]
 
         if not self.model_supports_thinking:
             return ["none"]

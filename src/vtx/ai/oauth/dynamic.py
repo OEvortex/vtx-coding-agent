@@ -230,7 +230,7 @@ def get_dynamic_api_key(provider: str) -> str | None:
         except Exception:
             pass
 
-    if provider in ("openai", "codex", "openai-codex"):
+    if provider == "codex":
         try:
             from vtx.ai.oauth.codex import get_valid_codex_token_sync, load_codex_credentials
 
@@ -261,7 +261,7 @@ def _check_oauth_stored(provider: str) -> bool:
             return is_cline_logged_in()
         except Exception:
             return False
-    if provider in ("openai", "codex", "openai-codex"):
+    if provider == "codex":
         try:
             from vtx.ai.oauth.codex import is_codex_logged_in
 

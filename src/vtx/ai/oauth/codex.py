@@ -1,5 +1,5 @@
 """
-OpenAI OAuth flow (ChatGPT/Codex-style OAuth).
+OpenAI Codex OAuth flow.
 
 Stores OAuth credentials locally and provides token refresh support.
 """
@@ -27,8 +27,8 @@ _REDIRECT_URI = "http://localhost:1455/auth/callback"
 _SCOPE = "openid profile email offline_access"
 _JWT_CLAIM_PATH = "https://api.openai.com/auth"
 _SUCCESS_HTML = """<!doctype html>
-<html lang=\"en\">
-<head><meta charset=\"utf-8\" /><title>Authentication successful</title></head>
+<html lang="en">
+<head><meta charset="utf-8" /><title>Authentication successful</title></head>
 <body><p>Authentication successful. Return to your terminal to continue.</p></body>
 </html>"""
 
@@ -41,9 +41,6 @@ class CodexCredentials:
     account_id: str
 
 
-OpenAICredentials = CodexCredentials
-
-
 def get_codex_auth_path() -> Path:
     preferred = get_config_dir() / "codex_auth.json"
     if preferred.exists():
@@ -52,9 +49,6 @@ def get_codex_auth_path() -> Path:
     if legacy.exists():
         return legacy
     return preferred
-
-
-get_openai_auth_path = get_codex_auth_path
 
 
 def load_codex_credentials() -> CodexCredentials | None:
@@ -74,9 +68,6 @@ def load_codex_credentials() -> CodexCredentials | None:
         return None
 
 
-load_openai_credentials = load_codex_credentials
-
-
 def save_codex_credentials(creds: CodexCredentials) -> None:
     path = get_config_dir() / "codex_auth.json"
     path.parent.mkdir(parents=True, exist_ok=True)
@@ -94,9 +85,6 @@ def save_codex_credentials(creds: CodexCredentials) -> None:
     path.chmod(0o600)
 
 
-save_openai_credentials = save_codex_credentials
-
-
 def clear_codex_credentials() -> None:
     for filename in ("codex_auth.json", "openai_auth.json"):
         path = get_config_dir() / filename
@@ -104,14 +92,8 @@ def clear_codex_credentials() -> None:
             path.unlink()
 
 
-clear_openai_credentials = clear_codex_credentials
-
-
 def is_codex_logged_in() -> bool:
     return load_codex_credentials() is not None
-
-
-is_openai_logged_in = is_codex_logged_in
 
 
 def _base64url_encode(data: bytes) -> str:
@@ -172,7 +154,7 @@ def _build_authorize_url(code_challenge: str, state: str, originator: str) -> st
     return f"{_AUTHORIZE_URL}?{query}"
 
 
-async def _exchange_code_for_tokens(code: str, verifier: str) -> OpenAICredentials:
+async def _exchange_code_for_tokens(code: str, verifier: str) -> CodexCredentials:
     async with (
         aiohttp.ClientSession() as session,
         session.post(
@@ -189,7 +171,9 @@ async def _exchange_code_for_tokens(code: str, verifier: str) -> OpenAICredentia
     ):
         if response.status >= 400:
             text = await response.text()
-            raise RuntimeError(f"OpenAI OAuth token exchange failed ({response.status}): {text}")
+            raise RuntimeError(
+                f"OpenAI Codex OAuth token exchange failed ({response.status}): {text}"
+            )
         data = await response.json()
 
     access = data.get("access_token")
@@ -200,13 +184,13 @@ async def _exchange_code_for_tokens(code: str, verifier: str) -> OpenAICredentia
         or not isinstance(refresh, str)
         or not isinstance(expires_in, int)
     ):
-        raise RuntimeError("OpenAI OAuth token response missing required fields")
+        raise RuntimeError("OpenAI Codex OAuth token response missing required fields")
 
     account_id = _extract_account_id(access)
     if not account_id:
-        raise RuntimeError("Failed to extract chatgpt_account_id from OpenAI OAuth token")
+        raise RuntimeError("Failed to extract chatgpt_account_id from OpenAI Codex OAuth token")
 
-    return OpenAICredentials(
+    return CodexCredentials(
         access=access,
         refresh=refresh,
         expires=int(time.time() * 1000) + expires_in * 1000,
@@ -290,7 +274,7 @@ def _parse_manual_input(input_text: str) -> tuple[str | None, str | None]:
 
 async def login(
     on_auth_url: Any | None = None, on_manual_input: Any | None = None, originator: str = "vtx"
-) -> OpenAICredentials:
+) -> CodexCredentials:
     verifier, challenge = _generate_pkce()
     state = _create_state()
     auth_url = _build_authorize_url(challenge, state, originator)
@@ -314,7 +298,7 @@ async def login(
 
         if not callback_awaitable and not manual_task:
             raise RuntimeError(
-                "OpenAI OAuth failed: could not start callback server on port 1455 "
+                "OpenAI Codex OAuth failed: could not start callback server on port 1455 "
                 "and no manual input handler provided."
             )
 
@@ -331,7 +315,7 @@ async def login(
                 manual_input = manual_task.result()
                 parsed_code, parsed_state = _parse_manual_input(str(manual_input))
                 if parsed_state and parsed_state != state:
-                    raise RuntimeError("OpenAI OAuth state mismatch")
+                    raise RuntimeError("OpenAI Codex OAuth state mismatch")
                 code = parsed_code
 
         elif callback_awaitable:
@@ -341,12 +325,12 @@ async def login(
             manual_input = await manual_task
             parsed_code, parsed_state = _parse_manual_input(str(manual_input))
             if parsed_state and parsed_state != state:
-                raise RuntimeError("OpenAI OAuth state mismatch")
+                raise RuntimeError("OpenAI Codex OAuth state mismatch")
             code = parsed_code
 
         if not code:
             raise TimeoutError(
-                "OpenAI OAuth timed out waiting for authorization callback on port 1455."
+                "OpenAI Codex OAuth timed out waiting for authorization callback on port 1455."
             )
 
         creds = await _exchange_code_for_tokens(code, verifier)
@@ -365,7 +349,6 @@ async def login(
 
 
 codex_login = login
-openai_login = login
 
 
 async def refresh_codex_token(creds: CodexCredentials) -> CodexCredentials:
@@ -412,9 +395,6 @@ async def refresh_codex_token(creds: CodexCredentials) -> CodexCredentials:
     return refreshed
 
 
-refresh_openai_token = refresh_codex_token
-
-
 async def get_valid_codex_credentials() -> CodexCredentials | None:
     creds = load_codex_credentials()
     if not creds:
@@ -429,15 +409,9 @@ async def get_valid_codex_credentials() -> CodexCredentials | None:
     return creds
 
 
-get_valid_openai_credentials = get_valid_codex_credentials
-
-
 async def get_valid_codex_token() -> str | None:
     creds = await get_valid_codex_credentials()
     return creds.access if creds else None
-
-
-get_valid_openai_token = get_valid_codex_token
 
 
 def get_valid_codex_token_sync() -> str | None:
@@ -454,6 +428,3 @@ def get_valid_codex_token_sync() -> str | None:
     if creds and creds.access:
         return creds.access
     return None
-
-
-get_valid_openai_token_sync = get_valid_codex_token_sync

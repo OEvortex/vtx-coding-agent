@@ -23,23 +23,23 @@ from __future__ import annotations
 from vtx.ai import (
     clear_api_key,
     clear_cline_credentials,
+    clear_codex_credentials,
     clear_copilot_credentials,
-    clear_openai_credentials,
     cline_login,
+    codex_login,
     copilot_login,
     get_copilot_token,
     get_dynamic_api_key,
     get_provider_info,
     get_provider_status,
     get_valid_cline_credentials,
-    get_valid_openai_credentials,
+    get_valid_codex_credentials,
     list_providers,
-    openai_login,
     save_api_key,
 )
 from vtx.ai import is_cline_logged_in as has_saved_cline_credentials
+from vtx.ai import is_codex_logged_in as has_saved_codex_credentials
 from vtx.ai import is_copilot_logged_in as has_saved_copilot_credentials
-from vtx.ai import is_openai_logged_in as has_saved_openai_credentials
 from vtx.tui.chat import ChatLog
 from vtx.tui.commands.base import CommandSupport
 from vtx.tui.floating_list import ListItem
@@ -65,7 +65,7 @@ def _oauth_login_providers() -> list[tuple[str, str, bool]]:
     """(provider_id, display_name, has_saved_credentials) per OAuth flow in src/vtx/ai/oauth."""
     return [
         ("github-copilot", "GitHub Copilot", has_saved_copilot_credentials()),
-        ("openai", "OpenAI (ChatGPT/Codex)", has_saved_openai_credentials()),
+        ("codex", "OpenAI Codex", has_saved_codex_credentials()),
         ("cline", "Cline (WorkOS)", has_saved_cline_credentials()),
     ]
 
@@ -134,8 +134,8 @@ class AuthCommands(CommandSupport):
             self.run_worker(self._copilot_login_flow(), exclusive=False)
             return
 
-        if provider_id == "openai":
-            self.run_worker(self._openai_login_flow(), exclusive=False)
+        if provider_id == "codex":
+            self.run_worker(self._codex_login_flow(), exclusive=False)
             return
 
         if provider_id == "cline":
@@ -348,37 +348,35 @@ class AuthCommands(CommandSupport):
         except Exception as e:
             chat.add_info_message(f"Login failed: {e}", error=True)
 
-    async def _openai_login_flow(self) -> None:
+    async def _codex_login_flow(self) -> None:
         import webbrowser
 
         chat = self.query_one("#chat-log", ChatLog)
-        had_saved_credentials = has_saved_openai_credentials()
+        had_saved_credentials = has_saved_codex_credentials()
 
         def on_auth_url(url: str) -> None:
             webbrowser.open(url)
             self.call_later(
                 chat.add_info_message,
-                "Opening browser for OpenAI OAuth...\n"
+                "Opening browser for OpenAI Codex OAuth...\n"
                 f"If browser does not open, visit:\n{url}\n\n"
                 "Waiting for authorization callback on http://localhost:1455/auth/callback ...",
             )
 
         try:
-            if await get_valid_openai_credentials():
-                chat.add_info_message("Already logged in to OpenAI")
+            if await get_valid_codex_credentials():
+                chat.add_info_message("Already logged in to OpenAI Codex")
                 return
 
             if had_saved_credentials:
-                chat.add_info_message(
-                    "Your saved OpenAI session is no longer valid.", warning=True
-                )
+                chat.add_info_message("Your saved Codex session is no longer valid.", warning=True)
             else:
-                chat.add_info_message("Starting OpenAI login...")
+                chat.add_info_message("Starting OpenAI Codex login...")
 
-            await openai_login(on_auth_url=on_auth_url)
+            await codex_login(on_auth_url=on_auth_url)
             chat.add_info_message(
-                "Successfully logged in to OpenAI!\n"
-                "You can now use /model to select openai-codex models."
+                "Successfully logged in to OpenAI Codex!\n"
+                "You can now use /model to select Codex models."
             )
         except Exception as e:
             chat.add_info_message(f"Login failed: {e}", error=True)
@@ -430,8 +428,8 @@ class AuthCommands(CommandSupport):
 
         if has_saved_copilot_credentials():
             items.append(ListItem(value="github-copilot", label="GitHub Copilot", description=""))
-        if has_saved_openai_credentials():
-            items.append(ListItem(value="openai", label="OpenAI (ChatGPT/Codex)", description=""))
+        if has_saved_codex_credentials():
+            items.append(ListItem(value="codex", label="OpenAI Codex", description=""))
         if has_saved_cline_credentials():
             items.append(ListItem(value="cline", label="Cline (WorkOS)", description=""))
 
@@ -457,9 +455,9 @@ class AuthCommands(CommandSupport):
             chat.add_info_message("Logged out of GitHub Copilot")
             return
 
-        if provider_id == "openai":
-            clear_openai_credentials()
-            chat.add_info_message("Logged out of OpenAI")
+        if provider_id == "codex":
+            clear_codex_credentials()
+            chat.add_info_message("Logged out of OpenAI Codex")
             return
 
         if provider_id == "cline":
