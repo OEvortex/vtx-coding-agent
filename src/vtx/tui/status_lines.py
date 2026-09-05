@@ -258,6 +258,19 @@ TOOL_STATUS_LINES: dict[str, tuple[str, ...]] = {
     ),
 }
 
+RECAP_STATUS_LINES: tuple[str, ...] = (
+    "Piecing together what you've been up to...",
+    "Connecting the dots across this session...",
+    "Replaying the highlights of this conversation...",
+    "Figuring out what to say so you don't have to scroll...",
+    "Summarizing the chaos you've created...",
+    "Distilling this session into a sensible takeaway...",
+    "Rewinding through the last few tool calls...",
+    "Catching you up before you dive back in...",
+    "Scanning the trail of breadcrumbs you left...",
+    "Turning this session into a sensible summary...",
+)
+
 # ---------------------------------------------------------------------------
 # Per-Tool Error Lines (10+ lines each)
 # ---------------------------------------------------------------------------
@@ -469,6 +482,11 @@ def pick_tool_error_line(tool_name: str, exclude: str | None = None) -> str:
     return _pick_from_pool(pool, exclude=exclude)
 
 
+def pick_recap_status_line(exclude: str | None = None) -> str:
+    """Pick a witty status line for the recap spinner."""
+    return _pick_from_pool(RECAP_STATUS_LINES, exclude=exclude)
+
+
 def pick_witty_line(
     exclude: str | None = None,
     *,
@@ -481,6 +499,8 @@ def pick_witty_line(
         if is_error:
             return pick_tool_error_line(tool_name, exclude=exclude)
         return pick_tool_status_line(tool_name, exclude=exclude)
+    if state == "recap":
+        return pick_recap_status_line(exclude=exclude)
     if state:
         return pick_agent_status_line(state, exclude=exclude)
     if not WITTY_STATUS_LINES:

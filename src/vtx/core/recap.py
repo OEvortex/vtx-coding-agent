@@ -124,10 +124,10 @@ def build_recap_context(
 def has_meaningful_activity(messages: list[Message]) -> bool:
     """True when anything substantive happened since the last user message.
 
-    Any assistant text, tool call or tool result counts — only completely
-    empty tails (e.g. a bare interrupt with no response) are skipped so we
-    never draft a recap for a turn that produced nothing.
+    Any non-empty assistant text counts immediately. Tool calls require at
+    least 3 invocations so recap is not drafted after a single lookup.
     """
+    MIN_TOOL_CALLS = 3
     last_user_idx = -1
     for i in range(len(messages) - 1, -1, -1):
         if isinstance(messages[i], UserMessage):
@@ -135,13 +135,17 @@ def has_meaningful_activity(messages: list[Message]) -> bool:
             break
 
     tail = messages[last_user_idx + 1 :] if last_user_idx >= 0 else messages
+    tool_call_count = 0
     for message in tail:
         if isinstance(message, AssistantMessage):
             if message_text(message).strip():
                 return True
-            if any(part.type == "tool_call" for part in message.content):
-                return True
+            tool_call_count += sum(
+                1 for part in message.content if getattr(part, "type", None) == "tool_call"
+            )
         elif isinstance(message, ToolResultMessage):
+            tool_call_count += 1
+        if tool_call_count >= MIN_TOOL_CALLS:
             return True
     return False
 

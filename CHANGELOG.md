@@ -17,11 +17,14 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 ### Changed
 - **General Harness & TUI Architecture Decoupling** — `vtx.ai`, `vtx.core`, and `vtx.tui` are completely decoupled from `vtx.coding_agent`. Built-in coding tools, prompts, and coding skills now reside exclusively in `vtx.coding_agent`, while `vtx.ai` provides the general agent harness (runtime, background task manager, dynamic tool registry, goal system, and skills sync engine).
 - **Witty-line rotation cadence** — `WITTY_ROTATE_EVERY_TICKS` raised from `12` to `20` (3s instead of 1.8s at 0.15s/tick) in both the chat spinner and the bottom status line.
+- **Gitlawb Opengateway dynamic model fetching** — removed hardcoded `known_models` from the `opengateway` provider and enabled `openmodelendpoint: true` so its model catalog is fetched dynamically from `https://opengateway.gitlawb.com/v1/models`.
 
 ### Fixed
 - **Coding agent startup tool resolution** — fixed an issue where starting `vtx` only loaded harness-builtin tools by ensuring `vtx.coding_agent` auto-registers its concrete coding tools (`read`, `edit`, `write`, `bash`, `find`, `grep`, `skill`) into the harness tool registry on package and CLI entrypoint initialization.
 - **Sub-agent context-window wiring** — Task-tool sub-agents now apply the active model's real context window and max output tokens (same catalog lookup as the main agent), so overflow auto-compaction triggers at the correct threshold instead of the harness default. Fixes sub-agent runs dying with `context_length_exceeded` (e.g. a 414k-token request against a 262k window) on models whose window differs from the default.
 - **Goal completion auditor freeze & provider resolution** — resolved an issue where models could get stuck when completing goals (`goal(action="update", status="complete")`). The completion auditor now reuses the session's active provider instance directly, correctly resolves dynamic models and custom base URLs, clamps reasoning/thinking levels to supported values, and parses multi-turn auditor verdict markers reliably.
+- **Recap throttling** — idle session recaps now require at least 3 tool calls before drafting a summary, preventing noisy recaps after trivial single-tool lookups.
+- **Recap witty status lines** — the recap spinner now uses a dedicated pool of witty context-aware lines instead of a static `Drafting recap...` string.
 
 ## [1.1.0] - 2026-08-26
 

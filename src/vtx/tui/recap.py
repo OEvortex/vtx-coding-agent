@@ -23,6 +23,7 @@ from vtx.core.recap import (
 )
 from vtx.core.types import TextContent, UserMessage
 from vtx.tui.chat import ChatLog
+from vtx.tui.status_lines import pick_recap_status_line
 
 if TYPE_CHECKING:
     from textual.worker import Worker
@@ -143,7 +144,7 @@ class RecapMixin:
                 return
 
         chat = self.query_one("#chat-log", ChatLog)
-        chat.show_spinner_status("Drafting recap...")
+        chat.show_spinner_status(pick_recap_status_line(), state="recap")
 
         try:
             recap = await generate_recap(context, provider)

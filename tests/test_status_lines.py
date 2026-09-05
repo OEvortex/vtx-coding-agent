@@ -2,10 +2,12 @@ from __future__ import annotations
 
 from vtx.tui.status_lines import (
     AGENT_STATUS_LINES,
+    RECAP_STATUS_LINES,
     TOOL_ERROR_LINES,
     TOOL_STATUS_LINES,
     WITTY_STATUS_LINES,
     pick_agent_status_line,
+    pick_recap_status_line,
     pick_tool_error_line,
     pick_tool_status_line,
     pick_witty_line,
@@ -107,3 +109,18 @@ def test_witty_line_exclusion() -> None:
     picked = pick_tool_status_line("read", exclude=first)
     assert picked != first
     assert picked in pool
+
+
+def test_recap_status_lines_have_at_least_10_entries() -> None:
+    assert len(RECAP_STATUS_LINES) >= 10
+
+
+def test_pick_recap_status_line() -> None:
+    line = pick_recap_status_line()
+    assert line
+    assert line in RECAP_STATUS_LINES
+
+
+def test_pick_witty_line_recap_state() -> None:
+    line = pick_witty_line(state="recap")
+    assert line in RECAP_STATUS_LINES

@@ -7,6 +7,7 @@ and modern loaded-resource chips.
 from __future__ import annotations
 
 import math
+import os
 
 try:
     import vtx.tui.chat as _chat
@@ -103,7 +104,6 @@ def _patched_add_session_info(self: _chat.ChatLog, version: str) -> None:
         if hasattr(child, "has_class") and child.has_class("session-info"):
             child.remove()
 
-    info_text = Text()
     accent = config.ui.colors.accent
     dim = config.ui.colors.dim
     muted = config.ui.colors.muted
@@ -112,44 +112,77 @@ def _patched_add_session_info(self: _chat.ChatLog, version: str) -> None:
     accent_rgb = _hex_to_rgb(accent)
     palette = _build_gradient_palette(accent_rgb, steps=24)
 
-    # 1. Gradient block-art logo with side details
+    llm = getattr(config, "llm", None)
+    model = (getattr(llm, "default_model", "") or "").strip()
+    provider = (getattr(llm, "default_provider", "") or "").strip()
+    theme = getattr(getattr(config, "ui", None), "theme", "") or ""
+    workspace = os.path.basename(os.getcwd()) or "~"
+
+    info_text = Text()
+
+    # 1. Gradient block-art logo with a refined side info panel
     for row_idx, line in enumerate(_LOGO_LINES):
         span = max(1, len(line) - 1)
+        rows = max(1, len(_LOGO_LINES) - 1)
         for col_idx, ch in enumerate(line):
             if ch == " ":
                 info_text.append(ch)
             else:
-                pos = (col_idx / span) + (row_idx * 0.12)
-                color = _sample_gradient(palette, pos)
-                info_text.append(ch, style=color)
+                pos = ((col_idx / span) + (row_idx / rows) * 0.55) * 0.72
+                info_text.append(ch, style=_sample_gradient(palette, pos))
 
-        # Side details on specific rows
+        # Side details aligned to specific logo rows
         if row_idx == 0:
-            info_text.append("   ■ openjarvis", style=f"bold {accent}")
-        elif row_idx == 1:
-            info_text.append("   [MODE] EDITOR · REALTIME STREAM", style=f"bold {muted}")
+            info_text.append("  ", style="")
+            info_text.append("●", style=f"bold {accent}")
+            info_text.append(" openjarvis", style=f"bold {accent}")
+            info_text.append(f"  v{_VERSION}", style=muted)
         elif row_idx == 2:
-            info_text.append("   ")
+            info_text.append("  ", style="")
+            info_text.append("✦", style=accent)
+            info_text.append("  Your personal intelligence", style=muted)
+        elif row_idx == 3:
+            info_text.append("  ", style="")
+            info_text.append("⚡", style=accent)
+            info_text.append("  Always on · realtime streaming", style=muted)
+        elif row_idx == 5:
+            info_text.append("  ", style="")
+            info_text.append("◆", style=accent)
+            info_text.append("  ", style="")
+            if provider or model:
+                if model:
+                    info_text.append(model, style=f"bold {accent}")
+                if provider:
+                    info_text.append(f"  {provider}", style=dim)
+            else:
+                info_text.append("no model configured", style=dim)
+        elif row_idx == 6:
+            info_text.append("  ", style="")
+            info_text.append("⌂", style=accent)
+            info_text.append(f"  {workspace}", style=muted)
+            if theme:
+                info_text.append(f"  ·  {theme}", style=dim)
+        elif row_idx == 7:
+            info_text.append("  ", style="")
             info_text.append("●", style=f"bold {success}")
             info_text.append(" ready", style=muted)
-            info_text.append(" · / commands · ! bash", style=dim)
-        elif row_idx == 3:
-            info_text.append(f"   v{_VERSION} · VTX-native code engine", style=dim)
 
         info_text.append("\n")
 
-    # 2. Editor workspace breadcrumb
-    info_text.append("\n")
-    info_text.append("╭─ [EDITOR WORKSPACE] ", style=f"bold {accent}")
-    info_text.append("─" * 38, style=dim)
-    info_text.append("\n")
-    info_text.append("│ ", style=dim)
-    info_text.append("✦ ", style=accent)
-    info_text.append("Editor Session Ready", style=f"bold {accent}")
-    info_text.append(" · realtime tool output streaming enabled\n", style=dim)
-    info_text.append("╰", style=dim)
-    info_text.append("─" * 60, style=dim)
-    info_text.append("\n")
+    # 2. Modern keyboard hint chips
+    if getattr(config.ui, "show_welcome_shortcuts", True):
+        chips = (
+            ("/", "commands"),
+            ("@", "files"),
+            ("!", "bash"),
+            ("esc", "interrupt"),
+            ("ctrl+c x2", "exit"),
+        )
+        for key, desc in chips:
+            info_text.append(" ", style="")
+            info_text.append(f" {key} ", style=f"bold {accent}")
+            info_text.append(f" {desc}  ", style=dim)
+        info_text.append("\n")
 
     info_text.rstrip()
     info_label = Label(info_text)
@@ -171,34 +204,46 @@ def _patched_add_loaded_resources(
 
     dim = config.ui.colors.dim
     muted = config.ui.colors.muted
-    notice_color = config.ui.colors.notice
     accent = config.ui.colors.accent
 
     text = Text()
 
     if tools:
-        text.append("◆ Resources\n", style=f"bold {accent}")
-        text.append("  [Tools] ", style=notice_color)
-        for i, tool in enumerate(tools):
-            if i:
-                text.append("  ", style=dim)
-            icon = _tool_icon(getattr(tool, "name", ""), tool)
-            text.append(icon, style=accent)
-            text.append(f" {getattr(tool, 'name', '')}", style=dim)
+        text.append("◆ ", style=f"bold {accent}")
+        text.append("Tools", style=f"bold {accent}")
+        text.append(f"  {len(tools)}", style=muted)
         text.append("\n")
+        for i, tool in enumerate(tools):
+            last = i == len(tools) - 1
+            text.append("  ╰─ " if last else "  ├─ ", style=dim)
+            icon = _tool_icon(getattr(tool, "name", ""), tool)
+            text.append(f"{icon} ", style=accent)
+            text.append(str(getattr(tool, "name", "")), style=muted)
+            if not last:
+                text.append("\n")
 
     if context_paths:
-        text.append("  [Context] ", style=notice_color)
-        for i, path in enumerate(context_paths):
-            if i:
-                text.append(" · ", style=dim)
-            text.append(f"{path}", style=dim)
+        if tools:
+            text.append("\n")
+        text.append("◆ ", style=f"bold {accent}")
+        text.append("Context", style=f"bold {accent}")
+        text.append(f"  {len(context_paths)}", style=muted)
         text.append("\n")
+        for i, path in enumerate(context_paths):
+            last = i == len(context_paths) - 1
+            text.append("  ╰─ " if last else "  ├─ ", style=dim)
+            text.append(str(path), style=muted)
+            if not last:
+                text.append("\n")
 
     if skills:
-        text.append("  [Skills] ", style=notice_color)
+        if tools or context_paths:
+            text.append("\n")
+        text.append("◆ ", style=f"bold {accent}")
+        text.append("Skills", style=f"bold {accent}")
+        text.append(f"  {len(skills)}", style=muted)
+        text.append("\n  ╰─ ", style=dim)
         text.append(", ".join(_SKILL_LABEL(skill) for skill in skills), style=muted)
-        text.append("\n")
 
     text.rstrip()
     label = Label(text)

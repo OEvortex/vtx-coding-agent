@@ -79,18 +79,48 @@ class TestBuildRecapContext:
 
 
 class TestHasMeaningfulActivity:
-    def test_tool_call_counts_as_activity(self):
+    def test_three_tool_calls_count_as_activity(self):
+        messages = [
+            UserMessage(content="go"),
+            AssistantMessage(
+                content=[
+                    ToolCall(id="t1", name="bash", arguments={"command": "ls"}),
+                    ToolCall(id="t2", name="read", arguments={"path": "x"}),
+                    ToolCall(id="t3", name="grep", arguments={"pattern": "y"}),
+                ]
+            ),
+        ]
+        assert has_meaningful_activity(messages)
+
+    def test_three_tool_results_count_as_activity(self):
+        messages = [
+            UserMessage(content="go"),
+            _tool_result("t1", "out1"),
+            _tool_result("t2", "out2"),
+            _tool_result("t3", "out3"),
+        ]
+        assert has_meaningful_activity(messages)
+
+    def test_one_tool_call_is_not_enough(self):
         messages = [
             UserMessage(content="go"),
             AssistantMessage(
                 content=[ToolCall(id="t1", name="bash", arguments={"command": "ls"})]
             ),
         ]
-        assert has_meaningful_activity(messages)
+        assert not has_meaningful_activity(messages)
 
-    def test_tool_result_counts_as_activity(self):
-        messages = [UserMessage(content="go"), _tool_result("t1", "out")]
-        assert has_meaningful_activity(messages)
+    def test_two_tool_calls_are_not_enough(self):
+        messages = [
+            UserMessage(content="go"),
+            AssistantMessage(
+                content=[
+                    ToolCall(id="t1", name="bash", arguments={"command": "ls"}),
+                    ToolCall(id="t2", name="read", arguments={"path": "x"}),
+                ]
+            ),
+        ]
+        assert not has_meaningful_activity(messages)
 
     def test_short_assistant_text_is_activity(self):
         messages = [UserMessage(content="go"), _assistant("done")]

@@ -112,17 +112,7 @@ providers:
     family: openai_compat
     base_url: https://opengateway.gitlawb.com/v1
     api_key_env: OPENGATEWAY_API_KEY
-    known_models:
-      - auto
-      - mimo-v2.5-pro
-      - mimo-v2.5
-      - mimo-v2-flash
-      - google/gemini-3.1-flash-lite
-      - minimax/minimax-m3
-      - qwen/qwen3.7-max
-      - z-ai/glm-5.2
-      - nvidia/nemotron-3-ultra-550b-a55b:free
-      - tencent/hy3
+    openmodelendpoint: true
     fetch_models: true
     models_endpoint: /models
     model_parser:
