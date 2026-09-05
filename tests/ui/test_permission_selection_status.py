@@ -1,4 +1,6 @@
 from vtx.coding_agent.config import _read_config_data, config, reset_config
+from vtx.ai.config import _read_config_data
+from vtx.coding_agent.config import config, reset_config
 from vtx.tui.commands import CommandsMixin
 
 
@@ -27,6 +29,7 @@ class FakeCommands(CommandsMixin):
         if selector == "#chat-log":
             return self.chat
         if selector == "#info-bar":
+        if selector in ("#info-bar", "#compact-footer"):
             return self.info_bar
         raise AssertionError(f"Unexpected selector: {selector}")
 
