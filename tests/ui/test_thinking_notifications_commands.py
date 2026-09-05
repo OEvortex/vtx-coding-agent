@@ -4,9 +4,9 @@ from typing import Any, ClassVar, cast
 from vtx.coding_agent.config import config, reset_config
 from vtx.coding_agent.runtime import ConversationRuntime
 from vtx.tui.commands import CommandsMixin
-from vtx.tui.widgets import CompactFooter
 from vtx.tui.floating_list import ListItem
 from vtx.tui.selection_mode import SelectionMode
+from vtx.tui.widgets import CompactFooter
 
 
 class FakeChat:

@@ -611,9 +611,9 @@ class Vtx(
 
         self._flush_launch_warnings(chat)
 
-        info_bar = self.query_one("#compact-footer", CompactFooter)
-        info_bar.set_model(self._runtime.model, self._runtime.model_provider)
-        info_bar.set_thinking_level(self._runtime.thinking_level)
+        footer = self.query_one("#compact-footer", CompactFooter)
+        footer.set_model(self._runtime.model, self._runtime.model_provider)
+        footer.set_thinking_level(self._runtime.thinking_level)
         self._apply_thinking_level_style(self._runtime.thinking_level)
 
         if (
@@ -623,14 +623,14 @@ class Vtx(
         ):
             self._render_session_entries(self._runtime.session)
             token_totals = self._runtime.session.token_totals()
-            info_bar.set_tokens(
+            footer.set_tokens(
                 token_totals.input_tokens,
                 token_totals.output_tokens,
                 token_totals.context_tokens,
                 token_totals.cache_read_tokens,
                 token_totals.cache_write_tokens,
             )
-            info_bar.set_file_changes(self._runtime.session.file_changes_summary())
+            footer.set_file_changes(self._runtime.session.file_changes_summary())
             chat.add_info_message("Resumed session")
             self._arm_recap_timer()
 
@@ -783,7 +783,7 @@ class Vtx(
     def action_toggle_thinking(self) -> None:
         self._hide_thinking = not self._hide_thinking
         chat = self.query_one("#chat-log", ChatLog)
-        info_bar = self.query_one("#compact-footer", CompactFooter)
+        footer = self.query_one("#compact-footer", CompactFooter)
 
         for block in chat.query(".thinking-block"):
             if self._hide_thinking:

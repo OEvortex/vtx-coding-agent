@@ -13,7 +13,7 @@ from vtx.core.types import AssistantMessage, StopReason, TextContent, TextPart, 
 from vtx.tui.commands import CommandsMixin
 
 
-class _FakeInfoBar:
+class _FakeFooter:
     def __init__(self) -> None:
         self.tokens_calls: list[tuple[int, int, int, int]] = []
         self.file_changes_calls: list[dict[str, tuple[int, int]]] = []
@@ -44,7 +44,7 @@ class _TestCommandsApp(CommandsMixin):
         provider: MockProvider,
         chat,
         input_box,
-        info_bar: _FakeInfoBar | None = None,
+        footer: _FakeFooter | None = None,
         status_line: _FakeStatusLine | None = None,
     ) -> None:
         self._cwd = "/test/project"
@@ -75,14 +75,14 @@ class _TestCommandsApp(CommandsMixin):
         self._runtime.agent = cast(Any, self._agent)
         self._chat = chat
         self._input_box = input_box
-        self._info_bar = info_bar or _FakeInfoBar()
+        self._footer = footer or _FakeFooter()
         self._status_line = status_line or _FakeStatusLine()
 
     def query_one(self, selector: str, cls):
         if selector == "#chat-log":
             return self._chat
-        if selector == "#info-bar":
-            return self._info_bar
+        if selector == "#compact-footer":
+            return self._footer
         if selector == "#status-line":
             return self._status_line
         if selector == "#input-box":
@@ -238,20 +238,20 @@ async def test_new_conversation_resets_file_change_stats():
     provider = MockProvider()
     chat = _FakeChat()
     input_box = _FakeInput()
-    info_bar = _FakeInfoBar()
+    footer = _FakeFooter()
     status_line = _FakeStatusLine()
     app = _TestCommandsApp(
         session=session,
         provider=provider,
         chat=chat,
         input_box=input_box,
-        info_bar=info_bar,
+        footer=footer,
         status_line=status_line,
     )
 
-    await app._do_new_conversation(cast(Any, chat), info_bar, status_line)
+    await app._do_new_conversation(cast(Any, chat), footer, status_line)
 
-    assert info_bar.file_changes_calls[-1] == {}
+    assert footer.file_changes_calls[-1] == {}
 
 
 def test_clear_conversation_resets_file_change_stats():
@@ -259,14 +259,14 @@ def test_clear_conversation_resets_file_change_stats():
     provider = MockProvider()
     chat = _FakeChat()
     input_box = _FakeInput()
-    info_bar = _FakeInfoBar()
+    footer = _FakeFooter()
     app = _TestCommandsApp(
-        session=session, provider=provider, chat=chat, input_box=input_box, info_bar=info_bar
+        session=session, provider=provider, chat=chat, input_box=input_box, footer=footer
     )
 
     app._clear_conversation()
 
-    assert info_bar.file_changes_calls[-1] == {}
+    assert footer.file_changes_calls[-1] == {}
 
 
 def test_clear_conversation_creates_session_with_persisted_system_prompt(monkeypatch):

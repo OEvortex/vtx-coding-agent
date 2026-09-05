@@ -19,11 +19,11 @@ function CopyButton({ text }: { text: string }) {
   return (
     <button
       onClick={handleCopy}
-      className="absolute top-2 right-2 p-1.5 rounded-md text-ink-faint hover:text-ink hover:bg-surface-2 transition-all cursor-pointer opacity-0 group-hover/code:opacity-100 z-10"
+      className="ml-auto p-1.5 rounded-md text-ink-faint hover:text-lime-300 hover:bg-white/5 transition-all cursor-pointer"
       title="Copy code"
       aria-label="Copy code"
     >
-      {copied ? <Check size={13} weight="bold" /> : <Copy size={13} weight="regular" />}
+      {copied ? <Check size={13} weight="bold" className="text-lime-300" /> : <Copy size={13} weight="regular" />}
     </button>
   );
 }
@@ -39,6 +39,24 @@ function extractCodeText(node: React.ReactNode): string {
   return "";
 }
 
+function prettyLinkLabel(children: React.ReactNode, href?: string): React.ReactNode {
+  if (typeof children === "string") {
+    let t = children;
+    // turn raw filenames like "configuration.md" / "sdk/README.md" into "Configuration"
+    if (/\.md\/?$/i.test(t.trim()) || (href && /\.md(#|$)/i.test(href))) {
+      t = t.replace(/^.*\//, "").replace(/\.md\/?$/i, "").replace(/[-_]+/g, " ").trim();
+      if (/^readme$/i.test(t)) t = "overview";
+      t = t.replace(/\b\w/g, (c) => c.toUpperCase());
+      return t;
+    }
+    return children;
+  }
+  if (Array.isArray(children)) {
+    const joined = children.filter((c) => typeof c === "string").join("");
+    if (joined && /\.md\/?$/i.test(joined.trim())) return prettyLinkLabel(joined, href);
+  }
+  return children;
+}
 function HeadingAnchor({ id, children }: { id?: string; children: React.ReactNode }) {
   return (
     <span className="group/heading inline-flex items-center gap-1.5">
@@ -73,51 +91,74 @@ const components: Components = {
     </h3>
   ),
   p: ({ children, ...props }) => (
-    <p className="mb-4 leading-[1.7] text-ink-muted" {...props}>
+    <p className="mb-4 leading-[1.75] text-zinc-300" {...props}>
       {children}
     </p>
   ),
   a: ({ children, href, ...props }) => (
     <a
       href={href}
-      className="text-accent underline decoration-accent/30 underline-offset-[3px] hover:decoration-accent transition-colors"
+      className="font-medium text-lime-200/90 underline decoration-lime-400/25 underline-offset-[3px] hover:text-lime-200 hover:decoration-lime-300 transition-colors"
       target={href?.startsWith("http") ? "_blank" : undefined}
       rel={href?.startsWith("http") ? "noopener noreferrer" : undefined}
       {...props}
     >
-      {children}
+      {prettyLinkLabel(children, href)}
     </a>
   ),
   ul: ({ children, ...props }) => (
-    <ul className="list-disc pl-6 mb-4 space-y-1.5 marker:text-ink-faint" {...props}>
+    <ul className="mb-5 space-y-2.5 rounded-xl border border-white/[0.07] bg-white/[0.015] p-4 pl-10 list-disc marker:text-lime-400/60" {...props}>
       {children}
     </ul>
   ),
   ol: ({ children, ...props }) => (
-    <ol className="list-decimal pl-6 mb-4 space-y-1.5 marker:text-ink-faint" {...props}>
+    <ol className="mb-5 space-y-2.5 rounded-xl border border-white/[0.07] bg-white/[0.015] p-4 pl-10 list-decimal marker:text-lime-400/60" {...props}>
       {children}
     </ol>
   ),
   li: ({ children, ...props }) => (
-    <li className="leading-[1.7] text-ink-muted" {...props}>
+    <li className="leading-[1.7] text-zinc-300 pl-1" {...props}>
       {children}
     </li>
   ),
-  blockquote: ({ children, ...props }) => (
-    <blockquote
-      className="border-l-2 border-accent pl-4 my-4 text-ink-muted italic"
-      {...props}
-    >
-      {children}
-    </blockquote>
-  ),
+  blockquote: ({ children, ...props }) => {
+    return (
+      <blockquote
+        className="docs-callout my-5 rounded-r-xl border border-white/10 border-l-2 border-l-lime-400 bg-lime-400/[0.04] px-4 py-3 text-ink-muted not-italic [&>p]:mb-0"
+        {...props}
+      >
+        {children}
+      </blockquote>
+    );
+  },
   pre: ({ children, ...props }) => {
     const codeText = extractCodeText(children);
+    let lang = "code";
+    const walk = (n: React.ReactNode): void => {
+      if (lang !== "code") return;
+      if (Array.isArray(n)) { n.forEach(walk); return; }
+      if (n && typeof n === "object" && "props" in n) {
+        const p = (n as { props: Record<string, unknown> }).props;
+        const c = p.className;
+        if (typeof c === "string") {
+          const m = c.match(/language-([\w+-]+)/);
+          if (m) lang = m[1];
+        }
+        if (p.children) walk(p.children as React.ReactNode);
+      }
+    };
+    walk(children);
     return (
-      <div className="relative group/code my-4">
-        <CopyButton text={codeText} />
+      <div className="relative group/code my-5 overflow-hidden rounded-xl border border-white/10 bg-[#0D0D10]">
+        <div className="flex items-center gap-2 border-b border-white/[0.07] bg-white/[0.02] px-4 py-2">
+          <span className="w-2 h-2 rounded-full bg-red-500/60" />
+          <span className="w-2 h-2 rounded-full bg-amber-500/60" />
+          <span className="w-2 h-2 rounded-full bg-green-500/60" />
+          <span className="ml-2 font-mono text-[10.5px] tracking-widest text-zinc-600 uppercase">{lang}</span>
+          <CopyButton text={codeText} />
+        </div>
         <pre
-          className="bg-[#111114] border border-hairline rounded-lg p-4 overflow-x-auto text-[13px] leading-[1.65] font-mono"
+          className="p-4 overflow-x-auto text-[13px] leading-[1.7] font-mono"
           {...props}
         >
           {children}
@@ -143,7 +184,7 @@ const components: Components = {
     );
   },
   table: ({ children, ...props }) => (
-    <div className="my-4 overflow-x-auto">
+    <div className="my-5 overflow-x-auto rounded-xl border border-white/10">
       <table className="w-full text-sm border-collapse" {...props}>
         {children}
       </table>

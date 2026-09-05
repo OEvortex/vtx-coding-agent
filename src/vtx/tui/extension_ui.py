@@ -356,6 +356,16 @@ class TextualExtensionUI(ExtensionUIContext):
         else:
             self._statuses[key] = value
         self._refresh_bar()
+        self._sync_footer_statuses()
+
+    def _sync_footer_statuses(self) -> None:
+        try:
+            from vtx.tui.widgets import CompactFooter
+
+            footer = self._app.query_one(CompactFooter)
+        except Exception:
+            return
+        footer.set_extension_statuses(self._statuses)
 
     def setWidget(  # noqa: N802
         self, key: str, widget: Any, options: dict[str, Any] | None = None

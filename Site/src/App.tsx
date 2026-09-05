@@ -5,6 +5,9 @@ import ToolArsenal from "./components/ToolArsenal";
 import TokenWar from "./components/TokenWar";
 import ProviderWall from "./components/ProviderWall";
 import InstallRave from "./components/InstallRave";
+import LiveLoop from "./components/LiveLoop";
+import CompareTable from "./components/CompareTable";
+import ShipLog from "./components/ShipLog";
 import Footer from "./components/Footer";
 import ScrollProgress from "./components/ScrollProgress";
 import NotFound from "./components/NotFound";
@@ -28,9 +31,12 @@ function LandingPage() {
       <Navbar />
       <main>
         <HeroInsane />
+        <LiveLoop />
         <ToolArsenal />
         <TokenWar />
+        <CompareTable />
         <ProviderWall />
+        <ShipLog />
         <InstallRave />
       </main>
       <Footer />

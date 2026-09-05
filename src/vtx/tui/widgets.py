@@ -362,7 +362,6 @@ class InfoBar(Vertical):
             self.app.push_screen(FileChangesModal(self._file_changes))
 
 
-
 class CompactFooter(Static):
     """Pi-footer-style compact 3-line text footer."""
 
@@ -406,6 +405,7 @@ class CompactFooter(Static):
         self,
         input_tokens: int,
         output_tokens: int,
+        context_tokens: int = 0,
         cache_read_tokens: int = 0,
         cache_write_tokens: int = 0,
     ) -> None:
@@ -414,7 +414,9 @@ class CompactFooter(Static):
         self._cache_read_tokens = cache_read_tokens
         self._cache_write_tokens = cache_write_tokens
         self._context_tokens = (
-            input_tokens + output_tokens + cache_read_tokens + cache_write_tokens
+            context_tokens
+            if context_tokens > 0
+            else (input_tokens + output_tokens + cache_read_tokens + cache_write_tokens)
         )
         self._update_content()
 
@@ -532,9 +534,7 @@ class CompactFooter(Static):
             identity.append(f"@ {self._active_agent}", style=accent)
 
         ext_parts = [
-            Text(f"{k}: {v}", style="cyan")
-            for k, v in self._extension_statuses.items()
-            if v
+            Text(f"{k}: {v}", style="cyan") for k, v in self._extension_statuses.items() if v
         ]
         line1 = Text()
         line1.append_text(identity)
@@ -626,6 +626,7 @@ class CompactFooter(Static):
         if self._is_file_changes_click(widget, event.x):
             event.stop()
             self.app.push_screen(FileChangesModal(self._file_changes))
+
 
 class QueueDisplay(Vertical):
     MAX_QUEUE = 5

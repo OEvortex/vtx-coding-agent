@@ -16,39 +16,81 @@ interface DocMetadata {
 }
 
 const docsMetadata: DocMetadata[] = [
-  // Getting Started
+  // Start here
+  {
+    id: "quickstart",
+    title: "Quickstart",
+    description: "Install, launch, run your first task in 30 seconds",
+    category: "Start",
+    fileName: "index.md",
+  },
   {
     id: "readme",
     title: "Documentation Index",
     description: "Overview of all available documentation and quick navigation",
-    category: "Getting Started",
+    category: "Start",
     fileName: "README.md",
   },
   {
     id: "configuration",
     title: "Configuration",
     description: "Every YAML config field with defaults, validation, and CLI overrides",
-    category: "Getting Started",
+    category: "Start",
     fileName: "configuration.md",
   },
   {
     id: "providers",
     title: "Providers & Models",
-    description: "Built-in LLM providers, OAuth, API keys, dynamic catalogs, local models",
-    category: "Getting Started",
+    description: "50+ LLM providers, OAuth, API keys, dynamic catalogs, local models",
+    category: "Start",
     fileName: "providers.md",
   },
 
-  // Tools
+  // Core loop
   {
     id: "tools",
     title: "Core Tools",
-    description: "The 5 core tools: read, edit, write, bash, find. With parameters and examples",
-    category: "Tools",
+    description: "The 10 surgical tools: read, edit, write, bash, find, skill, web, ask_user, task, goal",
+    category: "Core",
     fileName: "tools.md",
+  },
+  {
+    id: "permissions",
+    title: "Permissions",
+    description: "Prompt/auto modes, safe-command allowlist, and decision algorithm",
+    category: "Core",
+    fileName: "permissions.md",
+  },
+  {
+    id: "sessions",
+    title: "Sessions",
+    description: "JSONL session format, resume, handoff, export, and compaction",
+    category: "Core",
+    fileName: "sessions.md",
+  },
+  {
+    id: "headless",
+    title: "Headless Mode",
+    description: "Non-interactive prompt mode for scripts, CI, and automation",
+    category: "Core",
+    fileName: "headless.md",
   },
 
   // Features
+  {
+    id: "agents",
+    title: "Handoff Agents",
+    description: "Named profiles cycled live with Shift+Tab or /agent",
+    category: "Features",
+    fileName: "agents.md",
+  },
+  {
+    id: "goals",
+    title: "Persistent Goals",
+    description: "Durable file-backed objectives with task tree, checkpoints, and audit",
+    category: "Features",
+    fileName: "goals.md",
+  },
   {
     id: "skills",
     title: "Skills System",
@@ -64,32 +106,11 @@ const docsMetadata: DocMetadata[] = [
     fileName: "extensions.md",
   },
   {
-    id: "permissions",
-    title: "Permissions",
-    description: "The prompt/auto modes, safe-command allowlist, and decision algorithm",
-    category: "Features",
-    fileName: "permissions.md",
-  },
-  {
-    id: "sessions",
-    title: "Sessions",
-    description: "JSONL session format, resume, handoff, export, and compaction",
-    category: "Features",
-    fileName: "sessions.md",
-  },
-  {
     id: "theming",
     title: "Theming",
     description: "Built-in theme catalog and palette tokens",
     category: "Features",
     fileName: "theming.md",
-  },
-  {
-    id: "headless",
-    title: "Headless Mode",
-    description: "Non-interactive prompt mode for scripts, CI, and automation",
-    category: "Features",
-    fileName: "headless.md",
   },
   {
     id: "local-models",
@@ -230,7 +251,7 @@ const docs: DocEntry[] = docsMetadata.map((meta) => {
 
 export default docs;
 
-export const categories = ["Getting Started", "Tools", "Features", "SDK", "Reference"];
+export const categories = ["Start", "Core", "Features", "SDK", "Reference"];
 
 export function getDocById(id: string): DocEntry | undefined {
   return docs.find((d) => d.id === id);

@@ -54,11 +54,13 @@ const SearchModal = memo(function SearchModal({
   onSelect: (id: string) => void;
 }) {
   const [query, setQuery] = useState("");
+  const [cursor, setCursor] = useState(0);
   const inputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
     if (open) {
       setQuery("");
+      setCursor(0);
       setTimeout(() => inputRef.current?.focus(), 100);
     }
   }, [open]);
@@ -84,7 +86,15 @@ const SearchModal = memo(function SearchModal({
     return scored.map((item) => item.doc);
   }, [query]);
 
+  useEffect(() => setCursor(0), [query]);
+
   if (!open) return null;
+
+  const onKey = (e: React.KeyboardEvent) => {
+    if (e.key === "ArrowDown") { e.preventDefault(); setCursor((c) => Math.min(c + 1, results.length - 1)); }
+    if (e.key === "ArrowUp") { e.preventDefault(); setCursor((c) => Math.max(c - 1, 0)); }
+    if (e.key === "Enter" && results[cursor]) { onSelect(results[cursor].id); onClose(); }
+  };
 
   return (
     <motion.div
@@ -109,6 +119,7 @@ const SearchModal = memo(function SearchModal({
             placeholder="Search documentation..."
             value={query}
             onChange={(e) => setQuery(e.target.value)}
+            onKeyDown={onKey}
             className="flex-1 py-3.5 text-sm bg-transparent outline-none text-ink placeholder:text-ink-faint"
           />
           <kbd className="hidden sm:block text-[10px] font-mono text-ink-faint border border-hairline rounded px-1.5 py-0.5">
@@ -121,14 +132,15 @@ const SearchModal = memo(function SearchModal({
               No results found.
             </div>
           ) : (
-            results.map((doc) => (
+            results.map((doc, i) => (
               <button
                 key={doc.id}
+                onMouseEnter={() => setCursor(i)}
                 onClick={() => {
                   onSelect(doc.id);
                   onClose();
                 }}
-                className="w-full text-left px-4 py-3 hover:bg-surface transition-colors flex items-start gap-3 group cursor-pointer"
+                className={`w-full text-left px-4 py-3 transition-colors flex items-start gap-3 group cursor-pointer ${i === cursor ? "bg-lime-400/10" : "hover:bg-surface"}`}
               >
                 <FileText size={14} className="text-ink-faint mt-0.5 shrink-0 group-hover:text-ink transition-colors" />
                 <div className="min-w-0">
@@ -209,7 +221,7 @@ const SidebarContent = memo(function SidebarContent({
               Vtx docs
             </h2>
             <p className="font-mono text-[10.5px] text-ink-faint tracking-tight">
-              v0.4.2
+              v1.1.1 · {docs.length} pages
             </p>
           </div>
         </div>
@@ -378,8 +390,10 @@ export default memo(function DocsPage() {
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [tocOpen, setTocOpen] = useState(false);
   const [searchOpen, setSearchOpen] = useState(false);
-  const [activeDocId, setActiveDocId] = useState("readme");
+  const [activeDocId, setActiveDocId] = useState("quickstart");
   const [activeHeading, setActiveHeading] = useState("");
+  const [progress, setProgress] = useState(0);
+  const [copied, setCopied] = useState(false);
   const contentRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -412,7 +426,7 @@ export default memo(function DocsPage() {
         const id = match[1];
         if (getDocById(id)) setActiveDocId(id);
       } else {
-        setActiveDocId("readme");
+        setActiveDocId("quickstart");
       }
     };
     parseHash();
@@ -421,7 +435,13 @@ export default memo(function DocsPage() {
   }, []);
 
   const activeDoc = useMemo(() => getDocById(activeDocId), [activeDocId]);
-  const docContent = activeDoc?.content || "";
+  const rawContent = activeDoc?.content || "";
+  // Quickstart reuses docs/index.md which opens with its own "# Documentation index"
+  // H1 — strip it so we don't render two stacked titles.
+  const docContent = useMemo(() => {
+    if (activeDocId === "quickstart") return rawContent.replace(/^#\s+.+\n+/, "");
+    return rawContent;
+  }, [rawContent, activeDocId]);
 
   useEffect(() => {
     if (activeDoc) {
@@ -435,6 +455,18 @@ export default memo(function DocsPage() {
     () => (docContent ? extractHeadings(docContent) : []),
     [docContent]
   );
+  const readingMins = useMemo(() => {
+    const words = docContent.split(/\s+/).length;
+    return Math.max(1, Math.round(words / 200));
+  }, [docContent]);
+
+  const copyLink = useCallback(async () => {
+    try {
+      await navigator.clipboard.writeText(`${window.location.origin}/docs/#${activeDocId}`);
+    } catch { /* noop */ }
+    setCopied(true);
+    setTimeout(() => setCopied(false), 1400);
+  }, [activeDocId]);
 
   const handleSelectDoc = useCallback((id: string) => {
     setActiveDocId(id);
@@ -453,6 +485,8 @@ export default memo(function DocsPage() {
     const handleScroll = () => {
       cancelAnimationFrame(rafId);
       rafId = requestAnimationFrame(() => {
+        const max = container.scrollHeight - container.clientHeight;
+        setProgress(max > 0 ? Math.min(1, container.scrollTop / max) : 0);
         const headingEls = container.querySelectorAll("h1[id], h2[id], h3[id]");
         let closest = "";
         let closestDist = Infinity;
@@ -483,6 +517,7 @@ export default memo(function DocsPage() {
     <div className="bg-canvas min-h-screen text-ink font-sans antialiased">
       {/* Top bar */}
       <header className="fixed top-0 left-0 right-0 z-40 bg-canvas/85 backdrop-blur-md border-b border-hairline h-14 flex items-center px-4 sm:px-6">
+        <div className="absolute bottom-0 left-0 h-[2px] bg-lime-400 transition-[width] duration-100" style={{ width: `${progress * 100}%` }} aria-hidden="true" />
         <div className="flex items-center justify-between w-full max-w-[1600px] mx-auto">
           <div className="flex items-center gap-3">
             <button
@@ -593,7 +628,7 @@ export default memo(function DocsPage() {
 
         <main
           ref={contentRef}
-          className="flex-1 lg:ml-[280px] xl:mr-[220px] overflow-y-auto h-[calc(100vh-56px)] scroll-smooth"
+          className={`flex-1 lg:ml-[280px] overflow-y-auto h-[calc(100vh-56px)] scroll-smooth ${headings.length >= 2 ? "xl:mr-[220px]" : ""}`}
         >
           {activeDoc ? (
             <div className="max-w-3xl mx-auto px-6 sm:px-8 lg:px-12 py-10 overflow-hidden">
@@ -606,15 +641,33 @@ export default memo(function DocsPage() {
                   transition={{ duration: 0.25, ease: [0.16, 1, 0.3, 1] }}
                 >
                   <div className="mb-10">
-                    <span className="font-mono text-[10.5px] tracking-[0.18em] text-ink-faint uppercase block mb-3">
-                      {activeDoc.category}
-                    </span>
+                    <div className="flex flex-wrap items-center gap-2 mb-3">
+                      <span className="chip-accent">{activeDoc.category}</span>
+                      <span className="font-mono text-[11px] text-ink-faint">· {readingMins} min read</span>
+                      <button onClick={copyLink} className="ml-auto font-mono text-[11px] text-ink-faint hover:text-lime-300 transition-colors">
+                        {copied ? "✓ link copied" : "⧉ copy link"}
+                      </button>
+                    </div>
                     <h1 className="text-[32px] sm:text-[40px] font-semibold text-ink tracking-tight leading-[1.1]">
                       {activeDoc.title}
                     </h1>
                     <p className="text-[15px] text-ink-muted mt-3 leading-[1.6] max-w-[60ch]">
                       {activeDoc.description}
                     </p>
+                    {activeDocId === "quickstart" && (
+                      <div className="mt-6 grid gap-2 sm:grid-cols-3">
+                        {[
+                          ["1 · INSTALL", "uv tool install vtx-coding-agent"],
+                          ["2 · LAUNCH", "vtx"],
+                          ["3 · SHIP", 'vtx -p "write the tests"'],
+                        ].map(([t, c]) => (
+                          <div key={t} className="rounded-lg border border-lime-400/20 bg-lime-400/[0.04] p-3 overflow-hidden">
+                            <div className="font-mono text-[10px] tracking-[0.18em] text-lime-300">{t}</div>
+                            <code className="mt-1 block font-mono text-[11.5px] leading-relaxed text-zinc-200 break-all">{c}</code>
+                          </div>
+                        ))}
+                      </div>
+                    )}
                     <div className="h-px bg-hairline mt-8" />
                   </div>
 
@@ -627,8 +680,8 @@ export default memo(function DocsPage() {
               <QuickNav onSelect={handleSelectDoc} currentId={activeDocId} />
 
               <div className="mt-12 pt-6 border-t border-hairline flex items-center justify-between text-[10.5px] font-mono text-ink-faint">
-                <span>Last updated: Vtx v0.4.2</span>
-                <span>Open source under the MIT license</span>
+                <span>Last updated: Vtx v1.1.1</span>
+                <span>Apache-2.0 · open source</span>
               </div>
             </div>
           ) : (
@@ -638,9 +691,11 @@ export default memo(function DocsPage() {
           )}
         </main>
 
+        {headings.length >= 2 && (
         <aside className="hidden xl:block fixed right-0 top-14 bottom-0 w-[220px] border-l border-hairline overflow-y-auto p-5 bg-canvas">
           <TableOfContents headings={headings} activeId={activeHeading} />
         </aside>
+        )}
 
         <AnimatePresence>
           {tocOpen && (
