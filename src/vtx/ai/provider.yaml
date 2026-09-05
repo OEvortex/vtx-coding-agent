@@ -118,6 +118,18 @@ providers:
     model_parser:
       cooldown_minutes: 60
 
+  - slug: experientiallabs
+    display_name: Experiential Labs
+    description: Experiential Labs AI gateway.
+    family: openai_compat
+    base_url: https://api.experientiallabs.ai
+    api_key_env: EXPERIENTIALLABS_API_KEY
+    openmodelendpoint: false
+    fetch_models: true
+    models_endpoint: /models
+    model_parser:
+      cooldown_minutes: 10
+
   - slug: groq
     display_name: Groq
     description: Ultra-fast LPU inference.

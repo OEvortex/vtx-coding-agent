@@ -9,6 +9,7 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 ### Added
 - **Thinking-level mapping on model limits** — `TokenLimits` now carries `thinking_level_map`, populated from `models.dev` `reasoning_options` during catalog fetch, so supported reasoning efforts are available alongside context/output limits.
 - **Nested provider/model lookup in dynamic models** — `find_dynamic_model` now inspects nested `provider.models` structures and matches model IDs case-insensitively, improving catalog lookups for providers that expose models in nested payloads.
+- **Experiential Labs provider** — registered `experientiallabs` as a new OpenAI-compatible provider with base URL `https://api.experientiallabs.ai`, resolving `EXPERIENTIALLABS_API_KEY` from the environment, and auto-fetching its model catalog from `/models`.
 - **Thinking-level propagation tests** — added coverage for `reasoning_options` parsing into `TokenLimits.thinking_level_map` and for propagating that map through provider catalog/model construction.
 
 ### Changed

@@ -1,14 +1,20 @@
 """
 OpenAI Codex OAuth flow.
 
-Stores OAuth credentials locally and provides token refresh support.
+Mirrors the Codex CLI auth so VTX can use a ChatGPT/Codex subscription
+without an API key.  Supports both the browser authorization-code flow
+and the headless device-code flow, and falls back to ``~/.codex/auth.json``
+so an existing Codex CLI login is reused automatically.
 """
+
+from __future__ import annotations
 
 import asyncio
 import base64
 import contextlib
 import hashlib
 import json
+import os
 import secrets
 import time
 from dataclasses import dataclass
@@ -20,17 +26,23 @@ import aiohttp
 
 from vtx.core.paths import get_config_dir
 
-_CLIENT_ID = "app_EMoamEEZ73f0CkXaXp7hrann"
+_CLIENT_ID = os.getenv("CODEX_APP_SERVER_LOGIN_CLIENT_ID", "app_EMoamEEZ73f0CkXaXp7hrann")
 _AUTHORIZE_URL = "https://auth.openai.com/oauth/authorize"
 _TOKEN_URL = "https://auth.openai.com/oauth/token"
+_REFRESH_TOKEN_URL_OVERRIDE = os.getenv("CODEX_REFRESH_TOKEN_URL_OVERRIDE")
+_DEVICE_CODE_URL = "https://auth.openai.com/api/accounts/deviceauth/usercode"
+_DEVICE_POLL_URL = "https://auth.openai.com/api/accounts/deviceauth/token"
 _REDIRECT_URI = "http://localhost:1455/auth/callback"
-_SCOPE = "openid profile email offline_access"
+_SCOPE = "openid profile email offline_access api.connectors.read api.connectors.invoke"
 _JWT_CLAIM_PATH = "https://api.openai.com/auth"
 _SUCCESS_HTML = """<!doctype html>
 <html lang="en">
 <head><meta charset="utf-8" /><title>Authentication successful</title></head>
 <body><p>Authentication successful. Return to your terminal to continue.</p></body>
 </html>"""
+
+# Codex CLI default originator.
+_DEFAULT_ORIGINATOR = "codex_cli_rs"
 
 
 @dataclass
@@ -39,6 +51,11 @@ class CodexCredentials:
     access: str
     expires: int
     account_id: str
+    id_token: str | None = None
+
+
+def get_codex_native_path() -> Path:
+    return Path.home() / ".codex" / "auth.json"
 
 
 def get_codex_auth_path() -> Path:
@@ -51,21 +68,78 @@ def get_codex_auth_path() -> Path:
     return preferred
 
 
-def load_codex_credentials() -> CodexCredentials | None:
-    path = get_codex_auth_path()
-    if not path.exists():
+def _decode_jwt_payload(token: str) -> dict[str, Any] | None:
+    try:
+        parts = token.split(".")
+        if len(parts) != 3:
+            return None
+        payload = parts[1]
+        if payload is None:
+            return None
+        padded = payload + "=" * (-len(payload) % 4)
+        decoded = base64.urlsafe_b64decode(padded.encode()).decode()
+        return json.loads(decoded)
+    except Exception:
         return None
 
-    try:
-        data = json.loads(path.read_text())
-        return CodexCredentials(
-            refresh=data["refresh"],
-            access=data["access"],
-            expires=data["expires"],
-            account_id=data["account_id"],
-        )
-    except (json.JSONDecodeError, KeyError):
+
+def _extract_account_id(access_token: str) -> str | None:
+    payload = _decode_jwt_payload(access_token)
+    if not payload:
         return None
+    auth = payload.get(_JWT_CLAIM_PATH)
+    if not isinstance(auth, dict):
+        return None
+    account_id = auth.get("chatgpt_account_id")
+    return account_id if isinstance(account_id, str) and account_id else None
+
+
+def _load_native_credentials() -> CodexCredentials | None:
+    path = get_codex_native_path()
+    if not path.exists():
+        return None
+    try:
+        data = json.loads(path.read_text(encoding="utf-8"))
+        tokens = data.get("tokens")
+        if not isinstance(tokens, dict):
+            return None
+        access = tokens.get("access_token")
+        refresh = tokens.get("refresh_token")
+        id_token = tokens.get("id_token")
+        if not isinstance(access, str) or not isinstance(refresh, str):
+            return None
+        account_id = tokens.get("account_id")
+        if not account_id:
+            account_id = _extract_account_id(access)
+        expires = int(time.time() * 1000) + 3600 * 1000
+        if isinstance(tokens.get("expires_at"), (int, float)):
+            expires = int(tokens["expires_at"])
+        return CodexCredentials(
+            refresh=refresh,
+            access=access,
+            expires=expires,
+            account_id=account_id or "",
+            id_token=id_token if isinstance(id_token, str) else None,
+        )
+    except (OSError, json.JSONDecodeError, KeyError, TypeError):
+        return None
+
+
+def load_codex_credentials() -> CodexCredentials | None:
+    path = get_codex_auth_path()
+    if path.exists():
+        try:
+            data = json.loads(path.read_text())
+            return CodexCredentials(
+                refresh=data["refresh"],
+                access=data["access"],
+                expires=int(data["expires"]),
+                account_id=data.get("account_id", ""),
+                id_token=data.get("id_token"),
+            )
+        except (json.JSONDecodeError, KeyError, TypeError):
+            pass
+    return _load_native_credentials()
 
 
 def save_codex_credentials(creds: CodexCredentials) -> None:
@@ -78,6 +152,7 @@ def save_codex_credentials(creds: CodexCredentials) -> None:
                 "access": creds.access,
                 "expires": creds.expires,
                 "account_id": creds.account_id,
+                "id_token": creds.id_token,
             },
             indent=2,
         )
@@ -108,32 +183,6 @@ def _generate_pkce() -> tuple[str, str]:
 
 def _create_state() -> str:
     return secrets.token_hex(16)
-
-
-def _decode_jwt_payload(token: str) -> dict[str, Any] | None:
-    try:
-        parts = token.split(".")
-        if len(parts) != 3:
-            return None
-        payload = parts[1]
-        if payload is None:
-            return None
-        padded = payload + "=" * (-len(payload) % 4)
-        decoded = base64.urlsafe_b64decode(padded.encode()).decode()
-        return json.loads(decoded)
-    except Exception:
-        return None
-
-
-def _extract_account_id(access_token: str) -> str | None:
-    payload = _decode_jwt_payload(access_token)
-    if not payload:
-        return None
-    auth = payload.get(_JWT_CLAIM_PATH)
-    if not isinstance(auth, dict):
-        return None
-    account_id = auth.get("chatgpt_account_id")
-    return account_id if isinstance(account_id, str) and account_id else None
 
 
 def _build_authorize_url(code_challenge: str, state: str, originator: str) -> str:
@@ -179,6 +228,7 @@ async def _exchange_code_for_tokens(code: str, verifier: str) -> CodexCredential
     access = data.get("access_token")
     refresh = data.get("refresh_token")
     expires_in = data.get("expires_in")
+    id_token = data.get("id_token")
     if (
         not isinstance(access, str)
         or not isinstance(refresh, str)
@@ -188,13 +238,14 @@ async def _exchange_code_for_tokens(code: str, verifier: str) -> CodexCredential
 
     account_id = _extract_account_id(access)
     if not account_id:
-        raise RuntimeError("Failed to extract chatgpt_account_id from OpenAI Codex OAuth token")
+        account_id = data.get("account_id") or ""
 
     return CodexCredentials(
         access=access,
         refresh=refresh,
         expires=int(time.time() * 1000) + expires_in * 1000,
         account_id=account_id,
+        id_token=id_token if isinstance(id_token, str) else None,
     )
 
 
@@ -273,8 +324,11 @@ def _parse_manual_input(input_text: str) -> tuple[str | None, str | None]:
 
 
 async def login(
-    on_auth_url: Any | None = None, on_manual_input: Any | None = None, originator: str = "vtx"
+    on_auth_url: Any | None = None,
+    on_manual_input: Any | None = None,
+    originator: str | None = None,
 ) -> CodexCredentials:
+    originator = originator or os.getenv("CODEX_INTERNAL_ORIGINATOR_OVERRIDE", _DEFAULT_ORIGINATOR)
     verifier, challenge = _generate_pkce()
     state = _create_state()
     auth_url = _build_authorize_url(challenge, state, originator)
@@ -351,16 +405,97 @@ async def login(
 codex_login = login
 
 
+async def _request_device_code() -> dict[str, Any]:
+    async with aiohttp.ClientSession() as session:
+        async with session.post(
+            _DEVICE_CODE_URL,
+            headers={"Content-Type": "application/json"},
+            json={"client_id": _CLIENT_ID},
+        ) as response:
+            if response.status == 404:
+                raise RuntimeError(
+                    "Device code login is not enabled for this Codex server. "
+                    "Use the browser login or verify the server URL."
+                )
+            if response.status >= 400:
+                text = await response.text()
+                raise RuntimeError(
+                    f"OpenAI Codex device code request failed ({response.status}): {text}"
+                )
+            return await response.json()
+
+
+async def _poll_device_token(device_auth_id: str, user_code: str, interval: int) -> dict[str, Any]:
+    deadline = time.time() + 900
+    poll_interval = max(1, interval)
+    async with aiohttp.ClientSession() as session:
+        while time.time() < deadline:
+            async with session.post(
+                _DEVICE_POLL_URL,
+                headers={"Content-Type": "application/json"},
+                json={"device_auth_id": device_auth_id, "user_code": user_code},
+            ) as response:
+                if response.status == 403 or response.status == 404:
+                    await asyncio.sleep(poll_interval)
+                    continue
+                if response.status >= 400:
+                    text = await response.text()
+                    raise RuntimeError(
+                        f"OpenAI Codex device code poll failed ({response.status}): {text}"
+                    )
+                data = await response.json()
+                if data.get("authorization_code"):
+                    return data
+
+            await asyncio.sleep(poll_interval)
+
+    raise TimeoutError("OpenAI Codex device code flow timed out")
+
+
+async def login_with_device_code(
+    on_user_code: Any | None = None, originator: str | None = None
+) -> CodexCredentials:
+    originator = originator or os.getenv("CODEX_INTERNAL_ORIGINATOR_OVERRIDE", _DEFAULT_ORIGINATOR)
+    device = await _request_device_code()
+    verification_url = f"https://auth.openai.com/codex/device"
+    user_code = device.get("user_code") or device.get("usercode", "")
+    device_auth_id = device.get("device_auth_id")
+    interval = int(device.get("interval", 5))
+
+    if on_user_code:
+        on_user_code(verification_url, user_code)
+
+    if not device_auth_id:
+        raise RuntimeError("OpenAI Codex device code response missing device_auth_id")
+
+    poll_result = await _poll_device_token(device_auth_id, user_code, interval)
+    code = poll_result.get("authorization_code")
+    if not isinstance(code, str) or not code:
+        raise RuntimeError("OpenAI Codex device code flow did not return an authorization code")
+
+    code_verifier = poll_result.get("code_verifier")
+    if not isinstance(code_verifier, str):
+        raise RuntimeError("OpenAI Codex device code response missing code_verifier")
+
+    creds = await _exchange_code_for_tokens(code, code_verifier)
+    save_codex_credentials(creds)
+    return creds
+
+
 async def refresh_codex_token(creds: CodexCredentials) -> CodexCredentials:
+    refresh_url = _REFRESH_TOKEN_URL_OVERRIDE or _TOKEN_URL
     async with (
         aiohttp.ClientSession() as session,
         session.post(
-            _TOKEN_URL,
-            headers={"Content-Type": "application/x-www-form-urlencoded"},
-            data={
+            refresh_url,
+            headers={
+                "Content-Type": "application/json",
+                "originator": os.getenv("CODEX_INTERNAL_ORIGINATOR_OVERRIDE", _DEFAULT_ORIGINATOR),
+            },
+            json={
+                "client_id": _CLIENT_ID,
                 "grant_type": "refresh_token",
                 "refresh_token": creds.refresh,
-                "client_id": _CLIENT_ID,
             },
         ) as response,
     ):
@@ -383,13 +518,14 @@ async def refresh_codex_token(creds: CodexCredentials) -> CodexCredentials:
 
     account_id = _extract_account_id(access)
     if not account_id:
-        raise RuntimeError("Failed to extract chatgpt_account_id from OpenAI Codex OAuth token")
+        account_id = creds.account_id
 
     refreshed = CodexCredentials(
         access=access,
         refresh=refresh,
         expires=int(time.time() * 1000) + expires_in * 1000,
         account_id=account_id,
+        id_token=data.get("id_token") if isinstance(data.get("id_token"), str) else creds.id_token,
     )
     save_codex_credentials(refreshed)
     return refreshed
@@ -419,8 +555,6 @@ def get_valid_codex_token_sync() -> str | None:
 
     Returns a token from env or saved OpenAI Codex OAuth credentials.
     """
-    import os
-
     env = os.getenv("OPENAI_API_KEY", "").strip()
     if env:
         return env
