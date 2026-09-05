@@ -35,7 +35,7 @@ class FakeChat:
         self.scrolled_to_end = True
 
 
-class CompactFooter:
+class InfoBar:
     def __init__(self) -> None:
         self.classes: set[str] = set()
         self.removed_classes: list[str] = []
@@ -138,7 +138,7 @@ class FakeVtx:
         self, selected_item: ListItem | None = None, *, completion_visible: bool | None = None
     ) -> None:
         self.chat = FakeChat()
-        self.footer = CompactFooter()
+        self.footer = InfoBar()
         self.completion_list = FakeCompletionList(selected_item, visible=completion_visible)
         self.input_box = FakeInputBox()
         self._runtime = ConversationRuntime(

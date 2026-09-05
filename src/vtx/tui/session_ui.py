@@ -21,7 +21,7 @@ from vtx.tui.chat import ChatLog
 from vtx.tui.commands import CommandsMixin
 from vtx.tui.input import InputBox
 from vtx.tui.tool_output import escape_tool_output_text, truncate_tool_output_text
-from vtx.tui.widgets import CompactFooter, StatusLine, format_path
+from vtx.tui.widgets import InfoBar, StatusLine, format_path
 
 
 class SessionUIMixin:
@@ -190,7 +190,7 @@ class SessionUIMixin:
 
     async def _load_session(self, session_path: str | Path) -> None:
         chat = self.query_one("#chat-log", ChatLog)
-        info_bar = self.query_one("#compact-footer", CompactFooter)
+        info_bar = self.query_one("#compact-footer", InfoBar)
         status = self.query_one("#status-line", StatusLine)
         input_box = self.query_one("#input-box", InputBox)
 

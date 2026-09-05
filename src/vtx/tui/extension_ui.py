@@ -360,9 +360,9 @@ class TextualExtensionUI(ExtensionUIContext):
 
     def _sync_footer_statuses(self) -> None:
         try:
-            from vtx.tui.widgets import CompactFooter
+            from vtx.tui.widgets import InfoBar
 
-            footer = self._app.query_one(CompactFooter)
+            footer = self._app.query_one(InfoBar)
         except Exception:
             return
         footer.set_extension_statuses(self._statuses)

@@ -6,7 +6,7 @@ from vtx.coding_agent.runtime import ConversationRuntime
 from vtx.tui.commands import CommandsMixin
 from vtx.tui.floating_list import ListItem
 from vtx.tui.selection_mode import SelectionMode
-from vtx.tui.widgets import CompactFooter
+from vtx.tui.widgets import InfoBar
 
 
 class FakeChat:
@@ -80,7 +80,7 @@ class FakeSession:
 class FakeCommands(CommandsMixin):
     def __init__(self) -> None:
         self.chat = FakeChat()
-        self.footer = CompactFooter()
+        self.footer = InfoBar(".", "model")
         self.completion_list = FakeFloatingList()
         self.input_box = FakeInputBox()
         self._provider = cast(Any, FakeProvider())

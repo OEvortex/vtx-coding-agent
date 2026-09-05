@@ -45,7 +45,7 @@ from vtx.core.notify import NotificationEvent, notify
 from vtx.core.types import ImageContent, StopReason, ToolResultMessage
 from vtx.tui.ask_user import AskUserDialog
 from vtx.tui.chat import ChatLog
-from vtx.tui.widgets import CompactFooter, StatusLine
+from vtx.tui.widgets import InfoBar, StatusLine
 
 _NOTIFY_EVENTS = (AgentEndEvent, ToolApprovalEvent, BackgroundTaskCompletedEvent)
 
@@ -119,7 +119,7 @@ class AgentRunnerMixin:
     async def _run_agent(self, prompt: str, images: list[ImageContent] | None = None) -> None:
         chat = self.query_one("#chat-log", ChatLog)
         status = self.query_one("#status-line", StatusLine)
-        info_bar = self.query_one("#compact-footer", CompactFooter)
+        info_bar = self.query_one("#compact-footer", InfoBar)
 
         agent = self._runtime.prepare_for_run()
         if agent is None:
@@ -257,7 +257,7 @@ class AgentRunnerMixin:
             charge(input_tokens=delta_in, output_tokens=delta_out, elapsed_ms=max(0.0, elapsed_ms))
 
     async def _render_agent_event(
-        self, event: object, chat: ChatLog, status: StatusLine, info_bar: CompactFooter
+        self, event: object, chat: ChatLog, status: StatusLine, info_bar: InfoBar
     ) -> bool:
         """Render one agent event into the UI. Returns True if it signals interruption."""
         was_interrupted = False

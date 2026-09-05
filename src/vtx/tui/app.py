@@ -60,7 +60,7 @@ from vtx.tui.session_ui import SessionUIMixin
 from vtx.tui.startup import StartupMixin
 from vtx.tui.styles import get_styles
 from vtx.tui.tree import TreeSelector
-from vtx.tui.widgets import CompactFooter, QueueDisplay, StatusLine, format_path
+from vtx.tui.widgets import InfoBar, QueueDisplay, StatusLine, format_path
 
 _GIT_BRANCH_REFRESH_INTERVAL_SECONDS = 1.0
 
@@ -397,11 +397,13 @@ class Vtx(
         active_name = (
             self._runtime.active_agent.definition.name if self._runtime.active_agent else ""
         )
-        footer = CompactFooter(id="compact-footer")
-        footer._cwd = format_path(self._cwd)
-        footer._model = self._runtime.model
-        footer._model_provider = self._runtime.model_provider
-        footer._thinking_level = self._runtime.thinking_level
+        footer = InfoBar(
+            cwd=self._cwd,
+            model=self._runtime.model,
+            model_provider=self._runtime.model_provider,
+            thinking_level=self._runtime.thinking_level,
+            id="compact-footer",
+        )
         footer._active_agent = active_name
         yield footer
 
@@ -611,7 +613,7 @@ class Vtx(
 
         self._flush_launch_warnings(chat)
 
-        footer = self.query_one("#compact-footer", CompactFooter)
+        footer = self.query_one("#compact-footer", InfoBar)
         footer.set_model(self._runtime.model, self._runtime.model_provider)
         footer.set_thinking_level(self._runtime.thinking_level)
         self._apply_thinking_level_style(self._runtime.thinking_level)

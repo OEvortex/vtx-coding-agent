@@ -6,7 +6,7 @@ from vtx.ai.providers.mock import MockProvider
 from vtx.coding_agent.runtime import ConversationRuntime
 from vtx.core.types import AssistantMessage, TextContent
 from vtx.tui.session_ui import SessionUIMixin
-from vtx.tui.widgets import CompactFooter
+from vtx.tui.widgets import InfoBar
 
 
 class _FakeChat:
@@ -95,7 +95,7 @@ class _TestSessionApp(SessionUIMixin):
         self._runtime.session = self._session
         self._runtime.agent = self._agent
         self._chat = _FakeChat()
-        self._footer = CompactFooter()
+        self._footer = InfoBar(".", "model")
         self._status_line = _FakeStatusLine()
         self._input_box = _FakeInputBox()
         self.rendered_session: Session | None = None

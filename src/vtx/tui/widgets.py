@@ -2,7 +2,7 @@ import asyncio
 import contextlib
 import os
 import time
-from typing import Any, ClassVar
+from typing import ClassVar
 
 from rich.spinner import Spinner
 from rich.text import Text
@@ -11,7 +11,7 @@ from textual.app import ComposeResult
 from textual.containers import Horizontal, Vertical
 from textual.screen import ModalScreen
 from textual.timer import Timer
-from textual.widgets import Label, Static
+from textual.widgets import Label
 
 from vtx.ai.config import PermissionMode, config
 from vtx.core.git_branch import resolve_git_branch
@@ -277,7 +277,8 @@ class InfoBar(Vertical):
         self._context_tokens = (
             input_tokens + output_tokens + cache_read_tokens + cache_write_tokens
         )
-        self._label_row1_right.update(self._format_row1_right())
+        with contextlib.suppress(Exception):
+            self._label_row1_right.update(self._format_row1_right())
 
     def set_tokens(
         self,
@@ -292,7 +293,8 @@ class InfoBar(Vertical):
         self._cache_read_tokens = cache_read_tokens
         self._cache_write_tokens = cache_write_tokens
         self._context_tokens = context_tokens if context_tokens > 0 else None
-        self._label_row1_right.update(self._format_row1_right())
+        with contextlib.suppress(Exception):
+            self._label_row1_right.update(self._format_row1_right())
 
     def set_model(self, model: str, provider: str | None = None) -> None:
         self._model = model
@@ -304,14 +306,16 @@ class InfoBar(Vertical):
             self._context_window = m_info.context_window
         else:
             self._context_window = config.agent.default_context_window
-        self._label_row1_right.update(self._format_row1_right())
-        self._label_row2_right.update(self._format_row2_right())
+        with contextlib.suppress(Exception):
+            self._label_row1_right.update(self._format_row1_right())
+            self._label_row2_right.update(self._format_row2_right())
 
     def set_git_branch(self, branch: str) -> None:
         if self._git_branch == branch:
             return
         self._git_branch = branch
-        self.query_one("#info-cwd", Label).update(self._format_row1_left(), layout=False)
+        with contextlib.suppress(Exception):
+            self.query_one("#info-cwd", Label).update(self._format_row1_left(), layout=False)
 
     async def refresh_git_branch(self) -> None:
         # Branch resolution reads git metadata files and may shell out to git;
@@ -320,14 +324,16 @@ class InfoBar(Vertical):
 
     def set_thinking_level(self, thinking_level: str) -> None:
         self._thinking_level = thinking_level
-        self._label_row2_right.update(self._format_row2_right())
+        with contextlib.suppress(Exception):
+            self._label_row2_right.update(self._format_row2_right())
 
     def set_thinking_visibility(self, hide_thinking: bool) -> None:
         self._hide_thinking = hide_thinking
 
     def set_permission_mode(self, mode: PermissionMode) -> None:
         self._permission_mode = mode
-        self._label_row2_left.update(self._format_row2_left(), layout=False)
+        with contextlib.suppress(Exception):
+            self._label_row2_left.update(self._format_row2_left(), layout=False)
 
     def set_agent(self, agent: str) -> None:
         """Display the active handoff agent in the right info row.
@@ -337,307 +343,35 @@ class InfoBar(Vertical):
         if self._active_agent == agent:
             return
         self._active_agent = agent
-        self._label_row2_right.update(self._format_row2_right(), layout=False)
+        with contextlib.suppress(Exception):
+            self._label_row2_right.update(self._format_row2_right(), layout=False)
 
     def update_file_changes(self, path: str, added: int, removed: int) -> None:
         prev_added, prev_removed = self._file_changes.get(path, (0, 0))
         self._file_changes[path] = (prev_added + added, prev_removed + removed)
-        self._label_row2_left.update(self._format_row2_left(), layout=False)
+        with contextlib.suppress(Exception):
+            self._label_row2_left.update(self._format_row2_left(), layout=False)
 
     def set_file_changes(self, file_changes: dict[str, tuple[int, int]]) -> None:
         self._file_changes = file_changes
-        self._label_row2_left.update(self._format_row2_left(), layout=False)
-
-    def _is_file_changes_click(self, widget: object, x: int) -> bool:
-        return (
-            bool(self._file_changes)
-            and self._file_changes_text_start is not None
-            and widget is self._label_row2_left
-            and x >= self._file_changes_text_start
-        )
-
-    def on_click(self, event: events.Click) -> None:
-        widget, _ = self.screen.get_widget_at(event.screen_x, event.screen_y)
-        if self._is_file_changes_click(widget, event.x):
-            event.stop()
-            self.app.push_screen(FileChangesModal(self._file_changes))
-
-
-class CompactFooter(Static):
-    """Pi-footer-style compact 3-line text footer."""
-
-    DEFAULT_CSS = """
-    CompactFooter {
-        height: auto;
-        padding: 0 1;
-        color: $text-muted;
-    }
-
-    CompactFooter.-completion-hidden {
-        display: none;
-        height: 0;
-    }
-    """
-
-    def __init__(self, **kwargs: Any) -> None:
-        super().__init__("", **kwargs)
-        self._cwd = ""
-        self._git_branch = ""
-        self._model = ""
-        self._model_provider = ""
-        self._thinking_level = ""
-        self._active_agent = ""
-        self._permission_mode = "auto"
-        self._file_changes: dict[str, tuple[int, int]] = {}
-        self._input_tokens = 0
-        self._output_tokens = 0
-        self._cache_read_tokens = 0
-        self._cache_write_tokens = 0
-        self._context_tokens: int | None = None
-        self._context_window: int | None = None
-        self._extension_statuses: dict[str, str] = {}
-        self._elapsed_seconds = 0
-        self._elapsed_timer: Timer | None = None
-        self._file_changes_text_start: int | None = None
-        self._tps: float | None = None
-
-    # ---- public API ----------------------------------------------------------
-
-    def set_tokens(
-        self,
-        input_tokens: int,
-        output_tokens: int,
-        context_tokens: int = 0,
-        cache_read_tokens: int = 0,
-        cache_write_tokens: int = 0,
-    ) -> None:
-        self._input_tokens = input_tokens
-        self._output_tokens = output_tokens
-        self._cache_read_tokens = cache_read_tokens
-        self._cache_write_tokens = cache_write_tokens
-        self._context_tokens = (
-            context_tokens
-            if context_tokens > 0
-            else (input_tokens + output_tokens + cache_read_tokens + cache_write_tokens)
-        )
-        self._update_content()
-
-    def set_model(self, model: str, provider: str | None = None) -> None:
-        self._model = model
-        self._model_provider = provider
-        self._update_content()
-
-    def set_thinking_level(self, thinking_level: str) -> None:
-        self._thinking_level = thinking_level
-        self._update_content()
-
-    def set_permission_mode(self, mode: str) -> None:
-        self._permission_mode = mode
-        self._update_content()
-
-    def set_file_changes(self, file_changes: dict[str, tuple[int, int]]) -> None:
-        self._file_changes = file_changes
-        self._update_content()
-
-    def set_agent(self, agent: str) -> None:
-        self._active_agent = agent
-        self._update_content()
-
-    def set_git_branch(self, branch: str) -> None:
-        self._git_branch = branch
-        self._update_content()
-
-    async def refresh_git_branch(self) -> None:
-        self.set_git_branch(await asyncio.to_thread(get_git_branch, self._cwd))
+        with contextlib.suppress(Exception):
+            self._label_row2_left.update(self._format_row2_left(), layout=False)
 
     def set_extension_statuses(self, statuses: dict[str, str]) -> None:
-        self._extension_statuses = statuses
-        self._update_content()
-
-    def set_elapsed(self, seconds: float) -> None:
-        self._elapsed_seconds = seconds
-        self._update_content()
-
-    def set_context_window(self, context_window: int | None) -> None:
-        self._context_window = context_window
-        self._update_content()
+        pass
 
     def set_tps(self, tps: float | None) -> None:
-        self._tps = tps
-        self._update_content()
-
-    def update_file_changes(self, path: str, added: int, removed: int) -> None:
-        prev_added, prev_removed = self._file_changes.get(path, (0, 0))
-        self._file_changes[path] = (prev_added + added, prev_removed + removed)
-        self._update_content()
-
-    def update_tokens(
-        self,
-        input_tokens: int,
-        output_tokens: int,
-        cache_read_tokens: int = 0,
-        cache_write_tokens: int = 0,
-    ) -> None:
-        self._input_tokens += input_tokens
-        self._output_tokens += output_tokens
-        self._cache_read_tokens += cache_read_tokens
-        self._cache_write_tokens += cache_write_tokens
-        self._context_tokens = (
-            self._input_tokens
-            + self._output_tokens
-            + self._cache_read_tokens
-            + self._cache_write_tokens
-        )
-        self._update_content()
-
-    # ---- lifecycle -----------------------------------------------------------
-
-    def on_mount(self) -> None:
-        self._elapsed_timer = self.set_interval(1, self._tick_elapsed)
-
-    def on_unmount(self) -> None:
-        if self._elapsed_timer is not None:
-            self._elapsed_timer.stop()
-            self._elapsed_timer = None
-
-    def _tick_elapsed(self) -> None:
-        self._elapsed_seconds += 1
-        self._update_content(layout=False)
-
-    # ---- rendering -----------------------------------------------------------
-
-    def _format_tokens(self, count: int) -> str:
-        if count >= 1_000_000:
-            return f"{count / 1_000_000:.1f}M"
-        if count >= 1_000:
-            return f"{count / 1_000:.1f}k"
-        return str(count)
-
-    def _format_duration(self, seconds: float) -> str:
-        total = int(seconds)
-        h = total // 3600
-        m = (total % 3600) // 60
-        s = total % 60
-        if h:
-            return f"{h}h {m}m {s}s"
-        if m:
-            return f"{m}m {s}s"
-        return f"{s}s"
-
-    def _compute_lines(self) -> tuple[Text, Text]:
-        dim = config.ui.colors.dim
-        accent = config.ui.colors.accent
-        badge_label = config.ui.colors.badge.label
-        notice = config.ui.colors.notice
-        diff_added = config.ui.colors.diff_added
-        diff_removed = config.ui.colors.diff_removed
-        fg = config.ui.colors.fg
-
-        # --- line 1: identity + extensions (left) | metrics (right) ---
-        identity = Text()
-        cwd_text = self._cwd or "."
-        identity.append(cwd_text, style=fg)
-        if self._git_branch:
-            identity.append(" ", style=dim)
-            identity.append(f"⌥ {self._git_branch}", style=accent)
-        if self._active_agent:
-            identity.append(" ", style=dim)
-            identity.append(f"@ {self._active_agent}", style=accent)
-
-        ext_parts = []
-        for k, v in self._extension_statuses.items():
-            if v:
-                ext_parts.append(Text(f"{k}: {v}", style="cyan"))
-
-        metrics = Text()
-        up = self._format_tokens(self._input_tokens)
-        down = self._format_tokens(self._output_tokens)
-        metrics.append(f"↑{up} ", style=dim)
-        metrics.append("↓", style=fg)
-        metrics.append(f"{down}", style=dim)
-
-        if self._context_tokens and self._context_window:
-            ctx_pct = min(100.0, (self._context_tokens / self._context_window) * 100)
-            metrics.append(" ◔", style=fg)
-            metrics.append(f"{ctx_pct:.0f}%", style=dim)
-
-        prompt_total = self._input_tokens + self._cache_read_tokens + self._cache_write_tokens
-        if prompt_total > 0 and self._cache_read_tokens > 0:
-            cache_rate = (self._cache_read_tokens / prompt_total) * 100
-            metrics.append(" ↺", style=fg)
-            metrics.append(f"{cache_rate:.0f}%", style=dim)
-
-        if self._tps is not None:
-            metrics.append(" ⚡", style=fg)
-            metrics.append(f"{self._tps:.0f}", style=dim)
-
-        line1 = Text()
-        line1.append_text(identity)
-        if ext_parts:
-            line1.append("    ", style=dim)
-            for i, part in enumerate(ext_parts):
-                if i:
-                    line1.append("  ", style=dim)
-                line1.append_text(part)
-        line1.append("    ", style=dim)
-        line1.append_text(metrics)
-
-        # --- line 2: model + thinking (left) | status + runtime (right) ---
-        model_line = Text()
-        model_text = self._model or "no-model"
-        if self._model_provider:
-            model_text = f"({self._model_provider}) {model_text}"
-        model_line.append(model_text, style=dim)
-        model_line.append(f" · {self._thinking_level}", style=dim)
-
-        status = Text()
-        if self._permission_mode == "auto":
-            status.append("✓ auto", style=badge_label)
-        else:
-            status.append("⏹ prompt", style=notice)
-
-        if self._file_changes:
-            n = len(self._file_changes)
-            a = sum(a for a, _ in self._file_changes.values())
-            r = sum(r for _, r in self._file_changes.values())
-            status.append(" · ", style=dim)
-            self._file_changes_text_start = len(status.plain)
-            status.append(f"{n} file{'s' if n != 1 else ''}")
-            status.append(f" +{a}", style=diff_added)
-            status.append(f" -{r}", style=diff_removed)
-        else:
-            self._file_changes_text_start = None
-
-        runtime = Text()
-        runtime.append(f"◷ {self._format_duration(self._elapsed_seconds)}", style=dim)
-
-        right2 = Text()
-        right2.append_text(status)
-        right2.append(" · ", style=dim)
-        right2.append_text(runtime)
-
-        line2 = Text()
-        line2.append_text(model_line)
-        line2.append("    ", style=dim)
-        line2.append_text(right2)
-
-        return line1, line2
-
-    def _update_content(self, layout: bool = True) -> None:
-        line1, line2 = self._compute_lines()
-        out = Text()
-        out.append_text(line1)
-        out.append("\n")
-        out.append_text(line2)
-        with contextlib.suppress(Exception):
-            self.update(out, layout=layout)
-
-    # ---- click handling (preserve InfoBar file-changes modal) -----------------
+        pass
 
     def _is_file_changes_click(self, widget: object, x: int) -> bool:
+        try:
+            row2_left = self._label_row2_left
+        except Exception:
+            return False
         return (
             bool(self._file_changes)
             and self._file_changes_text_start is not None
+            and widget is row2_left
             and x >= self._file_changes_text_start
         )
 

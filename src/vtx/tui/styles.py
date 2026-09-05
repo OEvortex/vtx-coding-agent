@@ -341,14 +341,14 @@ Screen {{
     padding: 0 1;
 }}
 
-/* Compact footer - pi-footer-style 3-line text footer */
-CompactFooter {{
+/* InfoBar - 2-row footer */
+.info-bar {{
     height: auto;
     padding: 0 1;
     color: $text-muted;
 }}
 
-CompactFooter.-completion-hidden {{
+.info-bar.-completion-hidden {{
     display: none;
     height: 0;
 }}

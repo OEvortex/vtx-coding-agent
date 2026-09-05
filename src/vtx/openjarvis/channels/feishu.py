@@ -1479,7 +1479,7 @@ class FeishuChannel(BaseChannel):
             if msg_type == "audio" and not any(
                 filename.endswith(ext) for ext in (".opus", ".ogg", ".oga")
             ):
-                    filename = f"{filename}.ogg"
+                filename = f"{filename}.ogg"
 
         if data and filename:
             filename = self._safe_media_filename(filename, fallback_filename)
@@ -1865,12 +1865,13 @@ class FeishuChannel(BaseChannel):
                 if fallback_msg_id:
                     await loop.run_in_executor(
                         None,
-                        lambda fallback_msg_id=fallback_msg_id,
-                        card=card: self._reply_message_sync(
-                            fallback_msg_id,
-                            "interactive",
-                            card,
-                            reply_in_thread=self._should_use_reply_in_thread(meta),
+                        lambda fallback_msg_id=fallback_msg_id, card=card: (
+                            self._reply_message_sync(
+                                fallback_msg_id,
+                                "interactive",
+                                card,
+                                reply_in_thread=self._should_use_reply_in_thread(meta),
+                            )
                         ),
                     )
                 else:

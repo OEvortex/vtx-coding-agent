@@ -976,25 +976,25 @@ class MatrixChannel(BaseChannel):
                 aiohttp.ClientSession(timeout=timeout, headers=headers) as session,
                 session.get(media_url, params={"allow_remote": "true"}) as response,
             ):
-                    if response.status >= 400:
-                        self.logger.warning(
-                            "download failed for {}: HTTP {}", mxc_url, response.status
-                        )
-                        return None
-                    content_length = response.headers.get("Content-Length")
-                    if content_length is not None:
-                        try:
-                            if int(content_length) > limit_bytes:
-                                raise _MediaTooLargeError
-                        except ValueError:
-                            pass
-
-                    chunks = bytearray()
-                    async for chunk in response.content.iter_chunked(64 * 1024):
-                        chunks.extend(chunk)
-                        if len(chunks) > limit_bytes:
+                if response.status >= 400:
+                    self.logger.warning(
+                        "download failed for {}: HTTP {}", mxc_url, response.status
+                    )
+                    return None
+                content_length = response.headers.get("Content-Length")
+                if content_length is not None:
+                    try:
+                        if int(content_length) > limit_bytes:
                             raise _MediaTooLargeError
-                    return bytes(chunks)
+                    except ValueError:
+                        pass
+
+                chunks = bytearray()
+                async for chunk in response.content.iter_chunked(64 * 1024):
+                    chunks.extend(chunk)
+                    if len(chunks) > limit_bytes:
+                        raise _MediaTooLargeError
+                return bytes(chunks)
         except _MediaTooLargeError:
             raise
         except (TimeoutError, aiohttp.ClientError, OSError):

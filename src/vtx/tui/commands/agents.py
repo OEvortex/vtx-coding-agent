@@ -11,7 +11,7 @@ from vtx.ai.config import config
 from vtx.tui.chat import ChatLog
 from vtx.tui.commands.base import CommandSupport
 from vtx.tui.floating_list import FloatingList, ListItem
-from vtx.tui.widgets import CompactFooter
+from vtx.tui.widgets import InfoBar
 
 
 class AgentCommands(CommandSupport):
@@ -71,7 +71,7 @@ class AgentCommands(CommandSupport):
             chat.add_info_message(f"Agent {name!r} not found.", error=True)
             return
         self._sync_runtime_state()
-        info_bar = self.query_one("#compact-footer", CompactFooter)
+        info_bar = self.query_one("#compact-footer", InfoBar)
         info_bar.set_agent(new.definition.name if new else "")
 
     def _pick_agent(self) -> None:
@@ -115,7 +115,7 @@ class AgentCommands(CommandSupport):
             chat.add_info_message(f"Agent {name!r} not found.", error=True)
             return
         self._sync_runtime_state()
-        info_bar = self.query_one("#compact-footer", CompactFooter)
+        info_bar = self.query_one("#compact-footer", InfoBar)
         info_bar.set_agent(new.definition.name if new else "")
 
     def action_cycle_agent(self) -> None:
@@ -123,7 +123,7 @@ class AgentCommands(CommandSupport):
         new = self._runtime.cycle_active_agent()
         self._sync_runtime_state()
         try:
-            info_bar = self.query_one("#compact-footer", CompactFooter)
+            info_bar = self.query_one("#compact-footer", InfoBar)
             info_bar.set_agent(new.definition.name if new else "")
         except Exception:
             pass

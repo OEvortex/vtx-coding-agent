@@ -18,7 +18,7 @@ from vtx.tui.floating_list import FloatingList, ListItem
 from vtx.tui.input import InputBox
 from vtx.tui.selection_mode import SelectionMode
 from vtx.tui.tree import TreeSelector
-from vtx.tui.widgets import CompactFooter, StatusLine, format_path
+from vtx.tui.widgets import InfoBar, StatusLine, format_path
 
 
 class CompletionUIMixin:
@@ -74,7 +74,7 @@ class CompletionUIMixin:
         self.call_after_refresh(lambda: self._restore_chat_scroll_if_needed(was_at_bottom))
 
     def _set_bottom_info_displaced(self, displaced: bool) -> None:
-        info_bar = self.query_one("#compact-footer", CompactFooter)
+        info_bar = self.query_one("#compact-footer", InfoBar)
         if displaced:
             info_bar.add_class("-completion-hidden")
         else:
@@ -287,7 +287,7 @@ class CompletionUIMixin:
         selector = self.query_one("#tree-selector", TreeSelector)
         input_box = self.query_one("#input-box", InputBox)
         chat = self.query_one("#chat-log", ChatLog)
-        info_bar = self.query_one("#compact-footer", CompactFooter)
+        info_bar = self.query_one("#compact-footer", InfoBar)
         status = self.query_one("#status-line", StatusLine)
         try:
             result = self._runtime.navigate_tree(event.entry_id)

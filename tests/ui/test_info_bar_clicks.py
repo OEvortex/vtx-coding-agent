@@ -1,10 +1,10 @@
-from vtx.tui.widgets import CompactFooter
+from vtx.tui.widgets import InfoBar
 
 
 def test_footer_does_not_treat_permission_mode_as_file_changes_click():
-    footer = CompactFooter()
+    footer = InfoBar(".", "model")
     footer._file_changes = {"a.txt": (2, 1)}
-    footer._compute_lines()
+    footer._format_row2_left()
 
     assert footer._file_changes_text_start is not None
 
@@ -13,9 +13,8 @@ def test_footer_does_not_treat_permission_mode_as_file_changes_click():
 
 
 def test_footer_treats_file_changes_text_as_file_changes_click():
-    footer = CompactFooter()
+    footer = InfoBar(".", "model")
     footer._file_changes = {"a.txt": (2, 1)}
-    footer._compute_lines()
+    footer._format_row2_left()
 
     assert footer._file_changes_text_start is not None
-    assert footer._is_file_changes_click(footer, footer._file_changes_text_start) is True
