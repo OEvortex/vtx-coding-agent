@@ -5,7 +5,9 @@ Re-exports :class:`ConversationRuntime` and runtime helpers from :mod:`vtx.ai.ag
 
 from __future__ import annotations
 
-from vtx.ai.agent.runtime import (  # noqa: F401
+from vtx.ai.agent.runtime import (
+    MODEL_SELECT,
+    THINKING_LEVEL_SELECT,
     Agent,
     AgentRegistry,
     Any,
@@ -24,14 +26,12 @@ from vtx.ai.agent.runtime import (  # noqa: F401
     HandoffResult,
     LoadedAgent,
     LoadedExtensions,
-    MODEL_SELECT,
     MessageEntry,
     Model,
     Path,
     ProviderConfig,
     RuntimeInitResult,
     Session,
-    THINKING_LEVEL_SELECT,
     TextContent,
     TreeNavigationResult,
     UserMessage,
@@ -57,6 +57,8 @@ from vtx.ai.agent.runtime import (  # noqa: F401
 )
 
 __all__ = [
+    "MODEL_SELECT",
+    "THINKING_LEVEL_SELECT",
     "Agent",
     "AgentRegistry",
     "Any",
@@ -75,14 +77,12 @@ __all__ = [
     "HandoffResult",
     "LoadedAgent",
     "LoadedExtensions",
-    "MODEL_SELECT",
     "MessageEntry",
     "Model",
     "Path",
     "ProviderConfig",
     "RuntimeInitResult",
     "Session",
-    "THINKING_LEVEL_SELECT",
     "TextContent",
     "TreeNavigationResult",
     "UserMessage",

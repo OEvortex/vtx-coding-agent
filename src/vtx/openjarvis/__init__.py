@@ -9,6 +9,8 @@ Subpackages:
     utils     — shared helpers
 """
 
-from vtx.openjarvis.version import VERSION as __version__
+from vtx.openjarvis.version import VERSION
+
+__version__ = VERSION
 
 __all__ = ["__version__"]

@@ -145,8 +145,8 @@ async def run_headless(
         anthropic_auth = anthropic_compat_auth_mode or config.llm.auth.anthropic_compat
 
         # Load agents first so the active agent's tool surface is applied.
-        from vtx.ai.agent.extensions import load_for_runtime
         from vtx.ai.agent.agents import AgentRegistry, load_all_agents
+        from vtx.ai.agent.extensions import load_for_runtime
 
         agent_registry = AgentRegistry()
         if auto_discover_agents or agent_files:

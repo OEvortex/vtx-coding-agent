@@ -1227,7 +1227,7 @@ class WeixinChannel(BaseChannel):
                 pass
 
         task = asyncio.create_task(keepalive())
-        setattr(task, "_typing_stop_event", stop_event)
+        task._typing_stop_event = stop_event
         self._typing_tasks[chat_id] = task
 
     async def _stop_typing(self, chat_id: str, *, clear_remote: bool) -> None:

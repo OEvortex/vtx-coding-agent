@@ -5,7 +5,7 @@ Re-exports system prompt builder and sections from :mod:`vtx.ai.agent.prompts`.
 
 from __future__ import annotations
 
-from vtx.ai.agent.prompts import (  # noqa: F401
+from vtx.ai.agent.prompts import (
     BACKGROUND_TASKS,
     CONTEXT_AWARENESS,
     DEFAULT_VTX_BASE,

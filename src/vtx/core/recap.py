@@ -129,7 +129,7 @@ def has_meaningful_activity(messages: list[Message]) -> bool:
     doesn't trigger one).
     """
     MIN_TOOL_CALLS = 3
-    MIN_ASSISTANT_CHARS = 150
+    min_assistant_chars = 150
     last_user_idx = -1
     for i in range(len(messages) - 1, -1, -1):
         if isinstance(messages[i], UserMessage):
