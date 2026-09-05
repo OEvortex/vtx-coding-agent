@@ -1,8 +1,10 @@
 """Utility functions for agenite_claw."""
 
 import base64
+import datetime as _datetime
 import json
 import re
+import secrets as _secrets
 import shutil
 import time
 import uuid
@@ -841,11 +843,6 @@ async def collect_stream_to_response(
         reasoning_content="\n".join(thinking_parts) if thinking_parts else None,
         usage=usage_dict or None,
     )
-
-
-# VTX extensions
-import datetime as _datetime
-import secrets as _secrets
 
 
 def short_id(nbytes: int = 4) -> str:

@@ -931,7 +931,11 @@ class MatrixChannel(BaseChannel):
 
     def _event_filename(self, event: MatrixMediaEvent, attachment_type: str) -> str:
         body = getattr(event, "body", None)
-        if isinstance(body, str) and body.strip() and (candidate := safe_filename(Path(body).name)):
+        if (
+            isinstance(body, str)
+            and body.strip()
+            and (candidate := safe_filename(Path(body).name))
+        ):
             return candidate
         return _DEFAULT_ATTACH_NAME if attachment_type == "file" else attachment_type
 
