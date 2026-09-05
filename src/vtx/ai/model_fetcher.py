@@ -146,7 +146,11 @@ def _is_free_model(raw: dict[str, Any]) -> bool:
 
 def _parse_models(raw_models: list[dict[str, Any]], parser_config) -> list[FetchedModel]:
     models: list[FetchedModel] = []
+    flatten_field = getattr(parser_config, "flatten_field", None)
     for raw in raw_models:
+        if flatten_field and isinstance(raw, dict):
+            raw = raw.get(flatten_field, raw)
+
         model_id = raw.get(parser_config.id_field, "")
         if not model_id:
             continue

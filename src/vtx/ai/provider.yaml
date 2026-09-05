@@ -126,8 +126,13 @@ providers:
     api_key_env: EXPERIENTIALLABS_API_KEY
     openmodelendpoint: false
     fetch_models: true
-    models_endpoint: /models
+    models_endpoint: /api/models
     model_parser:
+      flatten_field: model
+      id_field: slug
+      name_field: display_name
+      context_field: context_window
+      output_field: max_output_tokens
       cooldown_minutes: 10
 
   - slug: groq

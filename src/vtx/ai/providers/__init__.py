@@ -4,7 +4,7 @@ from ..models import ApiType
 PROVIDER_API_BY_NAME: dict[str, ApiType] = {
     "openai": ApiType(ApiType.OPENAI_SDK),
     "openai-codex": ApiType(ApiType.OPENAI_SDK),
-    "codex": ApiType(ApiType.OPENAI_SDK),
+    "codex": ApiType(ApiType.OPENAI_RESPONSES),
     "anthropic": ApiType(ApiType.ANTHROPIC),
     "zhipu": ApiType(ApiType.OPENAI_SDK),
     "deepseek": ApiType(ApiType.OPENAI_SDK),

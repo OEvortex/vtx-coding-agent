@@ -65,7 +65,7 @@ def test_oauth_providers_in_catalog():
     assert codex is not None
     assert codex.slug == "codex"
     assert codex.display_name == "OpenAI Codex"
-    assert codex.base_url == "https://api.openai.com/v1"
+    assert codex.base_url == "https://chatgpt.com/backend-api/codex"
 
 
 def test_oauth_providers_in_dynamic_providers():
@@ -81,7 +81,7 @@ def test_oauth_providers_in_dynamic_providers():
     assert cline_cfg.base_url == "https://api.cline.bot/v1"
 
     codex_cfg = DYNAMIC_PROVIDERS["codex"]
-    assert codex_cfg.base_url == "https://api.openai.com/v1"
+    assert codex_cfg.base_url == "https://chatgpt.com/backend-api/codex"
 
 
 def test_copilot_dynamic_api_key_and_status(tmp_path: Path):

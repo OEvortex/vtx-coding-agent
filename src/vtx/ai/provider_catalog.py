@@ -33,6 +33,7 @@ class ModelParserConfig:
     context_field: str = "context_length"
     output_field: str = "max_completion_tokens"
     cooldown_minutes: int = 60
+    flatten_field: str | None = None
 
 
 @dataclass(frozen=True)
@@ -76,6 +77,7 @@ def _parse_entry(entry: dict) -> ProviderInfo:
         context_field=parser_data.get("context_field", "context_length"),
         output_field=parser_data.get("output_field", "max_completion_tokens"),
         cooldown_minutes=parser_data.get("cooldown_minutes", 60),
+        flatten_field=parser_data.get("flatten_field"),
     )
     return ProviderInfo(
         slug=slug,
@@ -192,7 +194,7 @@ def _get_builtin_oauth_providers() -> dict[str, ProviderInfo]:
             display_name="OpenAI Codex",
             description="OpenAI Codex OAuth provider.",
             family="openai_compat",
-            base_url="https://api.openai.com/v1",
+            base_url="https://chatgpt.com/backend-api/codex",
             api_key_env="OPENAI_API_KEY",
             known_models=(
                 "gpt-6-astra",
@@ -524,6 +526,7 @@ def register_custom_provider(
             context_field=parser_data.get("context_field", "context_length"),
             output_field=parser_data.get("output_field", "max_completion_tokens"),
             cooldown_minutes=parser_data.get("cooldown_minutes", 60),
+            flatten_field=parser_data.get("flatten_field"),
         ),
     )
     _custom_cache[slug] = info
