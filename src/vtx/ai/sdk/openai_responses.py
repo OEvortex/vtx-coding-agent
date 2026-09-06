@@ -165,7 +165,7 @@ class OpenAIResponsesSDK(BaseLLMSDK):
             # on ZDR/store:false per docs, but include keeps compat with older APIs)
             payload["include"] = ["reasoning.encrypted_content"]
 
-        if config.max_tokens:
+        if config.max_tokens and self._provider_slug != "codex":
             payload["max_output_tokens"] = config.max_tokens
         # Temperature rides the wire only when explicitly set (0.7 is the
         # unset default, same convention as the Chat Completions transport);
@@ -262,11 +262,11 @@ class OpenAIResponsesSDK(BaseLLMSDK):
                     {
                         "type": "tool_calls",
                         "tool_calls": [
-                            {
-                                "id": call["call_id"],
-                                "name": call["name"],
-                                "arguments": call["arguments"] or "{}",
-                            }
+                            ToolCall(
+                                id=call["call_id"],
+                                name=call["name"],
+                                arguments=call["arguments"] or "{}",
+                            )
                         ],
                     }
                 )

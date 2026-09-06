@@ -33,7 +33,7 @@
 
 ## Codebase Search
 
-Use vortexa (not grep/rg/file reads) to search code or understand a repo. It
+Use vortexa in bash (not grep/rg/file reads) to search code or understand a repo. It
 indexes the current directory (or pass --root <dir>).
 
   vortexa resolve "<query>" --plain          # default: matches + tests + callers/callees + deps

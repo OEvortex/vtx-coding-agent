@@ -350,6 +350,12 @@ def _provider_info_to_model(p: ProviderInfo, model_id: str) -> Model:
         "openai_compat": ApiType(ApiType.OPENAI_SDK),
         "anthropic": ApiType(ApiType.ANTHROPIC),
     }
+    # Some openai_compat providers actually use the Responses API transport.
+    responses_api_providers = {"codex", "openai-responses"}
+    if p.slug in responses_api_providers:
+        api = ApiType(ApiType.OPENAI_RESPONSES)
+    else:
+        api = family_to_api[p.family]
     from vtx.ai.context_length import context_length_manager
 
     limits = context_length_manager.get_limits(model_id)
@@ -378,7 +384,7 @@ def _provider_info_to_model(p: ProviderInfo, model_id: str) -> Model:
     return Model(
         id=model_id,
         provider=p.slug,
-        api=family_to_api[p.family],
+        api=api,
         base_url=p.base_url or "",
         max_tokens=max_tokens,
         supports_images=supports_images,

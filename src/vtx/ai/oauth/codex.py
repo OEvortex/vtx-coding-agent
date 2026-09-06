@@ -45,6 +45,12 @@ _SUCCESS_HTML = """<!doctype html>
 # Codex CLI default originator.
 _DEFAULT_ORIGINATOR = "codex_cli_rs"
 
+# Latest stable Codex CLI release. The backend rejects requests from clients
+# older than the current release, so bump this when a newer version ships.
+# ponytail: hardcoded version; consider reading from a bundled VERSION file
+# or env override if you want this to auto-update.
+_CODEX_CLI_VERSION = "0.153.4"
+
 
 @dataclass
 class CodexCredentials:
@@ -573,3 +579,10 @@ def _add_codex_originator_header(headers: dict[str, str | None], context: dict[s
         headers["originator"] = os.getenv(
             "CODEX_INTERNAL_ORIGINATOR_OVERRIDE", _DEFAULT_ORIGINATOR
         )
+        headers["User-Agent"] = f"{_DEFAULT_ORIGINATOR}/{_CODEX_CLI_VERSION} (linux x86_64)"
+        headers["Accept"] = "text/event-stream"
+        headers["OpenAI-Beta"] = "responses=experimental"
+
+        creds = load_codex_credentials()
+        if creds and creds.account_id:
+            headers["ChatGPT-Account-ID"] = creds.account_id

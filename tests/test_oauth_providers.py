@@ -254,3 +254,60 @@ def test_openai_sdk_provider_with_copilot(tmp_path: Path, monkeypatch):
     assert provider._sdk.api_key == copilot_token
     assert provider._sdk.base_url == "https://api.individual.githubcopilot.com"
     assert provider._sdk._default_headers == {"User-Agent": "GitHubCopilotChat/0.35.0"}
+
+
+def test_codex_responses_payload_omits_max_output_tokens():
+    from vtx.ai.sdk.base import Message
+    from vtx.ai.sdk.openai_responses import OpenAIResponsesSDK
+
+    sdk = OpenAIResponsesSDK(
+        api_key="tok", base_url="https://chatgpt.com/backend-api/codex", provider_slug="codex"
+    )
+    payload = sdk._build_payload(
+        [Message(role="user", content="hi")],
+        type(
+            "Cfg",
+            (),
+            {
+                "model": "gpt-5.6-luna",
+                "thinking_level": None,
+                "thinking_level_map": None,
+                "max_tokens": 64,
+                "temperature": None,
+                "top_p": None,
+                "frequency_penalty": None,
+                "presence_penalty": None,
+                "stop_sequences": None,
+                "tool_choice": None,
+            },
+        )(),
+    )
+    assert "max_output_tokens" not in payload
+    assert payload["model"] == "gpt-5.6-luna"
+
+
+def test_openai_responses_payload_includes_max_output_tokens():
+    from vtx.ai.sdk.base import Message
+    from vtx.ai.sdk.openai_responses import OpenAIResponsesSDK
+
+    sdk = OpenAIResponsesSDK(api_key="tok", provider_slug="openai-responses")
+    payload = sdk._build_payload(
+        [Message(role="user", content="hi")],
+        type(
+            "Cfg",
+            (),
+            {
+                "model": "gpt-4o",
+                "thinking_level": None,
+                "thinking_level_map": None,
+                "max_tokens": 64,
+                "temperature": None,
+                "top_p": None,
+                "frequency_penalty": None,
+                "presence_penalty": None,
+                "stop_sequences": None,
+                "tool_choice": None,
+            },
+        )(),
+    )
+    assert payload["max_output_tokens"] == 64
