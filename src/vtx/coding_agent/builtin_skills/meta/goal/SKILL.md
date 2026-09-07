@@ -92,6 +92,14 @@ goal(action="update", status="revise", objective="Updated objective description"
 
 ---
 
+### 5. `archive` — Kill / Archive the Focused Goal
+```python
+goal(action="archive")
+```
+Immediately archives the focused goal, moving it to `.vtx/goals/archived/`. Use this when the user asks to kill, cancel, or discard the goal without requiring completion verification.
+
+---
+
 ## Goal Lifecycle Workflow
 
 ### Phase 1: Ingestion & Planning

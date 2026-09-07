@@ -31,7 +31,7 @@ from .service import GoalError, GoalService, get_service, goal_progress
 
 log = logging.getLogger("agent.goal.tools")
 
-GOAL_ACTIONS = ("create", "get", "update", "set_tasks", "update_task")
+GOAL_ACTIONS = ("create", "get", "update", "set_tasks", "update_task", "archive")
 
 
 def _cwd() -> str:
@@ -220,6 +220,7 @@ class GoalTool(BaseTool):
             "update": self._update,
             "set_tasks": self._set_tasks,
             "update_task": self._update_task,
+            "archive": self._archive,
         }[action]
         return await handler(params, cancel_event)
 
@@ -431,6 +432,18 @@ class GoalTool(BaseTool):
             f"{tasks_note}\nAuditor notes:\n{feedback}"
         )
         return ToolResult(success=False, result=text, ui_summary="changes required ✗")
+
+    async def _archive(self, params: GoalParams, cancel_event: asyncio.Event | None) -> ToolResult:
+        del params, cancel_event
+        service = _service()
+        try:
+            record = _require_focused(service)
+        except GoalError as exc:
+            return _err(exc)
+        archived = service.archive(record.id)
+        path_hint = _archive_path_text(service, archived)
+        text = f"Goal archived (killed).\n{path_hint}"
+        return ToolResult(success=True, result=text, ui_summary="archived")
 
     # ------------------------------------------------------------------
     # set_tasks

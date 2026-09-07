@@ -32,3 +32,6 @@ benchmark_results.json
 
 # Local configuration files
 .vtx/
+
+# OpenJarvis private workspace (local-only; not pushed to hub)
+src/vtx/openjarvis/

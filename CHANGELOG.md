@@ -4,6 +4,19 @@ All notable changes to Vtx are documented in this file. The format is based on
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project
 adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.1.2] - 2026-09-07
+
+### Added
+- **Goal archive action** — `goal(action="archive")` lets the agent kill/focus the current goal on demand without requiring completion audit.
+- **OpenJarvis standalone packaging** — `src/vtx/openjarvis/pyproject.toml` so OpenJarvis can be built/published independently from the core `vtx-coding-agent` package.
+
+### Changed
+- **Removed direct goal slash commands from TUI routing** — lifecycle actions (`pause`, `resume`, `clear`, `settings`, etc.) are no longer exposed as `/goal-*` commands; users drive them through the agent via the `goal` tool or `Esc` while running.
+- **Core `pyproject.toml` trimmed** — OpenJarvis entry points and optional dependency groups moved to the OpenJarvis package manifest.
+
+### Fixed
+- **Pydantic field shadowing in `run_cli_app`** — renamed the `json` parameter to `json_output` in the CLI Apps tool schema and executor, removing the `Run_Cli_App_Params` shadowing warning on startup.
+
 ## [Unreleased]
 
 ### Added

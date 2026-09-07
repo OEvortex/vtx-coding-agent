@@ -20,7 +20,7 @@ default = true
 
 [project]
 name = "vtx-coding-agent"
-version = "1.1.1"
+version = "1.1.2"
 description = "Minimalist coding agent harness with a Textual TUI and headless CLI. Native vtx event loop. <1k-token system prompt, 50+ LLM providers, AGENTS.md + skills context, session tree, prompt/auto permissions."
 readme = "README.md"
 requires-python = ">=3.12"
@@ -79,17 +79,10 @@ msteams = [
     "cryptography>=41.0",
 ]
 matrix = [
-    "matrix-nio[e2e]>=0.25.2; sys_platform != 'win32'",
-    "aiohttp>=3.9.0,<4.0.0",
-    "mistune>=3.0.0,<4.0.0",
-    "nh3>=0.2.17,<1.0.0",
 ]
 discord = [
-    "discord.py>=2.5.2,<3.0.0",
 ]
 whatsapp = [
-    "neonize>=0.3.18.post0,<0.4.0",
-    "segno>=1.6.1,<2.0.0",
 ]
 langsmith = [
     "langsmith>=0.1.0",
@@ -114,8 +107,6 @@ dev = [
 
 [project.scripts]
 vtx = "vtx.coding_agent.cli:main"
-vtx-jarvis = "vtx.openjarvis.agent.cli:main"
-openjarvis = "vtx.openjarvis.agent.cli:main"
 
 [tool.ruff]
 target-version = "py312"
@@ -153,6 +144,6 @@ skip-magic-trailing-comma = true
 
 [tool.pytest.ini_options]
 addopts = "--import-mode=importlib"
-testpaths = ["tests", "src/vtx/openjarvis/tests"]
+testpaths = ["tests"]
 python_files = ["test_*.py"]
 python_functions = ["test_*"]

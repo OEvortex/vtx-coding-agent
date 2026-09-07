@@ -9,10 +9,9 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING, Any
 
-from vtx.ai.agent.goal.record import objective_title
-from vtx.ai.agent.goal.service import GoalError, get_service
-from vtx.ai.agent.goal.storage import find_goal_file
-from vtx.core.types import ImageContent
+from vtx.coding_agent.goal.record import objective_title
+from vtx.coding_agent.goal.service import GoalError, get_service
+from vtx.coding_agent.goal.storage import find_goal_file
 from vtx.tui.chat import ChatLog
 from vtx.tui.commands.base import CommandSupport
 
@@ -28,7 +27,7 @@ class GoalCommands(CommandSupport):
 
     if TYPE_CHECKING:
 
-        def _run_agent(self, prompt: str, images: list[ImageContent] | None = None) -> Any: ...
+        def _run_agent(self, prompt: str, images: list[Any] | None = None) -> Any: ...
         def _update_queue_display(self) -> None: ...
 
     # ------------------------------------------------------------------
@@ -124,7 +123,6 @@ class GoalCommands(CommandSupport):
         if session is not None and session.entries:
             self._restore_goal_state(session)
         else:
-            service.focused_id = None
             self._resolve_startup_focus(service)
 
     def _resolve_startup_focus(self, service) -> None:
@@ -175,18 +173,20 @@ class GoalCommands(CommandSupport):
         record, service = self._focused_active_goal()
         if record is None or record.status != "active":
             return ""
-        from vtx.ai.agent.goal.prompts import goal_context_block
+        from vtx.coding_agent.goal.prompts import goal_context_block
 
         return goal_context_block(service, record)
 
-    def goal_continuation_prompt(self) -> tuple[str, str] | None:
-        """The continuation prompt injected into auto-continue turns."""
-        service = self._goal_service()
-        record = service.focused()
-        if record is None or record.status != "active":
+    def _goal_auto_continue_prompt(self) -> tuple[str, str] | None:
+        """Checkpoint prompt when the agent stops short of the objective."""
+        record, service = self._focused_active_goal()
+        if record is None:
             return None
-
-        from vtx.ai.agent.goal.prompts import continuation_prompt
+        if not service.settings.get("autoContinue", True):
+            return None
+        if record.status != "active":
+            return None
+        from vtx.coding_agent.goal.prompts import continuation_prompt
 
         title = objective_title(record.objective, 60)
         display = f"◈ goal checkpoint · {title}"

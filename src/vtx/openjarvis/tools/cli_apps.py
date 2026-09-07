@@ -38,7 +38,7 @@ class CliAppsToolConfig(Base):
             description="Args for the CLI entry point (not the entry point itself).",
             nullable=True,
         ),
-        json=BooleanSchema(
+        json_output=BooleanSchema(
             description="Prepend --json when the CLI supports it.", default=False, nullable=True
         ),
         working_dir=StringSchema("Optional working directory.", nullable=True),
@@ -112,7 +112,7 @@ class CliAppsTool(Tool):
         self,
         name: str,
         args: list[str] | None = None,
-        json: bool | None = False,
+        json_output: bool | None = False,
         working_dir: str | None = None,
         timeout: int | None = None,
         **kwargs: Any,
@@ -126,7 +126,7 @@ class CliAppsTool(Tool):
             return manager.run(
                 name,
                 args=args or [],
-                json_output=bool(json),
+                json_output=bool(json_output),
                 working_dir=working_dir,
                 timeout=timeout,
                 restrict_to_workspace=access.restrict_to_workspace,
