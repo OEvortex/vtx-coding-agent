@@ -18,7 +18,6 @@ from vtx.ai.oauth.codex import is_codex_logged_in, login_with_device_code
 from vtx.ai.providers.openai_responses_sdk import OpenAIResponsesSDKProvider
 from vtx.core.types import UserMessage
 
-
 MODELS_TO_TRY = [
     "gpt-5.6-luna",
     "gpt-5.5",
@@ -64,7 +63,7 @@ async def ensure_authenticated() -> None:
         print(f"[auth] Login failed: {exc}")
         sys.exit(1)
 
-    print(f"[auth] Login successful!")
+    print("[auth] Login successful!")
     print(f"       account_id: {creds.account_id}")
     print(f"       access_token starts with: {creds.access[:10]}...")
     print(f"       refresh_token starts with: {creds.refresh[:10]}...")
@@ -83,12 +82,11 @@ async def test_model(model: str) -> tuple[str, str | None, str | None, str | Non
 
     content_parts = []
     thinking_parts = []
-    usage_info = None
     finish_reason = "stop"
     stream_error = None
 
     async for part in stream:
-        from vtx.core.types import StreamPart, TextPart, ThinkPart, StreamDone, StreamError
+        from vtx.core.types import StreamDone, StreamError, TextPart, ThinkPart
 
         if isinstance(part, StreamError):
             stream_error = part.error
@@ -101,14 +99,9 @@ async def test_model(model: str) -> tuple[str, str | None, str | None, str | Non
             finish_reason = part.stop_reason
 
     if stream.usage:
-        usage_info = {
-            "prompt_tokens": stream.usage.input_tokens,
-            "completion_tokens": stream.usage.output_tokens,
-            "total_tokens": stream.usage.input_tokens + stream.usage.output_tokens,
-        }
+        pass
 
     content = "".join(content_parts) if content_parts else None
-    reasoning = "\n".join(thinking_parts) if thinking_parts else None
 
     return model, content, finish_reason, stream_error
 
@@ -116,8 +109,8 @@ async def test_model(model: str) -> tuple[str, str | None, str | None, str | Non
 async def main() -> None:
     await ensure_authenticated()
 
-    print(f"\n[api] Testing Codex provider with Luna model first, then fallbacks...")
-    print(f"[api] Test message: {TEST_MESSAGE!r}\n")
+    print("\n[api] Testing Codex provider with Luna model first, then fallbacks...")
+    print("[api] Test message: {TEST_MESSAGE!r}\n")
 
     for model in MODELS_TO_TRY:
         print(f"[api] Trying model={model!r}...")
@@ -135,7 +128,7 @@ async def main() -> None:
             print(f"       SUCCESS: {content!r}")
             print(f"       finish_reason={finish_reason}")
             if used_model == "gpt-5.6-luna":
-                print(f"\n[result] SUCCESS: Luna model responded via Codex provider.")
+                print("\n[result] SUCCESS: Luna model responded via Codex provider.")
             else:
                 print(
                     f"\n[result] Luna is gated; {used_model} works. Provider plumbing is healthy."

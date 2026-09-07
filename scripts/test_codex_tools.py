@@ -21,6 +21,9 @@ async def main() -> None:
         print("[auth] No Codex credentials found. Run scripts/test_codex_luna.py first.")
         sys.exit(1)
     token = get_valid_codex_token_sync()
+    if not token:
+        print("[auth] No Codex token available. Run scripts/test_codex_luna.py first.")
+        sys.exit(1)
     print(f"[auth] Token: {token[:10]}...")
 
     config = ProviderConfig(
