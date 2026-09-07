@@ -1,5 +1,5 @@
 meta:
-  config_version: 12
+  config_version: 13
 
 llm:
   default_provider: "openai-codex"
@@ -123,6 +123,14 @@ task:
         questions.
       tools_allow: [read, find, skill, web]
       max_turns: 100
+
+# Runtime mode for the agent.
+# ``tool_first`` uses the default surgical tool surface (read, edit, write,
+# bash, find, web, ask_user, task, goal, skill).
+# ``rlm`` switches to a REPL-first experience where the model primarily
+# executes Python through a persistent ``ipython`` tool, similar to
+# Prime Agent's RLM harness.
+mode: tool_first
 
 # Example: DeepSeek provider
 # export DEEPSEEK_API_KEY="sk-your-api-key"

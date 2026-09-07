@@ -15,6 +15,7 @@ from vtx.core.types import ToolDefinition
 from ..goal.tools import GoalParams, GoalTaskItem, GoalTool
 from .ask_user import AskUserParams, AskUserTool
 from .base import BaseTool
+from .ipython import IpythonParams, IpythonTool
 from .task import SubagentSpec, TaskParams, TaskTool
 from .web import SearchParams, WebSearchTool, WebTool
 
@@ -25,6 +26,8 @@ __all__ = [
     "GoalParams",
     "GoalTaskItem",
     "GoalTool",
+    "IpythonParams",
+    "IpythonTool",
     "SearchParams",
     "SubagentSpec",
     "TaskParams",
@@ -186,3 +189,4 @@ register_tool(AskUserTool(), is_default=True, parent_only=True)
 register_tool(TaskTool(), is_default=True, parent_only=False)
 register_tool(WebTool(), is_default=True, parent_only=False)
 register_tool(GoalTool(), is_default=True, parent_only=True)
+register_tool(IpythonTool(), is_default=True, parent_only=False)

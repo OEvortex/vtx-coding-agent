@@ -1,5 +1,6 @@
 import asyncio
 import logging
+import os
 import platform
 import re
 import shutil
@@ -14,6 +15,7 @@ from typing import Literal
 
 import aiohttp
 
+from vtx.ai.agent.ipython_manager import IpythonManager
 from vtx.core.paths import get_config_dir
 
 ToolName = Literal["fd", "rg"]
@@ -217,3 +219,14 @@ async def ensure_tools(
         tools = ["fd", "rg"]
     results = await asyncio.gather(*(ensure_tool(t, silent=silent) for t in tools))
     return dict(zip(tools, results, strict=True))
+
+
+_IPYTHON_MANAGER_INSTANCE: IpythonManager | None = None
+
+
+def get_ipython_manager() -> IpythonManager:
+    """Return the process-wide REPL manager, creating it if needed."""
+    global _IPYTHON_MANAGER_INSTANCE
+    if _IPYTHON_MANAGER_INSTANCE is None:
+        _IPYTHON_MANAGER_INSTANCE = IpythonManager(os.getcwd())
+    return _IPYTHON_MANAGER_INSTANCE

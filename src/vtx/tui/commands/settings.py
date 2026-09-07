@@ -8,6 +8,7 @@ from vtx.ai.config import (
     NOTIFICATION_MODES,
     PERMISSION_MODES,
     THINKING_LINES_OPTIONS,
+    AgentMode,
     NotificationMode,
     PermissionMode,
     ThinkingLinesOption,
@@ -186,7 +187,9 @@ class SettingsCommands(CommandSupport):
         colored_badge_status = "on" if config.ui.colored_tool_badge else "off"
         git_context_status = "on" if config.llm.system_prompt.git_context else "off"
         ponytail_status = "on" if config.llm.system_prompt.ponytail else "off"
+        mode_status = config.mode
         return [
+            ListItem(value="mode", label="mode", description=mode_status),
             ListItem(
                 value="colored-tool-badge",
                 label="colored-tool-badge",
@@ -247,6 +250,29 @@ class SettingsCommands(CommandSupport):
         else:
             chat.add_info_message("Usage: /ponytail [on|off]", error=True)
 
+    def _select_mode(self, mode: str) -> None:
+        from vtx.ai.config import (
+            _atomic_write_text,
+            _ensure_config_file,
+            _read_config_data,
+            _serialize_config_yaml,
+            _set_config_version,
+            reload_config,
+        )
+
+        config_file = _ensure_config_file()
+        data = _read_config_data(config_file)
+        data["mode"] = mode
+        _set_config_version(data)
+        _atomic_write_text(config_file, _serialize_config_yaml(data))
+        reload_config()
+
+        chat = self.query_one("#chat-log", ChatLog)
+        chat.show_status(f"Mode changed to {mode}")
+        chat.add_info_message(
+            f"Mode changed to {mode}. Use /new or restart to apply fully.", warning=True
+        )
+
     def _handle_settings_select(self, item_value: str) -> SettingsSelectionResult:
         if item_value == "notifications":
             current_enabled = config.notifications.enabled
@@ -293,6 +319,18 @@ class SettingsCommands(CommandSupport):
         elif item_value == "thinking-lines":
             self._settings_active = True
             self._show_thinking_lines_picker()
+            return "reopened-picker"
+
+        elif item_value == "mode":
+            current = config.mode
+            new_mode: AgentMode = "tool_first" if current == "rlm" else "rlm"
+            self._select_mode(new_mode)
+            chat = self.query_one("#chat-log", ChatLog)
+            chat.show_status(f"Mode changed to {new_mode}")
+            chat.add_info_message(
+                f"Mode changed to {new_mode}. Use /new or restart to apply fully.", warning=True
+            )
+            self._show_settings_picker(selected_value=item_value)
             return "reopened-picker"
 
         elif item_value == "colored-tool-badge":
