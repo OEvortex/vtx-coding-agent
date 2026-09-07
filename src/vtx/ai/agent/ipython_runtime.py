@@ -10,6 +10,7 @@ one object per line, UTF-8, no other framing.
 
 from __future__ import annotations
 
+import ast
 import asyncio
 import codecs
 import contextlib
@@ -22,7 +23,6 @@ import sys
 import threading
 import traceback
 import uuid
-from collections.abc import Coroutine
 from typing import Any
 
 PROTOCOL_VERSION = 1
@@ -57,34 +57,21 @@ def _run_cell(code: str) -> tuple[str, str | None]:
 
     result_repr = None
     try:
-        # Top-level await support.
-        if "await " in code or code.strip().startswith("async "):
-            coro: Coroutine[Any, Any, Any] | None = eval(  # type: ignore[call-overload]
-                compile(code, f"<cell-{cell_id}>", "eval"), _namespace
-            )
-            if asyncio.iscoroutine(coro):
-                loop = asyncio.get_event_loop()
-                result = loop.run_until_complete(coro)
-                if result is not None:
-                    result_repr = repr(result)
-                sys.stdout.write(repr(result) + "\n")
+        compiled = compile(code, f"<cell-{cell_id}>", "exec", flags=ast.PyCF_ALLOW_TOP_LEVEL_AWAIT)
+        exec(compiled, _namespace)
+        try:
+            expr = compile(code, f"<cell-{cell_id}>", "eval")
+        except SyntaxError:
+            pass
         else:
-            compiled = compile(code, f"<cell-{cell_id}>", "exec")
-            exec(compiled, _namespace)  # type: ignore[arg-type]
-            # Trailing expression?
             try:
-                expr = compile(code, f"<cell-{cell_id}>", "eval")
-            except SyntaxError:
+                value = eval(expr, _namespace)
+            except Exception:
                 pass
             else:
-                try:
-                    value = eval(expr, _namespace)  # type: ignore[call-overload]
-                except Exception:
-                    pass
-                else:
-                    if value is not None:
-                        result_repr = repr(value)
-                        sys.stdout.write(repr(value) + "\n")
+                if value is not None:
+                    result_repr = repr(value)
+                    sys.stdout.write(repr(value) + "\n")
     except Exception:
         tb = traceback.format_exc()
         sys.stderr.write(tb)

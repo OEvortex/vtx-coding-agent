@@ -17,6 +17,8 @@ import time
 import uuid
 from asyncio.subprocess import Process
 from collections.abc import Callable, Coroutine
+from queue import Empty, Queue
+from threading import Thread
 from typing import Any
 
 from vtx.core.bytes_util import truncate_bytes
@@ -44,12 +46,11 @@ class IpythonKernel:
         self._last_activity = time.monotonic()
         self._execution_lock = asyncio.Lock()
         self._closed = False
-        self._reader_task: asyncio.Task[None] | None = None
+        self._reader_thread: Thread | None = None
+        self._reader_queue: Queue[str] | None = None
         self._output_buffer = ""
         self._result_repr: str | None = None
-        self._done_event = asyncio.Event()
-        self._pending_requests: dict[str, asyncio.Event] = {}
-        self._request_errors: dict[str, str] = {}
+        self._pending_done: dict[str, asyncio.Event] = {}
 
     async def start(self) -> None:
         if self._process and self._process.returncode is None:
@@ -66,19 +67,23 @@ class IpythonKernel:
             env=env,
         )
         self._last_activity = time.monotonic()
-        self._reader_task = asyncio.create_task(self._read_events())
+        self._reader_queue = Queue()
+        self._reader_thread = Thread(
+            target=self._read_events, args=(self._process.stdout, self._reader_queue), daemon=True
+        )
+        self._reader_thread.start()
 
-    async def _read_events(self) -> None:
-        assert self._process and self._process.stdout is not None
+    @staticmethod
+    def _read_events(stdout: Any, queue: Queue[str]) -> None:
+        """Synchronous reader thread: blocks on stdout and pushes complete lines."""
+        assert stdout is not None
         buffer = ""
         decoder = None
         while True:
             try:
-                raw = await asyncio.wait_for(self._process.stdout.read(4096), timeout=0.5)
-            except TimeoutError:
-                if self._process.returncode is not None:
-                    break
-                continue
+                raw = stdout.read(4096)
+            except Exception:
+                break
             if not raw:
                 break
             if decoder is None:
@@ -92,33 +97,23 @@ class IpythonKernel:
             buffer += text
             while "\n" in buffer:
                 line, buffer = buffer.split("\n", 1)
-                line = line.strip()
-                if not line:
-                    continue
-                try:
-                    event = json.loads(line)
-                except json.JSONDecodeError:
-                    continue
-                await self._handle_event(event)
+                queue.put(line.strip())
 
-    async def _handle_event(self, event: dict[str, Any]) -> None:
-        etype = event.get("event")
-        eid = event.get("id")
-        if etype in ("stdout", "stderr"):
-            self._output_buffer += event.get("text", "")
-            self._done_event.set()
-        elif etype == "result":
-            self._result_repr = event.get("text")
-            self._done_event.set()
-        elif etype == "error":
-            self._output_buffer += f"\n[{event.get('ename')}] {event.get('evalue')}\n"
-            self._done_event.set()
-        elif etype == "done":
-            if eid is not None and eid in self._pending_requests:
-                self._pending_requests.pop(eid).set()
-            self._done_event.set()
-        elif etype == "ready":
-            self._done_event.set()
+    async def _next_event(self, timeout: float) -> dict[str, Any] | None:
+        if self._reader_queue is None:
+            return None
+        try:
+            raw = await asyncio.get_event_loop().run_in_executor(
+                None, self._reader_queue.get, True, timeout
+            )
+        except Empty:
+            return None
+        if not raw:
+            return None
+        try:
+            return json.loads(raw)
+        except json.JSONDecodeError:
+            return None
 
     async def execute(
         self,
@@ -137,9 +132,11 @@ class IpythonKernel:
             self._last_activity = time.monotonic()
             self._output_buffer = ""
             self._result_repr = None
-            self._done_event.clear()
 
             rid = uuid.uuid4().hex
+            done_event = asyncio.Event()
+            self._pending_done[rid] = done_event
+
             request = {"type": "execute", "id": rid, "code": code.rstrip()}
             line = json.dumps(request, separators=(",", ":")) + "\n"
             try:
@@ -148,15 +145,22 @@ class IpythonKernel:
             except (ConnectionResetError, BrokenPipeError):
                 await self.start()
                 if self._process.stdin is None:
+                    self._pending_done.pop(rid, None)
                     return "REPL kernel connection was lost and could not be restored."
                 self._process.stdin.write(line.encode("utf-8"))
                 await self._process.stdin.drain()
 
-            return await self._wait_output(rid, on_output=on_output, timeout=timeout)
+            try:
+                return await self._wait_output(
+                    rid, done_event, on_output=on_output, timeout=timeout
+                )
+            finally:
+                self._pending_done.pop(rid, None)
 
     async def _wait_output(
         self,
         rid: str,
+        done_event: asyncio.Event,
         *,
         on_output: Callable[[str], Coroutine[Any, Any, None]] | None = None,
         timeout: float,
@@ -172,20 +176,29 @@ class IpythonKernel:
                     + "Retry or send an empty snippet to flush.]"
                 )
             try:
-                await asyncio.wait_for(self._done_event.wait(), timeout=0.5)
-            except TimeoutError:
+                event = await self._next_event(timeout=0.1)
+            except asyncio.CancelledError:
+                break
+            if event is None:
                 if self._process is not None and self._process.returncode is not None:
                     break
                 continue
-            self._done_event.clear()
+            etype = event.get("event")
+            eid = event.get("id")
+            if etype in ("stdout", "stderr"):
+                self._output_buffer += event.get("text", "")
+            elif etype == "result":
+                self._result_repr = event.get("text")
+            elif etype == "error":
+                self._output_buffer += f"\n[{event.get('ename')}] {event.get('evalue')}\n"
+            elif etype == "done":
+                if eid == rid:
+                    break
+                continue
             if len(self._output_buffer) != last_len:
                 last_len = len(self._output_buffer)
                 if on_output is not None:
                     await on_output(self._output_buffer[last_len:])
-            if self._result_repr is not None or (
-                self._process is not None and self._process.returncode is not None
-            ):
-                break
         output = truncate_bytes(self._output_buffer.strip(), _OUTPUT_TRUNCATE_BYTES)
         if self._result_repr is not None and not output:
             output = self._result_repr
@@ -206,9 +219,10 @@ class IpythonKernel:
 
     async def close(self) -> None:
         self._closed = True
-        if self._reader_task:
-            self._reader_task.cancel()
-            self._reader_task = None
+        if self._reader_thread and self._reader_thread.is_alive():
+            self._reader_thread.join(timeout=1.0)
+        self._reader_thread = None
+        self._reader_queue = None
         if self._process and self._process.returncode is None:
             try:
                 if self._process.stdin:
