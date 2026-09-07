@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import asyncio
 import codecs
+import contextlib
 import json
 import os
 import sys
@@ -19,8 +20,6 @@ import time
 import uuid
 from asyncio.subprocess import Process
 from collections.abc import Callable, Coroutine
-from queue import Empty, Queue
-from threading import Thread
 from typing import Any
 
 from vtx.core.bytes_util import truncate_bytes
@@ -49,8 +48,8 @@ class IpythonKernel:
         self._last_activity = time.monotonic()
         self._execution_lock = asyncio.Lock()
         self._closed = False
-        self._reader_thread: Thread | None = None
-        self._reader_queue: Queue[str] | None = None
+        self._reader_task: asyncio.Task[None] | None = None
+        self._queue: asyncio.Queue[str | None] | None = None
         self._output_buffer = ""
         self._result_repr: str | None = None
         self._pending_done: dict[str, asyncio.Event] = {}
@@ -70,46 +69,47 @@ class IpythonKernel:
             env=env,
         )
         self._last_activity = time.monotonic()
-        self._reader_queue = Queue()
-        self._reader_thread = Thread(
-            target=self._read_events, args=(self._process.stdout, self._reader_queue), daemon=True
-        )
-        self._reader_thread.start()
+        self._queue = asyncio.Queue()
+        self._reader_task = asyncio.create_task(self._read_events())
 
-    @staticmethod
-    def _read_events(stdout: Any, queue: Queue[str]) -> None:
-        """Synchronous reader thread: blocks on stdout and pushes complete lines."""
-        assert stdout is not None
+    async def _read_events(self) -> None:
+        assert self._process and self._process.stdout is not None
         buffer = ""
         decoder = None
-        while True:
+        while not self._closed:
             try:
-                raw = stdout.read(4096)
+                raw = await self._process.stdout.read(4096)
             except Exception:
                 break
             if not raw:
                 break
-            if decoder is None:
-                try:
-                    text = raw.decode("utf-8")
-                except UnicodeDecodeError:
-                    decoder = codecs.getincrementaldecoder("utf-8")("replace")
-                    text = decoder.decode(raw)
+            if isinstance(raw, str):
+                text = raw
             else:
-                text = decoder.decode(raw)
+                if decoder is None:
+                    try:
+                        text = raw.decode("utf-8")
+                    except UnicodeDecodeError:
+                        decoder = codecs.getincrementaldecoder("utf-8")("replace")
+                        text = decoder.decode(raw)
+                else:
+                    text = decoder.decode(raw)
             buffer += text
             while "\n" in buffer:
                 line, buffer = buffer.split("\n", 1)
-                queue.put(line.strip())
+                if self._queue is not None:
+                    await self._queue.put(line.strip())
+        if self._queue is not None:
+            await self._queue.put(None)
 
     async def _next_event(self, timeout: float) -> dict[str, Any] | None:
-        if self._reader_queue is None:
+        if self._queue is None:
             return None
         try:
-            raw = await asyncio.get_event_loop().run_in_executor(
-                None, self._reader_queue.get, True, timeout
-            )
-        except Empty:
+            raw = await asyncio.wait_for(self._queue.get(), timeout=timeout)
+        except TimeoutError:
+            return None
+        if raw is None:
             return None
         if not raw:
             return None
@@ -222,10 +222,12 @@ class IpythonKernel:
 
     async def close(self) -> None:
         self._closed = True
-        if self._reader_thread and self._reader_thread.is_alive():
-            self._reader_thread.join(timeout=1.0)
-        self._reader_thread = None
-        self._reader_queue = None
+        if self._reader_task:
+            self._reader_task.cancel()
+            with contextlib.suppress(asyncio.CancelledError):
+                await self._reader_task
+            self._reader_task = None
+        self._queue = None
         if self._process and self._process.returncode is None:
             try:
                 if self._process.stdin:
