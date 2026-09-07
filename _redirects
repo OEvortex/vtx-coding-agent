@@ -1,0 +1,21 @@
+# -------------------------------------------------------------------
+# Trailing-slash normalization.
+# The app expects /features/ and /docs/ (with slash). Force the slash
+# variant so SEO doesn't fragment between two equivalent URLs.
+# -------------------------------------------------------------------
+/features        /features/        301
+/Features        /features/        301
+/docs            /docs/            301
+/Docs            /docs/            301
+
+# -------------------------------------------------------------------
+# API → Netlify Functions
+# -------------------------------------------------------------------
+/api/*            /.netlify/functions/:splat  200
+
+# -------------------------------------------------------------------
+# SPA fallback: any unknown route gets index.html (client routes handle it).
+# This is the second match, so the trailing-slash rules above win for
+# the two known paths.
+# -------------------------------------------------------------------
+/*               /index.html       200

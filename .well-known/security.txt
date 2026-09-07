@@ -1,0 +1,4 @@
+Contact: https://t.me/jarvis_remastered
+Expires: 2027-06-12
+Preferred-Languages: en
+Canonical: https://agentjarvis-v2.netlify.app/.well-known/security.txt

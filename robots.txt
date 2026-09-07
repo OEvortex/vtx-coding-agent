@@ -1,0 +1,19 @@
+User-agent: *
+Allow: /
+
+# Block AI scrapers (optional — remove if you want them indexing)
+User-agent: GPTBot
+Disallow: /
+User-agent: ChatGPT-User
+Disallow: /
+User-agent: CCBot
+Disallow: /
+User-agent: anthropic-ai
+Disallow: /
+User-agent: Claude-Web
+Disallow: /
+User-agent: Bytespider
+Disallow: /
+
+# Sitemap
+Sitemap: https://agentjarvis-v2.netlify.app/sitemap.xml
