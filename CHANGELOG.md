@@ -4,6 +4,11 @@ All notable changes to Vtx are documented in this file. The format is based on
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project
 adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.1.3] - 2026-09-07
+
+### Fixed
+- **Source distribution bloat** — excluded `Site/node_modules` from the sdist, reducing package size from ~41MB to ~5.4MB.
+
 ## [1.1.2] - 2026-09-07
 
 ### Added

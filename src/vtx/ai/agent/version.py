@@ -39,7 +39,7 @@ else:
     try:
         VERSION = version(PACKAGE_NAME)
     except PackageNotFoundError:
-        VERSION = "1.1.2"  # Fallback version if package metadata is not available
+        VERSION = "1.1.3"  # Fallback version if package metadata is not available
 
 
 def format_version() -> str:
