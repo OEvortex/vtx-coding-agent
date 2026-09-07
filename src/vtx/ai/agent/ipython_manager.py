@@ -46,8 +46,10 @@ class IpythonKernel:
         self._closed = False
         self._reader_task: asyncio.Task[None] | None = None
         self._output_buffer = ""
-        self._done_event = asyncio.Event()
         self._result_repr: str | None = None
+        self._done_event = asyncio.Event()
+        self._pending_requests: dict[str, asyncio.Event] = {}
+        self._request_errors: dict[str, str] = {}
 
     async def start(self) -> None:
         if self._process and self._process.returncode is None:
@@ -97,18 +99,26 @@ class IpythonKernel:
                     event = json.loads(line)
                 except json.JSONDecodeError:
                     continue
-                etype = event.get("event")
-                if etype == "stdout" or etype == "stderr":
-                    self._output_buffer += event.get("text", "")
-                    self._done_event.set()
-                elif etype == "result":
-                    self._result_repr = event.get("text")
-                    self._done_event.set()
-                elif etype == "error":
-                    self._output_buffer += f"\n[{event.get('ename')}] {event.get('evalue')}\n"
-                    self._done_event.set()
-                elif etype == "done":
-                    self._done_event.set()
+                await self._handle_event(event)
+
+    async def _handle_event(self, event: dict[str, Any]) -> None:
+        etype = event.get("event")
+        eid = event.get("id")
+        if etype in ("stdout", "stderr"):
+            self._output_buffer += event.get("text", "")
+            self._done_event.set()
+        elif etype == "result":
+            self._result_repr = event.get("text")
+            self._done_event.set()
+        elif etype == "error":
+            self._output_buffer += f"\n[{event.get('ename')}] {event.get('evalue')}\n"
+            self._done_event.set()
+        elif etype == "done":
+            if eid is not None and eid in self._pending_requests:
+                self._pending_requests.pop(eid).set()
+            self._done_event.set()
+        elif etype == "ready":
+            self._done_event.set()
 
     async def execute(
         self,
@@ -142,10 +152,11 @@ class IpythonKernel:
                 self._process.stdin.write(line.encode("utf-8"))
                 await self._process.stdin.drain()
 
-            return await self._wait_output(on_output=on_output, timeout=timeout)
+            return await self._wait_output(rid, on_output=on_output, timeout=timeout)
 
     async def _wait_output(
         self,
+        rid: str,
         *,
         on_output: Callable[[str], Coroutine[Any, Any, None]] | None = None,
         timeout: float,
