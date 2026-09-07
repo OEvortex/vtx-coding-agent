@@ -4,6 +4,8 @@ Maintains long-lived ``python -m vtx.ai.agent.ipython_runtime`` subprocesses
 keyed by session id. Each subprocess executes snippets sequentially, preserving
 imports, variables, and side effects across calls. Communication uses a
 newline-delimited JSON protocol inspired by Prime Agent's ``rlm.repl``.
+
+Inspired by JARVIS's kernel pool pattern for parallel subagent execution.
 """
 
 from __future__ import annotations
@@ -25,6 +27,7 @@ from vtx.core.bytes_util import truncate_bytes
 
 _MAX_INACTIVITY_SECONDS = 600
 _OUTPUT_TRUNCATE_BYTES = 1_048_576  # 1 MiB per tool call
+_DEFAULT_POOL_SIZE = 4
 
 
 class IpythonKernel:
@@ -32,13 +35,13 @@ class IpythonKernel:
 
     def __init__(
         self,
-        session_id: str,
+        kernel_id: str,
         cwd: str,
         *,
         python: str | None = None,
         env: dict[str, str] | None = None,
     ) -> None:
-        self.session_id = session_id
+        self.kernel_id = kernel_id
         self.cwd = cwd
         self.python = python or sys.executable
         self._env = env or {}
@@ -237,16 +240,73 @@ class IpythonKernel:
         self._last_activity = time.monotonic()
 
 
-class IpythonManager:
-    """Owns one :class:`IpythonKernel` per session."""
+class KernelPool:
+    """Pool of reusable IPython kernels for parallel execution.
 
-    def __init__(self, cwd: str) -> None:
+    Inspired by JARVIS's ``KernelPool`` for concurrent subagent execution.
+    Kernels are checked out by ``session_id`` and returned when done.
+    """
+
+    def __init__(self, cwd: str, pool_size: int = _DEFAULT_POOL_SIZE) -> None:
         self.cwd = cwd
-        self._kernels: dict[str, IpythonKernel] = {}
-        self._gc_interval = 60.0
-        self._gc_task: asyncio.Task[None] | None = None
+        self.pool_size = pool_size
+        self._kernels: list[IpythonKernel] = []
+        self._in_use: dict[str, IpythonKernel] = {}
+        self._lock = asyncio.Lock()
 
     async def start(self) -> None:
+        async with self._lock:
+            for i in range(self.pool_size):
+                kernel = IpythonKernel(kernel_id=f"pool-{i}", cwd=self.cwd)
+                await kernel.start()
+                self._kernels.append(kernel)
+
+    async def acquire(self, session_id: str) -> IpythonKernel:
+        """Check out a kernel for the given session."""
+        async with self._lock:
+            if session_id in self._in_use:
+                return self._in_use[session_id]
+            if self._kernels:
+                kernel = self._kernels.pop()
+                self._in_use[session_id] = kernel
+                return kernel
+            # Pool exhausted: create a temporary kernel
+            kernel = IpythonKernel(kernel_id=f"temp-{session_id}", cwd=self.cwd)
+            await kernel.start()
+            self._in_use[session_id] = kernel
+            return kernel
+
+    async def release(self, session_id: str) -> None:
+        """Return a kernel to the pool."""
+        async with self._lock:
+            kernel = self._in_use.pop(session_id, None)
+            if kernel is not None and kernel.is_active():
+                self._kernels.append(kernel)
+
+    async def shutdown(self) -> None:
+        async with self._lock:
+            for kernel in list(self._kernels):
+                await kernel.close()
+            self._kernels.clear()
+            for kernel in list(self._in_use.values()):
+                await kernel.close()
+            self._in_use.clear()
+
+
+class IpythonManager:
+    """Manages IPython kernels with pooling for parallel subagent execution."""
+
+    def __init__(self, cwd: str, pool_size: int = _DEFAULT_POOL_SIZE) -> None:
+        self.cwd = cwd
+        self.pool_size = pool_size
+        self._pool = KernelPool(cwd, pool_size=pool_size)
+        self._session_kernels: dict[str, IpythonKernel] = {}
+        self._gc_interval = 60.0
+        self._gc_task: asyncio.Task[None] | None = None
+        self._background_tasks: set[asyncio.Task[None]] = set()
+
+    async def start(self) -> None:
+        await self._pool.start()
         if self._gc_task is None:
             self._gc_task = asyncio.create_task(self._gc_loop())
 
@@ -254,10 +314,7 @@ class IpythonManager:
         if self._gc_task:
             self._gc_task.cancel()
             self._gc_task = None
-        await asyncio.gather(
-            *(kernel.close() for kernel in self._kernels.values()), return_exceptions=True
-        )
-        self._kernels.clear()
+        await self._pool.shutdown()
 
     async def execute(
         self,
@@ -267,16 +324,22 @@ class IpythonManager:
         *,
         timeout: float = 180.0,
     ) -> str:
-        if session_id not in self._kernels:
-            self._kernels[session_id] = IpythonKernel(session_id, self.cwd)
-        kernel = self._kernels[session_id]
-        kernel.touch()
-        return await kernel.execute(code, on_output=on_output, timeout=timeout)
+        # Use a dedicated kernel for this session if we have one,
+        # otherwise check out from the pool.
+        if session_id not in self._session_kernels:
+            kernel = await self._pool.acquire(session_id)
+            self._session_kernels[session_id] = kernel
+        else:
+            kernel = self._session_kernels[session_id]
 
-    async def interrupt(self, session_id: str) -> None:
-        kernel = self._kernels.get(session_id)
-        if kernel is not None:
-            await kernel.interrupt()
+        kernel.touch()
+        try:
+            return await kernel.execute(code, on_output=on_output, timeout=timeout)
+        finally:
+            # Return pooled kernels when done, keep dedicated ones.
+            if session_id.startswith("pool-") or session_id.startswith("temp-"):
+                await self._pool.release(session_id)
+                self._session_kernels.pop(session_id, None)
 
     async def _gc_loop(self) -> None:
         while True:
@@ -284,15 +347,34 @@ class IpythonManager:
             now = time.monotonic()
             dead = [
                 sid
-                for sid, kernel in self._kernels.items()
+                for sid, kernel in self._session_kernels.items()
                 if not kernel.is_active() or now - kernel._last_activity > _MAX_INACTIVITY_SECONDS
             ]
             for sid in dead:
-                await self._kernels[sid].close()
-                self._kernels.pop(sid, None)
+                kernel = self._session_kernels.pop(sid, None)
+                if kernel is not None:
+                    await kernel.close()
 
     def dispose(self, session_id: str) -> None:
-        self._kernels.pop(session_id, None)
+        kernel = self._session_kernels.pop(session_id, None)
+        if kernel is not None:
+            task = asyncio.create_task(kernel.close())
+            self._background_tasks.add(task)
+            task.add_done_callback(self._background_tasks.discard)
+
+
+# Global manager instance
+_ipython_manager: IpythonManager | None = None
+
+
+def get_ipython_manager(cwd: str | None = None) -> IpythonManager:
+    """Return the process-wide IPython manager, creating it if needed."""
+    global _ipython_manager
+    if _ipython_manager is None:
+        if cwd is None:
+            cwd = os.getcwd()
+        _ipython_manager = IpythonManager(cwd)
+    return _ipython_manager
 
 
 # Lazy stdlib shim so tests can patch os.environ without import-order issues.

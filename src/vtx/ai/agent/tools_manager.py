@@ -224,9 +224,9 @@ async def ensure_tools(
 _IPYTHON_MANAGER_INSTANCE: IpythonManager | None = None
 
 
-def get_ipython_manager() -> IpythonManager:
-    """Return the process-wide REPL manager, creating it if needed."""
+def get_ipython_manager(cwd: str | None = None) -> IpythonManager:
+    """Return the process-wide IPython manager, creating it if needed."""
     global _IPYTHON_MANAGER_INSTANCE
     if _IPYTHON_MANAGER_INSTANCE is None:
-        _IPYTHON_MANAGER_INSTANCE = IpythonManager(os.getcwd())
+        _IPYTHON_MANAGER_INSTANCE = IpythonManager(cwd or os.getcwd())
     return _IPYTHON_MANAGER_INSTANCE
