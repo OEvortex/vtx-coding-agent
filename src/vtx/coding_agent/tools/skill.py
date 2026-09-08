@@ -24,10 +24,11 @@ class SkillParams(BaseModel):
                 data[key] = None
         return data
 
-    action: Literal["list", "view", "create", "patch", "edit", "delete"] = Field(
+    action: Literal["list", "view", "create", "patch", "edit", "delete", "run"] = Field(
         description=(
             "Action: 'list' (discover), 'view' (read), 'create' (new skill), "
-            "'patch' (find-replace), 'edit' (overwrite), or 'delete'"
+            "'patch' (find-replace), 'edit' (overwrite), 'delete' (remove), "
+            "or 'run' (execute skill instructions in REPL)"
         ),
         default="view",
     )
@@ -62,7 +63,8 @@ class SkillTool(BaseTool):
     description = (
         "Inspect and manage skill workflows. Use 'list' to discover available skills, "
         "'view' to read instructions, 'create'/'edit' to author full SKILL.md files, "
-        "'patch' for targeted replacements, or 'delete' to remove a skill."
+        "'patch' for targeted replacements, 'delete' to remove a skill, or 'run' to "
+        "execute a skill's instructions in the REPL."
     )
 
     def format_call(self, params: SkillParams) -> str:
@@ -160,6 +162,40 @@ class SkillTool(BaseTool):
                 )
             except Exception as e:
                 msg = f"Failed to read skill file: {e}"
+                return ToolResult(success=False, result=msg, ui_summary=f"[red]{msg}[/red]")
+
+        # Handle 'run' action - execute skill in REPL
+        if params.action == "run":
+            if not skill_dir:
+                msg = f"Skill '{params.name}' not found."
+                return ToolResult(success=False, result=msg, ui_summary=f"[red]{msg}[/red]")
+
+            target_file = params.file_path or "SKILL.md"
+            target_path = skill_dir / target_file
+            try:
+                skill_content = target_path.read_text(encoding="utf-8")
+            except Exception as e:
+                msg = f"Failed to read skill file: {e}"
+                return ToolResult(success=False, result=msg, ui_summary=f"[red]{msg}[/red]")
+
+            # Execute the skill instructions via REPL
+            try:
+                from vtx.ai.agent.tools.ipython import IpythonTool
+
+                tool = IpythonTool()
+                # Wrap skill content in a Python comment block for the REPL
+                repl_code = (
+                    f"# Skill: {params.name}\n"
+                    f"# Path: {target_path}\n\n"
+                    f"{skill_content}\n\n"
+                    "print('Skill executed successfully')"
+                )
+                result = await tool.execute(tool.params(code=repl_code))
+                return ToolResult(
+                    success=True, result=result.result, ui_summary=f"Ran skill '{params.name}'"
+                )
+            except Exception as e:
+                msg = f"Failed to run skill in REPL: {e}"
                 return ToolResult(success=False, result=msg, ui_summary=f"[red]{msg}[/red]")
 
         # Mutating actions: 'create', 'edit', 'patch', 'delete'

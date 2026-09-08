@@ -6,6 +6,7 @@ Re-exports configuration primitives and schema from :mod:`vtx.ai.config`.
 from __future__ import annotations
 
 from vtx.ai.config import (
+    AGENT_MODES,
     AVAILABLE_BINARIES,
     CONFIG_DIR_NAME,
     CURRENT_CONFIG_VERSION,
@@ -14,6 +15,7 @@ from vtx.ai.config import (
     THINKING_LINES_OPTIONS,
     TYPE_CHECKING,
     AgentConfig,
+    AgentMode,
     AgentsConfig,
     Any,
     AuthConfig,
@@ -76,6 +78,7 @@ from vtx.ai.config import (
 )
 
 __all__ = [
+    "AGENT_MODES",
     "AVAILABLE_BINARIES",
     "CONFIG_DIR_NAME",
     "CURRENT_CONFIG_VERSION",
@@ -84,6 +87,7 @@ __all__ = [
     "THINKING_LINES_OPTIONS",
     "TYPE_CHECKING",
     "AgentConfig",
+    "AgentMode",
     "AgentsConfig",
     "Any",
     "AuthConfig",

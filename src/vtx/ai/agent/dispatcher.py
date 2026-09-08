@@ -68,6 +68,7 @@ class DispatcherContext:
     # dispatch is unavailable (e.g. headless test harness without a
     # ConversationRuntime).
     background_manager: BackgroundTaskManager | None = None
+    session: Any = None  # vtx.ai.agent.session.Session | None
 
 
 _context: DispatcherContext | None = None

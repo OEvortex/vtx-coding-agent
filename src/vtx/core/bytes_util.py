@@ -30,3 +30,17 @@ def parse_bytes(value: str) -> int:
     if number < 0:
         raise ValueError(f"size must be non-negative, got {number}")
     return int(number * _UNIT_FACTORS[unit])
+
+
+def truncate_bytes(data: str, max_bytes: int) -> str:
+    """Truncate a string to ``max_bytes`` bytes, preserving UTF-8 validity."""
+    if max_bytes <= 0:
+        return ""
+    encoded = data.encode("utf-8", "replace")
+    if len(encoded) <= max_bytes:
+        return data
+    truncated = encoded[:max_bytes]
+    # Back off from a truncated multibyte character.
+    while truncated and truncated[-1] & 0b11000000 == 0b10000000:
+        truncated = truncated[:-1]
+    return truncated.decode("utf-8", "replace")

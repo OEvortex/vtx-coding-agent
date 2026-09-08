@@ -171,6 +171,19 @@ class ConversationRuntime:
         self.anthropic_compat_auth_mode: AuthMode = anthropic_compat_auth_mode
         self.extensions = extensions
 
+        # In RLM mode, collapse the active tool set to just the REPL so the
+        # model behaves like Prime Agent: one persistent ipython, no
+        # surgical tool surface.
+        if vtx_config.mode == "rlm":
+            from vtx.ai.agent.tools import get_all_tools
+
+            base_pool = get_all_tools()
+            repl_tool = base_pool.get("ipython")
+            if repl_tool is not None:
+                self.tools = [repl_tool]
+            else:
+                self.tools = []
+
         # Per-session extension list (the ones contributed to the active
         # agent, if any). The launch path is responsible for passing the
         # right list — usually ``agent_extensions`` is the list of loaded
@@ -341,6 +354,18 @@ class ConversationRuntime:
         if self.agent is not None:
             self.agent.tools = self.tools
 
+        # In RLM mode, collapse the active tool set to just the REPL so the
+        # model behaves like Prime Agent: one persistent ipython, no
+        # surgical tool surface.
+        if vtx_config.mode == "rlm":
+            repl_tool = base_pool.get("ipython")
+            if repl_tool is not None:
+                self.tools = [repl_tool]
+            else:
+                self.tools = []
+            if self.agent is not None:
+                self.agent.tools = self.tools
+
         # Apply the agent's model/provider/thinking overrides.
         if active is not None:
             d = active.definition
@@ -421,6 +446,7 @@ class ConversationRuntime:
                 progress_callback=self._progress_callback
                 or (existing.progress_callback if existing else None),
                 background_manager=self._background_manager,
+                session=self.session,
             )
         )
 

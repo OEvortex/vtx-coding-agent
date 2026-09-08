@@ -4,6 +4,24 @@ All notable changes to Vtx are documented in this file. The format is based on
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project
 adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.2.0] - 2026-09-08
+
+### Added
+- **RLM mode with persistent IPython REPL** — new `rlm` mode that collapses the agent toolset to a single `ipython` tool backed by a long-lived IPython subprocess; variables, imports, and side effects persist across turns, matching Prime Agent's REPL-first workflow.
+- **IPython manager with kernel pool** — `IpythonManager` maintains a pool of persistent IPython kernels keyed by session, enabling parallel subagent execution without restarting the REPL; output streaming uses a newline-delimited JSON protocol.
+- **Synchronous thread-based runtime** — `IpythonRuntime` runs cell execution in a thread executor and uses a blocking stdout reader plus Queue, eliminating async reader race conditions and reducing latency compared to the previous async approach.
+- **Settings UI toggle for RLM mode** — mode selection moved from a slash command to the Settings panel (`mode: standard | rlm`), streamlining the UI surface.
+- **RLM prompt infrastructure** — dedicated `rlm_master_prompt.md`, prompt builder, and system prompt for the restricted-tool RLM runtime.
+
+### Changed
+- **`python_repl` renamed to `ipython`** across tools, prompts, config, and manager modules to reflect the persistent-kernel model.
+- **RLM mode restricts runtime tools** — when `mode=rlm`, the active tool list is reduced to the single `ipython` tool, removing standard coding-agent tools for the duration of the session.
+
+### Fixed
+- **Double-execution of trailing expressions** — the runtime now skips the eval block when the expression contains a `Call` or `Yield`, preventing outputs like `print(2+2)` from running twice and breaking tool-call loops.
+- **Premature turn ending in RLM mode** — empty-cell synthesis, errored tuple returns, and `mutating=False` on the `IpythonTool` were corrected so the runtime waits for real output instead of ending the turn early.
+- **IPython runtime async blocking** — cells now execute in a worker thread, and trailing-expression detection uses `ast.parse` so the asyncio loop stays free and the runtime doesn't hang on blocking calls.
+
 ## [1.1.3] - 2026-09-07
 
 ### Fixed

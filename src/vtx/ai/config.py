@@ -42,6 +42,8 @@ CONFIG_DIR_NAME: str = "vtx"
 OnOverflowMode = Literal["continue", "pause"]
 AuthMode = Literal["auto", "required", "none"]
 PermissionMode = Literal["prompt", "auto"]
+AgentMode = Literal["tool_first", "rlm"]
+AGENT_MODES: tuple[AgentMode, ...] = get_args(AgentMode)
 NotificationMode = Literal["on", "off"]
 PERMISSION_MODES: tuple[PermissionMode, ...] = get_args(PermissionMode)
 NOTIFICATION_MODES: tuple[NotificationMode, ...] = get_args(NotificationMode)
@@ -60,7 +62,7 @@ def _load_default_config_yaml() -> dict[str, Any]:
 
 
 _DEFAULT_CONFIG_DATA = _load_default_config_yaml()
-CURRENT_CONFIG_VERSION = int(_DEFAULT_CONFIG_DATA.get("meta", {}).get("config_version", 1))
+CURRENT_CONFIG_VERSION = int(_DEFAULT_CONFIG_DATA.get("meta", {}).get("config_version", 13))
 
 
 _config_var: ContextVar["Config | None"] = ContextVar("vtx_config", default=None)
@@ -114,6 +116,12 @@ class UIConfig(BaseModel):
 class SystemPromptConfig(BaseModel):
     git_context: bool = False
     ponytail: bool = False
+
+
+class AgentModeConfig(BaseModel):
+    """Runtime mode for the agent."""
+
+    mode: AgentMode = "tool_first"
 
 
 class AuthConfig(BaseModel):
@@ -271,6 +279,10 @@ class ConfigSchema(BaseModel):
     agents: AgentsConfig = AgentsConfig()
     # Built-in sub-agent presets for the ``Task`` tool.
     task: TaskConfig = TaskConfig()
+    # Runtime mode: ``tool_first`` uses the default surgical tool surface;
+    # ``rlm`` switches to a REPL-first experience where the model primarily
+    # executes Python through a persistent ``ipython`` tool.
+    mode: AgentMode = "tool_first"
 
 
 # =================================================================================================
@@ -382,6 +394,10 @@ class Config:
     @property
     def task(self) -> TaskConfig:
         return self._parsed.task
+
+    @property
+    def mode(self) -> AgentMode:
+        return self._parsed.mode
 
 
 # =================================================================================================
@@ -679,6 +695,22 @@ def _migrate_v11_to_v12(data: dict[str, Any]) -> dict[str, Any]:
     return migrated
 
 
+def _migrate_v12_to_v13(data: dict[str, Any]) -> dict[str, Any]:
+    """Add the ``mode`` field. Pre-v13 users get ``tool_first``."""
+    migrated = Config._apply_legacy_key_shims(data)
+
+    mode = migrated.get("mode")
+    if mode not in ("tool_first", "rlm"):
+        migrated["mode"] = "tool_first"
+
+    meta = migrated.get("meta")
+    if not isinstance(meta, dict):
+        migrated["meta"] = {"config_version": 13}
+    else:
+        meta["config_version"] = 13
+    return migrated
+
+
 def _migrate_config_data(data: dict[str, Any]) -> tuple[dict[str, Any], int, int, bool]:
     original = deepcopy(data)
     current_version = _get_config_version(original)
@@ -732,6 +764,10 @@ def _migrate_config_data(data: dict[str, Any]) -> tuple[dict[str, Any], int, int
         if current_version == 11:
             migrated = _migrate_v11_to_v12(migrated)
             current_version = 12
+            continue
+        if current_version == 12:
+            migrated = _migrate_v12_to_v13(migrated)
+            current_version = 13
             continue
         break
 
