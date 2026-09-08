@@ -286,27 +286,7 @@ def _init_builtin_helpers() -> None:
     _namespace.setdefault("goal_update", goal_update)
     _namespace.setdefault("goal_set_tasks", goal_set_tasks)
     _namespace.setdefault("rlm", rlm)
-
-
-def call_tool(name: str, **kwargs: Any) -> Any:
-    """Call a main-process tool from the REPL via the JSON tool-call RPC.
-
-    Sends a ``tool_call`` event to the manager and blocks until the manager
-    writes a ``tool_result`` request back through stdin. Raises on tool error
-    or timeout.
-    """
-    rid = uuid.uuid4().hex
-    event = threading.Event()
-    _tool_call_events[rid] = event
-    _send({"event": "tool_call", "id": rid, "name": name, "args": kwargs})
-    if not event.wait(timeout=300):
-        _tool_call_events.pop(rid, None)
-        raise TimeoutError(f"Tool call {name} timed out after 300s")
-    result = _tool_call_responses.pop(rid, None)
-    _tool_call_events.pop(rid, None)
-    if isinstance(result, Exception):
-        raise result
-    return result
+    _namespace.setdefault("call_tool", call_tool)
 
 
 def call_tool(name: str, **kwargs: Any) -> Any:
@@ -439,6 +419,7 @@ def _run_cell_sync(code: str, cell_id: str) -> None:
     except Exception:
         tb = traceback.format_exc()
         sys.stderr.write(tb)
+        raise
     finally:
         sys.stdout = old_stdout
         sys.stderr = old_stderr
@@ -508,16 +489,32 @@ def main() -> None:
     loop = asyncio.new_event_loop()
     asyncio.set_event_loop(loop)
 
+    line_queue: asyncio.Queue[str | None] = asyncio.Queue()
+
+    def stdin_reader() -> None:
+        while True:
+            try:
+                line = sys.stdin.readline()
+            except Exception:
+                break
+            if not line:
+                break
+            loop.call_soon_threadsafe(line_queue.put_nowait, line)
+        loop.call_soon_threadsafe(line_queue.put_nowait, None)
+
+    reader_thread = threading.Thread(target=stdin_reader, name="ipython-stdin-reader", daemon=True)
+    reader_thread.start()
+
     async def serve() -> None:
         global _shutdown
         while not _shutdown:
             try:
-                raw = await loop.run_in_executor(None, sys.stdin.buffer.readline)
+                raw_line = await line_queue.get()
             except Exception:
                 break
-            if not raw:
+            if raw_line is None:
                 break
-            line = raw.decode("utf-8", "replace").strip()
+            line = raw_line.strip()
             if not line:
                 continue
             try:
@@ -547,9 +544,15 @@ def main() -> None:
                 continue
             rtype = request.get("type")
             if rtype == "execute":
-                # Dispatch to a worker thread so the asyncio loop stays free
-                # to keep reading stdin.
-                await loop.run_in_executor(None, _execute_in_thread, request)
+                # Execute in a dedicated thread so stdin continues processing
+                # tool results and other events without blocking.
+                exec_thread = threading.Thread(
+                    target=_execute_in_thread,
+                    args=(request,),
+                    name=f"ipython-exec-{request.get('id', 'cell')}",
+                    daemon=True,
+                )
+                exec_thread.start()
             elif rtype == "interrupt":
                 os.kill(os.getpid(), signal.SIGINT)
             elif rtype == "shutdown":

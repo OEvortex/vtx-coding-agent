@@ -163,6 +163,8 @@ class IpythonTool(BaseTool):
             from vtx.ai.agent.tools import get_tool
 
             tool = get_tool(name)
+            if tool is None and name == "web_search":
+                tool = get_tool("web")
             if tool is None:
                 raise ValueError(f"Tool not found: {name}")
             params_model = tool.params(**args)

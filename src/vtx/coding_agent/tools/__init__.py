@@ -61,6 +61,7 @@ all_tools: list[BaseTool] = [
     GrepTool(),
     SkillTool(),
     WebTool(),
+    WebSearchTool(),
     AskUserTool(),
     TaskTool(),
     GoalTool(),

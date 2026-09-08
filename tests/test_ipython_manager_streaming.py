@@ -197,19 +197,21 @@ async def test_tool_call_event_dispatches_to_executor():
 
     async def feed():
         await kernel._queue.put(
-            json.dumps({"event": "tool_call", "id": "rid-1", "name": "web_search", "args": {"query": "hello", "num_results": 2}})
+            json.dumps(
+                {
+                    "event": "tool_call",
+                    "id": "rid-1",
+                    "name": "web_search",
+                    "args": {"query": "hello", "num_results": 2},
+                }
+            )
         )
         await kernel._queue.put(json.dumps({"event": "done", "id": "rid-1", "status": "ok"}))
         await kernel._queue.put(None)
 
     feed_task = asyncio.create_task(feed())
     try:
-        result = await kernel._wait_output(
-            "rid-1",
-            asyncio.Event(),
-            on_output=None,
-            timeout=5.0,
-        )
+        result = await kernel._wait_output("rid-1", asyncio.Event(), on_output=None, timeout=5.0)
     finally:
         feed_task.cancel()
         with contextlib.suppress(asyncio.CancelledError, Exception):

@@ -126,3 +126,38 @@ def test_attribute_access_shows_repr(runtime):
     _send(runtime, {"type": "execute", "id": rid, "code": "import math\nmath.pi"})
     stdout_text = _collect_until_done(runtime, rid)
     assert stdout_text.startswith("3.14"), f"expected repr of pi, got {stdout_text!r}"
+
+
+def test_tool_call_rpc_bridge(runtime):
+    """Calling a tool helper like web_search must exchange tool_call and tool_result without
+    hanging."""
+    rid = uuid.uuid4().hex
+    _send(
+        runtime,
+        {
+            "type": "execute",
+            "id": rid,
+            "code": 'res = call_tool("web_search", query="HelpingAI")\nprint("SUCCESS:", res)',
+        },
+    )
+    # Read until we see the tool_call event
+    deadline = time.monotonic() + 5.0
+    tool_id = None
+    while time.monotonic() < deadline:
+        line = runtime.stdout.readline()
+        if not line:
+            break
+        event = json.loads(line)
+        if event.get("event") == "tool_call":
+            tool_id = event.get("id")
+            assert event.get("name") == "web_search"
+            assert event.get("args") == {"query": "HelpingAI"}
+            break
+    assert tool_id is not None, "Did not receive tool_call event"
+
+    # Send tool_result back
+    _send(runtime, {"event": "tool_result", "id": tool_id, "result": "Found HelpingAI"})
+
+    # Collect done
+    stdout_text = _collect_until_done(runtime, rid)
+    assert "SUCCESS: Found HelpingAI" in stdout_text
