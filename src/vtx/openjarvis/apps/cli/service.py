@@ -17,7 +17,6 @@ from typing import Any
 from urllib.parse import urlparse
 
 import httpx
-
 from vtx.openjarvis.apps.protocol import app_manifest, compact_dict
 from vtx.openjarvis.security.workspace_policy import is_path_within
 from vtx.openjarvis.utils.paths import get_runtime_subdir

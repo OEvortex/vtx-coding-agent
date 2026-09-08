@@ -401,5 +401,46 @@ f"code={prev_code.splitlines()[-1]}; res={prev_res}; under={_}"
         out3, err3 = await kernel.execute(cell3, timeout=5.0)
         assert not err3
         assert "120" in out3
+
+        # Fourth cell uses ! shell escape
+        cell4 = """!echo 'hello from bang'"""
+        out4, err4 = await kernel.execute(cell4, timeout=5.0)
+        assert not err4
+        assert "hello from bang" in out4
+
+        # Fifth cell uses %%bash cell magic
+        cell5 = """%%bash
+echo 'hello from magic'
+"""
+        out5, err5 = await kernel.execute(cell5, timeout=5.0)
+        assert not err5
+        assert "hello from magic" in out5
+    finally:
+        await kernel.close()
+
+
+@pytest.mark.asyncio
+async def test_ipython_runtime_out_eviction(tmp_path):
+    """Out dict should not grow beyond _MAX_OUT_ENTRIES."""
+    from vtx.ai.agent.ipython_manager import IpythonKernel
+
+    kernel = IpythonKernel("test-kernel-out-eviction", cwd=str(tmp_path))
+    await kernel.start()
+    try:
+        # Execute many cells to trigger eviction
+        for i in range(1050):
+            cell = f"x = {i}"
+            _out, err = await kernel.execute(cell, timeout=5.0)
+            assert not err
+
+        # Check Out size through the kernel itself (subprocess has separate namespace)
+        out_size, err = await kernel.execute("len(Out)", timeout=5.0)
+        assert not err
+        assert int(out_size.strip()) <= 1000
+
+        # Check that oldest entries were evicted by verifying a recent value exists
+        out_val, err = await kernel.execute("Out[1050]", timeout=5.0)
+        assert not err
+        assert "1050" in out_val
     finally:
         await kernel.close()

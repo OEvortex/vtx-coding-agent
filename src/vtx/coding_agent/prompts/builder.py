@@ -1,61 +1,23 @@
 """System prompt assembly for Vtx.
 
-The composer joins a small set of named sections in a fixed order:
-
-1. **base**    - the agent identity + general rules (or a user override)
-2. **tooling** - ``# Tool usage`` lines aggregated from tool guidelines
-3. **project** - discovered ``AGENTS.md`` / ``CLAUDE.md`` files
-4. **skills**  - discovered skill descriptions
-5. **git**     - snapshot of the working tree (only when enabled)
-6. **env**     - current date/time and working directory
-
-Each section is empty when its source has nothing to contribute, so
-the final prompt is just whatever joined list comes back. ``build_system_prompt``
-is the single entry point used by :mod:`vtx.loop` and the runtime.
+Re-exported from :mod:`vtx.ai.agent.prompts.builder` with the
+``vtx.coding_agent`` config object so that the coding-agent layer sees
+its own configuration values while sharing the implementation.
 """
 
 from __future__ import annotations
 
 from typing import Any
 
-from vtx.ai.agent.tools import BaseTool
 from vtx.coding_agent.config import config as vtx_config
-from vtx.coding_agent.context import (
-    Context,
-    formatted_agent_mds,
-    formatted_git_context,
-    formatted_skills,
-)
-from vtx.coding_agent.prompts.env import build_env_section
-from vtx.coding_agent.prompts.identity import DEFAULT_VTX_BASE
-from vtx.coding_agent.prompts.ponytail import build_ponytail_section
-from vtx.coding_agent.prompts.rlm import build_rlm_system_prompt
-from vtx.coding_agent.prompts.tooling import build_tool_guidelines_section
 
-
-def _resolve_base(override: str | None) -> str:
-    """Return the hardcoded base identity prompt."""
-    if override is not None:
-        return override
-    return DEFAULT_VTX_BASE
-
-
-def _resolve_git_flag(include_git: bool | None) -> bool:
-    if include_git is not None:
-        return include_git
-    return vtx_config.llm.system_prompt.git_context
-
-
-def _resolve_ponytail_flag(include_ponytail: bool | None) -> bool:
-    if include_ponytail is not None:
-        return include_ponytail
-    return getattr(vtx_config.llm.system_prompt, "ponytail", False)
+__all__ = ["build_system_prompt"]
 
 
 def build_system_prompt(
     cwd: str,
-    context: Context | None = None,
-    tools: list[BaseTool] | None = None,
+    context: Any = None,
+    tools: list[Any] | None = None,
     *,
     base_content: str | None = None,
     include_git_context: bool | None = None,
@@ -66,85 +28,24 @@ def build_system_prompt(
 ) -> str:
     """Compose the final system prompt for the agent.
 
-    Args:
-        cwd: Working directory used for context discovery and the env line.
-        context: Pre-loaded :class:`Context`. Loaded from ``cwd`` when omitted.
-        tools: Active tool set; contributes the ``# Tool usage`` section.
-        base_content: Override for the base identity/rules string. When
-            ``None`` the function uses :data:`vtx.prompts.identity.DEFAULT_VTX_BASE`.
-        include_git_context: Force the git section on/off. When ``None``
-            the value is read from config.
-        extra_instructions: Optional extra instructions appended to (or
-            replacing) the base identity block. Used by switchable agents
-            to inject their per-agent profile. ``None`` or empty string
-            means "no extra section".
-        extra_instructions_mode: ``"append"`` (default) inserts the extra
-            block after the base identity; ``"replace"`` swaps the base
-            identity out entirely. Ignored when ``extra_instructions`` is
-            empty.
+    This wrapper ensures the coding-agent config is active when the
+    underlying builder checks ``mode`` and other settings.
     """
-    from vtx.coding_agent.config import config as vtx_config
+    import vtx.ai.agent.prompts.builder as _builder
 
-    if context is None:
-        context = Context.load(cwd)
-
-    mode = vtx_config.mode
-    if mode == "rlm" and base_content is None:
-        installed_skills = (
-            [s.name for s in (skills or context.skills)] if (skills or context.skills) else []
+    original_config = _builder.vtx_config
+    _builder.vtx_config = vtx_config
+    try:
+        return _builder.build_system_prompt(
+            cwd=cwd,
+            context=context,
+            tools=tools,
+            base_content=base_content,
+            include_git_context=include_git_context,
+            include_ponytail=include_ponytail,
+            extra_instructions=extra_instructions,
+            extra_instructions_mode=extra_instructions_mode,
+            skills=skills,
         )
-        tool_names = [t.name if hasattr(t, "name") else str(t) for t in (tools or [])]
-        base = build_rlm_system_prompt(
-            cwd=cwd, installed_skills=installed_skills, active_tools=tool_names or ["ipython"]
-        )
-        sections: list[str] = [base]
-        if extra_instructions and extra_instructions_mode == "append":
-            sections.append(extra_instructions)
-        tool_section = build_tool_guidelines_section(tools)
-        if tool_section:
-            sections.append(tool_section)
-        if context.agents_files:
-            sections.append(formatted_agent_mds(context.agents_files))
-        effective_skills = skills if skills is not None else context.skills
-        if effective_skills:
-            sections.append(formatted_skills(effective_skills))
-        if _resolve_git_flag(include_git_context):
-            git_section = formatted_git_context(cwd)
-            if git_section:
-                sections.append(git_section)
-        sections.append(build_env_section(cwd))
-        return "\n\n".join(sections)
-
-    base = _resolve_base(base_content)
-    if extra_instructions and extra_instructions_mode == "replace":
-        base = extra_instructions
-    sections: list[str] = [base]
-
-    if extra_instructions and extra_instructions_mode == "append":
-        sections.append(extra_instructions)
-
-    if _resolve_ponytail_flag(include_ponytail):
-        sections.append(build_ponytail_section())
-
-    tool_section = build_tool_guidelines_section(tools)
-    if tool_section:
-        sections.append(tool_section)
-
-    if context.agents_files:
-        sections.append(formatted_agent_mds(context.agents_files))
-
-    effective_skills = skills if skills is not None else context.skills
-    if effective_skills:
-        sections.append(formatted_skills(effective_skills))
-
-    if _resolve_git_flag(include_git_context):
-        git_section = formatted_git_context(cwd)
-        if git_section:
-            sections.append(git_section)
-
-    sections.append(build_env_section(cwd))
-
-    return "\n\n".join(sections)
-
-
-__all__ = ["build_system_prompt"]
+    finally:
+        _builder.vtx_config = original_config

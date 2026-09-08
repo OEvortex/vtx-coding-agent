@@ -522,6 +522,15 @@ def preview_ipython_code(code: str) -> tuple[str, str]:
     if bash_match:
         body = trimmed[bash_match.end() :]
         return preview_bash_command(body)
+    # If the first non-empty line starts with '!', preview as bash command
+    for line in trimmed.splitlines():
+        line_str = line.strip()
+        if not line_str:
+            continue
+        if line_str.startswith("!"):
+            cmd = line_str.lstrip("!").strip()
+            return preview_bash_command(cmd)
+        break
     return preview_python_code(trimmed)
 
 

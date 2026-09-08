@@ -29,10 +29,12 @@ from typing import Any
 PROTOCOL_VERSION = 1
 
 _write_lock = threading.Lock()
+_state_lock = threading.Lock()
 _protocol_fd: int = -1
 _namespace: dict[str, Any] = {}
 _shutdown = False
 _ready_event = threading.Event()
+_MAX_OUT_ENTRIES = 1000  # Cap In/Out history to prevent unbounded memory growth
 
 # IPython-style execution history: In[n] has input code string, Out[n] has returned repr/value.
 # _In holds the list of input codes (1-indexed, In[0] is empty string).
@@ -207,14 +209,13 @@ def _init_builtin_helpers() -> None:
         val = None
         if tree is not None and tree.body:
             c = compile(tree, "<dynamic-cell>", "exec", flags=flags)
-            res = eval(c, _namespace)
+            res = eval(c, _namespace)  # eval() handles top-level await in CPython
             if inspect.iscoroutine(res):
                 val = asyncio.run(res)
-        elif tree is None:
-            c = compile(code_str, "<dynamic-cell>", "exec", flags=flags)
-            res = eval(c, _namespace)
-            if inspect.iscoroutine(res):
-                val = asyncio.run(res)
+        elif tree is not None:
+            # Empty or whitespace-only cell after stripping trailing expression
+            pass
+        # Removed dead 'elif tree is None' branch: if ast.parse fails, compile also fails
 
         if trailing is not None:
             c_expr = compile(trailing, "<dynamic-cell>", "eval", flags=flags)
@@ -244,6 +245,37 @@ def _init_builtin_helpers() -> None:
     _namespace.setdefault("rerun", rerun)
 
 
+def transform_cell_code(code: str) -> str:
+    """Transform IPython cell magics (%%bash) and shell escapes (!cmd) into Python code."""
+    trimmed = code.rstrip()
+    if not trimmed:
+        return code
+
+    # Check for %%bash cell magic
+    m_bash = re.match(r"^(?:[ \t]*\r?\n)*[ \t]*%%bash\b[^\r\n]*(?:\r?\n|$)", trimmed)
+    if m_bash:
+        bash_body = trimmed[m_bash.end() :]
+        escaped = bash_body.replace("\\", "\\\\").replace('"""', '\\"\\"\\"')
+        return f'run_bash("""{escaped}""")'
+
+    # Transform lines starting with ! into run_bash(...)
+    lines = code.splitlines(keepends=True)
+    transformed_lines: list[str] = []
+    has_transforms = False
+    for line in lines:
+        stripped = line.lstrip()
+        if stripped.startswith("!"):
+            indent = line[: len(line) - len(stripped)]
+            cmd = stripped[1:].strip()
+            escaped = cmd.replace("\\", "\\\\").replace('"', '\\"')
+            transformed_lines.append(f'{indent}run_bash("{escaped}")\n')
+            has_transforms = True
+        else:
+            transformed_lines.append(line)
+
+    return "".join(transformed_lines) if has_transforms else code
+
+
 _init_builtin_helpers()
 
 
@@ -255,19 +287,21 @@ def _send(event: dict[str, Any]) -> None:
 
 def _run_cell_sync(code: str, cell_id: str) -> None:
     """Run a cell synchronously in the worker thread; send events directly."""
+    code = transform_cell_code(code)
     global _cell_number
-    _cell_number += 1
-    cell_num = _cell_number
+    with _state_lock:
+        _cell_number += 1
+        cell_num = _cell_number
 
-    # Maintain IPython-style In history: In[n] = code string
-    In.append(code)
-    _namespace["In"] = In
-    _namespace["_ih"] = In
-    _namespace["_i"] = code
-    if len(In) > 2:
-        _namespace["_ii"] = In[-2]
-    if len(In) > 3:
-        _namespace["_iii"] = In[-3]
+        # Maintain IPython-style In history: In[n] = code string
+        In.append(code)
+        _namespace["In"] = In
+        _namespace["_ih"] = In
+        _namespace["_i"] = code
+        if len(In) > 2:
+            _namespace["_ii"] = In[-2]
+        if len(In) > 3:
+            _namespace["_iii"] = In[-3]
 
     old_stdout = sys.stdout
     old_stderr = sys.stderr
@@ -291,14 +325,10 @@ def _run_cell_sync(code: str, cell_id: str) -> None:
         flags = ast.PyCF_ALLOW_TOP_LEVEL_AWAIT
         if tree is not None and tree.body:
             compiled_body = compile(tree, f"<cell-{cell_id}>", "exec", flags=flags)
-            res = eval(compiled_body, _namespace)
+            res = eval(compiled_body, _namespace)  # eval() handles top-level await in CPython
             if inspect.iscoroutine(res):
                 asyncio.run(res)
-        elif tree is None:
-            compiled = compile(code, f"<cell-{cell_id}>", "exec", flags=flags)
-            res = eval(compiled, _namespace)
-            if inspect.iscoroutine(res):
-                asyncio.run(res)
+        # Removed dead 'elif tree is None' branch: if ast.parse fails, compile also fails
 
         if trailing_expr is not None:
             compiled_expr = compile(trailing_expr, f"<cell-{cell_id}>", "eval", flags=flags)
@@ -306,14 +336,20 @@ def _run_cell_sync(code: str, cell_id: str) -> None:
             if inspect.iscoroutine(value):
                 value = asyncio.run(value)
             if value is not None:
-                # Update _, __, ___ and Out[cell_num]
-                if "_" in _namespace:
-                    _namespace["___"] = _namespace.get("__")
-                    _namespace["__"] = _namespace["_"]
-                _namespace["_"] = value
-                Out[cell_num] = value
-                _namespace["Out"] = Out
-                _namespace["_oh"] = Out
+                with _state_lock:
+                    # Update _, __, ___ and Out[cell_num]
+                    if "_" in _namespace:
+                        _namespace["___"] = _namespace.get("__")
+                        _namespace["__"] = _namespace["_"]
+                    _namespace["_"] = value
+                    Out[cell_num] = value
+                    # Evict oldest Out entries if over limit to prevent memory leak
+                    if len(Out) > _MAX_OUT_ENTRIES:
+                        overflow = len(Out) - _MAX_OUT_ENTRIES
+                        for old_key in sorted(Out.keys())[:overflow]:
+                            del Out[old_key]
+                    _namespace["Out"] = Out
+                    _namespace["_oh"] = Out
                 sys.stdout.write(repr(value) + "\n")
     except Exception:
         tb = traceback.format_exc()
