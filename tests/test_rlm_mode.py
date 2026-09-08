@@ -369,3 +369,37 @@ x"""
         assert "42" in output
     finally:
         await kernel.close()
+
+
+@pytest.mark.asyncio
+async def test_ipython_runtime_code_as_variable(tmp_path):
+    from vtx.ai.agent.ipython_manager import IpythonKernel
+
+    kernel = IpythonKernel("test-kernel-code-vars", cwd=str(tmp_path))
+    await kernel.start()
+    try:
+        # First cell defines a computation
+        cell1 = """a = 100
+b = 20
+a + b"""
+        out1, err1 = await kernel.execute(cell1, timeout=5.0)
+        assert not err1
+        assert "120" in out1
+
+        # Second cell accesses In, Out, _i, _
+        cell2 = """prev_code = In[1]
+prev_res = Out[1]
+f"code={prev_code.splitlines()[-1]}; res={prev_res}; under={_}"
+"""
+        out2, err2 = await kernel.execute(cell2, timeout=5.0)
+        assert not err2
+        assert "a + b" in out2
+        assert "120" in out2
+
+        # Third cell uses context.code_history and rerun
+        cell3 = """rerun(1)"""
+        out3, err3 = await kernel.execute(cell3, timeout=5.0)
+        assert not err3
+        assert "120" in out3
+    finally:
+        await kernel.close()

@@ -34,6 +34,17 @@ _namespace: dict[str, Any] = {}
 _shutdown = False
 _ready_event = threading.Event()
 
+# IPython-style execution history: In[n] has input code string, Out[n] has returned repr/value.
+# _In holds the list of input codes (1-indexed, In[0] is empty string).
+# _Out holds the mapping of cell execution numbers to evaluated results.
+In: list[str] = [""]
+Out: dict[int, Any] = {}
+_namespace["In"] = In
+_namespace["Out"] = Out
+_namespace["_ih"] = In
+_namespace["_oh"] = Out
+_cell_number = 0
+
 
 @dataclass
 class RLMContext:
@@ -89,11 +100,46 @@ class RLMContext:
                 results.append(msg)
         return results
 
+    @property
+    def code_history(self) -> list[str]:
+        """Return all code snippets written across conversation turns and cell executions."""
+        snippets: list[str] = []
+        # First gather from message history (any tool_calls to ipython/bash or python codeblocks)
+        for msg in self.messages:
+            tool_calls = msg.get("tool_calls") or []
+            for tc in tool_calls:
+                if tc.get("name") in ("ipython", "bash"):
+                    args = tc.get("arguments") or {}
+                    code = args.get("code") or args.get("command")
+                    if code and code not in snippets:
+                        snippets.append(code)
+        # Also include all cells executed in this runtime session from In[1:]
+        for c in In[1:]:
+            if c and c not in snippets:
+                snippets.append(c)
+        return snippets
+
+    def get_code(self, index: int = -1) -> str:
+        """Get a previous code snippet by index (default -1 for most recent)."""
+        history = self.code_history
+        if not history:
+            return ""
+        try:
+            return history[index]
+        except IndexError:
+            return ""
+
+    def search_code(self, pattern: str) -> list[str]:
+        """Search previous code snippets for matching text or regex."""
+        regex = re.compile(pattern, re.IGNORECASE)
+        return [code for code in self.code_history if regex.search(code)]
+
     def __repr__(self) -> str:
         msg_count = len(self.messages)
+        cells_count = max(0, len(In) - 1)
         return (
             f"<RLMContext session_id={self.session_id!r} cwd={self.cwd!r} "
-            f"model={self.model!r} messages={msg_count}>"
+            f"model={self.model!r} messages={msg_count} cells={cells_count}>"
         )
 
 
@@ -147,11 +193,55 @@ def _init_builtin_helpers() -> None:
             f.write(new_data)
         return f"Edited {path}"
 
+    def run_code(code_str: str) -> Any:
+        """Dynamically execute code in the REPL namespace and return its last expression value."""
+        flags = ast.PyCF_ALLOW_TOP_LEVEL_AWAIT
+        tree = None
+        trailing = None
+        with contextlib.suppress(SyntaxError):
+            tree = ast.parse(code_str, mode="exec")
+        if tree is not None and tree.body and isinstance(tree.body[-1], ast.Expr):
+            last_expr = tree.body.pop()
+            trailing = ast.Expression(last_expr.value)
+
+        val = None
+        if tree is not None and tree.body:
+            c = compile(tree, "<dynamic-cell>", "exec", flags=flags)
+            res = eval(c, _namespace)
+            if inspect.iscoroutine(res):
+                val = asyncio.run(res)
+        elif tree is None:
+            c = compile(code_str, "<dynamic-cell>", "exec", flags=flags)
+            res = eval(c, _namespace)
+            if inspect.iscoroutine(res):
+                val = asyncio.run(res)
+
+        if trailing is not None:
+            c_expr = compile(trailing, "<dynamic-cell>", "eval", flags=flags)
+            val = eval(c_expr, _namespace)
+            if inspect.iscoroutine(val):
+                val = asyncio.run(val)
+            if val is not None:
+                _namespace["_"] = val
+        return val
+
+    def rerun(index: int = -1) -> Any:
+        """Re-run a previously executed cell or code snippet by index (default: last)."""
+        ctx: RLMContext | None = _namespace.get("context")
+        code = ctx.get_code(index) if ctx else ""
+        if not code and len(In) > 1:
+            code = In[index]
+        if not code:
+            raise ValueError(f"No previous code found at index {index}")
+        return run_code(code)
+
     _namespace.setdefault("bash", run_bash)
     _namespace.setdefault("run_bash", run_bash)
     _namespace.setdefault("read_file", read_file)
     _namespace.setdefault("write_file", write_file)
     _namespace.setdefault("edit_file", edit_file)
+    _namespace.setdefault("run_code", run_code)
+    _namespace.setdefault("rerun", rerun)
 
 
 _init_builtin_helpers()
@@ -165,6 +255,20 @@ def _send(event: dict[str, Any]) -> None:
 
 def _run_cell_sync(code: str, cell_id: str) -> None:
     """Run a cell synchronously in the worker thread; send events directly."""
+    global _cell_number
+    _cell_number += 1
+    cell_num = _cell_number
+
+    # Maintain IPython-style In history: In[n] = code string
+    In.append(code)
+    _namespace["In"] = In
+    _namespace["_ih"] = In
+    _namespace["_i"] = code
+    if len(In) > 2:
+        _namespace["_ii"] = In[-2]
+    if len(In) > 3:
+        _namespace["_iii"] = In[-3]
+
     old_stdout = sys.stdout
     old_stderr = sys.stderr
     sys.stdout = _CellStdout(cell_id)
@@ -202,7 +306,14 @@ def _run_cell_sync(code: str, cell_id: str) -> None:
             if inspect.iscoroutine(value):
                 value = asyncio.run(value)
             if value is not None:
+                # Update _, __, ___ and Out[cell_num]
+                if "_" in _namespace:
+                    _namespace["___"] = _namespace.get("__")
+                    _namespace["__"] = _namespace["_"]
                 _namespace["_"] = value
+                Out[cell_num] = value
+                _namespace["Out"] = Out
+                _namespace["_oh"] = Out
                 sys.stdout.write(repr(value) + "\n")
     except Exception:
         tb = traceback.format_exc()

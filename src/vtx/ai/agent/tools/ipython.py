@@ -110,13 +110,30 @@ class IpythonTool(BaseTool):
             tokens_data: dict[str, Any] = {}
             if session_obj is not None:
                 for msg in session_obj.messages:
-                    msg_dict: dict[str, Any] = {"role": getattr(msg, "role", "unknown")}
+                    role = getattr(msg, "role", "unknown")
+                    msg_dict: dict[str, Any] = {"role": role}
+                    if role == "tool_result":
+                        msg_dict["tool_name"] = getattr(msg, "tool_name", "")
+                        msg_dict["tool_call_id"] = getattr(msg, "tool_call_id", "")
+                        msg_dict["is_error"] = getattr(msg, "is_error", False)
                     content = getattr(msg, "content", None)
                     if isinstance(content, list):
                         msg_dict["content"] = [
                             getattr(p, "text", str(p)) if hasattr(p, "text") else str(p)
                             for p in content
                         ]
+                        # If assistant message contains tool calls, serialize them
+                        tool_calls = [
+                            {
+                                "id": getattr(p, "id", ""),
+                                "name": getattr(p, "name", ""),
+                                "arguments": getattr(p, "arguments", {}),
+                            }
+                            for p in content
+                            if getattr(p, "type", None) == "tool_call"
+                        ]
+                        if tool_calls:
+                            msg_dict["tool_calls"] = tool_calls
                     else:
                         msg_dict["content"] = str(content) if content is not None else ""
                     messages_data.append(msg_dict)

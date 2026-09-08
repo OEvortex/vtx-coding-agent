@@ -93,7 +93,10 @@ def build_system_prompt(
         installed_skills = (
             [s.name for s in (skills or context.skills)] if (skills or context.skills) else []
         )
-        base = build_rlm_system_prompt(cwd=cwd, installed_skills=installed_skills)
+        tool_names = [t.name if hasattr(t, "name") else str(t) for t in (tools or [])]
+        base = build_rlm_system_prompt(
+            cwd=cwd, installed_skills=installed_skills, active_tools=tool_names or ["ipython"]
+        )
         sections: list[str] = [base]
         if extra_instructions and extra_instructions_mode == "append":
             sections.append(extra_instructions)
