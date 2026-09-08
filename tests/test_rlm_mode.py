@@ -4,6 +4,8 @@ from __future__ import annotations
 
 from pathlib import Path
 
+import pytest
+
 from vtx.ai.agent.runtime import ConversationRuntime
 from vtx.ai.config import Config, ConfigSchema, set_config
 from vtx.coding_agent.prompts.builder import build_system_prompt
@@ -276,3 +278,94 @@ def test_tool_first_mode_keeps_default_tools():
     tool_names = [t.name for t in runtime.tools]
     assert "ipython" in tool_names
     assert len(tool_names) > 1
+
+
+def test_code_preview_heuristics():
+    from vtx.tui.ipython_block import (
+        normalize_error_details,
+        preview_bash_command,
+        preview_ipython_code,
+        preview_python_code,
+        summarize_error_details,
+    )
+
+    # Bash command preview skips set -e and runner wrappers
+    lang, text = preview_bash_command("set -e\npytest tests/test_rlm_mode.py")
+    assert lang == "bash"
+    assert "pytest" in text
+
+    # Python code preview scores mutations and effects higher than imports/definitions
+    python_code = """import os
+from pathlib import Path
+
+p = Path("test.txt")
+p.write_text("hello")
+"""
+    lang, text = preview_python_code(python_code)
+    assert lang == "python"
+    assert "write test.txt" in text
+
+    # IPython bash cell magic
+    bash_cell = """%%bash
+git status
+"""
+    lang, text = preview_ipython_code(bash_cell)
+    assert lang == "bash"
+    assert "git status" in text
+
+    # Error normalization and summarization
+    traceback_err = """Traceback (most recent call last):
+  File "test.py", line 12, in <module>
+    raise ValueError("Invalid configuration")
+ValueError: Invalid configuration"""
+    summary = summarize_error_details(traceback_err)
+    assert summary == "ValueError: Invalid configuration"
+    assert normalize_error_details("foo\x1b[31mbar\x1b[0m") == "foobar"
+
+
+def test_rlm_context_data_structure():
+    from vtx.ai.agent.ipython_runtime import RLMContext
+
+    ctx = RLMContext(
+        session_id="test-session-123",
+        cwd="/tmp/test",
+        model="gpt-4o",
+        system_prompt="system guidance",
+        messages=[
+            {"role": "user", "content": "hello world"},
+            {"role": "assistant", "content": "hi there"},
+            {"role": "user", "content": "run tests now"},
+        ],
+        tokens={"input_tokens": 100, "output_tokens": 50},
+    )
+
+    assert ctx.session_id == "test-session-123"
+    assert ctx.cwd == "/tmp/test"
+    assert ctx.model == "gpt-4o"
+    assert ctx.last_message == {"role": "user", "content": "run tests now"}
+    assert ctx.last_user_message == {"role": "user", "content": "run tests now"}
+
+    history = ctx.get_history(limit=2)
+    assert len(history) == 2
+
+    search_hits = ctx.search("tests")
+    assert len(search_hits) == 1
+    assert search_hits[0]["role"] == "user"
+
+
+@pytest.mark.asyncio
+async def test_ipython_runtime_top_level_await(tmp_path):
+    from vtx.ai.agent.ipython_manager import IpythonKernel
+
+    kernel = IpythonKernel("test-kernel", cwd=str(tmp_path))
+    await kernel.start()
+    try:
+        code = """import asyncio
+await asyncio.sleep(0.01)
+x = 42
+x"""
+        output, errored = await kernel.execute(code, timeout=5.0)
+        assert not errored
+        assert "42" in output
+    finally:
+        await kernel.close()

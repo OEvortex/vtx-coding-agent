@@ -86,6 +86,32 @@ def build_system_prompt(
     if context is None:
         context = Context.load(cwd)
 
+    mode = getattr(vtx_config, "mode", "tool_first")
+    if mode == "rlm" and base_content is None:
+        from vtx.coding_agent.prompts.rlm import build_rlm_system_prompt
+
+        installed_skills = (
+            [s.name for s in (skills or context.skills)] if (skills or context.skills) else []
+        )
+        base = build_rlm_system_prompt(cwd=cwd, installed_skills=installed_skills)
+        sections: list[str] = [base]
+        if extra_instructions and extra_instructions_mode == "append":
+            sections.append(extra_instructions)
+        tool_section = build_tool_guidelines_section(tools)
+        if tool_section:
+            sections.append(tool_section)
+        if context.agents_files:
+            sections.append(formatted_agent_mds(context.agents_files))
+        effective_skills = skills if skills is not None else context.skills
+        if effective_skills:
+            sections.append(formatted_skills(effective_skills))
+        if _resolve_git_flag(include_git_context):
+            git_section = formatted_git_context(cwd)
+            if git_section:
+                sections.append(git_section)
+        sections.append(build_env_section(cwd))
+        return "\n\n".join(sections)
+
     base = _resolve_base(base_content)
     if extra_instructions and extra_instructions_mode == "replace":
         base = extra_instructions

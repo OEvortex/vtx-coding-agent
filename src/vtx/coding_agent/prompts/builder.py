@@ -90,7 +90,10 @@ def build_system_prompt(
 
     mode = vtx_config.mode
     if mode == "rlm" and base_content is None:
-        base = build_rlm_system_prompt()
+        installed_skills = (
+            [s.name for s in (skills or context.skills)] if (skills or context.skills) else []
+        )
+        base = build_rlm_system_prompt(cwd=cwd, installed_skills=installed_skills)
         sections: list[str] = [base]
         if extra_instructions and extra_instructions_mode == "append":
             sections.append(extra_instructions)

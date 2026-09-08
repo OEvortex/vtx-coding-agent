@@ -195,6 +195,30 @@ Screen {{
     height: 0;
 }}
 
+/* IPython cell (RLM mode) — prime-agent-style rendering of the ipython tool. */
+.ipython-cell-block {{
+    margin-top: 0;
+    padding: 0 1;
+    width: 100%;
+}}
+
+.ipython-cell-block.-pending,
+.ipython-cell-block.-success,
+.ipython-cell-block.-error {{
+    background: {colors.tool_bg.pending};
+}}
+
+.ipython-cell-block.-with-details {{
+    background: {colors.tool_bg.pending};
+    padding: 0 1;
+    margin-top: 1;
+}}
+
+.ipython-cell-block #tool-output {{
+    color: {colors.fg};
+    padding: 0 1 0 3;
+}}
+
 /* Compaction message */
 .compaction-message {{
     background: {colors.panel};

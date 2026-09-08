@@ -13,14 +13,17 @@ from __future__ import annotations
 import ast
 import asyncio
 import contextlib
+import inspect
 import json
 import os
 import platform
+import re
 import signal
 import sys
 import threading
 import traceback
 import uuid
+from dataclasses import dataclass, field
 from typing import Any
 
 PROTOCOL_VERSION = 1
@@ -30,6 +33,128 @@ _protocol_fd: int = -1
 _namespace: dict[str, Any] = {}
 _shutdown = False
 _ready_event = threading.Event()
+
+
+@dataclass
+class RLMContext:
+    """Rich Python context object exposed in the persistent REPL namespace.
+
+    Allows the model to inspect the conversation as a variable (`context`),
+    slice messages, search past history, check token usage, and examine metadata.
+    """
+
+    session_id: str = "default"
+    cwd: str = ""
+    model: str = ""
+    system_prompt: str = ""
+    messages: list[dict[str, Any]] = field(default_factory=list)
+    tokens: dict[str, Any] = field(default_factory=dict)
+    custom_metadata: dict[str, Any] = field(default_factory=dict)
+
+    @property
+    def last_message(self) -> dict[str, Any] | None:
+        """Return the most recent message in the session."""
+        return self.messages[-1] if self.messages else None
+
+    @property
+    def last_user_message(self) -> dict[str, Any] | None:
+        """Return the most recent user prompt message."""
+        for msg in reversed(self.messages):
+            if msg.get("role") == "user":
+                return msg
+        return None
+
+    def get_history(
+        self, limit: int | None = None, role: str | None = None
+    ) -> list[dict[str, Any]]:
+        """Filter conversation history by role or limit."""
+        msgs = self.messages
+        if role:
+            msgs = [m for m in msgs if m.get("role") == role]
+        if limit is not None:
+            msgs = msgs[-limit:]
+        return msgs
+
+    def search(self, pattern: str) -> list[dict[str, Any]]:
+        """Search message text contents matching string or regex pattern."""
+        regex = re.compile(pattern, re.IGNORECASE)
+        results = []
+        for msg in self.messages:
+            content = msg.get("content", "")
+            if isinstance(content, list):
+                content_str = " ".join(str(p) for p in content)
+            else:
+                content_str = str(content)
+            if regex.search(content_str):
+                results.append(msg)
+        return results
+
+    def __repr__(self) -> str:
+        msg_count = len(self.messages)
+        return (
+            f"<RLMContext session_id={self.session_id!r} cwd={self.cwd!r} "
+            f"model={self.model!r} messages={msg_count}>"
+        )
+
+
+def _update_context_in_namespace(ctx_dict: dict[str, Any] | None) -> None:
+    """Update or initialize the `context` variable in the global REPL namespace."""
+    if not ctx_dict:
+        if "context" not in _namespace:
+            _namespace["context"] = RLMContext(cwd=os.getcwd())
+        return
+
+    _namespace["context"] = RLMContext(
+        session_id=ctx_dict.get("session_id", "default"),
+        cwd=ctx_dict.get("cwd", os.getcwd()),
+        model=ctx_dict.get("model", ""),
+        system_prompt=ctx_dict.get("system_prompt", ""),
+        messages=ctx_dict.get("messages", []),
+        tokens=ctx_dict.get("tokens", {}),
+        custom_metadata=ctx_dict.get("custom_metadata", {}),
+    )
+
+
+def _init_builtin_helpers() -> None:
+    """Initialize pre-bound helpers in the REPL namespace if not already present."""
+
+    def run_bash(command: str, timeout: float = 180.0) -> str:
+        import subprocess
+
+        res = subprocess.run(command, shell=True, capture_output=True, text=True, timeout=timeout)
+        out = res.stdout or ""
+        if res.stderr:
+            out += ("\n" if out else "") + res.stderr
+        return out.strip()
+
+    def read_file(path: str, offset: int = 0, limit: int = 2000) -> str:
+        with open(path, encoding="utf-8", errors="replace") as f:
+            lines = f.readlines()
+        return "".join(lines[offset : offset + limit])
+
+    def write_file(path: str, content: str) -> None:
+        with open(path, "w", encoding="utf-8") as f:
+            f.write(content)
+
+    def edit_file(path: str, old: str, new: str, replace_all: bool = False) -> str:
+        with open(path, encoding="utf-8") as f:
+            data = f.read()
+        if old not in data:
+            raise ValueError(f"Target content not found in {path}")
+        count = -1 if replace_all else 1
+        new_data = data.replace(old, new, count)
+        with open(path, "w", encoding="utf-8") as f:
+            f.write(new_data)
+        return f"Edited {path}"
+
+    _namespace.setdefault("bash", run_bash)
+    _namespace.setdefault("run_bash", run_bash)
+    _namespace.setdefault("read_file", read_file)
+    _namespace.setdefault("write_file", write_file)
+    _namespace.setdefault("edit_file", edit_file)
+
+
+_init_builtin_helpers()
 
 
 def _send(event: dict[str, Any]) -> None:
@@ -46,32 +171,55 @@ def _run_cell_sync(code: str, cell_id: str) -> None:
     sys.stderr = _CellStderr(cell_id)
 
     try:
-        compiled = compile(code, f"<cell-{cell_id}>", "exec", flags=ast.PyCF_ALLOW_TOP_LEVEL_AWAIT)
-        exec(compiled, _namespace)
-        # If the last statement is a bare expression, evaluate it and emit
-        # its repr as a result. This matches IPython/REPL behavior.
-        try:
+        # Separate trailing expression if present so bare expressions emit repr like IPython
+        tree = None
+        trailing_expr = None
+        with contextlib.suppress(SyntaxError):
             tree = ast.parse(code, mode="exec")
-        except SyntaxError:
-            tree = None
+
+        if tree is not None and tree.body and isinstance(tree.body[-1], ast.Expr):
+            # If the last statement is an Expr, compile body without it
+            # and compile the trailing expr separately in eval mode.
+            trailing_node = tree.body.pop()
+            assert isinstance(trailing_node, ast.Expr)
+            trailing_expr = ast.Expression(trailing_node.value)
+
+        flags = ast.PyCF_ALLOW_TOP_LEVEL_AWAIT
         if tree is not None and tree.body:
-            last = tree.body[-1]
-            if isinstance(last, ast.Expr):
-                expr_ast = last.value
-                expr_code = compile(ast.Expression(expr_ast), f"<cell-{cell_id}>", "eval")
-                try:
-                    value = eval(expr_code, _namespace)
-                except Exception:
-                    pass
-                else:
-                    if value is not None:
-                        sys.stdout.write(repr(value) + "\n")
+            compiled_body = compile(tree, f"<cell-{cell_id}>", "exec", flags=flags)
+            res = eval(compiled_body, _namespace)
+            if inspect.iscoroutine(res):
+                asyncio.run(res)
+        elif tree is None:
+            compiled = compile(code, f"<cell-{cell_id}>", "exec", flags=flags)
+            res = eval(compiled, _namespace)
+            if inspect.iscoroutine(res):
+                asyncio.run(res)
+
+        if trailing_expr is not None:
+            compiled_expr = compile(trailing_expr, f"<cell-{cell_id}>", "eval", flags=flags)
+            value = eval(compiled_expr, _namespace)
+            if inspect.iscoroutine(value):
+                value = asyncio.run(value)
+            if value is not None:
+                _namespace["_"] = value
+                sys.stdout.write(repr(value) + "\n")
     except Exception:
         tb = traceback.format_exc()
         sys.stderr.write(tb)
     finally:
         sys.stdout = old_stdout
         sys.stderr = old_stderr
+
+
+def _has_call(node: ast.AST) -> bool:
+    """Return True when ``node`` (or any descendant) is a ``Call`` expression."""
+    return any(isinstance(child, ast.Call) for child in ast.walk(node))
+
+
+def _has_yield(node: ast.AST) -> bool:
+    """Return True when ``node`` (or any descendant) is a ``Yield`` expression."""
+    return any(isinstance(child, (ast.Yield, ast.YieldFrom)) for child in ast.walk(node))
 
 
 class _CellStdout:
@@ -99,6 +247,9 @@ class _CellStderr:
 def _execute_in_thread(request: dict[str, Any]) -> None:
     rid = request.get("id", uuid.uuid4().hex)
     code = request.get("code", "")
+    ctx_dict = request.get("context")
+    if ctx_dict is not None or "context" not in _namespace:
+        _update_context_in_namespace(ctx_dict)
     cell_id = uuid.uuid4().hex
     try:
         _run_cell_sync(code, cell_id)
@@ -162,6 +313,8 @@ def main() -> None:
                 rid = request.get("id")
                 if rid is not None:
                     _send({"event": "done", "id": rid, "status": "ok"})
+                break
+            else:
                 _send(
                     {
                         "event": "error",

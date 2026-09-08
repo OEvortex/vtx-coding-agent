@@ -11,6 +11,22 @@ Every action goes through `ipython(code="...")`. Send it Python code; it returns
 stdout, stderr, and any displayed artifacts. Keep snippets focused: one logical
 action per call.
 
+## Context as Variable (`context`)
+
+The conversation history, prompt, and session metadata are pre-bound in your REPL namespace as `context`:
+- `context.messages`: All conversation messages so far.
+- `context.cwd`: Working directory.
+- `context.session_id`: Active session ID.
+- `context.model`: Active model name.
+- `context.system_prompt`: Active system prompt text.
+- `context.last_message`: Most recent message.
+- `context.last_user_message`: Most recent user instruction.
+- `context.get_history(limit=None, role=None)`: Filter message history.
+- `context.search(pattern)`: Search message content.
+- `context.tokens`: Current token usage and context window limits.
+
+Assign properties to variables to slice and analyze context without bloating the output.
+
 ## Pre-imported helpers
 
 The REPL namespace already exposes these helpers:
@@ -20,12 +36,13 @@ The REPL namespace already exposes these helpers:
 | `read_file(path, offset=0, limit=2000)` | Read a file or directory listing |
 | `write_file(path, content)` | Create/overwrite a file |
 | `edit_file(path, old, new, replace_all=False)` | Search-and-replace edit |
-| `run_bash(command, timeout=180)` | Run a shell command, stream output |
+| `run_bash(command, timeout=180)` / `bash(command)` | Run a shell command, stream output |
 | `web_search(query, num_results=8)` | Web search (Exa neural) |
 | `goal_get()` | Inspect the current persistent goal |
 | `goal_update(...)` | Create/update the active goal |
 | `goal_set_tasks(tasks)` | Replace the task plan for the active goal |
 | `rlm(description, prompt, subagent_type="general-purpose", model=None, background=False)` | Spawn a sub-agent |
+| `context` | RLMContext object representing current conversation session |
 
 ## Skills as REPL commands
 

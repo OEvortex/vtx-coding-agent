@@ -124,12 +124,19 @@ class IpythonKernel:
         on_output: Callable[[str], Coroutine[Any, Any, None]] | None = None,
         *,
         timeout: float = 180.0,
-    ) -> str:
+        context: dict[str, Any] | None = None,
+    ) -> tuple[str, bool]:
+        """Run ``code`` in the kernel.
+
+        Returns ``(output, errored)`` — ``errored`` is ``True`` when the cell
+        raised. ``output`` is the streamed stdout/stderr/traceback text (or a
+        short status sentence if the cell produced nothing).
+        """
         if self._closed:
-            return "REPL kernel is closed. Start a new session."
+            return ("REPL kernel is closed. Start a new session.", True)
         await self.start()
         if self._process is None or self._process.stdin is None:
-            return "REPL kernel failed to start."
+            return ("REPL kernel failed to start.", True)
 
         async with self._execution_lock:
             self._last_activity = time.monotonic()
@@ -140,7 +147,9 @@ class IpythonKernel:
             done_event = asyncio.Event()
             self._pending_done[rid] = done_event
 
-            request = {"type": "execute", "id": rid, "code": code.rstrip()}
+            request: dict[str, Any] = {"type": "execute", "id": rid, "code": code.rstrip()}
+            if context is not None:
+                request["context"] = context
             line = json.dumps(request, separators=(",", ":")) + "\n"
             try:
                 self._process.stdin.write(line.encode("utf-8"))
@@ -149,7 +158,7 @@ class IpythonKernel:
                 await self.start()
                 if self._process.stdin is None:
                     self._pending_done.pop(rid, None)
-                    return "REPL kernel connection was lost and could not be restored."
+                    return ("REPL kernel connection was lost and could not be restored.", True)
                 self._process.stdin.write(line.encode("utf-8"))
                 await self._process.stdin.drain()
 
@@ -167,17 +176,25 @@ class IpythonKernel:
         *,
         on_output: Callable[[str], Coroutine[Any, Any, None]] | None = None,
         timeout: float,
-    ) -> str:
+    ) -> tuple[str, bool]:
         start = time.monotonic()
-        last_len = 0
+        errored = False
+        timed_out = False
         while True:
             if time.monotonic() - start > timeout:
-                return (
-                    self._output_buffer
-                    + "\n[IPython timed out after "
+                timed_out = True
+                if on_output is not None:
+                    await on_output(
+                        "\n[IPython timed out after "
+                        + f"{timeout:.0f}s; the kernel may still be running. "
+                        + "Retry or send an empty snippet to flush.]"
+                    )
+                self._output_buffer += (
+                    "\n[IPython timed out after "
                     + f"{timeout:.0f}s; the kernel may still be running. "
                     + "Retry or send an empty snippet to flush.]"
                 )
+                break
             try:
                 event = await self._next_event(timeout=0.1)
             except asyncio.CancelledError:
@@ -188,24 +205,52 @@ class IpythonKernel:
                 continue
             etype = event.get("event")
             eid = event.get("id")
-            if etype in ("stdout", "stderr"):
-                self._output_buffer += event.get("text", "")
+            if etype == "stdout":
+                text = event.get("text", "")
+                self._output_buffer += text
+                if on_output is not None and text:
+                    await on_output(f"__STDOUT__{text}")
+            elif etype == "stderr":
+                text = event.get("text", "")
+                self._output_buffer += text
+                if on_output is not None and text:
+                    await on_output(f"__STDERR__{text}")
             elif etype == "result":
-                self._result_repr = event.get("text")
+                text = event.get("text") or ""
+                self._result_repr = text
+                if on_output is not None:
+                    await on_output(f"__RESULT__{text}")
             elif etype == "error":
-                self._output_buffer += f"\n[{event.get('ename')}] {event.get('evalue')}\n"
+                errored = True
+                ename = event.get("ename", "Error")
+                evalue = event.get("evalue", "")
+                tb_lines = event.get("traceback") or []
+                formatted = f"{ename}: {evalue}"
+                if tb_lines:
+                    formatted += "\n" + "\n".join(tb_lines)
+                self._output_buffer += f"\n[{ename}] {evalue}\n" + "\n".join(tb_lines)
+                if on_output is not None:
+                    await on_output(f"__ERROR__{formatted}")
             elif etype == "done":
                 if eid == rid:
+                    if on_output is not None:
+                        await on_output("__DONE__")
                     break
                 continue
-            if len(self._output_buffer) != last_len:
-                last_len = len(self._output_buffer)
-                if on_output is not None:
-                    await on_output(self._output_buffer[last_len:])
         output = truncate_bytes(self._output_buffer.strip(), _OUTPUT_TRUNCATE_BYTES)
-        if self._result_repr is not None and not output:
-            output = self._result_repr
-        return output
+        if errored:
+            return (output, True)
+        if timed_out:
+            return (output, True)
+        if not output:
+            if self._result_repr is not None:
+                output = self._result_repr
+            else:
+                # Cell ran cleanly but produced no stdout/result — synthesize
+                # a positive confirmation so the model doesn't see an empty
+                # tool result and conclude nothing happened.
+                output = "(cell executed successfully; no output)"
+        return (output, False)
 
     async def interrupt(self) -> None:
         if self._process and self._process.returncode is None and self._process.stdin is not None:
@@ -325,7 +370,13 @@ class IpythonManager:
         on_output: Callable[[str], Coroutine[Any, Any, None]] | None = None,
         *,
         timeout: float = 180.0,
-    ) -> str:
+        context: dict[str, Any] | None = None,
+    ) -> tuple[str, bool]:
+        """Run ``code`` in the session kernel.
+
+        Returns ``(output, errored)`` — ``errored`` is ``True`` when the cell
+        raised, timed out, or the kernel couldn't start.
+        """
         # Use a dedicated kernel for this session if we have one,
         # otherwise check out from the pool.
         if session_id not in self._session_kernels:
@@ -336,7 +387,9 @@ class IpythonManager:
 
         kernel.touch()
         try:
-            return await kernel.execute(code, on_output=on_output, timeout=timeout)
+            return await kernel.execute(
+                code, on_output=on_output, timeout=timeout, context=context
+            )
         finally:
             # Return pooled kernels when done, keep dedicated ones.
             if session_id.startswith("pool-") or session_id.startswith("temp-"):

@@ -446,6 +446,7 @@ class ConversationRuntime:
                 progress_callback=self._progress_callback
                 or (existing.progress_callback if existing else None),
                 background_manager=self._background_manager,
+                session=self.session,
             )
         )
 
