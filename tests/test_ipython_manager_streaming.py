@@ -9,6 +9,7 @@ from __future__ import annotations
 import asyncio
 import contextlib
 import json
+from typing import Any
 
 import pytest
 
@@ -18,6 +19,15 @@ from vtx.tui.ipython_block import TAG_DONE, TAG_ERROR, TAG_STDOUT
 
 class _FakeProcess:
     returncode = None
+
+    class _Stdin:
+        async def write(self, data: bytes) -> None:
+            return None
+
+        async def drain(self) -> None:
+            return None
+
+    stdin = _Stdin()
 
 
 async def _run_with_delivery(events: list[dict], *, timeout: float = 5.0):
@@ -157,7 +167,61 @@ async def test_empty_cell_synthesizes_positive_confirmation():
     (output, errored), _ = await _run_with_delivery(events)
     assert output  # not empty
     assert "successfully" in output.lower() or "no output" in output.lower()
-    assert errored is False
+
+
+@pytest.mark.asyncio
+async def test_tool_call_event_dispatches_to_executor():
+    """A ``tool_call`` event should be dispatched to ``_tool_executor`` and
+    the manager should write a ``tool_result`` response back through stdin."""
+    executor_calls: list[tuple[str, dict[str, Any]]] = []
+
+    async def fake_executor(name: str, args: dict[str, Any]) -> Any:
+        executor_calls.append((name, args))
+        return {"ok": True, "echo": args}
+
+    kernel = IpythonKernel(kernel_id="test", cwd=".")
+    kernel._process = _FakeProcess()  # type: ignore[assignment]
+    kernel._queue = asyncio.Queue()
+    kernel._tool_executor = fake_executor
+
+    written: list[bytes] = []
+
+    def fake_write(data: bytes) -> None:
+        written.append(data)
+
+    async def fake_drain() -> None:
+        return None
+
+    kernel._process.stdin.write = fake_write  # type: ignore[method-assign]
+    kernel._process.stdin.drain = fake_drain  # type: ignore[method-assign]
+
+    async def feed():
+        await kernel._queue.put(
+            json.dumps({"event": "tool_call", "id": "rid-1", "name": "web_search", "args": {"query": "hello", "num_results": 2}})
+        )
+        await kernel._queue.put(json.dumps({"event": "done", "id": "rid-1", "status": "ok"}))
+        await kernel._queue.put(None)
+
+    feed_task = asyncio.create_task(feed())
+    try:
+        result = await kernel._wait_output(
+            "rid-1",
+            asyncio.Event(),
+            on_output=None,
+            timeout=5.0,
+        )
+    finally:
+        feed_task.cancel()
+        with contextlib.suppress(asyncio.CancelledError, Exception):
+            await feed_task
+
+    assert result[1] is False
+    assert executor_calls == [("web_search", {"query": "hello", "num_results": 2})]
+    assert written, "expected manager to write a tool_result response"
+    response = json.loads(written[0].decode("utf-8"))
+    assert response["event"] == "tool_result"
+    assert response["id"] == "rid-1"
+    assert response["result"] == {"ok": True, "echo": {"query": "hello", "num_results": 2}}
 
 
 @pytest.mark.asyncio

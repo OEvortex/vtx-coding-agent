@@ -39,6 +39,7 @@ class IpythonKernel:
         *,
         python: str | None = None,
         env: dict[str, str] | None = None,
+        tool_executor: Callable[[str, dict[str, Any]], Coroutine[Any, Any, Any]] | None = None,
     ) -> None:
         self.kernel_id = kernel_id
         self.cwd = cwd
@@ -53,6 +54,7 @@ class IpythonKernel:
         self._output_buffer = ""
         self._result_repr: str | None = None
         self._pending_done: dict[str, asyncio.Event] = {}
+        self._tool_executor = tool_executor
 
     async def start(self) -> None:
         if self._process and self._process.returncode is None:
@@ -125,6 +127,7 @@ class IpythonKernel:
         *,
         timeout: float = 180.0,
         context: dict[str, Any] | None = None,
+        tool_executor: Callable[[str, dict[str, Any]], Coroutine[Any, Any, Any]] | None = None,
     ) -> tuple[str, bool]:
         """Run ``code`` in the kernel.
 
@@ -137,6 +140,8 @@ class IpythonKernel:
         await self.start()
         if self._process is None or self._process.stdin is None:
             return ("REPL kernel failed to start.", True)
+        if tool_executor is not None:
+            self._tool_executor = tool_executor
 
         async with self._execution_lock:
             self._last_activity = time.monotonic()
@@ -231,6 +236,23 @@ class IpythonKernel:
                 self._output_buffer += f"\n[{ename}] {evalue}\n" + "\n".join(tb_lines)
                 if on_output is not None:
                     await on_output(f"__ERROR__{formatted}")
+            elif etype == "tool_call":
+                tool_name = event.get("name")
+                tool_args = event.get("args") or {}
+                if self._tool_executor is not None:
+                    try:
+                        result = await self._tool_executor(tool_name, tool_args)
+                        payload = json.dumps({"event": "tool_result", "id": eid, "result": result})
+                    except Exception as exc:
+                        payload = json.dumps(
+                            {
+                                "event": "tool_result",
+                                "id": eid,
+                                "error": {"type": type(exc).__name__, "message": str(exc)},
+                            }
+                        )
+                    self._process.stdin.write(payload.encode("utf-8") + b"\n")
+                    await self._process.stdin.drain()
             elif etype == "done":
                 if eid == rid:
                     if on_output is not None:

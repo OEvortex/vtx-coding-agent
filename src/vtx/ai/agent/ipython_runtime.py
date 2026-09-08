@@ -36,6 +36,10 @@ _shutdown = False
 _ready_event = threading.Event()
 _MAX_OUT_ENTRIES = 1000  # Cap In/Out history to prevent unbounded memory growth
 
+# Tool-call RPC bridge state (main process -> worker thread)
+_tool_call_responses: dict[str, Any] = {}
+_tool_call_events: dict[str, threading.Event] = {}
+
 # IPython-style execution history: In[n] has input code string, Out[n] has returned repr/value.
 # _In holds the list of input codes (1-indexed, In[0] is empty string).
 # _Out holds the mapping of cell execution numbers to evaluated results.
@@ -236,6 +240,40 @@ def _init_builtin_helpers() -> None:
             raise ValueError(f"No previous code found at index {index}")
         return run_code(code)
 
+    def web_search(query: str, num_results: int = 8) -> str:
+        """Web search via the main-process tool bridge."""
+        return call_tool("web_search", query=query, num_results=num_results)
+
+    def goal_get() -> dict[str, Any]:
+        """Get the current focused goal via the main-process tool bridge."""
+        return call_tool("goal", action="get")
+
+    def goal_update(**kwargs: Any) -> dict[str, Any]:
+        """Update the current focused goal via the main-process tool bridge."""
+        return call_tool("goal", action="update", **kwargs)
+
+    def goal_set_tasks(tasks: list[dict[str, Any]]) -> dict[str, Any]:
+        """Set tasks for the current focused goal via the main-process tool bridge."""
+        return call_tool("goal", action="set_tasks", tasks=tasks)
+
+    def rlm(
+        description: str,
+        prompt: str,
+        subagent_type: str = "general-purpose",
+        model: str | None = None,
+        background: bool = False,
+    ) -> str:
+        """Spawn a subagent via the main-process task tool."""
+        args: dict[str, Any] = {
+            "description": description,
+            "prompt": prompt,
+            "subagent_type": subagent_type,
+            "background": background,
+        }
+        if model is not None:
+            args["model"] = model
+        return call_tool("task", **args)
+
     _namespace.setdefault("bash", run_bash)
     _namespace.setdefault("run_bash", run_bash)
     _namespace.setdefault("read_file", read_file)
@@ -243,6 +281,53 @@ def _init_builtin_helpers() -> None:
     _namespace.setdefault("edit_file", edit_file)
     _namespace.setdefault("run_code", run_code)
     _namespace.setdefault("rerun", rerun)
+    _namespace.setdefault("web_search", web_search)
+    _namespace.setdefault("goal_get", goal_get)
+    _namespace.setdefault("goal_update", goal_update)
+    _namespace.setdefault("goal_set_tasks", goal_set_tasks)
+    _namespace.setdefault("rlm", rlm)
+
+
+def call_tool(name: str, **kwargs: Any) -> Any:
+    """Call a main-process tool from the REPL via the JSON tool-call RPC.
+
+    Sends a ``tool_call`` event to the manager and blocks until the manager
+    writes a ``tool_result`` request back through stdin. Raises on tool error
+    or timeout.
+    """
+    rid = uuid.uuid4().hex
+    event = threading.Event()
+    _tool_call_events[rid] = event
+    _send({"event": "tool_call", "id": rid, "name": name, "args": kwargs})
+    if not event.wait(timeout=300):
+        _tool_call_events.pop(rid, None)
+        raise TimeoutError(f"Tool call {name} timed out after 300s")
+    result = _tool_call_responses.pop(rid, None)
+    _tool_call_events.pop(rid, None)
+    if isinstance(result, Exception):
+        raise result
+    return result
+
+
+def call_tool(name: str, **kwargs: Any) -> Any:
+    """Call a main-process tool from the REPL via the JSON tool-call RPC.
+
+    Sends a ``tool_call`` event to the manager and blocks until the manager
+    writes a ``tool_result`` request back through stdin. Raises on tool error
+    or timeout.
+    """
+    rid = uuid.uuid4().hex
+    event = threading.Event()
+    _tool_call_events[rid] = event
+    _send({"event": "tool_call", "id": rid, "name": name, "args": kwargs})
+    if not event.wait(timeout=300):
+        _tool_call_events.pop(rid, None)
+        raise TimeoutError(f"Tool call {name} timed out after 300s")
+    result = _tool_call_responses.pop(rid, None)
+    _tool_call_events.pop(rid, None)
+    if isinstance(result, Exception):
+        raise result
+    return result
 
 
 def transform_cell_code(code: str) -> str:
@@ -447,6 +532,18 @@ def main() -> None:
                         "traceback": [],
                     }
                 )
+                continue
+            # Manager -> worker tool-result responses use `event`, not `type`.
+            if request.get("event") == "tool_result":
+                rid = request.get("id")
+                if rid in _tool_call_events:
+                    if "error" in request:
+                        _tool_call_responses[rid] = RuntimeError(
+                            request["error"].get("message", str(request["error"]))
+                        )
+                    else:
+                        _tool_call_responses[rid] = request.get("result")
+                    _tool_call_events[rid].set()
                 continue
             rtype = request.get("type")
             if rtype == "execute":

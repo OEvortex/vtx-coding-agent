@@ -159,12 +159,25 @@ class IpythonTool(BaseTool):
             if on_output is not None:
                 on_output(text)
 
+        async def _execute_tool_by_name(name: str, args: dict[str, Any]) -> Any:
+            from vtx.ai.agent.tools import get_tool
+
+            tool = get_tool(name)
+            if tool is None:
+                raise ValueError(f"Tool not found: {name}")
+            params_model = tool.params(**args)
+            result = await tool.execute(params_model)
+            if not result.success:
+                raise RuntimeError(result.result or f"Tool {name} failed")
+            return result.result
+
         output, errored = await manager.execute(
             session_id,
             params.code,
             on_output=_on_output if on_output is not None else None,
             timeout=params.timeout,
             context=ctx_dict,
+            tool_executor=_execute_tool_by_name,
         )
         # Propagate the kernel's success/failure to the model via ``is_error``
         # so providers that honor the flag (Anthropic) actually mark the tool
