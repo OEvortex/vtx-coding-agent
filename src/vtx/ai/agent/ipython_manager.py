@@ -393,6 +393,7 @@ class IpythonManager:
         *,
         timeout: float = 180.0,
         context: dict[str, Any] | None = None,
+        tool_executor: Callable[[str, dict[str, Any]], Coroutine[Any, Any, Any]] | None = None,
     ) -> tuple[str, bool]:
         """Run ``code`` in the session kernel.
 
@@ -410,7 +411,11 @@ class IpythonManager:
         kernel.touch()
         try:
             return await kernel.execute(
-                code, on_output=on_output, timeout=timeout, context=context
+                code,
+                on_output=on_output,
+                timeout=timeout,
+                context=context,
+                tool_executor=tool_executor,
             )
         finally:
             # Return pooled kernels when done, keep dedicated ones.
