@@ -656,6 +656,7 @@ class IpythonBlock(ToolBlock):
     def compose(self) -> ComposeResult:
         yield Label(self._build_header_text(), id="tool-header")
         yield Label("", id="tool-output", classes="tool-output -hidden")
+        yield Label("", id="tool-footer", classes="tool-footer -hidden")
 
     # -- Call msg parsing -------------------------------------------------
 
@@ -692,8 +693,7 @@ class IpythonBlock(ToolBlock):
             )
         return ("◇", colors.muted)
 
-    def _build_header_text(self) -> Text:
-        text = Text()
+    def _build_header_text(self) -> Content:
         colors = config.ui.colors
         _marker_char, marker_style = self._marker()
 
@@ -705,47 +705,52 @@ class IpythonBlock(ToolBlock):
         if not lang_label:
             lang_label = "ipython"
 
-        text.append(f"{_marker_char} ", style=marker_style)
-        text.append(lang_label, style=colors.muted)
+        parts: list[Content | tuple[str, str | Style]] = []
+        parts.append(Content.assemble((f"{_marker_char} ", marker_style)))
+
+        if lang == "bash" or is_bash_cell:
+            parts.append(Content.assemble((lang_label, colors.spinner)))
+        else:
+            parts.append(Content.assemble((lang_label, colors.muted)))
 
         if preview:
-            text.append(" · ", style=colors.dim)
+            parts.append(Content.assemble((" · ", colors.dim)))
             if lang == "bash" or is_bash_cell:
-                text.append(preview, style=colors.spinner)
+                parts.append(Content.assemble((preview, colors.spinner)))
             else:
-                text.append(preview, style=colors.fg)
+                parts.append(Content.assemble((preview, colors.fg)))
         elif self._cell_state.is_partial:
-            text.append(" · ", style=colors.dim)
-            text.append("waiting for code", style=colors.muted)
+            parts.append(Content.assemble((" · ", colors.dim)))
+            parts.append(Content.assemble(("waiting for code", colors.muted)))
 
         counts = self._cell_state.line_counts()
         if counts:
             code_lines, out_lines = counts
-            text.append(" · ", style=colors.dim)
+            parts.append(Content.assemble((" · ", colors.dim)))
             segments: list[str] = []
             if code_lines > 0:
                 segments.append(f"↑{code_lines}")
             if out_lines > 0:
                 segments.append(f"↓{out_lines}")
-            text.append(f"{' '.join(segments)} lines", style=colors.muted)
+            parts.append(Content.assemble((f"{' '.join(segments)} lines", colors.muted)))
 
         duration = self._duration_label()
         if duration:
-            text.append(" · ", style=colors.dim)
-            text.append(duration, style=colors.muted)
+            parts.append(Content.assemble((" · ", colors.dim)))
+            parts.append(Content.assemble((duration, colors.muted)))
 
         if self._cell_state.is_error and self._cell_state.ename:
-            text.append(" · ", style=colors.dim)
-            text.append(self._cell_state.ename, style=colors.failed)
+            parts.append(Content.assemble((" · ", colors.dim)))
+            parts.append(Content.assemble((self._cell_state.ename, colors.failed)))
 
         if self._cell_state.show_expand_hint:
-            text.append(" · ", style=colors.dim)
+            parts.append(Content.assemble((" · ", colors.dim)))
             hint_action = "collapse" if self._cell_state.expanded else "expand"
-            text.append(f"(ctrl+o to {hint_action})", style=colors.muted)
+            parts.append(Content.assemble((f"(ctrl+o to {hint_action})", colors.muted)))
 
-        return text
+        return Content.assemble(*parts)
 
-    def _format_header(self, truncate: bool = True) -> Text:
+    def _format_header(self, truncate: bool = True) -> Content:
         del truncate
         return self._build_header_text()
 
@@ -759,7 +764,8 @@ class IpythonBlock(ToolBlock):
 
     def _refresh_header(self) -> None:
         try:
-            self.query_one("#tool-header", Label).update(self._build_header_text())
+            header_label = self.query_one("#tool-header", Label)
+            header_label.update(self._build_header_text())
         except Exception:
             return
 
@@ -908,11 +914,59 @@ class IpythonBlock(ToolBlock):
             output.remove_class("-details")
             output.remove_class("-diff-output")
             output.update(body)
+            # Show status footer when cell is finished
+            footer = self._render_status_footer()
+            if footer.plain:
+                self.query_one("#tool-footer", Label).update(footer)
+                self.query_one("#tool-footer", Label).remove_class("-hidden")
+            else:
+                self.query_one("#tool-footer", Label).add_class("-hidden")
         else:
             output.update(Content(""))
             self.remove_class("-with-details")
             output.add_class("-hidden")
+            self.query_one("#tool-footer", Label).add_class("-hidden")
         self._refresh_header()
+
+    def _render_status_footer(self) -> Content:
+        """Render a modern status footer with execution metadata."""
+        state = self._cell_state
+        colors = config.ui.colors
+
+        if not state.finished_at:
+            return Content("")
+
+        duration = self._duration_label()
+        if not duration:
+            return Content("")
+
+        parts: list[Content | tuple[str, str | Style]] = []
+
+        # Status indicator
+        if state.is_error:
+            parts.append(Content.assemble(("✗ ", "bold " + colors.failed)))
+        elif self._success:
+            parts.append(Content.assemble(("✓ ", "bold " + colors.success)))
+        else:
+            parts.append(Content.assemble(("◊ ", colors.muted)))
+
+        # Duration
+        parts.append(Content.assemble((duration, colors.dim)))
+
+        # Line counts
+        counts = state.line_counts()
+        if counts:
+            code_lines, out_lines = counts
+            if code_lines > 0 or out_lines > 0:
+                parts.append(Content.assemble((" · ", colors.dim)))
+                segments: list[str] = []
+                if code_lines > 0:
+                    segments.append(f"{code_lines} lines")
+                if out_lines > 0:
+                    segments.append(f"{out_lines} output")
+                parts.append(Content.assemble((" | ".join(segments), colors.muted)))
+
+        return Content.assemble(*parts)
 
     def _render_code(self) -> Content:
         code = self._cell_state.code

@@ -231,6 +231,18 @@ Screen {{
     padding: 0 1 1 1;
 }}
 
+.ipython-cell-block #tool-footer {{
+    padding: 0 1 1 1;
+    color: {colors.dim};
+    text-style: italic;
+}}
+
+.ipython-cell-block #tool-footer.-hidden {{
+    display: none;
+    height: 0;
+    padding: 0;
+}}
+
 /* Modern tool block overrides */
 .tool-block.-with-details {{
     padding: 0;
