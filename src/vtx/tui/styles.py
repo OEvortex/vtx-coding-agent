@@ -195,10 +195,10 @@ Screen {{
     height: 0;
 }}
 
-/* IPython cell (RLM mode) — prime-agent-style rendering of the ipython tool. */
+/* IPython cell (RLM mode) — modern card-style rendering of the ipython tool. */
 .ipython-cell-block {{
-    margin-top: 0;
-    padding: 0 1;
+    margin-top: 1;
+    padding: 0;
     width: 100%;
 }}
 
@@ -210,13 +210,36 @@ Screen {{
 
 .ipython-cell-block.-with-details {{
     background: {colors.tool_bg.pending};
-    padding: 0 1;
+    padding: 1;
     margin-top: 1;
+}}
+
+.ipython-cell-block.-success.-with-details {{
+    background: {colors.tool_bg.success};
+}}
+
+.ipython-cell-block.-error.-with-details {{
+    background: {colors.tool_bg.error};
+}}
+
+.ipython-cell-block #tool-header {{
+    padding: 0 1;
 }}
 
 .ipython-cell-block #tool-output {{
     color: {colors.fg};
-    padding: 0 1 0 3;
+    padding: 0 1 1 1;
+}}
+
+/* Modern tool block overrides */
+.tool-block.-with-details {{
+    padding: 0;
+    border: none;
+}}
+
+#tool-output.-hidden {{
+    display: none;
+    height: 0;
 }}
 
 /* Compaction message */
