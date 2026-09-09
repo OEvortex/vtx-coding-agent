@@ -14,10 +14,11 @@ import time
 from dataclasses import dataclass, field
 
 from rich.style import Style
-from rich.syntax import Syntax
 from rich.text import Text
 from textual import events
 from textual.app import ComposeResult
+from textual.content import Content
+from textual.highlight import highlight
 from textual.widgets import Label
 
 from vtx.ai.agent.tools.base import BaseTool
@@ -575,6 +576,27 @@ def _format_duration_ms(ms: float) -> str:
     return f"{ms / 1000:.1f}s"
 
 
+def _content_to_text(content: Any) -> Text:
+    """Convert a ``textual.highlight`` Content to a Rich Text."""
+    text = Text()
+    char_styles: dict[int, str] = {}
+    for span in content.spans:
+        for i in range(span.start, span.end):
+            char_styles[i] = span.style
+    prev_style: str | None = None
+    segment_start = 0
+    for i, char in enumerate(content.plain):
+        style = char_styles.get(i)
+        if style != prev_style:
+            if i > segment_start:
+                text.append(content.plain[segment_start:i], style=prev_style)
+            segment_start = i
+            prev_style = style
+    if segment_start < len(content.plain):
+        text.append(content.plain[segment_start:], style=prev_style)
+    return text
+
+
 def _label_for_kind(kind: str) -> str:
     return {"stdout": "out", "stderr": "err", "result": "res", "error": "err"}.get(kind, "out")
 
@@ -865,10 +887,25 @@ class IpythonBlock(ToolBlock):
             self._refresh_header()
             return
 
-        body = Text()
+        # Build body as Content so syntax-highlighted code stays in Textual's
+        # native renderable and theme tokens resolve correctly.
+        body = Content("")
         if self._cell_state.code:
-            body.append_text(self._render_code())
-        body.append_text(self._render_output_blocks())
+            code_render = self._render_code()
+            if isinstance(code_render, Content):
+                body = code_render
+            else:
+                body = Content.from_rich_text(code_render)
+        output_render = self._render_output_blocks()
+        if isinstance(output_render, Text):
+            output_content = Content.from_rich_text(output_render)
+        else:
+            output_content = output_render
+        if output_content.plain:
+            if body.plain:
+                body = Content(body.plain + "\n" + output_content.plain)
+            else:
+                body = output_content
 
         if body.plain:
             self.remove_class("-compact")
@@ -883,16 +920,18 @@ class IpythonBlock(ToolBlock):
             output.add_class("-hidden")
         self._refresh_header()
 
-    def _render_code(self) -> Text:
+    def _render_code(self) -> "Content":
         code = self._cell_state.code
         if not code:
-            return Text("")
+            return Content("")
         try:
-            syntax = Syntax(code, "python", theme="ansi_dark", word_wrap=False, padding=0)
-            rendered = Text()
-            rendered.append("› ", style=config.ui.colors.dim)  # noqa: RUF001
-            rendered += syntax
-            return rendered
+            highlighted = highlight(code, language="python")
+            prefix = "› "
+            offset_spans = [
+                type("Span", (), {"start": s.start + len(prefix), "end": s.end + len(prefix), "style": s.style})  # noqa: E501
+                for s in highlighted.spans
+            ]
+            return Content(prefix + highlighted.plain, spans=offset_spans)
         except Exception:
             text = Text()
             lines = code.splitlines()
