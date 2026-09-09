@@ -13,12 +13,12 @@ import re
 import time
 from dataclasses import dataclass, field
 
-from rich.style import Style
 from rich.text import Text
 from textual import events
 from textual.app import ComposeResult
-from textual.content import Content
+from textual.content import Content, Span
 from textual.highlight import highlight
+from textual.style import Style
 from textual.widgets import Label
 
 from vtx.ai.agent.tools.base import BaseTool
@@ -601,12 +601,12 @@ def _label_for_kind(kind: str) -> str:
     return {"stdout": "out", "stderr": "err", "result": "res", "error": "err"}.get(kind, "out")
 
 
-def _style_for_kind(kind: str, colors) -> Style:
+def _style_for_kind(kind: str, colors) -> str:
     if kind == "error":
-        return Style(color=colors.failed, bold=True)
+        return colors.failed
     if kind == "stderr":
-        return Style(color=colors.muted, bold=True)
-    return Style(color=colors.muted, bold=True)
+        return colors.muted
+    return colors.muted
 
 
 def _text_style_for_kind(kind: str, colors) -> str:
@@ -879,7 +879,7 @@ class IpythonBlock(ToolBlock):
             return
 
         if not self._cell_state.expanded:
-            output.update(Text(""))
+            output.update(Content(""))
             self.remove_class("-with-details")
             output.add_class("-hidden")
             output.remove_class("-details")
@@ -887,8 +887,6 @@ class IpythonBlock(ToolBlock):
             self._refresh_header()
             return
 
-        # Build body as Content so syntax-highlighted code stays in Textual's
-        # native renderable and theme tokens resolve correctly.
         body = Content("")
         if self._cell_state.code:
             code_render = self._render_code()
@@ -896,14 +894,10 @@ class IpythonBlock(ToolBlock):
                 body = code_render
             else:
                 body = Content.from_rich_text(code_render)
-        output_render = self._render_output_blocks()
-        if isinstance(output_render, Text):
-            output_content = Content.from_rich_text(output_render)
-        else:
-            output_content = output_render
+        output_content = self._render_output_blocks()
         if output_content.plain:
             if body.plain:
-                body = Content(body.plain + "\n" + output_content.plain)
+                body = body + "\n" + output_content
             else:
                 body = output_content
 
@@ -915,23 +909,18 @@ class IpythonBlock(ToolBlock):
             output.remove_class("-diff-output")
             output.update(body)
         else:
-            output.update(Text(""))
+            output.update(Content(""))
             self.remove_class("-with-details")
             output.add_class("-hidden")
         self._refresh_header()
 
-    def _render_code(self) -> "Content":
+    def _render_code(self) -> Content:
         code = self._cell_state.code
         if not code:
             return Content("")
         try:
             highlighted = highlight(code, language="python")
-            prefix = "› "
-            offset_spans = [
-                type("Span", (), {"start": s.start + len(prefix), "end": s.end + len(prefix), "style": s.style})  # noqa: E501
-                for s in highlighted.spans
-            ]
-            return Content(prefix + highlighted.plain, spans=offset_spans)
+            return Content("› ") + highlighted
         except Exception:
             text = Text()
             lines = code.splitlines()
@@ -941,48 +930,69 @@ class IpythonBlock(ToolBlock):
                 text.append(line, style=config.ui.colors.fg)
                 if index < len(lines) - 1:
                     text.append("\n")
-            return text
+            return Content.from_rich_text(text)
 
-    def _render_output_blocks(self) -> Text:
+    def _render_output_blocks(self) -> Content:
         state = self._cell_state
-        text = Text()
         colors = config.ui.colors
 
         if state.is_partial and not state.content:
-            text.append("  ")
-            text.append("waiting for output...", style=colors.muted)
-            return text
+            return Content.assemble(
+                ("  ", colors.dim), ("waiting for output...", colors.muted)
+            )
 
         if not state.is_partial and not state.content:
-            text.append("  ")
-            text.append("no output", style=colors.muted)
-            return text
+            return Content.assemble(("  ", colors.dim), ("no output", colors.muted))
 
+        parts: list[Content] = []
         for index, block in enumerate(state.content):
             if index > 0:
-                text.append("\n")
+                parts.append(Content("\n"))
             label = _label_for_kind(block.kind)
             label_style = _style_for_kind(block.kind, colors)
-            text.append("  ")
-            text.append(f"{label} ", style=label_style)
-            if not block.text:
-                continue
             style = _text_style_for_kind(block.kind, colors)
             raw = block.text
+            if not raw:
+                continue
             if block.kind == "error" and "\n" in raw:
-                text.append_text(self._render_traceback(raw, style))
+                parts.append(
+                    Content.assemble(
+                        ("  ", colors.dim),
+                        (f"{label} ", label_style),
+                        (self._render_traceback_content(raw, style), ""),
+                    )
+                )
             elif block.kind in {"stdout", "stderr", "result"} and self._looks_like_code(raw):
-                text.append_text(self._render_code_output(raw, style))
+                parts.append(
+                    Content.assemble(
+                        ("  ", colors.dim),
+                        (f"{label} ", label_style),
+                        (self._render_code_output_content(raw, style), ""),
+                    )
+                )
             else:
                 lines = raw.splitlines() or [""]
+                line_parts: list[Content] = []
                 for line_index, line in enumerate(lines):
                     if line_index == 0:
-                        text.append(line, style=style)
+                        line_parts.append(Content.assemble((line, style)))
                     else:
-                        text.append("\n")
-                        text.append("    ", style=colors.dim)
-                        text.append(line, style=style)
-        return text
+                        line_parts.append(
+                            Content.assemble(
+                                ("\n    ", colors.dim),
+                                (line, style),
+                            )
+                        )
+                parts.append(
+                    Content.assemble(
+                        ("  ", colors.dim),
+                        (f"{label} ", label_style),
+                        *line_parts,
+                    )
+                )
+        if not parts:
+            return Content("")
+        return Content.join(Content("\n"), parts)
 
     def _looks_like_code(self, text: str) -> bool:
         stripped = text.strip()
@@ -998,34 +1008,50 @@ class IpythonBlock(ToolBlock):
                 return True
         return False
 
-    def _render_code_output(self, text: str, style: str) -> Text:
-        rendered = Text()
+    def _render_code_output_content(self, text: str, style: str) -> Content:
         lines = text.splitlines() or [""]
+        parts: list[Content] = []
         for index, line in enumerate(lines):
             if index == 0:
-                rendered.append(line, style=style)
+                parts.append(Content.assemble((line, style)))
             else:
-                rendered.append("\n")
-                rendered.append("    ", style=config.ui.colors.dim)
-                rendered.append(line, style=style)
-        return rendered
+                parts.append(
+                    Content.assemble(
+                        ("\n    ", config.ui.colors.dim),
+                        (line, style),
+                    )
+                )
+        return Content.join(Content(""), parts)
 
-    def _render_traceback(self, text: str, style: str) -> Text:
-        rendered = Text()
+    def _render_traceback_content(self, text: str, style: str) -> Content:
         lines = text.splitlines() or [""]
+        parts: list[Content] = []
         for index, line in enumerate(lines):
             if index == 0:
-                rendered.append(line, style=style)
+                parts.append(Content.assemble((line, style)))
             else:
-                rendered.append("\n")
-                rendered.append("    ", style=config.ui.colors.dim)
                 if line.startswith("Traceback") or line.startswith("  File"):
-                    rendered.append(line, style=style)
+                    parts.append(
+                        Content.assemble(
+                            ("\n    ", config.ui.colors.dim),
+                            (line, style),
+                        )
+                    )
                 elif "Error:" in line or "Exception:" in line:
-                    rendered.append(line, style=Style(color=config.ui.colors.failed, bold=True))
+                    parts.append(
+                        Content.assemble(
+                            ("\n    ", config.ui.colors.dim),
+                            (line, f"bold {config.ui.colors.failed}"),
+                        )
+                    )
                 else:
-                    rendered.append(line, style=style)
-        return rendered
+                    parts.append(
+                        Content.assemble(
+                            ("\n    ", config.ui.colors.dim),
+                            (line, style),
+                        )
+                    )
+        return Content.join(Content(""), parts)
 
     # -- Resize ----------------------------------------------------------
 
