@@ -656,7 +656,6 @@ class IpythonBlock(ToolBlock):
     def compose(self) -> ComposeResult:
         yield Label(self._build_header_text(), id="tool-header")
         yield Label("", id="tool-output", classes="tool-output -hidden")
-        yield Label("", id="tool-footer", classes="tool-footer -hidden")
 
     # -- Call msg parsing -------------------------------------------------
 
@@ -836,7 +835,11 @@ class IpythonBlock(ToolBlock):
             self._stop_pulse()
         else:
             state.content.append(IpythonCellContentBlock(kind="stdout", text=delta))
-        self._render_cell()
+
+        # Reuse base ToolBlock live-output rendering so the ipython block
+        # behaves like every other tool block during streaming.
+        self._live_output = state.rendered_output_text()
+        self._render_live_output()
 
     # -- Result ----------------------------------------------------------
 
@@ -864,8 +867,10 @@ class IpythonBlock(ToolBlock):
         self._cell_state.finished_at = time.monotonic()
         self._stop_pulse()
         self._set_state(success)
-        self._render_cell()
-        self._refresh_header()
+        self._render_result_output()
+        self._safe_update(
+            lambda: self.query_one("#tool-header", Label).update(self._build_header_text())
+        )
 
     # -- Expansion -------------------------------------------------------
 
@@ -874,24 +879,17 @@ class IpythonBlock(ToolBlock):
             return
         self._expanded = expanded
         self._cell_state.expanded = expanded
-        self._render_cell()
+        self._render_result_output()
 
-    # -- Render ----------------------------------------------------------
-
-    def _render_cell(self) -> None:
+    def _render_result_output(self) -> None:
         try:
             output = self.query_one("#tool-output", Label)
         except Exception:
             return
 
-        if not self._cell_state.expanded:
-            output.update(Content(""))
-            self.remove_class("-with-details")
-            output.add_class("-hidden")
-            output.remove_class("-details")
-            output.remove_class("-diff-output")
-            self._refresh_header()
-            return
+        ui_details = (
+            self._ui_details_full if self._expanded and self._ui_details_full else self._ui_details
+        )
 
         body = Content("")
         if self._cell_state.code:
@@ -900,12 +898,17 @@ class IpythonBlock(ToolBlock):
                 body = code_render
             else:
                 body = Content.from_rich_text(code_render)
-        output_content = self._render_output_blocks()
-        if output_content.plain:
-            if body.plain:
-                body = body + "\n" + output_content
-            else:
-                body = output_content
+
+        output_content = Content("")
+        if ui_details:
+            output_content = Content.from_rich_text(
+                self._render_markup_safe(ui_details) if self._result_markup else Text(ui_details)
+            )
+
+        if body.plain and output_content.plain:
+            body = body + "\n" + output_content
+        elif output_content.plain:
+            body = output_content
 
         if body.plain:
             self.remove_class("-compact")
@@ -914,59 +917,11 @@ class IpythonBlock(ToolBlock):
             output.remove_class("-details")
             output.remove_class("-diff-output")
             output.update(body)
-            # Show status footer when cell is finished
-            footer = self._render_status_footer()
-            if footer.plain:
-                self.query_one("#tool-footer", Label).update(footer)
-                self.query_one("#tool-footer", Label).remove_class("-hidden")
-            else:
-                self.query_one("#tool-footer", Label).add_class("-hidden")
         else:
             output.update(Content(""))
             self.remove_class("-with-details")
+            output.add_class("-details")
             output.add_class("-hidden")
-            self.query_one("#tool-footer", Label).add_class("-hidden")
-        self._refresh_header()
-
-    def _render_status_footer(self) -> Content:
-        """Render a modern status footer with execution metadata."""
-        state = self._cell_state
-        colors = config.ui.colors
-
-        if not state.finished_at:
-            return Content("")
-
-        duration = self._duration_label()
-        if not duration:
-            return Content("")
-
-        parts: list[Content | tuple[str, str | Style]] = []
-
-        # Status indicator
-        if state.is_error:
-            parts.append(Content.assemble(("✗ ", "bold " + colors.failed)))
-        elif self._success:
-            parts.append(Content.assemble(("✓ ", "bold " + colors.success)))
-        else:
-            parts.append(Content.assemble(("◊ ", colors.muted)))
-
-        # Duration
-        parts.append(Content.assemble((duration, colors.dim)))
-
-        # Line counts
-        counts = state.line_counts()
-        if counts:
-            code_lines, out_lines = counts
-            if code_lines > 0 or out_lines > 0:
-                parts.append(Content.assemble((" · ", colors.dim)))
-                segments: list[str] = []
-                if code_lines > 0:
-                    segments.append(f"{code_lines} lines")
-                if out_lines > 0:
-                    segments.append(f"{out_lines} output")
-                parts.append(Content.assemble((" | ".join(segments), colors.muted)))
-
-        return Content.assemble(*parts)
 
     def _render_code(self) -> Content:
         code = self._cell_state.code
@@ -986,133 +941,12 @@ class IpythonBlock(ToolBlock):
                     text.append("\n")
             return Content.from_rich_text(text)
 
-    def _render_output_blocks(self) -> Content:
-        state = self._cell_state
-        colors = config.ui.colors
-
-        if state.is_partial and not state.content:
-            return Content.assemble(
-                ("  ", colors.dim), ("waiting for output...", colors.muted)
-            )
-
-        if not state.is_partial and not state.content:
-            return Content.assemble(("  ", colors.dim), ("no output", colors.muted))
-
-        parts: list[Content] = []
-        for index, block in enumerate(state.content):
-            if index > 0:
-                parts.append(Content("\n"))
-            label = _label_for_kind(block.kind)
-            label_style = _style_for_kind(block.kind, colors)
-            style = _text_style_for_kind(block.kind, colors)
-            raw = block.text
-            if not raw:
-                continue
-            if block.kind == "error" and "\n" in raw:
-                parts.append(
-                    Content.assemble(
-                        ("  ", colors.dim),
-                        (f"{label} ", label_style),
-                        (self._render_traceback_content(raw, style), ""),
-                    )
-                )
-            elif block.kind in {"stdout", "stderr", "result"} and self._looks_like_code(raw):
-                parts.append(
-                    Content.assemble(
-                        ("  ", colors.dim),
-                        (f"{label} ", label_style),
-                        (self._render_code_output_content(raw, style), ""),
-                    )
-                )
-            else:
-                lines = raw.splitlines() or [""]
-                line_parts: list[Content] = []
-                for line_index, line in enumerate(lines):
-                    if line_index == 0:
-                        line_parts.append(Content.assemble((line, style)))
-                    else:
-                        line_parts.append(
-                            Content.assemble(
-                                ("\n    ", colors.dim),
-                                (line, style),
-                            )
-                        )
-                parts.append(
-                    Content.assemble(
-                        ("  ", colors.dim),
-                        (f"{label} ", label_style),
-                        *line_parts,
-                    )
-                )
-        if not parts:
-            return Content("")
-        return Content.join(Content("\n"), parts)
-
-    def _looks_like_code(self, text: str) -> bool:
-        stripped = text.strip()
-        if not stripped:
-            return False
-        if stripped.startswith("Traceback") or "Error:" in stripped.splitlines()[0]:
-            return False
-        if stripped.startswith(">>> ") or stripped.startswith("..."):
-            return True
-        if "\n" in stripped:
-            lines = stripped.splitlines()
-            if any(line.startswith(">>> ") or line.startswith("...") for line in lines):
-                return True
-        return False
-
-    def _render_code_output_content(self, text: str, style: str) -> Content:
-        lines = text.splitlines() or [""]
-        parts: list[Content] = []
-        for index, line in enumerate(lines):
-            if index == 0:
-                parts.append(Content.assemble((line, style)))
-            else:
-                parts.append(
-                    Content.assemble(
-                        ("\n    ", config.ui.colors.dim),
-                        (line, style),
-                    )
-                )
-        return Content.join(Content(""), parts)
-
-    def _render_traceback_content(self, text: str, style: str) -> Content:
-        lines = text.splitlines() or [""]
-        parts: list[Content] = []
-        for index, line in enumerate(lines):
-            if index == 0:
-                parts.append(Content.assemble((line, style)))
-            else:
-                if line.startswith("Traceback") or line.startswith("  File"):
-                    parts.append(
-                        Content.assemble(
-                            ("\n    ", config.ui.colors.dim),
-                            (line, style),
-                        )
-                    )
-                elif "Error:" in line or "Exception:" in line:
-                    parts.append(
-                        Content.assemble(
-                            ("\n    ", config.ui.colors.dim),
-                            (line, f"bold {config.ui.colors.failed}"),
-                        )
-                    )
-                else:
-                    parts.append(
-                        Content.assemble(
-                            ("\n    ", config.ui.colors.dim),
-                            (line, style),
-                        )
-                    )
-        return Content.join(Content(""), parts)
-
     # -- Resize ----------------------------------------------------------
 
     def on_resize(self, event: events.Resize) -> None:
         del event
-        if self._cell_state.expanded:
-            self._render_cell()
+        if self._ui_details or self._ui_details_full:
+            self._render_result_output()
         else:
             self._refresh_header()
 
