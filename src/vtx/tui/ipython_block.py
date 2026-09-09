@@ -901,9 +901,14 @@ class IpythonBlock(ToolBlock):
 
         output_content = Content("")
         if ui_details:
-            output_content = Content.from_rich_text(
+            rendered = (
                 self._render_markup_safe(ui_details) if self._result_markup else Text(ui_details)
             )
+            output_content = Content.from_rich_text(rendered)
+        elif self._cell_state.content:
+            output_text = self._cell_state.rendered_output_text()
+            if output_text:
+                output_content = Content.from_rich_text(Text(output_text))
 
         if body.plain and output_content.plain:
             body = body + "\n" + output_content
@@ -920,7 +925,6 @@ class IpythonBlock(ToolBlock):
         else:
             output.update(Content(""))
             self.remove_class("-with-details")
-            output.add_class("-details")
             output.add_class("-hidden")
 
     def _render_code(self) -> Content:
