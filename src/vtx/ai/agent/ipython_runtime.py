@@ -173,6 +173,130 @@ def _update_context_in_namespace(ctx_dict: dict[str, Any] | None) -> None:
 def _init_builtin_helpers() -> None:
     """Initialize pre-bound helpers in the REPL namespace if not already present."""
 
+    class BashHandle:
+        """Non-blocking handle for a background shell command.
+
+        Created by ``bash(cmd, background=True)``. The process runs
+        concurrently; poll or await it without blocking the kernel.
+        """
+
+        def __init__(self, command: str, proc: Any) -> None:
+            self.command = command
+            self._proc = proc
+            self.pid = proc.pid
+            self._chunks: list[str] = []
+            self._done = threading.Event()
+            self._lock = threading.Lock()
+
+        def _append(self, text: str) -> None:
+            with self._lock:
+                self._chunks.append(text)
+
+        def _combined(self) -> str:
+            with self._lock:
+                return "".join(self._chunks)
+
+        @property
+        def running(self) -> bool:
+            return self._proc.poll() is None
+
+        def poll(self) -> dict[str, Any] | None:
+            """Non-blocking status check. Returns None while running."""
+            rc = self._proc.poll()
+            if rc is None:
+                return None
+            self._done.set()
+            return {"exit_code": rc, "output": self._combined()}
+
+        def tail(self, n: int = 50) -> str:
+            """Last ``n`` lines of combined stdout+stderr so far."""
+            lines = self._combined().splitlines()
+            return "\n".join(lines[-n:])
+
+        def output(self) -> str:
+            """All combined stdout+stderr captured so far."""
+            return self._combined()
+
+        def kill(self) -> None:
+            """Terminate the process (SIGTERM, escalating to SIGKILL)."""
+            with contextlib.suppress(Exception):
+                self._proc.terminate()
+            if not self._done.wait(timeout=5):
+                with contextlib.suppress(Exception):
+                    self._proc.kill()
+            self._done.set()
+
+        def wait(self, timeout: float | None = None) -> dict[str, Any]:
+            """Block until completion; return exit_code/output/duration."""
+            import time as _time
+
+            start = _time.monotonic()
+            with contextlib.suppress(Exception):
+                self._proc.wait(timeout=timeout)
+            self._done.set()
+            rc = self._proc.poll()
+            return {
+                "exit_code": rc,
+                "output": self._combined(),
+                "duration": _time.monotonic() - start,
+            }
+
+        def __await__(self) -> Any:
+            async def _wait_async() -> dict[str, Any]:
+                loop = asyncio.get_running_loop()
+                rc = await loop.run_in_executor(None, self._proc.wait)
+                self._done.set()
+                return {"exit_code": rc, "output": self._combined()}
+
+            return _wait_async().__await__()
+
+        def __repr__(self) -> str:
+            state = "running" if self.running else "done"
+            return f"<bash pid={self.pid} {state} cmd={self.command[:60]!r}>"
+
+    def _spawn_background(command: str) -> BashHandle:
+        import subprocess as _sp
+
+        proc = _sp.Popen(
+            command, shell=True, stdout=_sp.PIPE, stderr=_sp.STDOUT, text=True, bufsize=1
+        )
+        handle = BashHandle(command, proc)
+
+        def _pump() -> None:
+            try:
+                assert proc.stdout is not None
+                for line in proc.stdout:
+                    handle._append(line)
+            except Exception:
+                pass
+            finally:
+                handle._done.set()
+                with contextlib.suppress(Exception):
+                    if proc.stdout is not None:
+                        proc.stdout.close()
+
+        threading.Thread(target=_pump, name="bash-bg-pump", daemon=True).start()
+        return handle
+
+    def bash(command: str, timeout: float = 180.0, background: bool = False) -> Any:
+        """Run a shell command.
+
+        Blocking by default: waits up to ``timeout`` seconds and returns
+        combined stdout+stderr as a string. Pass ``background=True`` to
+        return a :class:`BashHandle` immediately for long-running work;
+        then use ``h.running`` / ``h.tail(n)`` / ``h.poll()`` /
+        ``h.kill()`` / ``await h``.
+        """
+        if background:
+            return _spawn_background(command)
+        import subprocess
+
+        res = subprocess.run(command, shell=True, capture_output=True, text=True, timeout=timeout)
+        out = res.stdout or ""
+        if res.stderr:
+            out += ("\n" if out else "") + res.stderr
+        return out.strip()
+
     def run_bash(command: str, timeout: float = 180.0) -> str:
         import subprocess
 
@@ -261,14 +385,32 @@ def _init_builtin_helpers() -> None:
 
     def rlm(
         description: str,
-        prompt: str,
+        prompt: str | None = None,
         subagent_type: str = "general-purpose",
         model: str | None = None,
         background: bool = False,
+        **kwargs: Any,
     ) -> str:
-        """Spawn a subagent via the main-process task tool."""
+        """Spawn a subagent via the main-process task tool.
+
+        Accepts both ``rlm(description, prompt)`` and the single-argument
+        shorthand ``rlm(prompt)``. Foreground (default) blocks until the
+        child finishes and returns its final answer text. With
+        ``background=True`` it returns a task id immediately and the
+        result arrives next turn. Unknown keywords (e.g. ``name``,
+        ``thinking``) are ignored for forward compatibility.
+        """
+        _ = kwargs.pop("name", None)
+        _ = kwargs.pop("thinking", None)
+        if kwargs:
+            raise TypeError(f"rlm() got unexpected keyword arguments: {sorted(kwargs)}")
+        if prompt is None:
+            # Single-argument shorthand: rlm("do X") -> description + prompt.
+            prompt = description
+            words = description.split()
+            description = " ".join(words[:5]) or "Sub-agent task"
         args: dict[str, Any] = {
-            "description": description,
+            "description": description[:128],
             "prompt": prompt,
             "subagent_type": subagent_type,
             "background": background,
