@@ -297,15 +297,6 @@ def _init_builtin_helpers() -> None:
             out += ("\n" if out else "") + res.stderr
         return out.strip()
 
-    def run_bash(command: str, timeout: float = 180.0) -> str:
-        import subprocess
-
-        res = subprocess.run(command, shell=True, capture_output=True, text=True, timeout=timeout)
-        out = res.stdout or ""
-        if res.stderr:
-            out += ("\n" if out else "") + res.stderr
-        return out.strip()
-
     def read_file(path: str, offset: int = 0, limit: int = 2000) -> str:
         with open(path, encoding="utf-8", errors="replace") as f:
             lines = f.readlines()
@@ -419,8 +410,8 @@ def _init_builtin_helpers() -> None:
             args["model"] = model
         return call_tool("task", **args)
 
-    _namespace.setdefault("bash", run_bash)
-    _namespace.setdefault("run_bash", run_bash)
+    _namespace.setdefault("bash", bash)
+    _namespace.setdefault("run_bash", bash)
     _namespace.setdefault("read_file", read_file)
     _namespace.setdefault("write_file", write_file)
     _namespace.setdefault("edit_file", edit_file)

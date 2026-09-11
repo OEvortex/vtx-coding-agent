@@ -879,12 +879,21 @@ class IpythonBlock(ToolBlock):
             return
         self._expanded = expanded
         self._cell_state.expanded = expanded
+        self._refresh_header()
         self._render_result_output()
 
     def _render_result_output(self) -> None:
         try:
             output = self.query_one("#tool-output", Label)
         except Exception:
+            return
+
+        if not self._cell_state.expanded:
+            output.update(Content(""))
+            self.remove_class("-with-details")
+            output.remove_class("-details")
+            output.remove_class("-diff-output")
+            output.add_class("-hidden")
             return
 
         ui_details = (

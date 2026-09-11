@@ -200,6 +200,29 @@ class TestIpythonBlockResult:
         block.set_expanded(True)
         assert block._cell_state.expanded is True
 
+    @pytest.mark.asyncio
+    async def test_collapsed_hides_output_expanded_shows_output(self):
+        block = _make_block("print('hello')")
+        async with _TestApp().run_test() as pilot:
+            pilot.app.mount(block)
+            await pilot.pause()
+            block.set_result("done", "hello\nworld", True)
+            await pilot.pause()
+            output_label = block.query_one("#tool-output")
+            assert "-hidden" in output_label.classes
+            assert not block.has_class("-with-details")
+
+            block.set_expanded(True)
+            await pilot.pause()
+            assert "-hidden" not in output_label.classes
+            assert block.has_class("-with-details")
+            assert "hello" in output_label.content.plain
+
+            block.set_expanded(False)
+            await pilot.pause()
+            assert "-hidden" in output_label.classes
+            assert not block.has_class("-with-details")
+
 
 # ---------------------------------------------------------------------------
 # Inherit + lazy ui_block property on IpythonTool
