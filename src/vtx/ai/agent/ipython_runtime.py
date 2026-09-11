@@ -13,6 +13,7 @@ from __future__ import annotations
 import ast
 import asyncio
 import contextlib
+import importlib
 import inspect
 import json
 import os
@@ -24,6 +25,7 @@ import threading
 import traceback
 import uuid
 from dataclasses import dataclass, field
+from pathlib import Path
 from typing import Any
 
 PROTOCOL_VERSION = 1
@@ -165,6 +167,7 @@ def _update_context_in_namespace(ctx_dict: dict[str, Any] | None) -> None:
         tokens=ctx_dict.get("tokens", {}),
         custom_metadata=ctx_dict.get("custom_metadata", {}),
     )
+    _init_python_skills(ctx_dict.get("cwd"))
 
 
 def _init_builtin_helpers() -> None:
@@ -289,6 +292,76 @@ def _init_builtin_helpers() -> None:
     _namespace.setdefault("call_tool", call_tool)
 
 
+def _init_python_skills(cwd: str | None = None) -> None:
+    """Discover Python-backed skills and bind their callable modules in the REPL namespace.
+
+    Follows the Prime Agent Python skills protocol:
+    - Finds skills with pyproject.toml and src/<import_name>/__init__.py
+    - Appends src/ to sys.path
+    - Imports and wraps each module via `vtx.skill.wrap_skill_module`
+    - Binds the import name in `_namespace`
+    """
+    from vtx.skill import FailedSkillModule, wrap_skill_module
+
+    target_cwd = Path(cwd or os.getcwd()).resolve()
+
+    # Find skill directories from project and user locations
+    skill_dirs: list[Path] = []
+
+    # 1. Project .agents/skills/ walking up to git root or filesystem root
+    curr = target_cwd
+    while True:
+        candidate = curr / ".agents" / "skills"
+        if candidate.is_dir():
+            skill_dirs.append(candidate)
+        if (curr / ".git").is_dir() or curr.parent == curr:
+            break
+        curr = curr.parent
+
+    # 2. User ~/.agents/skills/
+    user_skills = (Path.home() / ".agents" / "skills").resolve()
+    if user_skills.is_dir() and user_skills not in skill_dirs:
+        skill_dirs.append(user_skills)
+
+    # 3. User ~/.vtx/skills/
+    vtx_skills = (Path.home() / ".vtx" / "skills").resolve()
+    if vtx_skills.is_dir() and vtx_skills not in skill_dirs:
+        skill_dirs.append(vtx_skills)
+
+    for base_dir in skill_dirs:
+        try:
+            for skill_folder in base_dir.iterdir():
+                if not skill_folder.is_dir() or skill_folder.name.startswith("."):
+                    continue
+                pyproject = skill_folder / "pyproject.toml"
+                if not pyproject.is_file():
+                    continue
+                import_name = skill_folder.name.replace("-", "_")
+                if not re.match(r"^[A-Za-z_][A-Za-z0-9_]*$", import_name):
+                    continue
+                src_dir = skill_folder / "src"
+                pkg_init = src_dir / import_name / "__init__.py"
+                if not pkg_init.is_file():
+                    continue
+
+                # Add src_dir to sys.path if not present
+                src_str = str(src_dir.resolve())
+                if src_str not in sys.path:
+                    sys.path.insert(0, src_str)
+
+                # Import and wrap module
+                try:
+                    module = importlib.import_module(import_name)
+                    # Force reload if module was already imported to pick up any changes
+                    module = importlib.reload(module)
+                    wrapped = wrap_skill_module(module)
+                    _namespace[import_name] = wrapped
+                except Exception as exc:
+                    _namespace[import_name] = FailedSkillModule(import_name, exc)
+        except Exception:
+            pass
+
+
 def call_tool(name: str, **kwargs: Any) -> Any:
     """Call a main-process tool from the REPL via the JSON tool-call RPC.
 
@@ -342,6 +415,7 @@ def transform_cell_code(code: str) -> str:
 
 
 _init_builtin_helpers()
+_init_python_skills()
 
 
 def _send(event: dict[str, Any]) -> None:

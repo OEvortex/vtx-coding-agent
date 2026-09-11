@@ -47,6 +47,13 @@ def _parse_bool(value: Any) -> bool:
 
 
 @dataclass
+class SkillPythonMetadata:
+    import_name: str
+    package_path: str
+    pyproject_path: str
+
+
+@dataclass
 class Skill:
     path: str
     name: str
@@ -56,6 +63,8 @@ class Skill:
     include_in_prompt: bool = True
     bundled: bool = False
     category: str = DEFAULT_SKILL_CATEGORY
+    kind: str = "markdown"  # "markdown" | "python"
+    python: SkillPythonMetadata | None = None
 
 
 @dataclass
@@ -199,6 +208,36 @@ def _load_skill_from_dir(skill_dir: Path) -> tuple[Skill | None, list[SkillWarni
         if not description or not description.strip():
             return None, warnings
 
+        # Detect Python-backed skill:
+        # Prime Agent contract: pyproject.toml + src/<import_name>/__init__.py
+        kind = "markdown"
+        python_meta: SkillPythonMetadata | None = None
+        pyproject_path = skill_dir / "pyproject.toml"
+        if pyproject_path.is_file():
+            import_name = name.replace("-", "_")
+            if not re.match(r"^[A-Za-z_][A-Za-z0-9_]*$", import_name):
+                warnings.append(
+                    SkillWarning(
+                        str(pyproject_path), f'python skill import name "{import_name}" is invalid'
+                    )
+                )
+            else:
+                pkg_init_path = skill_dir / "src" / import_name / "__init__.py"
+                if pkg_init_path.is_file():
+                    kind = "python"
+                    python_meta = SkillPythonMetadata(
+                        import_name=import_name,
+                        package_path=str(skill_dir),
+                        pyproject_path=str(pyproject_path),
+                    )
+                else:
+                    warnings.append(
+                        SkillWarning(
+                            str(pyproject_path),
+                            f"python skill package src/{import_name}/__init__.py not found",
+                        )
+                    )
+
         skill = Skill(
             name=name,
             description=description,
@@ -207,6 +246,8 @@ def _load_skill_from_dir(skill_dir: Path) -> tuple[Skill | None, list[SkillWarni
             cmd_info=cmd_info,
             include_in_prompt=not cmd_only,
             category=category,
+            kind=kind,
+            python=python_meta,
         )
         return skill, warnings
 
@@ -430,6 +471,8 @@ def load_builtin_cmd_skills(package_names: str | list[str] | None = None) -> Loa
                             include_in_prompt=skill.include_in_prompt,
                             bundled=True,
                             category=skill.category,
+                            kind=skill.kind,
+                            python=skill.python,
                         )
                         for skill in result.skills
                     ]
@@ -502,7 +545,23 @@ def formatted_skills(skills: list[Skill]) -> str:
     for category in sorted(grouped):
         index_lines.append(f"  {category}:")
         for skill in sorted(grouped[category], key=lambda s: s.name):
-            index_lines.append(f"    - {skill.name}")
+            if skill.kind == "python" and skill.python:
+                index_lines.append(f"    - {skill.name} (python: `{skill.python.import_name}`)")
+            else:
+                index_lines.append(f"    - {skill.name}")
+
+    skill_tags: list[str] = []
+    for skill in sorted(skills, key=lambda s: s.name):
+        skill_tags.append("  <skill>")
+        skill_tags.append(f"    <name>{escape_xml(skill.name)}</name>")
+        skill_tags.append(f"    <type>{skill.kind}</type>")
+        if skill.kind == "python" and skill.python:
+            skill_tags.append(
+                f"    <python_import>{escape_xml(skill.python.import_name)}</python_import>"
+            )
+        skill_tags.append(f"    <description>{escape_xml(skill.description)}</description>")
+        skill_tags.append(f"    <location>{escape_xml(skill.path)}</location>")
+        skill_tags.append("  </skill>")
 
     lines = [
         "## Skills (mandatory)",
@@ -511,12 +570,8 @@ def formatted_skills(skills: list[Skill]) -> str:
         "to your task, you MUST load it with the read tool and follow its instructions. "
         "Err on the side of loading — it is always better to have context you don't need",
         "than to miss critical steps, pitfalls, or established workflows. "
-        "Skills contain specialized knowledge — repo conventions, commands, escape hatches, and",
-        "proven workflows that outperform general-purpose approaches. Load the skill even if you",
-        "think you could handle the task with basic tools. Skills also encode the user's",
-        "preferred approach, conventions, and quality standards for tasks like review, planning,",
-        "testing, and large refactors — load them even for tasks you already know how to do,",
-        "because the skill defines how it should be done here.",
+        "Skills with a python_import are prepared in the persistent Python kernel "
+        "when in RLM mode and can be called directly by that import name.",
         "",
         "When a skill file references a relative path, resolve it against the skill's directory",
         "(the parent of its SKILL.md) and use that absolute path in tool calls, not a path",
@@ -525,7 +580,7 @@ def formatted_skills(skills: list[Skill]) -> str:
         "to read the skill file again.",
         "",
         "<available_skills>",
-        *index_lines,
+        *skill_tags,
         "</available_skills>",
         "",
         "Only proceed without loading a skill if genuinely none are relevant to the task.",

@@ -164,7 +164,7 @@ async def test_empty_cell_synthesizes_positive_confirmation():
     return a non-empty tool result so the model doesn't conclude the cell
     did nothing."""
     events = [{"event": "done", "id": "rid", "status": "ok"}]
-    (output, errored), _ = await _run_with_delivery(events)
+    (output, _errored), _ = await _run_with_delivery(events)
     assert output  # not empty
     assert "successfully" in output.lower() or "no output" in output.lower()
 
