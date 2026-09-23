@@ -74,7 +74,7 @@ _BUNDLED_SKILLS_PROMPT = """# Bundled Python skills
 
 Vtx bundles these Python skills; they are pre-imported in the kernel from `src/vtx/coding_agent/builtin_skills/meta/`. Read a skill's SKILL.md before calling it:
 - `agent_message`: `await agent_message.send(message, receiver_role="parent")` sends the explicit reply a parent is waiting for; `receiver_role="sibling"` / `receiver_role="child"` also require `receiver_name=` (a child's name is `handle.name`); `agent_message.send("all", message)` broadcasts to the family roster. Not every message or task needs a reply; continue cleanup after sending and go idle normally.
-- `agent_observe`: `await agent_observe.list_agents()` lists the reachable family (parent, siblings, direct children); `await agent_observe.get_agent(target)` reads one live session summary; `await agent_observe.recent_messages(target, limit=8, max_chars=800)` reads bounded recent message previews.
+- `agent_observe`: `await agent_observe.list_agents()` / `get_agent(target)` / `recent_messages(target, limit=8, max_chars=800)` for bounded family inspection.
 - `edit`: `await edit(path="pkg/file.py", old_str=old, new_str=new)` (equivalently `await edit.run(...)`) replaces the one exact occurrence of `old_str` and returns a short confirmation; it raises when `old_str` is missing or matches more than once (widen the snippet to make it unique).
 - `compact`: `await compact.status()` reports context usage (`tokens`, `context_window`, `percent`, `scheduled`); `await compact.run(instructions=...)` schedules context compaction.
 - `refine`: `await refine.run(instructions=None, global_=False)` schedules continual harness refinement; `await refine.status()` reports `pending` and `in_flight`.
@@ -93,9 +93,7 @@ When to call `await refine.run()`: after a repeated failure, a reusable tactic e
 
 `await refine.run(instructions=..., global_=True)` schedules a refinement pass and returns immediately; it runs when the current turn ends, so continue working normally after calling it. Omit `global_` (or pass `global_=False`) for local, session-scoped refinement; set `global_=True` only for cross-session lessons. `await refine.status()` reports whether a refine is `pending` for this turn or `in_flight` right now. If a prior refinement caused issues, roll it back with `/refine rollback <id>`.
 
-Treat continual harness refinement as a small, evidence-backed update after observing a repeated failure or reusable tactic: diagnose the issue, update the smallest relevant continual harness component, validate on the next action, then record the outcome. Use `await refine.run()` to turn repeated delegation patterns into reusable subagent specs, repeated procedures into skills, durable facts/preferences into memories, and narrow behavioral policies into prompt addendums. Do not rewrite the whole continual harness when a focused memory, skill, prompt note, or subagent spec is enough.
-
-Call contract: read each installed Python skill's SKILL.md and call its documented module function in the Python REPL; do not assume a `.run` entrypoint. Use `<skill_import> ...` in shell when a CLI exists. Continual harness skill entries are Python REPL skills with an explicit Python `reference` and `arguments` contract. Spawn a continual harness subagent spec by composing a concise task prompt and calling `handle = await rlm.spawn('sub-task', name='worker')`; admission returns immediately with `rlm_child_id`, `name`, `session_dir`, and `model`, never the child's answer. Results arrive only through explicit `agent_message` replies or files; children reply with `await agent_message.send(message, receiver_role='parent')`. Use `await rlm.list_subagents()` to recover direct child handles and `await agent_message.send(..., receiver_role='child', receiver_name=handle.name)` for follow-ups. Do not invent wrappers such as `call_skill(...)`, `run_subagent(...)`, or named subagent registries."""
+Treat continual harness refinement as a small, evidence-backed update after observing a repeated failure or reusable tactic: diagnose the issue, update the smallest relevant continual harness component, validate on the next action, then record the outcome. Use `await refine.run()` to turn repeated delegation patterns into reusable subagent specs, repeated procedures into skills, durable facts/preferences into memories, and narrow behavioral policies into prompt addendums. Do not rewrite the whole continual harness when a focused memory, skill, prompt note, or subagent spec is enough. Skill/subagent call forms are the RLM-native ones documented above."""
 
 _CONTEXT_WINDOW_PROMPT = """# Context-window discipline
 
@@ -124,6 +122,8 @@ The conversation history, active prompt, session metadata, token stats, and all 
 - `context.search(pattern)`: search message contents for matching text/regex.
 - `context.tokens`: dictionary with token usage stats and context window limits.
 
+Never print `context.messages`, `context.system_prompt`, `In`, or `Out` wholesale — that dumps the whole conversation back into the output and burns context. Always query with filters (`get_history(limit=..., role=...)`, `search(...)`, `tail(n)`) and print only the slice you need.
+
 You can recursively access, inspect, modify, or compose previously written code without re-generating it from scratch:
 ```python
 # Inspect previous code
@@ -137,7 +137,7 @@ _RLM_HELPERS_PROMPT = """# Pre-bound REPL helpers
 
 These names already exist in the REPL namespace — call them directly, do not import or define them:
 
-- `bash(command)` -> BashHandle : starts a shell command and returns a live handle immediately; it NEVER blocks. Handle API: `h.pid` / `h.running` for liveness, `h.output()` / `h.tail(n)` for output so far, `h.poll()` for a non-blocking `BashResult` (None while running), `h.kill()` to terminate, and `await h` for the completed `BashResult(exit_code, output, duration)`.
+- `bash(command)` -> BashHandle : starts a shell command and returns a live handle immediately; it NEVER blocks (full handle API is documented in the REPL control section above: `h.output()` / `h.tail(n)`, `h.poll()`, `h.kill()`, `await h`).
 - `run_bash(command, timeout=180)` -> str : blocking shell command returning combined stdout+stderr as a string (times out with a note; the command keeps running).
 - `read_file(path, offset=0, limit=2000)` -> str : read a file slice (or list a directory).
 - `write_file(path, content)` -> None : create or overwrite a file.
@@ -252,7 +252,6 @@ def build_subagent_guidance(
         [
             "Fan-in results with `await rlm.collect(targets, timeout_ms=0)`: it returns typed snapshots of direct children (status, answer preview, error) without steering anyone; an explicit timeout blocks only that call until the children settle or the deadline passes.",
             "Large child outputs belong in files that you read selectively; `collect` snapshots are previews, not full results.",
-            "Delegate parallel context-heavy research or independent implementation; do a single known lookup, edit, or command inline.",
         ]
     )
     if include_refine_examples:
@@ -336,7 +335,7 @@ def build_rlm_system_prompt(
             skill_lines.append(
                 f"Installed skills available as shell commands: {skills_formatted}."
             )
-        if can_run_shell_skills:
+        if can_run_shell_skills and not has_ipython:
             skill_lines.append(
                 "Each skill is also available as a shell command by the same name: `<skill> ...`. Discover its CLI usage with `<skill> --help`."
             )
@@ -373,11 +372,7 @@ def build_rlm_system_prompt(
                     "Use `agent_message.send(..., receiver_role='child', receiver_name=child.name)` for follow-ups.",
                 ]
             )
-        if has_agent_observe:
-            recursion_lines.append(
-                "Use `agent_observe` to inspect a child's rollout. Observation is restricted to your parent, siblings, and direct children; relay through the intermediate child for deeper descendants."
-            )
-        else:
+        if not has_agent_observe:
             recursion_lines.append(
                 "Inspect files a child wrote when you need to collect its work without an observation capability."
             )

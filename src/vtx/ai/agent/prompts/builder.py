@@ -24,6 +24,7 @@ from vtx.ai.agent.context import (
     formatted_agent_mds,
     formatted_git_context,
     formatted_skills,
+    formatted_skills_index,
 )
 from vtx.ai.agent.tools import BaseTool
 from vtx.ai.config import config as vtx_config
@@ -119,7 +120,10 @@ def build_system_prompt(
             sections.append(formatted_agent_mds(context.agents_files))
         effective_skills = skills if skills is not None else context.skills
         if effective_skills:
-            sections.append(formatted_skills(effective_skills))
+            # RLM mode gets the compact routing index: the base prompt already
+            # documents the pre-imported modules, and the model reads SKILL.md
+            # on demand. The full catalog costs ~6k tokens every turn.
+            sections.append(formatted_skills_index(effective_skills))
         if _resolve_git_flag(include_git_context):
             git_section = formatted_git_context(cwd)
             if git_section:

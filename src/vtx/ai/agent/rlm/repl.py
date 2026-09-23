@@ -57,6 +57,8 @@ _STREAM_FRAME_TEXT_CAP = 64 * 1024
 # The host truncates results at a smaller per-execution maxChars, so this only
 # bounds a pathological repr or exception text in transit.
 _RESULT_TEXT_CAP = 1_048_576
+# Prime parity for file reads: 2000 lines AND 50KB, whichever hits first.
+_READ_FILE_MAX_BYTES = 50 * 1024
 _RESULT_TRUNCATION_MARKER = f"\n[... result truncated at {_RESULT_TEXT_CAP} characters ...]"
 # Oversized display and host_request payloads fail the cell instead of wedging host memory.
 _PAYLOAD_CAP = 16 * 1024 * 1024
@@ -1628,7 +1630,32 @@ def _init_builtin_helpers() -> None:
     def read_file(path: str, offset: int = 0, limit: int = 2000) -> str:
         with open(path, encoding="utf-8", errors="replace") as f:
             lines = f.readlines()
-        return "".join(lines[offset : offset + limit])
+        selected = lines[offset : offset + limit]
+        text = "".join(selected)
+        # Byte cap (prime parity: 2000 lines AND 50KB): a long-line file
+        # would otherwise dump up to the 64KB stream cap into context.
+        if len(text.encode("utf-8", errors="replace")) > _READ_FILE_MAX_BYTES:
+            budget = _READ_FILE_MAX_BYTES
+            kept: list[str] = []
+            size = 0
+            for line in selected:
+                size += len(line.encode("utf-8", errors="replace"))
+                if size > budget:
+                    break
+                kept.append(line)
+            text = "".join(kept)
+            total_lines = len(lines)
+            text += (
+                f"\n[... read truncated at {_READ_FILE_MAX_BYTES // 1024}KB "
+                f"({len(kept)}/{len(selected)} lines shown, file has {total_lines} lines); "
+                f"re-read with offset={offset + len(kept)} and a smaller limit ...]"
+            )
+        elif offset + limit < len(lines):
+            text += (
+                f"\n[... {len(lines) - offset - limit} more lines; "
+                f"re-read with offset={offset + limit} ...]"
+            )
+        return text
 
     def write_file(path: str, content: str) -> None:
         with open(path, "w", encoding="utf-8") as f:

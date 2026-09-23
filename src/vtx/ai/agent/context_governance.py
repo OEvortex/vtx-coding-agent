@@ -23,6 +23,23 @@ from vtx.core.types import (
 
 # ponytail: naive global character budget; tune or make configurable later.
 _MAX_TOOL_RESULT_CHARS = 200_000
+# RLM mode funnels every file read, shell call, and data print through the
+# single `ipython` tool, so one uncapped cell output can eat a quarter of the
+# window and persist there for the rest of the session. The tighter budget
+# only trims the model-bound copy (the session keeps the full text for UI,
+# export, and the compaction summarizer).
+_RLM_MAX_TOOL_RESULT_CHARS = 24_000
+
+
+def _result_budget_chars() -> int:
+    try:
+        from vtx.ai.config import config as vtx_config
+
+        if getattr(vtx_config, "mode", "tool_first") == "rlm":
+            return _RLM_MAX_TOOL_RESULT_CHARS
+    except Exception:
+        pass
+    return _MAX_TOOL_RESULT_CHARS
 
 
 def _tool_call_ids(assistant: AssistantMessage) -> set[str]:
@@ -62,8 +79,9 @@ def prepare_for_model(messages: list[Message]) -> list[Message]:
 
 
 def _budget_tool_result(message: ToolResultMessage) -> ToolResultMessage:
+    budget = _result_budget_chars()
     total_chars = sum(len(c.text) for c in message.content if isinstance(c, TextContent))
-    if total_chars <= _MAX_TOOL_RESULT_CHARS:
+    if total_chars <= budget:
         return message
 
     kept = 0
@@ -75,16 +93,18 @@ def _budget_tool_result(message: ToolResultMessage) -> ToolResultMessage:
             continue
         if truncated:
             continue
-        if kept + len(c.text) <= _MAX_TOOL_RESULT_CHARS:
+        if kept + len(c.text) <= budget:
             new_content.append(c)
             kept += len(c.text)
         else:
-            remaining = _MAX_TOOL_RESULT_CHARS - kept
+            remaining = budget - kept
             new_content.append(
                 TextContent(
                     text=(
                         f"{c.text[:remaining]}\n\n[tool output truncated: "
-                        f"{total_chars} chars total, showing first {_MAX_TOOL_RESULT_CHARS}]"
+                        f"{total_chars} chars total, showing first {budget}. "
+                        f"Re-run with a narrower slice (offset/limit, tail(n), "
+                        f"or filter in code) instead of dumping it again.]"
                     )
                 )
             )

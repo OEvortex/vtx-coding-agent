@@ -587,3 +587,35 @@ def formatted_skills(skills: list[Skill]) -> str:
     ]
 
     return "\n".join(lines)
+
+
+def formatted_skills_index(skills: list[Skill], *, max_desc_chars: int = 120) -> str:
+    """Compact one-line-per-skill index for RLM mode.
+
+    The full :func:`formatted_skills` catalog (~24k chars for a typical
+    install) is a fixed ~6k-token tax on every RLM turn. In RLM mode the
+    system prompt already documents the pre-imported modules and tells the
+    model to read SKILL.md on demand, so a routing index is enough: the
+    model reads the full file with ``read_file`` only for skills it will
+    actually use.
+    """
+    skills = [skill for skill in skills if skill.include_in_prompt]
+    if not skills:
+        return ""
+
+    lines = [
+        "## Skills index",
+        "",
+        "One line per available skill. Read the SKILL.md at the listed location",
+        "with `read_file` only for skills you will actually use — do not preload them.",
+        "",
+    ]
+    for skill in sorted(skills, key=lambda s: s.name):
+        desc = re.sub(r"\s+", " ", skill.description or "").strip()
+        if len(desc) > max_desc_chars:
+            desc = desc[: max_desc_chars - 3].rstrip() + "..."
+        if skill.kind == "python" and skill.python:
+            lines.append(f"- {skill.name} (python `{skill.python.import_name}`): {desc}")
+        else:
+            lines.append(f"- {skill.name}: {desc}")
+    return "\n".join(lines)

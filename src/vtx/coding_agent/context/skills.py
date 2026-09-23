@@ -55,6 +55,8 @@ class Skill:
     include_in_prompt: bool = True
     bundled: bool = False
     category: str = DEFAULT_SKILL_CATEGORY
+    kind: str = "markdown"
+    python: Any = None
 
 
 @dataclass
