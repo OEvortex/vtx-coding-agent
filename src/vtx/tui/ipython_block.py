@@ -13,11 +13,12 @@ import json
 import re
 import time
 from dataclasses import dataclass, field
+from typing import Any
 
 from rich.text import Text
 from textual import events
 from textual.app import ComposeResult
-from textual.content import Content, Span
+from textual.content import Content
 from textual.highlight import highlight
 from textual.style import Style
 from textual.widgets import Label
@@ -587,7 +588,7 @@ def _content_to_text(content: Any) -> Text:
             char_styles[i] = span.style
     prev_style: str | None = None
     segment_start = 0
-    for i, char in enumerate(content.plain):
+    for i, _char in enumerate(content.plain):
         style = char_styles.get(i)
         if style != prev_style:
             if i > segment_start:
@@ -980,12 +981,12 @@ class IpythonBlock(ToolBlock):
             return Content("")
         try:
             highlighted = highlight(code, language="python")
-            return Content("› ") + highlighted
+            return Content("> ") + highlighted
         except Exception:
             text = Text()
             lines = code.splitlines()
             for index, line in enumerate(lines):
-                prefix = "› " if index == 0 else "  "  # noqa: RUF001
+                prefix = "> " if index == 0 else "  "
                 text.append(prefix, style=config.ui.colors.dim)
                 text.append(line, style=config.ui.colors.fg)
                 if index < len(lines) - 1:
