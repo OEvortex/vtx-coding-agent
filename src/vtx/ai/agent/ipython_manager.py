@@ -1,11 +1,14 @@
-"""Persistent IPython REPL kernel manager for RLM mode.
+"""Persistent RLM REPL kernel manager.
 
 Maintains long-lived ``python -m vtx.ai.agent.ipython_runtime`` subprocesses
 keyed by session id. Each subprocess executes snippets sequentially, preserving
-imports, variables, and side effects across calls. Communication uses a
-newline-delimited JSON protocol inspired by Prime Agent's ``rlm.repl``.
+imports, variables, and side effects across calls. Communication uses the
+newline-delimited protocol documented next to Prime Agent's ``rlm.repl``:
+requests ``execute`` / ``interrupt`` / ``host_reply`` / ``snapshot`` /
+``restore`` / ``list_names`` / ``shutdown`` and events ``ready`` / ``stdout`` /
+``stderr`` / ``result`` / ``display`` / ``host_request`` / ``error`` / ``done``.
 
-Inspired by JARVIS's kernel pool pattern for parallel subagent execution.
+Ported from Prime Agent (MIT) — https://github.com/PrimeIntellect-ai/prime-agent
 """
 
 from __future__ import annotations
@@ -15,6 +18,7 @@ import codecs
 import contextlib
 import json
 import os
+import shutil
 import sys
 import time
 import uuid
@@ -28,9 +32,19 @@ _MAX_INACTIVITY_SECONDS = 600
 _OUTPUT_TRUNCATE_BYTES = 1_048_576  # 1 MiB per tool call
 _DEFAULT_POOL_SIZE = 4
 
+PROTOCOL_VERSION = 3
+_READY_TIMEOUT_SECONDS = 30.0
+# On abort the host waits this long for the kernel's `done` before it gives up
+# and reports the cell as aborted; the real `done` may still arrive later.
+_ABORT_GRACE_SECONDS = 1.0
+# Per-execution stream caps: the kernel ships whole lines, so truncation
+# happens here, once, with the marker the model is told to expect.
+_MAX_STREAM_CHARS = 65536
+_STREAM_TRUNCATION_MARKER = "\n[... output truncated at 65536 chars ...]"
+
 
 class IpythonKernel:
-    """One persistent IPython runtime subprocess."""
+    """One persistent RLM REPL runtime subprocess."""
 
     def __init__(
         self,
@@ -40,11 +54,15 @@ class IpythonKernel:
         python: str | None = None,
         env: dict[str, str] | None = None,
         tool_executor: Callable[[str, dict[str, Any]], Coroutine[Any, Any, Any]] | None = None,
+        host_dispatcher: Callable[..., Coroutine[Any, Any, dict[str, Any]]] | None = None,
     ) -> None:
         self.kernel_id = kernel_id
         self.cwd = cwd
         self.python = python or sys.executable
         self._env = env or {}
+        # Test seam: by default every ``host_request`` goes to the real bridge
+        # in ``vtx.ai.agent.rlm.host``.
+        self._host_dispatcher = host_dispatcher
         self._process: Process | None = None
         self._last_activity = time.monotonic()
         self._execution_lock = asyncio.Lock()
@@ -55,11 +73,42 @@ class IpythonKernel:
         self._result_repr: str | None = None
         self._pending_done: dict[str, asyncio.Event] = {}
         self._tool_executor = tool_executor
+        self._ready_event = asyncio.Event()
+        self._protocol: int | None = None
+        self._session_id: str | None = None
+        self._session_dir: str | None = None
+
+    def set_session(self, session_id: str | None, session_dir: str | None = None) -> None:
+        """Bind the session identity used for host-bridge routing and kernel env.
+
+        Must be called before the first ``execute`` (the env is fixed at spawn).
+        """
+        self._session_id = session_id
+        self._session_dir = session_dir
+
+    def _kernel_env(self) -> dict[str, str]:
+        env = {**dict(os.environ), **self._env}
+        env.setdefault("VTX_KERNEL_OWNER_PID", str(os.getpid()))
+        # The host always injects an absolute shell path so a repo-controlled
+        # PATH can never decide which shell `bash()` runs.
+        env.setdefault("VTX_BASH_SHELL", shutil.which("bash") or "/bin/sh")
+        try:
+            from vtx.core.paths import get_config_dir
+
+            harness_dir = get_config_dir() / "harness"
+            env.setdefault("VTX_GLOBAL_HARNESS_STATE_DIR", str(harness_dir))
+            if self._session_dir:
+                env.setdefault("VTX_SESSION_DIR", self._session_dir)
+                env.setdefault("VTX_HARNESS_STATE_DIR", os.path.join(self._session_dir, "harness"))
+        except Exception:
+            pass
+        return env
 
     async def start(self) -> None:
         if self._process and self._process.returncode is None:
             return
-        env = {**dict(os.environ), **self._env}
+        self._ready_event = asyncio.Event()
+        self._protocol = None
         self._process = await asyncio.create_subprocess_exec(
             self.python,
             "-m",
@@ -68,11 +117,22 @@ class IpythonKernel:
             stdout=asyncio.subprocess.PIPE,
             stderr=asyncio.subprocess.PIPE,
             cwd=self.cwd,
-            env=env,
+            env=self._kernel_env(),
         )
         self._last_activity = time.monotonic()
         self._queue = asyncio.Queue()
         self._reader_task = asyncio.create_task(self._read_events())
+        try:
+            await asyncio.wait_for(self._ready_event.wait(), timeout=_READY_TIMEOUT_SECONDS)
+        except TimeoutError:
+            raise RuntimeError(
+                f"RLM kernel did not become ready within {_READY_TIMEOUT_SECONDS:.0f}s"
+            ) from None
+        if self._protocol != PROTOCOL_VERSION:
+            raise RuntimeError(
+                f"Kernel runtime speaks protocol {self._protocol}, expected {PROTOCOL_VERSION}. "
+                "Reinstall or upgrade vtx."
+            )
 
     async def _read_events(self) -> None:
         assert self._process and self._process.stdout is not None
@@ -99,10 +159,25 @@ class IpythonKernel:
             buffer += text
             while "\n" in buffer:
                 line, buffer = buffer.split("\n", 1)
+                if self._is_ready_line(line):
+                    continue
                 if self._queue is not None:
                     await self._queue.put(line.strip())
         if self._queue is not None:
             await self._queue.put(None)
+
+    def _is_ready_line(self, line: str) -> bool:
+        """Consume the handshake line instead of queueing it."""
+        try:
+            event = json.loads(line)
+        except json.JSONDecodeError:
+            return False
+        if not isinstance(event, dict) or event.get("event") != "ready":
+            return False
+        protocol = event.get("protocol")
+        self._protocol = protocol if isinstance(protocol, int) else None
+        self._ready_event.set()
+        return True
 
     async def _next_event(self, timeout: float) -> dict[str, Any] | None:
         if self._queue is None:
@@ -116,9 +191,52 @@ class IpythonKernel:
         if not raw:
             return None
         try:
-            return json.loads(raw)
+            event = json.loads(raw)
         except json.JSONDecodeError:
             return None
+        return event if isinstance(event, dict) else None
+
+    async def _send(self, payload: dict[str, Any]) -> bool:
+        """Write one request line; ``False`` when the pipe is gone."""
+        if self._process is None or self._process.stdin is None:
+            return False
+        line = json.dumps(payload, separators=(",", ":")) + "\n"
+        try:
+            self._process.stdin.write(line.encode("utf-8"))
+            await self._process.stdin.drain()
+            return True
+        except (ConnectionResetError, BrokenPipeError, ProcessLookupError):
+            return False
+
+    async def _handle_host_request(
+        self,
+        event: dict[str, Any],
+        tool_executor: Callable[[str, dict[str, Any]], Coroutine[Any, Any, Any]] | None,
+    ) -> None:
+        """Dispatch one kernel->host request and always write a ``host_reply``."""
+        rid = event.get("id")
+        data = event.get("data")
+        if not isinstance(rid, str) or not isinstance(data, dict):
+            await self._send(
+                {
+                    "type": "host_reply",
+                    "id": rid,
+                    "data": {"status": "error", "error": "malformed host_request"},
+                }
+            )
+            return
+        try:
+            dispatch = self._host_dispatcher
+            if dispatch is None:
+                from vtx.ai.agent.rlm.host import dispatch_host_request
+
+                dispatch = dispatch_host_request
+            reply = await dispatch(data, tool_executor=tool_executor, session_id=self._session_id)
+        except Exception as exc:
+            reply = {"status": "error", "error": f"host bridge unavailable: {exc}"}
+        if not isinstance(reply, dict) or reply.get("status") not in ("ok", "error"):
+            reply = {"status": "error", "error": "host bridge returned a malformed reply"}
+        await self._send({"type": "host_reply", "id": rid, "data": reply})
 
     async def execute(
         self,
@@ -132,21 +250,23 @@ class IpythonKernel:
         """Run ``code`` in the kernel.
 
         Returns ``(output, errored)`` — ``errored`` is ``True`` when the cell
-        raised. ``output`` is the streamed stdout/stderr/traceback text (or a
-        short status sentence if the cell produced nothing).
+        raised, was interrupted, or timed out. ``output`` is the assembled
+        stdout/stderr/result/traceback text (or a short status sentence when
+        the cell produced nothing).
         """
         if self._closed:
             return ("REPL kernel is closed. Start a new session.", True)
-        await self.start()
-        if self._process is None or self._process.stdin is None:
-            return ("REPL kernel failed to start.", True)
         if tool_executor is not None:
             self._tool_executor = tool_executor
+        try:
+            await self.start()
+        except Exception as exc:
+            return (f"REPL kernel failed to start: {exc}", True)
+        if self._process is None or self._process.stdin is None:
+            return ("REPL kernel failed to start.", True)
 
         async with self._execution_lock:
             self._last_activity = time.monotonic()
-            self._output_buffer = ""
-            self._result_repr = None
 
             rid = uuid.uuid4().hex
             done_event = asyncio.Event()
@@ -155,17 +275,9 @@ class IpythonKernel:
             request: dict[str, Any] = {"type": "execute", "id": rid, "code": code.rstrip()}
             if context is not None:
                 request["context"] = context
-            line = json.dumps(request, separators=(",", ":")) + "\n"
-            try:
-                self._process.stdin.write(line.encode("utf-8"))
-                await self._process.stdin.drain()
-            except (ConnectionResetError, BrokenPipeError):
-                await self.start()
-                if self._process.stdin is None:
-                    self._pending_done.pop(rid, None)
-                    return ("REPL kernel connection was lost and could not be restored.", True)
-                self._process.stdin.write(line.encode("utf-8"))
-                await self._process.stdin.drain()
+            if not await self._send(request):
+                self._pending_done.pop(rid, None)
+                return ("REPL kernel connection was lost and could not be restored.", True)
 
             try:
                 return await self._wait_output(
@@ -185,20 +297,58 @@ class IpythonKernel:
         start = time.monotonic()
         errored = False
         timed_out = False
+        stdout_parts: list[str] = []
+        stderr_parts: list[str] = []
+        result_text: str | None = None
+        error_parts: list[str] = []
+        display_parts: list[str] = []
+        stdout_chars = 0
+        stderr_chars = 0
+        stdout_capped = False
+        stderr_capped = False
+
+        async def stream(tag: str, text: str) -> None:
+            if on_output is not None and text:
+                await on_output(f"{tag}{text}")
+
+        def cap(
+            parts: list[str], chars: int, text: str, capped: bool
+        ) -> tuple[list[str], int, bool]:
+            if capped:
+                return parts, chars, True
+            room = _MAX_STREAM_CHARS - chars
+            if room <= 0:
+                return parts, chars, True
+            if len(text) > room:
+                parts.append(text[:room])
+                parts.append(_STREAM_TRUNCATION_MARKER)
+                return parts, chars + room, True
+            parts.append(text)
+            return parts, chars + len(text), False
+
         while True:
             if time.monotonic() - start > timeout:
                 timed_out = True
-                if on_output is not None:
-                    await on_output(
-                        "\n[IPython timed out after "
-                        + f"{timeout:.0f}s; the kernel may still be running. "
-                        + "Retry or send an empty snippet to flush.]"
-                    )
-                self._output_buffer += (
-                    "\n[IPython timed out after "
-                    + f"{timeout:.0f}s; the kernel may still be running. "
-                    + "Retry or send an empty snippet to flush.]"
+                # Prime's abort path: ask the kernel to interrupt the cell,
+                # then give it a bounded grace period to report `done`.
+                await self._send({"type": "interrupt", "id": rid})
+                message = (
+                    f"\n[IPython timed out after {timeout:.0f}s; the cell was interrupted. "
+                    "Long work should run as a background `bash()` handle instead.]"
                 )
+                stdout_parts, stdout_chars, stdout_capped = cap(
+                    stdout_parts, stdout_chars, message, stdout_capped
+                )
+                await stream("__STDOUT__", message)
+                deadline = time.monotonic() + _ABORT_GRACE_SECONDS
+                while time.monotonic() < deadline:
+                    event = await self._next_event(timeout=0.05)
+                    if event is None:
+                        if self._process is not None and self._process.returncode is not None:
+                            break
+                        continue
+                    if event.get("event") == "done" and event.get("id") == rid:
+                        break
                 break
             try:
                 event = await self._next_event(timeout=0.1)
@@ -210,21 +360,33 @@ class IpythonKernel:
                 continue
             etype = event.get("event")
             eid = event.get("id")
-            if etype == "stdout":
+            # Cell-attributed frames and raw fd frames both belong to the
+            # running cell: the kernel only executes one cell at a time.
+            if etype in ("stdout", "stderr"):
                 text = event.get("text", "")
-                self._output_buffer += text
-                if on_output is not None and text:
-                    await on_output(f"__STDOUT__{text}")
-            elif etype == "stderr":
-                text = event.get("text", "")
-                self._output_buffer += text
-                if on_output is not None and text:
-                    await on_output(f"__STDERR__{text}")
+                if not text:
+                    continue
+                if etype == "stdout":
+                    stdout_parts, stdout_chars, stdout_capped = cap(
+                        stdout_parts, stdout_chars, text, stdout_capped
+                    )
+                    await stream("__STDOUT__", text)
+                else:
+                    stderr_parts, stderr_chars, stderr_capped = cap(
+                        stderr_parts, stderr_chars, text, stderr_capped
+                    )
+                    await stream("__STDERR__", text)
+            # Cells are serialized by ``_execution_lock`` and the kernel tags
+            # frames with the *cell* id, so anything that arrives between
+            # ``execute`` and ``done`` belongs to the running cell: only
+            # ``done`` is matched against the request id.
             elif etype == "result":
-                text = event.get("text") or ""
-                self._result_repr = text
-                if on_output is not None:
-                    await on_output(f"__RESULT__{text}")
+                result_text = event.get("text") or ""
+                await stream("__RESULT__", result_text)
+            elif etype == "display":
+                payload = event.get("data")
+                display_parts.append(json.dumps(payload, default=str))
+                await stream("__DISPLAY__", json.dumps(payload, default=str))
             elif etype == "error":
                 errored = True
                 ename = event.get("ename", "Error")
@@ -233,40 +395,42 @@ class IpythonKernel:
                 formatted = f"{ename}: {evalue}"
                 if tb_lines:
                     formatted += "\n" + "\n".join(tb_lines)
-                self._output_buffer += f"\n[{ename}] {evalue}\n" + "\n".join(tb_lines)
-                if on_output is not None:
-                    await on_output(f"__ERROR__{formatted}")
-            elif etype == "tool_call":
-                tool_name = event.get("name")
-                tool_args = event.get("args") or {}
-                if self._tool_executor is not None:
-                    try:
-                        result = await self._tool_executor(tool_name, tool_args)
-                        payload = json.dumps({"event": "tool_result", "id": eid, "result": result})
-                    except Exception as exc:
-                        payload = json.dumps(
-                            {
-                                "event": "tool_result",
-                                "id": eid,
-                                "error": {"type": type(exc).__name__, "message": str(exc)},
-                            }
-                        )
-                    self._process.stdin.write(payload.encode("utf-8") + b"\n")
-                    await self._process.stdin.drain()
+                error_parts.append(formatted)
+                await stream("__ERROR__", formatted)
+            elif etype == "host_request":
+                await self._handle_host_request(event, self._tool_executor)
             elif etype == "done":
-                if eid == rid:
-                    if on_output is not None:
-                        await on_output("__DONE__")
-                    break
-                continue
-        output = truncate_bytes(self._output_buffer.strip(), _OUTPUT_TRUNCATE_BYTES)
+                if eid != rid:
+                    continue
+                status = event.get("status")
+                if status not in (None, "ok"):
+                    errored = True
+                    if not error_parts:
+                        reason = event.get("reason") or status or "error"
+                        error_parts.append(f"KernelError: {reason}")
+                        await stream("__ERROR__", f"KernelError: {reason}")
+                if on_output is not None:
+                    await on_output("__DONE__")
+                done_event.set()
+                break
+
+        # Prime's assembly order: stdout, stderr, result, traceback, then
+        # any display payloads the cell emitted but the UI did not render.
+        sections = [
+            "".join(stdout_parts).strip(),
+            "".join(stderr_parts).strip(),
+            (result_text or "").strip(),
+            "\n".join(error_parts).strip(),
+        ]
+        output = "\n".join(section for section in sections if section)
+        output = truncate_bytes(output, _OUTPUT_TRUNCATE_BYTES)
         if errored:
             return (output, True)
         if timed_out:
             return (output, True)
         if not output:
-            if self._result_repr is not None:
-                output = self._result_repr
+            if display_parts:
+                output = "\n".join(display_parts)
             else:
                 # Cell ran cleanly but produced no stdout/result — synthesize
                 # a positive confirmation so the model doesn't see an empty
@@ -275,14 +439,9 @@ class IpythonKernel:
         return (output, False)
 
     async def interrupt(self) -> None:
-        if self._process and self._process.returncode is None and self._process.stdin is not None:
-            request = {"type": "interrupt", "id": uuid.uuid4().hex}
-            line = json.dumps(request, separators=(",", ":")) + "\n"
-            try:
-                self._process.stdin.write(line.encode("utf-8"))
-                await self._process.stdin.drain()
-            except (ConnectionResetError, BrokenPipeError, ProcessLookupError):
-                pass
+        request = {"type": "interrupt", "id": uuid.uuid4().hex}
+        if not await self._send(request):
+            pass
 
     def is_active(self) -> bool:
         return self._process is not None and self._process.returncode is None
@@ -312,8 +471,9 @@ class IpythonKernel:
 class KernelPool:
     """Pool of reusable IPython kernels for parallel execution.
 
-    Inspired by JARVIS's ``KernelPool`` for concurrent subagent execution.
-    Kernels are checked out by ``session_id`` and returned when done.
+    Kernels are created lazily: the subprocess (and therefore its session
+    env vars) only comes up on first use, so a pooled kernel can still be
+    bound to a session before it spawns.
     """
 
     def __init__(self, cwd: str, pool_size: int = _DEFAULT_POOL_SIZE) -> None:
@@ -325,10 +485,10 @@ class KernelPool:
 
     async def start(self) -> None:
         async with self._lock:
+            if self._kernels or self._in_use:
+                return
             for i in range(self.pool_size):
-                kernel = IpythonKernel(kernel_id=f"pool-{i}", cwd=self.cwd)
-                await kernel.start()
-                self._kernels.append(kernel)
+                self._kernels.append(IpythonKernel(kernel_id=f"pool-{i}", cwd=self.cwd))
 
     async def acquire(self, session_id: str) -> IpythonKernel:
         """Check out a kernel for the given session."""
@@ -337,11 +497,9 @@ class KernelPool:
                 return self._in_use[session_id]
             if self._kernels:
                 kernel = self._kernels.pop()
-                self._in_use[session_id] = kernel
-                return kernel
-            # Pool exhausted: create a temporary kernel
-            kernel = IpythonKernel(kernel_id=f"temp-{session_id}", cwd=self.cwd)
-            await kernel.start()
+            else:
+                # Pool exhausted: create a temporary kernel
+                kernel = IpythonKernel(kernel_id=f"temp-{session_id}", cwd=self.cwd)
             self._in_use[session_id] = kernel
             return kernel
 
@@ -349,8 +507,10 @@ class KernelPool:
         """Return a kernel to the pool."""
         async with self._lock:
             kernel = self._in_use.pop(session_id, None)
-            if kernel is not None and kernel.is_active():
+            if kernel is not None and kernel.is_active() and len(self._kernels) < self.pool_size:
                 self._kernels.append(kernel)
+            elif kernel is not None:
+                await kernel.close()
 
     async def shutdown(self) -> None:
         async with self._lock:
@@ -360,6 +520,14 @@ class KernelPool:
             for kernel in list(self._in_use.values()):
                 await kernel.close()
             self._in_use.clear()
+
+
+def session_harness_dir(session_id: str, cwd: str) -> str:
+    """Directory handed to the kernel as ``VTX_SESSION_DIR``."""
+    from vtx.core.paths import get_config_dir
+
+    safe_cwd = cwd.replace("/", "-").replace("\\", "-").strip("-") or "root"
+    return str(get_config_dir() / "sessions" / safe_cwd / session_id)
 
 
 class IpythonManager:
@@ -408,6 +576,7 @@ class IpythonManager:
         else:
             kernel = self._session_kernels[session_id]
 
+        kernel.set_session(session_id, session_harness_dir(session_id, self.cwd))
         kernel.touch()
         try:
             return await kernel.execute(
@@ -436,13 +605,22 @@ class IpythonManager:
                 kernel = self._session_kernels.pop(sid, None)
                 if kernel is not None:
                     await kernel.close()
+                # Drop the pool checkout too: a closed kernel is terminal, and
+                # handing it out again would fail every later execute for it.
+                await self._pool.release(sid)
 
     def dispose(self, session_id: str) -> None:
         kernel = self._session_kernels.pop(session_id, None)
-        if kernel is not None:
-            task = asyncio.create_task(kernel.close())
-            self._background_tasks.add(task)
-            task.add_done_callback(self._background_tasks.discard)
+        if kernel is None:
+            return
+
+        async def _close_and_release() -> None:
+            await kernel.close()
+            await self._pool.release(session_id)
+
+        task = asyncio.create_task(_close_and_release())
+        self._background_tasks.add(task)
+        task.add_done_callback(self._background_tasks.discard)
 
 
 # Global manager instance

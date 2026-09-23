@@ -263,6 +263,22 @@ class BackgroundTaskCompletedEvent:
     notification_tag: str = "vtx:background-task-completion"
 
 
+@dataclass
+class HostNoticeEvent:
+    """A parent-side RLM host-bridge notice surfaced to the UI.
+
+    Yielded at turn boundaries when the parent drains queued host notices
+    (bash-done follow-ups, ``agent_message`` replies, refinement outcomes).
+    The notice text is also appended to the session as a synthetic
+    ``UserMessage`` so the model sees it on the next turn; this event is
+    for display only.
+    """
+
+    type: Literal["host_notice"] = "host_notice"
+    kind: Literal["notice", "refinement", "refinement_error"] = "notice"
+    text: str = ""
+
+
 # =================================================================================================
 # Union Types
 # =================================================================================================
@@ -283,6 +299,7 @@ StreamEvent = (
     | ToolResultEvent
     | ToolApprovalEvent
     | AskUserEvent
+    | HostNoticeEvent
     | RetryEvent
     | TurnEndEvent
     | ErrorEvent

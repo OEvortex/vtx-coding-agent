@@ -9,6 +9,7 @@ Expands on Ctrl+O, matching Prime Agent's ``IPythonCellComponent`` UX.
 from __future__ import annotations
 
 import contextlib
+import json
 import re
 import time
 from dataclasses import dataclass, field
@@ -31,6 +32,7 @@ TAG_STDOUT = "__STDOUT__"
 TAG_STDERR = "__STDERR__"
 TAG_RESULT = "__RESULT__"
 TAG_ERROR = "__ERROR__"
+TAG_DISPLAY = "__DISPLAY__"
 TAG_DONE = "__DONE__"
 
 # Prime-Agent working-icon pulse frames.
@@ -77,7 +79,7 @@ BASH_CELL_MAGIC_PATTERN = re.compile(r"^(?:[ \t]*\r?\n)*[ \t]*%%bash\b[^\r\n]*(?
 
 @dataclass
 class IpythonCellContentBlock:
-    kind: str  # "stdout" | "stderr" | "result" | "error"
+    kind: str  # "stdout" | "stderr" | "result" | "error" | "display"
     text: str = ""
 
 
@@ -598,7 +600,39 @@ def _content_to_text(content: Any) -> Text:
 
 
 def _label_for_kind(kind: str) -> str:
-    return {"stdout": "out", "stderr": "err", "result": "res", "error": "err"}.get(kind, "out")
+    return {
+        "stdout": "out",
+        "stderr": "err",
+        "result": "res",
+        "error": "err",
+        "display": "disp",
+    }.get(kind, "out")
+
+
+def _display_text(payload: str) -> str:
+    """Render one ``emit()`` MIME bundle for the cell body.
+
+    Plain-text representations win (that is what a model emits for charts and
+    tables); binary bundles collapse to their MIME names instead of dumping a
+    base64 blob into the transcript.
+    """
+    try:
+        data = json.loads(payload)
+    except (json.JSONDecodeError, TypeError):
+        return payload
+    if not isinstance(data, dict):
+        return str(data)
+    for mime in ("text/plain", "text/markdown", "text/html"):
+        value = data.get(mime)
+        if isinstance(value, str) and value.strip():
+            return value
+    others = [mime for mime in data if not mime.startswith("text/")]
+    if others:
+        return f"[display: {', '.join(others)}]"
+    for mime, value in data.items():
+        if isinstance(value, (str, int, float, bool)) and str(value).strip():
+            return f"[{mime}] {value}"
+    return ""
 
 
 def _style_for_kind(kind: str, colors) -> str:
@@ -830,6 +864,10 @@ class IpythonBlock(ToolBlock):
             state.ename = first_line.split(":", 1)[0] if first_line else "Error"
             state.error_summary = text
             state.content.append(IpythonCellContentBlock(kind="error", text=text))
+        elif delta.startswith(TAG_DISPLAY):
+            rendered = _display_text(delta[len(TAG_DISPLAY) :])
+            if rendered:
+                state.content.append(IpythonCellContentBlock(kind="display", text=rendered))
         elif delta.startswith(TAG_DONE):
             state.is_partial = False
             self._stop_pulse()

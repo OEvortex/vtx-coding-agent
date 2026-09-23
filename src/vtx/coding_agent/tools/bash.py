@@ -14,6 +14,7 @@ from pydantic import BaseModel, Field
 
 from vtx.ai.agent.tools.base import BaseTool
 from vtx.coding_agent.config import config
+from vtx.core.gh_app import resolve_committer_vars
 from vtx.core.types import ToolResult
 
 DEFAULT_TIMEOUT = 180
@@ -26,7 +27,7 @@ _ANSI_ESCAPE_RE = re.compile(r"\x1b\[[0-9;]*[a-zA-Z]|\x1b\][^\x07]*\x07|\x1b[()]
 
 
 def _get_env() -> dict[str, str]:
-    return {
+    env = {
         **os.environ,
         "CI": "true",
         "NO_COLOR": "1",
@@ -34,6 +35,12 @@ def _get_env() -> dict[str, str]:
         "GIT_PAGER": "cat",
         "PAGER": "cat",
     }
+    # Attribute Vtx's git commits to the configured GitHub App bot identity
+    # (``vtx-coding-agent[bot]``) instead of the user's personal account.
+    # No-op when no app is configured; fails closed (no-op) on any error so it
+    # can never block a bash command.
+    env.update(resolve_committer_vars())
+    return env
 
 
 def _get_shell() -> str | None:

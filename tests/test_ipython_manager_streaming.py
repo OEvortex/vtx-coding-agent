@@ -87,12 +87,15 @@ async def test_emits_stderr():
 
 @pytest.mark.asyncio
 async def test_emits_result_repr():
+    """The assembled tool result is whitespace-stripped before it reaches the
+    model (stream frames are delivered raw)."""
     events = [
         {"event": "result", "id": "cell-1", "text": "42\n"},
         {"event": "done", "id": "rid", "status": "ok"},
     ]
-    (output, errored), _ = await _run_with_delivery(events)
-    assert output == "42\n"
+    (output, errored), delivered = await _run_with_delivery(events)
+    assert [d for d in delivered if d.startswith("__RESULT__")] == ["__RESULT__42\n"]
+    assert output == "42"
     assert errored is False
 
 
@@ -170,39 +173,47 @@ async def test_empty_cell_synthesizes_positive_confirmation():
 
 
 @pytest.mark.asyncio
-async def test_tool_call_event_dispatches_to_executor():
-    """A ``tool_call`` event should be dispatched to ``_tool_executor`` and
-    the manager should write a ``tool_result`` response back through stdin."""
+async def test_host_request_event_dispatches_to_host_bridge():
+    """A ``host_request`` frame must be routed to the host bridge and answered
+    with a ``host_reply`` frame carrying the typed reply envelope."""
     executor_calls: list[tuple[str, dict[str, Any]]] = []
 
     async def fake_executor(name: str, args: dict[str, Any]) -> Any:
         executor_calls.append((name, args))
         return {"ok": True, "echo": args}
 
-    kernel = IpythonKernel(kernel_id="test", cwd=".")
+    dispatched: list[dict[str, Any]] = []
+
+    async def fake_dispatch(
+        data: dict[str, Any], *, tool_executor: Any = None, session_id: str | None = None
+    ) -> dict[str, Any]:
+        dispatched.append(data)
+        assert session_id == "sess-1"
+        assert data["type"] == "tool.call"
+        assert tool_executor is fake_executor
+        result = await tool_executor(data["name"], data["args"])
+        return {"status": "ok", "result": result}
+
+    kernel = IpythonKernel(kernel_id="test", cwd=".", host_dispatcher=fake_dispatch)
     kernel._process = _FakeProcess()  # type: ignore[assignment]
     kernel._queue = asyncio.Queue()
     kernel._tool_executor = fake_executor
+    kernel.set_session("sess-1")
 
     written: list[bytes] = []
-
-    def fake_write(data: bytes) -> None:
-        written.append(data)
-
-    async def fake_drain() -> None:
-        return None
-
-    kernel._process.stdin.write = fake_write  # type: ignore[method-assign]
-    kernel._process.stdin.drain = fake_drain  # type: ignore[method-assign]
+    kernel._process.stdin.write = lambda data: written.append(data)  # type: ignore[method-assign]
 
     async def feed():
         await kernel._queue.put(
             json.dumps(
                 {
-                    "event": "tool_call",
-                    "id": "rid-1",
-                    "name": "web_search",
-                    "args": {"query": "hello", "num_results": 2},
+                    "event": "host_request",
+                    "id": "req-1",
+                    "data": {
+                        "type": "tool.call",
+                        "name": "web_search",
+                        "args": {"query": "hello", "num_results": 2},
+                    },
                 }
             )
         )
@@ -219,11 +230,41 @@ async def test_tool_call_event_dispatches_to_executor():
 
     assert result[1] is False
     assert executor_calls == [("web_search", {"query": "hello", "num_results": 2})]
-    assert written, "expected manager to write a tool_result response"
+    assert dispatched and dispatched[0]["type"] == "tool.call"
+    assert written, "expected manager to write a host_reply frame"
     response = json.loads(written[0].decode("utf-8"))
-    assert response["event"] == "tool_result"
-    assert response["id"] == "rid-1"
-    assert response["result"] == {"ok": True, "echo": {"query": "hello", "num_results": 2}}
+    assert response["type"] == "host_reply"
+    assert response["id"] == "req-1"
+    assert response["data"] == {
+        "status": "ok",
+        "result": {"ok": True, "echo": {"query": "hello", "num_results": 2}},
+    }
+
+
+@pytest.mark.asyncio
+async def test_host_bridge_failure_becomes_error_reply():
+    """A bridge that raises (or is missing) must produce an ``error`` reply —
+    never an unwritten request that would wedge the kernel forever."""
+
+    async def broken_dispatch(data: dict[str, Any], **kwargs: Any) -> dict[str, Any]:
+        raise RuntimeError("bridge exploded")
+
+    kernel = IpythonKernel(kernel_id="test", cwd=".", host_dispatcher=broken_dispatch)
+    kernel._process = _FakeProcess()  # type: ignore[assignment]
+    kernel._queue = asyncio.Queue()
+
+    written: list[bytes] = []
+    kernel._process.stdin.write = lambda data: written.append(data)  # type: ignore[method-assign]
+
+    await kernel._handle_host_request(
+        {"event": "host_request", "id": "req-2", "data": {"type": "rlm.run"}}, None
+    )
+    assert written, "expected an error host_reply even when the bridge raises"
+    response = json.loads(written[0].decode("utf-8"))
+    assert response["type"] == "host_reply"
+    assert response["id"] == "req-2"
+    assert response["data"]["status"] == "error"
+    assert "bridge exploded" in response["data"]["error"]
 
 
 @pytest.mark.asyncio
@@ -233,7 +274,7 @@ async def test_result_event_with_no_stdout_returns_repr():
         {"event": "done", "id": "rid", "status": "ok"},
     ]
     (output, errored), _ = await _run_with_delivery(events)
-    assert output == "hello\n"
+    assert output == "hello"
     assert errored is False
 
 

@@ -20,7 +20,14 @@ def test_rlm_system_prompt_contains_repl_guidance():
     assert "write_file" in prompt
     assert "run_bash" in prompt
     assert "goal_get" in prompt
-    assert "rlm(" in prompt
+    # Prime's strict spawn contract: children are spawned, never called.
+    assert "rlm.spawn" in prompt
+    assert "rlm(" not in prompt
+    assert "agent_message" in prompt
+    assert "rlm.harness" in prompt
+    assert "refine.run" in prompt
+    # VTX has no kernel MCP, so the prompt must not advertise one.
+    assert "mcp" not in prompt.lower()
 
 
 def test_build_system_prompt_uses_rlm_prompt_when_mode_is_rlm(tmp_path, monkeypatch):
@@ -427,9 +434,10 @@ async def test_ipython_runtime_out_eviction(tmp_path):
     kernel = IpythonKernel("test-kernel-out-eviction", cwd=str(tmp_path))
     await kernel.start()
     try:
-        # Execute many cells to trigger eviction
+        # Execute many cells producing values to trigger Out eviction (the
+        # kernel only records trailing expressions, like IPython/prime).
         for i in range(1050):
-            cell = f"x = {i}"
+            cell = f"x = {i}\n{i + 1}"
             _out, err = await kernel.execute(cell, timeout=5.0)
             assert not err
 

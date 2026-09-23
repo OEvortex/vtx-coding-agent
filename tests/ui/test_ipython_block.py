@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import json
+
 import pytest
 from textual.app import App, ComposeResult
 
@@ -10,6 +12,7 @@ from vtx.ai.config import config
 from vtx.tui.blocks import ToolBlock
 from vtx.tui.chat import ChatLog
 from vtx.tui.ipython_block import (
+    TAG_DISPLAY,
     TAG_DONE,
     TAG_ERROR,
     TAG_RESULT,
@@ -17,6 +20,7 @@ from vtx.tui.ipython_block import (
     TAG_STDOUT,
     IpythonBlock,
     IpythonCellState,
+    _label_for_kind,
 )
 from vtx.tui.styles import get_styles
 
@@ -149,6 +153,26 @@ class TestIpythonBlockStreaming:
         assert block._cell_state.is_error is True
         assert block._cell_state.ename == "NameError"
         assert block._cell_state.content[-1].kind == "error"
+
+    def test_display_prefers_plain_text(self):
+        block = _make_block()
+        payload = json.dumps(
+            {"text/plain": "col_a col_b\n1    2", "application/vnd.vtx.chart+json": {"series": []}}
+        )
+        block.append_live_output(f"{TAG_DISPLAY}{payload}")
+        last = block._cell_state.content[-1]
+        assert last.kind == "display"
+        assert last.text == "col_a col_b\n1    2"
+        assert _label_for_kind(last.kind) == "disp"
+
+    def test_display_binary_bundle_collapses_to_mime_name(self):
+        block = _make_block()
+        payload = json.dumps({"image/png": "iVBORw0KGgo..."})
+        block.append_live_output(f"{TAG_DISPLAY}{payload}")
+        last = block._cell_state.content[-1]
+        assert last.kind == "display"
+        assert "iVBORw0KGgo" not in last.text
+        assert "image/png" in last.text
 
     def test_done_stops_partial(self):
         block = _make_block()

@@ -17,6 +17,7 @@ from .agents import AgentCommands
 from .auth import AuthCommands
 from .base import CommandSupport
 from .goals import GoalCommands
+from .harness import HarnessCommands
 from .models import ModelCommands
 from .providers import ProviderCommands
 from .sessions import SessionCommands
@@ -35,6 +36,7 @@ class CommandsMixin(
     AgentCommands,
     UpdateCommands,
     GoalCommands,
+    HarnessCommands,
 ):
     def _handle_command(self, text: str) -> bool:
         parts = text[1:].split(maxsplit=1)
@@ -103,6 +105,9 @@ class CommandsMixin(
             return True
         if cmd == "compact":
             self._handle_compact_command()
+            return True
+        if cmd == "refine":
+            self._handle_refine_command(args)
             return True
         if cmd == "recap":
             self._handle_recap_command()

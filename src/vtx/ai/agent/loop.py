@@ -42,6 +42,7 @@ from vtx.core.events import (
     CompactionStartEvent,
     ErrorEvent,
     Event,
+    HostNoticeEvent,
     InterruptedEvent,
     TurnEndEvent,
     TurnStartEvent,
@@ -181,6 +182,7 @@ class Agent:
         turn = 0
         stop_reason = StopReason.STOP
         was_interrupted = False
+        resume_after_refine = False
 
         system_prompt = self._system_prompt
         max_turns = self._effective_max_turns()
@@ -257,6 +259,19 @@ class Agent:
                     stop_reason = StopReason.STEER
                     break
 
+                # Run a scheduled RLM refinement before compaction so it
+                # sees the full trajectory, and let the model resume for one
+                # extra turn when edits were applied (the notice is a user
+                # message it has not seen yet).
+                refined_applied = False
+                for evt in await self._drain_pending_refinement(cancel_event):
+                    yield evt
+                    if isinstance(evt, HostNoticeEvent) and evt.kind == "refinement":
+                        refined_applied = True
+                if refined_applied:
+                    # Harness digest changed: pick up the rebuilt prompt.
+                    system_prompt = self._system_prompt
+
                 # Check for context overflow after each turn.
                 # We iterate events instead of awaiting a single compaction result so
                 # CompactionStartEvent can be forwarded immediately and the UI can
@@ -275,6 +290,11 @@ class Agent:
                     continue
 
                 if stop_reason != StopReason.TOOL_USE:
+                    if refined_applied and not resume_after_refine and not was_interrupted:
+                        # The refinement notice is pending context: give the
+                        # model one turn to acknowledge it, then stop.
+                        resume_after_refine = True
+                        continue
                     break
 
             if turn >= max_turns and not was_interrupted:
@@ -292,6 +312,8 @@ class Agent:
         # last turn. We yield both the structured event and the synthetic
         # message; the renderer is responsible for surface rendering.
         for evt in self._drain_background_notifications():
+            yield evt
+        for evt in await self._drain_pending_refinement(cancel_event):
             yield evt
 
         if self._extensions is not None:
@@ -326,15 +348,28 @@ class Agent:
         once even if the parent does nothing in response
         (anthropics/claude-code#20679).
         """
-        if self._background_manager is None:
-            return []
-
         out: list[Event] = []
+
+        # RLM host-bridge notices first (bash-done follow-ups, agent_message
+        # replies, refinement outcomes) so they are never blocked behind the
+        # background-task manager — the manager may not even exist here.
+        try:
+            from vtx.ai.agent.rlm.registry import bridge_session_id, drain_notices
+
+            for text in drain_notices(bridge_session_id()):
+                out.append(HostNoticeEvent(kind="notice", text=text))
+                self.session.append_message(UserMessage(content=text))
+        except Exception:
+            log.exception("RLM host notice drain failed")
+
+        if self._background_manager is None:
+            return out
+
         try:
             drained = self._background_manager.drain_completed()
         except Exception:
             log.exception("BackgroundTaskManager.drain_completed failed")
-            return []
+            return out
 
         for record in drained:
             summary = self._format_bg_summary(record)
@@ -363,6 +398,72 @@ class Agent:
             )
             self.session.append_message(synthetic)
         return out
+
+    async def _drain_pending_refinement(self, cancel_event: asyncio.Event | None) -> list[Event]:
+        """Run a scheduled RLM harness refinement, if one is pending.
+
+        Drains the ``refine.run`` request queued by the host bridge, executes
+        the plan/apply pass (an auxiliary LLM call), and on success with at
+        least one applied edit:
+        - appends the prime-style ``[<source>-refinement]`` notice as a
+          ``UserMessage`` so the model sees the applied edits, and
+        - rebuilds the system prompt (harness digest) via ``reload_context``.
+
+        Returns the events to yield (a ``HostNoticeEvent`` per outcome).
+        Failures surface as a ``refinement_error`` notice rather than raising.
+        """
+        from vtx.ai.agent.rlm.registry import (
+            bridge_session_id,
+            drain_pending_refine,
+            set_refine_in_flight,
+        )
+
+        session_id = bridge_session_id()
+        pending = drain_pending_refine(session_id)
+        if pending is None:
+            return []
+        if cancel_event is not None and cancel_event.is_set():
+            # User aborted the turn: put the request back for the next run.
+            from vtx.ai.agent.rlm.registry import get_registry
+
+            get_registry(session_id).refine_pending = pending
+            return []
+
+        set_refine_in_flight(session_id, True)
+        try:
+            from vtx.ai.agent.rlm.refine import run_refinement
+
+            result = await run_refinement(
+                messages=self.session.all_messages,
+                provider=self.provider,
+                session_id=session_id,
+                cwd=self._cwd,
+                instructions=pending.get("instructions"),
+                global_=bool(pending.get("global")),
+                rollback_id=pending.get("rollbackId"),
+                source="self",
+                cancel_event=cancel_event,
+            )
+        except Exception as e:
+            log.exception("RLM refinement failed")
+            text = f"[refinement failed] {format_error(e)}"
+            self.session.append_message(UserMessage(content=text))
+            return [HostNoticeEvent(kind="refinement_error", text=text)]
+        finally:
+            set_refine_in_flight(session_id, False)
+
+        if not result.notice:
+            # Zero applied edits: prime suppresses the notice entirely; show
+            # an informational event only (no resume turn, nothing changed).
+            return [
+                HostNoticeEvent(kind="notice", text=f"Refinement {result.id}: no edits applied")
+            ]
+
+        self.session.append_message(UserMessage(content=result.notice))
+        self.reload_context()
+        return [
+            HostNoticeEvent(kind="refinement", text=f"Refinement {result.id}: {result.summary}")
+        ]
 
     def queue_follow_up(self, message: UserMessage) -> None:
         """Queue a follow-up user message for mid-turn injection.
@@ -440,6 +541,17 @@ class Agent:
         if stop_reason == StopReason.ERROR:
             return
 
+        # A compaction requested from the RLM kernel (compact.run) must run
+        # even when the overflow threshold has not been reached.
+        try:
+            from vtx.ai.agent.rlm.registry import bridge_session_id, drain_pending_compact
+
+            pending_compact = drain_pending_compact(bridge_session_id())
+        except Exception:
+            log.exception("RLM compact drain failed")
+            pending_compact = None
+        forced = pending_compact is not None
+
         # Get the latest assistant message that has usage.
         # The most recent assistant entry can be interrupted/error and have no usage.
         # Stop searching if we hit a compaction entry to avoid
@@ -455,25 +567,36 @@ class Agent:
                 last_usage = usage
                 break
 
-        if last_usage is None:
+        if last_usage is None and not forced:
             return
 
         harness_cfg = get_harness_config()
         context_window = self.config.context_window or harness_cfg.default_context_window
         threshold_percent = harness_cfg.compaction_threshold_percent
 
-        if not is_overflow(last_usage, context_window, threshold_percent):
+        if not forced and not is_overflow(last_usage, context_window, threshold_percent):
             return
 
         if cancel_event and cancel_event.is_set():
+            if forced:
+                # Give the request back rather than dropping it.
+                try:
+                    from vtx.ai.agent.rlm.registry import bridge_session_id, get_registry
+
+                    get_registry(bridge_session_id()).compact_pending = pending_compact
+                except Exception:
+                    log.exception("RLM compact requeue failed")
             return
 
-        tokens_before = (
-            last_usage.input_tokens
-            + last_usage.output_tokens
-            + last_usage.cache_read_tokens
-            + last_usage.cache_write_tokens
-        )
+        if last_usage is not None:
+            tokens_before = (
+                last_usage.input_tokens
+                + last_usage.output_tokens
+                + last_usage.cache_read_tokens
+                + last_usage.cache_write_tokens
+            )
+        else:
+            tokens_before = int(self.session.token_totals().context_tokens)
 
         # Yield start event immediately so UI can show status
         yield CompactionStartEvent()
@@ -485,9 +608,19 @@ class Agent:
 
         try:
             # Use all_messages (uncompacted) for summarization so LLM sees full history
-            summary = await generate_summary(
-                self.session.all_messages, self.provider, system_prompt
-            )
+            summary_messages = list(self.session.all_messages)
+            compact_instructions = (pending_compact or {}).get("instructions")
+            if compact_instructions:
+                # Focus hint lands before SUMMARIZATION_PROMPT (generate_summary
+                # appends it last), steering the summary as requested.
+                summary_messages.append(
+                    UserMessage(
+                        content=(
+                            f"Compaction focus requested by the kernel:\n{compact_instructions}"
+                        )
+                    )
+                )
+            summary = await generate_summary(summary_messages, self.provider, system_prompt)
 
             # Everything before is summarized, nothing "kept"
             first_kept_id = self.session.leaf_id or ""

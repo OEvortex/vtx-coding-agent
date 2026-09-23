@@ -443,6 +443,7 @@ DEFAULT_COMMANDS = [
     SlashCommand("export", "export session to HTML"),
     SlashCommand("copy", "copy last agent response text"),
     SlashCommand("compact", "compact current conversation now"),
+    SlashCommand("refine", "refine continual harness state"),
     SlashCommand("recap", "summarize where the session left off"),
     SlashCommand("agent", "list/switch handoff agents (Shift+Tab to cycle)"),
     SlashCommand("update", "check for and install latest vtx update"),

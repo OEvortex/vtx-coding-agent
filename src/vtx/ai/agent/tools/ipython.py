@@ -39,6 +39,39 @@ class IpythonParams(BaseModel):
 
 _ipython_block_cls: type | None = None
 
+# Bundled Python skills do not live under a scanned skills directory, so the
+# kernel cannot find them on its own: ship an import-name/package-path
+# inventory with every execute. Cached per cwd (a kernel restart picks up
+# skills installed mid-session).
+_python_skill_cache: dict[str, list[dict[str, str]]] = {}
+
+
+def _python_skill_inventory(cwd: str) -> list[dict[str, str]]:
+    cached = _python_skill_cache.get(cwd)
+    if cached is not None:
+        return cached
+    entries: list[dict[str, str]] = []
+    seen: set[str] = set()
+    try:
+        from vtx.ai.agent.context.skills import load_builtin_cmd_skills, load_skills
+
+        results = (load_builtin_cmd_skills(), load_skills(cwd))
+    except Exception:
+        results = ()
+    for result in results:
+        for skill in result.skills:
+            if skill.kind != "python" or skill.python is None or skill.name in seen:
+                continue
+            seen.add(skill.name)
+            entries.append(
+                {
+                    "import_name": skill.python.import_name,
+                    "package_path": skill.python.package_path,
+                }
+            )
+    _python_skill_cache[cwd] = entries
+    return entries
+
 
 def _resolve_ipython_block() -> type | None:
     """Lazily load :class:`vtx.tui.ipython_block.IpythonBlock`.
@@ -97,7 +130,9 @@ class IpythonTool(BaseTool):
         on_output: Callable[[str], None] | None = None,
     ) -> ToolResult:
         manager = get_ipython_manager()
-        session_id = params.session_id or os.environ.get("VTX_SESSION_ID") or "default"
+        from vtx.ai.agent.rlm.registry import bridge_session_id
+
+        session_id = bridge_session_id(params.session_id)
 
         # Build context dictionary for context-as-variable in REPL
         from vtx.ai.agent.dispatcher import get_context
@@ -153,6 +188,7 @@ class IpythonTool(BaseTool):
                 "system_prompt": disp_ctx.system_prompt or "",
                 "messages": messages_data,
                 "tokens": tokens_data,
+                "python_skills": _python_skill_inventory(disp_ctx.cwd or os.getcwd()),
             }
 
         async def _on_output(text: str) -> None:

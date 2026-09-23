@@ -136,6 +136,9 @@ select = [
 "src/vtx/coding_agent/prompts/env.py" = ["E501"]
 "src/vtx/coding_agent/prompts/rlm.py" = ["E501"]
 "src/vtx/ai/agent/sdk/**/*.py" = ["N818"]
+# Ported Prime Agent runtime: keep upstream control flow (try/pass cleanup
+# sites), Win32 ctypes struct names, and the long-lived protocol fd open().
+"src/vtx/ai/agent/rlm/**" = ["SIM105", "SIM112", "SIM115", "N801", "N806", "N818", "E501"]
 "src/vtx/ai/_httpcore_patch.py" = ["N806", "N812", "SIM117", "RUF002", "RUF003", "B009", "E501"]
 "tests/ui/test_latex.py" = ["RUF001"]
 "tests/ui/test_ipython_block.py" = ["E501"]

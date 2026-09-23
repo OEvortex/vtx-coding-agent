@@ -16,6 +16,7 @@ is the single entry point used by :mod:`vtx.loop` and the runtime.
 
 from __future__ import annotations
 
+import logging
 from typing import Any
 
 from vtx.ai.agent.context import (
@@ -98,6 +99,17 @@ def build_system_prompt(
             cwd=cwd, installed_skills=installed_skills, active_tools=tool_names or ["ipython"]
         )
         sections: list[str] = [base]
+        # Continual-harness digest (prime parity): entries + recent refinements,
+        # omitted entirely when there is nothing to show.
+        try:
+            from vtx.ai.agent.rlm.refine import harness_digest_for_prompt
+            from vtx.ai.agent.rlm.registry import bridge_session_id
+
+            digest = harness_digest_for_prompt(bridge_session_id(), cwd)
+            if digest:
+                sections.append(digest)
+        except Exception:
+            logging.getLogger(__name__).exception("harness digest build failed")
         if extra_instructions and extra_instructions_mode == "append":
             sections.append(extra_instructions)
         tool_section = build_tool_guidelines_section(tools)

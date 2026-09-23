@@ -23,6 +23,7 @@ from vtx.core import (
     CompactionEndEvent,
     CompactionStartEvent,
     ErrorEvent,
+    HostNoticeEvent,
     InterruptedEvent,
     RetryEvent,
     TextDeltaEvent,
@@ -413,6 +414,9 @@ class AgentRunnerMixin:
 
             case BackgroundTaskCompletedEvent(task_id=tid, description=desc, status=st):
                 chat.add_info_message(f"Background task '{desc}' ({st}) — task_id={tid}")
+
+            case HostNoticeEvent(kind=kind, text=text):
+                chat.add_info_message(text, error=(kind == "refinement_error"))
 
             case AgentEndEvent(stop_reason=reason):
                 if reason == StopReason.INTERRUPTED:
