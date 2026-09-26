@@ -671,6 +671,7 @@ class CompactionEndEvent:
     tokens_after: int = 0
     aborted: bool = False
     reason: str = ""
+    summary: str = ""
 
 
 @dataclass

@@ -1,3 +1,4 @@
+import asyncio
 from types import SimpleNamespace
 from typing import cast
 
@@ -520,3 +521,117 @@ class TestCompactionTokenCalculation:
         # Cumulative tokens should still include everything
         assert totals.input_tokens == 3500  # 3000 + 500
         assert totals.output_tokens == 600  # 500 + 100
+
+
+# ---------------------------------------------------------------------------
+# Compaction progress events
+# ---------------------------------------------------------------------------
+
+
+class TestCompactionProgressEvents:
+    def _agent(self):
+        session = Session.in_memory()
+        session.append_message(UserMessage(content="hi"))
+        session.append_message(
+            AssistantMessage(
+                content=[TextContent(text="usable")],
+                usage=Usage(
+                    input_tokens=3000,
+                    output_tokens=500,
+                    cache_read_tokens=100,
+                    cache_write_tokens=50,
+                ),
+            )
+        )
+        return Agent(
+            provider=MockProvider(),
+            tools=[],
+            session=session,
+            system_prompt="system",
+            config=AgentConfig(context_window=1000, max_output_tokens=1),
+        )
+
+    @staticmethod
+    def _streaming_summary(chunks):
+        async def _fake_summary(*args, on_delta=None, **kwargs):
+            from vtx.core.compaction import SummaryProgress
+
+            # Cumulative, matching the real generate_summary contract.
+            sections: list[tuple[int, str]] = []
+            chars = 0
+            for chunk in chunks:
+                chars += len(chunk)
+                if on_delta is not None:
+                    if "##" in chunk:
+                        sections = [(1, "Objective & Constraints")]
+                    on_delta(SummaryProgress(chars=chars, sections_started=list(sections)))
+                await asyncio.sleep(0)
+            return "final summary"
+
+        return _fake_summary
+
+    @pytest.mark.asyncio
+    async def test_start_event_carries_context_and_overflow_trigger(self, monkeypatch):
+        monkeypatch.setattr("vtx.ai.agent.loop.generate_summary", self._streaming_summary([]))
+        agent = self._agent()
+        events = [e async for e in agent._check_compaction(StopReason.STOP, "system", None)]
+        start = events[0]
+        assert start.type == "compaction_start"
+        assert start.tokens_before == 3650
+        assert start.context_window == 1000
+        assert start.trigger == "overflow"
+
+    @pytest.mark.asyncio
+    async def test_end_event_carries_the_summary(self, monkeypatch):
+        monkeypatch.setattr("vtx.ai.agent.loop.generate_summary", self._streaming_summary([]))
+        agent = self._agent()
+        events = [e async for e in agent._check_compaction(StopReason.STOP, "system", None)]
+        end = next(e for e in events if e.type == "compaction_end")
+        assert end.summary == "final summary"
+        assert end.aborted is False
+
+    @pytest.mark.asyncio
+    async def test_progress_events_are_emitted_and_precede_the_end(self, monkeypatch):
+        monkeypatch.setattr(
+            "vtx.ai.agent.loop.generate_summary",
+            self._streaming_summary(["<summary>\n## 1. Objective", " & Constraints\nbody"]),
+        )
+        agent = self._agent()
+        events = [e async for e in agent._check_compaction(StopReason.STOP, "system", None)]
+        types = [e.type for e in events]
+        assert types[0] == "compaction_start"
+        assert types[-1] == "compaction_end"
+        assert "compaction_progress" in types
+        assert types.index("compaction_progress") < types.index("compaction_end")
+
+    @pytest.mark.asyncio
+    async def test_progress_sections_carry_the_started_headings(self, monkeypatch):
+        monkeypatch.setattr(
+            "vtx.ai.agent.loop.generate_summary",
+            self._streaming_summary(["<summary>\n## 1. Objective", " & Constraints\nbody"]),
+        )
+        agent = self._agent()
+        events = [e async for e in agent._check_compaction(StopReason.STOP, "system", None)]
+        progress = [e for e in events if e.type == "compaction_progress"]
+        assert progress
+        assert progress[-1].sections_started == [(1, "Objective & Constraints")]
+        assert progress[-1].chars > 0
+
+    @pytest.mark.asyncio
+    async def test_summary_failure_still_yields_an_aborted_end_event(self, monkeypatch):
+        async def _boom(*args, **kwargs):
+            raise RuntimeError("provider exploded")
+
+        monkeypatch.setattr("vtx.ai.agent.loop.generate_summary", _boom)
+        agent = self._agent()
+        events = [e async for e in agent._check_compaction(StopReason.STOP, "system", None)]
+        end = next(e for e in events if e.type == "compaction_end")
+        assert end.aborted is True
+        assert "provider exploded" in end.reason
+
+    @pytest.mark.asyncio
+    async def test_no_progress_queue_leak_between_runs(self, monkeypatch):
+        monkeypatch.setattr("vtx.ai.agent.loop.generate_summary", self._streaming_summary([]))
+        agent = self._agent()
+        [e async for e in agent._check_compaction(StopReason.STOP, "system", None)]
+        assert len(agent._compaction_progress) == 0

@@ -15,6 +15,7 @@ from vtx.core import ApprovalResponse
 from vtx.core.paths import get_agents_dir
 from vtx.core.types import ImageContent
 from vtx.tui.blocks import (
+    CompactionBlock,
     ContentBlock,
     HandoffLinkBlock,
     LaunchWarning,
@@ -23,7 +24,6 @@ from vtx.tui.blocks import (
     ToolBlock,
     UpdateAvailableBlock,
     UserBlock,
-    stylize_badge_markers,
 )
 from vtx.tui.input import AskUserInput
 from vtx.tui.status_lines import WITTY_STATUS_LINES, pick_witty_line
@@ -86,6 +86,8 @@ class ChatLog(VerticalScroll):
         self._scroll_pending: bool = False
         # Session recap block (header + body labels), tracked for removal.
         self._recap_labels: list[Label] = []
+        # Live compaction block, while a handoff summary is being generated.
+        self._compaction_block: CompactionBlock | None = None
         # Task tool live state: per-tool-call transcript + last text
         # delta, updated by ``apply_task_progress``. Keyed by tool call
         # id; the block for that id must already exist (mounted when
@@ -143,6 +145,7 @@ class ChatLog(VerticalScroll):
         self._current_block = None
         self._last_status_label = None
         self._recap_labels = []
+        self._compaction_block = None
 
     def on_click(self, event) -> None:
         event.stop()
@@ -435,7 +438,7 @@ class ChatLog(VerticalScroll):
             ("/help", "Show this help"),
             ("/quit", "Quit (or ctrl+c twice)"),
             ("/clear", "Clear conversation history"),
-            ("/compact", "Compact current conversation now"),
+            ("/compact", "Compact now (add focus text to steer the summary)"),
             ("/refine", "Refine continual harness state (/refine <instructions>)"),
             ("/model", "Change model (/model gpt-4o)"),
             ("/provider", "Filter /model by provider"),
@@ -807,24 +810,52 @@ class ChatLog(VerticalScroll):
             self._current_block.finalize()
         self._current_block = None
 
-    def add_compaction_message(self, tokens_before: int, tokens_after: int = 0) -> None:
+    def start_compaction(
+        self, *, tokens_before: int = 0, context_window: int = 0, trigger: str = "overflow"
+    ) -> CompactionBlock:
+        """Mount a live compaction block and return it for progress updates."""
         self._stop_spinner()
-        # Remove the "Auto-compacting..." status if it's still showing
+        # Drop the "Compacting..." status line the block replaces.
         if self._is_last_child_status() and self._last_status_label is not None:
             self._last_status_label.remove()
             self._last_status_label = None
+        self.end_block()
 
-        dim_color = config.ui.colors.dim
-        token_str = f"{tokens_before:,}"
-
-        text = Text(f"[compaction] Compacted from {token_str}", style=dim_color)
-        stylize_badge_markers(text, ("[compaction]",))
-
-        label = Label(text)
-        label.add_class("compaction-message")
-        self.mount(label)
+        block = CompactionBlock(
+            tokens_before=tokens_before, context_window=context_window, trigger=trigger
+        )
+        self.mount(block)
+        self._compaction_block = block
         self._scroll_if_anchored(animate=False)
+        return block
+
+    def update_compaction_progress(self, chars: int, sections: list[tuple[int, str]]) -> None:
+        block = self._compaction_block
+        if block is not None and block.is_mounted:
+            block.update_progress(chars, sections)
+            self._scroll_if_anchored(animate=False)
+
+    def finish_compaction(
+        self, *, tokens_before: int, tokens_after: int, summary: str = "", error: str = ""
+    ) -> None:
+        """Settle the live block, or mount an already-finished one (session replay)."""
+        block = self._compaction_block
+        self._compaction_block = None
+        if block is None or not block.is_mounted:
+            block = CompactionBlock(tokens_before=tokens_before, trigger="overflow")
+            block.finish(tokens_after=tokens_after, summary=summary, error=error)
+            self.mount(block)
+            self._scroll_if_anchored(animate=False)
+            return
+        block.finish(tokens_after=tokens_after, summary=summary, error=error)
         self._scroll_if_anchored(animate=False)
+
+    def add_compaction_message(
+        self, tokens_before: int, tokens_after: int = 0, summary: str = ""
+    ) -> None:
+        self.finish_compaction(
+            tokens_before=tokens_before, tokens_after=tokens_after, summary=summary
+        )
 
     def add_aborted_message(self, message: str = "Interrupted by user") -> None:
         error_color = config.ui.colors.error

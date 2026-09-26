@@ -1,21 +1,25 @@
 import contextlib
+import re
 import textwrap
 import time
 from collections.abc import Callable, Iterable
 from dataclasses import dataclass
 from typing import Literal
 
+from rich.spinner import Spinner
 from rich.style import Style
 from rich.text import Text
 from textual import events
 from textual.app import ComposeResult
+from textual.content import Content
 from textual.message import Message
 from textual.timer import Timer
-from textual.widgets import Label, Static
+from textual.widgets import Label, ProgressBar, Static
 
 from vtx.ai.agent.tools.base import BaseTool
 from vtx.ai.config import config
 from vtx.core import ApprovalResponse
+from vtx.core.compaction import SUMMARY_SECTIONS
 from vtx.core.types import ImageContent
 from vtx.tui import task_ui
 from vtx.tui.ask_user import (
@@ -34,6 +38,7 @@ from vtx.tui.formatting import (
     format_bash_command,
     format_markdown,
     format_markdown_block,
+    format_tokens,
     markdown_render_width,
     strip_markdown_for_collapsed_text,
 )
@@ -1453,3 +1458,272 @@ class TaskToolBlock(ToolBlock):
             return
 
         super()._render_result_output()
+
+
+# ---------------------------------------------------------------------------
+# Compaction
+# ---------------------------------------------------------------------------
+
+COMPACTION_TICK_MS = 100
+
+_TRIGGER_LABELS = {
+    "overflow": "auto-compaction",
+    "manual": "requested",
+    "kernel": "kernel request",
+}
+
+
+def _short_section_title(title: str) -> str:
+    """Condense a mandated summary heading to a checklist-sized label."""
+    head = re.split(r"\s*[&,(-]", title, maxsplit=1)[0].strip()
+    if head.lower().startswith("all "):
+        head = head[4:]
+    return head[:14]
+
+
+def _format_elapsed(seconds: float) -> str:
+    if seconds < 10:
+        return f"{seconds:.1f}s"
+    if seconds < 60:
+        return f"{int(seconds)}s"
+    return f"{int(seconds // 60)}m{int(seconds % 60):02d}s"
+
+
+class CompactionBlock(Static):
+    """Context-compaction UI.
+
+    While the handoff summary is generated this shows an indeterminate bar and
+    a live checklist of the sections the summarization prompt mandates, so a
+    60-second wait shows work instead of a spinner. Afterwards it shows the
+    token delta and, on expand, the summary itself — the one artifact
+    compaction produces and the user otherwise never sees.
+    """
+
+    ALLOW_SELECT = True
+    can_focus = False
+
+    def __init__(
+        self,
+        *,
+        tokens_before: int = 0,
+        context_window: int = 0,
+        trigger: str = "overflow",
+        **kwargs,
+    ) -> None:
+        super().__init__(**kwargs)
+        self._tokens_before = tokens_before
+        self._context_window = context_window
+        self._trigger = trigger
+        self._tokens_after: int | None = None
+        self._summary: str = ""
+        self._error: str = ""
+        self._finished = False
+        self._expanded = False
+        self._chars = 0
+        self._sections: list[tuple[int, str]] = []
+        self._started_at = time.monotonic()
+        self._elapsed = 0.0
+        self._pulse_frame = 0
+        self._pulse_timer: Timer | None = None
+        self._spinner = Spinner("dots")
+        self.add_class("compaction-block", "-running")
+        self._refresh()
+
+    # -- Compose ---------------------------------------------------------
+
+    def compose(self) -> ComposeResult:
+        yield Label(self._format_header(), id="compaction-header")
+        yield ProgressBar(total=None, show_percentage=False, show_eta=False, id="compaction-bar")
+        yield Label("", id="compaction-sections")
+        yield Label("", id="compaction-summary", classes="-hidden")
+
+    # -- Pulse -----------------------------------------------------------
+
+    def on_mount(self, event: events.Mount) -> None:
+        del event
+        # Children exist now, so paint the initial state the timer will keep up to.
+        self._refresh()
+        self._pulse_timer = self.set_interval(COMPACTION_TICK_MS / 1000.0, self._tick_pulse)
+
+    def on_unmount(self) -> None:
+        self._stop_pulse()
+
+    def _stop_pulse(self) -> None:
+        timer, self._pulse_timer = self._pulse_timer, None
+        if timer is not None:
+            with contextlib.suppress(Exception):
+                timer.stop()
+
+    def _tick_pulse(self) -> None:
+        if self._finished:
+            self._stop_pulse()
+            return
+        self._pulse_frame += 1
+        self._refresh()
+
+    def _current_elapsed(self) -> float:
+        if self._finished:
+            return self._elapsed
+        return time.monotonic() - self._started_at
+
+    # -- State transitions -----------------------------------------------
+
+    def update_progress(self, chars: int, sections: list[tuple[int, str]]) -> None:
+        """Record streaming progress from the summary generation."""
+        if self._finished:
+            return
+        self._chars = chars
+        # The contract is cumulative, but never let a partial update clear a
+        # checklist the user has already watched fill in.
+        self._sections = sections or self._sections
+        self._refresh()
+
+    def finish(self, *, tokens_after: int, summary: str = "", error: str = "") -> None:
+        """Settle the block: success shows the token delta, failure the reason."""
+        if self._finished:
+            return
+        self._finished = True
+        self._elapsed = time.monotonic() - self._started_at
+        self._error = error
+        if error:
+            self.remove_class("-running")
+            self.add_class("-error")
+        else:
+            self._tokens_after = tokens_after
+            self._summary = summary
+            self.remove_class("-running")
+            self.add_class("-done")
+        self._stop_pulse()
+        self._refresh()
+
+    def toggle_expanded(self) -> bool:
+        """Toggle summary visibility. No-op until compaction has finished."""
+        if not self._finished or self._error or not self._summary:
+            return False
+        self._expanded = not self._expanded
+        self._render_summary()
+        self._refresh()
+        return self._expanded
+
+    def on_click(self, event: events.Click) -> None:
+        event.stop()
+        self.toggle_expanded()
+
+    # -- Rendering -------------------------------------------------------
+
+    def _refresh(self) -> None:
+        with contextlib.suppress(Exception):
+            self.query_one("#compaction-header", Label).update(self._format_header(), layout=False)
+            self._render_sections()
+        if self._finished:
+            with contextlib.suppress(Exception):
+                self._render_bar()
+
+    def _render_bar(self) -> None:
+        bar = self.query_one("#compaction-bar", ProgressBar)
+        if self._finished:
+            before = self._tokens_before or 1
+            bar.update(total=before, progress=self._tokens_after or 0)
+        else:
+            bar.update(total=None, progress=0)
+
+    def _render_sections(self) -> None:
+        label = self.query_one("#compaction-sections", Label)
+        label.set_class(self._finished or bool(self._error), "-hidden")
+        if self._finished:
+            label.update("")
+            return
+        label.update(self._format_sections())
+
+    def _render_summary(self) -> None:
+        with contextlib.suppress(Exception):
+            self._render_summary_unsafe()
+
+    def _render_summary_unsafe(self) -> None:
+        label = self.query_one("#compaction-summary", Label)
+        if not self._expanded or not self._summary:
+            label.add_class("-hidden")
+            return
+        label.remove_class("-hidden")
+        label.update(format_markdown_block(self._summary, markdown_render_width()))
+
+    def _format_header(self) -> Content:
+        colors = config.ui.colors
+        parts: list[Content | tuple[str, str]] = [Content.assemble(("⇊ ", colors.spinner))]
+
+        if self._error:
+            parts.append(Content.assemble(("Compaction failed", f"{colors.failed} bold")))
+            parts.append(Content.assemble((f": {self._error}", colors.dim)))
+            return Content.assemble(*parts)
+
+        if not self._finished:
+            parts.append(Content.assemble(("Compacting", f"{colors.running} bold")))
+            parts.append(
+                Content.assemble((f"  {_format_elapsed(self._current_elapsed())}", colors.dim))
+            )
+            if self._context_window:
+                pct = int(self._tokens_before * 100 / self._context_window)
+                parts.append(
+                    Content.assemble(
+                        (
+                            f"  {format_tokens(self._tokens_before)}"
+                            f"/{format_tokens(self._context_window)} ({pct}%)",
+                            colors.notice if pct >= 80 else colors.muted,
+                        )
+                    )
+                )
+            parts.append(
+                Content.assemble(
+                    (f"  {_TRIGGER_LABELS.get(self._trigger, self._trigger)}", colors.dim)
+                )
+            )
+            return Content.assemble(*parts)
+
+        before = self._tokens_before
+        after = self._tokens_after or 0
+        parts.append(Content.assemble(("Compacted", f"{colors.accent} bold")))
+        parts.append(
+            Content.assemble((f"  {format_tokens(before)} → {format_tokens(after)}", colors.fg))
+        )
+        if before > 0:
+            saved = 100 - int(after * 100 / before)
+            parts.append(Content.assemble((f"  (−{saved}%)", colors.success)))  # noqa: RUF001
+        parts.append(Content.assemble((f"  {_format_elapsed(self._elapsed)}", colors.dim)))
+        if self._summary:
+            parts.append(
+                Content.assemble(
+                    (
+                        "  ctrl+o to collapse" if self._expanded else "  ⏎ view summary",
+                        colors.muted,
+                    )
+                )
+            )
+        return Content.assemble(*parts)
+
+    def _format_sections(self) -> Content:
+        colors = config.ui.colors
+        if not self._sections:
+            return Content.assemble(("drafting handoff…", colors.dim))
+        done = {num for num, _ in self._sections}
+        active_num = max(done) + 1
+        active = self._spinner.render(time.time()) if self._spinner else ""
+        width = max(24, self.size.width or 80)
+        plain_width = 0
+        parts: list[Content | tuple[str, str]] = []
+        for num, title in SUMMARY_SECTIONS:
+            label = _short_section_title(title)
+            if num in done:
+                text, style = f"✓ {label}", colors.success
+            elif num == active_num:
+                text, style = f"{active} {label}", colors.running
+            else:
+                text, style = label, colors.dim
+            cost = len(text) + (3 if parts else 0)
+            if plain_width + cost > width - 1:
+                parts.append(("…", colors.dim))
+                break
+            if parts:
+                parts.append((" · ", colors.dim))
+            parts.append(Content.assemble((text, style)))
+            plain_width += cost
+        return Content.assemble(*parts)

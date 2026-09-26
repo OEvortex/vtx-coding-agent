@@ -262,6 +262,68 @@ Screen {{
     width: 100%;
 }}
 
+/* Compaction block */
+.compaction-block {{
+    padding: 1 1;
+    margin-top: 1;
+    width: 100%;
+    background: {colors.panel};
+}}
+
+.compaction-block #compaction-header,
+.compaction-block #compaction-sections,
+.compaction-block #compaction-summary {{
+    width: 100%;
+}}
+
+.compaction-block #compaction-bar {{
+    width: auto;
+    max-width: 100%;
+    height: 1;
+    margin-top: 1;
+}}
+
+.compaction-block #compaction-bar Bar {{
+    width: 40;
+    max-width: 100%;
+    height: 1;
+}}
+
+.compaction-block #compaction-bar Bar > .bar--bar {{
+    color: {colors.accent};
+    background: {colors.editor};
+}}
+
+.compaction-block #compaction-bar Bar > .bar--indeterminate {{
+    color: {colors.accent};
+    background: {colors.editor};
+}}
+
+.compaction-block #compaction-bar Bar > .bar--complete {{
+    color: {colors.success};
+    background: {colors.editor};
+}}
+
+.compaction-block #compaction-sections {{
+    margin-top: 1;
+    height: auto;
+}}
+
+.compaction-block #compaction-sections.-hidden {{
+    display: none;
+    height: 0;
+}}
+
+.compaction-block #compaction-summary {{
+    margin-top: 1;
+    height: auto;
+}}
+
+.compaction-block #compaction-summary.-hidden {{
+    display: none;
+    height: 0;
+}}
+
 /* Agent details */
 .agent-details {{
     width: 100%;

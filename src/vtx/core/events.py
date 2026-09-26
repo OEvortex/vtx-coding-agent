@@ -188,6 +188,16 @@ class AskUserEvent:
 @dataclass
 class CompactionStartEvent:
     type: Literal["compaction_start"] = "compaction_start"
+    tokens_before: int = 0
+    context_window: int = 0
+    trigger: str = ""  # "overflow" | "manual" | "kernel"
+
+
+@dataclass
+class CompactionProgressEvent:
+    type: Literal["compaction_progress"] = "compaction_progress"
+    chars: int = 0
+    sections_started: list[tuple[int, str]] = field(default_factory=list)
 
 
 @dataclass
@@ -197,6 +207,7 @@ class CompactionEndEvent:
     tokens_after: int = 0
     aborted: bool = False
     reason: str = ""  # why compaction aborted, empty on success
+    summary: str = ""
 
 
 # =================================================================================================
@@ -316,6 +327,7 @@ Event = (
     | AgentEndEvent
     | TurnStartEvent
     | CompactionStartEvent
+    | CompactionProgressEvent
     | CompactionEndEvent
     | StreamEvent
 )

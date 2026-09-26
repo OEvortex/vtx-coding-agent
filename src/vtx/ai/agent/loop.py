@@ -11,6 +11,7 @@ The loop ends on stop/error/interruption, compaction pause mode, or max turns.
 import asyncio
 import logging
 import os
+import time
 from collections import deque
 from collections.abc import AsyncIterator
 from dataclasses import dataclass
@@ -32,13 +33,14 @@ from vtx.ai.agent.extensions import (
 )
 from vtx.ai.agent.session import CompactionEntry, MessageEntry, Session
 from vtx.ai.agent.tools import BaseTool
-from vtx.core.compaction import generate_summary, is_overflow
+from vtx.core.compaction import SummaryProgress, generate_summary, is_overflow
 from vtx.core.errors import format_error
 from vtx.core.events import (
     AgentEndEvent,
     AgentStartEvent,
     BackgroundTaskCompletedEvent,
     CompactionEndEvent,
+    CompactionProgressEvent,
     CompactionStartEvent,
     ErrorEvent,
     Event,
@@ -62,6 +64,10 @@ from vtx.core.types import (
 __all__ = ["Agent", "AgentConfig"]
 
 log = logging.getLogger("agent.loop")
+
+# How often the compaction generator wakes to forward buffered progress.
+# Also the cooldown for progress events whose section count did not change.
+COMPACTION_PROGRESS_INTERVAL = 0.25
 
 
 @dataclass
@@ -117,6 +123,10 @@ class Agent:
         # callers via :meth:`queue_follow_up`; drained by the engine mid-turn so
         # sub-agent/queued results reach the model without ending the turn.
         self._pending_queue: deque[UserMessage] = deque()
+        # Compaction summary progress, pushed from the generate_summary delta
+        # callback (which runs on the stream's task) and drained by the
+        # compaction generator between polls.
+        self._compaction_progress: deque[CompactionProgressEvent] = deque()
 
     @property
     def context(self) -> Any:
@@ -537,7 +547,7 @@ class Agent:
 
     async def _check_compaction(
         self, stop_reason: StopReason, system_prompt: str, cancel_event: asyncio.Event | None
-    ) -> AsyncIterator[CompactionStartEvent | CompactionEndEvent]:
+    ) -> AsyncIterator[CompactionStartEvent | CompactionProgressEvent | CompactionEndEvent]:
         if stop_reason == StopReason.ERROR:
             return
 
@@ -599,28 +609,58 @@ class Agent:
             tokens_before = int(self.session.token_totals().context_tokens)
 
         # Yield start event immediately so UI can show status
-        yield CompactionStartEvent()
+        trigger = "kernel" if forced else "overflow"
+        yield CompactionStartEvent(
+            tokens_before=tokens_before, context_window=context_window, trigger=trigger
+        )
 
         if self._extensions is not None:
             await self._extensions.emit(
                 COMPACTION_START, cancel_event=cancel_event, tokens_before=tokens_before
             )
 
+        # Progress events are coalesced: a per-token event would flood the UI
+        # queue for a summary that takes tens of seconds, and the only signal
+        # worth watching is which of the mandated sections has started.
+        last_emit = 0.0
+        last_sections = 0
+
+        def _on_progress(progress: SummaryProgress) -> None:
+            nonlocal last_emit, last_sections
+            changed = len(progress.sections_started) != last_sections
+            now = time.monotonic()
+            if not changed and now - last_emit < COMPACTION_PROGRESS_INTERVAL:
+                return
+            last_emit = now
+            last_sections = len(progress.sections_started)
+            self._compaction_progress.append(
+                CompactionProgressEvent(
+                    chars=progress.chars, sections_started=list(progress.sections_started)
+                )
+            )
+
         try:
             # Use all_messages (uncompacted) for summarization so LLM sees full history
-            summary_messages = list(self.session.all_messages)
-            compact_instructions = (pending_compact or {}).get("instructions")
-            if compact_instructions:
-                # Focus hint lands before SUMMARIZATION_PROMPT (generate_summary
-                # appends it last), steering the summary as requested.
-                summary_messages.append(
-                    UserMessage(
-                        content=(
-                            f"Compaction focus requested by the kernel:\n{compact_instructions}"
-                        )
-                    )
+            summary_task = asyncio.create_task(
+                generate_summary(
+                    list(self.session.all_messages),
+                    self.provider,
+                    system_prompt,
+                    on_delta=_on_progress,
+                    focus_instructions=(pending_compact or {}).get("instructions"),
                 )
-            summary = await generate_summary(summary_messages, self.provider, system_prompt)
+            )
+            # Poll the summary task so queued progress reaches the UI between
+            # tokens; generate_summary has no cancel hook of its own.
+            while True:
+                done, _pending = await asyncio.wait(
+                    {summary_task}, timeout=COMPACTION_PROGRESS_INTERVAL
+                )
+                while self._compaction_progress:
+                    yield self._compaction_progress.popleft()
+                if done:
+                    break
+            summary = summary_task.result()
 
             # Everything before is summarized, nothing "kept"
             first_kept_id = self.session.leaf_id or ""
@@ -655,7 +695,9 @@ class Agent:
                 )
                 self.session.append_message(continue_msg)
 
-            yield CompactionEndEvent(tokens_before=tokens_before, tokens_after=tokens_after)
+            yield CompactionEndEvent(
+                tokens_before=tokens_before, tokens_after=tokens_after, summary=summary
+            )
 
             if self._extensions is not None:
                 await self._extensions.emit(

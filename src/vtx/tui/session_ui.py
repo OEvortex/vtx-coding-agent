@@ -128,7 +128,9 @@ class SessionUIMixin:
                         images=images or None,
                     )
             elif isinstance(entry, CompactionEntry):
-                chat.add_compaction_message(entry.tokens_before, entry.tokens_after or 0)
+                chat.add_compaction_message(
+                    entry.tokens_before, entry.tokens_after or 0, entry.summary
+                )
             elif isinstance(entry, CustomMessageEntry):
                 target_session_id = str(
                     (entry.details or {}).get("target_session_id") or ""

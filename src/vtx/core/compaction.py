@@ -11,6 +11,8 @@ Overflow formula:
 """
 
 import re
+from collections.abc import Callable
+from dataclasses import dataclass
 
 from vtx.core.abc import BaseProvider
 from vtx.core.types import Message, TextPart, Usage, UserMessage
@@ -156,6 +158,38 @@ instruction you were following and the exact point you stopped at.
 - Approaches that were tried and are known not to work.
 ---"""
 
+# The prompt mandates these headings in this order. Parsing them back out of the
+# prompt keeps the UI checklist in lockstep with the prompt instead of drifting
+# against a hand-copied list. Used to render live progress while the summary
+# streams: each heading that appears is one section finished.
+SUMMARY_SECTIONS: tuple[tuple[int, str], ...] = tuple(
+    (int(num), title)
+    for num, title in re.findall(r"^## (\d+)\. (.+)$", SUMMARIZATION_PROMPT, re.M)
+)
+
+_SECTION_HEADING_RE = re.compile(r"^##\s+(\d+)\.\s+(.+)$", re.M)
+
+
+def summary_progress(text: str) -> list[tuple[int, str]]:
+    """Return the ``(number, title)`` sections started so far in a partial stream.
+
+    Only the ``<summary>`` block counts: the ``<analysis>`` scratchpad runs
+    first and uses the same heading style, so ignoring it keeps the checklist
+    from ticking over on work that gets deleted.
+    """
+    summary = text
+    if "<summary>" in text:
+        summary = text.split("<summary>", 1)[1]
+    return [(int(n), t.strip()) for n, t in _SECTION_HEADING_RE.findall(summary)]
+
+
+@dataclass
+class SummaryProgress:
+    """Progress snapshot handed to ``generate_summary``'s ``on_delta`` callback."""
+
+    chars: int
+    sections_started: list[tuple[int, str]]
+
 
 def is_overflow(usage: Usage, context_window: int, threshold_percent: float) -> bool:
     if context_window <= 0:
@@ -194,16 +228,46 @@ def _strip_analysis(text: str) -> str:
 
 
 async def generate_summary(
-    messages: list[Message], provider: BaseProvider, system_prompt: str | None = None
+    messages: list[Message],
+    provider: BaseProvider,
+    system_prompt: str | None = None,
+    on_delta: Callable[[SummaryProgress], None] | None = None,
+    focus_instructions: str | None = None,
 ) -> str:
-    """Send the full conversation + summarization prompt to the LLM, return summary text."""
-    summary_messages: list[Message] = [*messages, UserMessage(content=SUMMARIZATION_PROMPT)]
+    """Send the full conversation + summarization prompt to the LLM, return summary text.
+
+    ``on_delta`` is called with a :class:`SummaryProgress` snapshot as tokens
+    arrive so a UI can show the summary being written instead of an opaque
+    wait. ``focus_instructions`` is prepended as a steering hint; the
+    summarization prompt still goes last so it stays the operative instruction.
+    """
+    summary_messages: list[Message] = list(messages)
+    if focus_instructions and focus_instructions.strip():
+        summary_messages.append(
+            UserMessage(
+                content=f"Compaction focus requested by the kernel:\n{focus_instructions.strip()}"
+            )
+        )
+    summary_messages.append(UserMessage(content=SUMMARIZATION_PROMPT))
 
     stream = await provider.stream(summary_messages, system_prompt=system_prompt, tools=None)
 
     text_parts: list[str] = []
+    chars = 0
+    sections: list[tuple[int, str]] = []
     async for part in stream:
         if isinstance(part, TextPart):
             text_parts.append(part.text)
+            if on_delta is None:
+                continue
+            chars += len(part.text)
+            # Re-scan only when a delta can possibly carry a heading, so the
+            # progress hook stays O(n) instead of re-joining and re-regexing
+            # the whole buffer on every token.
+            if "##" in part.text:
+                found = summary_progress("".join(text_parts))
+                if found:
+                    sections = found
+            on_delta(SummaryProgress(chars=chars, sections_started=sections))
 
     return _strip_analysis("".join(text_parts))

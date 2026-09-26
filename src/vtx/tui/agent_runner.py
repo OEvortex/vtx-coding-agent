@@ -21,6 +21,7 @@ from vtx.core import (
     AskUserResponse,
     BackgroundTaskCompletedEvent,
     CompactionEndEvent,
+    CompactionProgressEvent,
     CompactionStartEvent,
     ErrorEvent,
     HostNoticeEvent,
@@ -386,21 +387,25 @@ class AgentRunnerMixin:
                     chat.end_block()
                     self._current_block_type = None
 
-            case CompactionStartEvent():
+            case CompactionStartEvent(tokens_before=tb, context_window=cw, trigger=trg):
                 if self._current_block_type:
                     chat.end_block()
                     self._current_block_type = None
                 status.set_agent_state("compacting")
-                chat.show_spinner_status(state="compacting")
+                chat.start_compaction(tokens_before=tb, context_window=cw, trigger=trg)
 
-            case CompactionEndEvent(tokens_before=tb, tokens_after=ta, aborted=ab, reason=why):
+            case CompactionProgressEvent(chars=ch, sections_started=sec):
+                chat.update_compaction_progress(ch, sec)
+
+            case CompactionEndEvent(
+                tokens_before=tb, tokens_after=ta, aborted=ab, reason=why, summary=sm
+            ):
                 if ab:
-                    msg = "Compaction failed"
-                    if why:
-                        msg += f": {why}"
-                    chat.show_status(msg)
+                    chat.finish_compaction(
+                        tokens_before=tb, tokens_after=0, error=why or "aborted"
+                    )
                 else:
-                    chat.add_compaction_message(tb, ta)
+                    chat.finish_compaction(tokens_before=tb, tokens_after=ta, summary=sm)
 
             case RetryEvent(attempt=a, total_attempts=t, delay=d, error=e):
                 msg = f"Request failed (attempt {a}/{t}), retrying in {d}s; Error: {e}"

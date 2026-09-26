@@ -330,7 +330,7 @@ class SessionCommands(CommandSupport):
         copy_to_clipboard(text)
         chat.show_status("Copied last agent message to clipboard")
 
-    def _handle_compact_command(self) -> None:
+    def _handle_compact_command(self, args: str = "") -> None:
         chat = self.query_one("#chat-log", ChatLog)
 
         if self._is_running:
@@ -345,10 +345,11 @@ class SessionCommands(CommandSupport):
             chat.add_info_message("No conversation to compact", error=True)
             return
 
-        chat.show_spinner_status("Compacting...")
-        self.run_worker(self._do_compact(), exclusive=False)
+        instructions = (args or "").strip()
+        chat.start_compaction(trigger="manual")
+        self.run_worker(self._do_compact(instructions), exclusive=False)
 
-    async def _do_compact(self) -> None:
+    async def _do_compact(self, instructions: str = "") -> None:
         chat = self.query_one("#chat-log", ChatLog)
 
         if self._runtime.provider is None or self._runtime.session is None:
@@ -356,11 +357,17 @@ class SessionCommands(CommandSupport):
             return
 
         try:
-            result = await self._runtime.compact_now()
-            chat.add_compaction_message(result.tokens_before, result.tokens_after)
+            result = await self._runtime.compact_now(
+                instructions or None,
+                on_progress=lambda p: chat.update_compaction_progress(p.chars, p.sections_started),
+            )
+            chat.finish_compaction(
+                tokens_before=result.tokens_before,
+                tokens_after=result.tokens_after,
+                summary=result.summary,
+            )
         except Exception as e:
-            chat.show_status("Compaction failed")
-            chat.add_info_message(f"Compaction failed: {e}", error=True)
+            chat.finish_compaction(tokens_before=0, tokens_after=0, error=str(e))
 
     def _format_session_label(self, message: str) -> str:
         return " ".join(message.split())

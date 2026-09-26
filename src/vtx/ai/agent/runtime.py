@@ -32,7 +32,7 @@ from vtx.ai.base import AuthMode
 from vtx.ai.config import add_recent_model, get_last_selected, set_last_selected
 from vtx.ai.config import config as vtx_config
 from vtx.ai.dynamic_models import find_dynamic_model, get_dynamic_provider_headers
-from vtx.core.compaction import generate_summary
+from vtx.core.compaction import SummaryProgress, generate_summary
 from vtx.core.handoff import generate_handoff_prompt
 from vtx.core.types import AssistantMessage, TextContent, UserMessage
 
@@ -91,6 +91,7 @@ class RuntimeInitResult:
 class CompactionResult:
     tokens_before: int
     tokens_after: int = 0
+    summary: str = ""
 
 
 @dataclass
@@ -1128,13 +1129,21 @@ class ConversationRuntime:
                 )
         return 0
 
-    async def compact_now(self) -> CompactionResult:
+    async def compact_now(
+        self,
+        instructions: str | None = None,
+        on_progress: Callable[[SummaryProgress], None] | None = None,
+    ) -> CompactionResult:
         if self.provider is None or self.session is None or self.agent is None:
             raise RuntimeError("Agent not initialized")
 
         tokens_before = self.latest_assistant_usage_tokens()
         summary = await generate_summary(
-            self.session.all_messages, self.provider, system_prompt=self.agent.system_prompt
+            self.session.all_messages,
+            self.provider,
+            system_prompt=self.agent.system_prompt,
+            on_delta=on_progress,
+            focus_instructions=instructions,
         )
 
         summary_text = summary
@@ -1151,7 +1160,9 @@ class ConversationRuntime:
             tokens_before=tokens_before,
             tokens_after=tokens_after,
         )
-        return CompactionResult(tokens_before=tokens_before, tokens_after=tokens_after)
+        return CompactionResult(
+            tokens_before=tokens_before, tokens_after=tokens_after, summary=summary
+        )
 
     async def create_handoff(self, query: str) -> HandoffResult:
         if self.provider is None or self.session is None or self.agent is None:

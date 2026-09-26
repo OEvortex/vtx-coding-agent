@@ -24,6 +24,15 @@ class FakeChat:
     def add_compaction_message(self, tokens_before: int, tokens_after: int = 0) -> None:
         self.compaction_tokens = tokens_before
 
+    def start_compaction(self, **_kwargs) -> None:
+        return None
+
+    def update_compaction_progress(self, _chars: int, _sections: list) -> None:
+        return None
+
+    def finish_compaction(self, *, tokens_before: int = 0, **_kwargs) -> None:
+        self.compaction_tokens = tokens_before
+
     def add_info_message(self, message: str, error: bool = False, warning: bool = False) -> None:
         if error:
             self.errors.append(message)

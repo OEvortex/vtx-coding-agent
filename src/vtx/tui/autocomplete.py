@@ -442,7 +442,7 @@ DEFAULT_COMMANDS = [
     SlashCommand("logout", "logout from a provider"),
     SlashCommand("export", "export session to HTML"),
     SlashCommand("copy", "copy last agent response text"),
-    SlashCommand("compact", "compact current conversation now"),
+    SlashCommand("compact", "compact now; /compact <focus> steers the summary"),
     SlashCommand("refine", "refine continual harness state"),
     SlashCommand("recap", "summarize where the session left off"),
     SlashCommand("agent", "list/switch handoff agents (Shift+Tab to cycle)"),

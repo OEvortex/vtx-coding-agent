@@ -20,6 +20,10 @@ from vtx.tui.formatting import format_tokens
 from vtx.tui.status_lines import WITTY_STATUS_LINES
 from vtx.tui.status_lines import pick_witty_line as _pick_witty_line
 
+# Cells in the InfoBar context gauge. Small enough to sit inline with the
+# token counters without crowding the row.
+CONTEXT_METER_WIDTH = 10
+
 
 def format_path(path: str) -> str:
     home = os.path.expanduser("~")
@@ -203,6 +207,11 @@ class InfoBar(Vertical):
         result = Text()
         parts = []
 
+        # Context gauge, then the numbers.
+        meter = self._format_context_meter()
+        if meter.plain:
+            parts.append(meter)
+
         # Context size
         if self._context_tokens is not None:
             ctx = f"{format_tokens(self._context_tokens)}/{format_tokens(self._context_window)}"
@@ -226,6 +235,43 @@ class InfoBar(Vertical):
             result.append_text(part)
 
         return result
+
+    def _compaction_threshold_percent(self) -> float:
+        # Lazy import: keeps the module importable without the agent config.
+        from vtx.ai.agent.config import get_harness_config
+
+        return get_harness_config().compaction_threshold_percent
+
+    def _format_context_meter(self) -> Text:
+        """One-line context gauge with a tick at the auto-compaction threshold.
+
+        Hand-built instead of a ``ProgressBar`` because the threshold marker has
+        to land on a fixed cell, which no bar widget exposes.
+        """
+        colors = config.ui.colors
+        window = self._context_window or 0
+        if window <= 0:
+            return Text()
+        used = self._context_tokens or 0
+        threshold = self._compaction_threshold_percent() / 100.0
+        width = CONTEXT_METER_WIDTH
+        filled = min(width, round(width * used / window))
+        tick = min(width - 1, round(width * threshold))
+        over = used >= window * threshold
+
+        meter = Text()
+        meter.append("▕", style=colors.dim)
+        for i in range(width):
+            if i == tick:
+                # Always visible, so the threshold stays locatable once the
+                # fill passes it.
+                meter.append("┊", style=colors.notice if over else colors.muted)
+            elif i < filled:
+                meter.append("█", style=colors.notice if over else colors.accent)
+            else:
+                meter.append("░", style=colors.dim)
+        meter.append("▏", style=colors.dim)
+        return meter
 
     def _format_row2_left(self) -> Text:
         result = self._format_permission_mode()

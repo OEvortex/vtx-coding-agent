@@ -104,7 +104,7 @@ class CommandsMixin(
             self._handle_copy_command()
             return True
         if cmd == "compact":
-            self._handle_compact_command()
+            self._handle_compact_command(args)
             return True
         if cmd == "refine":
             self._handle_refine_command(args)
