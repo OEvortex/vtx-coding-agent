@@ -97,18 +97,32 @@ def _goal_file_hint(cwd: str, goal_id: str) -> str:
 
 
 def _snapshot_text(record: GoalRecord, service: GoalService) -> str:
+    """Full-fidelity goal snapshot for the agent.
+
+    Nothing here is truncated: the objective, verification contract and
+    auditor feedback are the three fields the agent has to reason about, and
+    a silently clipped verdict is what makes an audit loop unfixable.
+    """
     done, total = count_tasks(record.tasks)
     lines = [
         f"Goal {record.id} ({record.mode})",
-        f"Objective: {objective_title(record.objective, 200)}",
         f"Status: {status_line(service, record)}",
         f"Tasks: {done}/{total}",
+        f"Objective: {record.objective.strip()}",
     ]
     task = current_task(record)
     if task:
         lines.append(f"Current: [{task.id}] {task.title}")
+    if record.verification.strip():
+        lines.append(f"Verification contract: {record.verification.strip()}")
+    if record.completion_summary:
+        lines.append(f"Completion claim (untrusted): {record.completion_summary}")
     if record.review_feedback:
-        lines.append(f"Auditor feedback: {record.review_feedback}")
+        lines.append(
+            "Auditor feedback (address every item, then call "
+            'goal(action="update", status="complete") again):\n'
+            f"{record.review_feedback}"
+        )
     lines.append(f"File: {_goal_file_hint(service.cwd, record.id)}")
     return "\n".join(lines)
 
@@ -117,13 +131,53 @@ def _err(exc: GoalError) -> ToolResult:
     return ToolResult(success=False, result=str(exc), ui_summary=f"[red]{exc}[/red]")
 
 
-def _short(text: str, limit: int = 300) -> str:
+#: Marker appended to text that was cut, so a reader can never mistake a
+#: clipped fragment for the whole thing.
+CLIPPED = "…[clipped]"
+
+VERDICT_MARKERS = ("<approved/>", "<disapproved/>")
+
+
+def _strip_verdict_markers(text: str) -> str:
+    """Drop the auditor's machine verdict markers, keep the prose."""
     text = (text or "").strip()
-    for marker in ("<approved/>", "<disapproved/>"):
+    for marker in VERDICT_MARKERS:
         text = text.replace(marker, "").strip()
-    if len(text) > limit:
-        return text[: limit - 1].rstrip() + "…"
     return text
+
+
+def _short(text: str, limit: int = 300) -> str:
+    """Verdict markers stripped, then clipped on a paragraph boundary.
+
+    Clipping mid-sentence produced feedback the agent could not act on (it
+    could not even tell that more text existed), which turned one failed
+    audit into an endless re-audit loop. Prefer whole paragraphs, then whole
+    lines, and only hard-cut as a last resort.
+    """
+    text = _strip_verdict_markers(text)
+    if len(text) <= limit:
+        return text
+    for splitter in ("\n\n", "\n", " "):
+        clipped = _clip_to(text, limit, splitter)
+        if clipped is not None:
+            return clipped
+    return text[: max(1, limit - len(CLIPPED))].rstrip() + CLIPPED
+
+
+def _clip_to(text: str, limit: int, splitter: str) -> str | None:
+    """Longest prefix of whole ``splitter``-delimited units that fits."""
+    units = text.split(splitter)
+    out: list[str] = []
+    for unit in units:
+        if len(splitter.join([*out, unit])) + len(CLIPPED) > limit:
+            break
+        out.append(unit)
+    if not out:
+        return None
+    clipped = splitter.join(out).rstrip() + CLIPPED
+    if len(clipped) >= len(text):
+        return None
+    return clipped
 
 
 class GoalTaskItem(BaseModel):
@@ -506,17 +560,23 @@ class GoalTool(BaseTool):
             text = (
                 "Independent audit APPROVED — goal archived as complete.\n"
                 f"{_archive_path_text(service, archived)}\n\n"
-                f"Auditor summary:\n{_short(audit.summary, 1200)}"
+                f"Auditor summary:\n{audit.summary}"
             )
             return ToolResult(success=True, result=text, ui_summary="audit approved ✓")
 
-        feedback = _short(audit.summary, 1500) or "Requirements not met."
+        # The verdict is the only thing the next turn can act on, so it is
+        # stored whole. The earlier 1500-char cut landed mid-sentence, and
+        # the agent could not tell the text was clipped — so it kept
+        # re-auditing the same goal forever. The ledger keeps the short form.
+        feedback = _strip_verdict_markers(audit.summary) or "Requirements not met."
         service.set_status(record.id, "active", review_feedback=feedback)
         append_ledger(service.cwd, "audit_changes_required", record.id, summary=_short(feedback))
         tasks_note = f" Task progress was {done}/{total} ({pct}%)." if total else ""
         text = (
             "Independent audit requires more work — goal stays open with feedback.\n"
-            f"{tasks_note}\nAuditor notes:\n{feedback}"
+            f"{tasks_note}\nAddress every item below, then call "
+            'goal(action="update", status="complete") again.\n\n'
+            f"Auditor notes:\n{feedback}"
         )
         return ToolResult(success=False, result=text, ui_summary="changes required ✗")
 

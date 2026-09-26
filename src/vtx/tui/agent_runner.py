@@ -47,6 +47,7 @@ from vtx.core.notify import NotificationEvent, notify
 from vtx.core.types import ImageContent, StopReason, ToolResultMessage
 from vtx.tui.ask_user import AskUserDialog
 from vtx.tui.chat import ChatLog
+from vtx.tui.goal_agents import reset_subagents
 from vtx.tui.widgets import InfoBar, StatusLine
 
 _NOTIFY_EVENTS = (AgentEndEvent, ToolApprovalEvent, BackgroundTaskCompletedEvent)
@@ -131,6 +132,10 @@ class AgentRunnerMixin:
         self._dismiss_recap()
         current_prompt = prompt
         current_images = images
+        # Sub-agents are scoped to a run, so the goal beacon's "Agents" rows
+        # describe the work in flight now rather than every sub-agent ever
+        # dispatched in this session.
+        reset_subagents()
 
         while True:
             was_interrupted = False

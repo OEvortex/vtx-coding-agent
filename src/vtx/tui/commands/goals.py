@@ -63,6 +63,13 @@ class GoalCommands(CommandSupport):
     def _show_goal_dashboard(self, renderable) -> None:
         self._goal_chat().add_rich_message(renderable)
 
+    def _chat_width(self) -> int:
+        """Chat log content width in cells, for wrapping dashboard prose."""
+        try:
+            return max(20, self._goal_chat().content_size.width)
+        except Exception:
+            return 80
+
     # ------------------------------------------------------------------
     # selection callbacks (used by CompletionUIMixin)
     # ------------------------------------------------------------------
@@ -266,4 +273,4 @@ class GoalCommands(CommandSupport):
         if record is None:
             self._announce_goal_event("[vtx-goal] no focused goal")
             return
-        self._show_goal_dashboard(render_expanded(service, record))
+        self._show_goal_dashboard(render_expanded(service, record, width=self._chat_width()))

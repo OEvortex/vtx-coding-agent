@@ -259,13 +259,20 @@ class GoalService:
                 else (record.blocked_reason if status == "blocked" else None)
             )
             record.paused_reason = reason[:500] if status == "paused" and reason else None
+            # The completion claim and the auditor verdict are stored whole.
+            # They are the only record of what was claimed and what was
+            # objected to, and a clipped verdict cannot be acted on — which
+            # is what turned one failed audit into an endless re-audit loop.
+            # The auditor's own MAX_AUDIT_TURNS bound keeps this finite.
             if status == "complete":
-                record.completion_summary = (completion_summary or "")[:2000] or None
+                record.completion_summary = (completion_summary or "").strip() or None
                 if review_feedback:
-                    record.review_feedback = review_feedback[:2000]
+                    record.review_feedback = review_feedback
             elif status == "active":
+                # An absent argument preserves the previous verdict on purpose:
+                # feedback must keep surfacing until it is actually addressed.
                 record.review_feedback = (
-                    review_feedback[:2000] if review_feedback else (record.review_feedback)
+                    review_feedback if review_feedback else (record.review_feedback)
                 )
 
         return self.mutate(goal_id, apply, ledger_events=events)

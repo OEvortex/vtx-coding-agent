@@ -6,6 +6,7 @@ from pathlib import Path
 from types import SimpleNamespace
 
 import pytest
+from rich.cells import cell_len
 
 from vtx.ai.agent.dispatcher import DispatcherContext, set_context
 from vtx.coding_agent.goal import storage
@@ -82,6 +83,248 @@ def test_format_usage_hours_and_budget() -> None:
     assert "18.2K" in formatted
     record.token_budget = 100_000
     assert "/100K" in format_usage(record)
+
+
+def test_format_usage_scales_to_millions() -> None:
+    """A long goal must not read as `27631.9K`."""
+    from vtx.coding_agent.goal.record import GoalRecord, GoalUsage
+
+    record = GoalRecord(id="x", mode="regular", status="active", objective="o")
+    record.usage = GoalUsage(input_tokens=27_631_900, output_tokens=0, elapsed_ms=3_403_000)
+    formatted = format_usage(record)
+    assert "27.6M" in formatted
+    assert "K" not in formatted
+
+
+# ---------------------------------------------------------------------------
+# width-aware layout
+# ---------------------------------------------------------------------------
+
+
+def _line_widths(text) -> list[int]:
+    return [cell_len(line) for line in text.plain.split("\n") if line]
+
+
+@pytest.mark.parametrize("width", [44, 52, 60, 80, 100, 120])
+def test_compact_rows_are_exactly_the_widget_width(goal_cwd: Path, width: int) -> None:
+    """Every box row must be exactly `width` cells — no ragged right edge."""
+    service = GoalService(str(goal_cwd))
+    record = service.create(
+        "把目标系统现代化 so the beacon never truncates the auditor verdict",
+        verification="pytest -k goal && ruff check .",
+    )
+    service.replace_tasks(record.id, [{"title": "First task"}, {"title": "Second task"}])
+    service.update_task(record.id, "t1", "start")
+    record = service.focused()
+
+    text = render_compact(service, record, width=width)
+    assert set(_line_widths(text)) == {width}, f"ragged rows at width={width}"
+
+
+def test_compact_degrades_below_min_width(goal_cwd: Path) -> None:
+    """Too narrow for the box: one status line, no chrome, still fits."""
+    service = GoalService(str(goal_cwd))
+    record = service.create("Ship the thing")
+    record = service.focused()
+
+    text = render_compact(service, record, width=24)
+    assert "╭" not in text.plain
+    assert "╰" not in text.plain
+    assert "running" in text.plain
+    assert max(_line_widths(text)) <= 24
+
+
+def test_compact_never_exceeds_width_with_wide_glyphs(goal_cwd: Path) -> None:
+    """Double-width CJK must not shear the borders (cell_len, not len)."""
+    service = GoalService(str(goal_cwd))
+    record = service.create("这是一个非常长的目标描述" * 4, verification="测试命令 && echo ok")
+    record = service.focused()
+
+    text = render_compact(service, record, width=64)
+    assert set(_line_widths(text)) == {64}
+
+
+def test_verification_wraps_instead_of_being_clipped(goal_cwd: Path) -> None:
+    """A long verification command stays readable across lines."""
+    service = GoalService(str(goal_cwd))
+    record = service.create(
+        "Ship it", verification=" && ".join(f"pytest -k case_{i}" for i in range(12))
+    )
+    record = service.focused()
+
+    text = render_compact(service, record, width=80)
+    assert set(_line_widths(text)) == {80}
+    # The tail of the command survives instead of being cut at 48 chars.
+    assert "case_11" in text.plain
+
+
+# ---------------------------------------------------------------------------
+# sub-agent visibility
+# ---------------------------------------------------------------------------
+
+
+def test_compact_shows_spawned_subagents(goal_cwd: Path) -> None:
+    from vtx.tui.goal_agents import REGISTRY
+
+    REGISTRY.clear()
+    try:
+        service = GoalService(str(goal_cwd))
+        record = service.create("Ship the thing")
+        service.replace_tasks(record.id, [{"title": "Do the work"}])
+        service.update_task(record.id, "t1", "start")
+        record = service.focused()
+
+        assert "Agents" not in render_compact(service, record, width=80).plain
+
+        REGISTRY.record({"kind": "subagent_start", "subagent": "reviewer", "max_turns": 20})
+        REGISTRY.record({"kind": "tool_start", "subagent": "reviewer", "tool_name": "read"})
+        REGISTRY.record({"kind": "subagent_end", "subagent": "tester", "turns": 3, "tokens": 1200})
+
+        text = render_compact(service, record, width=80).plain
+        assert "Agents" in text
+        assert "1 running" in text
+        assert "1 done" in text
+        assert "reviewer" in text
+        assert "read" in text
+        assert set(_line_widths(render_compact(service, record, width=80))) == {80}
+    finally:
+        REGISTRY.clear()
+
+
+def test_expanded_lists_subagent_stats(goal_cwd: Path) -> None:
+    from vtx.tui.goal_agents import REGISTRY
+
+    REGISTRY.clear()
+    try:
+        service = GoalService(str(goal_cwd))
+        record = service.create("Ship the thing")
+        record = service.focused()
+
+        REGISTRY.record(
+            {
+                "kind": "subagent_start",
+                "subagent": "code-reviewer",
+                "model": "claude-sonnet-5",
+                "max_turns": 30,
+            }
+        )
+        REGISTRY.record(
+            {
+                "kind": "subagent_end",
+                "subagent": "code-reviewer",
+                "turns": 4,
+                "tokens": 38_210,
+                "tool_counts": {"read": 9, "grep": 4},
+            }
+        )
+
+        text = render_expanded(service, record, width=100).plain
+        assert "Agents" in text
+        assert "code-reviewer" in text
+        assert "↻4≤30" in text
+        assert "38.2K tok" in text
+    finally:
+        REGISTRY.clear()
+
+
+def test_subagent_registry_never_evicts_running_agents() -> None:
+    from vtx.tui.goal_agents import SubagentRegistry
+
+    registry = SubagentRegistry(max_tracked=2)
+    registry.record({"kind": "subagent_start", "subagent": "a"})
+    registry.record({"kind": "subagent_start", "subagent": "b"})
+    registry.record({"kind": "subagent_start", "subagent": "c"})
+    # All three are still running, so nothing may be dropped.
+    assert len(registry.runs()) == 3
+    assert registry.counts() == (3, 0)
+
+    registry.record({"kind": "subagent_end", "subagent": "a", "turns": 1})
+    registry.record({"kind": "subagent_start", "subagent": "d"})
+    # `a` finished, so it is the one that gets evicted.
+    assert [r.name for r in registry.runs()].count("a") == 0
+    assert {r.name for r in registry.runs()} >= {"b", "c", "d"}
+
+
+def test_subagent_registry_ignores_malformed_events() -> None:
+    from vtx.tui.goal_agents import SubagentRegistry
+
+    registry = SubagentRegistry()
+    assert registry.record({}) is None
+    assert registry.record({"kind": "subagent_start"}) is not None
+    assert not registry.record(None)
+    assert registry.runs()[0].name == "subagent"
+
+
+# ---------------------------------------------------------------------------
+# auditor feedback must survive intact (regression: the audit loop)
+# ---------------------------------------------------------------------------
+
+
+def test_long_auditor_feedback_is_stored_whole(goal_cwd: Path) -> None:
+    """The 1500-char cut made a failed audit impossible to act on.
+
+    The verdict was clipped mid-sentence on write, so the agent could not
+    read the rest and the goal re-audited forever. Long feedback must now be
+    stored verbatim.
+    """
+    service = GoalService(str(goal_cwd))
+    record = service.create("Ship the thing")
+
+    long_feedback = "## Audit findings\n\n" + ("A finding that must not be lost. " * 200)
+    assert len(long_feedback) > 4000, "fixture must exceed the old cap"
+
+    service.set_status(record.id, "active", review_feedback=long_feedback)
+    reloaded = service.focused()
+    assert reloaded is not None
+    assert reloaded.review_feedback == long_feedback
+
+
+def test_snapshot_returns_full_objective_and_feedback(goal_cwd: Path) -> None:
+    """`goal(action="get")` is the agent's only view; it must not clip."""
+    from vtx.coding_agent.goal.tools import _snapshot_text
+
+    service = GoalService(str(goal_cwd))
+    objective = "Do the thing. " * 100  # > the old 200-char cut
+    record = service.create(objective)
+    feedback = "Detailed finding. " * 200
+    service.set_status(record.id, "active", review_feedback=feedback)
+
+    reloaded = service.focused()
+    assert reloaded is not None
+    snapshot = _snapshot_text(reloaded, service)
+
+    assert objective.strip() in snapshot
+    assert feedback in snapshot
+    assert "…" not in snapshot.split("Objective:")[1].split("\n")[0]
+
+
+def test_short_clips_on_a_boundary_and_marks_the_clip() -> None:
+    """Ledger-size summaries clip on a boundary and say that they did."""
+    from vtx.coding_agent.goal.tools import CLIPPED, _short
+
+    text = "First paragraph.\n\nSecond paragraph is much longer than the limit here.\n\nThird."
+    clipped = _short(text, 60)
+    assert CLIPPED in clipped
+    assert clipped.startswith("First paragraph.")
+    # Never ends mid-word on a hard cut.
+    assert not _short("y" * 200, 40).rstrip(CLIPPED).endswith(("the", "and"))
+
+
+def test_truncate_on_words_measures_cells_and_marks_cuts() -> None:
+    from vtx.coding_agent.goal.record import truncate_on_words
+
+    # Word boundary, not mid-token.
+    assert (
+        truncate_on_words("All four phases shipped and the verification contract", 40)
+        == "All four phases shipped and the…"
+    )
+    # Always marked, even for a single over-long token.
+    assert truncate_on_words("x" * 100, 20).endswith("…")
+    assert cell_len(truncate_on_words("x" * 100, 20)) == 20
+    # Double-width characters counted as two cells. A wide glyph can leave a
+    # cell unused rather than being split, so the bound is `<=`, never `>`.
+    assert cell_len(truncate_on_words("这是一个非常长的目标描述文本", 20)) <= 20
+    assert truncate_on_words("short", 40) == "short"
 
 
 def test_format_usage_empty_hides_display() -> None:

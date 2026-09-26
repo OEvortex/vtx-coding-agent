@@ -51,6 +51,7 @@ from vtx.tui.commands import CommandsMixin
 from vtx.tui.completion_ui import CompletionUIMixin
 from vtx.tui.extension_ui import TextualExtensionUI
 from vtx.tui.floating_list import FloatingList
+from vtx.tui.goal_agents import record_subagent_event
 from vtx.tui.goal_ui import GoalWidget
 from vtx.tui.input import InputBox
 from vtx.tui.queue_ui import QueueUIMixin
@@ -528,6 +529,10 @@ class Vtx(
             self._runtime._rebuild_system_prompt()
 
     def _task_progress_callback(self, tool_call_id: str, event: dict) -> None:
+        # The goal beacon shows the sub-agents a goal run dispatched, so the
+        # registry is fed before the chat-log lookup: a not-yet-mounted log
+        # must not cost us the goal-side view either.
+        record_subagent_event(event)
         try:
             chat = self.query_one("#chat-log", ChatLog)
         except Exception:

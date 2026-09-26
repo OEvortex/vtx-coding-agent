@@ -13,6 +13,8 @@ import uuid
 from dataclasses import dataclass, field, replace
 from datetime import UTC, datetime
 
+from rich.cells import cell_len, set_cell_size
+
 GOAL_MODES: tuple[str, ...] = ("regular", "sisyphus")
 GOAL_STATUSES: tuple[str, ...] = ("active", "paused", "blocked", "budget_limited", "complete")
 TASK_STATUSES: tuple[str, ...] = ("pending", "complete", "skipped")
@@ -102,12 +104,31 @@ def clone_record(record: GoalRecord) -> GoalRecord:
     return replace(record, tasks=[replace(t) for t in record.tasks], usage=replace(record.usage))
 
 
+def truncate_on_words(text: str, max_width: int, *, overflow: str = "…") -> str:
+    """Cut ``text`` to ``max_width`` terminal cells without splitting a word.
+
+    Truncating mid-token ("the verification cont…") makes a line unreadable
+    and, worse, hides the tail of agent-facing text that the agent is
+    expected to act on. Prefer the last word boundary that fits. The overflow
+    marker is appended in *both* branches: a hard cut that silently drops the
+    rest is the failure mode this function exists to prevent.
+    """
+    if max_width <= 0:
+        return ""
+    if cell_len(text) <= max_width:
+        return text
+    budget = max(1, max_width - cell_len(overflow))
+    head = set_cell_size(text, budget)
+    cut = head.rfind(" ")
+    if cut >= max(1, budget // 2):
+        return head[:cut].rstrip() + overflow
+    return set_cell_size(text, budget) + overflow
+
+
 def objective_title(objective: str, max_chars: int = 60) -> str:
     """One-line objective summary for list rows and widget headers."""
     text = re.sub(r"\s+", " ", objective or "").strip()
-    if len(text) > max_chars:
-        return text[: max_chars - 1].rstrip() + "…"
-    return text
+    return truncate_on_words(text, max_chars)
 
 
 def create_record(

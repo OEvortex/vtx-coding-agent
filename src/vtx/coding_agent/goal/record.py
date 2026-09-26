@@ -20,6 +20,7 @@ from vtx.ai.agent.goal.record import (
     normalize_task_ids,
     objective_title,
     progress_percent,
+    truncate_on_words,
     utc_now_iso,
 )
 
@@ -41,5 +42,6 @@ __all__ = [
     "normalize_task_ids",
     "objective_title",
     "progress_percent",
+    "truncate_on_words",
     "utc_now_iso",
 ]
