@@ -1579,7 +1579,12 @@ class CompactionBlock(Static):
         self._refresh()
 
     def finish(
-        self, *, tokens_before: int | None = None, tokens_after: int, summary: str = "", error: str = ""
+        self,
+        *,
+        tokens_before: int | None = None,
+        tokens_after: int,
+        summary: str = "",
+        error: str = "",
     ) -> None:
         """Settle the block: success shows the token delta, failure the reason."""
         if self._finished:

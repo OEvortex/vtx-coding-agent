@@ -844,7 +844,10 @@ class ChatLog(VerticalScroll):
         if block is None or not block.is_mounted:
             block = CompactionBlock(tokens_before=tokens_before, trigger="overflow")
             block.finish(
-                tokens_before=tokens_before, tokens_after=tokens_after, summary=summary, error=error
+                tokens_before=tokens_before,
+                tokens_after=tokens_after,
+                summary=summary,
+                error=error,
             )
             self.mount(block)
             self._scroll_if_anchored(animate=False)
