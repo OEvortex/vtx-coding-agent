@@ -11,9 +11,15 @@ future rewrite cannot quietly restore the terse behaviour.
 
 from __future__ import annotations
 
+import asyncio
 import re
+from typing import ClassVar
 
-from vtx.core.compaction import SUMMARIZATION_PROMPT, _strip_analysis
+from vtx.ai.base import BaseProvider, LLMStream, ProviderConfig
+from vtx.ai.sdk.openai import GenerationConfig
+from vtx.ai.sdk.openai_responses import OpenAIResponsesSDK
+from vtx.core.compaction import SUMMARIZATION_PROMPT, _strip_analysis, generate_summary
+from vtx.core.types import StopReason, StreamDone, TextPart, UserMessage
 
 
 def test_prompt_is_substantial():
@@ -77,12 +83,18 @@ def test_prompt_warns_against_doing_completed_work_again():
     assert "repeating the same investigation" in lowered
 
 
-def test_prompt_drafts_before_summarizing():
-    """The analysis pass is what stops detail dying between read and write."""
-    assert "<analysis>" in SUMMARIZATION_PROMPT
-    assert "<summary>" in SUMMARIZATION_PROMPT
-    assert SUMMARIZATION_PROMPT.index("<analysis>") < SUMMARIZATION_PROMPT.index("<summary>")
-    assert "chronologically" in SUMMARIZATION_PROMPT.lower()
+def test_prompt_has_no_draft_pass():
+    """The analysis scratchpad was pure latency: every token in it was generated,
+    paid for, then deleted before the next agent saw it. On a long session that
+    roughly doubled compaction wall-clock for nothing."""
+    lowered = SUMMARIZATION_PROMPT.lower()
+    assert "<analysis>" not in lowered
+    assert "</analysis>" not in lowered
+    # No mandated draft-then-write ceremony, and no ordering to wait for.
+    assert "two blocks" not in lowered
+    assert "do not write the handoff yet" not in lowered
+    # The handoff is written directly, in one pass.
+    assert "produce the handoff document directly" in lowered
 
 
 def test_prompt_keeps_every_user_message():
@@ -111,6 +123,72 @@ def test_strip_analysis_keeps_only_the_summary():
     assert result.endswith("2. Next: run the tests")
 
 
+def test_strip_analysis_drops_an_unterminated_draft():
+    """A draft cut off mid-stream used to survive whole: the regex needs a closing
+    tag, so a truncated analysis stayed in the stored summary and was re-sent on
+    every later request."""
+    raw = "<analysis>\nwalked the whole session, noted 40 details\n## 1. Objective\n"
+    result = _strip_analysis(raw)
+    assert "walked the whole session" not in result
+    assert "<analysis>" not in result
+
+
 def test_strip_analysis_leaves_plain_summaries_alone():
     plain = "1. Objective: fix the bug\n\n2. Files touched:\n- src/a.py"
     assert _strip_analysis(plain) == plain
+
+
+def test_generate_summary_disables_thinking_and_tools():
+    """Compaction is a write-only task run over the whole history. Reasoning
+    tokens buy nothing here and tools must never be offered, or the summarizer
+    would start re-reading the codebase instead of writing the handoff."""
+    captured: dict[str, object] = {}
+
+    class _SpyProvider(BaseProvider):
+        name = "spy"
+        thinking_levels: ClassVar[list[str]] = ["default"]
+
+        def __init__(self) -> None:
+            self.config = ProviderConfig(model="spy", thinking_level="high")
+
+        async def _stream_impl(
+            self,
+            messages,
+            *,
+            system_prompt=None,
+            tools=None,
+            temperature=None,
+            max_tokens=None,
+            thinking_level=None,
+        ):
+            captured["tools"] = tools
+            captured["thinking_level"] = thinking_level
+            stream = LLMStream()
+
+            async def _iter():
+                yield TextPart(text="1. Objective: ship it")
+                yield StreamDone(stop_reason=StopReason.STOP)
+
+            stream.set_iterator(_iter())
+            return stream
+
+        def should_retry_for_error(self, error: Exception) -> bool:
+            return False
+
+    summary = asyncio.run(generate_summary([UserMessage(content="hi")], _SpyProvider()))
+
+    assert captured["tools"] is None
+    assert captured["thinking_level"] == "off"
+    assert summary == "1. Objective: ship it"
+
+
+def test_off_never_clamps_back_into_a_reasoning_effort():
+    """A model whose catalog marks ``off`` unsupported used to clamp it up to the
+    nearest real effort, re-enabling reasoning for a caller that asked for none."""
+    sdk = OpenAIResponsesSDK(api_key="test-key")
+    config = GenerationConfig(
+        model="m",
+        thinking_level="off",
+        thinking_level_map={"off": None, "low": "low", "high": "high"},
+    )
+    assert sdk._resolve_effort(config) is None

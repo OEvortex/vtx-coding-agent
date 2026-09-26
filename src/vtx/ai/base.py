@@ -292,6 +292,7 @@ class BaseProvider(ABC):
         tools: list[ToolDefinition] | None = None,
         temperature: float | None = None,
         max_tokens: int | None = None,
+        thinking_level: str | None = None,
     ) -> LLMStream:
         from vtx.ai.rate_limit import rate_limit_manager
 
@@ -302,6 +303,7 @@ class BaseProvider(ABC):
             tools=tools,
             temperature=temperature,
             max_tokens=max_tokens,
+            thinking_level=thinking_level,
         )
 
     @abstractmethod
@@ -313,6 +315,7 @@ class BaseProvider(ABC):
         tools: list[ToolDefinition] | None = None,
         temperature: float | None = None,
         max_tokens: int | None = None,
+        thinking_level: str | None = None,
     ) -> LLMStream: ...
 
     @abstractmethod

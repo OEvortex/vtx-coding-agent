@@ -199,6 +199,7 @@ class OpenAISDKProvider(BaseProvider):
         tools: list[ToolDefinition] | None = None,
         temperature: float | None = None,
         max_tokens: int | None = None,
+        thinking_level: str | None = None,
     ) -> LLMStream:
         sdk_messages = self._convert_messages(messages, system_prompt)
         sdk_tools = self._convert_tools(tools) if tools else None
@@ -209,7 +210,7 @@ class OpenAISDKProvider(BaseProvider):
             model=self.config.model,
             temperature=temp or 0.7,
             max_tokens=max_tok,
-            thinking_level=self.config.thinking_level,
+            thinking_level=thinking_level or self.config.thinking_level,
             thinking_level_map=self.config.thinking_level_map,
         )
 

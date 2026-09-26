@@ -27,26 +27,12 @@ finished work or break something that already works.
 
 Respond with plain text only. Do not call any tool.
 
-## Output shape: draft first, then hand off
+## Output shape
 
-Produce exactly two blocks, in this order.
-
-<analysis>
-A drafting pass over the conversation, walked chronologically. Go section by \
-section and pull the specifics out as you go: every file path, symbol, signature, \
-command line, error string, test name, config value, and every time the user \
-corrected you or changed intent. Note what was attempted and abandoned, and why. \
-Do not write the handoff yet.
-</analysis>
-
-<summary>
-The handoff document, in the section format below.
-</summary>
-
-The analysis block is scratchpad. It exists so that nothing gets lost on the way \
-to the summary — it is deleted before the next agent sees anything, so be \
-thorough in it and take as many passes over the conversation as you need. Only \
-the <summary> block is kept.
+Produce the handoff document directly, as plain text in the section format \
+below. There is no scratchpad, no draft pass, and no planning block: every \
+token you emit is a token the next agent has to read, so write the handoff \
+once, well, and stop.
 
 ## Binding length and fidelity rules
 
@@ -76,7 +62,7 @@ verified. That is what the next agent cannot afford to lose.
 7. **Quote the pivot point verbatim.** Where you left off and what the user last \
 asked for get quoted word for word, not paraphrased.
 8. Do not editorialize, apologize, or describe the conversation itself. Begin \
-immediately with the <analysis> block.
+immediately with section 1.
 
 Use exactly these sections, in this order.
 
@@ -173,9 +159,9 @@ _SECTION_HEADING_RE = re.compile(r"^##\s+(\d+)\.\s+(.+)$", re.M)
 def summary_progress(text: str) -> list[tuple[int, str]]:
     """Return the ``(number, title)`` sections started so far in a partial stream.
 
-    Only the ``<summary>`` block counts: the ``<analysis>`` scratchpad runs
-    first and uses the same heading style, so ignoring it keeps the checklist
-    from ticking over on work that gets deleted.
+    Older prompts wrapped the handoff in ``<summary>`` after an ``<analysis>``
+    draft. The draft is gone, but a model may still emit the wrapper, so skip
+    anything before it to keep the checklist honest.
     """
     summary = text
     if "<summary>" in text:
@@ -216,12 +202,18 @@ _ANALYSIS_RE = re.compile(r"<analysis>.*?</analysis>", re.DOTALL)
 
 
 def _strip_analysis(text: str) -> str:
-    """Drop the drafting scratchpad and unwrap the summary block.
+    """Normalize legacy tag wrappers out of a summary.
 
-    The prompt asks for an analysis pass before the summary; only the summary is
-    worth the context the next agent pays for.
+    The prompt no longer asks for an ``<analysis>`` draft pass, so this is a
+    safety net for summaries that still carry the old ceremony (an in-flight
+    session, or a model that volunteers the tags). An unterminated ``<analysis>``
+    is cut to its end rather than kept whole — the draft is never wanted, and
+    leaking it into stored context re-sends it on every later request.
     """
-    stripped = _ANALYSIS_RE.sub("", text).strip()
+    stripped = _ANALYSIS_RE.sub("", text)
+    if "<analysis>" in stripped:
+        stripped = stripped.split("<analysis>", 1)[0]
+    stripped = stripped.strip()
     if "<summary>" in stripped and "</summary>" in stripped:
         stripped = stripped.split("<summary>", 1)[1].rsplit("</summary>", 1)[0].strip()
     return re.sub(r"\n{3,}", "\n\n", stripped)
@@ -240,6 +232,10 @@ async def generate_summary(
     arrive so a UI can show the summary being written instead of an opaque
     wait. ``focus_instructions`` is prepended as a steering hint; the
     summarization prompt still goes last so it stays the operative instruction.
+
+    The call pins ``thinking_level="off"``: reasoning tokens on a write-only
+    task are pure latency, and the user's session reasoning level is meant for
+    turns that actually act on the codebase.
     """
     summary_messages: list[Message] = list(messages)
     if focus_instructions and focus_instructions.strip():
@@ -250,7 +246,9 @@ async def generate_summary(
         )
     summary_messages.append(UserMessage(content=SUMMARIZATION_PROMPT))
 
-    stream = await provider.stream(summary_messages, system_prompt=system_prompt, tools=None)
+    stream = await provider.stream(
+        summary_messages, system_prompt=system_prompt, tools=None, thinking_level="off"
+    )
 
     text_parts: list[str] = []
     chars = 0

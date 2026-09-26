@@ -80,6 +80,7 @@ class StreamPartsProvider(BaseProvider):
         tools: list[ToolDefinition] | None = None,
         temperature: float | None = None,
         max_tokens: int | None = None,
+        thinking_level: str | None = None,
     ) -> LLMStream:
         async def iterator() -> AsyncIterator[StreamPart]:
             for part in self._parts:

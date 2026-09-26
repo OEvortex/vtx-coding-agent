@@ -26,4 +26,5 @@ class BaseProvider(Protocol):
         tools: list[ToolDefinition] | None = None,
         temperature: float | None = None,
         max_tokens: int | None = None,
+        thinking_level: str | None = None,
     ) -> AsyncIterator[object]: ...

@@ -57,6 +57,7 @@ class MockProvider(BaseProvider):
         tools: list[ToolDefinition] | None = None,
         temperature: float | None = None,
         max_tokens: int | None = None,
+        thinking_level: str | None = None,
     ) -> LLMStream:
         self._attempt_count += 1
         self._last_messages = list(messages)

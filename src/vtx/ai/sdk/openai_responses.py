@@ -73,10 +73,16 @@ class OpenAIResponsesSDK(BaseLLMSDK):
 
     def _resolve_effort(self, config: GenerationConfig) -> str | None:
         """Clamp the level to the model's supported set, then map
-        it through ``thinking_level_map``. "off" resolves to None (omitted).
+        it through ``thinking_level_map``. "off"/"none" resolve to None
+        (omitted).
+
+        ``off``/``none`` are checked before clamping on purpose: a model whose
+        ``thinking_level_map`` marks ``off`` unsupported would otherwise have it
+        clamped *up* to the nearest real effort, silently switching reasoning
+        back on for a caller that explicitly asked for none.
         """
         level = config.thinking_level
-        if not level or level == "none":
+        if not level or level in ("none", "off"):
             return None
         supported = get_supported_thinking_levels(
             reasoning=True, thinking_level_map=config.thinking_level_map
