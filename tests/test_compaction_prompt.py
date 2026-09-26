@@ -13,7 +13,7 @@ from __future__ import annotations
 
 import re
 
-from vtx.core.compaction import SUMMARIZATION_PROMPT
+from vtx.core.compaction import SUMMARIZATION_PROMPT, _strip_analysis
 
 
 def test_prompt_is_substantial():
@@ -75,3 +75,42 @@ def test_prompt_warns_against_doing_completed_work_again():
     assert "will continue this work, not restart it" in lowered
     assert "already complete" in lowered
     assert "repeating the same investigation" in lowered
+
+
+def test_prompt_drafts_before_summarizing():
+    """The analysis pass is what stops detail dying between read and write."""
+    assert "<analysis>" in SUMMARIZATION_PROMPT
+    assert "<summary>" in SUMMARIZATION_PROMPT
+    assert SUMMARIZATION_PROMPT.index("<analysis>") < SUMMARIZATION_PROMPT.index("<summary>")
+    assert "chronologically" in SUMMARIZATION_PROMPT.lower()
+
+
+def test_prompt_keeps_every_user_message():
+    """User corrections are the detail a summary drops first."""
+    headings = " ".join(re.findall(r"^## .+$", SUMMARIZATION_PROMPT, re.M)).lower()
+    assert "all user messages" in headings
+    assert "not a tool result" in SUMMARIZATION_PROMPT
+
+
+def test_prompt_wants_the_code_not_its_location():
+    lowered = SUMMARIZATION_PROMPT.lower()
+    assert "not just its location" in lowered
+    assert "quote the pivot point verbatim" in lowered
+
+
+def test_strip_analysis_keeps_only_the_summary():
+    raw = (
+        "<analysis>\nwalked the whole session, noted 40 details\n</analysis>\n\n"
+        "<summary>\n1. Objective: ship the parser\n\n2. Next: run the tests\n</summary>"
+    )
+    result = _strip_analysis(raw)
+    assert "walked the whole session" not in result
+    assert "<analysis>" not in result
+    assert "<summary>" not in result
+    assert result.startswith("1. Objective: ship the parser")
+    assert result.endswith("2. Next: run the tests")
+
+
+def test_strip_analysis_leaves_plain_summaries_alone():
+    plain = "1. Objective: fix the bug\n\n2. Files touched:\n- src/a.py"
+    assert _strip_analysis(plain) == plain
