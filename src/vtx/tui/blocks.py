@@ -389,6 +389,7 @@ class ToolBlock(Static):
         # could never type into these fields.
         self._ask_user_input_visible: bool = False
         self._live_output: str = ""
+        self._live_render_pending: bool = False
         self.add_class("tool-block")
         self._set_state(None)
 
@@ -951,6 +952,26 @@ class ToolBlock(Static):
             lines = self._live_output.split("\n")
             if len(lines) > 100:
                 self._live_output = "\n".join(lines[-100:])
+        self._request_live_render()
+
+    def _request_live_render(self) -> None:
+        """Coalesce the live re-render into the next frame.
+
+        A chatty tool emits output deltas far faster than the screen refreshes
+        (the turn drains the tool's output queue with no throttle), and each
+        render is a full split of the accumulated buffer plus a Rich build and
+        a widget update. Doing that per delta saturates the event loop, and
+        because key events, the spinner and Esc are all served by that same
+        loop, the whole app stops responding. One render per frame is
+        indistinguishable to the eye.
+        """
+        if self._live_render_pending:
+            return
+        self._live_render_pending = True
+        self.call_after_refresh(self._flush_live_render)
+
+    def _flush_live_render(self) -> None:
+        self._live_render_pending = False
         self._render_live_output()
 
     def set_live_output(self, text: str) -> None:

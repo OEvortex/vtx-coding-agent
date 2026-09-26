@@ -268,6 +268,66 @@ async def test_host_bridge_failure_becomes_error_reply():
 
 
 @pytest.mark.asyncio
+async def test_hanging_host_request_does_not_outlive_cell_timeout():
+    """A bridge call that never returns must not outlive the cell deadline.
+
+    The dispatch is awaited inline in the drain loop, so an unbounded bridge
+    (a hung bash/task behind ``tool.call``) would stall the loop, the kernel's
+    ``done`` would never be read, and the execution lock would stay held for
+    every later cell — a permanent hang. The cell must time out instead, and
+    the kernel must still get its ``host_reply`` or it waits forever in turn.
+    """
+
+    async def hanging_dispatch(data: dict[str, Any], **kwargs: Any) -> dict[str, Any]:
+        await asyncio.sleep(3600)
+        return {"status": "ok", "result": None}
+
+    kernel = IpythonKernel(kernel_id="test", cwd=".", host_dispatcher=hanging_dispatch)
+    kernel._process = _FakeProcess()  # type: ignore[assignment]
+    kernel._queue = asyncio.Queue()
+
+    written: list[bytes] = []
+    kernel._process.stdin.write = lambda data: written.append(data)  # type: ignore[method-assign]
+
+    async def feed() -> None:
+        await kernel._queue.put(
+            json.dumps(
+                {
+                    "event": "host_request",
+                    "id": "req-hang",
+                    "data": {"type": "tool.call", "name": "bash", "args": {}},
+                }
+            )
+        )
+        await kernel._queue.put(json.dumps({"event": "done", "id": "rid-hang", "status": "ok"}))
+        await kernel._queue.put(None)
+
+    feed_task = asyncio.create_task(feed())
+    try:
+        # Generous outer bound: the cell timeout is 0.3s, so a regression
+        # blocks here instead of hanging the suite.
+        output, errored = await asyncio.wait_for(
+            kernel._wait_output("rid-hang", asyncio.Event(), on_output=None, timeout=0.3),
+            timeout=10.0,
+        )
+    finally:
+        feed_task.cancel()
+        with contextlib.suppress(asyncio.CancelledError, Exception):
+            await feed_task
+
+    assert errored is True
+    assert "timed out" in output.lower()
+    replies = [
+        json.loads(chunk.decode("utf-8"))
+        for chunk in written
+        if json.loads(chunk.decode("utf-8")).get("type") == "host_reply"
+    ]
+    assert [r["id"] for r in replies] == ["req-hang"]
+    assert replies[0]["data"]["status"] == "error"
+    assert "timed out" in replies[0]["data"]["error"]
+
+
+@pytest.mark.asyncio
 async def test_result_event_with_no_stdout_returns_repr():
     events = [
         {"event": "result", "id": "cell-1", "text": "hello\n"},

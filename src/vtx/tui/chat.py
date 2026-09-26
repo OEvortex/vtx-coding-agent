@@ -599,7 +599,9 @@ class ChatLog(VerticalScroll):
         block = self._tool_blocks.get(tool_id)
         if block and hasattr(block, "append_live_output"):
             block.append_live_output(delta)
-            self._scroll_if_anchored(animate=False)
+            # Coalesce like the text path: scroll_end() forces a layout pass,
+            # and tool deltas arrive far faster than frames.
+            self._request_scroll()
 
     def set_tool_result(
         self,

@@ -212,8 +212,17 @@ class IpythonKernel:
         self,
         event: dict[str, Any],
         tool_executor: Callable[[str, dict[str, Any]], Coroutine[Any, Any, Any]] | None,
+        *,
+        timeout: float | None = None,
     ) -> None:
-        """Dispatch one kernel->host request and always write a ``host_reply``."""
+        """Dispatch one kernel->host request and always write a ``host_reply``.
+
+        ``timeout`` bounds the dispatch. A bridge call can await a real tool
+        (bash, task, web) that never returns; without a bound the cell's own
+        deadline is never reached and the kernel waits on a reply forever.
+        Every exit writes a reply so the kernel's ``host_request()`` always
+        unblocks.
+        """
         rid = event.get("id")
         data = event.get("data")
         if not isinstance(rid, str) or not isinstance(data, dict):
@@ -231,7 +240,16 @@ class IpythonKernel:
                 from vtx.ai.agent.rlm.host import dispatch_host_request
 
                 dispatch = dispatch_host_request
-            reply = await dispatch(data, tool_executor=tool_executor, session_id=self._session_id)
+            call = dispatch(data, tool_executor=tool_executor, session_id=self._session_id)
+            reply = await call if timeout is None else await asyncio.wait_for(call, timeout)
+        except TimeoutError:
+            reply = {
+                "status": "error",
+                "error": (
+                    f"host request {data.get('type', '?')} timed out after {timeout:.0f}s; "
+                    "the cell was interrupted"
+                ),
+            }
         except Exception as exc:
             reply = {"status": "error", "error": f"host bridge unavailable: {exc}"}
         if not isinstance(reply, dict) or reply.get("status") not in ("ok", "error"):
@@ -398,7 +416,15 @@ class IpythonKernel:
                 error_parts.append(formatted)
                 await stream("__ERROR__", formatted)
             elif etype == "host_request":
-                await self._handle_host_request(event, self._tool_executor)
+                # The dispatch is part of this cell's execution, so it runs on
+                # the same deadline: awaiting it inline with no bound would let
+                # a bridge call that never returns outlast the cell timeout,
+                # stall the drain loop, and leave the kernel's ``done`` unread
+                # so every later cell blocks on the execution lock too.
+                budget = timeout - (time.monotonic() - start)
+                await self._handle_host_request(
+                    event, self._tool_executor, timeout=max(budget, 0.0)
+                )
             elif etype == "done":
                 if eid != rid:
                     continue

@@ -204,7 +204,9 @@ class IpythonTool(BaseTool):
             if tool is None:
                 raise ValueError(f"Tool not found: {name}")
             params_model = tool.params(**args)
-            result = await tool.execute(params_model)
+            # Forward the turn's cancel_event so Esc reaches a long tool called
+            # from inside a cell, the same as a direct tool call.
+            result = await tool.execute(params_model, cancel_event=cancel_event)
             if not result.success:
                 raise RuntimeError(result.result or f"Tool {name} failed")
             return result.result

@@ -4,6 +4,12 @@ All notable changes to Vtx are documented in this file. The format is based on
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project
 adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Fixed
+- **TUI freeze on chatty tool output** — live tool output re-rendered and re-laid-out once per output delta, so a tool streaming faster than the frame rate saturated Textual's single event loop and the whole app stopped responding, with keystrokes, the spinner and `Esc` all blocked. Renders and scroll-to-bottom now coalesce into one pass per frame, matching the batching the text-streaming path already used; 2000 deltas dropped from ~860ms to ~150ms of event-loop time.
+- **RLM host bridge could hang a cell indefinitely** — a `tool.call` dispatched through the kernel bridge awaited the tool inline with no bound, so the cell's own timeout was never reached and the kernel's `done` was never read, leaving the session kernel's execution lock held for every later cell. The dispatch now runs on the cell's remaining budget and always writes a `host_reply`, and the turn's `cancel_event` is forwarded to bridge tools so `Esc` reaches them.
+
 ## [1.2.0] - 2026-09-08
 
 ### Added
