@@ -6,10 +6,17 @@ Layout::
     .vtx/goals/archived/<same-name>.md     completed / cleared goals
     .vtx/goals/ledger.jsonl                durable activity ledger
     .vtx/goals/settings.json               user settings
+    .vtx/goals/leases/<session_id>.json    live owner sessions
 
 The markdown file embeds the authoritative metadata as a JSON block in an
 HTML comment; human-editable sections (# Objective, # Verification,
 # Goal Prompt) are re-merged from disk on read so user edits survive.
+
+Goals are **session-owned**: each record carries the ``session_id`` of the
+vtx instance that created it and is hidden from every other instance. The
+``leases/`` directory tracks which owning sessions are still running so a
+goal whose owner exited becomes claimable again instead of leaking into a
+fresh instance.
 """
 
 from __future__ import annotations
@@ -18,6 +25,7 @@ import json
 import logging
 import os
 import re
+import time
 from datetime import datetime
 from pathlib import Path
 
@@ -27,6 +35,10 @@ log = logging.getLogger("agent.goal")
 
 META_BEGIN = "<!-- vtx-goal:v1"
 META_END = "-->"
+
+#: A lease older than this means the owning process is gone (crashed, or the
+#: machine lost power mid-run) and its goals are up for claim.
+LEASE_TTL_SECONDS = 120
 
 _SECTION_RE = re.compile(r"^##\s+(.+?)\s*$", re.MULTILINE)
 _SAFE_ID_RE = re.compile(r"^[A-Za-z0-9_.-]+$")
@@ -157,11 +169,13 @@ def _extract_section(text: str, heading: str) -> str:
     return rest.strip()
 
 
-def read_active_pool(cwd: str) -> dict[str, GoalRecord]:
+def read_active_pool(cwd: str, *, session_id: str | None = None) -> dict[str, GoalRecord]:
     """Scan the goals directory and return open records keyed by id.
 
     Invalid files are skipped; completed records are dropped (they belong
-    in the archive). Results are ordered oldest-first by filename.
+    in the archive). Results are ordered oldest-first by filename. When
+    ``session_id`` is given only goals owned by that session are returned;
+    ``None`` returns every open goal regardless of owner.
     """
     pool: dict[str, GoalRecord] = {}
     directory = goals_dir(cwd)
@@ -181,6 +195,8 @@ def read_active_pool(cwd: str) -> dict[str, GoalRecord]:
         except OSError:
             continue
         if record is None or not record.is_open():
+            continue
+        if session_id is not None and not record.owned_by(session_id):
             continue
         pool[record.id] = record
     return pool
@@ -207,6 +223,72 @@ def archive(cwd: str, record: GoalRecord) -> Path:
         except OSError:
             log.warning("goal %s: could not remove active copy %s", record.id, source)
     return dest
+
+
+# ---------------------------------------------------------------------------
+# Session leases
+# ---------------------------------------------------------------------------
+
+
+def leases_dir(cwd: str) -> Path:
+    path = goals_dir(cwd) / "leases"
+    path.mkdir(parents=True, exist_ok=True)
+    return path
+
+
+def _lease_path(cwd: str, session_id: str) -> Path:
+    _check_component(session_id)
+    return leases_dir(cwd) / f"{session_id}.json"
+
+
+def renew_lease(cwd: str, session_id: str) -> None:
+    """Publish ``session_id`` as a live goal owner. Idempotent and throttled.
+
+    Called from every goal read/write path, so a running vtx instance keeps
+    its lease warm without a dedicated heartbeat thread. Failures are
+    non-fatal: a missing lease only makes goals look claimable, never lost.
+    """
+    if not session_id:
+        return
+    try:
+        path = _lease_path(cwd, session_id)
+        now = time.time()
+        if path.exists() and now - path.stat().st_mtime < LEASE_TTL_SECONDS / 3:
+            return
+        tmp = path.with_suffix(".tmp")
+        tmp.write_text(
+            json.dumps({"pid": os.getpid(), "ts": utc_now_iso(), "mtime": now}), encoding="utf-8"
+        )
+        os.replace(tmp, path)
+    except (OSError, ValueError) as exc:
+        log.debug("goal lease renew failed for session %s: %s", session_id, exc)
+
+
+def release_lease(cwd: str, session_id: str) -> None:
+    """Drop the lease on clean exit so goals are immediately claimable."""
+    if not session_id:
+        return
+    try:
+        _lease_path(cwd, session_id).unlink(missing_ok=True)
+    except (OSError, ValueError) as exc:
+        log.debug("goal lease release failed for session %s: %s", session_id, exc)
+
+
+def live_sessions(cwd: str) -> set[str]:
+    """Session ids holding a fresh lease, i.e. instances that are still up."""
+    live: set[str] = set()
+    now = time.time()
+    try:
+        entries = list(leases_dir(cwd).glob("*.json"))
+    except OSError:
+        return live
+    for path in entries:
+        try:
+            if now - path.stat().st_mtime < LEASE_TTL_SECONDS:
+                live.add(path.stem)
+        except OSError:
+            continue
+    return live
 
 
 # ---------------------------------------------------------------------------
@@ -265,6 +347,7 @@ ACTIVITY_VERBS: dict[str, str] = {
     "audit_changes_required": "audit changes required",
     "audit_skipped": "audit skipped",
     "budget_limited": "budget reached",
+    "claimed": "claimed by this session",
 }
 
 

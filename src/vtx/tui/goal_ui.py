@@ -291,9 +291,14 @@ class GoalWidget(Static):
     def __init__(self, **kwargs) -> None:
         super().__init__(**kwargs)
         self._cwd = ""
+        self._session_id = ""
 
     def set_cwd(self, cwd: str) -> None:
         self._cwd = cwd
+
+    def set_session_id(self, session_id: str) -> None:
+        """Bind the widget to one session so it renders only that session's goal."""
+        self._session_id = session_id or ""
 
     def refresh_goal(self, cwd: str | None = None) -> None:
         """Re-render from disk state; hide when nothing is focused."""
@@ -301,7 +306,7 @@ class GoalWidget(Static):
         if not cwd:
             self.remove_class("-visible")
             return
-        service = get_service(cwd)
+        service = get_service(cwd, self._session_id)
         record = service.focused() if not service.settings.get("disabled") else None
         if record is None:
             self.remove_class("-visible")

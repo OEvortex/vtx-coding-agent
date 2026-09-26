@@ -1005,7 +1005,7 @@ class FakeGoalService:
 def goal_service(monkeypatch):
     service = FakeGoalService()
 
-    def fake_get_service(cwd):
+    def fake_get_service(cwd, session_id=""):
         return service
 
     monkeypatch.setattr("vtx.ai.agent.goal.service.get_service", fake_get_service)
@@ -1015,7 +1015,9 @@ def goal_service(monkeypatch):
 @pytest.mark.asyncio
 async def test_goals_disabled_gate_uses_exact_message(monkeypatch, dispatcher):
     service = FakeGoalService(disabled=True)
-    monkeypatch.setattr("vtx.ai.agent.goal.service.get_service", lambda cwd, s=service: s)
+    monkeypatch.setattr(
+        "vtx.ai.agent.goal.service.get_service", lambda cwd, session_id="": service
+    )
     reply = await dispatch_host_request({"type": "goal.get"}, session_id=SID)
     assert reply == {"status": "error", "error": "goals are disabled in this session"}
 

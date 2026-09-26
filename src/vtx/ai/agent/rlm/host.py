@@ -949,9 +949,11 @@ def _require_goals_enabled(ctx: _Ctx) -> Any:
     module = _goal_service()
     parent_ctx = _parent_ctx()
     cwd = getattr(parent_ctx, "cwd", None) if parent_ctx else None
+    session = getattr(parent_ctx, "session", None) if parent_ctx else None
+    session_id = str(getattr(session, "id", "") or "")
     import os
 
-    service = module.get_service(cwd or os.getcwd())
+    service = module.get_service(cwd or os.getcwd(), session_id)
     if service.settings.get("disabled"):
         raise HostError(GOALS_DISABLED_MESSAGE)
     return service

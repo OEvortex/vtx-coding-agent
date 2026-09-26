@@ -140,6 +140,7 @@ def create_record(
         created_at=now,
         updated_at=now,
         token_budget=token_budget,
+        session_id=session_id,
     )
 
 
@@ -233,12 +234,18 @@ class GoalRecord:
     review_feedback: str | None = None
     token_budget: int | None = None
     usage: GoalUsage = field(default_factory=GoalUsage)
+    #: Owning vtx session id. Goals are invisible to every other running
+    #: instance; an empty value means the goal predates session ownership.
+    session_id: str = ""
 
     def label(self) -> str:
         return STATUS_LABELS.get(self.status, self.status)
 
     def is_open(self) -> bool:
         return self.status in ("active", "paused", "blocked", "budget_limited")
+
+    def owned_by(self, session_id: str) -> bool:
+        return self.session_id == session_id
 
     def to_meta(self) -> dict:
         """Authoritative machine-readable payload embedded in the file."""
@@ -259,6 +266,7 @@ class GoalRecord:
             "review_feedback": self.review_feedback,
             "token_budget": self.token_budget,
             "usage": self.usage.to_dict(),
+            "session_id": self.session_id,
         }
 
     @classmethod
@@ -287,6 +295,7 @@ class GoalRecord:
             review_feedback=meta.get("review_feedback") or None,
             token_budget=int(meta["token_budget"]) if meta.get("token_budget") else None,
             usage=GoalUsage.from_dict(meta.get("usage")),
+            session_id=str(meta.get("session_id") or ""),
         )
         # Older files stored the objective only in the markdown body.
         if not record.objective and objective_body:

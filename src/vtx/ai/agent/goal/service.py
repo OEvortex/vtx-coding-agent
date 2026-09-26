@@ -10,6 +10,13 @@ Pipeline for every mutation (mirrors pi-goal-x's GoalService)::
       -> publish the new record
 
 If the write fails, nothing commits and nothing is appended.
+
+A service is bound to one vtx **session**. Goals are session-owned: a goal
+created by session A is invisible to every other instance running against
+the same project, so parallel sessions never fight over focus or mutate
+each other's work. Goals whose owner is no longer running are exposed via
+:meth:`GoalService.claimable` and can be taken over with
+:meth:`GoalService.claim`.
 """
 
 from __future__ import annotations
@@ -41,10 +48,11 @@ FocusListener = Callable[[str | None, str], None]
 
 
 class GoalService:
-    """Project-scoped goal pool plus session focus and mutations."""
+    """Session-scoped goal pool plus focus and mutations."""
 
-    def __init__(self, cwd: str) -> None:
+    def __init__(self, cwd: str, session_id: str = "") -> None:
         self.cwd = cwd
+        self.session_id = session_id or ""
         self.focused_id: str | None = None
         self.on_focus_change: FocusListener | None = None
 
@@ -65,12 +73,37 @@ class GoalService:
     # ---- pool / focus -----------------------------------------------------
 
     def pool(self) -> dict[str, GoalRecord]:
-        return storage.read_active_pool(self.cwd)
+        """Open goals owned by this session.
+
+        Also refreshes this session's ownership lease, so other instances can
+        tell that a goal's owner is still running.
+        """
+        storage.renew_lease(self.cwd, self.session_id)
+        return storage.read_active_pool(self.cwd, session_id=self.session_id)
+
+    def claimable(self) -> dict[str, GoalRecord]:
+        """Open goals owned by no longer-running sessions, keyed by id.
+
+        These are the goals a fresh session may take over. Goals owned by a
+        session that still holds a lease are excluded, so a running instance
+        never advertises another instance's goal as up for grabs.
+        """
+        live = storage.live_sessions(self.cwd)
+        return {
+            goal_id: record
+            for goal_id, record in storage.read_active_pool(self.cwd).items()
+            if record.session_id not in live and record.session_id != self.session_id
+        }
 
     def get(self, goal_id: str) -> GoalRecord | None:
+        """Read a goal this session owns (active pool first, then archive)."""
         record = self.pool().get(goal_id)
-        archived = self._read_any(goal_id) if record is None else None
-        return record or archived
+        if record is not None:
+            return record
+        archived = self._read_any(goal_id)
+        if archived is None or not archived.owned_by(self.session_id):
+            return None
+        return archived
 
     def _read_any(self, goal_id: str) -> GoalRecord | None:
         path = storage.find_goal_file(self.cwd, goal_id)
@@ -95,7 +128,9 @@ class GoalService:
     ) -> None:
         changed = self.focused_id != goal_id
         self.focused_id = goal_id
-        storage.append_ledger(self.cwd, "focus_changed", goal_id, reason=reason)
+        storage.append_ledger(
+            self.cwd, "focus_changed", goal_id, reason=reason, session_id=self.session_id
+        )
         if changed and self.on_focus_change is not None:
             try:
                 self.on_focus_change(goal_id, reason)
@@ -119,14 +154,62 @@ class GoalService:
         source: str = "create_goal",
     ) -> GoalRecord:
         record = create_record(
-            objective, mode=mode, verification=verification, token_budget=token_budget
+            objective,
+            mode=mode,
+            verification=verification,
+            token_budget=token_budget,
+            session_id=self.session_id,
         )
         record.updated_at = utc_now_iso()
         storage.write_active(self.cwd, record)
-        storage.append_ledger(self.cwd, "created", record.id, mode=record.mode, source=source)
+        storage.append_ledger(
+            self.cwd,
+            "created",
+            record.id,
+            mode=record.mode,
+            source=source,
+            session_id=record.session_id,
+        )
         if focus:
             self.set_focus(record.id, reason="created")
         return clone_record(record)
+
+    def claim(self, goal_id: str, *, focus: bool = True) -> GoalRecord:
+        """Take ownership of an orphaned goal created by a dead session.
+
+        Refuses while the goal's owner is still running so two live instances
+        can never both own the same goal.
+        """
+        if not self.session_id:
+            raise GoalError("Cannot claim a goal without a bound session")
+        live = storage.live_sessions(self.cwd)
+        current = self._read_any(goal_id)
+        if current is None:
+            raise GoalError(f"Goal {goal_id!r} not found")
+        if not current.is_open():
+            raise GoalError(f"Goal {goal_id!r} is not open ({current.status})")
+        if current.session_id == self.session_id:
+            if focus:
+                self.set_focus(current.id, reason="claimed")
+            return clone_record(current)
+        if current.session_id and current.session_id in live:
+            raise GoalError(
+                f"Goal {goal_id!r} belongs to another running vtx session; "
+                "wait for it to exit before taking it over"
+            )
+
+        previous = current.session_id
+        claimed = clone_record(current)
+        claimed.session_id = self.session_id
+        claimed.revision = current.revision + 1
+        claimed.updated_at = utc_now_iso()
+        storage.write_active(self.cwd, claimed)
+        storage.append_ledger(
+            self.cwd, "claimed", claimed.id, session_id=self.session_id, previous_session=previous
+        )
+        if focus:
+            self.set_focus(claimed.id, reason="claimed")
+        return clone_record(claimed)
 
     def mutate(
         self,
@@ -343,11 +426,17 @@ def goal_progress(record: GoalRecord) -> tuple[int, int, int]:
     return done, total, progress_percent(done, total)
 
 
-_service_cache: dict[str, GoalService] = {}
+_service_cache: dict[tuple[str, str], GoalService] = {}
 
 
-def get_service(cwd: str) -> GoalService:
-    service = _service_cache.get(cwd)
+def get_service(cwd: str, session_id: str = "") -> GoalService:
+    """Return the cached service for ``(cwd, session_id)``.
+
+    Keying on the session keeps each running instance pointed at its own
+    goal pool and its own focus.
+    """
+    key = (cwd, session_id or "")
+    service = _service_cache.get(key)
     if service is None:
-        service = _service_cache[cwd] = GoalService(cwd)
+        service = _service_cache[key] = GoalService(cwd, key[1])
     return service

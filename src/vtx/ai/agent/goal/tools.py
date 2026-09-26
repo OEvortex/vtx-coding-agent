@@ -8,10 +8,16 @@ One ``goal`` tool with an ``action`` parameter covers the whole lifecycle
     goal(action="update",      status=..., reason=..., completion_summary=..., ...)
     goal(action="set_tasks",   tasks=[{title, id?, parent_id?}, ...])
     goal(action="update_task", task_id=..., task_status=..., evidence=..., ...)
+    goal(action="list_orphans")
+    goal(action="claim",       goal_id=...)
 
 All actions operate on the focused goal (focus is user-owned; no tool can
 switch it) through the
 :class:`~vtx.coding_agent.goal.service.GoalService` mutation boundary.
+
+Goals are bound to the session that created them, so parallel vtx instances
+in one project never see or mutate each other's goals. ``list_orphans`` and
+``claim`` let a fresh session adopt goals whose owning session has exited.
 """
 
 from __future__ import annotations
@@ -31,7 +37,16 @@ from .service import GoalError, GoalService, get_service, goal_progress
 
 log = logging.getLogger("agent.goal.tools")
 
-GOAL_ACTIONS = ("create", "get", "update", "set_tasks", "update_task", "archive")
+GOAL_ACTIONS = (
+    "create",
+    "get",
+    "update",
+    "set_tasks",
+    "update_task",
+    "archive",
+    "list_orphans",
+    "claim",
+)
 
 
 def _cwd() -> str:
@@ -46,8 +61,20 @@ def _cwd() -> str:
     return os.getcwd()
 
 
+def _session_id() -> str:
+    """The calling session's id, so goals stay bound to their creator."""
+    try:
+        from vtx.ai.agent.dispatcher import get_context
+
+        ctx = get_context()
+        session = getattr(ctx, "session", None) if ctx is not None else None
+        return str(getattr(session, "id", "") or "")
+    except Exception:
+        return ""
+
+
 def _service() -> GoalService:
-    return get_service(_cwd())
+    return get_service(_cwd(), _session_id())
 
 
 def _require_focused(service: GoalService) -> GoalRecord:
@@ -109,7 +136,8 @@ class GoalTaskItem(BaseModel):
 class GoalParams(BaseModel):
     action: str = Field(
         description=(
-            "Operation to perform: 'create', 'get', 'update', 'set_tasks', or 'update_task'"
+            "Operation to perform: 'create', 'get', 'update', 'set_tasks', 'update_task', "
+            "'list_orphans', or 'claim'"
         )
     )
     # create
@@ -170,6 +198,10 @@ class GoalParams(BaseModel):
     subtasks: list[GoalTaskItem] | None = Field(
         default=None, description="update_task: list of subtasks to attach under the target task"
     )
+    # claim
+    goal_id: str | None = Field(
+        default=None, description="claim: id of the orphaned goal to take over"
+    )
 
 
 class GoalTool(BaseTool):
@@ -184,12 +216,16 @@ class GoalTool(BaseTool):
         'goal(action="get") for the focused-goal snapshot; '
         'goal(action="update", status="complete") only when the objective is '
         "genuinely satisfied; create only after an explicit user request or "
-        "confirmed proposal",
+        "confirmed proposal; goals are session-scoped, so use "
+        'goal(action="list_orphans") / goal(action="claim") to adopt goals left '
+        "by an earlier session",
     )
     description = (
         "Manage persistent, multi-turn project goals and task trees. "
         "Track progress with 'create', 'get', 'set_tasks', 'update_task', or 'update'. "
-        "Marking a goal complete triggers an independent auditor verification step."
+        "Marking a goal complete triggers an independent auditor verification step. "
+        "Goals belong to the session that created them; 'list_orphans' and 'claim' "
+        "adopt goals left behind by sessions that have exited."
     )
 
     def format_call(self, params: GoalParams) -> str:
@@ -206,6 +242,8 @@ class GoalTool(BaseTool):
             extra = params.evidence or params.note or ""
             if extra:
                 detail += f" · {objective_title(extra, 40)}"
+        elif params.action == "claim" and params.goal_id:
+            detail = params.goal_id
         return params.action + (f" · {detail}" if detail else "")
 
     async def execute(
@@ -221,8 +259,57 @@ class GoalTool(BaseTool):
             "set_tasks": self._set_tasks,
             "update_task": self._update_task,
             "archive": self._archive,
+            "list_orphans": self._list_orphans,
+            "claim": self._claim,
         }[action]
         return await handler(params, cancel_event)
+
+    # ------------------------------------------------------------------
+    # session ownership: list_orphans / claim
+    # ------------------------------------------------------------------
+
+    async def _list_orphans(
+        self, params: GoalParams, cancel_event: asyncio.Event | None
+    ) -> ToolResult:
+        del params, cancel_event
+        service = _service()
+        orphans = service.claimable()
+        if not orphans:
+            return ToolResult(
+                success=True,
+                result="No orphaned goals. This session's goal pool is: "
+                + (", ".join(sorted(service.pool())) or "(empty)"),
+            )
+        lines = [
+            f"{len(orphans)} goal(s) from sessions that are no longer running. "
+            "Take one over with goal(action='claim', goal_id=...):"
+        ]
+        for record in sorted(orphans.values(), key=lambda r: r.created_at):
+            lines.append(
+                f"- {record.id} [{record.status}] "
+                f"{objective_title(record.objective, 90)}"
+                f" (created {record.created_at or 'unknown'})"
+            )
+        return ToolResult(success=True, result="\n".join(lines))
+
+    async def _claim(self, params: GoalParams, cancel_event: asyncio.Event | None) -> ToolResult:
+        del cancel_event
+        service = _service()
+        goal_id = (params.goal_id or service.focused_id or "").strip()
+        if not goal_id:
+            claimable = ", ".join(sorted(service.claimable())) or "none"
+            return _err(GoalError(f"claim requires goal_id. Claimable goals: {claimable}"))
+        try:
+            record = service.claim(goal_id)
+        except GoalError as exc:
+            return _err(exc)
+        return ToolResult(
+            success=True,
+            result="Goal claimed by this session and focused.\n"
+            + _snapshot_text(record, service)
+            + "\nContinue working toward the objective now.",
+            ui_summary=objective_title(record.objective),
+        )
 
     # ------------------------------------------------------------------
     # create

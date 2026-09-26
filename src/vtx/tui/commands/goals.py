@@ -34,8 +34,12 @@ class GoalCommands(CommandSupport):
     # helpers
     # ------------------------------------------------------------------
 
+    def _goal_session_id(self) -> str:
+        session = getattr(self._runtime, "session", None)
+        return str(getattr(session, "id", "") or "")
+
     def _goal_service(self):
-        return get_service(self._cwd)
+        return get_service(self._cwd, self._goal_session_id())
 
     def _goal_chat(self) -> ChatLog:
         return self.query_one("#chat-log", ChatLog)
@@ -48,6 +52,9 @@ class GoalCommands(CommandSupport):
             return
         refresh = getattr(widget, "refresh_goal", None)
         if callable(refresh):
+            set_session_id = getattr(widget, "set_session_id", None)
+            if callable(set_session_id):
+                set_session_id(self._goal_session_id())
             refresh(self._cwd)
 
     def _announce_goal_event(self, message: str, *, error: bool = False) -> None:
@@ -124,6 +131,26 @@ class GoalCommands(CommandSupport):
             self._restore_goal_state(session)
         else:
             self._resolve_startup_focus(service)
+
+        self._announce_claimable_goals(service)
+
+    def _announce_claimable_goals(self, service) -> None:
+        """Tell the user about goals left by sessions that have exited.
+
+        Strict session ownership means a fresh session starts with an empty
+        pool, so surface the adoptable goals instead of leaving the user to
+        wonder where their goal went. Nothing is claimed or focused here.
+        """
+        orphans = service.claimable()
+        if not orphans:
+            return
+        ordered = sorted(orphans.values(), key=lambda r: r.created_at)
+        titles = ", ".join(objective_title(r.objective, 40) for r in ordered[:3])
+        extra = f" (+{len(ordered) - 3} more)" if len(ordered) > 3 else ""
+        self._announce_goal_event(
+            f"[vtx-goal] {len(orphans)} goal(s) from earlier sessions are available "
+            f"to continue: {titles}{extra} — ask to claim one to take it over."
+        )
 
     def _resolve_startup_focus(self, service) -> None:
         """No session history: auto-focus the sole open goal when enabled."""

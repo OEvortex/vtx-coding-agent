@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from pathlib import Path
+from types import SimpleNamespace
 
 import pytest
 
@@ -19,7 +20,7 @@ def goal_cwd(tmp_path: Path, monkeypatch) -> Path:
     return tmp_path
 
 
-def _install_dispatcher(cwd: Path) -> None:
+def _install_dispatcher(cwd: Path, session_id: str = "") -> None:
     set_context(
         DispatcherContext(
             provider=None,
@@ -29,6 +30,7 @@ def _install_dispatcher(cwd: Path) -> None:
             thinking_level="high",
             agent_registry=None,
             cwd=str(cwd),
+            session=SimpleNamespace(id=session_id) if session_id else None,
         )
     )
 
@@ -205,6 +207,85 @@ async def test_goal_tool_complete_does_not_pause_goal(goal_cwd: Path) -> None:
     assert archived is not None
     assert archived.status == "complete"
     assert archived.paused_reason is None
+
+
+@pytest.mark.asyncio
+async def test_goal_tool_is_scoped_to_the_calling_session(goal_cwd: Path) -> None:
+    _install_dispatcher(goal_cwd, "session-a")
+    from vtx.coding_agent.goal.service import get_service
+
+    get_service(str(goal_cwd), "session-a").focused_id = None
+    created = await GoalTool().execute(GoalParams(action="create", objective="mine only"))
+    assert created.success
+    goal_id = get_service(str(goal_cwd), "session-a").focused().id
+
+    # A second instance in the same project sees nothing at all.
+    _install_dispatcher(goal_cwd, "session-b")
+    other = get_service(str(goal_cwd), "session-b")
+    other.focused_id = None
+    assert other.pool() == {}
+
+    blocked = await GoalTool().execute(GoalParams(action="create", objective="theirs"))
+    assert blocked.success, "the other session has no goal in the way"
+    assert other.focused().session_id == "session-b"
+
+    # ...and the first session's goal is still untouched and reachable.
+    _install_dispatcher(goal_cwd, "session-a")
+    mine = get_service(str(goal_cwd), "session-a")
+    assert list(mine.pool()) == [goal_id]
+    assert mine.get(goal_id).objective == "mine only"
+
+
+@pytest.mark.asyncio
+async def test_goal_tool_list_orphans_and_claim(goal_cwd: Path) -> None:
+    _install_dispatcher(goal_cwd, "session-a")
+    from vtx.coding_agent.goal.service import get_service
+
+    service_a = get_service(str(goal_cwd), "session-a")
+    service_a.focused_id = None
+    await GoalTool().execute(GoalParams(action="create", objective="left behind"))
+    goal_id = service_a.focused().id
+    # session-a exits without a clean unmount: the lease goes stale.
+    storage.release_lease(str(goal_cwd), "session-a")
+
+    _install_dispatcher(goal_cwd, "session-b")
+    listed = await GoalTool().execute(GoalParams(action="list_orphans"))
+    assert listed.success
+    assert goal_id in listed.result
+    assert "left behind" in listed.result
+
+    no_id = await GoalTool().execute(GoalParams(action="claim"))
+    assert not no_id.success
+    assert goal_id in no_id.result
+
+    claimed = await GoalTool().execute(GoalParams(action="claim", goal_id=goal_id))
+    assert claimed.success
+    service_b = get_service(str(goal_cwd), "session-b")
+    assert service_b.focused().id == goal_id
+    assert service_b.focused().session_id == "session-b"
+
+    # Now that b owns it, it is no longer an orphan and a is locked out.
+    _install_dispatcher(goal_cwd, "session-a")
+    assert get_service(str(goal_cwd), "session-a").pool() == {}
+    assert (await GoalTool().execute(GoalParams(action="list_orphans"))).success
+    assert goal_id not in (await GoalTool().execute(GoalParams(action="list_orphans"))).result
+
+
+@pytest.mark.asyncio
+async def test_goal_tool_claim_rejected_while_owner_is_live(goal_cwd: Path) -> None:
+    _install_dispatcher(goal_cwd, "session-a")
+    from vtx.coding_agent.goal.service import get_service
+
+    service_a = get_service(str(goal_cwd), "session-a")
+    service_a.focused_id = None
+    await GoalTool().execute(GoalParams(action="create", objective="busy goal"))
+    goal_id = service_a.focused().id
+    service_a.pool()  # renew session-a's lease
+
+    _install_dispatcher(goal_cwd, "session-b")
+    result = await GoalTool().execute(GoalParams(action="claim", goal_id=goal_id))
+    assert not result.success
+    assert "another running vtx session" in result.result
 
 
 @pytest.mark.asyncio

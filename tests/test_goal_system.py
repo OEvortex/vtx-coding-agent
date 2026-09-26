@@ -238,10 +238,13 @@ def test_archive_clears_focus_and_moves_file(cwd: Path) -> None:
     assert service.focused() is None
 
 
-def test_get_service_caches_per_cwd(cwd: Path) -> None:
+def test_get_service_caches_per_cwd_and_session(cwd: Path) -> None:
     a = get_service(str(cwd))
     b = get_service(str(cwd))
     assert a is b
+    other = get_service(str(cwd), "session-b")
+    assert other is not a
+    assert get_service(str(cwd), "session-b") is other
 
 
 def test_unfocus_keeps_goal_open(cwd: Path) -> None:
@@ -250,3 +253,101 @@ def test_unfocus_keeps_goal_open(cwd: Path) -> None:
     service.unfocus()
     assert service.focused() is None
     assert service.get(record.id).is_open()
+
+
+# ---------------------------------------------------------------------------
+# session ownership
+# ---------------------------------------------------------------------------
+
+
+def test_goals_are_invisible_to_other_sessions(cwd: Path) -> None:
+    a = GoalService(str(cwd), "session-a")
+    b = GoalService(str(cwd), "session-b")
+    record = a.create("only mine")
+
+    assert list(a.pool()) == [record.id]
+    assert b.pool() == {}
+    assert b.focused() is None
+    assert b.get(record.id) is None
+    with pytest.raises(GoalError):
+        b.set_status(record.id, "paused")
+    with pytest.raises(GoalError):
+        b.replace_tasks(record.id, [{"title": "hijack"}])
+
+
+def test_session_id_roundtrips_through_disk(cwd: Path) -> None:
+    service = GoalService(str(cwd), "session-a")
+    record = service.create("bound goal")
+    reloaded = storage.parse(storage.find_goal_file(str(cwd), record.id).read_text())
+    assert reloaded.session_id == "session-a"
+    assert reloaded.owned_by("session-a")
+    assert not reloaded.owned_by("session-b")
+
+
+def test_legacy_goal_files_have_no_owner(cwd: Path) -> None:
+    service = GoalService(str(cwd))
+    record = service.create("legacy")
+    path = storage.find_goal_file(str(cwd), record.id)
+    # Strip ownership the way a pre-session-scoping file looks on disk.
+    text = path.read_text(encoding="utf-8").replace(',\n "session_id": ""', "")
+    path.write_text(text, encoding="utf-8")
+
+    assert storage.parse(path.read_text(encoding="utf-8")).session_id == ""
+    assert GoalService(str(cwd), "session-a").claimable() != {}
+
+
+def test_live_owner_goals_are_not_claimable(cwd: Path) -> None:
+    a = GoalService(str(cwd), "session-a")
+    b = GoalService(str(cwd), "session-b")
+    record = a.create("still running")
+
+    # ``a`` holds a fresh lease, so b must not advertise it.
+    a.pool()
+    assert b.claimable() == {}
+    with pytest.raises(GoalError, match="another running vtx session"):
+        b.claim(record.id)
+
+
+def test_claim_takes_over_orphaned_goal(cwd: Path) -> None:
+    a = GoalService(str(cwd), "session-a")
+    record = a.create("take me over")
+    # Simulate the owning instance exiting: lease dropped, focus gone.
+    storage.release_lease(str(cwd), "session-a")
+
+    b = GoalService(str(cwd), "session-b")
+    assert list(b.claimable()) == [record.id]
+    claimed = b.claim(record.id)
+    assert claimed.session_id == "session-b"
+    assert b.focused_id == record.id
+    assert a.get(record.id) is None
+    assert b.pool()[record.id].status == "active"
+    assert "claimed" in {e["type"] for e in storage.read_ledger(str(cwd), goal_id=record.id)}
+
+
+def test_claim_requires_a_bound_session(cwd: Path) -> None:
+    service = GoalService(str(cwd), "session-a")
+    record = service.create("needs a session")
+    storage.release_lease(str(cwd), "session-a")
+    with pytest.raises(GoalError, match="without a bound session"):
+        GoalService(str(cwd)).claim(record.id)
+
+
+def test_claim_rejects_closed_and_missing_goals(cwd: Path) -> None:
+    a = GoalService(str(cwd), "session-a")
+    b = GoalService(str(cwd), "session-b")
+    record = a.create("open one")
+    storage.release_lease(str(cwd), "session-a")
+
+    with pytest.raises(GoalError, match="not found"):
+        b.claim("deadbeefdead")
+    b.claim(record.id, focus=False)
+    b.archive(record.id)
+    with pytest.raises(GoalError, match="not open"):
+        b.claim(record.id)
+
+
+def test_claimable_drops_goals_the_session_already_owns(cwd: Path) -> None:
+    a = GoalService(str(cwd), "session-a")
+    record = a.create("mine")
+    storage.release_lease(str(cwd), "session-a")
+    assert record.id not in a.claimable()

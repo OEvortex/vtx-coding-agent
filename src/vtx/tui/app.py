@@ -650,6 +650,7 @@ class Vtx(
             chat.add_info_message(f"Goal system init failed: {exc}", error=True)
         goal_widget = self.query_one("#goal-widget", GoalWidget)
         goal_widget.set_cwd(self._cwd)
+        goal_widget.set_session_id(self._goal_session_id())
         goal_widget.refresh_goal(self._cwd)
         self.set_interval(5.0, lambda: goal_widget.refresh_goal())
 
@@ -666,9 +667,16 @@ class Vtx(
 
         Called by Textual as the app is being torn down. Cancels any
         still-running background sub-agents so they do not outlive
-        the parent session.
+        the parent session. Also releases this session's goal ownership
+        lease so goals it created become claimable right away instead of
+        waiting out the lease TTL.
         """
         import contextlib
+
+        with contextlib.suppress(Exception):
+            from vtx.ai.agent.goal.storage import release_lease
+
+            release_lease(self._cwd, self._goal_session_id())
 
         with contextlib.suppress(Exception):
             await self._hook_bridge.unload()
