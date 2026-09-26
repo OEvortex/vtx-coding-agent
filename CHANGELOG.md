@@ -7,6 +7,7 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 ## [Unreleased]
 
 ### Changed
+- **Compaction preserves far more detail** — the summarization prompt never asked for length or for concrete artifacts, so an 800k-token session collapsed to a ~2k-token summary and the next agent effectively restarted from scratch. It now opens with binding length and fidelity rules (use the whole output budget, scale with session size, never replace an artifact with a description of it, enumerate rather than merge) and splits the handoff into 11 sections that capture what the old seven missed: environment and runtime facts, interface contracts and key code, per-file created/edited/read state, commands run and their outcomes, the exact in-progress state, and an explicit "do not redo" list of completed work and dead ends. Applies to both automatic and `/compact` runs, and to `compact.run(instructions=...)` focus hints.
 - **Skill slash commands are now opt-in, as documented** — `register_cmd` defaulted to `true` while `AGENTS.md` and `docs/skills.md` both describe it as opt-in, so every discovered skill was injected into the `/` list. The installed skill set went from 56 entries in the command list to the 9 that actually ask to be there; all 56 remain available to the agent as context, and any skill is still reachable explicitly via `/skill:<name>`.
 
 ### Fixed
