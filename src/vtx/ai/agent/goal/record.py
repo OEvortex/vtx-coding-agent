@@ -116,6 +116,7 @@ def create_record(
     mode: str = "regular",
     verification: str = "",
     token_budget: int | None = None,
+    session_id: str = "",
     now: str | None = None,
 ) -> GoalRecord:
     objective = (objective or "").strip()

@@ -254,14 +254,6 @@ Screen {{
     height: 0;
 }}
 
-/* Compaction message */
-.compaction-message {{
-    background: {colors.panel};
-    padding: 1 1;
-    margin-top: 1;
-    width: 100%;
-}}
-
 /* Compaction block */
 .compaction-block {{
     padding: 1 1;
