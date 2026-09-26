@@ -6,7 +6,13 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Changed
+- **Skill slash commands are now opt-in, as documented** — `register_cmd` defaulted to `true` while `AGENTS.md` and `docs/skills.md` both describe it as opt-in, so every discovered skill was injected into the `/` list. The installed skill set went from 56 entries in the command list to the 9 that actually ask to be there; all 56 remain available to the agent as context, and any skill is still reachable explicitly via `/skill:<name>`.
+
 ### Fixed
+- **`/compact` shadowed by the RLM `compact` kernel skill** — command routing checked registered skills before the built-in router, so any skill sharing a name with a built-in silently won. `/compact` and `/refine` were both unreachable; built-in commands now take precedence and the completion list is de-duplicated.
+- **YAML folded block scalars mangled skill descriptions** — frontmatter was parsed with a naive key/value scan, so `description: >` was stored as the literal string `>`, destroying the description of 15 bundled skills in both the model-facing skill index and the `/` list. Frontmatter now parses with `yaml.safe_load`, falling back to the old scan.
+- **Python skills auto-registered as slash commands** — kernel skills are imported by name inside the REPL, so a `/name` entry is meaningless for them; they now follow the same opt-in rule as every other skill.
 - **TUI freeze on chatty tool output** — live tool output re-rendered and re-laid-out once per output delta, so a tool streaming faster than the frame rate saturated Textual's single event loop and the whole app stopped responding, with keystrokes, the spinner and `Esc` all blocked. Renders and scroll-to-bottom now coalesce into one pass per frame, matching the batching the text-streaming path already used; 2000 deltas dropped from ~860ms to ~150ms of event-loop time.
 - **RLM host bridge could hang a cell indefinitely** — a `tool.call` dispatched through the kernel bridge awaited the tool inline with no bound, so the cell's own timeout was never reached and the kernel's `done` was never read, leaving the session kernel's execution lock held for every later cell. The dispatch now runs on the cell's remaining budget and always writes a `host_reply`, and the turn's `cancel_event` is forwarded to bridge tools so `Esc` reaches them.
 

@@ -480,9 +480,12 @@ class Vtx(
     def _sync_slash_commands(self) -> None:
         input_box = self.query_one("#input-box", InputBox)
         commands = DEFAULT_COMMANDS.copy()
+        # A skill that shares a name with a built-in is already unreachable
+        # (the built-in wins at submit time), so don't list it twice.
+        taken = {command.name for command in commands}
 
         for skill in self._registered_slash_skills():
-            if not skill.register_cmd:
+            if not skill.register_cmd or skill.name in taken:
                 continue
             cmd_description = skill.cmd_info
             if not cmd_description:
@@ -986,6 +989,12 @@ class Vtx(
         manual_skill_name = None
         manual_skill_query = ""
         if display_text.startswith("/") and not display_text.startswith("/skill:"):
+            # Built-in commands win on a name collision: a skill must never
+            # shadow /compact, /refine and friends just by sharing a name.
+            # Skills are still routed for every name the router does not know,
+            # which is how /goal reaches the goal skill.
+            if self._handle_command(display_text):
+                return
             parts = display_text[1:].split(maxsplit=1)
             cmd_name = parts[0]
             cmd_args = parts[1] if len(parts) > 1 else ""
@@ -1000,8 +1009,6 @@ class Vtx(
             if skill:
                 manual_skill_name = skill.name
                 manual_skill_query = cmd_args
-            elif self._handle_command(display_text):
-                return
         elif display_text.startswith("/skill:"):
             skill_name, _, skill_query = display_text[len("/skill:") :].partition(" ")
             selected_skill = next(

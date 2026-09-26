@@ -110,6 +110,18 @@ def _parse_frontmatter(content: str) -> dict[str, Any]:
 
     frontmatter_text = content[3 : end_match.start() + 3]
 
+    # Real YAML: the naive key/value scan below silently truncated folded block
+    # scalars (``description: >``) to a bare ">", which cost ~15 bundled skills
+    # their entire description in the skill index and the / command list.
+    try:
+        import yaml
+
+        parsed = yaml.safe_load(frontmatter_text)
+        if isinstance(parsed, dict):
+            return {str(key): value for key, value in parsed.items()}
+    except Exception:
+        pass
+
     result: dict[str, Any] = {}
     for line in frontmatter_text.split("\n"):
         line = line.strip()
@@ -187,18 +199,10 @@ def _load_skill_from_dir(skill_dir: Path) -> tuple[Skill | None, list[SkillWarni
         frontmatter = _parse_frontmatter(content)
 
         parent_dir_name = skill_dir.name
-        name = frontmatter.get("name") or parent_dir_name
-        description = frontmatter.get("description", "")
-        register_cmd_raw = frontmatter.get("register_cmd", True)
-        if isinstance(register_cmd_raw, str):
-            register_cmd_value = register_cmd_raw.strip().lower()
-            cmd_only = register_cmd_value == "only"
-            register_cmd = cmd_only or _parse_bool(register_cmd_raw)
-        else:
-            cmd_only = False
-            register_cmd = bool(register_cmd_raw)
-        cmd_info = str(frontmatter.get("cmd_info", "")).strip()
-        category_raw = str(frontmatter.get("category", "")).strip().lower()
+        name = str(frontmatter.get("name") or parent_dir_name)
+        description = str(frontmatter.get("description") or "")
+        cmd_info = str(frontmatter.get("cmd_info") or "").strip()
+        category_raw = str(frontmatter.get("category") or "").strip().lower()
         category = category_raw or DEFAULT_SKILL_CATEGORY
 
         warnings = _validate_skill(
@@ -237,6 +241,20 @@ def _load_skill_from_dir(skill_dir: Path) -> tuple[Skill | None, list[SkillWarni
                             f"python skill package src/{import_name}/__init__.py not found",
                         )
                     )
+
+        # register_cmd is opt-in, as documented (AGENTS.md, docs/skills.md):
+        # a skill is context for the agent, and only becomes a user-facing
+        # /command when it asks to be. Defaulting this to True put all 56
+        # skills in the slash list, and let bundled kernel skills named
+        # `compact` and `refine` shadow the real /compact and /refine commands.
+        register_cmd_raw = frontmatter.get("register_cmd", False)
+        if isinstance(register_cmd_raw, str):
+            register_cmd_value = register_cmd_raw.strip().lower()
+            cmd_only = register_cmd_value == "only"
+            register_cmd = cmd_only or _parse_bool(register_cmd_raw)
+        else:
+            cmd_only = False
+            register_cmd = bool(register_cmd_raw)
 
         skill = Skill(
             name=name,
