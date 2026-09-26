@@ -843,11 +843,15 @@ class ChatLog(VerticalScroll):
         self._compaction_block = None
         if block is None or not block.is_mounted:
             block = CompactionBlock(tokens_before=tokens_before, trigger="overflow")
-            block.finish(tokens_after=tokens_after, summary=summary, error=error)
+            block.finish(
+                tokens_before=tokens_before, tokens_after=tokens_after, summary=summary, error=error
+            )
             self.mount(block)
             self._scroll_if_anchored(animate=False)
             return
-        block.finish(tokens_after=tokens_after, summary=summary, error=error)
+        block.finish(
+            tokens_before=tokens_before, tokens_after=tokens_after, summary=summary, error=error
+        )
         self._scroll_if_anchored(animate=False)
 
     def add_compaction_message(

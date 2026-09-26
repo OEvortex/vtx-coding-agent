@@ -1129,6 +1129,26 @@ class ConversationRuntime:
                 )
         return 0
 
+    def _estimate_all_messages_tokens(self) -> int:
+        """Rough char/4 estimate used when the provider reports no usage."""
+        if self.session is None:
+            return 0
+        total_chars = 0
+        for msg in self.session.all_messages:
+            content = getattr(msg, "content", None)
+            if isinstance(content, str):
+                total_chars += len(content)
+            elif isinstance(content, list):
+                for part in content:
+                    text = getattr(part, "text", None)
+                    if isinstance(text, str):
+                        total_chars += len(text)
+                    else:
+                        thinking = getattr(part, "thinking", None)
+                        if isinstance(thinking, str):
+                            total_chars += len(thinking)
+        return total_chars // 4
+
     async def compact_now(
         self,
         instructions: str | None = None,
@@ -1138,6 +1158,11 @@ class ConversationRuntime:
             raise RuntimeError("Agent not initialized")
 
         tokens_before = self.latest_assistant_usage_tokens()
+        if not tokens_before:
+            with contextlib.suppress(Exception):
+                tokens_before = int(self.session.token_totals().context_tokens)
+        if not tokens_before:
+            tokens_before = self._estimate_all_messages_tokens()
         summary = await generate_summary(
             self.session.all_messages,
             self.provider,

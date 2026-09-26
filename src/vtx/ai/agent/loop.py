@@ -607,6 +607,18 @@ class Agent:
             )
         else:
             tokens_before = int(self.session.token_totals().context_tokens)
+        if not tokens_before:
+            total_chars = 0
+            for msg in self.session.all_messages:
+                content = getattr(msg, "content", None)
+                if isinstance(content, str):
+                    total_chars += len(content)
+                elif isinstance(content, list):
+                    for part in content:
+                        text = getattr(part, "text", None)
+                        if isinstance(text, str):
+                            total_chars += len(text)
+            tokens_before = total_chars // 4
 
         # Yield start event immediately so UI can show status
         trigger = "kernel" if forced else "overflow"

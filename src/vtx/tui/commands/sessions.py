@@ -3,6 +3,7 @@
 
 from __future__ import annotations
 
+import contextlib
 from datetime import UTC, datetime
 from pathlib import Path
 
@@ -346,7 +347,11 @@ class SessionCommands(CommandSupport):
             return
 
         instructions = (args or "").strip()
-        chat.start_compaction(trigger="manual")
+        tokens_before = self._runtime.latest_assistant_usage_tokens()
+        if not tokens_before and self._runtime.session is not None:
+            with contextlib.suppress(Exception):
+                tokens_before = int(self._runtime.session.token_totals().context_tokens)
+        chat.start_compaction(tokens_before=tokens_before, trigger="manual")
         self.run_worker(self._do_compact(instructions), exclusive=False)
 
     async def _do_compact(self, instructions: str = "") -> None:

@@ -1578,13 +1578,17 @@ class CompactionBlock(Static):
         self._sections = sections or self._sections
         self._refresh()
 
-    def finish(self, *, tokens_after: int, summary: str = "", error: str = "") -> None:
+    def finish(
+        self, *, tokens_before: int | None = None, tokens_after: int, summary: str = "", error: str = ""
+    ) -> None:
         """Settle the block: success shows the token delta, failure the reason."""
         if self._finished:
             return
         self._finished = True
         self._elapsed = time.monotonic() - self._started_at
         self._error = error
+        if tokens_before is not None:
+            self._tokens_before = tokens_before
         if error:
             self.remove_class("-running")
             self.add_class("-error")
