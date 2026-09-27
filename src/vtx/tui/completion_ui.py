@@ -7,6 +7,7 @@ classes created with it, and this mixin is a plain class.
 
 from __future__ import annotations
 
+import logging
 from typing import TYPE_CHECKING, Any
 
 from textual import on
@@ -20,6 +21,8 @@ from vtx.tui.selection_mode import SelectionMode
 from vtx.tui.tree import TreeSelector
 from vtx.tui.widgets import InfoBar, StatusLine, format_path
 
+log = logging.getLogger("tui.completion")
+
 
 class CompletionUIMixin:
     _selection_mode: SelectionMode | None
@@ -28,11 +31,16 @@ class CompletionUIMixin:
     _runtime: ConversationRuntime
 
     if TYPE_CHECKING:
+        _cwd: str
+        _is_running: bool
+
         query_one: Any
         batch_update: Any
         call_later: Any
         call_after_refresh: Any
         run_worker: Any
+
+        def _render_revert_state(self, chat: ChatLog, state: Any, *, redo: bool) -> None: ...
 
         def _reset_ctrl_d_delete_state(self) -> None: ...
         def _show_settings_picker(self, selected_value: str | None = None) -> None: ...
@@ -282,6 +290,28 @@ class CompletionUIMixin:
         else:
             completion_list.move_down()
 
+    def _revert_tree_to(self, entry_id: str, chat) -> object | None:
+        """Rewind conversation and worktree to the turn holding ``entry_id``.
+
+        Returns the staged :class:`RevertState`, or ``None`` when there is
+        nothing to rewind to. Failures are reported rather than raised, so a
+        tree jump still navigates even if the worktree cannot be restored.
+        """
+        session = getattr(self._runtime, "session", None)
+        cwd = getattr(self, "_cwd", "")
+        if session is None or self._is_running:
+            return None
+        try:
+            from vtx.ai.agent import revert as rv
+
+            boundary = rv.boundary_for_entry(session, entry_id)
+            if boundary is None or boundary == rv.previous_boundary(session):
+                return None
+            return rv.revert_to(session, boundary, cwd=cwd, commit_now=True)
+        except Exception:
+            log.exception("tree revert failed")
+            return None
+
     @on(TreeSelector.Selected)
     async def on_tree_selected(self, event: TreeSelector.Selected) -> None:
         selector = self.query_one("#tree-selector", TreeSelector)
@@ -289,6 +319,12 @@ class CompletionUIMixin:
         chat = self.query_one("#chat-log", ChatLog)
         info_bar = self.query_one("#compact-footer", InfoBar)
         status = self.query_one("#status-line", StatusLine)
+
+        # A tree jump rewinds the worktree as well as the transcript, so the
+        # conversation and the files on disk can never disagree. Same code path
+        # as /undo; only the choice of boundary differs.
+        revert_state = self._revert_tree_to(event.entry_id, chat)
+
         try:
             result = self._runtime.navigate_tree(event.entry_id)
         except Exception as exc:
@@ -320,6 +356,9 @@ class CompletionUIMixin:
         status.reset()
         if result.editor_text and not input_box.text.strip():
             input_box.insert(result.editor_text)
+        # Rendered after the rebuild above, which clears the chat log.
+        if revert_state is not None:
+            self._render_revert_state(chat, revert_state, redo=False)
         chat.show_status("Navigated to selected point")
         input_box.focus()
 

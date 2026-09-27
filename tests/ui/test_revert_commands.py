@@ -8,6 +8,7 @@ from pathlib import Path
 import pytest
 
 from vtx.ai.agent.revert import commit as _commit
+from vtx.ai.agent.revert import current_state as _current_state
 from vtx.ai.agent.revert import record_turn_snapshot
 from vtx.ai.agent.session import Session
 from vtx.ai.agent.snapshot import SnapshotStore, get_store
@@ -162,6 +163,42 @@ async def test_undo_is_refused_while_the_agent_is_working(project: Path) -> None
             app._is_running = False
         assert (project / "a.txt").read_text() == "a3\n", "must not revert mid-turn"
         assert any("Cannot undo" in line for line in _chat_lines(app))
+
+
+@pytest.mark.asyncio
+async def test_tree_jump_restores_files_too(project: Path) -> None:
+    """A tree jump must leave the transcript and the worktree agreeing.
+
+    Regression: `/tree` re-pointed the session leaf but never touched disk, so
+    picking an old point showed a past conversation over a dirty worktree.
+    """
+    app = Vtx(cwd=str(project))
+    async with app.run_test(size=(100, 30)) as pilot:
+        session, boundaries = _seed_turns(app, project)
+        assert (project / "a.txt").read_text() == "a3\n"
+
+        # Jump back to the first turn's prompt, as the tree selector would.
+        app._revert_tree_to(boundaries[0], app.query_one("#chat-log", ChatLog))
+        await pilot.pause()
+
+        assert (project / "a.txt").read_text() == "a0\n", (project / "a.txt").read_text()
+        assert boundaries[2] not in [e.id for e in session.get_branch()]
+        # A jump is immediate: nothing left staged for /redo.
+        assert _current_state(session) is None
+
+    # The branch is still reachable, so the jump was not destructive.
+    assert session.get_branch(boundaries[2])
+
+
+@pytest.mark.asyncio
+async def test_tree_jump_to_current_position_is_a_noop(project: Path) -> None:
+    app = Vtx(cwd=str(project))
+    async with app.run_test(size=(100, 30)) as pilot:
+        session, boundaries = _seed_turns(app, project)
+        app._revert_tree_to(boundaries[2], app.query_one("#chat-log", ChatLog))
+        await pilot.pause()
+        assert (project / "a.txt").read_text() == "a3\n", "must not touch the newest turn"
+        assert _current_state(session) is None
 
 
 @pytest.mark.asyncio

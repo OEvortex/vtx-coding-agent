@@ -275,6 +275,25 @@ def plan(session: Session, boundary_id: str) -> dict[str, str]:
 # ---------------------------------------------------------------------------
 
 
+def boundary_for_entry(session: Session, entry_id: str) -> str | None:
+    """The undo boundary that contains ``entry_id``.
+
+    Undo units are turns, so any entry maps to the user message that started
+    its turn: the entry itself when it is a user message (the usual ``/tree``
+    target), otherwise the nearest preceding one. That is what lets ``/tree``
+    jump to an arbitrary point — a tool call, a compaction — and still land on
+    a boundary the restore plan understands.
+    """
+    branch = session.get_branch()
+    index = next((i for i, e in enumerate(branch) if e.id == entry_id), None)
+    if index is None:
+        return None
+    for entry in reversed(branch[: index + 1]):
+        if entry.type == "message" and isinstance(entry.message, UserMessage):
+            return entry.id
+    return None
+
+
 def _staged_entry(session: Session) -> Any | None:
     """The live staged-revert entry on the active branch, if any."""
     for entry in reversed(session.get_branch()):
@@ -442,6 +461,32 @@ def _stage_conversation_only(
         agent_files=0,
     )
     session.append_custom_message(REVERT_ENTRY, state.to_json(), display=False)
+    return state
+
+
+def revert_to(
+    session: Session,
+    boundary_id: str,
+    *,
+    store: SnapshotStore | None = None,
+    cwd: str | None = None,
+    commit_now: bool = False,
+) -> RevertState:
+    """Rewind the conversation and the worktree to ``boundary_id``.
+
+    The single path behind both ``/undo`` and ``/tree``: they differ only in
+    how the boundary is chosen — ``/undo`` steps one turn back, ``/tree`` jumps
+    to whatever the user picked. Sharing the path is the point, because the
+    failure mode this replaces was the transcript and the working tree
+    disagreeing after a jump.
+
+    With ``commit_now`` the boundary is applied immediately (a deliberate jump
+    to a known point, still non-destructive). Otherwise the revert stays staged
+    so ``/redo`` can walk forward until the user sends their next prompt.
+    """
+    state = stage(session, boundary_id, store=store, cwd=cwd)
+    if commit_now:
+        commit(session)
     return state
 
 

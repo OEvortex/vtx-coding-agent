@@ -417,6 +417,43 @@ class TestUndoRedo:
         assert rv.unrevert(session, store=store, cwd=str(project)) == 0
         assert rv.current_state(session) is None
 
+    def test_boundary_for_entry_maps_any_entry_to_its_turn(
+        self, project: Path, store: SnapshotStore
+    ) -> None:
+        """`/tree` can select a tool call or a record, not just a prompt.
+
+        Undo units are turns, so any entry resolves to the user message that
+        started its turn; that is the boundary the restore plan understands.
+        """
+        session = _session(project)
+        u1 = _turn(session, store, project, "first ask", writes={"a.txt": "a1\n"})
+        inner = [e for e in session.get_branch() if e.id != u1]
+        assert inner, "the turn should have produced more entries"
+        for entry in inner:
+            assert rv.boundary_for_entry(session, entry.id) == u1
+        assert rv.boundary_for_entry(session, u1) == u1
+        assert rv.boundary_for_entry(session, "nope") is None
+
+    def test_revert_to_commits_immediately_when_asked(
+        self, project: Path, store: SnapshotStore
+    ) -> None:
+        """`/tree` jumps and lands; `/undo` stages until the next prompt."""
+        session, _u0, u1, u2 = self._three_turns(project, store)
+        assert (project / "a.txt").read_text() == "a3\n"
+
+        rv.revert_to(session, u1, store=store, cwd=str(project), commit_now=True)
+        assert (project / "a.txt").read_text() == "a1\n"
+        assert rv.current_state(session) is None, "a jump leaves nothing staged"
+        assert u2 not in [e.id for e in session.get_branch()], "u2 left the branch"
+
+        # Staged (the /undo default) keeps /redo alive. Staging at the *last*
+        # turn means "at the tip", where /redo clears instead of stepping, so
+        # stage one turn earlier to get a real forward step.
+        session2, _a, b1, _b2 = self._three_turns(project, store)
+        rv.revert_to(session2, b1, store=store, cwd=str(project))
+        assert rv.current_state(session2) is not None
+        assert rv.next_boundary(session2) is not None
+
     def test_unknown_boundary_is_refused(self, project: Path, store: SnapshotStore) -> None:
         session = _session(project)
         _turn(session, store, project, "hello")
