@@ -10,6 +10,7 @@ from vtx.ai.providers.sanitize import sanitize_surrogates
 from vtx.ai.sdk.anthropic import AnthropicSDK
 from vtx.ai.sdk.base import GenerationConfig
 from vtx.ai.sdk.base import Message as SDKMessage
+from vtx.ai.thinking import ANTHROPIC_MESSAGES
 from vtx.core.errors import format_error
 from vtx.core.types import (
     AssistantMessage,
@@ -35,6 +36,7 @@ from vtx.core.types import (
 
 class AnthropicSDKProvider(BaseProvider):
     name = "anthropic"
+    reasoning_style = ANTHROPIC_MESSAGES
 
     def __init__(self, config: ProviderConfig):
         super().__init__(config)

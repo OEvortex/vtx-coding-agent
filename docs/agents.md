@@ -23,7 +23,7 @@ The schema (`AgentDef`, pydantic):
 | `description` | required | shown in `/agent` list and to the model |
 | `icon`, `color` | none | TUI badge decoration |
 | `model`, `provider`, `base_url` | parent's | per-agent model routing |
-| `thinking_level` | parent's | `none`…`xhigh` |
+| `thinking_level` | parent's | `none`…`max`, or `default` |
 | `max_turns` | unlimited | turn budget |
 | `instructions` | none | extra system-prompt text |
 | `instructions_mode` | `"append"` | or `"replace"` |

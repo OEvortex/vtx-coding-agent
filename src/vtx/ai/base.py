@@ -266,6 +266,9 @@ class LLMStream(AsyncIterator["StreamPart"]):
 class BaseProvider(ABC):
     name: str
     thinking_levels: ClassVar[list[str]] = DEFAULT_THINKING_LEVELS
+    # Wire protocol this provider speaks, used to decide which thinking levels
+    # have a wire spelling at all (see ``vtx.ai.thinking.resolve_thinking_levels``).
+    reasoning_style: ClassVar[str | None] = None
 
     def __init__(self, config: ProviderConfig):
         self.config = config

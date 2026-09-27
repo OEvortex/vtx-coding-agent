@@ -11,6 +11,7 @@ from vtx.ai.providers.sanitize import sanitize_surrogates
 from vtx.ai.sdk.base import GenerationConfig
 from vtx.ai.sdk.base import Message as SDKMessage
 from vtx.ai.sdk.openai import OpenAISDK
+from vtx.ai.thinking import OPENAI_COMPLETIONS
 from vtx.core.errors import format_error
 from vtx.core.types import (
     AssistantMessage,
@@ -36,6 +37,7 @@ from vtx.core.types import (
 
 class OpenAISDKProvider(BaseProvider):
     name = "openai"
+    reasoning_style = OPENAI_COMPLETIONS
 
     def __init__(self, config: ProviderConfig):
         super().__init__(config)

@@ -87,4 +87,10 @@ vtx --provider openai --base-url http://localhost:8080/v1 \
 
 ## Thinking levels
 
-Levels cycle with `ctrl+t`: `none`, `minimal`, `low`, `medium`, `high`, `xhigh` — the provider/model advertises which subset it supports (detected per-model from [models.dev](https://models.dev) reasoning options); unsupported requests fall back to the provider's default.
+Levels cycle with `ctrl+t`: `none`, `minimal`, `low`, `medium`, `high`, `xhigh`, `max` — but vtx only ever *offers* the ones the selected model advertises, detected per-model from the [models.dev](https://models.dev) reasoning options and intersected with what the transport can express:
+
+- models that publish named efforts (OpenAI, Claude 4.6+) get exactly those tiers — `gpt-5-pro` offers only `high`, `gpt-5.6` offers up to `max`;
+- models that publish a thinking *token budget* instead of efforts (Claude Haiku/Sonnet 4.5) get a budget ladder, which the Anthropic API sends as `thinking.budget_tokens`;
+- models the catalog describes only as reasoning-capable, or not at all, offer `default` — vtx sends no reasoning parameter and lets the model decide, instead of guessing an effort that might be rejected.
+
+A level the current model doesn't support is never sent: it is clamped to the nearest supported one, so switching models or restoring a session can't fail a request.

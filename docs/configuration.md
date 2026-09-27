@@ -9,7 +9,7 @@ Vtx stores config in `~/.vtx/config.yml` (created with defaults on first run). E
 | `default_provider` | `"openai-codex"` | Any provider slug from [providers.md](providers.md) or a custom provider |
 | `default_model` | `"gpt-5.5"` | Model ID passed to the provider |
 | `default_base_url` | `""` | Override the provider's endpoint (local models etc.) |
-| `default_thinking_level` | `"low"` | One of the provider's supported thinking levels (`none`, `minimal`, `low`, `medium`, `high`, `xhigh`) |
+| `default_thinking_level` | `"low"` | One of the model's supported thinking levels (`none`, `minimal`, `low`, `medium`, `high`, `xhigh`, `max`, or `default` for "let the model decide") — see [providers.md](providers.md#thinking-levels) |
 | `tool_call_idle_timeout_seconds` | `180` | Abort a stalled tool-call stream after this idle time |
 | `request_timeout_seconds` | `600` | HTTP request timeout |
 | `auth.openai_compat` | `"auto"` | `auto` / `required` / `none` — whether OpenAI-compatible endpoints need an API key |

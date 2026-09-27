@@ -974,6 +974,7 @@ class ConversationRuntime:
             reasoning=info.supports_thinking,
             thinking_level_map=info.thinking_level_map,
             provider_levels=self.provider.thinking_levels,
+            style=getattr(self.provider, "reasoning_style", None),
         )
 
     def load_session(self, session_path: str | Path) -> Session:

@@ -190,3 +190,61 @@ def test_anthropic_levels_map_to_budget(level: str, expected_budget: int) -> Non
 
 def test_anthropic_unknown_level_omits_thinking() -> None:
     assert "thinking" not in _payload("bogus")
+
+
+# --- catalog-verified maps -------------------------------------------------
+
+
+def _kwargs_with_map(slug: str, level: str, level_map: dict[str, str | None]) -> dict:
+    sdk = OpenAISDK(api_key="x", base_url="https://example.com", provider_slug=slug)
+    return sdk._build_kwargs(
+        [Message(role="user", content="hi")],
+        GenerationConfig(model="m", thinking_level=level, thinking_level_map=level_map),
+    )
+
+
+def test_verified_max_tier_reaches_chat_completions() -> None:
+    """gpt-5.6 advertises a ``max`` effort; the level has to survive the
+    catalog map onto the wire instead of being dropped."""
+    kwargs = _kwargs_with_map(
+        "openai",
+        "max",
+        {"off": "none", "low": "low", "high": "high", "xhigh": "xhigh", "max": "max"},
+    )
+    assert kwargs.get("reasoning_effort") == "max"
+
+
+def test_budget_style_map_sends_budget_tokens_on_anthropic() -> None:
+    """Claude Haiku/Sonnet 4.5 publish a token budget, not named efforts."""
+    sdk = AnthropicSDK(api_key="x", base_url="https://example.com")
+    payload = sdk._build_payload(
+        [Message(role="user", content="hi")],
+        GenerationConfig(
+            model="m",
+            thinking_level="high",
+            thinking_level_map={"off": "none", "low": "budget:2048", "high": "budget:8192"},
+        ),
+    )
+    assert payload.get("thinking") == {"type": "enabled", "budget_tokens": 8192}
+
+
+def test_budget_style_map_never_reaches_other_transports() -> None:
+    """A token budget has no spelling outside the Anthropic Messages API, so
+    it must be dropped rather than forwarded as a bogus effort."""
+    kwargs = _kwargs_with_map("openai", "high", {"off": "none", "high": "budget:8192"})
+    assert "reasoning_effort" not in kwargs
+    assert "reasoning" not in kwargs
+
+
+def test_budget_style_map_respects_max_tokens() -> None:
+    sdk = AnthropicSDK(api_key="x", base_url="https://example.com")
+    payload = sdk._build_payload(
+        [Message(role="user", content="hi")],
+        GenerationConfig(
+            model="m",
+            thinking_level="high",
+            max_tokens=4096,
+            thinking_level_map={"off": "none", "high": "budget:8192"},
+        ),
+    )
+    assert payload["thinking"]["budget_tokens"] == 4096 - 1024

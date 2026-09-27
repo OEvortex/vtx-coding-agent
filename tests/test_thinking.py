@@ -45,8 +45,47 @@ def test_toggle_style_has_no_effort_equivalent():
     assert parse_models_dev_reasoning_options([{"type": "toggle"}]) is None
 
 
-def test_budget_tokens_only_yields_none():
-    assert parse_models_dev_reasoning_options([{"type": "budget_tokens", "min": 1024}]) is None
+def test_budget_tokens_convert_to_a_budget_ladder():
+    """Claude Haiku/Sonnet 4.5 publish a token budget instead of named
+    efforts; the ladder keeps them adjustable (opencode does the same with its
+    budget variants) instead of dropping the model to "default"."""
+    mapping = parse_models_dev_reasoning_options([{"type": "budget_tokens", "min": 1024}])
+    assert mapping is not None
+    assert mapping["off"] == "none"
+    assert mapping["low"] == "budget:2048"
+    assert mapping["high"] == "budget:8192"
+
+
+def test_budget_tokens_respect_the_model_output_limit():
+    # budget_tokens must stay strictly below max_tokens, so levels above
+    # 6144 - 1024 are not offered.
+    mapping = parse_models_dev_reasoning_options(
+        [{"type": "budget_tokens", "min": 1024}], max_tokens=6144
+    )
+    assert mapping is not None
+    assert mapping["low"] == "budget:2048"
+    assert mapping["medium"] == "budget:4096"
+    assert mapping["high"] is None
+    assert mapping["max"] is None
+
+
+def test_budget_minimum_drops_smaller_levels():
+    mapping = parse_models_dev_reasoning_options([{"type": "budget_tokens", "min": 4096}])
+    assert mapping is not None
+    assert mapping["minimal"] is None
+    assert mapping["low"] is None
+    assert mapping["medium"] == "budget:4096"
+
+
+def test_effort_wins_over_budget_tokens():
+    options = [
+        {"type": "effort", "values": ["low", "medium", "high"]},
+        {"type": "budget_tokens", "min": 1024},
+    ]
+    mapping = parse_models_dev_reasoning_options(options)
+    assert mapping is not None
+    assert mapping["high"] == "high"
+    assert mapping["xhigh"] is None
 
 
 def test_empty_or_missing_options_yield_none():
@@ -135,14 +174,18 @@ _FULL_MAP = {
 
 
 def test_offered_levels_use_the_none_spelling():
-    levels = resolve_thinking_levels(reasoning=True, thinking_level_map={"off": "none", "high": "high"})
+    levels = resolve_thinking_levels(
+        reasoning=True, thinking_level_map={"off": "none", "high": "high"}
+    )
     assert levels == ["none", "minimal", "low", "medium", "high"]
 
 
 def test_offered_levels_include_max_when_the_catalog_advertises_it():
     """Regression: a models.dev map advertising ``max`` used to be offered by
     the cycle while the provider rejected it with a ValueError."""
-    assert resolve_thinking_levels(reasoning=True, thinking_level_map=_FULL_MAP) == list(THINKING_LEVELS)
+    assert resolve_thinking_levels(reasoning=True, thinking_level_map=_FULL_MAP) == list(
+        THINKING_LEVELS
+    )
 
 
 def test_offered_levels_never_exceed_what_the_transport_expresses():
@@ -160,7 +203,9 @@ def test_offered_levels_default_only_without_verified_efforts():
     guess an effort it might 400 on, let it keep its own default."""
     assert resolve_thinking_levels(reasoning=True, thinking_level_map=None) == ["default"]
     all_unsupported = {level: None for level in EXTENDED_THINKING_LEVELS}
-    assert resolve_thinking_levels(reasoning=True, thinking_level_map=all_unsupported) == ["default"]
+    assert resolve_thinking_levels(reasoning=True, thinking_level_map=all_unsupported) == [
+        "default"
+    ]
 
 
 def test_offered_levels_for_non_reasoning_models():

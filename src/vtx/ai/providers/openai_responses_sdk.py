@@ -5,6 +5,7 @@ catalog marks the endpoint as Responses-style."""
 from __future__ import annotations
 
 from vtx.ai.providers.openai_sdk import OpenAISDKProvider
+from vtx.ai.thinking import OPENAI_RESPONSES
 
 
 class OpenAIResponsesSDKProvider(OpenAISDKProvider):
@@ -20,6 +21,7 @@ class OpenAIResponsesSDKProvider(OpenAISDKProvider):
     """
 
     name = "openai-responses"
+    reasoning_style = OPENAI_RESPONSES
 
     def __init__(self, config):
         super().__init__(config)

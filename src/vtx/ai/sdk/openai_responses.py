@@ -37,7 +37,7 @@ from openai import AsyncOpenAI
 
 from vtx.ai.provider_hooks import prepare_request
 from vtx.ai.sdk.base import BaseLLMSDK, GenerationConfig, GenerationResponse, Message, ToolCall
-from vtx.ai.thinking import clamp_thinking_level, get_supported_thinking_levels
+from vtx.ai.thinking import clamp_thinking_level, get_supported_thinking_levels, is_budget_level
 
 logger = logging.getLogger(__name__)
 
@@ -91,7 +91,7 @@ class OpenAIResponsesSDK(BaseLLMSDK):
         if clamped == "off":
             return None
         mapped = (config.thinking_level_map or {}).get(clamped)
-        return mapped if isinstance(mapped, str) else clamped
+        return mapped if isinstance(mapped, str) and not is_budget_level(mapped) else clamped
 
     def _build_payload(
         self, messages: list[Message], config: GenerationConfig, tools: list[dict] | None = None

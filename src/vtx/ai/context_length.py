@@ -106,7 +106,7 @@ class ContextLengthManager:
                     input_mods = modalities.get("input", [])
                     output_mods = modalities.get("output", [])
                     thinking_level_map = parse_models_dev_reasoning_options(
-                        model_info.get("reasoning_options")
+                        model_info.get("reasoning_options"), max_tokens=output
                     )
                     self._limits[model_id] = TokenLimits(
                         context=context,
