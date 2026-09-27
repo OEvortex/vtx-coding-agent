@@ -88,6 +88,12 @@ class CommandsMixin(
         if cmd == "tree":
             self._show_tree_selector()
             return True
+        if cmd == "undo":
+            self._handle_undo_command()
+            return True
+        if cmd == "redo":
+            self._handle_redo_command()
+            return True
         if cmd == "session":
             self._show_session_info()
             return True

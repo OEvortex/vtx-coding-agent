@@ -437,6 +437,8 @@ DEFAULT_COMMANDS = [
     SlashCommand("handoff", "start focused handoff in new session", submit_on_select=False),
     SlashCommand("resume", "resume a session"),
     SlashCommand("tree", "navigate session tree"),
+    SlashCommand("undo", "revert the last turn and its file changes"),
+    SlashCommand("redo", "step forward again after an /undo"),
     SlashCommand("session", "show session info and stats"),
     SlashCommand("login", "login to a provider"),
     SlashCommand("logout", "logout from a provider"),

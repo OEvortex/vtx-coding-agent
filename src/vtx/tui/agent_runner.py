@@ -132,6 +132,9 @@ class AgentRunnerMixin:
         self._dismiss_recap()
         current_prompt = prompt
         current_images = images
+        # A revert staged by /undo is only committed now, when the user has
+        # actually sent something. Until then /redo still works.
+        self._commit_staged_revert()
         # Sub-agents are scoped to a run, so the goal beacon's "Agents" rows
         # describe the work in flight now rather than every sub-agent ever
         # dispatched in this session.
@@ -149,6 +152,7 @@ class AgentRunnerMixin:
 
             status.set_status("working")
             turn_started = time.monotonic()
+            await self._record_revert_snapshot()
 
             # Goal state rides along with every user prompt (pi-goal-x
             # injects once per turn; here the block prepends to the query).
@@ -224,6 +228,40 @@ class AgentRunnerMixin:
             self.run_worker(self._load_session_by_id(session_id), exclusive=True)
 
         self._show_pending_update_notice_if_idle()
+
+    async def _record_revert_snapshot(self) -> None:
+        """Hash the worktree at turn start so ``/undo`` has a restore target.
+
+        Runs before the agent can touch anything, in a thread because hashing a
+        large worktree is a blocking subprocess. Best-effort: a failed capture
+        costs that turn its undo target and nothing else.
+        """
+        session = getattr(self._runtime, "session", None)
+        cwd = getattr(self, "_cwd", "")
+        if session is None or not cwd:
+            return
+        with contextlib.suppress(Exception):
+            from vtx.ai.agent.revert import capture_now, record_turn_snapshot
+
+            tree = await asyncio.to_thread(capture_now, cwd)
+            if tree:
+                await asyncio.to_thread(record_turn_snapshot, session, tree)
+
+    def _commit_staged_revert(self) -> None:
+        """Apply a staged revert once the user actually continues.
+
+        Deferring this to the next prompt is what makes ``/redo`` possible
+        after an undo: the boundary is not committed until the user sends
+        something, so a mis-click costs nothing.
+        """
+        session = getattr(self._runtime, "session", None)
+        if session is None:
+            return
+        with contextlib.suppress(Exception):
+            from vtx.ai.agent.revert import commit, current_state
+
+            if current_state(session) is not None:
+                commit(session)
 
     def _dequeue_next_prompt(self) -> tuple[str, str, list[ImageContent] | None] | None:
         # Steer messages take priority — drain steer queue first

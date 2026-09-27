@@ -211,6 +211,100 @@ class SessionCommands(CommandSupport):
 
         return items
 
+    # ------------------------------------------------------------------
+    # /undo and /redo
+    # ------------------------------------------------------------------
+
+    def _revert_chat(self) -> ChatLog:
+        return self.query_one("#chat-log", ChatLog)
+
+    def _revert_session(self) -> Session | None:
+        session = getattr(self._runtime, "session", None)
+        return session if session is not None else None
+
+    def _handle_undo_command(self) -> None:
+        """Rewind one turn: restore the agent's files, stage the boundary.
+
+        The boundary is not committed here, so ``/redo`` still works until the
+        user sends their next prompt.
+        """
+        from vtx.ai.agent import revert as rv
+
+        chat = self._revert_chat()
+        if self._is_running:
+            chat.add_info_message("Cannot undo while the agent is working", error=True)
+            return
+        session = self._revert_session()
+        if session is None:
+            chat.add_info_message("No active session", error=True)
+            return
+        target = rv.previous_boundary(session)
+        if target is None:
+            chat.add_info_message("Nothing left to undo")
+            return
+        try:
+            state = rv.stage(session, target, cwd=getattr(self, "_cwd", ""))
+        except rv.RevertError as exc:
+            chat.add_info_message(str(exc), error=True)
+            return
+        self._render_revert_state(chat, state, redo=True)
+
+    def _handle_redo_command(self) -> None:
+        """Step forward again, or clear the revert when already at the newest turn."""
+        from vtx.ai.agent import revert as rv
+
+        chat = self._revert_chat()
+        if self._is_running:
+            chat.add_info_message("Cannot redo while the agent is working", error=True)
+            return
+        session = self._revert_session()
+        if session is None:
+            chat.add_info_message("No active session", error=True)
+            return
+        if rv.current_state(session) is None:
+            chat.add_info_message("Nothing to redo — no revert is in effect")
+            return
+        target = rv.next_boundary(session)
+        if target is None:
+            changed = rv.unrevert(session, cwd=getattr(self, "_cwd", ""))
+            detail = f", {changed} files restored" if changed else ""
+            chat.add_info_message(f"Redone — back at the newest turn{detail}")
+            return
+        try:
+            state = rv.stage(session, target, cwd=getattr(self, "_cwd", ""))
+        except rv.RevertError as exc:
+            chat.add_info_message(str(exc), error=True)
+            return
+        self._render_revert_state(chat, state, redo=True)
+
+    def _render_revert_state(self, chat: ChatLog, state, *, redo: bool) -> None:
+        """Post the in-chat revert marker with its file list and /redo hint."""
+        from rich.text import Text
+
+        from vtx.ai.agent import revert
+
+        colors = config.ui.colors
+        text = Text()
+        text.append("↩ ", style=f"bold {colors.accent}")
+        text.append(revert.describe(state), style=colors.fg)
+        if state.reverted_entries:
+            text.append(f"  ({state.reverted_entries} entries rewound)", style=colors.dim)
+        for diff in state.files[:8]:
+            text.append("\n    ")
+            mark = {"added": "A", "deleted": "D"}.get(diff.status, "M")
+            style = {"added": colors.success, "deleted": colors.failed}.get(
+                diff.status, colors.dim
+            )
+            text.append(f"{mark} ", style=style)
+            text.append(diff.path, style=colors.muted)
+            if diff.additions or diff.deletions:
+                text.append(f"  +{diff.additions} -{diff.deletions}", style=colors.dim)
+        if len(state.files) > 8:
+            text.append(f"\n    … {len(state.files) - 8} more", style=colors.dim)
+        if redo:
+            text.append("\n/redo to step forward again", style=colors.dim)
+        chat.add_rich_message(text)
+
     def _show_tree_selector(self) -> None:
         chat = self.query_one("#chat-log", ChatLog)
         input_box = self.query_one("#input-box", InputBox)
