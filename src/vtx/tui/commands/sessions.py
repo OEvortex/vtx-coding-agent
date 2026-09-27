@@ -289,6 +289,12 @@ class SessionCommands(CommandSupport):
         text.append(revert.describe(state), style=colors.fg)
         if state.reverted_entries:
             text.append(f"  ({state.reverted_entries} entries rewound)", style=colors.dim)
+        if not state.files_available:
+            text.append(
+                "\nfiles were left as-is: this turn predates snapshotting "
+                "(resumed session). /redo still works.",
+                style=colors.notice,
+            )
         for diff in state.files[:8]:
             text.append("\n    ")
             mark = {"added": "A", "deleted": "D"}.get(diff.status, "M")

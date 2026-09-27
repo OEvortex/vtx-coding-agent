@@ -285,13 +285,46 @@ class TestUndoRedo:
         assert [e.id for e in session.get_branch(u2)][-1] == u2
         assert u1 in [e.id for e in session.get_branch(u1)]
 
-    def test_boundary_without_a_snapshot_is_refused(
+    def test_boundary_without_a_snapshot_rewinds_conversation_only(
+        self, project: Path, store: SnapshotStore
+    ) -> None:
+        """A resumed session has no snapshot for pre-resume turns.
+
+        The conversation rewind is lossless and still useful, so it must
+        succeed — and must say plainly that no files were restored.
+        """
+        session = _session(project)
+        legacy = session.append_message(UserMessage(content="recorded before snapshots"))
+        _agent_edit(session, "a.txt")
+        (project / "a.txt").write_text("agent wrote this\n")
+        # A later turn *is* snapshotted, so the session has snapshots at all.
+        _ask(session, store, "after the resume")
+        (project / "a.txt").write_text("later change\n")
+        _agent_edit(session, "a.txt")
+
+        state = rv.stage(session, legacy, store=store, cwd=str(project))
+        assert state.files_available is False
+        assert state.files == []
+        assert state.reverted_entries >= 1
+        # The file is untouched, because no tree describes that point.
+        assert (project / "a.txt").read_text() == "later change\n"
+        assert "conversation only" in rv.describe(state)
+        assert rv.current_state(session) is not None
+
+        # Redo still works from a conversation-only revert.
+        assert rv.unrevert(session, store=store, cwd=str(project)) == 0
+        assert rv.current_state(session) is None
+
+    def test_snapshotted_boundary_restores_files(
         self, project: Path, store: SnapshotStore
     ) -> None:
         session = _session(project)
-        legacy = session.append_message(UserMessage(content="recorded before snapshots"))
-        with pytest.raises(rv.RevertError, match="no snapshot recorded"):
-            rv.stage(session, legacy, store=store, cwd=str(project))
+        boundary = _ask(session, store, "ask")
+        (project / "a.txt").write_text("agent wrote this\n")
+        _agent_edit(session, "a.txt")
+        state = rv.stage(session, boundary, store=store, cwd=str(project))
+        assert state.files_available is True
+        assert (project / "a.txt").read_text() == "a0\n"
 
     def test_unknown_boundary_is_refused(self, project: Path, store: SnapshotStore) -> None:
         session = _session(project)

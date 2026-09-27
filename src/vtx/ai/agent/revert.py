@@ -77,6 +77,15 @@ class RevertState:
     def deletions(self) -> int:
         return sum(d.deletions for d in self.files)
 
+    @property
+    def files_available(self) -> bool:
+        """False when the boundary predates snapshotting, so no restore ran.
+
+        An empty ``tree`` is the marker: there was no recorded worktree state
+        for that point, only the conversation rewind.
+        """
+        return bool(self.tree)
+
     def to_json(self) -> str:
         return json.dumps(
             {
@@ -159,18 +168,22 @@ def capture_now(cwd: str) -> str | None:
 def _tree_at(session: Session, boundary_id: str) -> str | None:
     """Tree id recorded for the turn that ``boundary_id`` starts.
 
-    The snapshot entry for a turn is appended directly *after* the user
-    message that begins it, so the scan runs forward from the boundary
-    inclusive. Scanning backwards would land on the previous turn's snapshot
-    and silently revert one turn too far.
+    A turn's snapshot sits directly after the user message that begins it, so
+    the scan runs forward — but stops at the next user message. Without that
+    stop, a turn with no snapshot of its own (a resumed session) would borrow
+    the *following* turn's tree and restore files to a state that still
+    contains the very changes being reverted.
     """
     branch = session.get_branch()
     index = next((i for i, e in enumerate(branch) if e.id == boundary_id), None)
     if index is None:
         return None
-    for entry in branch[index:]:
+    for entry in branch[index + 1 :]:
         if entry.type == "custom_message" and entry.custom_type == SNAPSHOT_ENTRY:
             return entry.content or None
+        if entry.type == "message" and isinstance(entry.message, UserMessage):
+            # Reached the next turn without finding this turn's snapshot.
+            return None
     return None
 
 
@@ -276,6 +289,12 @@ def stage(
 
     The reverted turns stay on the active branch so ``/redo`` can walk forward
     again. :func:`commit` applies the boundary.
+
+    A boundary older than the earliest snapshot (typically a session resumed
+    from disk, or one recorded before snapshots existed) still rewinds the
+    conversation, but file restore is skipped and the returned state says so.
+    Refusing outright would be worse: the conversation rewind is lossless and
+    often all the user wanted.
     """
     if cwd is None:
         raise RevertError("cwd is required to stage a revert")
@@ -289,10 +308,10 @@ def stage(
 
     boundary_tree = _tree_at(session, boundary_id)
     if not boundary_tree:
-        raise RevertError(
-            "no snapshot recorded for that point — rewind further, "
-            "or start a new session to snapshot from the beginning"
-        )
+        # Older than anything we snapshotted. Rewind the conversation only:
+        # there is no recorded tree for that point, so claiming to restore
+        # files would be a lie.
+        return _stage_conversation_only(session, boundary_id, original_tree)
 
     current_tree = store.capture()
     if not current_tree:
@@ -334,6 +353,32 @@ def stage(
     return state
 
 
+def _stage_conversation_only(
+    session: Session, boundary_id: str, original_tree: str
+) -> RevertState:
+    """Rewind the conversation for a boundary that has no snapshot.
+
+    Used for turns recorded before snapshots existed — typically a session
+    resumed from disk. The branch rewind is lossless; only the file restore is
+    unavailable, and the state records that so the UI can say so plainly.
+    """
+    branch = session.get_branch()
+    index = next((i for i, e in enumerate(branch) if e.id == boundary_id), None)
+    if index is None:
+        raise RevertError(f"no such entry on this branch: {boundary_id!r}")
+    state = RevertState(
+        boundary_id=boundary_id,
+        boundary_label=_label(branch[index]),
+        tree="",
+        original_tree=original_tree,
+        files=[],
+        reverted_entries=max(0, len(branch) - index - 1),
+        agent_files=0,
+    )
+    session.append_custom_message(REVERT_ENTRY, state.to_json(), display=False)
+    return state
+
+
 def unrevert(
     session: Session, *, store: SnapshotStore | None = None, cwd: str | None = None
 ) -> int:
@@ -345,7 +390,7 @@ def unrevert(
     if state is None:
         return 0
     store = store or (get_store(cwd) if cwd else None)
-    if store is None or not state.original_tree:
+    if store is None or not state.original_tree or not state.files:
         clear_state(session)
         return 0
     paths = [d.path for d in state.files]
@@ -426,8 +471,11 @@ def next_boundary(session: Session) -> str | None:
 
 def describe(state: RevertState) -> str:
     """One-line summary for a chat info message."""
+    label = state.boundary_label or "this point"
+    if not state.files_available:
+        return f'Rewound to "{label}" (conversation only — no file snapshot for that point)'
     if not state.files:
-        return f'Reverted to "{state.boundary_label}" (no file changes)'
+        return f'Reverted to "{label}" (no file changes)'
     added = sum(1 for d in state.files if d.status == "added")
     removed = sum(1 for d in state.files if d.status == "deleted")
     parts = [f"{len(state.files)} files"]
@@ -435,4 +483,4 @@ def describe(state: RevertState) -> str:
         parts.append(f"{added} added")
     if removed:
         parts.append(f"{removed} removed")
-    return f'Reverted to "{state.boundary_label}" ({", ".join(parts)})'
+    return f'Reverted to "{label}" ({", ".join(parts)})'
