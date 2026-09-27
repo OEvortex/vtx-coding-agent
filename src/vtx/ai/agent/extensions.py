@@ -42,6 +42,7 @@ import contextlib
 import importlib.util
 import inspect
 import logging
+import shutil
 import sys
 import traceback
 from collections import defaultdict
@@ -2370,6 +2371,29 @@ def discover_extension_paths(
     return ordered
 
 
+def invalidate_extension_bytecode(path: Path) -> None:
+    """Drop cached bytecode for an extension package so an edit is really seen.
+
+    The entry module is compiled from source by :func:`load_extension`, but a
+    *package* extension's submodules are imported through the normal finder,
+    which validates ``__pycache__`` against the source's mtime and size. An
+    edit that keeps the file the same length and lands in the same mtime tick
+    is therefore served from cache, and a reload would report success while
+    running the old submodule. Removing the cache is safe: Python regenerates
+    it on the next import.
+    """
+    if path.name != "__init__.py":
+        return
+    cache = path.parent / "__pycache__"
+    try:
+        if cache.is_dir():
+            shutil.rmtree(cache, ignore_errors=True)
+    except OSError:
+        # A read-only tree is not a reason to fail the reload; the worst case is
+        # the mtime/size caveat above.
+        pass
+
+
 def load_extension(
     path: Path,
     *,
@@ -2378,8 +2402,19 @@ def load_extension(
     session_file: str | None,
     config_dir: Path,
     runner: ExtensionRunner | None = None,
+    fresh: bool = False,
 ) -> Extension:
-    """Import a single extension file or package and run its ``register`` hook."""
+    """Import a single extension file or package and run its ``register`` hook.
+
+    The source is compiled and executed directly rather than handed to
+    ``spec.loader.exec_module``. That is not a style preference: the normal
+    loader validates cached bytecode against the source's *mtime and size*, so
+    an edit that keeps the file the same length and lands in the same
+    mtime granularity window is served from ``__pycache__``. A hot reload would
+    then report success while running the previous version of the extension,
+    which is worse than not reloading at all. Compiling from the text we just
+    read makes a reload mean what it says.
+    """
     module_name = f"vtx_ext_{abs(hash(path.as_posix()))}"
     spec = importlib.util.spec_from_file_location(module_name, str(path))
     if spec is None or spec.loader is None:
@@ -2387,9 +2422,20 @@ def load_extension(
 
     module = importlib.util.module_from_spec(spec)
     sys.modules[module_name] = module
+    if fresh:
+        invalidate_extension_bytecode(path)
     try:
-        spec.loader.exec_module(module)
+        source = path.read_text(encoding="utf-8")
+    except OSError as exc:
+        sys.modules.pop(module_name, None)
+        raise ExtensionLoadError(f"Could not read extension at {path}: {exc}") from exc
+    try:
+        # module_from_spec has already set __name__/__file__/__path__ (the last
+        # for a package __init__.py), so exec'ing the code object populates a
+        # module that behaves exactly like an imported one.
+        exec(compile(source, str(path), "exec"), module.__dict__)
     except Exception as exc:
+        sys.modules.pop(module_name, None)
         raise ExtensionLoadError(f"Extension {path} failed to import: {exc}") from exc
 
     register = getattr(module, "register", None)
@@ -2429,6 +2475,7 @@ def load_all_extensions(
     agent_dir: Path | None = None,
     config_dir: Path | None = None,
     runner: ExtensionRunner | None = None,
+    fresh: bool = False,
 ) -> tuple[list[Extension], list[str], EventBus]:
     """Discover and load every extension. Returns ``(extensions, errors, bus)``.
 
@@ -2451,6 +2498,7 @@ def load_all_extensions(
                     session_file=session_file,
                     config_dir=config_dir or get_config_dir(),
                     runner=runner,
+                    fresh=fresh,
                 )
             )
         except ExtensionLoadError as exc:
@@ -2551,6 +2599,7 @@ def load_for_runtime(
     extra_paths: Iterable[str] | None = None,
     auto_discover: bool = True,
     session_file: str | None = None,
+    fresh: bool = False,
 ) -> LoadedExtensions:
     """Convenience entry point used by ``runtime.py`` and the TUI launch path.
 
@@ -2575,7 +2624,7 @@ def load_for_runtime(
 
     if auto_discover:
         exts, errors, bus = load_all_extensions(
-            cwd=cwd, configured=configured, session_file=session_file, runner=runner
+            cwd=cwd, configured=configured, session_file=session_file, runner=runner, fresh=fresh
         )
     else:
         # Only honor explicit paths when discovery is off.
@@ -2594,6 +2643,7 @@ def load_for_runtime(
                                 session_file=session_file,
                                 config_dir=get_config_dir(),
                                 runner=runner,
+                                fresh=fresh,
                             )
                         )
                     except ExtensionLoadError as exc:
@@ -2608,6 +2658,7 @@ def load_for_runtime(
                             session_file=session_file,
                             config_dir=get_config_dir(),
                             runner=runner,
+                            fresh=fresh,
                         )
                     )
                 except ExtensionLoadError as exc:

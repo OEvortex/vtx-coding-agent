@@ -449,4 +449,5 @@ DEFAULT_COMMANDS = [
     SlashCommand("recap", "summarize where the session left off"),
     SlashCommand("agent", "list/switch handoff agents (Shift+Tab to cycle)"),
     SlashCommand("update", "check for and install latest vtx update"),
+    SlashCommand("reload", "re-apply config, extensions, agents, tools, skills"),
 ]

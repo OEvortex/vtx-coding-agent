@@ -259,6 +259,23 @@ class TaskConfig(BaseModel):
     subagent_presets: list[SubagentPreset] = Field(default_factory=list)
 
 
+class RefineConfig(BaseModel):
+    """Continual-harness refinement (prime parity).
+
+    Auto-refine runs a cheap review gate at the turn boundary: after
+    ``turn_interval`` assistant turns, and (when ``on_compact``) right after a
+    context compaction. The gate reads the trajectory and answers
+    ``shouldRefine``; only an approved gate spends the plan pass that emits the
+    harness edits. ``cooldown_minutes`` bounds how often a gate may run, so a
+    failing provider does not retry on every turn.
+    """
+
+    enabled: bool = True
+    turn_interval: int = Field(default=25, ge=1)
+    on_compact: bool = True
+    cooldown_minutes: float = Field(default=20.0, ge=0)
+
+
 class ConfigSchema(BaseModel):
     meta: MetaConfig
     llm: LLMConfig
@@ -266,6 +283,7 @@ class ConfigSchema(BaseModel):
     compaction: CompactionConfig
     agent: AgentConfig
     permissions: PermissionsConfig
+    refine: RefineConfig = RefineConfig()
     notifications: NotificationsConfig = NotificationsConfig()
     recap: RecapConfig = RecapConfig()
     last_selected: LastSelectedConfig = LastSelectedConfig()
@@ -370,6 +388,10 @@ class Config:
     @property
     def permissions(self) -> PermissionsConfig:
         return self._parsed.permissions
+
+    @property
+    def refine(self) -> RefineConfig:
+        return self._parsed.refine
 
     @property
     def notifications(self) -> NotificationsConfig:
@@ -923,6 +945,10 @@ def _sync_harness_settings(cfg: Config) -> None:
         compaction_threshold_percent=cfg.compaction.threshold_percent,
         compaction_on_overflow=cfg.compaction.on_overflow,
         tool_call_idle_timeout_seconds=cfg.llm.tool_call_idle_timeout_seconds,
+        auto_refine_enabled=cfg.refine.enabled,
+        auto_refine_turn_interval=cfg.refine.turn_interval,
+        auto_refine_on_compact=cfg.refine.on_compact,
+        auto_refine_cooldown_seconds=cfg.refine.cooldown_minutes * 60.0,
     )
 
 

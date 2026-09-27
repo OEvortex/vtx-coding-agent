@@ -1101,6 +1101,48 @@ class ConversationRuntime:
         else:
             self.context = Context.load(self.cwd)
 
+    def rebind_resources(
+        self,
+        *,
+        tools: list[BaseTool] | None = None,
+        extensions: EventBus | None = None,
+        loaded_extensions: Any = None,
+        agent_registry: AgentRegistry | None = None,
+        active_agent: LoadedAgent | None = None,
+    ) -> None:
+        """Re-point the runtime at freshly loaded resources, keeping the session.
+
+        This is the runtime half of a hot reload. The conversation, provider,
+        model, and permission state are deliberately untouched — a reload
+        changes what the agent *is made of*, not what it has already said — so
+        the whole runtime is never rebuilt, only rebound.
+
+        Order matters: tools must be set before :meth:`reload_context`, because
+        the prompt builder is called with the active tool set and a stale list
+        would be baked into the new system prompt.
+        """
+        if tools is not None:
+            self.tools = tools
+            if self.agent is not None:
+                self.agent.tools = tools
+        if extensions is not None:
+            self.extensions = extensions
+        if agent_registry is not None:
+            self.agent_registry = agent_registry
+            self.agent_registry.set_active(
+                active_agent.definition.name if active_agent is not None else ""
+            )
+        elif active_agent is not None:
+            self.agent_registry.set_active(active_agent.definition.name)
+        if loaded_extensions is not None:
+            self.set_loaded_extensions(loaded_extensions)
+        self.reload_context()
+        # The header prompt is preferred over a fresh build, so a reload has to
+        # drop it or the pre-reload prompt keeps being sent.
+        if self.session is not None:
+            self.session.set_system_prompt(None)
+            self.session.set_header_tools([t.name for t in self.tools])
+
     def latest_assistant_usage_tokens(self) -> int:
         if self.session is None:
             return 0

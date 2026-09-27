@@ -29,6 +29,14 @@ class HarnessConfig:
     # Tool-call supervision
     tool_call_idle_timeout_seconds: float = 180.0
 
+    # Continual-harness refinement (prime parity). The loop runs a cheap
+    # review gate at the ``turn_interval`` / ``compact`` boundaries and only
+    # plans+applies edits when the gate approves them.
+    auto_refine_enabled: bool = True
+    auto_refine_turn_interval: int = 25
+    auto_refine_on_compact: bool = True
+    auto_refine_cooldown_seconds: float = 1200.0
+
 
 _config = HarnessConfig()
 
@@ -49,6 +57,10 @@ def apply_harness_settings(
     compaction_threshold_percent: float | None = None,
     compaction_on_overflow: str | None = None,
     tool_call_idle_timeout_seconds: float | None = None,
+    auto_refine_enabled: bool | None = None,
+    auto_refine_turn_interval: int | None = None,
+    auto_refine_on_compact: bool | None = None,
+    auto_refine_cooldown_seconds: float | None = None,
 ) -> None:
     """Merge user-facing settings into the harness config (None = keep)."""
     if max_turns is not None:
@@ -61,3 +73,11 @@ def apply_harness_settings(
         _config.compaction_on_overflow = compaction_on_overflow  # type: ignore
     if tool_call_idle_timeout_seconds is not None:
         _config.tool_call_idle_timeout_seconds = tool_call_idle_timeout_seconds
+    if auto_refine_enabled is not None:
+        _config.auto_refine_enabled = auto_refine_enabled
+    if auto_refine_turn_interval is not None:
+        _config.auto_refine_turn_interval = max(1, auto_refine_turn_interval)
+    if auto_refine_on_compact is not None:
+        _config.auto_refine_on_compact = auto_refine_on_compact
+    if auto_refine_cooldown_seconds is not None:
+        _config.auto_refine_cooldown_seconds = max(0.0, auto_refine_cooldown_seconds)

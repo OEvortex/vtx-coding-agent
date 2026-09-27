@@ -8,6 +8,7 @@
 - agents.py   - /agent
 - switch.py   - /switch
 - update.py   - /update
+- reload.py   - /reload
 """
 
 from __future__ import annotations
@@ -20,6 +21,7 @@ from .goals import GoalCommands
 from .harness import HarnessCommands
 from .models import ModelCommands
 from .providers import ProviderCommands
+from .reload import ReloadCommands
 from .sessions import SessionCommands
 from .settings import SettingsCommands, SettingsSelectionResult
 from .switch import SwitchCommands
@@ -37,6 +39,7 @@ class CommandsMixin(
     UpdateCommands,
     GoalCommands,
     HarnessCommands,
+    ReloadCommands,
 ):
     def _handle_command(self, text: str) -> bool:
         parts = text[1:].split(maxsplit=1)
@@ -127,6 +130,9 @@ class CommandsMixin(
         if cmd == "update":
             self._handle_update_command()
             return True
+        if cmd == "reload":
+            self._handle_reload_command(args)
+            return True
 
         # Extension commands take a final swing at anything the built-ins
         # did not handle. They can shadow built-in commands, letting
@@ -173,6 +179,7 @@ __all__ = [
     "GoalCommands",
     "ModelCommands",
     "ProviderCommands",
+    "ReloadCommands",
     "SessionCommands",
     "SettingsCommands",
     "SettingsSelectionResult",

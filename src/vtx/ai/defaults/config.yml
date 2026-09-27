@@ -24,6 +24,21 @@ compaction:
   on_overflow: "continue"
   threshold_percent: 80
 
+# Continual-harness refinement. The harness is the persistent, editable set of
+# prompt notes, memories, skills, and subagent specs rendered into the system
+# prompt (see the `# Continual Harness State` section). Auto-refine reviews the
+# trajectory at a turn boundary and, when it approves, applies small
+# evidence-backed edits to that harness. Set `enabled: false` to keep
+# refinement strictly manual (`/refine`, or the `refine` tool / kernel skill).
+refine:
+  enabled: true
+  # Review after this many assistant turns.
+  turn_interval: 25
+  # Also review right after a context compaction.
+  on_compact: true
+  # Minimum gap between two reviews.
+  cooldown_minutes: 20
+
 agent:
   max_turns: 500
   default_context_window: 200000

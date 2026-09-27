@@ -7,6 +7,12 @@ capture and baseline-conflict detection, a prime-style notice is built for
 the model, and the full result (with before/after snapshots) is persisted to
 ``refinements.jsonl`` so ``/refine rollback <id>`` can invert it later.
 
+Mode-neutral by construction: the executor runs in every runtime mode. Only
+the prompt-facing call contracts differ (``await refine.run()`` /
+``rlm.spawn`` in ``code_first``, the ``refine`` / ``task`` tools in
+``tool_first``), which is why every mode-sensitive prompt is built from
+:data:`current_mode`.
+
 Ported/adapted from Prime Agent (MIT) — https://github.com/PrimeIntellect-ai/prime-agent
 """
 
@@ -25,6 +31,9 @@ from vtx.core.types import AssistantMessage, Message, TextPart, ToolResultMessag
 
 log = logging.getLogger(__name__)
 
+MODE_CODE_FIRST = "code_first"
+MODE_TOOL_FIRST = "tool_first"
+
 TRUNCATED_JSON_ERROR = (
     "the model's JSON output was truncated; the refinement output budget was exhausted"
 )
@@ -36,6 +45,21 @@ _HISTORY_FILE_NAME = "refinements.jsonl"
 
 ACTIONS = ("create", "update", "delete")
 KINDS: tuple[HarnessKind, ...] = ("prompt", "memory", "skill", "subagent")
+
+
+def current_mode() -> str:
+    """Active runtime mode, defaulting to the REPL-first one.
+
+    Imported lazily: :mod:`vtx.ai.config` pulls in the provider stack, and
+    this module is reachable from the prompt builder above it.
+    """
+    try:
+        from vtx.ai.config import config
+
+        return getattr(config, "mode", MODE_CODE_FIRST) or MODE_CODE_FIRST
+    except Exception:
+        return MODE_CODE_FIRST
+
 
 REFINEMENT_SYSTEM_PROMPT = """You are Vtx's /refine continual harness subsystem.
 
@@ -102,6 +126,84 @@ _LOCAL_SCOPE_INSTRUCTION = (
     "read-only context: do not propose update or delete edits for them; create a local "
     "entry instead if an override is needed."
 )
+
+_REFINE_TRIGGER_TAIL = "Keep the edits small and evidence-backed."
+
+_MODE_DIGEST_LINES: dict[str, tuple[str, ...]] = {
+    MODE_CODE_FIRST: (
+        "When to call `await refine.run()`: after a repeated failure, a reusable tactic "
+        "emerges, a repeated delegation role should become a subagent spec, a repeated "
+        "procedure should become a skill, a durable fact/preference should become a "
+        "memory, a narrow behavioral policy should become a prompt addendum, a user "
+        "corrects behavior that should persist locally or globally, validation shows a "
+        "continual harness entry is wrong, or a skill/subagent/memory/prompt note should "
+        "be created, updated, deleted, or rolled back. Keep `await refine.run()` "
+        f"continual harness edits small and evidence-backed. {_REFINE_TRIGGER_TAIL}",
+        "Call contract: read each installed Python skill's SKILL.md and call its documented "
+        "module function in the Python REPL; do not assume a `.run` entrypoint. Use "
+        "`<skill_import> ...` in shell when a CLI exists. Continual harness skill entries "
+        "are Python REPL skills with an explicit Python `reference` and `arguments` "
+        "contract. Spawn a continual harness subagent spec by composing a concise task "
+        "prompt and calling `handle = await rlm.spawn('sub-task', name='worker')`; "
+        "admission returns immediately with `rlm_child_id`, `name`, `session_dir`, and "
+        "`model`, never the child's answer. Results arrive only through explicit "
+        "`agent_message` replies or files; children reply with "
+        "`await agent_message.send(message, receiver_role='parent')`. Use "
+        "`await rlm.list_subagents()` to recover direct child handles and "
+        "`await agent_message.send(..., receiver_role='child', receiver_name=handle.name)` "
+        "for follow-ups. Do not invent wrappers such as `call_skill(...)`, "
+        "`run_subagent(...)`, or named subagent registries.",
+    ),
+    MODE_TOOL_FIRST: (
+        "When to call the `refine` tool: after a repeated failure, a reusable tactic "
+        "emerges, a repeated delegation role should become a subagent spec, a repeated "
+        "procedure should become a skill, a durable fact/preference should become a "
+        "memory, a narrow behavioral policy should become a prompt addendum, a user "
+        "corrects behavior that should persist locally or globally, validation shows a "
+        "continual harness entry is wrong, or a skill/subagent/memory/prompt note should "
+        "be created, updated, deleted, or rolled back. Use `refine(instructions=...)` to "
+        "focus one pass and `refine(global_=true)` for cross-session entries; "
+        f"`refine(action='status')` reports whether a pass is already queued. {_REFINE_TRIGGER_TAIL}",
+        "Call contract: read each installed skill's SKILL.md and follow its documented call "
+        "form (a tool call, or a CLI/shell invocation). There is no persistent Python "
+        "kernel in this mode, so never write `await <module>.<func>(...)` Python import "
+        "call forms. Continual harness skill entries still carry an explicit `reference` "
+        "and `arguments` contract, but the call pattern must be the tool or CLI "
+        "invocation that works without a REPL. Invoke a continual harness subagent spec "
+        "with the `task` tool: `task(description=..., subagent_type='<spec title>', "
+        "prompt='<concise task>')`, whose result is the subagent's final text returned as "
+        "the tool result. Do not invent wrappers such as `rlm.spawn(...)`, "
+        "`agent_message.send(...)`, `call_skill(...)`, or `run_subagent(...)`.",
+    ),
+}
+
+_MODE_SUBAGENT_HINT: dict[str, str] = {
+    MODE_CODE_FIRST: (
+        "invoke a spec by turning it into a concise task prompt and spawning with "
+        "`await rlm.spawn('<task>', name='<worker>')`; admission returns a child handle, "
+        "never the answer"
+    ),
+    MODE_TOOL_FIRST: (
+        "invoke a spec with the `task` tool as `task(description=..., "
+        "subagent_type='<spec title>', prompt='<concise task>')`; the subagent's final "
+        "text comes back as the tool result"
+    ),
+}
+
+# Appended to the plan-pass prompt when the session is not REPL-first: the base
+# REFINEMENT_SYSTEM_PROMPT documents the RLM-native call forms, which the
+# tool-first surface cannot execute.
+_MODE_PLAN_INSTRUCTION: dict[str, str] = {
+    MODE_TOOL_FIRST: (
+        "Mode contract: this session has no persistent Python kernel and no "
+        "`rlm`/`agent_message` bridge. Write every `skill` edit as a tool-call or "
+        "CLI/shell call pattern (never an `await`ed Python import) and every `subagent` "
+        "edit as a `task`-tool delegation spec (`description`, `subagent_type`, and a "
+        "composed task prompt). Still emit the `reference` and `arguments` objects so the "
+        "contract stays machine-checkable. The agent triggers refinement with the "
+        "`refine` tool in this mode."
+    )
+}
 
 
 @dataclass
@@ -416,17 +518,24 @@ def _merge_states(*states: HarnessState) -> tuple[dict[HarnessKind, dict[str, An
     return merged, refinements
 
 
-def harness_digest_for_prompt(session_id: str, cwd: str) -> str:
-    """`# Continual Harness State` digest for the rlm system prompt.
+def harness_digest_for_prompt(session_id: str, cwd: str, *, mode: str | None = None) -> str:
+    """`# Continual Harness State` digest for the system prompt.
+
+    Rendered in every runtime mode; ``mode`` only selects the call contracts
+    the model is told to use (default: the active config mode).
 
     Returns ``""`` when there is nothing to show or rendering fails — the
     caller omits the section rather than failing prompt construction.
     """
     try:
+        resolved_mode = mode or current_mode()
         local_state = get_harness_state(local_state_dir(session_id, cwd))
         global_state = get_harness_state(global_=True)
         merged, refinements = _merge_states(global_state, local_state)
 
+        trigger_line, contract_line = _MODE_DIGEST_LINES.get(
+            resolved_mode, _MODE_DIGEST_LINES[MODE_CODE_FIRST]
+        )
         lines = [
             "# Continual Harness State",
             "",
@@ -435,21 +544,22 @@ def harness_digest_for_prompt(session_id: str, cwd: str) -> str:
             "Default to local continual harness refinement for current task progress, temporary blockers, and session coordination. Use global continual harness refinement only for stable cross-session lessons, durable user preferences, reusable skills/subagents, or explicitly project-qualified facts.",
             "Use these continual harness prompt notes, memories, skills, and subagent specs when they are relevant. The base system prompt is immutable; prompt entries below are supplemental notes only.",
             "",
-            "When to call `await refine.run()`: after a repeated failure, a reusable tactic emerges, a repeated delegation role should become a subagent spec, a repeated procedure should become a skill, a durable fact/preference should become a memory, a narrow behavioral policy should become a prompt addendum, a user corrects behavior that should persist locally or globally, validation shows a continual harness entry is wrong, or a skill/subagent/memory/prompt note should be created, updated, deleted, or rolled back. Keep `await refine.run()` continual harness edits small and evidence-backed.",
+            trigger_line,
             "",
-            "Call contract: read each installed Python skill's SKILL.md and call its documented module function in the Python REPL; do not assume a `.run` entrypoint. Use `<skill_import> ...` in shell when a CLI exists. Continual harness skill entries are Python REPL skills with an explicit Python `reference` and `arguments` contract. Spawn a continual harness subagent spec by composing a concise task prompt and calling `handle = await rlm.spawn('sub-task', name='worker')`; admission returns immediately with `rlm_child_id`, `name`, `session_dir`, and `model`, never the child's answer. Results arrive only through explicit `agent_message` replies or files; children reply with `await agent_message.send(message, receiver_role='parent')`. Use `await rlm.list_subagents()` to recover direct child handles and `await agent_message.send(..., receiver_role='child', receiver_name=handle.name)` for follow-ups. Do not invent wrappers such as `call_skill(...)`, `run_subagent(...)`, or named subagent registries.",
+            contract_line,
             "",
         ]
 
+        subagent_hint = _MODE_SUBAGENT_HINT.get(
+            resolved_mode, _MODE_SUBAGENT_HINT[MODE_CODE_FIRST]
+        )
         total_entries = 0
         for kind in KINDS:
             bucket = merged.get(kind, {})
             entries = sorted(bucket.values(), key=lambda e: (e.path, e.title, e.id))
             total_entries += len(entries)
             if kind == "subagent" and entries:
-                lines.append(
-                    f"{kind}: {len(entries)} (invoke a spec by turning it into a concise task prompt and spawning with `await rlm.spawn('<task>', name='<worker>')`; admission returns a child handle, never the answer)"
-                )
+                lines.append(f"{kind}: {len(entries)} ({subagent_hint})")
             else:
                 lines.append(f"{kind}: {len(entries)}")
             for entry in entries[:_DIGEST_ENTRY_LIMIT]:
@@ -817,6 +927,7 @@ async def plan_refinement(
     instructions: str | None = None,
     global_: bool = False,
     cancel_event: Any = None,
+    mode: str | None = None,
 ) -> dict[str, Any]:
     conversation = serialize_conversation(messages)[-_CONVERSATION_TAIL_CHARS:]
     scope_instruction = _GLOBAL_SCOPE_INSTRUCTION if global_ else _LOCAL_SCOPE_INSTRUCTION
@@ -826,6 +937,9 @@ async def plan_refinement(
         f"<conversation>\n{conversation}\n</conversation>",
         f"<scope_policy>\n{scope_instruction}\n</scope_policy>",
     ]
+    mode_instruction = _MODE_PLAN_INSTRUCTION.get(mode or current_mode())
+    if mode_instruction:
+        blocks.append(f"<mode_contract>\n{mode_instruction}\n</mode_contract>")
     if instructions:
         blocks.append(f"<user_refine_instructions>\n{instructions}\n</user_refine_instructions>")
     blocks.append(
@@ -849,6 +963,124 @@ async def plan_refinement(
         raise RuntimeError("Refinement cancelled during planning")
 
     return normalize_proposal(extract_json_object("\n".join(text_parts)))
+
+
+# =================================================================================================
+# auto-refine review gate (prime's reviewAutoRefine)
+#
+# The gate is the only auto-spent call: it reads the trajectory and answers
+# shouldRefine/rationale/instructions. An approved gate then runs one normal
+# plan/apply pass with those instructions, so the harness only changes when a
+# reviewer saw evidence worth persisting.
+# =================================================================================================
+
+AUTO_REFINE_REASON_TURN_INTERVAL = "turn_interval"
+AUTO_REFINE_REASON_COMPACT = "compact"
+AUTO_REFINE_REASONS = (AUTO_REFINE_REASON_TURN_INTERVAL, AUTO_REFINE_REASON_COMPACT)
+
+AUTO_REFINE_REVIEW_MAX_OUTPUT_TOKENS = 4_096
+_AUTO_REVIEW_CONVERSATION_CHARS = 40_000
+
+AUTO_REFINE_REVIEW_SYSTEM_PROMPT = """You are Vtx's automatic /refine review gate.
+
+Decide whether this checkpoint should run /refine. Auto /refine writes local continual harness state by default, so approve when the trajectory contains evidence useful to this session's future turns.
+Reject one-off noise, unsupported hypotheses, and transient tool outputs. Ask for global refinement only for durable cross-session lessons or explicitly project-qualified lessons likely to be reused in future sessions.
+
+Return JSON only:
+{
+  "shouldRefine": true|false,
+  "rationale": "short reason",
+  "instructions": "optional concise instructions for /refine if shouldRefine is true"
+}"""
+
+
+@dataclass
+class AutoRefineReview:
+    """Verdict from the auto-refine gate."""
+
+    should_refine: bool = False
+    rationale: str = ""
+    instructions: str | None = None
+
+
+def parse_auto_refine_review(text: str) -> AutoRefineReview:
+    value = extract_json_object(text)
+    if not isinstance(value, dict):
+        raise ValueError("Auto-refine review JSON must be an object")
+    return AutoRefineReview(
+        should_refine=value.get("shouldRefine") is True,
+        rationale=(
+            value["rationale"]
+            if isinstance(value.get("rationale"), str)
+            else "No rationale provided."
+        ),
+        instructions=(
+            value["instructions"] if isinstance(value.get("instructions"), str) else None
+        ),
+    )
+
+
+def auto_refine_instructions(reason: str, review: AutoRefineReview) -> str:
+    """Instruction block handed to the approved plan pass."""
+    detail = f"\nReviewer instructions: {review.instructions}" if review.instructions else ""
+    return (
+        f"Automatic refine review triggered by {reason}. Only create/update/delete local "
+        "harness entries if there is clear evidence that should help this session continue. "
+        "Prefer an empty edits array over speculative or one-off memories. Do not promote "
+        f"anything global unless explicitly requested. Reviewer rationale: {review.rationale}"
+        f"{detail}"
+    )
+
+
+async def review_auto_refine(
+    *,
+    messages: list[Message],
+    provider: Any,
+    states: tuple[HarnessState, ...],
+    history: list[dict[str, Any]],
+    reason: str,
+    turns_since_last_review: int,
+    cancel_event: Any = None,
+) -> AutoRefineReview:
+    """Ask the cheap gate whether this checkpoint warrants a refinement pass.
+
+    Raises on transport/parse failure; the caller turns that into a cooldown so
+    a broken provider does not retry a review on every turn.
+    """
+    conversation = serialize_conversation(messages)[-_AUTO_REVIEW_CONVERSATION_CHARS:]
+    user_prompt = "\n\n".join(
+        [
+            f"<trigger>\n{reason}; {turns_since_last_review} assistant turns since last "
+            "auto-refine review\n</trigger>",
+            f"<current_harness_state>\n{overview_for_prompt(*states)}\n</current_harness_state>",
+            f"<refinement_history>\n{history_for_prompt(history)}\n</refinement_history>",
+            f"<conversation>\n{conversation}\n</conversation>",
+            "Return shouldRefine=true when the trajectory contains evidence useful to this "
+            "session's future turns. Prefer local harness edits for current task progress, "
+            "temporary blockers, and current-run coordination. Ask for global refinement only "
+            "for durable cross-session lessons or explicitly project-qualified facts likely "
+            "to be reused in future sessions.",
+        ]
+    )
+
+    if cancel_event is not None and cancel_event.is_set():
+        raise RuntimeError("Auto-refine review cancelled")
+
+    stream = await provider.stream(
+        [UserMessage(content=user_prompt)],
+        system_prompt=AUTO_REFINE_REVIEW_SYSTEM_PROMPT,
+        tools=None,
+        max_tokens=AUTO_REFINE_REVIEW_MAX_OUTPUT_TOKENS,
+    )
+    text_parts: list[str] = []
+    async for part in stream:
+        if isinstance(part, TextPart):
+            text_parts.append(part.text)
+
+    if cancel_event is not None and cancel_event.is_set():
+        raise RuntimeError("Auto-refine review cancelled during review")
+
+    return parse_auto_refine_review("\n".join(text_parts))
 
 
 # =================================================================================================
@@ -888,6 +1120,7 @@ async def run_refinement(
     source: str = "self",
     cancel_event: Any = None,
     rollback_id: str | None = None,
+    mode: str | None = None,
 ) -> RefinementOutcome:
     """Full plan → apply → record → notice pipeline for one refinement.
 
@@ -933,6 +1166,7 @@ async def run_refinement(
             instructions=instructions,
             global_=global_,
             cancel_event=cancel_event,
+            mode=mode,
         )
         rollback_of = None
 
@@ -1000,11 +1234,21 @@ def parse_refine_command_options(args: str) -> RefineCommandOptions:
 
 
 __all__ = [
+    "AUTO_REFINE_REASONS",
+    "AUTO_REFINE_REASON_COMPACT",
+    "AUTO_REFINE_REASON_TURN_INTERVAL",
+    "AUTO_REFINE_REVIEW_MAX_OUTPUT_TOKENS",
+    "AUTO_REFINE_REVIEW_SYSTEM_PROMPT",
+    "MODE_CODE_FIRST",
+    "MODE_TOOL_FIRST",
     "REFINEMENT_SYSTEM_PROMPT",
+    "AutoRefineReview",
     "RefineCommandOptions",
     "RefinementOutcome",
     "apply_refinement",
+    "auto_refine_instructions",
     "create_notice",
+    "current_mode",
     "extract_json_object",
     "format_notice_body",
     "generate_refinement_id",
@@ -1013,9 +1257,11 @@ __all__ = [
     "load_history",
     "normalize_proposal",
     "overview_for_prompt",
+    "parse_auto_refine_review",
     "parse_refine_command_options",
     "plan_refinement",
     "resolve_states",
+    "review_auto_refine",
     "rollback_proposal",
     "run_refinement",
     "serialize_conversation",

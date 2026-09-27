@@ -259,6 +259,28 @@ class Session:
     def system_prompt(self) -> str | None:
         return self._header.system_prompt if self._header else None
 
+    def set_system_prompt(self, system_prompt: str | None) -> None:
+        """Replace the cached header prompt and persist it.
+
+        The runtime prefers the header prompt over a fresh build, so anything
+        that changes what the prompt should contain — a reload picking up new
+        skills, tools, or agent instructions — has to invalidate it here or the
+        stale one keeps winning.
+        """
+        if self._header is None:
+            return
+        if self._header.system_prompt == system_prompt:
+            return
+        self._header.system_prompt = system_prompt
+        self._write_all()
+
+    def set_header_tools(self, tools: builtins.list[str] | None) -> None:
+        """Record the active tool names in the header (provenance only)."""
+        if self._header is None or self._header.tools == tools:
+            return
+        self._header.tools = tools
+        self._write_all()
+
     @property
     def tools(self) -> builtins.list[str] | None:
         return self._header.tools if self._header else None

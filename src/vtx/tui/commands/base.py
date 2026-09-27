@@ -27,6 +27,8 @@ class CommandSupport:
     _openai_compat_auth_mode: Any
     _anthropic_compat_auth_mode: Any
     _runtime: ConversationRuntime
+    _session: Session | None
+    _loaded_extensions: Any
 
     # Methods from App - declared for type checking
     if TYPE_CHECKING:
