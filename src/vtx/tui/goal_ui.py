@@ -257,8 +257,12 @@ def _ellipsize(text: str, width: int) -> str:
     return truncate_on_words(" ".join((text or "").split()), max(0, width))
 
 
-def _fit(content: Text, width: int) -> Text:
-    """Force a single-line ``Text`` to exactly ``width`` cells (pad or clip)."""
+def _fit(content: Text, width: int, *, pad: bool = True) -> Text:
+    """Force a single-line ``Text`` to exactly ``width`` cells (pad or clip).
+
+    With ``pad=False`` an over-long line is still clipped — never allowed to
+    wrap mid-cell — but a short one is left short.
+    """
     if width <= 0:
         return Text("")
     current = cell_len(content.plain)
@@ -267,7 +271,7 @@ def _fit(content: Text, width: int) -> Text:
         clipped.spans = [s for s in content.spans if s.start < width]
         content = clipped
         current = cell_len(content.plain)
-    if current < width:
+    if pad and current < width:
         content.pad_right(width - current)
     return content
 
@@ -317,27 +321,41 @@ def _join_exact(segments: Sequence[tuple[str, str, bool]], sep: str = "  ") -> T
 
 
 class _Rail:
-    """Rows hung off an accent rail, forced to exactly ``width`` cells.
+    """Rows hung off a status-coloured rail.
 
     Every row is emitted as ``▌ <inner>`` and fitted to the real inner width,
     so an over-long label or a double-width CJK character can never shear the
     edge. Doing that arithmetic at each call site is what made the old box go
     ragged, so it lives in one place instead.
+
+    ``pad`` exists because the two call sites want opposite things. The
+    compact beacon is a pinned strip of known width whose rows must be exactly
+    the widget width, so it pads. The chat log pads every line to the terminal
+    edge itself and the width invariant buys nothing there, so it does not —
+    padding there shipped ~1400 styled space cells per line for no visible
+    gain.
     """
 
-    def __init__(self, width: int, color: str) -> None:
+    def __init__(self, width: int, color: str, *, pad: bool = True) -> None:
         self.width = max(8, width)
         self.color = color
         self.inner = max(1, self.width - RAIL_CELLS)
+        self.pad = pad
 
     def row(self, content: Text) -> Text:
         line = Text(RAIL, style=Style(color=self.color))
         line.append(" ")
-        line.append_text(_fit(content, self.inner))
+        line.append_text(_fit(content, self.inner, pad=self.pad))
         return line
 
     def gap(self) -> Text:
-        """An empty row that still carries the rail, so the edge stays unbroken."""
+        """A separator row that still carries the rail.
+
+        The rail is the block's left edge, so it has to be drawn on the blank
+        rows too. Skipping them turns a border into a dashed line — a column
+        of disconnected ticks running the height of the dashboard, which reads
+        as a rendering artefact rather than as a container.
+        """
         return Text("")
 
 
@@ -718,13 +736,16 @@ class GoalWidget(Static):
     GoalWidget {
         display: none;
         padding: 0 1;
-        margin: 0 1;
         height: auto;
     }
     GoalWidget.-visible {
         display: block;
     }
     """
+    # `padding: 0 1` only, deliberately. Chat blocks are indented by their own
+    # `padding: 0 1`, so a margin here as well pushed the rail one cell right of
+    # every other block's — the beacon looked misaligned with the log directly
+    # above it, and the two rails read as one broken edge.
 
     #: Cadence while a sub-agent is in flight. The beacon shares the registry
     #: with the pinned panel, so a slower tick here shows a fan-out frozen
@@ -1010,7 +1031,10 @@ def render_expanded(
     pct = pct_of(done, total)
     width = max(24, int(width or FALLBACK_WIDTH))
     agents = agents if agents is not None else REGISTRY.runs()
-    rail = _Rail(width, status_style(record.status))
+    # Unpadded: the chat log already pads to the terminal edge, so padding here
+    # only shipped a screenful of styled spaces per line. The rail still needs
+    # to be unbroken, so the blank separators are drawn as rail rows below.
+    rail = _Rail(width, status_style(record.status), pad=False)
     body = width - RAIL_CELLS
 
     out = Text()
@@ -1035,8 +1059,14 @@ def render_expanded(
         note.append(_ellipsize(reason, body - 6), style=Style(color=c.muted))
         out.append_text(rail.row(note))
 
+    def blank() -> None:
+        """A separator row that keeps the rail continuous."""
+        out.append("\n")
+        out.append_text(rail.row(rail.gap()))
+
     def section(title: str, color: str | None = None) -> None:
-        out.append("\n\n")
+        blank()
+        out.append("\n")
         out.append_text(rail.row(section_header(title, color)))
 
     def body_text(text: Text) -> None:
@@ -1150,7 +1180,8 @@ def render_expanded(
     else:
         body_text(Text("(no recorded activity yet)", style=Style(color=c.dim)))
 
-    out.append("\n\n")
+    blank()
+    out.append("\n")
     foot = Text()
     foot.append("file  ", style=Style(color=c.border))
     foot.append(_file_label(service.cwd, record.id), style=Style(color=c.muted))

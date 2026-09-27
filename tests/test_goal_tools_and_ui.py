@@ -158,6 +158,57 @@ def test_verification_wraps_instead_of_being_clipped(goal_cwd: Path) -> None:
     assert "case_11" in text.plain
 
 
+def test_expanded_rail_is_unbroken(goal_cwd: Path) -> None:
+    """The rail is the block's left edge, so the blank rows carry it too.
+
+    Skipping them turned the edge into a column of disconnected ticks running
+    the height of a 40-line dashboard, which reads as a rendering artefact
+    rather than as a container delimiting the block.
+    """
+    service = GoalService(str(goal_cwd))
+    record = service.create("Ship the thing", verification="pytest -q")
+    record = service.focused()
+
+    lines = render_expanded(service, record, width=100).plain.split("\n")
+    assert lines, "dashboard rendered nothing"
+    for line in lines:
+        assert line.startswith("▌"), f"gap in the rail at {line!r}"
+    # A rail row carries the bar and its trailing space, nothing else.
+    blanks = [line for line in lines if line.strip() == "▌"]
+    assert len(blanks) >= 4, "the sections are separated by rail rows"
+
+
+def test_expanded_rows_are_not_padded_to_the_terminal(goal_cwd: Path) -> None:
+    """The chat log pads every line itself; padding here doubled the work.
+
+    The SVG screen export showed each dashboard row shipping a ~1400-cell run
+    of styled spaces after a twelve-character line, which is pure overhead and
+    a hazard for terminal selection and soft-wrap.
+    """
+    service = GoalService(str(goal_cwd))
+    record = service.create("Ship the thing", verification="pytest -q")
+    record = service.focused()
+
+    lines = render_expanded(service, record, width=120).plain.split("\n")
+    short = [line for line in lines if line.startswith("▌ (none)")]
+    assert short, "expected the placeholder row"
+    assert cell_len(short[0]) < 20, f"row padded to {cell_len(short[0])} cells"
+
+
+def test_beacon_is_indented_like_the_chat_log(goal_cwd: Path) -> None:
+    """`padding: 0 1` only — a margin on top pushed the rail one cell right.
+
+    The chat log's blocks are indented by their own `padding: 0 1`. With
+    `margin: 0 1` as well, the beacon's rail landed at column 2 while every
+    block above it sat at column 1, and the two read as one broken edge.
+    """
+    from vtx.tui.goal_ui import GoalWidget
+
+    css = " ".join(GoalWidget.DEFAULT_CSS.split())
+    assert "margin" not in css, "a margin double-indents the beacon against the chat log"
+    assert "padding: 0 1" in css
+
+
 def test_terse_status_line_never_exceeds_width(goal_cwd: Path) -> None:
     """A running goal with a plan must not print past a narrow terminal.
 
