@@ -40,9 +40,10 @@ def test_panel_draws_one_row_per_running_subagent() -> None:
     lines = text.splitlines()
 
     assert lines[0].strip() == "● Agents"
+    # One line per running agent: the activity shares the row, so nothing is
+    # stacked underneath.
     assert sum(1 for line in lines if "─ " in line) == 4
-    # Every running row has a live sub-line under it.
-    assert sum(1 for line in lines if line.strip().endswith("thinking…")) == 4
+    assert sum(1 for line in lines if "thinking…" in line) == 4
 
 
 def test_queued_subagents_collapse_to_one_summary_line() -> None:
@@ -84,13 +85,82 @@ def test_row_shows_counters_and_activity() -> None:
     registry.record("a", {"kind": "tool_result", "subagent": "Plan", "tool_name": "read"})
 
     text = render_agents(registry.runs(), width=100).plain
+    # One line carries the task, the agent, the activity and the counters.
+    row = next(line for line in text.splitlines() if "Map the refactor" in line)
+    assert "Plan" in row
     # The task leads; the agent's profile blurb is secondary detail.
-    assert "Map the refactor" in text
-    assert "Plan" in text
     assert "Plan agent (read-only)" not in text
-    assert "1 tool · 8.7k tokens" in text
-    # No tool in flight, so the sub-line shows what the agent last said.
-    assert "pi-chonky-subagents is a [pi…" in text
+    assert "1 tool · 8.7k tokens" in row
+    # No tool in flight, so the row shows what the agent last streamed.
+    assert "pi-chonky-subagents is a [pi…" in row
+
+
+def test_thinking_tool_and_response_share_one_row() -> None:
+    """The row is the live view: thinking, tool call and response in place."""
+    registry = SubagentRegistry()
+    for index, name in enumerate(("alpha", "beta", "gamma")):
+        registry.record(f"r{index}", {"kind": "subagent_start", "subagent": name, "label": name})
+    # alpha is mid tool, beta is thinking, gamma is streaming its answer.
+    registry.record("r0", {"kind": "tool_start", "subagent": "alpha", "tool_name": "grep"})
+    registry.record(
+        "r2", {"kind": "text_delta", "subagent": "gamma", "delta": "the parser is in turn.py"}
+    )
+
+    lines = render_agents(registry.runs(), width=110).plain.splitlines()
+    rows = [line for line in lines if "─ " in line]
+    assert len(rows) == 3, "each agent is exactly one line"
+
+    alpha, beta, gamma = rows
+    assert "grep · searching…" in alpha
+    assert "thinking…" in beta
+    assert "the parser is in turn.py" in gamma
+    # No agent needed a second line for any of it.
+    assert all(line.endswith(("0.0s", "0.1s", "0.2s")) or "tokens" in line for line in rows)
+
+
+def test_streaming_response_keeps_the_newest_words_visible() -> None:
+    """Left-truncated, so the text that just arrived is what stays on screen."""
+    registry = SubagentRegistry()
+    registry.record("a", {"kind": "subagent_start", "subagent": "x", "label": "Long answer"})
+    registry.record(
+        "a",
+        {
+            "kind": "text_delta",
+            "subagent": "x",
+            "delta": "I checked every module under src/vtx/ai and src/vtx/tui first.",
+        },
+    )
+    row = next(
+        line
+        for line in render_agents(registry.runs(), width=120).plain.splitlines()
+        if "─ " in line
+    )
+    # The oldest words fall off the left; the words that just arrived stay,
+    # so the row ends where the sub-agent currently is.
+    tail = row.split("…")[-1].split("  ")[0].strip()
+    assert "…odule" in row, "the tail is truncated from the left, not the right"
+    assert tail.endswith("src/vtx/tui first.")
+    assert "I checked" not in row
+
+
+def test_counters_stay_in_one_column() -> None:
+    """Fixed columns are what make the counters scannable.
+
+    The activity is padded to a common width, so the counters begin at the
+    same offset on every row however long the activity was.
+    """
+    registry = SubagentRegistry()
+    for index, label in enumerate(("short", "a much longer task label", "mid")):
+        registry.record(f"r{index}", {"kind": "subagent_start", "subagent": "Explore"})
+        registry.record(f"r{index}", {"kind": "text_delta", "subagent": "Explore", "delta": label})
+    rows = [
+        line
+        for line in render_agents(registry.runs(), width=100).plain.splitlines()
+        if "─ " in line
+    ]
+    assert len(rows) == 3
+    ends = {len(line.rstrip()) for line in rows}
+    assert len(ends) == 1, f"counter block is ragged: {sorted(ends)}"
 
 
 def test_finished_run_collapses_into_a_summary_line() -> None:

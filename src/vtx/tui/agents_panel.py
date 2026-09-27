@@ -57,8 +57,16 @@ MAX_ROWS = 5
 #: Longest task label the row will show before ellipsizing.
 MAX_TITLE_WIDTH = 34
 
-#: Narrowest task label worth showing before the metrics start losing cells.
+#: Narrowest task label worth showing before other segments start losing cells.
 MIN_LABEL_WIDTH = 10
+
+#: Longest live activity (tool call or streaming response) a row will show.
+MAX_ACTIVITY_WIDTH = 46
+
+#: Below this, an activity is noise ("think…") and the cells are better spent
+#: on the label and the counters.
+MIN_ACTIVITY_WIDTH = 9
+
 
 #: Agent name suffix is dropped past this length — it is secondary detail.
 MAX_AGENT_WIDTH = 16
@@ -96,12 +104,17 @@ def _ellipsize(text: str, width: int) -> str:
     return text[: width - 1] + "…"
 
 
-def _text_snippet(text: str, limit: int = 60) -> str:
-    """First non-blank line of ``text``, trimmed to ``limit`` cells."""
-    snippet = next((line.strip() for line in text.splitlines() if line.strip()), "")
-    if len(snippet) > limit:
-        return snippet[:limit] + "…"
-    return snippet
+def _stream_tail(text: str, limit: int) -> str:
+    """The newest words of an in-flight response, trimmed to ``limit`` cells.
+
+    Left-truncated, not right: while a response streams in, the characters
+    that just arrived are the ones being read, so they have to stay on screen
+    instead of being pushed off the end by the paragraph before them.
+    """
+    line = next((part.strip() for part in reversed(text.splitlines()) if part.strip()), "")
+    if len(line) > limit:
+        return "…" + line[-(limit - 1) :]
+    return line
 
 
 def status_glyph(run: SubagentRun, frame: int) -> tuple[str, str]:
@@ -141,24 +154,29 @@ def metrics_for(run: SubagentRun) -> str:
     return " · ".join(parts)
 
 
-def activity_for(run: SubagentRun) -> str:
-    """The live sub-line: what this sub-agent is doing, or what it last said."""
+def activity_for(run: SubagentRun, limit: int = MAX_ACTIVITY_WIDTH) -> str:
+    """What this sub-agent is doing right now, on its own row.
+
+    One line covers all three phases, in the order they happen: a tool call
+    while one is in flight, the response streaming in once the model starts
+    writing, and plain "thinking…" before either. It repaints in place, so
+    watching a row is watching the sub-agent.
+    """
     if run.queued:
         if run.queue_position > 0:
             return f"queued · {run.queue_position} ahead of the cap"
         return "queued"
     if run.error:
-        return run.error
+        return _ellipsize(run.error, limit)
+    if run.active_tool:
+        # Name the tool as well as the action — "grep · searching…" locates a
+        # stuck agent in a way "searching…" alone does not.
+        return _ellipsize(f"{run.active_tool} · {describe_activity(run.active_tool, '')}", limit)
+    if run.last_text:
+        return _ellipsize(_stream_tail(run.last_text, limit), limit)
     if run.finished:
-        # A finished agent's last words beat "done": they say what it
-        # actually concluded.
-        return _text_snippet(run.last_text) or run.top_tools() or "done"
-    activity = describe_activity(run.active_tool, run.last_text)
-    # Name the tool as well as the action — "grep · searching" locates the
-    # agent in a way "searching…" alone does not.
-    if run.active_tool and not activity.startswith(run.active_tool):
-        return f"{run.active_tool} · {activity}"
-    return activity
+        return run.top_tools() or "done"
+    return "thinking…"
 
 
 def visible_runs(runs: Sequence[SubagentRun]) -> list[SubagentRun]:
@@ -218,6 +236,106 @@ def _fit_metrics(metrics: str, budget: int) -> str:
     return " · ".join(parts) if len(" · ".join(parts)) <= budget else ""
 
 
+def _last_field(fields: tuple[str, str, str, str]) -> int:
+    """Index of the right-most non-empty field in a row."""
+    for index in range(len(fields) - 1, -1, -1):
+        if fields[index]:
+            return index
+    return 0
+
+
+def _cell(text: str, width: int) -> str:
+    """Fit ``text`` into exactly ``width`` cells, padded with spaces.
+
+    ``str.ljust`` pads but never truncates, so a column budget of zero would
+    still print the whole field — which is how a row ends up wider than the
+    terminal it was measured against.
+    """
+    if width <= 0:
+        return ""
+    return _ellipsize(text, width).ljust(width)
+
+
+def _shrink_metrics(metrics: str, budget: int) -> str:
+    """Longest run of ``·``-separated counters that fits ``budget`` cells.
+
+    Counters are dropped whole, never truncated mid-number into something like
+    ``35 to…``. The tool count goes first, then the token count; the duration
+    is kept longest, because "is it stuck?" is the question a watcher actually
+    has.
+    """
+    parts = metrics.split(" · ") if metrics else []
+    while parts and len(" · ".join(parts)) > budget:
+        parts.pop(0)
+    return " · ".join(parts)
+
+
+def _layout_columns(runs: Sequence[SubagentRun], budget: int) -> list[tuple[str, str, str, str]]:
+    """Lay out every row as fixed columns with the activity as the flex one.
+
+    Fixed columns are what make the counters scannable: the eye finds the
+    token column because it is in the same place on every line. Only the
+    activity flexes, because it is the part whose length is genuinely
+    unpredictable — a tool name, a thinking placeholder, or a paragraph of
+    response streaming in.
+
+    When the terminal cannot hold the columns, they are given up in a fixed
+    order — agent name, then counters, then label width — and the activity
+    absorbs whatever is left.
+    """
+    labels = [_ellipsize(r.title, MAX_TITLE_WIDTH) for r in runs]
+    tags = [_agent_tag(r) for r in runs]
+    metrics = [metrics_for(r) for r in runs]
+
+    def gaps(columns: int) -> int:
+        return 2 * max(0, columns - 1)
+
+    label_width = min(MAX_TITLE_WIDTH, max((len(x) for x in labels), default=0))
+    tag_width = min(MAX_AGENT_WIDTH, max((len(x) for x in tags), default=0))
+    metrics = [_shrink_metrics(m, MAX_TITLE_WIDTH + MAX_ACTIVITY_WIDTH) for m in metrics]
+    metrics_width = max((len(m) for m in metrics), default=0)
+
+    if label_width + tag_width + metrics_width + gaps(4) > budget:
+        tag_width = 0
+    # Shrink the counters a part at a time, stopping the moment nothing gets
+    # shorter. (Testing the joined string for " · " looks like it works and
+    # does not: two empty metrics still join to " · ".)
+    while label_width + metrics_width + gaps(3) > budget:
+        wider = metrics_width
+        metrics = [_shrink_metrics(m, max(0, wider - 1)) for m in metrics]
+        metrics_width = max((len(m) for m in metrics), default=0)
+        if metrics_width >= wider:
+            break
+    if label_width + metrics_width + gaps(3) > budget:
+        metrics = ["" for _ in metrics]
+        metrics_width = 0
+    if label_width + metrics_width + gaps(2) > budget:
+        # MIN_LABEL_WIDTH is a preference for readable terminals, not a
+        # guarantee: on a very narrow one the label gives up cells instead of
+        # pushing the panel wider than the screen.
+        label_width = max(0, min(label_width, budget - metrics_width - gaps(2)))
+
+    activity_width = budget - label_width - tag_width - metrics_width - gaps(4)
+    activity_width = max(0, min(MAX_ACTIVITY_WIDTH, activity_width))
+    if activity_width < MIN_ACTIVITY_WIDTH:
+        # A one-cell activity is just an ellipsis; better to spend the cells on
+        # the label and the counters.
+        activity_width = 0
+
+    rows: list[tuple[str, str, str, str]] = []
+    for index, run in enumerate(runs):
+        activity = _ellipsize(activity_for(run, activity_width), activity_width)
+        rows.append(
+            (
+                _cell(labels[index], label_width),
+                _cell(tags[index], tag_width),
+                _cell(activity, activity_width),
+                _cell(metrics[index], metrics_width),
+            )
+        )
+    return rows
+
+
 def render_agents(
     runs: Sequence[SubagentRun],
     *,
@@ -226,32 +344,24 @@ def render_agents(
     max_rows: int = MAX_ROWS,
     header: bool = True,
 ) -> Text:
-    """Draw the panel: a row per running agent, then queued and done counts."""
+    """Draw the panel: one streaming line per running agent, then the counts."""
     colors = config.ui.colors
     tree_style = Style(color=colors.dim)
+    styles = {
+        "label": Style(color=colors.fg, bold=True),
+        "activity": Style(color=colors.dim),
+        "metrics": Style(color=colors.muted),
+        "tag": Style(color=colors.muted),
+    }
     rows = visible_runs(runs)
     shown = rows[:max_rows]
     hidden = len(rows) - len(shown)
 
-    metric_texts = [metrics_for(r) for r in shown]
-    metrics_width = max((len(m) for m in metric_texts), default=0)
-
-    # Room is spent in priority order: task label first, then the agent name,
-    # then the fixed-width metrics. On a narrow terminal the metrics are what
-    # gives up cells, and if even a short label will not fit the name goes.
     gutter = 7  # "│ ├─ ⠼ "
-    available = max(12, width - gutter)
-    label_width = available - metrics_width - 2
-    if label_width < MIN_LABEL_WIDTH:
-        metric_texts = [_fit_metrics(m, available - MIN_LABEL_WIDTH - 2) for m in metric_texts]
-        metrics_width = max((len(m) for m in metric_texts), default=0)
-        label_width = max(MIN_LABEL_WIDTH, available - metrics_width - 2)
-
-    tags = [_agent_tag(r) for r in shown]
-    agent_width = min(MAX_AGENT_WIDTH, max((len(t) for t in tags), default=0))
-    if agent_width and label_width < MIN_LABEL_WIDTH + agent_width + 2:
-        agent_width = 0
-    title_width = min(MAX_TITLE_WIDTH, label_width - (agent_width + 2 if agent_width else 0))
+    # No floor: on a terminal narrower than the gutter the row has to shrink
+    # below it rather than push the panel wider than the screen.
+    budget = max(0, width - gutter)
+    layout = _layout_columns(shown, budget)
 
     text = Text()
     if header:
@@ -262,55 +372,45 @@ def render_agents(
     for index, run in enumerate(shown):
         branch = _TREE_LAST if index == len(shown) - 1 and not hidden else _TREE_EDGE
         glyph, glyph_color = status_glyph(run, frame)
-        metrics = metric_texts[index]
 
         row = Text()
         row.append(f"{_GUTTER} {branch} ", style=tree_style)
         row.append(f"{glyph} ", style=Style(color=glyph_color))
 
-        title = _ellipsize(run.title, title_width)
-        row.append(title, style=Style(color=colors.fg, bold=True))
-        tag = tags[index]
-        if agent_width:
-            # Pad to a fixed width so the metrics column lines up down the
-            # panel, whatever the mix of agent names in the fan-out.
-            row.append(" " * max(1, title_width - len(title) + 2))
-            if tag and len(tag) <= agent_width:
-                row.append(_ellipsize(tag, agent_width), style=Style(color=colors.muted))
-            else:
-                row.append(" " * agent_width)
-        if metrics:
-            row.append("  " + metrics, style=Style(color=colors.muted))
+        label, tag, activity, metrics = layout[index]
+        # Every field is emitted, padding included, so the counters land in the
+        # same column on every row even when one agent has no activity to show.
+        for position, (key, field_text) in enumerate(
+            (("label", label), ("tag", tag), ("activity", activity), ("metrics", metrics))
+        ):
+            if not field_text:
+                continue
+            if len(row.plain) > gutter:
+                row.append("  ")
+            # A field padded past the last one on screen would leave the line
+            # with trailing blanks, so the tail is trimmed after the fact.
+            last_visible = position == _last_field((label, tag, activity, metrics))
+            row.append(field_text.rstrip() if last_visible else field_text, style=styles[key])
         text.append(row)
         text.append("\n")
 
-        detail = Text()
-        detail.append(_BRANCH_PAD, style=tree_style)
-        detail.append(
-            _ellipsize(activity_for(run), max(4, width - len(_BRANCH_PAD))),
-            style=Style(color=colors.dim if not run.error else colors.failed),
-        )
-        text.append(detail)
+    def footer(body: str, body_style: Style) -> None:
+        line = Text()
+        line.append(f"{_GUTTER} ", style=tree_style)
+        line.append(_ellipsize(body, max(0, width - 2)), style=body_style)
+        text.append(line)
         text.append("\n")
 
     if hidden > 0:
-        more = Text()
-        more.append(f"{_GUTTER} ", style=tree_style)
-        more.append(f"└─ … +{hidden} more running", style=tree_style)
-        text.append(more)
-        text.append("\n")
+        footer(f"└─ … +{hidden} more running", tree_style)
 
     queued_total = sum(1 for r in runs if r.queued)
     if queued_total:
-        queue_line = Text()
-        queue_line.append(f"{_GUTTER} ", style=tree_style)
-        queue_line.append(f"○ {queued_total} queued", style=Style(color=colors.muted))
-        text.append(queue_line)
-        text.append("\n")
+        footer(f"○ {queued_total} queued", Style(color=colors.muted))
 
     summary = finished_summary(runs)
     if summary:
-        text.append(Text(summary))
+        text.append(Text(_ellipsize(summary, max(0, width - 2))))
 
     if text.plain.endswith("\n"):
         text.right_crop()

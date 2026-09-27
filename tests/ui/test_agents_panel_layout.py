@@ -61,10 +61,12 @@ async def test_panel_shows_a_row_per_subagent_and_sits_above_the_input(
 
         assert panel.has_class("-visible")
         rendered = str(panel.content)
-        assert rendered.count("Explore") == 2
-        assert "Find TODO/FIXME comments" in rendered
+        rows = [line for line in rendered.splitlines() if "─ " in line]
+        assert len(rows) == 2, f"one line per sub-agent, got {rows}"
+        # Each row carries its own task and its own live tool.
+        assert any("Find TODO/FIXME comments" in row and "grep · sear" in row for row in rows)
+        assert any("Count files and LOC" in row and "read · read" in row for row in rows)
         assert "○ 1 queued" in rendered
-        assert "searching…" in rendered
 
         # Pinned: the strip sits between the status line and the editor.
         status = app.query_one("#status-line")
