@@ -22,15 +22,6 @@ class OpenAIResponsesSDKProvider(OpenAISDKProvider):
     """
 
     name = "openai-responses"
-    thinking_levels: ClassVar[list[str]] = [
-        "none",
-        "minimal",
-        "low",
-        "medium",
-        "high",
-        "xhigh",
-        "max",
-    ]
 
     def __init__(self, config):
         super().__init__(config)

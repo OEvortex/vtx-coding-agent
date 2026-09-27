@@ -36,9 +36,6 @@ from vtx.core.types import (
 
 class OpenAISDKProvider(BaseProvider):
     name = "openai"
-    # Full OpenAI-style effort enum. The picker filters by per-model
-    # capability (Model.supports_thinking) before showing these.
-    thinking_levels: ClassVar[list[str]] = ["none", "minimal", "low", "medium", "high", "xhigh"]
 
     def __init__(self, config: ProviderConfig):
         super().__init__(config)

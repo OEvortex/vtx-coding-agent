@@ -32,6 +32,7 @@ from vtx.ai.base import AuthMode
 from vtx.ai.config import add_recent_model, get_last_selected, set_last_selected
 from vtx.ai.config import config as vtx_config
 from vtx.ai.dynamic_models import find_dynamic_model, get_dynamic_provider_headers
+from vtx.ai.thinking import clamp_thinking_level
 from vtx.core.compaction import SummaryProgress, generate_summary
 from vtx.core.handoff import generate_handoff_prompt
 from vtx.core.types import AssistantMessage, TextContent, UserMessage
@@ -887,8 +888,15 @@ class ConversationRuntime:
         previous_level = self.thinking_level
         if self.provider is None:
             return
-        self.provider.set_thinking_level(level)
+        # Clamp into the offered set: a restored session or a model switch can
+        # hand us a level this model doesn't support, and the picker/cycle are
+        # the only places allowed to change it. Anything else is a no-op rather
+        # than an error escaping into the TUI.
+        levels = self.effective_thinking_levels
+        if levels and level not in levels:
+            level = clamp_thinking_level(level, levels)
         self.thinking_level = level
+        self.provider.set_thinking_level(level)
         if self.session:
             self.session.set_thinking_level(level)
 
@@ -945,47 +953,28 @@ class ConversationRuntime:
 
     @property
     def effective_thinking_levels(self) -> list[str]:
-        """The set of levels the picker/cycle should offer for the current
-        model + provider.
+        """The levels the picker, the ``ctrl+t`` cycle and every other selector
+        offer for the current model + provider.
 
-        When the model carries a thinking-level map
-        (derived from models.dev ``reasoning_options``), the supported
-        levels are read from it — including opt-in ``xhigh``/``max`` tiers
-        only for models that advertise them. Non-thinking models collapse
-        to ``["none"]``; models without map data keep the provider-level
-        OpenAI-style effort enum.
-        only for models that advertise them. If the model supports thinking
-        but no effort options are declared, only ``["default"]`` is valid.
-        Non-thinking models collapse to ``["none"]``.
+        Delegates to :func:`vtx.ai.thinking.resolve_thinking_levels` so every
+        caller sees the same list, derived from the models.dev-verified
+        ``thinking_level_map`` and intersected with what the provider can
+        express. An unknown model (custom endpoint, not in the catalog) keeps
+        the provider's full effort enum so it stays adjustable.
         """
         if self.provider is None:
             return []
 
-        from vtx.ai.models import get_model
-        from vtx.ai.thinking import get_supported_thinking_levels
+        from vtx.ai.thinking import resolve_thinking_levels
 
         info = get_model(self.model, self.model_provider)
-        if info is not None and info.supports_thinking:
-            levels = get_supported_thinking_levels(
-                reasoning=True, thinking_level_map=getattr(info, "thinking_level_map", None)
-            )
-            if levels != ["off"]:
-                # VTX vocabulary uses "none" for the off level.
-                return ["none" if lvl == "off" else lvl for lvl in levels]
-            level_map = getattr(info, "thinking_level_map", None)
-            if level_map:
-                levels = get_supported_thinking_levels(
-                    reasoning=True, thinking_level_map=level_map
-                )
-                if levels != ["off"]:
-                    # VTX vocabulary uses "none" for the off level.
-                    return ["none" if lvl == "off" else lvl for lvl in levels]
-            # Thinking model with no explicit effort levels defined: default only.
-            return ["default"]
-
-        if not self.model_supports_thinking:
-            return ["none"]
-        return list(self.provider.thinking_levels)
+        if info is None:
+            return list(self.provider.thinking_levels)
+        return resolve_thinking_levels(
+            reasoning=info.supports_thinking,
+            thinking_level_map=info.thinking_level_map,
+            provider_levels=self.provider.thinking_levels,
+        )
 
     def load_session(self, session_path: str | Path) -> Session:
         session = Session.load(session_path)

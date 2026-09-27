@@ -9,9 +9,11 @@ from pydantic import BaseModel, Field, model_validator
 from vtx.ai.agent.tools.base import BaseTool, ToolResult
 from vtx.coding_agent.context.skills import (
     get_user_skills_dir,
+    kernel_skills_available,
     load_builtin_cmd_skills,
     load_skills,
     merge_registered_skills,
+    skills_for_mode,
 )
 
 
@@ -82,6 +84,9 @@ class SkillTool(BaseTool):
             result = load_skills(cwd)
             builtin = load_builtin_cmd_skills()
             all_skills = merge_registered_skills(result.skills, builtin.skills)
+            # A python skill is a kernel module, not a set of instructions. With
+            # no kernel it can only dead-end, so don't offer it for discovery.
+            all_skills = skills_for_mode(all_skills)
             lines = ["Available skills:"]
             for skill in sorted(all_skills, key=lambda s: s.name):
                 path_str = str(skill.path)
@@ -166,6 +171,17 @@ class SkillTool(BaseTool):
 
         # Handle 'run' action - execute skill in REPL
         if params.action == "run":
+            # `run` hands the skill to the persistent Python kernel, which only
+            # exists in RLM mode. In tool_first mode the cell would run in a
+            # kernel the agent was never told about, so fail loudly instead.
+            if not kernel_skills_available():
+                msg = (
+                    "action='run' needs the persistent Python kernel, which only exists in RLM "
+                    "mode. Switch mode in settings, or use action='view' and follow the skill "
+                    "instructions yourself."
+                )
+                return ToolResult(success=False, result=msg, ui_summary=f"[red]{msg}[/red]")
+
             if not skill_dir:
                 msg = f"Skill '{params.name}' not found."
                 return ToolResult(success=False, result=msg, ui_summary=f"[red]{msg}[/red]")

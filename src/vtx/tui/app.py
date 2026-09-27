@@ -26,6 +26,7 @@ from textual.widgets import Input
 from vtx.ai import BaseProvider
 from vtx.ai.agent.agents import AgentRegistry, load_all_agents
 from vtx.ai.agent.context.skills import (
+    is_kernel_skill,
     load_builtin_cmd_skills,
     load_skills,
     merge_registered_skills,
@@ -487,6 +488,11 @@ class Vtx(
 
         for skill in self._registered_slash_skills():
             if not skill.register_cmd or skill.name in taken:
+                continue
+            # A kernel skill is a module imported into the Python REPL, not a
+            # prompt. `/name` would splice REPL API docs into the user message
+            # with nothing to call them with, so opt-in cannot enable it.
+            if is_kernel_skill(skill):
                 continue
             cmd_description = skill.cmd_info
             if not cmd_description:

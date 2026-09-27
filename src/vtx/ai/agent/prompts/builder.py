@@ -25,6 +25,7 @@ from vtx.ai.agent.context import (
     formatted_git_context,
     formatted_skills,
     formatted_skills_index,
+    skills_for_mode,
 )
 from vtx.ai.agent.tools import BaseTool
 from vtx.ai.config import config as vtx_config
@@ -151,7 +152,10 @@ def build_system_prompt(
 
     effective_skills = skills if skills is not None else context.skills
     if effective_skills:
-        sections.append(formatted_skills(effective_skills))
+        # No kernel in tool-first mode, so python skills are unrunnable here.
+        prompt_skills = skills_for_mode(effective_skills, mode)
+        if prompt_skills:
+            sections.append(formatted_skills(prompt_skills))
 
     if _resolve_git_flag(include_git_context):
         git_section = formatted_git_context(cwd)

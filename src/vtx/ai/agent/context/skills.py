@@ -73,6 +73,48 @@ class SkillWarning:
     message: str
 
 
+def is_kernel_skill(skill: Any) -> bool:
+    """Whether a skill is a Python-backed module callable from the kernel.
+
+    A python skill ships a ``pyproject.toml`` plus ``src/<import_name>``, and is
+    imported into the persistent IPython kernel rather than read as
+    instructions. Its SKILL.md body is API documentation for that module
+    ("call ``await compact.run()`` from the REPL"), so it is only actionable
+    where the kernel exists.
+    """
+    return (
+        getattr(skill, "kind", "markdown") == "python"
+        and getattr(skill, "python", None) is not None
+    )
+
+
+def kernel_skills_available(mode: str | None = None) -> bool:
+    """Whether the persistent Python kernel is available in the current mode.
+
+    The kernel is an RLM-mode facility: ``ipython`` is absent from
+    ``DEFAULT_TOOLS``, so a tool-first agent has no way to run a python skill.
+    """
+    if mode is None:
+        from vtx.ai.config import config as vtx_config
+
+        mode = getattr(vtx_config, "mode", "tool_first")
+    return mode == "rlm"
+
+
+def skills_for_mode(skills: list[Any], mode: str | None = None) -> list[Any]:
+    """Filter out skills the current mode cannot actually run.
+
+    Discovery surfaces (the mandatory prompt catalog, ``skill(action="list")``,
+    the ``/`` command list) must only offer skills the agent can act on. A
+    kernel skill advertised to a tool-first agent is worse than absent: its
+    description reads as generally applicable and its body is a REPL API the
+    agent has no tool to call, so loading it spends context and then dead-ends.
+    """
+    if kernel_skills_available(mode):
+        return list(skills)
+    return [skill for skill in skills if not is_kernel_skill(skill)]
+
+
 @dataclass
 class LoadSkillsResult:
     skills: list[Skill]
@@ -581,15 +623,25 @@ def formatted_skills(skills: list[Skill]) -> str:
         skill_tags.append(f"    <location>{escape_xml(skill.path)}</location>")
         skill_tags.append("  </skill>")
 
-    lines = [
-        "## Skills (mandatory)",
-        "",
+    rules = [
         "Before replying, scan the skills below. If a skill matches or is even partially relevant",
         "to your task, you MUST load it with the read tool and follow its instructions. "
         "Err on the side of loading — it is always better to have context you don't need",
-        "than to miss critical steps, pitfalls, or established workflows. "
-        "Skills with a python_import are prepared in the persistent Python kernel "
-        "when in RLM mode and can be called directly by that import name.",
+        "than to miss critical steps, pitfalls, or established workflows.",
+    ]
+    # Only explain the kernel import contract when a python skill is actually on
+    # offer. A tool-first agent gets no python skills at all, and telling it
+    # about modules it cannot import is a distraction, not a capability.
+    if any(is_kernel_skill(skill) for skill in skills):
+        rules.append(
+            "Skills with a python_import are prepared in the persistent Python kernel "
+            "when in RLM mode and can be called directly by that import name."
+        )
+
+    lines = [
+        "## Skills (mandatory)",
+        "",
+        *rules,
         "",
         "When a skill file references a relative path, resolve it against the skill's directory",
         "(the parent of its SKILL.md) and use that absolute path in tool calls, not a path",

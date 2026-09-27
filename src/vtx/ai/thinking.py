@@ -17,6 +17,8 @@ actually supports:
   ``reasoning_options`` to a thinking-level map.
 - :func:`get_supported_thinking_levels` — which of the canonical levels a
   model supports.
+- :func:`resolve_thinking_levels` — which levels to *offer* for a given
+  model + transport (the single source of truth for every selector).
 - :func:`clamp_thinking_level` — nearest-available fallback when a saved
   or requested level isn't supported by the selected model.
 """
@@ -31,7 +33,19 @@ EXTENDED_THINKING_LEVELS = ("off", "minimal", "low", "medium", "high", "xhigh", 
 
 _EFFORT_LEVELS = EXTENDED_THINKING_LEVELS[1:]  # minimal..max
 
+# The same vocabulary as spelled in vtx's own surfaces (picker entries, provider
+# ``thinking_levels``, session state): the catalog's "off" is called "none"
+# because that is what providers call ``reasoning_effort: "none"``. Every
+# translation between the two spellings goes through ``_as_catalog_level`` so
+# the two vocabularies can never drift apart again.
+THINKING_LEVELS: tuple[str, ...] = ("none", *_EFFORT_LEVELS)
+
 _MISSING = object()  # sentinel: key absent from the map (vs. explicit None)
+
+
+def _as_catalog_level(level: str) -> str:
+    """Normalize the off-level spelling (``"none"`` -> ``"off"``)."""
+    return "off" if level == "none" else level
 
 
 def parse_models_dev_reasoning_options(
@@ -97,23 +111,70 @@ def get_supported_thinking_levels(
 
 
 def clamp_thinking_level(level: str, supported: Iterable[str]) -> str:
-    """Nearest available level: prefer equal, then higher, then lower."""
+    """Nearest available level: prefer equal, then higher, then lower.
+
+    Accepts both spellings of the off level and answers in the spelling used by
+    ``supported``, so a clamped value can be handed straight back to a provider
+    (whose ``thinking_levels`` say ``"none"``) without a second translation.
+    """
     supported_list = list(supported)
     if not supported_list:
         return "off"
-    if level in supported_list:
-        return level
+    canonical = [_as_catalog_level(lvl) for lvl in supported_list]
+    target = _as_catalog_level(level)
+    if target in canonical:
+        return supported_list[canonical.index(target)]
     try:
-        idx = EXTENDED_THINKING_LEVELS.index(level)
+        idx = EXTENDED_THINKING_LEVELS.index(target)
     except ValueError:
         return supported_list[0]
-    for i in range(idx + 1, len(EXTENDED_THINKING_LEVELS)):
-        if EXTENDED_THINKING_LEVELS[i] in supported_list:
-            return EXTENDED_THINKING_LEVELS[i]
-    for i in range(idx - 1, -1, -1):
-        if EXTENDED_THINKING_LEVELS[i] in supported_list:
-            return EXTENDED_THINKING_LEVELS[i]
+    # Prefer the next level up, then walk back down to the lowest available.
+    for candidate in (
+        *EXTENDED_THINKING_LEVELS[idx + 1 :],
+        *reversed(EXTENDED_THINKING_LEVELS[:idx]),
+    ):
+        if candidate in canonical:
+            return supported_list[canonical.index(candidate)]
     return supported_list[0]
+
+
+def resolve_thinking_levels(
+    *,
+    reasoning: bool,
+    thinking_level_map: Mapping[str, str | None] | None = None,
+    provider_levels: Iterable[str] | None = None,
+) -> list[str]:
+    """The levels vtx should *offer* for one (model, transport) pair.
+
+    Single source of truth for the ``/thinking`` picker, the ``ctrl+t`` cycle,
+    session restore and every other selector. The rule is the same one
+    opencode uses for its model variants: a control is offered only when we
+    know the model accepts it, so a level can never be offered that the
+    transport rejects or silently drops on the wire.
+
+    - Non-reasoning models: ``["none"]`` (there is nothing to turn on).
+    - Catalog-verified models: exactly the efforts ``reasoning_options``
+      advertises, with levels the catalog marks unsupported dropped, then
+      intersected with ``provider_levels`` (what the transport can express).
+    - Reasoning models with no verified effort metadata: ``["default"]`` —
+      the model keeps its own default instead of us guessing an effort it
+      might 400 on. ``"default"`` resolves to "send no reasoning param".
+    """
+    if not reasoning:
+        return ["none"]
+
+    if thinking_level_map is not None:
+        derived = get_supported_thinking_levels(
+            reasoning=True, thinking_level_map=thinking_level_map
+        )
+    else:
+        derived = []
+
+    if not derived:
+        return ["default"]
+
+    wire = [_as_catalog_level(lvl) for lvl in (provider_levels or THINKING_LEVELS)]
+    return ["none" if lvl == "off" else lvl for lvl in derived if lvl in wire]
 
 
 # =============================================================================

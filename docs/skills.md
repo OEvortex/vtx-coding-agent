@@ -24,6 +24,23 @@ typed after the skill name (or the query passed to the `skill` tool).
 
 Constraints enforced at load time: name ≤ 64 chars, description ≤ 1024 chars, category ≤ 32 chars. The directory name should match `name`; mismatches produce a warning.
 
+## Python (kernel) skills
+
+A skill that also ships a `pyproject.toml` and `src/<import_name>/__init__.py` is loaded as a **kernel skill** instead of as instructions. It is imported into the persistent Python kernel and called by its import name:
+
+```
+.agents/skills/refine/
+├── SKILL.md          # API reference for the module
+├── pyproject.toml
+└── src/refine/__init__.py
+```
+
+```python
+await refine.run("persist a memory about checking git status before committing")
+```
+
+The kernel only exists in RLM mode, so kernel skills are hidden in `tool_first` mode — they are left out of the system-prompt catalog, the `skill` tool's `list`, and the `/` command menu, and `register_cmd: true` does not force one back in. A tool-first agent has no `ipython` tool, so an advertised kernel skill is a dead end: the description reads as generally applicable, the agent loads it, and then has nothing to call it with. In RLM mode they are pre-imported in the kernel and listed with their import name.
+
 ## Discovery paths
 
 Loaded in priority order:

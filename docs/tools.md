@@ -95,6 +95,8 @@ List, view, create, patch, edit, or delete skills. See [skills.md](skills.md) fo
 | `file_path` | string | Supporting file to target (default: SKILL.md) |
 | `scope` | enum | `project` (`.agents/skills`) or `global` (`~/.agents/skills`) |
 
+`list` omits kernel (Python) skills outside RLM mode — see [skills.md](skills.md#python-kernel-skills). `run` (hand the skill to the Python kernel) is RLM-only and errors out otherwise.
+
 ## web
 
 Web search through Exa's MCP endpoint. Needs internet access.
