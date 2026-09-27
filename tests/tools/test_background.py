@@ -434,3 +434,93 @@ class TestCloseSemantics:
         # Disk shows cancelled state.
         on_disk = json.loads((tmp_path / f"{record.task_id}.json").read_text())
         assert on_disk["status"] == "cancelled"
+
+
+class TestCompletionListeners:
+    """A settled task has to be able to reach a parent that is sitting idle.
+
+    ``drain_completed`` is consumed between turns, so a sub-agent that
+    finished after its parent went idle could not deliver anything until the
+    user typed something. These tests pin the signal that closes that gap.
+    """
+
+    @pytest.fixture(autouse=True)
+    def _clean_contextvar(self):
+        from vtx.coding_agent.tools.background import reset_manager
+
+        reset_manager()
+        yield
+        reset_manager()
+
+    @pytest.mark.asyncio
+    async def test_listener_fires_when_a_task_completes(self, tmp_path: Path):
+        mgr = BackgroundTaskManager(store_dir=tmp_path)
+        seen: list[str] = []
+        mgr.add_completion_listener(lambda rec: seen.append(rec.task_id))
+
+        record = await mgr.register(
+            description="Rate the codebase",
+            prompt="go",
+            subagent_type="subagent",
+            model=None,
+            parent_session_id=None,
+            run_coro_factory=lambda: _sleep_then(0.01, FakeResult("7.0/10")),
+        )
+        await mgr.wait(record.task_id, timeout=2, cancel_event=None)
+        assert seen == [record.task_id]
+        await mgr.close()
+
+    @pytest.mark.asyncio
+    async def test_listener_fires_for_a_failure(self, tmp_path: Path):
+        mgr = BackgroundTaskManager(store_dir=tmp_path)
+        seen: list[str] = []
+        mgr.add_completion_listener(lambda rec: seen.append(rec.status))
+
+        record = await mgr.register(
+            description="d",
+            prompt="p",
+            subagent_type="subagent",
+            model=None,
+            parent_session_id=None,
+            run_coro_factory=lambda: _sleep_then(0.01, FailingResult()),
+        )
+        await mgr.wait(record.task_id, timeout=2, cancel_event=None)
+        assert seen == ["error"]
+        await mgr.close()
+
+    @pytest.mark.asyncio
+    async def test_unsubscribe_stops_the_signal(self, tmp_path: Path):
+        mgr = BackgroundTaskManager(store_dir=tmp_path)
+        seen: list[str] = []
+        unsubscribe = mgr.add_completion_listener(lambda rec: seen.append(rec.task_id))
+        unsubscribe()
+
+        record = await mgr.register(
+            description="d",
+            prompt="p",
+            subagent_type="subagent",
+            model=None,
+            parent_session_id=None,
+            run_coro_factory=lambda: _sleep_then(0.01, FakeResult()),
+        )
+        await mgr.wait(record.task_id, timeout=2, cancel_event=None)
+        assert seen == []
+        await mgr.close()
+
+    @pytest.mark.asyncio
+    async def test_a_failing_listener_cannot_break_the_task(self, tmp_path: Path):
+        mgr = BackgroundTaskManager(store_dir=tmp_path)
+        mgr.add_completion_listener(lambda rec: (_ for _ in ()).throw(RuntimeError("bad")))
+
+        record = await mgr.register(
+            description="d",
+            prompt="p",
+            subagent_type="subagent",
+            model=None,
+            parent_session_id=None,
+            run_coro_factory=lambda: _sleep_then(0.01, FakeResult("fine")),
+        )
+        settled = await mgr.wait(record.task_id, timeout=2, cancel_event=None)
+        assert settled.result_text == "fine"
+        assert settled.status == "completed"
+        await mgr.close()

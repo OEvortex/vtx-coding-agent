@@ -7,6 +7,7 @@ import asyncio
 import contextlib
 import time
 from collections import deque
+from collections.abc import Callable
 from typing import TYPE_CHECKING, Any
 
 from vtx.ai.agent.runtime import ConversationRuntime
@@ -52,6 +53,23 @@ from vtx.tui.widgets import InfoBar, StatusLine
 
 _NOTIFY_EVENTS = (AgentEndEvent, ToolApprovalEvent, BackgroundTaskCompletedEvent)
 
+#: Chained wake-ups allowed per user prompt. A wake-up turn can dispatch
+#: another background sub-agent, which would otherwise wake the session again
+#: and again — a fan-out that never converges. Each task still delivers
+#: exactly once; this only bounds how many turns one prompt can cascade into.
+MAX_BACKGROUND_WAKEUPS = 4
+
+#: The turn the session runs for itself when a background sub-agent lands.
+#: The actual result arrives as a ``<vtx:background-task-completion>`` message
+#: the loop injects before this turn's first model call.
+_BACKGROUND_WAKEUP_PROMPT = (
+    "A background sub-agent you dispatched has finished. Its full result is in "
+    "the conversation above, wrapped in <vtx:background-task-completion> tags. "
+    "Report what it found and act on it: fold the answer into the current task, "
+    "or, if it changes what needs doing, say so and continue. Do not re-dispatch "
+    "the same work."
+)
+
 
 class AgentRunnerMixin:
     _is_running: bool
@@ -74,6 +92,12 @@ class AgentRunnerMixin:
     _ask_user_future: asyncio.Future[AskUserResponse] | None
     _ask_user_tool_id: str | None
     _ask_dialog: AskUserDialog | None
+    # Background wake-up bookkeeping. ``_bg_wakeup_chain`` resets on every user
+    # prompt; ``_bg_wakeup_busy`` closes the window where a task settles just
+    # as the previous run is tearing down.
+    _bg_wakeup_chain: int
+    _bg_wakeup_busy: bool
+    _bg_unsubscribe: Callable[[], None] | None
 
     if TYPE_CHECKING:
         app: Any
@@ -94,9 +118,96 @@ class AgentRunnerMixin:
             self, message: ToolResultMessage
         ) -> tuple[str, str | None]: ...
         async def _load_session_by_id(self, session_id: str) -> None: ...
+        def _goal_session_id(self) -> str: ...
 
     def _should_notify_for_event(self, event: object) -> bool:
         return self._notification_event_type(event) is not None
+
+    # ------------------------------------------------------------------
+    # Background sub-agent wake-up
+    # ------------------------------------------------------------------
+
+    def watch_background_tasks(self) -> None:
+        """Wake the session when a sub-agent finishes while nothing is running.
+
+        A background dispatch returns immediately and its result is drained
+        *between* turns, so a sub-agent that outlived the parent's turn had no
+        way to reach the model: the notification sat in the record until the
+        user happened to type something, and the agent's own answer looked
+        like it had ignored the work entirely. Subscribing to settlement makes
+        the delivery automatic, which is the whole point of `background: true`.
+        """
+        if self._bg_unsubscribe is not None:
+            return
+        try:
+            manager = self._runtime.ensure_background_manager()
+        except Exception:
+            return
+        if manager is None:
+            return
+        self._bg_unsubscribe = manager.add_completion_listener(self._on_background_task_settled)
+
+    def unwatch_background_tasks(self) -> None:
+        if self._bg_unsubscribe is not None:
+            self._bg_unsubscribe()
+            self._bg_unsubscribe = None
+
+    def _on_background_task_settled(self, record: Any) -> None:
+        """Called on the event loop the moment a background task settles."""
+        if getattr(record, "status", None) not in ("completed", "error"):
+            return
+        # Mid-run the loop drains between turns and delivers it; mid-turn is
+        # not ours to interrupt.
+        if self._is_running or self._bg_wakeup_busy or self._pending_session_switch_id:
+            return
+        if self._bg_wakeup_chain >= MAX_BACKGROUND_WAKEUPS:
+            self._note_background_backlog()
+            return
+        if getattr(record, "parent_session_id", None) not in (None, self._goal_session_id()):
+            # A task from a different session cannot be continued here.
+            return
+
+        self._bg_wakeup_chain += 1
+        self._bg_wakeup_busy = True
+        try:
+            chat = self.query_one("#chat-log", ChatLog)
+        except Exception:
+            self._bg_wakeup_busy = False
+            return
+        label = getattr(record, "description", "sub-agent")
+        if getattr(record, "status", "") == "error":
+            chat.add_info_message(
+                f"Sub-agent '{label}' failed — resuming to handle it", error=True
+            )
+        else:
+            chat.show_status(f"Sub-agent '{label}' finished — resuming to fold in the result")
+        self._is_running = True
+        self.run_worker(self._run_background_wakeup(), exclusive=True)
+
+    async def _run_background_wakeup(self) -> None:
+        try:
+            await self._run_agent(_BACKGROUND_WAKEUP_PROMPT)
+        except Exception as exc:  # a failed wake-up must not wedge the session
+            with contextlib.suppress(Exception):
+                self.query_one("#chat-log", ChatLog).add_info_message(
+                    f"Could not resume for a finished sub-agent: {exc}", error=True
+                )
+        finally:
+            self._bg_wakeup_busy = False
+            self._is_running = False
+
+    def _note_background_backlog(self) -> None:
+        """Tell the user why the session stopped resuming on its own."""
+        try:
+            chat = self.query_one("#chat-log", ChatLog)
+        except Exception:
+            return
+        chat.add_info_message(
+            "Stopped auto-resuming for finished sub-agents after "
+            f"{MAX_BACKGROUND_WAKEUPS} chained turns. Their results are in the "
+            "conversation; ask for what you need next."
+        )
+        self._bg_wakeup_chain = 0
 
     def _notification_event_type(self, event: object) -> NotificationEvent | None:
         if not config.notifications.enabled:

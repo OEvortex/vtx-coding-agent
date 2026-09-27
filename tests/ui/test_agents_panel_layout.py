@@ -7,10 +7,12 @@ width from the terminal rather than from a hardcoded layout.
 
 from __future__ import annotations
 
+import asyncio
 import time
 
 import pytest
 
+from vtx.tui import agents_panel
 from vtx.tui.agents_panel import AgentsPanel
 from vtx.tui.app import Vtx
 from vtx.tui.goal_agents import REGISTRY
@@ -118,6 +120,39 @@ async def test_panel_retires_once_everything_lands(tmp_path, clean_registry) -> 
         run = REGISTRY.runs()[0]
         run.ended_at = time.monotonic() - DONE_LINGER_SECONDS - 1
         panel.refresh_panel()
+        await pilot.pause()
+        assert not panel.has_class("-visible")
+        assert panel.region.height == 0
+
+
+@pytest.mark.asyncio
+async def test_panel_unpins_itself_after_the_linger_window(
+    tmp_path, clean_registry, monkeypatch
+) -> None:
+    """The regression: a finished row used to stay pinned forever.
+
+    The animation timer stopped as soon as nothing was running, so the panel
+    never re-checked whether its linger window had closed — the last row sat
+    there for the rest of the session.
+    """
+    monkeypatch.setattr(agents_panel, "DONE_LINGER_SECONDS", 0.2)
+
+    app = Vtx(cwd=str(tmp_path))
+    async with app.run_test(size=(100, 30)) as pilot:
+        panel = app.query_one("#agents-panel", AgentsPanel)
+
+        _start(app, "t1", "Rate the VTX codebase")
+        await pilot.pause()
+        assert panel.has_class("-visible")
+
+        app._task_progress_callback(
+            "t1", {"kind": "subagent_end", "subagent": "Explore", "turns": 9, "tokens": 859_200}
+        )
+        await pilot.pause()
+        assert panel.has_class("-visible")
+
+        # No further events: only the panel's own clock can unpin it.
+        await asyncio.sleep(1.0)
         await pilot.pause()
         assert not panel.has_class("-visible")
         assert panel.region.height == 0

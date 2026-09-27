@@ -106,6 +106,33 @@ class BackgroundTaskManager:
         self._lock = asyncio.Lock()
         self._rehydrated = False
         self._closed = False
+        self._completion_listeners: list[Callable[[BackgroundTaskRecord], None]] = []
+
+    def add_completion_listener(
+        self, listener: Callable[[BackgroundTaskRecord], None]
+    ) -> Callable[[], None]:
+        """Call ``listener(record)`` when a task settles. Returns an unsubscribe.
+
+        ``drain_completed`` only reaches the parent loop *between* turns, so a
+        sub-agent that finished after the parent went idle had no way to say so:
+        its result sat in the record until the user typed something, which is
+        exactly the "it worked but never told me" case. This is that signal.
+        Listeners must not block the event loop.
+        """
+        self._completion_listeners.append(listener)
+
+        def _unsubscribe() -> None:
+            with contextlib.suppress(ValueError):
+                self._completion_listeners.remove(listener)
+
+        return _unsubscribe
+
+    def _notify_settled(self, record: BackgroundTaskRecord) -> None:
+        for listener in list(self._completion_listeners):
+            try:
+                listener(record)
+            except Exception:
+                log.exception("Background completion listener failed for %s", record.task_id)
 
     async def close(self) -> None:
         """Cancel any still-running tasks; flush their final state."""
@@ -187,6 +214,7 @@ class BackgroundTaskManager:
                 await self._persist_record(record)
                 if record.result_future is not None and not record.result_future.done():
                     record.result_future.set_result(record)
+                self._notify_settled(record)
 
         return runner
 
@@ -285,6 +313,7 @@ class BackgroundTaskManager:
             await self._persist_record(record)
             if record.result_future is not None and not record.result_future.done():
                 record.result_future.set_result(record)
+            self._notify_settled(record)
         return True
 
     def drain_completed(self) -> list[BackgroundTaskRecord]:

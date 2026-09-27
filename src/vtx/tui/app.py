@@ -15,6 +15,7 @@ import asyncio
 import os
 import time
 from collections import deque
+from collections.abc import Callable
 from pathlib import Path
 from typing import Any, ClassVar
 
@@ -166,6 +167,10 @@ class Vtx(
             anthropic_compat_auth_mode or config.llm.auth.anthropic_compat
         )
         self._is_running = False
+        # Background wake-up: a settled sub-agent resumes the session.
+        self._bg_wakeup_chain = 0
+        self._bg_wakeup_busy = False
+        self._bg_unsubscribe: Callable[[], None] | None = None
         self._last_ctrl_c_time = 0.0
         self._last_ctrl_d_time = 0.0
         self._ctrl_c_threshold = 2.0
@@ -699,6 +704,10 @@ class Vtx(
         agents_panel.refresh_panel()
         self.set_interval(0.5, self._sync_agent_counts)
 
+        # A sub-agent that finishes after this turn ends has to be able to wake
+        # the session, or its result sits unread until the user types something.
+        self.watch_background_tasks()
+
         self._startup_complete = True
         self._show_pending_update_notice_if_idle()
         input_box.focus()
@@ -723,6 +732,8 @@ class Vtx(
 
             release_lease(self._cwd, self._goal_session_id())
 
+        with contextlib.suppress(Exception):
+            self.unwatch_background_tasks()
         with contextlib.suppress(Exception):
             await self._hook_bridge.unload()
         with contextlib.suppress(Exception):
@@ -1132,4 +1143,6 @@ class Vtx(
         chat.add_user_message(display_text, highlighted_skill=highlighted_skill)
 
         self._is_running = True
+        # A fresh prompt re-opens the budget for background wake-ups.
+        self._bg_wakeup_chain = 0
         self.run_worker(self._run_agent(query_text, images=event.images), exclusive=True)

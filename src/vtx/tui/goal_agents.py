@@ -41,6 +41,10 @@ class SubagentRun:
 
     run_id: str
     name: str
+    #: The dispatch's short task label ("Rate the VTX codebase"). This is what
+    #: a human recognises the run by; ``description`` is the agent *profile's*
+    #: blurb, which for the default sub-agent is the same boilerplate every run.
+    label: str = ""
     description: str = ""
     model: str | None = None
     max_turns: int | None = None
@@ -64,6 +68,11 @@ class SubagentRun:
     @property
     def queued(self) -> bool:
         return self.status == "queued"
+
+    @property
+    def title(self) -> str:
+        """Best available one-liner for this run: task label, else profile."""
+        return self.label or self.description or self.name
 
     @property
     def finished(self) -> bool:
@@ -120,12 +129,14 @@ class SubagentRegistry:
             self._evict()
 
         if kind == "subagent_queued":
+            run.label = str(event.get("label") or run.label)
             run.description = str(event.get("description") or run.description)
             run.model = event.get("model") or run.model
             run.max_turns = event.get("max_turns") or run.max_turns
             run.queue_position = int(event.get("position") or 0)
             run.status = "queued"
         elif kind == "subagent_start":
+            run.label = str(event.get("label") or run.label)
             run.description = str(event.get("description") or "")
             run.model = event.get("model")
             run.max_turns = event.get("max_turns")

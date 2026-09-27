@@ -132,11 +132,13 @@ Dispatch a fresh sub-agent with its own tools, session and system prompt. It can
 | `prompt` | string, required | Full instructions incl. context |
 | `subagent_type` | string | Name of an agent in `.vtx/agent/<name>.py`; default: the default sub-agent |
 | `model` | string | Model override (default: parent's) |
-| `background` | bool | Run concurrently; returns a task ID now, result arrives next turn |
+| `background` | bool | Run concurrently; returns a task ID now, result delivered when it lands |
 
 There are no built-in sub-agent presets: `subagent_type` is matched against the agents loaded from `.vtx/agent/` and `~/.vtx/agent/`, and an unknown or empty name runs the default sub-agent (the parent's tool surface and instructions, 200-turn budget).
 
 At most `task.max_concurrent` sub-agents run at once (default 4, `0` = uncapped). The rest wait in a FIFO queue — the pinned **Agents** panel above the editor lists the running ones and the queued count, and the info bar repeats `N running, M queued agents`. A config reload resizes the live queue.
+
+With `background: true` the dispatch returns a `task_id` and the sub-agent keeps working after the turn ends. When it lands, the session resumes itself: the result is injected into the conversation and the agent gets a turn to act on it, so you do not have to send a message to collect an answer you already paid for. A wake-up turn can dispatch again, so cascading resumes stop after a few and the chat says so — the results are still there to read.
 
 Results are capped at 32,000 chars with the last 200 transcript lines attached.
 

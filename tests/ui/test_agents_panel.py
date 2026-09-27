@@ -3,6 +3,7 @@
 import pytest
 from textual.app import App, ComposeResult
 
+from vtx.tui import task_ui
 from vtx.tui.agents_panel import (
     AgentsPanel,
     activity_for,
@@ -68,7 +69,12 @@ def test_row_shows_counters_and_activity() -> None:
     registry = SubagentRegistry()
     registry.record(
         "a",
-        {"kind": "subagent_start", "subagent": "Plan", "description": "Plan agent (read-only)"},
+        {
+            "kind": "subagent_start",
+            "subagent": "Plan",
+            "label": "Map the refactor",
+            "description": "Plan agent (read-only)",
+        },
     )
     registry.record("a", {"kind": "tool_start", "subagent": "Plan", "tool_name": "read"})
     registry.record("a", {"kind": "turn_end", "subagent": "Plan", "turns": 1, "tokens": 8700})
@@ -78,39 +84,55 @@ def test_row_shows_counters_and_activity() -> None:
     registry.record("a", {"kind": "tool_result", "subagent": "Plan", "tool_name": "read"})
 
     text = render_agents(registry.runs(), width=100).plain
-    assert "Plan agent (read-only)" in text
-    assert "1 tool use · 8.7k tokens" in text
+    # The task leads; the agent's profile blurb is secondary detail.
+    assert "Map the refactor" in text
+    assert "Plan" in text
+    assert "Plan agent (read-only)" not in text
+    assert "1 tool · 8.7k tokens" in text
     # No tool in flight, so the sub-line shows what the agent last said.
     assert "pi-chonky-subagents is a [pi…" in text
 
 
-def test_finished_run_shows_its_last_words() -> None:
+def test_finished_run_collapses_into_a_summary_line() -> None:
     registry = SubagentRegistry()
-    registry.record("a", {"kind": "subagent_start", "subagent": "Plan"})
+    registry.record("a", {"kind": "subagent_start", "subagent": "Plan", "label": "Find the bug"})
     registry.record(
         "a", {"kind": "text_delta", "subagent": "Plan", "delta": "found the auth bug in login()"}
     )
     registry.record("a", {"kind": "subagent_end", "subagent": "Plan", "turns": 2, "tokens": 900})
     run = registry.runs()[0]
+    # The run keeps its last words for anyone who asks...
     assert activity_for(run) == "found the auth bug in login()"
-    assert "✓" in render_agents([run], width=100).plain
+    # ...but the strip does not spend a two-line row on it.
+    text = render_agents([run], width=100).plain
+    assert text == "● Agents\n│ ✓ 1 finished · 900 tokens"
 
 
-def test_error_run_shows_the_error() -> None:
+def test_failed_runs_are_summarised_with_a_failure_count() -> None:
+    """A dead run gets no row of its own; the summary has to say it failed."""
     registry = SubagentRegistry()
-    registry.record("a", {"kind": "subagent_start", "subagent": "Plan"})
+    registry.record("a", {"kind": "subagent_start", "subagent": "Plan", "label": "Plan it"})
     registry.record("a", {"kind": "error", "subagent": "Plan", "error": "rate limited"})
     registry.record("a", {"kind": "subagent_end", "subagent": "Plan"})
+    registry.record("b", {"kind": "subagent_start", "subagent": "Plan", "label": "Plan it again"})
+    registry.record("b", {"kind": "subagent_end", "subagent": "Plan", "turns": 2, "tokens": 900})
+
     text = render_agents(registry.runs(), width=100).plain
-    assert "✗" in text
-    assert "rate limited" in text
+    summary = text.rsplit("\n", 1)[-1]
+    assert summary.startswith("│ ✗")
+    assert "2 finished" in summary
+    assert "1 failed" in summary
+    # The error text stays reachable on the run itself.
+    assert activity_for(registry.runs()[0]) == "rate limited"
 
 
 def test_rows_are_capped_and_the_rest_collapse() -> None:
     registry = _registry_with(running=10)
     text = render_agents(registry.runs(), width=100, max_rows=3).plain
-    assert "… +7 more agents" in text
-    assert sum(1 for line in text.splitlines() if "─ " in line) == 3
+    assert "… +7 more running" in text
+    # Three real rows (each with a spinner) plus the collapse line.
+    spinners = sum(1 for line in text.splitlines() if any(f in line for f in task_ui.SPINNER))
+    assert spinners == 3
 
 
 def test_last_visible_row_closes_the_tree() -> None:
@@ -177,11 +199,12 @@ def test_turn_boundary_keeps_a_background_subagent_alive() -> None:
         REGISTRY.clear()
 
 
-def test_visible_runs_puts_running_first_and_omits_queued() -> None:
+def test_only_running_agents_get_rows() -> None:
+    """Queued ones ride the count line, finished ones the summary line."""
     registry = _registry_with(running=1, queued=2, finished=1)
-    names = [run.name for run in visible_runs(registry.runs())]
-    assert len(names) == 2
-    assert all(run.queued is False for run in visible_runs(registry.runs()))
+    rows = visible_runs(registry.runs())
+    assert len(rows) == 1
+    assert rows[0].running is True
 
 
 def test_narrow_terminal_truncates_without_overflowing() -> None:

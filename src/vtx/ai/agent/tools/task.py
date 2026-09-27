@@ -282,6 +282,7 @@ async def _run_subagent(
     model_override: str | None,
     progress_callback: Callable[[str, dict], None] | None,
     tool_call_id: str,
+    label: str = "",
 ) -> SubagentRunResult:
     """Admit one sub-agent to the shared scheduler, then run it to completion.
 
@@ -290,6 +291,10 @@ async def _run_subagent(
     than inside the run) means a queued sub-agent has not yet built a session
     or a provider, and both the chat block and the pinned Agents panel can
     report it as queued instead of pretending to be working.
+
+    ``label`` is the dispatch's 3-5 word task description. It rides along
+    because it is what a human recognises the row by; the spec description is
+    boilerplate about the agent profile, not about this run.
     """
     scheduler = get_scheduler()
     emit = _make_progress_emitter(spec, tool_call_id, progress_callback)
@@ -299,6 +304,7 @@ async def _run_subagent(
         emit(
             "subagent_queued",
             description=spec.description,
+            label=label,
             model=sub_model,
             max_turns=spec.max_turns,
             position=scheduler.queued + 1,
@@ -314,6 +320,7 @@ async def _run_subagent(
             model_override=model_override,
             progress_callback=progress_callback,
             tool_call_id=tool_call_id,
+            label=label,
         )
     finally:
         scheduler.release()
@@ -327,6 +334,7 @@ async def _run_admitted_subagent(
     model_override: str | None,
     progress_callback: Callable[[str, dict], None] | None,
     tool_call_id: str,
+    label: str = "",
 ) -> SubagentRunResult:
     """Run a single sub-agent to completion."""
     from dataclasses import replace as dc_replace
@@ -385,6 +393,7 @@ async def _run_admitted_subagent(
     _emit(
         "subagent_start",
         description=spec.description,
+        label=label,
         model=sub_model,
         max_turns=spec.max_turns,
         tool_counts=dict(tool_counts),
@@ -547,6 +556,7 @@ class TaskTool(BaseTool[TaskParams]):
             model_override=params.model,
             progress_callback=progress_cb,
             tool_call_id=tool_call_id,
+            label=params.description,
         )
 
         if sub_result.error is not None and not sub_result.final_text:
@@ -649,6 +659,7 @@ class TaskTool(BaseTool[TaskParams]):
                 model_override=params.model,
                 progress_callback=progress_cb,
                 tool_call_id=tool_call_id,
+                label=params.description,
             )
 
         record = await manager.register(

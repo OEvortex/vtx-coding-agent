@@ -209,6 +209,14 @@ class Agent:
 
         yield AgentStartEvent()
 
+        # Deliver anything that settled while the session was idle *before* the
+        # first model call of this run. Draining only between turns meant a
+        # sub-agent that finished after the parent went idle was appended to
+        # the session but not shown to the model until the turn after next —
+        # the "it ran, it finished, and I never got the answer" case.
+        for evt in self._drain_background_notifications():
+            yield evt
+
         turn = 0
         stop_reason = StopReason.STOP
         was_interrupted = False
