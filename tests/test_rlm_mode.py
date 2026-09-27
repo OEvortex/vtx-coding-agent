@@ -282,12 +282,16 @@ def test_tool_first_mode_keeps_default_tools():
 
     runtime = ConversationRuntime(cwd=str(Path(".")), tools=[])
     runtime._apply_active_agent_to_runtime()
-    tool_names = [t.name for t in runtime.tools]
+    tool_names = {t.name for t in runtime.tools}
     # The surgical surface, in full — but not the REPL. ``ipython`` is
     # registered as available in every mode and default only in RLM, so a
     # tool-first agent must not be handed a kernel it has no lifecycle for.
+    #
+    # Asserted as "contains the surgical tools" rather than an exact set: the
+    # default set legitimately grows (refine, and whatever comes next), and a
+    # test that fails on every new tool is noise rather than signal.
     assert "ipython" not in tool_names
-    assert set(tool_names) == {
+    assert {
         "read",
         "edit",
         "write",
@@ -298,7 +302,7 @@ def test_tool_first_mode_keeps_default_tools():
         "ask_user",
         "task",
         "goal",
-    }
+    } <= tool_names
 
 
 def test_repl_tool_is_default_only_in_rlm_mode(monkeypatch):

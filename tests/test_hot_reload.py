@@ -237,3 +237,54 @@ class TestRuntimeRebind:
         from vtx.ai.agent.session import Session
 
         Session("s-reload", str(tmp_path), persist=False).set_system_prompt("x")
+
+
+class TestModeToolPolicy:
+    """``code_first`` runs REPL-first, so a mode edit has to reshape the live
+    tool set. The policy is extracted into one runtime method precisely so this
+    can happen mid-session rather than only at construction."""
+
+    def _runtime(self, tmp_path: Path):
+        from vtx.ai.agent.runtime import ConversationRuntime
+        from vtx.ai.agent.tools import get_tools_with_extensions
+
+        runtime = ConversationRuntime(cwd=str(tmp_path), tools=[])
+        runtime.tools = get_tools_with_extensions()
+        return runtime
+
+    def test_tool_first_keeps_the_full_surface(self, tmp_path: Path):
+        runtime = self._runtime(tmp_path)
+        runtime.apply_mode_tool_policy()
+        assert len(runtime.tools) > 1
+        assert "ipython" not in {t.name for t in runtime.tools}
+
+    def test_code_first_collapses_to_the_repl(self, tmp_path: Path):
+        import vtx.ai.config as config_mod
+
+        runtime = self._runtime(tmp_path)
+        config_mod.config._parsed.mode = "code_first"
+        try:
+            runtime.apply_mode_tool_policy()
+            assert [t.name for t in runtime.tools] == ["ipython"]
+        finally:
+            config_mod.config._parsed.mode = "tool_first"
+
+    def test_policy_leaves_a_fresh_list_alone_in_tool_first(self, tmp_path: Path):
+        """Restoring is the caller's job: it owns the base list."""
+        runtime = self._runtime(tmp_path)
+        runtime.tools = [runtime.tools[0]]
+        runtime.apply_mode_tool_policy()
+        assert len(runtime.tools) == 1, "tool_first must not re-collapse or expand"
+
+    def test_rebind_applies_the_policy_for_the_new_mode(self, tmp_path: Path):
+        import vtx.ai.config as config_mod
+        from vtx.ai.agent.runtime import ConversationRuntime
+        from vtx.ai.agent.tools import get_tools_with_extensions
+
+        runtime = ConversationRuntime(cwd=str(tmp_path), tools=[])
+        config_mod.config._parsed.mode = "code_first"
+        try:
+            runtime.rebind_resources(tools=get_tools_with_extensions())
+            assert [t.name for t in runtime.tools] == ["ipython"]
+        finally:
+            config_mod.config._parsed.mode = "tool_first"

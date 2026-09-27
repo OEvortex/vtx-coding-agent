@@ -2,7 +2,8 @@
 
 Provides the :class:`BaseTool` contract, schema shaping for LLM tool
 definitions, dynamic tool registration/lookup APIs, and core harness tools
-(:class:`AskUserTool`, :class:`TaskTool`, :class:`WebTool`, :class:`GoalTool`).
+(:class:`AskUserTool`, :class:`TaskTool`, :class:`WebTool`, :class:`GoalTool`,
+:class:`RefineTool`).
 """
 
 from __future__ import annotations
@@ -16,6 +17,7 @@ from ..goal.tools import GoalParams, GoalTaskItem, GoalTool
 from .ask_user import AskUserParams, AskUserTool
 from .base import BaseTool
 from .ipython import IpythonParams, IpythonTool
+from .refine import RefineParams, RefineTool
 from .task import SubagentSpec, TaskParams, TaskTool
 from .web import SearchParams, WebSearchTool, WebTool
 
@@ -29,6 +31,8 @@ __all__ = [
     "GoalTool",
     "IpythonParams",
     "IpythonTool",
+    "RefineParams",
+    "RefineTool",
     "SearchParams",
     "SubagentSpec",
     "TaskParams",
@@ -218,4 +222,5 @@ register_tool(AskUserTool(), is_default=True, parent_only=True)
 register_tool(TaskTool(), is_default=True, parent_only=False)
 register_tool(WebTool(), is_default=True, parent_only=False)
 register_tool(GoalTool(), is_default=True, parent_only=True)
+register_tool(RefineTool(), is_default=True, parent_only=True)
 register_tool(IpythonTool(), is_default=True, parent_only=False)

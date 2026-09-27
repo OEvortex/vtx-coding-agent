@@ -46,6 +46,7 @@ class _Snapshot:
     tools: list[str]
     active_agent: str | None
     mode: str
+    settings: dict[str, str]
 
 
 class ReloadCommands(CommandSupport):
@@ -147,6 +148,9 @@ class ReloadCommands(CommandSupport):
         self._tools = tools
 
         # 8. Rebind, then refresh context and the system prompt in one step.
+        #    rebind_resources applies the mode tool policy, so a `mode:` edit in
+        #    config.yml switches the live tool surface over rather than only
+        #    changing what the prompt claims.
         self._runtime.rebind_resources(
             tools=tools,
             extensions=loaded.bus,
@@ -159,9 +163,12 @@ class ReloadCommands(CommandSupport):
         #    which just changed.
         self._sync_slash_commands()
 
+        # 10. Push the settings that live outside the config object.
+        applied_settings = self._apply_reloaded_settings(before.settings)
+
         after = self._reload_snapshot()
 
-        # 10. Extensions re-initialize against the new module objects.
+        # 11. Extensions re-initialize against the new module objects.
         if loaded.bus is not None and loaded.bus.handler_count("session_start"):
             loaded.bus.emit_sync(
                 "session_start",
@@ -170,8 +177,7 @@ class ReloadCommands(CommandSupport):
                 reason="reload",
             )
 
-        self._report_reload(before, after)
-        self._refresh_reload_dependent_ui()
+        self._report_reload(before, after, applied_settings)
 
     def _reload_snapshot(self) -> _Snapshot:
         """Cheap pre/post comparison so the report can say what actually changed."""
@@ -188,7 +194,65 @@ class ReloadCommands(CommandSupport):
             tools=sorted(t.name for t in self._tools),
             active_agent=active.definition.name if active else None,
             mode=config.mode,
+            settings=self._settings_snapshot(),
         )
+
+    @staticmethod
+    def _settings_snapshot() -> dict[str, str]:
+        """The settings whose effect is not automatic on re-read.
+
+        Most config is read at the moment it is used — the tool-result budget,
+        the compaction threshold, ``colored_tool_badge``, ``thinking_lines`` — so
+        reloading the file is enough for those. These are the ones something
+        has to actively push at a live widget or a live tool set, and they are
+        what the before/after diff reports on.
+        """
+        with contextlib.suppress(Exception):
+            return {
+                "theme": config.ui.theme,
+                "permissions": config.permissions.mode,
+                "thinking_lines": str(config.ui.thinking_lines),
+                "colored_badge": str(config.ui.colored_tool_badge).lower(),
+                "notifications": "on" if config.notifications.enabled else "off",
+                "ponytail": str(config.llm.system_prompt.ponytail).lower(),
+                "git_context": str(config.llm.system_prompt.git_context).lower(),
+            }
+        return {}
+
+    def _apply_reloaded_settings(self, before: dict[str, str]) -> list[str]:
+        """Push changed settings into the live UI. Returns what was applied.
+
+        ``reload_config()`` has already updated the in-memory config, so the
+        only thing left is the part that lives outside it: a stylesheet Textual
+        compiled at mount, and a footer label.
+        """
+        applied: list[str] = []
+        after = self._settings_snapshot()
+
+        if before.get("theme") != after.get("theme") and "theme" in after:
+            with contextlib.suppress(Exception):
+                # get_styles() reads config.ui.colors, which UIConfig derives
+                # from the theme, so this rebuilds the sheet for the new theme.
+                self._apply_theme(after["theme"])
+                applied.append(f"theme -> {after['theme']}")
+
+        if before.get("permissions") != after.get("permissions") and "permissions" in after:
+            with contextlib.suppress(Exception):
+                infobar = self.query_one("#compact-footer", InfoBar)
+                infobar.set_permission_mode(after["permissions"])
+                applied.append(f"permissions -> {after['permissions']}")
+
+        if before.get("thinking_lines") != after.get("thinking_lines"):
+            applied.append(f"thinking lines -> {after.get('thinking_lines')}")
+        if before.get("colored_badge") != after.get("colored_badge"):
+            applied.append(f"tool badge -> {after.get('colored_badge')}")
+        if before.get("notifications") != after.get("notifications"):
+            applied.append(f"notifications -> {after.get('notifications')}")
+        if before.get("ponytail") != after.get("ponytail"):
+            applied.append(f"ponytail -> {after.get('ponytail')}")
+        if before.get("git_context") != after.get("git_context"):
+            applied.append(f"git context -> {after.get('git_context')}")
+        return applied
 
     def _invalidate_extension_modules(self) -> None:
         """Forget imported extension modules so edited code is actually re-read."""
@@ -199,7 +263,9 @@ class ReloadCommands(CommandSupport):
             # within this call.
             sys.modules.pop(name, None)
 
-    def _report_reload(self, before: _Snapshot, after: _Snapshot) -> None:
+    def _report_reload(
+        self, before: _Snapshot, after: _Snapshot, applied_settings: list[str]
+    ) -> None:
         chat = self.query_one("#chat-log", ChatLog)
         changes: list[str] = []
         if before.tools != after.tools:
@@ -220,21 +286,13 @@ class ReloadCommands(CommandSupport):
 
         summary = "; ".join(changes) if changes else "no visible changes"
         chat.add_info_message(f"Reloaded config, extensions, agents, tools, skills. ({summary})")
-        # Theme is the one thing a reload genuinely cannot do: Textual compiles
-        # the stylesheet at mount, so a new theme needs the process back.
-        chat.add_info_message(
-            "Themes and terminal-level settings still need a restart.", warning=True
-        )
-
-    def _refresh_reload_dependent_ui(self) -> None:
-        """Re-render the bars that show config-derived state."""
-        try:
-            infobar = self.query_one(InfoBar)
-        except Exception:
-            return
-        infobar.set_permission_mode(config.permissions.mode)
-        with contextlib.suppress(Exception):
-            infobar.refresh(layout=True)
+        # Name the settings that were pushed at live widgets, so a theme or
+        # permission change in config.yml is visibly confirmed rather than
+        # silently assumed.
+        if applied_settings:
+            chat.add_info_message("Applied settings: " + ", ".join(applied_settings))
+        else:
+            chat.add_info_message("Settings unchanged.")
 
 
 __all__ = ["ReloadCommands"]

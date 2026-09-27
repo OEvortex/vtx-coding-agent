@@ -57,10 +57,7 @@ class SettingsCommands(CommandSupport):
         set_theme(theme_id)
         self._apply_theme(theme_id)
         chat = self.query_one("#chat-log", ChatLog)
-        chat.add_info_message(
-            f"Theme changed to {theme_id}. Full theme refresh applies when vtx is restarted.",
-            warning=True,
-        )
+        chat.add_info_message(f"Theme changed to {theme_id}.")
 
     def _handle_permissions_command(self, args: str) -> None:
         descriptions: dict[PermissionMode, str] = {

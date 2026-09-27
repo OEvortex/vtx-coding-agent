@@ -311,6 +311,9 @@ async def _run_subagent(
         session=session,
         cwd=parent_ctx.cwd,
         system_prompt=system_prompt,
+        # Depth 1: the parent loop owns harness refinement, so a child neither
+        # runs the auto-refine gate nor drains the pending queue.
+        depth=1,
     )
 
     result = SubagentRunResult(session_id=session.id)

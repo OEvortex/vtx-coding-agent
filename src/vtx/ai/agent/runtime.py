@@ -130,6 +130,9 @@ class ConversationRuntime:
         self._progress_callback = progress_callback
         self._background_manager = None  # installed via ensure_background_manager
         self._background_manager_token = None
+        # Declared up front: apply_mode_tool_policy() runs below and mirrors the
+        # final tool set onto the agent when one exists.
+        self.agent: Agent | None = None
 
         # Resolve the initial agent (CLI > env > config > none). The CLI and
         # the launch path may pass an explicit ``active_agent``; otherwise we
@@ -176,15 +179,7 @@ class ConversationRuntime:
         # In RLM mode, collapse the active tool set to just the REPL so the
         # model behaves like Prime Agent: one persistent ipython, no
         # surgical tool surface.
-        if vtx_config.mode == "code_first":
-            from vtx.ai.agent.tools import get_all_tools
-
-            base_pool = get_all_tools()
-            repl_tool = base_pool.get("ipython")
-            if repl_tool is not None:
-                self.tools = [repl_tool]
-            else:
-                self.tools = []
+        self.apply_mode_tool_policy()
 
         # Per-session extension list (the ones contributed to the active
         # agent, if any). The launch path is responsible for passing the
@@ -194,7 +189,6 @@ class ConversationRuntime:
 
         self.provider: BaseProvider | None = None
         self.session: Session | None = None
-        self.agent: Agent | None = None
         self.context: Context | None = None
 
     # ---- agent lifecycle ------------------------------------------------
@@ -359,14 +353,7 @@ class ConversationRuntime:
         # In RLM mode, collapse the active tool set to just the REPL so the
         # model behaves like Prime Agent: one persistent ipython, no
         # surgical tool surface.
-        if vtx_config.mode == "code_first":
-            repl_tool = base_pool.get("ipython")
-            if repl_tool is not None:
-                self.tools = [repl_tool]
-            else:
-                self.tools = []
-            if self.agent is not None:
-                self.agent.tools = self.tools
+        self.apply_mode_tool_policy()
 
         # Apply the agent's model/provider/thinking overrides.
         if active is not None:
@@ -1094,6 +1081,28 @@ class ConversationRuntime:
         self._apply_model_info(self.agent)
         return self.agent
 
+    def apply_mode_tool_policy(self) -> None:
+        """Collapse or restore the tool set for the *current* config mode.
+
+        ``code_first`` runs REPL-first: one persistent ``ipython`` and no
+        surgical surface, so the model composes tool calls as code. ``tool_first``
+        gets the surgical defaults plus extensions.
+
+        This lives in one place because a mode switch has to be able to run it
+        mid-session. ``/reload`` calls it after re-reading config, which is what
+        makes editing ``mode:`` in config.yml and reloading actually switch the
+        running agent over instead of only changing what the prompt claims.
+        """
+        from vtx.ai.agent.tools import REPL_TOOL_NAME, get_all_tools
+
+        if vtx_config.mode != "code_first":
+            return
+
+        repl_tool = get_all_tools().get(REPL_TOOL_NAME)
+        self.tools = [repl_tool] if repl_tool is not None else []
+        if self.agent is not None:
+            self.agent.tools = self.tools
+
     def reload_context(self) -> None:
         if self.agent is not None:
             self.agent.reload_context()
@@ -1117,9 +1126,12 @@ class ConversationRuntime:
         changes what the agent *is made of*, not what it has already said — so
         the whole runtime is never rebuilt, only rebound.
 
-        Order matters: tools must be set before :meth:`reload_context`, because
-        the prompt builder is called with the active tool set and a stale list
-        would be baked into the new system prompt.
+        Order matters twice over. The mode tool policy has to run before
+        :meth:`reload_context`, because the prompt builder is called with the
+        active tool set and both a stale list and an un-collapsed
+        ``code_first`` surface would be baked into the new system prompt. And
+        the header prompt is dropped afterwards, because it is preferred over a
+        fresh build and would otherwise keep being sent.
         """
         if tools is not None:
             self.tools = tools
@@ -1136,6 +1148,10 @@ class ConversationRuntime:
             self.agent_registry.set_active(active_agent.definition.name)
         if loaded_extensions is not None:
             self.set_loaded_extensions(loaded_extensions)
+        # Picks up a `mode:` edit in config.yml: collapses the surface to the
+        # REPL in code_first, and leaves the freshly computed list alone in
+        # tool_first.
+        self.apply_mode_tool_policy()
         self.reload_context()
         # The header prompt is preferred over a fresh build, so a reload has to
         # drop it or the pre-reload prompt keeps being sent.
