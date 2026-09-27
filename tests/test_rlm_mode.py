@@ -68,7 +68,7 @@ def test_build_system_prompt_uses_rlm_prompt_when_mode_is_rlm(tmp_path, monkeypa
         "recent_models": {"entries": []},
         "extensions": [],
         "agents": {"default": "", "switch_mode": "lock", "files": []},
-        "task": {"subagent_presets": []},
+        "task": {"max_concurrent": 4},
         "mode": "code_first",
     }
     cfg = Config(data)
@@ -116,7 +116,7 @@ def test_build_system_prompt_uses_default_when_mode_is_tool_first(tmp_path, monk
         "recent_models": {"entries": []},
         "extensions": [],
         "agents": {"default": "", "switch_mode": "lock", "files": []},
-        "task": {"subagent_presets": []},
+        "task": {"max_concurrent": 4},
         "mode": "tool_first",
     }
     cfg = Config(data)
@@ -225,7 +225,7 @@ def test_rlm_mode_restricts_runtime_tools_to_repl():
         "recent_models": {"entries": []},
         "extensions": [],
         "agents": {"default": "", "switch_mode": "lock", "files": []},
-        "task": {"subagent_presets": []},
+        "task": {"max_concurrent": 4},
         "mode": "code_first",
     }
     cfg = Config(data)
@@ -274,7 +274,7 @@ def test_tool_first_mode_keeps_default_tools():
         "recent_models": {"entries": []},
         "extensions": [],
         "agents": {"default": "", "switch_mode": "lock", "files": []},
-        "task": {"subagent_presets": []},
+        "task": {"max_concurrent": 4},
         "mode": "tool_first",
     }
     cfg = Config(data)

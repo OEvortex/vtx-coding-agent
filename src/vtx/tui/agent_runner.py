@@ -47,7 +47,7 @@ from vtx.core.notify import NotificationEvent, notify
 from vtx.core.types import ImageContent, StopReason, ToolResultMessage
 from vtx.tui.ask_user import AskUserDialog
 from vtx.tui.chat import ChatLog
-from vtx.tui.goal_agents import reset_subagents
+from vtx.tui.goal_agents import prune_finished_subagents
 from vtx.tui.widgets import InfoBar, StatusLine
 
 _NOTIFY_EVENTS = (AgentEndEvent, ToolApprovalEvent, BackgroundTaskCompletedEvent)
@@ -135,10 +135,11 @@ class AgentRunnerMixin:
         # A revert staged by /undo is only committed now, when the user has
         # actually sent something. Until then /redo still works.
         self._commit_staged_revert()
-        # Sub-agents are scoped to a run, so the goal beacon's "Agents" rows
-        # describe the work in flight now rather than every sub-agent ever
-        # dispatched in this session.
-        reset_subagents()
+        # Age out sub-agents that ended a while ago. Pruning rather than
+        # clearing matters: a background sub-agent dispatched last turn is
+        # still working, and wiping the registry here would make the Agents
+        # panel blink out from under a fan-out the user is still waiting on.
+        prune_finished_subagents()
 
         while True:
             was_interrupted = False

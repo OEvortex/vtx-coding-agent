@@ -143,6 +143,40 @@ def test_panel_shows_while_a_subagent_is_queued_or_running() -> None:
     assert should_show(_registry_with(queued=3).runs()) is True
 
 
+def test_pruning_drops_old_finished_runs_but_never_live_ones() -> None:
+    """Turn-boundary housekeeping must not blink out a background sub-agent."""
+    from vtx.tui.goal_agents import REGISTRY
+
+    REGISTRY.clear()
+    try:
+        REGISTRY.record("live", {"kind": "subagent_start", "subagent": "Explore"})
+        REGISTRY.record("queued", {"kind": "subagent_queued", "subagent": "Explore"})
+        REGISTRY.record("old", {"kind": "subagent_start", "subagent": "Explore"})
+        REGISTRY.record("old", {"kind": "subagent_end", "subagent": "Explore"})
+
+        dropped = REGISTRY.prune_finished(0.0)
+        assert dropped == 1
+        assert {run.run_id for run in REGISTRY.runs()} == {"live", "queued"}
+    finally:
+        REGISTRY.clear()
+
+
+def test_turn_boundary_keeps_a_background_subagent_alive() -> None:
+    from vtx.tui.goal_agents import REGISTRY, prune_finished_subagents
+
+    REGISTRY.clear()
+    try:
+        # A background dispatch from the previous turn, still running.
+        REGISTRY.record("bg", {"kind": "subagent_start", "subagent": "Explore"})
+        REGISTRY.record("old", {"kind": "subagent_start", "subagent": "Explore"})
+        REGISTRY.record("old", {"kind": "subagent_end", "subagent": "Explore"})
+
+        prune_finished_subagents(0.0)
+        assert [run.run_id for run in REGISTRY.runs()] == ["bg"]
+    finally:
+        REGISTRY.clear()
+
+
 def test_visible_runs_puts_running_first_and_omits_queued() -> None:
     registry = _registry_with(running=1, queued=2, finished=1)
     names = [run.name for run in visible_runs(registry.runs())]

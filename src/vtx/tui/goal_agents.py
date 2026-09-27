@@ -29,6 +29,12 @@ MAX_TRACKED = 48
 DONE_LINGER_SECONDS = 8.0
 
 
+#: How long a finished run stays worth keeping once a new turn starts. Long
+#: enough that a sub-agent which just landed is still visible on the next
+#: screen, short enough that the strip is never a session log.
+FINISHED_TTL_SECONDS = 180.0
+
+
 @dataclass
 class SubagentRun:
     """One dispatched sub-agent."""
@@ -197,6 +203,26 @@ class SubagentRegistry:
         """Tracked runs, oldest dispatch first (callers sort by status)."""
         return [self._runs[key] for key in self._order if key in self._runs]
 
+    def prune_finished(
+        self, max_age: float = FINISHED_TTL_SECONDS, *, now: float | None = None
+    ) -> int:
+        """Forget runs that ended longer ago than ``max_age``. Returns the count.
+
+        Only finished runs age out. A live sub-agent is never pruned, however
+        old its dispatch was.
+        """
+        now = time.monotonic() if now is None else now
+        dropped = 0
+        for key in list(self._order):
+            run = self._runs.get(key)
+            if run is None or not run.finished or run.ended_at is None:
+                continue
+            if now - run.ended_at > max_age:
+                self._order.remove(key)
+                self._runs.pop(key, None)
+                dropped += 1
+        return dropped
+
     def counts(self) -> tuple[int, int, int]:
         """``(running, queued, finished)``."""
         all_runs = self.runs()
@@ -229,6 +255,12 @@ def record_subagent_event(run_id: str, event: dict) -> None:
     REGISTRY.record(run_id, event)
 
 
-def reset_subagents() -> None:
-    """Drop all tracked sub-agents (start of a new goal run / new turn)."""
-    REGISTRY.clear()
+def prune_finished_subagents(max_age: float = FINISHED_TTL_SECONDS) -> None:
+    """Turn-boundary housekeeping: forget sub-agents that ended long ago.
+
+    This replaced a blanket reset at the start of every run. A reset looked
+    tidy — the strip only ever described the work in flight — but it erased
+    background sub-agents the moment the user sent their next message, which
+    is exactly the kind that outlives the turn that dispatched them.
+    """
+    REGISTRY.prune_finished(max_age)

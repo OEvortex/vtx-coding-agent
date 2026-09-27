@@ -252,10 +252,10 @@ class AgentsPanel(Static):
             self._timer = None
 
     def _on_tick(self) -> None:
-        # Only animate while something is actually running; a queued-only or
-        # finished panel should not burn a repaint 8 times a second.
-        runs = REGISTRY.runs()
-        if not any(run.running for run in runs) and not should_show(runs):
+        # Only animate while a sub-agent is actually running. A queued-only or
+        # finished panel has nothing to animate, and its content only changes
+        # when a progress event arrives — which restarts this timer.
+        if not any(run.running for run in REGISTRY.runs()):
             self._stop_timer()
         self._frame += 1
         self.refresh_panel()

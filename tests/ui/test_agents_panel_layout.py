@@ -11,8 +11,8 @@ import time
 
 import pytest
 
-from vtx.tui.app import Vtx
 from vtx.tui.agents_panel import AgentsPanel
+from vtx.tui.app import Vtx
 from vtx.tui.goal_agents import REGISTRY
 from vtx.tui.widgets import InfoBar
 
@@ -34,7 +34,7 @@ def _start(app: Vtx, call_id: str, description: str) -> None:
 @pytest.mark.asyncio
 async def test_panel_is_hidden_with_no_subagents(tmp_path, clean_registry) -> None:
     app = Vtx(cwd=str(tmp_path))
-    async with app.run_test(size=(100, 30)) as pilot:
+    async with app.run_test(size=(100, 30)):
         panel = app.query_one("#agents-panel", AgentsPanel)
         assert not panel.has_class("-visible")
         assert panel.region.height == 0
