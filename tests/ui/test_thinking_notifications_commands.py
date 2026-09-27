@@ -248,3 +248,94 @@ def test_thinking_command_non_thinking_model_shows_only_none(monkeypatch):
     assert fake._runtime.effective_thinking_levels == ["none"]
     fake._handle_thinking_command("")
     assert [(item.value, item.label) for item in fake.completion_list.items] == [("none", "none")]
+
+
+def test_max_level_from_the_catalog_is_cyclable_without_crashing(monkeypatch):
+    """Regression for the ``ctrl+t`` crash: models.dev advertised the ``max``
+    effort, the cycle offered it, and the provider raised
+    ``ValueError: Invalid thinking level 'max'``."""
+    from vtx.ai.models import ApiType, Model
+
+    fake = FakeCommands()
+    fake._runtime.model = "reasoning-max"
+    fake._runtime.model_provider = "fake"
+    fake._runtime.thinking_level = "xhigh"
+    fake._provider.thinking_levels = [*fake._provider.thinking_levels, "max"]
+    monkeypatch.setattr(
+        "vtx.ai.agent.runtime.get_model",
+        lambda *args, **kwargs: Model(
+            id="reasoning-max",
+            provider="fake",
+            api=ApiType(ApiType.OPENAI_SDK),
+            base_url="https://api.example.com",
+            max_tokens=4096,
+            supports_images=False,
+            supports_thinking=True,
+            thinking_level_map={
+                "off": "none",
+                "minimal": "minimal",
+                "low": "low",
+                "medium": "medium",
+                "high": "high",
+                "xhigh": "xhigh",
+                "max": "max",
+            },
+        ),
+    )
+
+    assert fake._runtime.effective_thinking_levels == [
+        "none",
+        "minimal",
+        "low",
+        "medium",
+        "high",
+        "xhigh",
+        "max",
+    ]
+    fake._handle_thinking_command("max")
+
+    provider = cast(Any, fake._provider)
+    session = cast(Any, fake._session)
+    assert provider.thinking_level == "max"
+    assert fake._runtime.thinking_level == "max"
+    assert session.thinking_levels == ["max"]
+    assert fake.footer._thinking_level == "max"
+
+
+def test_level_outside_the_offered_set_is_clamped_not_raised(monkeypatch):
+    """A level restored from a session (or left over from another model) must
+    degrade to the nearest supported one instead of taking the app down."""
+    from vtx.ai.models import ApiType, Model
+
+    fake = FakeCommands()
+    fake._runtime.model = "reasoning-no-max"
+    fake._runtime.model_provider = "fake"
+    monkeypatch.setattr(
+        "vtx.ai.agent.runtime.get_model",
+        lambda *args, **kwargs: Model(
+            id="reasoning-no-max",
+            provider="fake",
+            api=ApiType(ApiType.OPENAI_SDK),
+            base_url="https://api.example.com",
+            max_tokens=4096,
+            supports_images=False,
+            supports_thinking=True,
+            thinking_level_map={
+                "off": "none",
+                "low": "low",
+                "high": "high",
+                "xhigh": None,
+                "max": None,
+            },
+        ),
+    )
+
+    assert "max" not in fake._runtime.effective_thinking_levels
+    fake._handle_thinking_command("max")
+    assert cast(Any, fake.chat).errors  # rejected by the picker
+    assert cast(Any, fake._provider).thinking_level == "low"
+
+    # The path a restored session or a model switch takes: clamp, never raise.
+    fake._runtime.set_thinking_level("max")
+    assert cast(Any, fake._provider).thinking_level == "high"
+    assert fake._runtime.thinking_level == "high"

@@ -4,8 +4,6 @@ catalog marks the endpoint as Responses-style."""
 
 from __future__ import annotations
 
-from typing import ClassVar
-
 from vtx.ai.providers.openai_sdk import OpenAISDKProvider
 
 

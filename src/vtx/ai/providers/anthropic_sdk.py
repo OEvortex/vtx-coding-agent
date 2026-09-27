@@ -1,7 +1,7 @@
 """Anthropic SDK provider - wraps the SDK layer into vtx's BaseProvider interface."""
 
 from collections.abc import AsyncIterator
-from typing import Any, ClassVar
+from typing import Any
 
 from anthropic import APIConnectionError, APIStatusError
 
@@ -35,7 +35,6 @@ from vtx.core.types import (
 
 class AnthropicSDKProvider(BaseProvider):
     name = "anthropic"
-    thinking_levels: ClassVar[list[str]] = ["none", "minimal", "low", "medium", "high", "xhigh"]
 
     def __init__(self, config: ProviderConfig):
         super().__init__(config)

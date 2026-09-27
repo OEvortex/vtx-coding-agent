@@ -12,9 +12,11 @@ import pytest
 from vtx.ai.dynamic_models import DynamicModelEntry, _parse_models
 from vtx.ai.thinking import (
     EXTENDED_THINKING_LEVELS,
+    THINKING_LEVELS,
     clamp_thinking_level,
     get_supported_thinking_levels,
     parse_models_dev_reasoning_options,
+    resolve_thinking_levels,
 )
 
 # =============================================================================
@@ -118,12 +120,83 @@ def test_canonical_level_order_is_preserved():
 
 
 # =============================================================================
+# resolve_thinking_levels — the offered set (picker / cycle / restore)
+# =============================================================================
+
+_FULL_MAP = {
+    "off": "none",
+    "minimal": "minimal",
+    "low": "low",
+    "medium": "medium",
+    "high": "high",
+    "xhigh": "xhigh",
+    "max": "max",
+}
+
+
+def test_offered_levels_use_the_none_spelling():
+    levels = resolve_thinking_levels(reasoning=True, thinking_level_map={"off": "none", "high": "high"})
+    assert levels == ["none", "minimal", "low", "medium", "high"]
+
+
+def test_offered_levels_include_max_when_the_catalog_advertises_it():
+    """Regression: a models.dev map advertising ``max`` used to be offered by
+    the cycle while the provider rejected it with a ValueError."""
+    assert resolve_thinking_levels(reasoning=True, thinking_level_map=_FULL_MAP) == list(THINKING_LEVELS)
+
+
+def test_offered_levels_never_exceed_what_the_transport_expresses():
+    # A transport without the ``max`` tier drops it instead of offering a level
+    # it would reject.
+    assert resolve_thinking_levels(
+        reasoning=True,
+        thinking_level_map=_FULL_MAP,
+        provider_levels=["none", "minimal", "low", "medium", "high", "xhigh"],
+    ) == ["none", "minimal", "low", "medium", "high", "xhigh"]
+
+
+def test_offered_levels_default_only_without_verified_efforts():
+    """A reasoning model the catalog never described effort levels for: don't
+    guess an effort it might 400 on, let it keep its own default."""
+    assert resolve_thinking_levels(reasoning=True, thinking_level_map=None) == ["default"]
+    all_unsupported = {level: None for level in EXTENDED_THINKING_LEVELS}
+    assert resolve_thinking_levels(reasoning=True, thinking_level_map=all_unsupported) == ["default"]
+
+
+def test_offered_levels_for_non_reasoning_models():
+    assert resolve_thinking_levels(reasoning=False, thinking_level_map=_FULL_MAP) == ["none"]
+
+
+def test_offered_levels_keep_catalog_order():
+    mapping = {"max": "max", "high": "high", "off": "none"}
+    assert resolve_thinking_levels(reasoning=True, thinking_level_map=mapping) == [
+        "none",
+        "minimal",
+        "low",
+        "medium",
+        "high",
+        "max",
+    ]
+
+
+# =============================================================================
 # clamp_thinking_level
 # =============================================================================
 
 
 def test_clamp_exact_match():
     assert clamp_thinking_level("high", ["off", "low", "high"]) == "high"
+
+
+def test_clamp_speaks_the_supported_vocabulary():
+    """``none`` is the off level in the provider/UI vocabulary, ``off`` in the
+    catalog vocabulary. Clamping must answer in the caller's spelling instead
+    of falling through to "lowest available"."""
+    assert clamp_thinking_level("none", ["none", "minimal", "low", "high"]) == "none"
+    assert clamp_thinking_level("off", ["none", "minimal", "low", "high"]) == "none"
+    assert clamp_thinking_level("max", list(THINKING_LEVELS)) == "max"
+    # A level below the supported floor must not be promoted to it.
+    assert clamp_thinking_level("none", ["low", "medium", "high"]) == "low"
 
 
 @pytest.mark.parametrize(

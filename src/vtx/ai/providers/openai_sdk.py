@@ -1,7 +1,7 @@
 """OpenAI SDK provider - wraps the SDK layer into vtx's BaseProvider interface."""
 
 from collections.abc import AsyncIterator
-from typing import Any, ClassVar
+from typing import Any
 
 from openai import APIConnectionError, APIError, APIStatusError
 
