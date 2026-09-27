@@ -141,11 +141,11 @@ class Agent:
         self._compaction_progress: deque[CompactionProgressEvent] = deque()
         # Auto-refine (prime parity). The gate runs at turn boundaries; these
         # counters throttle it and carry an approved-but-deferred review across
-        # a boundary that was busy (a turn was still streaming).
+        # a cancelled boundary. A cooldown skip needs no extra state: the turn
+        # counter keeps growing, so the next boundary re-evaluates the gate.
         self._auto_refine_turns_since_review = 0
         self._auto_refine_last_review_at = 0.0
         self._auto_refine_in_progress = False
-        self._auto_refine_deferred_reason: str | None = None
         self._pending_auto_refine_review: tuple[str, Any] | None = None
 
     @property
@@ -539,7 +539,6 @@ class Agent:
         if self._auto_refine_in_progress:
             # Cannot happen inside this sequential loop, but a re-entrant call
             # (extension, test) must not start a second pass.
-            self._auto_refine_deferred_reason = reason
             return []
 
         now = time.monotonic()
@@ -563,9 +562,7 @@ class Agent:
         ):
             return []
         if under_cooldown:
-            self._auto_refine_deferred_reason = reason
             return []
-        self._auto_refine_deferred_reason = None
 
         from vtx.ai.agent.rlm.refine import load_history, resolve_states, review_auto_refine
         from vtx.ai.agent.rlm.registry import bridge_session_id

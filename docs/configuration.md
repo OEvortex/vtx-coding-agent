@@ -34,6 +34,19 @@ The window is the active model's real context window from the catalog (e.g. 1M-c
 | `max_turns` | `500` | Hard turn budget per run |
 | `default_context_window` | `200000` | Fallback when the model's window is unknown |
 
+## `refine`
+
+Automatic continual-harness refinement. The harness is the persistent set of prompt notes, memories, skills, and subagent specs rendered into the system prompt (see the `refine` tool in [tools.md](tools.md#refine)). Auto-refine reviews the trajectory at a turn boundary and, when the review approves, applies small evidence-backed edits.
+
+| Field | Default | Notes |
+| --- | --- | --- |
+| `enabled` | `true` | Set false to keep refinement manual (`/refine`, the `refine` tool, the kernel skill) |
+| `turn_interval` | `25` | Review after this many assistant turns |
+| `on_compact` | `true` | Also review right after a context compaction |
+| `cooldown_minutes` | `20` | Minimum gap between two reviews |
+
+The review gate is a small auxiliary call that answers "did this trajectory produce anything worth persisting?"; most boundaries cost nothing, and a rejected review applies no edits. Refinement is never scoped to the cross-session store automatically — that requires an explicit `--global` / `global_=true`.
+
 ## `ui`
 
 | Field | Default | Notes |
@@ -95,7 +108,12 @@ See [agents.md](agents.md).
 
 ## `task`
 
-Built-in sub-agent presets for the `task` tool. Each preset accepts: `description`, `instructions`, `instructions_mode` (`append`/`replace`), `tools_allow`/`tools_deny`, `model`, `thinking_level`, `max_turns`. Defaults define `general-purpose`, `Explore` and `Plan` — see [tools.md](tools.md#task).
+```yaml
+task:
+  max_concurrent: 4  # sub-agents running at once; the rest queue FIFO (0 = no cap)
+```
+
+There are no sub-agent presets to configure. A `task` tool's `subagent_type` is resolved against the agents in `.vtx/agent/` and `~/.vtx/agent/` (see [agents.md](agents.md)); an unknown or empty name runs the default sub-agent. `max_concurrent` bounds how many sub-agents run at once — a config reload resizes the live queue, and the pinned Agents panel plus the info bar show the running/queued split — see [tools.md](tools.md#task).
 
 ## Internal state
 
@@ -103,7 +121,7 @@ Built-in sub-agent presets for the `task` tool. Each preset accepts: `descriptio
 
 ## Loading & migration
 
-Config is deep-merged over defaults, then migrated through versioned migrations (`meta.config_version`, currently 12). Migrations back up the old file before writing. Invalid YAML falls back to defaults with a warning shown at launch.
+Config is deep-merged over defaults, then migrated through versioned migrations (`meta.config_version`, currently 15). Migrations back up the old file before writing. Invalid YAML falls back to defaults with a warning shown at launch.
 
 ## CLI overrides
 

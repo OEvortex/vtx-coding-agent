@@ -9,6 +9,8 @@ import pytest
 from vtx.ai.agent.loop import Agent
 from vtx.ai.agent.rlm.harness import HarnessState, get_harness_state
 from vtx.ai.agent.rlm.refine import (
+    MODE_CODE_FIRST,
+    MODE_TOOL_FIRST,
     TRUNCATED_JSON_ERROR,
     RefinementOutcome,
     apply_refinement,
@@ -142,21 +144,21 @@ def test_validate_edit_rules():
     assert validate_edit({"action": "create", "kind": "memory", "title": "t"}) == (
         "create requires title and content"
     )
-    # skill edits require the python reference + arguments contract
+    # skill edits require the reference + arguments contract
     edit = {"action": "create", "kind": "skill", "title": "t", "content": "c"}
     assert validate_edit(dict(edit)) == "create skill requires arguments"
-    assert validate_edit({**edit, "arguments": {}}) == "create skill requires python reference"
+    assert validate_edit({**edit, "arguments": {}}) == "create skill entries require a reference"
     assert validate_edit({**edit, "arguments": {}, "reference": {"type": "shell"}}) == (
-        "create skill reference.type must be python"
+        "create skill reference.type must be one of: python, tool_first"
     )
     assert validate_edit({**edit, "arguments": {}, "reference": {"type": "python"}}) == (
-        "create skill requires python import"
+        "create skill reference requires a Python import"
     )
     assert (
         validate_edit(
             {**edit, "arguments": {}, "reference": {"type": "python", "import": "pkg.mod"}}
         )
-        == "create skill requires callable or call_pattern"
+        == "create skill reference requires a callable or call_pattern"
     )
     assert (
         validate_edit(
@@ -168,6 +170,45 @@ def test_validate_edit_rules():
         )
         is None
     )
+
+
+def test_validate_edit_accepts_tool_first_skill_reference():
+    edit = {"action": "create", "kind": "skill", "title": "t", "content": "c", "arguments": {}}
+
+    ok = {**edit, "reference": {"type": "tool_first", "call_pattern": "make lint"}}
+    assert validate_edit(ok) is None
+    assert (
+        validate_edit({**edit, "reference": {"type": "tool_first"}})
+        == "create skill reference of type 'tool_first' requires a call_pattern"
+    )
+    assert (
+        validate_edit(
+            {**edit, "reference": {"type": "tool_first", "call_pattern": "x", "import": "pkg.mod"}}
+        )
+        == "create skill reference of type 'tool_first' must not carry a Python import: "
+        "the session has no kernel to import into"
+    )
+
+
+def test_tool_first_skill_entry_persists(tmp_path):
+    from vtx.ai.agent.rlm.harness import skill_reference_error
+
+    state = _state(tmp_path)
+    entry = state.upsert(
+        "skill",
+        title="Release notes",
+        content="Summarize the last tag.",
+        id="rel",
+        reference={"type": "tool_first", "call_pattern": "git log --oneline -20"},
+        arguments={},
+    )
+    assert entry.reference["type"] == "tool_first"
+    assert skill_reference_error(entry.reference) is None
+
+    with pytest.raises(ValueError, match="must be one of"):
+        state.upsert(
+            "skill", title="Bad", content="c", id="bad", reference={"type": "shell"}, arguments={}
+        )
 
 
 # =================================================================================================
@@ -471,6 +512,7 @@ def test_harness_digest_renders_entries_and_refinements(tmp_path):
     cwd = str(tmp_path / "work")
     local = get_harness_state(local_state_dir(session_id, cwd))
     local.create("memory", "Test preference", "Use pytest for all tests.", id="test_pref")
+    local.create("subagent", "Reviewer", "Review diffs.", id="reviewer")
     local.record_refinement(
         "Remember test preference",
         ["create memory:test_pref"],
@@ -479,13 +521,44 @@ def test_harness_digest_renders_entries_and_refinements(tmp_path):
         id="refine_0001",
     )
 
-    digest = harness_digest_for_prompt(session_id, cwd)
-    assert digest.startswith("# Continual Harness State")
-    assert "- [local:test_pref] Test preference (general, v1): Use pytest for all tests." in digest
-    assert "memory: 1" in digest
-    assert "recent refinements: 1" in digest
-    assert "- [refine_0001] Remember test preference: create memory:test_pref" in digest
-    assert "await rlm.spawn" in digest  # subagent/ipython call contract line
+    for mode in (MODE_CODE_FIRST, MODE_TOOL_FIRST):
+        digest = harness_digest_for_prompt(session_id, cwd, mode=mode)
+        assert digest.startswith("# Continual Harness State")
+        assert (
+            "- [local:test_pref] Test preference (general, v1): Use pytest for all tests."
+            in digest
+        )
+        assert "memory: 1" in digest
+        assert "recent refinements: 1" in digest
+        assert "- [refine_0001] Remember test preference: create memory:test_pref" in digest
+
+
+def test_harness_digest_call_contract_is_mode_specific(tmp_path):
+    session_id = bridge_session_id()
+    cwd = str(tmp_path / "work")
+    local = get_harness_state(local_state_dir(session_id, cwd))
+    local.create("subagent", "Reviewer", "Review diffs.", id="reviewer")
+
+    rlm_digest = harness_digest_for_prompt(session_id, cwd, mode=MODE_CODE_FIRST)
+    assert "await refine.run()" in rlm_digest
+    assert "await rlm.spawn" in rlm_digest
+
+    tool_digest = harness_digest_for_prompt(session_id, cwd, mode=MODE_TOOL_FIRST)
+    assert "refine` tool" in tool_digest
+    assert "`task` tool" in tool_digest
+    # The tool-first model has no REPL, so the RLM-native trigger must not leak.
+    assert "await refine.run()" not in tool_digest
+
+
+def test_harness_digest_defaults_to_config_mode(tmp_path, monkeypatch):
+    from vtx.ai.agent.rlm import refine as refine_mod
+
+    monkeypatch.setattr(refine_mod, "current_mode", lambda: MODE_TOOL_FIRST)
+    cwd = str(tmp_path / "work")
+    local = get_harness_state(local_state_dir(bridge_session_id(), cwd))
+    local.create("memory", "Test preference", "Use pytest.", id="test_pref")
+
+    assert "refine` tool" in harness_digest_for_prompt(bridge_session_id(), cwd)
 
 
 # =================================================================================================

@@ -225,38 +225,21 @@ class AgentsConfig(BaseModel):
     files: list[str] = Field(default_factory=list)
 
 
-class SubagentPreset(BaseModel):
-    """A built-in preset for the ``Task`` tool's ``subagent_type`` parameter.
-
-    Mirrors the user-facing subset of :class:`~vtx.agents.AgentDef`: enough
-    to constrain the sub-agent's tool surface, system-prompt instructions,
-    and run budget without requiring a full ``.vtx/agent/<name>.py`` file.
-    """
-
-    name: str
-    description: str
-    instructions: str | None = None
-    instructions_mode: str = "append"  # "append" | "replace"
-    tools_allow: list[str] | None = None
-    tools_deny: list[str] = Field(default_factory=list)
-    model: str | None = None
-    thinking_level: Literal["none", "minimal", "low", "medium", "high", "xhigh"] | None = None
-    max_turns: int | None = Field(default=None, gt=0)
-
-
 class TaskConfig(BaseModel):
-    """Built-in sub-agent presets surfaced via the ``Task`` tool.
+    """Concurrency limits for the ``Task`` tool's sub-agents.
 
-    The ``Task`` tool delegates work to a fresh sub-agent. ``subagent_type``
-    is matched against, in order:
+    Sub-agent *profiles* are not configurable here: a ``subagent_type`` is
+    resolved against the user-defined agents in ``.vtx/agent/<name>.py``
+    (the :class:`~vtx.agents.AgentRegistry`), and an unknown name falls back
+    to a bare default sub-agent with the parent's tool surface.
 
-    1. A user-defined agent from ``.vtx/agent/<name>.py`` (the
-       ``AgentRegistry``'s current contents).
-    2. One of the named ``subagent_presets`` below.
-    3. ``"general-purpose"`` as the final fallback.
+    ``max_concurrent`` caps how many sub-agents run at once. Everything above
+    the cap waits in a FIFO queue instead of piling onto the same provider, so
+    the TUI can honestly report how many agents are running versus queued.
+    ``0`` disables the cap.
     """
 
-    subagent_presets: list[SubagentPreset] = Field(default_factory=list)
+    max_concurrent: int = Field(default=4, ge=0)
 
 
 class RefineConfig(BaseModel):
@@ -295,7 +278,7 @@ class ConfigSchema(BaseModel):
     extensions: list[str] = Field(default_factory=list)
     # Switchable handoff agents (``.vtx/agent/<name>.py``).
     agents: AgentsConfig = AgentsConfig()
-    # Built-in sub-agent presets for the ``Task`` tool.
+    # Sub-agent concurrency for the ``Task`` tool.
     task: TaskConfig = TaskConfig()
     # Runtime mode: ``tool_first`` uses the default surgical tool surface;
     # ``code_first`` switches to a REPL-first experience where the model primarily
@@ -666,21 +649,13 @@ def _migrate_v8_to_v9(data: dict[str, Any]) -> dict[str, Any]:
 
 
 def _migrate_v9_to_v10(data: dict[str, Any]) -> dict[str, Any]:
-    """Add the ``task.subagent_presets`` block. Pre-v10 users get the
-    built-in defaults (general-purpose / Explore / Plan).
-    """
+    """No-op migration. Sub-agent presets removed."""
     migrated = Config._apply_legacy_key_shims(data)
-
-    task = migrated.get("task")
-    if not isinstance(task, dict):
-        task = {}
-        migrated["task"] = task
-    if not isinstance(task.get("subagent_presets"), list):
-        task["subagent_presets"] = list(_DEFAULT_CONFIG_DATA["task"]["subagent_presets"])
 
     meta = migrated.get("meta")
     if not isinstance(meta, dict):
-        migrated["meta"] = {"config_version": 10}
+        meta = {"config_version": 10}
+        migrated["meta"] = meta
     else:
         meta["config_version"] = 10
     return migrated
@@ -756,6 +731,31 @@ def _migrate_v13_to_v14(data: dict[str, Any]) -> dict[str, Any]:
     return migrated
 
 
+def _migrate_v14_to_v15(data: dict[str, Any]) -> dict[str, Any]:
+    """Drop ``task.subagent_presets`` and add ``task.max_concurrent``.
+
+    Sub-agent profiles now come only from ``.vtx/agent/<name>.py``, so a
+    config carrying the old preset list loses it — leaving it in place would
+    suggest a knob that no longer exists.
+    """
+    migrated = dict(data)
+
+    task = migrated.get("task")
+    if not isinstance(task, dict):
+        task = {}
+        migrated["task"] = task
+    task.pop("subagent_presets", None)
+    if not isinstance(task.get("max_concurrent"), int) or task["max_concurrent"] < 0:
+        task["max_concurrent"] = 4
+
+    meta = migrated.get("meta")
+    if not isinstance(meta, dict):
+        migrated["meta"] = {"config_version": 15}
+    else:
+        meta["config_version"] = 15
+    return migrated
+
+
 def _migrate_config_data(data: dict[str, Any]) -> tuple[dict[str, Any], int, int, bool]:
     original = deepcopy(data)
     current_version = _get_config_version(original)
@@ -817,6 +817,10 @@ def _migrate_config_data(data: dict[str, Any]) -> tuple[dict[str, Any], int, int
         if current_version == 13:
             migrated = _migrate_v13_to_v14(migrated)
             current_version = 14
+            continue
+        if current_version == 14:
+            migrated = _migrate_v14_to_v15(migrated)
+            current_version = 15
             continue
         break
 
@@ -934,6 +938,13 @@ def reload_config() -> Config:
     cfg = _load_config()
     _config_var.set(cfg)
     _sync_harness_settings(cfg)
+    # Sub-agent admission is sized by config, so a reload has to resize the
+    # live queue too — otherwise a raised cap would only take effect on the
+    # next process.
+    with contextlib.suppress(Exception):
+        from vtx.ai.agent.subagents import set_limit
+
+        set_limit(cfg.task.max_concurrent)
     return cfg
 
 

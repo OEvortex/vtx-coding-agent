@@ -287,7 +287,7 @@ async def _start_child(ctx: _Ctx, prompt: str, kwargs: dict[str, Any]) -> ChildR
 
     from vtx.ai.agent.tools.task import _resolve_subagent_spec
 
-    spec = _resolve_subagent_spec("general-purpose", parent_ctx.agent_registry)
+    spec = _resolve_subagent_spec("", parent_ctx.agent_registry)
     thinking = kwargs.get("thinking")
     if isinstance(thinking, str):
         spec = replace(spec, thinking_level=thinking)

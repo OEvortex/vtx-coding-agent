@@ -35,7 +35,7 @@ from vtx.coding_agent.tools.task import (
 class TestTaskParamsValidation:
     def test_minimal(self):
         p = TaskParams(description="Find the auth bug", prompt="Look at the login flow.")
-        assert p.subagent_type == "general-purpose"
+        assert p.subagent_type == ""
         assert p.model is None
 
     def test_all_fields(self):
@@ -59,8 +59,9 @@ class TestTaskParamsValidation:
             TaskParams(description="x", prompt="")
 
     def test_subagent_type_default(self):
+        # Empty means "the default sub-agent" — there are no built-in presets.
         p = TaskParams(description="x", prompt="y")
-        assert p.subagent_type == "general-purpose"
+        assert p.subagent_type == ""
 
     def test_background_defaults_to_false(self):
         # The default must keep existing callers on the blocking path.
@@ -91,21 +92,33 @@ class TestResolveSubagentSpec:
         assert spec.name == "reviewer"
         assert spec.description == "Custom reviewer"
 
-    def test_unknown_type_falls_back_to_general_purpose(self):
+    def test_unknown_type_falls_back_to_default(self):
         spec = _resolve_subagent_spec("does-not-exist", None)
-        assert spec.name == "general-purpose"
+        assert spec.name == "subagent"
 
-    def test_empty_type_falls_back_to_general_purpose(self):
+    def test_empty_type_falls_back_to_default(self):
         spec = _resolve_subagent_spec("", None)
-        assert spec.name == "general-purpose"
+        assert spec.name == "subagent"
 
-    def test_no_registry_falls_back_to_preset(self):
-        spec = _resolve_subagent_spec("Plan", None)
-        assert spec.name == "Plan"
+    def test_no_registry_ignores_former_preset_names(self):
+        # "Plan"/"Explore" used to be built-in presets. They are just names now:
+        # without a matching agent file they run the default sub-agent.
+        assert _resolve_subagent_spec("Plan", None).name == "subagent"
+        assert _resolve_subagent_spec("Explore", None).name == "subagent"
 
-    def test_preset_used_when_registry_empty(self):
-        spec = _resolve_subagent_spec("Explore", None)
-        assert spec.name == "Explore"
+    def test_registry_agent_is_used_when_name_matches(self):
+        from vtx.coding_agent.agents import AgentDef, AgentRegistry, LoadedAgent
+
+        reg = AgentRegistry()
+        reg.agents = [
+            LoadedAgent(
+                definition=AgentDef(name="explore", description="Read-only search"),
+                path=Path("/e.py"),
+            )
+        ]
+        spec = _resolve_subagent_spec("explore", reg)
+        assert spec.name == "explore"
+        assert spec.description == "Read-only search"
 
 
 # ---------------------------------------------------------------------------
@@ -272,7 +285,7 @@ class TestTaskToolExecute:
         assert result.success is True
         assert result.result == "Here is the answer."
         assert "3 turns" in (result.ui_summary or "")
-        assert "Explore" in (result.ui_details_full or "")
+        assert "subagent" in (result.ui_details_full or "")
         assert "abc12345" in (result.ui_details_full or "")
 
     def test_execute_truncates_long_text_silently(self, monkeypatch):
@@ -317,15 +330,7 @@ class TestTaskToolExecute:
         )
         assert result.success is True
         assert result.result == "Here is the answer."
-        forbidden = (
-            "turns",
-            "tokens",
-            "abc12345",
-            "Explore",
-            "session",
-            "model",
-            "general-purpose",
-        )
+        forbidden = ("turns", "tokens", "abc12345", "Explore", "session", "model", "subagent")
         for needle in forbidden:
             assert needle.lower() not in (result.result or "").lower(), (
                 f"result leaked {needle!r}: {result.result!r}"

@@ -77,7 +77,11 @@ Api types: `openai-sdk` (chat completions), `openai-responses`, `anthropic`.
 
 ## Sub-agents
 
-The `task` tool dispatches isolated sub-agent sessions with their own tool surface, system prompt and JSONL session. Presets (`general-purpose`, `Explore`, `Plan`) come from `task.subagent_presets`; a user-defined agent of the same name wins. `background: true` runs via `BackgroundTaskManager` and notifies on a later turn.
+The `task` tool dispatches isolated sub-agent sessions with their own tool surface, system prompt and JSONL session. `subagent_type` is matched against the agents in `.vtx/agent/` and `~/.vtx/agent/`; anything else runs the default sub-agent (there are no built-in presets). `background: true` runs via `BackgroundTaskManager` and notifies on a later turn.
+
+Every dispatch passes through `ai.agent.subagents.SubagentScheduler`, a FIFO admission queue capped by `task.max_concurrent` (default 4, `0` = uncapped). A sub-agent over the cap waits for a slot *before* it builds a session or a provider, so "running" and "queued" are real counts.
+
+Both counters, plus a live row per sub-agent (name, description, turns/tool/token counters, current activity), render in the pinned **Agents** panel (`tui/agents_panel.py`) above the editor, fed from the process-wide `tui/goal_agents.REGISTRY`. The registry keys runs by tool-call id, so four concurrent `Explore` agents are four rows. The goal beacon renders the same rows from the same registry while a goal is focused; the chat log keeps only a static dispatch receipt per call.
 
 ## Compaction
 

@@ -174,18 +174,15 @@ def test_compact_shows_spawned_subagents(goal_cwd: Path) -> None:
         service.update_task(record.id, "t1", "start")
         record = service.focused()
 
-        assert "Agents" not in render_compact(service, record, width=80).plain
+        assert "reviewer" not in render_compact(service, record, width=80).plain
 
-        REGISTRY.record({"kind": "subagent_start", "subagent": "reviewer", "max_turns": 20})
-        REGISTRY.record({"kind": "tool_start", "subagent": "reviewer", "tool_name": "read"})
-        REGISTRY.record({"kind": "subagent_end", "subagent": "tester", "turns": 3, "tokens": 1200})
+        REGISTRY.record("r1", {"kind": "subagent_start", "subagent": "reviewer", "max_turns": 20})
+        REGISTRY.record("r1", {"kind": "tool_start", "subagent": "reviewer", "tool_name": "read"})
+        REGISTRY.record("r2", {"kind": "subagent_queued", "subagent": "tester", "position": 1})
 
         text = render_compact(service, record, width=80).plain
-        assert "Agents" in text
-        assert "1 running" in text
-        assert "1 done" in text
         assert "reviewer" in text
-        assert "read" in text
+        assert "1 queued" in text
         assert set(_line_widths(render_compact(service, record, width=80))) == {80}
     finally:
         REGISTRY.clear()
@@ -201,21 +198,23 @@ def test_expanded_lists_subagent_stats(goal_cwd: Path) -> None:
         record = service.focused()
 
         REGISTRY.record(
+            "r1",
             {
                 "kind": "subagent_start",
                 "subagent": "code-reviewer",
                 "model": "claude-sonnet-5",
                 "max_turns": 30,
-            }
+            },
         )
         REGISTRY.record(
+            "r1",
             {
                 "kind": "subagent_end",
                 "subagent": "code-reviewer",
                 "turns": 4,
                 "tokens": 38_210,
                 "tool_counts": {"read": 9, "grep": 4},
-            }
+            },
         )
 
         text = render_expanded(service, record, width=100).plain
@@ -231,27 +230,41 @@ def test_subagent_registry_never_evicts_running_agents() -> None:
     from vtx.tui.goal_agents import SubagentRegistry
 
     registry = SubagentRegistry(max_tracked=2)
-    registry.record({"kind": "subagent_start", "subagent": "a"})
-    registry.record({"kind": "subagent_start", "subagent": "b"})
-    registry.record({"kind": "subagent_start", "subagent": "c"})
+    registry.record("a", {"kind": "subagent_start", "subagent": "a"})
+    registry.record("b", {"kind": "subagent_start", "subagent": "b"})
+    registry.record("c", {"kind": "subagent_start", "subagent": "c"})
     # All three are still running, so nothing may be dropped.
     assert len(registry.runs()) == 3
-    assert registry.counts() == (3, 0)
+    assert registry.counts() == (3, 0, 0)
 
-    registry.record({"kind": "subagent_end", "subagent": "a", "turns": 1})
-    registry.record({"kind": "subagent_start", "subagent": "d"})
+    registry.record("a", {"kind": "subagent_end", "subagent": "a", "turns": 1})
+    registry.record("d", {"kind": "subagent_start", "subagent": "d"})
     # `a` finished, so it is the one that gets evicted.
     assert [r.name for r in registry.runs()].count("a") == 0
     assert {r.name for r in registry.runs()} >= {"b", "c", "d"}
+
+
+def test_subagent_registry_keeps_same_named_runs_apart() -> None:
+    """Four `Explore` fan-outs are four rows, not one smeared row."""
+    from vtx.tui.goal_agents import SubagentRegistry
+
+    registry = SubagentRegistry()
+    for i in range(4):
+        registry.record(f"call_{i}", {"kind": "subagent_start", "subagent": "Explore"})
+    assert len(registry.runs()) == 4
+    assert {r.run_id for r in registry.runs()} == {f"call_{i}" for i in range(4)}
+
+    registry.record("call_2", {"kind": "subagent_end", "subagent": "Explore", "turns": 2})
+    assert registry.counts() == (3, 0, 1)
 
 
 def test_subagent_registry_ignores_malformed_events() -> None:
     from vtx.tui.goal_agents import SubagentRegistry
 
     registry = SubagentRegistry()
-    assert registry.record({}) is None
-    assert registry.record({"kind": "subagent_start"}) is not None
-    assert not registry.record(None)
+    assert registry.record("x", {}) is None
+    assert registry.record("x", {"kind": "subagent_start"}) is not None
+    assert not registry.record("x", None)
     assert registry.runs()[0].name == "subagent"
 
 

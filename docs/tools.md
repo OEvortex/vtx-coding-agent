@@ -1,6 +1,6 @@
 # Tools
 
-Vtx ships 11 built-in tools. Ten are enabled by default; `grep` is built in but opt-in (enable it via an extension, agent `tools_allow`, or a custom tool list).
+Vtx ships 12 built-in tools. Eleven are enabled by default; `grep` is built in but opt-in (enable it via an extension, agent `tools_allow`, or a custom tool list).
 
 | Tool | Does | Default |
 | --- | --- | --- |
@@ -14,6 +14,7 @@ Vtx ships 11 built-in tools. Ten are enabled by default; `grep` is built in but 
 | `ask_user` | Ask the user a clarifying question | yes |
 | `task` | Dispatch a sub-agent | yes |
 | `goal` | Persistent project goals: create, track tasks, complete with audit | yes |
+| `refine` | Refine the continual harness (prompt notes, memories, skills, subagents) | yes |
 | `grep` | Search file contents (`ripgrep`) | no |
 
 All tools are `BaseTool` subclasses with Pydantic params. The `mutating` flag drives permission gating: non-mutating tools run without approval, mutating tools follow the permission mode (see [permissions.md](permissions.md)).
@@ -129,15 +130,13 @@ Dispatch a fresh sub-agent with its own tools, session and system prompt. It can
 | --- | --- | --- |
 | `description` | string, required | 3–5 word imperative label |
 | `prompt` | string, required | Full instructions incl. context |
-| `subagent_type` | string | Preset name or user agent; default `general-purpose` |
+| `subagent_type` | string | Name of an agent in `.vtx/agent/<name>.py`; default: the default sub-agent |
 | `model` | string | Model override (default: parent's) |
 | `background` | bool | Run concurrently; returns a task ID now, result arrives next turn |
 
-Built-in presets (overridable under `task.subagent_presets` in config):
+There are no built-in sub-agent presets: `subagent_type` is matched against the agents loaded from `.vtx/agent/` and `~/.vtx/agent/`, and an unknown or empty name runs the default sub-agent (the parent's tool surface and instructions, 200-turn budget).
 
-- **general-purpose** — full default tool set, 200-turn budget.
-- **Explore** — read-only investigation; tools limited to `read`, `find`, `skill`, `web`.
-- **Plan** — read-only planner that produces a step-by-step plan without touching files.
+At most `task.max_concurrent` sub-agents run at once (default 4, `0` = uncapped). The rest wait in a FIFO queue — the pinned **Agents** panel above the editor lists the running ones and the queued count, and the info bar repeats `N running, M queued agents`. A config reload resizes the live queue.
 
 Results are capped at 32,000 chars with the last 200 transcript lines attached.
 
@@ -164,3 +163,15 @@ One action-dispatched tool for the persistent goal system (see [goals.md](goals.
 | `subtasks` | list | `update_task`: attach subtasks under the target |
 
 `status="complete"` records the claim, then runs an independent auditor sub-agent over the workspace; the goal archives on `<approved/>` and stays open with feedback otherwise. The tool is non-mutating for permission purposes — archiving requires explicit user confirmation.
+
+## refine
+
+Refines the **continual harness**: the persistent prompt notes, memories, skills, and subagent specs that Vtx renders into the system prompt as `# Continual Harness State`. An auxiliary model reads the trajectory and emits small `create`/`update`/`delete` edits, so lessons survive outside the context window. Only the top-level session has this tool; `code_first` mode uses the equivalent kernel skill (`await refine.run()`) instead.
+
+| Param | Type | Notes |
+| --- | --- | --- |
+| `action` | enum | `run` (default) schedules a pass, `status` reports the queue |
+| `instructions` | string | Optional focus for this pass, e.g. the failure worth remembering |
+| `global_` | bool | Target the cross-session store. Leave false for current-task progress |
+
+The call returns immediately — the pass runs when the current turn ends, applies its edits, appends a refinement notice to the session, and the model resumes on the rebuilt prompt. Edits are recorded to `refinements.jsonl`, so `/refine rollback <refinement-id>` inverts one. See `refine` in [configuration.md](configuration.md#refine) for automatic refinement.

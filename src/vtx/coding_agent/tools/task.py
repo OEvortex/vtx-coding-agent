@@ -5,7 +5,10 @@ Re-exports the harness-native ``task`` tool from :mod:`vtx.ai.agent.tools.task`.
 
 from __future__ import annotations
 
+from vtx.ai.agent.subagents import SubagentScheduler, get_scheduler
 from vtx.ai.agent.tools.task import (
+    DEFAULT_MAX_TURNS,
+    DEFAULT_SUBAGENT,
     MAX_RESULT_CHARS,
     MAX_TRANSCRIPT_LINES,
     SUBAGENT_FINAL_ANSWER_DIRECTIVE,
@@ -21,14 +24,16 @@ from vtx.ai.agent.tools.task import (
     _resolve_api_and_base_url,
     _resolve_subagent_spec,
     _run_subagent,
-    _spec_from_preset,
 )
 
 __all__ = [
+    "DEFAULT_MAX_TURNS",
+    "DEFAULT_SUBAGENT",
     "MAX_RESULT_CHARS",
     "MAX_TRANSCRIPT_LINES",
     "SUBAGENT_FINAL_ANSWER_DIRECTIVE",
     "SubagentRunResult",
+    "SubagentScheduler",
     "SubagentSpec",
     "TaskParams",
     "TaskTool",
@@ -40,5 +45,5 @@ __all__ = [
     "_resolve_api_and_base_url",
     "_resolve_subagent_spec",
     "_run_subagent",
-    "_spec_from_preset",
+    "get_scheduler",
 ]

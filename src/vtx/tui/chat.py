@@ -731,6 +731,7 @@ class ChatLog(VerticalScroll):
         Called from the Task tool's progress callback. ``event`` is the
         small dict shape produced by ``TaskTool``:
 
+        * ``kind == "subagent_queued"``: waiting for a scheduler slot
         * ``kind == "subagent_start"``: opens the live view (model, max_turns)
         * ``kind == "text_delta"``: updates the activity text snippet
         * ``kind == "tool_start"``: counts a tool use and names the activity
@@ -763,6 +764,8 @@ class ChatLog(VerticalScroll):
                 "ended": False,
                 "stop_label": None,
                 "error": None,
+                "queued": False,
+                "queue_position": 0,
             },
         )
         if event.get("tool_counts"):
@@ -772,9 +775,14 @@ class ChatLog(VerticalScroll):
         if event.get("transcript"):
             state["transcript"] = list(event["transcript"])
 
-        if kind == "subagent_start":
+        if kind == "subagent_queued":
+            state["queued"] = True
+            state["queue_position"] = event.get("position") or 0
+        elif kind == "subagent_start":
             state["model"] = event.get("model")
             state["max_turns"] = event.get("max_turns")
+            state["queued"] = False
+            state["queue_position"] = 0
         elif kind == "text_delta":
             state["last_text"] = (state["last_text"] + event.get("delta", ""))[-400:]
         elif kind == "tool_start":
@@ -803,6 +811,8 @@ class ChatLog(VerticalScroll):
         state["ended"] = True
         state["stop_label"] = stop_label or state.get("stop_label")
         state["elapsed_ms"] = (time.monotonic() - state["started"]) * 1000
+        state["queued"] = False
+        state["queue_position"] = 0
 
     def end_block(self) -> None:
         # Finalize content/thinking blocks to render markdown once

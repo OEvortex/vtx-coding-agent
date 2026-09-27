@@ -13,8 +13,8 @@ from typing import TYPE_CHECKING, Any
 from pydantic import BaseModel, Field
 
 from vtx.ai.agent.dispatcher import DispatcherContext, get_context
+from vtx.ai.agent.subagents import get_scheduler
 from vtx.ai.agent.tools.base import BaseTool
-from vtx.ai.config import config as vtx_config
 from vtx.core.types import StopReason, TextContent, ToolResult, Usage
 
 if TYPE_CHECKING:
@@ -38,8 +38,12 @@ class TaskParams(BaseModel):
         description="Detailed task instructions and context (sub-agent cannot see this chat)",
     )
     subagent_type: str = Field(
-        default="general-purpose",
-        description="Sub-agent preset ('general-purpose', 'Explore', 'Plan') or custom agent name",
+        default="",
+        description=(
+            "Optional name of an agent from .vtx/agent/<name>.py to run as the "
+            "sub-agent (e.g. a read-only researcher). Unknown or empty names run "
+            "the default sub-agent with the parent's tool surface."
+        ),
     )
     model: str | None = Field(
         default=None, description="Optional model override (defaults to parent agent model)"
@@ -88,52 +92,47 @@ class SubagentSpec:
         )
 
 
-def _resolve_subagent_spec(subagent_type: str, registry: Any) -> SubagentSpec:
-    """Resolve ``subagent_type`` to a concrete :class:`SubagentSpec`."""
-    cleaned = (subagent_type or "").strip() or "general-purpose"
+#: Name of the sub-agent used when ``subagent_type`` matches no user agent.
+DEFAULT_SUBAGENT = "subagent"
 
-    if registry is not None:
-        loaded = registry.by_name(cleaned)
-        if loaded is not None:
-            d = loaded.definition
-            return SubagentSpec(
-                name=d.name,
-                description=d.description,
-                instructions=d.instructions,
-                instructions_mode=d.instructions_mode,
-                tools_allow=list(d.tools_allow) if d.tools_allow is not None else None,
-                tools_deny=list(d.tools_deny),
-                model=d.model,
-                thinking_level=d.thinking_level,
-                max_turns=d.max_turns,
-            )
+#: How many turns a default sub-agent gets before it is cut off.
+DEFAULT_MAX_TURNS = 200
 
-    presets = {p.name: p for p in vtx_config.task.subagent_presets}
-    preset = presets.get(cleaned)
-    if preset is not None:
-        return _spec_from_preset(preset)
 
-    if "general-purpose" in presets:
-        return _spec_from_preset(presets["general-purpose"])
-
+def _default_subagent_spec() -> SubagentSpec:
     return SubagentSpec(
-        name="general-purpose",
-        description="Default sub-agent (no presets configured).",
-        max_turns=200,
+        name=DEFAULT_SUBAGENT,
+        description="Default sub-agent: the parent's tools and instructions.",
+        max_turns=DEFAULT_MAX_TURNS,
     )
 
 
-def _spec_from_preset(preset: Any) -> SubagentSpec:
+def _resolve_subagent_spec(subagent_type: str, registry: Any) -> SubagentSpec:
+    """Resolve ``subagent_type`` to a concrete :class:`SubagentSpec`.
+
+    Only user-defined agents (``.vtx/agent/<name>.py``) name a sub-agent. There
+    are no built-in presets: anything the registry does not know about runs the
+    default sub-agent, which is the parent minus the parent-only tools.
+    """
+    cleaned = (subagent_type or "").strip()
+    if not cleaned or registry is None:
+        return _default_subagent_spec()
+
+    loaded = registry.by_name(cleaned)
+    if loaded is None:
+        return _default_subagent_spec()
+
+    d = loaded.definition
     return SubagentSpec(
-        name=preset.name,
-        description=preset.description,
-        instructions=preset.instructions,
-        instructions_mode=preset.instructions_mode,
-        tools_allow=list(preset.tools_allow) if preset.tools_allow is not None else None,
-        tools_deny=list(preset.tools_deny),
-        model=preset.model,
-        thinking_level=preset.thinking_level,
-        max_turns=preset.max_turns,
+        name=d.name,
+        description=d.description,
+        instructions=d.instructions,
+        instructions_mode=d.instructions_mode,
+        tools_allow=list(d.tools_allow) if d.tools_allow is not None else None,
+        tools_deny=list(d.tools_deny),
+        model=d.model,
+        thinking_level=d.thinking_level,
+        max_turns=d.max_turns,
     )
 
 
@@ -259,7 +258,68 @@ def _resolve_api_and_base_url(
     return (api_type, parent_base_url or provider_default or default_base_url_for_api(api_type))
 
 
+def _make_progress_emitter(
+    spec: SubagentSpec, tool_call_id: str, progress_callback: Callable[[str, dict], None] | None
+) -> Callable[..., None]:
+    def _emit(progress_kind: str, **fields: Any) -> None:
+        if progress_callback is None:
+            return
+        try:
+            progress_callback(
+                tool_call_id, {"kind": progress_kind, "subagent": spec.name, **fields}
+            )
+        except Exception:
+            log.exception("Task tool progress callback raised")
+
+    return _emit
+
+
 async def _run_subagent(
+    parent_ctx: DispatcherContext,
+    spec: SubagentSpec,
+    prompt: str,
+    cancel_event: asyncio.Event | None,
+    model_override: str | None,
+    progress_callback: Callable[[str, dict], None] | None,
+    tool_call_id: str,
+) -> SubagentRunResult:
+    """Admit one sub-agent to the shared scheduler, then run it to completion.
+
+    Dispatching is cheap but running is not: a fan-out of a dozen sub-agents
+    opened a dozen provider streams at once. Waiting for a slot here (rather
+    than inside the run) means a queued sub-agent has not yet built a session
+    or a provider, and both the chat block and the pinned Agents panel can
+    report it as queued instead of pretending to be working.
+    """
+    scheduler = get_scheduler()
+    emit = _make_progress_emitter(spec, tool_call_id, progress_callback)
+
+    sub_model = model_override or spec.model or parent_ctx.model
+    if not scheduler.admits_now():
+        emit(
+            "subagent_queued",
+            description=spec.description,
+            model=sub_model,
+            max_turns=spec.max_turns,
+            position=scheduler.queued + 1,
+        )
+
+    await scheduler.acquire()
+    try:
+        return await _run_admitted_subagent(
+            parent_ctx=parent_ctx,
+            spec=spec,
+            prompt=prompt,
+            cancel_event=cancel_event,
+            model_override=model_override,
+            progress_callback=progress_callback,
+            tool_call_id=tool_call_id,
+        )
+    finally:
+        scheduler.release()
+
+
+async def _run_admitted_subagent(
     parent_ctx: DispatcherContext,
     spec: SubagentSpec,
     prompt: str,
@@ -319,16 +379,7 @@ async def _run_subagent(
     result = SubagentRunResult(session_id=session.id)
     transcript = result.transcript
 
-    def _emit(progress_kind: str, **fields: Any) -> None:
-        if progress_callback is None:
-            return
-        try:
-            progress_callback(
-                tool_call_id, {"kind": progress_kind, "subagent": spec.name, **fields}
-            )
-        except Exception:
-            log.exception("Task tool progress callback raised")
-
+    _emit = _make_progress_emitter(spec, tool_call_id, progress_callback)
     tool_counts: dict[str, int] = {}
 
     _emit(

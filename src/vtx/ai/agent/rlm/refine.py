@@ -26,7 +26,13 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
-from vtx.ai.agent.rlm.harness import HarnessKind, HarnessState, _slug, get_harness_state
+from vtx.ai.agent.rlm.harness import (
+    HarnessKind,
+    HarnessState,
+    _slug,
+    get_harness_state,
+    skill_reference_error,
+)
 from vtx.core.types import AssistantMessage, Message, TextPart, ToolResultMessage, UserMessage
 
 log = logging.getLogger(__name__)
@@ -75,7 +81,7 @@ runtime, Python REPL kernel, and native call interface that executes those artif
 Continual harness components:
 - prompt: supplemental prompt notes only. The base system prompt is immutable and MUST NOT be rewritten.
 - memory: durable facts, decisions, failures, preferences, and outcomes.
-- skill: installed Python REPL skill. Skill create/update edits MUST include a `reference` object with `{"type":"python"}`, a Python import, and a callable or call pattern; they also MUST include an `arguments` object describing accepted inputs, required fields, defaults, and constraints. Use `{}` for `arguments` only when the Python callable truly needs no external inputs. Include the RLM-native call form `await <skill_import>(...)`.
+- skill: installed skill entry. Skill create/update edits MUST include a `reference` object saying how to invoke it, plus an `arguments` object describing accepted inputs, required fields, defaults, and constraints. Two reference shapes exist, one per runtime mode: `{"type":"python","import":"package.module","callable":"function_name","call_pattern":"await function_name(...)"}` for a session with a persistent Python kernel, and `{"type":"tool_first","call_pattern":"<tool or shell invocation>"}` for a session without one. Use `{}` for `arguments` only when the skill truly needs no external inputs. A `<mode_contract>` block below states which shape this session requires.
 - subagent: reusable delegation specs, including purpose, instructions, and when to invoke. Include the RLM-native call form: compose a concise task prompt and spawn with `handle = await rlm.spawn("sub-task", name="worker")`; admission returns immediately with `rlm_child_id`, `name`, `session_dir`, and `model`, never the child's answer. Results arrive only through explicit `agent_message` replies or files; children reply with `await agent_message.send(message, receiver_role="parent")`. Use `await rlm.list_subagents()` to recover direct child handles and `await agent_message.send(..., receiver_role="child", receiver_name=handle.name)` for follow-ups. Do not invent wrappers like `run_subagent(...)`.
 
 Scope and persistence policy:
@@ -196,12 +202,13 @@ _MODE_SUBAGENT_HINT: dict[str, str] = {
 _MODE_PLAN_INSTRUCTION: dict[str, str] = {
     MODE_TOOL_FIRST: (
         "Mode contract: this session has no persistent Python kernel and no "
-        "`rlm`/`agent_message` bridge. Write every `skill` edit as a tool-call or "
-        "CLI/shell call pattern (never an `await`ed Python import) and every `subagent` "
-        "edit as a `task`-tool delegation spec (`description`, `subagent_type`, and a "
-        "composed task prompt). Still emit the `reference` and `arguments` objects so the "
-        "contract stays machine-checkable. The agent triggers refinement with the "
-        "`refine` tool in this mode."
+        "`rlm`/`agent_message` bridge. Every `skill` edit MUST use the "
+        '`{"type": "tool_first", "call_pattern": "<the tool or shell invocation that runs it>"}` '
+        "reference shape -- this overrides the `python` example in the output shape above, and "
+        "a reference carrying a Python import is rejected. Write every `subagent` edit as a "
+        "`task`-tool delegation spec (purpose, instructions, when to invoke) rather than an "
+        "`rlm.spawn` call. Keep emitting the `arguments` object so the contract stays "
+        "machine-checkable. The agent triggers refinement with the `refine` tool in this mode."
     )
 }
 
@@ -385,23 +392,13 @@ def validate_edit(edit: dict[str, Any], computed_id: str | None = None) -> str |
     if action != "delete" and kind == "skill" and edit.get("arguments") is None:
         return f"{action} skill requires arguments"
     if action != "delete" and kind == "skill":
-        reference = edit.get("reference")
-        if not reference:
-            return f"{action} skill requires python reference"
-        if reference.get("type") != "python":
-            return f"{action} skill reference.type must be python"
-        has_import = bool(
-            isinstance(reference.get("import"), str) and reference.get("import")
-        ) or bool(
-            isinstance(reference.get("python_import"), str) and reference.get("python_import")
-        )
-        has_callable = bool(
-            isinstance(reference.get("callable"), str) and reference.get("callable")
-        ) or bool(isinstance(reference.get("call_pattern"), str) and reference.get("call_pattern"))
-        if not has_import:
-            return f"{action} skill requires python import"
-        if not has_callable:
-            return f"{action} skill requires callable or call_pattern"
+        # The harness owns the reference contract; a bad shape is reported as a
+        # per-edit error so the plan pass can repair it on the next attempt.
+        reference_error = skill_reference_error(edit.get("reference"), edit.get("id") or "")
+        if reference_error is not None:
+            # The harness messages already name the skill, so only the action is
+            # prefixed: "create skill reference.type must be one of: ...".
+            return f"{action} {reference_error}"
     return None
 
 

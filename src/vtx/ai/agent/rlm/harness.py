@@ -205,32 +205,75 @@ _ENTRY_FIELDS = {field.name for field in fields(HarnessEntry)}
 _REFINEMENT_FIELDS = {field.name for field in fields(RefinementEvent)}
 
 
-def _validate_python_skill_reference(
-    reference: dict[str, Any] | None, entry_name: str = ""
-) -> dict[str, Any]:
+SKILL_REFERENCE_PYTHON = "python"
+"""Skill reference shape for a REPL session: an import plus a callable."""
+
+SKILL_REFERENCE_TOOL_FIRST = "tool_first"
+"""Skill reference shape for a session with no kernel: a call pattern only."""
+
+SKILL_REFERENCE_TYPES = (SKILL_REFERENCE_PYTHON, SKILL_REFERENCE_TOOL_FIRST)
+
+SKILL_REFERENCE_REQUIRED = "skill entries require a reference"
+
+
+def skill_reference_error(reference: Any, entry_name: str = "") -> str | None:
+    """Return why a skill reference is unusable, else ``None``.
+
+    A harness skill entry has to say *how to invoke it*, and that call form
+    depends on the runtime mode the entry will be read in:
+
+    - ``python`` — an import plus a callable / ``call_pattern``, callable from
+      the persistent kernel (``code_first``).
+    - ``tool_first`` — a ``call_pattern`` naming the tool or shell invocation,
+      for a session that has no kernel to import into.
+
+    The harness store is mode-neutral, so a reference is validated against both
+    shapes rather than the current mode: an entry written in one mode stays
+    readable in the other, and a mode mismatch surfaces as a per-edit error at
+    write time instead of a dead entry in the system prompt later.
+    """
+    if not isinstance(reference, dict):
+        return SKILL_REFERENCE_REQUIRED
+    kind = reference.get("type")
+    if kind not in SKILL_REFERENCE_TYPES:
+        return f"skill reference.type must be one of: {', '.join(SKILL_REFERENCE_TYPES)}"
+
+    if kind == SKILL_REFERENCE_PYTHON:
+        has_import = bool(
+            isinstance(reference.get("import"), str) and reference["import"]
+        ) or bool(isinstance(reference.get("python_import"), str) and reference["python_import"])
+        if not has_import:
+            return "skill reference requires a Python import"
+        has_callable = bool(
+            isinstance(reference.get("callable"), str) and reference["callable"]
+        ) or bool(isinstance(reference.get("call_pattern"), str) and reference["call_pattern"])
+        if not has_callable:
+            return "skill reference requires a callable or call_pattern"
+        return None
+
+    if not isinstance(reference.get("call_pattern"), str) or not reference["call_pattern"]:
+        return f"skill reference of type {SKILL_REFERENCE_TOOL_FIRST!r} requires a call_pattern"
+    if any(
+        isinstance(reference.get(key), str) and reference[key]
+        for key in ("import", "python_import")
+    ):
+        return (
+            f"skill reference of type {SKILL_REFERENCE_TOOL_FIRST!r} must not carry a "
+            "Python import: the session has no kernel to import into"
+        )
+    return None
+
+
+def _validate_skill_reference(reference: Any, entry_name: str = "") -> dict[str, Any]:
     # Rejections name the entry so the caller can repair the right skill; the
     # suffix keeps the historical message text greppable.
     prefix = f"skill entry {entry_name!r} rejected: " if entry_name else ""
-
-    def reject(message: str) -> None:
-        raise ValueError(f"{prefix}{message}")
-
     if not isinstance(reference, dict):
-        reject("skill entries require a Python reference")
-    normalized = dict(reference)
-    if normalized.get("type") != "python":
-        reject("skill reference.type must be 'python'")
-    if not any(
-        isinstance(normalized.get(key), str) and normalized[key]
-        for key in ("import", "python_import")
-    ):
-        reject("skill reference requires a Python import")
-    if not any(
-        isinstance(normalized.get(key), str) and normalized[key]
-        for key in ("callable", "call_pattern")
-    ):
-        reject("skill reference requires a callable or call_pattern")
-    return normalized
+        raise ValueError(f"{prefix}{SKILL_REFERENCE_REQUIRED}")
+    error = skill_reference_error(reference, entry_name)
+    if error is not None:
+        raise ValueError(f"{prefix}{error}")
+    return dict(reference)
 
 
 def _type_name(value: Any) -> str:
@@ -302,15 +345,14 @@ def _validate_entry_shape(
     _require_text(kind, entry_name, "source", source)
     if kind == "skill":
         if reference is None:
-            # A new skill without a Python reference is invalid; an update that
-            # omits it preserves the existing reference instead.
+            # A new skill without a reference is invalid; an update that omits
+            # it preserves the existing reference instead.
             if existing is None:
                 raise ValueError(
-                    f"skill entry {entry_name!r} rejected: "
-                    f"skill entries require a Python reference"
+                    f"skill entry {entry_name!r} rejected: skill entries require a reference"
                 )
         else:
-            _validate_python_skill_reference(reference, entry_name)
+            _validate_skill_reference(reference, entry_name)
 
 
 def _validate_refinement_event(trigger: Any, changes: Any, *, evidence: Any, outcome: Any) -> None:
@@ -891,7 +933,7 @@ class HarnessState:
             content,
             id=id,
             path=path,
-            reference=_validate_python_skill_reference(reference, _describe_entry(id, title)),
+            reference=_validate_skill_reference(reference, _describe_entry(id, title)),
             arguments=arguments,
             metadata=metadata,
             global_=global_,
@@ -913,9 +955,9 @@ class HarnessState:
     ) -> HarnessEntry:
         # Only validate a reference when one is supplied; omitting it preserves the
         # existing reference (see _upsert) rather than forcing every title/content-only
-        # update to re-send the full Python reference.
+        # update to re-send the full reference.
         validated_reference = (
-            _validate_python_skill_reference(reference, _describe_entry(id, title))
+            _validate_skill_reference(reference, _describe_entry(id, title))
             if reference is not None
             else None
         )

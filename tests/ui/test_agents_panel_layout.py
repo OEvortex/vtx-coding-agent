@@ -1,0 +1,123 @@
+"""The pinned Agents panel inside the real app layout.
+
+The panel is only useful if it stays put: mounted under the status line, above
+the input box, it has to survive the chat scrolling behind it and take its
+width from the terminal rather than from a hardcoded layout.
+"""
+
+from __future__ import annotations
+
+import time
+
+import pytest
+
+from vtx.tui.app import Vtx
+from vtx.tui.agents_panel import AgentsPanel
+from vtx.tui.goal_agents import REGISTRY
+from vtx.tui.widgets import InfoBar
+
+
+@pytest.fixture
+def clean_registry():
+    REGISTRY.clear()
+    yield
+    REGISTRY.clear()
+
+
+def _start(app: Vtx, call_id: str, description: str) -> None:
+    """Dispatch a sub-agent the way the Task tool does."""
+    app._task_progress_callback(
+        call_id, {"kind": "subagent_start", "subagent": "Explore", "description": description}
+    )
+
+
+@pytest.mark.asyncio
+async def test_panel_is_hidden_with_no_subagents(tmp_path, clean_registry) -> None:
+    app = Vtx(cwd=str(tmp_path))
+    async with app.run_test(size=(100, 30)) as pilot:
+        panel = app.query_one("#agents-panel", AgentsPanel)
+        assert not panel.has_class("-visible")
+        assert panel.region.height == 0
+
+
+@pytest.mark.asyncio
+async def test_panel_shows_a_row_per_subagent_and_sits_above_the_input(
+    tmp_path, clean_registry
+) -> None:
+    app = Vtx(cwd=str(tmp_path))
+    async with app.run_test(size=(100, 30)) as pilot:
+        panel = app.query_one("#agents-panel", AgentsPanel)
+        input_box = app.query_one("#input-box")
+
+        _start(app, "t1", "Find TODO/FIXME comments")
+        _start(app, "t2", "Count files and LOC")
+        # Two dispatches of the same agent name must not collapse into one row.
+        app._task_progress_callback("t1", {"kind": "tool_start", "tool_name": "grep"})
+        app._task_progress_callback("t2", {"kind": "tool_start", "tool_name": "read"})
+        app._task_progress_callback("q1", {"kind": "subagent_queued", "subagent": "Explore"})
+        await pilot.pause()
+
+        assert panel.has_class("-visible")
+        rendered = str(panel.content)
+        assert rendered.count("Explore") == 2
+        assert "Find TODO/FIXME comments" in rendered
+        assert "○ 1 queued" in rendered
+        assert "searching…" in rendered
+
+        # Pinned: the strip sits between the status line and the editor.
+        status = app.query_one("#status-line")
+        assert status.region.y < panel.region.y < input_box.region.y
+        assert panel.region.width <= input_box.region.width
+
+
+@pytest.mark.asyncio
+async def test_panel_counts_reach_the_info_bar(tmp_path, clean_registry) -> None:
+    app = Vtx(cwd=str(tmp_path))
+    async with app.run_test(size=(100, 30)) as pilot:
+        footer = app.query_one("#compact-footer", InfoBar)
+
+        _start(app, "t1", "Map public API surface")
+        _start(app, "t2", "Analyze git history")
+        app._task_progress_callback("q1", {"kind": "subagent_queued", "subagent": "Explore"})
+        app._task_progress_callback("q2", {"kind": "subagent_queued", "subagent": "Explore"})
+        await pilot.pause()
+
+        assert footer._subagents_running == 2
+        assert footer._subagents_queued == 2
+
+        app._task_progress_callback(
+            "t1", {"kind": "subagent_end", "subagent": "Explore", "turns": 2, "tokens": 900}
+        )
+        app._task_progress_callback(
+            "t2", {"kind": "subagent_end", "subagent": "Explore", "turns": 1, "tokens": 400}
+        )
+        await pilot.pause()
+        assert (footer._subagents_running, footer._subagents_queued) == (0, 2)
+
+
+@pytest.mark.asyncio
+async def test_panel_retires_once_everything_lands(tmp_path, clean_registry) -> None:
+    app = Vtx(cwd=str(tmp_path))
+    async with app.run_test(size=(100, 30)) as pilot:
+        panel = app.query_one("#agents-panel", AgentsPanel)
+
+        _start(app, "t1", "Map public API surface")
+        await pilot.pause()
+        assert panel.has_class("-visible")
+
+        app._task_progress_callback(
+            "t1", {"kind": "subagent_end", "subagent": "Explore", "turns": 1, "tokens": 100}
+        )
+        await pilot.pause()
+        # The finished row lingers briefly so it can be read...
+        assert panel.has_class("-visible")
+
+        # ...then the strip gives its space back.
+        from vtx.tui.goal_agents import DONE_LINGER_SECONDS
+
+        run = REGISTRY.runs()[0]
+        run.ended_at = time.monotonic() - DONE_LINGER_SECONDS - 1
+        panel.refresh_panel()
+        await pilot.pause()
+        assert not panel.has_class("-visible")
+        assert panel.region.height == 0

@@ -33,6 +33,7 @@ from textual.widgets import Static
 from vtx.ai.agent.goal.record import GoalRecord, count_tasks, current_task, truncate_on_words
 from vtx.ai.agent.goal.service import GoalService, get_service
 from vtx.ai.config import config
+from vtx.tui.agents_panel import render_agents
 from vtx.tui.goal_agents import REGISTRY, SubagentRun
 
 if TYPE_CHECKING:
@@ -274,10 +275,10 @@ def render_compact(
     c = _colors()
     done, total = count_tasks(record.tasks)
     pct = round(done * 100 / total) if total else 0
-    running_agents, _ = REGISTRY.counts()
+    running_agents, queued_agents, _ = REGISTRY.counts()
 
     if width < MIN_BOX_WIDTH:
-        return _render_terse(record, done, total, pct, running_agents, width)
+        return _render_terse(record, done, total, pct, running_agents + queued_agents, width)
 
     box = _Box(width, c.border)
     inner = box.inner
@@ -407,43 +408,14 @@ def _task_window_limit() -> int:
 
 
 def _agent_rows(agents: list[SubagentRun], inner: int) -> list[Text]:
-    """Compact `Agents` block: a count line plus one line per live sub-agent."""
-    if not agents:
+    """Compact `Agents` block: one line per live sub-agent, queued count last.
+
+    Shares :func:`~vtx.tui.agents_panel.render_agents` with the pinned panel
+    so the beacon and the standing view never disagree about a run.
+    """
+    if not any(not run.finished for run in agents):
         return []
-    c = _colors()
-    running, finished = REGISTRY.counts()
-    rows: list[Text] = []
-
-    head = Text("Agents ", style=Style(color=c.dim))
-    if running:
-        head.append(f"{running} running", style=Style(color=c.accent, bold=True))
-        if finished:
-            head.append(f" · {finished} done", style=Style(color=c.dim))
-    else:
-        head.append(f"{finished} done", style=Style(color=c.success))
-    tokens = REGISTRY.total_tokens()
-    if tokens:
-        head.append(f"  {format_tokens(tokens)} tok", style=Style(color=c.dim))
-    rows.append(head)
-
-    # Running first: those are the ones the user is waiting on.
-    live = sorted((r for r in agents if r.running), key=lambda r: r.started_at)[:3]
-    for run in live:
-        line = Text("  ")
-        line.append("▸ ", style=Style(color=c.accent, bold=True))
-        name = truncate_on_words(run.name, 18)
-        line.append(name, style=Style(color=c.fg, bold=True))
-        line.append("  ")
-        detail = run.active_tool or run.top_tools() or run.description
-        line.append(
-            _ellipsize(detail, max(4, inner - cell_len(line.plain))), style=Style(color=c.dim)
-        )
-        rows.append(line)
-
-    hidden = sum(1 for r in agents if r.running) - len(live)
-    if hidden > 0:
-        rows.append(Text(f"    +{hidden} more running", style=Style(color=c.muted)))
-    return rows
+    return list(render_agents(agents, width=inner, max_rows=3, header=False).split("\n"))
 
 
 def _subtask_progress(record: GoalRecord) -> tuple[int, int]:
@@ -719,11 +691,14 @@ def _task_contract(task) -> str:
 def _agent_block(agents: list[SubagentRun], width: int) -> Text:
     """Expanded per-sub-agent list: outcome, turns, tokens, tool breakdown."""
     c = _colors()
-    running, finished = REGISTRY.counts()
+    running, queued, finished = REGISTRY.counts()
     out = Text()
-    out.append(f"\n{running} running · {finished} finished", style=Style(color=c.dim))
+    headline = f"{running} running"
+    if queued:
+        headline += f" · {queued} queued"
+    out.append(f"\n{headline} · {finished} finished", style=Style(color=c.dim))
 
-    ordered = sorted(agents, key=lambda r: (not r.running, -r.started_at))
+    ordered = sorted(agents, key=lambda r: (r.finished, not r.running, r.dispatched_at))
     name_width = min(20, max(10, max(cell_len(r.name) for r in ordered)))
     for run in ordered:
         out.append("\n")

@@ -1,16 +1,14 @@
-"""Live sub-agent registry for goal runs.
+"""Live sub-agent registry.
 
 The ``task`` tool streams a small event dict per sub-agent through the
 runtime's progress callback (see :meth:`vtx.ai.agent.tools.task.TaskTool`).
-The chat log consumes those events to draw each sub-agent's own block, but
-the goal beacon had no way to answer the question a user actually asks
-mid-goal: *is anything else working on this right now?*
+Two consumers fold those events in: the chat log (which draws the tool block
+for the dispatch) and this registry, which keeps just enough per sub-agent to
+answer the question a user actually asks mid-run: *what is working on this
+right now, and what is still waiting?*
 
-This module is a second, deliberately tiny consumer of the same stream. It
-keeps just enough per sub-agent to draw a row, so the goal dashboard can show
-that a goal dispatched 3 sub-agents, that 2 are still running, and which
-tools they are burning turns on.
-
+Runs are keyed by the dispatch's ``tool_call_id``, not by sub-agent name, so
+four concurrent ``Explore`` runs are four rows rather than one smeared row.
 State is process-local and best-effort: losing it on reload is harmless.
 """
 
@@ -19,18 +17,23 @@ from __future__ import annotations
 import time
 from dataclasses import dataclass, field
 
-#: Terminal statuses a sub-agent can end in. Anything else is "running".
+#: Terminal statuses a sub-agent can end in. Anything else is in flight.
 END_STATES = frozenset({"ok", "error", "stopped", "cancelled", "interrupted"})
 
-#: How many sub-agents to keep. A goal run that dispatched more than this is
-#: already past the point where the dashboard line is informative.
-MAX_TRACKED = 24
+#: How many sub-agents to keep. A turn that dispatched more than this is
+#: already past the point where the list is informative, and the oldest
+#: finished rows are evicted first.
+MAX_TRACKED = 48
+
+#: How long a finished run stays worth showing once nothing else is in flight.
+DONE_LINGER_SECONDS = 8.0
 
 
 @dataclass
 class SubagentRun:
-    """One dispatched sub-agent, as far as the beacon cares."""
+    """One dispatched sub-agent."""
 
+    run_id: str
     name: str
     description: str = ""
     model: str | None = None
@@ -40,9 +43,12 @@ class SubagentRun:
     tool_counts: dict[str, int] = field(default_factory=dict)
     active_tool: str | None = None
     last_text: str = ""
-    status: str = "running"
+    status: str = "queued"
     error: str | None = None
-    started_at: float = field(default_factory=time.monotonic)
+    #: FIFO position while queued; 1 means "next to start".
+    queue_position: int = 0
+    dispatched_at: float = field(default_factory=time.monotonic)
+    started_at: float | None = None
     ended_at: float | None = None
 
     @property
@@ -50,7 +56,18 @@ class SubagentRun:
         return self.status == "running"
 
     @property
+    def queued(self) -> bool:
+        return self.status == "queued"
+
+    @property
+    def finished(self) -> bool:
+        return self.status in END_STATES
+
+    @property
     def elapsed_ms(self) -> float:
+        """Wall time since the run started (or ended, once it is over)."""
+        if self.started_at is None:
+            return 0.0
         end = self.ended_at if self.ended_at is not None else time.monotonic()
         return max(0.0, (end - self.started_at) * 1000)
 
@@ -66,47 +83,58 @@ class SubagentRun:
 
 
 class SubagentRegistry:
-    """Ordered, bounded store of sub-agent runs for the current goal."""
+    """Ordered, bounded store of sub-agent runs."""
 
     def __init__(self, max_tracked: int = MAX_TRACKED) -> None:
         self._runs: dict[str, SubagentRun] = {}
         self._order: list[str] = []
         self._max = max_tracked
 
-    def record(self, event: dict) -> SubagentRun | None:
+    def record(self, run_id: str, event: dict) -> SubagentRun | None:
         """Fold one Task-tool progress event into the registry.
 
-        Returns the affected run, or ``None`` for events that carry no
-        sub-agent identity. Safe to call with any dict — malformed events are
-        ignored rather than raised, because a broken beacon must not be able
-        to break the turn that feeds it.
+        ``run_id`` is the dispatch's tool call id, so identical sub-agent
+        names stay distinct. Returns the affected run, or ``None`` for events
+        that carry no sub-agent identity. Safe to call with any dict —
+        malformed events are ignored rather than raised, because a broken
+        panel must not be able to break the turn that feeds it.
         """
         if not isinstance(event, dict):
             return None
-        name = str(event.get("subagent") or "").strip()
         kind = str(event.get("kind") or "")
         if not kind:
             return None
-        if not name:
-            name = "subagent"
+        key = (run_id or "").strip() or str(event.get("subagent") or "").strip() or "subagent"
 
-        run = self._runs.get(name)
+        run = self._runs.get(key)
         if run is None:
-            run = SubagentRun(name=name)
-            self._runs[name] = run
-            self._order.append(name)
+            run = SubagentRun(run_id=key, name=str(event.get("subagent") or "subagent"))
+            self._runs[key] = run
+            self._order.append(key)
             self._evict()
 
-        if kind == "subagent_start":
+        if kind == "subagent_queued":
+            run.description = str(event.get("description") or run.description)
+            run.model = event.get("model") or run.model
+            run.max_turns = event.get("max_turns") or run.max_turns
+            run.queue_position = int(event.get("position") or 0)
+            run.status = "queued"
+        elif kind == "subagent_start":
             run.description = str(event.get("description") or "")
             run.model = event.get("model")
             run.max_turns = event.get("max_turns")
             run.status = "running"
+            run.queue_position = 0
             run.started_at = time.monotonic()
         elif kind == "text_delta":
             run.last_text = (run.last_text + str(event.get("delta") or ""))[-400:]
         elif kind == "tool_start":
             run.active_tool = event.get("tool_name")
+            if not event.get("tool_counts"):
+                # Emitters that don't ship the full tally still deserve a count.
+                tool_name = str(event.get("tool_name") or "")
+                if tool_name:
+                    run.tool_counts[tool_name] = run.tool_counts.get(tool_name, 0) + 1
         elif kind == "tool_result":
             run.active_tool = None
         elif kind == "turn_end":
@@ -130,39 +158,55 @@ class SubagentRegistry:
                 run.tool_counts = {str(k): int(v) for k, v in counts.items()}
         return run
 
+    def forget(self, run_id: str) -> None:
+        """Drop one run (a dispatch the model retried, say)."""
+        if run_id in self._runs:
+            self._order.remove(run_id)
+            self._runs.pop(run_id, None)
+
     @staticmethod
     def _finish(run: SubagentRun, status: str) -> None:
-        if run.status in END_STATES:
+        if run.finished:
             return
         run.status = "error" if run.error else status
         run.ended_at = time.monotonic()
         run.active_tool = None
+        run.queue_position = 0
+        # A run cancelled before it ever started has no start time to measure
+        # from; borrow dispatch time so the row still shows a duration.
+        if run.started_at is None:
+            run.started_at = run.ended_at
 
     def _evict(self) -> None:
         """Drop the oldest *finished* runs once over the cap.
 
-        Running agents are never evicted — a live sub-agent with no row is
-        worse than a slightly stale registry. If everything is still running
-        we simply let the registry grow past the cap.
+        Queued and running agents are never evicted — a live sub-agent with no
+        row is worse than a slightly stale registry. If everything is still
+        in flight we simply let the registry grow past the cap.
         """
-        for name in list(self._order):
+        for key in list(self._order):
             if len(self._order) <= self._max:
                 return
-            run = self._runs.get(name)
-            if run is not None and run.running:
+            run = self._runs.get(key)
+            if run is not None and not run.finished:
                 continue
-            self._order.remove(name)
-            self._runs.pop(name, None)
+            self._order.remove(key)
+            self._runs.pop(key, None)
 
     def runs(self) -> list[SubagentRun]:
-        """Tracked runs, oldest first (callers sort by status themselves)."""
+        """Tracked runs, oldest dispatch first (callers sort by status)."""
         return [self._runs[key] for key in self._order if key in self._runs]
 
-    def counts(self) -> tuple[int, int]:
-        """``(running, finished)``."""
+    def counts(self) -> tuple[int, int, int]:
+        """``(running, queued, finished)``."""
         all_runs = self.runs()
         running = sum(1 for r in all_runs if r.running)
-        return running, len(all_runs) - running
+        queued = sum(1 for r in all_runs if r.queued)
+        return running, queued, len(all_runs) - running - queued
+
+    def has_live(self) -> bool:
+        """True while any sub-agent is queued or running."""
+        return any(not r.finished for r in self._runs.values())
 
     def total_tokens(self) -> int:
         return sum(r.tokens for r in self._runs.values())
@@ -175,14 +219,14 @@ class SubagentRegistry:
         return bool(self._runs)
 
 
-#: Process-wide registry. One app process == one chat == one goal run at a
-#: time, so a module singleton keeps the wiring trivial.
+#: Process-wide registry. One app process == one chat, so a module singleton
+#: keeps the wiring trivial.
 REGISTRY = SubagentRegistry()
 
 
-def record_subagent_event(event: dict) -> None:
+def record_subagent_event(run_id: str, event: dict) -> None:
     """Fold a Task-tool progress event into the global registry."""
-    REGISTRY.record(event)
+    REGISTRY.record(run_id, event)
 
 
 def reset_subagents() -> None:

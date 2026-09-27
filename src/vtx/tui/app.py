@@ -44,6 +44,7 @@ from vtx.core import ApprovalResponse, AskUserResponse
 from vtx.core.types import ImageContent
 from vtx.core.version import VERSION, format_version
 from vtx.tui.agent_runner import AgentRunnerMixin
+from vtx.tui.agents_panel import AgentsPanel
 from vtx.tui.ask_user import AskUserDialog
 from vtx.tui.autocomplete import DEFAULT_COMMANDS, SlashCommand
 from vtx.tui.blocks import HandoffLinkBlock, LaunchWarning
@@ -393,6 +394,7 @@ class Vtx(
         yield GoalWidget(id="goal-widget")
         yield QueueDisplay(id="queue-display")
         yield StatusLine(id="status-line")
+        yield AgentsPanel(id="agents-panel")
         yield InputBox(cwd=self._cwd, id="input-box")
         yield FloatingList(window_size=10, label_width=6, id="completion-list")
         yield TreeSelector(id="tree-selector")
@@ -535,16 +537,41 @@ class Vtx(
             self._runtime._rebuild_system_prompt()
 
     def _task_progress_callback(self, tool_call_id: str, event: dict) -> None:
-        # The goal beacon shows the sub-agents a goal run dispatched, so the
-        # registry is fed before the chat-log lookup: a not-yet-mounted log
-        # must not cost us the goal-side view either.
-        record_subagent_event(event)
+        # The registry feeds two pinned views: the Agents panel (always) and
+        # the goal beacon (only while a goal is focused). Fold the event in
+        # before touching widgets, so a not-yet-mounted screen can't cost us
+        # the state.
+        record_subagent_event(tool_call_id, event)
+        self._refresh_agents_panel()
         try:
             chat = self.query_one("#chat-log", ChatLog)
         except Exception:
             # Chat log not mounted yet (early turn) — drop the event.
             return
         chat.apply_task_progress(tool_call_id, event)
+
+    def _refresh_agents_panel(self) -> None:
+        """Repaint the pinned Agents strip and sync its counts to the info bar."""
+        try:
+            panel = self.query_one("#agents-panel", AgentsPanel)
+        except Exception:
+            return
+        panel.refresh_panel()
+        running, queued = panel.counts
+        try:
+            footer = self.query_one("#compact-footer", InfoBar)
+        except Exception:
+            return
+        footer.set_subagents(running, queued)
+
+    def _sync_agent_counts(self) -> None:
+        """Push the panel's running/queued counts into the info bar."""
+        try:
+            panel = self.query_one("#agents-panel", AgentsPanel)
+            footer = self.query_one("#compact-footer", InfoBar)
+        except Exception:
+            return
+        footer.set_subagents(*panel.counts)
 
     def _install_task_progress_callback(self) -> None:
         """Wire the Task tool's parent context to the chat log."""
@@ -664,6 +691,13 @@ class Vtx(
         goal_widget.set_session_id(self._goal_session_id())
         goal_widget.refresh_goal(self._cwd)
         self.set_interval(5.0, lambda: goal_widget.refresh_goal())
+
+        # Sub-agents: the pinned panel repaints itself while anything is in
+        # flight; this low-rate tick only keeps the info-bar counts honest
+        # when a run ends without a final progress event.
+        agents_panel = self.query_one("#agents-panel", AgentsPanel)
+        agents_panel.refresh_panel()
+        self.set_interval(0.5, self._sync_agent_counts)
 
         self._startup_complete = True
         self._show_pending_update_notice_if_idle()

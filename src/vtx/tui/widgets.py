@@ -165,6 +165,8 @@ class InfoBar(Vertical):
         self._permission_mode = config.permissions.mode
         self._file_changes_text_start: int | None = None
         self._active_agent: str = ""
+        self._subagents_running = 0
+        self._subagents_queued = 0
         self._row1_right: Label | None = None
         self._row2_left: Label | None = None
         self._row2_right: Label | None = None
@@ -276,17 +278,33 @@ class InfoBar(Vertical):
     def _format_row2_left(self) -> Text:
         result = self._format_permission_mode()
         self._file_changes_text_start = None
-        if not self._file_changes:
-            return result
+        if self._file_changes:
+            n_files = len(self._file_changes)
+            total_added = sum(a for a, _ in self._file_changes.values())
+            total_removed = sum(r for _, r in self._file_changes.values())
+            result.append(" • ", style=config.ui.colors.dim)
+            self._file_changes_text_start = len(result.plain)
+            result.append(f"{n_files} file{'s' if n_files != 1 else ''}")
+            result.append(f" +{total_added}", style=config.ui.colors.diff_added)
+            result.append(f" -{total_removed}", style=config.ui.colors.diff_removed)
+        if self._subagents_running or self._subagents_queued:
+            result.append("  ", style=config.ui.colors.dim)
+            result.append(self._format_subagents())
+        return result
 
-        n_files = len(self._file_changes)
-        total_added = sum(a for a, _ in self._file_changes.values())
-        total_removed = sum(r for _, r in self._file_changes.values())
-        result.append(" • ", style=config.ui.colors.dim)
-        self._file_changes_text_start = len(result.plain)
-        result.append(f"{n_files} file{'s' if n_files != 1 else ''}")
-        result.append(f" +{total_added}", style=config.ui.colors.diff_added)
-        result.append(f" -{total_removed}", style=config.ui.colors.diff_removed)
+    def _format_subagents(self) -> Text:
+        """`4 running, 28 queued agents` — the pinned panel's headline numbers.
+
+        Lives in the info bar rather than only in the panel so the count stays
+        visible after the panel retires (a collapsed or narrow terminal).
+        """
+        result = Text()
+        parts = []
+        if self._subagents_running:
+            parts.append(f"{self._subagents_running} running")
+        if self._subagents_queued:
+            parts.append(f"{self._subagents_queued} queued")
+        result.append(f"{', '.join(parts)} agent{'s' if len(parts) > 1 else ''}")
         return result
 
     def _format_permission_mode(self) -> Text:
@@ -396,6 +414,19 @@ class InfoBar(Vertical):
     def update_file_changes(self, path: str, added: int, removed: int) -> None:
         prev_added, prev_removed = self._file_changes.get(path, (0, 0))
         self._file_changes[path] = (prev_added + added, prev_removed + removed)
+        with contextlib.suppress(Exception):
+            self._label_row2_left.update(self._format_row2_left(), layout=False)
+
+    def set_subagents(self, running: int, queued: int) -> None:
+        """Show the sub-agent fan-out (``4 running, 28 queued agents``).
+
+        Fed by the pinned Agents panel. A no-op when the numbers are unchanged
+        so the 8fps panel tick doesn't re-layout the info bar.
+        """
+        if (running, queued) == (self._subagents_running, self._subagents_queued):
+            return
+        self._subagents_running = max(0, running)
+        self._subagents_queued = max(0, queued)
         with contextlib.suppress(Exception):
             self._label_row2_left.update(self._format_row2_left(), layout=False)
 

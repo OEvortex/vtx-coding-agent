@@ -41,6 +41,8 @@ await refine.run("persist a memory about checking git status before committing")
 
 The kernel only exists in RLM mode, so kernel skills are hidden in `tool_first` mode — they are left out of the system-prompt catalog, the `skill` tool's `list`, and the `/` command menu, and `register_cmd: true` does not force one back in. A tool-first agent has no `ipython` tool, so an advertised kernel skill is a dead end: the description reads as generally applicable, the agent loads it, and then has nothing to call it with. In RLM mode they are pre-imported in the kernel and listed with their import name.
 
+`refine` is the one kernel skill with a tool-first counterpart: since the capability is a host-side pass, not a kernel call, `tool_first` sessions get the equivalent `refine` tool (see [tools.md](tools.md#refine)) rather than a dead-end skill.
+
 ## Discovery paths
 
 Loaded in priority order:

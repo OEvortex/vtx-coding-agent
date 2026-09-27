@@ -1263,23 +1263,19 @@ class LaunchWarningsBlock(Static):
 
 
 class TaskToolBlock(ToolBlock):
-    """Task tool block with live and finished sub-agent rendering.
+    """Dispatch receipt for one sub-agent.
 
-    Running (animated ~8fps by a Textual timer)::
+    The scrollback keeps the *receipt* — what was dispatched, and how it ended
+    — and nothing else::
 
-        ⠙ haiku · ↻2 · 3 tool uses · 12.3s
-          ⎿  reading, running command…
+        ▸ Explore  Map public API surface
+          ⎿  Running in background (ID: 623586f8-8334-468)
 
-    Finished::
-
-        ✓ general-purpose · ↻5 · 7 tool uses · 33.8k token · 45.6s
-          ⎿  Done
-
-    Expanding the block (ctrl+]) still shows the full transcript from
-    ``ui_details_full``.
+    Live counters, the spinner and per-agent activity live in the pinned
+    Agents panel (:mod:`vtx.tui.agents_panel`), which shows every sub-agent at
+    once instead of one block per dispatch. This block repaints only when a
+    progress event arrives, so it costs nothing while the panel animates.
     """
-
-    LIVE_TICK_SECONDS = 0.08
 
     def __init__(self, **kwargs) -> None:
         super().__init__(**kwargs)
@@ -1287,8 +1283,10 @@ class TaskToolBlock(ToolBlock):
         self._task_finished: dict | None = None
         self._task_started: float | None = None
         self._task_elapsed_ms: float | None = None
-        self._live_timer: Timer | None = None
-        self._spinner_frame: int = 0
+        # A background dispatch finalizes its tool result immediately, long
+        # before the sub-agent ends. This tracks the sub-agent's own end so
+        # the receipt doesn't read as "finished" at 0 turns / 0 tool calls.
+        self._subagent_ended: bool = False
 
     def on_mount(self) -> None:
         if self._success is None and not self._awaiting_approval:
@@ -1301,7 +1299,6 @@ class TaskToolBlock(ToolBlock):
                     "tool_uses": 0,
                     "tokens": 0,
                 }
-            self._ensure_live_timer()
             self._render_result_output()
 
     def _format_header(self, truncate: bool = True) -> Text:
@@ -1331,17 +1328,18 @@ class TaskToolBlock(ToolBlock):
         desc = self._call_msg or ""
 
         result.append(f"{icon} ", style=icon_style)
-        result.append(f"{task_ui.GLYPHS['badge']} {subagent_name}", style=name_style)
+        result.append(subagent_name, style=name_style)
         if desc:
             result.append("  ")
             result.append(desc, style=Style(color=colors.dim))
 
-        if self._success is not None and self._task_finished is not None:
+        finished = self._task_finished or {}
+        if self._subagent_ended and finished:
             metrics: list[str] = []
             elapsed_ms = self._current_elapsed_ms()
             if elapsed_ms is not None:
                 metrics.append(task_ui.format_ms(elapsed_ms))
-            tokens = self._task_finished.get("tokens")
+            tokens = finished.get("tokens")
             if tokens:
                 metrics.append(task_ui.format_tokens(tokens))
             if metrics:
@@ -1350,19 +1348,18 @@ class TaskToolBlock(ToolBlock):
         return result
 
     def set_task_progress(self, stats: dict) -> None:
-        """Render a progress snapshot from :meth:`ChatLog.apply_task_progress`."""
+        """Fold a progress snapshot from :meth:`ChatLog.apply_task_progress`."""
         if self._task_started is None:
             self._task_started = time.monotonic()
         if stats.get("ended"):
+            self._subagent_ended = True
             elapsed = stats.get("elapsed_ms")
             self._task_elapsed_ms = (
                 elapsed if elapsed is not None else (time.monotonic() - self._task_started) * 1000
             )
             self._task_finished = dict(stats)
-            self._stop_live_timer()
         else:
             self._task_stats = dict(stats)
-            self._ensure_live_timer()
         self._render_result_output()
         # Update header in case subagent name resolved
         with contextlib.suppress(Exception):
@@ -1377,10 +1374,13 @@ class TaskToolBlock(ToolBlock):
         ui_details_full: str | None = None,
         images: list | None = None,
     ) -> None:
-        if self._task_started is not None and self._task_elapsed_ms is None:
+        if (
+            self._subagent_ended
+            and self._task_started is not None
+            and self._task_elapsed_ms is None
+        ):
             self._task_elapsed_ms = (time.monotonic() - self._task_started) * 1000
-        self._stop_live_timer()
-        if self._task_finished is None:
+        if self._subagent_ended and self._task_finished is None:
             self._task_finished = dict(self._task_stats or {})
             self._task_finished["ended"] = True
             if not success and ui_summary:
@@ -1393,23 +1393,6 @@ class TaskToolBlock(ToolBlock):
             ui_details_full=ui_details_full,
             images=images,
         )
-
-    def _ensure_live_timer(self) -> None:
-        if self._live_timer is None:
-            self._live_timer = self.set_interval(self.LIVE_TICK_SECONDS, self._on_live_tick)
-
-    def _stop_live_timer(self) -> None:
-        if self._live_timer is not None:
-            self._live_timer.stop()
-            self._live_timer = None
-
-    def _on_live_tick(self) -> None:
-        # Animate only while a sub-agent is actually in flight.
-        if self._task_finished is not None or self._task_stats is None:
-            self._stop_live_timer()
-            return
-        self._spinner_frame += 1
-        self._render_result_output()
 
     def _current_elapsed_ms(self) -> float | None:
         if self._task_elapsed_ms is not None:
@@ -1441,20 +1424,22 @@ class TaskToolBlock(ToolBlock):
             rendered = task_ui.render_finished(
                 self._task_finished,
                 self._success,
-                self._current_elapsed_ms(),
+                self._task_elapsed_ms,
                 result_text=result_text,
                 expanded=self._expanded,
             )
             self._show_body(rendered, finished=True)
             return
 
-        # Live in-flight view; also resumes over an already-finalized
-        # background block so late progress stays visible.
+        # A background dispatch already returned its tool result (the
+        # "Running in background (ID: …)" receipt) while the sub-agent is
+        # still going. Show that receipt, not a frozen 0-turn summary.
+        if self._success is not None and not self._awaiting_approval:
+            super()._render_result_output()
+            return
+
         if self._task_stats is not None and not self._awaiting_approval:
-            rendered = task_ui.render_live(
-                self._task_stats, self._spinner_frame, self._current_elapsed_ms()
-            )
-            self._show_body(rendered, finished=False)
+            self._show_body(task_ui.render_receipt(self._task_stats), finished=False)
             return
 
         super()._render_result_output()

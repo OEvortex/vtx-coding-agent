@@ -26,7 +26,7 @@ def get_styles() -> str:
 Screen {{
     layout: grid;
     grid-size: 1;
-    grid-rows: 1fr auto auto auto auto auto;
+    grid-rows: 1fr auto auto auto auto auto auto;
     background: transparent;
     color: {colors.fg};
 }}
@@ -396,6 +396,16 @@ Screen {{
 #exit-hint {{
     color: {colors.dim};
     width: auto;
+}}
+
+/* Pinned sub-agent strip: a standing view of the fan-out, above the editor. */
+#agents-panel {{
+    height: auto;
+    padding: 0 1;
+}}
+
+#agents-panel.-visible {{
+    display: block;
 }}
 
 /* Input area */
