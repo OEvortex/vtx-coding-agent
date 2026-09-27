@@ -323,7 +323,7 @@ class SettingsCommands(CommandSupport):
 
         elif item_value == "mode":
             current = config.mode
-            new_mode: AgentMode = "tool_first" if current == "rlm" else "rlm"
+            new_mode: AgentMode = "tool_first" if current == "code_first" else "code_first"
             self._select_mode(new_mode)
             chat = self.query_one("#chat-log", ChatLog)
             chat.show_status(f"Mode changed to {new_mode}")

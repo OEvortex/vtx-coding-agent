@@ -114,7 +114,7 @@ class IpythonTool(BaseTool):
         """Return the prime-agent-style cell widget when RLM mode is active."""
         from vtx.ai.config import config
 
-        if getattr(config, "mode", "tool_first") != "rlm":
+        if getattr(config, "mode", "tool_first") != "code_first":
             return None
         return _resolve_ipython_block()
 
@@ -196,19 +196,40 @@ class IpythonTool(BaseTool):
                 on_output(text)
 
         async def _execute_tool_by_name(name: str, args: dict[str, Any]) -> Any:
-            from vtx.ai.agent.tools import get_tool
+            from vtx.ai.agent.rlm.diagnostics import (
+                INVALID_INPUT,
+                TOOL_FAILURE,
+                UNKNOWN_TOOL,
+                BridgeError,
+            )
+            from vtx.ai.agent.tools import get_all_tools, get_tool
 
             tool = get_tool(name)
             if tool is None and name == "web_search":
                 tool = get_tool("web")
             if tool is None:
-                raise ValueError(f"Tool not found: {name}")
-            params_model = tool.params(**args)
+                # Typed here rather than left as a bare ValueError so the model
+                # gets a category it can act on, and the available names, instead
+                # of a traceback it has to interpret.
+                raise BridgeError(
+                    UNKNOWN_TOOL,
+                    f"No tool named '{name}' is available in this session.",
+                    suggestions=(f"Available tools: {', '.join(sorted(get_all_tools()))}",),
+                )
+            try:
+                params_model = tool.params(**args)
+            except Exception as exc:
+                raise BridgeError(
+                    INVALID_INPUT,
+                    f"'{name}' rejected the arguments it was given.",
+                    detail=repr(exc),
+                ) from exc
             # Forward the turn's cancel_event so Esc reaches a long tool called
             # from inside a cell, the same as a direct tool call.
             result = await tool.execute(params_model, cancel_event=cancel_event)
             if not result.success:
-                raise RuntimeError(result.result or f"Tool {name} failed")
+                # The tool's own message, already model-facing.
+                raise BridgeError(TOOL_FAILURE, result.result or f"'{name}' failed.")
             return result.result
 
         output, errored = await manager.execute(

@@ -203,6 +203,13 @@ def _preview(message: Any, index: int, max_chars: int) -> dict[str, Any]:
 
 
 async def _handle_tool_call(payload: dict[str, Any], ctx: _Ctx) -> Any:
+    from vtx.ai.agent.rlm.diagnostics import (
+        HOST_UNAVAILABLE,
+        BridgeError,
+        classify_bridge_error,
+        plain_data,
+    )
+
     name = payload.get("name")
     if not isinstance(name, str) or not name:
         raise HostError("tool.call name must be a non-empty string")
@@ -212,12 +219,28 @@ async def _handle_tool_call(payload: dict[str, Any], ctx: _Ctx) -> Any:
     if not isinstance(args, dict):
         raise HostError("tool.call args must be an object")
     if ctx.tool_executor is None:
-        raise HostError("tool.call requires a tool executor in this session")
-    result = await ctx.tool_executor(name, args)
+        raise BridgeError(
+            HOST_UNAVAILABLE,
+            "The host bridge is not available in this session, so main-process "
+            "tools cannot be called from a cell.",
+        )
+
+    available: tuple[str, ...] = ()
     try:
-        return json.loads(json.dumps(result, default=str))
-    except (TypeError, ValueError) as exc:
-        raise HostError(f'tool.call result for "{name}" is not JSON-serializable: {exc}') from exc
+        from vtx.ai.agent.tools import get_all_tools
+
+        available = tuple(get_all_tools())
+    except Exception:
+        pass
+
+    try:
+        result = await ctx.tool_executor(name, args)
+    except BaseException as exc:
+        # Every bridge failure reaches the model as a category, not a
+        # traceback. Unclassified host exceptions are sanitized by
+        # ``classify_bridge_error`` rather than forwarded verbatim.
+        raise classify_bridge_error(name, exc, available=available) from None
+    return plain_data(result)
 
 
 # =================================================================================================

@@ -35,7 +35,7 @@ def _result_budget_chars() -> int:
     try:
         from vtx.ai.config import config as vtx_config
 
-        if getattr(vtx_config, "mode", "tool_first") == "rlm":
+        if getattr(vtx_config, "mode", "tool_first") == "code_first":
             return _RLM_MAX_TOOL_RESULT_CHARS
     except Exception:
         pass

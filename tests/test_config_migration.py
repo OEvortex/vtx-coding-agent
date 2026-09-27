@@ -224,3 +224,62 @@ llm:
 
     warnings = consume_config_warnings()
     assert any("Migrated config" in warning for warning in warnings)
+
+
+def test_v13_rlm_mode_migrates_to_code_first(tmp_path, monkeypatch):
+    """v14 renamed the REPL-first mode; existing configs keep working."""
+    home = tmp_path / "home"
+    config_dir = home / ".vtx"
+    config_dir.mkdir(parents=True)
+    config_file = config_dir / "config.yml"
+    config_file.write_text("meta:\n  config_version: 13\n\nmode: rlm\n", encoding="utf-8")
+
+    monkeypatch.setattr(Path, "home", lambda: home)
+    reset_config()
+
+    cfg = get_config()
+    assert cfg.mode == "code_first"
+
+    # The rewrite is what the user sees on disk, so assert on it rather than
+    # on a config attribute: Config does not expose its own version.
+    written = yaml.safe_load(config_file.read_text(encoding="utf-8"))
+    assert written["meta"]["config_version"] == CURRENT_CONFIG_VERSION
+    assert written["mode"] == "code_first"
+
+    reset_config()
+
+
+def test_v12_rlm_mode_migrates_through_both_steps(tmp_path, monkeypatch):
+    home = tmp_path / "home"
+    config_dir = home / ".vtx"
+    config_dir.mkdir(parents=True)
+    config_file = config_dir / "config.yml"
+    config_file.write_text("meta:\n  config_version: 12\n\nmode: rlm\n", encoding="utf-8")
+
+    monkeypatch.setattr(Path, "home", lambda: home)
+    reset_config()
+
+    assert get_config().mode == "code_first"
+
+    written = yaml.safe_load(config_file.read_text(encoding="utf-8"))
+    assert written["meta"]["config_version"] == CURRENT_CONFIG_VERSION
+    assert written["mode"] == "code_first"
+
+    reset_config()
+
+
+def test_unknown_mode_value_falls_back_to_tool_first(tmp_path, monkeypatch):
+    home = tmp_path / "home"
+    config_dir = home / ".vtx"
+    config_dir.mkdir(parents=True)
+    config_file = config_dir / "config.yml"
+    config_file.write_text(
+        f"meta:\n  config_version: {CURRENT_CONFIG_VERSION}\n\nmode: nonsense\n", encoding="utf-8"
+    )
+
+    monkeypatch.setattr(Path, "home", lambda: home)
+    reset_config()
+
+    assert get_config().mode == "tool_first"
+
+    reset_config()

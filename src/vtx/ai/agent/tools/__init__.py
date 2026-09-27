@@ -20,6 +20,7 @@ from .task import SubagentSpec, TaskParams, TaskTool
 from .web import SearchParams, WebSearchTool, WebTool
 
 __all__ = [
+    "REPL_TOOL_NAME",
     "AskUserParams",
     "AskUserTool",
     "BaseTool",
@@ -51,6 +52,20 @@ _TOOL_REGISTRY: dict[str, BaseTool] = {}
 _DEFAULT_TOOL_NAMES: list[str] = []
 _PARENT_ONLY_TOOL_NAMES: set[str] = set()
 _default_tool_lookup: Any = None
+
+REPL_TOOL_NAME = "ipython"
+"""Name of the persistent-kernel tool, which is RLM-mode only."""
+
+
+def _mode_grants_repl() -> bool:
+    """Whether the current mode runs a persistent Python kernel.
+
+    Imported lazily: :mod:`vtx.ai.config` pulls in the provider and model
+    stack, and the registry is imported from underneath it.
+    """
+    from vtx.ai.config import config
+
+    return config.mode == "code_first"
 
 
 def register_tool(
@@ -115,8 +130,22 @@ def get_all_tools() -> dict[str, BaseTool]:
 
 
 def get_default_tools() -> list[str]:
-    """Return a list of tool names marked as default."""
-    return list(_DEFAULT_TOOL_NAMES)
+    """Return the tool names that are default *for the current mode*.
+
+    ``ipython`` is registered as available in every mode but is only default in
+    RLM mode. It is a persistent Python REPL, so a tool-first agent handed one
+    gets an 11-tool surface with a kernel that mode never wires up — it shows
+    in ``[Tools]``, in the exported session header, and in the tool schemas the
+    model is shown, and the model then calls it in a mode that has no kernel
+    lifecycle. Both RLM paths add it explicitly (the runtime collapses the tool
+    set to ``[ipython]``, and RLM sub-agents resolve base names here), so
+    excluding it from the tool-first default costs nothing. It stays
+    registered, so a profile can still opt in by name via ``tools_allow`` or a
+    tool group.
+    """
+    if _mode_grants_repl():
+        return list(_DEFAULT_TOOL_NAMES)
+    return [name for name in _DEFAULT_TOOL_NAMES if name != REPL_TOOL_NAME]
 
 
 def get_parent_only_tools() -> set[str]:

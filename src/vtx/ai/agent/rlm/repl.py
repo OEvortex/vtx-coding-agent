@@ -639,6 +639,22 @@ def _cap_text(text: str) -> str:
 
 
 def _error_event(cell_id: str, exc: BaseException) -> dict[str, Any]:
+    # A host-bridge failure is a categorized answer, not a defect in the cell.
+    # Printing a Python traceback for it would bury the category under frames
+    # from the host's own call path and read as "my code is broken".
+    from vtx.ai.agent.rlm.diagnostics import BridgeError
+
+    if isinstance(exc, BridgeError):
+        return {
+            "event": "error",
+            "id": cell_id,
+            "ename": f"BridgeError[{exc.kind}]",
+            "evalue": exc.message,
+            "traceback": exc.render().splitlines(),
+            "bridgeKind": exc.kind,
+            "retryable": exc.retryable,
+        }
+
     # No cell frame (e.g. SyntaxError): exception-only keeps filename, source, and caret.
     te = traceback.TracebackException.from_exception(exc)
     stack = _cell_stack(te.stack)

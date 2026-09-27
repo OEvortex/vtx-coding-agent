@@ -78,7 +78,7 @@ class TestSkillClassification:
         assert not is_kernel_skill(Skill(path="p", name="n", description="d"))
 
     def test_kernel_available_only_in_rlm_mode(self):
-        assert kernel_skills_available("rlm") is True
+        assert kernel_skills_available("code_first") is True
         assert kernel_skills_available("tool_first") is False
 
     def test_kernel_skill_without_metadata_is_not_treated_as_kernel(self):
@@ -98,7 +98,7 @@ class TestModeFilter:
         _write_kernel_skill(tmp_path, "kp")
         _write_markdown_skill(tmp_path, "plain")
         skills = load_skills(str(tmp_path)).skills
-        kept = {s.name for s in skills_for_mode(skills, "rlm")}
+        kept = {s.name for s in skills_for_mode(skills, "code_first")}
         assert kept == {"kp", "plain"}
 
     def test_filter_does_not_mutate_input(self, tmp_path: Path):
@@ -131,7 +131,7 @@ class TestPromptCatalog:
         _write_kernel_skill(tmp_path, "kp")
         skills = load_skills(str(tmp_path)).skills
         with patch("vtx.ai.agent.prompts.builder.vtx_config") as cfg:
-            cfg.mode = "rlm"
+            cfg.mode = "code_first"
             prompt = build_system_prompt(str(tmp_path), skills=skills)
         assert _skills_index_entries(prompt) == ["kp"]
 
@@ -160,7 +160,7 @@ class TestPromptCatalog:
 class TestSkillToolDiscovery:
     def _list_names(self, mode: str) -> list[str]:
         with patch("vtx.ai.agent.context.skills.kernel_skills_available") as available:
-            available.return_value = mode == "rlm"
+            available.return_value = mode == "code_first"
             result = asyncio.run(SkillTool().execute(SkillParams(action="list")))
         return [
             line[2:].split(" [")[0] for line in result.result.splitlines() if line.startswith("- ")
@@ -171,7 +171,7 @@ class TestSkillToolDiscovery:
         assert BUNDLED_KERNEL_SKILLS.isdisjoint(listed)
 
     def test_rlm_list_shows_bundled_kernel_skills(self):
-        listed = set(self._list_names("rlm"))
+        listed = set(self._list_names("code_first"))
         assert listed >= BUNDLED_KERNEL_SKILLS
 
     def test_list_still_shows_markdown_skills_in_tool_first(self):

@@ -259,7 +259,7 @@ class TestIpythonBlockWiring:
         from vtx.ai.agent.tools.ipython import IpythonTool
 
         tool = IpythonTool()
-        monkeypatch.setattr(config, "mode", "rlm")
+        monkeypatch.setattr(config, "mode", "code_first")
         async with _TestApp().run_test() as pilot:
             chat = pilot.app.query_one("#chat-log", ChatLog)
             block = chat.start_tool("ipython", "id-x", "print(1)", icon=">>>", tool=tool)

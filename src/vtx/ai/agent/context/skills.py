@@ -98,7 +98,7 @@ def kernel_skills_available(mode: str | None = None) -> bool:
         from vtx.ai.config import config as vtx_config
 
         mode = getattr(vtx_config, "mode", "tool_first")
-    return mode == "rlm"
+    return mode == "code_first"
 
 
 def skills_for_mode(skills: list[Any], mode: str | None = None) -> list[Any]:

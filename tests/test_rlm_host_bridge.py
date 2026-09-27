@@ -115,16 +115,21 @@ async def test_tool_call_executor_failure_degrades_to_error_envelope():
     reply = await dispatch_host_request(
         {"type": "tool.call", "name": "read", "args": {}}, tool_executor=executor, session_id=SID
     )
-    assert reply == {"status": "error", "error": "boom"}
+    # The envelope shape is unchanged; the payload now carries the failure
+    # category and the prescribed next step, so the model can tell a tool that
+    # declined from a tool that was never found.
+    assert reply["status"] == "error"
+    assert reply["error"].startswith("[bridge:tool_failure] boom")
+    assert "Next:" in reply["error"]
 
 
 @pytest.mark.asyncio
 async def test_tool_call_without_executor_is_honest():
     reply = await dispatch_host_request({"type": "tool.call", "name": "read"}, session_id=SID)
-    assert reply == {
-        "status": "error",
-        "error": "tool.call requires a tool executor in this session",
-    }
+    assert reply["status"] == "error"
+    # Categorized, and it says what to do instead of retrying the call.
+    assert reply["error"].startswith("[bridge:host_unavailable]")
+    assert "Do the work inside the cell instead" in reply["error"]
 
 
 @pytest.mark.asyncio
@@ -155,7 +160,10 @@ async def test_tool_call_non_serializable_result_reports_honestly():
         {"type": "tool.call", "name": "circ", "args": {}}, tool_executor=executor, session_id=SID
     )
     assert reply["status"] == "error"
-    assert reply["error"].startswith('tool.call result for "circ" is not JSON-serializable')
+    # Categorized as invalid output, and it does not echo the serializer's own
+    # message back across the bridge.
+    assert reply["error"].startswith("[bridge:invalid_output]")
+    assert "Circular reference" not in reply["error"]
 
 
 # =================================================================================================

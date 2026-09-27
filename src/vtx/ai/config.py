@@ -42,7 +42,7 @@ CONFIG_DIR_NAME: str = "vtx"
 OnOverflowMode = Literal["continue", "pause"]
 AuthMode = Literal["auto", "required", "none"]
 PermissionMode = Literal["prompt", "auto"]
-AgentMode = Literal["tool_first", "rlm"]
+AgentMode = Literal["tool_first", "code_first"]
 AGENT_MODES: tuple[AgentMode, ...] = get_args(AgentMode)
 NotificationMode = Literal["on", "off"]
 PERMISSION_MODES: tuple[PermissionMode, ...] = get_args(PermissionMode)
@@ -280,7 +280,7 @@ class ConfigSchema(BaseModel):
     # Built-in sub-agent presets for the ``Task`` tool.
     task: TaskConfig = TaskConfig()
     # Runtime mode: ``tool_first`` uses the default surgical tool surface;
-    # ``rlm`` switches to a REPL-first experience where the model primarily
+    # ``code_first`` switches to a REPL-first experience where the model primarily
     # executes Python through a persistent ``ipython`` tool.
     mode: AgentMode = "tool_first"
 
@@ -711,6 +711,29 @@ def _migrate_v12_to_v13(data: dict[str, Any]) -> dict[str, Any]:
     return migrated
 
 
+def _migrate_v13_to_v14(data: dict[str, Any]) -> dict[str, Any]:
+    """Rename the REPL-first mode from ``rlm`` to ``code_first``.
+
+    ``rlm`` named the implementation (recursive language model) rather than the
+    capability the mode actually gives the model, which made it read as an
+    internal detail next to the user-facing ``tool_first``. ``code_first``
+    describes the contract: the model writes code, and the host supplies tools.
+    """
+    migrated = dict(data)
+
+    if migrated.get("mode") == "rlm":
+        migrated["mode"] = "code_first"
+    elif migrated.get("mode") not in ("tool_first", "code_first"):
+        migrated["mode"] = "tool_first"
+
+    meta = migrated.get("meta")
+    if not isinstance(meta, dict):
+        migrated["meta"] = {"config_version": 14}
+    else:
+        meta["config_version"] = 14
+    return migrated
+
+
 def _migrate_config_data(data: dict[str, Any]) -> tuple[dict[str, Any], int, int, bool]:
     original = deepcopy(data)
     current_version = _get_config_version(original)
@@ -768,6 +791,10 @@ def _migrate_config_data(data: dict[str, Any]) -> tuple[dict[str, Any], int, int
         if current_version == 12:
             migrated = _migrate_v12_to_v13(migrated)
             current_version = 13
+            continue
+        if current_version == 13:
+            migrated = _migrate_v13_to_v14(migrated)
+            current_version = 14
             continue
         break
 

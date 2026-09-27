@@ -176,7 +176,7 @@ class ConversationRuntime:
         # In RLM mode, collapse the active tool set to just the REPL so the
         # model behaves like Prime Agent: one persistent ipython, no
         # surgical tool surface.
-        if vtx_config.mode == "rlm":
+        if vtx_config.mode == "code_first":
             from vtx.ai.agent.tools import get_all_tools
 
             base_pool = get_all_tools()
@@ -359,7 +359,7 @@ class ConversationRuntime:
         # In RLM mode, collapse the active tool set to just the REPL so the
         # model behaves like Prime Agent: one persistent ipython, no
         # surgical tool surface.
-        if vtx_config.mode == "rlm":
+        if vtx_config.mode == "code_first":
             repl_tool = base_pool.get("ipython")
             if repl_tool is not None:
                 self.tools = [repl_tool]

@@ -1,6 +1,6 @@
 """Recursive Language Model (RLM) system prompt for Vtx.
 
-When ``mode == "rlm"``, the agent operates in a REPL-first style: the model's
+When ``mode == "code_first"``, the agent operates in a REPL-first style: the model's
 primary action is to execute Python snippets through a persistent ``ipython``
 tool, and all other capabilities (file ops, shell, web, goals, skills,
 subagents) are exposed directly inside that REPL. Context (conversation
@@ -65,6 +65,8 @@ Each shell call is its own process, so shell state does not persist between call
 Python state in the kernel persists across cells: named variables, helper functions, classes, imports, notes, parsed outputs, and helper data structures all remain available in every later turn. Tool calls are themselves Python `await` expressions, so their return values can be bound to variables and composed into program logic just like any other call.
 
 Tool bridge: anything the REPL cannot do natively goes through the blocking `call_tool(name, **kwargs)` bridge to main-process tools (e.g. `call_tool("goal", action="get")`), or the async `await host_request("<type>", {...})` bridge for new code. The pre-bound `web_search`, `goal_get`, `goal_update`, `goal_set_tasks`, `emit`, and `host_request` helpers wrap these bridges — prefer them when they fit, fall back to the generic bridges otherwise.
+
+Bridge failures are categorized, and the category tells you what to do next — read it before retrying. `[bridge:unknown_tool]` the name is wrong, use a different one. `[bridge:invalid_input]` the arguments were rejected, fix the payload. `[bridge:tool_failure]` the tool ran and declined, so change your approach — an identical retry fails the same way. `[bridge:invalid_output]` the result could not cross back as data, so narrow the call. `[bridge:host_unavailable]` main-process tools are unreachable from a cell, do the work in the cell or delegate. `[bridge:timeout]` retry with less work per call. `[bridge:execution_failure]` a host-side fault, not your code — do not repeat the call. Only `[bridge:timeout]` is worth retrying unchanged.
 
 Terminology: continual harness names the persisted prompt, memory, skill, and subagent layer; RLM names the runtime, Python REPL kernel, and native call interface exposed to the model.
 

@@ -69,7 +69,7 @@ def test_build_system_prompt_uses_rlm_prompt_when_mode_is_rlm(tmp_path, monkeypa
         "extensions": [],
         "agents": {"default": "", "switch_mode": "lock", "files": []},
         "task": {"subagent_presets": []},
-        "mode": "rlm",
+        "mode": "code_first",
     }
     cfg = Config(data)
     set_config(cfg)
@@ -153,9 +153,9 @@ def test_config_schema_accepts_rlm_mode():
         compaction={"on_overflow": "continue", "threshold_percent": 80},
         agent={"max_turns": 500, "default_context_window": 200000},
         permissions={"mode": "prompt"},
-        mode="rlm",
+        mode="code_first",
     )
-    assert schema.mode == "rlm"
+    assert schema.mode == "code_first"
 
 
 def test_config_schema_defaults_to_tool_first():
@@ -226,7 +226,7 @@ def test_rlm_mode_restricts_runtime_tools_to_repl():
         "extensions": [],
         "agents": {"default": "", "switch_mode": "lock", "files": []},
         "task": {"subagent_presets": []},
-        "mode": "rlm",
+        "mode": "code_first",
     }
     cfg = Config(data)
     set_config(cfg)
@@ -283,8 +283,56 @@ def test_tool_first_mode_keeps_default_tools():
     runtime = ConversationRuntime(cwd=str(Path(".")), tools=[])
     runtime._apply_active_agent_to_runtime()
     tool_names = [t.name for t in runtime.tools]
-    assert "ipython" in tool_names
-    assert len(tool_names) > 1
+    # The surgical surface, in full — but not the REPL. ``ipython`` is
+    # registered as available in every mode and default only in RLM, so a
+    # tool-first agent must not be handed a kernel it has no lifecycle for.
+    assert "ipython" not in tool_names
+    assert set(tool_names) == {
+        "read",
+        "edit",
+        "write",
+        "bash",
+        "find",
+        "skill",
+        "web",
+        "ask_user",
+        "task",
+        "goal",
+    }
+
+
+def test_repl_tool_is_default_only_in_rlm_mode(monkeypatch):
+    """The REPL is mode-gated at the registry, not just at the prompt.
+
+    It used to be registered ``is_default=True`` unconditionally, so a
+    tool-first session advertised an 11-tool surface containing a persistent
+    kernel the mode never wires up — visible in the welcome ``[Tools]`` line
+    and in the schemas handed to the model.
+    """
+    import vtx.ai.config as config_mod
+    from vtx.ai.agent.tools import get_all_tools, get_default_tools, get_parent_only_tools
+
+    # Patch the resolved config, not the ``_ConfigProxy``. Setting an attribute
+    # on the proxy shadows its ``__getattr__`` delegation permanently, and
+    # monkeypatch's restore writes a frozen value back into the instance dict —
+    # silently pinning config.mode for every later test in the session.
+    parsed = config_mod.config._parsed
+
+    monkeypatch.setattr(parsed, "mode", "tool_first")
+    tool_first = get_default_tools()
+    assert "ipython" not in tool_first
+    # RLM sub-agents resolve their base names from the same list, so the
+    # parent-only filter must not be what hides it.
+    assert "ipython" not in [n for n in tool_first if n not in get_parent_only_tools()]
+
+    monkeypatch.setattr(parsed, "mode", "code_first")
+    rlm = get_default_tools()
+    assert "ipython" in rlm
+    assert "ipython" in [n for n in rlm if n not in get_parent_only_tools()]
+
+    # Still registered in tool-first, so a profile can opt in by name.
+    monkeypatch.setattr(parsed, "mode", "tool_first")
+    assert "ipython" in get_all_tools()
 
 
 def test_code_preview_heuristics():

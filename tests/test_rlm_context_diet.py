@@ -57,7 +57,7 @@ def test_rlm_full_prompt_size_regression_guard(tmp_path):
     import vtx.ai.config as config_mod
 
     old = config_mod.config._parsed.mode
-    config_mod.config._parsed.mode = "rlm"
+    config_mod.config._parsed.mode = "code_first"
     try:
         prompt = build_system_prompt(str(tmp_path), tools=[])
     finally:
@@ -105,7 +105,7 @@ def test_tool_result_budget_is_mode_aware(monkeypatch):
     assert "tool output truncated" in text
 
     # rlm: tighter budget since everything funnels through one tool
-    monkeypatch.setattr(config_mod.config._parsed, "mode", "rlm")
+    monkeypatch.setattr(config_mod.config._parsed, "mode", "code_first")
     repaired = prepare_for_model(messages)
     text = repaired[2].content[0].text
     assert len(text) <= _RLM_MAX_TOOL_RESULT_CHARS + 300

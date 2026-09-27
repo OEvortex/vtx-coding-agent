@@ -90,7 +90,7 @@ def build_system_prompt(
         context = Context.load(cwd)
 
     mode = getattr(vtx_config, "mode", "tool_first")
-    if mode == "rlm" and base_content is None:
+    if mode == "code_first" and base_content is None:
         from vtx.coding_agent.prompts.rlm import build_rlm_system_prompt
 
         installed_skills = (
