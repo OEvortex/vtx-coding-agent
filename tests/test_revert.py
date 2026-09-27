@@ -1,7 +1,7 @@
 """Tests for working-tree snapshots and turn-level undo/redo.
 
-These cover the two failure modes that matter most: a revert that silently
-corrupts the worktree, and a revert that cannot be undone again.
+Covers the failure modes that matter: a revert that silently restores nothing,
+and a revert that cannot be undone again.
 """
 
 from __future__ import annotations
@@ -45,27 +45,57 @@ def _session(project: Path) -> Session:
     return Session(cwd=str(project), session_id="test-session")
 
 
-def _ask(session: Session, store: SnapshotStore, text: str) -> str:
-    """A turn start in production order: snapshot first, then the user message.
+def _turn(
+    session: Session,
+    store: SnapshotStore,
+    project: Path,
+    prompt: str,
+    *,
+    writes: dict[str, str | None] | None = None,
+    report: bool = True,
+) -> str:
+    """Run one complete turn: capture start, prompt, mutate, close the bracket.
 
-    The runtime hashes the worktree at turn start and ``loop.py`` appends the
-    user message from inside ``agent.run``, so in a real session the snapshot
-    entry precedes its user message. Tests must match that or they validate an
-    ordering the product never produces.
+    Mirrors the runtime, which hashes the worktree before the turn and records
+    ``start``/``files`` once the turn's tools have settled. ``writes`` maps a
+    path to new content, or to ``None`` to delete it. ``report=False`` mutates
+    without emitting a ``file_changes`` tool result, the way bash or ipython do.
     """
-    rv.record_turn_snapshot(session, store.capture())
-    return session.append_message(UserMessage(content=text))
+    start = store.capture()
+    entry = session.append_message(UserMessage(content=prompt))
+    for index, (path, content) in enumerate((writes or {}).items(), start=1):
+        target = project / path
+        if content is None:
+            target.unlink()
+        else:
+            target.parent.mkdir(parents=True, exist_ok=True)
+            target.write_text(content)
+        if report:
+            session.append_message(
+                ToolResultMessage(
+                    tool_name="edit",
+                    tool_call_id=f"call-{len(session.all_entries)}-{index}",
+                    content=[TextContent(text="ok")],
+                    file_changes=FileChanges(path=str(target), added=1, removed=1),
+                )
+            )
+    rv.record_turn_snapshot(session, start, cwd=str(project))
+    return entry
 
 
-def _agent_edit(session: Session, path: str, added: int = 1, removed: int = 1) -> None:
+def _legacy_turn(session: Session, project: Path, prompt: str, path: str) -> str:
+    """A turn recorded before snapshots existed (e.g. a resumed session)."""
+    entry = session.append_message(UserMessage(content=prompt))
+    (project / path).write_text("legacy change\n")
     session.append_message(
         ToolResultMessage(
             tool_name="edit",
-            tool_call_id=f"call-{len(session.all_entries)}",
+            tool_call_id=f"legacy-{len(session.all_entries)}",
             content=[TextContent(text="ok")],
-            file_changes=FileChanges(path=path, added=added, removed=removed),
+            file_changes=FileChanges(path=str(project / path), added=1, removed=1),
         )
     )
+    return entry
 
 
 # ---------------------------------------------------------------------------
@@ -77,21 +107,11 @@ class TestSnapshotStore:
     def test_capture_is_content_addressed(self, project: Path, store: SnapshotStore) -> None:
         first = store.capture()
         assert first
-        # Same content, same id: capturing twice costs nothing.
-        assert store.capture() == first
+        assert store.capture() == first, "same content, same id"
 
         (project / "a.txt").write_text("changed\n")
         second = store.capture()
         assert second and second != first
-
-    def test_relative_normalizes_absolute_and_rejects_escapes(
-        self, project: Path, store: SnapshotStore
-    ) -> None:
-        assert store.relative(str(project / "src" / "a.py")) == "src/a.py"
-        assert store.relative("src/a.py") == "src/a.py"
-        assert store.relative("../outside.py") is None
-        assert store.relative("/etc/passwd") is None
-        assert store.relative("") is None
 
     def test_gitignored_paths_are_never_hashed(self, project: Path, store: SnapshotStore) -> None:
         before = store.capture()
@@ -139,7 +159,7 @@ class TestSnapshotStore:
         assert (project / "a.txt").read_text() == "a0\n"
         assert blob.read_bytes() == b"\x00\x01\xffbinary"
         assert script.stat().st_mode & 0o777 == 0o755
-        assert not (project / "new.txt").exists(), "absent from the target tree must be removed"
+        assert not (project / "new.txt").exists()
 
     def test_restore_is_selective(self, project: Path, store: SnapshotStore) -> None:
         t0 = store.capture()
@@ -155,6 +175,15 @@ class TestSnapshotStore:
         assert report.failed == ["../escape.txt", "/etc/passwd"]
         assert not (project.parent / "escape.txt").exists()
 
+    def test_relative_normalizes_absolute_and_rejects_escapes(
+        self, project: Path, store: SnapshotStore
+    ) -> None:
+        assert store.relative(str(project / "src" / "a.py")) == "src/a.py"
+        assert store.relative("src/a.py") == "src/a.py"
+        assert store.relative("../outside.py") is None
+        assert store.relative("/etc/passwd") is None
+        assert store.relative("") is None
+
     def test_non_git_directory_degrades_quietly(self, tmp_path: Path) -> None:
         plain = tmp_path / "plain"
         plain.mkdir()
@@ -168,29 +197,78 @@ class TestSnapshotStore:
 
 
 # ---------------------------------------------------------------------------
+# per-turn records
+# ---------------------------------------------------------------------------
+
+
+class TestTurnSnapshots:
+    def test_record_captures_start_end_and_changed_files(
+        self, project: Path, store: SnapshotStore
+    ) -> None:
+        session = _session(project)
+        _turn(session, store, project, "edit a", writes={"a.txt": "a1\n"})
+
+        records = rv._turn_snapshots(session)
+        assert len(records) == 1
+        record = records[0]
+        assert record.start and record.end and record.start != record.end
+        assert record.files == ["a.txt"]
+        assert record.turn
+
+    def test_a_turn_that_changed_nothing_records_no_files(
+        self, project: Path, store: SnapshotStore
+    ) -> None:
+        session = _session(project)
+        _turn(session, store, project, "just talk")
+        assert rv._turn_snapshots(session)[0].files == []
+
+    def test_files_include_edits_no_tool_reported(
+        self, project: Path, store: SnapshotStore
+    ) -> None:
+        """The whole point of diffing the worktree instead of trusting tools.
+
+        bash, python and ipython all mutate files without emitting a
+        ``file_changes`` result, so an attribution-based list misses them.
+        """
+        session = _session(project)
+        _turn(
+            session,
+            store,
+            project,
+            "shell out and edit",
+            writes={"a.txt": "via bash\n", "uv.lock": "via bash\n"},
+            report=False,
+        )
+        record = rv._turn_snapshots(session)[0]
+        assert sorted(record.files) == ["a.txt", "uv.lock"]
+
+    def test_no_snapshot_is_recorded_without_a_start_tree(
+        self, project: Path, store: SnapshotStore
+    ) -> None:
+        session = _session(project)
+        assert rv.record_turn_snapshot(session, None, cwd=str(project)) is None
+        assert rv._turn_snapshots(session) == []
+
+    def test_record_json_round_trips(self) -> None:
+        record = rv.TurnSnapshot(turn="t1", start="aaa", end="bbb", files=["x.py"])
+        again = rv.TurnSnapshot.from_json(record.to_json())
+        assert again == record
+        assert rv.TurnSnapshot.from_json("nope") is None
+        assert rv.TurnSnapshot.from_json('{"start": "a"}') is None
+
+
+# ---------------------------------------------------------------------------
 # undo / redo
 # ---------------------------------------------------------------------------
 
 
 class TestUndoRedo:
     def _three_turns(self, project: Path, store: SnapshotStore):
-        """Three turns: a.txt a0 -> a1 (+b.txt) -> a2 (-b.txt) -> a3."""
+        """a.txt a0 -> a1 (+b.txt) -> a2 (-b.txt) -> a3."""
         session = _session(project)
-        u0 = _ask(session, store, "first ask")
-        (project / "a.txt").write_text("a1\n")
-        (project / "b.txt").write_text("b1\n")
-        _agent_edit(session, "a.txt")
-        _agent_edit(session, "b.txt", added=1, removed=0)
-
-        u1 = _ask(session, store, "second ask")
-        (project / "a.txt").write_text("a2\n")
-        (project / "b.txt").unlink()
-        _agent_edit(session, "a.txt")
-        _agent_edit(session, "b.txt", added=0, removed=1)
-
-        u2 = _ask(session, store, "third ask")
-        (project / "a.txt").write_text("a3\n")
-        _agent_edit(session, "a.txt")
+        u0 = _turn(session, store, project, "first ask", writes={"a.txt": "a1\n", "b.txt": "b1\n"})
+        u1 = _turn(session, store, project, "second ask", writes={"a.txt": "a2\n", "b.txt": None})
+        u2 = _turn(session, store, project, "third ask", writes={"a.txt": "a3\n"})
         return session, u0, u1, u2
 
     def test_undo_walks_back_turn_by_turn(self, project: Path, store: SnapshotStore) -> None:
@@ -215,8 +293,8 @@ class TestUndoRedo:
         assert rv.previous_boundary(session) is None
 
     def test_redo_walks_forward(self, project: Path, store: SnapshotStore) -> None:
-        session, u0, u1, u2 = self._three_turns(project, store)
-        for boundary in (u2, u1, u0):
+        session, _u0, u1, u2 = self._three_turns(project, store)
+        for boundary in (u2, u1, _u0_boundary(session)):
             rv.stage(session, boundary, store=store, cwd=str(project))
 
         assert rv.next_boundary(session) == u1
@@ -234,15 +312,13 @@ class TestUndoRedo:
         rv.stage(session, u2, store=store, cwd=str(project))
         assert rv.next_boundary(session) is None
 
-        changed = rv.unrevert(session, store=store, cwd=str(project))
-        assert changed >= 1
+        assert rv.unrevert(session, store=store, cwd=str(project)) >= 1
         assert rv.current_state(session) is None
         assert (project / "a.txt").read_text() == "a3\n"
 
     def test_staging_twice_leaves_one_live_state(
         self, project: Path, store: SnapshotStore
     ) -> None:
-        """Regression: repeated undos used to strand earlier revert entries."""
         session, _u0, u1, u2 = self._three_turns(project, store)
         rv.stage(session, u2, store=store, cwd=str(project))
         rv.stage(session, u1, store=store, cwd=str(project))
@@ -257,41 +333,36 @@ class TestUndoRedo:
         rv.unrevert(session, store=store, cwd=str(project))
         assert rv.current_state(session) is None
 
-    def test_absolute_tool_paths_are_normalized_before_matching(
+    def test_undo_restores_files_changed_without_tool_reports(
         self, project: Path, store: SnapshotStore
     ) -> None:
-        """Regression: tool results report absolute paths, git reports relative.
+        """Regression: the reported failure mode from real use.
 
-        `FileChanges.path` is absolute but tree entries are project-relative, so
-        comparing them directly never matched and every restore silently did
-        nothing. Only a test using a realistic absolute path catches this.
+        A turn edited three files through ipython and bash. No tool reported
+        them, so an attribution-based guard restored nothing and the UI said
+        "no file changes" while the worktree stayed dirty.
         """
         session = _session(project)
-        boundary = _ask(session, store, "edit a file")
-        (project / "a.txt").write_text("agent wrote this\n")
-        _agent_edit(session, str(project / "a.txt"))  # absolute, as tools report
+        boundary = _turn(
+            session,
+            store,
+            project,
+            "bump the version",
+            report=False,
+            writes={"pyproject.toml": "1.2.1\n", "uv.lock": "locked\n", "version.py": "x = 1\n"},
+        )
+        assert rv.plan(session, boundary) != {}, "turn diff must be non-empty"
 
         state = rv.stage(session, boundary, store=store, cwd=str(project))
-        assert [d.path for d in state.files] == ["a.txt"], state.files
-        assert (project / "a.txt").read_text() == "a0\n"
-
-    def test_revert_never_touches_files_the_agent_did_not_report(
-        self, project: Path, store: SnapshotStore
-    ) -> None:
-        session = _session(project)
-        boundary = _ask(session, store, "do the thing")
-        (project / "a.txt").write_text("agent change\n")
-        _agent_edit(session, "a.txt")
-        # The user edits a different file by hand; the agent never claimed it.
-        (project / "keep.txt").write_text("USER EDIT\n")
-
-        state = rv.stage(session, boundary, store=store, cwd=str(project))
-        assert [d.path for d in state.files] == ["a.txt"]
-        assert (project / "keep.txt").read_text() == "USER EDIT\n"
+        assert sorted(d.path for d in state.files) == ["pyproject.toml", "uv.lock", "version.py"]
+        # All three were created by that turn, so reverting removes them.
+        for name in ("pyproject.toml", "uv.lock", "version.py"):
+            assert not (project / name).exists(), f"{name} should have been removed"
+        assert (project / "a.txt").read_text() == "a0\n", "untouched file survives"
 
     def test_commit_is_non_destructive(self, project: Path, store: SnapshotStore) -> None:
         session, _u0, _u1, u2 = self._three_turns(project, store)
-        _ask(session, store, "fourth ask")
+        _turn(session, store, project, "fourth ask")
         before = len(session.get_branch())
         total_before = len(session.all_entries)
 
@@ -300,35 +371,24 @@ class TestUndoRedo:
         branch = session.get_branch()
 
         assert committed == u2
-        assert len(branch) < before, "the reverted turns leave the active branch"
+        assert len(branch) < before
         assert u2 in [e.id for e in branch], "the boundary itself stays"
         assert rv.current_state(session) is None
         assert len(session.all_entries) >= total_before, "old entries survive for redo"
 
-    def test_snapshot_is_found_after_a_commit_rewinds_the_leaf(
+    def test_snapshot_found_after_a_commit_rewinds_the_leaf(
         self, project: Path, store: SnapshotStore
     ) -> None:
-        """Regression: snapshots were missed after a commit restored the leaf.
-
-        ``commit`` moves the leaf back to the boundary, so the next turn's
-        snapshot is appended at that restored leaf — ahead of its own user
-        message rather than after it. Looking only forward from the user
-        message then found nothing and every undo degraded to
-        conversation-only.
-        """
+        """A committed revert restores the leaf, so the next turn's record
+        lands at that restored point rather than after the boundary."""
         session, _u0, _u1, u2 = self._three_turns(project, store)
-        # Rewind to u2 and commit, so the leaf sits at the boundary.
         rv.stage(session, u2, store=store, cwd=str(project))
         rv.commit(session)
 
-        # A fresh turn after the commit, in production order.
-        _ask(session, store, "after the commit")
-        (project / "a.txt").write_text("a9\n")
-        _agent_edit(session, "a.txt")
-
+        _turn(session, store, project, "after the commit", writes={"a.txt": "a4\n"})
         state = rv.stage(session, rv.previous_boundary(session), store=store, cwd=str(project))
-        assert state.files_available is True, "snapshot must be found after a commit"
-        assert (project / "a.txt").read_text() == "a2\n", (project / "a.txt").read_text()
+        assert state.files_available is True
+        assert (project / "a.txt").read_text() == "a2\n"
 
     def test_redo_after_commit_can_reach_the_kept_branch(
         self, project: Path, store: SnapshotStore
@@ -336,65 +396,41 @@ class TestUndoRedo:
         session, _u0, u1, u2 = self._three_turns(project, store)
         rv.stage(session, u2, store=store, cwd=str(project))
         rv.commit(session)
-        # The dropped turn is still addressable, which is the point of the
-        # non-destructive rewind.
         assert session.get_branch(u2)
         assert [e.id for e in session.get_branch(u2)][-1] == u2
         assert u1 in [e.id for e in session.get_branch(u1)]
 
-    def test_boundary_without_a_snapshot_rewinds_conversation_only(
+    def test_legacy_turn_rewinds_conversation_only(
         self, project: Path, store: SnapshotStore
     ) -> None:
-        """A resumed session has no snapshot for pre-resume turns.
-
-        The conversation rewind is lossless and still useful, so it must
-        succeed — and must say plainly that no files were restored.
-        """
+        """A resumed session has no record for pre-resume turns."""
         session = _session(project)
-        legacy = session.append_message(UserMessage(content="recorded before snapshots"))
-        _agent_edit(session, "a.txt")
-        (project / "a.txt").write_text("agent wrote this\n")
-        # A later turn *is* snapshotted, so the session has snapshots at all.
-        _ask(session, store, "after the resume")
+        legacy = _legacy_turn(session, project, "recorded before snapshots", "a.txt")
         (project / "a.txt").write_text("later change\n")
-        _agent_edit(session, "a.txt")
 
         state = rv.stage(session, legacy, store=store, cwd=str(project))
         assert state.files_available is False
         assert state.files == []
-        assert state.reverted_entries >= 1
-        # The file is untouched, because no tree describes that point.
-        assert (project / "a.txt").read_text() == "later change\n"
         assert "conversation only" in rv.describe(state)
-        assert rv.current_state(session) is not None
-
-        # Redo still works from a conversation-only revert.
+        # The file is untouched: no record describes that point.
+        assert (project / "a.txt").read_text() == "later change\n"
         assert rv.unrevert(session, store=store, cwd=str(project)) == 0
         assert rv.current_state(session) is None
 
-    def test_snapshotted_boundary_restores_files(
-        self, project: Path, store: SnapshotStore
-    ) -> None:
-        session = _session(project)
-        boundary = _ask(session, store, "ask")
-        (project / "a.txt").write_text("agent wrote this\n")
-        _agent_edit(session, "a.txt")
-        state = rv.stage(session, boundary, store=store, cwd=str(project))
-        assert state.files_available is True
-        assert (project / "a.txt").read_text() == "a0\n"
-
     def test_unknown_boundary_is_refused(self, project: Path, store: SnapshotStore) -> None:
         session = _session(project)
-        _ask(session, store, "hello")
+        _turn(session, store, project, "hello")
         with pytest.raises(rv.RevertError):
             rv.stage(session, "not-a-real-entry", store=store, cwd=str(project))
 
-    def test_describe_is_human_readable(self, project: Path, store: SnapshotStore) -> None:
-        session, _u0, _u1, u2 = self._three_turns(project, store)
-        state = rv.stage(session, u2, store=store, cwd=str(project))
-        text = rv.describe(state)
-        assert "third ask" in text
-        assert "1 files" in text
+    def test_non_git_project_is_refused(self, tmp_path: Path, monkeypatch) -> None:
+        monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path / "config"))
+        plain = tmp_path / "plain"
+        plain.mkdir()
+        session = _session(plain)
+        entry = session.append_message(UserMessage(content="hi"))
+        with pytest.raises(rv.RevertError, match="git repository"):
+            rv.stage(session, entry, cwd=str(plain))
 
     def test_state_survives_a_json_round_trip(self, project: Path, store: SnapshotStore) -> None:
         session, _u0, _u1, u2 = self._three_turns(project, store)
@@ -402,12 +438,16 @@ class TestUndoRedo:
         restored = rv.RevertState.from_json(state.to_json())
         assert restored is not None
         assert restored.boundary_id == state.boundary_id
-        assert restored.boundary_label == state.boundary_label
         assert [d.path for d in restored.files] == [d.path for d in state.files]
 
     def test_corrupt_state_json_is_ignored(self) -> None:
         assert rv.RevertState.from_json("not json") is None
         assert rv.RevertState.from_json("{}") is None
+
+
+def _u0_boundary(session: Session) -> str:
+    """Rewind all the way to the first turn's user message."""
+    return rv.user_messages(session)[0].id
 
 
 class TestNavigation:
@@ -418,6 +458,14 @@ class TestNavigation:
 
     def test_redo_without_a_revert_is_a_noop(self, project: Path, store: SnapshotStore) -> None:
         session = _session(project)
-        _ask(session, store, "just one ask")
+        _turn(session, store, project, "just one ask")
         assert rv.current_state(session) is None
         assert rv.next_boundary(session) is None
+
+    def test_describe_is_human_readable(self, project: Path, store: SnapshotStore) -> None:
+        session = _session(project)
+        u1 = _turn(session, store, project, "second ask", writes={"a.txt": "a1\n"})
+        state = rv.stage(session, u1, store=store, cwd=str(project))
+        text = rv.describe(state)
+        assert "second ask" in text
+        assert "1 files" in text

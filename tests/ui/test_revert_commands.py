@@ -6,11 +6,11 @@ import subprocess
 from pathlib import Path
 
 import pytest
-from textual.app import App  # noqa: F401  (imported for the fixture plugin)
 
+from vtx.ai.agent.revert import commit as _commit
 from vtx.ai.agent.revert import record_turn_snapshot
 from vtx.ai.agent.session import Session
-from vtx.ai.agent.snapshot import get_store
+from vtx.ai.agent.snapshot import SnapshotStore, get_store
 from vtx.core.types import FileChanges, TextContent, ToolResultMessage, UserMessage
 from vtx.tui.app import Vtx
 from vtx.tui.chat import ChatLog
@@ -33,31 +33,42 @@ def project(tmp_path: Path, monkeypatch) -> Path:
     return proj
 
 
-def _seed_turns(app: Vtx, proj: Path) -> tuple[Session, list[str]]:
-    """Append three user/assistant turns that edit a.txt.
-
-    Production order: the runtime hashes the worktree at turn start and the
-    loop appends the user message from inside ``agent.run``, so the snapshot
-    entry comes first. Matching that here is what lets these tests catch
-    ordering bugs.
-    """
-    session = app._runtime.session
-    assert session is not None
-    store = get_store(str(proj))
-    boundaries: list[str] = []
-    for index, content in enumerate(["a1", "a2", "a3"], start=1):
-        record_turn_snapshot(session, store.capture())
-        entry = session.append_message(UserMessage(content=f"ask {index}"))
-        boundaries.append(entry)
-        (proj / "a.txt").write_text(f"{content}\n")
+def _turn(
+    session: Session,
+    store: SnapshotStore,
+    proj: Path,
+    prompt: str,
+    content: str,
+    *,
+    report: bool = True,
+    path: str = "a.txt",
+) -> str:
+    """One bracketed turn, matching what the runtime records."""
+    start = store.capture()
+    entry = session.append_message(UserMessage(content=prompt))
+    (proj / path).write_text(content)
+    if report:
         session.append_message(
             ToolResultMessage(
                 tool_name="edit",
-                tool_call_id=f"call-{index}",
+                tool_call_id=f"call-{content}",
                 content=[TextContent(text="ok")],
-                file_changes=FileChanges(path="a.txt", added=1, removed=1),
+                file_changes=FileChanges(path=str(proj / path), added=1, removed=1),
             )
         )
+    record_turn_snapshot(session, start, cwd=str(proj))
+    return entry
+
+
+def _seed_turns(app: Vtx, proj: Path) -> tuple[Session, list[str]]:
+    """Three turns that edit a.txt."""
+    session = app._runtime.session
+    assert session is not None
+    store = get_store(str(proj))
+    boundaries = [
+        _turn(session, store, proj, f"ask {i}", f"{content}\n")
+        for i, content in enumerate(["a1", "a2", "a3"], start=1)
+    ]
     return session, boundaries
 
 
@@ -98,6 +109,35 @@ async def test_undo_then_redo_restores_and_reapplies_files(project: Path) -> Non
 
 
 @pytest.mark.asyncio
+async def test_undo_restores_files_changed_without_tool_reports(project: Path) -> None:
+    """The reported failure: bash/ipython edits reported by no tool.
+
+    The turn below changes two files and emits no ``file_changes`` at all. A
+    revert that trusted tool reports would restore nothing and leave the
+    worktree dirty.
+    """
+    app = Vtx(cwd=str(project))
+    async with app.run_test(size=(100, 30)) as pilot:
+        session = app._runtime.session
+        assert session is not None
+        store = get_store(str(project))
+        _turn(
+            session, store, project, "bump version", "1.2.1\n", report=False, path="pyproject.toml"
+        )
+        _turn(session, store, project, "lock", "locked\n", report=False, path="uv.lock")
+        assert (project / "pyproject.toml").exists()
+
+        app._handle_command("/undo")
+        await pilot.pause()
+        assert not (project / "uv.lock").exists(), "unreported edit must still be reverted"
+        assert (project / "pyproject.toml").exists(), "only the last turn is undone"
+
+        app._handle_command("/undo")
+        await pilot.pause()
+        assert not (project / "pyproject.toml").exists()
+
+
+@pytest.mark.asyncio
 async def test_undo_to_the_start_and_back_is_graceful(project: Path) -> None:
     app = Vtx(cwd=str(project))
     async with app.run_test(size=(100, 30)) as pilot:
@@ -125,8 +165,8 @@ async def test_undo_is_refused_while_the_agent_is_working(project: Path) -> None
 
 
 @pytest.mark.asyncio
-async def test_undo_without_git_rewinds_conversation_only(tmp_path: Path, monkeypatch) -> None:
-    """A non-git project has no snapshots; the command must degrade, not crash."""
+async def test_undo_without_git_reports_a_clear_error(tmp_path: Path, monkeypatch) -> None:
+    """A non-git project has no snapshots; the command must say so, not crash."""
     monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path / "config"))
     plain = tmp_path / "plain"
     plain.mkdir()
@@ -136,29 +176,19 @@ async def test_undo_without_git_rewinds_conversation_only(tmp_path: Path, monkey
     async with app.run_test(size=(100, 30)) as pilot:
         session = app._runtime.session
         assert session is not None
-        store = get_store(str(plain))
-        for index in (1, 2):
-            session.append_message(UserMessage(content=f"ask {index}"))
-            record_turn_snapshot(session, store.capture())
-            (plain / "a.txt").write_text(f"a{index}\n")
-
+        session.append_message(UserMessage(content="hello"))
         app._handle_command("/undo")
         await pilot.pause()
-        lines = _chat_lines(app)
-        # No tree to restore, so the conversation rewinds and says so plainly
-        # instead of failing outright.
-        assert any("conversation only" in line for line in lines), lines[-3:]
-        assert not any("no snapshot recorded" in line for line in lines)
-        assert (plain / "a.txt").read_text() == "a2\n"
+        assert (plain / "a.txt").read_text() == "a0\n"
+        assert any("git repository" in line for line in _chat_lines(app)), _chat_lines(app)[-3:]
 
 
 @pytest.mark.asyncio
 async def test_resumed_session_undo_works_after_a_new_turn(project: Path) -> None:
-    """Regression: a resumed session had no undo target at all.
+    """Turns already on disk predate snapshotting.
 
-    Turns already on disk predate snapshotting, so they can only rewind the
-    conversation. The first turn that runs after the resume records its own
-    snapshot at turn start, and from then on /undo restores files properly.
+    They can only rewind the conversation; the first turn that runs after the
+    resume records its own bracket, and from then on files are restored.
     """
     app = Vtx(cwd=str(project))
     async with app.run_test(size=(100, 30)) as pilot:
@@ -166,9 +196,7 @@ async def test_resumed_session_undo_works_after_a_new_turn(project: Path) -> Non
         assert session is not None
         store = get_store(str(project))
 
-        # Turns that "came from disk": appended without any snapshot entry,
-        # which is exactly what a session recorded before this feature looks
-        # like once it is resumed.
+        # Turns that "came from disk": no snapshot record at all.
         for index in (1, 2):
             session.append_message(UserMessage(content=f"pre-resume ask {index}"))
             (project / "a.txt").write_text(f"a{index}\n")
@@ -177,23 +205,11 @@ async def test_resumed_session_undo_works_after_a_new_turn(project: Path) -> Non
                     tool_name="edit",
                     tool_call_id=f"pre-{index}",
                     content=[TextContent(text="ok")],
-                    file_changes=FileChanges(path="a.txt", added=1, removed=1),
+                    file_changes=FileChanges(path=str(project / "a.txt"), added=1, removed=1),
                 )
             )
 
-        # A turn that runs after the resume: the turn-start capture is what
-        # makes it undoable.
-        record_turn_snapshot(session, store.capture())
-        session.append_message(UserMessage(content="post-resume ask"))
-        (project / "a.txt").write_text("a3\n")
-        session.append_message(
-            ToolResultMessage(
-                tool_name="edit",
-                tool_call_id="post",
-                content=[TextContent(text="ok")],
-                file_changes=FileChanges(path="a.txt", added=1, removed=1),
-            )
-        )
+        _turn(session, store, project, "post-resume ask", "a3\n")
         assert (project / "a.txt").read_text() == "a3\n"
 
         # The post-resume turn restores files.
@@ -202,8 +218,10 @@ async def test_resumed_session_undo_works_after_a_new_turn(project: Path) -> Non
         assert (project / "a.txt").read_text() == "a2\n", (project / "a.txt").read_text()
         assert any("Reverted to" in line for line in _chat_lines(app))
 
-        # Undoing further back reaches a pre-resume turn: conversation only,
-        # with no dead-end error.
+        # Committing drops the recorded turn from the branch, so undoing into
+        # pre-resume territory has no record left and degrades to a
+        # conversation-only rewind rather than an error.
+        _commit(session)
         app._handle_command("/undo")
         await pilot.pause()
         lines = _chat_lines(app)

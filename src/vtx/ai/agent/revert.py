@@ -40,7 +40,7 @@ from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any
 
 from vtx.ai.agent.snapshot import FileDiff, SnapshotStore, get_store
-from vtx.core.types import ToolResultMessage, UserMessage
+from vtx.core.types import UserMessage
 
 if TYPE_CHECKING:
     from vtx.ai.agent.session import Session
@@ -135,25 +135,52 @@ class RevertState:
 
 
 # ---------------------------------------------------------------------------
-# snapshot bookkeeping
+# per-turn snapshot records
 # ---------------------------------------------------------------------------
 
 
-def record_turn_snapshot(session: Session, tree: str | None) -> str | None:
-    """Record the worktree state at the start of a turn.
+@dataclass
+class TurnSnapshot:
+    """One completed turn's worktree record.
 
-    Must be called *before* the agent can touch files, so the recorded tree is
-    a valid revert target for that turn.
+    Mirrors opencode's ``assistant.snapshot``: ``start`` is the tree before the
+    turn ran, ``files`` is every path that differed between the turn's start
+    and end trees.
+
+    ``files`` is a *worktree diff*, not a list of paths some tool reported. That
+    distinction is the whole point: bash, python and ipython all mutate files
+    without reporting anything, so an attribution-based list silently misses
+    most of what a turn actually changed.
     """
-    if not tree:
-        return None
-    try:
-        return session.append_custom_message(
-            SNAPSHOT_ENTRY, tree, display=False, details={"tree": tree}
+
+    turn: str
+    start: str
+    end: str = ""
+    files: list[str] = field(default_factory=list)
+
+    def to_json(self) -> str:
+        return json.dumps(
+            {"turn": self.turn, "start": self.start, "end": self.end, "files": self.files}
         )
-    except Exception:
-        log.exception("failed to record turn snapshot")
-        return None
+
+    @classmethod
+    def from_json(cls, blob: str) -> TurnSnapshot | None:
+        try:
+            data = json.loads(blob)
+        except (json.JSONDecodeError, TypeError):
+            return None
+        if not isinstance(data, dict):
+            return None
+        start = data.get("start")
+        turn = data.get("turn")
+        if not start or not turn:
+            return None
+        return cls(
+            turn=str(turn),
+            start=str(start),
+            end=str(data.get("end") or ""),
+            files=[str(f) for f in data.get("files", []) if f],
+        )
 
 
 def capture_now(cwd: str) -> str | None:
@@ -165,67 +192,82 @@ def capture_now(cwd: str) -> str | None:
         return None
 
 
-def _tree_at(session: Session, boundary_id: str) -> str | None:
-    """Tree id recorded for the turn that ``boundary_id`` starts.
+def last_user_entry_id(session: Session) -> str | None:
+    """Entry id of the user message that started the current turn."""
+    for entry in reversed(session.get_branch()):
+        if entry.type == "message" and isinstance(entry.message, UserMessage):
+            return entry.id
+    return None
 
-    A turn's snapshot is adjacent to its user message, and the runtime always
-    writes it *first*: the worktree is hashed at turn start and ``loop.py``
-    appends the user message from inside ``agent.run``. A session rewound by
-    ``commit`` lands the same way, because the next turn's snapshot is
-    appended at the restored leaf. So the snapshot for a turn is the one
-    immediately preceding its user message, and the search runs backwards.
 
-    The backward bound matters: a turn with no snapshot of its own (a session
-    resumed from disk, say) would otherwise reach back into the *previous*
-    turn and restore files to a state that still contains the changes being
-    reverted. Searching forwards would be worse still — in this ordering the
-    next turn's snapshot sits between this turn's results and the next user
-    message, so a forward scan would happily claim it.
+def record_turn_snapshot(
+    session: Session, start_tree: str | None, *, cwd: str | None = None
+) -> str | None:
+    """Close out a turn: capture the end tree and record start + changed files.
+
+    Called after the turn's tools have settled. ``start_tree`` is the tree
+    captured before the turn began, so the pair brackets exactly what the turn
+    changed. Returns the entry id, or ``None`` when the turn cannot be
+    bracketed (no start tree, or no user message to attribute it to).
+    """
+    if not start_tree or cwd is None:
+        return None
+    turn = last_user_entry_id(session)
+    if turn is None:
+        return None
+    try:
+        store = get_store(cwd)
+        end_tree = store.capture()
+        if not end_tree:
+            return None
+        record = TurnSnapshot(
+            turn=turn, start=start_tree, end=end_tree, files=store.files(start_tree, end_tree)
+        )
+    except Exception:
+        log.exception("failed to record turn snapshot")
+        return None
+    try:
+        return session.append_custom_message(SNAPSHOT_ENTRY, record.to_json(), display=False)
+    except Exception:
+        log.exception("failed to append turn snapshot entry")
+        return None
+
+
+def _turn_snapshots(session: Session) -> list[TurnSnapshot]:
+    """Every turn snapshot on the active branch, oldest first."""
+    out: list[TurnSnapshot] = []
+    for entry in session.get_branch():
+        if entry.type != "custom_message" or entry.custom_type != SNAPSHOT_ENTRY:
+            continue
+        record = TurnSnapshot.from_json(entry.content)
+        if record is not None:
+            out.append(record)
+    return out
+
+
+def plan(session: Session, boundary_id: str) -> dict[str, str]:
+    """Map each path to the tree it should be restored from.
+
+    Ports opencode's ``SessionRevert.plan``: walk the turns at and after the
+    boundary in order and, for each path any of them changed, keep the *first*
+    (earliest) turn's start tree. That tree is the state just after the
+    boundary prompt and before any reverted turn's work, which is exactly the
+    state the user asked to return to.
     """
     branch = session.get_branch()
     index = next((i for i, e in enumerate(branch) if e.id == boundary_id), None)
     if index is None:
-        return None
-    for entry in reversed(branch[:index]):
-        if entry.type == "message" and isinstance(entry.message, UserMessage):
-            return None
-        if entry.type == "custom_message" and entry.custom_type == SNAPSHOT_ENTRY:
-            return entry.content or None
-    return None
-
-
-def _agent_touched_files(session: Session, boundary_id: str) -> set[str]:
-    """Paths the agent reported changing at or after the boundary.
-
-    This is the guard that keeps a revert from destroying edits the user made
-    by hand in the same worktree.
-
-    It walks *descendants* of the boundary across every branch rather than the
-    active branch alone. A committed revert moves the turns it discards off
-    the active branch, and those turns are exactly the ones whose edits we are
-    undoing — reading only the live branch would find no claimed files and
-    silently restore nothing.
-    """
-    children: dict[str, list[Any]] = {}
-    for entry in session.all_entries:
-        if entry.parent_id:
-            children.setdefault(entry.parent_id, []).append(entry)
-
-    touched: set[str] = set()
-    seen: set[str] = set()
-    queue = [boundary_id]
-    while queue:
-        current = queue.pop()
-        for entry in children.get(current, []):
-            if entry.id in seen:
-                continue
-            seen.add(entry.id)
-            if entry.type == "message" and isinstance(entry.message, ToolResultMessage):
-                changes = entry.message.file_changes
-                if changes and changes.path:
-                    touched.add(changes.path)
-            queue.append(entry.id)
-    return touched
+        return {}
+    boundary_turns = {
+        e.id for e in branch[index:] if e.type == "message" and isinstance(e.message, UserMessage)
+    }
+    files: dict[str, str] = {}
+    for record in _turn_snapshots(session):
+        if record.turn not in boundary_turns:
+            continue
+        for path in record.files:
+            files.setdefault(path, record.start)
+    return files
 
 
 # ---------------------------------------------------------------------------
@@ -320,6 +362,8 @@ def stage(
     if cwd is None:
         raise RevertError("cwd is required to stage a revert")
     store = store or get_store(cwd)
+    if not store.available():
+        raise RevertError("snapshots need a git repository in this project")
 
     # Read the pre-revert tree before dropping the previous staged state, so
     # repeated undos still point `original_tree` at the true starting worktree.
@@ -327,34 +371,32 @@ def stage(
     original_tree = (existing.original_tree if existing else "") or ""
     _drop_staged_state(session)
 
-    boundary_tree = _tree_at(session, boundary_id)
-    if not boundary_tree:
-        # Older than anything we snapshotted. Rewind the conversation only:
-        # there is no recorded tree for that point, so claiming to restore
-        # files would be a lie.
+    # Which files to put back, and from where. Derived from the per-turn
+    # worktree diffs recorded by `record_turn_snapshot`, so bash, python and
+    # ipython edits are all included — none of them report `file_changes`.
+    restore_map = plan(session, boundary_id)
+    if not restore_map:
+        # No turn at or after the boundary recorded a diff (a session resumed
+        # from disk, or turns that predate snapshots). Rewind the conversation
+        # only: claiming to restore files would be a lie.
         return _stage_conversation_only(session, boundary_id, original_tree)
 
     current_tree = store.capture()
     if not current_tree:
         raise RevertError("could not snapshot the current worktree")
 
-    # Only the agent's own files. Anything the user changed by hand since the
-    # boundary is left alone even if it differs between the two trees.
-    # Tool results report absolute paths; git tree entries are project
-    # relative, so both sides are normalized before they are compared.
-    claimed = _agent_touched_files(session, boundary_id)
-    agent_files = {rel for rel in (store.relative(p) for p in claimed) if rel}
-    if not store.available():
-        raise RevertError("snapshots need a git repository in this project")
-
-    changed = store.files(boundary_tree, current_tree)
-    targets = [p for p in changed if p in agent_files]
-
+    # Only touch files that actually differ from the tree they came from, so a
+    # no-op revert does not churn mtimes on unrelated files.
+    targets = {
+        path: tree
+        for path, tree in restore_map.items()
+        if path in set(store.files(tree, current_tree))
+    }
     if targets:
-        store.restore({path: boundary_tree for path in targets})
+        store.restore(targets)
 
-    diffs = store.diff(boundary_tree, store.capture() or current_tree, targets)
     after_tree = store.capture() or current_tree
+    diffs = store.diff(current_tree, after_tree, sorted(targets))
 
     branch = session.get_branch()
     index = next((i for i, e in enumerate(branch) if e.id == boundary_id), None)
