@@ -34,14 +34,20 @@ def project(tmp_path: Path, monkeypatch) -> Path:
 
 
 def _seed_turns(app: Vtx, proj: Path) -> tuple[Session, list[str]]:
-    """Append three user/assistant turns that edit a.txt."""
+    """Append three user/assistant turns that edit a.txt.
+
+    Production order: the runtime hashes the worktree at turn start and the
+    loop appends the user message from inside ``agent.run``, so the snapshot
+    entry comes first. Matching that here is what lets these tests catch
+    ordering bugs.
+    """
     session = app._runtime.session
     assert session is not None
     store = get_store(str(proj))
     boundaries: list[str] = []
     for index, content in enumerate(["a1", "a2", "a3"], start=1):
-        entry = session.append_message(UserMessage(content=f"ask {index}"))
         record_turn_snapshot(session, store.capture())
+        entry = session.append_message(UserMessage(content=f"ask {index}"))
         boundaries.append(entry)
         (proj / "a.txt").write_text(f"{content}\n")
         session.append_message(
@@ -177,8 +183,8 @@ async def test_resumed_session_undo_works_after_a_new_turn(project: Path) -> Non
 
         # A turn that runs after the resume: the turn-start capture is what
         # makes it undoable.
-        session.append_message(UserMessage(content="post-resume ask"))
         record_turn_snapshot(session, store.capture())
+        session.append_message(UserMessage(content="post-resume ask"))
         (project / "a.txt").write_text("a3\n")
         session.append_message(
             ToolResultMessage(

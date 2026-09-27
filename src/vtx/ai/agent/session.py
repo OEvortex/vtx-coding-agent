@@ -811,6 +811,14 @@ class Session:
                     entries.append(SessionInfoEntry.model_validate(data))
                 elif entry_type == "leaf":
                     entries.append(LeafEntry.model_validate(data))
+                elif entry_type == "runtime_checkpoint":
+                    # Must be loaded, not skipped: these are written per tool
+                    # batch and sit between a user message and its results, so
+                    # dropping them severs the parent_id chain and
+                    # get_branch() collapses to almost nothing on a resumed
+                    # session. They are display=False and only the newest
+                    # active one is ever read, so keeping them is inert.
+                    entries.append(RuntimeCheckpointEntry.model_validate(data))
 
         if not header:
             raise ValueError(f"Invalid session file (no header): {path}")

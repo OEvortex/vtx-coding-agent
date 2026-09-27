@@ -168,22 +168,29 @@ def capture_now(cwd: str) -> str | None:
 def _tree_at(session: Session, boundary_id: str) -> str | None:
     """Tree id recorded for the turn that ``boundary_id`` starts.
 
-    A turn's snapshot sits directly after the user message that begins it, so
-    the scan runs forward — but stops at the next user message. Without that
-    stop, a turn with no snapshot of its own (a resumed session) would borrow
-    the *following* turn's tree and restore files to a state that still
-    contains the very changes being reverted.
+    A turn's snapshot is adjacent to its user message, and the runtime always
+    writes it *first*: the worktree is hashed at turn start and ``loop.py``
+    appends the user message from inside ``agent.run``. A session rewound by
+    ``commit`` lands the same way, because the next turn's snapshot is
+    appended at the restored leaf. So the snapshot for a turn is the one
+    immediately preceding its user message, and the search runs backwards.
+
+    The backward bound matters: a turn with no snapshot of its own (a session
+    resumed from disk, say) would otherwise reach back into the *previous*
+    turn and restore files to a state that still contains the changes being
+    reverted. Searching forwards would be worse still — in this ordering the
+    next turn's snapshot sits between this turn's results and the next user
+    message, so a forward scan would happily claim it.
     """
     branch = session.get_branch()
     index = next((i for i, e in enumerate(branch) if e.id == boundary_id), None)
     if index is None:
         return None
-    for entry in branch[index + 1 :]:
+    for entry in reversed(branch[:index]):
+        if entry.type == "message" and isinstance(entry.message, UserMessage):
+            return None
         if entry.type == "custom_message" and entry.custom_type == SNAPSHOT_ENTRY:
             return entry.content or None
-        if entry.type == "message" and isinstance(entry.message, UserMessage):
-            # Reached the next turn without finding this turn's snapshot.
-            return None
     return None
 
 
@@ -192,18 +199,32 @@ def _agent_touched_files(session: Session, boundary_id: str) -> set[str]:
 
     This is the guard that keeps a revert from destroying edits the user made
     by hand in the same worktree.
+
+    It walks *descendants* of the boundary across every branch rather than the
+    active branch alone. A committed revert moves the turns it discards off
+    the active branch, and those turns are exactly the ones whose edits we are
+    undoing — reading only the live branch would find no claimed files and
+    silently restore nothing.
     """
-    branch = session.get_branch()
-    index = next((i for i, e in enumerate(branch) if e.id == boundary_id), None)
-    if index is None:
-        return set()
+    children: dict[str, list[Any]] = {}
+    for entry in session.all_entries:
+        if entry.parent_id:
+            children.setdefault(entry.parent_id, []).append(entry)
+
     touched: set[str] = set()
-    for entry in branch[index:]:
-        if entry.type != "message":
-            continue
-        message = entry.message
-        if isinstance(message, ToolResultMessage) and message.file_changes:
-            touched.add(message.file_changes.path)
+    seen: set[str] = set()
+    queue = [boundary_id]
+    while queue:
+        current = queue.pop()
+        for entry in children.get(current, []):
+            if entry.id in seen:
+                continue
+            seen.add(entry.id)
+            if entry.type == "message" and isinstance(entry.message, ToolResultMessage):
+                changes = entry.message.file_changes
+                if changes and changes.path:
+                    touched.add(changes.path)
+            queue.append(entry.id)
     return touched
 
 
@@ -319,7 +340,10 @@ def stage(
 
     # Only the agent's own files. Anything the user changed by hand since the
     # boundary is left alone even if it differs between the two trees.
-    agent_files = _agent_touched_files(session, boundary_id)
+    # Tool results report absolute paths; git tree entries are project
+    # relative, so both sides are normalized before they are compared.
+    claimed = _agent_touched_files(session, boundary_id)
+    agent_files = {rel for rel in (store.relative(p) for p in claimed) if rel}
     if not store.available():
         raise RevertError("snapshots need a git repository in this project")
 

@@ -429,6 +429,26 @@ class SnapshotStore:
                 out.failed.append(rel)
         return out
 
+    def relative(self, path: str) -> str | None:
+        """Normalize a path to a project-relative, forward-slashed path.
+
+        Tool results report ``file_changes.path`` absolute, while git tree
+        entries are relative to the worktree. Comparing the two directly never
+        matches, so every restore would silently no-op. Paths outside the
+        project return ``None``.
+        """
+        if not path:
+            return None
+        try:
+            root = Path(self.cwd).resolve()
+            candidate = Path(path)
+            absolute = candidate if candidate.is_absolute() else root / candidate
+            relative = absolute.resolve().relative_to(root)
+        except (OSError, ValueError):
+            return None
+        text = relative.as_posix()
+        return text or None
+
     def _safe_path(self, rel: str) -> Path | None:
         """Resolve ``rel`` inside the project, or ``None`` if it escapes."""
         if not rel or rel.startswith("/"):

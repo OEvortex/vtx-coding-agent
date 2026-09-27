@@ -46,10 +46,15 @@ def _session(project: Path) -> Session:
 
 
 def _ask(session: Session, store: SnapshotStore, text: str) -> str:
-    """A user message plus the snapshot marking the start of its turn."""
-    entry = session.append_message(UserMessage(content=text))
+    """A turn start in production order: snapshot first, then the user message.
+
+    The runtime hashes the worktree at turn start and ``loop.py`` appends the
+    user message from inside ``agent.run``, so in a real session the snapshot
+    entry precedes its user message. Tests must match that or they validate an
+    ordering the product never produces.
+    """
     rv.record_turn_snapshot(session, store.capture())
-    return entry
+    return session.append_message(UserMessage(content=text))
 
 
 def _agent_edit(session: Session, path: str, added: int = 1, removed: int = 1) -> None:
@@ -78,6 +83,15 @@ class TestSnapshotStore:
         (project / "a.txt").write_text("changed\n")
         second = store.capture()
         assert second and second != first
+
+    def test_relative_normalizes_absolute_and_rejects_escapes(
+        self, project: Path, store: SnapshotStore
+    ) -> None:
+        assert store.relative(str(project / "src" / "a.py")) == "src/a.py"
+        assert store.relative("src/a.py") == "src/a.py"
+        assert store.relative("../outside.py") is None
+        assert store.relative("/etc/passwd") is None
+        assert store.relative("") is None
 
     def test_gitignored_paths_are_never_hashed(self, project: Path, store: SnapshotStore) -> None:
         before = store.capture()
@@ -243,6 +257,24 @@ class TestUndoRedo:
         rv.unrevert(session, store=store, cwd=str(project))
         assert rv.current_state(session) is None
 
+    def test_absolute_tool_paths_are_normalized_before_matching(
+        self, project: Path, store: SnapshotStore
+    ) -> None:
+        """Regression: tool results report absolute paths, git reports relative.
+
+        `FileChanges.path` is absolute but tree entries are project-relative, so
+        comparing them directly never matched and every restore silently did
+        nothing. Only a test using a realistic absolute path catches this.
+        """
+        session = _session(project)
+        boundary = _ask(session, store, "edit a file")
+        (project / "a.txt").write_text("agent wrote this\n")
+        _agent_edit(session, str(project / "a.txt"))  # absolute, as tools report
+
+        state = rv.stage(session, boundary, store=store, cwd=str(project))
+        assert [d.path for d in state.files] == ["a.txt"], state.files
+        assert (project / "a.txt").read_text() == "a0\n"
+
     def test_revert_never_touches_files_the_agent_did_not_report(
         self, project: Path, store: SnapshotStore
     ) -> None:
@@ -272,6 +304,31 @@ class TestUndoRedo:
         assert u2 in [e.id for e in branch], "the boundary itself stays"
         assert rv.current_state(session) is None
         assert len(session.all_entries) >= total_before, "old entries survive for redo"
+
+    def test_snapshot_is_found_after_a_commit_rewinds_the_leaf(
+        self, project: Path, store: SnapshotStore
+    ) -> None:
+        """Regression: snapshots were missed after a commit restored the leaf.
+
+        ``commit`` moves the leaf back to the boundary, so the next turn's
+        snapshot is appended at that restored leaf — ahead of its own user
+        message rather than after it. Looking only forward from the user
+        message then found nothing and every undo degraded to
+        conversation-only.
+        """
+        session, _u0, _u1, u2 = self._three_turns(project, store)
+        # Rewind to u2 and commit, so the leaf sits at the boundary.
+        rv.stage(session, u2, store=store, cwd=str(project))
+        rv.commit(session)
+
+        # A fresh turn after the commit, in production order.
+        _ask(session, store, "after the commit")
+        (project / "a.txt").write_text("a9\n")
+        _agent_edit(session, "a.txt")
+
+        state = rv.stage(session, rv.previous_boundary(session), store=store, cwd=str(project))
+        assert state.files_available is True, "snapshot must be found after a commit"
+        assert (project / "a.txt").read_text() == "a2\n", (project / "a.txt").read_text()
 
     def test_redo_after_commit_can_reach_the_kept_branch(
         self, project: Path, store: SnapshotStore
