@@ -174,6 +174,12 @@ class AgentRunnerMixin:
         except Exception:
             self._bg_wakeup_busy = False
             return
+        # The recap has to stand down. It is a summary of a finished
+        # conversation, and this turn is the start of the next one; leaving it
+        # running spends an LLM call restating what is already on screen and
+        # interleaves its output with the agent's own turn.
+        with contextlib.suppress(Exception):
+            self._dismiss_recap()
         label = getattr(record, "description", "sub-agent")
         if getattr(record, "status", "") == "error":
             chat.add_info_message(
@@ -208,6 +214,9 @@ class AgentRunnerMixin:
             "conversation; ask for what you need next."
         )
         self._bg_wakeup_chain = 0
+        # The session is genuinely idle now, so a recap is legitimate again.
+        with contextlib.suppress(Exception):
+            self._arm_recap_timer()
 
     def _notification_event_type(self, event: object) -> NotificationEvent | None:
         if not config.notifications.enabled:
@@ -231,6 +240,18 @@ class AgentRunnerMixin:
         return None
 
     async def _run_agent(self, prompt: str, images: list[ImageContent] | None = None) -> None:
+        try:
+            await self._run_agent_inner(prompt, images=images)
+        finally:
+            # A run that raised, or was cancelled by a newer prompt taking over
+            # the worker group, must not leave the session looking busy. Every
+            # gate in the app -- Esc, the status line, the recap, every
+            # background wake-up -- reads this one flag.
+            self._is_running = False
+
+    async def _run_agent_inner(
+        self, prompt: str, images: list[ImageContent] | None = None
+    ) -> None:
         chat = self.query_one("#chat-log", ChatLog)
         status = self.query_one("#status-line", StatusLine)
         info_bar = self.query_one("#compact-footer", InfoBar)

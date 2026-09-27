@@ -51,9 +51,30 @@ class RecapMixin:
     # Scheduling
     # ------------------------------------------------------------------
 
+    def _subagents_in_flight(self) -> bool:
+        """True while any sub-agent is queued or running.
+
+        A recap is a summary of a *finished* conversation. A session with
+        sub-agents in it is not finished, it is mid-flight: the parent turn
+        ended only because the work was handed off. Recapping then did two
+        harmful things at once — it spent an LLM call restating what was
+        already on screen, and the summary it produced arrived in the chat
+        *instead of* the sub-agent's result reaching the agent, so the finding
+        was visible to the user and invisible to the model. That reads as
+        "the notification never arrived" when the notification worked fine.
+        """
+        from vtx.tui.goal_agents import REGISTRY
+
+        return REGISTRY.has_live()
+
     def _arm_recap_timer(self) -> None:
         self._cancel_recap_timer()
         if not config.recap.enabled:
+            return
+        if self._subagents_in_flight():
+            # Deferred, not dropped: the timer is armed again when the
+            # session goes quiet with nothing outstanding.
+            log.debug("recap: not arming, sub-agents are still in flight")
             return
         seconds = max(5.0, float(config.recap.idle_seconds))
         self._recap_timer = self.set_timer(seconds, self._on_recap_idle)
@@ -136,6 +157,12 @@ class RecapMixin:
 
         manual = reason == "manual"
         if not manual:
+            # A turn can start between arming the timer and the LLM call
+            # landing. Drafting a recap of a live session is the same mistake
+            # one step later, so the check is repeated here.
+            if self._is_running or self._subagents_in_flight():
+                log.debug("recap(%s): skipped, session is not idle", reason)
+                return
             if not has_meaningful_activity(context.messages):
                 log.debug("recap(%s): skipped, no meaningful activity", reason)
                 return
@@ -170,6 +197,12 @@ class RecapMixin:
     def _on_recap_idle(self) -> None:
         self._recap_timer = None
         if not config.recap.enabled or self._is_running:
+            return
+        # Re-checked here, not just at arm time: a sub-agent can be dispatched
+        # inside the idle window, and the timer is the only thing standing
+        # between that and a recap of a session that is still working.
+        if self._subagents_in_flight():
+            log.debug("recap: idle timer fired but sub-agents are in flight")
             return
         self._recap_worker = self.run_worker(
             self._generate_and_show_recap("idle"), group="recap", exclusive=True

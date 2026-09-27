@@ -31,3 +31,6 @@ benchmark_results.json
 
 # Local configuration files
 .vtx/
+
+# jev lite snd
+jev lite snd/
