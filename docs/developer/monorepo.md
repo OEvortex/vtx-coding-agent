@@ -21,8 +21,7 @@ vtx-coding-agent/
 │                       # input, commands/, tree selector, export
 ├── tests/              # pytest: tools/, ui/, sdk/, llm/, context/, extensions/
 ├── examples/           # sdk/, extensions/, agents/ runnable samples
-├── Site/               # vite+react website that renders docs/*.md
-├── docs/               # these docs (indexed by Site/src/content/docs)
+├── docs/               # these docs
 └── pyproject.toml      # hatchling; wheel packages = the four src dirs
 ```
 

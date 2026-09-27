@@ -20,7 +20,6 @@ src/
   tui/            # Textual UI
 tests/            # pytest suite mirroring src (tools/, ui/, sdk/, llm/, context/, extensions/)
 examples/         # runnable examples: sdk/, extensions/, agents/
-Site/             # marketing/docs website (Vite + React) that renders docs/*.md
 scripts/          # install.sh / install.ps1, show_themes.py
 .agents/skills/   # repo skills incl. the tmux e2e harness
 ```
@@ -43,7 +42,7 @@ Run only the tests relevant to your change; the full suite is slow.
 - Keep the system prompt lean — prompt text lives in `src/ai/agent/prompts/identity.py`; token budget matters.
 - `core` must not import from `ai`/`tui`/`coding_agent`; keep dependency direction one-way (`architecture.md`).
 - Config schema changes need a new migration in `src/coding_agent/config.py` (`_migrate_vN_to_vN+1`) and a bump of `meta.config_version` in `defaults/config.yml`.
-- Docs in `docs/*.md` are rendered by the website (`Site/src/content/docs/index.ts` indexes them) and linked from the README — update both when adding pages.
+- New docs in `docs/*.md` are linked from the README — update the README index when adding pages.
 
 ## E2E testing
 
