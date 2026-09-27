@@ -445,6 +445,26 @@ WITTY_STATUS_LINES: tuple[str, ...] = tuple(
 )
 
 
+def subagents_own_the_status_line() -> bool:
+    """Whether a live sub-agent fan-out should suppress the witty status line.
+
+    The pinned ``Agents`` panel is already the standing view of the fan-out: it
+    names every running sub-agent, what it is doing right now, its turns, its
+    tokens and its duration. A witty line printed above that panel says the
+    same thing less precisely — and because the two rotate on independent
+    timers they visibly contradict each other, with the line reading "asking
+    the user" while the row directly beneath it reads ``grep``.
+
+    So while anything is in flight, the status line keeps its spinner and its
+    ``esc to interrupt`` hint, which are facts, and drops the quip, which is
+    not. This is the same reasoning that defers an idle recap during a
+    fan-out: the user is not watching an idle screen.
+    """
+    from vtx.tui.goal_agents import REGISTRY
+
+    return REGISTRY.has_live()
+
+
 def _pick_from_pool(pool: tuple[str, ...], exclude: str | None = None) -> str:
     """Pick a line from a pool, avoiding `exclude` if possible."""
     if not pool:

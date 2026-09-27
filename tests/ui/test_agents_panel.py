@@ -284,48 +284,43 @@ def test_narrow_terminal_truncates_without_overflowing() -> None:
         assert len(line) <= 40
 
 
-def test_gutterless_rows_drop_the_branch_connector() -> None:
-    """The goal beacon draws its own rail, so the panel's tree goes away.
-
-    Rendering both gave every agent row a `│ │ ├─` double vertical inside a
-    box that was already framed, and the connector had no rail to hang from.
-    """
-    registry = _registry_with(running=2, queued=1, finished=1)
-    with_gutter = render_agents(registry.runs(), width=100, header=False).plain
-    without = render_agents(registry.runs(), width=100, header=False, gutter="").plain
-
-    assert "│ ├─" in with_gutter
-    assert "├─" not in without
-    assert not any(line.startswith("│") for line in without.splitlines())
-    # The content is identical; only the indentation is gone.
-    assert "1 queued" in without and "1 finished" in without
-    for line in without.splitlines():
-        assert len(line) <= 100
-
-
 def test_no_blank_row_when_nothing_has_finished() -> None:
     """A whitespace-only trailing row is not content.
 
-    Indenting the finished-run summary with a two-space lead turned an empty
-    summary into `"  "`, which is truthy, so the renderer emitted a blank line.
-    The goal beacon then drew it as a second gap between the agent block and
-    whatever followed.
+    Indenting the finished-run summary turned an empty summary into a
+    non-empty one, so the renderer emitted a blank line that the goal beacon
+    then drew as a second gap between the agent block and whatever followed.
     """
     registry = _registry_with(running=2, queued=1)
-    lines = render_agents(registry.runs(), width=90, header=False, gutter="").plain.split("\n")
+    lines = render_agents(registry.runs(), width=90, header=False).plain.split("\n")
     assert lines
     assert all(line.strip() for line in lines), f"blank row in {lines}"
-    assert not render_agents(registry.runs(), width=90, gutter="").plain.endswith("\n")
+    assert not render_agents(registry.runs(), width=90).plain.endswith("\n")
 
 
-def test_gutterless_rows_get_two_cells_back_for_their_content() -> None:
-    """Dropping the gutter must widen the row, not shorten the label."""
+def test_goal_beacon_and_panel_share_one_row_grammar() -> None:
+    """Two strips stacked above the editor must read as one panel.
+
+    The goal beacon used to draw its own `▌` rail while the Agents panel
+    directly below it drew a `│ ├─` tree, so the two had different left edges,
+    different headers and different label weights. Sharing `strip_header` and
+    `tree_prefix` is what makes them one thing.
+    """
+    from vtx.tui.agents_panel import strip_header, tree_prefix
+
+    assert strip_header("Goal").plain == "● Goal"
+    assert strip_header("Goal").plain == strip_header("Agents").plain.replace("Agents", "Goal")
+
+    prefix = tree_prefix(last=False, glyph="⠋", glyph_color="#e8ecf4")
+    assert prefix.plain == "│ ├─ ⠋ "
+    # The vertical and the branch are structure; only the glyph is state.
+    assert prefix.plain.startswith("│ ├─ ")
+
+
+def test_panel_header_uses_the_shared_helper() -> None:
     registry = _registry_with(running=1)
-    registry.record("a", {"kind": "text_delta", "subagent": "Explore", "delta": "a long answer"})
-    runs = registry.runs()
-    narrow = render_agents(runs, width=60, gutter="").plain
-    wide = render_agents(runs, width=60).plain
-    assert len(narrow.splitlines()[0]) <= len(wide.splitlines()[0])
+    text = render_agents(registry.runs(), width=90).plain
+    assert text.splitlines()[0] == "● Agents"
 
 
 # ---------------------------------------------------------------------------

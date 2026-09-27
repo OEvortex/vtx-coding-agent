@@ -80,10 +80,57 @@ TICK_SECONDS = 0.12
 #: window closes.
 LINGER_TICK_SECONDS = 0.5
 
-_TREE_EDGE = "├─"
-_TREE_LAST = "└─"
-_GUTTER = "│"
-_BRANCH_PAD = "│ │  "
+#: The grammar every strip above the editor is built from. These are public
+#: because the goal beacon is drawn from the same vocabulary: one `● Header`,
+#: one `│ ├─` tree, bold labels, dim activity, muted counters. A second strip
+#: with its own shape directly below the first reads as two unrelated widgets
+#: rather than as one panel.
+TREE_EDGE = "├─"
+TREE_LAST = "└─"
+TREE_GUTTER = "│"
+HEADER_DOT = "●"
+
+
+def strip_header(label: str) -> Text:
+    """`● Agents` — the accent dot and bold word that head a pinned strip.
+
+    The dot carries the accent, the word carries the weight. A shaded chip
+    behind the word (` vtx-goal `) reads heavier and pulls the eye to the
+    least important part of the row: the strip's own name.
+    """
+    colors = config.ui.colors
+    out = Text()
+    out.append(f"{HEADER_DOT} ", style=Style(color=colors.accent))
+    out.append(label, style=Style(color=colors.fg, bold=True))
+    return out
+
+
+def tree_prefix(*, last: bool, glyph: str, glyph_color: str, depth: int = 0) -> Text:
+    """`│ ├─ ⠋ ` — the vertical, the branch and the status glyph, in one span.
+
+    Split across three styles so the gutter stays a hairline, the branch reads
+    as structure, and the glyph reads as state. Every strip above the editor
+    starts its rows with this, so a reader moving between them is reading one
+    panel and not two.
+
+    ``depth`` nests a row under another: the extra ``│ `` bars go *before* the
+    branch, so a subtask reads as hanging under its parent
+    (``│ │ ├─ · t2.2``) rather than as a sibling with a stray bar after it.
+    """
+    colors = config.ui.colors
+    branch = TREE_LAST if last else TREE_EDGE
+    out = Text()
+    out.append(TREE_GUTTER, style=Style(color=colors.dim))
+    out.append(" │" * depth, style=Style(color=colors.dim))
+    out.append(f" {branch} ", style=Style(color=colors.dim))
+    out.append(glyph, style=Style(color=glyph_color, bold=True))
+    out.append(" ")
+    return out
+
+
+def tree_prefix_cells(depth: int = 0) -> int:
+    """Cells :func:`tree_prefix` occupies, so columns can be sized off it."""
+    return cell_len(f"{TREE_GUTTER} {'│' * depth} {TREE_EDGE} x ")
 
 
 def _agent_tag(run: SubagentRun) -> str:
@@ -189,7 +236,7 @@ def visible_runs(runs: Sequence[SubagentRun]) -> list[SubagentRun]:
     return sorted((r for r in runs if r.running), key=lambda r: r.dispatched_at)
 
 
-def finished_summary(runs: Sequence[SubagentRun], gutter: str = _GUTTER) -> str:
+def finished_summary(runs: Sequence[SubagentRun]) -> str:
     """`✓ 2 finished · 4.1k tokens` for the runs that already landed."""
     done = [r for r in runs if r.finished]
     if not done:
@@ -197,7 +244,7 @@ def finished_summary(runs: Sequence[SubagentRun], gutter: str = _GUTTER) -> str:
     colors = config.ui.colors
     failed = sum(1 for r in done if r.status == "error")
     text = Text()
-    text.append(f"{gutter} ", style=Style(color=colors.dim))
+    text.append(f"{TREE_GUTTER} ", style=Style(color=colors.dim))
     glyph, color = ("✗", colors.failed) if failed else ("✓", colors.success)
     text.append(f"{glyph} ", style=Style(color=color))
     count = f"{len(done)} finished"
@@ -344,15 +391,8 @@ def render_agents(
     frame: int = 0,
     max_rows: int = MAX_ROWS,
     header: bool = True,
-    gutter: str = _GUTTER,
 ) -> Text:
-    """Draw the panel: one streaming line per running agent, then the counts.
-
-    ``gutter`` is the vertical drawn down the left of each row. The pinned panel
-    uses the default; the goal beacon passes ``""`` because the rail it already
-    draws is that vertical, and running both gave every row a `│ │ ├─` double
-    edge inside a frame that was already boxed.
-    """
+    """Draw the panel: one streaming line per running agent, then the counts."""
     colors = config.ui.colors
     tree_style = Style(color=colors.dim)
     styles = {
@@ -365,11 +405,8 @@ def render_agents(
     shown = rows[:max_rows]
     hidden = len(rows) - len(shown)
 
-    # "│ ├─ ⠼ " with the gutter, "⠼ " without it. Without a gutter there is no
-    # vertical for a branch to hang from, so the connector goes too and the
-    # rows become a plain list — which is what a fan-out is.
-    lead = [part for part in (gutter, _TREE_EDGE, "x") if part]
-    prefix_cells = cell_len(" ".join(lead)) + 1
+    # "│ ├─ ⠼ "
+    prefix_cells = cell_len(f"{TREE_GUTTER} {TREE_EDGE} x ")
     # No floor: on a terminal narrower than the prefix the row has to shrink
     # below it rather than push the panel wider than the screen.
     budget = max(0, width - prefix_cells)
@@ -377,21 +414,17 @@ def render_agents(
 
     text = Text()
     if header:
-        text.append("● ", style=Style(color=colors.accent))
-        text.append("Agents", style=Style(color=colors.fg, bold=True))
+        text.append_text(strip_header("Agents"))
         text.append("\n")
 
     for index, run in enumerate(shown):
         glyph, glyph_color = status_glyph(run, frame)
-        branch = ""
-        if gutter:
-            branch = " " + (_TREE_LAST if index == len(shown) - 1 and not hidden else _TREE_EDGE)
-
         row = Text()
-        if gutter:
-            row.append(f"{gutter}", style=tree_style)
-        row.append(f"{branch} ", style=tree_style)
-        row.append(f"{glyph} ", style=Style(color=glyph_color))
+        row.append_text(
+            tree_prefix(
+                last=index == len(shown) - 1 and not hidden, glyph=glyph, glyph_color=glyph_color
+            )
+        )
 
         label, tag, activity, metrics = layout[index]
         # Every field is emitted, padding included, so the counters land in the
@@ -410,11 +443,11 @@ def render_agents(
         text.append(row)
         text.append("\n")
 
-    footer_gutter_cells = cell_len(gutter) + 1
+    footer_gutter_cells = cell_len(TREE_GUTTER) + 1
 
     def footer(body: str, body_style: Style) -> None:
         line = Text()
-        line.append(f"{gutter} " if gutter else "  ", style=tree_style)
+        line.append(f"{TREE_GUTTER} ", style=tree_style)
         line.append(_ellipsize(body, max(0, width - footer_gutter_cells)), style=body_style)
         text.append(line)
         text.append("\n")
@@ -426,13 +459,7 @@ def render_agents(
     if queued_total:
         footer(f"○ {queued_total} queued", Style(color=colors.muted))
 
-    summary = finished_summary(runs, gutter)
-    if not gutter:
-        # The gutter contributed the indent; keep the summary aligned with the
-        # two-space lead the rows and the queued footer use instead. Guarded on
-        # the *stripped* text — prefixing an empty string would produce a
-        # whitespace-only row that the beacon then drew as a blank one.
-        summary = "  " + summary.lstrip() if summary.strip() else ""
+    summary = finished_summary(runs)
     if summary:
         text.append(Text(_ellipsize(summary, max(0, width - footer_gutter_cells))))
 

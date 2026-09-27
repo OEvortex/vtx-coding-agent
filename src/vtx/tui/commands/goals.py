@@ -16,7 +16,7 @@ from vtx.tui.chat import ChatLog
 from vtx.tui.commands.base import CommandSupport
 
 if TYPE_CHECKING:
-    pass
+    from textual.screen import Screen
 
 
 class GoalCommands(CommandSupport):
@@ -26,6 +26,12 @@ class GoalCommands(CommandSupport):
     _pending_queue: Any
 
     if TYPE_CHECKING:
+        _cwd: str
+
+        @property
+        def screen_stack(self) -> list[Screen[Any]]: ...
+
+        def push_screen(self, screen: Screen[Any]) -> Any: ...
 
         def _run_agent(self, prompt: str, images: list[Any] | None = None) -> Any: ...
         def _update_queue_display(self) -> None: ...
@@ -60,8 +66,20 @@ class GoalCommands(CommandSupport):
     def _announce_goal_event(self, message: str, *, error: bool = False) -> None:
         self._goal_chat().add_info_message(message, error=error)
 
-    def _show_goal_dashboard(self, renderable) -> None:
-        self._goal_chat().add_rich_message(renderable)
+    def _open_goal_dashboard(self):
+        """The live dashboard overlay, or ``None`` if it is not on screen.
+
+        The app binds Ctrl+Shift+G with ``priority=True``, so an app-level key
+        handler runs before the overlay's own bindings and the overlay never
+        sees the key. That is fine: the action below is written as a real
+        toggle, so the same chord closes it either way.
+        """
+        from vtx.tui.goal_ui import GoalDashboardScreen
+
+        for screen in reversed(self.screen_stack):
+            if isinstance(screen, GoalDashboardScreen):
+                return screen
+        return None
 
     def _chat_width(self) -> int:
         """Chat log content width in cells, for wrapping dashboard prose."""
@@ -265,12 +283,22 @@ class GoalCommands(CommandSupport):
         self._refresh_goal_widget()
 
     def action_toggle_goal_dashboard(self) -> None:
-        """Ctrl+Shift+G: post the expanded unified dashboard to the chat log."""
-        from vtx.tui.goal_ui import render_expanded
+        """Ctrl+Shift+G: open the goal dashboard, or close it if it is already open.
 
-        service = self._goal_service()
-        record = service.focused()
-        if record is None:
+        This used to *post* the expanded dashboard to the chat log, which made
+        the name a lie in the direction that mattered: there was no collapse,
+        and every press added another copy of the same forty-line block to the
+        scrollback. An overlay can be taken back, so the toggle is real now and
+        the chat log stays a conversation.
+        """
+        from vtx.tui.goal_ui import GoalDashboardScreen
+
+        open_dashboard = self._open_goal_dashboard()
+        if open_dashboard is not None:
+            open_dashboard.dismiss(None)
+            return
+
+        if self._goal_service().focused() is None:
             self._announce_goal_event("[vtx-goal] no focused goal")
             return
-        self._show_goal_dashboard(render_expanded(service, record, width=self._chat_width()))
+        self.push_screen(GoalDashboardScreen(self._cwd, self._goal_session_id()))

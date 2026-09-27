@@ -17,7 +17,7 @@ from vtx.ai.config import PermissionMode, config
 from vtx.core.git_branch import resolve_git_branch
 from vtx.tui.chat import WITTY_ROTATE_EVERY_TICKS
 from vtx.tui.formatting import format_tokens
-from vtx.tui.status_lines import WITTY_STATUS_LINES
+from vtx.tui.status_lines import WITTY_STATUS_LINES, subagents_own_the_status_line
 from vtx.tui.status_lines import pick_witty_line as _pick_witty_line
 
 # Cells in the InfoBar context gauge. Small enough to sit inline with the
@@ -591,7 +591,12 @@ class StatusLine(Horizontal):
             result.append(str(spinner_text), style=spinner_color)
         else:
             result.append(str(spinner_text), style=spinner_color)
-        result.append(f" {self._witty_line}...", style=config.ui.colors.muted)
+        # The pinned Agents panel is the standing view of a fan-out, so a quip
+        # about spinning one up here is both redundant and, given the two
+        # independent rotation timers, occasionally wrong. See
+        # `subagents_own_the_status_line`.
+        if not subagents_own_the_status_line():
+            result.append(f" {self._witty_line}...", style=config.ui.colors.muted)
         result.append(" (esc to interrupt)", style=dim_color)
         if self._streaming_token_count > 20:
             result.append(f" ↓{self._streaming_token_count!s}", style=dim_color)
@@ -629,7 +634,12 @@ class StatusLine(Horizontal):
             pass
 
     def _update_spinner(self) -> None:
-        if self._status != "idle":
+        if self._status == "idle":
+            return
+        # No point rotating a quip that is not on screen: pausing keeps the
+        # `exclude` history intact so the line that comes back after the
+        # fan-out finishes is not one the reader just saw.
+        if not subagents_own_the_status_line():
             self._witty_ticks += 1
             if self._witty_ticks >= WITTY_ROTATE_EVERY_TICKS and WITTY_STATUS_LINES:
                 self._witty_ticks = 0
@@ -637,7 +647,7 @@ class StatusLine(Horizontal):
                     exclude=self._witty_line, tool_name=self._active_tool, state=self._agent_state
                 )
                 self._animate_witty_line()
-            self._status_text.update(self._render_spinner(), layout=False)
+        self._status_text.update(self._render_spinner(), layout=False)
 
     def set_active_tool(self, tool_name: str | None) -> None:
         """Update the currently active tool for context-aware status lines."""

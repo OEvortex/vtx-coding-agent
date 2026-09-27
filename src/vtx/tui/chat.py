@@ -26,7 +26,7 @@ from vtx.tui.blocks import (
     UserBlock,
 )
 from vtx.tui.input import AskUserInput
-from vtx.tui.status_lines import WITTY_STATUS_LINES, pick_witty_line
+from vtx.tui.status_lines import WITTY_STATUS_LINES, pick_witty_line, subagents_own_the_status_line
 
 __all__ = ["MAX_CHILDREN", "PRUNE_TO", "WITTY_ROTATE_EVERY_TICKS", "WITTY_STATUS_LINES", "ChatLog"]
 
@@ -190,7 +190,13 @@ class ChatLog(VerticalScroll):
         self._spinner_tool = tool_name
         self._spinner_state = state
         if message:
+            # An explicit message is a fact the caller chose to state
+            # ("Creating handoff..."), so it survives a live fan-out.
             self._spinner_line = message
+        elif subagents_own_the_status_line():
+            # Auto-picked, so it is a quip — and the pinned Agents panel is
+            # already saying the same thing with better detail.
+            self._spinner_line = ""
         else:
             self._spinner_line = _pick_witty_line(tool_name=tool_name, state=state)
         self._spinner_label = Label(self._render_spinner_text(self._spinner_line))
@@ -205,7 +211,8 @@ class ChatLog(VerticalScroll):
         spinner_text = self._spinner.render(time.time()) if self._spinner else ""
         result = Text()
         result.append(str(spinner_text), style=info_color)
-        result.append(f" {line}", style=info_color)
+        if line:
+            result.append(f" {line}", style=info_color)
         return result
 
     def set_spinner_tool(self, tool_name: str | None, state: str | None = None) -> None:
@@ -219,20 +226,24 @@ class ChatLog(VerticalScroll):
         self._spinner_tool = tool_name
         self._spinner_state = state
         self._spinner_ticks = 0
-        self._spinner_line = _pick_witty_line(
-            exclude=self._spinner_line, tool_name=tool_name, state=state
-        )
+        if not subagents_own_the_status_line():
+            self._spinner_line = _pick_witty_line(
+                exclude=self._spinner_line, tool_name=tool_name, state=state
+            )
         self._spinner_label.update(self._render_spinner_text(self._spinner_line))
 
     def _tick_spinner(self) -> None:
         if self._spinner_label is None or self._spinner is None:
             return
-        self._spinner_ticks += 1
-        if self._spinner_ticks >= WITTY_ROTATE_EVERY_TICKS:
-            self._spinner_ticks = 0
-            self._spinner_line = _pick_witty_line(
-                exclude=self._spinner_line, tool_name=self._spinner_tool, state=self._spinner_state
-            )
+        if not subagents_own_the_status_line():
+            self._spinner_ticks += 1
+            if self._spinner_ticks >= WITTY_ROTATE_EVERY_TICKS:
+                self._spinner_ticks = 0
+                self._spinner_line = _pick_witty_line(
+                    exclude=self._spinner_line,
+                    tool_name=self._spinner_tool,
+                    state=self._spinner_state,
+                )
         self._spinner_label.update(self._render_spinner_text(self._spinner_line))
 
     def _stop_spinner(self) -> None:

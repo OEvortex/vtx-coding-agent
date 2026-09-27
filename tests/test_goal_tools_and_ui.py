@@ -12,6 +12,7 @@ from vtx.ai.agent.dispatcher import DispatcherContext, set_context
 from vtx.coding_agent.goal import storage
 from vtx.coding_agent.goal.service import GoalService
 from vtx.coding_agent.goal.tools import GoalParams, GoalTool
+from vtx.tui.goal_agents import REGISTRY
 from vtx.tui.goal_ui import format_usage, render_compact, render_expanded
 
 
@@ -60,7 +61,7 @@ def test_render_compact_and_expanded(goal_cwd: Path) -> None:
     record = service.focused()
     compact = render_compact(service, record)
     text = compact.plain
-    assert "vtx-goal" in text
+    assert "Goal" in text
     assert "running" in text
     assert "▸ t2" in text
     assert "✓ t1" in text
@@ -172,14 +173,94 @@ def test_expanded_rail_is_unbroken(goal_cwd: Path) -> None:
     lines = render_expanded(service, record, width=100).plain.split("\n")
     assert lines, "dashboard rendered nothing"
     for line in lines:
-        assert line.startswith("▌"), f"gap in the rail at {line!r}"
-    # A rail row carries the bar and its trailing space, nothing else.
-    blanks = [line for line in lines if line.strip() == "▌"]
-    assert len(blanks) >= 4, "the sections are separated by rail rows"
+        assert line.startswith(("│", "●")), f"gap in the gutter at {line!r}"
+    # A separator row carries the bar and its trailing space, nothing else.
+    blanks = [line for line in lines if line.strip() == "│"]
+    assert len(blanks) >= 4, "the sections are separated by gutter rows"
+
+
+def test_beacon_and_agents_panel_use_one_grammar(goal_cwd: Path) -> None:
+    """Two strips stacked above the editor must read as one panel.
+
+    The beacon used to open with a shaded ` vtx-goal ` chip and hang its rows
+    off a `▌` rail while the `Agents` panel directly below opened with `●
+    Agents` and hung its rows off a `│ ├─` tree. Different left edge,
+    different header, different label weight: two unrelated widgets. Both are
+    now built from `strip_header` and `tree_prefix`.
+    """
+    from vtx.tui.agents_panel import render_agents
+
+    service = GoalService(str(goal_cwd))
+    record = service.create("Ship the thing")
+    service.replace_tasks(record.id, [{"title": "Do the work"}])
+    service.update_task(record.id, "t1", "start")
+    record = service.focused()
+
+    REGISTRY.clear()
+    try:
+        REGISTRY.record("r1", {"kind": "subagent_start", "subagent": "explore", "label": "Work"})
+        REGISTRY.record("r1", {"kind": "tool_start", "subagent": "explore", "tool_name": "grep"})
+
+        goal_rows = render_compact(service, record, width=100).plain.splitlines()
+        agent_rows = render_agents(REGISTRY.runs(), width=100).plain.splitlines()
+
+        assert goal_rows[0].startswith("● Goal")
+        assert agent_rows[0].startswith("● Agents")
+        # Same header shape, only the word differs.
+        assert goal_rows[0].split()[1] != agent_rows[0].split()[1]
+        # Same tree gutter on every list row in both.
+        assert any(line.startswith(("│ ├─ ", "│ └─ ")) for line in goal_rows)
+        assert any(line.startswith(("│ ├─ ", "│ └─ ")) for line in agent_rows)
+        # The old shaded chip is gone.
+        assert "vtx-goal" not in "\n".join(goal_rows)
+        assert "▌" not in "\n".join(goal_rows)
+    finally:
+        REGISTRY.clear()
+
+
+def test_subtasks_nest_under_their_parent(goal_cwd: Path) -> None:
+    """The continuation bars go before the branch, not after it.
+
+    `│ ├─ ✓ │ t2.1` reads as a sibling of `t1` with a stray bar trailing it;
+    `│ │ ├─ ✓ t2.1` reads as what it is — hanging under `t2`.
+    """
+    service = GoalService(str(goal_cwd))
+    record = service.create("Ship the thing")
+    service.replace_tasks(record.id, [{"title": "Parent"}, {"title": "Child", "parent_id": "t1"}])
+    service.update_task(record.id, "t1", "start")
+    record = service.focused()
+
+    lines = render_compact(service, record, width=100).plain.splitlines()
+    parent = next(line for line in lines if "Parent" in line)
+    child = next(line for line in lines if "Child" in line)
+    assert parent.startswith("│ ├─ ")
+    assert child.startswith("│ │ ├─ ") or child.startswith("│ │ └─ "), (
+        f"subtask not nested under its parent: {child!r}"
+    )
+
+
+def test_witty_lines_are_suppressed_during_a_fanout() -> None:
+    """The Agents panel is the standing view; the quip above it is redundant.
+
+    The two rotate on independent timers, so they visibly contradict: the line
+    read "asking the user" while the row beneath it read `grep`.
+    """
+    from vtx.tui.goal_agents import SubagentRegistry
+    from vtx.tui.status_lines import subagents_own_the_status_line
+
+    registry = SubagentRegistry()
+    assert subagents_own_the_status_line() is False
+    registry.record("a", {"kind": "subagent_start", "subagent": "explore"})
+    # Point the global at the fixture so the predicate sees it.
+    original, REGISTRY._runs, REGISTRY._order = (REGISTRY, registry._runs, registry._order)
+    try:
+        assert subagents_own_the_status_line() is True
+    finally:
+        REGISTRY._runs, REGISTRY._order = original._runs, original._order
 
 
 def test_expanded_rows_are_not_padded_to_the_terminal(goal_cwd: Path) -> None:
-    """The chat log pads every line itself; padding here doubled the work.
+    """The host pads every line itself; padding here doubled the work.
 
     The SVG screen export showed each dashboard row shipping a ~1400-cell run
     of styled spaces after a twelve-character line, which is pure overhead and
@@ -190,7 +271,7 @@ def test_expanded_rows_are_not_padded_to_the_terminal(goal_cwd: Path) -> None:
     record = service.focused()
 
     lines = render_expanded(service, record, width=120).plain.split("\n")
-    short = [line for line in lines if line.startswith("▌ (none)")]
+    short = [line for line in lines if line.startswith("│ (none)")]
     assert short, "expected the placeholder row"
     assert cell_len(short[0]) < 20, f"row padded to {cell_len(short[0])} cells"
 
@@ -310,7 +391,7 @@ def test_activity_drops_the_repeated_date(goal_cwd: Path) -> None:
     assert all(row[4] == "-" for row in rows), "ledger rows carry an ISO timestamp"
 
     expanded = render_expanded(service, service.focused(), width=100).plain
-    activity = expanded.split("◆ Activity", 1)[1]
+    activity = expanded.split("● Activity", 1)[1]
     for row in rows:
         date, _, _ = row.partition(" ")
         assert date not in activity, "the activity log should not repeat the date"

@@ -3,31 +3,40 @@
 Two modes share one presentation model, so they can never disagree:
 
 - compact: always visible above the editor while a goal is focused
-- expanded: full task tree + verification + recent activity, rendered
-  into the chat log via Ctrl+Shift+G
+- expanded: the full task tree, contracts and activity, in the
+  :class:`GoalDashboardScreen` overlay that Ctrl+Shift+G opens and Esc closes
 
 Render functions are pure (data in, Rich Text out), matching the
 convention in :mod:`vtx.tui.task_ui`.
 
 The rules the whole module follows:
 
-- **A rail, not a box.** One accent-coloured ``▌`` down the left edge instead
-  of a ``╭─╮`` frame. A frame spends two rows and two very loud rules saying
-  "this is a panel", which the rail says with one cell — and it said it
-  *loudest* on a wide terminal, where the horizontal rules are longest and the
-  content they enclose is no wider than it would be without them.
+- **One grammar, shared with the Agents panel.** Every strip above the editor
+  is drawn from :mod:`vtx.tui.agents_panel` — one ``● Header``, one ``│ ├─``
+  tree, bold labels, dim activity, muted counters. The goal beacon used to
+  carry its own ``▌`` rail and its own shaded ``vtx-goal`` chip, so it and the
+  ``Agents`` panel sitting directly below it had different left edges,
+  different headers and different label weights, and read as two unrelated
+  widgets rather than one panel. Sharing the helpers is what makes them one
+  thing. It also retires the ``▌ │ ├─`` double edge that came from drawing a
+  rail and a gutter at the same time.
 - **One fact, one row.** Status, objective and accounting share the header
   line, because at any usable width that line is half empty while the rows
   below were paying to repeat it. The old `Current` row existed only to
   restate the ``▸`` the task list already showed.
 - **Colour means state, not decoration.** Pending work is muted; orange is
   reserved for the verification contract. The mark column is the fastest read
-  on the panel precisely because only three of five marks are coloured.
+  on the panel precisely because only three of five marks are coloured, and
+  the mark sits in its own column so it can be read straight down.
 - **Every width is measured in terminal cells** (``cell_len``), never
-  characters, so a CJK or emoji objective cannot shear the rail.
+  characters, so a CJK or emoji objective cannot shear the gutter.
 - **Nothing that matters is clipped.** One-line fields ellipsize on a word
   boundary, multi-line fields wrap, and the goal file always holds the full
   text. Ctrl+Shift+G is always one keypress away.
+- **Reversible.** Anything this UI puts on screen, it can take back. The
+  expanded view used to be *posted to the chat log*, which has no undo: a
+  second Ctrl+Shift+G stacked an identical copy of the same forty-line block
+  and there was no way to collapse either of them. It is an overlay now.
 """
 
 from __future__ import annotations
@@ -35,12 +44,15 @@ from __future__ import annotations
 import re
 from collections.abc import Sequence
 from dataclasses import dataclass
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any, ClassVar
 
 from rich.cells import cell_len
 from rich.console import Console
 from rich.style import Style
 from rich.text import Text
+from textual.binding import Binding
+from textual.containers import VerticalScroll
+from textual.screen import ModalScreen
 from textual.widgets import Static
 
 from vtx.ai.agent.goal.record import (
@@ -52,7 +64,13 @@ from vtx.ai.agent.goal.record import (
 )
 from vtx.ai.agent.goal.service import GoalService, get_service
 from vtx.ai.config import config
-from vtx.tui.agents_panel import render_agents
+from vtx.tui.agents_panel import (
+    TREE_GUTTER,
+    render_agents,
+    strip_header,
+    tree_prefix,
+    tree_prefix_cells,
+)
 from vtx.tui.goal_agents import REGISTRY, SubagentRun
 
 if TYPE_CHECKING:
@@ -84,9 +102,8 @@ MAX_SUBTASK_ROWS = 3
 #: view; inside the goal beacon the fan-out is a footnote, not the headline.
 AGENT_ROWS = 2
 
-#: Cells consumed by the rail itself: the accent bar and its trailing space.
-RAIL = "▌"
-RAIL_CELLS = 2
+#: Cells the shared tree gutter occupies: `│ ` — the vertical and its space.
+GUTTER_CELLS = 2
 
 #: Reused console for width maths; never printed to.
 _WRAP_CONSOLE = Console(width=FALLBACK_WIDTH)
@@ -228,26 +245,6 @@ def mark_color(mark: str) -> str:
     }.get(mark, colors.fg)
 
 
-def title_chip(label: str = "vtx-goal") -> Text:
-    """Badge-style label chip using the theme's badge colors."""
-    c = _colors()
-    return Text(f" {label} ", style=Style(color=c.badge.label, bgcolor=c.badge.bg, bold=True))
-
-
-def section_header(title: str, color: str | None = None) -> Text:
-    """Quiet `◆ Title` eyebrow for the expanded dashboard.
-
-    The diamond is a hairline colour and the word carries the weight, so a
-    section marker reads as structure rather than as another thing competing
-    with the content for attention.
-    """
-    c = _colors()
-    out = Text()
-    out.append("◆ ", style=Style(color=color or c.border))
-    out.append(title, style=_style(color or c.title, bold=True))
-    return out
-
-
 # ---------------------------------------------------------------------------
 # width helpers
 # ---------------------------------------------------------------------------
@@ -320,45 +317,6 @@ def _join_exact(segments: Sequence[tuple[str, str, bool]], sep: str = "  ") -> T
     return out
 
 
-class _Rail:
-    """Rows hung off a status-coloured rail.
-
-    Every row is emitted as ``▌ <inner>`` and fitted to the real inner width,
-    so an over-long label or a double-width CJK character can never shear the
-    edge. Doing that arithmetic at each call site is what made the old box go
-    ragged, so it lives in one place instead.
-
-    ``pad`` exists because the two call sites want opposite things. The
-    compact beacon is a pinned strip of known width whose rows must be exactly
-    the widget width, so it pads. The chat log pads every line to the terminal
-    edge itself and the width invariant buys nothing there, so it does not —
-    padding there shipped ~1400 styled space cells per line for no visible
-    gain.
-    """
-
-    def __init__(self, width: int, color: str, *, pad: bool = True) -> None:
-        self.width = max(8, width)
-        self.color = color
-        self.inner = max(1, self.width - RAIL_CELLS)
-        self.pad = pad
-
-    def row(self, content: Text) -> Text:
-        line = Text(RAIL, style=Style(color=self.color))
-        line.append(" ")
-        line.append_text(_fit(content, self.inner, pad=self.pad))
-        return line
-
-    def gap(self) -> Text:
-        """A separator row that still carries the rail.
-
-        The rail is the block's left edge, so it has to be drawn on the blank
-        rows too. Skipping them turns a border into a dashed line — a column
-        of disconnected ticks running the height of the dashboard, which reads
-        as a rendering artefact rather than as a container.
-        """
-        return Text("")
-
-
 def _keyhint(pairs: Sequence[tuple[str, str]], width: int) -> Text:
     """`esc pause  ·  ctrl+shift+g expand`, right-aligned as a footer.
 
@@ -399,38 +357,40 @@ def _header(record: GoalRecord, *, width: int, open_extra: int = 0) -> Text:
     right = _join(segments, max(0, width // 2))
 
     line = Text()
-    line.append(title_chip())
-    line.append(" ")
-    line.append(status_dot(record.status))
+    line.append_text(strip_header("Goal"))
+    line.append("  ")
     line.append(record.label(), style=_style(status_color))
     room = width - cell_len(line.plain) - cell_len(right.plain) - 2
     if room >= MIN_OBJECTIVE_ROOM:
-        line.append("  " + _ellipsize(record.objective, room - 2), style=_style(c.title))
+        line.append("  " + _ellipsize(record.objective, room - 2), style=_style(c.fg))
     line.append(" " * max(1, width - cell_len(line.plain) - cell_len(right.plain)))
     line.append_text(right)
     return line
 
 
-def _progress_line(record: GoalRecord, *, width: int) -> Text:
+def _progress_row(record: GoalRecord, *, width: int) -> Text | None:
     """Bar, counts, and the subtask roll-up for the task in flight.
 
-    Returns an empty row when there is no plan yet: a ``0/0 · 0%`` bar is a
-    chart of nothing, and the header already says the goal is running.
+    Returns ``None`` when there is no plan yet: a ``0/0 · 0%`` bar is a chart
+    of nothing, and the header already says the goal is running.
     """
     c = _colors()
     done, total = count_tasks(record.tasks)
     if not total:
-        return Text("")
+        return None
     pct = pct_of(done, total)
     sub_done, sub_total = _subtask_progress(record)
     tail = _join(
-        [(f"tasks {done}/{total}", c.fg, False), (f"{pct}%", c.accent, True)]
+        [(f"{done}/{total} tasks", c.fg, False), (f"{pct}%", c.accent, True)]
         + ([(f"sub {sub_done}/{sub_total}", c.dim, False)] if sub_total else []),
         max(0, width // 2),
         sep=" · ",
     )
+    # The bar rides the same tree gutter as every other row, so the block has
+    # one left edge instead of a header column and then a second one.
     bar_width = max(4, min(24, width - cell_len(tail.plain) - 2))
     line = Text()
+    line.append(f"{TREE_GUTTER} ", style=Style(color=c.dim))
     line.append_text(progress_bar_text(pct, bar_width))
     line.append("  ")
     line.append_text(tail)
@@ -509,30 +469,39 @@ def _task_line(
     id_width: int,
     current: bool,
     color: str,
+    last: bool,
     width: int,
 ) -> Text:
-    line = Text()
-    line.append("  " * depth)
-    line.append(mark, style=_style(mark_color(mark), bold=current))
-    line.append(" ")
+    """One plan row in the shared strip grammar: `│ ├─ ▸ t2  Title`.
+
+    The branch and the mark are separate columns on purpose. The mark is state
+    — it is what a reader scans; the branch is structure — and merging them
+    (the old `✓ t2`) made the mark column depend on list position, so the one
+    column worth scanning could not be read straight down.
+    """
+    line = tree_prefix(
+        last=last,
+        glyph=mark,
+        glyph_color=config.ui.colors.accent if current else mark_color(mark),
+        depth=depth,
+    )
     line.append(task_id.ljust(id_width), style=_style(color, bold=current))
     line.append("  ")
-    room = width - depth * 2 - id_width - 4
-    line.append(_ellipsize(title, room), style=_style(color, bold=current))
+    room = width - tree_prefix_cells(depth) - id_width - 2
+    line.append(_ellipsize(title, room), style=_style(color, bold=True))
     return line
 
 
-def _count_line(label: str, count: int) -> Text:
-    """A collapsed-window row: `  … 3 earlier`, sitting in the id column."""
+def _count_line(label: str, count: int, *, last: bool = False) -> Text:
+    """A collapsed-window row: `│ ├─ · … 3 earlier`."""
     c = _colors()
-    line = Text()
-    line.append(" ")
+    line = tree_prefix(last=last, glyph="·", glyph_color=c.border)
     line.append(f"… {count} {label}", style=Style(color=c.muted))
     return line
 
 
 def _task_rows(record: GoalRecord, *, limit: int, width: int) -> list[Text]:
-    """Beacon task rows: mark column, id column, flexible title."""
+    """Beacon plan rows in the shared strip grammar."""
     c = _colors()
     rows, hidden_before, hidden_after = _task_window(record, limit)
     if not rows and not hidden_before and not hidden_after:
@@ -540,11 +509,13 @@ def _task_rows(record: GoalRecord, *, limit: int, width: int) -> list[Text]:
     active = active_task(record)
     active_id = active.id if active is not None else None
     id_width = max((cell_len(task.id) for task in _window_tasks(rows)), default=0)
+    # The tail count is itself a row, so the branch above it must not close.
+    last_index = len(rows) - 1
 
     out: list[Text] = []
     if hidden_before:
         out.append(_count_line("earlier", hidden_before))
-    for entry in rows:
+    for index, entry in enumerate(rows):
         if isinstance(entry, _Collapsed):
             out.append(_count_line(entry.label, entry.count))
             continue
@@ -559,11 +530,12 @@ def _task_rows(record: GoalRecord, *, limit: int, width: int) -> list[Text]:
                 id_width=id_width,
                 current=is_current,
                 color=c.accent if is_current else (c.muted if task.status == "skipped" else c.fg),
+                last=index == last_index and not hidden_after,
                 width=width,
             )
         )
     if hidden_after:
-        out.append(_count_line("more", hidden_after))
+        out.append(_count_line("more", hidden_after, last=True))
     return out
 
 
@@ -571,13 +543,15 @@ def _verify_rows(verification: str, *, width: int) -> list[Text]:
     """The verification contract, wrapped under a fixed label gutter.
 
     Wrapped, never clipped: a shell command you cannot read is worse than no
-    command at all, and the goal file still holds it either way.
+    command at all, and the goal file still holds it either way. It hangs off
+    the same tree gutter as everything else so the block has one left edge.
     """
     c = _colors()
     gutter = len("Verify")
     rows: list[Text] = []
-    for index, piece in enumerate(_wrap_lines(verification, max(8, width - gutter - 2))):
+    for index, piece in enumerate(_wrap_lines(verification, max(8, width - gutter - 4))):
         line = Text()
+        line.append(f"{TREE_GUTTER} ", style=Style(color=c.dim))
         line.append(
             ("Verify" if index == 0 else " " * gutter).ljust(gutter + 2), style=Style(color=c.dim)
         )
@@ -596,9 +570,12 @@ def render_compact(
 ) -> Text:
     """The above-editor beacon, laid out to ``width`` terminal cells.
 
-    ``width`` is the widget's real content width, so the rail always closes on
-    the right edge. Below :data:`MIN_RAIL_WIDTH` the rail costs more than it
-    communicates, so it degrades to a single status line.
+    Built from the same grammar as the pinned ``Agents`` strip directly below
+    it — ``● Goal`` header, ``│ ├─`` branches, bold labels, muted counters — so
+    the two read as one panel. ``width`` is the widget's real content width, so
+    every row is exactly that many cells. Below :data:`MIN_RAIL_WIDTH` the
+    tree costs more than it communicates and the beacon degrades to a single
+    status line.
     """
     width = int(width or FALLBACK_WIDTH)
     agents = agents if agents is not None else REGISTRY.runs()
@@ -607,8 +584,7 @@ def render_compact(
         live = sum(1 for run in agents if not run.finished)
         return _render_terse(record, live, width)
 
-    rail = _Rail(width, status_style(record.status))
-    inner = rail.inner
+    inner = width - GUTTER_CELLS
     task_rows = _task_rows(record, limit=TASK_ROWS, width=inner)
     agent_rows = _agent_rows(agents, inner)
     verify_rows = (
@@ -618,30 +594,49 @@ def render_compact(
     )
 
     body: list[Text] = [_header(record, width=inner, open_extra=max(0, len(service.pool()) - 1))]
-    progress = _progress_line(record, width=inner)
-    if progress.plain:
+    progress = _progress_row(record, width=inner)
+    if progress is not None:
         body.append(progress)
     if task_rows:
-        body.append(rail.gap())
+        body.append(_gap())
         body.extend(task_rows)
     if agent_rows:
-        body.append(rail.gap())
+        body.append(_gap())
+        body.append(strip_header("Agents"))
         body.extend(agent_rows)
     if verify_rows:
-        body.append(rail.gap())
+        body.append(_gap())
         body.extend(verify_rows)
     body.append(_keyhint((("esc", "pause"), (expanded_hint, "expand")), inner))
 
     out = Text()
     for row in body:
-        out.append_text(rail.row(row))
+        out.append_text(_fit(row, width))
         out.append("\n")
     out.right_crop()
     return out
 
 
+def _gap() -> Text:
+    """A separator row that keeps the strip's left edge unbroken."""
+    c = _colors()
+    return Text(f"{TREE_GUTTER} ", style=Style(color=c.dim))
+
+
+def _gutted(content: Text) -> Text:
+    """Hang ``content`` off the shared tree gutter, without a branch.
+
+    For rows that are not list items — a progress bar, a section's field, a
+    ledger line. They still need the vertical, or the block loses its edge.
+    """
+    line = Text()
+    line.append_text(_gap())
+    line.append_text(content)
+    return line
+
+
 def _render_terse(record: GoalRecord, live: int, width: int) -> Text:
-    """Terminal too narrow for a rail: one status line, no chrome.
+    """Terminal too narrow for the tree: one status line, no chrome.
 
     Cells are budgeted rather than assumed. The previous version appended a
     fixed set of segments and only guarded the objective, so a running goal on a
@@ -695,14 +690,13 @@ def pct_of(done: int, total: int) -> int:
 def _agent_rows(agents: list[SubagentRun], inner: int) -> list[Text]:
     """Compact sub-agent block: live rows, then the queued/finished counts.
 
-    Shares :func:`~vtx.tui.agents_panel.render_agents` with the pinned panel
-    so the beacon and the standing view never disagree about a run. The tree
-    gutter is suppressed: the rail already provides the vertical, and drawing
-    both gave the beacon a `│ │ ├─` double edge.
+    Shares :func:`~vtx.tui.agents_panel.render_agents` with the pinned panel so
+    the beacon and the standing view can never disagree about a run, and so
+    both draw their rows from the same grammar.
     """
     if not any(not run.finished for run in agents):
         return []
-    rendered = render_agents(agents, width=inner, max_rows=AGENT_ROWS, header=False, gutter="")
+    rendered = render_agents(agents, width=inner, max_rows=AGENT_ROWS, header=False)
     return [row for row in rendered.split("\n") if row.plain.strip()]
 
 
@@ -828,22 +822,23 @@ class GoalWidget(Static):
 # ---------------------------------------------------------------------------
 
 
-def _append_field(text: Text, rail: _Rail, label: str, value: str, color: str) -> None:
+def _append_field(text: Text, width: int, label: str, value: str, color: str) -> None:
     """Append a ``label  value`` field, hanging wrapped lines under the label.
 
     The label keeps its own column so a long verification command stays
     visibly attached to the field it belongs to instead of drifting left.
     """
     gutter = len(label) + 2
-    lines = _wrap_lines(value, max(8, rail.inner - gutter))
+    lines = _wrap_lines(value, max(8, width - 2 - gutter))
     for index, line in enumerate(lines):
         row = Text()
+        row.append(f"{TREE_GUTTER} ", style=Style(color=config.ui.colors.dim))
         if index == 0:
             row.append(label, style=Style(color=config.ui.colors.dim))
         row.append("  ")
         row.append(line, style=_style(color))
         text.append("\n")
-        text.append_text(rail.row(row))
+        text.append_text(row)
 
 
 def top_level_total(record: GoalRecord) -> int:
@@ -881,19 +876,26 @@ def _status_reason(record: GoalRecord) -> str:
 def _task_tree_text(record: GoalRecord, width: int = FALLBACK_WIDTH) -> Text:
     """The full plan: one aligned row per task, evidence under its title.
 
-    Nothing here is clipped — the chat log is the only place with room to show
-    a task's proof in full, which is exactly why the title yields first.
+    Nothing here is clipped — the overlay is the only place with room to show a
+    task's proof in full, which is exactly why the title yields first.
     """
     c = _colors()
     active = active_task(record)
     top = [t for t in record.tasks if not t.parent_id]
     id_width = max((cell_len(t.id) for t in record.tasks), default=0)
+    # The last row of the whole tree closes the vertical, so no branch below it
+    # dangles.
+    total_rows = len(record.tasks)
+    seen = 0
     out = Text()
 
     def emit(task, depth: int) -> None:
+        nonlocal seen
+        seen += 1
         is_current = active is not None and active.id == task.id
         color = c.accent if is_current else (c.dim if task.status == "skipped" else c.fg)
-        prefix = 2 * depth + 2 + id_width + 2
+        # Evidence lines up under the title, so it inherits the row's prefix.
+        prefix = tree_prefix_cells(depth) + id_width + 2
         out.append_text(
             _task_line(
                 task_mark(record, task.id),
@@ -903,6 +905,7 @@ def _task_tree_text(record: GoalRecord, width: int = FALLBACK_WIDTH) -> Text:
                 id_width=id_width,
                 current=is_current,
                 color=color,
+                last=seen == total_rows,
                 width=width,
             )
         )
@@ -919,10 +922,11 @@ def _task_tree_text(record: GoalRecord, width: int = FALLBACK_WIDTH) -> Text:
             return
         # Evidence gets the width the title left over, so the actual proof
         # survives instead of being clipped to a fixed character count.
-        for index, line in enumerate(_wrap_lines(detail, max(20, width - prefix))):
+        for index, line in enumerate(_wrap_lines(detail, max(20, width - prefix - 2))):
             if index:
                 out.append("\n")
-            out.append(" " * prefix, style=Style(color=detail_color))
+            out.append(f"{TREE_GUTTER} ", style=Style(color=c.dim))
+            out.append(" " * (prefix - 2), style=Style(color=detail_color))
             out.append(line, style=Style(color=detail_color))
         out.append("\n")
 
@@ -934,7 +938,7 @@ def _task_tree_text(record: GoalRecord, width: int = FALLBACK_WIDTH) -> Text:
 
 
 def _agent_block(agents: list[SubagentRun], width: int) -> Text:
-    """Expanded sub-agent list: outcome, turns, tokens, tool breakdown.
+    """Overlay sub-agent list: outcome, turns, tokens, tool breakdown.
 
     Queued agents get a count instead of rows, matching the pinned panel: a row
     for an agent that has not started can only say `0 turns · 0 tokens`, which
@@ -944,22 +948,27 @@ def _agent_block(agents: list[SubagentRun], width: int) -> Text:
     c = _colors()
     _, queued, finished = REGISTRY.counts()
     out = Text()
-    ordered = sorted(agents, key=lambda r: (r.finished, not r.running, r.dispatched_at))
+    running = [r for r in agents if not r.queued]
+    ordered = sorted(running, key=lambda r: (r.finished, not r.running, r.dispatched_at))
     name_width = min(20, max(10, max((cell_len(r.name) for r in ordered), default=0)))
 
-    for run in ordered:
-        if run.queued:
-            continue
+    for index, run in enumerate(ordered):
         out.append("\n")
-        if run.running:
-            out.append("▸ ", style=_style(c.accent, bold=True))
-        else:
-            out.append(
-                {"ok": "✓ ", "error": "✗ "}.get(run.status, "· "),
-                style=_style(
-                    {"ok": c.success, "error": c.failed}.get(run.status, c.dim), bold=True
-                ),
+        glyph, glyph_color = (
+            ("▸", c.accent)
+            if run.running
+            else (
+                {"ok": "✓", "error": "✗"}.get(run.status, "·"),
+                {"ok": c.success, "error": c.failed}.get(run.status, c.dim),
             )
+        )
+        out.append_text(
+            tree_prefix(
+                last=index == len(ordered) - 1 and not queued and not finished,
+                glyph=glyph,
+                glyph_color=glyph_color,
+            )
+        )
         out.append(
             truncate_on_words(run.name, name_width).ljust(name_width + 1),
             style=_style(c.fg, bold=True),
@@ -972,8 +981,11 @@ def _agent_block(agents: list[SubagentRun], width: int) -> Text:
         out.append("  " + "  ·  ".join(parts), style=Style(color=c.dim))
         body = run.error or (run.description if not run.running else "")
         if body:
-            for line in _wrap_lines(body, max(10, width - 6)):
-                out.append("\n    " + line, style=Style(color=c.failed if run.error else c.muted))
+            detail_style = Style(color=c.failed if run.error else c.muted)
+            for line in _wrap_lines(body, max(10, width - 8)):
+                out.append("\n")
+                out.append(f"{TREE_GUTTER}     ", style=Style(color=c.dim))
+                out.append(line, style=detail_style)
 
     footer: list[tuple[str, str]] = []
     if queued:
@@ -984,7 +996,7 @@ def _agent_block(agents: list[SubagentRun], width: int) -> Text:
         footer.append((f"✓ {finished} finished{total}", c.dim))
     if footer:
         out.append("\n")
-        out.append("  ")
+        out.append(f"{TREE_GUTTER} ", style=Style(color=c.dim))
         out.append_text(
             _join([(text, color, False) for text, color in footer], max(0, width - 4), sep="  ·  ")
         )
@@ -1004,8 +1016,9 @@ def _activity_rows(activity: list[str], width: int) -> list[Text]:
         match = _ACTIVITY_RE.match(raw)
         stamp, message = (match.group(1), raw[match.end() :]) if match else ("", raw)
         line = Text()
+        line.append(f"{TREE_GUTTER} ", style=Style(color=c.dim))
         line.append((stamp if stamp else "").ljust(8) + " ", style=Style(color=c.border))
-        line.append(_ellipsize(message, max(10, width - 11)), style=Style(color=c.dim))
+        line.append(_ellipsize(message, max(10, width - 12)), style=Style(color=c.dim))
         rows.append(line)
     return rows
 
@@ -1031,47 +1044,46 @@ def render_expanded(
     pct = pct_of(done, total)
     width = max(24, int(width or FALLBACK_WIDTH))
     agents = agents if agents is not None else REGISTRY.runs()
-    # Unpadded: the chat log already pads to the terminal edge, so padding here
-    # only shipped a screenful of styled spaces per line. The rail still needs
-    # to be unbroken, so the blank separators are drawn as rail rows below.
-    rail = _Rail(width, status_style(record.status), pad=False)
-    body = width - RAIL_CELLS
+    # Same grammar as the pinned strips: a `│ ├─` tree on every row, including
+    # the blank separators, so the block reads as one bordered panel. Rows are
+    # left at their natural width — the host already pads, and padding here
+    # shipped a screenful of styled spaces per line for no visible gain.
+    body = width - GUTTER_CELLS
 
     out = Text()
-    out.append_text(
-        rail.row(_header(record, width=body, open_extra=max(0, len(service.pool()) - 1)))
-    )
+    out.append_text(_header(record, width=body, open_extra=max(0, len(service.pool()) - 1)))
 
-    meta = Text()
-    meta.append(f"id {record.id}  ·  {record.mode}", style=Style(color=c.muted))
-    if record.created_at:
-        meta.append(f"  ·  {record.created_at[:10]}", style=Style(color=c.border))
-    out.append("\n")
-    out.append_text(rail.row(meta))
+    def row(content: Text) -> None:
+        out.append("\n")
+        out.append_text(content)
+
+    row(
+        _gutted(
+            Text()
+            .append(f"id {record.id}  ·  {record.mode}", style=Style(color=c.muted))
+            .append(
+                f"  ·  {record.created_at[:10]}" if record.created_at else "",
+                style=Style(color=c.border),
+            )
+        )
+    )
 
     reason = _status_reason(record)
     if reason:
-        out.append("\n")
         note = Text()
         note.append(
             "why  ", style=Style(color=c.failed if record.status == "blocked" else c.notice)
         )
         note.append(_ellipsize(reason, body - 6), style=Style(color=c.muted))
-        out.append_text(rail.row(note))
+        row(_gutted(note))
 
-    def blank() -> None:
-        """A separator row that keeps the rail continuous."""
+    def section(title: str) -> None:
         out.append("\n")
-        out.append_text(rail.row(rail.gap()))
-
-    def section(title: str, color: str | None = None) -> None:
-        blank()
-        out.append("\n")
-        out.append_text(rail.row(section_header(title, color)))
+        out.append_text(_gap())
+        row(strip_header(title))
 
     def body_text(text: Text) -> None:
-        out.append("\n")
-        out.append_text(rail.row(text))
+        row(_gutted(text))
 
     # Progress
     section("Progress")
@@ -1092,9 +1104,8 @@ def render_expanded(
     # Tasks
     section("Tasks")
     if record.tasks:
-        out.append("\n")
-        for row in _task_tree_text(record, body).split("\n"):
-            out.append_text(rail.row(row))
+        for line in _task_tree_text(record, body).split("\n"):
+            row(line)
     else:
         body_text(Text("(no task plan)", style=Style(color=c.dim)))
 
@@ -1130,9 +1141,9 @@ def render_expanded(
             body_text(roll)
         contract = _task_contract(active)
         if contract:
-            _append_field(out, rail, "contract", contract, c.notice)
+            _append_field(out, body, "contract", contract, c.notice)
         if active.evidence:
-            _append_field(out, rail, "evidence", active.evidence, c.success)
+            _append_field(out, body, "evidence", active.evidence, c.success)
     else:
         body_text(
             Text("(none — all tasks complete)" if total else "(none)", style=Style(color=c.dim))
@@ -1141,28 +1152,25 @@ def render_expanded(
     # Sub-agents dispatched during this run
     if agents:
         section("Agents")
-        for row in _agent_block(agents, body).split("\n"):
-            if row:
-                out.append("\n")
-                out.append_text(rail.row(row))
+        for line in _agent_block(agents, body).split("\n"):
+            if line.plain.strip():
+                row(line)
 
     # Goal verification
-    section("Verification", color=c.notice)
+    section("Verification")
     if record.verification.strip():
-        _append_field(out, rail, "verify", record.verification.strip(), c.notice)
+        _append_field(out, body, "verify", record.verification.strip(), c.notice)
     else:
         body_text(
             Text("no contract — auditor judges against the objective", style=Style(color=c.dim))
         )
 
     if record.review_feedback:
-        section("Auditor feedback", color=c.failed)
-        out.append("\n")
+        section("Auditor feedback")
         for line in record.review_feedback.strip().splitlines():
-            out.append_text(rail.row(Text(line, style=Style(color=c.failed))))
-        out.append("\n")
-        out.append_text(
-            rail.row(
+            row(_gutted(Text(line, style=Style(color=c.failed))))
+        row(
+            _gutted(
                 Text(
                     "address every item above, then complete the goal again",
                     style=Style(color=c.dim),
@@ -1172,18 +1180,128 @@ def render_expanded(
 
     # Recent activity
     section("Activity")
-    rows = _activity_rows(recent_activity(service.cwd, record.id, limit=activity_limit), body)
-    if rows:
-        for row in rows:
-            out.append("\n")
-            out.append_text(rail.row(row))
+    activity = _activity_rows(recent_activity(service.cwd, record.id, limit=activity_limit), body)
+    if activity:
+        for line in activity:
+            row(line)
     else:
         body_text(Text("(no recorded activity yet)", style=Style(color=c.dim)))
 
-    blank()
     out.append("\n")
+    out.append_text(_gap())
     foot = Text()
     foot.append("file  ", style=Style(color=c.border))
     foot.append(_file_label(service.cwd, record.id), style=Style(color=c.muted))
-    out.append_text(rail.row(foot))
+    row(_gutted(foot))
     return out
+
+
+# ---------------------------------------------------------------------------
+# expanded overlay
+# ---------------------------------------------------------------------------
+
+
+class GoalDashboardScreen(ModalScreen[None]):
+    """The expanded dashboard as a dismissible overlay.
+
+    Ctrl+Shift+G is labelled *expand*, and pressing it *did* expand something —
+    the chat log, permanently. Every press appended another copy of the same
+    block and nothing could take any of them back, so "expand" was the one
+    affordance in the UI with no inverse. An overlay is the shape the label
+    already promised: open, close, open again, and the conversation is exactly
+    as it was.
+
+    It re-renders on a timer rather than showing the snapshot it was opened
+    with. A goal moves while you watch it, and a frozen dashboard is worse than
+    the beacon it was opened from — it looks authoritative and is not.
+    """
+
+    BINDINGS: ClassVar[list] = [
+        # `priority` because the app binds Escape to interrupt the agent. The
+        # overlay is in front, so Escape has to mean "close me" here.
+        Binding("escape", "close_dashboard", "Close", priority=True)
+    ]
+
+    CSS = """
+    GoalDashboardScreen {
+        /* Dim the app behind rather than hiding it: the goal is still running
+           underneath and the user needs to see that it is. */
+        background: $surface 70%;
+        align: left top;
+    }
+    #goal-dashboard-scroll {
+        width: 100%;
+        height: 100%;
+        padding: 1 2;
+        background: transparent;
+        scrollbar-size-vertical: 1;
+    }
+    #goal-dashboard {
+        width: 100%;
+        height: auto;
+        background: transparent;
+    }
+    #goal-dashboard-footer {
+        width: 100%;
+        height: auto;
+        padding-top: 1;
+        color: $text-muted;
+    }
+    """
+
+    #: Re-render cadence while the overlay is up. Fast enough that a task
+    #: completing is visible, slow enough not to churn the compositor.
+    TICK_SECONDS = 1.0
+
+    #: Past this the task titles become one very long line and the mark/id/title
+    #: columns stop being scannable, which is the whole point of the layout.
+    MAX_WIDTH = 120
+
+    def __init__(self, cwd: str, session_id: str = "", **kwargs: Any) -> None:
+        super().__init__(**kwargs)
+        self._cwd = cwd
+        self._session_id = session_id
+
+    def compose(self):
+        with VerticalScroll(id="goal-dashboard-scroll"):
+            yield Static(id="goal-dashboard")
+            yield Static(id="goal-dashboard-footer")
+
+    def on_mount(self) -> None:
+        self.set_interval(self.TICK_SECONDS, self.refresh_dashboard)
+        self.refresh_dashboard()
+
+    def on_resize(self, event) -> None:
+        self.refresh_dashboard()
+
+    def action_close_dashboard(self) -> None:
+        self.dismiss(None)
+
+    @property
+    def content_width(self) -> int:
+        """Cells available to the renderer, inside the scroll padding."""
+        return max(24, min(self.MAX_WIDTH, self.size.width - 4))
+
+    def refresh_dashboard(self) -> None:
+        """Re-render from live goal state, or say why there is nothing to show."""
+        body = self.query_one("#goal-dashboard", Static)
+        footer = self.query_one("#goal-dashboard-footer", Static)
+
+        service = get_service(self._cwd, self._session_id)
+        record = service.focused() if not service.settings.get("disabled") else None
+        if record is None:
+            # The goal was archived or the feature switched off while the
+            # overlay was up. Stop pretending and let the user close it.
+            c = _colors()
+            body.update(Text("no focused goal", style=Style(color=c.dim)))
+            footer.update(Text(""))
+            return
+
+        body.update(render_expanded(service, record, width=self.content_width))
+        c = _colors()
+        hint = Text()
+        hint.append("esc", style=Style(color=c.muted))
+        hint.append(" close  ·  ", style=Style(color=c.dim))
+        hint.append("ctrl+shift+g", style=Style(color=c.muted))
+        hint.append(" close", style=Style(color=c.dim))
+        footer.update(hint)
