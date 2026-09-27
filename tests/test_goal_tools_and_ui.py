@@ -158,6 +158,115 @@ def test_verification_wraps_instead_of_being_clipped(goal_cwd: Path) -> None:
     assert "case_11" in text.plain
 
 
+def test_terse_status_line_never_exceeds_width(goal_cwd: Path) -> None:
+    """A running goal with a plan must not print past a narrow terminal.
+
+    The old terse renderer appended a fixed set of segments and only guarded
+    the objective, so this line came out at 37 cells and the terminal wrapped
+    it onto a second row under the editor.
+    """
+    service = GoalService(str(goal_cwd))
+    record = service.create("Ship the thing")
+    service.replace_tasks(record.id, [{"title": f"Task {i}"} for i in range(6)])
+    service.update_task(record.id, "t1", "start")
+    service.charge_usage(record.id, input_tokens=223_000, output_tokens=0, elapsed_ms=767_000)
+    record = service.focused()
+
+    for width in (14, 18, 24, 30, 38, 39):
+        text = render_compact(service, record, width=width)
+        assert max(_line_widths(text)) <= width, f"overflowed at width={width}"
+        assert "running" in text.plain
+
+
+def test_no_plan_means_no_empty_progress_bar(goal_cwd: Path) -> None:
+    """`0/0 · 0%` is a chart of nothing; the header already says it is running."""
+    service = GoalService(str(goal_cwd))
+    record = service.create("Ship the thing")
+    record = service.focused()
+
+    text = render_compact(service, record, width=80).plain
+    assert "0/0" not in text
+    assert "░" not in text and "─" not in text.split("\n")[1]
+
+
+def test_paused_goal_marks_no_task_as_current(goal_cwd: Path) -> None:
+    """Nothing is in flight when the goal is paused, so nothing gets the `▸`.
+
+    The old mark came from `current_task()`, which reports the next pending
+    task regardless of status — so a paused goal advertised a "current" task
+    in accent bold for work that was not happening.
+    """
+    service = GoalService(str(goal_cwd))
+    record = service.create("Ship the thing")
+    service.replace_tasks(record.id, [{"title": "First"}, {"title": "Second"}])
+    service.set_status(record.id, "paused", reason="interrupted by user")
+    record = service.focused()
+
+    text = render_compact(service, record, width=80).plain
+    assert "paused" in text
+    assert "▸" not in text
+
+
+def test_active_task_stays_inside_the_beacon_window(goal_cwd: Path) -> None:
+    """The one row that cannot be reconstructed from a `+N more` is always shown."""
+    service = GoalService(str(goal_cwd))
+    record = service.create("Ship the thing")
+    service.replace_tasks(record.id, [{"title": f"Task {i}"} for i in range(20)])
+    service.update_task(record.id, "t1", "complete", evidence="done")
+    service.update_task(record.id, "t17", "start")
+    record = service.focused()
+
+    text = render_compact(service, record, width=80).plain
+    assert "▸ t17" in text
+    # The window is bounded, not a dump of the whole plan.
+    assert "t1" in text or "…" in text
+    assert text.count("Task ") <= 6
+
+
+def test_blocked_reason_is_visible(goal_cwd: Path) -> None:
+    """The reason a goal is stuck belongs on screen, not only in the goal file."""
+    service = GoalService(str(goal_cwd))
+    record = service.create("Rotate the key")
+    service.set_status(record.id, "blocked", reason="waiting on the vendor CA bundle")
+    record = service.focused()
+
+    expanded = render_expanded(service, record, width=100).plain
+    assert "blocked" in expanded
+    assert "waiting on the vendor CA bundle" in expanded
+
+
+def test_progress_bar_uses_a_slim_track(goal_cwd: Path) -> None:
+    """Half-cell rounding, so the bar creeps instead of stuttering in 8% jumps."""
+    from vtx.tui.goal_ui import progress_bar_text
+
+    bar = progress_bar_text(50, 10).plain
+    assert bar.count("━") + bar.count("─") == 10
+    assert "█" not in bar and "░" not in bar
+    # 50% of an odd width lands on a half cell, which is the `╸`.
+    assert "╸" in progress_bar_text(50, 9).plain
+    assert progress_bar_text(100, 8).plain == "━" * 8
+
+
+def test_activity_drops_the_repeated_date(goal_cwd: Path) -> None:
+    """Six ledger lines from one sitting do not need six identical dates."""
+    from vtx.ai.agent.goal.storage import append_ledger, recent_activity
+
+    service = GoalService(str(goal_cwd))
+    record = service.create("Ship the thing")
+    append_ledger(str(goal_cwd), "tweaked", record.id, change="tweaked the objective")
+    rows = recent_activity(str(goal_cwd), record.id, limit=3)
+    assert rows
+    assert all(row[4] == "-" for row in rows), "ledger rows carry an ISO timestamp"
+
+    expanded = render_expanded(service, service.focused(), width=100).plain
+    activity = expanded.split("◆ Activity", 1)[1]
+    for row in rows:
+        date, _, _ = row.partition(" ")
+        assert date not in activity, "the activity log should not repeat the date"
+        # The time survives, so the log is still ordered and readable.
+        assert row.split(" ")[1][:8] in activity
+
+
 # ---------------------------------------------------------------------------
 # sub-agent visibility
 # ---------------------------------------------------------------------------
