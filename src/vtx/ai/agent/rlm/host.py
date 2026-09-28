@@ -772,13 +772,11 @@ async def _handle_agent_message_send(payload: dict[str, Any], ctx: _Ctx) -> dict
     if role == "parent":
         if receiver_name is not None:
             raise HostError("agent_message.send receiver_name must be omitted for parent messages")
-    elif not isinstance(receiver_name, str) or not receiver_name.strip():
+        return _parent_receipt(ctx, message)
+    if not isinstance(receiver_name, str) or not receiver_name.strip():
         raise HostError(
             "agent_message.send receiver_name is required for sibling and child messages"
         )
-
-    if role == "parent":
-        return _parent_receipt(ctx, message)
     selector = receiver_name.strip()
     if role == "sibling":
         raise HostError(f"No sibling matches {json.dumps(selector)}")

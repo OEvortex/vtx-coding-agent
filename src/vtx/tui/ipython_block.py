@@ -784,7 +784,7 @@ class IpythonBlock(ToolBlock):
 
         return Content.assemble(*parts)
 
-    def _format_header(self, truncate: bool = True) -> Content:
+    def _format_header(self, truncate: bool = True) -> Content:  # ty:ignore[invalid-method-override]
         del truncate
         return self._build_header_text()
 

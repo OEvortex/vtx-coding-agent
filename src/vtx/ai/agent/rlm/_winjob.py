@@ -133,13 +133,13 @@ class _PROCESS_INFORMATION(ctypes.Structure):
     ]
 
 
-_kernel32_cache: ctypes.WinDLL | None = None  # type: ignore[name-defined]
+_kernel32_cache: ctypes.WinDLL | None = None  # type: ignore[name-defined]  # ty:ignore[unresolved-attribute]
 
 
 def _kernel32():
     global _kernel32_cache
     if _kernel32_cache is None:
-        k32 = ctypes.WinDLL("kernel32", use_last_error=True)
+        k32 = ctypes.WinDLL("kernel32", use_last_error=True)  # ty:ignore[unresolved-attribute]
         # HANDLE argtypes/restype are mandatory: c_int truncates 64-bit handles.
         h, b, i, p = wintypes.HANDLE, wintypes.BOOL, ctypes.c_int, wintypes.LPVOID
         w = wintypes.LPCWSTR
@@ -177,7 +177,7 @@ def _open_reader(handle: int) -> BinaryIO:
     import msvcrt
 
     try:
-        fd = msvcrt.open_osfhandle(handle, os.O_RDONLY)
+        fd = msvcrt.open_osfhandle(handle, os.O_RDONLY)  # ty:ignore[unresolved-attribute]
     except BaseException:
         _kernel32().CloseHandle(handle)
         raise

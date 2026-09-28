@@ -11,6 +11,7 @@ Ported from Prime Agent (MIT) — https://github.com/PrimeIntellect-ai/prime-age
 
 from __future__ import annotations
 
+import builtins
 import json
 import math
 import os
@@ -20,7 +21,7 @@ import unicodedata
 from dataclasses import asdict, dataclass, field, fields
 from datetime import UTC, datetime
 from pathlib import Path
-from typing import Any, Literal
+from typing import Any, Literal, overload
 from uuid import uuid4
 
 from vtx.core.paths import get_config_dir
@@ -132,6 +133,10 @@ def _resolve_global_flag(global_: bool = False, extra: dict[str, Any] | None = N
     return bool(global_)
 
 
+@overload
+def _strip_scope_prefix(id: str, global_: bool) -> tuple[str, bool]: ...
+@overload
+def _strip_scope_prefix(id: str | None, global_: bool) -> tuple[str | None, bool]: ...
 def _strip_scope_prefix(id: str | None, global_: bool) -> tuple[str | None, bool]:
     # overview() displays entries as [local:id]/[global:id]; accept those ids
     # verbatim. A global: prefix routes to the global store unless the caller
@@ -723,7 +728,7 @@ class HarnessState:
 
     def list(
         self, kind: HarnessKind | None = None, *, global_: bool = False, **kwargs: Any
-    ) -> list[HarnessEntry]:
+    ) -> builtins.list[HarnessEntry]:
         if target := self._global_target(global_, kwargs):
             return target.list(kind)
         self._sync_from_disk()
@@ -1020,7 +1025,7 @@ class HarnessState:
     def record_refinement(
         self,
         trigger: str,
-        changes: list[str] | str,
+        changes: builtins.list[str] | str,
         *,
         evidence: str = "",
         outcome: str = "",
@@ -1055,7 +1060,7 @@ class HarnessState:
 
     def plan_refinement(
         self, observation: str, *, failing_component: str = "", next_step: str = ""
-    ) -> list[str]:
+    ) -> builtins.list[str]:
         target = f" for {failing_component}" if failing_component else ""
         plan = [
             f"Diagnose the repeated failure or opportunity{target}: {observation}",
@@ -1130,7 +1135,7 @@ class HarnessState:
         *,
         global_: bool = False,
         **kwargs: Any,
-    ) -> list[HarnessEntry]:
+    ) -> builtins.list[HarnessEntry]:
         """Return harness entries ranked by weighted term overlap with *query*.
 
         Terms are scored against an entry's title, content, path, and id;

@@ -27,6 +27,7 @@ from . import _winjob
 # it the kernel's pre-ready startup path) stays small. asyncio is bound onto
 # this module's globals by BashHandle.__init__ before any code path here can
 # touch it; every other user imports inside the function that needs it.
+asyncio: Any  # bound at runtime by BashHandle.__init__
 
 _IS_POSIX = os.name == "posix"
 

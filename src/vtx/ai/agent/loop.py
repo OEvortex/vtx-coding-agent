@@ -752,7 +752,7 @@ class Agent:
         context_window = self.config.context_window or harness_cfg.default_context_window
         threshold_percent = harness_cfg.compaction_threshold_percent
 
-        if not forced and not is_overflow(last_usage, context_window, threshold_percent):
+        if not forced and not is_overflow(last_usage, context_window, threshold_percent):  # ty:ignore[invalid-argument-type]
             return
 
         if cancel_event and cancel_event.is_set():

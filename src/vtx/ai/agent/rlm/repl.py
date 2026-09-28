@@ -552,7 +552,10 @@ def _request_interrupt(target: str | None) -> None:
     # (sync-blocked cells and the finishing repr/drain cannot be broken there;
     # best-effort parity).
     if hasattr(signal, "pthread_kill"):
-        signal.pthread_kill(threading.main_thread().ident, signal.SIGINT)
+        main_ident = threading.main_thread().ident
+        if main_ident is None:  # only possible before the thread is started
+            return
+        signal.pthread_kill(main_ident, signal.SIGINT)
         if _loop is not None:
             # Wake the selector so a cancel scheduled by the handler runs promptly.
             _loop.call_soon_threadsafe(lambda: None)
@@ -725,8 +728,9 @@ def _compile_cell(code: str, filename: str) -> tuple[list[types.CodeType], bool]
     linecache.cache[filename] = (len(code), None, code.splitlines(keepends=True), filename)
     tree = ast.parse(code, filename)
     trailing: ast.Expression | None = None
-    if tree.body and isinstance(tree.body[-1], ast.Expr):
-        trailing = ast.Expression(tree.body.pop().value)
+    if tree.body and isinstance(last := tree.body[-1], ast.Expr):
+        tree.body.pop()
+        trailing = ast.Expression(last.value)
     flags = ast.PyCF_ALLOW_TOP_LEVEL_AWAIT
     codes: list[types.CodeType] = []
     if tree.body:
@@ -951,7 +955,7 @@ def _snapshot_state(
     import tempfile
 
     try:
-        import dill
+        import dill  # ty: ignore[unresolved-import]  # optional dep; absence degrades to an error reply
     except Exception as err:
         return {"error": f"dill unavailable: {err}"}
     dill.settings["recurse"] = True
@@ -1122,7 +1126,7 @@ def _restore_state(
     if not os.path.exists(path):
         return {"restored": [], "failed": [], "reason": "snapshot not found"}
     try:
-        import dill
+        import dill  # ty: ignore[unresolved-import]  # optional dep; absence degrades to an error reply
     except Exception as err:
         return {"error": f"dill unavailable: {err}"}
     try:
@@ -1247,6 +1251,9 @@ async def _handle_state(req: dict[str, Any], ns: dict[str, Any]) -> None:
         )
         _send({"event": "done", "id": rid, "status": "error", "reason": reason})
         return
+    # run() only ever returns a result mapping; the "error" branch above already
+    # covered the failure tuples, whose value slot is None.
+    assert isinstance(result, dict)
     if "error" in result:
         _send({"event": "done", "id": rid, "status": "error", "reason": result["error"]})
         return
@@ -1433,7 +1440,7 @@ def _wait_owner_windows(owner: int) -> None:
 
     SYNCHRONIZE = 0x00100000
     INFINITE = 0xFFFFFFFF
-    k32 = ctypes.WinDLL("kernel32", use_last_error=True)
+    k32 = ctypes.WinDLL("kernel32", use_last_error=True)  # ty: ignore[unresolved-attribute]  # Windows-only path
     k32.OpenProcess.argtypes = [wintypes.DWORD, wintypes.BOOL, wintypes.DWORD]
     k32.OpenProcess.restype = wintypes.HANDLE
     k32.WaitForSingleObject.argtypes = [wintypes.HANDLE, wintypes.DWORD]
@@ -1699,9 +1706,9 @@ def _init_builtin_helpers() -> None:
         trailing = None
         with contextlib.suppress(SyntaxError):
             tree = ast.parse(code_str, mode="exec")
-        if tree is not None and tree.body and isinstance(tree.body[-1], ast.Expr):
-            last_expr = tree.body.pop()
-            trailing = ast.Expression(last_expr.value)
+        if tree is not None and tree.body and isinstance(last := tree.body[-1], ast.Expr):
+            tree.body.pop()
+            trailing = ast.Expression(last.value)
 
         val = None
         if tree is not None and tree.body:
