@@ -37,4 +37,19 @@ def load_builtin_vtx_skills() -> list[Skill]:
     return result.skills
 
 
-__all__ = ["load_builtin_vtx_skills", "load_vtx_skills"]
+def format_skills_for_prompt(skills: list[Skill]) -> str:
+    """Render a list of skills as a compact prompt section.
+
+    Useful for adding to your agent's ``instructions`` if you want the
+    LLM to know which skills are available without using the file-based
+    skill loader tool.
+    """
+    if not skills:
+        return ""
+    lines = ["# Available skills", ""]
+    for skill in skills:
+        lines.append(f"- {skill.name}: {skill.description}")
+    return "\n".join(lines)
+
+
+__all__ = ["format_skills_for_prompt", "load_builtin_vtx_skills", "load_vtx_skills"]
