@@ -689,10 +689,16 @@ class ConversationRuntime:
             provider_error = str(e)
 
         if provider:
-            valid_levels = provider.thinking_levels
-            if thinking_level not in valid_levels:
-                thinking_level = valid_levels[0] if valid_levels else "high"
-                provider.set_thinking_level(thinking_level)
+            # Validate against what *this model* can express, not the
+            # provider's full enum: a saved level (config default, or a
+            # session recorded against a different model) can be a tier the
+            # model has no wire spelling for, and keeping it would leave the
+            # UI showing e.g. "max" while the request silently omits the
+            # reasoning parameter and the model falls back to its own default.
+            thinking_level = self._clamp_to_supported(
+                thinking_level, model=model, model_provider=model_provider, provider=provider
+            )
+            provider.set_thinking_level(thinking_level)
 
         if not continue_recent and not resume_session:
             selected_model = get_model(model, model_provider) or find_dynamic_model(
@@ -964,6 +970,35 @@ class ConversationRuntime:
             style=getattr(self.provider, "reasoning_style", None),
         )
 
+    def _clamp_to_supported(
+        self, level: str, *, model: str, model_provider: str | None, provider: BaseProvider
+    ) -> str:
+        """Clamp a restored/configured level to what this model can express.
+
+        Startup and session restore used to validate only against
+        ``provider.thinking_levels`` (the transport's full enum), so a level
+        like ``"max"`` survived a switch to a model whose catalog advertises
+        no ``max`` tier. The wire layer then dropped the unsupported level and
+        the request fell back to the model's own default, leaving the UI
+        showing a level that was not in effect. Clamp against the same set the
+        picker offers so the displayed level is always the one that is sent.
+        """
+        from vtx.ai.thinking import resolve_thinking_levels
+
+        info = get_model(model, model_provider)
+        if info is None:
+            levels = list(provider.thinking_levels)
+        else:
+            levels = resolve_thinking_levels(
+                reasoning=info.supports_thinking,
+                thinking_level_map=info.thinking_level_map,
+                provider_levels=provider.thinking_levels,
+                style=getattr(provider, "reasoning_style", None),
+            )
+        if not levels or level in levels:
+            return level
+        return clamp_thinking_level(level, levels)
+
     def load_session(self, session_path: str | Path) -> Session:
         session = Session.load(session_path)
         model = self.model
@@ -1004,9 +1039,11 @@ class ConversationRuntime:
             restored_base_url = None
 
         if provider:
-            valid_levels = provider.thinking_levels
-            if valid_levels and thinking_level not in valid_levels:
-                thinking_level = valid_levels[0]
+            # Same reason as initialize(): a session's saved level can be a
+            # tier the restored model cannot express.
+            thinking_level = self._clamp_to_supported(
+                thinking_level, model=model, model_provider=model_provider, provider=provider
+            )
 
         # Commit only after all provider construction/validation above has succeeded.
         self.session = session

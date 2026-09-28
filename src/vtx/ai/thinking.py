@@ -289,6 +289,21 @@ def _resolve_effort(
     return default_when_unmapped
 
 
+def _emit_effort(effort: str, style: str) -> dict[str, Any]:
+    """Wrap a resolved effort string in the field name ``style`` expects."""
+    if effort == "off":
+        return {}
+    if style == OPENAI_COMPLETIONS:
+        # Chat Completions: reasoning_effort supports
+        # none|minimal|low|medium|high|xhigh|max (docs: platform.openai.com
+        # /docs/api-reference/chat/create). "off"/"none" are handled by the
+        # caller; every other verified effort passes through verbatim.
+        return {"reasoning_effort": effort}
+    if style == OPENAI_RESPONSES:
+        return {"reasoning": {"effort": effort}}
+    raise ValueError(f"Unknown reasoning style: {style!r}")
+
+
 def resolve_reasoning_params(
     style: str,
     level: str | None,
@@ -307,14 +322,36 @@ def resolve_reasoning_params(
       "budget_tokens": N}}`` where N comes from the shared budget table,
       clamped so it stays strictly below ``max_tokens``.
 
-    ``level`` of ``None``/``"none"``/``"off"`` means "model default" and
-    resolves to ``{}``. An explicit ``None`` in ``level_map`` marks the
-    ``level`` of ``None``/``"none"``/``"off"``/``"default"`` means "model default"
-    and resolves to ``{}``. An explicit ``None`` in ``level_map`` marks the
-    level unsupported and also resolves to ``{}``.
+    ``level`` of ``None``/``"default"`` means "model default" and resolves to
+    ``{}``. ``"none"``/``"off"`` is different: when the catalog verified that
+    the model takes a literal ``none`` effort (models.dev publishes
+    ``values: ["none", "low", ...]`` for gpt-5.1/5.4/5.6 and friends), that
+    string is the model's *only* documented way to stop reasoning — omitting
+    the parameter leaves the model on its own default, which for a reasoning
+    model is thinking. So an off level resolves to ``{}`` (model default)
+    only when no verified ``none`` effort exists to send; with one, it is
+    forwarded like any other effort. An explicit ``None`` in ``level_map``
+    marks the level unsupported and resolves to ``{}``.
     """
-    if level is None or level in ("none", "off", "default"):
+    if level is None or level == "default":
         return {}
+    if level in ("none", "off"):
+        # Anthropic's documented off switch is simply not sending ``thinking``;
+        # it has no ``none`` effort to forward, so never route it through the
+        # OpenAI-shaped emitters below.
+        if style == ANTHROPIC_MESSAGES:
+            return {}
+        # Route through the map so a catalog-verified ``none`` effort reaches
+        # the wire; fall back to "model default" when there is none.
+        if level_map is None or "off" not in level_map:
+            return {}
+        off_effort = _resolve_effort("off", level_map=level_map, default_when_unmapped=None)
+        # Only a literal "none" is a real off switch on these transports; any
+        # other mapped string is a spelling we cannot verify, so stay silent
+        # rather than guess a value the API would reject.
+        if off_effort != "none":
+            return {}
+        return _emit_effort(off_effort, style)
 
     if style == ANTHROPIC_MESSAGES:
         # Three paths:
@@ -354,23 +391,7 @@ def resolve_reasoning_params(
             budget = min(budget, max(_ANTHROPIC_MIN_BUDGET, max_tokens - _ANTHROPIC_MIN_BUDGET))
         return {"thinking": {"type": "enabled", "budget_tokens": budget}}
 
-    effort = _resolve_effort(
-        level, level_map=level_map, default_when_unmapped=None if level == "none" else level
-    )
+    effort = _resolve_effort(level, level_map=level_map, default_when_unmapped=level)
     if effort is None:
         return {}
-
-    if style == OPENAI_COMPLETIONS:
-        # Chat Completions: reasoning_effort supports none|minimal|low|medium|high|xhigh|max
-        # (docs: platform.openai.com/docs/api-reference/chat/create). "off"/"none" already
-        # returned {} above; every other verified effort passes through. "max" is now valid
-        # for gpt-5.6 family (was previously dropped).
-        if effort in ("off",):
-            return {}
-        return {"reasoning_effort": effort}
-    if style == OPENAI_RESPONSES:
-        if effort == "off":
-            return {}
-        return {"reasoning": {"effort": effort}}
-
-    raise ValueError(f"Unknown reasoning style: {style!r}")
+    return _emit_effort(effort, style)

@@ -73,16 +73,26 @@ class OpenAIResponsesSDK(BaseLLMSDK):
 
     def _resolve_effort(self, config: GenerationConfig) -> str | None:
         """Clamp the level to the model's supported set, then map
-        it through ``thinking_level_map``. "off"/"none" resolve to None
-        (omitted).
+        it through ``thinking_level_map``.
 
         ``off``/``none`` are checked before clamping on purpose: a model whose
         ``thinking_level_map`` marks ``off`` unsupported would otherwise have it
         clamped *up* to the nearest real effort, silently switching reasoning
         back on for a caller that explicitly asked for none.
+
+        A catalog-verified ``none`` effort is returned as the string ``"none"``
+        rather than ``None``: the Responses API accepts it as an explicit
+        "do not reason" signal, whereas omitting ``reasoning`` leaves the model
+        on its own default (i.e. still thinking). ``None`` therefore means
+        "send no reasoning parameter".
         """
         level = config.thinking_level
-        if not level or level in ("none", "off"):
+        if not level:
+            return None
+        if level in ("none", "off"):
+            mapped_off = (config.thinking_level_map or {}).get("off")
+            if isinstance(mapped_off, str) and not is_budget_level(mapped_off):
+                return mapped_off
             return None
         supported = get_supported_thinking_levels(
             reasoning=True, thinking_level_map=config.thinking_level_map
@@ -164,7 +174,7 @@ class OpenAIResponsesSDK(BaseLLMSDK):
         }
 
         effort = self._resolve_effort(config)
-        if effort is not None and effort != "none":
+        if effort is not None:
             payload["reasoning"] = {"effort": effort}
             # Include encrypted reasoning so stateless turns can replay it
             # (store:false already default; encrypted_content populated by default

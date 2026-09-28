@@ -301,9 +301,9 @@ def _sdk(slug):
     return OpenAISDK(api_key="test-key", provider_slug=slug)
 
 
-def test_map_authorizes_effort_on_unwhitelisted_provider():
-    """models.dev-verified support must send reasoning_effort even when the
-    provider slug is not in the hardcoded whitelist."""
+def test_map_authorizes_effort_on_any_provider():
+    """models.dev-verified support must send reasoning_effort on every
+    openai_compat provider."""
     sdk = _sdk("kilo")
     kwargs: dict = {}
     sdk._apply_thinking_kwargs(
@@ -356,19 +356,49 @@ def test_mapped_string_is_sent_verbatim():
     assert kwargs["reasoning_effort"] == "medium-reasoning"
 
 
-def test_no_map_keeps_legacy_slug_whitelist():
-    """Without a verified map, non-whitelisted slugs stay silent (no change)."""
-    sdk = _sdk("kilo")
+def test_no_map_still_sends_level_on_any_slug():
+    """Without a verified map the level still goes out on every openai_compat
+    provider. The old slug allow-list meant the level was silently dropped on
+    all but three providers, which is indistinguishable from it not working.
+    """
+    for slug in ("kilo", "zenmux", "openrouter", "groq", "openai", "openai-codex"):
+        kwargs: dict = {}
+        _sdk(slug)._apply_thinking_kwargs(
+            kwargs, GenerationConfig(model="m", thinking_level="high")
+        )
+        assert kwargs["reasoning_effort"] == "high", f"{slug!r} dropped the thinking level"
+
+
+def test_verified_none_effort_is_not_swallowed():
+    """The reported bug: choosing "off" left the model thinking.
+
+    A catalog-verified ``none`` effort is the only documented way to stop
+    reasoning, so it must reach the wire rather than being dropped like the
+    unsupported/off-by-omission case.
+    """
     kwargs: dict = {}
-    sdk._apply_thinking_kwargs(kwargs, GenerationConfig(model="m", thinking_level="high"))
+    _sdk("kilo")._apply_thinking_kwargs(
+        kwargs,
+        GenerationConfig(
+            model="gpt-5.1",
+            thinking_level="none",
+            thinking_level_map={"off": "none", "low": "low", "high": "high"},
+        ),
+    )
+    assert kwargs["reasoning_effort"] == "none"
+
+
+def test_unsupported_off_still_omits_reasoning_effort():
+    """When the catalog does not verify a ``none`` effort, omission is correct:
+    the model keeps its own default rather than us guessing a spelling."""
+    kwargs: dict = {}
+    _sdk("kilo")._apply_thinking_kwargs(
+        kwargs,
+        GenerationConfig(
+            model="m", thinking_level="none", thinking_level_map={"off": None, "low": "low"}
+        ),
+    )
     assert "reasoning_effort" not in kwargs
-
-
-def test_no_map_whitelisted_slug_still_sends():
-    sdk = _sdk("openai-codex")
-    kwargs: dict = {}
-    sdk._apply_thinking_kwargs(kwargs, GenerationConfig(model="m", thinking_level="high"))
-    assert kwargs["reasoning_effort"] == "high"
 
 
 def test_default_level_omits_reasoning_effort():

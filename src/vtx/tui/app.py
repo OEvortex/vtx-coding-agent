@@ -868,16 +868,25 @@ class Vtx(
         self._select_permission_mode(new_mode)
 
     def action_cycle_thinking_level(self) -> None:
+        chat = self.query_one("#chat-log", ChatLog)
         if self._runtime.provider is None:
+            chat.show_status("Thinking level unavailable: agent not initialized")
             return
 
         levels = self._runtime.effective_thinking_levels
-        if not levels:
+        if len(levels) < 2:
+            # One level means there is nothing to cycle to (a non-reasoning
+            # model, or one whose catalog advertises no effort control). Report
+            # it: a silent no-op is indistinguishable from a dead key.
+            chat.show_status(f"Thinking level: {levels[0] if levels else 'unavailable'}")
             return
+
         current = self._runtime.thinking_level or "none"
-        current_idx = levels.index(current) if current in levels else 0
-        new_level = levels[(current_idx + 1) % len(levels)]
-        self._select_thinking_level(new_level)
+        # -1 (not 0) when the level in effect isn't offered — e.g. "none" on a
+        # model whose catalog marks the off level unsupported — so the first
+        # press lands on the lowest offered level instead of skipping it.
+        current_idx = levels.index(current) if current in levels else -1
+        self._select_thinking_level(levels[(current_idx + 1) % len(levels)])
 
     @on(HandoffLinkBlock.LinkSelected)
     def on_handoff_link_selected(self, event: HandoffLinkBlock.LinkSelected) -> None:

@@ -92,11 +92,13 @@ def stylize_badge_markers(text: Text, markers: Iterable[str]) -> None:
 class _StreamingMarkdownMixin:
     """Block-cached markdown streaming.
 
-    The current unfinished line is buffered until a newline arrives. Completed text is
-    split at stable block boundaries (blank lines outside code fences). Closed blocks
-    are rendered once and cached, so each refresh only re-renders the open tail block,
-    coalesced into the next frame. `_flush_streaming` does one full render at the end,
-    so the final display never carries streaming artifacts.
+    Completed text is split at stable block boundaries (blank lines outside code
+    fences). Closed blocks are rendered once and cached, so each refresh only
+    re-renders the still-open block: the uncommitted tail plus the line currently
+    being written. Every delta schedules an update, coalesced into the next refresh
+    frame, so text shows up as it arrives instead of waiting on a newline.
+    `_flush_streaming` does one full render at the end, so the final display never
+    carries streaming artifacts.
     """
 
     _pending: str
@@ -123,9 +125,6 @@ class _StreamingMarkdownMixin:
     def _streaming_update_label(self, display: Text) -> None:
         raise NotImplementedError
 
-    def _streaming_pending_style(self) -> str | None:
-        return None
-
     def _refresh_completed_display(self) -> None:
         width = markdown_render_width()
         if width != self._committed_width:  # cached renders are stale after a resize
@@ -142,16 +141,22 @@ class _StreamingMarkdownMixin:
                 self._committed_blocks.append(block)
             self._committed_len = boundary
 
-        tail = self._completed[self._committed_len :]
+        # The still-open block spans the uncommitted tail *and* the line being written
+        # right now, so a partial line is rendered on every delta rather than held back
+        # until the newline that would close it.
+        open_text = self._completed[self._committed_len :] + self._pending
         parts = [*self._committed_blocks]
-        if tail.strip():
-            tail_block = format_markdown_block(tail, width)
-            if tail_block.plain:
-                parts.append(tail_block)
+        if open_text.strip():
+            open_block = format_markdown_block(open_text, width)
+            if open_block.plain:
+                parts.append(open_block)
         self._completed_display = Text("\n\n").join(parts) if parts else Text()
 
     def _render_streaming_display(self) -> Text:
         display = self._completed_display.copy()
+        # Only reserve the next line when the current one is closed. With a partial
+        # line pending the open block already ends with that text, so a trailing
+        # newline would just add a blank line under live output.
         completed_needs_separator = self._completed.endswith("\n") or self._completed.endswith(
             "\r"
         )
@@ -188,7 +193,11 @@ class _StreamingMarkdownMixin:
         if last_nl != -1:
             self._completed += self._pending[: last_nl + 1]
             self._pending = self._pending[last_nl + 1 :]
-            self._schedule_streaming_update()
+
+        # Unconditional: the newline only decides what is eligible for block caching,
+        # not whether anything is renderable. Gating this on a newline left the text
+        # invisible until the line closed, which is what made streaming look buffered.
+        self._schedule_streaming_update()
 
     def _flush_streaming(self) -> Text:
         self._stream_finalized = True
@@ -260,9 +269,6 @@ class ThinkingBlock(_StreamingMarkdownMixin, Static):
     def _streaming_update_label(self, display: Text) -> None:
         self.label.update(display)
         return None
-
-    def _streaming_pending_style(self) -> str | None:
-        return f"{config.ui.colors.dim} italic"
 
     async def append(self, text: str) -> None:
         self._content += text
