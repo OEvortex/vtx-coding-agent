@@ -659,6 +659,40 @@ _DIGEST_REFINEMENT_LIMIT = 5
 HARNESS_DIGEST_TAG = "vtx:harness-digest"
 REFINEMENT_NOTICE_TAG = "vtx:refinement-notice"
 
+
+def append_refinement_notice(
+    session: Any,
+    notice: str,
+    *,
+    source: str,
+    refinement_id: str | None = None,
+    summary: str = "",
+    scope: str = "local",
+) -> str:
+    """Record a model-facing refinement notice as a typed, non-displayed entry.
+
+    Prime's ``createRefinementNoticeMessage`` builds a custom message rather
+    than a user turn, so the notice is structurally distinct from something the
+    user typed. Stored as a plain `UserMessage` the refiner's own prose read
+    back as an instruction. `display=False` keeps it out of the transcript —
+    the TUI already draws a dedicated outcome block from `result` — while
+    `Session.messages` still hands it to the provider.
+    """
+    from vtx.ai.agent.session import REFINEMENT_NOTICE_CUSTOM_TYPE
+
+    return session.append_custom_message(
+        REFINEMENT_NOTICE_CUSTOM_TYPE,
+        notice,
+        display=False,
+        details={
+            "refinementId": refinement_id,
+            "summary": summary,
+            "scope": scope,
+            "source": source,
+        },
+    )
+
+
 #: Bump when the fingerprinted material or its canonical serialization changes,
 #: so fingerprints minted under different versions never compare equal.
 #: Normalizing a render-ignored flag out of the material does not need a bump:

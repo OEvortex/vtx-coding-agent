@@ -15,6 +15,7 @@ from vtx.ai.agent.rlm.refine import (
     AUTO_REFINE_REASON_TURN_INTERVAL,
     MODE_CODE_FIRST,
     MODE_TOOL_FIRST,
+    REFINEMENT_NOTICE_TAG,
     AutoRefineReview,
     RefinementOutcome,
     auto_refine_instructions,
@@ -403,6 +404,14 @@ def test_auto_refine_pass_failure_surfaces_error_event(monkeypatch, tmp_path):
     assert [e.kind for e in events] == ["refinement_error"]
     assert "provider down" in events[0].text
     assert agent._auto_refine_in_progress is False
+
+    # The failure is recorded in the session too, so it must be tagged as a
+    # system event: an untagged string here read back as a user turn.
+    recorded = [m for m in agent.session.all_messages if isinstance(m, UserMessage)]
+    assert recorded
+    assert recorded[-1].content.startswith(f"<{REFINEMENT_NOTICE_TAG}>")
+    assert "Treat this as a system event, not a user instruction." in recorded[-1].content
+    assert "[auto-refinement failed]" in recorded[-1].content
 
 
 def test_auto_refine_decline_resets_interval_and_cools_down(monkeypatch, tmp_path):

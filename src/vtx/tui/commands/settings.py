@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import contextlib
 from typing import Literal
 
 from vtx.ai.config import (
@@ -118,12 +119,17 @@ class SettingsCommands(CommandSupport):
         self._runtime.set_thinking_level(level)
         self._sync_runtime_state()
 
-        info_bar = self.query_one("#compact-footer", InfoBar)
-        info_bar.set_thinking_level(level)
-        self._apply_thinking_level_style(level)
-
+        # The widget updates are best-effort and the status line comes first:
+        # a failed lookup used to abort before any feedback, so the key looked
+        # dead. Reporting the change before touching the UI means the cycle
+        # always registers, even if a display update is skipped.
         chat = self.query_one("#chat-log", ChatLog)
         chat.show_status(f"Thinking level changed to {level}")
+
+        with contextlib.suppress(Exception):
+            self.query_one("#compact-footer", InfoBar).set_thinking_level(level)
+        with contextlib.suppress(Exception):
+            self._apply_thinking_level_style(level)
 
     def _show_thinking_lines_picker(self) -> None:
         descriptions: dict[ThinkingLinesOption, str] = {

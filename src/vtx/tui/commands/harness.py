@@ -210,7 +210,6 @@ class HarnessCommands(CommandSupport):
     async def _do_refine(self, options: Any) -> None:
         from vtx.ai.agent.rlm.refine import run_refinement
         from vtx.ai.agent.rlm.registry import bridge_session_id
-        from vtx.core.types import UserMessage
 
         chat = self.query_one("#chat-log", ChatLog)
         if self._runtime.provider is None or self._runtime.session is None:
@@ -236,7 +235,16 @@ class HarnessCommands(CommandSupport):
         # The notice is a conversation message (the model sees it next turn)
         # and the delivered digest changed, so refresh context.
         if outcome.notice:
-            self._runtime.session.append_message(UserMessage(content=outcome.notice))
+            from vtx.ai.agent.rlm.refine import append_refinement_notice
+
+            append_refinement_notice(
+                self._runtime.session,
+                outcome.notice,
+                source="user",
+                refinement_id=outcome.id,
+                summary=outcome.summary,
+                scope=outcome.scope,
+            )
         self._runtime.reload_context()
 
         # The block carries the per-edit diffs; the notice is what the model

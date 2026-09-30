@@ -95,6 +95,16 @@ class CustomMessageEntry(EntryBase):
     details: dict[str, Any] | None = None
 
 
+#: Custom entry whose content is model-facing rather than audit-only.
+#:
+#: Most custom entries (revert records, snapshots, handoff links) exist for the
+#: transcript and must never reach the provider. The refinement notice is the
+#: exception: the model is meant to read it, so `Session.messages` converts it
+#: back into a conversation message. That mirrors prime's `convertToLlm`, which
+#: passes `refinement_notice` through while dropping the audit types.
+REFINEMENT_NOTICE_CUSTOM_TYPE = "refinement_notice"
+
+
 class SessionInfoEntry(EntryBase):
     type: Literal["session_info"] = "session_info"
     name: str | None = None
@@ -550,6 +560,23 @@ class Session:
     def get_entry(self, entry_id: str) -> SessionEntry | None:
         return self._by_id.get(entry_id)
 
+    @staticmethod
+    def _llm_message(entry: SessionEntry) -> Message | None:
+        """The provider-facing message for one entry, or None if it is not one.
+
+        A refinement notice is stored as a typed custom entry so the transcript
+        can tell it from a user turn, but it carries text the model must read,
+        so it is converted back here rather than dropped with the audit entries.
+        """
+        if isinstance(entry, MessageEntry):
+            return entry.message
+        if (
+            isinstance(entry, CustomMessageEntry)
+            and entry.custom_type == REFINEMENT_NOTICE_CUSTOM_TYPE
+        ):
+            return UserMessage(content=entry.content)
+        return None
+
     @property
     def messages(self) -> builtins.list[Message]:
         """Messages for LLM context. If compaction exists, returns compacted view."""
@@ -560,7 +587,11 @@ class Session:
                 break
 
         if last_compaction is None:
-            return [e.message for e in self.active_entries if isinstance(e, MessageEntry)]
+            return [
+                message
+                for message in (self._llm_message(e) for e in self.active_entries)
+                if message is not None
+            ]
 
         # Build compacted message list:
         # 1. Synthetic user message framing this as a state restoration
@@ -587,15 +618,22 @@ class Session:
             if isinstance(entry, CompactionEntry) and entry.id == last_compaction.id:
                 past_compaction = True
                 continue
-            if past_compaction and isinstance(entry, MessageEntry):
-                result.append(entry.message)
+            if not past_compaction:
+                continue
+            message = self._llm_message(entry)
+            if message is not None:
+                result.append(message)
 
         return result
 
     @property
     def all_messages(self) -> builtins.list[Message]:
         """All messages regardless of compaction (for UI rendering)."""
-        return [e.message for e in self.active_entries if isinstance(e, MessageEntry)]
+        return [
+            message
+            for message in (self._llm_message(e) for e in self.active_entries)
+            if message is not None
+        ]
 
     def get_last_assistant_text(self) -> str | None:
         for message in reversed(self.messages):

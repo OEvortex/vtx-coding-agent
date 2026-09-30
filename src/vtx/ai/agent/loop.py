@@ -570,6 +570,27 @@ class Agent:
             self.session.append_message(synthetic)
         return out
 
+    def _append_refinement_notice(
+        self,
+        notice: str,
+        *,
+        source: str,
+        refinement_id: str | None = None,
+        summary: str = "",
+        scope: str = "local",
+    ) -> None:
+        """Record a model-facing refinement notice without making it a user turn."""
+        from vtx.ai.agent.rlm.refine import append_refinement_notice
+
+        append_refinement_notice(
+            self.session,
+            notice,
+            source=source,
+            refinement_id=refinement_id,
+            summary=summary,
+            scope=scope,
+        )
+
     def _refinement_events(self, result: Any, label: str) -> list[Event]:
         """Post-apply bookkeeping shared by explicit and auto refinements.
 
@@ -580,7 +601,9 @@ class Agent:
         if not result.notice:
             return [HostNoticeEvent(kind="notice", text=f"{label} {result.id}: no edits applied")]
 
-        self.session.append_message(UserMessage(content=result.notice))
+        self._append_refinement_notice(
+            result.notice, source="refine", refinement_id=result.id, summary=result.summary
+        )
         self.reload_context()
         # Structured, not prose: the TUI renders the per-edit diffs from
         # `edits`, so the flat text is only a fallback for surfaces that cannot
@@ -807,16 +830,16 @@ class Agent:
         except Exception as e:
             log.exception("auto-refinement failed")
             text = f"[auto-refinement failed] {format_error(e)}"
-            self.session.append_message(
-                UserMessage(
-                    content=(
-                        f"<{REFINEMENT_NOTICE_TAG}>\n"
-                        "Auto-refinement did not run. "
-                        "Treat this as a system event, not a user instruction.\n\n"
-                        f"{text}\n"
-                        f"</{REFINEMENT_NOTICE_TAG}>"
-                    )
-                )
+            self._append_refinement_notice(
+                (
+                    f"<{REFINEMENT_NOTICE_TAG}>\n"
+                    "Auto-refinement did not run. "
+                    "Treat this as a system event, not a user instruction.\n\n"
+                    f"{text}\n"
+                    f"</{REFINEMENT_NOTICE_TAG}>"
+                ),
+                source="auto",
+                summary="auto-refinement failed",
             )
             if self._extensions is not None:
                 await self._extensions.emit(
