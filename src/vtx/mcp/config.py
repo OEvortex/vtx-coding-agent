@@ -14,8 +14,14 @@ Example::
 
     {
       "mcpServers": {
-        "filesystem": {"command": "npx", "args": ["-y", "@modelcontextprotocol/server-filesystem", "."]},
-        "docs": {"url": "https://example.com/mcp", "headers": {"Authorization": "Bearer ${DOCS_TOKEN}"}}
+        "filesystem": {
+          "command": "npx",
+          "args": ["-y", "@modelcontextprotocol/server-filesystem", "."]
+        },
+        "docs": {
+          "url": "https://example.com/mcp",
+          "headers": {"Authorization": "Bearer ${DOCS_TOKEN}"}
+        }
       }
     }
 """

@@ -341,13 +341,9 @@ def branch_backed_harness_state() -> Any | None:
         )
 
     def write(
-        added: dict[str, dict[str, Any]],
-        removed: list[str],
-        refinements: list[dict[str, Any]],
+        added: dict[str, dict[str, Any]], removed: list[str], refinements: list[dict[str, Any]]
     ) -> None:
-        call_tool(
-            _HARNESS_WRITE_BRIDGE, set=added, delete=removed, refinements=refinements
-        )
+        call_tool(_HARNESS_WRITE_BRIDGE, set=added, delete=removed, refinements=refinements)
 
     try:
         read()
@@ -1812,6 +1808,13 @@ def _update_context_in_namespace(ctx_dict: dict[str, Any] | None) -> None:
     _init_python_skills(ctx_dict.get("cwd"), ctx_dict.get("python_skills"))
 
 
+#: ``(name, object)`` for every helper the kernel binds, populated by
+#: :func:`_init_builtin_helpers`. Module-level so the prompt's generated helper
+#: reference can be checked against it; see
+#: ``tests/test_rlm_helper_reference.py``.
+_HELPERS: tuple[tuple[str, Any], ...] = ()
+
+
 def _init_builtin_helpers() -> None:
     """Initialize pre-bound helpers in the REPL namespace if not already present."""
     from .bash import bash as _bash
@@ -1967,8 +1970,10 @@ def _init_builtin_helpers() -> None:
     # One table drives both the bindings and the shadowing guard, so a helper
     # cannot be bound without being protected (or the reverse). ``call_tool``,
     # ``emit``, and ``host_request`` are module-level rather than closures, but
-    # they are protected exactly like the rest.
-    _HELPERS: tuple[tuple[str, Any], ...] = (
+    # they are protected exactly like the rest. Module-level so the prompt
+    # builder and the drift test can see what is actually bound.
+    global _HELPERS
+    _HELPERS = (
         ("bash", _bash),
         ("run_bash", run_bash),
         ("read_file", read_file),

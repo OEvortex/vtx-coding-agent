@@ -678,6 +678,20 @@ class ChatLog(VerticalScroll):
         self.set_tool_output_expanded(expanded)
         return expanded
 
+    def toggle_latest_refinement_expanded(self) -> bool:
+        """Toggle the newest collapsible refinement block.
+
+        The block advertises "ctrl+d for edits" while collapsed, so this is the
+        key it means. Returns False when there is nothing collapsible, which is
+        what keeps ctrl+d from arming the session-delete chord instead.
+        """
+        for block in reversed(self._refinement_blocks):
+            if block.has_details:
+                block.toggle_expanded()
+                self._scroll_if_anchored(animate=False)
+                return True
+        return False
+
     def update_tool_call_msg(self, tool_id: str, call_msg: str) -> None:
         block = self._tool_blocks.get(tool_id)
         if block:

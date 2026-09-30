@@ -227,9 +227,7 @@ def session_harness_bindings() -> tuple[Any | None, Any | None]:
         return session.replay_harness_state()
 
     def write(
-        added: dict[str, dict[str, Any]],
-        removed: list[str],
-        refinements: list[dict[str, Any]],
+        added: dict[str, dict[str, Any]], removed: list[str], refinements: list[dict[str, Any]]
     ) -> None:
         session.append_harness_state(added, removed, refinements)
 
@@ -246,9 +244,7 @@ async def _handle_harness_read(payload: dict[str, Any], ctx: _Ctx) -> Any:
         # instead of treating "no session" as "no memories".
         return plain_data({"available": False, "entries": {}, "refinements": []})
     entries, refinements = session.replay_harness_state()
-    return plain_data(
-        {"available": True, "entries": entries, "refinements": refinements}
-    )
+    return plain_data({"available": True, "entries": entries, "refinements": refinements})
 
 
 async def _handle_harness_write(payload: dict[str, Any], ctx: _Ctx) -> Any:

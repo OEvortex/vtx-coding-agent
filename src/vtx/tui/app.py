@@ -786,6 +786,12 @@ class Vtx(
             return
 
         if self._selection_mode != SelectionMode.SESSION:
+            # Outside the session picker, ctrl+d means what a collapsed
+            # refinement block says it means: expand its per-edit diffs. The
+            # block advertises "ctrl+d for edits", and nothing used to read
+            # that, so the key did nothing at all outside the picker.
+            if self.query_one("#chat-log", ChatLog).toggle_latest_refinement_expanded():
+                return
             return
 
         completion_list = self.query_one("#completion-list", FloatingList)

@@ -174,7 +174,7 @@ def validate_read_resource_result(value: Any) -> ReadResourceResult:
             )
         ):
             raise invalid("Invalid contents in MCP resources/read result")
-    return cast(ReadResourceResult, value)
+    return value
 
 
 def validate_call_tool_result(value: Any) -> CallToolResult:

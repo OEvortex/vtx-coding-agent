@@ -1258,6 +1258,11 @@ class RefinementBlock(Static):
         self._expanded = expanded
         self._render_detail()
 
+    def toggle_expanded(self) -> bool:
+        """Flip the collapsed state and return the new value."""
+        self.set_expanded(not self._expanded)
+        return self._expanded
+
     def _render_detail(self) -> None:
         with contextlib.suppress(Exception):
             header = self.query_one("#refinement-header", Label)

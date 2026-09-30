@@ -1346,22 +1346,51 @@ class HarnessState:
         }
 
 
+#: Distinguishes "caller passed no branch bindings" (adopt the live session's)
+#: from "caller explicitly wants the file-backed store" (``None``).
+_DEFAULT = object()
+
+
+def _session_harness_bindings() -> tuple[BranchReader | None, BranchWriter | None]:
+    """The live session's branch bindings, or ``(None, None)`` outside a session.
+
+    Imported lazily: ``host`` pulls in the tool registry and the dispatcher, and
+    this module is imported by all of them.
+    """
+    try:
+        from vtx.ai.agent.rlm.host import session_harness_bindings
+
+        return session_harness_bindings()
+    except Exception:
+        return (None, None)
+
+
 def get_harness_state(
     state_dir: str | Path | None = None,
     *,
     global_: bool = False,
-    branch_reader: BranchReader | None = None,
-    branch_writer: BranchWriter | None = None,
+    branch_reader: BranchReader | None | object = _DEFAULT,
+    branch_writer: BranchWriter | None | object = _DEFAULT,
     **kwargs: Any,
 ) -> HarnessState:
     """Return the cached local harness state, or global when requested.
 
-    With ``branch_reader``/``branch_writer`` the local state is backed by the
-    session tree rather than a JSON file, so a revert or a branch shows the
-    state as of its own leaf. The cache key includes the branch callbacks'
-    identity, because two sessions in one process must not share a store.
+    By default the local state is backed by the live session tree, so a revert or
+    a branch shows the harness as of its own leaf instead of whatever the
+    abandoned path last wrote to a shared JSON file. Doing it here rather than in
+    each caller keeps the refiner and ``/harness`` branch-correct without threading
+    bindings through both.
+
+    Pass ``branch_reader=None`` to force the file-backed store; the kernel does
+    this because it reaches the session over the bridge instead. The cache key
+    includes the bindings' identity, so two sessions in one process never share a
+    store.
     """
     global_ = _resolve_global_flag(global_, kwargs)
+    if branch_reader is _DEFAULT:
+        branch_reader, branch_writer = (None, None) if global_ else _session_harness_bindings()
+    elif branch_writer is _DEFAULT:
+        branch_writer = None
     file_path = _state_file(state_dir, global_=global_)
     scope: HarnessScope = "global" if global_ else "local"
     cache_key = (file_path, scope, id(branch_reader), id(branch_writer))

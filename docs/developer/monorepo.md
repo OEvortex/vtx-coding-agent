@@ -1,6 +1,6 @@
 # Monorepo structure
 
-Vtx is a single Python distribution (`vtx-coding-agent`) built from four import packages under `src/`, plus a website and examples.
+Vtx is a single Python distribution (`vtx-coding-agent`) built from five import packages under `src/`, plus a website and examples.
 
 ```
 vtx-coding-agent/
@@ -13,21 +13,30 @@ vtx-coding-agent/
 │   │       │           #   tools/, prompts/, context/, extensions/,
 │   │       │           #   agents/ (handoff profiles), hooks/
 │   │       └── sdk/    #   the VTX Agentic SDK (docs/sdk/)
+│   ├── mcp/            # Model Context Protocol client: protocol core,
+│   │                   # stdio / Streamable HTTP transports, mcp.json,
+│   │                   # and the BaseTool adapter (docs/mcp.md)
 │   ├── coding_agent/   # app shell: cli.py (entry point), config.py,
 │   │                   # headless.py, themes.py, defaults/config.yml
 │   ├── core/           # types, events, permissions, compaction, handoff,
 │   │                   # paths, notify, scratchpad, tracing/ — imports nothing internal
 │   └── tui/            # Textual app: app.py + mixins, chat/blocks rendering,
 │                       # input, commands/, tree selector, export
-├── tests/              # pytest: tools/, ui/, sdk/, llm/, context/, extensions/
+├── tests/              # pytest: tools/, ui/, sdk/, llm/, context/, extensions/, mcp/
 ├── examples/           # sdk/, extensions/, agents/ runnable samples
 ├── docs/               # these docs
-└── pyproject.toml      # hatchling; wheel packages = the four src dirs
+└── pyproject.toml      # hatchling; wheel packages = the src dirs
 ```
 
 ## Dependency direction
 
-`core` ← `ai` ← `coding_agent` / `tui`. `core` never imports from the other three; `ai` never imports `tui`. The TUI talks to the harness through `ConversationRuntime` and typed events only.
+`core` ← `ai` ← `mcp` ← `coding_agent` / `tui`. `core` never imports from the
+others; `ai` never imports `tui` or `mcp`. `mcp` sits beside `coding_agent`
+rather than inside `ai` because its `McpTool` adapter builds on the harness tool
+contract in `ai.agent.tools` — and the harness itself never imports `vtx.mcp`.
+`ConversationRuntime` reaches it through a lazy import so the loop is not
+closed. The TUI talks to the harness through `ConversationRuntime` and typed
+events only.
 
 ## Entry points
 

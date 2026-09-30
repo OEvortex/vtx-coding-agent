@@ -17,6 +17,8 @@ Ported/adapted from Prime Agent (MIT) — https://github.com/PrimeIntellect-ai/p
 
 from __future__ import annotations
 
+from vtx.ai.agent.rlm.helper_docs import render_helpers_reference
+
 DEFAULT_RLM_EXTRA_IMPORT_LABELS = [
     "requests",
     "httpx",
@@ -135,34 +137,10 @@ updated = prev_code.replace("mode='dry_run'", "mode='execute'")
 run_code(updated)
 ```"""
 
-_RLM_HELPERS_PROMPT = """# Pre-bound REPL helpers
-
-These names already exist in the REPL namespace — call them directly, do not import or define them:
-
-- `bash(command)` -> BashHandle : starts a shell command and returns a live handle immediately; it NEVER blocks (full handle API is documented in the REPL control section above: `h.output()` / `h.tail(n)`, `h.poll()`, `h.kill()`, `await h`).
-- `run_bash(command, timeout=180)` -> str : blocking shell command returning combined stdout+stderr as a string (times out with a note; the command keeps running).
-- `read_file(path, offset=0, limit=2000)` -> str : read a file slice (or list a directory).
-- `write_file(path, content)` -> None : create or overwrite a file.
-- `edit_file(path, old, new, replace_all=False)` -> str : exact search-and-replace edit; raises if `old` not found.
-- `run_code(code_str)` -> Any : execute a code string in the namespace, return its last expression value.
-- `rerun(index=-1)` -> Any : re-run a previous code snippet or cell by index.
-- `find_tools(query, limit=8)` -> list[dict] : search the callable tool surface by keyword, best matches first. Use this when you need a capability this prompt does not name: it returns `[{name, description}]`, and you call the winner with `call_tool`. Do not guess tool names.
-- `describe_tool(name)` -> dict | None : one tool's full declaration (`name`, `description`, `parameters` JSON schema), or `None` if the name is not callable. Pair it with `find_tools` to get the arguments right the first time.
-- `web_search(query, num_results=8)` -> str : web search via the tool bridge.
-- `goal_get()` -> dict : focused-goal snapshot via the tool bridge.
-- `goal_update(**kwargs)` -> dict : e.g. `goal_update(status="complete", completion_summary="...")`.
-- `goal_set_tasks(tasks)` -> dict : replace the task plan; `tasks` is a list of `{title, id?, parent_id?, note?}` dicts.
-- `call_tool(name, **kwargs)` -> Any : generic escape hatch to any main-process tool (`"web_search"`, `"goal"`, `"task"`, ...). Find the exact name with `find_tools` and its arguments with `describe_tool` first.
-- `emit(data)` -> None : ship one display event (dict of MIME type -> JSON payload) to the host.
-- `await host_request("<type>", {...})` -> dict : generic async host bridge used by Python skills; raises on a host error or unregistered type.
-- `rlm` : the model-facing namespace object (`rlm.spawn`, `rlm.list_subagents`, `rlm.collect`, `rlm.delete_subagent`, `rlm.progress_note`, `rlm.find_models`, `rlm.harness`, `rlm.get_harness_state`).
-- `harness` : alias of `rlm.harness` for the continual harness store.
-- `context` : the RLMContext object for this session (see above).
-- `In`, `Out`, `_i`, `_ii`, `_iii`, `_`, `__`, `___`, `_oh` : IPython-style execution history variables.
-
-These names are bound to the helpers and cannot be reassigned. A cell that rebinds or deletes one has it restored and is told which names were restored, because the namespace is the same dict for the life of the kernel: a shadowed `call_tool` would silently disarm the tool bridge for every later cell. Pick a different name for your own binding.
-
-The `rlm` object is not callable: calling it raises TypeError `'rlm' is not callable; spawn a child with: handle = await rlm.spawn('sub-task', name='worker')`. There is no blocking foreground spawn — `rlm.spawn` returns at admission and never the answer."""
+#: Generated from ``rlm.helper_docs.HELPER_SPECS`` so the documented signature
+#: cannot drift from the one ``_init_builtin_helpers`` binds; the drift test in
+#: ``tests/test_rlm_helper_reference.py`` asserts the two against each other.
+_RLM_HELPERS_PROMPT = render_helpers_reference()
 
 _GOALS_PROMPT = """# Goals
 

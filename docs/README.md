@@ -20,6 +20,7 @@ This folder is the reference companion to the top-level [README](../README.md). 
 | [skills.md](skills.md) | Authoring skills — frontmatter, `$ARGUMENTS`, `register_cmd`, discovery paths |
 | [agents.md](agents.md) | Switchable handoff agents — `.vtx/agent/<name>.py`, `Shift+Tab` cycling |
 | [extensions.md](extensions.md) | Python extensions, the `ExtensionAPI`, lifecycle events, YAML hooks |
+| [mcp.md](mcp.md) | MCP servers — `mcp.json`, `/mcp`, tool naming, permissions, failure behaviour |
 | [theming.md](theming.md) | The full theme catalog and palette tokens |
 | [headless.md](headless.md) | The `-p`/`--prompt` non-interactive flow, exit codes, stdin handling |
 | [local-models.md](local-models.md) | Ollama, llama.cpp and vLLM setup for local models |
