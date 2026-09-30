@@ -11,6 +11,7 @@ from vtx.tui.chat import ChatLog
 from vtx.tui.floating_list import ListItem
 from vtx.tui.input import InputBox
 from vtx.tui.selection_mode import SelectionMode
+from vtx.tui.widgets import InfoBar
 
 Choice = TypeVar("Choice", bound=str)
 
@@ -83,6 +84,22 @@ class CommandSupport:
 
         self._selection_mode = selection_mode
         self._restore_chat_scroll_after_refresh(was_at_bottom)
+
+    def _refresh_thinking_level_display(self) -> None:
+        """Re-read the runtime's thinking level into the info bar and style.
+
+        The runtime is the source of truth and clamps the level when the model
+        changes, so any mixin that switches a model must re-read it — otherwise
+        the bar keeps rendering the previous model's level (e.g. "none" on a
+        model that only offers low..max). Lives here because both the model and
+        settings mixins need it. Best-effort: the bar is a display, not state.
+        """
+        import contextlib
+
+        with contextlib.suppress(Exception):
+            level = self._runtime.thinking_level
+            self.query_one("#compact-footer", InfoBar).set_thinking_level(level)
+            self._apply_thinking_level_style(level)
 
     def _build_choice_items(
         self, choices: Sequence[Choice], current: Choice, descriptions: Mapping[Choice, str]

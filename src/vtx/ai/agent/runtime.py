@@ -839,6 +839,20 @@ class ConversationRuntime:
         self.model = model.id
         self.model_provider = model.provider
 
+        # Reconcile the carried-over level with what the new model can express.
+        # initialize() does this, but a model switch did not: the level from the
+        # previous model survived, so a model that offers only low..max kept
+        # showing "none" — a level it cannot send — and the info bar and the
+        # provider disagreed about what was in effect.
+        if self.provider is not None:
+            levels = self.effective_thinking_levels
+            if levels and self.thinking_level not in levels:
+                clamped = clamp_thinking_level(self.thinking_level, levels)
+                self.thinking_level = clamped
+                self.provider.set_thinking_level(clamped)
+                if self.session:
+                    self.session.set_thinking_level(clamped)
+
         if self.session:
             self.session.set_model(model.provider, model.id, model.base_url)
         if self.agent and self.provider:

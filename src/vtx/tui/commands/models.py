@@ -205,6 +205,10 @@ class ModelCommands(CommandSupport):
         self._sync_runtime_state()
 
         info_bar.set_model(model.id, model.provider)
+        # switch_model clamps the level to what the new model can express, so
+        # the bar has to be re-read: without this it kept rendering the old
+        # model's level (e.g. "none" on a model that only offers low..max).
+        self._refresh_thinking_level_display()
 
         chat.add_info_message(f"Model changed to {model.id} ({model.provider})")
 

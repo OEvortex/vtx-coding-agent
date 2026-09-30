@@ -193,6 +193,149 @@ def _preview(message: Any, index: int, max_chars: int) -> dict[str, Any]:
 # =================================================================================================
 
 
+async def _handle_tool_search(payload: dict[str, Any], ctx: _Ctx) -> Any:
+    """Rank the callable tools against a natural-language query.
+
+    Backs the kernel's ``find_tools()``. Returns ``{name, description}`` dicts
+    rather than full schemas: the point is to narrow the field cheaply, and
+    ``describe_tool`` fetches the argument shape for the one that matched.
+    """
+    from vtx.ai.agent.rlm.diagnostics import (
+        INVALID_INPUT,
+        HOST_UNAVAILABLE,
+        BridgeError,
+        plain_data,
+    )
+    from vtx.ai.agent.rlm.toolsearch import DEFAULT_TOOL_SEARCH_LIMIT, rank, tool_document
+
+    query = payload.get("query")
+    if not isinstance(query, str) or not query.strip():
+        raise BridgeError(INVALID_INPUT, "tool.search query must be a non-empty string")
+    limit = payload.get("limit", DEFAULT_TOOL_SEARCH_LIMIT)
+    if not isinstance(limit, int) or isinstance(limit, bool) or limit <= 0:
+        raise BridgeError(INVALID_INPUT, "tool.search limit must be a positive integer")
+
+    try:
+        from vtx.ai.agent.tools import get_all_tools
+
+        tools = get_all_tools()
+    except Exception as exc:
+        raise BridgeError(
+            HOST_UNAVAILABLE,
+            "The tool registry is not readable right now, so tools cannot be searched.",
+            detail=repr(exc),
+        ) from exc
+
+    documents = [tool_document(tool) for tool in tools.values()]
+    matches = rank(query, documents, min(limit, 32))
+    return plain_data(
+        {
+            "tools": [
+                {
+                    "name": match.name,
+                    "description": next(
+                        (
+                            document.description
+                            for document in documents
+                            if document.name == match.name
+                        ),
+                        "",
+                    ),
+                }
+                for match in matches
+            ]
+        }
+    )
+
+
+async def _handle_tool_catalog(payload: dict[str, Any], ctx: _Ctx) -> Any:
+    """Every callable tool's name, description, and input schema, in one reply.
+
+    Backs the kernel's cached discovery catalog. Fetching the whole surface once
+    is what makes ``find_tools`` and ``describe_tool`` work from synchronous cell
+    code: a cell cannot await a round trip inside a plain function, and a search
+    per query would put a bridge call in the middle of every tool lookup.
+
+    The full schema set is a few kilobytes against the ~24k-char skills catalog
+    the model already carries, and it is cached in the kernel rather than added
+    to the prompt, so it costs one host round trip per session, not per turn.
+    """
+    from vtx.ai.agent.rlm.diagnostics import HOST_UNAVAILABLE, BridgeError, plain_data
+
+    try:
+        from vtx.ai.agent.tools import get_all_tools
+
+        tools = get_all_tools()
+    except Exception as exc:
+        raise BridgeError(
+            HOST_UNAVAILABLE,
+            "The tool registry is not readable right now, so tools cannot be listed.",
+            detail=repr(exc),
+        ) from exc
+
+    catalog: list[dict[str, Any]] = []
+    for name, tool in sorted(tools.items()):
+        parameters = getattr(tool, "parameters", None)
+        if parameters is None:
+            params_model = getattr(tool, "params", None)
+            schema = getattr(params_model, "model_json_schema", None)
+            parameters = schema() if callable(schema) else {}
+        catalog.append(
+            {
+                "name": str(getattr(tool, "name", name)),
+                "description": str(getattr(tool, "description", "") or ""),
+                "parameters": parameters or {},
+            }
+        )
+    return plain_data({"tools": catalog})
+
+
+async def _handle_tool_describe(payload: dict[str, Any], ctx: _Ctx) -> Any:
+    """Resolve one tool's description and input schema.
+
+    Backs the kernel's ``describe_tool()``. Returns ``None`` for an unknown
+    name rather than raising: the natural next step after a search miss is to
+    try another spelling, and an exception there costs the model a turn.
+    """
+    from vtx.ai.agent.rlm.diagnostics import (
+        INVALID_INPUT,
+        HOST_UNAVAILABLE,
+        BridgeError,
+        plain_data,
+    )
+
+    name = payload.get("name")
+    if not isinstance(name, str) or not name:
+        raise BridgeError(INVALID_INPUT, "tool.describe name must be a non-empty string")
+    try:
+        from vtx.ai.agent.tools import get_tool
+
+        tool = get_tool(name)
+    except Exception as exc:
+        raise BridgeError(
+            HOST_UNAVAILABLE,
+            "The tool registry is not readable right now.",
+            detail=repr(exc),
+        ) from exc
+    if tool is None:
+        return plain_data({"tool": None})
+
+    parameters = getattr(tool, "parameters", None)
+    if parameters is None:
+        params_model = getattr(tool, "params", None)
+        schema = getattr(params_model, "model_json_schema", None)
+        parameters = schema() if callable(schema) else {}
+    return plain_data(
+        {
+            "tool": {
+                "name": str(getattr(tool, "name", name)),
+                "description": str(getattr(tool, "description", "") or ""),
+                "parameters": parameters or {},
+            }
+        }
+    )
+
+
 async def _handle_tool_call(payload: dict[str, Any], ctx: _Ctx) -> Any:
     from vtx.ai.agent.rlm.diagnostics import (
         HOST_UNAVAILABLE,
@@ -1042,6 +1185,9 @@ async def _handle_goal(payload: dict[str, Any], ctx: _Ctx) -> dict[str, Any]:
 
 _HANDLERS: dict[str, Handler] = {
     "tool.call": _handle_tool_call,
+    "tool.search": _handle_tool_search,
+    "tool.describe": _handle_tool_describe,
+    "tool.catalog": _handle_tool_catalog,
     "rlm.run": _handle_rlm_run,
     "rlm.create_session": _handle_rlm_create_session,
     "rlm.find_models": _handle_rlm_find_models,

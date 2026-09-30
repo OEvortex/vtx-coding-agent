@@ -82,6 +82,8 @@ _ALWAYS_SKIP = {
     "edit_file",
     "run_code",
     "rerun",
+    "find_tools",
+    "describe_tool",
     "web_search",
     "goal_get",
     "goal_update",
@@ -291,6 +293,98 @@ def call_tool(name: str, **kwargs: Any) -> Any:
     if isinstance(result, dict) and "error" in result:
         raise RuntimeError(result["error"])
     return result
+
+
+class _ToolDiscovery:
+    """Cached, lazily populated view of the callable tool surface.
+
+    The tool set only changes when the session reloads, and a search is
+    synchronous (a cell cannot await a discovery round trip inside
+    ``call_tool``-style code without an event loop), so the catalog is fetched
+    once over the async bridge and kept. ``_clear_tool_discovery()`` drops it
+    when the surface can have changed.
+    """
+
+    _tools: list[dict[str, Any]] | None = None
+    _by_name: dict[str, dict[str, Any]] | None = None
+
+    @classmethod
+    def catalog(cls) -> list[dict[str, Any]]:
+        if cls._tools is None:
+            reply = call_tool("__vtx_tool_catalog__")
+            tools = reply.get("tools") if isinstance(reply, dict) else None
+            cls._tools = tools if isinstance(tools, list) else []
+            cls._by_name = {
+                str(tool.get("name")): tool
+                for tool in cls._tools
+                if isinstance(tool, dict) and tool.get("name")
+            }
+        return cls._tools
+
+    @classmethod
+    def find(cls, query: str, limit: int) -> list[dict[str, Any]]:
+        """Rank the catalog locally with the same BM25 the host uses.
+
+        Ranking in the kernel rather than shipping the query to the host keeps
+        ``find_tools`` usable from synchronous cell code and makes repeat
+        searches free.
+        """
+        from .toolsearch import rank, tool_document
+
+        catalog = cls.catalog()
+        if not catalog:
+            return []
+        documents = [
+            tool_document(
+                _Doc(
+                    name=str(tool.get("name", "")),
+                    description=str(tool.get("description", "") or ""),
+                    parameters=tool.get("parameters") or {},
+                )
+            )
+            for tool in catalog
+            if isinstance(tool, dict)
+        ]
+        by_name = {document.name: document for document in documents}
+        matches = rank(query, documents, limit)
+        return [
+            {
+                "name": match.name,
+                "description": by_name[match.name].description if match.name in by_name else "",
+            }
+            for match in matches
+        ]
+
+    @classmethod
+    def describe(cls, name: str) -> dict[str, Any] | None:
+        if cls._by_name is None:
+            cls.catalog()
+        return (cls._by_name or {}).get(name)
+
+
+class _Doc:
+    """Minimal tool stand-in so :func:`tool_document` can read a catalog entry."""
+
+    __slots__ = ("name", "description", "parameters")
+
+    def __init__(self, name: str, description: str, parameters: Any) -> None:
+        self.name = name
+        self.description = description
+        self.parameters = parameters
+
+
+def _clear_tool_discovery() -> None:
+    """Drop the cached catalog; the next search refetches it."""
+    _ToolDiscovery._tools = None
+    _ToolDiscovery._by_name = None
+
+
+def _search_tools(query: str, limit: int = 8) -> list[dict[str, Any]]:
+    return _ToolDiscovery.find(query, limit)
+
+
+def _describe_tool(name: str) -> dict[str, Any] | None:
+    return _ToolDiscovery.describe(name)
 
 
 # =================================================================================================
@@ -838,6 +932,10 @@ async def _handle_execute(req: dict[str, Any], ns: dict[str, Any]) -> None:
     ctx_dict = req.get("context")
     if ctx_dict is not None or "context" not in ns:
         _update_context_in_namespace(ctx_dict)
+    # The tool surface can change on reload or a mode switch, so the cached
+    # discovery catalog is dropped whenever a context is re-pushed.
+    if ctx_dict is not None:
+        _clear_tool_discovery()
     code = transform_cell_code(req.get("code", ""))
     cell_num = _record_history(code)
     try:
@@ -865,6 +963,23 @@ async def _handle_execute(req: dict[str, Any], ns: dict[str, Any]) -> None:
             # Close the interrupt window before the protocol sends so a
             # handler-raised KeyboardInterrupt can never tear a frame mid-_send.
             _finish_request(cell_id)
+        shadowed = _restore_shadowed_helpers(ns)
+        if shadowed:
+            # Reported in the cell that did it, which is where the model is
+            # looking, and only when the cell got far enough to run.
+            names = ", ".join(f"`{name}`" for name in shadowed)
+            _send(
+                {
+                    "event": "stdout",
+                    "id": cell_id,
+                    "text": (
+                        f"\n[restored {names}: these names are bound to the REPL helpers "
+                        "and cannot be reassigned. Pick a different name, or call the "
+                        "helper you meant to shadow through `harness`/`rlm` or "
+                        "`import` if it is not one of these.]"
+                    ),
+                }
+            )
         if result_text is not None:
             _send({"event": "result", "id": cell_id, "text": result_text})
         if error is not None:
@@ -1743,6 +1858,44 @@ def _init_builtin_helpers() -> None:
             raise ValueError(f"No previous code found at index {index}")
         return run_code(code)
 
+    def find_tools(query: str, limit: int = 8) -> list[dict[str, Any]]:
+        """Search the callable tool surface by keyword; best matches first.
+
+        The RLM prompt does not enumerate every tool, and a wrong guess costs a
+        ``[bridge:unknown_tool]`` round trip plus a re-read of the tool list. BM25
+        over name, description, and parameter names finds the tool from a task
+        description instead. Returns ``{name, description}`` dicts; an empty list
+        means nothing scored above zero.
+        """
+        return _search_tools(query, limit)
+
+    def describe_tool(name: str) -> dict[str, Any] | None:
+        """Resolve one tool's full declaration: description and parameter schema.
+
+        The counterpart to :func:`find_tools`: search narrows the field, this
+        returns the exact argument shape so a call is right the first time.
+        Returns ``None`` when no such tool is callable.
+        """
+        return _describe_tool(name)
+
+    def find_tools(query: str, limit: int = 8) -> list[dict[str, Any]]:
+        """Search the callable tool surface by keyword; best matches first.
+
+        BM25 over name, description, and parameter names, so a task description
+        is enough to find the tool. Returns ``{name, description}`` dicts, best
+        first; an empty list means nothing matched.
+        """
+        return _search_tools(query, limit)
+
+    def describe_tool(name: str) -> dict[str, Any] | None:
+        """One tool's full declaration: description and parameter schema.
+
+        The counterpart to :func:`find_tools`: search narrows the field, this
+        gives the exact argument shape so the call is right first time. Returns
+        ``None`` when no such tool is callable.
+        """
+        return _describe_tool(name)
+
     def web_search(query: str, num_results: int = 8) -> str:
         """Web search via the main-process tool bridge."""
         return call_tool("web_search", query=query, num_results=num_results)
@@ -1773,6 +1926,58 @@ def _init_builtin_helpers() -> None:
     _namespace.setdefault("call_tool", call_tool)
     _namespace.setdefault("emit", emit)
     _namespace.setdefault("host_request", host_request)
+    _protect_helpers(_namespace, _HELPER_NAMES)
+
+
+#: Every name ``_init_builtin_helpers`` binds. Kept as one tuple so the guard in
+#: ``_handle_execute`` and the bindings themselves cannot drift apart.
+_HELPER_NAMES: tuple[str, ...] = (
+    "bash",
+    "run_bash",
+    "read_file",
+    "write_file",
+    "edit_file",
+    "run_code",
+    "rerun",
+    "find_tools",
+    "describe_tool",
+    "web_search",
+    "goal_get",
+    "goal_update",
+    "goal_set_tasks",
+    "call_tool",
+    "emit",
+    "host_request",
+)
+
+#: Name -> the object bound to it when the helpers were installed. A cell that
+#: reassigns one of these silently disables the real helper for every later
+#: cell, because the namespace is the same dict for the life of the kernel and
+#: nothing re-binds it (the bridge, `bash`, and the file helpers are only
+#: reachable through these names). Rebinding is therefore reverted and reported
+#: instead of accepted: a model that meant to shadow one almost always meant to
+#: define a local, and a silently broken `call_tool` is invisible until a much
+#: later cell fails to reach a tool at all.
+_protected_helpers: dict[str, Any] = {}
+
+
+def _protect_helpers(ns: dict[str, Any], names: tuple[str, ...]) -> None:
+    for name in names:
+        _protected_helpers[name] = ns.get(name)
+
+
+def _restore_shadowed_helpers(ns: dict[str, Any]) -> list[str]:
+    """Undo helper rebinding and name what was restored. Returns the names."""
+    restored: list[str] = []
+    for name, original in _protected_helpers.items():
+        if name not in ns:
+            # Deleted outright; put it back the same way.
+            ns[name] = original
+            restored.append(name)
+        elif ns[name] is not original:
+            ns[name] = original
+            restored.append(name)
+    return restored
 
 
 _python_skills_key: tuple[Any, ...] | None = None

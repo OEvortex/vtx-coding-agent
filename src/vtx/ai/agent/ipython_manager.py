@@ -26,7 +26,7 @@ from asyncio.subprocess import Process
 from collections.abc import Callable, Coroutine
 from typing import Any
 
-from vtx.core.bytes_util import truncate_bytes
+from vtx.core.bytes_util import spill_text, truncate_bytes
 
 _MAX_INACTIVITY_SECONDS = 600
 _OUTPUT_TRUNCATE_BYTES = 1_048_576  # 1 MiB per tool call
@@ -41,6 +41,26 @@ _ABORT_GRACE_SECONDS = 1.0
 # happens here, once, with the marker the model is told to expect.
 _MAX_STREAM_CHARS = 65536
 _STREAM_TRUNCATION_MARKER = "\n[... output truncated at 65536 chars ...]"
+
+#: Reported when a cell outlives its abort grace without the kernel ever
+#: acknowledging the interrupt. The kernel's serve loop is still blocked on that
+#: cell, so every later cell for the session would queue behind it and time out
+#: in turn. The only way out is to kill the process, which discards the
+#: namespace, so the model is told plainly what it lost.
+_WEDGED_NOTICE = (
+    "\n[The REPL kernel did not respond to the interrupt, so it was stopped and "
+    "restarted. This cell's variables, imports, and helper functions are gone; "
+    "re-create anything you still need. Long work belongs in a background "
+    "`bash()` handle, which survives a kernel restart.]"
+)
+
+
+def _spill_note(stream: str, text: str) -> str:
+    """Note pointing at a file holding a stream the per-stream cap shortened."""
+    path = spill_text(text)
+    if path is None:
+        return f"[{stream} was truncated at {_MAX_STREAM_CHARS} chars and could not be saved]"
+    return f"[Full {stream}: {path} (read it with read_file(path, offset, limit))]"
 
 
 class IpythonKernel:
@@ -77,6 +97,10 @@ class IpythonKernel:
         self._protocol: int | None = None
         self._session_id: str | None = None
         self._session_dir: str | None = None
+        # Set when a cell outlived its abort grace without the kernel
+        # acknowledging the interrupt. Terminal for the namespace: the process
+        # is blocked mid-cell and no input can reach it.
+        self._wedged = False
 
     def set_session(self, session_id: str | None, session_dir: str | None = None) -> None:
         """Bind the session identity used for host-bridge routing and kernel env.
@@ -105,6 +129,8 @@ class IpythonKernel:
         return env
 
     async def start(self) -> None:
+        if self._wedged:
+            raise RuntimeError("RLM kernel is wedged and cannot be restarted in place")
         if self._process and self._process.returncode is None:
             return
         self._ready_event = asyncio.Event()
@@ -317,6 +343,11 @@ class IpythonKernel:
         timed_out = False
         stdout_parts: list[str] = []
         stderr_parts: list[str] = []
+        # Uncapped copies, used only to spill to a file when a cap bit. The
+        # kernel already bounds what it ships (``_RESULT_TEXT_CAP``, the bash
+        # bounded buffer), so this cannot grow without limit.
+        stdout_full: list[str] = []
+        stderr_full: list[str] = []
         result_text: str | None = None
         error_parts: list[str] = []
         display_parts: list[str] = []
@@ -359,6 +390,7 @@ class IpythonKernel:
                 )
                 await stream("__STDOUT__", message)
                 deadline = time.monotonic() + _ABORT_GRACE_SECONDS
+                acknowledged = False
                 while time.monotonic() < deadline:
                     event = await self._next_event(timeout=0.05)
                     if event is None:
@@ -366,7 +398,19 @@ class IpythonKernel:
                             break
                         continue
                     if event.get("event") == "done" and event.get("id") == rid:
+                        acknowledged = True
                         break
+                if not acknowledged and self.is_active():
+                    # The kernel is alive but still inside the cell: SIGINT
+                    # could not break it (a C extension, an uninterruptible
+                    # syscall, or a thread holding the GIL). Mark it so the
+                    # manager replaces the process instead of letting every
+                    # later cell queue behind this one.
+                    self._wedged = True
+                    await stream("__STDOUT__", _WEDGED_NOTICE)
+                    stdout_parts, stdout_chars, stdout_capped = cap(
+                        stdout_parts, stdout_chars, _WEDGED_NOTICE, stdout_capped
+                    )
                 break
             try:
                 event = await self._next_event(timeout=0.1)
@@ -385,11 +429,13 @@ class IpythonKernel:
                 if not text:
                     continue
                 if etype == "stdout":
+                    stdout_full.append(text)
                     stdout_parts, stdout_chars, stdout_capped = cap(
                         stdout_parts, stdout_chars, text, stdout_capped
                     )
                     await stream("__STDOUT__", text)
                 else:
+                    stderr_full.append(text)
                     stderr_parts, stderr_chars, stderr_capped = cap(
                         stderr_parts, stderr_chars, text, stderr_capped
                     )
@@ -449,7 +495,29 @@ class IpythonKernel:
             "\n".join(error_parts).strip(),
         ]
         output = "\n".join(section for section in sections if section)
+        # Decide before truncating: afterwards the length is within the cap and
+        # the fact that anything was lost is unrecoverable from the string.
+        output_capped = len(output.encode("utf-8", "replace")) > _OUTPUT_TRUNCATE_BYTES
+        full_output = output
         output = truncate_bytes(output, _OUTPUT_TRUNCATE_BYTES)
+        notes: list[str] = []
+        # A cap that drops the middle loses work the model cannot get back, so
+        # point it at a file instead. It already has ``read_file`` with
+        # offset/limit for paging through it.
+        if stdout_capped:
+            notes.append(_spill_note("stdout", "".join(stdout_full)))
+        if stderr_capped:
+            notes.append(_spill_note("stderr", "".join(stderr_full)))
+        if output_capped:
+            # Spill the whole thing: the truncated copy is exactly the part the
+            # model already has.
+            path = spill_text(full_output)
+            if path is not None:
+                notes.append(
+                    f"[Full cell output: {path} (read it with read_file(path, offset, limit))]"
+                )
+        if notes:
+            output = f"{output}\n\n" + "\n".join(notes)
         if errored:
             return (output, True)
         if timed_out:
@@ -471,6 +539,14 @@ class IpythonKernel:
 
     def is_active(self) -> bool:
         return self._process is not None and self._process.returncode is None
+
+    def is_wedged(self) -> bool:
+        """Whether a cell is stuck past its abort grace with the kernel alive.
+
+        Terminal for this process: it is blocked mid-cell, so the namespace is
+        unreachable and every later request would queue behind the stuck one.
+        """
+        return self._wedged
 
     async def close(self) -> None:
         self._closed = True
@@ -533,7 +609,12 @@ class KernelPool:
         """Return a kernel to the pool."""
         async with self._lock:
             kernel = self._in_use.pop(session_id, None)
-            if kernel is not None and kernel.is_active() and len(self._kernels) < self.pool_size:
+            if (
+                kernel is not None
+                and not kernel.is_wedged()
+                and kernel.is_active()
+                and len(self._kernels) < self.pool_size
+            ):
                 self._kernels.append(kernel)
             elif kernel is not None:
                 await kernel.close()
@@ -594,13 +675,17 @@ class IpythonManager:
         Returns ``(output, errored)`` — ``errored`` is ``True`` when the cell
         raised, timed out, or the kernel couldn't start.
         """
-        # Use a dedicated kernel for this session if we have one,
-        # otherwise check out from the pool.
-        if session_id not in self._session_kernels:
+        kernel = self._session_kernels.get(session_id)
+        if kernel is not None and kernel.is_wedged():
+            # The previous cell wedged the kernel: its serve loop is still
+            # blocked, so this one would queue behind it and time out the same
+            # way. Replace it, accepting the namespace loss, rather than
+            # poisoning every later cell in the session.
+            await self._drop_kernel(session_id)
+            kernel = None
+        if kernel is None:
             kernel = await self._pool.acquire(session_id)
             self._session_kernels[session_id] = kernel
-        else:
-            kernel = self._session_kernels[session_id]
 
         kernel.set_session(session_id, session_harness_dir(session_id, self.cwd))
         kernel.touch()
@@ -618,31 +703,41 @@ class IpythonManager:
                 await self._pool.release(session_id)
                 self._session_kernels.pop(session_id, None)
 
+    async def _drop_kernel(self, session_id: str) -> None:
+        """Close a session's kernel and forget every reference to it."""
+        kernel = self._session_kernels.pop(session_id, None)
+        if kernel is not None:
+            await kernel.close()
+        # A wedged or closed kernel is terminal; handing the same object out
+        # again would fail every later execute for this session.
+        await self._pool.release(session_id)
+
     async def _gc_loop(self) -> None:
         while True:
             await asyncio.sleep(self._gc_interval)
-            now = time.monotonic()
-            dead = [
-                sid
-                for sid, kernel in self._session_kernels.items()
-                if not kernel.is_active() or now - kernel._last_activity > _MAX_INACTIVITY_SECONDS
-            ]
-            for sid in dead:
-                kernel = self._session_kernels.pop(sid, None)
-                if kernel is not None:
-                    await kernel.close()
-                # Drop the pool checkout too: a closed kernel is terminal, and
-                # handing it out again would fail every later execute for it.
-                await self._pool.release(sid)
+            await self._gc_loop_once()
+
+    async def _gc_loop_once(self) -> None:
+        now = time.monotonic()
+        dead = [
+            sid
+            for sid, kernel in self._session_kernels.items()
+            if not kernel.is_active()
+            or kernel.is_wedged()
+            or now - kernel._last_activity > _MAX_INACTIVITY_SECONDS
+        ]
+        for sid in dead:
+            # Drop the pool checkout too: a closed or wedged kernel is
+            # terminal, and handing it out again would fail every later
+            # execute for it.
+            await self._drop_kernel(sid)
 
     def dispose(self, session_id: str) -> None:
-        kernel = self._session_kernels.pop(session_id, None)
-        if kernel is None:
+        if session_id not in self._session_kernels:
             return
 
         async def _close_and_release() -> None:
-            await kernel.close()
-            await self._pool.release(session_id)
+            await self._drop_kernel(session_id)
 
         task = asyncio.create_task(_close_and_release())
         self._background_tasks.add(task)

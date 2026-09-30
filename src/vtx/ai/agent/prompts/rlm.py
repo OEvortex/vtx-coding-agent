@@ -158,6 +158,8 @@ These names already exist in the REPL namespace — call them directly, do not i
 - `context` : the RLMContext object for this session (see above).
 - `In`, `Out`, `_i`, `_ii`, `_iii`, `_`, `__`, `___`, `_oh` : IPython-style execution history variables.
 
+These names are bound to the helpers and cannot be reassigned. A cell that rebinds or deletes one has it restored and is told which names were restored, because the namespace is the same dict for the life of the kernel: a shadowed `call_tool` would silently disarm the tool bridge for every later cell. Pick a different name for your own binding.
+
 The `rlm` object is not callable: calling it raises TypeError `'rlm' is not callable; spawn a child with: handle = await rlm.spawn('sub-task', name='worker')`. There is no blocking foreground spawn — `rlm.spawn` returns at admission and never the answer."""
 
 _GOALS_PROMPT = """# Goals

@@ -9,11 +9,16 @@ from __future__ import annotations
 import asyncio
 import contextlib
 import json
+import os
+import re
+import stat
 from typing import Any
+from unittest import mock
 
 import pytest
 
-from vtx.ai.agent.ipython_manager import IpythonKernel
+from vtx.ai.agent import ipython_manager
+from vtx.ai.agent.ipython_manager import IpythonKernel, IpythonManager, KernelPool
 from vtx.tui.ipython_block import TAG_DONE, TAG_ERROR, TAG_STDOUT
 
 
@@ -159,6 +164,236 @@ async def test_done_for_other_rid_is_ignored():
     assert output == "ours"
     assert errored is False
     assert delivered[-1] == TAG_DONE
+
+
+@pytest.mark.asyncio
+async def test_wedged_cell_is_reported_and_marks_the_kernel():
+    """A cell that ignores the interrupt wedges the kernel.
+
+    The kernel stays alive but its serve loop is still blocked on the cell, so
+    every later cell for the session would queue behind it and time out the
+    same way. The host must mark it and say plainly that the namespace is gone,
+    rather than reporting a plain timeout and leaving the session poisoned.
+    """
+    kernel = IpythonKernel(kernel_id="test", cwd=".")
+    kernel._process = _FakeProcess()  # type: ignore[assignment]
+    kernel._queue = asyncio.Queue()
+    written: list[bytes] = []
+    kernel._process.stdin.write = lambda data: written.append(data)  # type: ignore[method-assign]
+
+    delivered: list[str] = []
+    with (
+        mock.patch.object(ipython_manager, "_ABORT_GRACE_SECONDS", 0.05),
+        mock.patch.object(kernel, "_send", new=_recording_send(written)),
+    ):
+        # No events at all: the cell never finishes and never dies.
+        output, errored = await kernel._wait_output(
+            "rid", asyncio.Event(), on_output=stream_collector(delivered), timeout=0.05
+        )
+
+    assert errored is True
+    assert kernel.is_wedged() is True
+    assert "did not respond to the interrupt" in output
+    assert "restarted" in output
+    assert any("did not respond to the interrupt" in text for text in delivered)
+    # The interrupt was actually sent, otherwise the kernel was never asked.
+    assert any(json.loads(w.decode())["type"] == "interrupt" for w in written)
+
+
+@pytest.mark.asyncio
+async def test_interrupt_acknowledged_inside_grace_does_not_wedge():
+    """A cell that reports ``done`` within the grace period is not wedged.
+
+    SIGINT can be slow to land in a tight loop or a C call, so the grace window
+    is what separates "slow to stop" from "cannot be stopped". A cell that
+    reports inside the window must not cost the model its namespace.
+    """
+    kernel = IpythonKernel(kernel_id="test", cwd=".")
+    kernel._process = _FakeProcess()  # type: ignore[assignment]
+    kernel._queue = asyncio.Queue()
+
+    async def feed() -> None:
+        await asyncio.sleep(0.15)
+        await kernel._queue.put(json.dumps({"event": "done", "id": "rid", "status": "ok"}))
+        await kernel._queue.put(None)
+
+    feed_task = asyncio.create_task(feed())
+    try:
+        with (
+            mock.patch.object(ipython_manager, "_ABORT_GRACE_SECONDS", 1.0),
+            mock.patch.object(kernel, "_send", new=_recording_send([])),
+        ):
+            output, errored = await kernel._wait_output(
+                "rid", asyncio.Event(), on_output=None, timeout=0.05
+            )
+    finally:
+        feed_task.cancel()
+        with contextlib.suppress(asyncio.CancelledError, Exception):
+            await feed_task
+
+    assert errored is True  # the cell did time out
+    assert kernel.is_wedged() is False
+    assert "did not respond" not in output
+
+
+@pytest.mark.asyncio
+async def test_dead_kernel_on_timeout_is_not_reported_as_wedged():
+    """A kernel that died during the grace period needs no restart notice."""
+
+    class _DeadProcess:
+        stdin = None
+        returncode = 1
+
+    kernel = IpythonKernel(kernel_id="test", cwd=".")
+    kernel._queue = asyncio.Queue()
+    kernel._process = _DeadProcess()  # type: ignore[assignment]
+    with mock.patch.object(ipython_manager, "_ABORT_GRACE_SECONDS", 0.05):
+        output, _errored = await kernel._wait_output(
+            "rid", asyncio.Event(), on_output=None, timeout=0.05
+        )
+    assert kernel.is_wedged() is False
+    assert "did not respond" not in output
+
+
+@pytest.mark.asyncio
+async def test_oversized_output_spills_to_a_readable_file(monkeypatch):
+    """Truncation alone loses work; the full text must stay reachable."""
+    monkeypatch.setattr(ipython_manager, "_OUTPUT_TRUNCATE_BYTES", 200)
+    body = "x" * 5000
+    events = [
+        {"event": "stdout", "id": "cell-1", "text": body},
+        {"event": "done", "id": "rid", "status": "ok"},
+    ]
+    (output, errored), _ = await _run_with_delivery(events)
+    assert errored is False
+    assert len(output) < len(body) + 400  # truncated, not passed through whole
+    match = re.search(r"\[Full cell output: (\S+) \(read it with", output)
+    assert match, output
+    path = match.group(1)
+    try:
+        assert os.path.exists(path)
+        assert open(path, encoding="utf-8").read() == body
+        assert stat.S_IMODE(os.stat(path).st_mode) == 0o600
+    finally:
+        os.unlink(path)
+
+
+@pytest.mark.asyncio
+async def test_stream_cap_spills_the_full_stream(monkeypatch):
+    """A capped stream keeps its head, and the dropped tail lands in a file."""
+    monkeypatch.setattr(ipython_manager, "_MAX_STREAM_CHARS", 100)
+    body = "y" * 4000
+    events = [
+        {"event": "stdout", "id": "cell-1", "text": body},
+        {"event": "done", "id": "rid", "status": "ok"},
+    ]
+    (output, _errored), _ = await _run_with_delivery(events)
+    assert ipython_manager._STREAM_TRUNCATION_MARKER in output
+    match = re.search(r"\[Full stdout: (\S+) \(read it with", output)
+    assert match, output
+    path = match.group(1)
+    try:
+        assert open(path, encoding="utf-8").read() == body
+    finally:
+        os.unlink(path)
+
+
+@pytest.mark.asyncio
+async def test_short_output_is_not_spilled():
+    events = [
+        {"event": "stdout", "id": "cell-1", "text": "small\n"},
+        {"event": "done", "id": "rid", "status": "ok"},
+    ]
+    (output, _errored), _ = await _run_with_delivery(events)
+    assert output == "small"
+    assert "Full cell output" not in output
+    assert "Full stdout" not in output
+
+
+@pytest.mark.asyncio
+async def test_manager_replaces_a_wedged_kernel_instead_of_reusing_it():
+    """The wedge is terminal for the process, not for the session."""
+    manager = IpythonManager(cwd=".")
+    wedged = IpythonKernel(kernel_id="wedged", cwd=".")
+    wedged._wedged = True
+    closed: list[str] = []
+    wedged.close = _record_close(closed, "wedged")  # type: ignore[method-assign]
+
+    fresh = IpythonKernel(kernel_id="fresh", cwd=".")
+
+    async def fake_acquire(session_id: str) -> IpythonKernel:
+        return fresh
+
+    async def fake_execute(*args: Any, **kwargs: Any) -> tuple[str, bool]:
+        return ("ok", False)
+
+    manager._pool.acquire = fake_acquire  # type: ignore[method-assign]
+    manager._pool.release = _noop_release  # type: ignore[method-assign]
+    fresh.execute = fake_execute  # type: ignore[method-assign]
+    manager._session_kernels["sess"] = wedged
+
+    output, errored = await manager.execute("sess", "1")
+
+    assert (output, errored) == ("ok", False)
+    assert closed == ["wedged"], "the wedged process must be killed, not pooled"
+    assert manager._session_kernels["sess"] is fresh
+
+
+@pytest.mark.asyncio
+async def test_pool_refuses_to_recycle_a_wedged_kernel():
+    pool = KernelPool(cwd=".", pool_size=2)
+    wedged = IpythonKernel(kernel_id="wedged", cwd=".")
+    wedged._wedged = True
+    closed: list[str] = []
+    wedged.close = _record_close(closed, "wedged")  # type: ignore[method-assign]
+    pool._in_use["sess"] = wedged
+
+    await pool.release("sess")
+
+    assert closed == ["wedged"]
+    assert pool._kernels == []
+
+
+@pytest.mark.asyncio
+async def test_gc_collects_a_wedged_kernel():
+    manager = IpythonManager(cwd=".")
+    wedged = IpythonKernel(kernel_id="wedged", cwd=".")
+    wedged._wedged = True
+    closed: list[str] = []
+    wedged.close = _record_close(closed, "wedged")  # type: ignore[method-assign]
+    manager._session_kernels["sess"] = wedged
+    manager._pool.release = _noop_release  # type: ignore[method-assign]
+
+    await manager._gc_loop_once()
+
+    assert closed == ["wedged"]
+    assert "sess" not in manager._session_kernels
+
+
+def _record_close(into: list[str], name: str):
+    async def close() -> None:
+        into.append(name)
+
+    return close
+
+
+async def _noop_release(session_id: str) -> None:
+    return None
+
+
+def _recording_send(written: list[bytes]):
+    async def send(payload: dict[str, Any]) -> bool:
+        written.append(json.dumps(payload).encode("utf-8"))
+        return True
+
+    return send
+
+
+def stream_collector(into: list[str]):
+    async def on_output(text: str) -> None:
+        into.append(text)
+
+    return on_output
 
 
 @pytest.mark.asyncio

@@ -328,7 +328,15 @@ class Vtx(
             if info is None:
                 return False
             self._runtime.switch_model(info)
+            # switch_model may clamp the level; the bar renders the old value
+            # until it is re-read.
+            self._refresh_thinking_level_display()
             return True
+
+        def _extension_set_thinking_level(level: Any) -> None:
+            """Apply an extension's level change and re-read the display."""
+            self._runtime.set_thinking_level(str(level))
+            self._refresh_thinking_level_display()
 
         runner = self._loaded_extensions.runner
         assert runner is not None
@@ -347,7 +355,7 @@ class Vtx(
                 get_commands=lambda: {},
                 set_model=_extension_set_model,
                 get_thinking_level=lambda: self._runtime.thinking_level,
-                set_thinking_level=self._runtime.set_thinking_level,
+                set_thinking_level=_extension_set_thinking_level,
             ),
             context_actions=ExtensionContextActions(
                 get_model=lambda: self._runtime.model,

@@ -51,9 +51,14 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Literal, get_args
 
-from pydantic import BaseModel, Field, create_model
+from pydantic import BaseModel
 
 from vtx.ai.agent.tools.base import BaseTool
+from vtx.ai.agent.tools.schema import (
+    json_schema_to_pydantic,
+    json_type_to_python,
+    safe_class_name,
+)
 from vtx.core.paths import get_config_dir
 from vtx.core.types import ImageContent, TextContent, ToolResult
 
@@ -2219,96 +2224,24 @@ class ExtensionTool(BaseTool):
 # =============================================================================
 # JSON Schema -> pydantic
 # =============================================================================
+#
+# The implementation moved to ``vtx.ai.agent.tools.schema`` because MCP tools
+# need the same bridge: an MCP server ships a JSON Schema per tool in
+# ``tools/list``, and the agent loop's ``tool.params(**arguments)`` validation
+# path has to work for it exactly as it does for an extension tool. The private
+# aliases below stay so nothing inside this module has to change.
 
 
 def _json_schema_to_pydantic(tool_name: str, schema: dict[str, Any]) -> type[BaseModel]:
-    """Convert a JSON Schema for tool parameters into a pydantic ``BaseModel``.
-
-    We support the subset of JSON Schema that providers accept: ``type: object``
-    with ``properties`` and ``required``. Property types map to native Python /
-    pydantic types. Anything we don't understand is left as ``Any``, which
-    means a slightly looser contract but never blocks an extension.
-
-    Constraints like ``enum``, ``minLength``, ``pattern`` are preserved in
-    the generated model's JSON schema via ``Field(json_schema_extra=...)``
-    so they round-trip back to the LLM provider.
-    """
-    if schema.get("type") not in (None, "object"):
-        raise ValueError(
-            f"Extension tool {tool_name!r}: parameters.type must be "
-            f"'object' (got {schema.get('type')!r})"
-        )
-    properties: dict[str, Any] = schema.get("properties") or {}
-    required: set[str] = set(schema.get("required") or [])
-
-    fields: dict[str, Any] = {}
-    for prop_name, prop_schema in properties.items():
-        py_type = _json_type_to_python(prop_schema)
-        description = prop_schema.get("description") if isinstance(prop_schema, dict) else None
-        extra: dict[str, Any] = {}
-        if isinstance(prop_schema, dict):
-            for key in ("enum", "minLength", "maxLength", "minimum", "maximum", "pattern"):
-                if key in prop_schema:
-                    extra[key] = prop_schema[key]
-        field_kwargs: dict[str, Any] = {"description": description}
-        if extra:
-            field_kwargs["json_schema_extra"] = extra
-        if prop_name in required:
-            fields[prop_name] = (py_type, Field(..., **field_kwargs))
-        else:
-            fields[prop_name] = (py_type, Field(default=None, **field_kwargs))
-
-    if not fields:
-        # An empty schema would be ambiguous; default to a single optional
-        # ``input`` field so the LLM always has something concrete to send.
-        fields["input"] = (str | None, Field(default=None, description="Optional input"))
-
-    model_name = f"{_safe_class_name(tool_name)}_Params"
-    return create_model(model_name, **fields)  # type: ignore[call-overload]
+    return json_schema_to_pydantic(tool_name, schema)
 
 
 def _json_type_to_python(prop_schema: Any) -> Any:
-    """Map a single property's JSON Schema to a Python type annotation."""
-    if not isinstance(prop_schema, dict):
-        return Any
-
-    json_type = prop_schema.get("type")
-
-    if isinstance(json_type, list):
-        # Nullable unions ("type": ["string", "null"]) -- pick the first non-null.
-        for t in json_type:
-            if t != "null":
-                json_type = t
-                break
-
-    if json_type == "string":
-        # We deliberately do not translate ``enum`` into a Python ``Literal``
-        # here: the type-checker cannot validate runtime enum values, and
-        # pydantic does not enforce them from JSON schema automatically.
-        # The enum constraint lives in the JSON schema we hand to the LLM
-        # provider, so most providers will reject invalid values upstream.
-        return str
-    if json_type == "integer":
-        return int
-    if json_type == "number":
-        return float
-    if json_type == "boolean":
-        return bool
-    if json_type == "array":
-        inner = _json_type_to_python(prop_schema.get("items") or {})
-        return list[inner]  # type: ignore[valid-type]
-    if json_type == "object":
-        return dict[str, Any]
-    if json_type == "null":
-        return None
-    return Any
+    return json_type_to_python(prop_schema)
 
 
 def _safe_class_name(tool_name: str) -> str:
-    cleaned = "".join(c if c.isalnum() else "_" for c in tool_name.title())
-    if cleaned and cleaned[0].isdigit():
-        cleaned = "T_" + cleaned
-    return cleaned or "Extension"
+    return safe_class_name(tool_name)
 
 
 # =============================================================================
@@ -2726,4 +2659,4 @@ def install_provider_bridge(bus: EventBus) -> None:
 
 
 # Suppress "imported but unused" for the typing-only imports above.
-_ = (get_args, ImageContent, TextContent, Field)
+_ = (get_args, ImageContent, TextContent)
