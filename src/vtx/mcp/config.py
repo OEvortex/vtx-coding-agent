@@ -274,6 +274,25 @@ def load_mcp_config(
     return LoadedMcpConfig(servers=list(servers.values()), errors=errors)
 
 
+def project_config_path(cwd: str | Path) -> Path:
+    return Path(cwd) / PROJECT_CONFIG_DIRNAME / MCP_CONFIG_FILENAME
+
+
+def inspect_project_config(cwd: str | Path) -> LoadedMcpConfig:
+    """Parse a project ``mcp.json`` *without* honoring it.
+
+    Trust is a decision about running code, so the file is parsed and validated
+    but never connected -- this exists so ``/mcp trust`` can show what trusting
+    would actually launch. That list is the whole point: a trust prompt that
+    says "trust this project?" without naming the commands is a prompt nobody
+    can answer.
+    """
+    servers: dict[str, McpServerConfig] = {}
+    errors: list[str] = []
+    _read_config_file(project_config_path(cwd), "project", servers, errors)
+    return LoadedMcpConfig(servers=list(servers.values()), errors=errors)
+
+
 def update_mcp_server_config(path: Path, name: str, patch: dict[str, Any]) -> None:
     """Apply ``patch`` to one server in ``mcp.json``, creating the file if needed.
 

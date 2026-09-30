@@ -5,7 +5,7 @@ import os
 import sys
 from collections.abc import AsyncIterator
 from pathlib import Path
-from typing import TYPE_CHECKING, TextIO
+from typing import TYPE_CHECKING, Any, TextIO
 
 import vtx.coding_agent.tools  # noqa: F401
 from vtx.ai.config import (
@@ -93,6 +93,32 @@ def truncate(text: str, width: int = 100) -> str:
     if len(text) <= width:
         return text
     return text[: width - 1] + "…"
+
+
+def _apply_project_trust(runtime: Any) -> None:
+    """Honor a project ``mcp.json`` only if it was trusted by hand before.
+
+    A headless run has no way to ask, so it never asks: it reads the same trust
+    store the TUI does. An untrusted project file produces one line on stderr
+    rather than silence, so its absence is not mistaken for "nothing to run".
+    """
+    from vtx.mcp.config import project_config_path
+    from vtx.mcp.trust import ProjectTrustStore
+
+    try:
+        trusted = ProjectTrustStore().is_trusted(runtime.cwd)
+    except OSError as exc:
+        print(f"warning: MCP project trust: {exc}", file=sys.stderr)
+        return
+    if trusted:
+        runtime.set_project_trusted(True)
+        return
+    if project_config_path(runtime.cwd).is_file():
+        print(
+            "warning: this project has a .vtx/mcp.json but is not trusted, so its "
+            "MCP servers were not started",
+            file=sys.stderr,
+        )
 
 
 async def run_headless(
@@ -223,6 +249,7 @@ async def run_headless(
         # tools are in the first request rather than arriving mid-turn. The
         # wait is bounded inside the manager, and a failure is reported on
         # stderr rather than raised: a broken server must not fail a run.
+        _apply_project_trust(runtime)
         try:
             mcp_tools = await runtime.connect_mcp()
         except Exception as exc:

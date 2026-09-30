@@ -286,6 +286,21 @@ class StreamableHttpTransport(TransportEvents):
                         fetch=self._get_client(),
                     )
                 )
+            except McpAuthRequiredError:
+                raise
+            except Exception as exc:
+                # Whatever went wrong inside the provider -- discovery refused
+                # the connection, the flow raised, the store was unreadable --
+                # the situation the caller is in is identical: this request
+                # could not be authenticated and a human has to act. Leaking
+                # the provider's own exception would report it as a server
+                # failure instead, which is the wrong thing to go and debug.
+                # The cause is kept, because *why* sign-in cannot proceed
+                # automatically is exactly what the user needs to know.
+                raise McpAuthRequiredError(
+                    response.headers.get("www-authenticate"),
+                    f"could not authenticate unattended: {exc}",
+                ) from exc
             finally:
                 with contextlib.suppress(Exception):
                     await response.aclose()

@@ -82,6 +82,31 @@ class StartupMixin:
             self._fd_path = paths["fd"]
             self.query_one("#input-box", InputBox).set_fd_path(self._fd_path)
 
+    def _apply_mcp_project_trust(self) -> None:
+        """Let a previously trusted project's ``.vtx/mcp.json`` take effect.
+
+        Only a decision the user already made by hand is honored here. A
+        project that has never been trusted stays untrusted, and ``/mcp`` says
+        so rather than the file being silently ignored.
+        """
+        from vtx.mcp.config import project_config_path
+        from vtx.mcp.trust import ProjectTrustStore
+
+        try:
+            trusted = ProjectTrustStore().is_trusted(self._runtime.cwd)
+        except OSError as exc:
+            self._add_launch_warning(f"MCP project trust: {exc}", severity="warning")
+            return
+        if trusted:
+            self._runtime.set_project_trusted(True)
+            return
+        if project_config_path(self._runtime.cwd).is_file():
+            self._add_launch_warning(
+                "This project has a .vtx/mcp.json but is not trusted, so its servers "
+                "were not started. Run /mcp trust to see what it would launch.",
+                severity="warning",
+            )
+
     async def _connect_mcp(self) -> None:
         """Connect the configured MCP servers and fold in their tools.
 
@@ -90,6 +115,7 @@ class StartupMixin:
         the user needs to know *which* one failed and why. ``/mcp`` shows the
         same state on demand.
         """
+        self._apply_mcp_project_trust()
         try:
             tools = await self._runtime.connect_mcp()
         except Exception as exc:
@@ -103,7 +129,9 @@ class StartupMixin:
             if status.state == "failed":
                 self._add_launch_warning(f"MCP server {status.name!r}: {status.error or 'failed'}")
             elif status.state == "needs-auth":
-                self._add_launch_warning(f"MCP server {status.name!r} needs sign-in; run /mcp")
+                self._add_launch_warning(
+                    f"MCP server {status.name!r} needs sign-in; run /mcp signin"
+                )
 
         if tools:
             # The session header lists the tool surface, so a tool that arrived

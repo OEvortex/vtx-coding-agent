@@ -42,6 +42,9 @@ log = logging.getLogger("mcp.manager")
 DEFAULT_STARTUP_WAIT_SECONDS = 10.0
 CLIENT_NAME = "vtx"
 
+# Sentinel for "no auth provider was supplied", distinct from an explicit None.
+_UNSET: Any = object()
+
 
 @dataclass
 class McpServerStatus:
@@ -54,13 +57,15 @@ class McpServerStatus:
     instructions: str | None = None
     source: str = ""
     scope: str = "global"
+    authorization_url: str | None = None
+    """The authorize URL a sign-in needs the user to open, if one was reached."""
 
     def describe(self) -> str:
         if self.state == "connected":
             plural = "s" if self.tool_count != 1 else ""
             return f"connected ({self.tool_count} tool{plural})"
         if self.state == "needs-auth":
-            return "needs sign-in"
+            return f"needs sign-in: {self.error}" if self.error else "needs sign-in"
         if self.error:
             return f"{self.state}: {self.error}"
         return self.state
@@ -80,9 +85,21 @@ class McpServerConnection:
     """
 
     def __init__(
-        self, config: McpServerConfig, *, roots: list[Root] | None = None, on_change: Any = None
+        self,
+        config: McpServerConfig,
+        *,
+        roots: list[Root] | None = None,
+        on_change: Any = None,
+        oauth_provider_factory: Any = None,
+        auth_provider: Any = _UNSET,
+        oauth_redirect_handler: Any = None,
     ) -> None:
         self.config = config
+        self._oauth_provider_factory = oauth_provider_factory
+        # _UNSET rather than None, so an explicit None can mean "no provider"
+        # and be told apart from "not decided yet".
+        self._auth_provider_override = auth_provider
+        self._oauth_redirect_handler = oauth_redirect_handler
         self.status = McpServerStatus(
             name=config.name,
             state="disabled" if not config.enabled else "connecting",
@@ -112,9 +129,68 @@ class McpServerConnection:
             )
         return StreamableHttpTransport(
             StreamableHttpTransportOptions(
-                url=self.config.url or "", headers=self.config.resolved_headers()
+                url=self.config.url or "",
+                headers=self.config.resolved_headers(),
+                # Present for every remote server, not only configured ones: a
+                # stored token is what stops the first call 401-ing, and without
+                # a provider the transport has no way to send one at all.
+                auth_provider=self._auth_provider(),
             )
         )
+
+    def _auth_provider(self):
+        """The bearer-token provider for this server, or ``None``.
+
+        Only remote servers get one. A stdio server is a local process vtx
+        already controls, with no authorization server to talk to.
+        """
+        if self._auth_provider_override is not _UNSET:
+            return self._auth_provider_override
+        if self.config.is_stdio or not self.config.url:
+            return None
+        from .oauth import adapt_oauth_provider
+
+        return adapt_oauth_provider(self.oauth_provider())
+
+    def oauth_provider(self, redirect_url: str = ""):
+        """A credential store for this server, sharing the manager's state.
+
+        Built fresh each call rather than cached: ``redirect_url`` is only known
+        once a callback listener is bound, and the underlying store is what has
+        to be shared, not the provider object.
+        """
+        from .oauth import FileOAuthStateStore, McpOAuthProvider, OAuthClientMetadata
+
+        if self._oauth_provider_factory is not None:
+            return self._oauth_provider_factory(self.config, redirect_url)
+        settings = self.config.oauth
+        return McpOAuthProvider(
+            server_url=self.config.url or "",
+            redirect_url=redirect_url,
+            client_metadata=OAuthClientMetadata(
+                redirect_uris=[redirect_url] if redirect_url else [],
+                client_name=CLIENT_NAME,
+                software_id="vtx",
+                software_version=VERSION,
+                token_endpoint_auth_method=(
+                    "client_secret_post" if settings and settings.client_secret else "none"
+                ),
+            ),
+            store=FileOAuthStateStore(),
+            on_redirect=self._on_oauth_redirect,
+        )
+
+    async def _on_oauth_redirect(self, url: str) -> None:
+        """Hand the authorize URL to whoever is driving the sign-in.
+
+        With no listener installed the URL is only recorded on the status, so a
+        headless run reports the link rather than failing opaquely.
+        """
+        self.status.authorization_url = url
+        if self._oauth_redirect_handler is not None:
+            result = self._oauth_redirect_handler(url)
+            if asyncio.iscoroutine(result):
+                await result
 
     def _client_options(self) -> McpClientOptions:
         return McpClientOptions(
@@ -154,9 +230,11 @@ class McpServerConnection:
         try:
             await client.connect(transport)
         except McpAuthRequiredError as exc:
-            # A state the user can act on, not a failure to report.
+            # A state the user can act on, not a failure to report. The reason
+            # is kept because "needs sign-in" and "needs sign-in, but discovery
+            # is unreachable" call for different things.
             self.status.state = "needs-auth"
-            self.status.error = None
+            self.status.error = exc.body or None
             await self._safe_close(client)
             raise McpConnectionClosedError(
                 f'MCP server "{self.config.name}" requires sign-in'
@@ -192,6 +270,72 @@ class McpServerConnection:
             log.debug("MCP %s did not connect: %s", self.config.name, exc)
             return
         await self.reload_definitions(client)
+
+    async def sign_in(self, open_url: Any = None) -> bool:
+        """Run the OAuth flow for this server. Returns True if tokens were stored.
+
+        Binds a loopback listener, sends the user to the authorize URL, waits
+        for the redirect, and exchanges the code. A server that already has a
+        usable refresh token short-circuits: there is no reason to ask a human
+        to click through a browser for a grant we can renew.
+        """
+        if self.config.is_stdio or not self.config.url:
+            self.status.state = "needs-auth"
+            self.status.error = "sign-in applies to remote servers only"
+            return False
+
+        from .oauth import OAuthCallbackServer, OAuthFlowOptions, authorize_mcp
+
+        settings = self.config.oauth
+        callback = await OAuthCallbackServer.listen(
+            port=settings.callback_port if settings and settings.callback_port else 0
+        )
+        try:
+            # The transport builds its provider from the same factory, so the
+            # tokens written here are the ones it will send.
+            provider = self.oauth_provider(redirect_url=callback.redirect_url)
+            # Scope comes from config when the user set one; otherwise the
+            # server's advertised scopes are requested.
+            scope = settings.scope if settings and settings.scope else None
+
+            state = await provider.state()
+            waiting = asyncio.ensure_future(callback.wait_for_callback(state))
+            try:
+                result = await authorize_mcp(
+                    provider, OAuthFlowOptions(server_url=self.config.url, scope=scope)
+                )
+                if result == "AUTHORIZED":
+                    self.status.state = "connected"
+                    self.status.error = None
+                    self.status.authorization_url = None
+                    return True
+
+                # A redirect is outstanding; the browser has to complete it.
+                got = await waiting
+                await authorize_mcp(
+                    provider,
+                    OAuthFlowOptions(
+                        server_url=self.config.url, authorization_code=got.code, scope=scope
+                    ),
+                )
+            finally:
+                waiting.cancel()
+                with contextlib.suppress(BaseException):
+                    await waiting
+
+            # authorization_url is left in place on purpose: a headless run
+            # has no browser and reads the link back out of the status, so
+            # clearing it here would lose the one artefact that helps.
+            self.status.state = "connected"
+            self.status.error = None
+            return True
+        except Exception as exc:
+            self.status.state = "needs-auth"
+            self.status.error = str(exc) or exc.__class__.__name__
+            log.debug("MCP %s sign-in failed: %s", self.config.name, exc)
+            return False
+        finally:
+            await callback.close()
 
     async def reconnect(self) -> None:
         """Tear the connection down and build a fresh one.
@@ -320,7 +464,9 @@ class McpManager:
         project_trusted: bool = False,
         config_dir: Path | None = None,
         startup_wait_seconds: float = DEFAULT_STARTUP_WAIT_SECONDS,
+        oauth_provider_factory: Any = None,
     ) -> None:
+        self._oauth_provider_factory = oauth_provider_factory
         self.cwd = cwd
         self.startup_wait_seconds = startup_wait_seconds
         # Kept so reload() re-reads the same files this manager was built from;
@@ -341,7 +487,10 @@ class McpManager:
     def _build_servers(self, config: LoadedMcpConfig) -> None:
         for server_config in config.servers:
             self.servers[server_config.name] = McpServerConnection(
-                server_config, roots=self.roots, on_change=self._server_changed
+                server_config,
+                roots=self.roots,
+                on_change=self._server_changed,
+                oauth_provider_factory=self._oauth_provider_for,
             )
 
     # ---- lifecycle --------------------------------------------------------
@@ -409,6 +558,19 @@ class McpManager:
             for tool in connection.build_tools(taken.__contains__):
                 taken.add(tool.name)
             tools.extend(connection.tools)
+
+        # The three session-level resource tools, so a server's resources are
+        # reachable rather than merely listable by code. Their names are fixed
+        # and could collide with a built-in or a server tool, so they go through
+        # the same taken-set rather than being assumed unique.
+        from .resources import create_mcp_resource_tools
+
+        for tool in create_mcp_resource_tools(self):
+            if tool.name in taken:
+                log.warning("MCP resource tool %s collides with an existing tool", tool.name)
+                continue
+            taken.add(tool.name)
+            tools.append(tool)
         return tools
 
     def all_tools(self) -> list[BaseTool]:
@@ -419,6 +581,37 @@ class McpManager:
 
     def get(self, name: str) -> McpServerConnection | None:
         return self.servers.get(name)
+
+    def _oauth_provider_for(self, config: McpServerConfig, redirect_url: str = ""):
+        """The credential store for a server, honouring a caller-injected one.
+
+        Takes the redirect URL for the same reason the connection's own factory
+        does: it is only known once a loopback listener is bound, and a provider
+        built without it cannot complete a flow.
+        """
+        factory = self._oauth_provider_factory
+        if factory is not None:
+            return factory(config, redirect_url)
+        from .oauth import FileOAuthStateStore, McpOAuthProvider, OAuthClientMetadata
+
+        return McpOAuthProvider(
+            server_url=config.url or "",
+            redirect_url=redirect_url,
+            client_metadata=OAuthClientMetadata(
+                redirect_uris=[redirect_url] if redirect_url else [], client_name=CLIENT_NAME
+            ),
+            store=FileOAuthStateStore(),
+        )
+
+    async def sign_in(self, name: str, open_url: Any = None) -> bool:
+        """Sign in to one server and reconnect it. See the connection method."""
+        connection = self.get(name)
+        if connection is None:
+            return False
+        signed_in = await connection.sign_in(open_url=open_url)
+        if signed_in:
+            await connection.reconnect()
+        return signed_in
 
     # ---- change notification ---------------------------------------------
 

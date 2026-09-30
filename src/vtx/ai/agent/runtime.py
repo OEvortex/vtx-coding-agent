@@ -553,9 +553,26 @@ class ConversationRuntime:
 
         A project MCP server is a command vtx would execute. Reading one out of
         a repository the user merely opened would mean running code they did
-        not ask to run, so this stays False until something decides otherwise.
+        not ask to run, so this is False until a person grants trust -- see
+        :mod:`vtx.mcp.trust`.
         """
         self._project_trusted = trusted
+
+    @property
+    def project_trusted(self) -> bool:
+        return self._project_trusted
+
+    async def apply_project_trust(self, trusted: bool) -> list[BaseTool]:
+        """Set trust and rebuild the servers, so it takes effect now.
+
+        A separate method from :meth:`set_project_trusted` because granting
+        trust is useless if the already-built manager keeps its untrusted
+        configuration until the next restart.
+        """
+        self._project_trusted = trusted
+        if self._mcp_manager is None:
+            return []
+        return await self.reload_mcp()
 
     # ---- MCP -------------------------------------------------------------
 
