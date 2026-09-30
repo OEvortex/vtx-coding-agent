@@ -693,14 +693,21 @@ class InputBox(Vertical):
             textarea.action_cursor_line_end()
 
     def action_tab_complete(self) -> None:
-        """Handle Tab key for path completion."""
+        """Tab accepts the highlighted completion, or falls back to path completion.
+
+        Tab used to only move the highlight, so the slash/at dropdowns could be
+        accepted with Enter but not Tab — the key every other shell uses to
+        accept a completion. Enter keeps submitting the message.
+        """
+        if self._is_completing:
+            self.post_message(self.CompletionSelect())
+            return
         self.run_worker(self._do_tab_complete())
 
     async def _do_tab_complete(self) -> None:
-        """Perform tab completion asynchronously."""
-        # If already completing, treat Tab as moving down in the list
+        """Perform path completion asynchronously."""
         if self._is_completing:
-            self.post_message(self.CompletionMove(1))
+            self.post_message(self.CompletionSelect())
             return
 
         textarea = self.query_one("#input-textarea", TextArea)

@@ -369,7 +369,56 @@ def _parse_json_candidate(candidate: str) -> Any:
     except json.JSONDecodeError as error:
         if _is_incomplete_json(candidate):
             raise ValueError(TRUNCATED_JSON_ERROR) from error
+        # Balanced-but-malformed: an invalid escape (`\w`, a bare backslash in a
+        # regex or Windows path), a stray comma, single quotes. json-repair is
+        # already a declared dependency and fixes these without guessing, so the
+        # refiner is not defeated by a formatting slip.
+        try:
+            from json_repair import repair_json
+
+            repaired = repair_json(candidate, return_objects=True)
+        except Exception:  # repair is best-effort; a failure here is not fatal
+            repaired = None
+        # Only a dict: the refiner always asks for an object, and accepting a
+        # repaired list would let prose like "the set {a,b}" pass as a proposal.
+        if isinstance(repaired, dict):
+            return repaired
         raise ValueError(f"the model did not return valid JSON: {error.msg}") from error
+
+
+def _first_balanced_object(text: str) -> str | None:
+    """Return the first balanced ``{...}`` span, respecting strings and escapes.
+
+    Slicing from the first ``{`` to the last ``}`` spans the whole reply, so a
+    model that wrote prose containing a brace (or two objects) produced a
+    candidate that was never valid JSON. Scanning for the first *balanced* span
+    is the difference between "no JSON here" and "JSON after the chatter".
+    """
+    start = -1
+    depth = 0
+    in_string = False
+    escaped = False
+    for index, char in enumerate(text):
+        if escaped:
+            escaped = False
+            continue
+        if in_string:
+            if char == "\\":
+                escaped = True
+            elif char == '"':
+                in_string = False
+            continue
+        if char == '"' and depth > 0:
+            in_string = True
+        elif char == "{":
+            if depth == 0:
+                start = index
+            depth += 1
+        elif char == "}" and depth > 0:
+            depth -= 1
+            if depth == 0:
+                return text[start : index + 1]
+    return None
 
 
 def extract_json_object(text: str) -> Any:
@@ -379,6 +428,18 @@ def extract_json_object(text: str) -> Any:
     fenced = re.search(r"```(?:json)?\s*([\s\S]*?)```", trimmed)
     if fenced:
         return _parse_json_candidate(fenced.group(1).strip())
+    balanced = _first_balanced_object(trimmed)
+    if balanced is not None:
+        try:
+            return _parse_json_candidate(balanced)
+        except ValueError:
+            # The first balanced span was prose (e.g. "the set {a,b}"). Try the
+            # next one rather than letting repair invent an object from it.
+            rest = trimmed[trimmed.find(balanced) + len(balanced) :]
+            nxt = _first_balanced_object(rest)
+            if nxt is not None:
+                return _parse_json_candidate(nxt)
+            raise
     start = trimmed.find("{")
     end = trimmed.rfind("}")
     if start != -1 and end > start:
