@@ -210,7 +210,9 @@ async def test_do_handoff_creates_link_entries_and_prefills_prompt(monkeypatch):
     async def _fake_handoff(messages, _provider_obj, system_prompt, query):
         return "Task: Implement phase two"
 
-    monkeypatch.setattr("vtx.coding_agent.runtime.generate_handoff_prompt", _fake_handoff)
+    # create_handoff lives on the harness runtime, which imports
+    # generate_handoff_prompt directly; coding_agent.runtime only re-exports it.
+    monkeypatch.setattr("vtx.ai.agent.runtime.generate_handoff_prompt", _fake_handoff)
 
     original_session = app._session
     assert original_session is not None

@@ -318,7 +318,7 @@ class _FakeProvider:
     def __init__(self, chunks):
         self._chunks = chunks
 
-    async def stream(self, messages, system_prompt=None, tools=None):
+    async def stream(self, messages, system_prompt=None, tools=None, thinking_level=None):
         return _FakeStream(self._chunks)
 
 
@@ -345,7 +345,7 @@ class TestGenerateSummaryProgress:
         provider = _FakeProvider(["ok"])
         captured: list[list] = []
 
-        async def stream(messages, system_prompt=None, tools=None):
+        async def stream(messages, system_prompt=None, tools=None, thinking_level=None):
             captured.append(list(messages))
             return _FakeStream(["ok"])
 

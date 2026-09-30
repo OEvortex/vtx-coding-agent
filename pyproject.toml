@@ -101,6 +101,7 @@ dev = [
  "pyright>=1.1.408",
  "pytest>=9.0.2",
  "pytest-asyncio>=1.3.0",
+ "pytest-cov>=6.0.0",
  "ruff>=0.15.8",
  "twine>=5.1.1",
 ]
@@ -129,7 +130,7 @@ select = [
 "src/vtx/tui/latex.py" = ["RUF001"]
 "src/vtx/coding_agent/prompts/identity.py" = ["E501"]
 "src/vtx/coding_agent/prompts/env.py" = ["E501"]
-"src/vtx/coding_agent/prompts/rlm.py" = ["E501"]
+"src/vtx/ai/agent/prompts/rlm.py" = ["E501"]
 "src/vtx/ai/agent/sdk/**/*.py" = ["N818"]
 # Ported Prime Agent runtime: keep upstream control flow (try/pass cleanup
 # sites), Win32 ctypes struct names, and the long-lived protocol fd open().

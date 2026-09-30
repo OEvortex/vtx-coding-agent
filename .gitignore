@@ -23,6 +23,10 @@ vtx-session-*
 .env
 .pytest_cache/
 .ruff_cache/
+.coverage
+.coverage.*
+htmlcov/
+Site/
 # One-off screenshots
 image.png
 model-merge/

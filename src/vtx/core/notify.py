@@ -24,10 +24,7 @@ def _platform() -> str:
 
 @cache
 def _sound_path(event: NotificationEvent) -> Path:
-    try:
-        return Path(str(resources.files("vtx.core.sounds").joinpath(_SOUND_FILES[event])))
-    except Exception:
-        return Path(str(resources.files("vtx.coding_agent.sounds").joinpath(_SOUND_FILES[event])))
+    return Path(str(resources.files("vtx.core.sounds").joinpath(_SOUND_FILES[event])))
 
 
 @cache

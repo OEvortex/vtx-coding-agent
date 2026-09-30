@@ -649,6 +649,8 @@ def formatted_skills(skills: list[Skill]) -> str:
         "command, its full content is already included in the user message, so you don't need",
         "to read the skill file again.",
         "",
+        *index_lines,
+        "",
         "<available_skills>",
         *skill_tags,
         "</available_skills>",

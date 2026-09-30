@@ -20,12 +20,12 @@ async def test_write(write_tool, text_file):
         WriteParams(path=str(text_file), content="line1\nline2\nline3")
     )
     assert tool_result.success
-    assert "Created" in tool_result.result
-    assert "+3" in tool_result.result
+    # New file: added lines only, nothing removed.
+    assert tool_result.result == "Diff · +3 -0"
 
     tool_result = await write_tool.execute(
         WriteParams(path=str(text_file), content="line1\nline2\nline3\nline4")
     )
     assert tool_result.success
-    assert "Overwrote" in tool_result.result
-    assert "+4" in tool_result.result
+    # Overwrite: the removed count reports the replaced file's previous size.
+    assert tool_result.result == "Diff · +4 -3"

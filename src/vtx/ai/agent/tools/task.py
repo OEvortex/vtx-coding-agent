@@ -274,6 +274,24 @@ def _make_progress_emitter(
     return _emit
 
 
+# Product layers register a replacement runner here instead of the harness
+# importing them. The old mechanism had each call site re-import
+# vtx.coding_agent.tools.task looking for a divergent _run_subagent, but that
+# module re-exports this very function, so the lookup could never differ and
+# the harness still held a back-edge to the product layer.
+_subagent_runner_override: Callable[..., Any] | None = None
+
+
+def set_subagent_runner(runner: Callable[..., Any] | None) -> None:
+    """Override the sub-agent runner (product layer or tests)."""
+    global _subagent_runner_override
+    _subagent_runner_override = runner
+
+
+def resolve_subagent_runner() -> Callable[..., Any]:
+    return _subagent_runner_override or _run_subagent
+
+
 async def _run_subagent(
     parent_ctx: DispatcherContext,
     spec: SubagentSpec,
@@ -341,15 +359,7 @@ async def _run_admitted_subagent(
 
     from vtx.ai import get_max_tokens
     from vtx.ai.agent.loop import Agent
-
-    try:
-        import vtx.coding_agent.runtime as _ca_runtime
-
-        create_provider = getattr(_ca_runtime, "create_provider", None)
-        if create_provider is None:
-            from vtx.ai.agent.runtime import create_provider
-    except Exception:
-        from vtx.ai.agent.runtime import create_provider
+    from vtx.ai.agent.runtime import create_provider
 
     tools = _build_subagent_tool_list(parent_ctx, spec)
     system_prompt = _build_subagent_system_prompt(parent_ctx, spec, tools)
@@ -535,18 +545,7 @@ class TaskTool(BaseTool[TaskParams]):
         spec = _resolve_subagent_spec(params.subagent_type, parent_ctx.agent_registry)
         progress_cb = parent_ctx.progress_callback
 
-        # Support backwards-compatible monkeypatching on vtx.coding_agent.tools.task
-        runner = _run_subagent
-        try:
-            import vtx.coding_agent.tools.task as _cat
-
-            if (
-                getattr(_cat, "_run_subagent", None) is not None
-                and _cat._run_subagent is not _run_subagent
-            ):
-                runner = _cat._run_subagent
-        except Exception:
-            pass
+        runner = resolve_subagent_runner()
 
         sub_result = await runner(
             parent_ctx=parent_ctx,
@@ -639,17 +638,7 @@ class TaskTool(BaseTool[TaskParams]):
             parent_session_id = parent_ctx.session.id
 
         async def _factory() -> Any:
-            runner = _run_subagent
-            try:
-                import vtx.coding_agent.tools.task as _cat
-
-                if (
-                    getattr(_cat, "_run_subagent", None) is not None
-                    and _cat._run_subagent is not _run_subagent
-                ):
-                    runner = _cat._run_subagent
-            except Exception:
-                pass
+            runner = resolve_subagent_runner()
 
             return await runner(
                 parent_ctx=parent_ctx,

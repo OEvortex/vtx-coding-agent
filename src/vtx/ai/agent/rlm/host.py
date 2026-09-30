@@ -141,19 +141,10 @@ def _parent_ctx() -> Any:
 
 
 def _load_runner() -> Callable[..., Awaitable[Any]]:
-    """Resolve the sub-agent runner (honours the coding_agent override)."""
+    """Resolve the sub-agent runner, honouring a registered override."""
     from vtx.ai.agent.tools import task as task_module
 
-    runner = task_module._run_subagent
-    try:
-        import vtx.coding_agent.tools.task as cat
-
-        override = getattr(cat, "_run_subagent", None)
-        if override is not None and override is not runner:
-            runner = override
-    except Exception:
-        pass
-    return runner
+    return task_module.resolve_subagent_runner()
 
 
 def _message_text(message: Any) -> str:

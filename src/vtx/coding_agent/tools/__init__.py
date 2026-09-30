@@ -98,8 +98,12 @@ def get_tools_with_extensions(
 ) -> list[BaseTool]:
     tools = get_tools(default_names)
     if extension_tools:
+        # Name-match replacement, mirroring vtx.ai.agent.tools: an extension may
+        # ship a tool whose name matches a built-in in order to override it.
+        ext_names = {t.name for t in extension_tools}
+        tools = [t for t in tools if t.name not in ext_names]
         for ext_tool in extension_tools:
-            if ext_tool.name not in [t.name for t in tools]:
+            if not any(t.name == ext_tool.name for t in tools):
                 tools.append(ext_tool)
     return tools
 

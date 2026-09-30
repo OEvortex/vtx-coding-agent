@@ -24,6 +24,8 @@ from vtx.ai.agent.tools.task import (
     _resolve_api_and_base_url,
     _resolve_subagent_spec,
     _run_subagent,
+    resolve_subagent_runner,
+    set_subagent_runner,
 )
 
 __all__ = [
@@ -46,4 +48,6 @@ __all__ = [
     "_resolve_subagent_spec",
     "_run_subagent",
     "get_scheduler",
+    "resolve_subagent_runner",
+    "set_subagent_runner",
 ]

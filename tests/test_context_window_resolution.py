@@ -39,7 +39,7 @@ def _runtime(tmp_path, monkeypatch, model: str, provider: str | None) -> Convers
 
 def test_prepare_for_run_applies_model_context_window(tmp_path, monkeypatch):
     monkeypatch.setattr(
-        "vtx.coding_agent.runtime.get_model",
+        "vtx.ai.agent.runtime.get_model",
         lambda model_id, provider=None: _model(model_id, provider or "kilo", 1_048_576),
     )
     runtime = _runtime(tmp_path, monkeypatch, "stealth/ox-alpha", "kilo")
@@ -63,8 +63,8 @@ def test_stale_provider_label_falls_back_to_catalog_wide_lookup(tmp_path, monkey
             return _model(model_id, "kilo", 1_048_576)
         return None
 
-    monkeypatch.setattr("vtx.coding_agent.runtime.get_model", fake_get_model)
-    monkeypatch.setattr("vtx.coding_agent.runtime.find_dynamic_model", fake_find_dynamic)
+    monkeypatch.setattr("vtx.ai.agent.runtime.get_model", fake_get_model)
+    monkeypatch.setattr("vtx.ai.agent.runtime.find_dynamic_model", fake_find_dynamic)
 
     runtime = _runtime(tmp_path, monkeypatch, "stealth/ox-alpha", "openai")
     runtime.initialize()
@@ -75,8 +75,8 @@ def test_stale_provider_label_falls_back_to_catalog_wide_lookup(tmp_path, monkey
 
 
 def test_unknown_model_falls_back_to_harness_default(tmp_path, monkeypatch):
-    monkeypatch.setattr("vtx.coding_agent.runtime.get_model", lambda *a, **k: None)
-    monkeypatch.setattr("vtx.coding_agent.runtime.find_dynamic_model", lambda *a, **k: None)
+    monkeypatch.setattr("vtx.ai.agent.runtime.get_model", lambda *a, **k: None)
+    monkeypatch.setattr("vtx.ai.agent.runtime.find_dynamic_model", lambda *a, **k: None)
 
     runtime = _runtime(tmp_path, monkeypatch, "totally-unknown", "nowhere")
     runtime.initialize()
@@ -93,9 +93,9 @@ def test_switch_model_updates_context_window_immediately(tmp_path, monkeypatch):
             return _model(model_id, provider or "openai", windows[model_id])
         return None
 
-    monkeypatch.setattr("vtx.coding_agent.runtime.get_model", fake_get_model)
+    monkeypatch.setattr("vtx.ai.agent.runtime.get_model", fake_get_model)
     monkeypatch.setattr(
-        "vtx.coding_agent.runtime.get_max_tokens", lambda model_id: None, raising=False
+        "vtx.ai.agent.runtime.get_max_tokens", lambda model_id: None, raising=False
     )
 
     runtime = _runtime(tmp_path, monkeypatch, "gpt-4o", "openai")
@@ -114,8 +114,8 @@ def test_switch_model_updates_context_window_immediately(tmp_path, monkeypatch):
 def test_initialize_keeps_requested_provider_label_when_model_unknown(tmp_path, monkeypatch):
     """An unknown model must NOT relabel the provider as the engine class
     name ("openai"); the user's requested label is preserved."""
-    monkeypatch.setattr("vtx.coding_agent.runtime.get_model", lambda *a, **k: None)
-    monkeypatch.setattr("vtx.coding_agent.runtime.find_dynamic_model", lambda *a, **k: None)
+    monkeypatch.setattr("vtx.ai.agent.runtime.get_model", lambda *a, **k: None)
+    monkeypatch.setattr("vtx.ai.agent.runtime.find_dynamic_model", lambda *a, **k: None)
 
     runtime = _runtime(tmp_path, monkeypatch, "stealth/ox-alpha", "kilo")
     runtime.initialize()
@@ -133,9 +133,9 @@ def test_initialize_heals_engine_class_name_provider_label(tmp_path, monkeypatch
             return real
         return None
 
-    monkeypatch.setattr("vtx.coding_agent.runtime.get_model", fake_get_model)
+    monkeypatch.setattr("vtx.ai.agent.runtime.get_model", fake_get_model)
     monkeypatch.setattr(
-        "vtx.coding_agent.runtime.find_dynamic_model",
+        "vtx.ai.agent.runtime.find_dynamic_model",
         lambda model_id, provider=None: real if provider is None else None,
     )
 

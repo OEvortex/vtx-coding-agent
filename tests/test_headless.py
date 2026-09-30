@@ -125,8 +125,10 @@ async def test_render_run_composition_stream_error():
 @pytest.mark.asyncio
 async def test_run_headless_prints_and_restores_permissions(monkeypatch, capsys):
     get_config().permissions.mode = "prompt"
+    # create_provider is called from the harness runtime; coding_agent.runtime
+    # only re-exports it, so patch the defining module.
     monkeypatch.setattr(
-        "vtx.coding_agent.runtime.create_provider",
+        "vtx.ai.agent.runtime.create_provider",
         lambda api_type, config: MockProvider(config, scenario="simple_text"),
     )
     code = await _run_headless("hi")
@@ -139,7 +141,7 @@ async def test_run_headless_prints_and_restores_permissions(monkeypatch, capsys)
 async def test_run_headless_sets_auto_during_run_and_restores(monkeypatch):
     get_config().permissions.mode = "prompt"
     monkeypatch.setattr(
-        "vtx.coding_agent.runtime.create_provider",
+        "vtx.ai.agent.runtime.create_provider",
         lambda api_type, config: MockProvider(config, scenario="simple_text"),
     )
 

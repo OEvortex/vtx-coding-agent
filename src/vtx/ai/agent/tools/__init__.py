@@ -168,8 +168,14 @@ def get_tools_with_extensions(
         if tool is not None and tool not in tools:
             tools.append(tool)
     if extension_tools:
+        # An extension may ship a tool whose name matches a built-in to replace
+        # it (ExtensionAPI.register_tool documents this as "or override a
+        # built-in"). Deduping on identity instead would silently keep the
+        # built-in and drop the extension. Replace in place so ordering holds.
+        ext_names = {t.name for t in extension_tools}
+        tools = [t for t in tools if t.name not in ext_names]
         for ext_tool in extension_tools:
-            if ext_tool not in tools:
+            if not any(t.name == ext_tool.name for t in tools):
                 tools.append(ext_tool)
     return tools
 

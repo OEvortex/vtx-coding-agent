@@ -209,6 +209,14 @@ class _FakeRunResult:
             self.stop_reason = StopReason.STOP
 
 
+@pytest.fixture(autouse=True)
+def _reset_subagent_runner():
+    """The runner override is module-global; clear it so one test's stub
+    cannot leak into the next."""
+    yield
+    _mod.set_subagent_runner(None)
+
+
 def _install_dispatcher_ctx() -> None:
     from vtx.ai.agent.dispatcher import DispatcherContext, set_context
 
@@ -254,7 +262,7 @@ class TestTaskToolExecute:
         async def _boom(*args, **kwargs):
             return _FakeRunResult(final_text="", error="upstream 500", transcript=["  → bash"])
 
-        monkeypatch.setattr(_mod, "_run_subagent", _boom)
+        _mod.set_subagent_runner(_boom)
 
         tool = TaskTool()
         result = asyncio.run(tool.execute(TaskParams(description="x", prompt="y")))
@@ -276,7 +284,7 @@ class TestTaskToolExecute:
                 session_id="abc12345",
             )
 
-        monkeypatch.setattr(_mod, "_run_subagent", _ok)
+        _mod.set_subagent_runner(_ok)
 
         tool = TaskTool()
         result = asyncio.run(
@@ -299,7 +307,7 @@ class TestTaskToolExecute:
         async def _ok(*args, **kwargs):
             return _FakeRunResult(final_text=huge, turns=1, session_id="s")
 
-        monkeypatch.setattr(_mod, "_run_subagent", _ok)
+        _mod.set_subagent_runner(_ok)
 
         tool = TaskTool()
         result = asyncio.run(tool.execute(TaskParams(description="x", prompt="y")))
@@ -322,7 +330,7 @@ class TestTaskToolExecute:
                 session_id="abc12345",
             )
 
-        monkeypatch.setattr(_mod, "_run_subagent", _ok)
+        _mod.set_subagent_runner(_ok)
 
         tool = TaskTool()
         result = asyncio.run(
@@ -348,7 +356,7 @@ class TestTaskToolExecute:
                 pc(tool_call_id, {"kind": "subagent_start", "subagent": "x"})
             return _FakeRunResult(final_text="done", turns=1, session_id="s")
 
-        monkeypatch.setattr(_mod, "_run_subagent", _ok)
+        _mod.set_subagent_runner(_ok)
         ctx = DispatcherContext(
             provider=_FakeProvider(),
             model="m",
@@ -423,8 +431,10 @@ class TestTaskToolExecute:
         monkeypatch.setattr(_mod, "_build_subagent_system_prompt", lambda *a, **kw: "system")
         monkeypatch.setattr(_mod, "_create_subagent_session", lambda *a, **kw: _StubSession())
         monkeypatch.setattr(_mod, "_resolve_api_and_base_url", lambda *a, **kw: ("openai", None))
+        # create_provider is called from the harness runtime; the
+        # coding_agent.runtime re-export is not what _run_subagent consults.
         monkeypatch.setattr(
-            "vtx.coding_agent.runtime.create_provider", lambda *a, **kw: _FakeProvider()
+            "vtx.ai.agent.runtime.create_provider", lambda *a, **kw: _FakeProvider()
         )
         monkeypatch.setattr("vtx.ai.agent.loop.Agent", lambda *a, **kw: _FakeSubAgent(*a, **kw))
 
