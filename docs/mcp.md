@@ -42,7 +42,7 @@ for another agent copies over unchanged:
 | `cwd` | stdio | Working directory. |
 | `url` | http | `http(s)` endpoint. Required, and mutually exclusive with `command`. |
 | `headers` | http | Extra request headers. `$VAR` / `${VAR}` are expanded. |
-| `oauth` | http | `clientId`, `clientSecret`, `callbackPort`, `scope` for servers without dynamic registration. |
+| `oauth` | http | `clientId`, `clientSecret`, `callbackPort`, `scope` — only needed without dynamic registration. |
 | `enabled` | both | `false` keeps the entry without connecting it, so it can be re-enabled later. |
 | `timeout` | both | Per-request timeout in seconds. Default `60`. Progress notifications reset it. |
 
@@ -54,8 +54,22 @@ as "needs sign-in" rather than crashing the session.
 
 A project MCP server is a command vtx would **execute**. Reading one out of a
 repository the user merely opened would mean running code they did not ask to
-run, so `<project>/.vtx/mcp.json` is ignored until the project is trusted. A
-global `~/.vtx/mcp.json` is always read, because the user wrote it themselves.
+run, so `<project>/.vtx/mcp.json` is ignored until you trust the project. A
+global `~/.vtx/mcp.json` is always read, because you wrote it yourself.
+
+`/mcp` says so when a project file exists but is not trusted, rather than
+leaving a checked-in `mcp.json` looking like it had no effect.
+
+`/mcp trust` needs two presses. The first lists every server the file defines
+and the exact command each one would run; the second grants trust. Trust here
+means "run these commands", so a prompt that does not name them is not a
+decision you can actually make. `/mcp untrust` revokes it.
+
+A decision is recorded per resolved project path in
+`~/.vtx/trusted-projects.json`, and applies to later sessions in that project
+only. Nothing grants it implicitly — not on first use, not because a file is
+small, and not from anything inside the project directory. A project cannot
+trust itself. If the store is unreadable, every project reads as untrusted.
 
 ## Commands
 
@@ -64,6 +78,10 @@ global `~/.vtx/mcp.json` is always read, because the user wrote it themselves.
 | `/mcp` | list every server, its state, and its tool count |
 | `/mcp reload` | re-read `mcp.json` and reconnect |
 | `/mcp reconnect <name>` | rebuild one server's connection |
+| `/mcp signin <name>` | authorize a remote server (opens a browser) |
+| `/mcp signout <name>` | discard that server's stored credentials |
+| `/mcp trust` | show what this project would run, then allow it |
+| `/mcp untrust` | stop reading this project's `mcp.json` |
 | `/mcp enable <name>` | enable a server and save it to its `mcp.json` |
 | `/mcp disable <name>` | disable a server and save it to its `mcp.json` |
 
@@ -102,6 +120,90 @@ content; audio and resource links become short text placeholders.
 
 **Cancellation.** `Esc` during a tool call cancels the request and tells the
 server to stop, using the same interrupt path as every other vtx tool.
+
+## Resources
+
+A server can also publish *resources* — files, schemas, application state —
+rather than tools. Three session-level tools make those reachable:
+
+| Tool | Does |
+| --- | --- |
+| `list_mcp_resources` | list resources, from one server or all of them |
+| `list_mcp_resource_templates` | list parameterized resources, such as file patterns |
+| `read_mcp_resource` | read one resource by server and URI |
+
+They appear only when at least one server is connected. The names are the ones
+models already know from other coding agents, and they take a `server` argument
+rather than existing per server, so three tools cover any number of servers.
+
+Listing with a `server` returns one page plus a `cursor` for the next; listing
+without one walks every page of every server and reports any server that failed
+under `errors` rather than hiding the ones that worked. MCP App user
+interfaces (`ui://` URIs and `profile=mcp-app` HTML) are filtered out — they are
+pages for a host to render, not content for a model.
+
+Reading gives text and images for a model to consume, and writes a binary
+resource to a private temp file and names the path.
+
+## Signing in to a remote server
+
+A remote server that answers `401` reports `needs-auth` and contributes no
+tools. `/mcp signin <name>` runs the full OAuth 2.1 authorization-code flow with
+PKCE:
+
+1. vtx discovers the authorization server from the protected-resource metadata
+   (RFC 9728) at `/.well-known/oauth-protected-resource`, falling back to the
+   server's own origin when it publishes none.
+2. It registers itself dynamically (RFC 7591) unless `oauth.clientId` is set.
+3. A loopback listener is bound and your browser is opened at the authorize URL.
+   The URL is always printed too — a browser is a convenience, the terminal is
+   the channel you can definitely read.
+4. The redirect is received, the code is exchanged, and the tokens are written
+   to `~/.vtx/mcp-auth.json` (mode 0600).
+
+Afterwards the transport sends the bearer token on every request and refreshes it
+transparently when a `401` comes back. A refresh token is used in preference to
+another browser round trip, so a second `/mcp signin` usually does not open a
+browser at all. Two `401`s arriving at once share one refresh, and a request
+whose token was already replaced is retried rather than refreshed again — with
+rotating refresh tokens, a second refresh would fail *and* discard the new
+grant.
+
+Credentials are per server URL. `~/.vtx/mcp-auth.json` holds every server's, and
+a provider will not read an entry belonging to a different URL.
+
+Some things are deliberately refused. Credentials are never sent to a
+non-HTTPS endpoint, except a loopback redirect URI (RFC 8252 §8.3). An issuer
+that does not match the one requested is a fatal error rather than something to
+work around, because sending a client secret to whatever answered would be the
+wrong outcome either way. A server that returns 401 but whose authorization
+metadata cannot be found still reports `needs-auth` — not `failed` — since
+signing in is still the thing to do.
+
+### Servers without dynamic registration
+
+Set these in the server's `mcp.json` entry:
+
+```json
+{
+  "mcpServers": {
+    "docs": {
+      "url": "https://example.com/mcp",
+      "oauth": {
+        "clientId": "…",
+        "clientSecret": "…",
+        "callbackPort": 8765,
+        "scope": "read write"
+      }
+    }
+  }
+}
+```
+
+`clientId` skips registration. `clientSecret` is sent with the token request;
+`token_endpoint_auth_method` picks how. `callbackPort` pins the loopback port,
+which a server with pre-registered redirect URIs usually requires. `scope`
+overrides the server's advertised scopes.
 
 ## Failure behaviour
 
@@ -146,5 +248,4 @@ Deliberately out of scope, matching the reference client this is modelled on:
 - acting as an MCP **server** — vtx is a client
 - server-initiated sampling and elicitation
 - MCP tasks
-- OAuth sign-in: a remote server that answers 401 reports `needs-auth`, but the
-  interactive authorization flow is not implemented
+- client-ID metadata documents as an alternative to dynamic registration
