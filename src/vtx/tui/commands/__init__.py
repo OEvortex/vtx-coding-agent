@@ -9,6 +9,7 @@
 - switch.py   - /switch
 - update.py   - /update
 - reload.py   - /reload
+- mcp.py      - /mcp
 """
 
 from __future__ import annotations
@@ -19,6 +20,7 @@ from .auth import AuthCommands
 from .base import CommandSupport
 from .goals import GoalCommands
 from .harness import HarnessCommands
+from .mcp import McpCommands
 from .models import ModelCommands
 from .providers import ProviderCommands
 from .reload import ReloadCommands
@@ -40,6 +42,7 @@ class CommandsMixin(
     GoalCommands,
     HarnessCommands,
     ReloadCommands,
+    McpCommands,
 ):
     def _handle_command(self, text: str) -> bool:
         parts = text[1:].split(maxsplit=1)
@@ -135,6 +138,9 @@ class CommandsMixin(
             return True
         if cmd == "reload":
             self._handle_reload_command(args)
+            return True
+        if cmd == "mcp":
+            self._handle_mcp_command(args)
             return True
 
         # Extension commands take a final swing at anything the built-ins

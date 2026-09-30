@@ -196,6 +196,27 @@ class McpServerConnection:
             return
         await self.reload_definitions(client)
 
+    async def reconnect(self) -> None:
+        """Tear the connection down and build a fresh one.
+
+        Resetting ``_closed`` is the point: after :meth:`close` a connection is
+        permanently shut down, so reconnecting has to be a way back rather than
+        a no-op.
+        """
+        await self.close()
+        self._closed = False
+        self.client = None
+        self.tools = []
+        self.definitions = []
+        self._dispose_tools_changed = None
+        self._opening = None
+        if not self.config.enabled:
+            self.status.state = "disabled"
+            return
+        self.status.state = "connecting"
+        self.status.error = None
+        await self.connect()
+
     async def reload_definitions(self, client: McpClient | None = None) -> list[McpToolDef]:
         """Re-list the server's tools.
 

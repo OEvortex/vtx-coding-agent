@@ -105,6 +105,32 @@ class CustomMessageEntry(EntryBase):
 REFINEMENT_NOTICE_CUSTOM_TYPE = "refinement_notice"
 
 
+class HarnessStateEntry(EntryBase):
+    """One session-scoped continual-harness write, replayed from the branch.
+
+    The harness used to be a single JSON file per session, which meant a revert
+    or a branch still showed the memories and skills written on the abandoned
+    path: the file is not in the session tree, so nothing rewinds it. Storing
+    harness writes as tree entries makes them obey the same branch semantics as
+    messages, which is what ``Session.get_branch()`` already implements.
+
+    ``set`` and ``delete`` are keyed by ``"<kind>:<entry id>"`` so a write is a
+    delta rather than a full snapshot: the branch can grow without each entry
+    re-shipping the whole store, and replay stays a fold over the entries in
+    order. ``global_`` writes are excluded by design — the global store is
+    cross-session by definition and has no branch to belong to.
+    """
+
+    type: Literal["harness_state"] = "harness_state"
+    set: dict[str, dict[str, Any]] = field(default_factory=dict)
+    delete: builtins.list[str] = field(default_factory=list)
+    refinements: builtins.list[dict[str, Any]] = field(default_factory=list)
+
+
+#: Custom entry type for a harness write, for hosts that prefer the generic path.
+HARNESS_STATE_CUSTOM_TYPE = "harness_state"
+
+
 class SessionInfoEntry(EntryBase):
     type: Literal["session_info"] = "session_info"
     name: str | None = None
@@ -137,6 +163,7 @@ SessionEntry = (
     | ModelChangeEntry
     | CompactionEntry
     | CustomMessageEntry
+    | HarnessStateEntry
     | SessionInfoEntry
     | LeafEntry
     | RuntimeCheckpointEntry
@@ -456,6 +483,50 @@ class Session:
         )
         self._append_entry(entry)
         return entry.id
+
+    def append_harness_state(
+        self,
+        set_entries: dict[str, dict[str, Any]],
+        delete_ids: builtins.list[str] | None = None,
+        refinements: builtins.list[dict[str, Any]] | None = None,
+    ) -> str:
+        """Record one session-scoped harness write on the current branch."""
+        entry = HarnessStateEntry(
+            id=self._generate_entry_id(),
+            parent_id=self._leaf_id,
+            timestamp=_now_iso(),
+            set=dict(set_entries),
+            delete=list(delete_ids or []),
+            refinements=list(refinements or []),
+        )
+        self._append_entry(entry)
+        return entry.id
+
+    def replay_harness_state(
+        self, leaf_id: str | None = None
+    ) -> tuple[dict[str, dict[str, Any]], builtins.list[dict[str, Any]]]:
+        """Fold the branch's harness entries into the current local state.
+
+        Returns ``(entries, refinements)`` where ``entries`` is keyed by
+        ``"<kind>:<id>"``. Later entries win, and a key present in both ``set``
+        and ``delete`` of the same entry is dropped, so a single write is
+        atomic regardless of field order.
+
+        Replaying the branch (rather than reading a file) is what makes a revert
+        show the state as of the reverted-to point: entries written after the
+        new leaf are not on the path and are never visited.
+        """
+        entries: dict[str, dict[str, Any]] = {}
+        refinements: list[dict[str, Any]] = []
+        for entry in self.get_branch(leaf_id):
+            if not isinstance(entry, HarnessStateEntry):
+                continue
+            for key, value in entry.set.items():
+                entries[key] = value
+            for key in entry.delete:
+                entries.pop(key, None)
+            refinements.extend(entry.refinements)
+        return entries, refinements
 
     def append_session_info(self, name: str) -> str:
         entry = SessionInfoEntry(
@@ -888,6 +959,8 @@ class Session:
                     entries.append(CompactionEntry.model_validate(data))
                 elif entry_type == "custom_message":
                     entries.append(CustomMessageEntry.model_validate(data))
+                elif entry_type == "harness_state":
+                    entries.append(HarnessStateEntry.model_validate(data))
                 elif entry_type == "session_info":
                     entries.append(SessionInfoEntry.model_validate(data))
                 elif entry_type == "leaf":

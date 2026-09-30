@@ -661,7 +661,86 @@ def formatted_skills(skills: list[Skill]) -> str:
     return "\n".join(lines)
 
 
-def formatted_skills_index(skills: list[Skill], *, max_desc_chars: int = 120) -> str:
+#: Characters per token when costing an index line. The same 4-chars-per-token
+#: estimate pi's codemode catalog uses; a rough estimate is enough to decide
+#: which lines fit, and being wrong only moves the cutoff by a few entries.
+CHARS_PER_TOKEN = 4
+
+#: Default ceiling for the RLM skills index, in estimated tokens. Sized to leave
+#: room for the rest of the code_first prompt: the index competes with the
+#: helper reference, the harness reference, and the bridge contract.
+DEFAULT_SKILLS_INDEX_BUDGET_TOKENS = 1200
+
+
+def _skill_index_line(skill: Skill, max_desc_chars: int) -> str:
+    desc = re.sub(r"\s+", " ", skill.description or "").strip()
+    if len(desc) > max_desc_chars:
+        desc = desc[: max_desc_chars - 3].rstrip() + "..."
+    if skill.kind == "python" and skill.python:
+        return f"- {skill.name} (python `{skill.python.import_name}`): {desc}"
+    return f"- {skill.name}: {desc}"
+
+
+def _select_skill_index_lines(
+    skills: list[Skill], max_desc_chars: int, budget_tokens: int | None
+) -> tuple[list[str], int]:
+    """Pick index lines that fit ``budget_tokens``, spread across categories.
+
+    Selection is round-robin over categories, cheapest line first within each.
+    A plain cheapest-first pass would fill the budget with one category's short
+    lines and drop every other category entirely, which is worse than useless:
+    the model then cannot tell that the omitted skills exist. Round-robin
+    guarantees each category is represented before any category is complete,
+    and a category whose next line does not fit drops out while the others
+    continue, so a single oversized category cannot starve the rest.
+
+    Returns ``(selected_lines, omitted_count)``.
+    """
+    groups: dict[str, list[tuple[str, int]]] = {}
+    for skill in skills:
+        line = _skill_index_line(skill, max_desc_chars)
+        cost = max(1, -(-len(line) // CHARS_PER_TOKEN))  # ceil
+        groups.setdefault(skill.category or DEFAULT_SKILL_CATEGORY, []).append((line, cost))
+
+    # Ungrouped first, then categories by name, so the ordering is stable and
+    # does not depend on dict insertion order from discovery.
+    ordered = sorted(groups.items(), key=lambda item: item[0])
+    if budget_tokens is None:
+        selected = [line for _, entries in ordered for line, _ in entries]
+        return selected, 0
+
+    queues = [sorted(entries, key=lambda entry: entry[1]) for _, entries in ordered]
+    remaining = budget_tokens
+    chosen: list[tuple[int, str]] = []
+    active = [index for index, queue in enumerate(queues) if queue]
+    while active:
+        placed = 0
+        still_active: list[int] = []
+        for index in active:
+            line, cost = queues[index][0]
+            if cost > remaining:
+                continue  # drop out; the other categories keep going
+            remaining -= cost
+            placed += 1
+            chosen.append((index, line))
+            queues[index].pop(0)
+            if queues[index]:
+                still_active.append(index)
+        if not placed:
+            # Nothing fit this round, so nothing will fit a later one either.
+            break
+        active = still_active
+
+    chosen.sort(key=lambda entry: entry[0])
+    return [line for _, line in chosen], sum(len(queue) for queue in queues)
+
+
+def formatted_skills_index(
+    skills: list[Skill],
+    *,
+    max_desc_chars: int = 120,
+    budget_tokens: int | None = DEFAULT_SKILLS_INDEX_BUDGET_TOKENS,
+) -> str:
     """Compact one-line-per-skill index for RLM mode.
 
     The full :func:`formatted_skills` catalog (~24k chars for a typical
@@ -670,24 +749,35 @@ def formatted_skills_index(skills: list[Skill], *, max_desc_chars: int = 120) ->
     model to read SKILL.md on demand, so a routing index is enough: the
     model reads the full file with ``read_file`` only for skills it will
     actually use.
-    """
-    skills = [skill for skill in skills if skill.include_in_prompt]
-    if not skills:
-        return ""
 
-    lines = [
+    The index is capped at ``budget_tokens`` estimated tokens, spread across
+    skill categories so a large category cannot crowd the others out of the
+    prompt entirely. Omitted skills stay reachable: they are named as omitted
+    and the model can find them on disk or with ``find_tools``-style discovery
+    over the skills directory.
+    """
+    listed = [skill for skill in skills if skill.include_in_prompt]
+    if not listed:
+        return ""
+    listed.sort(key=lambda skill: skill.name)
+
+    lines, omitted = _select_skill_index_lines(listed, max_desc_chars, budget_tokens)
+    if not lines:
+        # A budget too small for even one line must not produce an empty
+        # section, which would read as "no skills are available".
+        lines, omitted = _select_skill_index_lines(listed, max_desc_chars, None)
+
+    header = [
         "## Skills index",
         "",
         "One line per available skill. Read the SKILL.md at the listed location",
         "with `read_file` only for skills you will actually use — do not preload them.",
         "",
     ]
-    for skill in sorted(skills, key=lambda s: s.name):
-        desc = re.sub(r"\s+", " ", skill.description or "").strip()
-        if len(desc) > max_desc_chars:
-            desc = desc[: max_desc_chars - 3].rstrip() + "..."
-        if skill.kind == "python" and skill.python:
-            lines.append(f"- {skill.name} (python `{skill.python.import_name}`): {desc}")
-        else:
-            lines.append(f"- {skill.name}: {desc}")
-    return "\n".join(lines)
+    if omitted:
+        header.append(
+            f"({omitted} further skill(s) are installed but not listed here to save "
+            "context. Find them with `find_tools`, or list the skills directory.)"
+        )
+        header.append("")
+    return "\n".join([*header, *lines])

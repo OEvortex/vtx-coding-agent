@@ -453,4 +453,5 @@ DEFAULT_COMMANDS = [
     SlashCommand("agent", "list/switch handoff agents (Shift+Tab to cycle)"),
     SlashCommand("update", "check for and install latest vtx update"),
     SlashCommand("reload", "re-apply config, extensions, agents, tools, skills"),
+    SlashCommand("mcp", "list/manage MCP servers (/mcp, /mcp reload, /mcp enable <name>)"),
 ]

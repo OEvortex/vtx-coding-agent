@@ -137,9 +137,12 @@ async def test_an_expired_session_is_distinguished_from_a_plain_404(server):
 
     def handler(request: Request) -> Reply:
         if request.method == "POST":
-            posts["n"] += 1
-            if posts["n"] > 1:
+            # Checked before incrementing, so the third POST -- tools/list --
+            # is the one that 404s. Failing the second would break the
+            # notifications/initialized handshake instead.
+            if posts["n"] >= 2:
                 return Reply(status=404, json_body={"error": "gone"})
+            posts["n"] += 1
         return protocol_reply(request)
 
     _srv, url = server(handler)

@@ -70,7 +70,8 @@ _STOPWORDS = frozenset(
 #: ``read-file``, and ``readFile`` all yield their parts. Names are additionally
 #: indexed whole (see :func:`_terms`) so an exact tool name still ranks first.
 _TOKEN_RE = re.compile(r"[A-Za-z0-9]+")
-_CAMEL_RE = re.compile(r"(?<=[a-z0-9])(?=[A-Z])")
+#: Zero-width boundary before an uppercase letter, used to split camelCase.
+_CAMEL_RE = re.compile(r"(?<=[a-z0-9])([A-Z])")
 
 #: Field weights. The name is the strongest signal, but a description carrying
 #: the query's words is what disambiguates two similarly named tools.
@@ -100,23 +101,33 @@ def tool_document(tool: Any) -> ToolDocument:
     Accepts a ``BaseTool``, a ``ToolDefinition``, or anything exposing ``name``
     plus one of ``description`` / ``parameters`` / ``params``, so this works
     for built-ins, extension tools, and MCP tools without a per-source branch.
+    ``parameters`` wins when both are present: an explicit schema is the
+    already-resolved contract, while ``params`` needs a call to produce one.
     """
     name = str(getattr(tool, "name", "") or "")
     description = str(getattr(tool, "description", "") or "")
-    parameters = getattr(tool, "parameters", None)
-    if parameters is None:
-        params_model = getattr(tool, "params", None)
-        schema = getattr(params_model, "model_json_schema", None)
-        if callable(schema):
-            try:
-                parameters = schema()
-            except Exception:
-                parameters = None
-    if parameters is None:
-        parameters = {}
     return ToolDocument(
-        name=name, description=description, parameters=_parameter_names(parameters)
+        name=name, description=description, parameters=_parameter_names(_schema_of(tool))
     )
+
+
+def _schema_of(tool: Any) -> Any:
+    """The tool's input schema, from ``parameters`` or by calling ``params``."""
+    parameters = getattr(tool, "parameters", None)
+    if parameters is not None:
+        return parameters
+    params_model = getattr(tool, "params", None)
+    if params_model is None:
+        return {}
+    schema = getattr(params_model, "model_json_schema", None)
+    if not callable(schema):
+        return {}
+    try:
+        return schema() or {}
+    except Exception:
+        # A tool whose schema will not generate is still findable by name and
+        # description; dropping it entirely would make it undiscoverable.
+        return {}
 
 
 def _parameter_names(schema: Any) -> str:
@@ -129,6 +140,8 @@ def _parameter_names(schema: Any) -> str:
     """
     names: list[str] = []
     stack: list[Any] = [schema]
+    # Identity, not equality: a self-referential schema recurses forever under
+    # ``==``, and a shared sub-schema is legitimately visited once.
     seen: set[int] = set()
     while stack:
         node = stack.pop()
@@ -138,6 +151,10 @@ def _parameter_names(schema: Any) -> str:
         properties = node.get("properties")
         if isinstance(properties, dict):
             names.extend(str(key) for key in properties)
+            # Descend into each property, so a nested object's own field names
+            # are searchable: "the tool that takes a search term" has to reach a
+            # term nested one level down.
+            stack.extend(value for value in properties.values() if isinstance(value, dict))
         items = node.get("items")
         if isinstance(items, dict):
             stack.append(items)
@@ -151,20 +168,18 @@ def _parameter_names(schema: Any) -> str:
 def _terms(text: str) -> list[str]:
     """Lowercase token list for one field, including split and whole forms.
 
-    ``web_search`` yields ``web_search``, ``web``, ``search``. Keeping the whole
-    form is what makes an exact tool-name query rank that tool first; the parts
-    are what let a natural-language query reach it.
+    ``web_search`` and ``runBash`` both yield their whole form plus their parts.
+    Keeping the whole form is what makes an exact tool-name query rank that tool
+    first; the parts are what let a natural-language query reach it.
     """
-    lowered = text.lower()
+    # Split camelCase before lowercasing, so ``runBash`` contributes ``bash``
+    # rather than only the unmatchable ``runbash``.
+    split = _CAMEL_RE.sub(r"_\1", text)
     tokens: list[str] = []
-    for match in _TOKEN_RE.finditer(lowered):
+    for match in _TOKEN_RE.finditer(split.lower()):
         token = match.group(0)
         if len(token) > 1 and token not in _STOPWORDS:
             tokens.append(token)
-    for match in _CAMEL_RE.finditer(text):
-        part = match.group(0)
-        if len(part) > 1 and part.lower() not in _STOPWORDS:
-            tokens.append(part.lower())
     return tokens
 
 

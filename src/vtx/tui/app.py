@@ -633,6 +633,12 @@ class Vtx(
         # worker completes.
         self.run_worker(self._hook_bridge.load(), exclusive=False)
 
+        # Connect the configured MCP servers. The wait is bounded inside the
+        # manager and launched before the runtime initializes, so the tools are
+        # part of the first prompt instead of arriving mid-session. With no
+        # mcp.json this reads one absent file and returns immediately.
+        self.run_worker(self._connect_mcp(), exclusive=False)
+
         try:
             init_result = self._runtime.initialize(
                 resume_session=self._resume_session, continue_recent=self._continue_recent

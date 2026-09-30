@@ -238,9 +238,11 @@ class StreamableHttpTransport(TransportEvents):
         # End the session server-side so it can release per-session state,
         # then drop our streams and the client we own.
         if self._started and self._session_id and self._client is not None:
+            headers, _token = await self._headers()
             with contextlib.suppress(Exception):
                 await asyncio.wait_for(
-                    self._client.delete(self.url, headers=await self._headers()[0]), timeout=1.0
+                    self._client.delete(self.url, headers=headers),
+                    timeout=1.0,
                 )
         for response in list(self._open_streams):
             with contextlib.suppress(Exception):
@@ -438,6 +440,12 @@ class StreamableHttpTransport(TransportEvents):
             event_name = value
         elif field == "id" and "\0" not in value:
             event_id = value
+            if cursor is not None:
+                # Recorded as soon as the line is seen, not when the event is
+                # dispatched. A priming event carries an id and no data, and it
+                # exists precisely so a dropped stream can be resumed -- waiting
+                # for a dispatch would mean never learning the id at all.
+                cursor.last_event_id = value
         elif field == "retry" and value.isdigit():
             # A server-supplied reconnect delay overrides our backoff, so it is
             # read here rather than at the reconnect decision.

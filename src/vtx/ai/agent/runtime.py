@@ -172,6 +172,12 @@ class ConversationRuntime:
         self.api_key = api_key
         self.base_url = base_url
         self.tools = tools
+        # MCP tools are held apart from `tools` because they arrive after the
+        # tool set is built and must survive a reload. See `_sync_mcp_tools`.
+        self._mcp_tools: list[BaseTool] = []
+        self._mcp_tool_names: set[str] = set()
+        self._mcp_manager: Any = None
+        self._project_trusted = False
         self.openai_compat_auth_mode: AuthMode = openai_compat_auth_mode
         self.anthropic_compat_auth_mode: AuthMode = anthropic_compat_auth_mode
         self.extensions = extensions
@@ -180,6 +186,10 @@ class ConversationRuntime:
         # model behaves like Prime Agent: one persistent ipython, no
         # surgical tool surface.
         self.apply_mode_tool_policy()
+
+        # Re-apply MCP tools: the mode policy rebuilt the set from the built-in
+        # and extension pools, neither of which knows about them.
+        self._sync_mcp_tools()
 
         # Per-session extension list (the ones contributed to the active
         # agent, if any). The launch path is responsible for passing the
@@ -349,6 +359,9 @@ class ConversationRuntime:
         self.tools = new_tools
         if self.agent is not None:
             self.agent.tools = self.tools
+        # The filter rebuilt the set from the built-in and extension pools, so
+        # the MCP tools have to be merged back in.
+        self._sync_mcp_tools()
 
         # In RLM mode, collapse the active tool set to just the REPL so the
         # model behaves like Prime Agent: one persistent ipython, no
@@ -482,6 +495,17 @@ class ConversationRuntime:
             except Exception:
                 log.exception("Failed to reset background manager contextvar")
             self._background_manager_token = None
+        # A stdio MCP server is a child process holding a pipe. Closing the
+        # manager is the only thing that takes it down; leaking one orphans
+        # the process for as long as it decides to live.
+        if self._mcp_manager is not None:
+            try:
+                await self._mcp_manager.close()
+            except Exception:
+                log.exception("MCP manager close failed")
+            self._mcp_manager = None
+            self._mcp_tools = []
+            self._mcp_tool_names = set()
 
     def active_commands(self) -> dict:
         """The current slash-command dict (session + agent-local).
@@ -523,6 +547,95 @@ class ConversationRuntime:
             extra_instructions=extra,
             extra_instructions_mode=mode,
         )
+
+    def set_project_trusted(self, trusted: bool) -> None:
+        """Whether a project-local ``.vtx/mcp.json`` may be read.
+
+        A project MCP server is a command vtx would execute. Reading one out of
+        a repository the user merely opened would mean running code they did
+        not ask to run, so this stays False until something decides otherwise.
+        """
+        self._project_trusted = trusted
+
+    # ---- MCP -------------------------------------------------------------
+
+    @property
+    def mcp_manager(self) -> Any:
+        return self._mcp_manager
+
+    def ensure_mcp_manager(self) -> Any:
+        """Build the MCP manager on first use.
+
+        Lazy, for the same reason extensions are: a session with no
+        ``mcp.json`` should pay nothing for the integration.
+        """
+        if self._mcp_manager is None:
+            # Imported here rather than at module scope: vtx.mcp builds on the
+            # harness tool contract in vtx.ai.agent.tools, so a top-level
+            # import would close the dependency loop.
+            from vtx.mcp.manager import McpManager
+
+            self._mcp_manager = McpManager(
+                cwd=self.cwd,
+                project_trusted=self._project_trusted,
+            )
+            self._mcp_manager.on_tools_changed(self._on_mcp_tools_changed)
+        return self._mcp_manager
+
+    async def connect_mcp(self, startup_wait_seconds: float | None = None) -> list[BaseTool]:
+        """Connect the configured servers and add their tools.
+
+        Bounded and non-fatal: a slow or broken server reports itself on
+        ``/mcp`` rather than holding up or failing the session.
+        """
+        manager = self.ensure_mcp_manager()
+        if startup_wait_seconds is not None:
+            manager.startup_wait_seconds = startup_wait_seconds
+        for message in manager.errors:
+            log.warning("MCP config: %s", message)
+        try:
+            tools = await manager.connect_all()
+        except Exception as exc:
+            # A broken integration must not stop the agent from starting.
+            log.warning("MCP startup failed: %s", exc)
+            return []
+        self._mcp_tools = list(tools)
+        self._sync_mcp_tools()
+        return self._mcp_tools
+
+    async def reload_mcp(self) -> list[BaseTool]:
+        """Re-read ``mcp.json``, reconnect, and swap in the new tool set."""
+        manager = self.ensure_mcp_manager()
+        self._mcp_tools = await manager.reload()
+        self._sync_mcp_tools()
+        return self._mcp_tools
+
+    def _on_mcp_tools_changed(self, tools: list[BaseTool]) -> None:
+        """A server added, removed, or renamed a tool."""
+        self.sync_mcp_tools(tools)
+
+    def sync_mcp_tools(self, tools: list[BaseTool]) -> None:
+        """Replace the live MCP tool set and re-derive the active tools."""
+        self._mcp_tools = list(tools)
+        self._sync_mcp_tools()
+
+    def _sync_mcp_tools(self) -> None:
+        """Merge the current MCP tools into the active tool set.
+
+        MCP tools are appended *after* an agent profile's allow/deny filter
+        rather than put through it. A profile pinning an explicit
+        ``tools_allow`` is describing the built-in surface; silently deleting
+        every MCP tool because of it would be surprising and hard to diagnose.
+        """
+        # Drop the previous generation by name, so a removed server's tools
+        # actually leave the set instead of accumulating.
+        kept = [t for t in self.tools if t.name not in self._mcp_tool_names]
+        self.tools = kept + list(self._mcp_tools)
+        self._mcp_tool_names = {t.name for t in self._mcp_tools}
+        if self.agent is not None:
+            self.agent.tools = self.tools
+        if self.agent is not None and self.context is not None:
+            self._rebuild_system_prompt()
 
     def _provider_config(
         self,
@@ -1199,6 +1312,9 @@ class ConversationRuntime:
             self.agent_registry.set_active(active_agent.definition.name)
         if loaded_extensions is not None:
             self.set_loaded_extensions(loaded_extensions)
+        # A reload rebuilds the tool set from the built-in and extension pools;
+        # MCP tools are in neither, so put them back.
+        self._sync_mcp_tools()
         # Picks up a `mode:` edit in config.yml: collapses the surface to the
         # REPL in code_first, and leaves the freshly computed list alone in
         # tool_first.

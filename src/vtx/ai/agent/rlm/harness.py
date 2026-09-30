@@ -18,6 +18,7 @@ import os
 import re
 import stat
 import unicodedata
+from collections.abc import Callable
 from dataclasses import asdict, dataclass, field, fields
 from datetime import UTC, datetime
 from pathlib import Path
@@ -32,7 +33,7 @@ HarnessScope = Literal["local", "global"]
 _DEFAULT_FILE_NAME = "harness_state.json"
 _DEFAULT_HARNESS_DIR_NAME = "harness"
 _KINDS: tuple[HarnessKind, ...] = ("prompt", "memory", "skill", "subagent")
-_state_cache: dict[tuple[Path, HarnessScope], HarnessState] = {}
+_state_cache: dict[tuple[Path, HarnessScope, int, int], HarnessState] = {}
 
 
 def _now() -> str:
@@ -410,8 +411,27 @@ def _validate_refinement_event(trigger: Any, changes: Any, *, evidence: Any, out
         )
 
 
+#: Supplies the session-scoped harness state as ``(entries, refinements)``,
+#: where ``entries`` is keyed ``"<kind>:<entry id>"``. Returning the *branch's*
+#: state is what makes a revert show the state as of the reverted-to point.
+BranchReader = Callable[[], tuple[dict[str, dict[str, Any]], list[dict[str, Any]]]]
+
+#: Commits one local harness delta to the session, as ``(set, delete,
+#: refinements)``. A delta rather than a snapshot so the branch does not grow by
+#: the whole store on every write.
+BranchWriter = Callable[[dict[str, dict[str, Any]], list[str], list[dict[str, Any]]], None]
+
+
 class HarnessState:
-    """CRUD store for reset-free harness refinement state."""
+    """CRUD store for reset-free harness refinement state.
+
+    Session-scoped state can be branch-backed: with a ``branch_reader`` the local
+    store is hydrated from the session tree instead of a JSON file, and with a
+    ``branch_writer`` each local save is committed as a session entry. That is
+    what makes a revert or a branch show the memories and skills written on its
+    own path. The global store stays file-backed, since it is cross-session by
+    definition and has no branch to belong to.
+    """
 
     def __init__(
         self,
@@ -420,6 +440,8 @@ class HarnessState:
         in_memory: bool = False,
         scope: HarnessScope = "local",
         local_write_error: str | None = None,
+        branch_reader: BranchReader | None = None,
+        branch_writer: BranchWriter | None = None,
     ):
         # in_memory mode never resolves or touches a path. It is the safe fallback when
         # path resolution itself fails, so constructing it cannot re-raise that error.
@@ -435,6 +457,13 @@ class HarnessState:
         # When set, local mutations raise instead of vanishing into a volatile
         # store; reads and global_=True delegation keep working.
         self._local_write_error = local_write_error
+        # Only the local scope is branch-backed; a global state must not read or
+        # write the session tree.
+        self._branch_reader = branch_reader if scope == "local" else None
+        self._branch_writer = branch_writer if scope == "local" else None
+        #: The branch state as last read or committed, used to turn a save into
+        #: a delta. ``None`` until the first branch read.
+        self._branch_baseline: dict[str, dict[str, Any]] | None = None
         self.entries: dict[HarnessKind, dict[str, HarnessEntry]] = {kind: {} for kind in _KINDS}
         self.refinements: list[RefinementEvent] = []
         self._global_target_state_dir: Path | None = None
@@ -442,6 +471,11 @@ class HarnessState:
         # writes (e.g. the host `/refine` command) and avoid clobbering them.
         self._loaded_mtime: int | None = None
         self.load()
+
+    @property
+    def branch_backed(self) -> bool:
+        """Whether local state is stored in the session tree rather than a file."""
+        return self._branch_reader is not None
 
     def _ensure_local_writable(self) -> None:
         if self._local_write_error is not None:
@@ -456,18 +490,28 @@ class HarnessState:
             return None
 
     def _sync_from_disk(self) -> None:
-        """Reload if another process rewrote the state file since we last touched it.
+        """Reload if the state changed since we last touched it.
 
-        The kernel keeps a long-lived ``HarnessState`` in memory while the host
-        ``/refine`` command rewrites the same file from a separate process. Without
-        this guard the next in-kernel ``save()`` would overwrite host edits with a
-        stale snapshot. We re-read whenever the on-disk mtime no longer matches the
-        value recorded at our last load/save.
+        File-backed state: the kernel keeps a long-lived ``HarnessState`` in
+        memory while the host ``/refine`` command rewrites the same file from a
+        separate process. Without this guard the next in-kernel ``save()`` would
+        overwrite host edits with a stale snapshot. We re-read whenever the
+        on-disk mtime no longer matches the value recorded at our last load/save.
+
+        Branch-backed state: the equivalent staleness comes from the session tree
+        moving (a revert, or a host-side refinement appending an entry), so the
+        read is unconditional. It is a fold over a handful of entries, and it is
+        what makes a revert take effect in the kernel.
         """
+        if self._branch_reader is not None:
+            self._load_from_branch()
+            return
         if self._disk_mtime() != self._loaded_mtime:
             self.load()
 
     def load(self) -> HarnessState:
+        if self._branch_reader is not None:
+            return self._load_from_branch()
         if self.file_path is None or not self.file_path.exists():
             self._loaded_mtime = None
             return self
@@ -484,69 +528,146 @@ class HarnessState:
         if not isinstance(data, dict):
             data = {}
 
-        entries: dict[HarnessKind, dict[str, HarnessEntry]] = {kind: {} for kind in _KINDS}
         raw_entries = data.get("entries", {})
-        if isinstance(raw_entries, dict):
-            for kind in _KINDS:
-                raw_kind_entries = raw_entries.get(kind, {})
-                if not isinstance(raw_kind_entries, dict):
-                    continue
-                for entry_id, raw_entry in raw_kind_entries.items():
-                    if isinstance(raw_entry, dict):
-                        entry_data = {
-                            key: value for key, value in raw_entry.items() if key in _ENTRY_FIELDS
-                        }
-                        entry_data["id"] = str(entry_id)
-                        entry_data["kind"] = kind
-                        if not isinstance(entry_data.get("title"), str) or not isinstance(
-                            entry_data.get("content"), str
-                        ):
-                            continue
-                        if not isinstance(entry_data.get("path"), str):
-                            entry_data["path"] = "general"
-                        if entry_data.get("scope") not in ("local", "global"):
-                            entry_data["scope"] = self.scope
-                        if not isinstance(entry_data.get("source"), str):
-                            entry_data["source"] = "agent"
-                        version = entry_data.get("version", 1)
-                        if isinstance(version, str):
-                            try:
-                                version = int(version)
-                            except ValueError:
-                                version = 1
-                        if not isinstance(version, int):
-                            version = 1
-                        entry_data["version"] = version
-                        if not isinstance(entry_data.get("reference"), dict):
-                            entry_data["reference"] = {}
-                        if not isinstance(entry_data.get("arguments"), dict):
-                            entry_data["arguments"] = {}
-                        if not isinstance(entry_data.get("metadata"), dict):
-                            entry_data["metadata"] = {}
-                        entries[kind][str(entry_id)] = HarnessEntry(**entry_data)
+        self._hydrate(
+            raw_entries if isinstance(raw_entries, dict) else {},
+            data.get("refinements", []),
+        )
+        self._loaded_mtime = mtime
+        return self
+
+    def _load_from_branch(self) -> HarnessState:
+        """Hydrate from the session tree instead of a file.
+
+        A reader failure degrades to empty rather than raising: the harness must
+        never be the reason a kernel cell fails, and an empty store is a state
+        the model can still write to.
+        """
+        assert self._branch_reader is not None
+        try:
+            entries, refinements = self._branch_reader()
+        except Exception:
+            entries, refinements = {}, []
+        self._branch_baseline = dict(entries)
+        self._hydrate(self._from_flat(entries), refinements)
+        return self
+
+    @staticmethod
+    def _from_flat(flat: dict[str, dict[str, Any]]) -> dict[str, dict[str, Any]]:
+        """Regroup ``"<kind>:<id>"`` keys into the nested entry layout."""
+        nested: dict[str, dict[str, Any]] = {kind: {} for kind in _KINDS}
+        for key, value in flat.items():
+            kind, separator, entry_id = key.partition(":")
+            if not separator or kind not in nested or not isinstance(value, dict):
+                continue
+            nested[kind][entry_id] = value
+        return nested
+
+    def _to_flat(self) -> dict[str, dict[str, Any]]:
+        """Flatten the nested entry layout into ``"<kind>:<id>"`` keys."""
+        return {
+            f"{kind}:{entry_id}": asdict(entry)
+            for kind, records in self.entries.items()
+            for entry_id, entry in records.items()
+        }
+
+    def _hydrate(
+        self, raw_entries: dict[str, Any], raw_refinements: Any
+    ) -> None:
+        """Validate and install entries and refinements from either source.
+
+        Shared by the file and branch paths so a branch-replayed entry is held to
+        exactly the same shape rules as one read from disk.
+        """
+        entries: dict[HarnessKind, dict[str, HarnessEntry]] = {kind: {} for kind in _KINDS}
+        for kind in _KINDS:
+            raw_kind_entries = raw_entries.get(kind, {})
+            if not isinstance(raw_kind_entries, dict):
+                continue
+            for entry_id, raw_entry in raw_kind_entries.items():
+                entry = self._coerce_entry(kind, str(entry_id), raw_entry)
+                if entry is not None:
+                    entries[kind][str(entry_id)] = entry
         self.entries = entries
 
         self.refinements = []
-        raw_refinements = data.get("refinements", [])
         if isinstance(raw_refinements, list):
             for raw_event in raw_refinements:
-                if isinstance(raw_event, dict):
-                    event_data = {
-                        key: value for key, value in raw_event.items() if key in _REFINEMENT_FIELDS
-                    }
-                    if not isinstance(event_data.get("id"), str) or not isinstance(
-                        event_data.get("trigger"), str
-                    ):
-                        continue
-                    changes = event_data.get("changes")
-                    if isinstance(changes, str):
-                        event_data["changes"] = [changes]
-                    elif isinstance(changes, list):
-                        event_data["changes"] = [str(change) for change in changes]
-                    elif not isinstance(changes, list):
-                        continue
-                    self.refinements.append(RefinementEvent(**event_data))
-        self._loaded_mtime = mtime
+                event = self._coerce_refinement(raw_event)
+                if event is not None:
+                    self.refinements.append(event)
+
+    def _coerce_entry(
+        self, kind: HarnessKind, entry_id: str, raw_entry: Any
+    ) -> HarnessEntry | None:
+        """One entry from untrusted stored data, or ``None`` if unusable.
+
+        Every field is coerced rather than trusted: the data comes from a JSON
+        file or from a session entry, and a malformed record must be dropped, not
+        raise inside a kernel cell.
+        """
+        if not isinstance(raw_entry, dict):
+            return None
+        entry_data = {key: value for key, value in raw_entry.items() if key in _ENTRY_FIELDS}
+        entry_data["id"] = entry_id
+        entry_data["kind"] = kind
+        if not isinstance(entry_data.get("title"), str) or not isinstance(
+            entry_data.get("content"), str
+        ):
+            return None
+        if not isinstance(entry_data.get("path"), str):
+            entry_data["path"] = "general"
+        if entry_data.get("scope") not in ("local", "global"):
+            entry_data["scope"] = self.scope
+        if not isinstance(entry_data.get("source"), str):
+            entry_data["source"] = "agent"
+        version = entry_data.get("version", 1)
+        if isinstance(version, str):
+            try:
+                version = int(version)
+            except ValueError:
+                version = 1
+        if not isinstance(version, int):
+            version = 1
+        entry_data["version"] = version
+        for field in ("reference", "arguments", "metadata"):
+            if not isinstance(entry_data.get(field), dict):
+                entry_data[field] = {}
+        return HarnessEntry(**entry_data)
+
+    def _coerce_refinement(self, raw_event: Any) -> RefinementEvent | None:
+        """One refinement event from untrusted stored data, or ``None``."""
+        if not isinstance(raw_event, dict):
+            return None
+        event_data = {key: value for key, value in raw_event.items() if key in _REFINEMENT_FIELDS}
+        if not isinstance(event_data.get("id"), str) or not isinstance(
+            event_data.get("trigger"), str
+        ):
+            return None
+        changes = event_data.get("changes")
+        if isinstance(changes, str):
+            event_data["changes"] = [changes]
+        elif isinstance(changes, list):
+            event_data["changes"] = [str(change) for change in changes]
+        else:
+            return None
+        return RefinementEvent(**event_data)
+
+    def _save_to_branch(self) -> HarnessState:
+        """Commit the local delta to the session as one branch entry.
+
+        Only what changed since the last read is sent, so the branch grows by
+        the write rather than by the whole store. The baseline is advanced even
+        when nothing changed, so a no-op save does not append an empty entry.
+        """
+        assert self._branch_writer is not None
+        baseline = self._branch_baseline or {}
+        current = self._to_flat()
+        added = {key: value for key, value in current.items() if baseline.get(key) != value}
+        removed = [key for key in baseline if key not in current]
+        if added or removed:
+            self._branch_writer(added, removed, [asdict(event) for event in self.refinements])
+        self._branch_baseline = current
         return self
 
     def _global_target(
@@ -564,6 +685,8 @@ class HarnessState:
         return target
 
     def save(self) -> HarnessState:
+        if self._branch_writer is not None and self._branch_baseline is not None:
+            return self._save_to_branch()
         if self.file_path is None:
             # in_memory fallback: nothing to persist.
             return self
@@ -1227,16 +1350,32 @@ class HarnessState:
 
 
 def get_harness_state(
-    state_dir: str | Path | None = None, *, global_: bool = False, **kwargs: Any
+    state_dir: str | Path | None = None,
+    *,
+    global_: bool = False,
+    branch_reader: BranchReader | None = None,
+    branch_writer: BranchWriter | None = None,
+    **kwargs: Any,
 ) -> HarnessState:
-    """Return the cached local harness state, or global when requested."""
+    """Return the cached local harness state, or global when requested.
+
+    With ``branch_reader``/``branch_writer`` the local state is backed by the
+    session tree rather than a JSON file, so a revert or a branch shows the
+    state as of its own leaf. The cache key includes the branch callbacks'
+    identity, because two sessions in one process must not share a store.
+    """
     global_ = _resolve_global_flag(global_, kwargs)
     file_path = _state_file(state_dir, global_=global_)
     scope: HarnessScope = "global" if global_ else "local"
-    cache_key = (file_path, scope)
+    cache_key = (file_path, scope, id(branch_reader), id(branch_writer))
     state = _state_cache.get(cache_key)
     if state is None:
-        state = HarnessState(file_path, scope=scope)
+        state = HarnessState(
+            file_path,
+            scope=scope,
+            branch_reader=branch_reader,
+            branch_writer=branch_writer,
+        )
         # Recorded at construction only: an instance created from env defaults must
         # keep targeting VTX_GLOBAL_HARNESS_STATE_DIR even when a later explicit
         # state_dir call aliases the same local file. An explicit dir that merely

@@ -89,15 +89,20 @@ class _RequestHandler(BaseHTTPRequestHandler):
                 self.send_header(key, value)
             self.send_header("content-type", "text/event-stream")
             self.send_header("cache-control", "no-cache")
-            self.send_header("connection", "keep-alive")
+            self.send_header("connection", "keep-alive" if reply.keep_open else "close")
             self.end_headers()
             for line in reply.sse_lines:
                 self.wfile.write((line + "\n\n").encode())
                 self.wfile.flush()
             if reply.keep_open:
-                # Park until the client goes away; the test closes it.
-                self.close_connection = True
+                # Park until the client goes away.
                 threading.Event().wait(30)
+            else:
+                # HTTP/1.1 with no content-length or chunking means the body
+                # ends when the connection closes, so a "dropped" SSE stream
+                # must actually close. Leaving it open makes the client wait
+                # forever, which is a different bug than the one under test.
+                self.close_connection = True
             return
 
         if reply.json_body is not None:

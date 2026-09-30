@@ -12,6 +12,7 @@ import json
 import os
 import re
 import stat
+from pathlib import Path
 from typing import Any
 from unittest import mock
 
@@ -272,7 +273,7 @@ async def test_oversized_output_spills_to_a_readable_file(monkeypatch):
     path = match.group(1)
     try:
         assert os.path.exists(path)
-        assert open(path, encoding="utf-8").read() == body
+        assert Path(path).read_text(encoding="utf-8") == body
         assert stat.S_IMODE(os.stat(path).st_mode) == 0o600
     finally:
         os.unlink(path)
@@ -293,7 +294,7 @@ async def test_stream_cap_spills_the_full_stream(monkeypatch):
     assert match, output
     path = match.group(1)
     try:
-        assert open(path, encoding="utf-8").read() == body
+        assert Path(path).read_text(encoding="utf-8") == body
     finally:
         os.unlink(path)
 
