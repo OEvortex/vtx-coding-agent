@@ -288,7 +288,7 @@ class Agent:
                 return
 
             previous = self._skills_state.summaries
-            text = render_update(previous, summaries) if summaries else render_removed()
+            text = render_update(previous, summaries) if summaries else render_removed(previous)
             entry_id = self._adopt_skills_refresh_slot()
             message = build_skills_refresh_message(text)
             if entry_id is not None:

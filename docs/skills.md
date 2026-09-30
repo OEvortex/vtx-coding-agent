@@ -54,12 +54,14 @@ Loaded in priority order:
 
 ## How they trigger
 
-- **Model-invoked**: the skills index (name + one-line description) rides along in the system prompt; the model calls the `skill` tool with a name and query. The SKILL.md body (frontmatter stripped) becomes the working instructions.
+- **Model-invoked**: the skills catalog (name + description) rides along in the system prompt; the model calls `skill(action="load", name=...)`. The SKILL.md body (frontmatter stripped) plus the skill's directory becomes the working instructions, so `scripts/...` and `reference/...` inside a skill resolve against the skill directory.
+
+  The catalog is a snapshot in the system prompt. A skill installed or deleted mid-session is announced at the next cold boundary as a `<vtx:skills-refresh>` context message that supersedes the earlier list, naming what was added, changed, and removed — the prompt itself is not rebuilt, so the cached prefix behind it stays valid.
 - **User-invoked**: type `/my-skill do the thing`. With `register_cmd: true` the skill appears in slash-command autocomplete; `$ARGUMENTS` receives `do the thing`.
 
 ## Managing skills
 
-The agent can manage skills itself via the `skill` tool (`list`, `view`, `create`, `patch`, `edit`, `delete`, scope `project` or `global`) — see [tools.md](tools.md#skill). Users just edit markdown.
+The agent loads a skill with `skill(action="load", name=...)` and can manage skills itself via the same tool (`create`, `patch`, `edit`, `delete`, scope `project` or `global`) — see [tools.md](tools.md#skill). Users just edit markdown.
 
 ## SDK
 

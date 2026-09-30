@@ -87,11 +87,16 @@ Search file contents by regex via `ripgrep`. Max 100 results / 30 KB output.
 
 ## skill
 
-List, view, create, patch, edit, or delete skills. See [skills.md](skills.md) for the format.
+Load, list, view, create, patch, edit, or delete skills. See [skills.md](skills.md) for the format.
+
+`load` is the normal way to use a skill: the system prompt advertises skills by
+name and description only, and `load` returns the SKILL.md body, the skill's
+directory, and the files beside it, so relative paths inside a skill resolve
+without a separate read.
 
 | Param | Type | Notes |
 | --- | --- | --- |
-| `action` | enum | `list`, `view`, `create`, `patch`, `edit`, `delete` |
+| `action` | enum | `load`, `list`, `view`, `create`, `patch`, `edit`, `delete` |
 | `name` | string | Skill name; required except for `list` |
 | `content` | string | Full SKILL.md content; required for `create`/`edit` |
 | `old_string` / `new_string` | string | Find/replace pair for `patch` |

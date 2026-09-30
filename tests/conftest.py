@@ -1,5 +1,8 @@
 import pytest
 
+from vtx.ai.agent.dispatcher import set_context
+from vtx.ai.agent.rlm.harness import _state_cache
+from vtx.ai.agent.rlm.registry import reset_state
 from vtx.coding_agent.config import get_config, reset_config
 
 
@@ -64,6 +67,23 @@ def isolate_user_config(monkeypatch: pytest.MonkeyPatch, tmp_path) -> None:
     monkeypatch.setattr("pathlib.Path.home", lambda: home)
     monkeypatch.delenv("XDG_CONFIG_HOME", raising=False)
     reset_config()
+    # The harness store is cached per process and keyed by path, so a test that
+    # writes an entry keeps that HarnessState for every later test at the same
+    # path. HOME above isolates the directory, not the cache.
+    #
+    # The dispatcher context must be cleared too, and it is the subtle one: it
+    # is a plain module global, not a contextvar, so a test that installs a
+    # live session leaves it installed for every later test in the same xdist
+    # worker. The local harness store then silently becomes session-backed
+    # instead of file-backed, and a test reads entries another test wrote
+    # through a session it never knew about. Without these resets the suite's
+    # pass/fail depends on how xdist happens to shard it: a later test sees an
+    # earlier one's entries and raises "memory entry ... already exists", or
+    # gets a digest that should have been empty.
+    yield
+    reset_state()
+    set_context(None)
+    _state_cache.clear()
 
 
 @pytest.fixture

@@ -98,17 +98,21 @@ def render_update(previous: tuple[SkillSummary, ...], current: tuple[SkillSummar
     return "\n".join(lines)
 
 
-def render_removed() -> str:
+def render_removed(previous: tuple[SkillSummary, ...] = ()) -> str:
     """Announce that no skills remain.
 
     Silence is not enough here: an empty `<available_skills>` block reads as
     "this harness has no skills", which invites the model to explain that to the
-    user rather than to notice something went wrong.
+    user rather than to notice something went wrong. The departed skills are
+    still named, because "everything is gone" leaves the model unable to say
+    which skill it can no longer use -- and the last skill going away is exactly
+    when it is most likely to be mid-task and calling it.
     """
-    return (
-        "Skill guidance is no longer available. Do not use any previously listed skill.\n\n"
-        + format_summaries(())
-    )
+    gone = ", ".join(s.name for s in previous)
+    head = "Skill guidance is no longer available. Do not use any previously listed skill."
+    if gone:
+        head = f"No longer available (do not call these): {gone}"
+    return f"{head}\n\n" + format_summaries(())
 
 
 def format_summaries(summaries: tuple[SkillSummary, ...]) -> str:
