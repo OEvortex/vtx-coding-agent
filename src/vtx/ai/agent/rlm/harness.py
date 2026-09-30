@@ -81,29 +81,40 @@ def _harness_query_runs(text: str) -> list[str]:
     return runs
 
 
-def _harness_query_terms(query: str) -> list[str]:
-    """Tokenize a search query into lowercase substring terms.
+#: Shortest non-CJK run kept as a term when tokenizing an explicit search query.
+_QUERY_MIN_RUN = 3
+#: Shortest non-CJK run kept when mining conversation text for digest relevance.
+#: Mined text is full of function words, so the floor sits one character above
+#: the explicit-query floor to keep ``the``/``and``/``not`` out of the ranking.
+_MINED_MIN_RUN = 4
+
+
+def harness_query_terms(text: str, *, min_run: int = _QUERY_MIN_RUN) -> list[str]:
+    """Tokenize text into lowercase substring terms.
 
     Letters and digits of every script form terms; punctuation and symbols
     only separate them, so ``worktree?`` never ranks entries by question
     marks. CJK runs carry no spaces between words, so each run becomes
     overlapping bigrams: ``修复登录`` yields ``修复``/``复登``/``登录`` and
     still matches an entry containing ``登录故障``. Each term counts once.
-    Minimum lengths stay below the digest builder's four-character cut
-    because ``search`` tokenizes explicit queries, not mined conversation:
-    three ASCII characters keep real terms (rlm, api, cli), two characters
-    keep short words of other scripts (мир), and single characters are
+
+    ``min_run`` is the shortest non-CJK run kept. It differs by caller because
+    the two callers mine different text: ``search`` tokenizes an explicit
+    query, where three ASCII characters keep real terms (rlm, api, cli) and
+    two characters keep short words of other scripts. The digest builder mines
+    whole conversations, so it passes :data:`_MINED_MIN_RUN` to keep function
+    words like ``the``/``and``/``not`` out of the ranking. Single characters are
     terms only for CJK, where one character is a word.
     """
     terms: list[str] = []
     seen: set[str] = set()
-    for run in _harness_query_runs(query.lower()):
+    for run in _harness_query_runs(text.lower()):
         if _CJK_TERM_CHARS.search(run):
             # Bigrams keep whitespace-free CJK findable without single
             # characters matching too loosely.
             candidates = [run[i : i + 2] for i in range(len(run) - 1)] or [run]
         elif run.isascii():
-            candidates = [run] if len(run) >= 3 else []
+            candidates = [run] if len(run) >= min_run else []
         else:
             # Other scripts space out words: lone characters match too
             # broadly, so two characters is the floor.
@@ -113,6 +124,10 @@ def _harness_query_terms(query: str) -> list[str]:
                 seen.add(term)
                 terms.append(term)
     return terms
+
+
+def _harness_query_terms(query: str) -> list[str]:
+    return harness_query_terms(query)
 
 
 def _agent_dir() -> Path:
@@ -1245,4 +1260,5 @@ __all__ = [
     "HarnessState",
     "RefinementEvent",
     "get_harness_state",
+    "harness_query_terms",
 ]

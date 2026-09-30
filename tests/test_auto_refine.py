@@ -19,6 +19,7 @@ from vtx.ai.agent.rlm.refine import (
     RefinementOutcome,
     auto_refine_instructions,
     harness_digest_for_prompt,
+    harness_digest_with_fingerprint,
     local_state_dir,
     parse_auto_refine_review,
     plan_refinement,
@@ -490,18 +491,25 @@ def test_auto_refine_approved_review_replayed_next_boundary(monkeypatch, tmp_pat
 
 
 def test_tool_first_digest_tells_model_about_refine_tool(tmp_path, monkeypatch):
-    from vtx.ai.agent import prompts as prompts_mod
-
     cwd = str(tmp_path)
     state = get_harness_state(local_state_dir(bridge_session_id(), cwd))
     state.create("memory", "Pref", "Use pytest.", id="pref")
 
     monkeypatch.setattr(refine_mod, "current_mode", lambda: MODE_TOOL_FIRST)
-    prompt = prompts_mod.build_system_prompt(cwd, tools=[])
+    digest, fingerprint = harness_digest_with_fingerprint(
+        bridge_session_id(), cwd, mode=MODE_TOOL_FIRST
+    )
 
-    assert "# Continual Harness State" in prompt
-    assert "Use pytest." in prompt
-    assert "refine` tool" in prompt
+    # Delivered as a context message, not folded into the cached system prompt:
+    # relevance ranking rewrites the digest per task, which would invalidate the
+    # provider's system-prompt prefix on nearly every turn.
+    from vtx.ai.agent.prompts import build_system_prompt
+
+    assert "# Continual Harness State" not in build_system_prompt(cwd, tools=[])
+    assert "# Continual Harness State" in digest
+    assert "Use pytest." in digest
+    assert "refine` tool" in digest
+    assert fingerprint
 
 
 def test_harness_digest_omitted_when_store_empty(tmp_path):

@@ -168,7 +168,7 @@ One action-dispatched tool for the persistent goal system (see [goals.md](goals.
 
 ## refine
 
-Refines the **continual harness**: the persistent prompt notes, memories, skills, and subagent specs that Vtx renders into the system prompt as `# Continual Harness State`. An auxiliary model reads the trajectory and emits small `create`/`update`/`delete` edits, so lessons survive outside the context window. Only the top-level session has this tool; `code_first` mode uses the equivalent kernel skill (`await refine.run()`) instead.
+Refines the **continual harness**: the persistent prompt notes, memories, skills, and subagent specs that Vtx renders to the model as `# Continual Harness State`. An auxiliary model reads the trajectory and emits small `create`/`update`/`delete` edits, so lessons survive outside the context window. Only the top-level session has this tool; `code_first` mode uses the equivalent kernel skill (`await refine.run()`) instead.
 
 | Param | Type | Notes |
 | --- | --- | --- |
@@ -176,4 +176,6 @@ Refines the **continual harness**: the persistent prompt notes, memories, skills
 | `instructions` | string | Optional focus for this pass, e.g. the failure worth remembering |
 | `global_` | bool | Target the cross-session store. Leave false for current-task progress |
 
-The call returns immediately — the pass runs when the current turn ends, applies its edits, appends a refinement notice to the session, and the model resumes on the rebuilt prompt. Edits are recorded to `refinements.jsonl`, so `/refine rollback <refinement-id>` inverts one. See `refine` in [configuration.md](configuration.md#refine) for automatic refinement.
+The call returns immediately — the pass runs when the current turn ends, applies its edits, appends a refinement notice to the session, and the model resumes. Edits are recorded to `refinements.jsonl`, so `/refine rollback <refinement-id>` inverts one. See `refine` in [configuration.md](configuration.md#refine) for automatic refinement.
+
+The harness digest reaches the model as a context message rather than part of the system prompt. Its entries are ranked by relevance to the current task, so folding it into the prompt would rewrite the provider's cached prefix on nearly every turn. It is delivered at each run boundary, and only re-rendered when the harness state it summarizes has actually changed.

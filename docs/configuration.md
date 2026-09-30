@@ -36,7 +36,7 @@ The window is the active model's real context window from the catalog (e.g. 1M-c
 
 ## `refine`
 
-Automatic continual-harness refinement. The harness is the persistent set of prompt notes, memories, skills, and subagent specs rendered into the system prompt (see the `refine` tool in [tools.md](tools.md#refine)). Auto-refine reviews the trajectory at a turn boundary and, when the review approves, applies small evidence-backed edits.
+Automatic continual-harness refinement. The harness is the persistent set of prompt notes, memories, skills, and subagent specs rendered into the model as `# Continual Harness State` (see the `refine` tool in [tools.md](tools.md#refine)). Auto-refine reviews the trajectory at a turn boundary and, when the review approves, applies small evidence-backed edits.
 
 | Field | Default | Notes |
 | --- | --- | --- |

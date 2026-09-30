@@ -18,22 +18,35 @@ Ported/adapted from Prime Agent (MIT) — https://github.com/PrimeIntellect-ai/p
 
 from __future__ import annotations
 
+import hashlib
 import json
 import logging
+import math
 import re
+from collections.abc import Callable
 from dataclasses import asdict, dataclass, field
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
 from vtx.ai.agent.rlm.harness import (
+    _MINED_MIN_RUN,
     HarnessKind,
     HarnessState,
     _slug,
     get_harness_state,
+    harness_query_terms,
     skill_reference_error,
 )
-from vtx.core.types import AssistantMessage, Message, TextPart, ToolResultMessage, UserMessage
+from vtx.core.types import (
+    AssistantMessage,
+    Message,
+    StopReason,
+    StreamDone,
+    TextPart,
+    ToolResultMessage,
+    UserMessage,
+)
 
 log = logging.getLogger(__name__)
 
@@ -133,18 +146,29 @@ _LOCAL_SCOPE_INSTRUCTION = (
     "entry instead if an override is needed."
 )
 
-_REFINE_TRIGGER_TAIL = "Keep the edits small and evidence-backed."
+_CODE_FIRST_TRIGGER_HEAD = (
+    "When to call `await refine.run()`: after a repeated failure, a reusable tactic "
+    "emerges, a repeated delegation role should become a subagent spec, a repeated "
+    "procedure should become a skill, a durable fact/preference should become a "
+    "memory, a narrow behavioral policy should become a prompt addendum, a user "
+    "corrects behavior that should persist locally or globally, validation shows a "
+    "continual harness entry is wrong, or a skill/subagent/memory/prompt note should "
+    "be created, updated, deleted, or rolled back."
+)
+_TOOL_FIRST_TRIGGER_HEAD = (
+    "When to call the `refine` tool: after a repeated failure, a reusable tactic "
+    "emerges, a repeated delegation role should become a subagent spec, a repeated "
+    "procedure should become a skill, a durable fact/preference should become a "
+    "memory, a narrow behavioral policy should become a prompt addendum, a user "
+    "corrects behavior that should persist locally or globally, validation shows a "
+    "continual harness entry is wrong, or a skill/subagent/memory/prompt note should "
+    "be created, updated, deleted, or rolled back."
+)
 
 _MODE_DIGEST_LINES: dict[str, tuple[str, ...]] = {
     MODE_CODE_FIRST: (
-        "When to call `await refine.run()`: after a repeated failure, a reusable tactic "
-        "emerges, a repeated delegation role should become a subagent spec, a repeated "
-        "procedure should become a skill, a durable fact/preference should become a "
-        "memory, a narrow behavioral policy should become a prompt addendum, a user "
-        "corrects behavior that should persist locally or globally, validation shows a "
-        "continual harness entry is wrong, or a skill/subagent/memory/prompt note should "
-        "be created, updated, deleted, or rolled back. Keep `await refine.run()` "
-        f"continual harness edits small and evidence-backed. {_REFINE_TRIGGER_TAIL}",
+        f"{_CODE_FIRST_TRIGGER_HEAD} Keep `await refine.run()` continual harness "
+        "edits small and evidence-backed.",
         "Call contract: read each installed Python skill's SKILL.md and call its documented "
         "module function in the Python REPL; do not assume a `.run` entrypoint. Use "
         "`<skill_import> ...` in shell when a CLI exists. Continual harness skill entries "
@@ -161,15 +185,10 @@ _MODE_DIGEST_LINES: dict[str, tuple[str, ...]] = {
         "`run_subagent(...)`, or named subagent registries.",
     ),
     MODE_TOOL_FIRST: (
-        "When to call the `refine` tool: after a repeated failure, a reusable tactic "
-        "emerges, a repeated delegation role should become a subagent spec, a repeated "
-        "procedure should become a skill, a durable fact/preference should become a "
-        "memory, a narrow behavioral policy should become a prompt addendum, a user "
-        "corrects behavior that should persist locally or globally, validation shows a "
-        "continual harness entry is wrong, or a skill/subagent/memory/prompt note should "
-        "be created, updated, deleted, or rolled back. Use `refine(instructions=...)` to "
+        f"{_TOOL_FIRST_TRIGGER_HEAD} Use `refine(instructions=...)` to "
         "focus one pass and `refine(global_=true)` for cross-session entries; "
-        f"`refine(action='status')` reports whether a pass is already queued. {_REFINE_TRIGGER_TAIL}",
+        "`refine(action='status')` reports whether a pass is already queued. Keep continual "
+        "harness edits small and evidence-backed.",
         "Call contract: read each installed skill's SKILL.md and follow its documented call "
         "form (a tool call, or a CLI/shell invocation). There is no persistent Python "
         "kernel in this mode, so never write `await <module>.<func>(...)` Python import "
@@ -497,110 +516,497 @@ def create_notice(result: dict[str, Any], source: str) -> str:
 _DIGEST_ENTRY_LIMIT = 6
 _DIGEST_REFINEMENT_LIMIT = 5
 
+#: Marker tag wrapping the delivered digest context message. The digest is
+#: delivered as conversation context rather than in the system prompt so that
+#: relevance re-ranking (which changes as the task moves) cannot invalidate the
+#: provider's cached system-prompt prefix every turn.
+HARNESS_DIGEST_TAG = "vtx:harness-digest"
+
+#: Bump when the fingerprinted material or its canonical serialization changes,
+#: so fingerprints minted under different versions never compare equal.
+#: Normalizing a render-ignored flag out of the material does not need a bump:
+#: fingerprint equality still implies identical renders.
+_DIGEST_FINGERPRINT_VERSION = 1
+
+#: Hard cap on ranked query terms. Scoring is O(terms x entries) and the
+#: ranked corpus is small, so an unbounded map only adds latency.
+_MAX_QUERY_TERMS = 48
+
 
 def _merge_states(*states: HarnessState) -> tuple[dict[HarnessKind, dict[str, Any]], list[Any]]:
-    """Merge stores for digest rendering; later states override earlier ones
-    for the same kind/id (call with global first, local last)."""
+    """Merge stores for digest rendering (call with global first, local last).
+
+    A bare ``dict.update`` would drop an earlier store's entry whenever a later
+    store held the same kind/id, which is the common case: ``create_memory``
+    slugs titles, so ``notes`` in two scopes collides easily and the global
+    entry would silently vanish from the digest. A colliding later entry is
+    therefore keyed by ``<scope>:<id>`` so both survive. The key is internal
+    only — the digest renders ``[<scope>:<id>]`` from the entry's own fields,
+    which already disambiguate the two scopes from the model's point of view.
+    """
     merged: dict[HarnessKind, dict[str, Any]] = {}
     refinements: list[Any] = []
     for state in states:
         state.list()  # sync from disk
         for kind in KINDS:
             bucket = merged.setdefault(kind, {})
-            bucket.update(state.entries.get(kind, {}))
+            for entry_id, entry in state.entries.get(kind, {}).items():
+                bucket[entry_id if entry_id not in bucket else f"{state.scope}:{entry_id}"] = entry
         refinements.extend(state.refinements)
-    refinements.sort(key=lambda event: getattr(event, "created_at", ""))
+    refinements.sort(key=lambda event: _created_at(event))
     return merged, refinements
 
 
-def harness_digest_for_prompt(session_id: str, cwd: str, *, mode: str | None = None) -> str:
-    """`# Continual Harness State` digest for the system prompt.
+def _created_at(event: Any) -> str:
+    """Sortable created_at for a refinement event of any provenance.
+
+    A hand-edited store can hold a non-string here; sorting must not raise.
+    """
+    value = (
+        event.get("created_at") if isinstance(event, dict) else getattr(event, "created_at", "")
+    )
+    return value if isinstance(value, str) else ""
+
+
+def harness_refinement_malformation(event: Any) -> str | None:
+    """Return why a persisted refinement event cannot be rendered, else None.
+
+    Mirrors :func:`harness_entry_malformation`: the digest joins ``changes``
+    with ``str.join`` and truncates ``trigger``/``outcome`` with string
+    slicing, so a non-string member of either store would raise. Render paths
+    skip the event with a diagnostic instead, so one corrupt element cannot
+    break prompt construction.
+    """
+    if not isinstance(event, dict):
+        changes = getattr(event, "changes", None)
+        event_id = getattr(event, "id", None)
+        trigger = getattr(event, "trigger", None)
+        outcome = getattr(event, "outcome", None)
+    else:
+        changes = event.get("changes")
+        event_id = event.get("id")
+        trigger = event.get("trigger")
+        outcome = event.get("outcome")
+    if not isinstance(event_id, str):
+        return "id not a string"
+    if not isinstance(trigger, str):
+        return "trigger not a string"
+    if not isinstance(changes, list) or not all(isinstance(c, str) for c in changes):
+        return "changes is not a list of strings"
+    if outcome is not None and not isinstance(outcome, str):
+        return "outcome not a string"
+    return None
+
+
+def _malformed_event_label(event: Any) -> str:
+    """Bounded label for a skipped malformed event.
+
+    A corrupt element is labeled by type, never by value: arbitrary unbounded
+    text from a hand-edited store must not reach every session's prompt.
+    """
+    if event is None:
+        return "null"
+    if not isinstance(event, dict) and not hasattr(event, "id"):
+        return f"a {type(event).__name__}"
+    event_id = event.get("id") if isinstance(event, dict) else getattr(event, "id", None)
+    return event_id if isinstance(event_id, str) else f"a {type(event_id).__name__} id"
+
+
+# -------------------------------------------------------------------------------------------------
+# Relevance ranking
+#
+# The digest renders a handful of entries per kind. Ordered alphabetically, a
+# store holding more entries than the limit hides the ones that matter for the
+# task at hand, so the model cannot even tell they exist. Ranking by weighted
+# term overlap against the current task keeps the relevant entries in the
+# visible window.
+# -------------------------------------------------------------------------------------------------
+
+#: term -> weight
+HarnessQueryTerms = dict[str, float]
+
+
+def harness_query_term_idf(entries: list[Any], terms: HarnessQueryTerms) -> dict[str, float]:
+    """Inverse document frequency per term over *entries*.
+
+    ``log(1 + documents / matches)``: a term present in every entry still
+    weighs ``log(2)``, while a term in one entry of N weighs ``log(1 + N)``, so
+    rare distinctive terms outrank ubiquitous ones. Terms matching no entry are
+    omitted — they cannot score anything.
+    """
+    idf: dict[str, float] = {}
+    if not terms:
+        return idf
+    matches: dict[str, int] = {}
+    for entry in entries:
+        title = _searchable(entry.title)
+        content = _searchable(entry.content)
+        identifier = f"{_searchable(entry.path)} {_searchable(entry.id)}"
+        for term in terms:
+            if term in title or term in content or term in identifier:
+                matches[term] = matches.get(term, 0) + 1
+    for term, document_frequency in matches.items():
+        idf[term] = math.log(1 + len(entries) / document_frequency)
+    return idf
+
+
+def _searchable(value: Any) -> str:
+    """Lowercase a possibly malformed persisted field."""
+    return value.lower() if isinstance(value, str) else ""
+
+
+def score_harness_entry(
+    entry: Any, terms: HarnessQueryTerms, idf: dict[str, float] | None = None
+) -> float:
+    """Weighted term overlap between one entry and the query terms.
+
+    One match per field counts once per term, so coverage over distinct fields
+    beats repetition inside a single field. Path and id form one identifier
+    slot: the id is often embedded in the path, so matching both is one signal.
+    """
+    if not terms:
+        return 0.0
+    title = _searchable(entry.title)
+    content = _searchable(entry.content)
+    identifier = f"{_searchable(entry.path)} {_searchable(entry.id)}"
+    score = 0.0
+    for term, weight in terms.items():
+        fields = 0
+        if term in title:
+            fields += 1
+        if term in content:
+            fields += 1
+        if term in identifier:
+            fields += 1
+        if fields:
+            score += weight * (idf or {}).get(term, 1.0) * (1 + (fields - 1) * 0.5)
+    return score
+
+
+def _rank_entries(entries: list[Any], terms: HarnessQueryTerms | None) -> list[Any]:
+    """Order entries for the digest: by relevance when terms are given.
+
+    Ties break on ``(path, title, id)`` so touching one entry never reshuffles
+    equal-score siblings, which keeps the rendered digest a stable prefix for
+    provider prompt-cache reuse.
+    """
+    if not terms:
+        return sorted(entries, key=lambda e: (e.path, e.title, e.id))
+
+    idf = harness_query_term_idf(entries, terms)
+    return sorted(
+        entries,
+        key=lambda e: (
+            -score_harness_entry(e, terms, idf),
+            "\0".join((e.path or "", e.title or "", e.id or "")),
+        ),
+    )
+
+
+def build_digest_query_terms(
+    *, objective: str | None = None, messages: list[Message] | None = None
+) -> HarnessQueryTerms:
+    """Relevance signal mined from the current task.
+
+    The active goal objective is the strongest signal; the last few
+    user/assistant messages rank below it, weighted newest-first and floored at
+    1 so a long tail of recency cannot outweigh the stated objective. Terms are
+    mined with the raised floor that keeps function words out of the ranking.
+    """
+    terms: HarnessQueryTerms = {}
+
+    def add(text: str | None, weight: float) -> None:
+        if not text:
+            return
+        for raw in harness_query_terms(text, min_run=_MINED_MIN_RUN):
+            if raw not in terms:
+                if len(terms) >= _MAX_QUERY_TERMS:
+                    return
+                terms[raw] = weight
+
+    add(objective, 3.0)
+    recency_weight = 2.0
+    for message in reversed((messages or [])[-4:]):
+        if isinstance(message, (UserMessage, AssistantMessage)):
+            add(_message_text(message), recency_weight)
+        recency_weight = max(1.0, recency_weight - 0.5)
+    return terms
+
+
+def harness_digest_for_prompt(
+    session_id: str,
+    cwd: str,
+    *,
+    mode: str | None = None,
+    query_terms: HarnessQueryTerms | None = None,
+) -> str:
+    """`# Continual Harness State` digest for the model.
 
     Rendered in every runtime mode; ``mode`` only selects the call contracts
     the model is told to use (default: the active config mode).
+
+    ``query_terms`` selects entries by relevance to the current task instead of
+    alphabetical order. Callers pass terms mined once per cold boundary: the
+    digest is delivered as context (see :data:`HARNESS_DIGEST_TAG`) rather than
+    rebuilt in the system prompt every turn, so re-ranking cannot invalidate the
+    cached system-prompt prefix.
 
     Returns ``""`` when there is nothing to show or rendering fails — the
     caller omits the section rather than failing prompt construction.
     """
     try:
-        resolved_mode = mode or current_mode()
-        local_state = get_harness_state(local_state_dir(session_id, cwd))
-        global_state = get_harness_state(global_=True)
-        merged, refinements = _merge_states(global_state, local_state)
-
-        trigger_line, contract_line = _MODE_DIGEST_LINES.get(
-            resolved_mode, _MODE_DIGEST_LINES[MODE_CODE_FIRST]
+        return _render_digest(
+            *load_merged_harness(session_id, cwd), mode or current_mode(), query_terms
         )
-        lines = [
-            "# Continual Harness State",
-            "",
-            "Local continual harness entries belong to this Vtx session. Global continual harness entries persist across Vtx sessions.",
-            "The continual harness entries below are compact summaries, not full descriptions. Use them as routing/context hints; inspect or refine the underlying continual harness entry only when detail matters.",
-            "Default to local continual harness refinement for current task progress, temporary blockers, and session coordination. Use global continual harness refinement only for stable cross-session lessons, durable user preferences, reusable skills/subagents, or explicitly project-qualified facts.",
-            "Use these continual harness prompt notes, memories, skills, and subagent specs when they are relevant. The base system prompt is immutable; prompt entries below are supplemental notes only.",
-            "",
-            trigger_line,
-            "",
-            contract_line,
-            "",
-        ]
-
-        subagent_hint = _MODE_SUBAGENT_HINT.get(
-            resolved_mode, _MODE_SUBAGENT_HINT[MODE_CODE_FIRST]
-        )
-        total_entries = 0
-        for kind in KINDS:
-            bucket = merged.get(kind, {})
-            entries = sorted(bucket.values(), key=lambda e: (e.path, e.title, e.id))
-            total_entries += len(entries)
-            if kind == "subagent" and entries:
-                lines.append(f"{kind}: {len(entries)} ({subagent_hint})")
-            else:
-                lines.append(f"{kind}: {len(entries)}")
-            for entry in entries[:_DIGEST_ENTRY_LIMIT]:
-                malformation = harness_entry_malformation(entry)
-                if malformation:
-                    lines.append(f"harness: skipped malformed entry {entry.id} ({malformation})")
-                    continue
-                arguments_text = ""
-                if entry.kind == "skill" and entry.arguments:
-                    arguments_text = (
-                        f" args={compact_text(json.dumps(entry.arguments, ensure_ascii=False))}"
-                    )
-                reference_text = ""
-                if entry.kind == "skill" and entry.reference:
-                    reference_text = (
-                        f" ref={compact_text(json.dumps(entry.reference, ensure_ascii=False))}"
-                    )
-                lines.append(
-                    f"- [{entry.scope}:{entry.id}] {entry.title} ({entry.path}, v{entry.version})"
-                    f"{reference_text}{arguments_text}: {compact_text(entry.content)}"
-                )
-            overflow = len(entries) - min(len(entries), _DIGEST_ENTRY_LIMIT)
-            if overflow > 0:
-                lines.append(f"- +{overflow} more {kind} entries")
-            lines.append("")
-
-        if total_entries == 0 and not refinements:
-            return ""
-
-        if total_entries == 0:
-            lines.append("No saved harness entries yet.")
-            lines.append("")
-
-        lines.append(f"recent refinements: {len(refinements)}")
-        for event in refinements[-_DIGEST_REFINEMENT_LIMIT:]:
-            changes = ", ".join(event.changes) if event.changes else "no applied edits"
-            outcome = f"; outcome: {compact_text(event.outcome)}" if event.outcome else ""
-            lines.append(f"- [{event.id}] {compact_text(event.trigger)}: {changes}{outcome}")
-        refinement_overflow = len(refinements) - min(len(refinements), _DIGEST_REFINEMENT_LIMIT)
-        if refinement_overflow > 0:
-            lines.append(f"- +{refinement_overflow} older refinement events")
-
-        return "\n".join(lines).strip()
     except Exception:
         log.exception("harness digest rendering failed")
         return ""
+
+
+def _render_digest(
+    merged: dict[HarnessKind, dict[str, Any]],
+    refinements: list[Any],
+    resolved_mode: str,
+    query_terms: HarnessQueryTerms | None,
+) -> str:
+    trigger_line, contract_line = _MODE_DIGEST_LINES.get(
+        resolved_mode, _MODE_DIGEST_LINES[MODE_CODE_FIRST]
+    )
+    lines = [
+        "# Continual Harness State",
+        "",
+        "Local continual harness entries belong to this Vtx session. Global continual harness entries persist across Vtx sessions.",
+        "The continual harness entries below are compact summaries, not full descriptions. Use them as routing/context hints; inspect or refine the underlying continual harness entry only when detail matters.",
+        "Default to local continual harness refinement for current task progress, temporary blockers, and session coordination. Use global continual harness refinement only for stable cross-session lessons, durable user preferences, reusable skills/subagents, or explicitly project-qualified facts.",
+        "Use these continual harness prompt notes, memories, skills, and subagent specs when they are relevant. The base system prompt is immutable; prompt entries below are supplemental notes only.",
+        "",
+        trigger_line,
+        "",
+        contract_line,
+        "",
+    ]
+
+    subagent_hint = _MODE_SUBAGENT_HINT.get(resolved_mode, _MODE_SUBAGENT_HINT[MODE_CODE_FIRST])
+    total_entries = 0
+    for kind in KINDS:
+        bucket = merged.get(kind, {})
+        # Document frequency is scoped to the kind's own entries: they
+        # compete for the same visible slots, so the discount should
+        # reflect terms ubiquitous within the kind, not across kinds.
+        entries = _rank_entries(list(bucket.values()), query_terms)
+        total_entries += len(entries)
+        if kind == "subagent" and entries:
+            lines.append(f"{kind}: {len(entries)} ({subagent_hint})")
+        else:
+            lines.append(f"{kind}: {len(entries)}")
+        if query_terms and len(entries) > _DIGEST_ENTRY_LIMIT:
+            lines.append(
+                "(entries ranked by relevance to the current task; the rest are "
+                "reachable via the harness search tool)"
+            )
+        for entry in entries[:_DIGEST_ENTRY_LIMIT]:
+            malformation = harness_entry_malformation(entry)
+            if malformation:
+                lines.append(f"harness: skipped malformed entry {entry.id} ({malformation})")
+                continue
+            arguments_text = ""
+            if entry.kind == "skill" and entry.arguments:
+                arguments_text = (
+                    f" args={compact_text(json.dumps(entry.arguments, ensure_ascii=False))}"
+                )
+            reference_text = ""
+            if entry.kind == "skill" and entry.reference:
+                reference_text = (
+                    f" ref={compact_text(json.dumps(entry.reference, ensure_ascii=False))}"
+                )
+            lines.append(
+                f"- [{entry.scope}:{entry.id}] {entry.title} ({entry.path}, v{entry.version})"
+                f"{reference_text}{arguments_text}: {compact_text(entry.content)}"
+            )
+        overflow = len(entries) - min(len(entries), _DIGEST_ENTRY_LIMIT)
+        if overflow > 0:
+            lines.append(f"- +{overflow} more {kind} entries")
+        lines.append("")
+
+    if total_entries == 0 and not refinements:
+        return ""
+
+    if total_entries == 0:
+        lines.append("No saved harness entries yet.")
+        lines.append("")
+
+    lines.append(f"recent refinements: {len(refinements)}")
+    for event in refinements[-_DIGEST_REFINEMENT_LIMIT:]:
+        malformation = harness_refinement_malformation(event)
+        if malformation:
+            lines.append(
+                f"harness: skipped malformed refinement event "
+                f"{_malformed_event_label(event)} ({malformation})"
+            )
+            continue
+        changes = ", ".join(event.changes) if event.changes else "no applied edits"
+        outcome = f"; outcome: {compact_text(event.outcome)}" if event.outcome else ""
+        lines.append(f"- [{event.id}] {compact_text(event.trigger)}: {changes}{outcome}")
+    refinement_overflow = len(refinements) - min(len(refinements), _DIGEST_REFINEMENT_LIMIT)
+    if refinement_overflow > 0:
+        lines.append(f"- +{refinement_overflow} older refinement events")
+
+    return "\n".join(lines).strip()
+
+
+def load_merged_harness(
+    session_id: str, cwd: str
+) -> tuple[dict[HarnessKind, dict[str, Any]], list[Any]]:
+    """Load the global store and this session's local store, merged."""
+    return _merge_states(
+        get_harness_state(global_=True), get_harness_state(local_state_dir(session_id, cwd))
+    )
+
+
+def harness_digest_fingerprint(
+    merged: dict[HarnessKind, dict[str, Any]], refinements: list[Any], mode: str
+) -> str:
+    """Stable fingerprint of the material a rendered digest actually prints.
+
+    Equal fingerprints imply byte-identical digests, so a cold boundary can
+    decide staleness by comparing state rather than by comparing rendered text.
+    Text comparison is unusable here: relevance ranking makes the rendered
+    digest depend on query terms, which change as the task moves, so text
+    equality would report a stale digest on nearly every boundary and re-append
+    an identical-prefix message for nothing.
+
+    Covered: entry identity and content, sorted so entry order is normalized
+    away; the call contract on non-skill entries, which the formatter never
+    prints; the mode, which selects the trigger and contract lines; and each
+    refinement's printed fields in stored order (the formatter renders a
+    positional newest tail, so order is material here). A malformed event
+    renders as a skip line rather than its fields, so its label and reason are
+    the fingerprint material for it.
+
+    Excluded: ``metadata``, ``source``, the invisible ``created_at``/
+    ``updated_at`` bookkeeping, and the query terms themselves — the digest is
+    frozen for one delivery, so ranking is not state.
+    """
+    entries = sorted(
+        (
+            {
+                "scope": entry.scope or "global",
+                "kind": entry.kind,
+                "id": entry.id,
+                "title": entry.title,
+                "path": entry.path,
+                "version": entry.version,
+                "content": entry.content,
+                # Only skills render the call contract, so another kind can
+                # change these without changing a single digest byte.
+                "reference": entry.reference if entry.kind == "skill" else None,
+                "arguments": entry.arguments if entry.kind == "skill" else None,
+            }
+            for bucket in merged.values()
+            for entry in bucket.values()
+        ),
+        key=lambda item: f"{item['scope']}\0{item['kind']}\0{item['id']}",
+    )
+    rendered_refinements = []
+    for event in refinements:
+        malformation = harness_refinement_malformation(event)
+        if malformation is not None:
+            rendered_refinements.append(
+                {"malformed": malformation, "label": _malformed_event_label(event)}
+            )
+            continue
+        rendered_refinements.append(
+            {
+                "id": event.id,
+                "trigger": event.trigger,
+                "changes": event.changes,
+                "outcome": event.outcome,
+            }
+        )
+    material = json.dumps(
+        {
+            "version": _DIGEST_FINGERPRINT_VERSION,
+            "mode": mode,
+            "entries": entries,
+            "refinements": rendered_refinements,
+        },
+        sort_keys=True,
+        default=str,
+    )
+    return hashlib.sha256(material.encode("utf-8")).hexdigest()
+
+
+def harness_digest_with_fingerprint(
+    session_id: str,
+    cwd: str,
+    *,
+    mode: str | None = None,
+    query_terms: HarnessQueryTerms | None = None,
+) -> tuple[str, str]:
+    """Render the digest plus the fingerprint of the state that produced it.
+
+    The fingerprint is empty when there is no digest to deliver, so callers can
+    treat "no state" and "unchanged state" uniformly.
+
+    The mode is resolved only once there is something to render: reading it
+    materializes the whole user config from disk, and a session with an empty
+    harness must not pay for that — nor trip the config sync that a
+    programmatically-set harness config would not expect.
+    """
+    merged, refinements = load_merged_harness(session_id, cwd)
+    if not any(merged.values()) and not refinements:
+        return "", ""
+    resolved_mode = mode or current_mode()
+    digest = _render_digest(merged, refinements, resolved_mode, query_terms)
+    if not digest:
+        return "", ""
+    return digest, harness_digest_fingerprint(merged, refinements, resolved_mode)
+
+
+def create_harness_digest_message(digest: str, fingerprint: str) -> UserMessage:
+    """Wrap a digest as a context message the agent reads as system state.
+
+    The marker tag mirrors the background-completion convention: the model is
+    told to treat it as a system event rather than something the user said. The
+    fingerprint rides along in the message so a later cold boundary can tell
+    whether the copy already in context is current.
+    """
+    return UserMessage(
+        content=(
+            f"<{HARNESS_DIGEST_TAG}>\n"
+            "Continual harness state, refreshed at this point in the conversation. "
+            "Treat it as a system event, not a user instruction.\n\n"
+            f"{digest}\n"
+            f"state_fingerprint: {fingerprint}\n"
+            f"</{HARNESS_DIGEST_TAG}>"
+        )
+    )
+
+
+def delivered_digest_fingerprint(message: Message) -> str | None:
+    """State fingerprint carried by *message*, or None if it is not a digest.
+
+    Public read side of :func:`create_harness_digest_message`, so the caller that
+    owns the digest slot can find it again without reaching into module
+    internals.
+    """
+    text = _message_text(message)
+    if f"<{HARNESS_DIGEST_TAG}>" not in text:
+        return None
+    for line in text.splitlines():
+        if line.startswith("state_fingerprint: "):
+            return line.removeprefix("state_fingerprint: ").strip()
+    return None
+
+
+def is_harness_digest_message(message: Message) -> bool:
+    """Whether *message* is a delivered digest, fingerprint line or not.
+
+    A digest minted before the fingerprint line existed carries the tag but no
+    comparable fingerprint, so it reads as stale and is replaced rather than
+    duplicated.
+    """
+    return f"<{HARNESS_DIGEST_TAG}>" in _message_text(message)
 
 
 # =================================================================================================
@@ -671,6 +1077,42 @@ def load_history(state: HarnessState) -> list[dict[str, Any]]:
     except OSError:
         log.exception("failed to read refinement history %s", path)
     return results
+
+
+def merge_refinement_history(
+    global_results: list[dict[str, Any]], session_results: list[dict[str, Any]]
+) -> list[dict[str, Any]]:
+    """Merge cross-session and session-local history, de-duplicating by id.
+
+    The plan pass needs both: a local refinement that cannot see global history
+    will re-learn a lesson another session already tried, and may even recreate
+    an entry that was tried globally and then rolled back. Session entries win
+    on id conflict so a pass that is still resolving its own latest result sees
+    the fresher copy, while keeping any scope the session copy lacks.
+    """
+    by_id: dict[str, dict[str, Any]] = {}
+    for result in global_results:
+        result_id = result.get("id")
+        if isinstance(result_id, str):
+            by_id[result_id] = result
+    for result in session_results:
+        result_id = result.get("id")
+        if not isinstance(result_id, str):
+            continue
+        existing = by_id.get(result_id)
+        if result.get("scope") or existing is None or not existing.get("scope"):
+            by_id[result_id] = result
+        else:
+            by_id[result_id] = {**result, "scope": existing["scope"]}
+    return list(by_id.values())
+
+
+def load_merged_history(session_id: str, cwd: str) -> list[dict[str, Any]]:
+    """Refinement history visible to a plan pass: global plus this session's."""
+    return merge_refinement_history(
+        load_history(get_harness_state(global_=True)),
+        load_history(get_harness_state(local_state_dir(session_id, cwd))),
+    )
 
 
 def append_history(state: HarnessState, result: dict[str, Any]) -> None:
@@ -912,6 +1354,174 @@ def apply_refinement(
 # plan (LLM pass)
 # =================================================================================================
 
+#: Output cap for the plan pass. A refinement proposal is a handful of small
+#: JSON edits, so a large budget buys nothing and a truncated reply is a total
+#: loss of the pass.
+REFINEMENT_MAX_OUTPUT_TOKENS = 32_000
+
+#: Slack added on top of the system prompt's token bound, covering the message
+#: envelope and the provider's own framing.
+_CONTEXT_OVERHEAD_TOKENS = 1_024
+
+#: Assumed context window when the provider's model is not in the catalog. Only
+#: the fitting math depends on this; an unknown model still gets a bounded
+#: request rather than an unbounded one.
+_FALLBACK_CONTEXT_WINDOW = 200_000
+
+#: Assumed output ceiling when the model is not in the catalog.
+_FALLBACK_MAX_TOKENS = 8_192
+
+
+def _model_limits(provider: Any) -> tuple[int, int]:
+    """Return ``(context_window, max_tokens)`` for the provider's model.
+
+    Falls back to conservative constants for an unlisted model so budgeting
+    still applies. Reading the live catalog keeps this honest when the model is
+    known: an uncapped request would otherwise overflow a small-context model.
+    """
+    from vtx.ai.models import get_model
+
+    model_id = getattr(provider, "model", None)
+    model = get_model(model_id) if isinstance(model_id, str) and model_id else None
+    context_window = getattr(model, "context_window", None)
+    max_tokens = getattr(model, "max_tokens", None)
+    return (
+        context_window
+        if isinstance(context_window, int) and context_window > 0
+        else _FALLBACK_CONTEXT_WINDOW,
+        max_tokens if isinstance(max_tokens, int) and max_tokens > 0 else _FALLBACK_MAX_TOKENS,
+    )
+
+
+def _token_bound(text: str) -> int:
+    """Upper bound on tokens for *text*.
+
+    One token per UTF-8 byte bounds byte-based tokenizers, including dense or
+    unusual text. Erring high is safe here: the bound only decides how much
+    trajectory to drop, and dropping too little is the failure this prevents.
+    """
+    return len(text.encode("utf-8"))
+
+
+def _thinking_off(provider: Any) -> bool:
+    """Whether the provider runs this call without reasoning tokens."""
+    config = getattr(provider, "config", None)
+    return getattr(config, "thinking_level", "off") in ("off", "", None)
+
+
+def refinement_request(
+    *,
+    system_prompt: str,
+    conversation: str,
+    build_prompt: Callable[[str], str],
+    output_reserve: int,
+    context_window: int,
+    model_max_tokens: int,
+) -> tuple[str, int]:
+    """Fit a refinement request to the model; return ``(user_prompt, max_tokens)``.
+
+    The trajectory and the reply have to fit in the same window, and a fixed
+    character tail cannot do that: on a small-context model an 80k-character
+    trajectory overflows before a reply is ever generated. So the input budget is
+    ``context_window`` minus the smallest of the model's output ceiling, this
+    call's reserve, and half the window; the longest tail of trajectory that
+    fits inside it is found by binary search; and whatever context is left over
+    becomes ``max_tokens``.
+
+    Drops from the tail, because the newest turns are what a refinement pass
+    reasons about. Raises when the prompt alone leaves no room for a reply,
+    which is a configuration problem worth naming rather than surfacing later
+    as an empty or cut-off completion.
+    """
+    system_reserve = _token_bound(system_prompt) + _CONTEXT_OVERHEAD_TOKENS
+    output_cap = min(model_max_tokens, output_reserve, context_window // 2)
+    input_budget = context_window - output_cap
+
+    def prompt_for_length(length: int) -> str:
+        start = max(0, len(conversation) - length)
+        # Never split a surrogate pair: a lone surrogate is not encodable and
+        # would raise inside the token bound.
+        if start < len(conversation) and "\ud800" <= conversation[start] <= "\udfff":
+            start += 1
+        return build_prompt(
+            "[Earlier conversation omitted to fit the model context.\n" + conversation[start:]
+        )
+
+    user_prompt = build_prompt(conversation)
+    if conversation and system_reserve + _token_bound(user_prompt) > input_budget:
+        low, high = 0, len(conversation)
+        while low < high:
+            length = (low + high + 1) // 2
+            if system_reserve + _token_bound(prompt_for_length(length)) <= input_budget:
+                low = length
+            else:
+                high = length - 1
+        user_prompt = prompt_for_length(low)
+
+    # The reserve caps the reply as well as the input budget: a small call (the
+    # review gate) must not be handed the model's full ceiling just because the
+    # window had room to spare.
+    max_tokens = min(output_cap, context_window - system_reserve - _token_bound(user_prompt))
+    if max_tokens <= 0:
+        raise ValueError(
+            "Refinement prompt leaves no room for output in the model's context window; "
+            "retry with a smaller request."
+        )
+    return user_prompt, max_tokens
+
+
+async def _complete_refinement_call(
+    *,
+    provider: Any,
+    system_prompt: str,
+    user_prompt: str,
+    max_tokens: int,
+    cancel_event: Any = None,
+    label: str,
+) -> str:
+    """Run one text-only refinement call and return its reply text.
+
+    A ``length`` stop is reported as a truncation error rather than handed to
+    the JSON extractor. The extractor can only diagnose a reply that visibly
+    stops mid-value; a stream that stopped for output budget tells us the cause
+    directly, even when the partial text happens to parse as balanced JSON.
+    """
+    if cancel_event is not None and cancel_event.is_set():
+        raise RuntimeError(f"{label} cancelled before the call")
+
+    stream = await provider.stream(
+        [UserMessage(content=user_prompt)],
+        system_prompt=system_prompt,
+        tools=None,
+        max_tokens=max_tokens,
+    )
+    text_parts: list[str] = []
+    stop_reason = None
+    async for part in stream:
+        if isinstance(part, TextPart):
+            text_parts.append(part.text)
+        elif isinstance(part, StreamDone):
+            stop_reason = part.stop_reason
+
+    if cancel_event is not None and cancel_event.is_set():
+        raise RuntimeError(f"{label} cancelled during the call")
+    if stop_reason is StopReason.LENGTH:
+        raise ValueError(f"{label}: {TRUNCATED_JSON_ERROR}")
+    return "\n".join(text_parts)
+
+
+def _output_reserve(provider: Any, cap: int) -> int:
+    """Output room to reserve for a refinement call.
+
+    Reasoning tokens and the JSON reply share the model's output budget, so with
+    reasoning on the model needs its full ceiling and this call must not compete
+    for it. With reasoning off the call only needs the JSON, so the small cap
+    applies and the rest of the window stays available for trajectory.
+    """
+    if _thinking_off(provider):
+        return cap
+    return _model_limits(provider)[1]
+
 
 async def plan_refinement(
     *,
@@ -926,41 +1536,55 @@ async def plan_refinement(
 ) -> dict[str, Any]:
     conversation = serialize_conversation(messages)[-_CONVERSATION_TAIL_CHARS:]
     scope_instruction = _GLOBAL_SCOPE_INSTRUCTION if global_ else _LOCAL_SCOPE_INSTRUCTION
-    blocks = [
-        f"<current_harness_state>\n{overview_for_prompt(*states)}\n</current_harness_state>",
-        f"<refinement_history>\n{history_for_prompt(history)}\n</refinement_history>",
-        f"<conversation>\n{conversation}\n</conversation>",
-        f"<scope_policy>\n{scope_instruction}\n</scope_policy>",
-    ]
+    state_block = (
+        f"<current_harness_state>\n{overview_for_prompt(*states)}\n</current_harness_state>"
+    )
+    history_block = f"<refinement_history>\n{history_for_prompt(history)}\n</refinement_history>"
+    tail_blocks = [f"<scope_policy>\n{scope_instruction}\n</scope_policy>"]
     mode_instruction = _MODE_PLAN_INSTRUCTION.get(mode or current_mode())
     if mode_instruction:
-        blocks.append(f"<mode_contract>\n{mode_instruction}\n</mode_contract>")
+        tail_blocks.append(f"<mode_contract>\n{mode_instruction}\n</mode_contract>")
     if instructions:
-        blocks.append(f"<user_refine_instructions>\n{instructions}\n</user_refine_instructions>")
-    blocks.append(
+        tail_blocks.append(
+            f"<user_refine_instructions>\n{instructions}\n</user_refine_instructions>"
+        )
+    tail_blocks.append(
         "Return only JSON edits. If no useful edit is justified, return an empty edits "
         "array with a rationale."
     )
-    user_prompt = "\n\n".join(blocks)
 
-    if cancel_event is not None and cancel_event.is_set():
-        raise RuntimeError("Refinement cancelled before planning")
+    # The trajectory is the only block the fit rewrites, so build_prompt
+    # substitutes just it and leaves the fixed blocks byte-identical.
+    def build_prompt(trimmed: str) -> str:
+        return "\n\n".join(
+            [
+                state_block,
+                history_block,
+                f"<conversation>\n{trimmed}\n</conversation>",
+                *tail_blocks,
+            ]
+        )
 
-    stream = await provider.stream(
-        [UserMessage(content=user_prompt)], system_prompt=REFINEMENT_SYSTEM_PROMPT, tools=None
+    context_window, model_max_tokens = _model_limits(provider)
+    user_prompt, max_tokens = refinement_request(
+        system_prompt=REFINEMENT_SYSTEM_PROMPT,
+        conversation=conversation,
+        build_prompt=build_prompt,
+        output_reserve=_output_reserve(provider, REFINEMENT_MAX_OUTPUT_TOKENS),
+        context_window=context_window,
+        model_max_tokens=model_max_tokens,
     )
-    text_parts: list[str] = []
-    async for part in stream:
-        if isinstance(part, TextPart):
-            text_parts.append(part.text)
+    text = await _complete_refinement_call(
+        provider=provider,
+        system_prompt=REFINEMENT_SYSTEM_PROMPT,
+        user_prompt=user_prompt,
+        max_tokens=max_tokens,
+        cancel_event=cancel_event,
+        label="Refinement failed",
+    )
+    return normalize_proposal(extract_json_object(text))
 
-    if cancel_event is not None and cancel_event.is_set():
-        raise RuntimeError("Refinement cancelled during planning")
 
-    return normalize_proposal(extract_json_object("\n".join(text_parts)))
-
-
-# =================================================================================================
 # auto-refine review gate (prime's reviewAutoRefine)
 #
 # The gate is the only auto-spent call: it reads the trajectory and answers
@@ -1043,39 +1667,51 @@ async def review_auto_refine(
     a broken provider does not retry a review on every turn.
     """
     conversation = serialize_conversation(messages)[-_AUTO_REVIEW_CONVERSATION_CHARS:]
-    user_prompt = "\n\n".join(
-        [
-            f"<trigger>\n{reason}; {turns_since_last_review} assistant turns since last "
-            "auto-refine review\n</trigger>",
-            f"<current_harness_state>\n{overview_for_prompt(*states)}\n</current_harness_state>",
-            f"<refinement_history>\n{history_for_prompt(history)}\n</refinement_history>",
-            f"<conversation>\n{conversation}\n</conversation>",
-            "Return shouldRefine=true when the trajectory contains evidence useful to this "
-            "session's future turns. Prefer local harness edits for current task progress, "
-            "temporary blockers, and current-run coordination. Ask for global refinement only "
-            "for durable cross-session lessons or explicitly project-qualified facts likely "
-            "to be reused in future sessions.",
-        ]
+    state_block = (
+        f"<current_harness_state>\n{overview_for_prompt(*states)}\n</current_harness_state>"
+    )
+    history_block = f"<refinement_history>\n{history_for_prompt(history)}\n</refinement_history>"
+    trigger_block = (
+        f"<trigger>\n{reason}; {turns_since_last_review} assistant turns since last "
+        "auto-refine review\n</trigger>"
+    )
+    tail_block = (
+        "Return shouldRefine=true when the trajectory contains evidence useful to this "
+        "session's future turns. Prefer local harness edits for current task progress, "
+        "temporary blockers, and current-run coordination. Ask for global refinement only "
+        "for durable cross-session lessons or explicitly project-qualified facts likely "
+        "to be reused in future sessions."
     )
 
-    if cancel_event is not None and cancel_event.is_set():
-        raise RuntimeError("Auto-refine review cancelled")
+    def build_prompt(trimmed: str) -> str:
+        return "\n\n".join(
+            [
+                trigger_block,
+                state_block,
+                history_block,
+                f"<conversation>\n{trimmed}\n</conversation>",
+                tail_block,
+            ]
+        )
 
-    stream = await provider.stream(
-        [UserMessage(content=user_prompt)],
+    context_window, model_max_tokens = _model_limits(provider)
+    user_prompt, max_tokens = refinement_request(
         system_prompt=AUTO_REFINE_REVIEW_SYSTEM_PROMPT,
-        tools=None,
-        max_tokens=AUTO_REFINE_REVIEW_MAX_OUTPUT_TOKENS,
+        conversation=conversation,
+        build_prompt=build_prompt,
+        output_reserve=_output_reserve(provider, AUTO_REFINE_REVIEW_MAX_OUTPUT_TOKENS),
+        context_window=context_window,
+        model_max_tokens=model_max_tokens,
     )
-    text_parts: list[str] = []
-    async for part in stream:
-        if isinstance(part, TextPart):
-            text_parts.append(part.text)
-
-    if cancel_event is not None and cancel_event.is_set():
-        raise RuntimeError("Auto-refine review cancelled during review")
-
-    return parse_auto_refine_review("\n".join(text_parts))
+    text = await _complete_refinement_call(
+        provider=provider,
+        system_prompt=AUTO_REFINE_REVIEW_SYSTEM_PROMPT,
+        user_prompt=user_prompt,
+        max_tokens=max_tokens,
+        cancel_event=cancel_event,
+        label="Auto-refine review failed",
+    )
+    return parse_auto_refine_review(text)
 
 
 # =================================================================================================
@@ -1152,7 +1788,10 @@ async def run_refinement(
     else:
         state, overview_states, scope = resolve_states(session_id, cwd, global_=global_)
         baseline = snapshot_baseline(state)
-        history = load_history(state)
+        # Merged, not just the target store's: a pass that cannot see global
+        # history re-learns lessons another session already tried, including
+        # entries that were tried globally and then rolled back.
+        history = load_merged_history(session_id, cwd)
         proposal = await plan_refinement(
             messages=messages,
             provider=provider,
@@ -1234,31 +1873,47 @@ __all__ = [
     "AUTO_REFINE_REASON_TURN_INTERVAL",
     "AUTO_REFINE_REVIEW_MAX_OUTPUT_TOKENS",
     "AUTO_REFINE_REVIEW_SYSTEM_PROMPT",
+    "HARNESS_DIGEST_TAG",
     "MODE_CODE_FIRST",
     "MODE_TOOL_FIRST",
+    "REFINEMENT_MAX_OUTPUT_TOKENS",
     "REFINEMENT_SYSTEM_PROMPT",
     "AutoRefineReview",
+    "HarnessQueryTerms",
     "RefineCommandOptions",
     "RefinementOutcome",
     "apply_refinement",
     "auto_refine_instructions",
+    "build_digest_query_terms",
+    "create_harness_digest_message",
     "create_notice",
     "current_mode",
+    "delivered_digest_fingerprint",
     "extract_json_object",
     "format_notice_body",
     "generate_refinement_id",
+    "harness_digest_fingerprint",
     "harness_digest_for_prompt",
+    "harness_digest_with_fingerprint",
+    "harness_query_term_idf",
+    "harness_refinement_malformation",
     "history_for_prompt",
+    "is_harness_digest_message",
     "load_history",
+    "load_merged_harness",
+    "load_merged_history",
+    "merge_refinement_history",
     "normalize_proposal",
     "overview_for_prompt",
     "parse_auto_refine_review",
     "parse_refine_command_options",
     "plan_refinement",
+    "refinement_request",
     "resolve_states",
     "review_auto_refine",
     "rollback_proposal",
     "run_refinement",
+    "score_harness_entry",
     "serialize_conversation",
     "snapshot_baseline",
     "validate_edit",

@@ -362,6 +362,27 @@ class Session:
         self._append_entry(entry)
         return entry.id
 
+    def replace_message(self, entry_id: str, message: Message) -> None:
+        """Swap the message on an existing :class:`MessageEntry`, in place.
+
+        The session log is append-only, so this does not add an entry; it
+        rewrites the one named by *entry_id*. Used for context slots that hold
+        regenerable state — the continual-harness digest — where a fresh value
+        should replace the stale one rather than stack a second copy behind it.
+        A crash before the next rewrite leaves the previous value on disk, which
+        is recoverable: the digest is keyed by a state fingerprint, so a stale
+        copy is detected on resume and re-delivered.
+
+        Raises ``ValueError`` when the entry is missing or is not a message.
+        """
+        entry = self._by_id.get(entry_id)
+        if not isinstance(entry, MessageEntry):
+            raise ValueError(f"No message entry with id {entry_id!r}")
+        entry.message = message
+        # Force the next persist to rewrite the whole log: an appended-only flush
+        # would leave the superseded text on disk.
+        self._flushed = False
+
     def append_thinking_level_change(self, thinking_level: str) -> str:
         entry = ThinkingLevelChangeEntry(
             id=self._generate_entry_id(),

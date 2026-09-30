@@ -3,21 +3,25 @@
 The composer joins a small set of named sections in a fixed order:
 
 1. **base**    - the agent identity + general rules (or a user override)
-2. **harness** - ``# Continual Harness State`` digest (both runtime modes)
-3. **tooling** - ``# Tool usage`` lines aggregated from tool guidelines
-4. **project** - discovered ``AGENTS.md`` / ``CLAUDE.md`` files
-5. **skills**  - discovered skill descriptions
-6. **git**     - snapshot of the working tree (only when enabled)
-7. **env**     - current date/time and working directory
+2. **tooling** - ``# Tool usage`` lines aggregated from tool guidelines
+3. **project** - discovered ``AGENTS.md`` / ``CLAUDE.md`` files
+4. **skills**  - discovered skill descriptions
+5. **git**     - snapshot of the working tree (only when enabled)
+6. **env**     - current date/time and working directory
 
 Each section is empty when its source has nothing to contribute, so
 the final prompt is just whatever joined list comes back. ``build_system_prompt``
 is the single entry point used by :mod:`vtx.loop` and the runtime.
+
+The ``# Continual Harness State`` digest is deliberately *not* a section here.
+It is per-session state whose entries are ranked by relevance to the current
+task, so folding it in here would rewrite the provider's cached prefix on
+nearly every turn. The agent delivers it as a context message at cold
+boundaries instead (see :func:`vtx.ai.agent.rlm.refine.create_harness_digest_message`).
 """
 
 from __future__ import annotations
 
-import logging
 from typing import Any
 
 from vtx.ai.agent.context import (
@@ -54,24 +58,6 @@ def _resolve_ponytail_flag(include_ponytail: bool | None) -> bool:
     if include_ponytail is not None:
         return include_ponytail
     return getattr(vtx_config.llm.system_prompt, "ponytail", False)
-
-
-def _harness_digest_section(cwd: str, mode: str) -> str:
-    """Continual-harness digest (prime parity), rendered in every mode.
-
-    Entries + recent refinements, omitted entirely when there is nothing to
-    show. ``mode`` only picks the call contract the model is told to use
-    (the REPL-native forms in ``code_first``, the tool-first forms in
-    ``tool_first``). A rendering failure must never break prompt assembly.
-    """
-    try:
-        from vtx.ai.agent.rlm.refine import harness_digest_for_prompt
-        from vtx.ai.agent.rlm.registry import bridge_session_id
-
-        return harness_digest_for_prompt(bridge_session_id(), cwd, mode=mode)
-    except Exception:
-        logging.getLogger(__name__).exception("harness digest build failed")
-        return ""
 
 
 def build_system_prompt(
@@ -120,11 +106,6 @@ def build_system_prompt(
             cwd=cwd, installed_skills=installed_skills, active_tools=tool_names or ["ipython"]
         )
         sections: list[str] = [base]
-        # Continual-harness digest (prime parity): entries + recent refinements,
-        # omitted entirely when there is nothing to show.
-        digest = _harness_digest_section(cwd, mode)
-        if digest:
-            sections.append(digest)
         if extra_instructions and extra_instructions_mode == "append":
             sections.append(extra_instructions)
         tool_section = build_tool_guidelines_section(tools)
@@ -149,14 +130,6 @@ def build_system_prompt(
     if extra_instructions and extra_instructions_mode == "replace":
         base = extra_instructions
     sections: list[str] = [base]
-
-    # Continual-harness digest (prime parity). The harness is mode-neutral:
-    # prompt notes, memories, skills, and subagent specs are rendered in the
-    # tool-first prompt too, so refinement changes what the model actually
-    # reads. Only the call contract inside the digest differs per mode.
-    digest = _harness_digest_section(cwd, mode)
-    if digest:
-        sections.append(digest)
 
     if extra_instructions and extra_instructions_mode == "append":
         sections.append(extra_instructions)

@@ -147,6 +147,12 @@ class Agent:
         self._auto_refine_last_review_at = 0.0
         self._auto_refine_in_progress = False
         self._pending_auto_refine_review: tuple[str, Any] | None = None
+        # Continual-harness digest slot. The digest is context, not prompt: it
+        # is delivered as one message at cold boundaries and swapped in place
+        # when the harness state it renders changes. See
+        # :meth:`_ensure_harness_digest_context`.
+        self._harness_digest_entry_id: str | None = None
+        self._harness_digest_fingerprint: str | None = None
 
     @property
     def context(self) -> Any:
@@ -161,6 +167,109 @@ class Agent:
             self._context = self._context_loader(self._cwd)
         if self._prompt_builder is not None:
             self._system_prompt = self._prompt_builder(self._cwd, self._context, tools=self.tools)
+
+    def _ensure_harness_digest_context(self) -> None:
+        """Deliver the continual-harness digest when the copy in context is stale.
+
+        A run is a cold boundary: a fresh prompt starts, and the digest's entries
+        are ranked against the task now in front of us. Staleness is decided by
+        the *state* fingerprint rather than by rendered text, because re-ranking
+        changes the text whenever the task moves even though no entry changed.
+        Text comparison would re-append an equivalent message on nearly every
+        boundary and invalidate the cached prefix behind it for nothing.
+
+        The digest occupies a single context slot rather than accumulating one
+        message per refinement: the session log is append-only, so a stale copy
+        is swapped in place. Because that keeps its original position, a refresh
+        invalidates the prefix only from the digest onward, and only on the
+        boundaries where harness state actually changed.
+
+        Skipped for sub-agents, which share the parent's harness and would only
+        duplicate a digest the parent already delivers. A session with nothing in
+        the harness gets nothing appended and no slot is claimed, so the first
+        entry written later is delivered on a later boundary.
+
+        Never raises: a harness read failure must not block the user's turn.
+        """
+        if self._depth != 0:
+            return
+        try:
+            from vtx.ai.agent.rlm.refine import (
+                build_digest_query_terms,
+                create_harness_digest_message,
+                harness_digest_with_fingerprint,
+            )
+            from vtx.ai.agent.rlm.registry import bridge_session_id
+
+            session_id = bridge_session_id()
+            digest, fingerprint = harness_digest_with_fingerprint(
+                session_id,
+                self._cwd,
+                query_terms=build_digest_query_terms(
+                    objective=self._goal_objective(), messages=self.session.messages
+                ),
+            )
+            if not digest:
+                return
+            entry_id = self._harness_digest_entry_id
+            if entry_id is not None and self.session.get_entry(entry_id) is not None:
+                if self._harness_digest_fingerprint == fingerprint:
+                    return
+                self.session.replace_message(
+                    entry_id, create_harness_digest_message(digest, fingerprint)
+                )
+            else:
+                # A resumed session carries its digest in the log but not this
+                # engine's slot bookkeeping, so re-adopt it by content rather
+                # than delivering a second copy.
+                entry_id = self._adopt_harness_digest_slot()
+                if entry_id is None:
+                    entry_id = self.session.append_message(
+                        create_harness_digest_message(digest, fingerprint)
+                    )
+                elif self._harness_digest_fingerprint == fingerprint:
+                    return
+                else:
+                    self.session.replace_message(
+                        entry_id, create_harness_digest_message(digest, fingerprint)
+                    )
+            self._harness_digest_entry_id = entry_id
+            self._harness_digest_fingerprint = fingerprint
+        except Exception:
+            log.exception("harness digest delivery failed")
+
+    def _adopt_harness_digest_slot(self) -> str | None:
+        """Point the slot bookkeeping at a digest already present in the log.
+
+        A resumed session carries its digest entry but not this engine's slot
+        bookkeeping, so without this the first boundary after a resume would
+        deliver a second copy. Returns the entry id, or None when there is
+        nothing to adopt.
+        """
+        from vtx.ai.agent.rlm.refine import delivered_digest_fingerprint, is_harness_digest_message
+
+        for entry in reversed(self.session.active_entries):
+            message = getattr(entry, "message", None)
+            if message is None or not is_harness_digest_message(message):
+                continue
+            self._harness_digest_fingerprint = delivered_digest_fingerprint(message)
+            return entry.id
+        return None
+
+    def _goal_objective(self) -> str | None:
+        """Focused goal objective: the strongest relevance signal for ranking."""
+        try:
+            from vtx.ai.agent.goal.service import get_service
+            from vtx.ai.agent.rlm.registry import bridge_session_id
+
+            service = get_service(self._cwd, bridge_session_id())
+            if service.settings.get("disabled"):
+                return None
+            record = service.focused()
+        except Exception:
+            return None
+        objective = record.objective if record is not None else None
+        return objective if isinstance(objective, str) and objective else None
 
     @property
     def messages(self) -> list[Message]:
@@ -193,6 +302,7 @@ class Agent:
         else:
             user_message = UserMessage(content=query)
 
+        self._ensure_harness_digest_context()
         self.session.append_message(user_message)
 
         # Resume from a checkpoint left by a previous cancelled (/stop) run in
