@@ -70,7 +70,7 @@ class RefineTool(BaseTool):
         'refine(action="run", instructions="...") once you notice a repeated '
         "failure, a reusable tactic, or a behavior correction worth keeping; "
         'refine(action="status") to check whether a pass is already queued. '
-        "It returns immediately and runs when the turn ends, so keep working"
+        "It returns immediately and runs when the turn ends, so keep working",
     )
     description = (
         "Refine Vtx's continual harness: the persistent prompt notes, memories, "

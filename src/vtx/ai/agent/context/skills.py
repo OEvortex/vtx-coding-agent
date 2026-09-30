@@ -597,19 +597,10 @@ def formatted_skills(skills: list[Skill]) -> str:
     if not skills:
         return ""
 
-    grouped: dict[str, list[Skill]] = {}
-    for skill in skills:
-        grouped.setdefault(skill.category or DEFAULT_SKILL_CATEGORY, []).append(skill)
-
-    index_lines: list[str] = []
-    for category in sorted(grouped):
-        index_lines.append(f"  {category}:")
-        for skill in sorted(grouped[category], key=lambda s: s.name):
-            if skill.kind == "python" and skill.python:
-                index_lines.append(f"    - {skill.name} (python: `{skill.python.import_name}`)")
-            else:
-                index_lines.append(f"    - {skill.name}")
-
+    # One listing only. A grouped name index used to precede the XML, which
+    # named every skill a second time with no description or path, so the
+    # catalog shipped doubled on every turn. The XML is the listing; the python
+    # import it carries per entry is what the index used to add.
     skill_tags: list[str] = []
     for skill in sorted(skills, key=lambda s: s.name):
         skill_tags.append("  <skill>")
@@ -648,8 +639,6 @@ def formatted_skills(skills: list[Skill]) -> str:
         "relative to the current working directory. If a skill is manually triggered via slash",
         "command, its full content is already included in the user message, so you don't need",
         "to read the skill file again.",
-        "",
-        *index_lines,
         "",
         "<available_skills>",
         *skill_tags,

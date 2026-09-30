@@ -646,6 +646,19 @@ class TestFormatSkillsForPrompt:
         assert "<description>A test skill</description>" in result
         assert "<location>/path/to/SKILL.md</location>" in result
 
+    def test_names_each_skill_exactly_once(self):
+        """A grouped name index used to precede the XML, naming every skill a
+        second time with no description or path."""
+        skills = [
+            Skill(name="alpha", description="Alpha", path="/a/SKILL.md", category="workflows"),
+            Skill(name="beta", description="Beta", path="/b/SKILL.md", category="review"),
+        ]
+
+        result = formatted_skills(skills)
+
+        for skill in skills:
+            assert result.count(skill.name) == 1, skill.name
+
     def test_groups_skills_by_category(self):
         skills = [
             Skill(

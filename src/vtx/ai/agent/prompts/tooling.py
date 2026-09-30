@@ -21,7 +21,13 @@ def build_tool_guidelines_section(tools: list[BaseTool] | None) -> str:
     guidelines: list[str] = []
     seen: set[str] = set()
     for tool in tools:
-        for guideline in tool.prompt_guidelines:
+        # A tool that writes `prompt_guidelines = ("a" "b")` without the trailing
+        # comma gets a str, not a tuple, and iterating it yields one bullet per
+        # character. Normalize rather than trust: the failure is invisible at the
+        # definition site and ruins the whole section at the prompt site.
+        raw = tool.prompt_guidelines
+        entries = (raw,) if isinstance(raw, str) else raw or ()
+        for guideline in entries:
             if guideline in seen:
                 continue
             guidelines.append(guideline)
