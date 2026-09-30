@@ -457,6 +457,7 @@ class ChatLog(VerticalScroll):
             ("/clear", "Clear conversation history"),
             ("/compact", "Compact now (add focus text to steer the summary)"),
             ("/refine", "Refine continual harness state (/refine <instructions>)"),
+            ("/harness", "Browse or delete harness entries (/harness show <id>)"),
             ("/model", "Change model (/model gpt-4o)"),
             ("/provider", "Filter /model by provider"),
             ("/themes", "Change UI theme (/themes gruvbox-dark)"),
@@ -937,6 +938,41 @@ class ChatLog(VerticalScroll):
         self.mount(label)
         self._scroll_if_anchored(animate=False)
 
+    def add_harness_entries(
+        self, entries: list, *, title: str = "Harness entries", empty: str = "  (none)"
+    ) -> None:
+        """Render harness entries as a browsable list.
+
+        Shows the ids because they are what ``/harness delete`` takes, and the
+        scope because a global entry is asserted to every future session while
+        a local one dies with this one — the difference decides whether a bad
+        entry is worth deleting at all.
+        """
+        from rich.text import Text
+
+        colors = config.ui.colors
+        text = Text()
+        text.append(f"[{title}]\n", style=colors.notice)
+        if not entries:
+            text.append(empty + "\n", style=colors.dim)
+        for entry in entries:
+            text.append(f"  {entry.id}", style=colors.accent)
+            text.append(f"  {entry.kind}/{entry.path}", style=colors.dim)
+            text.append(f"  [{entry.scope}]", style=colors.muted)
+            text.append(f"  v{entry.version}\n", style=colors.dim)
+            text.append(f"    {entry.title}\n", style=colors.fg)
+            summary = entry.content.strip().replace("\n", " ")
+            if len(summary) > 160:
+                summary = f"{summary[:157]}..."
+            if summary:
+                text.append(f"    {summary}\n", style=colors.muted)
+        text.append(f"\n{len(entries)} entries · /harness show <id> · /harness delete <id>\n")
+        label = Label(text)
+        label.add_class("info-message")
+        label.add_class("harness-entries")
+        self.mount(label)
+        self._scroll_if_anchored(animate=False)
+
     def add_refinement(
         self,
         *,
@@ -979,6 +1015,7 @@ class ChatLog(VerticalScroll):
         if block.has_details:
             self._refinement_blocks.append(block)
         self._scroll_if_anchored(animate=False)
+        self._prune_if_needed()
         return block
 
     def add_info_message(self, message: str, error: bool = False, warning: bool = False) -> None:

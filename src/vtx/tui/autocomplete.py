@@ -446,6 +446,9 @@ DEFAULT_COMMANDS = [
     SlashCommand("copy", "copy last agent response text"),
     SlashCommand("compact", "compact now; /compact <focus> steers the summary"),
     SlashCommand("refine", "refine continual harness state"),
+    SlashCommand(
+        "harness", "browse harness entries (/harness, /harness show <id>, /harness delete <id>)"
+    ),
     SlashCommand("recap", "summarize where the session left off"),
     SlashCommand("agent", "list/switch handoff agents (Shift+Tab to cycle)"),
     SlashCommand("update", "check for and install latest vtx update"),

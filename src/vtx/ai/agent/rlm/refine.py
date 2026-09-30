@@ -31,6 +31,7 @@ from typing import Any
 
 from vtx.ai.agent.rlm.harness import (
     _MINED_MIN_RUN,
+    HarnessEntry,
     HarnessKind,
     HarnessState,
     _slug,
@@ -1427,6 +1428,18 @@ _FALLBACK_CONTEXT_WINDOW = 200_000
 _FALLBACK_MAX_TOKENS = 8_192
 
 
+def provider_model_id(provider: Any) -> str:
+    """The model id a provider will actually request.
+
+    Read off ``config``, not off the provider: ``BaseProvider`` stores the model
+    in its ``ProviderConfig`` and exposes no ``model`` attribute, so a
+    ``getattr(provider, "model", ...)`` lookup silently yields nothing and every
+    caller falls back to its defaults.
+    """
+    model_id = getattr(getattr(provider, "config", None), "model", None)
+    return model_id if isinstance(model_id, str) else ""
+
+
 def _model_limits(provider: Any) -> tuple[int, int]:
     """Return ``(context_window, max_tokens)`` for the provider's model.
 
@@ -1436,8 +1449,8 @@ def _model_limits(provider: Any) -> tuple[int, int]:
     """
     from vtx.ai.models import get_model
 
-    model_id = getattr(provider, "model", None)
-    model = get_model(model_id) if isinstance(model_id, str) and model_id else None
+    model_id = provider_model_id(provider)
+    model = get_model(model_id) if model_id else None
     context_window = getattr(model, "context_window", None)
     max_tokens = getattr(model, "max_tokens", None)
     return (
@@ -1581,7 +1594,7 @@ def resolve_refine_provider(provider: Any) -> tuple[Any, str]:
     window would fail over-limit on the wire after the trajectory was already
     truncated to fit it.
     """
-    session_label = str(getattr(provider, "model", "") or "session model")
+    session_label = provider_model_id(provider) or "session model"
     selector = _refine_model_selector()
     if not selector:
         return provider, session_label
@@ -2116,6 +2129,109 @@ def parse_refine_command_options(args: str) -> RefineCommandOptions:
     return RefineCommandOptions(instructions=rest or None, global_=global_flag)
 
 
+# =================================================================================================
+# /harness — direct store inspection
+#
+# Refinement is the only writer, and it only writes when a model decides to.
+# That leaves no way to see what the agent currently believes, and no way to
+# remove an entry you know is wrong without spending a refinement pass and
+# hoping the model agrees with you. This is the read/delete escape hatch: it
+# goes straight to the store, so it costs nothing and can contradict the model.
+# =================================================================================================
+
+HARNESS_USAGE = "Usage: /harness [list|show <id>|search <query>|delete <id>] [--global] [kind]"
+
+
+@dataclass
+class HarnessCommandOptions:
+    """Parsed ``/harness`` arguments."""
+
+    action: str = "list"
+    target: str = ""
+    kind: HarnessKind | None = None
+    global_: bool = False
+    errors: list[str] = field(default_factory=list)
+
+
+def parse_harness_command_options(args: str) -> HarnessCommandOptions:
+    """Parse ``/harness`` args.
+
+    The kind is positional and trailing, so ``/harness memory`` lists only
+    memories while ``/harness search pytest`` is unambiguous. An unknown
+    trailing word is a kind error rather than a silent no-op filter, since a
+    typo that quietly showed every kind would read as "nothing matched".
+    """
+    tokens = args.strip().split()
+    options = HarnessCommandOptions()
+    positional: list[str] = []
+    for token in tokens:
+        if token == "--global":
+            options.global_ = True
+            continue
+        if token.startswith("--"):
+            options.errors.append(f"Unknown option {token!r}. {HARNESS_USAGE}")
+            return options
+        positional.append(token)
+
+    if not positional:
+        return options
+
+    action = positional[0]
+    rest = positional[1:]
+    if action in ("list", "ls"):
+        action = "list"
+    elif action in ("show", "get", "view"):
+        action = "show"
+    elif action in ("delete", "rm", "remove"):
+        action = "delete"
+    elif action in ("search", "find", "grep"):
+        action = "search"
+    elif action in KINDS:
+        # Bare kind with no verb: `/harness memory` is a list of memories.
+        action, rest = "list", positional
+    else:
+        options.errors.append(f"Unknown action {action!r}. {HARNESS_USAGE}")
+        return options
+
+    options.action = action
+    if action == "list" and rest and rest[0] in KINDS:
+        # A kind filters the list. Only the list takes one: `show`/`delete`
+        # identify a single entry, where a kind could not disambiguate
+        # anything, and `search` treats every word as a query term.
+        options.kind = rest.pop(0)  # ty:ignore[invalid-assignment]
+    if rest:
+        options.target = " ".join(rest)
+    if action == "delete" and not options.target:
+        options.errors.append("Usage: /harness delete <id>")
+        return options
+    if action == "show" and not options.target:
+        options.errors.append("Usage: /harness show <id>")
+        return options
+    return options
+
+
+def resolve_harness_entry(
+    session_id: str, cwd: str, target: str, *, global_: bool = False
+) -> tuple[HarnessEntry, HarnessState] | None:
+    """Find one entry by ``id`` or by a case-insensitive title, in either scope.
+
+    Matching on title as well as id because the ids shown by ``/harness list``
+    are slugs, and a user reading a list is far more likely to type the title
+    they just saw. Both scopes are searched, global first: a global id shadows
+    nothing locally (they are keyed separately), and reporting the global one
+    is the more surprising-but-important hit.
+    """
+    for state in (
+        get_harness_state(global_=True),
+        get_harness_state(local_state_dir(session_id, cwd)),
+    ):
+        for kind in KINDS:
+            for entry in state.entries.get(kind, {}).values():
+                if entry.id == target or entry.title.strip().lower() == target.strip().lower():
+                    return entry, state
+    return None
+
+
 __all__ = [
     "AUTO_REFINE_REASONS",
     "AUTO_REFINE_REASON_COMPACT",
@@ -2123,11 +2239,13 @@ __all__ = [
     "AUTO_REFINE_REVIEW_MAX_OUTPUT_TOKENS",
     "AUTO_REFINE_REVIEW_SYSTEM_PROMPT",
     "HARNESS_DIGEST_TAG",
+    "HARNESS_USAGE",
     "MODE_CODE_FIRST",
     "MODE_TOOL_FIRST",
     "REFINEMENT_MAX_OUTPUT_TOKENS",
     "REFINEMENT_SYSTEM_PROMPT",
     "AutoRefineReview",
+    "HarnessCommandOptions",
     "HarnessQueryTerms",
     "RefineCommandOptions",
     "RefinementOutcome",
@@ -2155,9 +2273,12 @@ __all__ = [
     "normalize_proposal",
     "overview_for_prompt",
     "parse_auto_refine_review",
+    "parse_harness_command_options",
     "parse_refine_command_options",
     "plan_refinement",
+    "provider_model_id",
     "refinement_request",
+    "resolve_harness_entry",
     "resolve_states",
     "review_auto_refine",
     "rollback_proposal",

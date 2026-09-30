@@ -116,6 +116,30 @@ def setup(api):
 
 `tool_call` and `tool_result` are blocking events: handlers run before the action completes and may veto it.
 
+## Refinement events
+
+Refinement writes to state that outlives the session, so it has its own two events:
+
+| Event | Blocking | Notes |
+| --- | --- | --- |
+| `session_before_refine` | yes | Payload: `session_id`, `reason`, `review`. Return `{"block": True, "reason": "..."}` to veto the pass |
+| `refine_complete` | no | Payload: `session_id`, `applied`, `total`, `outcome`. Fires after a pass, including one that raised |
+
+A veto is treated as a completed review: the approved verdict is discarded rather than left pending, so a refused pass is not silently retried at the next turn boundary. A handler that raises is ignored, as with every other event.
+
+```python
+def setup(api):
+    @api.on("session_before_refine")
+    def no_refine_in_shared_repo(event, payload):
+        if payload["review"].stale_entries:
+            return  # let a contradiction fix through
+        return {"block": True, "reason": "refinement is disabled in this project"}
+
+    @api.on("refine_complete")
+    def audit(event, payload):
+        log.info("refine %s: %s/%s applied", payload["outcome"].id, payload["applied"], payload["total"])
+```
+
 ## Provider request hooks
 
 Two events let you inspect and rewrite every outgoing LLM request —

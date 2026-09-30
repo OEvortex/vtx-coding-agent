@@ -178,4 +178,22 @@ Refines the **continual harness**: the persistent prompt notes, memories, skills
 
 The call returns immediately — the pass runs when the current turn ends, applies its edits, appends a refinement notice to the session, and the model resumes. Edits are recorded to `refinements.jsonl`, so `/refine rollback <refinement-id>` inverts one. See `refine` in [configuration.md](configuration.md#refine) for automatic refinement.
 
+## /harness
+
+Reads and edits the continual harness directly, without a refinement pass and without the model in the loop. Refinement is the only automatic writer, and it only writes when a model decides to — which leaves no way to see what the agent currently believes, and no way to remove an entry you know is wrong without spending a pass and hoping the model agrees.
+
+| Form | Effect |
+| --- | --- |
+| `/harness` | List every entry, with the ids `/harness delete` takes |
+| `/harness memory` | List one kind (`prompt`, `memory`, `skill`, `subagent`) |
+| `/harness search <query>` | Rank entries by term overlap against the query |
+| `/harness show <id>` | Print one entry in full |
+| `/harness delete <id>` | Remove an entry and reload context |
+
+Add `--global` to any form to restrict it to the cross-session store. `show` and `delete` accept either the id or the title, case-insensitively, because you are reading a list of titles when you reach for them.
+
+Deleting reloads the context: the entry is in the harness digest the model is reading, and without a reload it would keep being told about a memory that no longer exists. Entries are listed from both scopes, and a global and a local entry that share an id are shown as two rows rather than collapsed — the scope is what decides whether a bad entry is worth deleting at all.
+
+In the TUI, a refinement pass renders as a one-line outcome (`◆ Harness refined · ctrl+d for edits`) that expands into the per-edit field diffs: what each field held before, what it holds now, which edits failed and why. The same block appears for a `/refine` you ran and for an auto-refine at a turn boundary.
+
 The harness digest reaches the model as a context message rather than part of the system prompt. Its entries are ranked by relevance to the current task, so folding it into the prompt would rewrite the provider's cached prefix on nearly every turn. It is delivered at each run boundary, and only re-rendered when the harness state it summarizes has actually changed.

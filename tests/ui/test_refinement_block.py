@@ -5,6 +5,7 @@ import pytest
 from textual.app import App, ComposeResult
 from textual.widgets import Label
 
+from vtx.tui import chat as chat_module
 from vtx.tui.blocks import RefinementBlock, refinement_header
 from vtx.tui.chat import ChatLog
 from vtx.tui.styles import get_styles
@@ -17,13 +18,18 @@ class RefinementApp(App):
         yield ChatLog(id="chat-log")
 
 
-def _edit(*, action="create", kind="memory", entry_id="pref", before=None, after=None, applied=True, error=None, reason=None):
-    edit = {
-        "action": action,
-        "kind": kind,
-        "id": entry_id,
-        "applied": applied,
-    }
+def _edit(
+    *,
+    action="create",
+    kind="memory",
+    entry_id="pref",
+    before=None,
+    after=None,
+    applied=True,
+    error=None,
+    reason=None,
+):
+    edit = {"action": action, "kind": kind, "id": entry_id, "applied": applied}
     if before is not None:
         edit["before"] = before
     if after is not None:
@@ -33,6 +39,14 @@ def _edit(*, action="create", kind="memory", entry_id="pref", before=None, after
     if reason is not None:
         edit["reason"] = reason
     return edit
+
+
+def _detail(block) -> str:
+    return str(block.query_one("#refinement-output", Label).render())
+
+
+def _header(block) -> str:
+    return str(block.query_one("#refinement-header", Label).render())
 
 
 def _entry(title="Pref", content="Use pytest.", scope="local"):
@@ -47,7 +61,11 @@ def _entry(title="Pref", content="Use pytest.", scope="local"):
 def test_header_counts_unevenly():
     assert (
         refinement_header(
-            applied=2, total=2, kinds=["memory", "memory"], actions=["create", "create"], rollback_of=None
+            applied=2,
+            total=2,
+            kinds=["memory", "memory"],
+            actions=["create", "create"],
+            rollback_of=None,
         )
         == "Harness refined · 2 memories created"
     )
@@ -65,7 +83,11 @@ def test_header_collapses_singular():
 def test_header_reports_partial_application():
     """A partial pass is the case a user must notice, so it says so."""
     header = refinement_header(
-        applied=1, total=3, kinds=["memory", "memory"], actions=["create", "create"], rollback_of=None
+        applied=1,
+        total=3,
+        kinds=["memory", "memory"],
+        actions=["create", "create"],
+        rollback_of=None,
     )
     assert header.startswith("Harness partially refined")
     assert "1/3" in header
@@ -99,7 +121,11 @@ def test_header_handles_a_pass_that_changed_nothing():
 
 def test_header_uses_changed_when_a_pass_mixes_actions():
     header = refinement_header(
-        applied=2, total=2, kinds=["memory", "memory"], actions=["create", "update"], rollback_of=None
+        applied=2,
+        total=2,
+        kinds=["memory", "memory"],
+        actions=["create", "update"],
+        rollback_of=None,
     )
     assert "changed" in header
 
@@ -126,7 +152,7 @@ async def test_create_shows_added_fields_as_plus():
         block.set_expanded(True)
         await pilot.pause()
 
-        detail = block.query_one("#refinement-output", Label).renderable.plain
+        detail = _detail(block)
         assert "+ Use pytest." in detail
         assert "✓ Created local memory pref" in detail
 
@@ -152,7 +178,7 @@ async def test_update_shows_removed_and_added_lines():
         block.set_expanded(True)
         await pilot.pause()
 
-        detail = block.query_one("#refinement-output", Label).renderable.plain
+        detail = _detail(block)
         assert "- Use port 5432." in detail
         assert "+ Use port 6433." in detail
 
@@ -178,9 +204,13 @@ async def test_unchanged_field_is_not_shown_as_a_diff():
         block.set_expanded(True)
         await pilot.pause()
 
-        detail = block.query_one("#refinement-output", Label).renderable.plain
-        assert "Title" not in detail, "an unchanged field should not render"
-        assert "+ changed" in detail
+        detail = _detail(block)
+        # The whole resulting entry is shown, so an untouched field stays
+        # visible -- but plainly, without the -/+ diff markers.
+        assert "Title: Same" in detail
+        assert "- Same" not in detail
+        assert "- changed" in detail
+        assert "+ new" in detail
 
 
 @pytest.mark.asyncio
@@ -198,7 +228,7 @@ async def test_failed_edit_shows_its_error():
         block.set_expanded(True)
         await pilot.pause()
 
-        detail = block.query_one("#refinement-output", Label).renderable.plain
+        detail = _detail(block)
         assert "✗ Failed to" in detail
         assert "entry already exists" in detail
 
@@ -218,7 +248,7 @@ async def test_reason_is_surfaced():
         block.set_expanded(True)
         await pilot.pause()
 
-        detail = block.query_one("#refinement-output", Label).renderable.plain
+        detail = _detail(block)
         assert "Reason: the user corrected this twice" in detail
 
 
@@ -235,7 +265,7 @@ async def test_collapsed_block_is_one_line_and_hides_detail():
         )
         await pilot.pause()
 
-        header = block.query_one("#refinement-header", Label).renderable.plain
+        header = _header(block)
         assert "A summary" not in header, "collapsed shows the outcome, not the prose"
         assert "ctrl+d" in header
         assert block.query_one("#refinement-output", Label).has_class("-hidden")
@@ -258,7 +288,7 @@ async def test_detail_names_the_model_that_ran_the_pass():
         block.set_expanded(True)
         await pilot.pause()
 
-        detail = block.query_one("#refinement-output", Label).renderable.plain
+        detail = _detail(block)
         assert "openrouter/some-cheap-model" in detail
 
 
@@ -288,11 +318,7 @@ async def test_block_inherits_the_current_expansion_state():
         chat.set_tool_output_expanded(True)
 
         block = chat.add_refinement(
-            summary="",
-            applied=1,
-            total=1,
-            edits=[_edit(after=_entry())],
-            refinement_id="refine_8",
+            summary="", applied=1, total=1, edits=[_edit(after=_entry())], refinement_id="refine_8"
         )
         await pilot.pause()
 
@@ -315,26 +341,52 @@ async def test_a_pass_with_no_edits_falls_back_to_a_line():
 
         assert block is None
         assert not chat._refinement_blocks
-        assert "refine_9" in chat.children[-1].renderable.plain
+        assert "refine_9" in str(chat.children[-1].render())
 
 
 @pytest.mark.asyncio
-async def test_pruning_drops_stale_refinement_references():
-    """Pruned blocks must not be retained for the expansion toggle."""
+async def test_pruning_drops_stale_refinement_references(monkeypatch):
+    """A pruned block must not stay in the expansion list, or ctrl+d would
+    keep updating a widget that is no longer on screen."""
+    monkeypatch.setattr(chat_module, "MAX_CHILDREN", 4)
+    monkeypatch.setattr(chat_module, "PRUNE_TO", 2)
     async with RefinementApp().run_test() as pilot:
         chat = pilot.app.query_one("#chat-log", ChatLog)
-        for i in range(3):
+        blocks = [
             chat.add_refinement(
                 summary="",
                 applied=1,
                 total=1,
-                edits=[_edit(after=_entry(entry_id=f"e{i}"))],
+                edits=[_edit(entry_id=f"e{i}", after=_entry())],
                 refinement_id=f"refine_p{i}",
             )
-        await pilot.pause()
-        assert len(chat._refinement_blocks) == 3
-
-        chat._refinement_blocks = [
-            b for b in chat._refinement_blocks if b not in chat.children[:1]
+            for i in range(5)
         ]
+        # The fifth mount trips the cap, so pruning has already run.
+        await pilot.pause()
+
         assert len(chat._refinement_blocks) == 2
+        assert blocks[0] not in chat._refinement_blocks
+        assert blocks[-1] in chat._refinement_blocks
+        assert all(block.is_attached for block in chat._refinement_blocks)
+
+
+@pytest.mark.asyncio
+async def test_clearing_the_log_forgets_refinement_blocks():
+    """Session switch must drop the blocks, not toggle dead widgets."""
+    async with RefinementApp().run_test() as pilot:
+        chat = pilot.app.query_one("#chat-log", ChatLog)
+        chat.add_refinement(
+            summary="",
+            applied=1,
+            total=1,
+            edits=[_edit(after=_entry())],
+            refinement_id="refine_c1",
+        )
+        await pilot.pause()
+        assert chat._refinement_blocks
+
+        await chat.remove_all_children()
+        await pilot.pause()
+
+        assert not chat._refinement_blocks

@@ -118,6 +118,9 @@ class CommandsMixin(
         if cmd == "refine":
             self._handle_refine_command(args)
             return True
+        if cmd == "harness":
+            self._handle_harness_command(args)
+            return True
         if cmd == "recap":
             self._handle_recap_command()
             return True
