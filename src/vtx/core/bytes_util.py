@@ -53,6 +53,7 @@ def spill_text(data: str, *, prefix: str = "vtx-rlm", suffix: str = ".txt") -> s
     model cannot recover. Spilling the full text keeps it reachable: the caller
     points the model at the path and it already has a paged reader.
     """
+    import contextlib
     import os
     import tempfile
 
@@ -61,13 +62,13 @@ def spill_text(data: str, *, prefix: str = "vtx-rlm", suffix: str = ".txt") -> s
         with os.fdopen(fd, "w", encoding="utf-8", errors="replace") as handle:
             handle.write(data)
     except OSError:
-        try:
+        # A partial file is worse than none: the model would be pointed at text
+        # that stops mid-stream with nothing marking the cut.
+        with contextlib.suppress(OSError):
             os.unlink(path)
-        except OSError:
-            pass
         return None
-    try:
+    # Cell output is model-influenced and lands in a shared temp dir, so it is
+    # owner-only. Best effort: a chmod failure does not invalidate the spill.
+    with contextlib.suppress(OSError):
         os.chmod(path, 0o600)
-    except OSError:
-        pass
     return path

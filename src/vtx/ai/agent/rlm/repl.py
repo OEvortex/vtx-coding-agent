@@ -295,6 +295,12 @@ def call_tool(name: str, **kwargs: Any) -> Any:
     return result
 
 
+#: Bridge name that returns the whole tool surface. Routed by
+#: ``IpythonTool`` to the ``tool.catalog`` host request rather than to a real
+#: tool, so it never appears in the model's tool list.
+_TOOL_CATALOG_BRIDGE = "__vtx_tool_catalog__"
+
+
 class _ToolDiscovery:
     """Cached, lazily populated view of the callable tool surface.
 
@@ -311,7 +317,16 @@ class _ToolDiscovery:
     @classmethod
     def catalog(cls) -> list[dict[str, Any]]:
         if cls._tools is None:
-            reply = call_tool("__vtx_tool_catalog__")
+            # ``call_tool`` blocks on a thread, so this is safe from sync cell
+            # code; the reply is the cached surface, not a per-query search.
+            # A bridge failure is not fatal: discovery degrades to "no results"
+            # rather than taking down the cell that asked.
+            try:
+                reply = call_tool(_TOOL_CATALOG_BRIDGE)
+            except Exception:
+                cls._tools = []
+                cls._by_name = {}
+                return cls._tools
             tools = reply.get("tools") if isinstance(reply, dict) else None
             cls._tools = tools if isinstance(tools, list) else []
             cls._by_name = {
@@ -365,7 +380,7 @@ class _ToolDiscovery:
 class _Doc:
     """Minimal tool stand-in so :func:`tool_document` can read a catalog entry."""
 
-    __slots__ = ("name", "description", "parameters")
+    __slots__ = ("description", "name", "parameters")
 
     def __init__(self, name: str, description: str, parameters: Any) -> None:
         self.name = name
@@ -1861,26 +1876,6 @@ def _init_builtin_helpers() -> None:
     def find_tools(query: str, limit: int = 8) -> list[dict[str, Any]]:
         """Search the callable tool surface by keyword; best matches first.
 
-        The RLM prompt does not enumerate every tool, and a wrong guess costs a
-        ``[bridge:unknown_tool]`` round trip plus a re-read of the tool list. BM25
-        over name, description, and parameter names finds the tool from a task
-        description instead. Returns ``{name, description}`` dicts; an empty list
-        means nothing scored above zero.
-        """
-        return _search_tools(query, limit)
-
-    def describe_tool(name: str) -> dict[str, Any] | None:
-        """Resolve one tool's full declaration: description and parameter schema.
-
-        The counterpart to :func:`find_tools`: search narrows the field, this
-        returns the exact argument shape so a call is right the first time.
-        Returns ``None`` when no such tool is callable.
-        """
-        return _describe_tool(name)
-
-    def find_tools(query: str, limit: int = 8) -> list[dict[str, Any]]:
-        """Search the callable tool surface by keyword; best matches first.
-
         BM25 over name, description, and parameter names, so a task description
         is enough to find the tool. Returns ``{name, description}`` dicts, best
         first; an empty list means nothing matched.
@@ -1912,43 +1907,32 @@ def _init_builtin_helpers() -> None:
         """Set tasks for the current focused goal via the main-process tool bridge."""
         return call_tool("goal", action="set_tasks", tasks=tasks)
 
-    _namespace.setdefault("bash", _bash)
-    _namespace.setdefault("run_bash", run_bash)
-    _namespace.setdefault("read_file", read_file)
-    _namespace.setdefault("write_file", write_file)
-    _namespace.setdefault("edit_file", edit_file)
-    _namespace.setdefault("run_code", run_code)
-    _namespace.setdefault("rerun", rerun)
-    _namespace.setdefault("web_search", web_search)
-    _namespace.setdefault("goal_get", goal_get)
-    _namespace.setdefault("goal_update", goal_update)
-    _namespace.setdefault("goal_set_tasks", goal_set_tasks)
-    _namespace.setdefault("call_tool", call_tool)
-    _namespace.setdefault("emit", emit)
-    _namespace.setdefault("host_request", host_request)
-    _protect_helpers(_namespace, _HELPER_NAMES)
+    # One table drives both the bindings and the shadowing guard, so a helper
+    # cannot be bound without being protected (or the reverse). ``call_tool``,
+    # ``emit``, and ``host_request`` are module-level rather than closures, but
+    # they are protected exactly like the rest.
+    _HELPERS: tuple[tuple[str, Any], ...] = (
+        ("bash", _bash),
+        ("run_bash", run_bash),
+        ("read_file", read_file),
+        ("write_file", write_file),
+        ("edit_file", edit_file),
+        ("run_code", run_code),
+        ("rerun", rerun),
+        ("find_tools", find_tools),
+        ("describe_tool", describe_tool),
+        ("web_search", web_search),
+        ("goal_get", goal_get),
+        ("goal_update", goal_update),
+        ("goal_set_tasks", goal_set_tasks),
+        ("call_tool", call_tool),
+        ("emit", emit),
+        ("host_request", host_request),
+    )
+    for _name, _helper in _HELPERS:
+        _namespace.setdefault(_name, _helper)
+    _protect_helpers(_namespace, tuple(name for name, _ in _HELPERS))
 
-
-#: Every name ``_init_builtin_helpers`` binds. Kept as one tuple so the guard in
-#: ``_handle_execute`` and the bindings themselves cannot drift apart.
-_HELPER_NAMES: tuple[str, ...] = (
-    "bash",
-    "run_bash",
-    "read_file",
-    "write_file",
-    "edit_file",
-    "run_code",
-    "rerun",
-    "find_tools",
-    "describe_tool",
-    "web_search",
-    "goal_get",
-    "goal_update",
-    "goal_set_tasks",
-    "call_tool",
-    "emit",
-    "host_request",
-)
 
 #: Name -> the object bound to it when the helpers were installed. A cell that
 #: reassigns one of these silently disables the real helper for every later
@@ -1963,18 +1947,24 @@ _protected_helpers: dict[str, Any] = {}
 
 def _protect_helpers(ns: dict[str, Any], names: tuple[str, ...]) -> None:
     for name in names:
-        _protected_helpers[name] = ns.get(name)
+        if name in ns:
+            _protected_helpers[name] = ns[name]
+        else:
+            # Never record a name that is not bound. A ``None`` here would be
+            # indistinguishable from a helper the cell deliberately replaced
+            # with ``None``, and restoring it would delete the real binding.
+            _protected_helpers.pop(name, None)
 
 
 def _restore_shadowed_helpers(ns: dict[str, Any]) -> list[str]:
-    """Undo helper rebinding and name what was restored. Returns the names."""
+    """Undo helper rebinding and name what was restored. Returns the names.
+
+    A name that was never bound is not guarded, so this can only ever put back
+    an object that was really there.
+    """
     restored: list[str] = []
     for name, original in _protected_helpers.items():
-        if name not in ns:
-            # Deleted outright; put it back the same way.
-            ns[name] = original
-            restored.append(name)
-        elif ns[name] is not original:
+        if ns.get(name) is not original:
             ns[name] = original
             restored.append(name)
     return restored

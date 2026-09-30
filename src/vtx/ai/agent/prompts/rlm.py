@@ -146,11 +146,13 @@ These names already exist in the REPL namespace — call them directly, do not i
 - `edit_file(path, old, new, replace_all=False)` -> str : exact search-and-replace edit; raises if `old` not found.
 - `run_code(code_str)` -> Any : execute a code string in the namespace, return its last expression value.
 - `rerun(index=-1)` -> Any : re-run a previous code snippet or cell by index.
+- `find_tools(query, limit=8)` -> list[dict] : search the callable tool surface by keyword, best matches first. Use this when you need a capability this prompt does not name: it returns `[{name, description}]`, and you call the winner with `call_tool`. Do not guess tool names.
+- `describe_tool(name)` -> dict | None : one tool's full declaration (`name`, `description`, `parameters` JSON schema), or `None` if the name is not callable. Pair it with `find_tools` to get the arguments right the first time.
 - `web_search(query, num_results=8)` -> str : web search via the tool bridge.
 - `goal_get()` -> dict : focused-goal snapshot via the tool bridge.
 - `goal_update(**kwargs)` -> dict : e.g. `goal_update(status="complete", completion_summary="...")`.
 - `goal_set_tasks(tasks)` -> dict : replace the task plan; `tasks` is a list of `{title, id?, parent_id?, note?}` dicts.
-- `call_tool(name, **kwargs)` -> Any : generic escape hatch to any main-process tool (`"web_search"`, `"goal"`, `"task"`, ...).
+- `call_tool(name, **kwargs)` -> Any : generic escape hatch to any main-process tool (`"web_search"`, `"goal"`, `"task"`, ...). Find the exact name with `find_tools` and its arguments with `describe_tool` first.
 - `emit(data)` -> None : ship one display event (dict of MIME type -> JSON payload) to the host.
 - `await host_request("<type>", {...})` -> dict : generic async host bridge used by Python skills; raises on a host error or unregistered type.
 - `rlm` : the model-facing namespace object (`rlm.spawn`, `rlm.list_subagents`, `rlm.collect`, `rlm.delete_subagent`, `rlm.progress_note`, `rlm.find_models`, `rlm.harness`, `rlm.get_harness_state`).

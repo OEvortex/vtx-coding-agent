@@ -7,6 +7,30 @@ from typing import TYPE_CHECKING, Any
 from vtx.tui.chat import ChatLog
 from vtx.tui.commands.base import CommandSupport
 
+
+def _refinement_status(outcome: Any) -> str:
+    """One-line outcome for the status bar, matching the block's own wording.
+
+    This used to always say "Refinement complete". A pass whose edits were all
+    rejected (an edit missing its ``kind``, a baseline conflict, a malformed
+    entry) renders a block titled "Harness refinement failed" and then
+    immediately contradicted it in the status line — the two read as a
+    contradiction because they are one, reported twice.
+    """
+    applied = getattr(outcome, "applied", 0)
+    total = getattr(outcome, "total", 0)
+    rollback = bool(getattr(outcome, "rollback_of", None))
+    noun = "rollback" if rollback else "refinement"
+
+    if total == 0:
+        return f"Harness {noun} unchanged · no edits applied"
+    if applied == 0:
+        return f"Harness {noun} failed · no edits applied"
+    if applied < total:
+        return f"Harness {noun} partial · {applied}/{total} edits applied"
+    return f"Harness {noun} complete · {applied} {'edit' if applied == 1 else 'edits'} applied"
+
+
 if TYPE_CHECKING:
     pass
 
@@ -259,4 +283,4 @@ class HarnessCommands(CommandSupport):
             refinement_id=outcome.id,
             model=outcome.model,
         )
-        chat.show_status("Refinement complete")
+        chat.show_status(_refinement_status(outcome))

@@ -114,7 +114,9 @@ def tool_document(tool: Any) -> ToolDocument:
                 parameters = None
     if parameters is None:
         parameters = {}
-    return ToolDocument(name=name, description=description, parameters=_parameter_names(parameters))
+    return ToolDocument(
+        name=name, description=description, parameters=_parameter_names(parameters)
+    )
 
 
 def _parameter_names(schema: Any) -> str:
@@ -184,7 +186,9 @@ def _weighted_terms(document: ToolDocument) -> list[str]:
     return terms
 
 
-def rank(query: str, documents: Iterable[ToolDocument], limit: int = DEFAULT_TOOL_SEARCH_LIMIT) -> list[ToolMatch]:
+def rank(
+    query: str, documents: Iterable[ToolDocument], limit: int = DEFAULT_TOOL_SEARCH_LIMIT
+) -> list[ToolMatch]:
     """Rank ``documents`` against ``query`` with BM25, best first.
 
     ``score = Σ_t idf(t) · (f(t,d)·(k1+1)) / (f(t,d) + k1·(1-b+b·|d|/avgdl))``
@@ -219,13 +223,15 @@ def rank(query: str, documents: Iterable[ToolDocument], limit: int = DEFAULT_TOO
                 continue
             document_frequency = sum(1 for other in bags if term in other)
             idf = math.log(1 + (total - document_frequency + 0.5) / (document_frequency + 0.5))
-            denominator = frequency + _BM25_K1 * (1 - _BM25_B + _BM25_B * length / (avg_length or 1))
+            denominator = frequency + _BM25_K1 * (
+                1 - _BM25_B + _BM25_B * length / (avg_length or 1)
+            )
             score += idf * (frequency * (_BM25_K1 + 1)) / denominator
         scores.append(score)
 
     matches = [
         ToolMatch(name=document.name, score=score)
-        for document, score in zip(docs, scores)
+        for document, score in zip(docs, scores, strict=True)
         if score > 0
     ]
     # Name breaks ties: equal scores mean the two tools matched the same terms,
@@ -234,10 +240,4 @@ def rank(query: str, documents: Iterable[ToolDocument], limit: int = DEFAULT_TOO
     return matches[: max(limit, 0)]
 
 
-__all__ = [
-    "DEFAULT_TOOL_SEARCH_LIMIT",
-    "ToolDocument",
-    "ToolMatch",
-    "rank",
-    "tool_document",
-]
+__all__ = ["DEFAULT_TOOL_SEARCH_LIMIT", "ToolDocument", "ToolMatch", "rank", "tool_document"]

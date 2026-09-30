@@ -52,8 +52,9 @@ KINDS: Final = (
 #: taxonomy: the category exists to change behavior, not just to label.
 _REMEDY: Final = {
     UNKNOWN_TOOL: (
-        "Pick a different name. Call `help(name)` or `dir(name)` to confirm, and "
-        "check the Tools list in the skills index for the exact spelling."
+        'Search for the tool instead of guessing its name: `find_tools("<what you '
+        'need>")` returns candidates, and `describe_tool(name)` gives the exact '
+        "parameters to call it with."
     ),
     INVALID_INPUT: (
         "The call was well-named but the arguments were wrong. Re-read the tool's "
@@ -165,7 +166,16 @@ def classify_bridge_error(
         )
 
     if _is_unknown_tool(exc):
-        suggestions = (f"Available tools: {', '.join(sorted(available))}",) if available else ()
+        suggestions = (
+            (
+                (
+                    f"Available tools: {', '.join(sorted(available))}. Or search for the "
+                    'capability: find_tools("what you need") then describe_tool(name).'
+                ),
+            )
+            if available
+            else ()
+        )
         return BridgeError(
             UNKNOWN_TOOL,
             f"No tool named '{name}' is available in this session.",

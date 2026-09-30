@@ -240,7 +240,7 @@ class StreamableHttpTransport(TransportEvents):
         if self._started and self._session_id and self._client is not None:
             with contextlib.suppress(Exception):
                 await asyncio.wait_for(
-                    self._client.delete(self.url, headers=await self._headers()), timeout=1.0
+                    self._client.delete(self.url, headers=await self._headers()[0]), timeout=1.0
                 )
         for response in list(self._open_streams):
             with contextlib.suppress(Exception):
@@ -266,9 +266,15 @@ class StreamableHttpTransport(TransportEvents):
         provider = self.options.auth_provider
         for attempt in range(2):
             request_headers, token = await self._headers(headers)
-            response = await self._get_client().request(
+            # stream=True is essential, not an optimisation: client.request()
+            # buffers the whole body, and an SSE response deliberately stays
+            # open, so it would block until the server closed it -- forever.
+            # The caller decides when to read (aread for a JSON reply) or to
+            # hand the live stream to a reader task that closes it on the end.
+            request = self._get_client().build_request(
                 method, self.url, headers=request_headers, content=content
             )
+            response = await self._get_client().send(request, stream=True)
             if attempt > 0 or provider is None or not _needs_authorization(response):
                 return response
             try:

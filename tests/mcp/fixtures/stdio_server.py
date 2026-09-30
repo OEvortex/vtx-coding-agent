@@ -16,12 +16,29 @@ INITIALIZE_RESULT = {
 }
 
 
+ECHO_INPUT_SCHEMA = {
+    "type": "object",
+    "properties": {"text": {"type": "string", "description": "Text to echo back"}},
+    "required": ["text"],
+}
+
+
 def handle(message: dict) -> dict:
     method = message.get("method")
     if method == "initialize":
         return INITIALIZE_RESULT
     if method == "tools/list":
-        return {"tools": [{"name": "echo", "inputSchema": {"type": "object"}}]}
+        # The schema must declare the argument the tool actually reads, or a
+        # client that builds its params from the schema cannot pass one.
+        return {
+            "tools": [
+                {
+                    "name": "echo",
+                    "description": "Echo the given text back to the caller.",
+                    "inputSchema": ECHO_INPUT_SCHEMA,
+                }
+            ]
+        }
     if method == "tools/call":
         text = (message.get("params", {}).get("arguments") or {}).get("text")
         return {"content": [{"type": "text", "text": str(text)}]}

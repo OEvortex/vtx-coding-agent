@@ -58,7 +58,12 @@ async def test_connects_to_a_newline_delimited_server_and_captures_stderr():
 
     assert client.protocol_version == "2025-06-18"
     assert client.server_info == {"name": "stdio-fixture", "version": "1.0.0"}
-    assert await client.list_tools() == [{"name": "echo", "inputSchema": {"type": "object"}}]
+    tools = await client.list_tools()
+    assert [t["name"] for t in tools] == ["echo"]
+    # The declared input schema must survive the round trip intact, since a
+    # client builds its params model from exactly this.
+    assert tools[0]["inputSchema"]["properties"]["text"]["type"] == "string"
+    assert tools[0]["inputSchema"]["required"] == ["text"]
     assert await client.call_tool("echo", {"text": "hello"}) == {
         "content": [{"type": "text", "text": "hello"}]
     }

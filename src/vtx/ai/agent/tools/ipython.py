@@ -39,6 +39,11 @@ class IpythonParams(BaseModel):
 
 _ipython_block_cls: type | None = None
 
+#: Reserved bridge name the kernel uses to fetch the whole tool surface for its
+#: discovery cache. It is not a registered tool, so it never reaches the model's
+#: tool list or the prompt.
+_TOOL_CATALOG_BRIDGE = "__vtx_tool_catalog__"
+
 # Bundled Python skills do not live under a scanned skills directory, so the
 # kernel cannot find them on its own: ship an import-name/package-path
 # inventory with every execute. Cached per cwd (a kernel restart picks up
@@ -197,12 +202,31 @@ class IpythonTool(BaseTool):
 
         async def _execute_tool_by_name(name: str, args: dict[str, Any]) -> Any:
             from vtx.ai.agent.rlm.diagnostics import (
+                HOST_UNAVAILABLE,
                 INVALID_INPUT,
                 TOOL_FAILURE,
                 UNKNOWN_TOOL,
                 BridgeError,
             )
             from vtx.ai.agent.tools import get_all_tools, get_tool
+
+            if name == _TOOL_CATALOG_BRIDGE:
+                # The kernel's discovery catalog, not a tool call. Routed to the
+                # host's ``tool.catalog`` handler so the kernel can cache the
+                # whole surface once and rank it locally, which is what makes
+                # find_tools/describe_tool work from synchronous cell code.
+                from vtx.ai.agent.rlm.host import dispatch_host_request
+
+                reply = await dispatch_host_request(
+                    {"type": "tool.catalog"}, session_id=session_id
+                )
+                if reply.get("status") != "ok":
+                    raise BridgeError(
+                        HOST_UNAVAILABLE,
+                        "The tool catalog could not be read from the host.",
+                        detail=str(reply.get("error", "")),
+                    )
+                return reply["result"]
 
             tool = get_tool(name)
             if tool is None and name == "web_search":
@@ -214,7 +238,11 @@ class IpythonTool(BaseTool):
                 raise BridgeError(
                     UNKNOWN_TOOL,
                     f"No tool named '{name}' is available in this session.",
-                    suggestions=(f"Available tools: {', '.join(sorted(get_all_tools()))}",),
+                    suggestions=(
+                        f"Available tools: {', '.join(sorted(get_all_tools()))}. "
+                        f'Or search for the capability: find_tools("what you need") '
+                        f"then describe_tool(name) for its parameters."
+                    ),
                 )
             try:
                 params_model = tool.params(**args)
