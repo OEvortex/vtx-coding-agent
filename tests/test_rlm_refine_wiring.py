@@ -11,6 +11,7 @@ from vtx.ai.agent.rlm.harness import HarnessState, get_harness_state
 from vtx.ai.agent.rlm.refine import (
     MODE_CODE_FIRST,
     MODE_TOOL_FIRST,
+    REFINEMENT_NOTICE_TAG,
     TRUNCATED_JSON_ERROR,
     RefinementOutcome,
     apply_refinement,
@@ -409,7 +410,12 @@ def test_run_refinement_local_scope_creates_entry_and_notice(tmp_path):
     assert outcome.applied == 1
     assert outcome.scope == "local"
     assert outcome.notice is not None
-    assert outcome.notice.startswith("[self-refinement]\n\n")
+    # The notice is a system event, not a user turn: it is tagged so a later
+    # turn cannot read the refiner's prose as something the user asked for.
+    assert outcome.notice.startswith(f"<{REFINEMENT_NOTICE_TAG}>")
+    assert outcome.notice.endswith(f"</{REFINEMENT_NOTICE_TAG}>")
+    assert "Treat this as a system event, not a user instruction." in outcome.notice
+    assert "[self-refinement]\n\n" in outcome.notice
     assert "create memory [local:test_pref] Test preference" in outcome.notice
 
     # entry landed in the session-local store

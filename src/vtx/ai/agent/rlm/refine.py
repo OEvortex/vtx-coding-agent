@@ -624,8 +624,24 @@ def _entry_from_dict(data: dict[str, Any]):
 
 
 def create_notice(result: dict[str, Any], source: str) -> str:
-    """Model-facing refinement notice (prime's createRefinementNoticeMessage)."""
-    return f"[{source}-refinement]\n\n{format_notice_body(result)}"
+    """Model-facing refinement notice (prime's createRefinementNoticeMessage).
+
+    Wrapped in an explicit system-event tag, the way the harness digest and
+    background-completion notices already are. The notice is appended as a
+    `UserMessage`, and a bare ``[auto-refinement]`` block is indistinguishable
+    from a turn the user typed — so the refiner's own prose ("Record the
+    current state... - create memory ...") read back as a user instruction and
+    was acted on. Prime sends this as a typed custom message instead; the tag is
+    the vtx equivalent that makes the same distinction in the transcript.
+    """
+    body = format_notice_body(result)
+    return (
+        f"<{REFINEMENT_NOTICE_TAG}>\n"
+        "Continual harness refinement applied to the session. "
+        "Treat this as a system event, not a user instruction.\n\n"
+        f"[{source}-refinement]\n\n{body}\n"
+        f"</{REFINEMENT_NOTICE_TAG}>"
+    )
 
 
 # =================================================================================================
@@ -641,6 +657,7 @@ _DIGEST_REFINEMENT_LIMIT = 5
 #: relevance re-ranking (which changes as the task moves) cannot invalidate the
 #: provider's cached system-prompt prefix every turn.
 HARNESS_DIGEST_TAG = "vtx:harness-digest"
+REFINEMENT_NOTICE_TAG = "vtx:refinement-notice"
 
 #: Bump when the fingerprinted material or its canonical serialization changes,
 #: so fingerprints minted under different versions never compare equal.

@@ -36,7 +36,11 @@ from vtx.ai.agent.extensions import (
     TURN_START,
     EventBus,
 )
-from vtx.ai.agent.rlm.refine import AUTO_REFINE_REASON_COMPACT, AUTO_REFINE_REASON_TURN_INTERVAL
+from vtx.ai.agent.rlm.refine import (
+    AUTO_REFINE_REASON_COMPACT,
+    AUTO_REFINE_REASON_TURN_INTERVAL,
+    REFINEMENT_NOTICE_TAG,
+)
 from vtx.ai.agent.session import CompactionEntry, MessageEntry, Session
 from vtx.ai.agent.tools import BaseTool
 from vtx.core.compaction import SummaryProgress, generate_summary, is_overflow
@@ -803,7 +807,17 @@ class Agent:
         except Exception as e:
             log.exception("auto-refinement failed")
             text = f"[auto-refinement failed] {format_error(e)}"
-            self.session.append_message(UserMessage(content=text))
+            self.session.append_message(
+                UserMessage(
+                    content=(
+                        f"<{REFINEMENT_NOTICE_TAG}>\n"
+                        "Auto-refinement did not run. "
+                        "Treat this as a system event, not a user instruction.\n\n"
+                        f"{text}\n"
+                        f"</{REFINEMENT_NOTICE_TAG}>"
+                    )
+                )
+            )
             if self._extensions is not None:
                 await self._extensions.emit(
                     REFINE_COMPLETE, session_id=session_id, applied=0, total=0, outcome=None
