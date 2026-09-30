@@ -81,6 +81,7 @@ def test_ranking_surfaces_relevant_entry_past_the_display_limit(tmp_path):
     # The model is told the list is ranked, so a hidden entry is not mistaken
     # for a nonexistent one.
     assert "ranked by relevance" in ranked
+    assert "harness.search" in ranked, "the REPL read path is named for code_first"
 
 
 def test_query_terms_weight_goal_above_recent_messages():

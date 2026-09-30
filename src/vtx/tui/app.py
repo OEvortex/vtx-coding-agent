@@ -847,7 +847,7 @@ class Vtx(
         chat = self.query_one("#chat-log", ChatLog)
         expanded = chat.toggle_tool_output_expanded()
         status = "expanded" if expanded else "collapsed"
-        chat.show_status(f"Tool output {status}")
+        chat.show_status(f"Tool output and refinement edits {status}")
 
     def action_toggle_thinking(self) -> None:
         self._hide_thinking = not self._hide_thinking

@@ -288,6 +288,11 @@ class HostNoticeEvent:
     type: Literal["host_notice"] = "host_notice"
     kind: Literal["notice", "refinement", "refinement_error"] = "notice"
     text: str = ""
+    #: Set on ``kind="refinement"`` only: the structured
+    #: :class:`~vtx.ai.agent.rlm.refine.RefinementOutcome`, so the TUI can draw
+    #: per-edit field diffs instead of flattening ``text``. ``text`` stays
+    #: meaningful for surfaces that cannot render the block.
+    refinement: Any = None
 
 
 # =================================================================================================

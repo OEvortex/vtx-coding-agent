@@ -1,4 +1,5 @@
 import contextlib
+import json
 import re
 import textwrap
 import time
@@ -1103,6 +1104,245 @@ class ToolBlock(Static):
             output.remove_class("-details")
             output.remove_class("-diff-output")
             output.add_class("-hidden")
+
+
+# =================================================================================================
+# Refinement outcome
+# =================================================================================================
+
+#: Harness entry fields worth showing per edit, in display order.
+_EDIT_FIELDS: tuple[tuple[str, str], ...] = (
+    ("title", "Title"),
+    ("content", "Description"),
+    ("path", "Path"),
+    ("reference", "Reference"),
+    ("arguments", "Arguments"),
+    ("metadata", "Metadata"),
+)
+
+
+def _edit_scope(edit: dict, fallback: str) -> str:
+    entry = edit.get("after") or edit.get("before") or {}
+    return str(entry.get("scope") or fallback)
+
+
+def _plural(kind: str, count: int) -> str:
+    if count == 1:
+        return kind
+    if kind == "memory":
+        return "memories"
+    return f"{kind}s"
+
+
+def _edit_verb(action: str) -> str:
+    return {"create": "Created", "update": "Updated", "delete": "Deleted"}.get(
+        str(action), "Changed"
+    )
+
+
+def _past_tense(action: str) -> str:
+    return {"create": "created", "update": "updated", "delete": "deleted"}.get(
+        str(action), "changed"
+    )
+
+
+def refinement_header(
+    *, applied: int, total: int, kinds: list[str], actions: list[str], rollback_of: str | None
+) -> str:
+    """One-line summary of a refinement pass, in prime's phrasing.
+
+    States the outcome precisely rather than as a bare count: a rollback reads
+    differently from a forward pass, and a partial application is called out
+    because it is the case a user actually needs to notice.
+    """
+    if total == 0:
+        return (
+            "Harness rollback unchanged · no edits applied"
+            if rollback_of
+            else "Harness unchanged · no edits applied"
+        )
+    if applied == 0:
+        return "Harness rollback failed" if rollback_of else "Harness refinement failed"
+    if applied < total:
+        partial = "Harness partially rolled back" if rollback_of else "Harness partially refined"
+        return f"{partial} · {applied}/{total} edits applied"
+    if rollback_of:
+        noun = "edit" if applied == 1 else "edits"
+        return f"Harness rollback completed · {applied} {noun} applied"
+
+    first_kind = kinds[0]
+    if all(kind == first_kind for kind in kinds):
+        action = _past_tense(actions[0]) if all(a == actions[0] for a in actions) else "changed"
+        return f"Harness refined · {applied} {_plural(first_kind, applied)} {action}"
+    noun = "edit" if applied == 1 else "edits"
+    return f"Harness refined · {applied} {noun} applied"
+
+
+def _field_value_lines(value: object) -> list[str]:
+    """Render one entry field as display lines; empty values produce none."""
+    if isinstance(value, str):
+        return value.split("\n") if value else []
+    if not isinstance(value, dict) or not value:
+        return []
+    return [json.dumps(value, ensure_ascii=False, sort_keys=True)]
+
+
+class RefinementBlock(Static):
+    """Collapsed one-line outcome; Ctrl+D expands the per-edit field diff.
+
+    A refinement pass can rewrite or delete several harness entries at once, and
+    the model is told about it in prose. This shows the user exactly what changed
+    — which entry, which field, and what the failed edits were — without that
+    detail costing anything while collapsed.
+    """
+
+    ALLOW_SELECT = True
+    can_focus = False
+
+    def __init__(
+        self,
+        *,
+        summary: str = "",
+        applied: int = 0,
+        total: int = 0,
+        edits: list[dict] | None = None,
+        scope: str = "local",
+        rollback_of: str | None = None,
+        refinement_id: str = "",
+        model: str = "",
+        expanded: bool = False,
+        **kwargs,
+    ) -> None:
+        super().__init__(**kwargs)
+        self._summary = summary
+        self._applied = applied
+        self._total = total
+        self._edits = list(edits or [])
+        self._scope = scope
+        self._rollback_of = rollback_of
+        self._refinement_id = refinement_id
+        self._model = model
+        self._expanded = expanded
+        self.add_class("refinement-block")
+
+    def compose(self) -> ComposeResult:
+        yield Label(self._format_header(), id="refinement-header")
+        yield Label("", id="refinement-output", classes="-hidden")
+
+    @property
+    def has_details(self) -> bool:
+        return bool(self._edits)
+
+    def _format_header(self) -> Text:
+        colors = config.ui.colors
+        applied = [e for e in self._edits if e.get("applied")]
+        header = refinement_header(
+            applied=self._applied,
+            total=self._total,
+            kinds=[str(e.get("kind", "entry")) for e in applied] or ["entry"],
+            actions=[str(e.get("action", "update")) for e in applied] or ["update"],
+            rollback_of=self._rollback_of,
+        )
+        # "Harness refined · 2 memories created" collapses to "Harness refined"
+        # on one line; the counts live in the expanded detail.
+        short = header.split(" · ")[0] if header.startswith("Harness refined") else header
+        text = Text("◆ ", style=Style(color=colors.accent))
+        text.append(short)
+        if not self._expanded and self.has_details:
+            text.append(" · ctrl+d for edits", style=Style(color=colors.dim))
+        return text
+
+    def set_expanded(self, expanded: bool) -> None:
+        if self._expanded == expanded:
+            return
+        self._expanded = expanded
+        self._render_detail()
+
+    def _render_detail(self) -> None:
+        with contextlib.suppress(Exception):
+            header = self.query_one("#refinement-header", Label)
+            header.update(self._format_header())
+            output = self.query_one("#refinement-output", Label)
+            if self._expanded:
+                self.remove_class("-with-details")
+                output.remove_class("-hidden")
+                output.update(self._format_detail())
+            else:
+                self.remove_class("-with-details")
+                output.add_class("-hidden")
+                output.update(Text(""))
+
+    def _format_detail(self) -> Text:
+        colors = config.ui.colors
+        text = Text()
+        meta = f"{self._scope}"
+        if self._rollback_of:
+            meta += f" · rollback of {self._rollback_of}"
+        if self._refinement_id:
+            meta += f" · refinement {self._refinement_id}"
+        if self._model:
+            meta += f" · {self._model}"
+        text.append(meta + "\n", style=Style(color=colors.dim))
+        if self._summary.strip():
+            text.append(self._summary.strip() + "\n\n", style=Style(color=colors.fg))
+
+        for edit in self._edits:
+            text.append_text(self._format_edit(edit))
+            text.append("\n\n")
+        return text
+
+    def _format_edit(self, edit: dict) -> Text:
+        colors = config.ui.colors
+        text = Text()
+        scope = _edit_scope(edit, self._scope)
+        edit_id = str(edit.get("id", "?"))
+        kind = str(edit.get("kind", "entry"))
+        action = str(edit.get("action", "update"))
+
+        if not edit.get("applied"):
+            error = edit.get("error") or "unknown error"
+            text.append("✗ Failed to ", style=Style(color=colors.error))
+            text.append(f"{action} {scope} {kind} ")
+            text.append(edit_id, style=Style(color=colors.error))
+            text.append(f": {error}\n", style=Style(color=colors.error))
+            return text
+
+        text.append("✓ ", style=Style(color=colors.success))
+        text.append(_edit_verb(action))
+        text.append(f" {scope} {kind} ")
+        text.append(edit_id, style=Style(color=colors.accent))
+        text.append("\n")
+
+        before = edit.get("before")
+        after = edit.get("after")
+        for field, label in _EDIT_FIELDS:
+            rows = self._field_rows(field, label, before, after, action)
+            if rows:
+                text.append_text(rows)
+        reason = edit.get("reason")
+        if isinstance(reason, str) and reason.strip():
+            text.append(f"  Reason: {reason.strip()}\n", style=Style(color=colors.dim))
+        return text
+
+    def _field_rows(
+        self, field: str, label: str, before: object, after: object, action: str
+    ) -> Text | None:
+        """Rows for one field: unchanged fields plain, changed fields -/+."""
+        colors = config.ui.colors
+        added = _field_value_lines((after or {}).get(field)) if isinstance(after, dict) else []
+        removed = _field_value_lines((before or {}).get(field)) if isinstance(before, dict) else []
+        if not added and not removed:
+            return None
+        text = Text()
+        if removed == added:
+            text.append(f"  {label}: ", style=Style(color=colors.dim))
+            text.append("\n".join(added) + "\n", style=Style(color=colors.fg))
+            return text
+        for line in removed:
+            text.append(f"  {label}\n- {line}\n", style=Style(color=colors.error))
+        for line in added:
+            text.append(f"  {label}\n+ {line}\n", style=Style(color=colors.success))
+        return text
 
 
 class UserBlock(Static):

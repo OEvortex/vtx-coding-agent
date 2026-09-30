@@ -72,13 +72,21 @@ class HarnessCommands(CommandSupport):
             return
 
         # The notice is a conversation message (the model sees it next turn)
-        # and the digest in the system prompt changed, so rebuild context.
+        # and the delivered digest changed, so refresh context.
         if outcome.notice:
             self._runtime.session.append_message(UserMessage(content=outcome.notice))
         self._runtime.reload_context()
 
-        if outcome.notice:
-            chat.add_info_message(outcome.notice)
-        else:
-            chat.add_info_message(f"Refinement {outcome.id}: no edits applied")
+        # The block carries the per-edit diffs; the notice is what the model
+        # reads, so it is not also dumped into the transcript as an info line.
+        chat.add_refinement(
+            summary=outcome.summary,
+            applied=outcome.applied,
+            total=outcome.total,
+            edits=outcome.edits,
+            scope=outcome.scope,
+            rollback_of=outcome.rollback_of,
+            refinement_id=outcome.id,
+            model=outcome.model,
+        )
         chat.show_status("Refinement complete")

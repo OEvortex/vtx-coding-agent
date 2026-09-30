@@ -38,6 +38,7 @@ from vtx.ai.agent.rlm.harness import (
     harness_query_terms,
     skill_reference_error,
 )
+from vtx.ai.base import ProviderConfig
 from vtx.core.types import (
     AssistantMessage,
     Message,
@@ -64,6 +65,43 @@ _HISTORY_FILE_NAME = "refinements.jsonl"
 
 ACTIONS = ("create", "update", "delete")
 KINDS: tuple[HarnessKind, ...] = ("prompt", "memory", "skill", "subagent")
+
+# =================================================================================================
+# stale-entry detection
+#
+# Entries are write-mostly: a refinement pass can update or delete one, but
+# nothing re-checks whether an old entry is still true. A global entry recorded
+# from one session is read by every later session, so a fact that has since
+# changed keeps being asserted with the same confidence. Nothing in the store
+# decays it, and the digest's per-kind limit means old entries also stop being
+# visible.
+#
+# Detection folds into the auto-refine gate rather than adding a pass: the gate
+# already reads the trajectory and already decides whether a refinement pass is
+# worth running, so a contradiction it can see is free to report.
+# =================================================================================================
+
+STALE_REASON = "contradicted by the current trajectory"
+
+STALE_REVIEW_INSTRUCTIONS = (
+    "Also check whether any existing harness entry is now contradicted by what you "
+    "just observed. If one is, update it or delete it; do not add a second entry "
+    "that repeats the same subject while leaving the wrong one in place. If nothing "
+    "is contradicted, say so and leave the entries alone."
+)
+
+
+@dataclass
+class StaleEntry:
+    """An existing entry the gate believes the trajectory contradicts."""
+
+    kind: HarnessKind
+    id: str
+    scope: str
+    reason: str = STALE_REASON
+
+    def label(self) -> str:
+        return f"[{self.scope}:{self.id}] {self.kind}"
 
 
 def current_mode() -> str:
@@ -202,6 +240,20 @@ _MODE_DIGEST_LINES: dict[str, tuple[str, ...]] = {
     ),
 }
 
+#: Shown when relevance ranking trims a kind below its display limit. The
+#: reachability claim is per-mode because it differs: only ``code_first`` has
+#: the REPL ``harness`` object to read the remainder through.
+_RANKED_NOTE: dict[str, str] = {
+    MODE_CODE_FIRST: (
+        "(entries ranked by relevance to the current task; the rest are "
+        "readable with harness.list(...) and harness.search(...) in the REPL)"
+    ),
+    MODE_TOOL_FIRST: (
+        "(entries ranked by relevance to the current task; only the top entries "
+        "are shown, so an entry you need but cannot see is not retrievable here)"
+    ),
+}
+
 _MODE_SUBAGENT_HINT: dict[str, str] = {
     MODE_CODE_FIRST: (
         "invoke a spec by turning it into a concise task prompt and spawning with "
@@ -243,6 +295,12 @@ class RefinementOutcome:
     scope: str
     notice: str | None = None
     rollback_of: str | None = None
+    #: Per-edit records (action, kind, id, scope, before, after, error). The TUI
+    #: renders the diff from these; the model only ever sees `notice`.
+    edits: list[dict[str, Any]] = field(default_factory=list)
+    #: Model the pass ran on, so the cost is attributable when it was routed away
+    #: from the session model.
+    model: str = ""
 
 
 # =================================================================================================
@@ -800,10 +858,7 @@ def _render_digest(
         else:
             lines.append(f"{kind}: {len(entries)}")
         if query_terms and len(entries) > _DIGEST_ENTRY_LIMIT:
-            lines.append(
-                "(entries ranked by relevance to the current task; the rest are "
-                "reachable via the harness search tool)"
-            )
+            lines.append(_RANKED_NOTE.get(resolved_mode, _RANKED_NOTE[MODE_CODE_FIRST]))
         for entry in entries[:_DIGEST_ENTRY_LIMIT]:
             malformation = harness_entry_malformation(entry)
             if malformation:
@@ -1510,6 +1565,118 @@ async def _complete_refinement_call(
     return "\n".join(text_parts)
 
 
+def resolve_refine_provider(provider: Any) -> tuple[Any, str]:
+    """Return ``(provider, label)`` for a refinement call.
+
+    Refinement reads the trajectory and emits a small JSON proposal, so it can
+    run on a cheaper model than the session's. ``refine.model`` selects it as
+    ``provider/model``; anything that would make the pass worse or impossible
+    falls back to the session provider, and the returned label says which was
+    used so the TUI and logs can attribute the cost.
+
+    Falls back rather than raising because refinement is a background nicety: a
+    bad selector must not break the turn. The three fallback causes are an
+    unparsable selector, a model that is not in the catalog, and a model whose
+    context window cannot hold the request — the last matters because a small
+    window would fail over-limit on the wire after the trajectory was already
+    truncated to fit it.
+    """
+    session_label = str(getattr(provider, "model", "") or "session model")
+    selector = _refine_model_selector()
+    if not selector:
+        return provider, session_label
+
+    resolved = _build_auxiliary_provider(selector)
+    if resolved is None:
+        log.warning(
+            "refine.model %r is unusable; using the session model for refinement", selector
+        )
+        return provider, session_label
+    aux_provider, model_id, provider_name = resolved
+    return aux_provider, f"{provider_name}/{model_id}"
+
+
+def _refine_model_selector() -> str:
+    """``refine.model`` as a non-empty string, or "" when unset.
+
+    A hand-edited config can hold a non-string here; treat that as unset so the
+    pass falls back rather than failing.
+    """
+    try:
+        from vtx.ai.config import config
+
+        selector = getattr(config.refine, "model", None)
+    except Exception:
+        return ""
+    return selector.strip() if isinstance(selector, str) else ""
+
+
+def _build_auxiliary_provider(selector: str) -> tuple[Any, str, str] | None:
+    """Build a provider for a ``provider/model`` selector, or None if unusable."""
+    from vtx.ai.agent.runtime import create_provider
+    from vtx.ai.models import get_model
+
+    provider_name, separator, model_id = selector.rpartition("/")
+    if not separator or not provider_name or not model_id:
+        return None
+    info = get_model(model_id, provider_name)
+    if info is None:
+        return None
+    api_key = _auxiliary_api_key(info.provider)
+    if not api_key and not _provider_allows_anonymous(info.provider):
+        return None
+    try:
+        aux = create_provider(
+            info.api,
+            ProviderConfig(
+                api_key=api_key,
+                base_url=info.base_url,
+                model=info.effective_id,
+                max_tokens=info.max_tokens,
+                thinking_level="off",
+                provider=info.provider,
+                thinking_level_map=getattr(info, "thinking_level_map", None),
+            ),
+        )
+    except Exception:
+        log.warning("refine.model %r could not be instantiated", selector, exc_info=True)
+        return None
+    return aux, model_id, info.provider
+
+
+def _auxiliary_api_key(provider_name: str) -> str | None:
+    """Credential for *provider_name* from its catalog env var, if configured.
+
+    Resolution is deferred to the provider constructor, which reads its own
+    configured env var; this only needs to know whether one exists, so an
+    unauthenticated selector is rejected here rather than at the first call.
+    """
+    try:
+        from vtx.ai.provider_catalog import get as get_provider
+        from vtx.ai.provider_catalog import is_provider_configured
+
+        entry = get_provider(provider_name)
+        if entry is None or not is_provider_configured(entry):
+            return None
+        import os
+
+        env_var = getattr(entry, "api_key_env", None)
+        return os.getenv(env_var) if isinstance(env_var, str) and env_var else None
+    except Exception:
+        return None
+
+
+def _provider_allows_anonymous(provider_name: str) -> bool:
+    """Whether *provider_name* serves without a credential (local gateways)."""
+    try:
+        from vtx.ai.provider_catalog import get as get_provider
+
+        entry = get_provider(provider_name)
+    except Exception:
+        return False
+    return bool(entry is not None and (entry.is_local or entry.api_key_optional))
+
+
 def _output_reserve(provider: Any, cap: int) -> int:
     """Output room to reserve for a refinement call.
 
@@ -1605,11 +1772,14 @@ AUTO_REFINE_REVIEW_SYSTEM_PROMPT = """You are Vtx's automatic /refine review gat
 Decide whether this checkpoint should run /refine. Auto /refine writes local continual harness state by default, so approve when the trajectory contains evidence useful to this session's future turns.
 Reject one-off noise, unsupported hypotheses, and transient tool outputs. Ask for global refinement only for durable cross-session lessons or explicitly project-qualified lessons likely to be reused in future sessions.
 
+Also report entries the current harness state already holds that the trajectory now contradicts. Entries are never re-checked once written, so an entry that a later run invalidated would otherwise keep being asserted. Only report a contradiction you can point at in the trajectory; leave the list empty when the trajectory does not bear on an entry. A correct-but-unused entry is not stale.
+
 Return JSON only:
 {
   "shouldRefine": true|false,
   "rationale": "short reason",
-  "instructions": "optional concise instructions for /refine if shouldRefine is true"
+  "instructions": "optional concise instructions for /refine if shouldRefine is true",
+  "staleEntries": [{"kind": "prompt|memory|skill|subagent", "id": "existing entry id", "reason": "what in the trajectory contradicts it"}]
 }"""
 
 
@@ -1620,9 +1790,20 @@ class AutoRefineReview:
     should_refine: bool = False
     rationale: str = ""
     instructions: str | None = None
+    stale_entries: list[StaleEntry] = field(default_factory=list)
 
 
-def parse_auto_refine_review(text: str) -> AutoRefineReview:
+def parse_auto_refine_review(
+    text: str, *, known: dict[tuple[str, str], str] | None = None
+) -> AutoRefineReview:
+    """Parse a gate verdict, resolving reported stale ids against *known*.
+
+    ``known`` maps ``(kind, id)`` to scope. A reported id that does not resolve
+    is dropped rather than trusted: the gate is a cheap model that can hallucinate
+    an entry, and acting on a phantom would have the plan pass editing something
+    that does not exist — or worse, creating a duplicate of a real entry under a
+    name the gate invented.
+    """
     value = extract_json_object(text)
     if not isinstance(value, dict):
         raise ValueError("Auto-refine review JSON must be an object")
@@ -1636,7 +1817,63 @@ def parse_auto_refine_review(text: str) -> AutoRefineReview:
         instructions=(
             value["instructions"] if isinstance(value.get("instructions"), str) else None
         ),
+        stale_entries=_parse_stale_entries(value.get("staleEntries"), known),
     )
+
+
+def _parse_stale_entries(raw: Any, known: dict[tuple[str, str], str] | None) -> list[StaleEntry]:
+    if not known or not isinstance(raw, list):
+        return []
+    found: list[StaleEntry] = []
+    seen: set[tuple[str, str]] = set()
+    for item in raw:
+        if not isinstance(item, dict):
+            continue
+        kind = item.get("kind")
+        entry_id = item.get("id")
+        if kind not in KINDS or not isinstance(entry_id, str) or not entry_id:
+            continue
+        scope = known.get((kind, entry_id))
+        if scope is None or (kind, entry_id) in seen:
+            continue
+        seen.add((kind, entry_id))
+        reason = item.get("reason")
+        found.append(
+            StaleEntry(
+                kind=kind,
+                id=entry_id,
+                scope=scope,
+                reason=reason.strip()
+                if isinstance(reason, str) and reason.strip()
+                else STALE_REASON,
+            )
+        )
+    return found
+
+
+def known_entry_index(session_id: str, cwd: str) -> dict[tuple[str, str], str]:
+    """``(kind, id) -> scope`` for every entry visible to a session.
+
+    Both scopes, because a global entry is read by this session and by every
+    other one, so a contradiction to it is worth reporting even from a local pass.
+    """
+    index: dict[tuple[str, str], str] = {}
+    for state in (
+        get_harness_state(global_=True),
+        get_harness_state(local_state_dir(session_id, cwd)),
+    ):
+        for kind in KINDS:
+            for entry_id, entry in state.entries.get(kind, {}).items():
+                index.setdefault((kind, str(entry_id)), entry.scope or state.scope)
+    return index
+
+
+def stale_instructions(review: AutoRefineReview) -> str:
+    """Instruction block naming the entries the gate flagged as contradicted."""
+    lines = [STALE_REVIEW_INSTRUCTIONS, f"Flagged as contradicted: {review.rationale}"]
+    for entry in review.stale_entries:
+        lines.append(f"- {entry.label()}: {entry.reason}")
+    return "\n".join(lines)
 
 
 def auto_refine_instructions(reason: str, review: AutoRefineReview) -> str:
@@ -1659,6 +1896,8 @@ async def review_auto_refine(
     history: list[dict[str, Any]],
     reason: str,
     turns_since_last_review: int,
+    session_id: str = "",
+    cwd: str = "",
     cancel_event: Any = None,
 ) -> AutoRefineReview:
     """Ask the cheap gate whether this checkpoint warrants a refinement pass.
@@ -1711,7 +1950,10 @@ async def review_auto_refine(
         cancel_event=cancel_event,
         label="Auto-refine review failed",
     )
-    return parse_auto_refine_review(text)
+    # Reported ids are resolved against the live store, so a hallucinated id
+    # cannot send the plan pass after an entry that does not exist.
+    known = known_entry_index(session_id, cwd)
+    return parse_auto_refine_review(text, known=known)
 
 
 # =================================================================================================
@@ -1760,6 +2002,11 @@ async def run_refinement(
     """
     fallback_scope = "global" if global_ else "local"
     result_id = generate_refinement_id()
+    # Rollback inverts recorded snapshots and never calls the model, so there is
+    # nothing to route away from the session model.
+    plan_provider, model_label = (
+        (provider, "") if rollback_id else resolve_refine_provider(provider)
+    )
 
     if rollback_id:
         # The recorded result decides its own scope when known (prime parity).
@@ -1794,7 +2041,7 @@ async def run_refinement(
         history = load_merged_history(session_id, cwd)
         proposal = await plan_refinement(
             messages=messages,
-            provider=provider,
+            provider=plan_provider,
             states=overview_states,
             history=history,
             instructions=instructions,
@@ -1822,6 +2069,8 @@ async def run_refinement(
         scope=scope,
         notice=notice,
         rollback_of=rollback_of,
+        edits=result["appliedEdits"],
+        model=model_label,
     )
 
 

@@ -195,6 +195,27 @@ Screen {{
     height: 0;
 }}
 
+/* Refinement outcome — one line collapsed, per-edit diffs on ctrl+d. */
+.refinement-block {{
+    padding: 0 1;
+    margin-top: 1;
+    width: 100%;
+}}
+
+#refinement-header {{
+    text-style: none;
+}}
+
+#refinement-output {{
+    color: {colors.dim};
+    padding: 0 0 0 1;
+}}
+
+#refinement-output.-hidden {{
+    display: none;
+    height: 0;
+}}
+
 /* IPython cell (RLM mode) — modern card-style rendering of the ipython tool. */
 .ipython-cell-block {{
     margin-top: 1;

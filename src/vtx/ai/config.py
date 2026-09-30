@@ -257,6 +257,15 @@ class RefineConfig(BaseModel):
     turn_interval: int = Field(default=25, ge=1)
     on_compact: bool = True
     cooldown_minutes: float = Field(default=20.0, ge=0)
+    model: str | None = None
+    """Model for refinement passes, as ``provider/model``.
+
+    Refinement reads the whole trajectory and writes a small JSON proposal, so
+    it does not need the session model's capability or its context window.
+    Pointing it at a cheaper model keeps the gate and the plan pass off the
+    session model, which is the bulk of refinement's cost. Falls back to the
+    session model when unset, unknown, or too small for the request.
+    """
 
 
 class ConfigSchema(BaseModel):

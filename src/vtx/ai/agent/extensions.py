@@ -89,6 +89,8 @@ TOOL_EXECUTION_UPDATE = "tool_execution_update"
 TOOL_EXECUTION_END = "tool_execution_end"
 COMPACTION_START = "compaction_start"
 COMPACTION_END = "compaction_end"
+SESSION_BEFORE_REFINE = "session_before_refine"
+REFINE_COMPLETE = "refine_complete"
 # Agent lifecycle events (re-exported from vtx.agents for convenience).
 # The constants live in vtx.agents; importing them here avoids a cycle
 # at the call sites that import from vtx.extensions.
@@ -137,6 +139,8 @@ ALL_EVENTS: tuple[str, ...] = (
     TOOL_EXECUTION_END,
     COMPACTION_START,
     COMPACTION_END,
+    SESSION_BEFORE_REFINE,
+    REFINE_COMPLETE,
     AGENT_ACTIVATED,
     AGENT_CHANGED,
     TOOL_GROUP_CHANGED,

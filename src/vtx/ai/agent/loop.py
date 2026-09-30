@@ -153,6 +153,9 @@ class Agent:
         # :meth:`_ensure_harness_digest_context`.
         self._harness_digest_entry_id: str | None = None
         self._harness_digest_fingerprint: str | None = None
+        #: Last gate verdict that flagged contradicted entries, surfaced so the
+        #: UI can show what prompted the corrective pass.
+        self._stale_review: Any = None
 
     @property
     def context(self) -> Any:
@@ -575,7 +578,14 @@ class Agent:
 
         self.session.append_message(UserMessage(content=result.notice))
         self.reload_context()
-        return [HostNoticeEvent(kind="refinement", text=f"{label} {result.id}: {result.summary}")]
+        # Structured, not prose: the TUI renders the per-edit diffs from
+        # `edits`, so the flat text is only a fallback for surfaces that cannot
+        # draw the block.
+        return [
+            HostNoticeEvent(
+                kind="refinement", text=f"{label} {result.id}: {result.summary}", refinement=result
+            )
+        ]
 
     async def _drain_pending_refinement(self, cancel_event: asyncio.Event | None) -> list[Event]:
         """Run a scheduled RLM harness refinement, if one is pending.
@@ -682,20 +692,27 @@ class Agent:
         if under_cooldown:
             return []
 
-        from vtx.ai.agent.rlm.refine import load_history, resolve_states, review_auto_refine
+        from vtx.ai.agent.rlm.refine import (
+            load_merged_history,
+            resolve_states,
+            review_auto_refine,
+            stale_instructions,
+        )
         from vtx.ai.agent.rlm.registry import bridge_session_id
 
         session_id = bridge_session_id()
-        state, overview_states, _scope = resolve_states(session_id, self._cwd, global_=False)
+        _target, overview_states, _scope = resolve_states(session_id, self._cwd, global_=False)
         self._auto_refine_in_progress = True
         try:
             review = await review_auto_refine(
                 messages=self.session.all_messages,
                 provider=self.provider,
                 states=overview_states,
-                history=load_history(state),
+                history=load_merged_history(session_id, self._cwd),
                 reason=reason,
                 turns_since_last_review=self._auto_refine_turns_since_review,
+                session_id=session_id,
+                cwd=self._cwd,
                 cancel_event=cancel_event,
             )
         except Exception:
@@ -705,6 +722,19 @@ class Agent:
             self._auto_refine_last_review_at = time.monotonic()
             self._auto_refine_in_progress = False
             return []
+
+        # A flagged contradiction is itself a reason to refine: correcting or
+        # deleting the wrong entry is the highest-value edit available, and it
+        # would otherwise never happen because nothing re-checks written entries.
+        if review.stale_entries:
+            self._stale_review = review
+            # A flagged contradiction is itself a reason to refine: correcting
+            # or deleting the wrong entry is the highest-value edit available,
+            # and it would otherwise never happen, because nothing re-checks a
+            # written entry.
+            if not review.should_refine:
+                review.should_refine = True
+                review.instructions = stale_instructions(review)
 
         if not review.should_refine:
             self._auto_refine_last_review_at = time.monotonic()
@@ -729,6 +759,36 @@ class Agent:
             self._auto_refine_in_progress = False
             return []
 
+        from vtx.ai.agent.extensions import REFINE_COMPLETE, SESSION_BEFORE_REFINE
+        from vtx.ai.agent.rlm.refine import stale_instructions
+
+        if self._extensions is not None:
+            verdict = await self._extensions.emit(
+                SESSION_BEFORE_REFINE,
+                session_id=session_id,
+                reason=reason,
+                review=review,
+                cancel_event=cancel_event,
+            )
+            if verdict.get("block"):
+                reason_text = verdict.get("reason") or "blocked by an extension"
+                self._auto_refine_in_progress = False
+                self._auto_refine_last_review_at = time.monotonic()
+                self._auto_refine_turns_since_review = 0
+                log.info("refinement blocked by extension: %s", reason_text)
+                return [
+                    HostNoticeEvent(
+                        kind="refinement_error", text=f"[refinement blocked] {reason_text}"
+                    )
+                ]
+
+        instructions = auto_refine_instructions(reason, review)
+        if review.stale_entries:
+            # Append rather than replace: the gate's own instructions are about
+            # adding something, the flagged entries are about removing or
+            # correcting something, and a plan pass can do both.
+            instructions = f"{instructions}\n\n{stale_instructions(review)}"
+
         set_refine_in_flight(session_id, True)
         try:
             result = await run_refinement(
@@ -736,7 +796,7 @@ class Agent:
                 provider=self.provider,
                 session_id=session_id,
                 cwd=self._cwd,
-                instructions=auto_refine_instructions(reason, review),
+                instructions=instructions,
                 source="auto",
                 cancel_event=cancel_event,
             )
@@ -744,6 +804,10 @@ class Agent:
             log.exception("auto-refinement failed")
             text = f"[auto-refinement failed] {format_error(e)}"
             self.session.append_message(UserMessage(content=text))
+            if self._extensions is not None:
+                await self._extensions.emit(
+                    REFINE_COMPLETE, session_id=session_id, applied=0, total=0, outcome=None
+                )
             return [HostNoticeEvent(kind="refinement_error", text=text)]
         finally:
             set_refine_in_flight(session_id, False)
@@ -751,7 +815,16 @@ class Agent:
             self._auto_refine_last_review_at = time.monotonic()
             self._auto_refine_turns_since_review = 0
 
-        return self._refinement_events(result, "Auto-refine")
+        events = self._refinement_events(result, "Auto-refine")
+        if self._extensions is not None:
+            await self._extensions.emit(
+                REFINE_COMPLETE,
+                session_id=session_id,
+                applied=result.applied,
+                total=result.total,
+                outcome=result,
+            )
+        return events
 
     def queue_follow_up(self, message: UserMessage) -> None:
         """Queue a follow-up user message for mid-turn injection.

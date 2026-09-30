@@ -20,6 +20,7 @@ from vtx.tui.blocks import (
     HandoffLinkBlock,
     LaunchWarning,
     LaunchWarningsBlock,
+    RefinementBlock,
     ThinkingBlock,
     ToolBlock,
     UpdateAvailableBlock,
@@ -75,6 +76,9 @@ class ChatLog(VerticalScroll):
         super().__init__(**kwargs)
         self._current_block: ThinkingBlock | ContentBlock | None = None
         self._tool_blocks: dict[str, ToolBlock] = {}
+        # Refinement blocks share the tool-output expansion toggle: both are
+        # "detail you asked to see", and one Ctrl+D should reveal either.
+        self._refinement_blocks: list[RefinementBlock] = []
         self._tool_output_expanded = False
         self._anchor_released: bool = False
         self._last_status_label: Label | None = None
@@ -131,6 +135,7 @@ class ChatLog(VerticalScroll):
         active_tool_ids = {tid for tid, block in self._tool_blocks.items() if block in to_remove}
         for tid in active_tool_ids:
             del self._tool_blocks[tid]
+        self._refinement_blocks = [b for b in self._refinement_blocks if b not in to_remove]
         if self._last_status_label in to_remove:
             self._last_status_label = None
         self.call_after_refresh(lambda: self.remove_children(to_remove))
@@ -141,6 +146,7 @@ class ChatLog(VerticalScroll):
         if children:
             await self.remove_children(children)
         self._tool_blocks.clear()
+        self._refinement_blocks.clear()
         self._tool_output_expanded = False
         self._current_block = None
         self._last_status_label = None
@@ -662,6 +668,8 @@ class ChatLog(VerticalScroll):
         self._tool_output_expanded = expanded
         for block in self._tool_blocks.values():
             block.set_expanded(expanded)
+        for block in self._refinement_blocks:
+            block.set_expanded(expanded)
         self._scroll_if_anchored(animate=False)
 
     def toggle_tool_output_expanded(self) -> bool:
@@ -928,6 +936,50 @@ class ChatLog(VerticalScroll):
             label.add_class("-error")
         self.mount(label)
         self._scroll_if_anchored(animate=False)
+
+    def add_refinement(
+        self,
+        *,
+        summary: str = "",
+        applied: int = 0,
+        total: int = 0,
+        edits: list[dict] | None = None,
+        scope: str = "local",
+        rollback_of: str | None = None,
+        refinement_id: str = "",
+        model: str = "",
+    ) -> RefinementBlock:
+        """Mount a refinement outcome block, collapsible with Ctrl+D.
+
+        Prefers the rich block whenever the pass reported edits: the counts and
+        per-field diffs are the only record of what refinement changed, since
+        the model's own notice is prose. A pass with nothing to show falls back
+        to an info line rather than an empty block.
+        """
+        if not edits:
+            self.add_info_message(
+                f"Refinement {refinement_id}: no edits applied"
+                if refinement_id
+                else "Refinement: no edits applied"
+            )
+            return None  # ty:ignore[invalid-return-type]
+
+        block = RefinementBlock(
+            summary=summary,
+            applied=applied,
+            total=total,
+            edits=edits,
+            scope=scope,
+            rollback_of=rollback_of,
+            refinement_id=refinement_id,
+            model=model,
+            expanded=self._tool_output_expanded,
+        )
+        self.mount(block)
+        if block.has_details:
+            self._refinement_blocks.append(block)
+        self._scroll_if_anchored(animate=False)
+        return block
 
     def add_info_message(self, message: str, error: bool = False, warning: bool = False) -> None:
         info_color = config.ui.colors.info
