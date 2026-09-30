@@ -32,7 +32,7 @@ def test_skills_index_is_compact_routing_list(tmp_path):
     full = formatted_skills(ctx.skills)
     index = formatted_skills_index(ctx.skills)
     assert "## Skills index" in index
-    assert "read_file" in index  # on-demand loading instruction
+    assert 'skill(action="load"' in index  # on-demand loading instruction
     for skill in ctx.skills:
         if skill.include_in_prompt:
             assert skill.name in index

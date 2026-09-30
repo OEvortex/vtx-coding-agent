@@ -642,9 +642,10 @@ class TestFormatSkillsForPrompt:
         assert "<available_skills>" in result
         assert "</available_skills>" in result
         assert "<name>test-skill</name>" in result
-        assert "<type>markdown</type>" in result
         assert "<description>A test skill</description>" in result
-        assert "<location>/path/to/SKILL.md</location>" in result
+        # No <location>: skills are loaded by name via the skill tool, so the
+        # path in the catalog only invited the model to read the file directly.
+        assert "<location>" not in result
 
     def test_names_each_skill_exactly_once(self):
         """A grouped name index used to precede the XML, naming every skill a

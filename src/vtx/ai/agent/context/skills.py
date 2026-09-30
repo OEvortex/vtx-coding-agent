@@ -601,24 +601,31 @@ def formatted_skills(skills: list[Skill]) -> str:
     # named every skill a second time with no description or path, so the
     # catalog shipped doubled on every turn. The XML is the listing; the python
     # import it carries per entry is what the index used to add.
+    #
+    # No <location>. The catalog names skills for the `skill` tool to load by,
+    # and the tool resolves the path itself; shipping the path as well made the
+    # model read the file directly, skipping the tool's base-directory banner
+    # and its relative-path resolution rules.
     skill_tags: list[str] = []
     for skill in sorted(skills, key=lambda s: s.name):
         skill_tags.append("  <skill>")
         skill_tags.append(f"    <name>{escape_xml(skill.name)}</name>")
-        skill_tags.append(f"    <type>{skill.kind}</type>")
+        skill_tags.append(f"    <description>{escape_xml(skill.description)}</description>")
         if skill.kind == "python" and skill.python:
             skill_tags.append(
                 f"    <python_import>{escape_xml(skill.python.import_name)}</python_import>"
             )
-        skill_tags.append(f"    <description>{escape_xml(skill.description)}</description>")
-        skill_tags.append(f"    <location>{escape_xml(skill.path)}</location>")
         skill_tags.append("  </skill>")
 
     rules = [
+        "Skills provide specialized instructions and workflows for specific tasks.",
         "Before replying, scan the skills below. If a skill matches or is even partially relevant",
-        "to your task, you MUST load it with the read tool and follow its instructions. "
-        "Err on the side of loading — it is always better to have context you don't need",
-        "than to miss critical steps, pitfalls, or established workflows.",
+        'to your task, you MUST load it with `skill(action="load", name="...")` and follow its',
+        "instructions. Err on the side of loading — it is always better to have context you don't",
+        "need than to miss critical steps, pitfalls, or established workflows.",
+        "Each load returns the skill's directory; paths inside a skill are relative to it.",
+        "If a skill is manually triggered via slash command, its full content is already included",
+        "in the user message, so you don't need to load it again.",
     ]
     # Only explain the kernel import contract when a python skill is actually on
     # offer. A tool-first agent gets no python skills at all, and telling it
@@ -633,12 +640,6 @@ def formatted_skills(skills: list[Skill]) -> str:
         "## Skills (mandatory)",
         "",
         *rules,
-        "",
-        "When a skill file references a relative path, resolve it against the skill's directory",
-        "(the parent of its SKILL.md) and use that absolute path in tool calls, not a path",
-        "relative to the current working directory. If a skill is manually triggered via slash",
-        "command, its full content is already included in the user message, so you don't need",
-        "to read the skill file again.",
         "",
         "<available_skills>",
         *skill_tags,
@@ -759,14 +760,15 @@ def formatted_skills_index(
     header = [
         "## Skills index",
         "",
-        "One line per available skill. Read the SKILL.md at the listed location",
-        "with `read_file` only for skills you will actually use — do not preload them.",
+        "One line per available skill. Load a skill's instructions with",
+        '`skill(action="load", name="...")` only for skills you will actually use —',
+        "do not preload them.",
         "",
     ]
     if omitted:
         header.append(
             f"({omitted} further skill(s) are installed but not listed here to save "
-            "context. Find them with `find_tools`, or list the skills directory.)"
+            'context. Find them with `skill(action="list")`.'
         )
         header.append("")
     return "\n".join([*header, *lines])

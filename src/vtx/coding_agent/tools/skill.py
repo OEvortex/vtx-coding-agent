@@ -14,6 +14,7 @@ from vtx.coding_agent.context.skills import (
     load_skills,
     merge_registered_skills,
     skills_for_mode,
+    strip_frontmatter,
 )
 
 
@@ -26,13 +27,14 @@ class SkillParams(BaseModel):
                 data[key] = None
         return data
 
-    action: Literal["list", "view", "create", "patch", "edit", "delete", "run"] = Field(
+    action: Literal["load", "list", "view", "create", "patch", "edit", "delete", "run"] = Field(
         description=(
-            "Action: 'list' (discover), 'view' (read), 'create' (new skill), "
+            "Action: 'load' (inject a skill's instructions into context, the normal way "
+            "to use one), 'list' (discover), 'view' (raw file read), 'create' (new skill), "
             "'patch' (find-replace), 'edit' (overwrite), 'delete' (remove), "
             "or 'run' (execute skill instructions in REPL)"
         ),
-        default="view",
+        default="load",
     )
     name: str | None = Field(
         description="Skill name (lowercase/hyphens, e.g. 'review'). Required except for 'list'.",
@@ -56,17 +58,42 @@ class SkillParams(BaseModel):
     )
 
 
+MAX_SKILL_FILES = 10
+
+
+def _sibling_files(skill_dir: Path, *, exclude: str) -> list[str]:
+    """Files beside the SKILL.md, sampled and capped.
+
+    The model can `read` anything in the directory; this only tells it what is
+    there, so a skill that points at `reference/api.md` does not also cost a
+    directory listing to discover. Capped because the point is orientation, not
+    an inventory, and an uncapped list is unbounded context on a big skill.
+    """
+    try:
+        found = sorted(
+            f.relative_to(skill_dir).as_posix()
+            for f in skill_dir.rglob("*")
+            if f.is_file() and f.name != exclude and "__pycache__" not in f.parts
+        )
+    except OSError:
+        return []
+    return found[:MAX_SKILL_FILES]
+
+
 class SkillTool(BaseTool):
     name = "skill"
     tool_icon = "⚙"
     params = SkillParams
-    mutating = True  # Can modify skills, though list/view are read-only
+    mutating = True  # Can modify skills, though load/list/view are read-only
     prompt_guidelines = ()
     description = (
-        "Inspect and manage skill workflows. Use 'list' to discover available skills, "
-        "'view' to read instructions, 'create'/'edit' to author full SKILL.md files, "
-        "'patch' for targeted replacements, 'delete' to remove a skill, or 'run' to "
-        "execute a skill's instructions in the REPL."
+        "Load a skill's instructions into the conversation. Call action='load' with the skill "
+        "name from <available_skills> when a task matches its description; the output is the "
+        "full skill body plus the skill's directory and the files beside it, so relative paths "
+        "inside the skill resolve without a separate read. Also manages skills: 'list' to "
+        "discover, 'view' for a raw file read, 'create'/'edit' to author SKILL.md files, "
+        "'patch' for targeted replacements, 'delete' to remove a skill, 'run' to execute a "
+        "skill's instructions in the REPL."
     )
 
     def format_call(self, params: SkillParams) -> str:
@@ -149,6 +176,36 @@ class SkillTool(BaseTool):
             return None, False
 
         skill_dir, is_builtin = find_skill_dir(params.name)
+
+        # Handle 'load' action: the model's normal way to use a skill.
+        if params.action == "load":
+            if not skill_dir:
+                msg = f"Skill '{params.name}' not found."
+                return ToolResult(success=False, result=msg, ui_summary=f"[red]{msg}[/red]")
+
+            target_file = params.file_path or "SKILL.md"
+            target_path = skill_dir / target_file
+            try:
+                body = strip_frontmatter(target_path.read_text(encoding="utf-8"))
+            except Exception as e:
+                msg = f"Failed to read skill file: {e}"
+                return ToolResult(success=False, result=msg, ui_summary=f"[red]{msg}[/red]")
+
+            files = _sibling_files(skill_dir, exclude=target_path.name)
+            lines = [
+                f'<skill_content name="{params.name}">',
+                "",
+                body.strip(),
+                "",
+                f"Base directory for this skill: {skill_dir}",
+                "Relative paths in this skill (scripts/, reference/) are relative to this base",
+                "directory, not the current working directory.",
+            ]
+            if files:
+                lines += ["", "Files in this skill directory:"]
+                lines += [f"- {name}" for name in files]
+            lines.append("</skill_content>")
+            return ToolResult(success=True, result="\n".join(lines))
 
         # Handle 'view' action
         if params.action == "view":

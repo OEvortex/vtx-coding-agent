@@ -42,6 +42,7 @@ from vtx.ai.agent.rlm.refine import (
     REFINEMENT_NOTICE_TAG,
 )
 from vtx.ai.agent.session import CompactionEntry, MessageEntry, Session
+from vtx.ai.agent.skills_refresh import SkillsCatalogState
 from vtx.ai.agent.tools import BaseTool
 from vtx.core.compaction import SummaryProgress, generate_summary, is_overflow
 from vtx.core.errors import format_error
@@ -157,6 +158,10 @@ class Agent:
         # :meth:`_ensure_harness_digest_context`.
         self._harness_digest_entry_id: str | None = None
         self._harness_digest_fingerprint: str | None = None
+        # Skills catalog slot. Same shape as the harness digest: the system
+        # prompt carries a snapshot, and a change is delivered as one swapped
+        # context message. See :meth:`_ensure_skills_refresh_context`.
+        self._skills_state = SkillsCatalogState()
         #: Last gate verdict that flagged contradicted entries, surfaced so the
         #: UI can show what prompted the corrective pass.
         self._stale_review: Any = None
@@ -245,6 +250,76 @@ class Agent:
         except Exception:
             log.exception("harness digest delivery failed")
 
+    def _ensure_skills_refresh_context(self) -> None:
+        """Announce a skill catalog that changed since the last cold boundary.
+
+        The catalog in the system prompt is a snapshot, and rebuilding the
+        prompt to refresh it would invalidate the cached prefix on every
+        boundary. So a change is delivered as its own context message, the same
+        slot-and-swap shape the harness digest uses.
+
+        Only a real change speaks: a boundary that re-ranks nothing, re-reads
+        the same files, or finds the catalog unreadable stays silent. An
+        unreadable catalog preserves the last known one rather than announcing
+        that no skills exist, which is the same fail-closed rule the project
+        trust store uses.
+        """
+        if self._depth != 0:
+            return
+        try:
+            from vtx.ai.agent.skills_refresh import (
+                build_skills_refresh_message,
+                render_removed,
+                render_update,
+            )
+
+            catalog = self._load_skills_catalog_state()
+            if catalog is None:
+                return
+            summaries, fingerprint = catalog
+
+            if self._skills_state.fingerprint == "" and self._skills_state.summaries == ():
+                # First boundary of the run: the system prompt already carries
+                # this catalog, so announcing it would duplicate the block.
+                self._skills_state.summaries = summaries
+                self._skills_state.fingerprint = fingerprint
+                return
+            if fingerprint == self._skills_state.fingerprint:
+                return
+
+            previous = self._skills_state.summaries
+            text = render_update(previous, summaries) if summaries else render_removed()
+            entry_id = self._adopt_skills_refresh_slot()
+            message = build_skills_refresh_message(text)
+            if entry_id is not None:
+                self.session.replace_message(entry_id, message)
+            else:
+                entry_id = self.session.append_message(message)
+            self._skills_state.summaries = summaries
+            self._skills_state.fingerprint = fingerprint
+        except Exception:
+            log.exception("skills catalog refresh delivery failed")
+
+    def _load_skills_catalog_state(self) -> tuple[tuple, str] | None:
+        """Summarize the catalog, or None when it cannot be read."""
+        from vtx.ai.agent.context.skills import load_skills
+        from vtx.ai.agent.skills_refresh import fingerprint_summaries, summarize_skills
+
+        loaded = load_skills(self._cwd)
+        summaries = summarize_skills(loaded.skills)
+        return summaries, fingerprint_summaries(summaries)
+
+    def _adopt_skills_refresh_slot(self) -> str | None:
+        """Reuse a skills-refresh slot already present in a resumed log."""
+        from vtx.ai.agent.skills_refresh import is_skills_refresh_message
+
+        for entry in reversed(self.session.active_entries):
+            message = getattr(entry, "message", None)
+            if message is None or not is_skills_refresh_message(message):
+                continue
+            return entry.id
+        return None
+
     def _adopt_harness_digest_slot(self) -> str | None:
         """Point the slot bookkeeping at a digest already present in the log.
 
@@ -310,6 +385,7 @@ class Agent:
             user_message = UserMessage(content=query)
 
         self._ensure_harness_digest_context()
+        self._ensure_skills_refresh_context()
         self.session.append_message(user_message)
 
         # Resume from a checkpoint left by a previous cancelled (/stop) run in

@@ -31,7 +31,8 @@ def test_skill_detection_and_formatting(tmp_path: Path):
     assert skill.python.import_name == "word_count"
 
     formatted = formatted_skills(res.skills)
-    assert "<type>python</type>" in formatted
+    # <type> was dropped: the catalog routes by name and description, and the
+    # python import is the only type-specific fact the model acts on.
     assert "<python_import>word_count</python_import>" in formatted
 
 
