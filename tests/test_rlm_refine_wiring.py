@@ -107,6 +107,12 @@ def test_extract_json_object_plain_fenced_and_truncated():
     assert TRUNCATED_JSON_ERROR
 
 
+def test_extract_json_object_tolerates_raw_control_chars():
+    payload = '{"edits": [{"action": "create", "content": "line one\nline two"}]}'
+    assert extract_json_object(payload)["edits"][0]["content"] == "line one\nline two"
+    assert extract_json_object(f"Sure!\n{payload}\nDone.")["edits"][0]["action"] == "create"
+
+
 def test_normalize_proposal_preserves_invalid_fields():
     proposal = normalize_proposal(
         {

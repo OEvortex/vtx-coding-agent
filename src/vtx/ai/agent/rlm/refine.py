@@ -286,7 +286,8 @@ def _is_incomplete_json(candidate: str) -> bool:
 
 def _parse_json_candidate(candidate: str) -> Any:
     try:
-        return json.loads(candidate)
+        # strict=False: models routinely emit raw newlines/tabs inside string values.
+        return json.loads(candidate, strict=False)
     except json.JSONDecodeError as error:
         if _is_incomplete_json(candidate):
             raise ValueError(TRUNCATED_JSON_ERROR) from error
@@ -303,10 +304,7 @@ def extract_json_object(text: str) -> Any:
     start = trimmed.find("{")
     end = trimmed.rfind("}")
     if start != -1 and end > start:
-        try:
-            return json.loads(trimmed[start : end + 1])
-        except json.JSONDecodeError:
-            return _parse_json_candidate(trimmed[start:])
+        return _parse_json_candidate(trimmed[start : end + 1])
     if _is_incomplete_json(trimmed):
         raise ValueError(TRUNCATED_JSON_ERROR)
     raise ValueError("Refiner did not return a JSON object")
