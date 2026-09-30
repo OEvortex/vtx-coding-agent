@@ -34,6 +34,7 @@ from ..jsonrpc import (
     is_jsonrpc_response,
     parse_jsonrpc_message,
 )
+from ..tasks import spawn_logging
 from ..transport import DEFAULT_MAX_MESSAGE_BYTES, TransportEvents
 
 log = logging.getLogger("mcp.transport.http")

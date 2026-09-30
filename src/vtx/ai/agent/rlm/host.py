@@ -193,6 +193,97 @@ def _preview(message: Any, index: int, max_chars: int) -> dict[str, Any]:
 # =================================================================================================
 
 
+def _live_session() -> Any | None:
+    """The session this turn is running in, or ``None`` outside a session.
+
+    ``get_context()`` is a contextvar that the agent loop populates, so this is
+    the only way to reach the session tree from a bridge handler: a kernel
+    request carries a session *id*, not the object.
+    """
+    from vtx.ai.agent.dispatcher import get_context
+
+    try:
+        disp_ctx = get_context()
+    except Exception:
+        return None
+    return getattr(disp_ctx, "session", None) if disp_ctx is not None else None
+
+
+def session_harness_bindings() -> tuple[Any | None, Any | None]:
+    """``(branch_reader, branch_writer)`` for the current session, or ``(None, None)``.
+
+    Backs the local continual harness with the session tree instead of a JSON
+    file, so a revert or a branch shows the state as of its own leaf. Returns
+    ``(None, None)`` when there is no session to write to (``--no-session``), so
+    the caller keeps the file-backed store and its existing error message rather
+    than silently accepting writes that go nowhere.
+    """
+
+    session = _live_session()
+    if session is None or not hasattr(session, "replay_harness_state"):
+        return (None, None)
+
+    def read() -> tuple[dict[str, dict[str, Any]], list[dict[str, Any]]]:
+        return session.replay_harness_state()
+
+    def write(
+        added: dict[str, dict[str, Any]],
+        removed: list[str],
+        refinements: list[dict[str, Any]],
+    ) -> None:
+        session.append_harness_state(added, removed, refinements)
+
+    return (read, write)
+
+
+async def _handle_harness_read(payload: dict[str, Any], ctx: _Ctx) -> Any:
+    """The branch's local harness state, for a kernel with no session access."""
+    from vtx.ai.agent.rlm.diagnostics import plain_data
+
+    session = _live_session()
+    if session is None or not hasattr(session, "replay_harness_state"):
+        # Reported explicitly so the kernel falls back to its file-backed store
+        # instead of treating "no session" as "no memories".
+        return plain_data({"available": False, "entries": {}, "refinements": []})
+    entries, refinements = session.replay_harness_state()
+    return plain_data(
+        {"available": True, "entries": entries, "refinements": refinements}
+    )
+
+
+async def _handle_harness_write(payload: dict[str, Any], ctx: _Ctx) -> Any:
+    """Commit one local harness delta onto the session branch."""
+    from vtx.ai.agent.rlm.diagnostics import (
+        HOST_UNAVAILABLE,
+        INVALID_INPUT,
+        BridgeError,
+        plain_data,
+    )
+
+    session = _live_session()
+    if session is None or not hasattr(session, "append_harness_state"):
+        raise BridgeError(
+            HOST_UNAVAILABLE,
+            "This session has no session store, so continual harness writes cannot "
+            "be saved. Pass global_=True to persist across sessions instead.",
+        )
+    added = payload.get("set")
+    removed = payload.get("delete")
+    refinements = payload.get("refinements")
+    if not isinstance(added, dict):
+        raise BridgeError(INVALID_INPUT, "harness.write set must be an object")
+    if removed is not None and not isinstance(removed, list):
+        raise BridgeError(INVALID_INPUT, "harness.write delete must be a list")
+    if refinements is not None and not isinstance(refinements, list):
+        raise BridgeError(INVALID_INPUT, "harness.write refinements must be a list")
+    session.append_harness_state(
+        {str(key): value for key, value in added.items() if isinstance(value, dict)},
+        [str(key) for key in removed or []],
+        [item for item in refinements or [] if isinstance(item, dict)],
+    )
+    return plain_data({"committed": True})
+
+
 async def _handle_tool_catalog(payload: dict[str, Any], ctx: _Ctx) -> Any:
     """Every callable tool's name, description, and input schema, in one reply.
 
@@ -1082,6 +1173,8 @@ async def _handle_goal(payload: dict[str, Any], ctx: _Ctx) -> dict[str, Any]:
 _HANDLERS: dict[str, Handler] = {
     "tool.call": _handle_tool_call,
     "tool.catalog": _handle_tool_catalog,
+    "harness.read": _handle_harness_read,
+    "harness.write": _handle_harness_write,
     "rlm.run": _handle_rlm_run,
     "rlm.create_session": _handle_rlm_create_session,
     "rlm.find_models": _handle_rlm_find_models,

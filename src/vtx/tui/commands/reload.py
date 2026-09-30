@@ -164,10 +164,12 @@ class ReloadCommands(CommandSupport):
         self._sync_slash_commands()
 
         # 9b. MCP servers. mcp.json is not part of config.yml, so /reload is
-        #     the only thing that picks up an edit to it. Reloading closes the
+        #     the only thing that picks up an edit to it. Run as a worker
+        #     rather than inline: connecting a server can take seconds, and
+        #     /reload has already swapped everything else. Reloading closes the
         #     old connections first, which is what stops a removed server's
         #     child process from being orphaned.
-        mcp_note = await self._reload_mcp(chat)
+        self.run_worker(self._reload_mcp(chat), exclusive=False)
 
         # 10. Push the settings that live outside the config object.
         applied_settings = self._apply_reloaded_settings(before.settings)
@@ -184,19 +186,23 @@ class ReloadCommands(CommandSupport):
             )
 
         self._report_reload(before, after, applied_settings)
-        if mcp_note:
-            chat.add_info_message(mcp_note)
 
-    async def _reload_mcp(self, chat: ChatLog) -> str:
-        """Re-read ``mcp.json`` and reconnect. Returns a one-line report."""
+    async def _reload_mcp(self, chat: ChatLog) -> None:
+        """Re-read ``mcp.json`` and reconnect, reporting the outcome."""
         try:
             tools = await self._runtime.reload_mcp()
         except Exception as exc:
-            return f"MCP reload failed: {exc}"
+            chat.add_info_message(f"MCP reload failed: {exc}", error=True)
+            return
         if not tools:
-            return "MCP: no tools from any server."
-        servers = sorted({t.server for t in tools})
-        return f"MCP: {len(tools)} tool(s) from {', '.join(servers)}."
+            chat.add_info_message("MCP: no tools from any server.")
+            return
+        servers = ", ".join(
+            s.name
+            for s in self._runtime.ensure_mcp_manager().statuses()
+            if s.state == "connected" and s.tool_count
+        )
+        chat.add_info_message(f"MCP: {len(tools)} tool(s) from {servers or 'no server'}.")
 
     def _reload_snapshot(self) -> _Snapshot:
         """Cheap pre/post comparison so the report can say what actually changed."""

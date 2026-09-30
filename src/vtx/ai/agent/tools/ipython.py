@@ -39,10 +39,14 @@ class IpythonParams(BaseModel):
 
 _ipython_block_cls: type | None = None
 
-#: Reserved bridge name the kernel uses to fetch the whole tool surface for its
-#: discovery cache. It is not a registered tool, so it never reaches the model's
-#: tool list or the prompt.
-_TOOL_CATALOG_BRIDGE = "__vtx_tool_catalog__"
+#: Reserved bridge names the kernel uses to reach host state it cannot see from
+#: the subprocess, mapped to the host request type each one dispatches to. They
+#: are not registered tools, so they never reach the model's tool list or prompt.
+_BRIDGE_REQUESTS: dict[str, str] = {
+    "__vtx_tool_catalog__": "tool.catalog",
+    "__vtx_harness_read__": "harness.read",
+    "__vtx_harness_write__": "harness.write",
+}
 
 # Bundled Python skills do not live under a scanned skills directory, so the
 # kernel cannot find them on its own: ship an import-name/package-path
@@ -210,20 +214,21 @@ class IpythonTool(BaseTool):
             )
             from vtx.ai.agent.tools import get_all_tools, get_tool
 
-            if name == _TOOL_CATALOG_BRIDGE:
-                # The kernel's discovery catalog, not a tool call. Routed to the
-                # host's ``tool.catalog`` handler so the kernel can cache the
-                # whole surface once and rank it locally, which is what makes
-                # find_tools/describe_tool work from synchronous cell code.
+            if name in _BRIDGE_REQUESTS:
+                # A reserved kernel bridge request, not a tool call. These are
+                # the requests that need host state the subprocess cannot reach
+                # on its own: the tool catalog (so find_tools/describe_tool work
+                # from synchronous cell code) and the session-backed continual
+                # harness (so a revert or branch sees its own harness state).
                 from vtx.ai.agent.rlm.host import dispatch_host_request
 
                 reply = await dispatch_host_request(
-                    {"type": "tool.catalog"}, session_id=session_id
+                    {"type": _BRIDGE_REQUESTS[name], **args}, session_id=session_id
                 )
                 if reply.get("status") != "ok":
                     raise BridgeError(
                         HOST_UNAVAILABLE,
-                        "The tool catalog could not be read from the host.",
+                        f"The {name} bridge request could not be served by the host.",
                         detail=str(reply.get("error", "")),
                     )
                 return reply["result"]

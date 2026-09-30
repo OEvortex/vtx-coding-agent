@@ -300,6 +300,63 @@ def call_tool(name: str, **kwargs: Any) -> Any:
 #: tool, so it never appears in the model's tool list.
 _TOOL_CATALOG_BRIDGE = "__vtx_tool_catalog__"
 
+#: Bridge names for the session-backed continual harness. The kernel is a
+#: separate process with no access to the session tree, so reads and writes go
+#: through the host, which owns the branch.
+_HARNESS_READ_BRIDGE = "__vtx_harness_read__"
+_HARNESS_WRITE_BRIDGE = "__vtx_harness_write__"
+
+#: Cached answer to "is the host serving a session?". Probed once, because every
+#: harness access would otherwise pay a round trip to learn it is unavailable.
+_harness_bridge_available: bool | None = None
+
+
+def branch_backed_harness_state() -> Any | None:
+    """A :class:`HarnessState` persisted in the host's session tree, or ``None``.
+
+    Returns ``None`` when the host has no session to write to (``--no-session``)
+    or the bridge is unreachable, so the caller falls back to the file-backed
+    store and keeps its existing "no persistent local harness store" error. That
+    matters: silently accepting writes that go nowhere is worse than refusing
+    them.
+    """
+    global _harness_bridge_available
+
+    from .harness import HarnessState, get_harness_state
+
+    if not is_active():
+        return get_harness_state()
+    if _harness_bridge_available is False:
+        return get_harness_state()
+
+    def read() -> tuple[dict[str, Any], list[dict[str, Any]]]:
+        reply = call_tool(_HARNESS_READ_BRIDGE)
+        if not isinstance(reply, dict) or not reply.get("available"):
+            raise RuntimeError("host session store is unavailable")
+        entries = reply.get("entries")
+        refinements = reply.get("refinements")
+        return (
+            entries if isinstance(entries, dict) else {},
+            refinements if isinstance(refinements, list) else [],
+        )
+
+    def write(
+        added: dict[str, dict[str, Any]],
+        removed: list[str],
+        refinements: list[dict[str, Any]],
+    ) -> None:
+        call_tool(
+            _HARNESS_WRITE_BRIDGE, set=added, delete=removed, refinements=refinements
+        )
+
+    try:
+        read()
+    except Exception:
+        _harness_bridge_available = False
+        return get_harness_state()
+    _harness_bridge_available = True
+    return HarnessState(in_memory=True, scope="local", branch_reader=read, branch_writer=write)
+
 
 class _ToolDiscovery:
     """Cached, lazily populated view of the callable tool surface.

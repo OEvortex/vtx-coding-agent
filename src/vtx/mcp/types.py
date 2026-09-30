@@ -8,7 +8,7 @@ checks out, so unknown fields survive.
 
 from __future__ import annotations
 
-from typing import Any, Literal, NotRequired, TypedDict
+from typing import Any, Literal, NotRequired, TypedDict, cast
 
 from .jsonrpc import McpError, invalid, is_object
 
@@ -114,7 +114,9 @@ def validate_initialize_result(value: Any) -> InitializeResult:
         or ("instructions" in value and not isinstance(value["instructions"], str))
     ):
         raise McpError(-32600, "Invalid MCP initialize result")
-    return value  # ty: ignore[invalid-return-type]
+    # Every field the TypedDict declares is checked above; the cast only
+    # tells the checker that, which narrowing cannot express.
+    return cast(InitializeResult, value)
 
 
 def _is_tool(tool: dict[str, Any]) -> bool:
@@ -172,7 +174,7 @@ def validate_read_resource_result(value: Any) -> ReadResourceResult:
             )
         ):
             raise invalid("Invalid contents in MCP resources/read result")
-    return value  # ty: ignore[invalid-return-type]
+    return cast(ReadResourceResult, value)
 
 
 def validate_call_tool_result(value: Any) -> CallToolResult:
@@ -185,7 +187,7 @@ def validate_call_tool_result(value: Any) -> CallToolResult:
         raise McpError(-32600, "Invalid MCP tools/call result")
     if value.get("structuredContent") is not None and not is_object(value["structuredContent"]):
         raise McpError(-32600, "Invalid MCP tools/call structured content")
-    return {**value, "content": value.get("content") or []}  # ty: ignore[invalid-return-type]
+    return cast(CallToolResult, {**value, "content": value.get("content") or []})
 
 
 ToolListItem = _is_tool

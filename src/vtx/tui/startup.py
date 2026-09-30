@@ -29,6 +29,7 @@ class StartupMixin:
     _pending_update_notice_version: str | None
     _git_branch_refresh_inflight: bool
     _launch_warnings: list[LaunchWarning]
+    _runtime: Any
 
     if TYPE_CHECKING:
         query_one: Any

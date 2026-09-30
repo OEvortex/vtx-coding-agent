@@ -229,11 +229,12 @@ async def run_headless(
             print(f"warning: MCP startup failed: {exc}", file=sys.stderr)
             mcp_tools = []
         if mcp_tools:
-            print(
-                f"mcp: {len(mcp_tools)} tool(s) from "
-                f"{len({t.server for t in mcp_tools})} server(s)",
-                file=sys.stderr,
+            contributing = sum(
+                1
+                for status in runtime.ensure_mcp_manager().statuses()
+                if status.state == "connected" and status.tool_count
             )
+            print(f"mcp: {len(mcp_tools)} tool(s) from {contributing} server(s)", file=sys.stderr)
         for message in runtime.ensure_mcp_manager().errors:
             print(f"warning: MCP config: {message}", file=sys.stderr)
 

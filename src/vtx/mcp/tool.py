@@ -136,14 +136,17 @@ def convert_mcp_result(result: CallToolResult) -> ToolResult:
     truncated_text, truncated = truncate_middle(text, MCP_OUTPUT_MAX_BYTES)
 
     if truncated:
+        # Encoded once and reused: the file on disk and the size reported to the
+        # model have to describe the same bytes.
+        encoded = text.encode("utf-8", "replace")
         try:
-            path = save_output_file(text.encode("utf-8", "replace"), ".txt")
+            path = save_output_file(encoded, ".txt")
             where = f"[Full output: {path} (read it with offset/limit)]"
         except OSError as exc:
             where = f"[Could not save the full output: {exc}]"
+        total = format_bytes(len(encoded))
         truncated_text = (
-            f"Warning: truncated output ({format_bytes(len(text.encode('utf-8', 'replace')))} total)\n\n"
-            f"{truncated_text}\n\n{where}"
+            f"Warning: truncated output ({total} total)\n\n{truncated_text}\n\n{where}"
         )
 
     is_error = result.get("isError") is True
@@ -222,7 +225,10 @@ def enrich_result(result: CallToolResult) -> CallToolResult:
             enriched.append(
                 {
                     "type": "text",
-                    "text": f"[Binary resource {resource.get('uri')} ({kind}) could not be saved: {exc}]",
+                    "text": (
+                        f"[Binary resource {resource.get('uri')} ({kind}) "
+                        f"could not be saved: {exc}]"
+                    ),
                 }
             )
         else:

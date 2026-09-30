@@ -186,12 +186,12 @@ def protocol_reply(request: Request) -> Reply:
             }
         )
     if method == "tools/call":
-        return Reply(
-            sse_lines=[
-                "id: tool-result",
-                f"data: {json.dumps({'jsonrpc': '2.0', 'id': message['id'], 'result': {'content': [{'type': 'text', 'text': 'hello'}]}})}",
-            ]
-        )
+        payload = {
+            "jsonrpc": "2.0",
+            "id": message["id"],
+            "result": {"content": [{"type": "text", "text": "hello"}]},
+        }
+        return Reply(sse_lines=["id: tool-result", f"data: {json.dumps(payload)}"])
     return Reply(
         json_body={
             "jsonrpc": "2.0",

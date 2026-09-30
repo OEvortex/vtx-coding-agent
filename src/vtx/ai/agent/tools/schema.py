@@ -91,7 +91,7 @@ def json_schema_to_pydantic(tool_name: str, schema: dict[str, Any]) -> type[Base
     """
     if not isinstance(schema, dict) or schema.get("type") not in (None, "object"):
         raise ValueError(
-            f"Tool {tool_name!r}: parameters.type must be 'object' (got {schema.get('type')!r})"  # ty: ignore[possibly-unbound-attribute]
+            f"Tool {tool_name!r}: parameters.type must be 'object' (got {schema.get('type')!r})"  # ty: ignore[possibly-missing-attribute]
         )
     properties: dict[str, Any] = schema.get("properties") or {}
     required: set[str] = set(schema.get("required") or [])
@@ -125,7 +125,7 @@ def json_schema_to_pydantic(tool_name: str, schema: dict[str, Any]) -> type[Base
         fields["input"] = (str | None, Field(default=None, description="Optional input"))
 
     model_name = f"{safe_class_name(tool_name)}_Params"
-    return create_model(model_name, **fields)  # ty: ignore[call-overload]
+    return create_model(model_name, **fields)  # ty: ignore[invalid-overload]
 
 
 def normalize_object_schema(schema: dict[str, Any]) -> dict[str, Any]:

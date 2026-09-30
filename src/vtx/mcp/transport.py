@@ -20,8 +20,11 @@ log = logging.getLogger("mcp.transport")
 DEFAULT_MAX_MESSAGE_BYTES = 16 * 1024 * 1024
 
 MessageListener = Callable[[JsonRpcMessage], Any]
-ErrorListener = Callable[[Exception], Any]
+ErrorListener = Callable[[BaseException], Any]
 CloseListener = Callable[[], Any]
+
+# Listener call sites wrap each one in a try/except, so a listener that raises
+# is reported and the transport keeps running.
 
 
 class McpTransport(Protocol):

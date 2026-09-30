@@ -497,7 +497,16 @@ class _HarnessProxy:
     _unpersisted: HarnessState | None = None
 
     def _resolve(self) -> HarnessState:
+        # The kernel is a separate process, so the local store is reached over
+        # the bridge: the host owns the session tree and folds the branch. A
+        # revert therefore shows the state as of the reverted-to leaf, instead of
+        # the file showing whatever the abandoned path last wrote.
+        from . import repl
+
         try:
+            state = repl.branch_backed_harness_state()
+            if state is not None:
+                return state
             return get_harness_state()
         except RuntimeError as exc:
             if "Local harness state requires" in str(exc):
@@ -530,9 +539,17 @@ class _HarnessProxy:
 _harness_state = _HarnessProxy()
 
 
+def _host_harness_state() -> HarnessState:
+    """``rlm.get_harness_state()``: the bridge-backed store when there is one."""
+    from . import repl
+
+    state = repl.branch_backed_harness_state()
+    return state if state is not None else get_harness_state()
+
+
 class _RLMNamespace:
     harness = _harness_state
-    get_harness_state = staticmethod(get_harness_state)
+    get_harness_state = staticmethod(_host_harness_state)
 
     async def spawn(
         self, prompt: str, *, name: str, model: str | None = None, thinking: str | None = None

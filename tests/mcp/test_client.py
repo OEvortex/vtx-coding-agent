@@ -22,14 +22,20 @@ async def _never_responds(_message):
     await asyncio.Event().wait()
 
 
+_pending_progress: list[asyncio.Future] = []
+
+
 def _send_progress(server, token, step: int = 1):
-    asyncio.ensure_future(
-        server.transport.send(
-            {
-                "jsonrpc": "2.0",
-                "method": "notifications/progress",
-                "params": {"progressToken": token, "progress": step, "total": 10},
-            }
+    # Stored, not discarded: an unreferenced task can be collected mid-flight.
+    _pending_progress.append(
+        asyncio.ensure_future(
+            server.transport.send(
+                {
+                    "jsonrpc": "2.0",
+                    "method": "notifications/progress",
+                    "params": {"progressToken": token, "progress": step, "total": 10},
+                }
+            )
         )
     )
 

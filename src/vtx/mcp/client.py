@@ -65,7 +65,7 @@ DEFAULT_REQUEST_TIMEOUT_MS = 30_000
 MAX_LIST_PAGES = 1_000
 
 NotificationListener = Callable[[Any], Any]
-ErrorListener = Callable[[Exception], Any]
+ErrorListener = Callable[[BaseException], Any]
 CloseListener = Callable[[], Any]
 ProgressListener = Callable[[dict[str, Any]], Any]
 RequestHandler = Callable[[Any, asyncio.Event], Awaitable[Any] | Any]
@@ -453,7 +453,9 @@ class McpClient:
             return
         token = params["progressToken"]
         request_id = self._progress_requests.get(token)
-        entry = self._pending.get(request_id) if request_id is not None else None
+        if request_id is None:
+            return
+        entry = self._pending.get(request_id)
         if entry is None:
             return
         # Progress proves the server is alive, so the deadline moves.
@@ -740,7 +742,11 @@ class McpClient:
             return
 
         async def handle(_params: Any, _event: asyncio.Event) -> dict[str, Any]:
-            resolved = roots() if callable(roots) else roots
+            # isinstance rather than callable(): a list is not callable, but a
+            # type checker cannot narrow a union on callable() alone.
+            if isinstance(roots, list):
+                return {"roots": list(roots)}
+            resolved = roots()
             if asyncio.iscoroutine(resolved):
                 resolved = await resolved
             return {"roots": list(resolved or [])}

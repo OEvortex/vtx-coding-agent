@@ -166,8 +166,6 @@ def validate_mcp_server_config(name: str, value: Any) -> tuple[McpServerConfig |
     if not isinstance(timeout, (int, float)) or isinstance(timeout, bool) or timeout <= 0:
         return None, f'MCP server "{name}": timeout must be a positive number of seconds'
 
-    common = {"name": name, "enabled": enabled, "timeout_seconds": int(timeout)}
-
     if has_command:
         command = value.get("command")
         if not isinstance(command, str) or not command:
@@ -183,8 +181,18 @@ def validate_mcp_server_config(name: str, value: Any) -> tuple[McpServerConfig |
             return None, f'MCP server "{name}": cwd must be a string'
         if "url" in value or "headers" in value or "oauth" in value:
             return None, f'MCP server "{name}": stdio servers take no url/headers/oauth'
+        # Built field by field rather than via **kwargs: unpacking a shared
+        # dict widens every value to a union and loses the field types.
         return (
-            McpServerConfig(**common, command=command, args=list(args), env=dict(env), cwd=cwd),
+            McpServerConfig(
+                name=name,
+                enabled=enabled,
+                timeout_seconds=int(timeout),
+                command=command,
+                args=[a for a in args if isinstance(a, str)],
+                env=dict(env),
+                cwd=cwd,
+            ),
             None,
         )
 
@@ -197,7 +205,17 @@ def validate_mcp_server_config(name: str, value: Any) -> tuple[McpServerConfig |
     oauth, oauth_error = _validate_oauth(name, value.get("oauth"))
     if oauth_error:
         return None, oauth_error
-    return (McpServerConfig(**common, url=url, headers=dict(headers), oauth=oauth), None)
+    return (
+        McpServerConfig(
+            name=name,
+            enabled=enabled,
+            timeout_seconds=int(timeout),
+            url=url,
+            headers=dict(headers),
+            oauth=oauth,
+        ),
+        None,
+    )
 
 
 def _read_config_file(
@@ -262,11 +280,12 @@ def update_mcp_server_config(path: Path, name: str, patch: dict[str, Any]) -> No
         if not _is_record(loaded):
             raise ValueError(f"{path}: expected a JSON object")
         parsed = loaded
-    entries = parsed.get("mcpServers")
-    if entries is None:
-        entries = {}
-    if not _is_record(entries):
-        raise ValueError(f'{path}: expected an "mcpServers" object')
+    raw_entries = parsed.get("mcpServers")
+    entries: dict[str, Any] = {}
+    if raw_entries is not None:
+        if not _is_record(raw_entries):
+            raise ValueError(f'{path}: expected an "mcpServers" object')
+        entries = dict(raw_entries)
     if name not in entries:
         raise ValueError(f'{path} does not define MCP server "{name}"')
 
@@ -288,9 +307,9 @@ def add_mcp_server_config(path: Path, name: str, config: McpServerConfig) -> Non
     parsed: dict[str, Any] = {}
     if path.is_file():
         parsed = json.loads(path.read_text(encoding="utf-8"))
-    entries = parsed.get("mcpServers")
-    if not _is_record(entries):
-        entries = {}
+    entries: dict[str, Any] = {}
+    if _is_record(parsed.get("mcpServers")):
+        entries = dict(parsed["mcpServers"])
     entries[name] = {
         k: v
         for k, v in (

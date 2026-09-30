@@ -20,6 +20,7 @@ from dataclasses import dataclass, field
 from typing import Any
 
 from ..jsonrpc import JsonRpcMessage, McpConnectionClosedError, parse_jsonrpc_message
+from ..tasks import spawn_logging
 from ..transport import DEFAULT_MAX_MESSAGE_BYTES, TransportEvents
 
 log = logging.getLogger("mcp.transport.stdio")
@@ -54,6 +55,25 @@ def _install_exit_hook() -> None:
     atexit.register(_kill_live)
 
 
+async def _taskkill_windows(pid: int) -> None:
+    """Kill a process tree on Windows, where there are no process groups.
+
+    ``/T`` takes the children with it, which is what makes this equivalent to
+    the POSIX group kill.
+    """
+    killer = await asyncio.create_subprocess_exec(
+        "taskkill",
+        "/pid",
+        str(pid),
+        "/T",
+        "/F",
+        stdin=asyncio.subprocess.DEVNULL,
+        stdout=asyncio.subprocess.DEVNULL,
+        stderr=asyncio.subprocess.DEVNULL,
+    )
+    await killer.wait()
+
+
 def _kill_process_tree(process: asyncio.subprocess.Process, sig: int) -> None:
     pid = process.pid
     if pid is None or process.returncode is not None:
@@ -61,19 +81,9 @@ def _kill_process_tree(process: asyncio.subprocess.Process, sig: int) -> None:
     if _IS_WINDOWS:
         # No graceful signals on Windows, and a ``.cmd`` shim runs under
         # cmd.exe, so killing only the direct child leaves the server running.
-        with contextlib.suppress(OSError):
-            subprocess = asyncio.create_subprocess_exec(
-                "taskkill",
-                "/pid",
-                str(pid),
-                "/T",
-                "/F",
-                stdin=asyncio.subprocess.DEVNULL,
-                stdout=asyncio.subprocess.DEVNULL,
-                stderr=asyncio.subprocess.DEVNULL,
-            )
-            with contextlib.suppress(Exception):
-                asyncio.ensure_future(subprocess)
+        # Best-effort: a failure here leaves a stray process, it does not break
+        # the shutdown, so it must never propagate.
+        spawn_logging(_taskkill_windows(pid), name="mcp-taskkill")
         return
     if USE_PROCESS_GROUPS:
         try:

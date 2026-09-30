@@ -9,7 +9,7 @@ trusted, mirroring the reference implementation's boundary checks.
 
 from __future__ import annotations
 
-from typing import Any
+from typing import Any, TypeGuard
 
 JsonRpcId = str | int
 JsonRpcMessage = dict[str, Any]
@@ -50,7 +50,13 @@ class McpAbortError(Exception):
     """The caller cancelled the request (an ``asyncio.Event`` was set)."""
 
 
-def is_object(value: Any) -> bool:
+def is_object(value: Any) -> TypeGuard[dict[str, Any]]:
+    """True for a JSON object.
+
+    A ``TypeGuard`` rather than a plain ``bool`` so that ``is_object(x)``
+    narrows ``x`` for a type checker as well as at runtime, which is the whole
+    point of the boundary checks that use it.
+    """
     return isinstance(value, dict)
 
 
