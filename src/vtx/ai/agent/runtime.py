@@ -567,11 +567,18 @@ class ConversationRuntime:
 
         A separate method from :meth:`set_project_trusted` because granting
         trust is useless if the already-built manager keeps its untrusted
-        configuration until the next restart.
+        configuration until the next restart. The manager holds its own copy of
+        the flag and does the reading, so it has to be told too -- setting only
+        the runtime's would reload the same untrusted config.
+
+        The manager is built if it does not exist yet, so the result does not
+        depend on whether anything has touched MCP first: a grant made before
+        the first ``connect_mcp`` has to work, or it reports success while
+        starting nothing.
         """
         self._project_trusted = trusted
-        if self._mcp_manager is None:
-            return []
+        manager = self.ensure_mcp_manager()
+        manager.set_project_trusted(trusted)
         return await self.reload_mcp()
 
     # ---- MCP -------------------------------------------------------------

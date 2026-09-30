@@ -511,6 +511,14 @@ class McpManager:
             )
         return self.rebuild_tools()
 
+    def set_project_trusted(self, trusted: bool) -> None:
+        """Whether a project-local ``mcp.json`` is read by :meth:`reload`.
+
+        The manager keeps its own copy because it is what does the reading, so a
+        change made elsewhere only takes effect if it is pushed here.
+        """
+        self.project_trusted = trusted
+
     async def reload(self) -> list[BaseTool]:
         """Re-read config, reconnect, and return the new tool list."""
         await self.close()
