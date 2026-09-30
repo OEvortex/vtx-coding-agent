@@ -216,6 +216,36 @@ class OpenAISDK(BaseLLMSDK):
             self._async_client = AsyncOpenAI(**kwargs)
         return self._async_client
 
+
+def _tool_param(tool: dict[str, Any]) -> Any:
+    """One wire tool entry, preserving a grammar when the provider sent one.
+
+    ``ChatCompletionToolParam`` has no grammar field, and OpenAI's
+    grammar-constrained sampling extends the function object, so a grammar is
+    emitted as a plain dict. A tool without one still goes through the typed
+    constructor, keeping the existing shape and validation for the common case.
+    """
+    function = tool.get("function", {})
+    grammar = function.get("grammar")
+    if grammar is None:
+        return ChatCompletionToolParam(
+            type="function",
+            function={
+                "name": function["name"],
+                "description": function.get("description", ""),
+                "parameters": function["parameters"],
+            },
+        )
+    return {
+        "type": "function",
+        "function": {
+            "name": function["name"],
+            "description": function.get("description", ""),
+            "parameters": function["parameters"],
+            "grammar": grammar,
+        },
+    }
+
     def _build_kwargs(
         self, messages: list[Message], config: GenerationConfig, tools: list[dict] | None = None
     ) -> dict[str, Any]:
@@ -239,17 +269,7 @@ class OpenAISDK(BaseLLMSDK):
         if config.stop_sequences:
             kwargs["stop"] = config.stop_sequences
         if tools:
-            kwargs["tools"] = [
-                ChatCompletionToolParam(
-                    type="function",
-                    function={
-                        "name": t["function"]["name"],
-                        "description": t["function"].get("description", ""),
-                        "parameters": t["function"]["parameters"],
-                    },
-                )
-                for t in tools
-            ]
+            kwargs["tools"] = [_tool_param(t) for t in tools]
             if config.tool_choice is not None:
                 kwargs["tool_choice"] = config.tool_choice
         self._apply_thinking_kwargs(kwargs, config)

@@ -217,7 +217,12 @@ def get_tool_definitions(tools: list[BaseTool]) -> list[ToolDefinition]:
             schema = {}
         defs.append(
             ToolDefinition(
-                name=tool.name, description=tool.description, parameters=_slim_schema(schema)
+                name=tool.name,
+                description=tool.description,
+                parameters=_slim_schema(schema),
+                # A tool opts in by declaring ``constrained_sampling``; the
+                # provider decides whether it has a dialect for it.
+                constrained_sampling=getattr(tool, "constrained_sampling", None),
             )
         )
     return defs

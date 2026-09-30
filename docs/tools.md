@@ -19,6 +19,8 @@ Vtx ships 12 built-in tools. Eleven are enabled by default; `grep` is built in b
 
 All tools are `BaseTool` subclasses with Pydantic params. The `mutating` flag drives permission gating: non-mutating tools run without approval, mutating tools follow the permission mode (see [permissions.md](permissions.md)).
 
+MCP server tools join the same set. They are `BaseTool` subclasses like any other, so they are gated, rendered, and interruptible identically; a server that annotates a tool `readOnlyHint` gets it registered as non-mutating and therefore no approval prompt. Their names are `mcp__<server>__<tool>`. See [mcp.md](mcp.md) for configuration and behaviour.
+
 ## read
 
 Read a file or directory.

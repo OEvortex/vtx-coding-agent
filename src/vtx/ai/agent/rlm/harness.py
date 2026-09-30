@@ -22,7 +22,7 @@ from collections.abc import Callable
 from dataclasses import asdict, dataclass, field, fields
 from datetime import UTC, datetime
 from pathlib import Path
-from typing import Any, Literal, overload
+from typing import Any, Literal, cast, overload
 from uuid import uuid4
 
 from vtx.core.paths import get_config_dir
@@ -1387,18 +1387,22 @@ def get_harness_state(
     store.
     """
     global_ = _resolve_global_flag(global_, kwargs)
+    # Narrowed from the sentinel-typed parameters to the real callback types.
+    reader: BranchReader | None = None
+    writer: BranchWriter | None = None
     if branch_reader is _DEFAULT:
-        branch_reader, branch_writer = (None, None) if global_ else _session_harness_bindings()
-    elif branch_writer is _DEFAULT:
-        branch_writer = None
+        reader, writer = (None, None) if global_ else _session_harness_bindings()
+    else:
+        if branch_reader is not None:
+            reader = cast(BranchReader, branch_reader)
+        if branch_writer is not None:
+            writer = cast(BranchWriter, branch_writer)
     file_path = _state_file(state_dir, global_=global_)
     scope: HarnessScope = "global" if global_ else "local"
-    cache_key = (file_path, scope, id(branch_reader), id(branch_writer))
+    cache_key = (file_path, scope, id(reader), id(writer))
     state = _state_cache.get(cache_key)
     if state is None:
-        state = HarnessState(
-            file_path, scope=scope, branch_reader=branch_reader, branch_writer=branch_writer
-        )
+        state = HarnessState(file_path, scope=scope, branch_reader=reader, branch_writer=writer)
         # Recorded at construction only: an instance created from env defaults must
         # keep targeting VTX_GLOBAL_HARNESS_STATE_DIR even when a later explicit
         # state_dir call aliases the same local file. An explicit dir that merely

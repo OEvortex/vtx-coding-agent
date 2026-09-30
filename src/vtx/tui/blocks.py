@@ -1149,11 +1149,12 @@ def _past_tense(action: str) -> str:
 def refinement_header(
     *, applied: int, total: int, kinds: list[str], actions: list[str], rollback_of: str | None
 ) -> str:
-    """One-line summary of a refinement pass, in prime's phrasing.
+    """One-line summary of a refinement pass.
 
     States the outcome precisely rather than as a bare count: a rollback reads
     differently from a forward pass, and a partial application is called out
-    because it is the case a user actually needs to notice.
+    because it is the case a user actually needs to notice. A total failure
+    carries its ``0/N`` too, so the header alone says how much was rejected.
     """
     if total == 0:
         return (
@@ -1162,7 +1163,8 @@ def refinement_header(
             else "Harness unchanged · no edits applied"
         )
     if applied == 0:
-        return "Harness rollback failed" if rollback_of else "Harness refinement failed"
+        operation = "Harness rollback failed" if rollback_of else "Harness refinement failed"
+        return f"{operation} · 0/{total} edits applied"
     if applied < total:
         partial = "Harness partially rolled back" if rollback_of else "Harness partially refined"
         return f"{partial} · {applied}/{total} edits applied"
@@ -1178,6 +1180,33 @@ def refinement_header(
     return f"Harness refined · {applied} {noun} applied"
 
 
+#: Character budget for a collapsed refinement summary when the block has not
+#: been measured yet (not yet mounted, or width unknown).
+_COLLAPSED_SUMMARY_FALLBACK_WIDTH = 120
+
+
+def _refinement_header_color() -> str:
+    """Header colour, falling back to accent for themes that do not name one."""
+    return getattr(config.ui.colors, "refinement_header", "") or config.ui.colors.accent
+
+
+def _refinement_summary_color() -> str:
+    """Summary colour, falling back to the foreground for unnamed themes."""
+    return getattr(config.ui.colors, "refinement_summary", "") or config.ui.colors.fg
+
+
+def _clamp_summary(text: str, limit: int) -> str:
+    """Collapse whitespace and cut to ``limit`` characters on a word boundary."""
+    collapsed = " ".join(text.split())
+    if len(collapsed) <= limit:
+        return collapsed
+    cut = collapsed[: max(0, limit - 1)]
+    space = cut.rfind(" ")
+    if space > limit // 2:
+        cut = cut[:space]
+    return cut.rstrip() + "…"
+
+
 def _field_value_lines(value: object) -> list[str]:
     """Render one entry field as display lines; empty values produce none."""
     if isinstance(value, str):
@@ -1188,12 +1217,18 @@ def _field_value_lines(value: object) -> list[str]:
 
 
 class RefinementBlock(Static):
-    """Collapsed one-line outcome; Ctrl+D expands the per-edit field diff.
+    """Clickable outcome header + summary; click either to expand the per-edit diff.
 
     A refinement pass can rewrite or delete several harness entries at once, and
     the model is told about it in prose. This shows the user exactly what changed
     — which entry, which field, and what the failed edits were — without that
     detail costing anything while collapsed.
+
+    The header and the summary are both click targets: the block advertises no
+    key, because a key name is not an affordance. Collapsed, the summary is the
+    body — whitespace-collapsed and clamped — so the block still says what the
+    pass was for without opening it. Expanded, the summary keeps its own line
+    breaks and the quiet metadata and per-edit diffs follow it.
     """
 
     ALLOW_SELECT = True
@@ -1227,7 +1262,18 @@ class RefinementBlock(Static):
 
     def compose(self) -> ComposeResult:
         yield Label(self._format_header(), id="refinement-header")
+        yield Label(self._format_summary(), id="refinement-summary")
         yield Label("", id="refinement-output", classes="-hidden")
+
+    def on_click(self, event: events.Click) -> None:
+        event.stop()
+        self.toggle_expanded()
+
+    def _on_resize(self) -> None:
+        # The collapsed summary is clamped to a width-derived budget, so it has
+        # to be re-clamped when the terminal resizes or it keeps the old cut.
+        if not self._expanded:
+            self._render_detail()
 
     @property
     def has_details(self) -> bool:
@@ -1247,10 +1293,28 @@ class RefinementBlock(Static):
         # on one line; the counts live in the expanded detail.
         short = header.split(" · ")[0] if header.startswith("Harness refined") else header
         text = Text("◆ ", style=Style(color=colors.accent))
-        text.append(short)
-        if not self._expanded and self.has_details:
-            text.append(" · ctrl+d for edits", style=Style(color=colors.dim))
+        text.append(short, style=Style(color=_refinement_header_color()))
         return text
+
+    def _format_summary(self) -> Text:
+        """The collapsed body, and the summary again when expanded.
+
+        Collapsed it is whitespace-collapsed and clamped to a couple of lines so
+        a long summary cannot push the per-edit detail off the screen. Expanded
+        it keeps its own line breaks, because that is where the detail is read.
+        """
+        summary = self._summary.strip() or "No summary was recorded for this harness change."
+        style = Style(color=_refinement_summary_color())
+        if self._expanded:
+            return Text(summary, style=style)
+        return Text(_clamp_summary(summary, self._collapsed_summary_width()), style=style)
+
+    def _collapsed_summary_width(self) -> int:
+        """Character budget for the collapsed summary: about two wrapped lines."""
+        width = self.size.width or 0
+        if width <= 0:
+            return _COLLAPSED_SUMMARY_FALLBACK_WIDTH
+        return max(40, width * 2 - 4)
 
     def set_expanded(self, expanded: bool) -> None:
         if self._expanded == expanded:
@@ -1265,31 +1329,38 @@ class RefinementBlock(Static):
 
     def _render_detail(self) -> None:
         with contextlib.suppress(Exception):
-            header = self.query_one("#refinement-header", Label)
-            header.update(self._format_header())
+            self.query_one("#refinement-header", Label).update(self._format_header())
+            self.query_one("#refinement-summary", Label).update(self._format_summary())
             output = self.query_one("#refinement-output", Label)
             if self._expanded:
-                self.remove_class("-with-details")
                 output.remove_class("-hidden")
                 output.update(self._format_detail())
             else:
-                self.remove_class("-with-details")
                 output.add_class("-hidden")
                 output.update(Text(""))
 
     def _format_detail(self) -> Text:
         colors = config.ui.colors
         text = Text()
-        meta = f"{self._scope}"
+        # The summary is already rendered above this, so the expanded body opens
+        # with the quiet metadata: the full outcome, the id, and the scope.
+        applied = [e for e in self._edits if e.get("applied")]
+        outcome = refinement_header(
+            applied=self._applied,
+            total=self._total,
+            kinds=[str(e.get("kind", "entry")) for e in applied] or ["entry"],
+            actions=[str(e.get("action", "update")) for e in applied] or ["update"],
+            rollback_of=self._rollback_of,
+        )
+        meta = outcome
+        if self._refinement_id:
+            meta += f" · Refinement {self._refinement_id}"
+        meta += f" · {self._scope}"
         if self._rollback_of:
             meta += f" · rollback of {self._rollback_of}"
-        if self._refinement_id:
-            meta += f" · refinement {self._refinement_id}"
         if self._model:
             meta += f" · {self._model}"
         text.append(meta + "\n", style=Style(color=colors.dim))
-        if self._summary.strip():
-            text.append(self._summary.strip() + "\n\n", style=Style(color=colors.fg))
 
         for edit in self._edits:
             text.append_text(self._format_edit(edit))

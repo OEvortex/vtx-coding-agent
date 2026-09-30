@@ -195,7 +195,7 @@ Screen {{
     height: 0;
 }}
 
-/* Refinement outcome — one line collapsed, per-edit diffs on ctrl+d. */
+/* Refinement outcome — click the header or summary to expand the per-edit diffs. */
 .refinement-block {{
     padding: 0 1;
     margin-top: 1;
@@ -204,6 +204,12 @@ Screen {{
 
 #refinement-header {{
     text-style: none;
+}}
+
+/* Both are click targets, so they get the pointer and the hover tint that the
+   rest of the clickable rows use. */
+#refinement-header:hover, #refinement-summary:hover {{
+    background: {colors.panel_alt};
 }}
 
 #refinement-output {{

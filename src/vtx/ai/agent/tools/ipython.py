@@ -245,8 +245,8 @@ class IpythonTool(BaseTool):
                     f"No tool named '{name}' is available in this session.",
                     suggestions=(
                         f"Available tools: {', '.join(sorted(get_all_tools()))}. "
-                        f'Or search for the capability: find_tools("what you need") '
-                        f"then describe_tool(name) for its parameters."
+                        'Or search for the capability: find_tools("what you need") '
+                        "then describe_tool(name) for its parameters.",
                     ),
                 )
             try:

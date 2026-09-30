@@ -178,17 +178,25 @@ class OpenAISDKProvider(BaseProvider):
         )
 
     def _convert_tools(self, tools: list[ToolDefinition]) -> list[dict[str, Any]]:
-        return [
-            {
-                "type": "function",
-                "function": {
-                    "name": tool.name,
-                    "description": tool.description,
-                    "parameters": tool.parameters,
-                },
+        converted: list[dict[str, Any]] = []
+        for tool in tools:
+            function: dict[str, Any] = {
+                "name": tool.name,
+                "description": tool.description,
+                "parameters": tool.parameters,
             }
-            for tool in tools
-        ]
+            grammar = (
+                tool.constrained_sampling.for_provider(self.config.provider)
+                if tool.constrained_sampling
+                else None
+            )
+            if grammar is not None:
+                # Carried alongside the function so the SDK can decide the wire
+                # shape; a provider with no dialect leaves the tool unconstrained
+                # rather than guessing at a format.
+                function["grammar"] = {"type": "lark", "definition": grammar}
+            converted.append({"type": "function", "function": function})
+        return converted
 
     async def _stream_impl(
         self,

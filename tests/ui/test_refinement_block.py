@@ -49,6 +49,10 @@ def _header(block) -> str:
     return str(block.query_one("#refinement-header", Label).render())
 
 
+def _summary(block) -> str:
+    return str(block.query_one("#refinement-summary", Label).render())
+
+
 def _entry(title="Pref", content="Use pytest.", scope="local"):
     return {"title": title, "content": content, "path": "general", "scope": scope, "version": 1}
 
@@ -94,11 +98,13 @@ def test_header_reports_partial_application():
 
 
 def test_header_reports_total_failure():
+    # A bare "Harness refinement failed" hides how much was rejected; the count
+    # is what distinguishes one bad edit from the whole pass going wrong.
     assert (
         refinement_header(
             applied=0, total=2, kinds=["memory"], actions=["create"], rollback_of=None
         )
-        == "Harness refinement failed"
+        == "Harness refinement failed · 0/2 edits applied"
     )
 
 
@@ -253,7 +259,7 @@ async def test_reason_is_surfaced():
 
 
 @pytest.mark.asyncio
-async def test_collapsed_block_is_one_line_and_hides_detail():
+async def test_collapsed_block_shows_the_summary_and_hides_the_detail():
     async with RefinementApp().run_test() as pilot:
         chat = pilot.app.query_one("#chat-log", ChatLog)
         block = chat.add_refinement(
@@ -265,10 +271,55 @@ async def test_collapsed_block_is_one_line_and_hides_detail():
         )
         await pilot.pause()
 
-        header = _header(block)
-        assert "A summary" not in header, "collapsed shows the outcome, not the prose"
-        assert "ctrl+d" in header
+        # The block advertises no key: a key name is not an affordance.
+        assert "ctrl+d" not in _header(block)
+        # Collapsed, the summary is the body.
+        assert "A summary" in _summary(block)
         assert block.query_one("#refinement-output", Label).has_class("-hidden")
+
+
+@pytest.mark.asyncio
+async def test_clicking_the_header_expands_and_collapses():
+    async with RefinementApp().run_test() as pilot:
+        chat = pilot.app.query_one("#chat-log", ChatLog)
+        block = chat.add_refinement(
+            summary="A summary long enough to matter.",
+            applied=1,
+            total=1,
+            edits=[_edit(after=_entry())],
+            refinement_id="refine_6",
+        )
+        await pilot.pause()
+        assert block._expanded is False
+
+        await pilot.click("#refinement-header")
+        await pilot.pause()
+        assert block._expanded is True
+        assert not block.query_one("#refinement-output", Label).has_class("-hidden")
+
+        await pilot.click("#refinement-header")
+        await pilot.pause()
+        assert block._expanded is False
+        assert block.query_one("#refinement-output", Label).has_class("-hidden")
+
+
+@pytest.mark.asyncio
+async def test_clicking_the_summary_also_toggles():
+    async with RefinementApp().run_test() as pilot:
+        chat = pilot.app.query_one("#chat-log", ChatLog)
+        block = chat.add_refinement(
+            summary="A summary long enough to matter.",
+            applied=1,
+            total=1,
+            edits=[_edit(after=_entry())],
+            refinement_id="refine_6",
+        )
+        await pilot.pause()
+
+        await pilot.click("#refinement-summary")
+        await pilot.pause()
+
+        assert block._expanded is True
 
 
 @pytest.mark.asyncio

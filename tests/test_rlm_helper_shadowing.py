@@ -13,9 +13,6 @@ throwaway namespace. The subprocess is never spawned.
 
 from __future__ import annotations
 
-import re
-from pathlib import Path
-
 import pytest
 
 from vtx.ai.agent.rlm import repl as repl_module
@@ -58,15 +55,19 @@ def _sentinel(name: str) -> object:
 
 
 def _declared_helper_names() -> set[str]:
-    """The names in the ``_HELPERS`` table that drives bindings and the guard."""
-    source = Path(repl_module.__file__).read_text(encoding="utf-8")
-    table = re.search(
-        r"_HELPERS: tuple\[tuple\[str, Any\], \.\.\.\] = \((.*?)\n    \)", source, re.S
-    )
-    assert table, "the _HELPERS binding table was not found in repl.py"
-    declared = set(re.findall(r'\("([a-z_]+)", ', table.group(1)))
-    assert declared, "the _HELPERS table declared no helpers"
-    return declared
+    """The names in the ``_HELPERS`` table that drives bindings and the guard.
+
+    Read from the module rather than parsed out of the source: the table is
+    populated by ``_init_builtin_helpers``, so the test has to bind the helpers
+    before it can see anything.
+    """
+    original = repl_module._namespace
+    repl_module._namespace = {}
+    try:
+        repl_module._init_builtin_helpers()
+        return {name for name, _ in repl_module._HELPERS}
+    finally:
+        repl_module._namespace = original
 
 
 def test_every_helper_is_bound_and_protected_by_one_table():

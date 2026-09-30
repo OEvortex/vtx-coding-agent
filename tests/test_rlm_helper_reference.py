@@ -119,7 +119,7 @@ def _normalize_default(default: str | None) -> str | None:
 
 
 def test_the_prompt_section_is_the_generated_one():
-    assert _RLM_HELPERS_PROMPT == render_helpers_reference()
+    assert render_helpers_reference() == _RLM_HELPERS_PROMPT
 
 
 def test_every_helper_appears_in_the_prompt():

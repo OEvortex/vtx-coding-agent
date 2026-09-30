@@ -24,6 +24,10 @@ class SyntaxColorConfig(BaseModel):
 
 
 class ColorsConfig(BaseModel):
+    # Optional refinement-block accents. Empty means "use the fallback", so
+    # existing themes and user config.yml files keep working unchanged.
+    refinement_header: str = ""
+    refinement_summary: str = ""
     dim: str
     muted: str
     title: str

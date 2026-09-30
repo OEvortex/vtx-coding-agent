@@ -3,7 +3,7 @@ from __future__ import annotations
 from enum import StrEnum
 from typing import Any, Literal
 
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 
 class StopReason(StrEnum):
@@ -151,10 +151,40 @@ class ToolParameter(BaseModel):
     enum: list[str] | None = None
 
 
+class ConstrainedSampling(BaseModel):
+    """A grammar that constrains how a provider samples one tool's arguments.
+
+    Grammar-constrained decoding makes the provider emit only text the grammar
+    accepts, so a malformed argument is impossible rather than merely unlikely.
+    It is opt-in per tool and per provider, because support is uneven: today only
+    OpenAI's Chat Completions path is wired, and a provider with no entry in
+    ``variants`` is sent an unconstrained request.
+
+    ``variants`` is keyed by provider slug so a second dialect (Anthropic, a local
+    llama.cpp endpoint) can be added without changing this type. The key is the
+    discriminator, not a fallback chain: silently applying one provider's grammar
+    to another's wire format would produce requests that fail or, worse, parse.
+    """
+
+    type: Literal["grammar"] = "grammar"
+    #: provider slug -> grammar definition in that provider's dialect.
+    variants: dict[str, str] = Field(default_factory=dict)
+
+    def for_provider(self, provider: str | None) -> str | None:
+        """The grammar for ``provider``, or ``None`` when it has no dialect."""
+        if not provider:
+            return None
+        return self.variants.get(provider.strip().lower())
+
+
 class ToolDefinition(BaseModel):
     name: str
     description: str
     parameters: dict[str, Any]  # JSON Schema
+    #: Optional grammar constraining this tool's arguments. ``None`` (the
+    #: default) means unconstrained, which is what every tool except a
+    #: deliberate opt-in uses.
+    constrained_sampling: ConstrainedSampling | None = None
 
 
 class FileChanges(BaseModel):
