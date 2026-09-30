@@ -961,10 +961,32 @@ class ChatLog(VerticalScroll):
         scope because a global entry is asserted to every future session while
         a local one dies with this one — the difference decides whether a bad
         entry is worth deleting at all.
+
+        Titles and summaries are wrapped here rather than left to Rich. Rich
+        wraps at the label's measured width, which can exceed the visible area,
+        and it starts the continuation at column 0, so a long memory summary
+        runs off the right edge and wraps back to the far left.
         """
+        import textwrap
+
         from rich.text import Text
 
         colors = config.ui.colors
+        # 4 for the label's own padding, 1 so a full line never hits the edge.
+        width = max(40, (self.content_size.width or self.size.width or 80) - 5)
+        indent = "    "
+
+        def wrap(value: str, max_lines: int) -> str:
+            lines = textwrap.wrap(
+                value, width=width, initial_indent=indent, subsequent_indent=indent
+            )
+            if not lines:
+                return ""
+            if len(lines) > max_lines:
+                lines = lines[:max_lines]
+                lines[-1] = lines[-1][: width - len(indent) - 1].rstrip() + "..."
+            return "\n".join(lines)
+
         text = Text()
         text.append(f"[{title}]\n", style=colors.notice)
         if not entries:
@@ -974,13 +996,16 @@ class ChatLog(VerticalScroll):
             text.append(f"  {entry.kind}/{entry.path}", style=colors.dim)
             text.append(f"  [{entry.scope}]", style=colors.muted)
             text.append(f"  v{entry.version}\n", style=colors.dim)
-            text.append(f"    {entry.title}\n", style=colors.fg)
+            title_lines = wrap(entry.title, 2)
+            if title_lines:
+                text.append(title_lines + "\n", style=colors.fg)
             summary = entry.content.strip().replace("\n", " ")
-            if len(summary) > 160:
-                summary = f"{summary[:157]}..."
-            if summary:
-                text.append(f"    {summary}\n", style=colors.muted)
-        text.append(f"\n{len(entries)} entries · /harness show <id> · /harness delete <id>\n")
+            summary_lines = wrap(summary, 4)
+            if summary_lines:
+                text.append(summary_lines + "\n", style=colors.muted)
+        count = len(entries)
+        noun = "entry" if count == 1 else "entries"
+        text.append(f"\n{count} {noun} · /harness show <id> · /harness delete <id>\n")
         label = Label(text)
         label.add_class("info-message")
         label.add_class("harness-entries")
