@@ -219,6 +219,24 @@ async def run_headless(
         )
         await hook_bridge.load()
 
+        # Connect the configured MCP servers before the run starts, so their
+        # tools are in the first request rather than arriving mid-turn. The
+        # wait is bounded inside the manager, and a failure is reported on
+        # stderr rather than raised: a broken server must not fail a run.
+        try:
+            mcp_tools = await runtime.connect_mcp()
+        except Exception as exc:
+            print(f"warning: MCP startup failed: {exc}", file=sys.stderr)
+            mcp_tools = []
+        if mcp_tools:
+            print(
+                f"mcp: {len(mcp_tools)} tool(s) from "
+                f"{len({t.server for t in mcp_tools})} server(s)",
+                file=sys.stderr,
+            )
+        for message in runtime.ensure_mcp_manager().errors:
+            print(f"warning: MCP config: {message}", file=sys.stderr)
+
         try:
             init = runtime.initialize()
             if init.provider_error:

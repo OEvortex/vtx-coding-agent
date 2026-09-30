@@ -84,7 +84,10 @@ def test_rejects_stdio_servers_carrying_http_keys():
 def test_loads_global_then_project_with_project_winning(tmp_path: Path):
     config_dir = tmp_path / "config"
     project = tmp_path / "project"
-    _write(config_dir / "mcp.json", {"mcpServers": {"a": {"command": "global-a"}, "b": {"command": "global-b"}}})
+    _write(
+        config_dir / "mcp.json",
+        {"mcpServers": {"a": {"command": "global-a"}, "b": {"command": "global-b"}}},
+    )
     _write(project / ".vtx" / "mcp.json", {"mcpServers": {"a": {"command": "project-a"}}})
 
     # Untrusted: the project file is not read at all.
@@ -115,7 +118,9 @@ def test_reports_a_broken_file_without_raising(tmp_path: Path):
 
 
 def test_reports_a_bad_entry_and_keeps_the_good_one(tmp_path: Path):
-    _write(tmp_path / "mcp.json", {"mcpServers": {"good": {"command": "x"}, "bad": {"url": "nope"}}})
+    _write(
+        tmp_path / "mcp.json", {"mcpServers": {"good": {"command": "x"}, "bad": {"url": "nope"}}}
+    )
     config = load_mcp_config(cwd=str(tmp_path), config_dir=tmp_path)
     assert [s.name for s in config.servers] == ["good"]
     assert len(config.errors) == 1
@@ -138,7 +143,9 @@ def test_env_expansion(monkeypatch):
 
     # ${NAME} and $NAME both expand; an unset variable expands to empty rather
     # than raising, so a missing optional token does not stop a server starting.
-    stdio, _ = validate_mcp_server_config("b", {"command": "x", "env": {"A": "$EMPTY", "B": "${UNSET}"}})
+    stdio, _ = validate_mcp_server_config(
+        "b", {"command": "x", "env": {"A": "$EMPTY", "B": "${UNSET}"}}
+    )
     assert stdio is not None
     assert stdio.resolved_env() == {"A": "", "B": ""}
 

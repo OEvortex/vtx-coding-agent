@@ -218,7 +218,7 @@ class StreamableHttpTransport(TransportEvents):
         if content_type == "text/event-stream":
             # Left open on purpose: the SSE reader task owns it from here and
             # closes it when the stream ends.
-            asyncio.ensure_future(self._consume_response_stream(response, message["id"]))
+            spawn_logging(self._consume_response_stream(response, message["id"]))
             return
 
         await response.aclose()
@@ -240,10 +240,7 @@ class StreamableHttpTransport(TransportEvents):
         if self._started and self._session_id and self._client is not None:
             headers, _token = await self._headers()
             with contextlib.suppress(Exception):
-                await asyncio.wait_for(
-                    self._client.delete(self.url, headers=headers),
-                    timeout=1.0,
-                )
+                await asyncio.wait_for(self._client.delete(self.url, headers=headers), timeout=1.0)
         for response in list(self._open_streams):
             with contextlib.suppress(Exception):
                 await response.aclose()
@@ -523,7 +520,7 @@ class StreamableHttpTransport(TransportEvents):
         if not self.options.open_get_stream or self._get_stream_started or self._closed:
             return
         self._get_stream_started = True
-        asyncio.ensure_future(self._run_get_stream())
+        spawn_logging(self._run_get_stream())
 
     async def _run_get_stream(self) -> None:
         """Keep the server-to-client stream open, reconnecting when it drops."""

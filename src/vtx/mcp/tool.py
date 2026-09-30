@@ -32,9 +32,10 @@ from vtx.ai.agent.tools.schema import (
 from vtx.core.bytes_util import format_bytes
 from vtx.core.types import ToolResult
 
-from .client import McpClient, McpRequestOptions
+from .client import McpRequestOptions
 from .content import split_content, to_tool_content
-from .types import CallToolResult, Tool as McpToolDef
+from .types import CallToolResult
+from .types import Tool as McpToolDef
 
 log = logging.getLogger("mcp.tool")
 
@@ -78,8 +79,10 @@ def _is_text_mime_type(mime_type: str | None) -> bool:
     if not mime_type:
         return False
     kind = mime_type.split(";", 1)[0].strip().lower()
-    return kind.startswith("text/") or kind in ("application/json",) or kind.endswith(
-        ("+json", "+xml")
+    return (
+        kind.startswith("text/")
+        or kind in ("application/json",)
+        or kind.endswith(("+json", "+xml"))
     )
 
 
@@ -163,7 +166,7 @@ def _resource_link_text(block: dict[str, Any]) -> str:
     described = ", ".join(d for d in details if d)
     suffix = f" ({described})" if described else ""
     title = block.get("title") or block.get("name") or block.get("uri")
-    return f"[Resource {block.get('uri')} \"{title}\"{suffix}]"
+    return f'[Resource {block.get("uri")} "{title}"{suffix}]'
 
 
 def enrich_result(result: CallToolResult) -> CallToolResult:
@@ -302,18 +305,12 @@ class McpTool(BaseTool):
         return f"{self._server}/{self.tool_name} " + " / ".join(parts)
 
     async def execute(
-        self,
-        params: Any,
-        cancel_event: asyncio.Event | None = None,
-        on_output: Any = None,
+        self, params: Any, cancel_event: asyncio.Event | None = None, on_output: Any = None
     ) -> ToolResult:
         arguments = params.model_dump(exclude_none=True) if hasattr(params, "model_dump") else {}
 
         progress_updates: list[tuple[str, dict[str, Any]]] = []
-        options = McpRequestOptions(
-            cancel_event=cancel_event,
-            timeout_ms=self._timeout_ms,
-        )
+        options = McpRequestOptions(cancel_event=cancel_event, timeout_ms=self._timeout_ms)
         if on_output is not None:
             options.on_progress = lambda progress: progress_updates.append(
                 (progress.get("message") or f"progress {progress.get('progress')}", progress)
@@ -324,7 +321,9 @@ class McpTool(BaseTool):
         except asyncio.CancelledError:
             raise
         except Exception as exc:
-            return ToolResult(success=False, result=f"MCP tool {self._server}/{self.tool_name} failed: {exc}")
+            return ToolResult(
+                success=False, result=f"MCP tool {self._server}/{self.tool_name} failed: {exc}"
+            )
 
         if progress_updates and on_output is not None:
             # Report the last progress line, not all of them: the block shows

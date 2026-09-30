@@ -2,6 +2,7 @@ import asyncio
 
 import pytest
 
+from tests.mcp.helpers import connect, create_server
 from vtx.mcp import (
     McpAbortError,
     McpClient,
@@ -11,8 +12,6 @@ from vtx.mcp import (
     McpTimeoutError,
 )
 from vtx.mcp.jsonrpc import McpError
-
-from tests.mcp.helpers import connect, create_server
 
 
 def _opts(**kwargs) -> McpRequestOptions:

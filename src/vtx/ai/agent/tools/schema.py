@@ -91,8 +91,7 @@ def json_schema_to_pydantic(tool_name: str, schema: dict[str, Any]) -> type[Base
     """
     if not isinstance(schema, dict) or schema.get("type") not in (None, "object"):
         raise ValueError(
-            f"Tool {tool_name!r}: parameters.type must be 'object' "
-            f"(got {schema.get('type')!r})"  # ty: ignore[possibly-unbound-attribute]
+            f"Tool {tool_name!r}: parameters.type must be 'object' (got {schema.get('type')!r})"  # ty: ignore[possibly-unbound-attribute]
         )
     properties: dict[str, Any] = schema.get("properties") or {}
     required: set[str] = set(schema.get("required") or [])

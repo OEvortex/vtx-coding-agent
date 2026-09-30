@@ -62,7 +62,7 @@ def _kill_process_tree(process: asyncio.subprocess.Process, sig: int) -> None:
         # No graceful signals on Windows, and a ``.cmd`` shim runs under
         # cmd.exe, so killing only the direct child leaves the server running.
         with contextlib.suppress(OSError):
-            subprocess = asyncio.create_subprocess_exec(  # noqa: S603
+            subprocess = asyncio.create_subprocess_exec(
                 "taskkill",
                 "/pid",
                 str(pid),

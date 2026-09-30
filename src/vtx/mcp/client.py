@@ -27,12 +27,13 @@ from .jsonrpc import (
     McpConnectionClosedError,
     McpError,
     McpTimeoutError,
+    is_jsonrpc_id,
     is_jsonrpc_notification,
     is_jsonrpc_request,
     is_jsonrpc_response,
-    is_jsonrpc_id,
     is_object,
 )
+from .tasks import spawn
 from .transport import McpTransport
 from .types import (
     LATEST_PROTOCOL_VERSION,
@@ -355,7 +356,10 @@ class McpClient:
             self._handle_response(message)
             return
         if is_jsonrpc_request(message):
-            asyncio.ensure_future(self._handle_request(message))
+            # spawn, not a bare ensure_future: the loop holds only a weak
+            # reference to a running task, so an unreferenced one can be
+            # collected mid-handler. This one handles its own errors.
+            spawn(self._handle_request(message))
             return
         if is_jsonrpc_notification(message):
             self._handle_notification(message["method"], message.get("params"))
@@ -513,7 +517,7 @@ class McpClient:
             params: dict[str, Any] = {"requestId": request_id}
             if reason:
                 params["reason"] = reason
-            asyncio.ensure_future(self._send_cancelled(params))
+            spawn(self._send_cancelled(params))
 
     async def _send_cancelled(self, params: dict[str, Any]) -> None:
         try:

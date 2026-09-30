@@ -530,8 +530,7 @@ class HarnessState:
 
         raw_entries = data.get("entries", {})
         self._hydrate(
-            raw_entries if isinstance(raw_entries, dict) else {},
-            data.get("refinements", []),
+            raw_entries if isinstance(raw_entries, dict) else {}, data.get("refinements", [])
         )
         self._loaded_mtime = mtime
         return self
@@ -571,9 +570,7 @@ class HarnessState:
             for entry_id, entry in records.items()
         }
 
-    def _hydrate(
-        self, raw_entries: dict[str, Any], raw_refinements: Any
-    ) -> None:
+    def _hydrate(self, raw_entries: dict[str, Any], raw_refinements: Any) -> None:
         """Validate and install entries and refinements from either source.
 
         Shared by the file and branch paths so a branch-replayed entry is held to
@@ -630,9 +627,9 @@ class HarnessState:
         if not isinstance(version, int):
             version = 1
         entry_data["version"] = version
-        for field in ("reference", "arguments", "metadata"):
-            if not isinstance(entry_data.get(field), dict):
-                entry_data[field] = {}
+        for dict_field in ("reference", "arguments", "metadata"):
+            if not isinstance(entry_data.get(dict_field), dict):
+                entry_data[dict_field] = {}
         return HarnessEntry(**entry_data)
 
     def _coerce_refinement(self, raw_event: Any) -> RefinementEvent | None:
@@ -1371,10 +1368,7 @@ def get_harness_state(
     state = _state_cache.get(cache_key)
     if state is None:
         state = HarnessState(
-            file_path,
-            scope=scope,
-            branch_reader=branch_reader,
-            branch_writer=branch_writer,
+            file_path, scope=scope, branch_reader=branch_reader, branch_writer=branch_writer
         )
         # Recorded at construction only: an instance created from env defaults must
         # keep targeting VTX_GLOBAL_HARNESS_STATE_DIR even when a later explicit

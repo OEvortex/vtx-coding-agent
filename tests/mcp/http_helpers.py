@@ -11,9 +11,10 @@ from __future__ import annotations
 
 import json
 import threading
+from collections.abc import Callable
 from dataclasses import dataclass, field
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
-from typing import Any, Callable
+from typing import Any
 
 from vtx.mcp.types import LATEST_PROTOCOL_VERSION
 
@@ -125,13 +126,13 @@ class _RequestHandler(BaseHTTPRequestHandler):
         self.send_header("content-length", "0")
         self.end_headers()
 
-    def do_GET(self) -> None:  # noqa: N802
+    def do_GET(self) -> None:
         self._dispatch("GET")
 
-    def do_POST(self) -> None:  # noqa: N802
+    def do_POST(self) -> None:
         self._dispatch("POST")
 
-    def do_DELETE(self) -> None:  # noqa: N802
+    def do_DELETE(self) -> None:
         self._dispatch("DELETE")
 
 
@@ -188,7 +189,7 @@ def protocol_reply(request: Request) -> Reply:
         return Reply(
             sse_lines=[
                 "id: tool-result",
-                f'data: {json.dumps({"jsonrpc": "2.0", "id": message["id"], "result": {"content": [{"type": "text", "text": "hello"}]}})}',
+                f"data: {json.dumps({'jsonrpc': '2.0', 'id': message['id'], 'result': {'content': [{'type': 'text', 'text': 'hello'}]}})}",
             ]
         )
     return Reply(

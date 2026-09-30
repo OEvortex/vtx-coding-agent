@@ -4,6 +4,7 @@ import threading
 
 import pytest
 
+from tests.mcp.http_helpers import Reply, Request, protocol_reply, serve, shutdown
 from vtx.mcp import McpClient, McpClientOptions, McpError, McpRequestOptions
 from vtx.mcp.transports.streamable_http import (
     McpAuthRequiredError,
@@ -14,8 +15,6 @@ from vtx.mcp.transports.streamable_http import (
     StreamableHttpTransportOptions,
 )
 from vtx.mcp.types import LATEST_PROTOCOL_VERSION
-
-from tests.mcp.http_helpers import Reply, Request, protocol_reply, serve, shutdown
 
 
 @pytest.fixture
@@ -66,7 +65,9 @@ async def test_handles_json_and_sse_replies_with_session_and_protocol_headers(se
     assert "DELETE" in methods
     get_index = methods.index("GET")
     initialized_index = next(
-        i for i, r in enumerate(srv.requests) if (r.message or {}).get("method") == "notifications/initialized"
+        i
+        for i, r in enumerate(srv.requests)
+        if (r.message or {}).get("method") == "notifications/initialized"
     )
     assert get_index > initialized_index
 
@@ -267,7 +268,11 @@ async def test_a_dropped_response_stream_is_resumed_with_last_event_id(server):
     def handler(request: Request) -> Reply:
         if request.method == "GET" and request.headers.get("last-event-id"):
             resume_headers.append(request.headers["last-event-id"])
-            payload = {"jsonrpc": "2.0", "id": 2, "result": {"content": [{"type": "text", "text": "resumed"}]}}
+            payload = {
+                "jsonrpc": "2.0",
+                "id": 2,
+                "result": {"content": [{"type": "text", "text": "resumed"}]},
+            }
             return Reply(sse_lines=["id: 2", f"data: {json.dumps(payload)}"])
         message = request.message
         if request.method != "POST":
@@ -357,7 +362,8 @@ async def test_401_then_insufficient_scope_403_are_handed_to_the_auth_provider(s
             return Reply(status=401, headers={"www-authenticate": "Bearer"})
         if (message or {}).get("method") == "tools/call" and auth == "Bearer new":
             return Reply(
-                status=403, headers={"www-authenticate": 'Bearer error="insufficient_scope", scope="admin"'}
+                status=403,
+                headers={"www-authenticate": 'Bearer error="insufficient_scope", scope="admin"'},
             )
         return protocol_reply(request)
 
@@ -375,10 +381,7 @@ async def test_401_then_insufficient_scope_403_are_handed_to_the_auth_provider(s
 
     assert await client.call_tool("echo") == {"content": [{"type": "text", "text": "hello"}]}
     # Both challenges reached the provider, each carrying the token it rejected.
-    assert seen == [
-        {"status": 401, "token": "old"},
-        {"status": 403, "token": "new"},
-    ]
+    assert seen == [{"status": 401, "token": "old"}, {"status": 403, "token": "new"}]
     await client.close()
 
 

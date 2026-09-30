@@ -131,7 +131,9 @@ def _validate_oauth(name: str, value: Any) -> tuple[McpOAuthSettings | None, str
         if value.get(key) is not None and not isinstance(value[key], str):
             return None, f'MCP server "{name}": oauth.{key} must be a string'
     port = value.get("callbackPort")
-    if port is not None and (not isinstance(port, int) or isinstance(port, bool) or not 1 <= port <= 65535):
+    if port is not None and (
+        not isinstance(port, int) or isinstance(port, bool) or not 1 <= port <= 65535
+    ):
         return None, f'MCP server "{name}": oauth.callbackPort must be a port number'
     return (
         McpOAuthSettings(
@@ -182,13 +184,7 @@ def validate_mcp_server_config(name: str, value: Any) -> tuple[McpServerConfig |
         if "url" in value or "headers" in value or "oauth" in value:
             return None, f'MCP server "{name}": stdio servers take no url/headers/oauth'
         return (
-            McpServerConfig(
-                **common,
-                command=command,
-                args=list(args),
-                env=dict(env),
-                cwd=cwd,
-            ),
+            McpServerConfig(**common, command=command, args=list(args), env=dict(env), cwd=cwd),
             None,
         )
 
@@ -201,18 +197,12 @@ def validate_mcp_server_config(name: str, value: Any) -> tuple[McpServerConfig |
     oauth, oauth_error = _validate_oauth(name, value.get("oauth"))
     if oauth_error:
         return None, oauth_error
-    return (
-        McpServerConfig(
-            **common,
-            url=url,
-            headers=dict(headers),
-            oauth=oauth,
-        ),
-        None,
-    )
+    return (McpServerConfig(**common, url=url, headers=dict(headers), oauth=oauth), None)
 
 
-def _read_config_file(path: Path, scope: str, servers: dict[str, McpServerConfig], errors: list[str]) -> None:
+def _read_config_file(
+    path: Path, scope: str, servers: dict[str, McpServerConfig], errors: list[str]
+) -> None:
     if not path.is_file():
         return
     try:
@@ -220,7 +210,9 @@ def _read_config_file(path: Path, scope: str, servers: dict[str, McpServerConfig
     except (OSError, json.JSONDecodeError) as exc:
         errors.append(f"{path}: {exc}")
         return
-    if not _is_record(parsed) or (parsed.get("mcpServers") is not None and not _is_record(parsed["mcpServers"])):
+    if not _is_record(parsed) or (
+        parsed.get("mcpServers") is not None and not _is_record(parsed["mcpServers"])
+    ):
         errors.append(f'{path}: expected an object with an "mcpServers" object')
         return
 
@@ -238,7 +230,9 @@ def _read_config_file(path: Path, scope: str, servers: dict[str, McpServerConfig
         servers[name] = config
 
 
-def load_mcp_config(*, cwd: str, project_trusted: bool = False, config_dir: Path | None = None) -> LoadedMcpConfig:
+def load_mcp_config(
+    *, cwd: str, project_trusted: bool = False, config_dir: Path | None = None
+) -> LoadedMcpConfig:
     """Load global, then (when trusted) project configuration.
 
     A disabled server is still returned with ``enabled=False`` so it can be

@@ -96,18 +96,23 @@ class McpCommands(CommandSupport):
         connection = manager.get(name)
         if connection is None:
             known = ", ".join(sorted(manager.servers)) or "none"
-            chat.add_info_message(f"No MCP server named {name!r}. Configured: {known}", warning=True)
+            chat.add_info_message(
+                f"No MCP server named {name!r}. Configured: {known}", warning=True
+            )
             return
 
         if action in ("enable", "disable"):
             config = connection.config
             if not config.source:
                 chat.add_info_message(
-                    f"{name!r} was registered in code, so there is no mcp.json to edit.", warning=True
+                    f"{name!r} was registered in code, so there is no mcp.json to edit.",
+                    warning=True,
                 )
                 return
             try:
-                update_mcp_server_config(Path(config.source), name, {"enabled": action == "enable"})
+                update_mcp_server_config(
+                    Path(config.source), name, {"enabled": action == "enable"}
+                )
             except Exception as exc:
                 chat.add_info_message(f"could not update {config.source}: {exc}", error=True)
                 return

@@ -26,6 +26,7 @@ from vtx.core.version import VERSION
 from .client import McpClient, McpClientOptions, McpRequestOptions
 from .config import LoadedMcpConfig, McpServerConfig, load_mcp_config
 from .jsonrpc import McpConnectionClosedError
+from .tasks import spawn
 from .tool import McpTool, McpToolCaller, create_mcp_tool_name
 from .transports.stdio import StdioTransport, StdioTransportOptions
 from .transports.streamable_http import (
@@ -33,7 +34,8 @@ from .transports.streamable_http import (
     StreamableHttpTransport,
     StreamableHttpTransportOptions,
 )
-from .types import Root, Tool as McpToolDef
+from .types import Root
+from .types import Tool as McpToolDef
 
 log = logging.getLogger("mcp.manager")
 
@@ -78,11 +80,7 @@ class McpServerConnection:
     """
 
     def __init__(
-        self,
-        config: McpServerConfig,
-        *,
-        roots: list[Root] | None = None,
-        on_change: Any = None,
+        self, config: McpServerConfig, *, roots: list[Root] | None = None, on_change: Any = None
     ) -> None:
         self.config = config
         self.status = McpServerStatus(
@@ -114,8 +112,7 @@ class McpServerConnection:
             )
         return StreamableHttpTransport(
             StreamableHttpTransportOptions(
-                url=self.config.url or "",
-                headers=self.config.resolved_headers(),
+                url=self.config.url or "", headers=self.config.resolved_headers()
             )
         )
 
@@ -331,9 +328,7 @@ class McpManager:
         self.config_dir = config_dir or get_config_dir()
         self.project_trusted = project_trusted
         self.config = config or load_mcp_config(
-            cwd=cwd,
-            project_trusted=project_trusted,
-            config_dir=self.config_dir,
+            cwd=cwd, project_trusted=project_trusted, config_dir=self.config_dir
         )
         self.errors = list(self.config.errors)
         self.roots: list[Root] = [{"uri": cwd_to_uri(cwd), "name": cwd}]
@@ -362,7 +357,9 @@ class McpManager:
         for task in not_done:
             # Left running: it finishes in the background and the manager is
             # told to rebuild when it does.
-            task.add_done_callback(lambda t: self._server_changed(None) if not t.cancelled() else None)
+            task.add_done_callback(
+                lambda t: self._server_changed(None) if not t.cancelled() else None
+            )
         return self.rebuild_tools()
 
     async def reload(self) -> list[BaseTool]:
@@ -370,9 +367,7 @@ class McpManager:
         await self.close()
         self._closed = False
         fresh = load_mcp_config(
-            cwd=self.cwd,
-            project_trusted=self.project_trusted,
-            config_dir=self.config_dir,
+            cwd=self.cwd, project_trusted=self.project_trusted, config_dir=self.config_dir
         )
         self.config = fresh
         self.errors = list(fresh.errors)
@@ -443,7 +438,7 @@ class McpManager:
             return
         self._refresh_task = asyncio.ensure_future(self._rebuild_and_notify())
         if connection is not None:
-            asyncio.ensure_future(connection.reload_definitions())
+            spawn(connection.reload_definitions())
 
     async def _rebuild_and_notify(self) -> None:
         await asyncio.sleep(0)

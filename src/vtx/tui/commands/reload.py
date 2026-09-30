@@ -163,6 +163,12 @@ class ReloadCommands(CommandSupport):
         #    which just changed.
         self._sync_slash_commands()
 
+        # 9b. MCP servers. mcp.json is not part of config.yml, so /reload is
+        #     the only thing that picks up an edit to it. Reloading closes the
+        #     old connections first, which is what stops a removed server's
+        #     child process from being orphaned.
+        mcp_note = await self._reload_mcp(chat)
+
         # 10. Push the settings that live outside the config object.
         applied_settings = self._apply_reloaded_settings(before.settings)
 
@@ -178,6 +184,19 @@ class ReloadCommands(CommandSupport):
             )
 
         self._report_reload(before, after, applied_settings)
+        if mcp_note:
+            chat.add_info_message(mcp_note)
+
+    async def _reload_mcp(self, chat: ChatLog) -> str:
+        """Re-read ``mcp.json`` and reconnect. Returns a one-line report."""
+        try:
+            tools = await self._runtime.reload_mcp()
+        except Exception as exc:
+            return f"MCP reload failed: {exc}"
+        if not tools:
+            return "MCP: no tools from any server."
+        servers = sorted({t.server for t in tools})
+        return f"MCP: {len(tools)} tool(s) from {', '.join(servers)}."
 
     def _reload_snapshot(self) -> _Snapshot:
         """Cheap pre/post comparison so the report can say what actually changed."""

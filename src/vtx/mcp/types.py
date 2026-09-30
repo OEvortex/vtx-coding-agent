@@ -198,14 +198,15 @@ normalize_resource_template = _with_template_name
 ServerState = Literal["idle", "connecting", "connected", "closed"]
 
 __all__ = [
+    "LATEST_PROTOCOL_VERSION",
+    "SUPPORTED_PROTOCOL_VERSIONS",
     "CallToolResult",
     "ClientCapabilities",
     "ContentBlock",
     "Implementation",
     "InitializeResult",
-    "LATEST_PROTOCOL_VERSION",
-    "ListResourcesResult",
     "ListResourceTemplatesResult",
+    "ListResourcesResult",
     "ListToolsResult",
     "ReadResourceResult",
     "Resource",
@@ -213,7 +214,6 @@ __all__ = [
     "ResourceTemplate",
     "ResourceTemplateListItem",
     "Root",
-    "SUPPORTED_PROTOCOL_VERSIONS",
     "ServerCapabilities",
     "Tool",
     "ToolListItem",

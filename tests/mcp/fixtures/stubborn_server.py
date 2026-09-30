@@ -23,7 +23,7 @@ def main() -> None:
     # SIGTERM is ignored, so only the SIGKILL escalation can end this.
     signal.signal(signal.SIGTERM, lambda *_: None)
 
-    grandchild = subprocess.Popen(  # noqa: S603
+    grandchild = subprocess.Popen(
         [
             sys.executable,
             "-c",

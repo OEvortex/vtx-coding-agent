@@ -27,14 +27,7 @@ def _config(*servers: dict) -> LoadedMcpConfig:
 
 
 def _stdio(name: str = "echo", script: Path = STDIO_SERVER, **extra) -> dict:
-    return {
-        "name": name,
-        "spec": {
-            "command": sys.executable,
-            "args": [str(script)],
-            **extra,
-        },
-    }
+    return {"name": name, "spec": {"command": sys.executable, "args": [str(script)], **extra}}
 
 
 @pytest.mark.asyncio
@@ -84,9 +77,7 @@ async def test_close_stops_the_server_process(tmp_path):
 
 @pytest.mark.asyncio
 async def test_a_disabled_server_is_never_started(tmp_path):
-    manager = McpManager(
-        cwd=str(tmp_path), config=_config(_stdio(**{"enabled": False}))
-    )
+    manager = McpManager(cwd=str(tmp_path), config=_config(_stdio(**{"enabled": False})))
     try:
         tools = await manager.connect_all()
         assert tools == []
@@ -118,8 +109,7 @@ async def test_one_broken_server_does_not_block_a_working_one(tmp_path):
     manager = McpManager(
         cwd=str(tmp_path),
         config=_config(
-            {"name": "bad", "spec": {"command": "definitely-not-a-command-xyzzy"}},
-            _stdio("good"),
+            {"name": "bad", "spec": {"command": "definitely-not-a-command-xyzzy"}}, _stdio("good")
         ),
     )
     try:
@@ -174,9 +164,7 @@ async def test_roots_are_advertised_to_the_server(tmp_path):
 async def test_startup_wait_does_not_raise_when_a_server_is_slow(tmp_path):
     """A server still connecting at the deadline must not hold up the session."""
     manager = McpManager(
-        cwd=str(tmp_path),
-        config=_config(_stdio("slow", SLOW_SERVER)),
-        startup_wait_seconds=0.05,
+        cwd=str(tmp_path), config=_config(_stdio("slow", SLOW_SERVER)), startup_wait_seconds=0.05
     )
     try:
         tools = await manager.connect_all()
@@ -245,7 +233,9 @@ async def test_status_describe_reads_as_prose(tmp_path):
     from vtx.mcp.manager import McpServerStatus
 
     assert McpServerStatus("a", state="connected", tool_count=1).describe() == "connected (1 tool)"
-    assert McpServerStatus("a", state="connected", tool_count=3).describe() == "connected (3 tools)"
+    assert (
+        McpServerStatus("a", state="connected", tool_count=3).describe() == "connected (3 tools)"
+    )
     assert McpServerStatus("a", state="needs-auth").describe() == "needs sign-in"
     assert McpServerStatus("a", state="disabled").describe() == "disabled"
     assert "boom" in McpServerStatus("a", state="failed", error="boom").describe()

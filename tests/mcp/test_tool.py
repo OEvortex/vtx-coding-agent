@@ -4,9 +4,7 @@ import json
 
 import pytest
 
-from vtx.core.types import ImageContent, ToolResult
-
-from vtx.mcp.client import McpRequestOptions
+from vtx.core.types import ImageContent
 from vtx.mcp.tool import (
     MCP_OUTPUT_MAX_BYTES,
     McpTool,
@@ -84,7 +82,11 @@ def test_a_tool_without_annotations_is_mutating():
 
 def test_destructive_hint_overrides_read_only():
     tool = _tool(
-        {"name": "t", "inputSchema": {}, "annotations": {"readOnlyHint": True, "destructiveHint": True}}
+        {
+            "name": "t",
+            "inputSchema": {},
+            "annotations": {"readOnlyHint": True, "destructiveHint": True},
+        }
     )
     assert tool.mutating is True
 
@@ -234,7 +236,11 @@ def test_format_call_shows_the_server_and_tool():
     tool = _tool(
         {
             "name": "read",
-            "inputSchema": {"type": "object", "properties": {"path": {"type": "string"}}, "required": ["path"]},
+            "inputSchema": {
+                "type": "object",
+                "properties": {"path": {"type": "string"}},
+                "required": ["path"],
+            },
         }
     )
     assert tool.format_call(tool.params(path="/a")) == "fs/read path=/a"
@@ -297,7 +303,9 @@ def test_truncate_middle_leaves_short_text_alone():
 
 
 def test_audio_becomes_a_placeholder():
-    result = convert_mcp_result({"content": [{"type": "audio", "data": "x", "mimeType": "audio/wav"}]})
+    result = convert_mcp_result(
+        {"content": [{"type": "audio", "data": "x", "mimeType": "audio/wav"}]}
+    )
     assert result.result == "[audio audio/wav omitted]"
     assert result.images is None
 
@@ -313,7 +321,11 @@ def test_text_typed_blob_resource_is_inlined():
                 "content": [
                     {
                         "type": "resource",
-                        "resource": {"uri": "file:///a.json", "mimeType": "application/json", "blob": blob},
+                        "resource": {
+                            "uri": "file:///a.json",
+                            "mimeType": "application/json",
+                            "blob": blob,
+                        },
                     }
                 ]
             }
@@ -330,7 +342,11 @@ def test_binary_resource_is_written_to_a_file():
                 "content": [
                     {
                         "type": "resource",
-                        "resource": {"uri": "file:///data.bin", "mimeType": "application/octet-stream", "blob": blob},
+                        "resource": {
+                            "uri": "file:///data.bin",
+                            "mimeType": "application/octet-stream",
+                            "blob": blob,
+                        },
                     }
                 ]
             }
@@ -352,7 +368,11 @@ def test_binary_resource_keeps_a_useful_extension():
                 "content": [
                     {
                         "type": "resource",
-                        "resource": {"uri": "file:///report.pdf", "mimeType": "application/pdf", "blob": blob},
+                        "resource": {
+                            "uri": "file:///report.pdf",
+                            "mimeType": "application/pdf",
+                            "blob": blob,
+                        },
                     }
                 ]
             }
@@ -392,7 +412,11 @@ def test_image_resource_passes_through_as_an_image():
                 "content": [
                     {
                         "type": "resource",
-                        "resource": {"uri": "file:///a.png", "mimeType": "image/png", "blob": blob},
+                        "resource": {
+                            "uri": "file:///a.png",
+                            "mimeType": "image/png",
+                            "blob": blob,
+                        },
                     }
                 ]
             }

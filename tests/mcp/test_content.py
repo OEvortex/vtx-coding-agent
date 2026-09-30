@@ -1,7 +1,6 @@
 import pytest
 
 from vtx.core.types import ImageContent, TextContent
-
 from vtx.mcp.content import split_content, to_tool_content
 
 

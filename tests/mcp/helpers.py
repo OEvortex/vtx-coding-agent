@@ -4,7 +4,8 @@ from __future__ import annotations
 
 import asyncio
 import json
-from typing import Any, Callable
+from collections.abc import Callable
+from typing import Any
 
 from vtx.mcp.jsonrpc import JSON_RPC_METHOD_NOT_FOUND, McpError, is_jsonrpc_request
 from vtx.mcp.transports.in_memory import InMemoryTransport, create_in_memory_transport_pair

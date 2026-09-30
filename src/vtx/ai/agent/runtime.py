@@ -575,10 +575,7 @@ class ConversationRuntime:
             # import would close the dependency loop.
             from vtx.mcp.manager import McpManager
 
-            self._mcp_manager = McpManager(
-                cwd=self.cwd,
-                project_trusted=self._project_trusted,
-            )
+            self._mcp_manager = McpManager(cwd=self.cwd, project_trusted=self._project_trusted)
             self._mcp_manager.on_tools_changed(self._on_mcp_tools_changed)
         return self._mcp_manager
 

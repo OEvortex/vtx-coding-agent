@@ -185,7 +185,7 @@ async def test_cancellation_stops_a_running_tool_call():
 
 @pytest.mark.asyncio
 async def test_timeout_kills_the_child_process():
-    from vtx.mcp import McpTimeoutError, McpRequestOptions
+    from vtx.mcp import McpRequestOptions, McpTimeoutError
 
     slow = FIXTURES / "slow_server.py"
     transport = _transport(slow)

@@ -15,7 +15,7 @@ from vtx.core.version import PACKAGE_NAME, VERSION
 from vtx.tui.blocks import LaunchWarning
 from vtx.tui.chat import ChatLog
 from vtx.tui.input import InputBox
-from vtx.tui.widgets import InfoBar
+from vtx.tui.widgets import InfoBar, format_path
 
 _CHANGELOG_URL = "https://github.com/OEvortex/vtx-coding-agent/blob/main/CHANGELOG.md"
 
@@ -80,6 +80,50 @@ class StartupMixin:
         if not self._fd_path and paths.get("fd"):
             self._fd_path = paths["fd"]
             self.query_one("#input-box", InputBox).set_fd_path(self._fd_path)
+
+    async def _connect_mcp(self) -> None:
+        """Connect the configured MCP servers and fold in their tools.
+
+        Problems are reported once, as launch warnings, rather than as an error
+        dialog: a server that will not start should not stop the session, and
+        the user needs to know *which* one failed and why. ``/mcp`` shows the
+        same state on demand.
+        """
+        try:
+            tools = await self._runtime.connect_mcp()
+        except Exception as exc:
+            self._add_launch_warning(f"MCP: {exc}", severity="error")
+            return
+
+        manager = self._runtime.ensure_mcp_manager()
+        for message in manager.errors:
+            self._add_launch_warning(f"MCP config: {message}", severity="error")
+        for status in manager.statuses():
+            if status.state == "failed":
+                self._add_launch_warning(f"MCP server {status.name!r}: {status.error or 'failed'}")
+            elif status.state == "needs-auth":
+                self._add_launch_warning(f"MCP server {status.name!r} needs sign-in; run /mcp")
+
+        if tools:
+            # The session header lists the tool surface, so a tool that arrived
+            # after startup has to be reflected there or /session under-reports
+            # what the model can actually call.
+            self.call_later(self._refresh_loaded_resources)
+
+    def _refresh_loaded_resources(self) -> None:
+        context = self._runtime.context
+        if context is None:
+            return
+        try:
+            chat = self.query_one("#chat-log", ChatLog)
+            chat.add_loaded_resources(
+                context_paths=[format_path(f.path) for f in context.agents_files],
+                skills=context.skills,
+                tools=self._runtime.tools,
+            )
+        except Exception:
+            # Purely cosmetic: never let a redraw failure break a session.
+            pass
 
     async def _check_for_updates(self) -> None:
         latest = await get_newer_pypi_version(PACKAGE_NAME, VERSION)

@@ -54,11 +54,7 @@ from typing import Any, Literal, get_args
 from pydantic import BaseModel
 
 from vtx.ai.agent.tools.base import BaseTool
-from vtx.ai.agent.tools.schema import (
-    json_schema_to_pydantic,
-    json_type_to_python,
-    safe_class_name,
-)
+from vtx.ai.agent.tools.schema import json_schema_to_pydantic, json_type_to_python, safe_class_name
 from vtx.core.paths import get_config_dir
 from vtx.core.types import ImageContent, TextContent, ToolResult
 
