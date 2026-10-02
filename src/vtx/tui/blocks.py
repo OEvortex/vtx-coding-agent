@@ -1278,7 +1278,7 @@ class TaskToolBlock(ToolBlock):
           ⎿  Running in background (ID: 623586f8-8334-468)
 
     Live counters, the spinner and per-agent activity live in the pinned
-    Agents panel (:mod:`vtx.tui.agents_panel`), which shows every sub-agent at
+    Agents panel (:mod:`vtx.coding_agent.tui.agents_panel`), which shows every sub-agent at
     once instead of one block per dispatch. This block repaints only when a
     progress event arrives, so it costs nothing while the panel animates.
     """

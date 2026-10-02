@@ -460,7 +460,7 @@ def subagents_own_the_status_line() -> bool:
     not. This is the same reasoning that defers an idle recap during a
     fan-out: the user is not watching an idle screen.
     """
-    from vtx.tui.goal_agents import REGISTRY
+    from vtx.coding_agent.tui.goal_agents import REGISTRY
 
     return REGISTRY.has_live()
 

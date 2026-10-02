@@ -6,10 +6,10 @@ from unittest.mock import MagicMock
 
 import pytest
 
+from vtx.coding_agent.tui.commands import CommandsMixin
+from vtx.coding_agent.tui.commands.update import UpdateCommands
 from vtx.core.self_update import _installer_choice
 from vtx.tui.autocomplete import DEFAULT_COMMANDS
-from vtx.tui.commands import CommandsMixin
-from vtx.tui.commands.update import UpdateCommands
 
 
 class FakeChat:
@@ -74,7 +74,8 @@ async def test_do_update_success_already_up_to_date(monkeypatch):
     """_do_update displays already up to date notice when up to date."""
     app = FakeApp()
     monkeypatch.setattr(
-        "vtx.tui.commands.update.self_update", lambda: (True, "Already up to date (uv tool).")
+        "vtx.coding_agent.tui.commands.update.self_update",
+        lambda: (True, "Already up to date (uv tool)."),
     )
 
     await app._do_update()
@@ -90,7 +91,8 @@ async def test_do_update_success_upgraded(monkeypatch):
     """_do_update prompts to restart when upgraded successfully."""
     app = FakeApp()
     monkeypatch.setattr(
-        "vtx.tui.commands.update.self_update", lambda: (True, "Updated successfully via uv tool.")
+        "vtx.coding_agent.tui.commands.update.self_update",
+        lambda: (True, "Updated successfully via uv tool."),
     )
 
     await app._do_update()
@@ -107,7 +109,7 @@ async def test_do_update_failure(monkeypatch):
     """_do_update displays error message when self_update fails."""
     app = FakeApp()
     monkeypatch.setattr(
-        "vtx.tui.commands.update.self_update", lambda: (False, "network unreachable")
+        "vtx.coding_agent.tui.commands.update.self_update", lambda: (False, "network unreachable")
     )
 
     await app._do_update()

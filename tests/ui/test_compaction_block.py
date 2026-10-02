@@ -6,6 +6,7 @@ import pytest
 from textual.app import App, ComposeResult
 from textual.widgets import Label, ProgressBar
 
+from vtx.coding_agent.tui.chat import ChatLog
 from vtx.core.compaction import (
     SUMMARIZATION_PROMPT,
     SUMMARY_SECTIONS,
@@ -15,7 +16,6 @@ from vtx.core.compaction import (
 from vtx.core.events import CompactionEndEvent, CompactionProgressEvent, CompactionStartEvent
 from vtx.protocol.types import TextPart
 from vtx.tui.blocks import CompactionBlock, _format_elapsed, _short_section_title
-from vtx.tui.chat import ChatLog
 from vtx.tui.styles import get_styles
 
 # ---------------------------------------------------------------------------

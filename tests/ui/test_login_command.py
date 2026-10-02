@@ -2,8 +2,8 @@ from contextlib import contextmanager
 
 import pytest
 
-from vtx.tui.commands import CommandsMixin
-from vtx.tui.commands import auth as commands
+from vtx.coding_agent.tui.commands import CommandsMixin
+from vtx.coding_agent.tui.commands import auth as commands
 from vtx.tui.floating_list import ListItem
 from vtx.tui.selection_mode import SelectionMode
 

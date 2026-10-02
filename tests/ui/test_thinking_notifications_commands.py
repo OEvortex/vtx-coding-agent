@@ -2,11 +2,11 @@ from contextlib import contextmanager
 from typing import Any, ClassVar, cast
 
 from vtx.agent.runtime import ConversationRuntime
+from vtx.coding_agent.tui.commands import CommandsMixin
+from vtx.coding_agent.tui.widgets import InfoBar
 from vtx.core.config import config, reset_config
-from vtx.tui.commands import CommandsMixin
 from vtx.tui.floating_list import ListItem
 from vtx.tui.selection_mode import SelectionMode
-from vtx.tui.widgets import InfoBar
 
 
 class FakeChat:

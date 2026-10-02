@@ -4,9 +4,9 @@ from __future__ import annotations
 
 import asyncio
 
+from vtx.coding_agent.tui.chat import ChatLog
+from vtx.coding_agent.tui.commands.base import CommandSupport
 from vtx.core.self_update import self_update
-from vtx.tui.chat import ChatLog
-from vtx.tui.commands.base import CommandSupport
 
 
 class UpdateCommands(CommandSupport):

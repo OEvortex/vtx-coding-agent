@@ -8,15 +8,15 @@ from datetime import UTC, datetime
 from pathlib import Path
 
 from vtx.agent.session import Session, SessionInfo
+from vtx.coding_agent.tui.chat import ChatLog
+from vtx.coding_agent.tui.commands.base import CommandSupport
+from vtx.coding_agent.tui.tree import TreeSelector
+from vtx.coding_agent.tui.widgets import InfoBar, StatusLine, format_path
 from vtx.core.config import config
-from vtx.tui.chat import ChatLog
 from vtx.tui.clipboard import copy_to_clipboard
-from vtx.tui.commands.base import CommandSupport
 from vtx.tui.floating_list import FloatingList, ListItem
 from vtx.tui.input import InputBox
 from vtx.tui.selection_mode import SelectionMode
-from vtx.tui.tree import TreeSelector
-from vtx.tui.widgets import InfoBar, StatusLine, format_path
 
 
 class SessionCommands(CommandSupport):
@@ -408,7 +408,7 @@ class SessionCommands(CommandSupport):
         self._restore_chat_scroll_after_refresh(was_at_bottom)
 
     def _handle_export_command(self) -> None:
-        from vtx.tui.export import export_session_html
+        from vtx.coding_agent.tui.export import export_session_html
 
         chat = self.query_one("#chat-log", ChatLog)
 

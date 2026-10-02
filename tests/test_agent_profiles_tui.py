@@ -69,7 +69,7 @@ def test_action_cycle_agent_string_set(monkeypatch, tmp_path: Path):
 def test_agents_command_mixin_exists():
     """The /agent command mixin is importable and exposes the expected
     methods used by the TUI."""
-    from vtx.tui.commands.agents import AgentCommands
+    from vtx.coding_agent.tui.commands.agents import AgentCommands
 
     assert hasattr(AgentCommands, "_handle_agent_command")
     assert hasattr(AgentCommands, "_set_active_agent")
@@ -82,7 +82,7 @@ def test_agents_command_mixin_exists():
 
 def test_agents_command_registered_in_router():
     """The /agent command is wired into the central command router."""
-    from vtx.tui.commands import CommandsMixin
+    from vtx.coding_agent.tui.commands import CommandsMixin
 
     src = Path(CommandsMixin._handle_command.__code__.co_filename)
     text = src.read_text()
@@ -92,7 +92,7 @@ def test_agents_command_registered_in_router():
 
 def test_app_binding_for_shift_tab_is_cycle_agent():
     """The Shift+Tab binding in the TUI app triggers the agent cycle."""
-    from vtx.tui.app import Vtx
+    from vtx.coding_agent.tui.app import Vtx
 
     bindings = {b.key: b.action for b in Vtx.BINDINGS if hasattr(b, "key")}
     assert "shift+tab" in bindings

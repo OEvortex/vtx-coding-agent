@@ -178,7 +178,7 @@ class TestReloadIsWired:
         assert any(c.name == "reload" for c in DEFAULT_COMMANDS)
 
     def test_dispatch_reaches_the_handler(self):
-        from vtx.tui.commands import CommandsMixin
+        from vtx.coding_agent.tui.commands import CommandsMixin
 
         assert hasattr(CommandsMixin, "_handle_reload_command")
         assert any(base.__name__ == "ReloadCommands" for base in CommandsMixin.__mro__)

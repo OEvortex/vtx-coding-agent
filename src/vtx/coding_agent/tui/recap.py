@@ -14,6 +14,8 @@ from typing import TYPE_CHECKING, Any
 
 from textual.timer import Timer
 
+from vtx.coding_agent.tui.chat import ChatLog
+from vtx.coding_agent.tui.status_lines import pick_recap_status_line
 from vtx.core.config import config
 from vtx.core.recap import (
     RecapContext,
@@ -22,17 +24,15 @@ from vtx.core.recap import (
     has_meaningful_activity,
 )
 from vtx.protocol.types import TextContent, UserMessage
-from vtx.tui.chat import ChatLog
-from vtx.tui.status_lines import pick_recap_status_line
 
 if TYPE_CHECKING:
     from textual.worker import Worker
 
-log = logging.getLogger("vtx.tui.recap")
+log = logging.getLogger("vtx.coding_agent.tui.recap")
 
 
 class RecapMixin:
-    """Mixed into :class:`vtx.tui.app.Vtx`; owns all recap scheduling state."""
+    """Mixed into :class:`vtx.coding_agent.tui.app.Vtx`; owns all recap scheduling state."""
 
     _is_running: bool
     _runtime: Any  # ConversationRuntime; typed loosely to avoid an import cycle
@@ -63,7 +63,7 @@ class RecapMixin:
         was visible to the user and invisible to the model. That reads as
         "the notification never arrived" when the notification worked fine.
         """
-        from vtx.tui.goal_agents import REGISTRY
+        from vtx.coding_agent.tui.goal_agents import REGISTRY
 
         return REGISTRY.has_live()
 

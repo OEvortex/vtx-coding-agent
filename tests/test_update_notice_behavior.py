@@ -1,4 +1,4 @@
-from vtx.tui.app import Vtx
+from vtx.coding_agent.tui.app import Vtx
 
 
 def _make_app() -> Vtx:

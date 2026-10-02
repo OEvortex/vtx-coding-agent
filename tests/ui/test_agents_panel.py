@@ -1,10 +1,9 @@
-"""Tests for the pinned sub-agent panel (vtx.tui.agents_panel)."""
+"""Tests for the pinned sub-agent panel (vtx.coding_agent.tui.agents_panel)."""
 
 import pytest
 from textual.app import App, ComposeResult
 
-from vtx.tui import task_ui
-from vtx.tui.agents_panel import (
+from vtx.coding_agent.tui.agents_panel import (
     AgentsPanel,
     activity_for,
     metrics_for,
@@ -12,8 +11,9 @@ from vtx.tui.agents_panel import (
     should_show,
     visible_runs,
 )
-from vtx.tui.goal_agents import SubagentRegistry
-from vtx.tui.widgets import InfoBar
+from vtx.coding_agent.tui.goal_agents import SubagentRegistry
+from vtx.coding_agent.tui.widgets import InfoBar
+from vtx.tui import task_ui
 
 
 def _registry_with(*, running: int = 0, queued: int = 0, finished: int = 0) -> SubagentRegistry:
@@ -237,7 +237,7 @@ def test_panel_shows_while_a_subagent_is_queued_or_running() -> None:
 
 def test_pruning_drops_old_finished_runs_but_never_live_ones() -> None:
     """Turn-boundary housekeeping must not blink out a background sub-agent."""
-    from vtx.tui.goal_agents import REGISTRY
+    from vtx.coding_agent.tui.goal_agents import REGISTRY
 
     REGISTRY.clear()
     try:
@@ -254,7 +254,7 @@ def test_pruning_drops_old_finished_runs_but_never_live_ones() -> None:
 
 
 def test_turn_boundary_keeps_a_background_subagent_alive() -> None:
-    from vtx.tui.goal_agents import REGISTRY, prune_finished_subagents
+    from vtx.coding_agent.tui.goal_agents import REGISTRY, prune_finished_subagents
 
     REGISTRY.clear()
     try:
@@ -306,7 +306,7 @@ def test_goal_beacon_and_panel_share_one_row_grammar() -> None:
     different headers and different label weights. Sharing `strip_header` and
     `tree_prefix` is what makes them one thing.
     """
-    from vtx.tui.agents_panel import strip_header, tree_prefix
+    from vtx.coding_agent.tui.agents_panel import strip_header, tree_prefix
 
     assert strip_header("Goal").plain == "● Goal"
     assert strip_header("Goal").plain == strip_header("Agents").plain.replace("Agents", "Goal")
@@ -337,7 +337,7 @@ class PanelApp(App[None]):
 
 @pytest.mark.asyncio
 async def test_panel_hides_until_a_subagent_is_in_flight() -> None:
-    from vtx.tui.goal_agents import REGISTRY
+    from vtx.coding_agent.tui.goal_agents import REGISTRY
 
     REGISTRY.clear()
     try:

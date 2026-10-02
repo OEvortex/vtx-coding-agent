@@ -12,6 +12,9 @@ from typing import TYPE_CHECKING, Any
 
 from vtx.agent.runtime import ConversationRuntime
 from vtx.agent.tools import lookup_default_tool as get_tool
+from vtx.coding_agent.tui.chat import ChatLog
+from vtx.coding_agent.tui.goal_agents import prune_finished_subagents
+from vtx.coding_agent.tui.widgets import InfoBar, StatusLine
 from vtx.core import (
     AgentEndEvent,
     AgentStartEvent,
@@ -47,9 +50,6 @@ from vtx.core.config import config
 from vtx.core.notify import NotificationEvent, notify
 from vtx.protocol.types import ImageContent, StopReason, ToolResultMessage
 from vtx.tui.ask_user import AskUserDialog
-from vtx.tui.chat import ChatLog
-from vtx.tui.goal_agents import prune_finished_subagents
-from vtx.tui.widgets import InfoBar, StatusLine
 
 _NOTIFY_EVENTS = (AgentEndEvent, ToolApprovalEvent, BackgroundTaskCompletedEvent)
 

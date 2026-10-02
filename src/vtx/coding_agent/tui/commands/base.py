@@ -7,11 +7,11 @@ from typing import TYPE_CHECKING, Any, TypeVar, cast
 
 from vtx.agent.runtime import ConversationRuntime
 from vtx.agent.session import Session
-from vtx.tui.chat import ChatLog
+from vtx.coding_agent.tui.chat import ChatLog
+from vtx.coding_agent.tui.widgets import InfoBar
 from vtx.tui.floating_list import ListItem
 from vtx.tui.input import InputBox
 from vtx.tui.selection_mode import SelectionMode
-from vtx.tui.widgets import InfoBar
 
 Choice = TypeVar("Choice", bound=str)
 

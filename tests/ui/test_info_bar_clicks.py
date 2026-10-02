@@ -1,4 +1,4 @@
-from vtx.tui.widgets import InfoBar
+from vtx.coding_agent.tui.widgets import InfoBar
 
 
 def test_footer_does_not_treat_permission_mode_as_file_changes_click():

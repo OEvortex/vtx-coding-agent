@@ -9,6 +9,9 @@ from vtx.agent.runtime import ConversationRuntime
 from vtx.agent.session import CompactionEntry, CustomMessageEntry, MessageEntry, Session
 from vtx.agent.tools import BaseTool
 from vtx.agent.tools import lookup_default_tool as get_tool
+from vtx.coding_agent.tui.chat import ChatLog
+from vtx.coding_agent.tui.commands import CommandsMixin
+from vtx.coding_agent.tui.widgets import InfoBar, StatusLine, format_path
 from vtx.protocol.types import (
     AssistantMessage,
     ImageContent,
@@ -18,11 +21,8 @@ from vtx.protocol.types import (
     ToolResultMessage,
     UserMessage,
 )
-from vtx.tui.chat import ChatLog
-from vtx.tui.commands import CommandsMixin
 from vtx.tui.input import InputBox
 from vtx.tui.tool_output import escape_tool_output_text, truncate_tool_output_text
-from vtx.tui.widgets import InfoBar, StatusLine, format_path
 
 
 class SessionUIMixin:

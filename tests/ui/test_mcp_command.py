@@ -15,7 +15,7 @@ from typing import Any, cast
 
 import pytest
 
-from vtx.tui.commands import CommandsMixin
+from vtx.coding_agent.tui.commands import CommandsMixin
 
 pytestmark = pytest.mark.asyncio
 

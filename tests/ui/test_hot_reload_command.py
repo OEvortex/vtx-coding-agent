@@ -18,10 +18,10 @@ import pytest
 import yaml
 from textual.app import App, ComposeResult
 
-from vtx.tui.chat import ChatLog
-from vtx.tui.commands.reload import ReloadCommands
+from vtx.coding_agent.tui.chat import ChatLog
+from vtx.coding_agent.tui.commands.reload import ReloadCommands
+from vtx.coding_agent.tui.widgets import InfoBar
 from vtx.tui.input import InputBox
-from vtx.tui.widgets import InfoBar
 
 
 class _ReloadApp(ReloadCommands, App):
@@ -240,7 +240,7 @@ class TestReloadIsSafe:
         )
 
         import vtx.core.config as config_mod
-        from vtx.tui.commands import reload as reload_mod
+        from vtx.coding_agent.tui.commands import reload as reload_mod
 
         monkeypatch.setattr(reload_mod, "reload_config", lambda: None)
         monkeypatch.setattr(config_mod.config._parsed, "extensions", [str(ext_dir)], raising=False)

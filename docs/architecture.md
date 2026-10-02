@@ -14,8 +14,8 @@ Vtx is a minimalist coding-agent harness built around a small, transparent runti
 | `vtx.codemode` | Confined script execution: the sandbox, its isolation layers, and the discovery/catalog layer (see [codemode.md](codemode.md)). |
 | `vtx.agent` | The product-neutral agent harness: loop, turn engine, session store, tool registry, prompt/context assembly, extensions, hooks, goals, and the programmatic SDK. |
 | `vtx.mcp` | MCP client: server config, transports (stdio, in-memory, streamable HTTP), tool/resource exposure, OAuth, and the trust prompt. |
-| `vtx.tui` | The Textual terminal UI: chat rendering, input, slash commands, session tree selector. |
-| `vtx.coding_agent` | The product layer: CLI entry point (`coding_agent.cli:main`), headless runner, the concrete filesystem tools and their default registry, and the built-in skills package. |
+| `vtx.tui` | **Base** terminal-UI toolkit: input editing and tab completion, fuzzy matching, overlay lists, LaTeX/formatting helpers, clipboard, styling, and the block renderers for tool calls and results. Knows nothing about the agent, models, sessions, goals, or slash commands. |
+| `vtx.coding_agent` | The product layer: CLI entry point (`coding_agent.cli:main`), headless runner, the concrete filesystem tools and their default registry, the built-in skills package, and its own interface under `coding_agent.tui` (app shell, chat pane, panels, dialogs, slash commands). |
 
 ### Dependency direction
 
@@ -29,7 +29,7 @@ mcp ───────────────────────→  ag
 tui ───────────────────────→  coding_agent
 ```
 
-The harness (`vtx.agent`) never imports `vtx.coding_agent` or `vtx.tui`; product code injects everything engine-side (system-prompt builder, context loader, tool registry, user config knobs). Every remaining upward edge — `agent → mcp`, `agent → tui`, `core → agent`, `codemode → agent` — is a **function-local** import, so no module-level cycle exists and layering stays verifiable. `vtx.core` reaches upward only from `config.py`, which merges user YAML into the harness knobs in `core/harness_config.py` and resolves provider catalogs and subagent limits.
+The harness (`vtx.agent`) never imports `vtx.coding_agent`; product code injects everything engine-side (system-prompt builder, context loader, tool registry, user config knobs). Every remaining upward edge — `agent → mcp`, `agent → tui`, `core → agent`, `codemode → agent` — is a **function-local** import, so no module-level cycle exists and layering stays verifiable. `vtx.core` reaches upward only from `config.py`, which merges user YAML into the harness knobs in `core/harness_config.py` and resolves provider catalogs and subagent limits.
 
 Enforced by `.github/workflows/ci.yml`. The one runtime seam that used to break it — the sub-agent runner, where three call sites re-imported `vtx.coding_agent.tools.task` looking for a divergent `_run_subagent` — is now an explicit `set_subagent_runner()` hook in `vtx.agent.tools.task`. That module re-exported the same function object, so the lookup could never differ; the back-edge existed only to keep old monkeypatches working. `vtx.coding_agent.prompts.rlm` moved to `vtx.agent.prompts.rlm` for the same reason.
 
@@ -37,7 +37,7 @@ The harness used to live at `vtx.ai.agent`, nested inside the LLM package, which
 
 ## Two run surfaces
 
-- **TUI** (`vtx`, `tui.launch.run_tui`) — the interactive Textual app.
+- **TUI** (`vtx`, `coding_agent.tui.launch.run_tui`) — the interactive Textual app.
 - **Headless** (`vtx -p "..."`, `coding_agent.headless`) — one prompt in, text out, exit code reflects the stop reason.
 
 Both drive the same `ConversationRuntime` → `Agent` stack.
@@ -107,7 +107,7 @@ Completion has two halves, and both are load-bearing. `BackgroundTaskManager` ex
 
 Every dispatch passes through `agent.subagents.SubagentScheduler`, a FIFO admission queue capped by `task.max_concurrent` (default 4, `0` = uncapped). A sub-agent over the cap waits for a slot *before* it builds a session or a provider, so "running" and "queued" are real counts.
 
-Both counters, plus a live row per sub-agent (name, description, turns/tool/token counters, current activity), render in the pinned **Agents** panel (`tui/agents_panel.py`) above the editor, fed from the process-wide `tui/goal_agents.REGISTRY`. The registry keys runs by tool-call id, so four concurrent `Explore` agents are four rows. The goal beacon renders the same rows from the same registry while a goal is focused; the chat log keeps only a static dispatch receipt per call.
+Both counters, plus a live row per sub-agent (name, description, turns/tool/token counters, current activity), render in the pinned **Agents** panel (`coding_agent/tui/agents_panel.py`) above the editor, fed from the process-wide `coding_agent/tui/goal_agents.REGISTRY`. The registry keys runs by tool-call id, so four concurrent `Explore` agents are four rows. The goal beacon renders the same rows from the same registry while a goal is focused; the chat log keeps only a static dispatch receipt per call.
 
 ## Compaction
 

@@ -40,31 +40,31 @@ from vtx.agent.tools import get_tool, get_tools_with_extensions
 from vtx.agent.tools_manager import get_tool_path
 from vtx.ai import BaseProvider
 from vtx.ai.base import AuthMode
+from vtx.coding_agent.tui.agent_runner import AgentRunnerMixin
+from vtx.coding_agent.tui.agents_panel import AgentsPanel
+from vtx.coding_agent.tui.chat import ChatLog
+from vtx.coding_agent.tui.commands import CommandsMixin
+from vtx.coding_agent.tui.completion_ui import CompletionUIMixin
+from vtx.coding_agent.tui.extension_ui import TextualExtensionUI
+from vtx.coding_agent.tui.goal_agents import record_subagent_event
+from vtx.coding_agent.tui.goal_ui import GoalWidget
+from vtx.coding_agent.tui.queue_ui import QueueUIMixin
+from vtx.coding_agent.tui.recap import RecapMixin
+from vtx.coding_agent.tui.session_ui import SessionUIMixin
+from vtx.coding_agent.tui.startup import StartupMixin
+from vtx.coding_agent.tui.tree import TreeSelector
+from vtx.coding_agent.tui.widgets import InfoBar, QueueDisplay, StatusLine, format_path
 from vtx.core import ApprovalResponse, AskUserResponse
 from vtx.core.config import config, consume_config_warnings, get_last_selected, set_ponytail
 from vtx.core.version import VERSION, format_version
 from vtx.protocol.types import ImageContent
-from vtx.tui.agent_runner import AgentRunnerMixin
-from vtx.tui.agents_panel import AgentsPanel
 from vtx.tui.ask_user import AskUserDialog
 from vtx.tui.autocomplete import DEFAULT_COMMANDS, SlashCommand
 from vtx.tui.blocks import HandoffLinkBlock, LaunchWarning
-from vtx.tui.chat import ChatLog
-from vtx.tui.commands import CommandsMixin
-from vtx.tui.completion_ui import CompletionUIMixin
-from vtx.tui.extension_ui import TextualExtensionUI
 from vtx.tui.floating_list import FloatingList
-from vtx.tui.goal_agents import record_subagent_event
-from vtx.tui.goal_ui import GoalWidget
 from vtx.tui.input import InputBox
-from vtx.tui.queue_ui import QueueUIMixin
-from vtx.tui.recap import RecapMixin
 from vtx.tui.selection_mode import SelectionMode
-from vtx.tui.session_ui import SessionUIMixin
-from vtx.tui.startup import StartupMixin
 from vtx.tui.styles import get_styles
-from vtx.tui.tree import TreeSelector
-from vtx.tui.widgets import InfoBar, QueueDisplay, StatusLine, format_path
 
 _GIT_BRANCH_REFRESH_INTERVAL_SECONDS = 1.0
 

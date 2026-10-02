@@ -8,6 +8,7 @@ from vtx.agent.loop import Agent, AgentConfig
 from vtx.agent.runtime import ConversationRuntime
 from vtx.agent.session import CompactionEntry, Session
 from vtx.ai.providers.mock import MockProvider
+from vtx.coding_agent.tui.commands import CommandsMixin
 from vtx.core.compaction import is_overflow
 from vtx.core.config import Config
 from vtx.protocol.types import (
@@ -19,7 +20,6 @@ from vtx.protocol.types import (
     Usage,
     UserMessage,
 )
-from vtx.tui.commands import CommandsMixin
 
 # ---------------------------------------------------------------------------
 # is_overflow tests

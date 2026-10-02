@@ -4,9 +4,9 @@ from __future__ import annotations
 
 import pytest
 
+from vtx.coding_agent.tui.widgets import CONTEXT_METER_WIDTH, InfoBar
 from vtx.core.config import config
 from vtx.core.harness_config import get_harness_config
-from vtx.tui.widgets import CONTEXT_METER_WIDTH, InfoBar
 
 
 @pytest.fixture

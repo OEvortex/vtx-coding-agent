@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from typing import Any
 
-from vtx.tui.app import Vtx
+from vtx.coding_agent.tui.app import Vtx
 
 _PROVIDER = object()
 

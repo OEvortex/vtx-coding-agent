@@ -7,7 +7,7 @@ import pytest
 
 from vtx.agent.runtime import ConversationRuntime
 from vtx.agent.session import SessionInfo
-from vtx.tui.app import Vtx
+from vtx.coding_agent.tui.app import Vtx
 from vtx.tui.autocomplete import (
     FilePathProvider,
     PullRequestProvider,

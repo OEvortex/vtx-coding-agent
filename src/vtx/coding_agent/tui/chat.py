@@ -10,6 +10,11 @@ from textual.widgets import Label
 
 from vtx.agent.context.skills import Skill
 from vtx.agent.tools import BaseTool
+from vtx.coding_agent.tui.status_lines import (
+    WITTY_STATUS_LINES,
+    pick_witty_line,
+    subagents_own_the_status_line,
+)
 from vtx.core import ApprovalResponse
 from vtx.core.config import config
 from vtx.core.paths import get_agents_dir
@@ -26,7 +31,6 @@ from vtx.tui.blocks import (
     UserBlock,
 )
 from vtx.tui.input import AskUserInput
-from vtx.tui.status_lines import WITTY_STATUS_LINES, pick_witty_line, subagents_own_the_status_line
 
 __all__ = ["MAX_CHILDREN", "PRUNE_TO", "WITTY_ROTATE_EVERY_TICKS", "WITTY_STATUS_LINES", "ChatLog"]
 

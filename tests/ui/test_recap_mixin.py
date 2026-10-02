@@ -7,8 +7,8 @@ the context builder must skip non-text parts instead of crashing.
 from types import SimpleNamespace
 
 from vtx.agent.session import Session
+from vtx.coding_agent.tui.recap import RecapMixin
 from vtx.protocol.types import ImageContent, TextContent, UserMessage
-from vtx.tui.recap import RecapMixin
 
 
 def _host_with_session(session: Session):

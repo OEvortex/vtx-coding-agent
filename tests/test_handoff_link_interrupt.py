@@ -2,7 +2,7 @@ import inspect
 from types import SimpleNamespace
 from typing import cast
 
-from vtx.tui.app import Vtx
+from vtx.coding_agent.tui.app import Vtx
 from vtx.tui.blocks import HandoffLinkBlock
 
 

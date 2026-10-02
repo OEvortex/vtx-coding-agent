@@ -243,7 +243,7 @@ def main() -> None:
             )
         )
 
-    from vtx.tui.launch import run_tui
+    from vtx.coding_agent.tui.launch import run_tui
 
     run_tui(args)
 

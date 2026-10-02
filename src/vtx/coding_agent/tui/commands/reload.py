@@ -27,10 +27,10 @@ import sys
 from dataclasses import dataclass
 
 from vtx.agent.tools import get_tools_with_extensions
+from vtx.coding_agent.tui.chat import ChatLog
+from vtx.coding_agent.tui.commands.base import CommandSupport
+from vtx.coding_agent.tui.widgets import InfoBar
 from vtx.core.config import config, reload_config
-from vtx.tui.chat import ChatLog
-from vtx.tui.commands.base import CommandSupport
-from vtx.tui.widgets import InfoBar
 
 #: Prefix the extension loader stamps on every module it imports.
 _EXTENSION_MODULE_PREFIX = "vtx_ext_"

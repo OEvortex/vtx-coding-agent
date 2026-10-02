@@ -3,7 +3,7 @@ from unittest.mock import AsyncMock, Mock, patch
 import pytest
 
 from vtx.coding_agent.tools.bash import BashTool
-from vtx.tui.app import Vtx
+from vtx.coding_agent.tui.app import Vtx
 
 
 def test_handle_shell_command_execution():

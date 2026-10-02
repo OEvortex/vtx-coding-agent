@@ -14,8 +14,8 @@ from vtx.agent.extensions import Extension, ExtensionAPI, ExtensionTool
 from vtx.agent.tools.base import BaseTool
 from vtx.coding_agent.agents.api import AgentAPI
 from vtx.coding_agent.agents.loader import load_agent
+from vtx.coding_agent.tui.chat import ChatLog
 from vtx.tui.blocks import ToolBlock
-from vtx.tui.chat import ChatLog
 from vtx.tui.styles import get_styles
 
 # ---------------------------------------------------------------------------

@@ -23,10 +23,10 @@ from vtx.core.config import (
     set_thinking_lines,
 )
 from vtx.core.themes import get_theme_options
+from vtx.tui.floating_list import FloatingList, ListItem
+from vtx.tui.selection_mode import SelectionMode
 
 from ..chat import ChatLog
-from ..floating_list import FloatingList, ListItem
-from ..selection_mode import SelectionMode
 from ..widgets import InfoBar
 from .base import CommandSupport
 
