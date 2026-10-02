@@ -21,6 +21,7 @@ from vtx.ai.agent.codemode import (
     adapt_tools,
     base_tool_schema,
 )
+from vtx.ai.agent.codemode.types import CodemodeTool
 from vtx.ai.agent.tools import BaseTool
 from vtx.core.types import ToolResult
 
@@ -387,3 +388,51 @@ async def test_search_finds_a_tool_the_catalog_never_listed():
     # JSON, so a tuple would arrive as a list -- the same trap the store is
     # careful about, and the reason this asserts a list.
     assert result.value == [["mcp__docs__rare", False]]
+
+
+@pytest.mark.parametrize(
+    "schema",
+    [
+        {"content": [{"type": "text"}]},  # envelope, no structuredContent
+        {"type": "object", "properties": {"n": {"type": "integer"}}},  # not one
+        {},  # empty
+        "oops",  # not even a schema object
+        [1, 2],
+        None,
+    ],
+)
+def test_a_hostile_output_schema_degrades_instead_of_raising(schema):
+    """An `output_schema` arrives from a third-party server, unvalidated.
+
+    A tool declaring `output_schema: "oops"` must render as `Any`, not raise out
+    of `render_signature` -- the declaration is built per turn, so a raise there
+    would take down every request from a session with a badly-behaved server
+    connected, rather than that one tool's description.
+    """
+    from vtx.ai.agent.codemode.declarations import render_signature
+
+    async def noop(args, signal):
+        return None
+
+    text = render_signature(
+        CodemodeTool(name="remote", description="R", execute=noop, output_schema=schema)
+    )
+    assert text.startswith("def tools.remote(")
+    assert "-> " in text
+
+
+def test_a_string_structured_content_still_renders_the_envelope():
+    # Present but the wrong shape: the envelope is real, so it is named, and the
+    # inner type falls back rather than inventing one.
+    from vtx.ai.agent.codemode.declarations import render_signature
+    from vtx.mcp.tool import mcp_result_schema
+
+    async def noop(args, signal):
+        return None
+
+    text = render_signature(
+        CodemodeTool(
+            name="remote", description="R", execute=noop, output_schema=mcp_result_schema("oops")
+        )
+    )
+    assert "-> CallToolResult:" in text

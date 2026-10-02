@@ -414,27 +414,6 @@ def is_mcp_result_schema(schema: object) -> bool:
     return isinstance(items, dict) and items.get("type") == "object"
 
 
-def structured_content_schema(schema: object) -> dict[str, Any] | bool | None:
-    """The ``structuredContent`` schema inside a ``CallToolResult`` envelope.
-
-    ``True`` when the tool declares the field but gives it no shape, and
-    ``None`` when the schema is not a ``CallToolResult`` at all. The shape is
-    re-checked here rather than inferred from :func:`is_mcp_result_schema`,
-    because a predicate that returns a bool does not narrow its argument.
-    """
-    if not isinstance(schema, dict):
-        return None
-    properties = schema.get("properties")
-    if not isinstance(properties, dict) or not is_mcp_result_schema(schema):
-        return None
-    declared = properties.get("structuredContent")
-    if isinstance(declared, bool):
-        return declared
-    if isinstance(declared, dict):
-        return {str(key): value for key, value in declared.items()}
-    return True
-
-
 def script_value(result: CallToolResult) -> dict[str, Any] | None:
     """The ``CallToolResult`` a script receives, with protocol plumbing removed.
 
@@ -468,6 +447,5 @@ __all__ = [
     "mcp_result_schema",
     "save_output_file",
     "script_value",
-    "structured_content_schema",
     "truncate_middle",
 ]

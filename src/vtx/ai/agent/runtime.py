@@ -107,6 +107,20 @@ class TreeNavigationResult:
     editor_text: str | None = None
 
 
+def _script_callable(tool: BaseTool) -> bool:
+    """Whether an MCP tool is reachable at all, i.e. its exposure is not `hidden`.
+
+    A built-in has no exposure and is always reachable. A tool that a
+    configuration calls unreachable should not be carried in the session's list
+    at all: every consumer already excludes it, but leaving it in place means
+    the next consumer has to remember.
+    """
+    from vtx.mcp.exposure import SCRIPT_CALLABLE
+
+    exposure = getattr(tool, "exposure", None)
+    return exposure is None or exposure in SCRIPT_CALLABLE
+
+
 def _harness_codemode() -> Any:
     """The harness's own ``codemode`` tool, or ``None``.
 
@@ -372,8 +386,6 @@ class ConversationRuntime:
             always_keep=always_keep,
         )
         self.tools = new_tools
-        if self.agent is not None:
-            self.agent.tools = self.tools
         # The filter rebuilt the set from the built-in and extension pools, so
         # the MCP tools have to be merged back in.
         self._sync_mcp_tools()
@@ -416,7 +428,7 @@ class ConversationRuntime:
         new_prompt = build_system_prompt(
             self.cwd,
             context=self.context,
-            tools=self.tools,
+            tools=self.declared_tools(),
             extra_instructions=extra,
             extra_instructions_mode=mode,
             skills=agent_skills,
@@ -550,14 +562,14 @@ class ConversationRuntime:
             return build_system_prompt(
                 self.cwd,
                 context=context,
-                tools=self.tools,
+                tools=self.declared_tools(),
                 extra_instructions=extra,
                 extra_instructions_mode=mode,
             )
         return (session.system_prompt if session else None) or build_system_prompt(
             self.cwd,
             context=context,
-            tools=self.tools,
+            tools=self.declared_tools(),
             extra_instructions=extra,
             extra_instructions_mode=mode,
         )
@@ -661,17 +673,50 @@ class ConversationRuntime:
         rather than put through it. A profile pinning an explicit
         ``tools_allow`` is describing the built-in surface; silently deleting
         every MCP tool because of it would be surprising and hard to diagnose.
+
+        What *is* filtered here is exposure, and it is the whole reason the
+        taxonomy exists. A ``codemode`` or ``deferred`` tool is not declared to
+        the model as an ordinary tool call -- it is reachable only by writing a
+        script, or by finding it with ``tool_search``. Leaving those declared
+        would mean a two-hundred-tool server still costs two hundred tool
+        definitions every turn, which is precisely the cost the setting was
+        introduced to avoid. Only ``direct`` (and a built-in, which has no
+        exposure) stays in the declared set.
+
+        A ``hidden`` tool is dropped from ``self.tools`` outright rather than
+        filtered by each consumer. Every consumer -- the declared set, the
+        sandbox, ``tool_search`` -- already excludes it, but a tool this
+        configuration calls unreachable should not be sitting in the session's
+        tool list for some future consumer to forget to check.
         """
-        # Drop the previous generation by name, so a removed server's tools
-        # actually leave the set instead of accumulating.
+
         kept = [t for t in self.tools if t.name not in self._mcp_tool_names]
-        self.tools = kept + list(self._mcp_tools)
+        # `SCRIPT_CALLABLE` covers every exposure except `hidden`, `direct`
+        # included: a tool the model can call directly can also be composed into
+        # a script.
+        reachable = [t for t in self._mcp_tools if _script_callable(t)]
+        self.tools = kept + reachable
+        # Names of *all* the server's tools, reachable or not, so that a tool
+        # which becomes hidden later is still cleaned out of the live set.
         self._mcp_tool_names = {t.name for t in self._mcp_tools}
         self._wire_codemode()
         if self.agent is not None:
-            self.agent.tools = self.tools
+            self.agent.tools = self.declared_tools()
         if self.agent is not None and self.context is not None:
             self._rebuild_system_prompt()
+
+    def declared_tools(self) -> list[BaseTool]:
+        """The tools sent to the provider, which is not the same as the pool.
+
+        Every tool this session can reach, minus the ones whose exposure says the
+        model should not be offered them directly. A ``codemode`` tool is still
+        in ``self.tools`` -- a script can call it, ``tool_search`` can find it,
+        and ``codemode`` lists it -- it is simply not a tool the model may invoke
+        by name.
+        """
+        from vtx.mcp.exposure import declared_to_model
+
+        return [t for t in self.tools if declared_to_model(getattr(t, "exposure", None))]
 
     def _wire_codemode(self) -> None:
         """Point the ``codemode`` tool at this session's live tool set.
@@ -731,36 +776,23 @@ class ConversationRuntime:
 
         The prompt is rebuilt because the newly-loaded tool's description has to
         be in the *next* request, not the one that searched for it.
+
+        Only a tool already in ``self.tools`` is promoted. This used to widen the
+        lookup to every registered tool, which meant a search could pull back one
+        the active agent profile had denied by name -- the model asking for it by
+        description was enough to un-deny it. The pool a search draws from is
+        already this set, so a match is by construction something this session is
+        allowed to have.
         """
-        by_name = {t.name: t for t in self._all_known_tools()}
-        additions = [by_name[name] for name in names if name in by_name]
-        if not additions:
-            return
-        known = {t.name for t in self.tools}
-        fresh = [t for t in additions if t.name not in known]
+        allowed = {t.name: t for t in self.tools}
+        fresh = [allowed[name] for name in names if name in allowed]
         if not fresh:
             return
         self.tools = [*self.tools, *fresh]
         if self.agent is not None:
-            self.agent.tools = self.tools
+            self.agent.tools = self.declared_tools()
         if self.agent is not None and self.context is not None:
             self._rebuild_system_prompt()
-
-    def _all_known_tools(self) -> list[BaseTool]:
-        """Every tool this session could offer: built-ins, extensions, and MCP.
-
-        The pool ``tool_search`` draws from. Wider than the active set on
-        purpose -- a tool that is registered but filtered out of the current
-        agent profile should not be promoted by a search, so the caller filters
-        this against the profile; the MCP half is always in.
-        """
-        from vtx.ai.agent.tools import get_all_tools
-
-        pool: dict[str, BaseTool] = {name: tool for name, tool in get_all_tools().items()}
-        for ext in self._agent_extensions:
-            pool.update(ext.tools)
-        pool.update({t.name: t for t in self._mcp_tools})
-        return list(pool.values())
 
     def _unwire_codemode(self) -> None:
         """Release the ``codemode`` tool's wiring, if this runtime still holds it.
@@ -849,7 +881,8 @@ class ConversationRuntime:
         context = context or Context.load(self.cwd)
         agent = Agent(
             provider=provider,
-            tools=self.tools,
+            # The declared set, not the pool: `Agent` is what sends the request.
+            tools=self.declared_tools(),
             session=session,
             cwd=self.cwd,
             context=context,
@@ -1407,7 +1440,7 @@ class ConversationRuntime:
 
         self.agent.provider = self.provider
         self.agent.session = self.session
-        self.agent.tools = self.tools
+        self.agent.tools = self.declared_tools()
         self._apply_model_info(self.agent)
         return self.agent
 
@@ -1443,7 +1476,7 @@ class ConversationRuntime:
         if tools is not None:
             self.tools = tools
             if self.agent is not None:
-                self.agent.tools = tools
+                self.agent.tools = self.declared_tools()
             self._wire_codemode()
         if extensions is not None:
             self.extensions = extensions

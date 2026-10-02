@@ -54,18 +54,31 @@ A connected server can publish far more tools than fit in a prompt. Declaring
 them all is unaffordable; declaring none makes the integration worthless. So
 each server says how its tools are offered, and each tool can override it.
 
-| `exposure` | Declared to the model | Callable from a script | Listed for the model |
-| --- | --- | --- | --- |
-| `direct` | yes | yes | — |
-| `codemode` | no | yes | **yes** |
-| `codemode-deferred` | no | yes | no |
-| `deferred` | no | yes | no, but `tool_search` finds it |
-| `hidden` | no | no | no |
+| `exposure` | Declared to the model | Callable from a script | Listed in the codemode catalog | Found by `tool_search` |
+| --- | --- | --- | --- | --- |
+| `direct` | **yes** | yes | no | no |
+| `codemode` | no | yes | **yes** | yes |
+| `codemode-deferred` | no | yes | no | yes |
+| `deferred` | no | yes | no | yes |
+| `hidden` | no | **no** | no | no |
 
 `codemode` is the default. It is the setting that makes a large tool set usable:
 the model writes one script that calls several of them, pays for one turn, and
-the intermediate results never enter the transcript at all. See
-[codemode](codemode.md).
+the intermediate results never enter the transcript at all. A `codemode` tool is
+*not* declared as a tool call the model may invoke by name — that is the point,
+because two hundred declared tools cost two hundred definitions on every turn.
+See [codemode](codemode.md).
+
+Two rows are worth reading closely:
+
+- **`direct` is still callable from a script.** A model that needs six of a
+  server's tools in one turn should not have to pay six. Declared directly *and*
+  composable is not a conflict. It is left out of the codemode catalog, though,
+  since the model already has it in front of it.
+- **`hidden` means unreachable, not merely unlisted.** A `hidden` tool is not
+  declared, not callable from a script, and not findable by `tool_search`. It
+  is dropped from the session's tool list entirely, so no future code path can
+  reach it by forgetting to check.
 
 `tool_exposure` overrides per tool, and is what makes a broad server usable with
 care. Keys are tool names as the server offers them, or `*` patterns:

@@ -20,6 +20,8 @@ from pathlib import Path
 import pytest
 
 from vtx.ai.agent.codemode import CodemodeSandbox, adapt_tools
+from vtx.ai.agent.extensions import EventBus
+from vtx.ai.agent.runtime import ConversationRuntime
 from vtx.ai.agent.tools import get_all_tools
 from vtx.mcp.config import LoadedMcpConfig, validate_mcp_server_config
 from vtx.mcp.manager import McpManager
@@ -121,8 +123,6 @@ async def test_a_hidden_tool_is_callable_by_nobody(tmp_path):
 async def test_the_harness_tool_reaches_mcp_tools_through_the_runtime(tmp_path):
     # The end-to-end claim: a session with a connected server, using the
     # registered `codemode` tool, can call that server's tools from a script.
-    from vtx.ai.agent.extensions import EventBus
-    from vtx.ai.agent.runtime import ConversationRuntime
     from vtx.ai.agent.tools.codemode import CodemodeParams
 
     runtime = ConversationRuntime(
@@ -154,3 +154,171 @@ async def test_the_harness_tool_reaches_mcp_tools_through_the_runtime(tmp_path):
         assert result.success, result.result
     finally:
         await runtime.close()
+
+
+async def test_a_codemode_exposed_tool_is_not_declared_to_the_model(tmp_path, monkeypatch):
+    """The taxonomy's whole purpose, asserted end to end.
+
+    Everything else about the wiring can be right while this is wrong: the tool
+    reaches a script, appears in the catalog, and is findable -- and the model
+    is still sent two hundred tool definitions per turn, which is the cost the
+    exposure setting exists to remove.
+    """
+    from vtx.ai.agent.tools import get_tool_definitions
+
+    runtime = ConversationRuntime(
+        cwd=str(tmp_path), model="gpt-test", tools=[], extensions=EventBus()
+    )
+    try:
+        manager = runtime.ensure_mcp_manager()
+        parsed, error = validate_mcp_server_config(
+            "echo",
+            {"command": sys.executable, "args": [str(STDIO_SERVER)], "exposure": "codemode"},
+        )
+        assert error is None, error
+        manager.config = LoadedMcpConfig(servers=[parsed])
+        manager._build_servers(manager.config)
+        runtime.sync_mcp_tools(await manager.connect_all())
+
+        declared = {d.name for d in get_tool_definitions(runtime.declared_tools())}
+        assert "mcp__echo__echo" not in declared
+        # ...and still in the pool, so a script and a search can both reach it.
+        assert "mcp__echo__echo" in {t.name for t in runtime.tools}
+    finally:
+        await runtime.close()
+
+
+async def test_a_direct_exposed_tool_is_declared_and_still_callable(tmp_path, monkeypatch):
+    """Declared directly *and* composable is not a conflict.
+
+    A model needing six of a server's tools in one turn should not have to pay
+    six, so `direct` does not withdraw a tool from the sandbox. It is only left
+    out of the codemode catalog, since the model already has it in front of it.
+    """
+    from vtx.ai.agent.tools import get_tool_definitions
+
+    runtime = ConversationRuntime(
+        cwd=str(tmp_path), model="gpt-test", tools=[], extensions=EventBus()
+    )
+    try:
+        manager = runtime.ensure_mcp_manager()
+        parsed, error = validate_mcp_server_config(
+            "echo", {"command": sys.executable, "args": [str(STDIO_SERVER)], "exposure": "direct"}
+        )
+        assert error is None, error
+        manager.config = LoadedMcpConfig(servers=[parsed])
+        manager._build_servers(manager.config)
+        runtime.sync_mcp_tools(await manager.connect_all())
+
+        declared = {d.name for d in get_tool_definitions(runtime.declared_tools())}
+        assert "mcp__echo__echo" in declared
+
+        codemode = get_all_tools()["codemode"]
+        assert "mcp__echo__echo" in {t.name for t in codemode.session_tools()}
+        # Not re-listed: the model already has it.
+        assert "mcp__echo__echo" not in codemode.build_description()
+    finally:
+        await runtime.close()
+
+
+async def test_a_per_tool_override_beats_the_server_exposure(tmp_path, monkeypatch):
+    """The documented shape, through the real parser and a real server.
+
+    `{"*": "direct", "echo": "codemode"}` has to resolve as written: the exact
+    name beats the pattern, so the one tool the operator wants composed arrives
+    through a script rather than as its own tool definition.
+    """
+    from vtx.ai.agent.tools import get_tool_definitions
+
+    runtime = ConversationRuntime(
+        cwd=str(tmp_path), model="gpt-test", tools=[], extensions=EventBus()
+    )
+    try:
+        manager = runtime.ensure_mcp_manager()
+        parsed, error = validate_mcp_server_config(
+            "echo",
+            {
+                "command": sys.executable,
+                "args": [str(STDIO_SERVER)],
+                "exposure": "direct",
+                "tool_exposure": {"*": "direct", "echo": "codemode"},
+            },
+        )
+        assert error is None, error
+        manager.config = LoadedMcpConfig(servers=[parsed])
+        manager._build_servers(manager.config)
+        tools = await manager.connect_all()
+        runtime.sync_mcp_tools(tools)
+
+        assert [t.exposure for t in tools if t.name == "mcp__echo__echo"] == ["codemode"]
+        declared = {d.name for d in get_tool_definitions(runtime.declared_tools())}
+        assert "mcp__echo__echo" not in declared
+    finally:
+        await runtime.close()
+
+
+async def test_a_hidden_tool_leaves_the_session_tool_list_entirely(tmp_path, monkeypatch):
+    """Unreachable, not merely unlisted.
+
+    Every consumer already excludes a hidden tool, so a version that kept it in
+    the list and filtered on the way out would behave identically today. It is
+    dropped at the source so the next consumer cannot reach one by forgetting.
+    """
+    runtime = ConversationRuntime(
+        cwd=str(tmp_path), model="gpt-test", tools=[], extensions=EventBus()
+    )
+    try:
+        manager = runtime.ensure_mcp_manager()
+        parsed, error = validate_mcp_server_config(
+            "echo", {"command": sys.executable, "args": [str(STDIO_SERVER)], "exposure": "hidden"}
+        )
+        assert error is None, error
+        manager.config = LoadedMcpConfig(servers=[parsed])
+        manager._build_servers(manager.config)
+        tools = await manager.connect_all()
+        runtime.sync_mcp_tools(tools)
+
+        assert "mcp__echo__echo" not in {t.name for t in runtime.tools}
+        assert "mcp__echo__echo" not in {t.name for t in runtime.declared_tools()}
+        assert "mcp__echo__echo" not in {
+            t.name for t in get_all_tools()["codemode"].session_tools()
+        }
+    finally:
+        await runtime.close()
+
+
+async def test_a_becoming_hidden_is_cleaned_out_of_a_live_session(tmp_path, monkeypatch):
+    """The `list_changed` path, which is the one that actually runs.
+
+    A server that drops or narrows a tool while connected must not leave the old
+    one behind, or a tool the operator just hid stays callable for the rest of
+    the session.
+    """
+    runtime = ConversationRuntime(
+        cwd=str(tmp_path), model="gpt-test", tools=[], extensions=EventBus()
+    )
+    try:
+        manager = runtime.ensure_mcp_manager()
+        parsed, error = validate_mcp_server_config(
+            "echo",
+            {"command": sys.executable, "args": [str(STDIO_SERVER)], "exposure": "codemode"},
+        )
+        assert error is None, error
+        manager.config = LoadedMcpConfig(servers=[parsed])
+        manager._build_servers(manager.config)
+        runtime.sync_mcp_tools(await manager.connect_all())
+        assert "mcp__echo__echo" in {t.name for t in runtime.tools}
+
+        # Same tool, newly hidden.
+
+        runtime._mcp_tools = [replace_tool_hidden(t) for t in runtime._mcp_tools]
+        runtime.sync_mcp_tools(runtime._mcp_tools)
+        assert "mcp__echo__echo" not in {t.name for t in runtime.tools}
+    finally:
+        await runtime.close()
+
+
+def replace_tool_hidden(tool):
+    """The same tool object with a narrowed exposure, as a reload would build."""
+    tool.exposure = "hidden"
+    return tool

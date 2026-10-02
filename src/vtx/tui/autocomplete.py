@@ -6,14 +6,15 @@ completion types (slash commands, file paths, sessions, etc.).
 """
 
 import os
+import re
 import subprocess
 from abc import ABC, abstractmethod
 from collections.abc import Sequence
 from dataclasses import dataclass
-from functools import lru_cache
 
 from vtx.core.gh_cli import PullRequest, is_available, list_pull_requests
 from vtx.tui.floating_list import ListItem
+from vtx.tui.fuzzy import fuzzy_filter, fuzzy_match
 
 
 @dataclass
@@ -24,6 +25,10 @@ class CompletionResult:
 
 
 class AutocompleteProvider(ABC):
+    #: Providers that shell out (fd, gh) set this so the input box runs
+    #: their suggestions off the event loop and debounces keystrokes.
+    slow: bool = False
+
     @property
     @abstractmethod
     def trigger_chars(self) -> set[str]: ...
@@ -47,74 +52,6 @@ class AutocompleteProvider(ABC):
         ...
 
 
-class FuzzyMatcher:
-    def __init__(self, case_sensitive: bool = False) -> None:
-        self.case_sensitive = case_sensitive
-
-    def match(self, query: str, candidate: str) -> tuple[float, Sequence[int]]:
-        """
-        Match query against candidate.
-
-        Returns:
-            Tuple of (score, list of matching indices). (0, []) for no match.
-        """
-        if not query:
-            return (1.0, [])
-
-        if not self.case_sensitive:
-            query = query.lower()
-            candidate = candidate.lower()
-
-        positions = []
-        idx = 0
-        for char in query:
-            idx = candidate.find(char, idx)
-            if idx == -1:
-                return (0.0, [])
-            positions.append(idx)
-            idx += 1
-
-        score = self._score(candidate, positions)
-        return (score, positions)
-
-    @classmethod
-    @lru_cache(maxsize=1024)
-    def get_first_letters(cls, candidate: str) -> frozenset[int]:
-        indices = set()
-        word_start = True
-        for i, char in enumerate(candidate):
-            if char.isalnum():
-                if word_start:
-                    indices.add(i)
-                    word_start = False
-            else:
-                word_start = True
-        return frozenset(indices)
-
-    def _score(self, candidate: str, positions: Sequence[int]) -> float:
-        if not positions:
-            return 0.0
-
-        score = float(len(positions))
-        first_letters = self.get_first_letters(candidate)
-        first_letter_matches = len(positions) - len(set(positions) - first_letters)
-        score += first_letter_matches * 0.5
-
-        groups = 1
-        for i in range(1, len(positions)):
-            if positions[i] != positions[i - 1] + 1:
-                groups += 1
-
-        if len(positions) > 1:
-            group_factor = (len(positions) - groups + 1) / len(positions)
-            score *= 1 + group_factor
-
-        if positions[0] == 0:
-            score *= 1.2
-
-        return score
-
-
 @dataclass
 class SlashCommand:
     name: str
@@ -127,7 +64,6 @@ class SlashCommand:
 class SlashCommandProvider(AutocompleteProvider):
     def __init__(self, commands: list[SlashCommand] | None = None) -> None:
         self._commands = commands or []
-        self._matcher = FuzzyMatcher(case_sensitive=False)
 
     @property
     def commands(self) -> list[SlashCommand]:
@@ -185,7 +121,7 @@ class SlashCommandProvider(AutocompleteProvider):
         # Filter and score commands
         scored = []
         for cmd in available_commands:
-            score, _ = self._matcher.match(query, cmd.name)
+            score, _ = fuzzy_match(query, cmd.name)
             if score > 0 or not query:
                 scored.append((score, cmd))
 
@@ -226,9 +162,10 @@ class SlashCommandProvider(AutocompleteProvider):
 
 
 class PullRequestProvider(AutocompleteProvider):
+    slow = True
+
     def __init__(self, cwd: str = ".") -> None:
         self._cwd = cwd
-        self._matcher = FuzzyMatcher(case_sensitive=False)
 
     def set_cwd(self, cwd: str) -> None:
         self._cwd = cwd
@@ -262,7 +199,7 @@ class PullRequestProvider(AutocompleteProvider):
         for pr in list_pull_requests(self._cwd):
             label = f"#{pr.number} {pr.branch}"
             haystack = f"{label} {pr.title}"
-            score, _ = self._matcher.match(query, haystack)
+            score, _ = fuzzy_match(query, haystack)
             if score > 0 or not query:
                 scored.append((score, pr, label))
         scored.sort(key=lambda item: (-item[0], item[1].number))
@@ -287,10 +224,11 @@ class PullRequestProvider(AutocompleteProvider):
 
 
 class FilePathProvider(AutocompleteProvider):
+    slow = True
+
     def __init__(self, cwd: str = ".", fd_path: str | None = None) -> None:
         self._cwd = cwd
         self._fd_path = fd_path
-        self._matcher = FuzzyMatcher(case_sensitive=False)
         self._cached_paths: list[str] = []
 
     def set_cwd(self, cwd: str) -> None:
@@ -360,9 +298,29 @@ class FilePathProvider(AutocompleteProvider):
         return CompletionResult(items=items, prefix=prefix, replace_start=at_pos)
 
     def _get_paths(self, query: str) -> list[str]:
-        if self._fd_path:
-            return self._query_fd(query)
-        return self._fuzzy_filter(query)
+        paths = self._query_fd(query) if self._fd_path else self._fuzzy_filter(query)
+        # Directories first so descending into one stays reachable without
+        # scrolling; then shallowest, shortest, alphabetical.
+        return sorted(paths, key=lambda p: (not p.endswith("/"), p.count("/"), len(p), p))
+
+    @staticmethod
+    def _fd_query(query: str) -> str:
+        """Turn a typed path fragment into an fd regex.
+
+        fd matches its argument as a regex against the whole path, so a
+        literal ``src/vex`` matches nothing (``src/vtx`` does not contain it).
+        Escaping the separators lets each segment stand for a run of
+        characters instead, which is what the user meant. Ported from pi-mono.
+        """
+        normalized = query.replace(os.sep, "/")
+        if "/" not in normalized:
+            return re.escape(normalized)
+        trailing = normalized.endswith("/")
+        segments = [re.escape(s) for s in normalized.strip("/").split("/") if s]
+        if not segments:
+            return normalized
+        pattern = "[\\\\/]".join(segments)
+        return pattern + "[\\\\/]" if trailing else pattern
 
     def _query_fd(self, query: str) -> list[str]:
         fd_path = self._fd_path
@@ -381,7 +339,7 @@ class FilePathProvider(AutocompleteProvider):
                 "-t",
                 "d",
             )
-            cmd = (*cmd, query) if query else (*cmd, ".")
+            cmd = (*cmd, self._fd_query(query)) if query else (*cmd, ".")
 
             result = subprocess.run(
                 cmd, cwd=self._cwd, capture_output=True, text=True, timeout=0.3
@@ -397,15 +355,9 @@ class FilePathProvider(AutocompleteProvider):
     def _fuzzy_filter(self, query: str) -> list[str]:
         if not query:
             return self._cached_paths[:50]
-
-        scored = []
-        for path in self._cached_paths:
-            score, _ = self._matcher.match(query, path)
-            if score > 0:
-                scored.append((score, path))
-
-        scored.sort(key=lambda x: -x[0])
-        return [p for _, p in scored[:50]]
+        # Multi-token: ``@src vtx`` narrows on both parts instead of
+        # failing to match the literal space.
+        return fuzzy_filter(self._cached_paths, query, lambda p: p)[:50]
 
     def apply_completion(
         self, text: str, cursor_col: int, item: ListItem, prefix: str

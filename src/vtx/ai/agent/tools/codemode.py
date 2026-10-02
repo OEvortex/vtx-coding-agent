@@ -63,6 +63,19 @@ def _exposure_of(tool: BaseTool) -> str | None:
     return getattr(tool, "exposure", None)
 
 
+def _reachable_from_script(tool: BaseTool) -> bool:
+    """Whether a script may call this tool at all.
+
+    A built-in has no exposure and is always reachable. An MCP tool is reachable
+    only when its exposure says so, and ``hidden`` is the one value that means no
+    -- everything else is either listed or findable.
+    """
+    from vtx.mcp.exposure import SCRIPT_CALLABLE
+
+    exposure = _exposure_of(tool)
+    return exposure is None or exposure in SCRIPT_CALLABLE
+
+
 def _accepted_kwargs(tool: BaseTool, cancel_event: asyncio.Event | None) -> dict[str, Any]:
     """Only the kwargs ``tool.execute`` actually accepts.
 
@@ -238,13 +251,19 @@ class CodemodeTool(BaseTool):
         point of the exposure taxonomy: an MCP server's tools reach the model
         through a script rather than through the transcript, because a connected
         server can offer more tools than fit in a prompt.
+
+        A tool marked ``hidden`` is excluded here, not merely unlisted. It is the
+        one exposure that means *unreachable*; a tool that can still be called by
+        name from inside a script is not hidden, it is just unadvertised, and
+        treating the two the same would make the setting a suggestion that a
+        model defeats by reading its own declarations.
         """
         from vtx.ai.agent.codemode.integration import adapt_tools
         from vtx.mcp.exposure import SCRIPT_LISTED
 
         source = self.tool_source
         tools = list(source()) if source is not None else list(_registered_tools())
-        selected = [t for t in tools if t.name != CODEMODE_TOOL_NAME]
+        selected = [t for t in tools if t.name != CODEMODE_TOOL_NAME and _reachable_from_script(t)]
         return adapt_tools(
             selected,
             invoke=self._invoke,

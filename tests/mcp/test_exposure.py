@@ -11,7 +11,9 @@ from __future__ import annotations
 import pytest
 
 from vtx.mcp.exposure import (
+    DECLARED_TO_MODEL,
     EXPOSURES,
+    SCRIPT_CALLABLE,
     needs_script_reach,
     normalize_exposure,
     tool_exposure,
@@ -124,3 +126,70 @@ def test_every_exposure_is_a_known_string():
 @pytest.mark.parametrize("bad", [None, 1, [], {}, "codemode "])
 def test_normalize_rejects_non_exposures(bad):
     assert normalize_exposure(bad) is None
+
+
+def test_the_package_re_exports_what_a_host_needs():
+    """A TUI filter or a profile check should not have to reach into a submodule.
+
+    The names are re-exported so a host making its own exposure decision reads
+    the same taxonomy the runtime does, rather than re-deriving it and drifting.
+    """
+    import vtx.mcp as mcp
+
+    missing = [name for name in mcp.__all__ if not hasattr(mcp, name)]
+    assert missing == []
+
+    assert mcp.EXPOSURES == EXPOSURES
+    assert mcp.SCRIPT_CALLABLE == SCRIPT_CALLABLE
+    assert mcp.DECLARED_TO_MODEL == DECLARED_TO_MODEL
+    # A built-in has no exposure and is declared, whatever else changes.
+    assert mcp.declared_to_model(None) is True
+    assert mcp.declared_to_model("codemode") is False
+
+
+# ---- patterns must survive the config parser -----------------------------
+
+
+def test_a_wildcard_key_is_accepted_by_the_parser():
+    """`{"delete_*": "hidden"}` is the documented way to make a broad server
+    usable, so a validator that rejects it as a malformed key makes the
+    documentation a lie. The whole resolution machinery is unreachable if the
+    only way to spell a pattern is refused at the front door.
+    """
+    from vtx.mcp.config import validate_mcp_server_config
+
+    config, error = validate_mcp_server_config(
+        "docs",
+        {
+            "url": "https://example.com/mcp",
+            "exposure": "codemode",
+            "tool_exposure": {"delete_*": "hidden", "search": "direct"},
+        },
+    )
+    assert error is None, error
+    assert config is not None
+    assert config.exposure_of("delete_repo") == "hidden"
+    assert config.exposure_of("search") == "direct"
+    assert config.exposure_of("read_repo") == "codemode"
+
+
+@pytest.mark.parametrize("key", ["*", "delete_*", "get_?", "get_[a-z]*", "a-b", "x1"])
+def test_valid_pattern_keys_are_accepted(key):
+    from vtx.mcp.config import validate_mcp_server_config
+
+    config, error = validate_mcp_server_config(
+        "s", {"command": "x", "tool_exposure": {key: "hidden"}}
+    )
+    assert error is None, (key, error)
+    assert config is not None and config.tool_exposure == {key: "hidden"}
+
+
+@pytest.mark.parametrize("key", ["has space", "a.b", "quote'", "semi;colon"])
+def test_keys_that_are_neither_a_name_nor_a_pattern_are_rejected(key):
+    from vtx.mcp.config import validate_mcp_server_config
+
+    config, error = validate_mcp_server_config(
+        "s", {"command": "x", "tool_exposure": {key: "hidden"}}
+    )
+    assert config is None
+    assert error is not None and "tool name or pattern" in error

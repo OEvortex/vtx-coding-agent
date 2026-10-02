@@ -22,6 +22,7 @@ client directly when you want one connection and no tool wiring::
     await client.close()
 """
 
+from . import exposure
 from .auth import AuthProvider, UnauthorizedContext
 from .client import (
     DEFAULT_REQUEST_TIMEOUT_MS,
@@ -38,6 +39,16 @@ from .config import (
     validate_mcp_server_config,
 )
 from .content import LlmContent, split_content, to_tool_content
+from .exposure import (
+    DECLARED_TO_MODEL,
+    EXPOSURES,
+    SCRIPT_CALLABLE,
+    SCRIPT_DISCOVERABLE,
+    SCRIPT_LISTED,
+    declared_to_model,
+    normalize_exposure,
+    tool_exposure,
+)
 from .jsonrpc import (
     JSON_RPC_INTERNAL_ERROR,
     JSON_RPC_INVALID_PARAMS,
@@ -81,8 +92,10 @@ from .types import (
 )
 
 __all__ = [
+    "DECLARED_TO_MODEL",
     "DEFAULT_MAX_MESSAGE_BYTES",
     "DEFAULT_REQUEST_TIMEOUT_MS",
+    "EXPOSURES",
     "JSON_RPC_INTERNAL_ERROR",
     "JSON_RPC_INVALID_PARAMS",
     "JSON_RPC_INVALID_REQUEST",
@@ -91,6 +104,9 @@ __all__ = [
     "LATEST_PROTOCOL_VERSION",
     "MAX_LIST_PAGES",
     "MCP_OUTPUT_MAX_BYTES",
+    "SCRIPT_CALLABLE",
+    "SCRIPT_DISCOVERABLE",
+    "SCRIPT_LISTED",
     "SUPPORTED_PROTOCOL_VERSIONS",
     "AuthProvider",
     "CallToolResult",
@@ -134,9 +150,13 @@ __all__ = [
     "UnauthorizedContext",
     "create_in_memory_transport_pair",
     "create_mcp_tool_name",
+    "declared_to_model",
+    "exposure",
     "load_mcp_config",
+    "normalize_exposure",
     "parse_jsonrpc_message",
     "split_content",
     "to_tool_content",
+    "tool_exposure",
     "validate_mcp_server_config",
 ]

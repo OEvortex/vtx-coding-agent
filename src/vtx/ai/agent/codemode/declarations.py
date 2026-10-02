@@ -252,7 +252,7 @@ def type_name(schema: Mapping[str, Any]) -> str:
     return "Any"
 
 
-def is_mcp_result_schema(schema: Mapping[str, Any]) -> bool:
+def is_mcp_result_schema(schema: object) -> bool:
     """Whether ``schema`` is an MCP ``CallToolResult`` envelope.
 
     Recognized structurally: an array-of-object ``content``, a boolean
@@ -260,7 +260,14 @@ def is_mcp_result_schema(schema: Mapping[str, Any]) -> bool:
     module stays free of any dependency on :mod:`vtx.mcp` -- the dependency
     layering puts ``vtx.mcp`` above ``vtx.ai``, and a protocol marker does not
     justify inverting it. ``vtx.mcp`` builds the shape; this recognizes it.
+
+    Takes ``object`` rather than a ``Mapping`` because the value arrives from a
+    JSON schema on an untrusted tool, where a string or a list is as likely as a
+    dict and must be answered with ``False`` rather than an ``AttributeError``
+    that would surface as a sandbox failure.
     """
+    if not isinstance(schema, Mapping):
+        return False
     properties = schema.get("properties")
     if not isinstance(properties, Mapping):
         return False
@@ -271,13 +278,14 @@ def is_mcp_result_schema(schema: Mapping[str, Any]) -> bool:
     return isinstance(items, Mapping) and items.get("type") == "object"
 
 
-def structured_content_schema(schema: Mapping[str, Any]) -> Mapping[str, Any] | bool | None:
+def structured_content_schema(schema: object) -> Mapping[str, Any] | bool | None:
     """The ``structuredContent`` schema inside a ``CallToolResult`` envelope.
 
     ``True`` when the field is declared with no shape, and ``None`` when the
-    schema is not a ``CallToolResult`` at all.
+    schema is not a ``CallToolResult`` at all -- including when it is not a
+    schema-shaped object at all.
     """
-    if not is_mcp_result_schema(schema):
+    if not isinstance(schema, Mapping) or not is_mcp_result_schema(schema):
         return None
     properties = schema.get("properties")
     if not isinstance(properties, Mapping):
@@ -285,7 +293,11 @@ def structured_content_schema(schema: Mapping[str, Any]) -> Mapping[str, Any] | 
     declared = properties.get("structuredContent")
     if isinstance(declared, bool):
         return declared
-    return declared if isinstance(declared, Mapping) else True
+    if isinstance(declared, Mapping):
+        return {str(key): value for key, value in declared.items()}
+    # Declared with something that is not a schema at all. The envelope is real,
+    # so it still gets named -- there is just no inner shape to print.
+    return True
 
 
 #: The content-block types a script can find in ``result["content"]``. Printed

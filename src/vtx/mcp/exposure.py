@@ -62,7 +62,20 @@ EXPOSURES: Final[tuple[str, ...]] = (
 )
 
 #: Exposures whose tools a script may call, whether or not they are listed.
-SCRIPT_CALLABLE: Final = frozenset({"codemode", "codemode-deferred", "deferred"})
+#:
+#: ``direct`` is in here because a tool the model can already call directly can
+#: also be composed into a script -- a model that needs six of them in one turn
+#: should not have to pay six. It is left *out* of :data:`SCRIPT_LISTED`, because
+#: advertising it in the codemode catalog would describe something the model
+#: already has in front of it.
+SCRIPT_CALLABLE: Final = frozenset({"direct", "codemode", "codemode-deferred", "deferred"})
+
+#: Exposures declared to the model as an ordinary tool call, which it may invoke
+#: by name. Everything else is reachable only through a script or a search, and
+#: staying out of the request is the point: a two-hundred-tool server declared
+#: tool-by-tool costs two hundred definitions on every turn, which is the cost
+#: the other exposures exist to avoid.
+DECLARED_TO_MODEL: Final = frozenset({"direct"})
 
 #: Exposures the ``codemode`` description advertises. ``codemode-deferred`` and
 #: ``deferred`` are callable but unlisted, which is the whole difference.
@@ -83,6 +96,12 @@ _BY_WIDTH: Final = ("direct", "codemode", "codemode-deferred", "deferred", "hidd
 _SCRIPT_REACHING: Final = frozenset({"codemode", "codemode-deferred", "deferred"})
 
 _NAME_RE = re.compile(r"\A[A-Za-z0-9_-]{1,64}\Z")
+
+#: A ``tool_exposure`` key is an exact tool name, or an ``fnmatch`` pattern over
+#: one. The wildcards have to be allowed, or the documented
+#: ``{"delete_*": "hidden"}`` -- the one setting that makes a broad server
+#: usable with care -- is rejected as a malformed key.
+_NAME_OR_PATTERN_RE = re.compile(r"\A[A-Za-z0-9_*?\[\]-]{1,64}\Z")
 
 
 def normalize_exposure(value: object) -> str | None:
@@ -120,8 +139,15 @@ def validate_exposures(
         return resolved, {}, "tool_exposure must map tool names to exposures"
 
     for key, value in tool_exposure.items():
-        if not isinstance(key, str) or not _NAME_RE.match(key):
-            return resolved, {}, f'tool_exposure key "{key}" is not a tool name or pattern'
+        if not isinstance(key, str) or not _NAME_OR_PATTERN_RE.match(key):
+            return (
+                resolved,
+                {},
+                (
+                    f'tool_exposure key "{key}" is not a tool name or pattern '
+                    "(letters, digits, _ - and the * ? [ ] wildcards)"
+                ),
+            )
         normalized = normalize_exposure(value)
         if normalized is None:
             return resolved, {}, (f'tool_exposure "{key}" must be one of {", ".join(EXPOSURES)}')
@@ -148,6 +174,14 @@ def tool_exposure(config_exposure: str | None, overrides: dict[str, str], tool_n
 
 def is_valid_name(name: object) -> bool:
     return isinstance(name, str) and bool(_NAME_RE.match(name))
+
+
+def declared_to_model(exposure: object) -> bool:
+    """Whether a tool with this exposure is sent to the provider as a tool call.
+
+    A tool with no exposure is a built-in, and built-ins are always declared.
+    """
+    return exposure is None or exposure in DECLARED_TO_MODEL
 
 
 def widest(*exposures: str) -> str:
