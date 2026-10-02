@@ -2,12 +2,14 @@ import re
 import shutil
 from typing import ClassVar
 
+from rich import box
 from rich._loop import loop_first
 from rich.console import Console, ConsoleOptions, RenderResult
-from rich.markdown import CodeBlock, Heading, ListElement, ListItem, Markdown
+from rich.markdown import CodeBlock, Heading, ListElement, ListItem, Markdown, TableElement
 from rich.segment import Segment
 from rich.style import Style
 from rich.syntax import Syntax
+from rich.table import Table
 from rich.text import Text
 from rich.theme import Theme
 
@@ -20,19 +22,31 @@ _MARKDOWN_THEME: Theme | None = None
 def get_markdown_theme() -> Theme:
     global _MARKDOWN_THEME
     if _MARKDOWN_THEME is None:
-        code_color = config.ui.colors.markdown_code
-        heading_style = Style(bold=True)
+        colors = config.ui.colors
+        code_color = colors.markdown_code
+        # A real hierarchy: every level was plain bold before, so # and #######
+        # were indistinguishable. Ramp from the brightest title colour down to
+        # dim, which still reads on a monochrome terminal because weight is
+        # preserved at every level.
+        heading_styles = {
+            "markdown.h1": Style(bold=True, underline=True, color=colors.title),
+            "markdown.h2": Style(bold=True, color=colors.accent),
+            "markdown.h3": Style(bold=True, color=colors.markdown_heading),
+            "markdown.h4": Style(bold=True, color=colors.muted),
+            "markdown.h5": Style(bold=True, color=colors.dim),
+            "markdown.h6": Style(bold=True, italic=True, color=colors.dim),
+        }
         _MARKDOWN_THEME = Theme(
             {
-                "markdown.h1": heading_style,
-                "markdown.h2": heading_style,
-                "markdown.h3": heading_style,
-                "markdown.h4": heading_style,
-                "markdown.h5": heading_style,
-                "markdown.h6": heading_style,
+                **heading_styles,
                 "markdown.code": Style(color=code_color),
-                "markdown.table.header": Style(bold=True),
-                "markdown.table.border": Style(),
+                "markdown.code_block": Style(color=code_color),
+                "markdown.block_quote": Style(color=colors.muted),
+                "markdown.item.bullet": Style(color=colors.accent),
+                "markdown.item.number": Style(color=colors.accent),
+                "markdown.hr": Style(color=colors.border),
+                "markdown.table.header": Style(bold=True, color=colors.markdown_heading),
+                "markdown.table.border": Style(color=colors.dim),
             }
         )
     return _MARKDOWN_THEME
@@ -99,6 +113,37 @@ class PlainCodeBlock(CodeBlock):
         yield syntax
 
 
+class VtxTableElement(TableElement):
+    """Table renderer tuned for a narrow chat pane.
+
+    Rich's default uses ``show_edge=True``, which wraps every table in blank
+    lines, and an unstyled rule. Dropping the edges and styling the rule keeps
+    consecutive tables readable when the model emits several in one reply.
+    """
+
+    def __rich_console__(self, console: Console, options: ConsoleOptions) -> RenderResult:
+        table = Table(
+            box=box.SIMPLE_HEAD,
+            pad_edge=False,
+            style="markdown.table.border",
+            show_edge=False,
+            collapse_padding=True,
+            padding=(0, 1),
+        )
+
+        if self.header is not None and self.header.row is not None:
+            for column in self.header.row.cells:
+                heading = column.content.copy()
+                heading.stylize("markdown.table.header")
+                table.add_column(heading)
+
+        if self.body is not None:
+            for row in self.body.rows:
+                table.add_row(*[element.content for element in row.cells])
+
+        yield table
+
+
 class CustomMarkdown(Markdown):
     elements: ClassVar[dict] = {
         **Markdown.elements,
@@ -108,6 +153,7 @@ class CustomMarkdown(Markdown):
         "list_item_open": PlainListItem,
         "fence": PlainCodeBlock,
         "code_block": PlainCodeBlock,
+        "table_open": VtxTableElement,
     }
 
 
