@@ -5,12 +5,11 @@ differently for each.
 
 **Sandbox-level** kinds describe the execution itself: ``script`` (raised or
 failed to compile), ``timeout``, ``aborted``, ``sandbox`` (worker or transport
-failed). These mirror pi-mono exactly.
+failed).
 
 **Tool-level** kinds describe one admitted tool call: ``unknown_tool``,
 ``invalid_input``, ``tool_failure``, ``invalid_output``, ``host_unavailable``.
-These come from opencode's ten-kind taxonomy, which VTX's old RLM kernel also
-ported. A cell that says ``Tool not found: goal`` and one that says ``goal
+A cell that says ``Tool not found: goal`` and one that says ``goal
 refused: not your session`` need three different responses — try a different
 name, change the arguments, or stop and report. Collapsing them into one
 traceback loses the only information the model needs to choose.

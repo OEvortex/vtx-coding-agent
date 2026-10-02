@@ -1827,8 +1827,8 @@ class ExtensionAPI:
         custom block can introspect it.
 
         ``tool_icon`` overrides the default ``"↪"`` extension icon. Useful
-        when shipping a built-in-feeling tool (e.g. the bundled ``task``
-        extension uses ``"⊕"``) without forking ``ExtensionTool``.
+        when shipping a built-in-feeling tool (e.g. the bundled
+        ``delegate_subagent`` uses ``"⊕"``) without forking ``ExtensionTool``.
         """
         if not name or not isinstance(name, str):
             raise ValueError("Tool name must be a non-empty string")

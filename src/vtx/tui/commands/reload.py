@@ -1,20 +1,20 @@
 """``/reload`` — re-apply config, extensions, agents, tools, and context in place.
 
-Modelled on pi-mono's ``AgentSession.reload()``, which is an explicit command
-rather than a background watcher. Both halves of that choice matter here:
+An explicit command rather than a background watcher. Both halves of that
+choice matter here:
 
 * **Explicit beats watched.** A file watcher has to guess whether a write is
   finished, has to debounce, and reloads on every keystroke-save from an editor
   that saves in bursts. A command fires once, when the user says the code is
   ready, and its cost is bounded and visible.
-* **The order is the safety property.** pi-mono emits ``session_shutdown``
-  before touching anything, clears the extension cache, reloads settings,
-  rebuilds the runtime with the *previous* flag values, then re-emits
-  ``session_start``. Extensions get a chance to release whatever they cached,
-  and a reload never silently resets a choice the user made.
+* **The order is the safety property.** ``session_shutdown`` is emitted before
+  touching anything, the extension cache is cleared, settings are reloaded, the
+  runtime is rebuilt with the *previous* flag values, then ``session_start`` is
+  re-emitted. Extensions get a chance to release whatever they cached, and a
+  reload never silently resets a choice the user made.
 
-The one thing pi-mono does not have to handle: a Python extension's
-submodules. Its loader re-executes the entry module every time, so an edited
+The one part that needs handling beyond the obvious: a Python extension's
+submodules. The loader re-executes the entry module every time, so an edited
 entry file is picked up, but a package extension's submodules stay cached in
 ``sys.modules`` forever. That is handled explicitly below.
 """
@@ -71,9 +71,9 @@ class ReloadCommands(CommandSupport):
 
         before = self._reload_snapshot()
 
-        # 1. Tell the outgoing extensions to let go, exactly as pi-mono does
-        #    before clearing its cache. This is their only chance to release
-        #    sockets, subprocesses, and caches keyed to the old module objects.
+        # 1. Tell the outgoing extensions to let go, before clearing the cache. This
+        #    is their only chance to release sockets, subprocesses, and caches
+        #    keyed to the old module objects.
         old_bus = getattr(self._loaded_extensions, "bus", None)
         if old_bus is not None and old_bus.handler_count(SESSION_SHUTDOWN):
             old_bus.emit_sync(

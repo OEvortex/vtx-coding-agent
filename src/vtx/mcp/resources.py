@@ -12,9 +12,6 @@ They are session-level rather than per-server because the names are the ones
 models already know from other coding agents, and because three tools cost the
 same however many servers are connected. Each takes a ``server`` argument and
 covers every connected server that offers resources.
-
-Adapted from ref/pi-mono/packages/coding-agent/src/extensions/mcp/resources.ts
-(MIT, see LICENSES/).
 """
 
 from __future__ import annotations

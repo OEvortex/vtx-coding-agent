@@ -38,7 +38,8 @@ def test_load_all_agents_with_cwd(monkeypatch, tmp_path: Path):
     loaded, errors = load_all_agents(cwd=str(tmp_path))
     names = {a.definition.name for a in loaded}
     assert "review" in names
-    assert "plan" in names
+    # No built-in profiles any more: the registry holds exactly what was found.
+    assert names == {"review"}
     assert errors == []
 
 
@@ -53,8 +54,7 @@ def test_load_all_agents_user_writes_global_only(tmp_path: Path):
     cwd.mkdir()
     loaded, errors = load_all_agents(cwd=str(cwd), agent_dir=global_dir)
     names = {a.definition.name for a in loaded}
-    assert "yolo" in names
-    assert "plan" in names
+    assert names == {"yolo"}
     assert errors == []
 
 
@@ -217,7 +217,8 @@ def test_cli_list_agents_empty(monkeypatch, tmp_path: Path, capsys):
         cli.main()
     assert e.value.code == 0
     out = capsys.readouterr().out
-    assert "plan" in out
+    # Nothing is listed, because nothing is discovered from an empty cwd.
+    assert out.strip()
 
 
 # =============================================================================

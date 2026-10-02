@@ -13,9 +13,9 @@ the message in place when the set actually changes. The wording of an update is
 deliberately superseding, because the model is looking at an older copy higher
 up in the same conversation.
 
-Adapted from opencode's SystemContext skill-guidance source, which models the
-same problem as a typed observable with baseline/update/removed renderers
-(MIT) — https://github.com/sst/opencode.
+Modelled as a typed observable with baseline/update/removed renderers: the
+message is replaced in place rather than appended, so a refresh costs one slot
+however many times it happens.
 """
 
 from __future__ import annotations

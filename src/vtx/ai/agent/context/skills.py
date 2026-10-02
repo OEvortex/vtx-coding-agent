@@ -246,7 +246,7 @@ def _load_skill_from_dir(skill_dir: Path) -> tuple[Skill | None, list[SkillWarni
             return None, warnings
 
         # Detect Python-backed skill:
-        # Prime Agent contract: pyproject.toml + src/<import_name>/__init__.py
+        # Detect Python-backed skill: pyproject.toml + src/<import_name>/__init__.py
         kind = "markdown"
         python_meta: SkillPythonMetadata | None = None
         pyproject_path = skill_dir / "pyproject.toml"

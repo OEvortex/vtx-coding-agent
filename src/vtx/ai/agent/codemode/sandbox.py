@@ -648,7 +648,9 @@ class _CallResult:
         return frame
 
 
-#: Matches pi-mono's fixed cap. An interpreter property, not a host knob.
+#: Fixed cap. An interpreter property rather than a host knob: it bounds the
+#: worker's own threads, and a host raising it buys nothing it cannot get from a
+#: second, independent execution.
 MAX_CONCURRENT_TOOL_CALLS = 8
 
 #: Deepest tool-call nesting served. Guards a script that calls a tool from
@@ -881,7 +883,8 @@ class _Store:
         return _copy(value)
 
     def set(self, key: str, value: Any) -> None:
-        # Storing None deletes the key, matching pi-mono.
+        # Storing None deletes the key. Distinct from omitting a write: a delete
+        # is an instruction the host has to apply, not an absence.
         if value is None:
             self.deletes.add(key)
             self.writes.pop(key, None)
@@ -933,7 +936,8 @@ def _exec_script(code: str, namespace: dict[str, Any]) -> Any:
 
     The source is wrapped rather than compiled as a bare ``exec`` block so
     top-level ``return`` works, which is what the model expects when told it is
-    writing a script body, and how pi-mono presents it.
+    writing a script body. A bare block would make the body a module, where
+    ``return`` is a syntax error.
     """
     body = indent(code, "    ")
     compiled = compile(

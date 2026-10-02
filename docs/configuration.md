@@ -101,7 +101,7 @@ task:
   max_concurrent: 4  # sub-agents running at once; the rest queue FIFO (0 = no cap)
 ```
 
-There are no sub-agent presets to configure. A `task` tool's `subagent_type` is resolved against the agents in `.vtx/agent/` and `~/.vtx/agent/` (see [agents.md](agents.md)); an unknown or empty name runs the default sub-agent. `max_concurrent` bounds how many sub-agents run at once — a config reload resizes the live queue, and the pinned Agents panel plus the info bar show the running/queued split — see [tools.md](tools.md#task).
+There are no sub-agent presets to configure. A `delegate_subagent` tool's `subagent_type` is resolved against the agents in `.vtx/agent/` and `~/.vtx/agent/` (see [agents.md](agents.md)); an unknown or empty name runs the default sub-agent. `max_concurrent` bounds how many sub-agents run at once — a config reload resizes the live queue, and the pinned Agents panel plus the info bar show the running/queued split — see [tools.md](tools.md#delegate_subagent).
 
 ## Internal state
 

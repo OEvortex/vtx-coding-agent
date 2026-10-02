@@ -33,7 +33,7 @@ Both drive the same `ConversationRuntime` → `Agent` stack.
 | `agent_runner.py` | `run_agent_turn(spec)` — thin stateless wrapper over `run_single_turn` used by sub-agents and tests. |
 | `config.py` | Harness-owned runtime knobs (max turns, compaction policy, idle timeout) with product-neutral defaults; `vtx.coding_agent.config` mirrors user YAML into it. |
 | `session.py` | JSONL session persistence with a branching tree of entries (see [sessions.md](sessions.md)). |
-| `dispatcher.py` | Per-task context (`DispatcherContext`) so tools like `task` can reach provider/model/session info. |
+| `dispatcher.py` | Per-task context (`DispatcherContext`) so tools like `delegate_subagent` can reach provider/model/session info. |
 | `context_governance.py` | Budgets oversized tool results before they are sent back to the model. |
 | `extensions.py`, `extension_manager.py` | Extension discovery, the `ExtensionAPI`, and the event bus (see [extensions.md](extensions.md)). |
 | `hooks/` | `.vtx/hooks.yml` declarative hooks and the `AgentHook` protocol (see [extensions.md](extensions.md)). |
@@ -82,7 +82,7 @@ Api types: `openai-sdk` (chat completions), `openai-responses`, `anthropic`.
 
 ## Sub-agents
 
-The `task` tool dispatches isolated sub-agent sessions with their own tool surface, system prompt and JSONL session. `subagent_type` is matched against the agents in `.vtx/agent/` and `~/.vtx/agent/`; anything else runs the default sub-agent (there are no built-in presets). `background: true` runs via `BackgroundTaskManager` and notifies on a later turn.
+The `delegate_subagent` tool dispatches isolated sub-agent sessions with their own tool surface, system prompt and JSONL session. `subagent_type` is matched against the agents in `.vtx/agent/` and `~/.vtx/agent/`; anything else runs the default sub-agent (there are no built-in presets). `background: true` runs via `BackgroundTaskManager` and notifies on a later turn.
 
 Completion has two halves, and both are load-bearing. `BackgroundTaskManager` exposes a settlement listener, so a sub-agent that finishes *after* the parent turn ends still reaches a session that is sitting idle — the TUI resumes itself rather than waiting for the user to type. `Agent.run` then drains anything already settled *before the first model call* of that run, not between turns, so the result is in context for the turn that reacts to it. Draining only between turns meant a sub-agent outliving its parent turn was appended to the session and shown to the model one turn too late. A completion is delivered exactly once (`drain_completed` flips `notified`), and a wake-up turn can cascade at most `MAX_BACKGROUND_WAKEUPS` times before the session stops resuming itself and says so.
 

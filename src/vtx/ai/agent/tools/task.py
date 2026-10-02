@@ -159,7 +159,7 @@ def _build_subagent_tool_list(parent_ctx: DispatcherContext, spec: SubagentSpec)
 
 SUBAGENT_FINAL_ANSWER_DIRECTIVE = (
     "You are an isolated sub-agent dispatched by a parent agent via the "
-    "Task tool. Your final text response is returned to the parent agent "
+    "Subagent dispatch. Your final text response is returned to the parent agent "
     "verbatim as the tool result, so:\n"
     "\n"
     "  - Return ONLY your final answer — no preamble, no 'I will now...', "
@@ -269,7 +269,7 @@ def _make_progress_emitter(
                 tool_call_id, {"kind": progress_kind, "subagent": spec.name, **fields}
             )
         except Exception:
-            log.exception("Task tool progress callback raised")
+            log.exception("subagent dispatch progress callback raised")
 
     return _emit
 
@@ -478,7 +478,7 @@ async def _run_admitted_subagent(
         raise
     except Exception as exc:
         result.error = f"Sub-agent raised: {exc}"
-        log.exception("Task tool sub-agent run failed")
+        log.exception("subagent dispatch failed")
         _emit("error", error=result.error)
 
     result.duration_ms = (time.monotonic() - started_at) * 1000
@@ -495,7 +495,10 @@ async def _run_admitted_subagent(
 
 
 class TaskTool(BaseTool[TaskParams]):
-    name = "task"
+    # Renamed from `task`, which collided with the goal system's task list: a
+    # model told to "check the task" could mean the todo list or the dispatcher.
+    # `delegate_subagent` says what the tool actually does.
+    name = "delegate_subagent"
     params = TaskParams
     tool_icon = "▸"
     mutating = False
@@ -528,7 +531,7 @@ class TaskTool(BaseTool[TaskParams]):
             return ToolResult(
                 success=False,
                 result=(
-                    "Task tool invoked before the parent context was "
+                    "Subagent dispatch invoked before the parent context was "
                     "initialized. This usually means the TUI/headless "
                     "runtime never set the dispatcher context; please "
                     "report it as a bug."

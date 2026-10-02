@@ -328,7 +328,6 @@ def test_load_all_agents_collects_errors(tmp_path: Path):
     )
     names = {a.definition.name for a in loaded}
     assert "good" in names
-    assert "plan" in names
     assert len(errors) == 1
 
 

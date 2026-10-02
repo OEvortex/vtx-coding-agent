@@ -46,7 +46,7 @@ class DispatcherContext:
 
     Populated by :class:`vtx.runtime.ConversationRuntime` on initialize,
     agent change, model change, and thinking-level change. Read by
-    dispatching tools (e.g. the example Task tool) when they need to
+    dispatching tools (e.g. the example subagent tool) when they need to
     spawn a sub-agent that reuses the parent's provider, model, and
     cwd.
     """

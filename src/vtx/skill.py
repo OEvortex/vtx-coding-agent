@@ -1,6 +1,6 @@
 """Python skill module wrapper and CLI runner for VTX Python-backed skills.
 
-Follows the Prime Agent Python skills protocol:
+The Python skills protocol:
 - If a skill package defines `run(...)` (sync or async), the module is wrapped
   into a callable object so `await skill(...)` and `await skill.run(...)` work.
 - Signature and docstring from `run(...)` are copied so `help(skill)` displays the API.

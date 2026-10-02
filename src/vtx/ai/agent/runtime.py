@@ -364,7 +364,7 @@ class ConversationRuntime:
             if d.thinking_level is not None:
                 self.thinking_level = d.thinking_level
 
-        # Keep the Task tool's parent context in sync with the active
+        # Keep the delegate_subagent tool's parent context in sync with the active
         # tool/agent/model state so sub-agents dispatched via ``Task``
         # see fresh data. (TUI also installs its own progress_callback
         # in ConversationRuntime; this call only refreshes the static
@@ -857,7 +857,7 @@ class ConversationRuntime:
         self._sync_provider_session_id()
 
         # Install the background-task manager before the dispatcher
-        # context so the Task tool sees it. The TUI later overwrites
+        # context so delegate_subagent sees it. The TUI later overwrites
         # ``progress_callback`` with its chat-log forwarder.
         if provider and session:
             self.ensure_background_manager()
@@ -999,7 +999,7 @@ class ConversationRuntime:
             except RuntimeError:
                 pass
 
-        # The Task tool's parent context needs a fresh snapshot whenever
+        # The delegate_subagent tool's parent context needs a fresh snapshot whenever
         # the model changes.
         self._refresh_dispatcher_context()
 
@@ -1041,7 +1041,7 @@ class ConversationRuntime:
             except RuntimeError:
                 pass
 
-        # Refresh the Task tool's parent context so sub-agents inherit
+        # Refresh the delegate_subagent tool's parent context so sub-agents inherit
         # the new thinking level on the next dispatch.
         self._refresh_dispatcher_context()
 

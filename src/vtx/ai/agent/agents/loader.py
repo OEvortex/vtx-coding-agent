@@ -170,48 +170,13 @@ def load_all_agents(
     Errors are collected, not raised: one bad agent should not block the
     rest. Mirrors :func:`vtx.extensions.load_all_extensions`.
     """
-    builtins = [
-        LoadedAgent(
-            definition=AgentDef(
-                name="plan",
-                description="Read-only plan formulation and investigation profile.",
-                icon="📋",
-                thinking_level="high",
-                tools_allow=["read", "find", "grep", "skill", "web", "ask_user"],
-                tools_deny=["bash", "write", "edit"],
-                instructions=(
-                    "You are Vtx in Plan mode. Your sole objective is to formulate a "
-                    "comprehensive, step-by-step execution plan to address the user's "
-                    "request. You are strictly in a read-only mode.\n"
-                    "\n"
-                    "## Operational Constraints\n"
-                    "- Do not write or edit any files, do not run bash commands, and do "
-                    "not execute code.\n"
-                    "- You are allowed to use read-only tools to gather context: `read`, `find`, "
-                    "`grep`, `skill`, `web`, and `ask_user`.\n"
-                    "- Avoid conversational filler. Start directly with progress or the plan.\n"
-                    "\n"
-                    "## Planning Guidelines\n"
-                    "1. **Investigate first:** Search the codebase to locate files, symbols, "
-                    "and conventions relevant to the task.\n"
-                    "2. **Draft the Plan:** Formulate a structured plan covering:\n"
-                    "   - **Objectives:** What needs to be achieved.\n"
-                    "   - **Proposed Changes:** Specific files to edit, add, or delete, "
-                    "referencing absolute paths and line numbers (e.g., `src/vtx/cli.py:42`).\n"
-                    "   - **Verification Steps:** How the changes should be tested (tests to run, "
-                    "syntax checks).\n"
-                    "   - **Risks & Edge Cases:** Potential side effects, dependencies, or "
-                    "architectural gotchas.\n"
-                    "3. **Refine:** Ensure the plan is detailed, precise, and immediately "
-                    "actionable for a developer or implementation agent."
-                ),
-                instructions_mode="replace",
-            ),
-            path=Path("<builtin>"),
-        )
-    ]
-
-    loaded_by_name: dict[str, LoadedAgent] = {a.definition.name: a for a in builtins}
+    # No built-in profiles. They used to be hardcoded here, which meant every
+    # session carried a `plan` profile the user never asked for, and editing the
+    # shipped list was the only way to change what the agent could be. Agents now
+    # come solely from `.vtx/agent/<name>.py`; with none present the registry is
+    # empty and the runtime falls back to its session-default behaviour, which is
+    # the same path it already took when no agent was active.
+    loaded_by_name: dict[str, LoadedAgent] = {}
 
     paths = find_agent_paths(cwd=cwd, configured=configured, agent_dir=agent_dir)
     errors: list[str] = []

@@ -7,7 +7,7 @@ authorization server guards a given MCP server and which scopes exist. The
 Both are fetched from well-known URLs, and both are cached on the provider so a
 reconnect does not pay for them again.
 
-Adapted from modelcontextprotocol/typescript-sdk v1.29.0 (MIT, see LICENSES/).
+Adapted from modelcontextprotocol/typescript-sdk v1.29.0 (MIT).
 """
 
 from __future__ import annotations

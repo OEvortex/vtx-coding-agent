@@ -26,7 +26,7 @@ A caller drives the whole thing::
 
 Or let a transport do it automatically with :func:`adapt_oauth_provider`.
 
-Adapted from modelcontextprotocol/typescript-sdk v1.29.0 (MIT, see LICENSES/).
+Adapted from modelcontextprotocol/typescript-sdk v1.29.0 (MIT).
 """
 
 from .callback import CallbackPage, OAuthCallback, OAuthCallbackServer

@@ -11,7 +11,7 @@ Three shapes of call:
 The provider protocol is a Protocol rather than an ABC so a caller can satisfy it
 with a plain object, and so the durable store stays the caller's choice.
 
-Adapted from modelcontextprotocol/typescript-sdk v1.29.0 (MIT, see LICENSES/).
+Adapted from modelcontextprotocol/typescript-sdk v1.29.0 (MIT).
 """
 
 from __future__ import annotations

@@ -143,7 +143,7 @@ class RevertState:
 class TurnSnapshot:
     """One completed turn's worktree record.
 
-    Mirrors opencode's ``assistant.snapshot``: ``start`` is the tree before the
+    ``start`` is the tree before the
     turn ran, ``files`` is every path that differed between the turn's start
     and end trees.
 
@@ -248,7 +248,7 @@ def _turn_snapshots(session: Session) -> list[TurnSnapshot]:
 def plan(session: Session, boundary_id: str) -> dict[str, str]:
     """Map each path to the tree it should be restored from.
 
-    Ports opencode's ``SessionRevert.plan``: walk the turns at and after the
+    Walk the turns at and after the
     boundary in order and, for each path any of them changed, keep the *first*
     (earliest) turn's start tree. That tree is the state just after the
     boundary prompt and before any reverted turn's work, which is exactly the

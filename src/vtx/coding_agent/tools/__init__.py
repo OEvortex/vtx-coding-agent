@@ -78,11 +78,11 @@ DEFAULT_TOOLS: list[str] = [
     "skill",
     "web",
     "ask_user",
-    "task",
+    "delegate_subagent",
     "goal",
 ]
 
-PARENT_ONLY_TOOLS: frozenset[str] = frozenset({"task", "goal"})
+PARENT_ONLY_TOOLS: frozenset[str] = frozenset({"delegate_subagent", "goal"})
 
 
 def get_tools(names: list[str]) -> list[BaseTool]:

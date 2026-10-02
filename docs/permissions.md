@@ -16,7 +16,7 @@ Toggle live with `alt+ctrl+p` or `/settings` → permissions. Set the default un
 For each tool call:
 
 1. Extension/agent permission gates are consulted first (see below). A `deny` blocks, an `allow` short-circuits.
-2. If the tool is non-mutating (`read`, `find`, `grep`, `web`, `ask_user`, `task`) → **allow**.
+2. If the tool is non-mutating (`read`, `find`, `grep`, `web`, `ask_user`, `delegate_subagent`) → **allow**.
 3. `bash`: the command is parsed and checked against the safe lists (below). A read-only command with no shell punctuation → **allow**; anything else → **prompt**.
 4. Every other mutating tool (`edit`, `write`, `skill`) → **prompt**.
 

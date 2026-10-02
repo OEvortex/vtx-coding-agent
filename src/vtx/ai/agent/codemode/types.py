@@ -1,9 +1,9 @@
 """Public types for the codemode sandbox.
 
-Mirrors pi-mono's shape: a sandbox is constructed once with its tools and
-limits, then executed many times. Each :meth:`CodemodeSandbox.execute` call is
-one-shot -- a fresh process, a fresh namespace -- so nothing leaks between
-runs except what the script explicitly wrote to the store.
+A sandbox is constructed once with its tools and limits, then executed many
+times. Each :meth:`CodemodeSandbox.execute` call is one-shot -- a fresh
+process, a fresh namespace -- so nothing leaks between runs except what the
+script explicitly wrote to the store.
 """
 
 from __future__ import annotations
@@ -96,8 +96,8 @@ class Result:
 
     Exactly one of ``value``/``diagnostic`` is meaningful, keyed by ``ok``.
     ``output`` holds ordered ``text()`` and ``console`` items produced before
-    the end, and is populated for failures too -- pi-mono keeps output on both
-    paths and so does this.
+    the end, and is populated for failures too: output produced before the
+    failure is still worth having.
     """
 
     ok: bool
@@ -124,11 +124,10 @@ class Limits:
     One knob. ``timeout_ms`` is a wall-clock deadline enforced by killing the
     process, so a busy loop and a hung tool call die the same way.
 
-    pi-mono's sandbox has three (``maxToolCalls``, ``maxOutputBytes`` as well);
-    neither of those is implemented here, so they are not offered rather than
-    accepted and ignored. Both are easy to add at the host — a counter in
-    ``_serve`` and a size check in ``_result_from_frame`` — if a caller needs
-    them.
+    A call-count budget and an output-size cap would both be reasonable, but
+    neither is implemented, so neither is accepted: offering a limit that does
+    nothing is worse than not having one. Both are easy to add at the host — a
+    counter in ``_serve`` and a size check in ``_result_from_frame``.
     """
 
     timeout_ms: int | None = 30_000

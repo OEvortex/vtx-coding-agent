@@ -214,8 +214,8 @@ register_tool(AskUserTool(), is_default=True, parent_only=True)
 register_tool(TaskTool(), is_default=True, parent_only=False)
 register_tool(WebTool(), is_default=True, parent_only=False)
 register_tool(GoalTool(), is_default=True, parent_only=True)
-# `codemode` composes the tools above rather than adding a capability of its own,
-# so it is default-off: a user who did not ask for orchestration should not get
-# it in the prompt. Opt in by name via `tools_allow`, a tool group, or an agent
-# profile. pi-mono registers it inactive for the same reason.
-register_tool(CodemodeTool(), is_default=False, parent_only=False)
+# `codemode` composes the tools above rather than adding a capability of its
+# own, but it is default-on: a tool the model has to be told about before it
+# uses it is a tool it will not think to use, and hiding it just removes a
+# capability it would otherwise reach for on its own.
+register_tool(CodemodeTool(), is_default=True, parent_only=False)

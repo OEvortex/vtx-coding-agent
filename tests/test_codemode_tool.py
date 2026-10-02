@@ -59,12 +59,11 @@ def echo_tool() -> EchoTool:
 # --------------------------------------------------------------------------
 
 
-def test_codemode_is_registered_but_default_off():
-    # Default-off for the same reason pi-mono registers it inactive: it composes
-    # the other tools rather than adding a capability, so a user who did not ask
-    # for orchestration should not be handed it in the prompt.
+def test_codemode_is_registered_and_default_on():
+    # Default-on: a tool the model must be told about before it uses it is a tool
+    # it will not think to use.
     assert CODEMODE_TOOL_NAME in get_all_tools()
-    assert CODEMODE_TOOL_NAME not in get_default_tools()
+    assert CODEMODE_TOOL_NAME in get_default_tools()
 
 
 def test_sandbox_excludes_codemode_itself():

@@ -59,8 +59,8 @@ def parse_models_dev_reasoning_options(
     - ``{"type": "effort", "values": [...]}`` — named effort tiers.
     - ``{"type": "budget_tokens", "min": N}`` — a token budget instead of
       named efforts (Claude Haiku/Sonnet 4.5). Derived into the shared
-      :data:`ANTHROPIC_BUDGETS` ladder, the same move opencode makes when it
-      turns a budget range into variants.
+      :data:`ANTHROPIC_BUDGETS` ladder, which turns a budget range into
+      variants the way the named efforts are turned into variants.
 
     ``{"type": "toggle"}`` has no per-level equivalent in vtx and yields
     ``None`` (the model then keeps its own default). Values without a
@@ -197,10 +197,9 @@ def resolve_thinking_levels(
     """The levels vtx should *offer* for one (model, transport) pair.
 
     Single source of truth for the ``/thinking`` picker, the ``ctrl+t`` cycle,
-    session restore and every other selector. The rule is the same one
-    opencode uses for its model variants: a control is offered only when we
-    know it can actually be sent, so a level can never be offered that the
-    transport rejects or silently drops on the wire.
+    session restore and every other selector. The rule is that a control is
+    offered only when we know it can actually be sent, so a level can never be
+    offered that the transport rejects or silently drops on the wire.
 
     - Non-reasoning models: ``["none"]`` (there is nothing to turn on).
     - Catalog-verified models: exactly the levels ``reasoning_options``

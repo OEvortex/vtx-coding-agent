@@ -5,7 +5,7 @@ than deserialized by a validation library. Metadata documents carry fields vtx
 does not use, and dropping them would mean re-fetching on the next run; so each
 parser copies the document through and overwrites only the fields it checked.
 
-Adapted from modelcontextprotocol/typescript-sdk v1.29.0 (MIT, see LICENSES/).
+Adapted from modelcontextprotocol/typescript-sdk v1.29.0 (MIT).
 """
 
 from __future__ import annotations

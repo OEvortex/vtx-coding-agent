@@ -300,10 +300,9 @@ def render_declarations(
     costs = [len(text) // 4 + 1 for _, text in rendered]
     budget = max(0, budget_tokens)
 
-    # Cheapest-first, not declaration order. opencode sorts by cost within each
-    # namespace round so a group is never starved; with a flat surface and one
-    # shared budget, taking the cheapest first maximizes how many tools fit,
-    # and that is the number the model is missing.
+    # Cheapest-first, not declaration order, so one expensive tool cannot consume
+    # the budget that a dozen cheap ones would have fit into. What the model is
+    # missing is a count of tools, so maximizing that count is the goal.
     included: list[int] = []
     spent = 0
     for index in sorted(range(len(rendered)), key=lambda i: (costs[i], i)):

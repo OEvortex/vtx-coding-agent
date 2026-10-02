@@ -38,9 +38,12 @@ class AgentRegistry:
 
     @property
     def names(self) -> list[str]:
-        builtins = sorted(a.definition.name for a in self.agents if str(a.path) == "<builtin>")
-        users = sorted(a.definition.name for a in self.agents if str(a.path) != "<builtin>")
-        return builtins + users
+        """Every agent name, sorted.
+
+        There is no builtin/user split any more — profiles come only from
+        `.vtx/agent/`, so there is nothing to partition on.
+        """
+        return sorted(a.definition.name for a in self.agents)
 
     @property
     def active(self) -> LoadedAgent | None:

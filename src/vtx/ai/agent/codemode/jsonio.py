@@ -4,10 +4,9 @@ Both sides must agree exactly. If the host accepted a value the worker would
 reject, a tool could succeed and then fail the script for no reason the model
 could see. So there is one implementation and both import it.
 
-The rules are pi-mono's: arguments and results make a JSON round trip. That
-means ``NaN``/``Infinity`` go (non-standard JSON), non-string dict keys go,
-and anything with no JSON representation is an error rather than a silent
-``str()``.
+Arguments and results make a JSON round trip. That means ``NaN``/``Infinity``
+go (non-standard JSON), non-string dict keys go, and anything with no JSON
+representation is an error rather than a silent ``str()``.
 """
 
 from __future__ import annotations

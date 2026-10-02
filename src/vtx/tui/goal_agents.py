@@ -1,6 +1,6 @@
 """Live sub-agent registry.
 
-The ``task`` tool streams a small event dict per sub-agent through the
+The ``delegate_subagent`` tool streams a small event dict per sub-agent through the
 runtime's progress callback (see :meth:`vtx.ai.agent.tools.task.TaskTool`).
 Two consumers fold those events in: the chat log (which draws the tool block
 for the dispatch) and this registry, which keeps just enough per sub-agent to

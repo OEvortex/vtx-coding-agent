@@ -1,6 +1,6 @@
 # Tools
 
-Vtx ships 11 built-in tools. Nine are enabled by default; `grep` and `codemode` are built in but opt-in (enable either via an extension, agent `tools_allow`, or a custom tool list).
+Vtx ships 11 built-in tools. Ten are enabled by default; `grep` is built in but opt-in (enable it via an extension, agent `tools_allow`, or a custom tool list).
 
 | Tool | Does | Default |
 | --- | --- | --- |
@@ -12,10 +12,10 @@ Vtx ships 11 built-in tools. Nine are enabled by default; `grep` and `codemode` 
 | `skill` | Manage skill workflows | yes |
 | `web` | Web search (Exa neural) | yes |
 | `ask_user` | Ask the user a clarifying question | yes |
-| `task` | Dispatch a sub-agent | yes |
+| `delegate_subagent` | Dispatch an isolated sub-agent | yes |
 | `goal` | Persistent project goals: create, track tasks, complete with audit | yes |
+| `codemode` | Run a confined script that calls the other tools | yes |
 | `grep` | Search file contents (`ripgrep`) | no |
-| `codemode` | Run a confined script that calls the other tools | no |
 
 All tools are `BaseTool` subclasses with Pydantic params. The `mutating` flag drives permission gating: non-mutating tools run without approval, mutating tools follow the permission mode (see [permissions.md](permissions.md)).
 
@@ -129,7 +129,7 @@ Ask the user a clarifying question and block on the answer. Rendered as an inter
 | `multi_select` | bool | Allow multiple selections |
 | `header` | string | Modal title tag (max 12 chars) |
 
-## task
+## delegate_subagent
 
 Dispatch a fresh sub-agent with its own tools, session and system prompt. It cannot see this conversation — put all context in `prompt`.
 
@@ -198,7 +198,8 @@ network operation has to go through a tool.
 Side effects are real: a script that fails partway does not undo the calls that
 already ran. Marked mutating for the same reason `bash` is.
 
-Default-off, because it composes the other tools rather than adding a capability
-of its own. Opt in via `tools_allow`, a tool group, or an agent profile. See
-[codemode.md](codemode.md) for the sandbox contract, the failure taxonomy, and
-how the isolation is enforced.
+Because a script can reach `bash`, it is denied outright by the read-only
+`plan` profile — see [agents.md](agents.md).
+
+See [codemode.md](codemode.md) for the sandbox contract, the failure taxonomy,
+and how the isolation is enforced.

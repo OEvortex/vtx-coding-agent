@@ -1,6 +1,6 @@
-"""The ``task`` subagent tool.
+"""The ``delegate_subagent`` tool.
 
-Re-exports the harness-native ``task`` tool from :mod:`vtx.ai.agent.tools.task`.
+Re-exports the harness-native tool from :mod:`vtx.ai.agent.tools.task`.
 """
 
 from __future__ import annotations

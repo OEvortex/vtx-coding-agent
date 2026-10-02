@@ -2,6 +2,12 @@
 
 Agents are switchable profiles: each one bundles instructions, tool allow/deny lists, an optional model/provider override, and permission gates. Cycle them live with `shift+tab` or `/agent <name>`. Implemented in `src/ai/agent/agents/`.
 
+**Vtx ships no built-in agents.** Profiles come only from files you write, in `.vtx/agent/` or `~/.vtx/agent/`. Out of the box the registry is empty and the agent runs with its default configuration — `shift+tab` cycles a single "no profile" entry until you add one. There used to be a hardcoded read-only `plan` profile; removing it means the shipped list is no longer something you edit in place to change what the agent can be.
+
+## A caution on `tools_deny`
+
+`delegate_subagent` and `bash` are ways to run code, and a profile that denies one while allowing the other has not restricted anything. If you use a deny list, deny both. An allow list (`tools_allow`) is safe by construction, since it intersects rather than replaces.
+
 ## Defining an agent
 
 A Python file in `.vtx/agent/<name>.py` (project, walked up to the git root) or `~/.vtx/agent/<name>.py` (global):

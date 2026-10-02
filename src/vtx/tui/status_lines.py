@@ -220,7 +220,7 @@ TOOL_STATUS_LINES: dict[str, tuple[str, ...]] = {
         "Prompting you because you clearly forgot something...",
         "Requesting your input on the bug you caused...",
     ),
-    "task": (
+    "delegate_subagent": (
         "Spawning a sub-agent to handle your mess...",
         "Delegating to background because you multitask poorly...",
         "Orchestrating a worker to do your job for you...",
@@ -398,7 +398,7 @@ TOOL_ERROR_LINES: dict[str, tuple[str, ...]] = {
         "Dialog faulted because your keyboard layout is weird...",
         "Interrupted because your cat walked on the keyboard...",
     ),
-    "task": (
+    "delegate_subagent": (
         "Sub-agent had a crisis because your prompt was vague...",
         "Crashed because you gave it too many instructions...",
         "Ran out of steam because your context was too long...",
