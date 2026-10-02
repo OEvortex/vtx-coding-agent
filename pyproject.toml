@@ -48,6 +48,7 @@ dependencies = [
     "pydantic-settings>=2.12.0,<3.0.0",
     "pydantic>=2.12.5",
     "pypdf>=5.0.0,<6.0.0",
+    "pyjwt>=2.0,<3.0",
     "pytest-xdist>=3.8.0",
     "python-docx>=1.1.0,<2.0.0",
     "python-pptx>=1.0.0,<2.0.0",
@@ -59,41 +60,6 @@ dependencies = [
     "tiktoken>=0.12.0,<1.0.0",
     "typer>=0.20.0,<1.0.0",
 ]
-
-[project.optional-dependencies]
-api = [
-    "aiohttp>=3.9.0,<4.0.0",
-]
-azure = [
-    "azure-identity>=1.19.0,<2.0.0",
-]
-wecom = [
-    "wecom-aibot-sdk-python>=0.1.5",
-]
-weixin = [
-    "qrcode[pil]>=8.0",
-    "pycryptodome>=3.20.0",
-]
-msteams = [
-    "PyJWT>=2.0,<3.0",
-    "cryptography>=41.0",
-]
-matrix = [
-]
-discord = [
-]
-whatsapp = [
-]
-langsmith = [
-    "langsmith>=0.1.0",
-]
-pdf = [
-    "pymupdf>=1.25.0",
-]
-olostep = [
-    "olostep>=0.1.0",
-]
-
 
 [dependency-groups]
 dev = [
