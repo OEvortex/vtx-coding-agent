@@ -15,7 +15,7 @@ Dependency direction: `core` → (nothing), `ai` → `core`, `coding_agent` → 
 
 Enforced by `.github/workflows/ci.yml`. The one runtime seam that used to break it — the sub-agent runner, where three call sites re-imported `vtx.coding_agent.tools.task` looking for a divergent `_run_subagent` — is now an explicit `set_subagent_runner()` hook in `vtx.ai.agent.tools.task`. That module re-exported the same function object, so the lookup could never differ; the back-edge existed only to keep old monkeypatches working. `vtx.coding_agent.prompts.rlm` moved to `vtx.ai.agent.prompts.rlm` for the same reason.
 
-`vtx.coding_agent` is a thin product layer over the harness. Anything that duplicated a harness module has become a re-export alias (`prompts/identity.py`, `prompts/ponytail.py`, `prompts/rlm.py`, `context/loader.py`, `context/agent_mds.py`, `context/git.py`, `context/_xml.py`, `agents/activate.py`, `agents/discovery.py`), so there is one implementation to keep correct. Concrete tools, the CLI, headless, config schema/migrations, and themes stay here — they are the product.
+`vtx.coding_agent` is a thin product layer over the harness. Anything that duplicated a harness module has become a re-export alias (`prompts/identity.py`, `prompts/ponytail.py`, `context/loader.py`, `context/agent_mds.py`, `context/git.py`, `context/_xml.py`, `agents/activate.py`, `agents/discovery.py`), so there is one implementation to keep correct. Concrete tools, the CLI, headless, config schema/migrations, and themes stay here — they are the product.
 
 ## Two run surfaces
 
@@ -40,6 +40,7 @@ Both drive the same `ConversationRuntime` → `Agent` stack.
 | `sdk/` | The programmatic multi-agent SDK (see [sdk/README.md](sdk/README.md)). |
 | `tools/` | Tool contract only: `BaseTool` and JSON-schema slimming for LLM tool definitions. Concrete tools live in the coding agent. |
 | `background.py` | Background-task notification tag shared between parent and sub-agents. |
+| `codemode/` | Confined script execution — the sandbox, its isolation layers, and the discovery/catalog layer (see [codemode.md](codemode.md)). |
 
 Support modules: `tools_manager.py` (auto-download of `fd`/`rg` into `~/.vtx/bin`), `version.py` (package version resolution).
 
@@ -49,7 +50,7 @@ Support modules: `tools_manager.py` (auto-download of `fd`/`rg` into `~/.vtx/bin
 |--------|----------------|
 | `runtime.py` | `ConversationRuntime` — composition root wiring provider, tools, extensions, agents; owns model/thinking switches, sessions, compaction and handoff entry points; resolves each model's real context window onto the engine. |
 | `tools/` | The 10 built-in `BaseTool` implementations plus the default registry (`DEFAULT_TOOLS`) (see [tools.md](tools.md)). |
-| `prompts/` | Aliases to `vtx.ai.agent.prompts` (identity, ponytail, rlm, tooling, env, builder). |
+| `prompts/` | Aliases to `vtx.ai.agent.prompts` (identity, ponytail, tooling, env, builder). |
 | `context/` | Aliases to `vtx.ai.agent.context` (`AGENTS.md` discovery, skills loading, git snapshot). |
 | `agents/` | Switchable handoff agents: schema (`AgentDef`), loader, registry, plus aliases for `discovery`/`activate` (see [agents.md](agents.md)). |
 | `gh_cli.py`, `git_branch.py`, `diff_display.py` | PR autocomplete data, git metadata paths, diff color blending. |

@@ -54,6 +54,7 @@ from vtx.ai.agent.codemode.errors import (
     UnknownTool,
 )
 from vtx.ai.agent.codemode.host import SANDBOX_PATH, CodemodeSandbox
+from vtx.ai.agent.codemode.integration import adapt_tool, adapt_tools, base_tool_schema
 from vtx.ai.agent.codemode.source import (
     CODEMODE_SOURCE_GRAMMAR,
     CodemodeSourceError,
@@ -95,6 +96,9 @@ __all__ = [
     "ToolCall",
     "ToolError",
     "UnknownTool",
+    "adapt_tool",
+    "adapt_tools",
+    "base_tool_schema",
     "clamp_timeout",
     "parse_source",
     "rank",

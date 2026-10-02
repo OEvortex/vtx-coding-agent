@@ -24,19 +24,13 @@ compaction:
   on_overflow: "continue"
   threshold_percent: 80
 
-# Continual-harness refinement. The harness is the persistent, editable set of
-# prompt notes, memories, skills, and subagent specs rendered into the system
-# prompt (see the `# Continual Harness State` section). Auto-refine reviews the
-# trajectory at a turn boundary and, when it approves, applies small
-# evidence-backed edits to that harness. Set `enabled: false` to keep
-# refinement strictly manual (`/refine`, or the `refine` tool / kernel skill).
+# Retired: continual-harness refinement. Removed with the RLM kernel; the
+# fields still validate so an older config file keeps loading, but nothing
+# reads them. Delete this block.
 refine:
   enabled: true
-  # Review after this many assistant turns.
   turn_interval: 25
-  # Also review right after a context compaction.
   on_compact: true
-  # Minimum gap between two reviews.
   cooldown_minutes: 20
 
 agent:
@@ -107,12 +101,13 @@ agents:
 task:
   max_concurrent: 4
 
-# Runtime mode for the agent.
-# ``tool_first`` uses the default surgical tool surface (read, edit, write,
-# bash, find, web, ask_user, task, goal, skill).
-# ``rlm`` switches to a REPL-first experience where the model primarily
-# executes Python through a persistent ``ipython`` tool, similar to
-# Prime Agent's RLM harness.
+# Runtime mode for the agent. One value: the default surgical tool surface
+# (read, edit, write, bash, find, web, ask_user, task, goal, skill).
+#
+# The REPL-first mode (`rlm`, later `code_first`) was removed when its
+# persistent Python kernel was replaced by the codemode sandbox. The field is
+# kept so an older config still validates; the migration normalises any other
+# value to `tool_first`.
 mode: tool_first
 
 # Example: DeepSeek provider

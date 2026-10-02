@@ -1,6 +1,6 @@
 # Tools
 
-Vtx ships 12 built-in tools. Eleven are enabled by default; `grep` is built in but opt-in (enable it via an extension, agent `tools_allow`, or a custom tool list).
+Vtx ships 10 built-in tools. Nine are enabled by default; `grep` is built in but opt-in (enable it via an extension, agent `tools_allow`, or a custom tool list).
 
 | Tool | Does | Default |
 | --- | --- | --- |
@@ -14,7 +14,6 @@ Vtx ships 12 built-in tools. Eleven are enabled by default; `grep` is built in b
 | `ask_user` | Ask the user a clarifying question | yes |
 | `task` | Dispatch a sub-agent | yes |
 | `goal` | Persistent project goals: create, track tasks, complete with audit | yes |
-| `refine` | Refine the continual harness (prompt notes, memories, skills, subagents) | yes |
 | `grep` | Search file contents (`ripgrep`) | no |
 
 All tools are `BaseTool` subclasses with Pydantic params. The `mutating` flag drives permission gating: non-mutating tools run without approval, mutating tools follow the permission mode (see [permissions.md](permissions.md)).
@@ -103,7 +102,7 @@ without a separate read.
 | `file_path` | string | Supporting file to target (default: SKILL.md) |
 | `scope` | enum | `project` (`.agents/skills`) or `global` (`~/.agents/skills`) |
 
-`list` omits kernel (Python) skills outside RLM mode — see [skills.md](skills.md#python-kernel-skills). `run` (hand the skill to the Python kernel) is RLM-only and errors out otherwise.
+`list` omits python skills, which are hidden because nothing can execute them — see [skills.md](skills.md#python-skills). `run` returns the skill file rather than executing it: the persistent Python kernel it used to hand off to was removed with the RLM mode.
 
 ## web
 
@@ -172,35 +171,3 @@ One action-dispatched tool for the persistent goal system (see [goals.md](goals.
 | `subtasks` | list | `update_task`: attach subtasks under the target |
 
 `status="complete"` records the claim, then runs an independent auditor sub-agent over the workspace; the goal archives on `<approved/>` and stays open with feedback otherwise. The tool is non-mutating for permission purposes — archiving requires explicit user confirmation.
-
-## refine
-
-Refines the **continual harness**: the persistent prompt notes, memories, skills, and subagent specs that Vtx renders to the model as `# Continual Harness State`. An auxiliary model reads the trajectory and emits small `create`/`update`/`delete` edits, so lessons survive outside the context window. Only the top-level session has this tool; `code_first` mode uses the equivalent kernel skill (`await refine.run()`) instead.
-
-| Param | Type | Notes |
-| --- | --- | --- |
-| `action` | enum | `run` (default) schedules a pass, `status` reports the queue |
-| `instructions` | string | Optional focus for this pass, e.g. the failure worth remembering |
-| `global_` | bool | Target the cross-session store. Leave false for current-task progress |
-
-The call returns immediately — the pass runs when the current turn ends, applies its edits, appends a refinement notice to the session, and the model resumes. Edits are recorded to `refinements.jsonl`, so `/refine rollback <refinement-id>` inverts one. See `refine` in [configuration.md](configuration.md#refine) for automatic refinement.
-
-## /harness
-
-Reads and edits the continual harness directly, without a refinement pass and without the model in the loop. Refinement is the only automatic writer, and it only writes when a model decides to — which leaves no way to see what the agent currently believes, and no way to remove an entry you know is wrong without spending a pass and hoping the model agrees.
-
-| Form | Effect |
-| --- | --- |
-| `/harness` | List every entry, with the ids `/harness delete` takes |
-| `/harness memory` | List one kind (`prompt`, `memory`, `skill`, `subagent`) |
-| `/harness search <query>` | Rank entries by term overlap against the query |
-| `/harness show <id>` | Print one entry in full |
-| `/harness delete <id>` | Remove an entry and reload context |
-
-Add `--global` to any form to restrict it to the cross-session store. `show` and `delete` accept either the id or the title, case-insensitively, because you are reading a list of titles when you reach for them.
-
-Deleting reloads the context: the entry is in the harness digest the model is reading, and without a reload it would keep being told about a memory that no longer exists. Entries are listed from both scopes, and a global and a local entry that share an id are shown as two rows rather than collapsed — the scope is what decides whether a bad entry is worth deleting at all.
-
-In the TUI, a refinement pass renders as a one-line outcome (`◆ Harness refined · ctrl+d for edits`) that expands into the per-edit field diffs: what each field held before, what it holds now, which edits failed and why. The same block appears for a `/refine` you ran and for an auto-refine at a turn boundary.
-
-The harness digest reaches the model as a context message rather than part of the system prompt. Its entries are ranked by relevance to the current task, so folding it into the prompt would rewrite the provider's cached prefix on nearly every turn. It is delivered at each run boundary, and only re-rendered when the harness state it summarizes has actually changed.

@@ -243,14 +243,13 @@ class TaskConfig(BaseModel):
 
 
 class RefineConfig(BaseModel):
-    """Continual-harness refinement (prime parity).
+    """Retired: continual-harness refinement.
 
-    Auto-refine runs a cheap review gate at the turn boundary: after
-    ``turn_interval`` assistant turns, and (when ``on_compact``) right after a
-    context compaction. The gate reads the trajectory and answers
-    ``shouldRefine``; only an approved gate spends the plan pass that emits the
-    harness edits. ``cooldown_minutes`` bounds how often a gate may run, so a
-    failing provider does not retry on every turn.
+    The harness it refined is gone, so nothing reads these fields any more.
+    The class stays so a config file that still carries a ``refine:`` block
+    validates instead of erroring -- the same reasoning as
+    :func:`_migrate_v13_to_v14` for ``mode``. Delete the block from your
+    config; the defaults below are inert.
     """
 
     enabled: bool = True
@@ -258,14 +257,6 @@ class RefineConfig(BaseModel):
     on_compact: bool = True
     cooldown_minutes: float = Field(default=20.0, ge=0)
     model: str | None = None
-    """Model for refinement passes, as ``provider/model``.
-
-    Refinement reads the whole trajectory and writes a small JSON proposal, so
-    it does not need the session model's capability or its context window.
-    Pointing it at a cheaper model keeps the gate and the plan pass off the
-    session model, which is the bulk of refinement's cost. Falls back to the
-    session model when unset, unknown, or too small for the request.
-    """
 
 
 class ConfigSchema(BaseModel):
@@ -963,10 +954,6 @@ def _sync_harness_settings(cfg: Config) -> None:
         compaction_threshold_percent=cfg.compaction.threshold_percent,
         compaction_on_overflow=cfg.compaction.on_overflow,
         tool_call_idle_timeout_seconds=cfg.llm.tool_call_idle_timeout_seconds,
-        auto_refine_enabled=cfg.refine.enabled,
-        auto_refine_turn_interval=cfg.refine.turn_interval,
-        auto_refine_on_compact=cfg.refine.on_compact,
-        auto_refine_cooldown_seconds=cfg.refine.cooldown_minutes * 60.0,
     )
 
 

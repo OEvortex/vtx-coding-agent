@@ -24,24 +24,32 @@ typed after the skill name (or the query passed to the `skill` tool).
 
 Constraints enforced at load time: name ≤ 64 chars, description ≤ 1024 chars, category ≤ 32 chars. The directory name should match `name`; mismatches produce a warning.
 
-## Python (kernel) skills
+## Python skills
 
-A skill that also ships a `pyproject.toml` and `src/<import_name>/__init__.py` is loaded as a **kernel skill** instead of as instructions. It is imported into the persistent Python kernel and called by its import name:
+A skill that also ships a `pyproject.toml` and `src/<import_name>/__init__.py` is
+loaded as a **python skill** rather than as instructions.
 
 ```
-.agents/skills/refine/
+.agents/skills/word-count/
 ├── SKILL.md          # API reference for the module
 ├── pyproject.toml
-└── src/refine/__init__.py
+└── src/word_count/__init__.py
 ```
 
-```python
-await refine.run("persist a memory about checking git status before committing")
-```
+Python skills are discovered and importable, but nothing executes them. They were
+imported into the persistent Python kernel that the RLM mode provided; that
+kernel is gone, replaced by the codemode sandbox, which runs a confined script
+rather than exposing a long-lived interpreter.
 
-The kernel only exists in RLM mode, so kernel skills are hidden in `tool_first` mode — they are left out of the system-prompt catalog, the `skill` tool's `list`, and the `/` command menu, and `register_cmd: true` does not force one back in. A tool-first agent has no `ipython` tool, so an advertised kernel skill is a dead end: the description reads as generally applicable, the agent loads it, and then has nothing to call it with. In RLM mode they are pre-imported in the kernel and listed with their import name.
+So python skills are **hidden from every discovery surface** — the system-prompt
+catalog, the `skill` tool's `list`, and the `/` command menu — and
+`register_cmd: true` does not force one back in. Advertising one would spend
+context on a dead end: the description reads as generally applicable, the agent
+loads it, and then has nothing to call it with.
 
-`refine` is the one kernel skill with a tool-first counterpart: since the capability is a host-side pass, not a kernel call, `tool_first` sessions get the equivalent `refine` tool (see [tools.md](tools.md#refine)) rather than a dead-end skill.
+`skill(action="run")` returns the file instead of running it, so a python skill
+is still readable. A `SKILL.md` body is instructions for a model, and the model
+can follow those directly.
 
 ## Discovery paths
 

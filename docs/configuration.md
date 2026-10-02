@@ -34,25 +34,6 @@ The window is the active model's real context window from the catalog (e.g. 1M-c
 | `max_turns` | `500` | Hard turn budget per run |
 | `default_context_window` | `200000` | Fallback when the model's window is unknown |
 
-## `refine`
-
-Automatic continual-harness refinement. The harness is the persistent set of prompt notes, memories, skills, and subagent specs rendered into the model as `# Continual Harness State` (see the `refine` tool in [tools.md](tools.md#refine)). Auto-refine reviews the trajectory at a turn boundary and, when the review approves, applies small evidence-backed edits.
-
-| Field | Default | Notes |
-| --- | --- | --- |
-| `enabled` | `true` | Set false to keep refinement manual (`/refine`, the `refine` tool, the kernel skill) |
-| `turn_interval` | `25` | Review after this many assistant turns |
-| `on_compact` | `true` | Also review right after a context compaction |
-| `cooldown_minutes` | `20` | Minimum gap between two reviews |
-| `model` | unset | `provider/model` to run refinement passes on, e.g. `openai/gpt-4o-mini`. Falls back to the session model |
-
-The review gate is a small auxiliary call that answers "did this trajectory produce anything worth persisting?"; most boundaries cost nothing, and a rejected review applies no edits. Refinement is never scoped to the cross-session store automatically — that requires an explicit `--global` / `global_=true`.
-
-`model` exists because a refinement pass reads the trajectory and writes a small JSON proposal, which does not need the session model's capability or context window. Pointing it at a cheaper model keeps the gate and the plan pass off the session model. It falls back to the session model when unset, when the model is not in the catalog, when its provider has no configured credential, or when the provider cannot be built — a bad selector degrades to the normal path rather than failing the turn. `/refine rollback` never calls a model at all, so `model` does not affect it.
-
-### Stale entries
-
-The gate is also asked whether any existing entry is contradicted by what it just observed, and reports the ones it can point at in the trajectory. A reported contradiction is by itself enough to trigger a pass, seeded with instructions to correct or delete that entry rather than add a second one beside it. Reported ids are resolved against the live store first, so an id the gate invented is discarded. Nothing else re-checks written entries, so this is the only path by which a wrong memory is ever corrected.
 
 ## `ui`
 

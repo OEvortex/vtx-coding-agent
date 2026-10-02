@@ -90,6 +90,9 @@ TOOL_EXECUTION_UPDATE = "tool_execution_update"
 TOOL_EXECUTION_END = "tool_execution_end"
 COMPACTION_START = "compaction_start"
 COMPACTION_END = "compaction_end"
+# Retired with the refinement subsystem: nothing emits these, and nothing
+# listens. Kept so an extension that subscribes to them still loads -- the
+# event bus would otherwise raise on an unknown name at import time.
 SESSION_BEFORE_REFINE = "session_before_refine"
 REFINE_COMPLETE = "refine_complete"
 # Agent lifecycle events (re-exported from vtx.agents for convenience).
