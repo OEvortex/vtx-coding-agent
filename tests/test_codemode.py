@@ -23,7 +23,6 @@ from vtx.ai.agent.codemode import (
     CodemodeTool,
     Limits,
     ToolError,
-    UnknownTool,
     clamp_timeout,
     parse_source,
     rank,

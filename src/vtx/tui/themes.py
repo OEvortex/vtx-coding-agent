@@ -3,12 +3,6 @@ from __future__ import annotations
 from pydantic import BaseModel, model_validator
 
 
-class ToolBgConfig(BaseModel):
-    pending: str
-    success: str
-    error: str
-
-
 class BadgeColorConfig(BaseModel):
     bg: str
     label: str
@@ -24,10 +18,6 @@ class SyntaxColorConfig(BaseModel):
 
 
 class ColorsConfig(BaseModel):
-    # Optional refinement-block accents. Empty means "use the fallback", so
-    # existing themes and user config.yml files keep working unchanged.
-    refinement_header: str = ""
-    refinement_summary: str = ""
     dim: str
     muted: str
     title: str
@@ -41,7 +31,6 @@ class ColorsConfig(BaseModel):
     notice: str
     diff_added: str
     diff_removed: str
-    tool_bg: ToolBgConfig
     badge: BadgeColorConfig
     running: str
     success: str
@@ -101,7 +90,6 @@ _THEMES: dict[str, ThemeConfig] = {
             notice="#ffb347",
             diff_added="#00ff88",
             diff_removed="#ff4757",
-            tool_bg=ToolBgConfig(pending="#151820", success="#151820", error="#1a0f10"),
             badge=BadgeColorConfig(bg="#151820", label="#00b4ff"),
             running="#00b4ff",
             success="#00ff88",
@@ -132,7 +120,6 @@ _THEMES: dict[str, ThemeConfig] = {
             notice="#ff8b00",
             diff_added="#00875a",
             diff_removed="#de350b",
-            tool_bg=ToolBgConfig(pending="#eaedf3", success="#eaedf3", error="#ffebe6"),
             badge=BadgeColorConfig(bg="#eaedf3", label="#0077b6"),
             running="#0077b6",
             success="#00875a",
@@ -163,7 +150,6 @@ _THEMES: dict[str, ThemeConfig] = {
             notice="#fe8019",
             diff_added="#b8bb26",
             diff_removed="#fb4934",
-            tool_bg=ToolBgConfig(pending="#32302f", success="#3c3836", error="#3c2f2f"),
             badge=BadgeColorConfig(bg="#3c3836", label="#d3869b"),
             running="#458588",
             success="#98971a",
@@ -194,7 +180,6 @@ _THEMES: dict[str, ThemeConfig] = {
             notice="#af3a03",
             diff_added="#79740e",
             diff_removed="#9d0006",
-            tool_bg=ToolBgConfig(pending="#f2e5bc", success="#ebdbb2", error="#f3d9d4"),
             badge=BadgeColorConfig(bg="#ebdbb2", label="#b16286"),
             running="#458588",
             success="#79740e",
@@ -225,7 +210,6 @@ _THEMES: dict[str, ThemeConfig] = {
             notice="#fab387",
             diff_added="#a6e3a1",
             diff_removed="#f38ba8",
-            tool_bg=ToolBgConfig(pending="#313244", success="#2b3a33", error="#3d2f38"),
             badge=BadgeColorConfig(bg="#313244", label="#cba6f7"),
             running="#89b4fa",
             success="#a6e3a1",
@@ -256,7 +240,6 @@ _THEMES: dict[str, ThemeConfig] = {
             notice="#fe640b",
             diff_added="#40a02b",
             diff_removed="#d20f39",
-            tool_bg=ToolBgConfig(pending="#e6e9ef", success="#dfe8dc", error="#f2d8dd"),
             badge=BadgeColorConfig(bg="#e6e9ef", label="#8839ef"),
             running="#1e66f5",
             success="#40a02b",
@@ -287,7 +270,6 @@ _THEMES: dict[str, ThemeConfig] = {
             notice="#e5c890",
             diff_added="#a6d189",
             diff_removed="#e78284",
-            tool_bg=ToolBgConfig(pending="#232634", success="#29342b", error="#3a2a31"),
             badge=BadgeColorConfig(bg="#232634", label="#ca9ee6"),
             running="#8da4e2",
             success="#a6d189",
@@ -318,7 +300,6 @@ _THEMES: dict[str, ThemeConfig] = {
             notice="#eed49f",
             diff_added="#a6da95",
             diff_removed="#ed8796",
-            tool_bg=ToolBgConfig(pending="#181926", success="#29342b", error="#3a2a31"),
             badge=BadgeColorConfig(bg="#181926", label="#c6a0f6"),
             running="#8aadf4",
             success="#a6da95",
@@ -349,7 +330,6 @@ _THEMES: dict[str, ThemeConfig] = {
             notice="#ffb86c",
             diff_added="#50fa7b",
             diff_removed="#ff5555",
-            tool_bg=ToolBgConfig(pending="#343746", success="#2f3b35", error="#43303a"),
             badge=BadgeColorConfig(bg="#343746", label="#bd93f9"),
             running="#8be9fd",
             success="#50fa7b",
@@ -380,7 +360,6 @@ _THEMES: dict[str, ThemeConfig] = {
             notice="#e69875",
             diff_added="#4fd6be",
             diff_removed="#c53b53",
-            tool_bg=ToolBgConfig(pending="#343f44", success="#20303b", error="#37222c"),
             badge=BadgeColorConfig(bg="#343f44", label="#7fbbb3"),
             running="#a7c080",
             success="#a7c080",
@@ -411,7 +390,6 @@ _THEMES: dict[str, ThemeConfig] = {
             notice="#DA702C",
             diff_added="#879A39",
             diff_removed="#D14D41",
-            tool_bg=ToolBgConfig(pending="#282726", success="#1A2D1A", error="#2D1A1A"),
             badge=BadgeColorConfig(bg="#282726", label="#4385BE"),
             running="#DA702C",
             success="#879A39",
@@ -442,7 +420,6 @@ _THEMES: dict[str, ThemeConfig] = {
             notice="#db6d28",
             diff_added="#3fb950",
             diff_removed="#f85149",
-            tool_bg=ToolBgConfig(pending="#161b22", success="#132a1b", error="#2d1f24"),
             badge=BadgeColorConfig(bg="#161b22", label="#bc8cff"),
             running="#58a6ff",
             success="#3fb950",
@@ -473,7 +450,6 @@ _THEMES: dict[str, ThemeConfig] = {
             notice="#bc4c00",
             diff_added="#1a7f37",
             diff_removed="#cf222e",
-            tool_bg=ToolBgConfig(pending="#f6f8fa", success="#eaf5ec", error="#f8e6e8"),
             badge=BadgeColorConfig(bg="#f6f8fa", label="#8250df"),
             running="#0969da",
             success="#1a7f37",
@@ -504,7 +480,6 @@ _THEMES: dict[str, ThemeConfig] = {
             notice="#ff9e64",
             diff_added="#9ece6a",
             diff_removed="#f7768e",
-            tool_bg=ToolBgConfig(pending="#24283b", success="#243638", error="#3a2734"),
             badge=BadgeColorConfig(bg="#24283b", label="#bb9af7"),
             running="#7aa2f7",
             success="#9ece6a",
@@ -535,7 +510,6 @@ _THEMES: dict[str, ThemeConfig] = {
             notice="#b15c00",
             diff_added="#587539",
             diff_removed="#f52a65",
-            tool_bg=ToolBgConfig(pending="#cbccd1", success="#c7d8cb", error="#dec7cf"),
             badge=BadgeColorConfig(bg="#cbccd1", label="#9854f1"),
             running="#2e7de9",
             success="#587539",
@@ -566,7 +540,6 @@ _THEMES: dict[str, ThemeConfig] = {
             notice="#D7A657",
             diff_added="#98BB6C",
             diff_removed="#E82424",
-            tool_bg=ToolBgConfig(pending="#363646", success="#252E25", error="#362020"),
             badge=BadgeColorConfig(bg="#363646", label="#957FB8"),
             running="#7E9CD8",
             success="#98BB6C",
@@ -597,7 +570,6 @@ _THEMES: dict[str, ThemeConfig] = {
             notice="#FF9E3B",
             diff_added="#76946A",
             diff_removed="#C34043",
-            tool_bg=ToolBgConfig(pending="#1D1C19", success="#282727", error="#2a2022"),
             badge=BadgeColorConfig(bg="#282727", label="#a292a3"),
             running="#8ba4b0",
             success="#76946A",
@@ -628,7 +600,6 @@ _THEMES: dict[str, ThemeConfig] = {
             notice="#d19a66",
             diff_added="#98c379",
             diff_removed="#e06c75",
-            tool_bg=ToolBgConfig(pending="#353b45", success="#33403b", error="#442f36"),
             badge=BadgeColorConfig(bg="#353b45", label="#c678dd"),
             running="#61afef",
             success="#98c379",
@@ -659,7 +630,6 @@ _THEMES: dict[str, ThemeConfig] = {
             notice="#986801",
             diff_added="#50a14f",
             diff_removed="#e45649",
-            tool_bg=ToolBgConfig(pending="#f0f0f1", success="#e6f1e6", error="#f5e3e1"),
             badge=BadgeColorConfig(bg="#f0f0f1", label="#a626a4"),
             running="#4078f2",
             success="#50a14f",
@@ -690,7 +660,6 @@ _THEMES: dict[str, ThemeConfig] = {
             notice="#d08770",
             diff_added="#a3be8c",
             diff_removed="#bf616a",
-            tool_bg=ToolBgConfig(pending="#3b4252", success="#364238", error="#46343b"),
             badge=BadgeColorConfig(bg="#3b4252", label="#b48ead"),
             running="#5e81ac",
             success="#a3be8c",
@@ -721,7 +690,6 @@ _THEMES: dict[str, ThemeConfig] = {
             notice="#ecc48d",
             diff_added="#c5e478",
             diff_removed="#EF5350",
-            tool_bg=ToolBgConfig(pending="#0b253a", success="#0a2e1a", error="#2d1b1b"),
             badge=BadgeColorConfig(bg="#0b253a", label="#7fdbca"),
             running="#82AAFF",
             success="#c5e478",
@@ -752,7 +720,6 @@ _THEMES: dict[str, ThemeConfig] = {
             notice="#e6db74",
             diff_added="#a6e22e",
             diff_removed="#f92672",
-            tool_bg=ToolBgConfig(pending="#3e3d32", success="#1a3a1a", error="#3a1a1a"),
             badge=BadgeColorConfig(bg="#3e3d32", label="#ae81ff"),
             running="#66d9ef",
             success="#a6e22e",
@@ -783,7 +750,6 @@ _THEMES: dict[str, ThemeConfig] = {
             notice="#cb4b16",
             diff_added="#859900",
             diff_removed="#dc322f",
-            tool_bg=ToolBgConfig(pending="#073642", success="#183c37", error="#402c32"),
             badge=BadgeColorConfig(bg="#073642", label="#6c71c4"),
             running="#268bd2",
             success="#859900",
@@ -814,7 +780,6 @@ _THEMES: dict[str, ThemeConfig] = {
             notice="#cb4b16",
             diff_added="#859900",
             diff_removed="#dc322f",
-            tool_bg=ToolBgConfig(pending="#eee8d5", success="#e5eed4", error="#f2ddda"),
             badge=BadgeColorConfig(bg="#eee8d5", label="#6c71c4"),
             running="#268bd2",
             success="#859900",
@@ -845,7 +810,6 @@ _THEMES: dict[str, ThemeConfig] = {
             notice="#E6B673",
             diff_added="#7FD962",
             diff_removed="#F26D78",
-            tool_bg=ToolBgConfig(pending="#0D1017", success="#20303b", error="#37222c"),
             badge=BadgeColorConfig(bg="#0D1017", label="#D2A6FF"),
             running="#59C2FF",
             success="#7FD962",
@@ -876,7 +840,6 @@ _THEMES: dict[str, ThemeConfig] = {
             notice="#ffcb6b",
             diff_added="#c3e88d",
             diff_removed="#f07178",
-            tool_bg=ToolBgConfig(pending="#32364a", success="#2e3c2b", error="#3c2b2b"),
             badge=BadgeColorConfig(bg="#32364a", label="#c792ea"),
             running="#82aaff",
             success="#c3e88d",
@@ -907,7 +870,6 @@ _THEMES: dict[str, ThemeConfig] = {
             notice="#f6c177",
             diff_added="#31748f",
             diff_removed="#eb6f92",
-            tool_bg=ToolBgConfig(pending="#26233a", success="#1f2d3a", error="#3a1f2d"),
             badge=BadgeColorConfig(bg="#26233a", label="#c4a7e7"),
             running="#9ccfd8",
             success="#31748f",

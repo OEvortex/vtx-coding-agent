@@ -4,6 +4,7 @@ Ported from Prime Agent (MIT) — https://github.com/PrimeIntellect-ai/prime-age
 
 from __future__ import annotations
 
+import contextlib
 from pathlib import Path
 
 
@@ -52,11 +53,19 @@ _DIFF_DISPLAY_MIME = "application/vnd.vtx.diff+json"
 
 
 def _emit_diff(path: str, old_str: str, new_str: str, start_line: int) -> None:
-    """Stream a diff to the host as a display event; best-effort outside the kernel."""
-    try:
-        from vtx.ai.agent.rlm import emit
+    """Stream a diff to the host as a display event.
 
-        emit(
+    Best-effort: the RLM kernel that provided ``emit`` is gone, so this is now a
+    no-op unless the host installs an ``emit`` hook on this module. Kept rather
+    than deleted because the diff-display MIME type is still the contract the
+    TUI renders, and a future host can light it back up by assigning one
+    function here.
+    """
+    sink = globals().get("_display_sink")
+    if sink is None:
+        return
+    with contextlib.suppress(Exception):
+        sink(
             {
                 _DIFF_DISPLAY_MIME: {
                     "path": path,
@@ -67,5 +76,3 @@ def _emit_diff(path: str, old_str: str, new_str: str, start_line: int) -> None:
                 "text/plain": f"Edited {path}",
             }
         )
-    except Exception:
-        pass

@@ -122,12 +122,17 @@ def test_bundled_kernel_skills_do_not_shadow_commands():
     assert collisions == [], f"skills shadow built-in commands: {collisions}"
 
 
-def test_bundled_kernel_skills_are_not_slash_commands():
-    """The five bundled kernel skills are imported, never typed as /name."""
+def test_bundled_python_skills_are_not_slash_commands():
+    """The one bundled python skill is imported, never typed as /name.
+
+    It was five; the other four (``agent-message``, ``agent-observe``,
+    ``compact``, ``refine``) were deleted with the RLM kernel, which was the
+    only thing that could import them.
+    """
     skills = {s.name: s for s in load_builtin_cmd_skills().skills}
-    for name in ("agent-message", "agent-observe", "compact", "edit", "refine"):
-        assert skills[name].kind == "python", name
-        assert skills[name].register_cmd is False, name
+    python_skills = [name for name, skill in skills.items() if skill.kind == "python"]
+    assert python_skills == ["edit"]
+    assert skills["edit"].register_cmd is False
 
 
 # ---------------------------------------------------------------------------

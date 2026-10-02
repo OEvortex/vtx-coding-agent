@@ -9,7 +9,6 @@ from vtx.ai.config import (
     NOTIFICATION_MODES,
     PERMISSION_MODES,
     THINKING_LINES_OPTIONS,
-    AgentMode,
     NotificationMode,
     PermissionMode,
     ThinkingLinesOption,
@@ -325,13 +324,14 @@ class SettingsCommands(CommandSupport):
             return "reopened-picker"
 
         elif item_value == "mode":
-            current = config.mode
-            new_mode: AgentMode = "tool_first" if current == "code_first" else "code_first"
-            self._select_mode(new_mode)
+            # One runtime mode remains. The entry stays in the picker so the
+            # layout does not shift, and selecting it explains why rather than
+            # toggling to a value that no longer exists.
             chat = self.query_one("#chat-log", ChatLog)
-            chat.show_status(f"Mode changed to {new_mode}")
             chat.add_info_message(
-                f"Mode changed to {new_mode}. Use /new or restart to apply fully.", warning=True
+                "There is one runtime mode. The REPL-first mode was removed when "
+                "the RLM kernel was replaced by the codemode sandbox.",
+                warning=True,
             )
             self._show_settings_picker(selected_value=item_value)
             return "reopened-picker"

@@ -30,7 +30,6 @@ def coerce_json(value: Any, *, what: str) -> Any:
     model can tell "this tool's return value is wrong" from "these arguments
     are wrong".
     """
-    from vtx.ai.agent.codemode.errors import InvalidOutput
 
     return _coerce(value, what=what, depth=0)
 

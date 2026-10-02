@@ -12,12 +12,6 @@ The composer joins a small set of named sections in a fixed order:
 Each section is empty when its source has nothing to contribute, so
 the final prompt is just whatever joined list comes back. ``build_system_prompt``
 is the single entry point used by :mod:`vtx.loop` and the runtime.
-
-The ``# Continual Harness State`` digest is deliberately *not* a section here.
-It is per-session state whose entries are ranked by relevance to the current
-task, so folding it in here would rewrite the provider's cached prefix on
-nearly every turn. The agent delivers it as a context message at cold
-boundaries instead (see :func:`vtx.ai.agent.rlm.refine.create_harness_digest_message`).
 """
 
 from __future__ import annotations
@@ -29,7 +23,6 @@ from vtx.ai.agent.context import (
     formatted_agent_mds,
     formatted_git_context,
     formatted_skills,
-    formatted_skills_index,
     skills_for_mode,
 )
 from vtx.ai.agent.tools import BaseTool
@@ -94,38 +87,6 @@ def build_system_prompt(
     if context is None:
         context = Context.load(cwd)
 
-    mode = getattr(vtx_config, "mode", "tool_first")
-    if mode == "code_first" and base_content is None:
-        from .rlm import build_rlm_system_prompt
-
-        installed_skills = (
-            [s.name for s in (skills or context.skills)] if (skills or context.skills) else []
-        )
-        tool_names = [t.name if hasattr(t, "name") else str(t) for t in (tools or [])]
-        base = build_rlm_system_prompt(
-            cwd=cwd, installed_skills=installed_skills, active_tools=tool_names or ["ipython"]
-        )
-        sections: list[str] = [base]
-        if extra_instructions and extra_instructions_mode == "append":
-            sections.append(extra_instructions)
-        tool_section = build_tool_guidelines_section(tools)
-        if tool_section:
-            sections.append(tool_section)
-        if context.agents_files:
-            sections.append(formatted_agent_mds(context.agents_files))
-        effective_skills = skills if skills is not None else context.skills
-        if effective_skills:
-            # RLM mode gets the compact routing index: the base prompt already
-            # documents the pre-imported modules, and the model reads SKILL.md
-            # on demand. The full catalog costs ~6k tokens every turn.
-            sections.append(formatted_skills_index(effective_skills))
-        if _resolve_git_flag(include_git_context):
-            git_section = formatted_git_context(cwd)
-            if git_section:
-                sections.append(git_section)
-        sections.append(build_env_section(cwd))
-        return "\n\n".join(sections)
-
     base = _resolve_base(base_content)
     if extra_instructions and extra_instructions_mode == "replace":
         base = extra_instructions
@@ -146,8 +107,9 @@ def build_system_prompt(
 
     effective_skills = skills if skills is not None else context.skills
     if effective_skills:
-        # No kernel in tool-first mode, so python skills are unrunnable here.
-        prompt_skills = skills_for_mode(effective_skills, mode)
+        # Filters out skills with no runtime to execute them. There is no
+        # kernel any more, so that is currently every python skill.
+        prompt_skills = skills_for_mode(effective_skills)
         if prompt_skills:
             sections.append(formatted_skills(prompt_skills))
 

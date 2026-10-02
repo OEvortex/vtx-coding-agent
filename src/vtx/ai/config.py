@@ -42,7 +42,7 @@ CONFIG_DIR_NAME: str = "vtx"
 OnOverflowMode = Literal["continue", "pause"]
 AuthMode = Literal["auto", "required", "none"]
 PermissionMode = Literal["prompt", "auto"]
-AgentMode = Literal["tool_first", "code_first"]
+AgentMode = Literal["tool_first"]
 AGENT_MODES: tuple[AgentMode, ...] = get_args(AgentMode)
 NotificationMode = Literal["on", "off"]
 PERMISSION_MODES: tuple[PermissionMode, ...] = get_args(PermissionMode)
@@ -289,9 +289,8 @@ class ConfigSchema(BaseModel):
     agents: AgentsConfig = AgentsConfig()
     # Sub-agent concurrency for the ``Task`` tool.
     task: TaskConfig = TaskConfig()
-    # Runtime mode: ``tool_first`` uses the default surgical tool surface;
-    # ``code_first`` switches to a REPL-first experience where the model primarily
-    # executes Python through a persistent ``ipython`` tool.
+    # Runtime mode. One value remains; see :func:`_migrate_v13_to_v14` for why
+    # the field is kept rather than removed.
     mode: AgentMode = "tool_first"
 
 
@@ -718,18 +717,17 @@ def _migrate_v12_to_v13(data: dict[str, Any]) -> dict[str, Any]:
 
 
 def _migrate_v13_to_v14(data: dict[str, Any]) -> dict[str, Any]:
-    """Rename the REPL-first mode from ``rlm`` to ``code_first``.
+    """Retire the REPL-first mode.
 
-    ``rlm`` named the implementation (recursive language model) rather than the
-    capability the mode actually gives the model, which made it read as an
-    internal detail next to the user-facing ``tool_first``. ``code_first``
-    describes the contract: the model writes code, and the host supplies tools.
+    ``rlm`` became ``code_first`` in this step, and both are now gone: the
+    RLM kernel has been replaced by :mod:`vtx.ai.agent.codemode`, a confined
+    sandbox rather than a persistent one. ``mode`` is kept as a field so an
+    existing config file still loads, but there is only one runtime mode and
+    anything claiming otherwise is normalised to ``tool_first``.
     """
     migrated = dict(data)
 
-    if migrated.get("mode") == "rlm":
-        migrated["mode"] = "code_first"
-    elif migrated.get("mode") not in ("tool_first", "code_first"):
+    if migrated.get("mode") != "tool_first":
         migrated["mode"] = "tool_first"
 
     meta = migrated.get("meta")

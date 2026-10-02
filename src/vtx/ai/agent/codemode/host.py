@@ -19,6 +19,7 @@ cancellation to get wrong.
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import json
 import os
 import subprocess
@@ -28,16 +29,6 @@ from pathlib import Path
 from typing import Any
 
 from vtx.ai.agent.codemode import errors, jsonio
-
-# Frame types, mirrored as constants here rather than imported: the worker is
-# launched by file path so it cannot import this package, and duplicating five
-# string literals is cheaper than a shared module the worker would have to load
-# through a path that reintroduces the import cost. tests/test_codemode.py
-# asserts both sides agree.
-_EXECUTE = "execute"
-_TOOL_CALL = "tool_call"
-_TOOL_RESULT = "tool_result"
-_RESULT = "result"
 from vtx.ai.agent.codemode.types import (
     MAX_STORE_TOTAL_CHARS,
     MAX_STORE_VALUE_CHARS,
@@ -48,6 +39,16 @@ from vtx.ai.agent.codemode.types import (
     ToolCall,
     coerce_json,
 )
+
+# Frame types, mirrored as constants here rather than imported: the worker is
+# launched by file path so it cannot import this package, and duplicating five
+# string literals is cheaper than a shared module the worker would have to load
+# through a path that reintroduces the import cost. tests/test_codemode.py
+# asserts both sides agree.
+_EXECUTE = "execute"
+_TOOL_CALL = "tool_call"
+_TOOL_RESULT = "tool_result"
+_RESULT = "result"
 
 #: Grace period between SIGTERM and SIGKILL. Long enough for a well-behaved
 #: process to exit on its own, short enough that a wedged one is not the
@@ -188,7 +189,7 @@ class CodemodeSandbox:
             "VTX_CODEMODE": "1",
         }
         try:
-            return subprocess.Popen(  # noqa: S603 - fixed argv, no shell
+            return subprocess.Popen(
                 [self._python, "-I", str(SANDBOX_PATH)],
                 stdin=subprocess.PIPE,
                 stdout=subprocess.PIPE,
@@ -359,7 +360,7 @@ class CodemodeSandbox:
                 "value": None,
                 "error": exc.diagnostic(),
             }
-        except Exception as exc:  # noqa: BLE001 - sanitized into a tool failure
+        except Exception:
             # Unclassified: the message is not forwarded. A tool that raises
             # something the host did not anticipate is a host defect, and its
             # text can carry paths or internals into the model's context.
@@ -504,7 +505,8 @@ def _reject_duplicate_identifiers(tools: Sequence[CodemodeTool]) -> None:
         identifier = tool.identifier()
         if identifier in seen:
             raise ValueError(
-                f"tools {seen[identifier]!r} and {tool.name!r} both map to identifier {identifier!r}"
+                f"tools {seen[identifier]!r} and {tool.name!r} both map to "
+                f"identifier {identifier!r}"
             )
         seen[identifier] = tool.name
 
@@ -548,26 +550,24 @@ async def _terminate(process: subprocess.Popen[bytes]) -> None:
             return
         await asyncio.sleep(0.05)
 
-    try:
+    with contextlib.suppress(ProcessLookupError, PermissionError, OSError):
         if _IS_WINDOWS:
             process.kill()
         else:
             os.killpg(os.getpgid(process.pid), 9)
-    except (ProcessLookupError, PermissionError, OSError):
-        try:
-            process.kill()
-        except OSError:
-            pass
+        return
+    # The group signal failed (already reaped, or no group). Fall back to the
+    # single process; failing to kill a process that already exited is fine.
+    with contextlib.suppress(OSError):
+        process.kill()
 
 
 async def _reap(process: subprocess.Popen[bytes]) -> None:
     """Close the pipes and wait, so no zombie outlives the execution."""
     for stream in (process.stdin, process.stdout, process.stderr):
         if stream is not None:
-            try:
+            with contextlib.suppress(OSError):
                 stream.close()
-            except OSError:
-                pass
     try:
         await asyncio.get_running_loop().run_in_executor(None, process.wait, 5.0)
     except (subprocess.TimeoutExpired, OSError):

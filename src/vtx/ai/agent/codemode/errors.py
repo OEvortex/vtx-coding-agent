@@ -149,17 +149,24 @@ class ToolError(CodemodeError):
         return {"kind": self.kind, "message": self.message}
 
 
-class UnknownTool(ToolError):
+# The names below intentionally omit an `Error` suffix (N818). They are not
+# internal identifiers: a model script writes `except UnknownTool:` to branch on
+# a wrong tool name differently from a tool that declined, and the shorter name
+# is what the model-facing instructions document. Suffixing them would push a
+# convention onto the caller for the sake of the callee.
+
+
+class UnknownTool(ToolError):  # noqa: N818 - see above
     def __init__(self, name: str) -> None:
         super().__init__(f"Unknown tool: {name}", kind=UNKNOWN_TOOL)
 
 
-class InvalidInput(ToolError):
+class InvalidInput(ToolError):  # noqa: N818 - see above
     def __init__(self, name: str, *, detail: str | None = None) -> None:
         super().__init__(f"Invalid arguments for tool: {name}", detail=detail, kind=INVALID_INPUT)
 
 
-class InvalidOutput(ToolError):
+class InvalidOutput(ToolError):  # noqa: N818 - see above
     def __init__(self, what: str, *, detail: str | None = None) -> None:
         super().__init__(
             f"{what} is not JSON data: {detail or 'no JSON representation'}",
@@ -168,7 +175,7 @@ class InvalidOutput(ToolError):
         )
 
 
-class HostUnavailable(ToolError):
+class HostUnavailable(ToolError):  # noqa: N818 - see above
     def __init__(self, detail: str | None = None) -> None:
         super().__init__(
             "The host bridge is not available in this session",
@@ -195,11 +202,11 @@ class SandboxError(CodemodeError):
     """The sandbox process or transport failed."""
 
 
-class ScriptAborted(CodemodeError):
+class ScriptAborted(CodemodeError):  # noqa: N818 - see above
     kind = ABORTED
 
 
-class ScriptTimeout(CodemodeError):
+class ScriptTimeout(CodemodeError):  # noqa: N818 - see above
     kind = TIMEOUT
 
 

@@ -6,11 +6,6 @@ messages to the session, and decides whether to continue. After every turn, over
 may run and emit its own start/end events so the UI can reflect that state in real time.
 
 The loop ends on stop/error/interruption, compaction pause mode, or max turns.
-
-Between turns it also drains the host bridge's pending harness refinement
-(`/refine`, the `refine` tool, the kernel skill) and, unless disabled, runs the
-auto-refine review gate that decides on its own whether the trajectory
-produced lessons worth persisting.
 """
 
 import asyncio
@@ -36,11 +31,6 @@ from vtx.ai.agent.extensions import (
     TURN_START,
     EventBus,
 )
-from vtx.ai.agent.rlm.refine import (
-    AUTO_REFINE_REASON_COMPACT,
-    AUTO_REFINE_REASON_TURN_INTERVAL,
-    REFINEMENT_NOTICE_TAG,
-)
 from vtx.ai.agent.session import CompactionEntry, MessageEntry, Session
 from vtx.ai.agent.skills_refresh import SkillsCatalogState
 from vtx.ai.agent.tools import BaseTool
@@ -55,7 +45,6 @@ from vtx.core.events import (
     CompactionStartEvent,
     ErrorEvent,
     Event,
-    HostNoticeEvent,
     InterruptedEvent,
     TurnEndEvent,
     TurnStartEvent,
@@ -113,8 +102,9 @@ class Agent:
         ``system_prompt`` is used.
 
         ``depth`` is the sub-agent nesting level (0 for a top-level session).
-        Only depth 0 runs auto-refine: harness refinement is drained by the
-        parent loop, so a child would queue work the parent cannot attribute.
+        Only depth 0 delivers the skills catalog refresh: a child shares the
+        parent's session, so it would duplicate an announcement the parent
+        already made.
         """
         self.provider = provider
         self.tools = tools
@@ -144,27 +134,10 @@ class Agent:
         # callback (which runs on the stream's task) and drained by the
         # compaction generator between polls.
         self._compaction_progress: deque[CompactionProgressEvent] = deque()
-        # Auto-refine (prime parity). The gate runs at turn boundaries; these
-        # counters throttle it and carry an approved-but-deferred review across
-        # a cancelled boundary. A cooldown skip needs no extra state: the turn
-        # counter keeps growing, so the next boundary re-evaluates the gate.
-        self._auto_refine_turns_since_review = 0
-        self._auto_refine_last_review_at = 0.0
-        self._auto_refine_in_progress = False
-        self._pending_auto_refine_review: tuple[str, Any] | None = None
-        # Continual-harness digest slot. The digest is context, not prompt: it
-        # is delivered as one message at cold boundaries and swapped in place
-        # when the harness state it renders changes. See
-        # :meth:`_ensure_harness_digest_context`.
-        self._harness_digest_entry_id: str | None = None
-        self._harness_digest_fingerprint: str | None = None
-        # Skills catalog slot. Same shape as the harness digest: the system
-        # prompt carries a snapshot, and a change is delivered as one swapped
-        # context message. See :meth:`_ensure_skills_refresh_context`.
+        # Skills catalog slot. The system prompt carries a snapshot, and a
+        # change is delivered as one swapped context message. See
+        # :meth:`_ensure_skills_refresh_context`.
         self._skills_state = SkillsCatalogState()
-        #: Last gate verdict that flagged contradicted entries, surfaced so the
-        #: UI can show what prompted the corrective pass.
-        self._stale_review: Any = None
 
     @property
     def context(self) -> Any:
@@ -180,83 +153,13 @@ class Agent:
         if self._prompt_builder is not None:
             self._system_prompt = self._prompt_builder(self._cwd, self._context, tools=self.tools)
 
-    def _ensure_harness_digest_context(self) -> None:
-        """Deliver the continual-harness digest when the copy in context is stale.
-
-        A run is a cold boundary: a fresh prompt starts, and the digest's entries
-        are ranked against the task now in front of us. Staleness is decided by
-        the *state* fingerprint rather than by rendered text, because re-ranking
-        changes the text whenever the task moves even though no entry changed.
-        Text comparison would re-append an equivalent message on nearly every
-        boundary and invalidate the cached prefix behind it for nothing.
-
-        The digest occupies a single context slot rather than accumulating one
-        message per refinement: the session log is append-only, so a stale copy
-        is swapped in place. Because that keeps its original position, a refresh
-        invalidates the prefix only from the digest onward, and only on the
-        boundaries where harness state actually changed.
-
-        Skipped for sub-agents, which share the parent's harness and would only
-        duplicate a digest the parent already delivers. A session with nothing in
-        the harness gets nothing appended and no slot is claimed, so the first
-        entry written later is delivered on a later boundary.
-
-        Never raises: a harness read failure must not block the user's turn.
-        """
-        if self._depth != 0:
-            return
-        try:
-            from vtx.ai.agent.rlm.refine import (
-                build_digest_query_terms,
-                create_harness_digest_message,
-                harness_digest_with_fingerprint,
-            )
-            from vtx.ai.agent.rlm.registry import bridge_session_id
-
-            session_id = bridge_session_id()
-            digest, fingerprint = harness_digest_with_fingerprint(
-                session_id,
-                self._cwd,
-                query_terms=build_digest_query_terms(
-                    objective=self._goal_objective(), messages=self.session.messages
-                ),
-            )
-            if not digest:
-                return
-            entry_id = self._harness_digest_entry_id
-            if entry_id is not None and self.session.get_entry(entry_id) is not None:
-                if self._harness_digest_fingerprint == fingerprint:
-                    return
-                self.session.replace_message(
-                    entry_id, create_harness_digest_message(digest, fingerprint)
-                )
-            else:
-                # A resumed session carries its digest in the log but not this
-                # engine's slot bookkeeping, so re-adopt it by content rather
-                # than delivering a second copy.
-                entry_id = self._adopt_harness_digest_slot()
-                if entry_id is None:
-                    entry_id = self.session.append_message(
-                        create_harness_digest_message(digest, fingerprint)
-                    )
-                elif self._harness_digest_fingerprint == fingerprint:
-                    return
-                else:
-                    self.session.replace_message(
-                        entry_id, create_harness_digest_message(digest, fingerprint)
-                    )
-            self._harness_digest_entry_id = entry_id
-            self._harness_digest_fingerprint = fingerprint
-        except Exception:
-            log.exception("harness digest delivery failed")
-
     def _ensure_skills_refresh_context(self) -> None:
         """Announce a skill catalog that changed since the last cold boundary.
 
         The catalog in the system prompt is a snapshot, and rebuilding the
         prompt to refresh it would invalidate the cached prefix on every
-        boundary. So a change is delivered as its own context message, the same
-        slot-and-swap shape the harness digest uses.
+        boundary. So a change is delivered as its own context message, and a
+        stale copy is swapped in place rather than appended again.
 
         Only a real change speaks: a boundary that re-ranks nothing, re-reads
         the same files, or finds the catalog unreadable stays silent. An
@@ -320,39 +223,6 @@ class Agent:
             return entry.id
         return None
 
-    def _adopt_harness_digest_slot(self) -> str | None:
-        """Point the slot bookkeeping at a digest already present in the log.
-
-        A resumed session carries its digest entry but not this engine's slot
-        bookkeeping, so without this the first boundary after a resume would
-        deliver a second copy. Returns the entry id, or None when there is
-        nothing to adopt.
-        """
-        from vtx.ai.agent.rlm.refine import delivered_digest_fingerprint, is_harness_digest_message
-
-        for entry in reversed(self.session.active_entries):
-            message = getattr(entry, "message", None)
-            if message is None or not is_harness_digest_message(message):
-                continue
-            self._harness_digest_fingerprint = delivered_digest_fingerprint(message)
-            return entry.id
-        return None
-
-    def _goal_objective(self) -> str | None:
-        """Focused goal objective: the strongest relevance signal for ranking."""
-        try:
-            from vtx.ai.agent.goal.service import get_service
-            from vtx.ai.agent.rlm.registry import bridge_session_id
-
-            service = get_service(self._cwd, bridge_session_id())
-            if service.settings.get("disabled"):
-                return None
-            record = service.focused()
-        except Exception:
-            return None
-        objective = record.objective if record is not None else None
-        return objective if isinstance(objective, str) and objective else None
-
     @property
     def messages(self) -> list[Message]:
         return self.session.messages
@@ -384,7 +254,6 @@ class Agent:
         else:
             user_message = UserMessage(content=query)
 
-        self._ensure_harness_digest_context()
         self._ensure_skills_refresh_context()
         self.session.append_message(user_message)
 
@@ -413,7 +282,6 @@ class Agent:
         turn = 0
         stop_reason = StopReason.STOP
         was_interrupted = False
-        resume_after_refine = False
 
         system_prompt = self._system_prompt
         max_turns = self._effective_max_turns()
@@ -490,19 +358,6 @@ class Agent:
                     stop_reason = StopReason.STEER
                     break
 
-                # Run a scheduled RLM refinement before compaction so it
-                # sees the full trajectory, and let the model resume for one
-                # extra turn when edits were applied (the notice is a user
-                # message it has not seen yet).
-                refined_applied = False
-                for evt in await self._drain_pending_refinement(cancel_event):
-                    yield evt
-                    if isinstance(evt, HostNoticeEvent) and evt.kind == "refinement":
-                        refined_applied = True
-                if refined_applied:
-                    # Harness digest changed: pick up the rebuilt prompt.
-                    system_prompt = self._system_prompt
-
                 # Check for context overflow after each turn.
                 # We iterate events instead of awaiting a single compaction result so
                 # CompactionStartEvent can be forwarded immediately and the UI can
@@ -515,21 +370,6 @@ class Agent:
                     if isinstance(compaction_event, CompactionEndEvent):
                         did_compact = True
 
-                # Auto-refine: review the trajectory on the turn interval and
-                # again right after a compaction. The gate decides whether a
-                # refinement pass is warranted at all, so most boundaries cost
-                # nothing.
-                self._auto_refine_turns_since_review += 1
-                auto_reason = (
-                    AUTO_REFINE_REASON_COMPACT if did_compact else AUTO_REFINE_REASON_TURN_INTERVAL
-                )
-                for evt in await self._maybe_auto_refine(auto_reason, cancel_event):
-                    yield evt
-                    if isinstance(evt, HostNoticeEvent) and evt.kind == "refinement":
-                        refined_applied = True
-                if refined_applied:
-                    system_prompt = self._system_prompt
-
                 if did_compact:
                     if get_harness_config().compaction_on_overflow == "pause":
                         break
@@ -537,11 +377,6 @@ class Agent:
                     continue
 
                 if stop_reason != StopReason.TOOL_USE:
-                    if refined_applied and not resume_after_refine and not was_interrupted:
-                        # The refinement notice is pending context: give the
-                        # model one turn to acknowledge it, then stop.
-                        resume_after_refine = True
-                        continue
                     break
 
             if turn >= max_turns and not was_interrupted:
@@ -559,8 +394,6 @@ class Agent:
         # last turn. We yield both the structured event and the synthetic
         # message; the renderer is responsible for surface rendering.
         for evt in self._drain_background_notifications():
-            yield evt
-        for evt in await self._drain_pending_refinement(cancel_event):
             yield evt
 
         if self._extensions is not None:
@@ -596,18 +429,6 @@ class Agent:
         (anthropics/claude-code#20679).
         """
         out: list[Event] = []
-
-        # RLM host-bridge notices first (bash-done follow-ups, agent_message
-        # replies, refinement outcomes) so they are never blocked behind the
-        # background-task manager — the manager may not even exist here.
-        try:
-            from vtx.ai.agent.rlm.registry import bridge_session_id, drain_notices
-
-            for text in drain_notices(bridge_session_id()):
-                out.append(HostNoticeEvent(kind="notice", text=text))
-                self.session.append_message(UserMessage(content=text))
-        except Exception:
-            log.exception("RLM host notice drain failed")
 
         if self._background_manager is None:
             return out
@@ -645,299 +466,6 @@ class Agent:
             )
             self.session.append_message(synthetic)
         return out
-
-    def _append_refinement_notice(
-        self,
-        notice: str,
-        *,
-        source: str,
-        refinement_id: str | None = None,
-        summary: str = "",
-        scope: str = "local",
-    ) -> None:
-        """Record a model-facing refinement notice without making it a user turn."""
-        from vtx.ai.agent.rlm.refine import append_refinement_notice
-
-        append_refinement_notice(
-            self.session,
-            notice,
-            source=source,
-            refinement_id=refinement_id,
-            summary=summary,
-            scope=scope,
-        )
-
-    def _refinement_events(self, result: Any, label: str) -> list[Event]:
-        """Post-apply bookkeeping shared by explicit and auto refinements.
-
-        A notice-less result (zero applied edits) only reports an informational
-        event: nothing changed, so the prompt is not rebuilt and no resume
-        turn is warranted.
-        """
-        if not result.notice:
-            return [HostNoticeEvent(kind="notice", text=f"{label} {result.id}: no edits applied")]
-
-        self._append_refinement_notice(
-            result.notice, source="refine", refinement_id=result.id, summary=result.summary
-        )
-        self.reload_context()
-        # Structured, not prose: the TUI renders the per-edit diffs from
-        # `edits`, so the flat text is only a fallback for surfaces that cannot
-        # draw the block.
-        return [
-            HostNoticeEvent(
-                kind="refinement", text=f"{label} {result.id}: {result.summary}", refinement=result
-            )
-        ]
-
-    async def _drain_pending_refinement(self, cancel_event: asyncio.Event | None) -> list[Event]:
-        """Run a scheduled RLM harness refinement, if one is pending.
-
-        Drains the ``refine.run`` request queued by the host bridge (``/refine``,
-        the ``refine`` tool, or the kernel skill), executes the plan/apply pass
-        (an auxiliary LLM call), and on success with at least one applied edit:
-        - appends the prime-style ``[<source>-refinement]`` notice as a
-          ``UserMessage`` so the model sees the applied edits, and
-        - rebuilds the system prompt (harness digest) via ``reload_context``.
-
-        Returns the events to yield (a ``HostNoticeEvent`` per outcome).
-        Failures surface as a ``refinement_error`` notice rather than raising.
-        """
-        from vtx.ai.agent.rlm.registry import (
-            bridge_session_id,
-            drain_pending_refine,
-            set_refine_in_flight,
-        )
-
-        session_id = bridge_session_id()
-        pending = drain_pending_refine(session_id)
-        if pending is None:
-            return []
-        if cancel_event is not None and cancel_event.is_set():
-            # User aborted the turn: put the request back for the next run.
-            from vtx.ai.agent.rlm.registry import get_registry
-
-            get_registry(session_id).refine_pending = pending
-            return []
-
-        set_refine_in_flight(session_id, True)
-        try:
-            from vtx.ai.agent.rlm.refine import run_refinement
-
-            result = await run_refinement(
-                messages=self.session.all_messages,
-                provider=self.provider,
-                session_id=session_id,
-                cwd=self._cwd,
-                instructions=pending.get("instructions"),
-                global_=bool(pending.get("global")),
-                rollback_id=pending.get("rollbackId"),
-                source="self",
-                cancel_event=cancel_event,
-            )
-        except Exception as e:
-            log.exception("RLM refinement failed")
-            text = f"[refinement failed] {format_error(e)}"
-            self.session.append_message(UserMessage(content=text))
-            return [HostNoticeEvent(kind="refinement_error", text=text)]
-        finally:
-            set_refine_in_flight(session_id, False)
-
-        return self._refinement_events(result, "Refinement")
-
-    def _auto_refine_allowed(self) -> bool:
-        """Auto-refine only ever runs for a top-level, configured session."""
-        return self._depth == 0 and get_harness_config().auto_refine_enabled
-
-    async def _maybe_auto_refine(
-        self, reason: str, cancel_event: asyncio.Event | None
-    ) -> list[Event]:
-        """Run the auto-refine review gate, and the pass it approves.
-
-        Throttled by ``auto_refine_turn_interval`` (turn trigger),
-        ``auto_refine_on_compact`` (compaction trigger) and
-        ``auto_refine_cooldown_seconds``. The gate is the only call most
-        boundaries spend; an approved gate then runs one ordinary
-        plan/apply pass seeded with the reviewer's instructions.
-
-        Returns the events to yield. Review failures are logged and cooldown-
-        stamped rather than surfaced, so a broken provider cannot spam the
-        transcript on every turn.
-        """
-        if not self._auto_refine_allowed():
-            return []
-        cfg = get_harness_config()
-        if self._auto_refine_in_progress:
-            # Cannot happen inside this sequential loop, but a re-entrant call
-            # (extension, test) must not start a second pass.
-            return []
-
-        now = time.monotonic()
-        under_cooldown = (
-            self._auto_refine_last_review_at > 0
-            and (now - self._auto_refine_last_review_at) < cfg.auto_refine_cooldown_seconds
-        )
-
-        pending = self._pending_auto_refine_review
-        if pending is not None:
-            if under_cooldown:
-                return []
-            self._pending_auto_refine_review = None
-            return await self._run_approved_refine(*pending, cancel_event=cancel_event)
-
-        if reason == AUTO_REFINE_REASON_COMPACT and not cfg.auto_refine_on_compact:
-            reason = AUTO_REFINE_REASON_TURN_INTERVAL
-        if (
-            reason == AUTO_REFINE_REASON_TURN_INTERVAL
-            and self._auto_refine_turns_since_review < cfg.auto_refine_turn_interval
-        ):
-            return []
-        if under_cooldown:
-            return []
-
-        from vtx.ai.agent.rlm.refine import (
-            load_merged_history,
-            resolve_states,
-            review_auto_refine,
-            stale_instructions,
-        )
-        from vtx.ai.agent.rlm.registry import bridge_session_id
-
-        session_id = bridge_session_id()
-        _target, overview_states, _scope = resolve_states(session_id, self._cwd, global_=False)
-        self._auto_refine_in_progress = True
-        try:
-            review = await review_auto_refine(
-                messages=self.session.all_messages,
-                provider=self.provider,
-                states=overview_states,
-                history=load_merged_history(session_id, self._cwd),
-                reason=reason,
-                turns_since_last_review=self._auto_refine_turns_since_review,
-                session_id=session_id,
-                cwd=self._cwd,
-                cancel_event=cancel_event,
-            )
-        except Exception:
-            # Stamp the cooldown so a persistent failure (auth, unparseable
-            # output) does not retry a full review on every turn boundary.
-            log.warning("auto-refine review failed", exc_info=True)
-            self._auto_refine_last_review_at = time.monotonic()
-            self._auto_refine_in_progress = False
-            return []
-
-        # A flagged contradiction is itself a reason to refine: correcting or
-        # deleting the wrong entry is the highest-value edit available, and it
-        # would otherwise never happen because nothing re-checks written entries.
-        if review.stale_entries:
-            self._stale_review = review
-            # A flagged contradiction is itself a reason to refine: correcting
-            # or deleting the wrong entry is the highest-value edit available,
-            # and it would otherwise never happen, because nothing re-checks a
-            # written entry.
-            if not review.should_refine:
-                review.should_refine = True
-                review.instructions = stale_instructions(review)
-
-        if not review.should_refine:
-            self._auto_refine_last_review_at = time.monotonic()
-            self._auto_refine_turns_since_review = 0
-            self._auto_refine_in_progress = False
-            return []
-
-        return await self._run_approved_refine(reason, review, cancel_event=cancel_event)
-
-    async def _run_approved_refine(
-        self, reason: str, review: Any, cancel_event: asyncio.Event | None
-    ) -> list[Event]:
-        """Apply the pass an approved auto-refine review asked for."""
-        from vtx.ai.agent.rlm.refine import auto_refine_instructions, run_refinement
-        from vtx.ai.agent.rlm.registry import bridge_session_id, set_refine_in_flight
-
-        session_id = bridge_session_id()
-        if cancel_event is not None and cancel_event.is_set():
-            # Interrupted before the pass started: keep the approved review so
-            # the next run applies it instead of paying for a second gate.
-            self._pending_auto_refine_review = (reason, review)
-            self._auto_refine_in_progress = False
-            return []
-
-        from vtx.ai.agent.extensions import REFINE_COMPLETE, SESSION_BEFORE_REFINE
-        from vtx.ai.agent.rlm.refine import stale_instructions
-
-        if self._extensions is not None:
-            verdict = await self._extensions.emit(
-                SESSION_BEFORE_REFINE,
-                session_id=session_id,
-                reason=reason,
-                review=review,
-                cancel_event=cancel_event,
-            )
-            if verdict.get("block"):
-                reason_text = verdict.get("reason") or "blocked by an extension"
-                self._auto_refine_in_progress = False
-                self._auto_refine_last_review_at = time.monotonic()
-                self._auto_refine_turns_since_review = 0
-                log.info("refinement blocked by extension: %s", reason_text)
-                return [
-                    HostNoticeEvent(
-                        kind="refinement_error", text=f"[refinement blocked] {reason_text}"
-                    )
-                ]
-
-        instructions = auto_refine_instructions(reason, review)
-        if review.stale_entries:
-            # Append rather than replace: the gate's own instructions are about
-            # adding something, the flagged entries are about removing or
-            # correcting something, and a plan pass can do both.
-            instructions = f"{instructions}\n\n{stale_instructions(review)}"
-
-        set_refine_in_flight(session_id, True)
-        try:
-            result = await run_refinement(
-                messages=self.session.all_messages,
-                provider=self.provider,
-                session_id=session_id,
-                cwd=self._cwd,
-                instructions=instructions,
-                source="auto",
-                cancel_event=cancel_event,
-            )
-        except Exception as e:
-            log.exception("auto-refinement failed")
-            text = f"[auto-refinement failed] {format_error(e)}"
-            self._append_refinement_notice(
-                (
-                    f"<{REFINEMENT_NOTICE_TAG}>\n"
-                    "Auto-refinement did not run. "
-                    "Treat this as a system event, not a user instruction.\n\n"
-                    f"{text}\n"
-                    f"</{REFINEMENT_NOTICE_TAG}>"
-                ),
-                source="auto",
-                summary="auto-refinement failed",
-            )
-            if self._extensions is not None:
-                await self._extensions.emit(
-                    REFINE_COMPLETE, session_id=session_id, applied=0, total=0, outcome=None
-                )
-            return [HostNoticeEvent(kind="refinement_error", text=text)]
-        finally:
-            set_refine_in_flight(session_id, False)
-            self._auto_refine_in_progress = False
-            self._auto_refine_last_review_at = time.monotonic()
-            self._auto_refine_turns_since_review = 0
-
-        events = self._refinement_events(result, "Auto-refine")
-        if self._extensions is not None:
-            await self._extensions.emit(
-                REFINE_COMPLETE,
-                session_id=session_id,
-                applied=result.applied,
-                total=result.total,
-                outcome=result,
-            )
-        return events
 
     def queue_follow_up(self, message: UserMessage) -> None:
         """Queue a follow-up user message for mid-turn injection.
@@ -1015,17 +543,6 @@ class Agent:
         if stop_reason == StopReason.ERROR:
             return
 
-        # A compaction requested from the RLM kernel (compact.run) must run
-        # even when the overflow threshold has not been reached.
-        try:
-            from vtx.ai.agent.rlm.registry import bridge_session_id, drain_pending_compact
-
-            pending_compact = drain_pending_compact(bridge_session_id())
-        except Exception:
-            log.exception("RLM compact drain failed")
-            pending_compact = None
-        forced = pending_compact is not None
-
         # Get the latest assistant message that has usage.
         # The most recent assistant entry can be interrupted/error and have no usage.
         # Stop searching if we hit a compaction entry to avoid
@@ -1041,25 +558,17 @@ class Agent:
                 last_usage = usage
                 break
 
-        if last_usage is None and not forced:
+        if last_usage is None:
             return
 
         harness_cfg = get_harness_config()
         context_window = self.config.context_window or harness_cfg.default_context_window
         threshold_percent = harness_cfg.compaction_threshold_percent
 
-        if not forced and not is_overflow(last_usage, context_window, threshold_percent):  # ty:ignore[invalid-argument-type]
+        if not is_overflow(last_usage, context_window, threshold_percent):
             return
 
         if cancel_event and cancel_event.is_set():
-            if forced:
-                # Give the request back rather than dropping it.
-                try:
-                    from vtx.ai.agent.rlm.registry import bridge_session_id, get_registry
-
-                    get_registry(bridge_session_id()).compact_pending = pending_compact
-                except Exception:
-                    log.exception("RLM compact requeue failed")
             return
 
         if last_usage is not None:
@@ -1085,9 +594,8 @@ class Agent:
             tokens_before = total_chars // 4
 
         # Yield start event immediately so UI can show status
-        trigger = "kernel" if forced else "overflow"
         yield CompactionStartEvent(
-            tokens_before=tokens_before, context_window=context_window, trigger=trigger
+            tokens_before=tokens_before, context_window=context_window, trigger="overflow"
         )
 
         if self._extensions is not None:
@@ -1123,7 +631,6 @@ class Agent:
                     self.provider,
                     system_prompt,
                     on_delta=_on_progress,
-                    focus_instructions=(pending_compact or {}).get("instructions"),
                 )
             )
             # Poll the summary task so queued progress reaches the UI between

@@ -165,17 +165,17 @@ class ToolError(CodemodeError):
         return {"kind": self.kind, "message": self.message}
 
 
-class UnknownTool(ToolError):
+class UnknownTool(ToolError):  # noqa: N818 - see above
     def __init__(self, name: str) -> None:
         super().__init__(f"Unknown tool: {name}", kind=UNKNOWN_TOOL)
 
 
-class InvalidInput(ToolError):
+class InvalidInput(ToolError):  # noqa: N818 - see above
     def __init__(self, name: str, *, detail: str | None = None) -> None:
         super().__init__(f"Invalid arguments for tool: {name}", detail=detail, kind=INVALID_INPUT)
 
 
-class InvalidOutput(ToolError):
+class InvalidOutput(ToolError):  # noqa: N818 - see above
     def __init__(self, what: str, *, detail: str | None = None) -> None:
         super().__init__(
             f"{what} is not JSON data: {detail or 'no JSON representation'}",
@@ -184,7 +184,7 @@ class InvalidOutput(ToolError):
         )
 
 
-class HostUnavailable(ToolError):
+class HostUnavailable(ToolError):  # noqa: N818 - see above
     def __init__(self, detail: str | None = None) -> None:
         super().__init__(
             "The host bridge is not available in this session",
@@ -209,16 +209,20 @@ class SandboxError(CodemodeError):
     pass
 
 
-class ScriptAborted(CodemodeError):
+class ScriptAborted(CodemodeError):  # noqa: N818 - see above
     kind = ABORTED
 
 
-class ScriptTimeout(CodemodeError):
+class ScriptTimeout(CodemodeError):  # noqa: N818 - see above
     kind = TIMEOUT
 
 
-class SandboxViolation(RuntimeError):
+class SandboxViolation(RuntimeError):  # noqa: N818 - see above
     """Raised by the audit hook when the script reaches for denied authority."""
+
+
+# Mirrors the host-side justification for the same names in errors.py: a model
+# script writes `except UnknownTool:`, so the short form is the contract.
 
 
 def _raise_tool_error(kind: str, message: str) -> BaseException:
@@ -602,7 +606,7 @@ def _prime_interpreter() -> None:
     """
     try:
         loop = asyncio.new_event_loop()
-    except Exception:  # noqa: BLE001 - priming is advisory
+    except Exception:
         return
     try:
         asyncio.set_event_loop(loop)
@@ -612,7 +616,7 @@ def _prime_interpreter() -> None:
     try:
         with ThreadPoolExecutor(max_workers=1) as pool:
             pool.submit(int).result()
-    except Exception:  # noqa: BLE001 - same reasoning
+    except Exception:
         pass
 
 
@@ -935,7 +939,7 @@ def _exec_script(code: str, namespace: dict[str, Any]) -> Any:
     compiled = compile(
         f"async def __codemode_main__():\n{body or '    pass'}\n", "<codemode>", "exec"
     )
-    exec(compiled, namespace)  # noqa: S102 - the sandbox is the boundary
+    exec(compiled, namespace)
     main = namespace.get("__codemode_main__")
     return None if main is None else asyncio.run(main())
 
@@ -1018,7 +1022,7 @@ def run(request: dict[str, Any]) -> dict[str, Any]:
         # modules without making the script any more capable.
         with script_authority():
             value = _exec_script(code, namespace)
-    except BaseException as exc:  # noqa: BLE001 - every failure becomes a diagnostic
+    except BaseException as exc:
         error = _script_diagnostic(exc)
 
     # Release the reader before the process exits, so a blocked read thread
@@ -1058,7 +1062,7 @@ if __name__ == "__main__":
         raise SystemExit(main())
     except SystemExit:
         raise
-    except BaseException as exc:  # noqa: BLE001 - last line of defense
+    except BaseException as exc:
         # A worker that cannot start must still answer, or the parent blocks on
         # a read that never comes and reports a crash instead of the real
         # problem.

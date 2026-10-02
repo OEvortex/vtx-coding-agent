@@ -9,7 +9,6 @@ from pydantic import BaseModel, Field, model_validator
 from vtx.ai.agent.tools.base import BaseTool, ToolResult
 from vtx.coding_agent.context.skills import (
     get_user_skills_dir,
-    kernel_skills_available,
     load_builtin_cmd_skills,
     load_skills,
     merge_registered_skills,
@@ -226,18 +225,18 @@ class SkillTool(BaseTool):
                 msg = f"Failed to read skill file: {e}"
                 return ToolResult(success=False, result=msg, ui_summary=f"[red]{msg}[/red]")
 
-        # Handle 'run' action - execute skill in REPL
+        # Handle 'run' action - hand the skill to the model
         if params.action == "run":
-            # `run` hands the skill to the persistent Python kernel, which only
-            # exists in RLM mode. In tool_first mode the cell would run in a
-            # kernel the agent was never told about, so fail loudly instead.
-            if not kernel_skills_available():
-                msg = (
-                    "action='run' needs the persistent Python kernel, which only exists in RLM "
-                    "mode. Switch mode in settings, or use action='view' and follow the skill "
-                    "instructions yourself."
-                )
-                return ToolResult(success=False, result=msg, ui_summary=f"[red]{msg}[/red]")
+            # `run` used to hand the skill to the persistent Python kernel.
+            # That kernel went with the RLM mode, so there is nothing to run it
+            # in. Say so and return the file rather than failing outright: a
+            # markdown skill's body is instructions, and the model can follow
+            # them itself.
+            msg = (
+                "action='run' needs the persistent Python kernel, which no longer "
+                "exists. Returning the skill file instead -- use action='view' if "
+                "you only want the path."
+            )
 
             if not skill_dir:
                 msg = f"Skill '{params.name}' not found."
@@ -251,25 +250,15 @@ class SkillTool(BaseTool):
                 msg = f"Failed to read skill file: {e}"
                 return ToolResult(success=False, result=msg, ui_summary=f"[red]{msg}[/red]")
 
-            # Execute the skill instructions via REPL
-            try:
-                from vtx.ai.agent.tools.ipython import IpythonTool
-
-                tool = IpythonTool()
-                # Wrap skill content in a Python comment block for the REPL
-                repl_code = (
-                    f"# Skill: {params.name}\n"
-                    f"# Path: {target_path}\n\n"
-                    f"{skill_content}\n\n"
-                    "print('Skill executed successfully')"
-                )
-                result = await tool.execute(tool.params(code=repl_code))
-                return ToolResult(
-                    success=True, result=result.result, ui_summary=f"Ran skill '{params.name}'"
-                )
-            except Exception as e:
-                msg = f"Failed to run skill in REPL: {e}"
-                return ToolResult(success=False, result=msg, ui_summary=f"[red]{msg}[/red]")
+            # Executing a skill meant running its body in the persistent kernel, which
+            # went with the RLM mode. A python skill has no runtime now, and a
+            # markdown skill's body is instructions for a model rather than
+            # code, so the file is handed back and the model reads it.
+            return ToolResult(
+                success=True,
+                result=f"{msg}\n\n---\n{skill_content}",
+                ui_summary=f"Read skill '{params.name}'",
+            )
 
         # Mutating actions: 'create', 'edit', 'patch', 'delete'
         if is_builtin:

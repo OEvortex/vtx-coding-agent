@@ -98,27 +98,22 @@ class CustomMessageEntry(EntryBase):
 #: Custom entry whose content is model-facing rather than audit-only.
 #:
 #: Most custom entries (revert records, snapshots, handoff links) exist for the
-#: transcript and must never reach the provider. The refinement notice is the
-#: exception: the model is meant to read it, so `Session.messages` converts it
-#: back into a conversation message. That mirrors prime's `convertToLlm`, which
-#: passes `refinement_notice` through while dropping the audit types.
+#: transcript and must never reach the provider. A refinement notice was the
+#: exception -- the model was meant to read it, so `Session.messages` converted
+#: it back into a conversation message. Nothing writes one any more, but the
+#: read path stays so a session recorded before the harness was removed still
+#: shows the notices the model was given at the time.
 REFINEMENT_NOTICE_CUSTOM_TYPE = "refinement_notice"
 
 
 class HarnessStateEntry(EntryBase):
-    """One session-scoped continual-harness write, replayed from the branch.
+    """Retired: the continual-harness write record.
 
-    The harness used to be a single JSON file per session, which meant a revert
-    or a branch still showed the memories and skills written on the abandoned
-    path: the file is not in the session tree, so nothing rewinds it. Storing
-    harness writes as tree entries makes them obey the same branch semantics as
-    messages, which is what ``Session.get_branch()`` already implements.
-
-    ``set`` and ``delete`` are keyed by ``"<kind>:<entry id>"`` so a write is a
-    delta rather than a full snapshot: the branch can grow without each entry
-    re-shipping the whole store, and replay stays a fold over the entries in
-    order. ``global_`` writes are excluded by design — the global store is
-    cross-session by definition and has no branch to belong to.
+    Kept so a session file written before the harness was removed still parses.
+    An old branch will replay these entries and find them inert -- nothing reads
+    the state any more. The model validates any ``{"type": "harness_state"}``
+    record it meets, so deleting the class would make those sessions
+    unloadable, which is a worse outcome than carrying a few dead lines.
     """
 
     type: Literal["harness_state"] = "harness_state"
@@ -127,7 +122,8 @@ class HarnessStateEntry(EntryBase):
     refinements: builtins.list[dict[str, Any]] = field(default_factory=list)
 
 
-#: Custom entry type for a harness write, for hosts that prefer the generic path.
+#: Retired alongside :class:`HarnessStateEntry`. Nothing reads it; kept so the
+#: name still resolves for an out-of-tree caller.
 HARNESS_STATE_CUSTOM_TYPE = "harness_state"
 
 
@@ -483,50 +479,6 @@ class Session:
         )
         self._append_entry(entry)
         return entry.id
-
-    def append_harness_state(
-        self,
-        set_entries: dict[str, dict[str, Any]],
-        delete_ids: builtins.list[str] | None = None,
-        refinements: builtins.list[dict[str, Any]] | None = None,
-    ) -> str:
-        """Record one session-scoped harness write on the current branch."""
-        entry = HarnessStateEntry(
-            id=self._generate_entry_id(),
-            parent_id=self._leaf_id,
-            timestamp=_now_iso(),
-            set=dict(set_entries),
-            delete=list(delete_ids or []),
-            refinements=list(refinements or []),
-        )
-        self._append_entry(entry)
-        return entry.id
-
-    def replay_harness_state(
-        self, leaf_id: str | None = None
-    ) -> tuple[dict[str, dict[str, Any]], builtins.list[dict[str, Any]]]:
-        """Fold the branch's harness entries into the current local state.
-
-        Returns ``(entries, refinements)`` where ``entries`` is keyed by
-        ``"<kind>:<id>"``. Later entries win, and a key present in both ``set``
-        and ``delete`` of the same entry is dropped, so a single write is
-        atomic regardless of field order.
-
-        Replaying the branch (rather than reading a file) is what makes a revert
-        show the state as of the reverted-to point: entries written after the
-        new leaf are not on the path and are never visited.
-        """
-        entries: dict[str, dict[str, Any]] = {}
-        refinements: list[dict[str, Any]] = []
-        for entry in self.get_branch(leaf_id):
-            if not isinstance(entry, HarnessStateEntry):
-                continue
-            for key, value in entry.set.items():
-                entries[key] = value
-            for key in entry.delete:
-                entries.pop(key, None)
-            refinements.extend(entry.refinements)
-        return entries, refinements
 
     def append_session_info(self, name: str) -> str:
         entry = SessionInfoEntry(

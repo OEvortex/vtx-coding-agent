@@ -616,20 +616,8 @@ class AgentRunnerMixin:
             case BackgroundTaskCompletedEvent(task_id=tid, description=desc, status=st):
                 chat.add_info_message(f"Background task '{desc}' ({st}) — task_id={tid}")
 
-            case HostNoticeEvent(kind=kind, text=text, refinement=outcome):
-                if kind == "refinement" and outcome is not None:
-                    chat.add_refinement(
-                        summary=outcome.summary,
-                        applied=outcome.applied,
-                        total=outcome.total,
-                        edits=outcome.edits,
-                        scope=outcome.scope,
-                        rollback_of=outcome.rollback_of,
-                        refinement_id=outcome.id,
-                        model=outcome.model,
-                    )
-                else:
-                    chat.add_info_message(text, error=(kind == "refinement_error"))
+            case HostNoticeEvent(text=text):
+                chat.add_info_message(text)
 
             case AgentEndEvent(stop_reason=reason):
                 if reason == StopReason.INTERRUPTED:

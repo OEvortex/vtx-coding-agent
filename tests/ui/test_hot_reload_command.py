@@ -124,42 +124,10 @@ class TestModeSwitch:
             assert {"read", "bash", "edit", "write"} <= names
 
     @pytest.mark.asyncio
-    async def test_switching_to_code_first_collapses_to_the_repl(self, config_file, reload_app):
-        app, runtime = reload_app
-        _edit_config(config_file, mode="tool_first")
-        async with app.run_test() as pilot:
-            await pilot.pause()
-            _reload(app)
-            await pilot.pause()
-            assert len(runtime.tools) > 1
-
-            _edit_config(config_file, mode="code_first")
-            _reload(app)
-            await pilot.pause()
-            assert [t.name for t in runtime.tools] == ["ipython"]
-
-    @pytest.mark.asyncio
-    async def test_the_switch_is_reversible(self, config_file, reload_app):
-        app, runtime = reload_app
-        _edit_config(config_file, mode="code_first")
-        async with app.run_test() as pilot:
-            await pilot.pause()
-            _reload(app)
-            await pilot.pause()
-            assert [t.name for t in runtime.tools] == ["ipython"]
-
-            _edit_config(config_file, mode="tool_first")
-            _reload(app)
-            await pilot.pause()
-            names = {t.name for t in runtime.tools}
-            assert "ipython" not in names
-            assert {"read", "bash"} <= names
-
-    @pytest.mark.asyncio
-    async def test_the_conversation_survives_a_mode_switch(self, config_file, reload_app):
+    async def test_the_conversation_survives_a_reload(self, config_file, reload_app):
         app, runtime = reload_app
         session = runtime.session
-        _edit_config(config_file, mode="code_first")
+        _edit_config(config_file, mode="tool_first")
         async with app.run_test() as pilot:
             await pilot.pause()
             _reload(app)
@@ -167,16 +135,17 @@ class TestModeSwitch:
             assert runtime.session is session
 
     @pytest.mark.asyncio
-    async def test_the_system_prompt_follows_the_new_mode(self, config_file, reload_app):
-        """Otherwise the model is told about a surface it does not have."""
+    async def test_the_system_prompt_describes_the_actual_surface(self, config_file, reload_app):
+        """Otherwise the model is told about tools it does not have."""
         app, runtime = reload_app
-        _edit_config(config_file, mode="code_first")
+        _edit_config(config_file, mode="tool_first")
         async with app.run_test() as pilot:
             await pilot.pause()
             _reload(app)
             await pilot.pause()
             prompt = runtime.resolve_system_prompt()
-            assert "RLM mode" in prompt or "code_first" in prompt
+            assert "ipython" not in prompt
+            assert "REPL" not in prompt
 
 
 class TestThemeAndChrome:
@@ -233,13 +202,19 @@ class TestReloadIsSafe:
     @pytest.mark.asyncio
     async def test_reload_is_repeatable(self, config_file, reload_app):
         app, runtime = reload_app
-        _edit_config(config_file, mode="code_first")
+        _edit_config(config_file, mode="tool_first")
         async with app.run_test() as pilot:
             await pilot.pause()
+            _reload(app)
+            await pilot.pause()
+            first = [t.name for t in runtime.tools]
             for _ in range(3):
                 _reload(app)
                 await pilot.pause()
-            assert [t.name for t in runtime.tools] == ["ipython"]
+            # Reloading repeatedly must not accumulate or drop tools; the
+            # surface it converges to is the point.
+            assert [t.name for t in runtime.tools] == first
+            assert len(first) > 1
 
     @pytest.mark.asyncio
     async def test_picks_up_a_newly_added_extension(self, tmp_path, monkeypatch, reload_app):

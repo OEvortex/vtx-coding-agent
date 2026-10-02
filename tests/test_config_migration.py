@@ -226,8 +226,8 @@ llm:
     assert any("Migrated config" in warning for warning in warnings)
 
 
-def test_v13_rlm_mode_migrates_to_code_first(tmp_path, monkeypatch):
-    """v14 renamed the REPL-first mode; existing configs keep working."""
+def test_v13_rlm_mode_normalises_to_tool_first(tmp_path, monkeypatch):
+    """v14 retired the REPL-first mode; an old config still loads."""
     home = tmp_path / "home"
     config_dir = home / ".vtx"
     config_dir.mkdir(parents=True)
@@ -238,13 +238,13 @@ def test_v13_rlm_mode_migrates_to_code_first(tmp_path, monkeypatch):
     reset_config()
 
     cfg = get_config()
-    assert cfg.mode == "code_first"
+    assert cfg.mode == "tool_first"
 
     # The rewrite is what the user sees on disk, so assert on it rather than
     # on a config attribute: Config does not expose its own version.
     written = yaml.safe_load(config_file.read_text(encoding="utf-8"))
     assert written["meta"]["config_version"] == CURRENT_CONFIG_VERSION
-    assert written["mode"] == "code_first"
+    assert written["mode"] == "tool_first"
 
     reset_config()
 
@@ -259,11 +259,11 @@ def test_v12_rlm_mode_migrates_through_both_steps(tmp_path, monkeypatch):
     monkeypatch.setattr(Path, "home", lambda: home)
     reset_config()
 
-    assert get_config().mode == "code_first"
+    assert get_config().mode == "tool_first"
 
     written = yaml.safe_load(config_file.read_text(encoding="utf-8"))
     assert written["meta"]["config_version"] == CURRENT_CONFIG_VERSION
-    assert written["mode"] == "code_first"
+    assert written["mode"] == "tool_first"
 
     reset_config()
 

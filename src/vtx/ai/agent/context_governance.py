@@ -23,22 +23,9 @@ from vtx.core.types import (
 
 # ponytail: naive global character budget; tune or make configurable later.
 _MAX_TOOL_RESULT_CHARS = 200_000
-# RLM mode funnels every file read, shell call, and data print through the
-# single `ipython` tool, so one uncapped cell output can eat a quarter of the
-# window and persist there for the rest of the session. The tighter budget
-# only trims the model-bound copy (the session keeps the full text for UI,
-# export, and the compaction summarizer).
-_RLM_MAX_TOOL_RESULT_CHARS = 24_000
 
 
 def _result_budget_chars() -> int:
-    try:
-        from vtx.ai.config import config as vtx_config
-
-        if getattr(vtx_config, "mode", "tool_first") == "code_first":
-            return _RLM_MAX_TOOL_RESULT_CHARS
-    except Exception:
-        pass
     return _MAX_TOOL_RESULT_CHARS
 
 

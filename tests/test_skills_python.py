@@ -1,9 +1,6 @@
 from pathlib import Path
 
-import pytest
-
 from vtx.ai.agent.context.skills import formatted_skills, load_skills
-from vtx.ai.agent.ipython_manager import IpythonKernel
 from vtx.skill import CallableModule, wrap_skill_module
 
 
@@ -56,8 +53,15 @@ def test_callable_module_wrapper():
     assert wrapped.__doc__ == run_fn.__doc__
 
 
-@pytest.mark.asyncio
-async def test_runtime_python_skills_execution(tmp_path: Path):
+def test_python_skill_module_is_still_wrappable(tmp_path: Path):
+    """A python skill stays loadable, but there is nothing to run it in.
+
+    The persistent kernel went with the RLM mode, so a python skill is
+    discovered and importable but not executable by the agent -- which is why
+    ``skills_for_mode`` filters them out of the prompt catalog. This test
+    covers the surviving half so the removal does not silently break
+    discovery.
+    """
     skill_dir = tmp_path / ".agents" / "skills" / "calculator"
     src_dir = skill_dir / "src" / "calculator"
     src_dir.mkdir(parents=True)
@@ -69,13 +73,12 @@ async def test_runtime_python_skills_execution(tmp_path: Path):
         'async def run(a: int, b: int) -> int:\n    """Add two numbers."""\n    return a + b\n'
     )
 
-    kernel = IpythonKernel("test_kernel", cwd=str(tmp_path))
-    try:
-        await kernel.start()
-        stdout, errored = await kernel.execute(
-            'ans = await calculator(10, 20)\nprint("RESULT:", ans)'
-        )
-        assert not errored, f"Execution failed: {stdout}"
-        assert "RESULT: 30" in stdout
-    finally:
-        await kernel.close()
+    res = load_skills(cwd=str(tmp_path))
+    assert len(res.skills) == 1
+    assert res.skills[0].kind == "python"
+    # And it is hidden from the prompt, because offering a skill the agent
+    # cannot run spends context on a dead end.
+    assert formatted_skills(res.skills) != ""  # formatting still works
+    from vtx.ai.agent.context.skills import skills_for_mode
+
+    assert skills_for_mode(res.skills) == []

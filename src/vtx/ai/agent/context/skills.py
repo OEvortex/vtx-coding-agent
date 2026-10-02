@@ -89,16 +89,14 @@ def is_kernel_skill(skill: Any) -> bool:
 
 
 def kernel_skills_available(mode: str | None = None) -> bool:
-    """Whether the persistent Python kernel is available in the current mode.
+    """Whether a persistent Python kernel is available.
 
-    The kernel is an RLM-mode facility: ``ipython`` is absent from
-    ``DEFAULT_TOOLS``, so a tool-first agent has no way to run a python skill.
+    Always false. The kernel went with the RLM mode; the codemode sandbox
+    replaced it and runs a confined script in a subprocess rather than exposing
+    a long-lived interpreter. Retained so callers can keep asking the question
+    and get the honest answer.
     """
-    if mode is None:
-        from vtx.ai.config import config as vtx_config
-
-        mode = getattr(vtx_config, "mode", "tool_first")
-    return mode == "code_first"
+    return False
 
 
 def skills_for_mode(skills: list[Any], mode: str | None = None) -> list[Any]:
@@ -106,9 +104,9 @@ def skills_for_mode(skills: list[Any], mode: str | None = None) -> list[Any]:
 
     Discovery surfaces (the mandatory prompt catalog, ``skill(action="list")``,
     the ``/`` command list) must only offer skills the agent can act on. A
-    kernel skill advertised to a tool-first agent is worse than absent: its
-    description reads as generally applicable and its body is a REPL API the
-    agent has no tool to call, so loading it spends context and then dead-ends.
+    kernel skill is worse than absent: its description reads as generally
+    applicable and its body is a REPL API the agent has no tool to call, so
+    loading it spends context and then dead-ends.
     """
     if kernel_skills_available(mode):
         return list(skills)

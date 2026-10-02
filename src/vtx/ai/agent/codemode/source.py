@@ -70,7 +70,8 @@ def parse_source(source: str) -> SourceOptions:
     unknown = sorted(set(parsed) - KNOWN_FIELDS)
     if unknown:
         raise CodemodeSourceError(
-            f"Unknown options field(s): {', '.join(unknown)}. Known fields: {', '.join(sorted(KNOWN_FIELDS))}."
+            f"Unknown options field(s): {', '.join(unknown)}. "
+            f"Known fields: {', '.join(sorted(KNOWN_FIELDS))}."
         )
 
     timeout_ms = parsed.get("timeout_ms")

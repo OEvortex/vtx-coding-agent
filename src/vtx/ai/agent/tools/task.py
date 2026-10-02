@@ -389,8 +389,9 @@ async def _run_admitted_subagent(
         session=session,
         cwd=parent_ctx.cwd,
         system_prompt=system_prompt,
-        # Depth 1: the parent loop owns harness refinement, so a child neither
-        # runs the auto-refine gate nor drains the pending queue.
+        # Depth 1: a child inherits the parent's session-level state rather than
+        # owning it, so it neither runs the skills-refresh gate nor drains the
+        # parent's pending queue.
         depth=1,
     )
 

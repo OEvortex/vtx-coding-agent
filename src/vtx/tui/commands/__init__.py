@@ -19,7 +19,6 @@ from .agents import AgentCommands
 from .auth import AuthCommands
 from .base import CommandSupport
 from .goals import GoalCommands
-from .harness import HarnessCommands
 from .mcp import McpCommands
 from .models import ModelCommands
 from .providers import ProviderCommands
@@ -40,7 +39,6 @@ class CommandsMixin(
     AgentCommands,
     UpdateCommands,
     GoalCommands,
-    HarnessCommands,
     ReloadCommands,
     McpCommands,
 ):
@@ -117,12 +115,6 @@ class CommandsMixin(
             return True
         if cmd == "compact":
             self._handle_compact_command(args)
-            return True
-        if cmd == "refine":
-            self._handle_refine_command(args)
-            return True
-        if cmd == "harness":
-            self._handle_harness_command(args)
             return True
         if cmd == "recap":
             self._handle_recap_command()
