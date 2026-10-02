@@ -1,6 +1,6 @@
 # Handoff agents
 
-Agents are switchable profiles: each one bundles instructions, tool allow/deny lists, an optional model/provider override, and permission gates. Cycle them live with `shift+tab` or `/agent <name>`. Implemented in `src/ai/agent/agents/`.
+Agents are switchable profiles: each one bundles instructions, tool allow/deny lists, an optional model/provider override, and permission gates. Cycle them live with `shift+tab` or `/agent <name>`. Implemented in `src/vtx/agent/agents/`.
 
 **Vtx ships no built-in agents.** Profiles come only from files you write, in `.vtx/agent/` or `~/.vtx/agent/`. Out of the box the registry is empty and the agent runs with its default configuration — `shift+tab` cycles a single "no profile" entry until you add one. There used to be a hardcoded read-only `plan` profile; removing it means the shipped list is no longer something you edit in place to change what the agent can be.
 

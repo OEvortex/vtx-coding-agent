@@ -3,7 +3,7 @@
 `Agent` bundles everything needed to run one role.
 
 ```python
-from vtx.ai.agent.sdk import Agent
+from vtx.agent.sdk import Agent
 
 agent = Agent(
     name="triage",
@@ -33,7 +33,7 @@ agent = Agent(
 
 ```python
 from pydantic import BaseModel
-from vtx.ai.agent.sdk import Agent, AgentOutputSchema
+from vtx.agent.sdk import Agent, AgentOutputSchema
 
 class Report(BaseModel):
     summary: str

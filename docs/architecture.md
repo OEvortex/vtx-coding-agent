@@ -1,21 +1,39 @@
 # Architecture
 
-Vtx is a minimalist coding-agent harness built around a small, transparent runtime. This page maps the four `src/vtx` packages.
+Vtx is a minimalist coding-agent harness built around a small, transparent runtime. This page maps the ten `src/vtx` packages.
 
 ## Package layout
 
 | Package | Responsibility |
 |--------|----------------|
-| `vtx.core` | Zero-dependency foundations: message/event types, permission gate, compaction, handoff prompts, tracing, paths, notifications. |
-| `vtx.ai` | LLM layer: provider catalog, OAuth, SDK adapters, plus the product-neutral agent harness under `ai.agent` (loop, turn engine, session store, tool contracts, extensions, hooks, SDK). |
-| `vtx.coding_agent` | The coding agent built on the harness: CLI entry point (`coding_agent.cli:main`), config schema and migrations, headless runner, themes, runtime composition root, built-in tools registry, prompt/context assembly, subagent definitions. |
+| `vtx.protocol` | **Leaf.** The wire vocabulary every layer speaks: message and stream types, the provider/tool contracts, error formatting. Imports nothing from `vtx`. |
+| `vtx.telemetry` | **Leaf.** Tracing: spans, processors, console and JSONL exporters. Imports nothing from `vtx`. |
+| `vtx.git` | Git and GitHub integration: branch metadata, the `gh` CLI wrapper, GitHub App auth. |
+| `vtx.core` | Shared foundations: agent events, the permission gate, notifications, the scratchpad dir, compaction, handoff prompts, paths, the user config schema and its defaults, the theme palette registry, harness knobs, and package-version resolution. |
+| `vtx.ai` | LLM layer only: provider catalog, OAuth, SDK adapters, model catalog, rate limits, tool parsing. No harness code. |
+| `vtx.codemode` | Confined script execution: the sandbox, its isolation layers, and the discovery/catalog layer (see [codemode.md](codemode.md)). |
+| `vtx.agent` | The product-neutral agent harness: loop, turn engine, session store, tool registry, prompt/context assembly, extensions, hooks, goals, and the programmatic SDK. |
+| `vtx.mcp` | MCP client: server config, transports (stdio, in-memory, streamable HTTP), tool/resource exposure, OAuth, and the trust prompt. |
 | `vtx.tui` | The Textual terminal UI: chat rendering, input, slash commands, session tree selector. |
+| `vtx.coding_agent` | The product layer: CLI entry point (`coding_agent.cli:main`), headless runner, the concrete filesystem tools and their default registry, and the built-in skills package. |
 
-Dependency direction: `core` → (nothing), `ai` → `core`, `coding_agent` → `ai` + `core`, `tui` → all three. The harness (`vtx.ai.agent`) never imports `vtx.coding_agent`; product code injects everything engine-side (system-prompt builder, context loader, tool registry, user config knobs).
+### Dependency direction
 
-Enforced by `.github/workflows/ci.yml`. The one runtime seam that used to break it — the sub-agent runner, where three call sites re-imported `vtx.coding_agent.tools.task` looking for a divergent `_run_subagent` — is now an explicit `set_subagent_runner()` hook in `vtx.ai.agent.tools.task`. That module re-exported the same function object, so the lookup could never differ; the back-edge existed only to keep old monkeypatches working. `vtx.coding_agent.prompts.rlm` moved to `vtx.ai.agent.prompts.rlm` for the same reason.
+```
+protocol, telemetry          (leaves)
+   ↓
+core, git                   ai ──→ core
+   ↓                          ↓
+mcp ───────────────────────→  agent ──→ codemode
+   ↓                          ↓
+tui ───────────────────────→  coding_agent
+```
 
-`vtx.coding_agent` is a thin product layer over the harness. Anything that duplicated a harness module has become a re-export alias (`prompts/identity.py`, `prompts/ponytail.py`, `context/loader.py`, `context/agent_mds.py`, `context/git.py`, `context/_xml.py`, `agents/activate.py`, `agents/discovery.py`), so there is one implementation to keep correct. Concrete tools, the CLI, headless, config schema/migrations, and themes stay here — they are the product.
+The harness (`vtx.agent`) never imports `vtx.coding_agent` or `vtx.tui`; product code injects everything engine-side (system-prompt builder, context loader, tool registry, user config knobs). Every remaining upward edge — `agent → mcp`, `agent → tui`, `core → agent`, `codemode → agent` — is a **function-local** import, so no module-level cycle exists and layering stays verifiable. `vtx.core` reaches upward only from `config.py`, which merges user YAML into the harness knobs in `core/harness_config.py` and resolves provider catalogs and subagent limits.
+
+Enforced by `.github/workflows/ci.yml`. The one runtime seam that used to break it — the sub-agent runner, where three call sites re-imported `vtx.coding_agent.tools.task` looking for a divergent `_run_subagent` — is now an explicit `set_subagent_runner()` hook in `vtx.agent.tools.task`. That module re-exported the same function object, so the lookup could never differ; the back-edge existed only to keep old monkeypatches working. `vtx.coding_agent.prompts.rlm` moved to `vtx.agent.prompts.rlm` for the same reason.
+
+The harness used to live at `vtx.ai.agent`, nested inside the LLM package, which made `vtx.ai` a 116-module grab bag holding the entire runtime. It is now a sibling of `vtx.ai`, so `vtx.ai` holds only AI code. Likewise every module that duplicated a harness module has been removed rather than aliased: `coding_agent/{prompts,context,goal}`, `runtime.py`, `version.py`, `config.py`, `defaults/`, `gh_cli.py`, `git_branch.py`, `self_update.py`, `diff_display.py`, and `themes.py` each have a single home. One module path per concern, one implementation to keep correct.
 
 ## Two run surfaces
 
@@ -24,14 +42,14 @@ Enforced by `.github/workflows/ci.yml`. The one runtime seam that used to break 
 
 Both drive the same `ConversationRuntime` → `Agent` stack.
 
-## Agent harness (`vtx.ai.agent`)
+## Agent harness (`vtx.agent`)
 
 | Module | Responsibility |
 |--------|----------------|
 | `loop.py` | `Agent.run(query)` — the interactive turn loop: streams events per turn, runs compaction between turns, queues follow-ups and steering. Product-agnostic: system prompt and context are injected. |
 | `turn.py` | `run_single_turn` — one turn: stream from the provider, execute tool calls, emit events. Handles retries, empty-response recovery, length recovery, mid-turn injections. |
 | `agent_runner.py` | `run_agent_turn(spec)` — thin stateless wrapper over `run_single_turn` used by sub-agents and tests. |
-| `config.py` | Harness-owned runtime knobs (max turns, compaction policy, idle timeout) with product-neutral defaults; `vtx.coding_agent.config` mirrors user YAML into it. |
+| `runtime.py` | `ConversationRuntime` — composition root wiring provider, tools, extensions, agents; owns model/thinking switches, sessions, compaction and handoff entry points; resolves each model's real context window onto the engine. |
 | `session.py` | JSONL session persistence with a branching tree of entries (see [sessions.md](sessions.md)). |
 | `dispatcher.py` | Per-task context (`DispatcherContext`) so tools like `delegate_subagent` can reach provider/model/session info. |
 | `context_governance.py` | Budgets oversized tool results before they are sent back to the model. |
@@ -40,20 +58,21 @@ Both drive the same `ConversationRuntime` → `Agent` stack.
 | `sdk/` | The programmatic multi-agent SDK (see [sdk/README.md](sdk/README.md)). |
 | `tools/` | Tool contract only: `BaseTool` and JSON-schema slimming for LLM tool definitions. Concrete tools live in the coding agent. |
 | `background.py` | Background-task notification tag shared between parent and sub-agents. |
-| `codemode/` | Confined script execution — the sandbox, its isolation layers, and the discovery/catalog layer (see [codemode.md](codemode.md)). |
+| `codemode/` | Confined script execution — the sandbox, its isolation layers, and the discovery/catalog layer (see [codemode.md](codemode.md)). Promoted to its own `vtx.codemode` package; the harness imports it one-way. |
 
-Support modules: `tools_manager.py` (auto-download of `fd`/`rg` into `~/.vtx/bin`), `version.py` (package version resolution).
+Support modules: `tools_manager.py` (auto-download of `fd`/`rg` into `~/.vtx/bin`). Harness-owned runtime knobs (max turns, compaction policy, idle timeout) live in `core/harness_config.py` with product-neutral defaults, and `core/config.py` mirrors user YAML into them. Package-version resolution lives in `core/version.py`, which every package reads from.
 
 ## Coding-agent layer (`vtx.coding_agent`)
 
 | Module | Responsibility |
 |--------|----------------|
-| `runtime.py` | `ConversationRuntime` — composition root wiring provider, tools, extensions, agents; owns model/thinking switches, sessions, compaction and handoff entry points; resolves each model's real context window onto the engine. |
-| `tools/` | The 11 built-in `BaseTool` implementations plus the default registry (`DEFAULT_TOOLS`) (see [tools.md](tools.md)). |
-| `prompts/` | Aliases to `vtx.ai.agent.prompts` (identity, ponytail, tooling, env, builder). |
-| `context/` | Aliases to `vtx.ai.agent.context` (`AGENTS.md` discovery, skills loading, git snapshot). |
-| `agents/` | Switchable handoff agents: schema (`AgentDef`), loader, registry, plus aliases for `discovery`/`activate` (see [agents.md](agents.md)). |
-| `gh_cli.py`, `git_branch.py`, `diff_display.py` | PR autocomplete data, git metadata paths, diff color blending. |
+| `cli.py` | Console-script entry point (`vtx = vtx.coding_agent.cli:main`) and its auth/provider flags. |
+| `headless.py` | One prompt in, text out; exit code reflects the stop reason. |
+| `tools/` | The built-in `BaseTool` implementations (`bash`, `edit`, `find`, `grep`, `read`, `write`, `skill`) plus the default registry (`DEFAULT_TOOLS`) (see [tools.md](tools.md)). |
+| `builtin_skills/` | The skills package registered into the harness at import time. |
+| `agents/` | Switchable handoff agents: schema (`AgentDef`), loader, registry (see [agents.md](agents.md)). |
+
+The composition root is `vtx.agent.runtime`, not `coding_agent/runtime.py`; prompt, context, and goal assembly likewise live under `vtx.agent.{prompts,context,goal}`.
 
 ## LLM layer (`src/ai`)
 
@@ -86,7 +105,7 @@ The `delegate_subagent` tool dispatches isolated sub-agent sessions with their o
 
 Completion has two halves, and both are load-bearing. `BackgroundTaskManager` exposes a settlement listener, so a sub-agent that finishes *after* the parent turn ends still reaches a session that is sitting idle — the TUI resumes itself rather than waiting for the user to type. `Agent.run` then drains anything already settled *before the first model call* of that run, not between turns, so the result is in context for the turn that reacts to it. Draining only between turns meant a sub-agent outliving its parent turn was appended to the session and shown to the model one turn too late. A completion is delivered exactly once (`drain_completed` flips `notified`), and a wake-up turn can cascade at most `MAX_BACKGROUND_WAKEUPS` times before the session stops resuming itself and says so.
 
-Every dispatch passes through `ai.agent.subagents.SubagentScheduler`, a FIFO admission queue capped by `task.max_concurrent` (default 4, `0` = uncapped). A sub-agent over the cap waits for a slot *before* it builds a session or a provider, so "running" and "queued" are real counts.
+Every dispatch passes through `agent.subagents.SubagentScheduler`, a FIFO admission queue capped by `task.max_concurrent` (default 4, `0` = uncapped). A sub-agent over the cap waits for a slot *before* it builds a session or a provider, so "running" and "queued" are real counts.
 
 Both counters, plus a live row per sub-agent (name, description, turns/tool/token counters, current activity), render in the pinned **Agents** panel (`tui/agents_panel.py`) above the editor, fed from the process-wide `tui/goal_agents.REGISTRY`. The registry keys runs by tool-call id, so four concurrent `Explore` agents are four rows. The goal beacon renders the same rows from the same registry while a goal is focused; the chat log keeps only a static dispatch receipt per call.
 

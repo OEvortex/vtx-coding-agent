@@ -176,7 +176,7 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - **Task tool UI/UX parity** — redesigned the Task tool block rendering with `▸ <subagent_name> <description>` header formatting, live 80ms braille spinner animation with turn count (`↻5≤30`), active tool/text activity line (`⎿ reading…`), token metrics, execution duration tracking, and collapsible/expandable output formatting.
 
 ### Changed
-- **Harness/coding-agent package split** — `vtx.ai.agent` is now a product-neutral harness (loop, turn engine, session store, tool contracts, extensions/hooks, SDK); concrete built-in tools, prompt/context assembly, subagent definitions, and the runtime composition root moved to `vtx.coding_agent`. The harness no longer imports product code: system-prompt building, context loading, the tool registry, and user config knobs are injected, with harness-owned defaults mirroring user YAML.
+- **Harness/coding-agent package split** — `vtx.agent` is now a product-neutral harness (loop, turn engine, session store, tool contracts, extensions/hooks, SDK); concrete built-in tools, prompt/context assembly, subagent definitions, and the runtime composition root moved to `vtx.coding_agent`. The harness no longer imports product code: system-prompt building, context loading, the tool registry, and user config knobs are injected, with harness-owned defaults mirroring user YAML.
 - **ask_user dialog extracted** — shared dialog logic moved to `vtx.tui.ask_user` with dedicated test coverage.
 - **API type unification** — duplicate `openai-completions` folded into `openai-sdk`; fetched-model cache now carries thinking/free metadata for picker rendering.
 - **Handoff prompt in handoff link details** — handoff link blocks now include the handoff prompt in their details view.
@@ -188,7 +188,7 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - **`/model` picker now shows the last-selected model** — the last-selected model is now remembered across sessions and pre-selected in the `/model` picker; if the last-selected model is no longer available, the default model is selected instead.
 - **ctrl+t now properlly cycles between thinking levels** — the `ctrl+t` shortcut now cycles between models thinking levels, and the current level is displayed in the status bar.
 - **Stale provider labels on resumed sessions** — sessions recorded under a wrong provider label (e.g. `openai` for a custom gateway like kilo) are healed at initialize time, keeping lookups, pricing, and context-window resolution on the right catalog entry; unknown models no longer silently relabel the provider as the engine class name.
-- **Event class map ImportError** — `_get_event_class_map()` self-imported event classes from `vtx.ai.agent.extensions`; it now imports agent/turn lifecycle events from `vtx.core.events`, fixing crashes on first event-object lookup.
+- **Event class map ImportError** — `_get_event_class_map()` self-imported event classes from `vtx.agent.extensions`; it now imports agent/turn lifecycle events from `vtx.core.events`, fixing crashes on first event-object lookup.
 - **Restored missing `get_valid_openai_credentials` export** from `vtx.ai` (accidentally dropped during the cline OAuth refactor; `/login` OpenAI flow depended on it).
 - **Removed duplicated `_emit_error` definition** in the extension runner.
 

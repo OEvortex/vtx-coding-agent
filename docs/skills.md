@@ -1,6 +1,6 @@
 # Skills
 
-Skills are markdown workflows the agent loads on demand, keeping the base prompt lean. Implemented in `src/ai/agent/context/skills.py`.
+Skills are markdown workflows the agent loads on demand, keeping the base prompt lean. Implemented in `src/vtx/agent/context/skills.py`.
 
 ## Anatomy
 

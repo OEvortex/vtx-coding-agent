@@ -1,6 +1,6 @@
 # Extensions & hooks
 
-Extensions are Python files that hook into Vtx at startup: register tools and slash commands, intercept lifecycle events, or gate tool calls. Implemented in `src/ai/agent/extensions.py`; the extension manager in `extension_manager.py`.
+Extensions are Python files that hook into Vtx at startup: register tools and slash commands, intercept lifecycle events, or gate tool calls. Implemented in `src/vtx/agent/extensions.py`; the extension manager in `extension_manager.py`.
 
 ## Discovery
 

@@ -1,6 +1,6 @@
 # Permissions
 
-Vtx gates mutating tool calls by default. Everything here is implemented in `src/core/permissions.py` and wired into the turn loop in `src/ai/agent/turn.py`.
+Vtx gates mutating tool calls by default. Everything here is implemented in `src/vtx/core/permissions.py` and wired into the turn loop in `src/vtx/agent/turn.py`.
 
 ## Modes
 

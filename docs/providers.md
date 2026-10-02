@@ -2,7 +2,7 @@
 
 ## Built-in catalog
 
-`src/ai/provider.yaml` defines **57 providers**. Each entry carries a slug, display name, base URL, API-key env var, known models, capability flags (tools/vision/thinking), and an optional dynamic model-catalog endpoint.
+`src/vtx/ai/provider.yaml` defines **57 providers**. Each entry carries a slug, display name, base URL, API-key env var, known models, capability flags (tools/vision/thinking), and an optional dynamic model-catalog endpoint.
 
 Highlights:
 
@@ -18,7 +18,7 @@ Run `vtx` and use `/provider` then `/model` to browse; `/model` auto-fetches eac
 
 Keys resolve in this order: config/CLI → provider env var → OAuth (if the provider supports it) → local-endpoint bypass. Logged-in credentials are cached as JSON/YAML files under `~/.vtx` (e.g. `copilot_auth.json`).
 
-Env vars recognized out of the box (`src/ai/base.py`):
+Env vars recognized out of the box (`src/vtx/ai/base.py`):
 
 | Provider | Env var |
 | --- | --- |
@@ -40,7 +40,7 @@ Base URLs on localhost / loopback are treated as local: no API key is required (
 
 ## OAuth logins
 
-Built-in login flows (`src/ai/oauth/`):
+Built-in login flows (`src/vtx/ai/oauth/`):
 
 - **GitHub Copilot** — `vtx` → `/login` → copilot; device flow, token refresh handled automatically.
 - **OpenAI (Codex)** — ChatGPT-style OAuth used by the default `openai-codex` provider.

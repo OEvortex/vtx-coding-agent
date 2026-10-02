@@ -33,7 +33,7 @@ vtx-coding-agent/
 `core` ← `ai` ← `mcp` ← `coding_agent` / `tui`. `core` never imports from the
 others; `ai` never imports `tui` or `mcp`. `mcp` sits beside `coding_agent`
 rather than inside `ai` because its `McpTool` adapter builds on the harness tool
-contract in `ai.agent.tools` — and the harness itself never imports `vtx.mcp`.
+contract in `agent.tools` — and the harness itself never imports `vtx.mcp`.
 `ConversationRuntime` reaches it through a lazy import so the loop is not
 closed. The TUI talks to the harness through `ConversationRuntime` and typed
 events only.
@@ -41,12 +41,12 @@ events only.
 ## Entry points
 
 - `vtx = coding_agent.cli:main` — parses flags, then dispatches to `tui.launch.run_tui` or `coding_agent.headless.run_headless`.
-- SDK consumers import `from vtx.ai.agent.sdk import Agent, Runner, tool`.
+- SDK consumers import `from vtx.agent.sdk import Agent, Runner, tool`.
 
 ## Why this shape
 
 The pre-split monolith mixed provider plumbing with UI state. The split keeps:
 
 - `core` dependency-free so tools/tests can use message types without an LLM stack;
-- all agent logic in one place (`ai.agent`) shared by TUI, headless, sub-agents and the SDK;
+- all agent logic in one place (`vtx.agent`) shared by TUI, headless, sub-agents and the SDK;
 - the CLI/config/themes shell thin enough to swap (that's how headless mode exists at all).

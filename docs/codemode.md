@@ -15,7 +15,7 @@ aggregation done in code instead of paid for in context.
 ## Using it
 
 ```python
-from vtx.ai.agent.codemode import CodemodeSandbox, CodemodeTool, Limits
+from vtx.agent.codemode import CodemodeSandbox, CodemodeTool, Limits
 
 async def lookup(args, _signal):
     return await db.fetch_one(args["id"])
@@ -42,8 +42,8 @@ fresh namespace, nothing carried over except what you put in the store.
 `adapt_tools()` wraps VTX's own `BaseTool` implementations for the sandbox:
 
 ```python
-from vtx.ai.agent.codemode import CodemodeSandbox, adapt_tools
-from vtx.ai.agent.tools import get_all_tools
+from vtx.agent.codemode import CodemodeSandbox, adapt_tools
+from vtx.agent.tools import get_all_tools
 
 sandbox = CodemodeSandbox(tools=adapt_tools(list(get_all_tools().values())))
 ```

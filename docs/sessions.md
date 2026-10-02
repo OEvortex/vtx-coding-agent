@@ -1,6 +1,6 @@
 # Sessions
 
-Sessions are append-only JSONL files with a branching tree of entries. Implemented in `src/ai/agent/session.py`.
+Sessions are append-only JSONL files with a branching tree of entries. Implemented in `src/vtx/agent/session.py`.
 
 ## Where they live
 

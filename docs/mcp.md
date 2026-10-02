@@ -307,7 +307,7 @@ await client.close()
 ```
 
 `vtx.mcp` is a top-level package, a sibling of `vtx.coding_agent` and
-`vtx.tui`. The harness (`vtx.ai.agent`) never imports it; the product layer
+`vtx.tui`. The harness (`vtx.agent`) never imports it; the product layer
 wires it up.
 
 ## Not supported

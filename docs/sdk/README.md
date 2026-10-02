@@ -2,16 +2,16 @@
 
 The VTX Agentic SDK is Vtx's programmatic, multi-agent interface. It exposes the same lean runtime the CLI uses — Pydantic-typed tools, handoffs, guardrails, approvals and pluggable sessions — as a Python API.
 
-Import it from the `ai.agent.sdk` package (55 public exports):
+Import it from the `agent.sdk` package (55 public exports):
 
 ```python
-from vtx.ai.agent.sdk import Agent, Runner, tool
+from vtx.agent.sdk import Agent, Runner, tool
 ```
 
 ## Quick start
 
 ```python
-from vtx.ai.agent.sdk import Agent, Runner, tool
+from vtx.agent.sdk import Agent, Runner, tool
 
 @tool
 def get_weather(city: str) -> str:

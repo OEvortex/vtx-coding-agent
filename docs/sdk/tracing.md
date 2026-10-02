@@ -1,11 +1,11 @@
 # SDK Tracing
 
-Tracing records a tree of spans for a run and ships them to processors. Backed by `core.tracing`; the SDK re-exports the API.
+Tracing records a tree of spans for a run and ships them to processors. Backed by `vtx.telemetry`; the SDK re-exports the API.
 
 ## Instrumenting code
 
 ```python
-from vtx.ai.agent.sdk import trace, span, current_trace
+from vtx.agent.sdk import trace, span, current_trace
 
 with trace("support-bot", group_id="user-42"):
     with span("retrieve_order", order_id="123"):
@@ -18,7 +18,7 @@ with trace("support-bot", group_id="user-42"):
 ## Processors
 
 ```python
-from vtx.ai.agent.sdk import (
+from vtx.agent.sdk import (
     TraceProcessor, ConsoleTraceProcessor, JSONLTraceProcessor,
     add_trace_processor, set_trace_processors,
 )
@@ -32,7 +32,7 @@ add_trace_processor(ConsoleTraceProcessor())                      # append
 ## Toggles
 
 ```python
-from vtx.ai.agent.sdk import enable_tracing, disable_tracing
+from vtx.agent.sdk import enable_tracing, disable_tracing
 disable_tracing()                          # or RunConfig(tracing_disabled=True)
 RunConfig(trace_include_sensitive_data=False)   # keep payloads out of traces
 ```
