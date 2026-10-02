@@ -19,17 +19,13 @@ sandbox. The sandbox itself knows nothing about tools, sessions, or the TUI.
 from __future__ import annotations
 
 import asyncio
+import inspect
+from collections.abc import Callable, Sequence
 from typing import Any, ClassVar
 
 from pydantic import BaseModel, Field
 
-from vtx.ai.agent.codemode import (
-    CODEMODE_SOURCE_GRAMMAR,
-    CodemodeSandbox,
-    Limits,
-    adapt_tools,
-    parse_source,
-)
+from vtx.ai.agent.codemode import CODEMODE_SOURCE_GRAMMAR, CodemodeSandbox, Limits, parse_source
 
 # Aliased, because this module defines a harness tool also called CodemodeTool.
 # Unaliased, the class below shadows the sandbox type and every annotation
@@ -40,14 +36,49 @@ from vtx.ai.agent.codemode.errors import (
     INVALID_INPUT,
     SANDBOX,
     SCRIPT,
+    STALLED,
     TIMEOUT,
     UNKNOWN_TOOL,
 )
 from vtx.ai.agent.codemode.types import Diagnostic
 from vtx.ai.agent.tools.base import BaseTool
-from vtx.core.types import ToolResult
+from vtx.core.types import ImageContent, ToolResult
 
 CODEMODE_TOOL_NAME = "codemode"
+
+
+def _registered_tools() -> list[BaseTool]:
+    from vtx.ai.agent.tools import get_all_tools
+
+    return list(get_all_tools().values())
+
+
+def _exposure_of(tool: BaseTool) -> str | None:
+    """A host tool's declared exposure, or ``None`` for a built-in.
+
+    A missing attribute means "not an MCP tool", and built-ins are always
+    listed. Read from the host tool because that is where the MCP adapter sets
+    it; the sandbox tool inherits the answer through ``adapt_tools``.
+    """
+    return getattr(tool, "exposure", None)
+
+
+def _accepted_kwargs(tool: BaseTool, cancel_event: asyncio.Event | None) -> dict[str, Any]:
+    """Only the kwargs ``tool.execute`` actually accepts.
+
+    The turn loop does the same filtering. A tool that takes no ``cancel_event``
+    would raise ``TypeError`` if handed one, and that would surface to the model
+    as the tool failing rather than as a wiring detail.
+    """
+    kwargs: dict[str, Any] = {}
+    try:
+        parameters = inspect.signature(tool.execute).parameters
+    except (TypeError, ValueError):
+        return kwargs
+    if cancel_event is not None and "cancel_event" in parameters:
+        kwargs["cancel_event"] = cancel_event
+    return kwargs
+
 
 #: The tool the script uses to discover the others. Named to match what the
 #: sandbox injects, so the description and the implementation cannot disagree.
@@ -67,6 +98,9 @@ class CodemodeParams(BaseModel):
 #: A single "the script failed" would leave the model guessing.
 _RECOVERY = {
     SCRIPT: "The traceback names a line in your own source; fix that line.",
+    STALLED: (
+        "You awaited something that can never complete. Await a tool call, or do not await at all."
+    ),
     UNKNOWN_TOOL: (
         "No such tool here. Call `tools.search(...)` to list what exists — the "
         "catalog below may be partial."
@@ -94,15 +128,24 @@ Inside the script:
 - `tools.<name>(**kwargs)` calls a tool. Its result comes back as plain JSON data.
 - `tools.search(query=..., limit=...)` finds tools, when the list below is partial.
 - `text(value)` appends to the output shown to you. `print` is discarded.
+- `image(value)` appends an image you can see. It takes a base64 data URI or an
+  image block taken straight from an MCP result.
 - `store(key, value)` / `load(key)` carry JSON values between codemode calls;
   writes are kept only if the script returns successfully.
+- A first line of `# @options: {{"max_tool_calls": 20}}` lowers your own budgets.
+  You can ask for less than the limits below, never more.
 
 The sandbox has no filesystem, network, subprocess, `eval`/`exec`/`compile`, or
 `open`, and can only `import` a short standard-library allowlist. It has no
 filesystem authority at all — every file operation is a tool call.
 
+MCP tools, when connected, are grouped by server below and return a
+`CallToolResult` rather than a string. Read `structuredContent` when it is
+present, and check `isError` before trusting a result.
+
 Side effects are real: if the script fails partway, earlier tool calls are not
-undone.
+undone. A tool that needs your user's approval cannot be called from here — call
+it directly so they can approve it.
 
 {catalog}"""
 
@@ -140,38 +183,112 @@ class CodemodeTool(BaseTool):
     )
 
     def __init__(
-        self, *, timeout_ms: int | None = 30_000, catalog_budget_tokens: int = 2000
+        self,
+        *,
+        timeout_ms: int | None = 30_000,
+        catalog_budget_tokens: int = 2000,
+        max_tool_calls: int | None = 200,
+        max_output_tokens: int | None = 8_000,
+        memory_limit_bytes: int | None = 512 * 1024 * 1024,
     ) -> None:
         self._timeout_ms = timeout_ms
         self._catalog_budget = catalog_budget_tokens
+        self._limits = Limits(
+            timeout_ms=timeout_ms,
+            max_tool_calls=max_tool_calls,
+            max_output_tokens=max_output_tokens,
+            memory_limit_bytes=memory_limit_bytes,
+        )
         # One sandbox for the session: the tool set only changes on a reload, and
         # the sandbox is reusable by design, so this is construction, not per-call.
         self._sandbox: CodemodeSandbox | None = None
+        #: Identity of the tool set the cached sandbox was built from. MCP
+        #: servers connect, disconnect, and gain and lose tools while a session
+        #: runs, and a sandbox holding a stale list is invisible failure: a tool
+        #: the model can see in its own tool list raises ``UnknownTool`` from
+        #: inside a script. Comparing identities each turn is cheaper than
+        #: remembering to invalidate.
+        self._fingerprint: tuple[tuple[str, int], ...] = ()
+        #: Supplies the live session tool list. Set by the runtime; ``None``
+        #: means fall back to the global registry, which is right for a bare
+        #: harness with no MCP.
+        self.tool_source: Callable[[], Sequence[BaseTool]] | None = None
+        #: Extensions, so nested calls emit the same hooks the model's own do.
+        self.extensions: Any = None
+        #: The host's permission gate. A script cannot answer a prompt, so a
+        #: gated call is refused with an explanation rather than run.
+        self.permission: Callable[[BaseTool, dict[str, Any]], Any] | None = None
+        #: Cancellation for nested calls, shared with the turn that started it.
+        self.cancel_event: asyncio.Event | None = None
         # Carried between calls. Host-owned, because the sandbox persists nothing.
         self._store: dict[str, Any] = {}
 
-    def sandbox_tools(self) -> list[SandboxTool]:
-        from vtx.ai.agent.tools import get_all_tools
+    # -- tool set ---------------------------------------------------------
 
-        """The harness tool set, as sandbox tools.
+    def session_tools(self) -> list[SandboxTool]:
+        """Every tool this session can call, as sandbox tools.
 
         Excludes ``codemode`` itself: a script that could start a script could
         nest without limit, and the nested run would have no deadline of its own
-        worth speaking of. ``bash`` is included deliberately — it is the tool
+        worth speaking of. ``bash`` is included deliberately -- it is the tool
         through which a script reaches the shell, and the permission gate has
         already ruled on it by the time the script runs.
+
+        MCP tools are included when the session has any, which is the whole
+        point of the exposure taxonomy: an MCP server's tools reach the model
+        through a script rather than through the transcript, because a connected
+        server can offer more tools than fit in a prompt.
         """
+        from vtx.ai.agent.codemode.integration import adapt_tools
+        from vtx.mcp.exposure import SCRIPT_LISTED
+
+        source = self.tool_source
+        tools = list(source()) if source is not None else list(_registered_tools())
+        selected = [t for t in tools if t.name != CODEMODE_TOOL_NAME]
         return adapt_tools(
-            [t for name, t in get_all_tools().items() if name != CODEMODE_TOOL_NAME]
+            selected,
+            invoke=self._invoke,
+            listed=lambda tool: _exposure_of(tool) in SCRIPT_LISTED or _exposure_of(tool) is None,
         )
 
+    async def _invoke(self, tool: BaseTool, args: dict[str, Any]) -> Any:
+        """Run one tool on the script's behalf, with the host's gates applied.
+
+        Routes through :mod:`vtx.ai.agent.codemode.governance` so a call made
+        from inside a script emits the same extension hooks, answers to the same
+        permission decision, and is recorded the same way as a call the model
+        made directly. Calling ``tool.execute`` here instead would be a way to
+        do anything any exposed tool could, with no second look -- which is the
+        one thing an approved ``codemode`` call must not be.
+        """
+        return await self._governed(tool, args)
+
+    def _governed(self, tool: BaseTool, args: dict[str, Any]) -> Any:
+        from vtx.ai.agent.codemode.governance import ToolGovernance
+
+        async def run(target: BaseTool, arguments: dict[str, Any]) -> Any:
+            params = target.params.model_validate(arguments)
+            return await target.execute(params, **_accepted_kwargs(target, self.cancel_event))
+
+        return ToolGovernance(
+            tool,
+            run=run,
+            extensions=self.extensions,
+            permission=self.permission,
+            cancel_event=self.cancel_event,
+        )(args, None)
+
     def _get_sandbox(self) -> CodemodeSandbox:
-        if self._sandbox is None:
+        tools = self.session_tools()
+        fingerprint = tuple((tool.name, id(tool)) for tool in tools)
+        if self._sandbox is None or fingerprint != self._fingerprint:
             self._sandbox = CodemodeSandbox(
-                tools=self.sandbox_tools(),
-                limits=Limits(timeout_ms=self._timeout_ms),
+                tools=tools,
+                limits=self._limits,
                 catalog_budget_tokens=self._catalog_budget,
+                listed=[tool.name for tool in tools if tool.listed],
             )
+            self._fingerprint = fingerprint
         return self._sandbox
 
     def refresh(self) -> None:
@@ -236,10 +353,13 @@ class CodemodeTool(BaseTool):
             )
 
         sandbox = self._get_sandbox()
+        self.cancel_event = cancel_event
         result = await sandbox.execute(
             source.code,
             store=self._store,
-            timeout_ms=source.timeout_ms or self._timeout_ms,
+            timeout_ms=source.timeout_ms,
+            max_tool_calls=source.max_tool_calls,
+            max_output_tokens=source.max_output_tokens,
             signal=cancel_event,
         )
 
@@ -258,24 +378,93 @@ class CodemodeTool(BaseTool):
             return ToolResult(
                 success=False,
                 result="\n".join(body),
-                ui_summary=f"Script failed ({diagnostic.kind})",
+                images=_result_images(result) or None,
+                ui_summary=_failure_summary(result, diagnostic),
             )
 
         # Commit the store only on success: a script that half-ran must not leave
         # state behind that the model believes was never written.
         result.apply_to_store(self._store)
 
+        images = _result_images(result)
         parts = [item.get("text", "") for item in result.output if item.get("type") == "text"]
         value_repr = _render_value(result.value)
         if value_repr is not None:
             parts.append(value_repr)
-        calls = ", ".join(c.name for c in result.calls)
-        summary = f"Script ok ({len(result.calls)} tool calls)"
+        body = "\n".join(p for p in parts if p)
+        if result.output_truncated:
+            # Said out loud, because a silently shortened result is read as a
+            # complete one and the model will reason from a table it never saw
+            # the whole of.
+            body = f"{body}\n\n[Output truncated to fit the model's context.]"
         return ToolResult(
-            success=True,
-            result="\n".join(p for p in parts if p),
-            ui_summary=f"{summary}: {calls}" if calls else summary,
+            success=True, result=body, images=images or None, ui_summary=_success_summary(result)
         )
+
+
+def _result_images(result: Any) -> list[ImageContent]:
+    """Images the script emitted with ``image()``.
+
+    This is how a picture gets from a tool, through a script, to the model. A
+    tool that returns a screenshot used to be flattened to text before a script
+    ever saw it, so a script had no way to forward one; ``image()`` accepts the
+    block unchanged and it arrives as real image content.
+    """
+    images: list[ImageContent] = []
+    for item in result.output:
+        if item.get("type") != "image":
+            continue
+        data = item.get("data")
+        if not isinstance(data, str) or not data:
+            continue
+        mime = item.get("mimeType")
+        images.append(
+            ImageContent(
+                data=data, mime_type=mime if isinstance(mime, str) and mime else "image/png"
+            )
+        )
+    return images
+
+
+def _success_summary(result: Any) -> str:
+    """The one-line TUI summary: how many calls, which, and how long.
+
+    Names rather than just a count, because a script that failed after two of
+    forty calls is a very different thing from one that made two calls, and the
+    durations are what tell a model which call to avoid.
+    """
+    calls = result.calls
+    base = f"Script ok ({len(calls)} tool calls)"
+    if not calls:
+        return base
+    names = ", ".join(_call_label(call) for call in calls[:6])
+    if len(calls) > 6:
+        names += f", +{len(calls) - 6} more"
+    return f"{base}: {names}"
+
+
+def _call_label(call: Any) -> str:
+    if call.ok:
+        return call.name
+    return f"{call.name} ({call.kind or 'error'})"
+
+
+def _failure_summary(result: Any, diagnostic: Diagnostic) -> str:
+    """The one-line TUI summary for a failed run.
+
+    Includes the calls that already happened. A script that failed partway has
+    usually already had real side effects, and a summary that says only "failed"
+    leaves the user with no way to know whether the half that ran changed
+    anything.
+    """
+    summary = f"Script failed ({diagnostic.kind})"
+    done = [call for call in result.calls if not call.ok]
+    if done:
+        names = ", ".join(_call_label(call) for call in done[:4])
+        return f"{summary}; failed calls: {names}"
+    if result.calls:
+        return f"{summary} after {len(result.calls)} calls (not undone)"
+    return summary
 
 
 def _render_value(value: Any) -> str | None:

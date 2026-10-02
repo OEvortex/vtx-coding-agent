@@ -40,6 +40,19 @@ class CodemodeTool:
     execute: Callable[[dict[str, Any], Any], Awaitable[Any]] = field(repr=False)
     input_schema: dict[str, Any] | None = None
     output_schema: dict[str, Any] | None = None
+    #: Grouping label for the model-facing catalog, e.g. ``mcp__docs``. A tool
+    #: with none is listed flat. Carried on the tool so the catalog can say
+    #: where something came from without the host repeating itself.
+    namespace: str | None = None
+    #: One line on what the group is, rendered as the catalog's section header.
+    namespace_description: str | None = None
+    #: Whether the catalog should advertise this tool. ``None`` means always.
+    #:
+    #: A tool can be callable without being listed, which is what makes a large
+    #: MCP tool set usable: two hundred callable tools cannot all be printed in
+    #: a prompt, but the dozen that matter can be, and the rest stay one
+    #: ``tools.search`` away. See :mod:`vtx.mcp.exposure`.
+    listed: bool = True
 
     def identifier(self) -> str:
         """Return the Python identifier the script calls this tool by.
@@ -71,6 +84,9 @@ class ToolCall:
     status: str
     kind: str | None = None
     message: str | None = None
+    #: Wall time for the call, in milliseconds. Measured rather than assumed so
+    #: the model can see which of several parallel calls was the slow one.
+    duration_ms: int | None = None
 
     @property
     def ok(self) -> bool:
@@ -109,6 +125,10 @@ class Result:
     #: when ``ok`` -- a failed run reports no writes.
     store_writes: Mapping[str, Any] = field(default_factory=dict)
     store_deletes: frozenset[str] = frozenset()
+    #: True when ``output`` was cut to fit ``Limits.max_output_tokens``, head and
+    #: tail kept. Reported so the model is never left reading a shortened result
+    #: as if it were the whole one.
+    output_truncated: bool = False
 
     def apply_to_store(self, store: dict[str, Any]) -> None:
         """Commit staged writes onto ``store`` in place."""
@@ -121,16 +141,34 @@ class Result:
 class Limits:
     """Resource budgets for one execution.
 
-    One knob. ``timeout_ms`` is a wall-clock deadline enforced by killing the
-    process, so a busy loop and a hung tool call die the same way.
+    Every knob here is enforced. A limit that is accepted but does nothing is
+    worse than no limit at all, because the model will believe it set one.
 
-    A call-count budget and an output-size cap would both be reasonable, but
-    neither is implemented, so neither is accepted: offering a limit that does
-    nothing is worse than not having one. Both are easy to add at the host — a
-    counter in ``_serve`` and a size check in ``_result_from_frame``.
+    ``timeout_ms`` is a wall-clock deadline enforced by killing the process, so
+    a busy loop and a hung tool call die the same way.
+
+    ``max_tool_calls`` bounds fan-out. A script that issues a thousand calls in
+    one turn is not doing the work the model asked for; it is spending the
+    session's budget on its own initiative, and a ceiling makes that visible
+    instead of letting it run out the clock.
+
+    ``max_output_tokens`` bounds what reaches the model. A script that returns a
+    whole table when the model wanted a count answered correctly and communicated
+    badly, so the middle is cut and the cut is reported.
+
+    ``memory_limit_bytes`` is an address-space cap applied inside the worker. A
+    runaway allocation is otherwise only stopped by the deadline, which means the
+    user watches memory climb for thirty seconds first.
     """
 
     timeout_ms: int | None = 30_000
+    max_tool_calls: int | None = None
+    max_output_tokens: int | None = None
+    memory_limit_bytes: int | None = None
+    #: Fail a script that is blocked on something nothing can complete, rather
+    #: than waiting out the deadline. On by default; off when chasing a suspected
+    #: false positive.
+    detect_stalls: bool = True
 
 
 def coerce_json(value: Any, *, what: str) -> JsonValue:

@@ -30,12 +30,17 @@ def handle(message: dict) -> dict:
     if method == "tools/list":
         # The schema must declare the argument the tool actually reads, or a
         # client that builds its params from the schema cannot pass one.
+        #
+        # `readOnlyHint` is not decoration: a tool a script calls has to clear
+        # the permission gate, and a tool that does nothing but echo its input
+        # is exactly the kind that should be allowed to.
         return {
             "tools": [
                 {
                     "name": "echo",
                     "description": "Echo the given text back to the caller.",
                     "inputSchema": ECHO_INPUT_SCHEMA,
+                    "annotations": {"readOnlyHint": True},
                 }
             ]
         }

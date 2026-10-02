@@ -80,12 +80,17 @@ INVALID_INPUT = "invalid_input"
 TOOL_FAILURE = "tool_failure"
 INVALID_OUTPUT = "invalid_output"
 HOST_UNAVAILABLE = "host_unavailable"
+#: The script is blocked on something that can never complete. Distinct from
+#: TIMEOUT because the cause is provable in a millisecond rather than waited
+#: for, and because the fix is a different edit.
+STALLED = "stalled"
 
 KINDS = (
     SCRIPT,
     TIMEOUT,
     ABORTED,
     SANDBOX,
+    STALLED,
     UNKNOWN_TOOL,
     INVALID_INPUT,
     TOOL_FAILURE,
@@ -108,6 +113,11 @@ _REMEDY = {
     SANDBOX: (
         "The sandbox process failed, not your script. Retry once; if it persists, "
         "report it rather than rewriting working code."
+    ),
+    STALLED: (
+        "The script is waiting on a result that can never arrive: no tool call is "
+        "outstanding and no timer can fire. You awaited something that will never "
+        "settle -- await a tool call, or stop awaiting."
     ),
     UNKNOWN_TOOL: (
         "That tool is not in the sandbox. Check the declared tools for the exact "
@@ -211,6 +221,15 @@ class SandboxError(CodemodeError):
 
 class ScriptAborted(CodemodeError):  # noqa: N818 - see above
     kind = ABORTED
+
+
+class ScriptStalled(CodemodeError):  # noqa: N818 - see above
+    """Raised when the script is provably unable to make further progress."""
+
+    kind = STALLED
+
+    def diagnostic(self) -> dict[str, Any]:
+        return {"kind": STALLED, "message": remedy_for(STALLED), "stack": None}
 
 
 class ScriptTimeout(CodemodeError):  # noqa: N818 - see above
@@ -623,7 +642,7 @@ def _prime_interpreter() -> None:
 class _CallResult:
     """One tool call's outcome, as the worker saw it."""
 
-    __slots__ = ("kind", "message", "name", "status", "value")
+    __slots__ = ("call_id", "kind", "message", "name", "status", "value")
 
     def __init__(
         self,
@@ -632,15 +651,22 @@ class _CallResult:
         value: Any = None,
         kind: str | None = None,
         message: str | None = None,
+        call_id: int | None = None,
     ) -> None:
         self.name = name
         self.status = status
         self.value = value
         self.kind = kind
         self.message = message
+        #: The protocol id, so the host can join this record to the one it timed.
+        #: Joining by position would be wrong: with `asyncio.gather` the two sides
+        #: finish in different orders.
+        self.call_id = call_id
 
     def as_frame(self) -> dict[str, Any]:
         frame: dict[str, Any] = {"tool": self.name, "status": self.status}
+        if self.call_id is not None:
+            frame["id"] = self.call_id
         if self.kind is not None:
             frame["kind"] = self.kind
         if self.message is not None:
@@ -711,6 +737,17 @@ class _ToolBridge:
         with self._lock:
             return list(self._calls)
 
+    @property
+    def in_flight(self) -> int:
+        """How many tool calls the host owes a reply to.
+
+        The stall detector's premise: a reply arriving is one of only two things
+        that can resume a blocked script, so a script that is blocked while
+        this is zero is blocked on nothing reachable.
+        """
+        with self._lock:
+            return len(self._pending)
+
     def make_proxy(self, identifier: str, declared: str) -> Any:
         # The round trip blocks on the parent's reply, so it happens off the
         # event loop thread. Waiting inline would park the loop for the
@@ -737,19 +774,21 @@ class _ToolBridge:
             write_frame({"type": TOOL_CALL, "id": call_id, "name": declared, "args": _plain(args)})
             reply = inbox.get()
             if reply is None:
-                self._record(declared, "error", kind=ABORTED, message=remedy_for(ABORTED))
+                self._record(
+                    declared, "error", kind=ABORTED, message=remedy_for(ABORTED), call_id=call_id
+                )
                 raise ScriptAborted()
             if reply.get("type") != TOOL_RESULT or reply.get("id") != call_id:
-                self._record(declared, "error", kind=SANDBOX)
+                self._record(declared, "error", kind=SANDBOX, call_id=call_id)
                 raise SandboxError("The host sent a mismatched tool reply.")
             if reply.get("ok"):
                 value = reply.get("value")
-                self._record(declared, "ok", value=value)
+                self._record(declared, "ok", value=value, call_id=call_id)
                 return value
             error = reply.get("error") or {}
             kind = str(error.get("kind") or TOOL_FAILURE)
             message = str(error.get("message") or remedy_for(kind))
-            self._record(declared, "error", kind=kind, message=message)
+            self._record(declared, "error", kind=kind, message=message, call_id=call_id)
             raise _raise_tool_error(kind, message)
         finally:
             self._depth.value -= 1
@@ -763,9 +802,10 @@ class _ToolBridge:
         value: Any = None,
         kind: str | None = None,
         message: str | None = None,
+        call_id: int | None = None,
     ) -> None:
         with self._lock:
-            self._calls.append(_CallResult(name, status, value, kind, message))
+            self._calls.append(_CallResult(name, status, value, kind, message, call_id))
 
     def shutdown(self) -> None:
         """Stop the reader and release anyone still waiting."""
@@ -910,6 +950,56 @@ def _plain(value: Any) -> Any:
     return value
 
 
+#: What ``image()`` accepts, in the order it tries them. An MCP tool result can
+#: be handed over untouched, which is the point: a script that calls a
+#: screenshot tool and forwards the block should not have to know the encoding.
+_IMAGE_EXPECTS = (
+    "image() expects a non-empty image URL string, an object with 'image_url', "
+    "or a raw MCP image block"
+)
+
+#: Only inline data is accepted. A remote URL would make the fetch the host's
+#: problem at render time, on a URL the model chose, with the model's own
+#: reachability assumptions -- and a script that could point the transcript at
+#: an arbitrary host is an exfiltration primitive dressed as a feature.
+_IMAGE_REMOTE = "remote image URLs are not supported; pass a base64 data URI instead"
+
+
+def _image_payload(value: Any) -> tuple[str, str]:
+    """Return ``(base64 data, mime type)`` for whatever ``image()`` was handed.
+
+    Accepts a data URI, ``{"image_url": ...}``, and an MCP ``ImageContent``
+    block. Raises :class:`TypeError` on anything else, naming the three shapes
+    rather than saying "invalid argument" -- a model that guessed wrong should
+    not have to guess again.
+    """
+    url: Any = value
+    if isinstance(value, dict):
+        kind = value.get("type")
+        if kind == "image":
+            data = value.get("data")
+            mime = value.get("mimeType") or value.get("mime_type")
+            if not isinstance(data, str) or not data:
+                raise TypeError("image() expected MCP image block data")
+            return data, mime if isinstance(mime, str) and mime else "application/octet-stream"
+        if kind is not None:
+            raise TypeError(f"image() only accepts MCP image blocks, got {kind!r}")
+        if "image_url" in value:
+            url = value["image_url"]
+    if not isinstance(url, str) or not url:
+        raise TypeError(_IMAGE_EXPECTS)
+
+    colon = url.find(":")
+    scheme = url[:colon].lower() if colon != -1 else ""
+    if scheme in ("http", "https"):
+        raise TypeError(_IMAGE_REMOTE)
+    comma = url.find(",")
+    header = [p.strip().lower() for p in url[colon + 1 : comma].split(";")] if comma != -1 else []
+    if scheme != "data" or comma == -1 or "base64" not in header[1:]:
+        raise TypeError("invalid image output; pass a base64 data URI")
+    return url[comma + 1 :], header[0] or "application/octet-stream"
+
+
 def _install_exception_types(namespace: dict[str, Any]) -> None:
     """Expose the typed error classes so a script can catch them by name.
 
@@ -926,12 +1016,100 @@ def _install_exception_types(namespace: dict[str, Any]) -> None:
         "ScriptError",
         "ScriptTimeout",
         "ScriptAborted",
+        "ScriptStalled",
         "SandboxError",
     ):
         namespace[name] = globals()[name]
 
 
-def _exec_script(code: str, namespace: dict[str, Any]) -> Any:
+def _pending_timer_count(loop: Any) -> int | None:
+    """How many timer callbacks the loop still owes, or ``None`` if unknowable.
+
+    ``asyncio.sleep`` is available to scripts here, unlike in the JavaScript
+    reference where the VM has no timers at all. So a script waiting on a sleep
+    is waiting on a real thing, and a naive "blocked and no tool calls" check
+    would call that a deadlock. Timers are the difference between the two, and
+    they live on a private attribute, so the answer is reported as unknowable
+    rather than guessed when the internals move -- which disables the check
+    rather than firing it wrongly.
+    """
+    try:
+        return len(loop._scheduled)
+    except Exception:
+        return None
+
+
+def _other_live_tasks(loop: Any, mine: set[asyncio.Task[Any]]) -> list[asyncio.Task[Any]]:
+    """Tasks other than the script's and ours that could still do work.
+
+    A task the script spawned is a producer of whatever the script is waiting
+    for, so its presence means "not provably stuck". Counting them is the
+    difference between a proof and a guess.
+    """
+    try:
+        return [t for t in asyncio.all_tasks(loop) if t not in mine and not t.done()]
+    except Exception:
+        # Unknowable: return something that suppresses the check.
+        return [loop]  # type: ignore[list-item]
+
+
+class _StallGuard:
+    """Fails a script that provably cannot make progress.
+
+    The sandbox has exactly two ways to resume a blocked script: a tool reply
+    arriving, or a timer firing. A script that is blocked with neither pending
+    is not slow, it is dead -- so the run can end in a millisecond with a
+    diagnosis, instead of sitting out the whole deadline and then reporting a
+    timeout, which would send the model off splitting its work when the actual
+    bug is a promise that will never settle.
+    """
+
+    def __init__(self, task: asyncio.Task[Any], bridge: Any) -> None:
+        self._task = task
+        self._bridge = bridge
+        self.stalled = False
+
+    async def watch(self) -> None:
+        loop = asyncio.get_running_loop()
+        mine = {t for t in (self._task, asyncio.current_task()) if t is not None}
+        while not self._task.done():
+            # Yield so anything runnable runs first. A task that merely needed
+            # another turn must not be mistaken for a blocked one.
+            await asyncio.sleep(0)
+            if self._task.done():
+                return
+            if self._bridge.in_flight:
+                continue
+            timers = _pending_timer_count(loop)
+            if timers is None or timers:
+                continue
+            if _other_live_tasks(loop, mine):
+                continue
+            self.stalled = True
+            self._task.cancel()
+            return
+
+
+async def _run_script(coro: Any, bridge: Any, *, detect_stalls: bool) -> Any:
+    """Await the script's entry point, watching for a provable deadlock."""
+    task = asyncio.ensure_future(coro)
+    if not detect_stalls:
+        return await task
+    guard = _StallGuard(task, bridge)
+    watcher = asyncio.ensure_future(guard.watch())
+    try:
+        return await task
+    except asyncio.CancelledError:
+        # Only ours if the guard raised the flag; otherwise this is a cancellation
+        # from elsewhere and it belongs to the caller.
+        if guard.stalled:
+            raise ScriptStalled from None
+        raise
+    finally:
+        watcher.cancel()
+
+
+def _exec_script(code: str, namespace: dict[str, Any], bridge: Any, *, detect_stalls: bool) -> Any:
     """Run ``code`` as an async function body and return its result.
 
     The source is wrapped rather than compiled as a bare ``exec`` block so
@@ -945,7 +1123,13 @@ def _exec_script(code: str, namespace: dict[str, Any]) -> Any:
     )
     exec(compiled, namespace)
     main = namespace.get("__codemode_main__")
-    return None if main is None else asyncio.run(main())
+    if main is None:
+        return None
+
+    async def runner() -> Any:
+        return await _run_script(main(), bridge, detect_stalls=detect_stalls)
+
+    return asyncio.run(runner())
 
 
 def _script_diagnostic(exc: BaseException) -> dict[str, Any]:
@@ -977,13 +1161,38 @@ def _script_stack(exc: BaseException) -> str:
     return f"Traceback (most recent call last):\n{''.join(lines)}{type(exc).__name__}: {exc}"
 
 
+def _limit_memory(limit_bytes: int | None) -> None:
+    """Cap this process's address space, if asked and if the platform allows.
+
+    A runaway allocation is otherwise only stopped by the deadline, so the user
+    watches memory climb for the whole of it. ``RLIMIT_AS`` is checked for
+    rather than assumed: it is absent on Windows, and the import itself is
+    conditional for the same reason. A missing limit degrades to the deadline,
+    which is the pre-existing behaviour.
+    """
+    if not limit_bytes or limit_bytes <= 0:
+        return
+    try:
+        import resource
+    except ImportError:
+        return
+    try:
+        _soft, hard = resource.getrlimit(resource.RLIMIT_AS)
+        ceiling = limit_bytes if hard == resource.RLIM_INFINITY else min(limit_bytes, hard)
+        resource.setrlimit(resource.RLIMIT_AS, (ceiling, hard))
+    except (ValueError, OSError, AttributeError):
+        return
+
+
 def run(request: dict[str, Any]) -> dict[str, Any]:
     """Execute one program and return the terminal ``result`` frame."""
     code = str(request.get("code") or "")
     declarations = request.get("tools") or []
     initial_store = request.get("store") or {}
+    detect_stalls = request.get("detect_stalls", True) is not False
 
     _prime_interpreter()
+    _limit_memory(request.get("memory_limit_bytes"))
     bridge = _ToolBridge(sys.stdin)
     store = _Store(dict(initial_store))
     output: list[dict[str, Any]] = []
@@ -995,6 +1204,18 @@ def run(request: dict[str, Any]) -> dict[str, Any]:
         )
         output.append({"type": "text", "text": rendered})
         write_frame({"type": TEXT, "value": rendered})
+
+    def image(value: Any) -> None:
+        """Append an image to the output the model sees.
+
+        The reason this exists: a tool that returns a picture -- a screenshot, a
+        chart, a rendered page -- currently has it flattened into text by the
+        time a script sees it, and a script that cannot forward the image has no
+        way to pass it on. Taking a raw MCP image block makes the common case
+        a pass-through.
+        """
+        data, mime = _image_payload(value)
+        output.append({"type": "image", "data": data, "mimeType": mime})
 
     proxies = {
         d["identifier"]: bridge.make_proxy(d["identifier"], d["name"])
@@ -1008,6 +1229,7 @@ def run(request: dict[str, Any]) -> dict[str, Any]:
         "store": store.set,
         "load": store.get,
         "text": text,
+        "image": image,
         # `print` is deliberately NOT overridden with a host-side function. A
         # closure defined here would carry this module's __globals__, and the
         # script could read them straight to the interpreter. The genuine
@@ -1025,7 +1247,7 @@ def run(request: dict[str, Any]) -> dict[str, Any]:
         # that work on its own account and denying it would break allowlisted
         # modules without making the script any more capable.
         with script_authority():
-            value = _exec_script(code, namespace)
+            value = _exec_script(code, namespace, bridge, detect_stalls=detect_stalls)
     except BaseException as exc:
         error = _script_diagnostic(exc)
 

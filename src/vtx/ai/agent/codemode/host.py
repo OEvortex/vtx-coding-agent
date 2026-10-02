@@ -24,6 +24,7 @@ import json
 import os
 import subprocess
 import sys
+import time
 from collections.abc import Mapping, Sequence
 from pathlib import Path
 from typing import Any
@@ -32,6 +33,7 @@ from vtx.ai.agent.codemode import errors, jsonio
 from vtx.ai.agent.codemode.declarations import rank as rank_tools
 from vtx.ai.agent.codemode.declarations import render_signature
 from vtx.ai.agent.codemode.errors import InvalidInput
+from vtx.ai.agent.codemode.source import clamp_int, clamp_timeout
 from vtx.ai.agent.codemode.types import (
     MAX_STORE_TOTAL_CHARS,
     MAX_STORE_VALUE_CHARS,
@@ -93,6 +95,7 @@ class CodemodeSandbox:
         limits: Limits | None = None,
         catalog_budget_tokens: int = 2000,
         python_executable: str | None = None,
+        listed: Sequence[str] | None = None,
     ) -> None:
         self._tools: tuple[CodemodeTool, ...] = tuple(tools or ())
         self._limits = limits or Limits()
@@ -103,17 +106,37 @@ class CodemodeSandbox:
         #: crash. Reset per execution, so a slow run does not poison the next.
         self._timed_out = False
         self._aborted = False
+        #: Names the catalog advertises. ``None`` means all of them.
+        #:
+        #: A tool can be callable without being listed, and that is the whole
+        #: point of the exposure taxonomy: with a large tool set, listing every
+        #: callable tool would crowd the catalog past its budget and listing
+        #: none of the MCP ones would make the integration useless. A tool the
+        #: model can call but was not shown is still reachable by exact name or
+        #: through ``tools.search``.
+        self._listed = None if listed is None else frozenset(listed)
         _reject_duplicate_identifiers(self._tools)
         if any(tool.identifier() == SEARCH_TOOL_NAME for tool in self._tools):
             raise ValueError(
                 f"{SEARCH_TOOL_NAME!r} is reserved for the sandbox's built-in tool "
                 "search; rename the tool"
             )
+        if self._listed is not None:
+            unknown = self._listed - {t.name for t in self._tools}
+            if unknown:
+                raise ValueError(f"listed tools not in the sandbox: {', '.join(sorted(unknown))}")
 
     @property
     def tools(self) -> tuple[CodemodeTool, ...]:
         """The injected tools, not including the built-in search tool."""
         return self._tools
+
+    @property
+    def _advertised(self) -> tuple[CodemodeTool, ...]:
+        """The tools the model-facing catalog describes."""
+        if self._listed is None:
+            return self._tools
+        return tuple(tool for tool in self._tools if tool.name in self._listed)
 
     @property
     def _all_tools(self) -> tuple[CodemodeTool, ...]:
@@ -132,9 +155,15 @@ class CodemodeSandbox:
         partial, but a speculative call from a model that misread the list should
         find the tool rather than fail as an unknown name -- otherwise the
         recovery advice ("search for it") is impossible to follow.
+
+        It searches the whole callable set, not just what the catalog listed. A
+        tool that is callable but unlisted is exactly the one a model has least
+        reason to know exists, so hiding it from the search that exists to
+        surface it would make it unreachable in practice.
         """
 
         tools = self._tools
+        advertised = {tool.name for tool in self._advertised}
 
         async def search(args: dict[str, Any], _signal: Any) -> Any:
             query = args.get("query")
@@ -148,7 +177,7 @@ class CodemodeSandbox:
             if not isinstance(offset, int) or isinstance(offset, bool) or offset < 0:
                 offset = 0
             pool = (
-                [t for t in tools if t.name.split(".", 1)[0] == namespace]
+                [t for t in tools if (t.namespace or t.name.split(".", 1)[0]) == namespace]
                 if isinstance(namespace, str)
                 else list(tools)
             )
@@ -187,6 +216,10 @@ class CodemodeSandbox:
                         "name": tool.name,
                         "description": tool.description,
                         "signature": render_signature(tool),
+                        # Whether the catalog named this one. A model that found
+                        # a tool it was never shown benefits from knowing it is
+                        # off-list rather than wondering why it is not above.
+                        "listed": tool.name in advertised,
                     }
                     for tool in page
                 ],
@@ -197,8 +230,9 @@ class CodemodeSandbox:
         return CodemodeTool(
             name=SEARCH_TOOL_NAME,
             description=(
-                "Search the tools this sandbox was given. Use it when the tool "
-                "list in the instructions is marked PARTIAL."
+                "Search the tools this sandbox was given, including any the "
+                "instructions did not list. Use it when the tool list is marked "
+                "PARTIAL, or when you need a tool you were not shown."
             ),
             input_schema={
                 "type": "object",
@@ -224,7 +258,7 @@ class CodemodeSandbox:
         """Render the model-facing tool list within the catalog budget."""
         from vtx.ai.agent.codemode.declarations import render_declarations
 
-        text, _complete = render_declarations(self._tools, budget_tokens=self._catalog_budget)
+        text, _complete = render_declarations(self._advertised, budget_tokens=self._catalog_budget)
         return text
 
     def instructions(self) -> str:
@@ -241,8 +275,9 @@ class CodemodeSandbox:
         """
         from vtx.ai.agent.codemode.declarations import render_declarations
 
-        body, complete = render_declarations(self._tools, budget_tokens=self._catalog_budget)
-        total = len(self._tools)
+        advertised = self._advertised
+        body, complete = render_declarations(advertised, budget_tokens=self._catalog_budget)
+        total = len(advertised)
         shown = body.count("def tools.") if body else 0
         workflow = _WORKFLOW
         if complete:
@@ -256,11 +291,26 @@ class CodemodeSandbox:
             ).strip()
             workflow = _WORKFLOW_PARTIAL
 
+        # A callable-but-unlisted tool is a different case from a listed one cut
+        # by the budget, and needs a different sentence: the model was never
+        # shown it, so "the list above is partial" does not explain its absence.
+        unlisted = len(self._tools) - total
+        if unlisted > 0:
+            body = (
+                f"{body}\n\n"
+                f"{unlisted} further tool{'' if unlisted == 1 else 's'} can be "
+                f"called but are not listed above. Find them with "
+                f"`tools.{SEARCH_TOOL_NAME}`."
+            ).strip()
+            if complete:
+                heading = f"## Available tools ({total} listed, {unlisted} findable)"
+                workflow = _WORKFLOW_PARTIAL
+
         # The search mention belongs only to the partial case. In the complete
         # case it would advertise a discovery step the model does not need, and a
         # `COMPLETE` list is a claim the model should be able to act on without a
         # second lookup.
-        rules = _RULES if complete else _RULES_PARTIAL
+        rules = _RULES if complete and unlisted == 0 else _RULES_PARTIAL
         return f"""{workflow}
 
 {rules}
@@ -277,6 +327,8 @@ class CodemodeSandbox:
         *,
         store: Mapping[str, Any] | None = None,
         timeout_ms: int | None = None,
+        max_tool_calls: int | None = None,
+        max_output_tokens: int | None = None,
         signal: asyncio.Event | None = None,
     ) -> Result:
         """Run one program and return its :class:`Result`.
@@ -285,13 +337,19 @@ class CodemodeSandbox:
         ``Result.diagnostic`` are the outcome channel; an exception here means
         the host itself is broken, which is a different problem and should
         surface as one.
+
+        The three budget overrides are the script's own requests. Each is
+        resolved against the sandbox's limit with min-wins, so a script can ask
+        for less and never for more.
         """
         if self._closed:
             return _sandbox_failure("The sandbox is closed.")
         if not code.strip():
             return Result(ok=False, diagnostic=Diagnostic(errors.SCRIPT, "The script is empty."))
 
-        deadline_ms = timeout_ms if timeout_ms is not None else self._limits.timeout_ms
+        deadline_ms = clamp_timeout(timeout_ms, self._limits.timeout_ms)
+        call_budget = clamp_int(max_tool_calls, self._limits.max_tool_calls)
+        output_budget = clamp_int(max_output_tokens, self._limits.max_output_tokens, floor=256)
         values = dict(store or {})
         rejections = _validate_store(values)
         if rejections:
@@ -304,7 +362,9 @@ class CodemodeSandbox:
         self._timed_out = False
         self._aborted = False
         try:
-            return await self._pump(process, code, values, deadline_ms, signal)
+            return await self._pump(
+                process, code, values, deadline_ms, call_budget, output_budget, signal
+            )
         finally:
             await _reap(process)
 
@@ -355,6 +415,8 @@ class CodemodeSandbox:
         code: str,
         store: dict[str, Any],
         timeout_ms: int | None,
+        call_budget: int | None,
+        output_budget: int | None,
         signal: asyncio.Event | None,
     ) -> Result:
         """Drive the worker: send the request, answer tool calls, read the result."""
@@ -368,6 +430,8 @@ class CodemodeSandbox:
                 {"name": tool.name, "identifier": tool.identifier()} for tool in self._all_tools
             ],
             "store": store,
+            "detect_stalls": self._limits.detect_stalls,
+            "memory_limit_bytes": self._limits.memory_limit_bytes,
         }
         try:
             process.stdin.write((_dumps(request) + "\n").encode("utf-8"))
@@ -375,8 +439,7 @@ class CodemodeSandbox:
         except (BrokenPipeError, OSError):
             return _sandbox_failure("The sandbox process closed its input before the script ran.")
 
-        loop = asyncio.get_running_loop()
-        calls: list[ToolCall] = []
+        state = _Execution(call_budget=call_budget, output_budget=output_budget)
         # Tool calls run as tasks, not inline. Awaiting each one before reading
         # the next frame serializes the host, which makes `asyncio.gather` in
         # the script buy nothing: the worker would send four calls, and the
@@ -396,7 +459,7 @@ class CodemodeSandbox:
                     return self._terminal_failure()
                 kind = frame.get("type")
                 if kind == _TOOL_CALL:
-                    task = asyncio.create_task(self._serve_and_reply(process, frame, calls))
+                    task = asyncio.create_task(self._serve_and_reply(process, frame, state))
                     inflight[task] = int(frame.get("id") or 0)
                 elif kind == _RESULT:
                     # Drain before reporting: a tool the script started and did
@@ -404,7 +467,7 @@ class CodemodeSandbox:
                     # would leave the tool's own side effects unaccounted for.
                     if inflight:
                         await asyncio.gather(*inflight, return_exceptions=True)
-                    return _result_from_frame(frame)
+                    return _result_from_frame(frame, state, state.output_budget)
                 else:
                     # text() frames are already carried in the terminal frame's
                     # output list; acknowledging them here would be redundant.
@@ -419,14 +482,13 @@ class CodemodeSandbox:
             pending = [task for task in (*inflight, timeout_task, abort_task) if task is not None]
             if pending:
                 await asyncio.gather(*pending, return_exceptions=True)
-            del loop
 
     async def _serve_and_reply(
-        self, process: subprocess.Popen[bytes], frame: Mapping[str, Any], calls: list[ToolCall]
+        self, process: subprocess.Popen[bytes], frame: Mapping[str, Any], state: _Execution
     ) -> None:
         """Run one tool call and write its reply, as its own task."""
         assert process.stdin is not None
-        reply = await self._serve(frame, calls)
+        reply = await self._serve(frame, state)
         try:
             process.stdin.write((_dumps(reply) + "\n").encode("utf-8"))
             process.stdin.flush()
@@ -450,83 +512,69 @@ class CodemodeSandbox:
 
         return await asyncio.get_running_loop().run_in_executor(None, _read)
 
-    async def _serve(self, frame: Mapping[str, Any], calls: list[ToolCall]) -> dict[str, Any]:
+    async def _serve(self, frame: Mapping[str, Any], state: _Execution) -> dict[str, Any]:
         """Run one tool call and build its reply frame."""
         name = str(frame.get("name") or "")
         raw_args = frame.get("args")
         args = raw_args if isinstance(raw_args, dict) else {}
         call_id = int(frame.get("id") or 0)
 
+        def record(status: str, **fields: Any) -> None:
+            state.by_id[call_id] = ToolCall(name=name, status=status, **fields)
+
+        def reply(ok: bool, value: Any = None, error: Any = None) -> dict[str, Any]:
+            return {"type": _TOOL_RESULT, "id": call_id, "ok": ok, "value": value, "error": error}
+
+        def refuse(error: errors.ToolError) -> dict[str, Any]:
+            record("error", kind=error.kind, message=error.message)
+            return reply(False, error=error.diagnostic())
+
+        # The budget is spent at admission, not at completion: four calls
+        # already in flight have already been paid for, so a fifth refused
+        # after four finish would let the script exceed the ceiling by exactly
+        # the concurrency it asked for.
+        refusal = state.admit()
+        if refusal is not None:
+            return refuse(refusal)
+
         tool = next((t for t in self._all_tools if t.name == name), None)
         if tool is None:
             # The sandbox only exposes declared names, so this means the script
             # reached past the namespace -- or the two sides disagree, which is
             # a host defect. Either way it is not the script's input problem.
-            error = errors.UnknownTool(name)
-            calls.append(
-                ToolCall(name=name, status="error", kind=error.kind, message=error.message)
-            )
-            return {
-                "type": _TOOL_RESULT,
-                "id": call_id,
-                "ok": False,
-                "value": None,
-                "error": error.diagnostic(),
-            }
+            return refuse(errors.UnknownTool(name))
 
         try:
             args = coerce_json(args, what=f"{name} arguments")
         except errors.ToolError as exc:
-            calls.append(ToolCall(name=name, status="error", kind=exc.kind, message=exc.message))
-            return {
-                "type": _TOOL_RESULT,
-                "id": call_id,
-                "ok": False,
-                "value": None,
-                "error": exc.diagnostic(),
-            }
+            return refuse(exc)
 
+        started = time.monotonic()
         try:
             value = await tool.execute(args, None)
         except errors.ToolError as exc:
-            calls.append(ToolCall(name=name, status="error", kind=exc.kind, message=exc.message))
-            return {
-                "type": _TOOL_RESULT,
-                "id": call_id,
-                "ok": False,
-                "value": None,
-                "error": exc.diagnostic(),
-            }
+            record("error", kind=exc.kind, message=exc.message, duration_ms=_elapsed_ms(started))
+            return reply(False, error=exc.diagnostic())
         except Exception:
             # Unclassified: the message is not forwarded. A tool that raises
             # something the host did not anticipate is a host defect, and its
             # text can carry paths or internals into the model's context.
-            calls.append(ToolCall(name=name, status="error", kind=errors.TOOL_FAILURE))
-            return {
-                "type": _TOOL_RESULT,
-                "id": call_id,
-                "ok": False,
-                "value": None,
-                "error": {
+            record("error", kind=errors.TOOL_FAILURE, duration_ms=_elapsed_ms(started))
+            return reply(
+                False,
+                error={
                     "kind": errors.TOOL_FAILURE,
                     "message": errors.remedy_for(errors.TOOL_FAILURE),
                 },
-            }
+            )
 
         try:
             value = coerce_json(value, what=f"{name} result")
         except errors.ToolError as exc:
-            calls.append(ToolCall(name=name, status="error", kind=exc.kind, message=exc.message))
-            return {
-                "type": _TOOL_RESULT,
-                "id": call_id,
-                "ok": False,
-                "value": None,
-                "error": exc.diagnostic(),
-            }
+            return refuse(exc)
 
-        calls.append(ToolCall(name=name, status="ok"))
-        return {"type": _TOOL_RESULT, "id": call_id, "ok": True, "value": value, "error": None}
+        record("ok", duration_ms=_elapsed_ms(started))
+        return reply(True, value=value)
 
     async def _on_deadline(self, process: subprocess.Popen[bytes], timeout_ms: int) -> None:
         await asyncio.sleep(timeout_ms / 1000)
@@ -585,24 +633,84 @@ def _read_frame(stream: Any) -> dict[str, Any] | None:
     return parsed if isinstance(parsed, dict) else None
 
 
-def _result_from_frame(frame: Mapping[str, Any]) -> Result:
+class _Execution:
+    """Mutable per-run state, shared by every tool-call task.
+
+    One object rather than loose parameters because the call counter has to be
+    read-modify-written from several concurrent tasks; passing an ``int`` would
+    lose the increments.
+    """
+
+    __slots__ = ("by_id", "call_budget", "output_budget", "spent")
+
+    def __init__(self, *, call_budget: int | None, output_budget: int | None) -> None:
+        self.call_budget = call_budget
+        self.output_budget = output_budget
+        self.spent = 0
+        #: Protocol id -> the host's record of that call, in completion order.
+        #: Keyed by id rather than appended to a list because concurrent calls
+        #: finish out of order, and the id is the only thing both sides agree on.
+        self.by_id: dict[int, ToolCall] = {}
+
+    def admit(self) -> errors.ToolError | None:
+        """Claim one call against the budget, or refuse it.
+
+        A refusal comes back as a tool error rather than an execution failure so
+        the script can catch it and adapt -- fan out less, or ask the user. A
+        script that cannot see why it stopped is a script that retries.
+        """
+        self.spent += 1
+        if self.call_budget is not None and self.spent > self.call_budget:
+            return errors.ToolError(
+                f"This script may make at most {self.call_budget} tool call"
+                f"{'' if self.call_budget == 1 else 's'}, and has reached that. "
+                "Do less per call, filter before fetching more, or split the "
+                "work across several codemode calls.",
+                kind=errors.TOOL_FAILURE,
+            )
+        return None
+
+
+def _elapsed_ms(started: float) -> int:
+    return max(0, round((time.monotonic() - started) * 1000))
+
+
+def _result_from_frame(
+    frame: Mapping[str, Any], state: _Execution, output_budget: int | None = None
+) -> Result:
     """Project the worker's terminal frame into a :class:`Result`.
 
     Store writes are kept only on success. A script that half-ran and then
     raised must not leave the host holding state the model believes was never
     written.
+
+    The host's own record of each call is authoritative for the name, the status,
+    and the duration -- only it knows when a tool actually ran. The worker's
+    record is joined on for the failure kind and message, which it alone knows,
+    because a call the *script* caught reports differently from one the host
+    refused. The join is on the protocol id rather than on position: with
+    ``asyncio.gather`` the two sides finish in different orders, so pairing them
+    by index would attribute a call's error to its neighbour.
     """
+    by_id = {
+        int(call["id"]): call
+        for call in (frame.get("calls") or [])
+        if isinstance(call, dict) and isinstance(call.get("id"), int)
+    }
     calls = tuple(
         ToolCall(
-            name=str(call.get("tool") or ""),
-            status=str(call.get("status") or "error"),
-            kind=call.get("kind"),
-            message=call.get("message"),
+            name=recorded.name,
+            status=recorded.status,
+            kind=by_id.get(call_id, {}).get("kind") if call_id is not None else None,
+            message=by_id.get(call_id, {}).get("message") if call_id is not None else None,
+            duration_ms=recorded.duration_ms,
         )
-        for call in (frame.get("calls") or [])
-        if isinstance(call, dict)
+        for call_id, recorded in state.by_id.items()
     )
-    output = tuple(item for item in (frame.get("output") or []) if isinstance(item, dict))
+    output, truncated = _cap_output(
+        tuple(item for item in (frame.get("output") or []) if isinstance(item, dict)),
+        output_budget,
+    )
     ok = bool(frame.get("ok"))
 
     if not ok:
@@ -612,7 +720,9 @@ def _result_from_frame(frame: Mapping[str, Any]) -> Result:
             message=str(error.get("message") or errors.remedy_for(errors.SANDBOX)),
             stack=error.get("stack") if isinstance(error.get("stack"), str) else None,
         )
-        return Result(ok=False, output=output, calls=calls, diagnostic=diagnostic)
+        return Result(
+            ok=False, output=output, calls=calls, diagnostic=diagnostic, output_truncated=truncated
+        )
 
     raw_writes = frame.get("store_writes")
     writes = dict(raw_writes) if isinstance(raw_writes, dict) else {}
@@ -623,7 +733,93 @@ def _result_from_frame(frame: Mapping[str, Any]) -> Result:
         calls=calls,
         store_writes=writes,
         store_deletes=frozenset(key for key, value in writes.items() if value is None),
+        output_truncated=truncated,
     )
+
+
+#: Characters per token when estimating output cost. The same heuristic the
+#: catalog budget uses, so one number governs both.
+CHARS_PER_TOKEN = 4
+
+
+def _cap_output(
+    output: tuple[Mapping[str, Any], ...], budget_tokens: int | None
+) -> tuple[tuple[Mapping[str, Any], ...], bool]:
+    """Cut the middle out of a script's text output to fit the budget.
+
+    Head and tail are kept because both carry meaning: the head is what the
+    script was doing, the tail is what it concluded. Images are never dropped --
+    a truncated picture is a broken picture, and their cost is bounded by the
+    call budget rather than by length.
+
+    The returned *value* is not capped here. It arrives already decoded, so
+    there is nothing to shorten without a second serialization round trip; the
+    caller that renders it to text applies :func:`truncate_middle` instead.
+    """
+    if budget_tokens is None or not output:
+        return output, False
+    allowance = budget_tokens * CHARS_PER_TOKEN
+    if sum(len(str(item.get("text") or "")) for item in output) <= allowance:
+        return output, False
+
+    kept: list[Mapping[str, Any]] = []
+    spent = 0
+    for item in output:
+        if item.get("type") != "text":
+            kept.append(item)
+            continue
+        text = str(item.get("text") or "")
+        room = allowance - spent
+        if room <= 0:
+            continue
+        if len(text) <= room:
+            kept.append(item)
+            spent += len(text)
+            continue
+        # The marker is paid for out of the same allowance rather than added on
+        # top of it. Measuring only the retained text would overshoot the budget
+        # by the length of the notice explaining the overshoot -- which nobody
+        # notices until the budget is what is keeping a session inside its
+        # context window.
+        head_room, tail_room, marker = _split_within(text, room)
+        removed = len(text) - head_room - tail_room
+        marker = f"\n... {removed:,} characters truncated ...\n"
+        kept.append({**item, "text": text[:head_room] + marker + text[-tail_room:]})
+        spent = allowance
+    return tuple(kept), True
+
+
+def _split_within(text: str, room: int) -> tuple[int, int, str]:
+    """Split ``room`` characters into head and tail, leaving room for the marker.
+
+    The marker names how much was dropped, so its own length depends on the split
+    and the split depends on the marker's length. Two passes converge: the second
+    one has the right digit count, and a marker that grows by a character is
+    absorbed by the retained text rather than the budget.
+    """
+    kept = room
+    for _ in range(2):
+        marker = f"\n... {max(0, len(text) - kept):,} characters truncated ...\n"
+        kept = max(0, room - len(marker))
+    head_room = kept // 2
+    return head_room, kept - head_room, marker
+
+
+def truncate_middle(text: str, budget_tokens: int) -> tuple[str, bool]:
+    """Shorten rendered text to a token budget, keeping both ends.
+
+    Used for the value a script returned, which reaches the model as text the
+    caller assembles. Returns ``(text, truncated)`` so the caller can tell the
+    model it was cut -- a silently shortened result reads as a complete one,
+    which is the failure this whole mechanism exists to prevent.
+    """
+    allowance = budget_tokens * CHARS_PER_TOKEN
+    if len(text) <= allowance:
+        return text, False
+    head_room, tail_room, marker = _split_within(text, allowance)
+    removed = len(text) - head_room - tail_room
+    marker = f"\n... {removed:,} characters truncated ...\n"
+    return text[:head_room] + marker + text[-tail_room:], True
 
 
 def _sandbox_failure(message: str) -> Result:
@@ -748,8 +944,16 @@ _RULES_BODY = """
   ran and declined.
 - `text(value)` appends to the output the model reads. `print` goes to a
   discarded stream and is not shown to the model -- use `text`.
+- `image(value)` appends an image the model can see. It takes a base64 data
+  URI, `{"image_url": ...}`, or an image block straight out of an MCP result --
+  so a tool that returns a picture can be forwarded without re-encoding it.
+  A remote `http` URL is refused.
 - `store(key, value)` and `load(key)` carry JSON values between executions.
   Writes are committed only if the script returns successfully.
+- The first line may be `# @options: {"timeout_ms": 5000, "max_tool_calls": 20,
+  "max_output_tokens": 4000}` to lower your own budgets. Every field is
+  optional. You may only ask for *less* than the host allows; asking for more
+  is clamped, and an unknown field is an error.
 """
 
 _RULES = "## Rules" + _RULES_BODY

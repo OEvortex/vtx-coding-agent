@@ -1,6 +1,7 @@
 import pytest
 
 from vtx.ai.agent.dispatcher import set_context
+from vtx.ai.agent.tools import get_tool
 from vtx.coding_agent.config import get_config, reset_config
 
 
@@ -71,6 +72,18 @@ def isolate_user_config(monkeypatch: pytest.MonkeyPatch, tmp_path) -> None:
     # pass/fail depends on how xdist happens to shard it.
     yield
     set_context(None)
+    # Same class of leak, same reason. `codemode` is a registry singleton that a
+    # runtime re-points at its own tool list, permission config, and extension
+    # bus. A test that builds a runtime and does not close it leaves those
+    # installed, and a later test asserting on the built-in catalog then sees
+    # that runtime's tools instead.
+    codemode = get_tool("codemode")
+    if codemode is not None:
+        codemode.tool_source = None
+        codemode.extensions = None
+        codemode.permission = None
+        codemode.cancel_event = None
+        codemode.refresh()
 
 
 @pytest.fixture

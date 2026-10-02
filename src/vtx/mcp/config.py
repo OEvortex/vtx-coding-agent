@@ -10,6 +10,16 @@ Both use the ``mcpServers`` shape shared by other MCP clients, so a config a
 user already has for Claude Desktop, Cursor, or another agent copies over
 unchanged. Project entries replace global entries with the same name.
 
+Two keys are specific to vtx, because a connected server's tool surface is
+frequently too large to declare to the model one tool call at a time:
+
+``exposure``
+    How this server's tools reach the model. ``direct`` declares them as
+    ordinary tool calls, ``codemode`` makes them callable from inside a
+    ``codemode`` script and lists them there instead. The default is
+    ``codemode``. ``tool_exposure`` overrides it for individual tools, by exact
+    name or by ``*`` pattern. See :mod:`vtx.mcp.exposure`.
+
 Example::
 
     {
@@ -20,7 +30,9 @@ Example::
         },
         "docs": {
           "url": "https://example.com/mcp",
-          "headers": {"Authorization": "Bearer ${DOCS_TOKEN}"}
+          "headers": {"Authorization": "Bearer ${DOCS_TOKEN}"},
+          "exposure": "codemode",
+          "tool_exposure": {"delete_*": "hidden", "search": "direct"}
         }
       }
     }
@@ -36,6 +48,7 @@ from pathlib import Path
 from typing import Any
 
 from vtx.core.paths import get_config_dir
+from vtx.mcp import exposure as exposure_mod
 
 MCP_CONFIG_FILENAME = "mcp.json"
 PROJECT_CONFIG_DIRNAME = ".vtx"
@@ -89,6 +102,18 @@ class McpServerConfig:
     url: str | None = None
     headers: dict[str, str] = field(default_factory=dict)
     oauth: McpOAuthSettings | None = None
+    # How this server's tools are offered to the model. See
+    # :mod:`vtx.mcp.exposure` for what each value means. ``None`` means the
+    # server said nothing, and ``exposure_of`` applies the default.
+    exposure: str | None = None
+    #: Per-tool overrides. Keys are tool names as the server offers them, or
+    #: ``*`` patterns. An exact name beats a pattern; among patterns the first
+    #: one in declaration order wins.
+    tool_exposure: dict[str, str] = field(default_factory=dict)
+
+    def exposure_of(self, tool_name: str) -> str:
+        """This tool's exposure: its override, else the server's, else the default."""
+        return exposure_mod.tool_exposure(self.exposure, self.tool_exposure, tool_name)
 
     @property
     def is_stdio(self) -> bool:
@@ -172,6 +197,14 @@ def validate_mcp_server_config(name: str, value: Any) -> tuple[McpServerConfig |
     if not isinstance(timeout, (int, float)) or isinstance(timeout, bool) or timeout <= 0:
         return None, f'MCP server "{name}": timeout must be a positive number of seconds'
 
+    # Both transports carry the same exposure settings, so they are resolved
+    # once here rather than duplicated down each branch.
+    exposure, tool_exposure, exposure_error = exposure_mod.validate_exposures(
+        value.get("exposure"), value.get("tool_exposure")
+    )
+    if exposure_error:
+        return None, f'MCP server "{name}": {exposure_error}'
+
     if has_command:
         command = value.get("command")
         if not isinstance(command, str) or not command:
@@ -198,6 +231,8 @@ def validate_mcp_server_config(name: str, value: Any) -> tuple[McpServerConfig |
                 args=[a for a in args if isinstance(a, str)],
                 env=dict(env),
                 cwd=cwd,
+                exposure=exposure,
+                tool_exposure=dict(tool_exposure),
             ),
             None,
         )
@@ -219,6 +254,8 @@ def validate_mcp_server_config(name: str, value: Any) -> tuple[McpServerConfig |
             url=url,
             headers=dict(headers),
             oauth=oauth,
+            exposure=exposure,
+            tool_exposure=dict(tool_exposure),
         ),
         None,
     )

@@ -731,3 +731,40 @@ async def test_oversized_input_store_is_refused_before_spawning():
     result = await _sandbox().execute("return 1", store={"k": "x" * (MAX_STORE_VALUE_CHARS + 1)})
     assert not result.ok
     assert result.diagnostic.kind == "sandbox"
+
+
+def test_the_stall_kind_is_mirrored_in_both_processes():
+    """The worker is launched by path and cannot import this package.
+
+    So the diagnostic kinds are written twice, once per side, and this is what
+    catches them drifting apart. A kind that exists on only one side would be
+    reported to the model under a name it was never told about.
+    """
+    import re
+    from pathlib import Path
+
+    from vtx.ai.agent.codemode import errors
+    from vtx.ai.agent.codemode.sandbox import STALLED
+
+    names = (
+        "SCRIPT",
+        "TIMEOUT",
+        "ABORTED",
+        "SANDBOX",
+        "STALLED",
+        "UNKNOWN_TOOL",
+        "INVALID_INPUT",
+        "TOOL_FAILURE",
+        "INVALID_OUTPUT",
+        "HOST_UNAVAILABLE",
+    )
+    worker = Path(errors.__file__).with_name("sandbox.py").read_text()
+    for name in names:
+        match = re.search(rf'^{name}\s*=\s*"([^"]+)"', worker, re.M)
+        assert match is not None, f"{name} missing from the worker"
+        assert match.group(1) == getattr(errors, name), name
+
+    # And it is terminal, so a script cannot catch its way out of a deadlock.
+    assert STALLED in errors.SANDBOX_KINDS
+    assert STALLED not in errors.TOOL_KINDS
+    assert STALLED in errors.KINDS

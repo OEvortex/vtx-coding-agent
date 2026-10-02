@@ -252,6 +252,77 @@ def type_name(schema: Mapping[str, Any]) -> str:
     return "Any"
 
 
+def is_mcp_result_schema(schema: Mapping[str, Any]) -> bool:
+    """Whether ``schema`` is an MCP ``CallToolResult`` envelope.
+
+    Recognized structurally: an array-of-object ``content``, a boolean
+    ``isError``, and an object ``_meta``. Structural rather than nominal so this
+    module stays free of any dependency on :mod:`vtx.mcp` -- the dependency
+    layering puts ``vtx.mcp`` above ``vtx.ai``, and a protocol marker does not
+    justify inverting it. ``vtx.mcp`` builds the shape; this recognizes it.
+    """
+    properties = schema.get("properties")
+    if not isinstance(properties, Mapping):
+        return False
+    content = properties.get("content")
+    if not isinstance(content, Mapping) or content.get("type") != "array":
+        return False
+    items = content.get("items")
+    return isinstance(items, Mapping) and items.get("type") == "object"
+
+
+def structured_content_schema(schema: Mapping[str, Any]) -> Mapping[str, Any] | bool | None:
+    """The ``structuredContent`` schema inside a ``CallToolResult`` envelope.
+
+    ``True`` when the field is declared with no shape, and ``None`` when the
+    schema is not a ``CallToolResult`` at all.
+    """
+    if not is_mcp_result_schema(schema):
+        return None
+    properties = schema.get("properties")
+    if not isinstance(properties, Mapping):
+        return None
+    declared = properties.get("structuredContent")
+    if isinstance(declared, bool):
+        return declared
+    return declared if isinstance(declared, Mapping) else True
+
+
+#: The content-block types a script can find in ``result["content"]``. Printed
+#: once, under the catalog, and only when something actually uses it -- a
+#: preamble nobody reads is context the model pays for on every turn.
+MCP_TYPES_PREAMBLE = """\
+MCP tools return a CallToolResult, not a string:
+    result["content"]        list of blocks: {"type": "text"|"image", ...}
+    result["structuredContent"]  the tool's own JSON, when it declares an output schema
+    result["isError"]        True when the call failed -- check it and read
+                             result["content"][0]["text"] for why
+Use structuredContent when it is there; it is the typed data. `_meta` is stripped."""
+
+
+def output_type(schema: Mapping[str, Any] | None) -> str:
+    """The return annotation for one tool.
+
+    An MCP tool's value is a ``CallToolResult``, and printing that as
+    ``dict[str, Any]`` would understate what the script actually receives -- it
+    would not say the result can carry structured data or that ``isError`` is
+    there to be branched on, which are the two things a script most needs to
+    know. So the envelope is named, and the tool's declared output shape is
+    spelled into it.
+    """
+    if schema is None:
+        return "Any"
+    structured = structured_content_schema(schema)
+    if structured is None:
+        return type_name(schema)
+    if not isinstance(structured, Mapping):
+        # `True` (declared, no shape) and `False` (a schema that accepts nothing)
+        # both render as the bare envelope rather than an invented shape.
+        return "CallToolResult"
+    rendered = type_name(structured)
+    return "CallToolResult" if rendered == "Any" else f"CallToolResult[{rendered}]"
+
+
 def render_signature(tool: CodemodeTool) -> str:
     """Render one tool as a callable signature the model can copy.
 
@@ -261,7 +332,7 @@ def render_signature(tool: CodemodeTool) -> str:
     description is the docstring.
     """
     identifier = tool.identifier()
-    output = type_name(tool.output_schema or {})
+    output = output_type(tool.output_schema or None)
     parameters = _schema_lines(tool.input_schema or {}, "")
     lines = [
         f"def tools.{identifier}({', '.join(parameters)}) -> {output}:",
@@ -289,32 +360,119 @@ def render_declarations(
     told the list is exhaustive will never go looking for a search tool.
 
     The budget is estimated at four characters per token, the same heuristic
-    the rest of the harness uses. Selection is round-robin over the tools in
-    declaration order so a cheap tool is not starved by an expensive one that
-    happens to sort earlier.
+    the rest of the harness uses.
+
+    **Tools are grouped by namespace and the budget is spent fairly across
+    groups.** A single global cheapest-first pass is wrong once the tool set has
+    sources: with two hundred MCP tools on one server and a dozen built-ins, the
+    twelve are cheap and go in first, the server's tools fill the rest, and a
+    second server's tools are left out entirely with no sign they exist. So
+    each group takes turns, cheapest-first within its turn, and a group that
+    cannot afford its next entry drops out while the others continue. Every
+    group is represented before any group is complete.
     """
     if not tools:
         return "", True
 
-    rendered = [(tool, render_signature(tool)) for tool in tools]
-    costs = [len(text) // 4 + 1 for _, text in rendered]
+    groups = _group_by_namespace(tools)
     budget = max(0, budget_tokens)
+    shown = _allocate(groups, budget)
 
-    # Cheapest-first, not declaration order, so one expensive tool cannot consume
-    # the budget that a dozen cheap ones would have fit into. What the model is
-    # missing is a count of tools, so maximizing that count is the goal.
-    included: list[int] = []
-    spent = 0
-    for index in sorted(range(len(rendered)), key=lambda i: (costs[i], i)):
-        cost = costs[index]
-        if spent + cost > budget:
-            break
-        included.append(index)
-        spent += cost
+    sections: list[str] = []
+    for namespace, entries in groups:
+        visible = [entry for entry in entries if entry.tool.name in shown]
+        label = f"{namespace} ({len(entries)} tool{'' if len(entries) == 1 else 's'}"
+        if len(visible) == len(entries):
+            label += ")"
+        elif visible:
+            label += f", {len(visible)} shown)"
+        else:
+            label += ", none shown)"
+        heading = f"# {label}"
+        if namespace_description(entries):
+            heading += f"\n{namespace_description(entries)}"
+        sections.append(
+            "\n\n".join([heading, *(entry.text for entry in visible)]) if visible else heading
+        )
 
-    if len(included) == len(rendered):
-        return "\n\n".join(rendered[i][1] for i in range(len(rendered))), True
+    total = sum(len(entries) for _, entries in groups)
+    body = "\n\n".join(sections)
+    if any(tool.output_schema and is_mcp_result_schema(tool.output_schema) for tool in tools):
+        # Only when a tool actually returns one, for the same reason the catalog
+        # is partial-reporting rather than always-partial: text the model is not
+        # using is text it pays for.
+        body = f"{body}\n\n{MCP_TYPES_PREAMBLE}" if body else MCP_TYPES_PREAMBLE
+    return body, len(shown) == total
 
-    included.sort()
-    body = "\n\n".join(rendered[i][1] for i in included)
-    return body, False
+
+class _Entry(NamedTuple):
+    tool: CodemodeTool
+    text: str
+    cost: int
+
+
+def _group_by_namespace(tools: Sequence[CodemodeTool]) -> list[tuple[str, list[_Entry]]]:
+    """Group tools under their namespace, unnamespaced first, then by name.
+
+    Order is deterministic and the ungrouped tools come first, so the most
+    fundamental surface is never the one squeezed out of the catalog.
+    """
+    plain: list[_Entry] = []
+    grouped: dict[str, list[_Entry]] = {}
+    for tool in tools:
+        text = render_signature(tool)
+        entry = _Entry(tool, text, len(text) // 4 + 1)
+        namespace = tool.namespace or ""
+        if namespace:
+            grouped.setdefault(namespace, []).append(entry)
+        else:
+            plain.append(entry)
+
+    groups: list[tuple[str, list[_Entry]]] = [("", plain)] if plain else []
+    groups.extend((name, grouped[name]) for name in sorted(grouped))
+    return groups
+
+
+def namespace_description(entries: list[_Entry]) -> str | None:
+    """The group's own one-line description, if any tool in it declares one.
+
+    Taken from the first tool that has one, so an MCP server's ``instructions``
+    reaches the model as the header for its tools. That is the server describing
+    its own capability, which is better than anything inferred here -- and it
+    costs nothing when no script is written.
+    """
+    for entry in entries:
+        if entry.tool.namespace_description:
+            return entry.tool.namespace_description
+    return None
+
+
+def _allocate(groups: list[tuple[str, list[_Entry]]], budget: int) -> set[str]:
+    """Choose which entries fit the budget, round-robin across groups.
+
+    Cheapest-first *within* each group's turn, and every group gets a turn
+    before any group gets a second. That is the property a flat pass lacks: a
+    group with twenty expensive tools cannot crowd out a group with three cheap
+    ones, which is exactly the failure that makes an MCP server's tools vanish
+    from the catalog when built-ins are present.
+    """
+    queues = [sorted(entries, key=lambda e: (e.cost, e.tool.name)) for _, entries in groups]
+    shown: set[str] = set()
+    remaining = budget
+    active = [queue for queue in queues if queue]
+    while active:
+        still: list[list[_Entry]] = []
+        for queue in active:
+            entry = queue[0]
+            if entry.cost > remaining:
+                # Out of budget. The group stops here; the others carry on, so a
+                # namespace that cannot afford anything does not consume the turn
+                # of a namespace that can.
+                continue
+            remaining -= entry.cost
+            shown.add(entry.tool.name)
+            queue.pop(0)
+            if queue:
+                still.append(queue)
+        active = still
+    return shown

@@ -4,7 +4,7 @@ import asyncio
 import contextlib
 import logging
 import os
-from collections.abc import Callable
+from collections.abc import Callable, Sequence
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
@@ -27,7 +27,7 @@ from vtx.ai.agent.extensions import MODEL_SELECT, THINKING_LEVEL_SELECT, EventBu
 from vtx.ai.agent.loop import Agent
 from vtx.ai.agent.prompts import build_system_prompt
 from vtx.ai.agent.session import CompactionEntry, CustomMessageEntry, MessageEntry, Session
-from vtx.ai.agent.tools import BaseTool
+from vtx.ai.agent.tools import CODEMODE_TOOL_NAME, TOOL_SEARCH_TOOL_NAME, BaseTool, get_tool
 from vtx.ai.base import AuthMode
 from vtx.ai.config import add_recent_model, get_last_selected, set_last_selected
 from vtx.ai.config import config as vtx_config
@@ -107,6 +107,28 @@ class TreeNavigationResult:
     editor_text: str | None = None
 
 
+def _harness_codemode() -> Any:
+    """The harness's own ``codemode`` tool, or ``None``.
+
+    Narrowed by type rather than by name lookup. The registry is global, so an
+    extension can register something also called ``codemode``; handing *it* this
+    session's tool list and permission config would wire an unrelated tool into
+    the agent's governance.
+    """
+    from vtx.ai.agent.tools.codemode import CodemodeTool as HarnessCodemodeTool
+
+    tool = get_tool(CODEMODE_TOOL_NAME)
+    return tool if isinstance(tool, HarnessCodemodeTool) else None
+
+
+def _harness_tool_search() -> Any:
+    """The harness's own ``tool_search`` tool, or ``None``. See :func:`_harness_codemode`."""
+    from vtx.ai.agent.tools.tool_search import ToolSearchTool as HarnessToolSearch
+
+    tool = get_tool(TOOL_SEARCH_TOOL_NAME)
+    return tool if isinstance(tool, HarnessToolSearch) else None
+
+
 class ConversationRuntime:
     def __init__(
         self,
@@ -179,6 +201,8 @@ class ConversationRuntime:
         self.openai_compat_auth_mode: AuthMode = openai_compat_auth_mode
         self.anthropic_compat_auth_mode: AuthMode = anthropic_compat_auth_mode
         self.extensions = extensions
+        #: Whether this runtime currently owns the `codemode` singleton's wiring.
+        self._codemode_wired = False
 
         self._sync_mcp_tools()
 
@@ -493,6 +517,10 @@ class ConversationRuntime:
             self._mcp_tools = []
             self._mcp_tool_names = set()
 
+        # Hand the codemode singleton back before the tool list goes stale, so a
+        # later session does not inherit this one's tools and permission config.
+        self._unwire_codemode()
+
     def active_commands(self) -> dict:
         """The current slash-command dict (session + agent-local).
 
@@ -639,10 +667,141 @@ class ConversationRuntime:
         kept = [t for t in self.tools if t.name not in self._mcp_tool_names]
         self.tools = kept + list(self._mcp_tools)
         self._mcp_tool_names = {t.name for t in self._mcp_tools}
+        self._wire_codemode()
         if self.agent is not None:
             self.agent.tools = self.tools
         if self.agent is not None and self.context is not None:
             self._rebuild_system_prompt()
+
+    def _wire_codemode(self) -> None:
+        """Point the ``codemode`` tool at this session's live tool set.
+
+        Without this the sandbox builds its catalog from the global tool
+        registry, which by construction contains no MCP tools -- a connected
+        server's tools would be reachable by the model as ordinary tool calls
+        and invisible to every script, which is backwards: code mode is the
+        mechanism that makes a large MCP tool set affordable at all.
+
+        Also supplies the permission gate and the extension bus, so a tool called
+        from inside a script is governed exactly like one the model called
+        directly. Omitting them would leave a script as a way around both.
+
+        The ``codemode`` tool is a registry singleton, so a second runtime in the
+        same process takes the wiring over from the first. :meth:`_unwire_codemode`
+        on shutdown gives it back, or a closed session would keep answering with
+        its tool list and its permission config.
+        """
+        tool = _harness_codemode()
+        if tool is None:
+            return
+        # A bound method, not a lambda: ``_unwire_codemode`` identifies the owner
+        # by ``__self__``, and a plain function has no owner to compare.
+        tool.tool_source = self._codemode_tool_source
+        tool.extensions = self.extensions
+        tool.permission = self._codemode_permission
+        self._codemode_wired = True
+        self._wire_tool_search()
+        refresh = getattr(tool, "refresh", None)
+        if callable(refresh):
+            # Rebuild now rather than waiting for the next fingerprint check, so
+            # the description rebuilt alongside the system prompt already reflects
+            # the new tool set.
+            refresh()
+
+    def _codemode_tool_source(self) -> list[BaseTool]:
+        return list(self.tools)
+
+    def _wire_tool_search(self) -> None:
+        """Let ``tool_search`` promote a match into the model's tool list.
+
+        Without the activate callback the tool would find a tool and tell the
+        model about it, and the model's next attempt to call it would fail as an
+        unknown name. Reporting a capability it cannot reach is worse than
+        staying quiet about it, so finding and loading are one operation or the
+        search is not worth having.
+        """
+        tool = _harness_tool_search()
+        if tool is None:
+            return
+        tool.tool_source = self._codemode_tool_source
+        tool.activate = self._activate_tools
+
+    def _activate_tools(self, names: Sequence[str]) -> None:
+        """Add tools to the live set and rebuild the prompt.
+
+        The prompt is rebuilt because the newly-loaded tool's description has to
+        be in the *next* request, not the one that searched for it.
+        """
+        by_name = {t.name: t for t in self._all_known_tools()}
+        additions = [by_name[name] for name in names if name in by_name]
+        if not additions:
+            return
+        known = {t.name for t in self.tools}
+        fresh = [t for t in additions if t.name not in known]
+        if not fresh:
+            return
+        self.tools = [*self.tools, *fresh]
+        if self.agent is not None:
+            self.agent.tools = self.tools
+        if self.agent is not None and self.context is not None:
+            self._rebuild_system_prompt()
+
+    def _all_known_tools(self) -> list[BaseTool]:
+        """Every tool this session could offer: built-ins, extensions, and MCP.
+
+        The pool ``tool_search`` draws from. Wider than the active set on
+        purpose -- a tool that is registered but filtered out of the current
+        agent profile should not be promoted by a search, so the caller filters
+        this against the profile; the MCP half is always in.
+        """
+        from vtx.ai.agent.tools import get_all_tools
+
+        pool: dict[str, BaseTool] = {name: tool for name, tool in get_all_tools().items()}
+        for ext in self._agent_extensions:
+            pool.update(ext.tools)
+        pool.update({t.name: t for t in self._mcp_tools})
+        return list(pool.values())
+
+    def _unwire_codemode(self) -> None:
+        """Release the ``codemode`` tool's wiring, if this runtime still holds it.
+
+        Checked by identity rather than done unconditionally: a runtime that
+        has already been replaced must not strip the wiring the live one just
+        installed, or the next script would fall back to the bare registry and
+        silently lose every MCP tool.
+        """
+        if not getattr(self, "_codemode_wired", False):
+            return
+        tool = _harness_codemode()
+        if tool is None or tool.tool_source is None:
+            return
+        if getattr(tool.tool_source, "__self__", None) is not self:
+            # A newer runtime already took the wiring. Stripping it here would
+            # drop the live session's tool list and silently lose every MCP tool.
+            return
+        tool.tool_source = None
+        tool.extensions = None
+        tool.permission = None
+        self._codemode_wired = False
+        search = _harness_tool_search()
+        if search is not None:
+            search.tool_source = None
+            search.activate = None
+        refresh = getattr(tool, "refresh", None)
+        if callable(refresh):
+            refresh()
+
+    def _codemode_permission(self, tool: BaseTool, arguments: dict) -> Any:
+        """The session's permission decision, for a call made inside a script.
+
+        ``PROMPT`` reaches the script as a refusal rather than an auto-approve,
+        and the model is told to call the tool directly instead. A script is a way
+        to do the ungated calls together, not a way to get a gated one done
+        without the user seeing it.
+        """
+        from vtx.core.permissions import check_permission
+
+        return check_permission(tool, arguments, vtx_config)
 
     def _provider_config(
         self,
@@ -1285,6 +1444,7 @@ class ConversationRuntime:
             self.tools = tools
             if self.agent is not None:
                 self.agent.tools = tools
+            self._wire_codemode()
         if extensions is not None:
             self.extensions = extensions
         if agent_registry is not None:

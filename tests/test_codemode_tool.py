@@ -69,7 +69,7 @@ def test_codemode_is_registered_and_default_on():
 def test_sandbox_excludes_codemode_itself():
     # A script that could start a script would nest without limit, and the
     # nested run would have no deadline worth speaking of.
-    names = {t.name for t in get_all_tools()[CODEMODE_TOOL_NAME].sandbox_tools()}
+    names = {t.name for t in get_all_tools()[CODEMODE_TOOL_NAME].session_tools()}
     assert CODEMODE_TOOL_NAME not in names
     assert "read" in names
 

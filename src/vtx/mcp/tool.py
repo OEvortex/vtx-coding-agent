@@ -265,6 +265,8 @@ class McpTool(BaseTool):
         name: str,
         caller: McpToolCaller,
         timeout_ms: int = 60_000,
+        exposure: str = "codemode",
+        instructions: str | None = None,
     ) -> None:
         self._server = server
         self._definition = definition
@@ -290,6 +292,19 @@ class McpTool(BaseTool):
         destructive = annotations.get("destructiveHint") is True
         self.mutating = not read_only or destructive
 
+        #: Whether the model reaches this by calling it directly, by writing a
+        #: script that calls it, or not at all. Read by the codemode tool when
+        #: it builds the sandbox's catalog. See :mod:`vtx.mcp.exposure`.
+        self.exposure = exposure
+        #: Groups every tool from one server in the codemode catalog, so two
+        #: hundred tools read as two sections rather than two hundred entries.
+        self.namespace = f"mcp__{server}"
+        #: The server's own description of its tools, from ``initialize``. This
+        #: is the one place it gets used: it reaches the model only when a
+        #: script is written, and it is far better than anything vtx could
+        #: invent about what a third-party server's tools are for.
+        self.instructions = (instructions or "").strip() or None
+
     @property
     def server(self) -> str:
         return self._server
@@ -297,6 +312,18 @@ class McpTool(BaseTool):
     @property
     def tool_name(self) -> str:
         return str(self._definition.get("name", ""))
+
+    @property
+    def output_schema(self) -> dict[str, Any] | None:
+        """The shape a script receives: a ``CallToolResult``, not a string.
+
+        A script is not a chat model. It can read a dict, branch on
+        ``isError``, and take ``content[0]["text"]`` without a parse -- and doing
+        the filtering in code is the entire reason to write a script. Declaring
+        the real output shape here is what lets :mod:`vtx.ai.agent.codemode`
+        render it rather than falling back to ``dict[str, Any]``.
+        """
+        return mcp_result_schema(self._definition.get("outputSchema"))
 
     def format_call(self, params: Any) -> str:
         data = params.model_dump(exclude_none=True) if hasattr(params, "model_dump") else {}
@@ -337,7 +364,97 @@ class McpTool(BaseTool):
             message, _payload = progress_updates[-1]
             on_output(message)
 
-        return convert_mcp_result(enrich_result(result))
+        enriched = enrich_result(result)
+        converted = convert_mcp_result(enriched)
+        # The script gets the result whole. `converted.result` has been cut to
+        # 20KB for the model, which is right there and wrong here: a script that
+        # wants the 200th row of a large result is exactly the case code mode
+        # exists for, and truncating it would make the feature useless while
+        # still charging for it.
+        converted.structured = script_value(enriched)
+        return converted
+
+
+def mcp_result_schema(structured: object) -> dict[str, Any]:
+    """The output schema a script sees: a ``CallToolResult`` carrying ``structured``.
+
+    Declared as a shape rather than computed per tool so the codemode catalog can
+    recognize it. Any tool that advertises an output schema with this exact
+    envelope is declaring that its result is an MCP ``CallToolResult``, and the
+    declaration renderer turns it into ``CallToolResult<...>`` without this
+    package being imported. That is a protocol marker, not a coupling.
+    """
+    properties: dict[str, Any] = {
+        "content": {"type": "array", "items": {"type": "object"}},
+        "isError": {"type": "boolean"},
+        "_meta": {"type": "object"},
+    }
+    if isinstance(structured, dict) and structured:
+        properties["structuredContent"] = structured
+    return {"type": "object", "properties": properties, "required": ["content"]}
+
+
+def is_mcp_result_schema(schema: object) -> bool:
+    """Whether ``schema`` is a ``CallToolResult`` envelope.
+
+    Recognized structurally: an array-of-object ``content``, a boolean
+    ``isError``, and an object ``_meta``. Structural rather than nominal so the
+    codemode package can do this without importing vtx.mcp, which would close a
+    dependency loop the layering exists to keep open.
+    """
+    if not isinstance(schema, dict):
+        return False
+    properties = schema.get("properties")
+    if not isinstance(properties, dict):
+        return False
+    content = properties.get("content")
+    if not isinstance(content, dict) or content.get("type") != "array":
+        return False
+    items = content.get("items")
+    return isinstance(items, dict) and items.get("type") == "object"
+
+
+def structured_content_schema(schema: object) -> dict[str, Any] | bool | None:
+    """The ``structuredContent`` schema inside a ``CallToolResult`` envelope.
+
+    ``True`` when the tool declares the field but gives it no shape, and
+    ``None`` when the schema is not a ``CallToolResult`` at all. The shape is
+    re-checked here rather than inferred from :func:`is_mcp_result_schema`,
+    because a predicate that returns a bool does not narrow its argument.
+    """
+    if not isinstance(schema, dict):
+        return None
+    properties = schema.get("properties")
+    if not isinstance(properties, dict) or not is_mcp_result_schema(schema):
+        return None
+    declared = properties.get("structuredContent")
+    if isinstance(declared, bool):
+        return declared
+    if isinstance(declared, dict):
+        return {str(key): value for key, value in declared.items()}
+    return True
+
+
+def script_value(result: CallToolResult) -> dict[str, Any] | None:
+    """The ``CallToolResult`` a script receives, with protocol plumbing removed.
+
+    ``_meta`` is stripped and nothing else is. It is server-defined metadata
+    that routinely carries cursors, rate-limit state, and occasionally
+    credentials the server echoed back; a script has no use for it and the
+    model's context is the last place it should land. Everything else --
+    ``content`` blocks verbatim, ``structuredContent``, ``isError`` -- passes
+    through untouched.
+
+    Returned even when ``isError`` is set, which is the point: an MCP tool that
+    fails usually says *why* in its result, and a script that can read that and
+    branch is doing something a raised exception would have prevented.
+    """
+    if not isinstance(result, dict):
+        return None
+    value = {key: v for key, v in result.items() if key != "_meta"}
+    if not isinstance(value.get("content"), list):
+        value["content"] = []
+    return value
 
 
 __all__ = [
@@ -347,6 +464,10 @@ __all__ = [
     "convert_mcp_result",
     "create_mcp_tool_name",
     "enrich_result",
+    "is_mcp_result_schema",
+    "mcp_result_schema",
     "save_output_file",
+    "script_value",
+    "structured_content_schema",
     "truncate_middle",
 ]

@@ -192,3 +192,198 @@ def test_adapt_tool_is_reusable_across_sandboxes():
     assert tool.name == "list_rows"
     assert tool.input_schema is not None
     assert tool.identifier() == "list_rows"
+
+
+# ---- structured results --------------------------------------------------
+
+
+class RemoteTool(BaseTool):
+    """Stands in for an MCP tool: its value is a ``CallToolResult``, not prose."""
+
+    name = "remote"
+    description = "Call a remote server"
+    params = Query
+    mutating = False
+
+    def __init__(self) -> None:
+        self._fail = False
+
+    @property
+    def output_schema(self):
+        from vtx.mcp.tool import mcp_result_schema
+
+        return mcp_result_schema({"type": "array", "items": {"type": "integer"}})
+
+    async def execute(self, params: Query, cancel_event=None) -> ToolResult:
+        value = {
+            "content": [{"type": "text", "text": "upstream refused" if self._fail else "ok"}],
+            "structuredContent": {"rows": [1, 2, 3]},
+            "isError": self._fail,
+        }
+        # What a model would read is flattened and truncated; what a script gets
+        # is the whole thing. Both are present on purpose.
+        return ToolResult(success=not self._fail, result="ok", structured=value)
+
+
+@pytest.mark.asyncio
+async def test_a_structured_result_reaches_the_script_whole():
+    tool = RemoteTool()
+    sandbox = CodemodeSandbox(tools=[adapt_tool(tool)])
+    result = await sandbox.execute(
+        "r = await tools.remote(n=1)\n"
+        "return {'rows': r['structuredContent']['rows'], 'text': r['content'][0]['text']}"
+    )
+    assert result.ok
+    assert result.value == {"rows": [1, 2, 3], "text": "ok"}
+
+
+@pytest.mark.asyncio
+async def test_a_structured_failure_is_a_value_not_an_exception():
+    # An MCP tool that fails usually says why. Raising would discard the only
+    # text that explains it, and the script could not branch on the reason.
+    tool = RemoteTool()
+    tool._fail = True
+    sandbox = CodemodeSandbox(tools=[adapt_tool(tool)])
+    result = await sandbox.execute(
+        "r = await tools.remote(n=1)\n"
+        "return {'failed': r['isError'], 'why': r['content'][0]['text']}"
+    )
+    assert result.ok
+    assert result.value == {"failed": True, "why": "upstream refused"}
+
+
+def test_an_mcp_result_schema_renders_as_a_call_tool_result():
+    # The declaration is the model's only description of what it gets back. A
+    # bare `dict[str, Any]` would not say that structured data is there, or that
+    # `isError` is there to be branched on.
+    from vtx.ai.agent.codemode.declarations import render_signature
+
+    text = render_signature(adapt_tool(RemoteTool()))
+    # The tool's own declared output shape is spelled into the envelope, so the
+    # model learns the value is typed rather than an opaque dict.
+    assert "CallToolResult[list[int]]" in text
+
+
+def test_the_mcp_types_preamble_appears_only_when_something_uses_it():
+    from vtx.ai.agent.codemode.declarations import render_declarations
+    from vtx.ai.agent.codemode.types import CodemodeTool
+
+    plain = CodemodeTool(name="read", description="Read", execute=lambda a, s: None)
+
+    # Nothing returns one, so the explanation of what a CallToolResult is would
+    # be text the model pays for and never uses.
+    assert "MCP tools return a CallToolResult" not in render_declarations([plain])[0]
+    assert (
+        "MCP tools return a CallToolResult"
+        in render_declarations([plain, adapt_tool(RemoteTool())])[0]
+    )
+
+
+# ---- namespace grouping --------------------------------------------------
+
+
+def test_the_catalog_groups_tools_by_namespace():
+    from vtx.ai.agent.codemode.declarations import render_declarations
+    from vtx.ai.agent.codemode.types import CodemodeTool
+
+    tools = [
+        CodemodeTool(name="read", description="Read a file", execute=lambda a, s: None),
+        CodemodeTool(
+            name="mcp__docs__search",
+            description="Search the docs",
+            execute=lambda a, s: None,
+            namespace="mcp__docs",
+            namespace_description="Documentation search.",
+        ),
+    ]
+    text, complete = render_declarations(tools)
+    assert complete
+    assert "# mcp__docs (1 tool)" in text
+    # The server's own description of its tools becomes the section header, so it
+    # reaches the model without costing anything when no script is written.
+    assert "Documentation search." in text
+
+
+def test_a_tiny_budget_still_shows_every_namespace():
+    # The property a flat cheapest-first pass does not have: with two servers,
+    # the cheaper one must not use the whole budget and leave the other absent
+    # with no sign it exists.
+    from vtx.ai.agent.codemode.declarations import render_declarations
+    from vtx.ai.agent.codemode.types import CodemodeTool
+
+    def many(namespace: str, count: int) -> list[CodemodeTool]:
+        return [
+            CodemodeTool(
+                name=f"{namespace}__tool_{i}",
+                description="x" * 200,
+                execute=lambda a, s: None,
+                namespace=namespace,
+            )
+            for i in range(count)
+        ]
+
+    tools = many("mcp__cheap", 2) + many("mcp__dear", 20)
+    text, complete = render_declarations(tools, budget_tokens=40)
+    assert not complete
+    # Both namespaces are present, and the empty one says it is empty rather
+    # than vanishing.
+    assert "# mcp__cheap" in text
+    assert "# mcp__dear" in text
+    assert "none shown" in text or "shown)" in text
+
+
+def test_a_listed_and_callable_tool_split_survives_into_the_instructions():
+    from vtx.ai.agent.codemode.types import CodemodeTool
+
+    async def noop(args, signal):
+        return None
+
+    tools = [
+        CodemodeTool(name="read", description="Read", execute=noop, listed=True),
+        CodemodeTool(
+            name="mcp__docs__rare",
+            description="Rare",
+            execute=noop,
+            listed=False,
+            namespace="mcp__docs",
+        ),
+    ]
+    sandbox = CodemodeSandbox(tools=tools, listed=["read"], catalog_budget_tokens=2000)
+    instructions = sandbox.instructions()
+    # Callable but unlisted: the model has to be told that separately, because
+    # "the list above is partial" does not explain a tool it was never shown.
+    assert "mcp__docs__rare" not in instructions
+    assert "1 further tool can be called but are not listed" in instructions
+    # ...and it is still callable, or it would be lost rather than deferred.
+    assert any(t.name == "mcp__docs__rare" for t in sandbox.tools)
+
+
+@pytest.mark.asyncio
+async def test_search_finds_a_tool_the_catalog_never_listed():
+    # A tool that is callable but unlisted is the one a model has least reason
+    # to know exists, so hiding it from the search that exists to surface it
+    # would make it unreachable in practice rather than merely unadvertised.
+    from vtx.ai.agent.codemode.types import CodemodeTool
+
+    async def noop(args, signal):
+        return None
+
+    tools = [
+        CodemodeTool(name="read", description="Read a file", execute=noop, listed=True),
+        CodemodeTool(
+            name="mcp__docs__rare",
+            description="Rebuild the documentation index",
+            execute=noop,
+            listed=False,
+            namespace="mcp__docs",
+        ),
+    ]
+    sandbox = CodemodeSandbox(tools=tools, listed=["read"], catalog_budget_tokens=2000)
+    result = await sandbox.execute(
+        "f = await tools.search(query='rebuild documentation index')\n"
+        "return [[m['name'], m['listed']] for m in f['matches']]"
+    )
+    assert result.ok
+    # JSON, so a tuple would arrive as a list -- the same trap the store is
+    # careful about, and the reason this asserts a list.
+    assert result.value == [["mcp__docs__rare", False]]

@@ -416,6 +416,8 @@ class McpServerConnection:
                         name=create_mcp_tool_name(self.config.name, tool_name, is_taken),
                         caller=McpToolCaller(server_name=self.config.name, call=self.call_tool),
                         timeout_ms=self.config.timeout_seconds * 1000,
+                        exposure=self.config.exposure_of(tool_name),
+                        instructions=self.status.instructions,
                     )
                 )
             except (ValueError, TypeError) as exc:

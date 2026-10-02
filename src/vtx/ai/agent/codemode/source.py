@@ -20,17 +20,28 @@ from __future__ import annotations
 import json
 import re
 from dataclasses import dataclass
-from typing import Final
+from typing import Any, Final
 
 _OPTIONS_LINE: Final = re.compile(r"\A\s*#\s*@options:\s*(?P<body>.*?)\s*\Z")
 
 #: Fields a model may set. Unknown fields are an error rather than ignored:
 #: silently dropping one would let a model believe it had set a limit.
-KNOWN_FIELDS: Final = frozenset({"timeout_ms"})
+KNOWN_FIELDS: Final = frozenset({"max_output_tokens", "max_tool_calls", "timeout_ms"})
 
 #: Bounds. A model cannot widen the host's deadline or set it absurdly short.
 MIN_TIMEOUT_MS: Final = 1_000
 MAX_TIMEOUT_MS: Final = 600_000
+
+#: Output budget bounds. The upper end is generous: this is a ceiling on a
+#: mistake, not a target, and a model asking for a large budget is usually
+#: fetching a large result to filter down.
+MIN_OUTPUT_TOKENS: Final = 256
+MAX_OUTPUT_TOKENS: Final = 200_000
+
+#: Fan-out bounds. One is the floor because a budget of zero admits nothing and
+#: the script could only fail, which is never a useful outcome to allow.
+MIN_TOOL_CALLS: Final = 1
+MAX_TOOL_CALLS: Final = 1_000
 
 
 class CodemodeSourceError(ValueError):
@@ -43,6 +54,8 @@ class SourceOptions:
 
     code: str
     timeout_ms: int | None = None
+    max_tool_calls: int | None = None
+    max_output_tokens: int | None = None
 
 
 def parse_source(source: str) -> SourceOptions:
@@ -76,12 +89,19 @@ def parse_source(source: str) -> SourceOptions:
 
     timeout_ms = parsed.get("timeout_ms")
     if timeout_ms is not None:
-        if not isinstance(timeout_ms, int) or isinstance(timeout_ms, bool):
-            raise CodemodeSourceError("timeout_ms must be an integer number of milliseconds.")
-        if not MIN_TIMEOUT_MS <= timeout_ms <= MAX_TIMEOUT_MS:
-            raise CodemodeSourceError(
-                f"timeout_ms must be between {MIN_TIMEOUT_MS} and {MAX_TIMEOUT_MS}."
-            )
+        timeout_ms = _bounded_int("timeout_ms", timeout_ms, MIN_TIMEOUT_MS, MAX_TIMEOUT_MS)
+
+    max_tool_calls = parsed.get("max_tool_calls")
+    if max_tool_calls is not None:
+        max_tool_calls = _bounded_int(
+            "max_tool_calls", max_tool_calls, MIN_TOOL_CALLS, MAX_TOOL_CALLS
+        )
+
+    max_output_tokens = parsed.get("max_output_tokens")
+    if max_output_tokens is not None:
+        max_output_tokens = _bounded_int(
+            "max_output_tokens", max_output_tokens, MIN_OUTPUT_TOKENS, MAX_OUTPUT_TOKENS
+        )
 
     # Replace, do not remove: the traceback line numbers stay correct.
     lines[0] = ""
@@ -89,7 +109,21 @@ def parse_source(source: str) -> SourceOptions:
     if not remainder.strip():
         raise CodemodeSourceError("The options line must be followed by code.")
 
-    return SourceOptions(code=remainder, timeout_ms=timeout_ms)
+    return SourceOptions(
+        code=remainder,
+        timeout_ms=timeout_ms,
+        max_tool_calls=max_tool_calls,
+        max_output_tokens=max_output_tokens,
+    )
+
+
+def _bounded_int(field: str, value: Any, low: int, high: int) -> int:
+    """Validate one integer field against its range."""
+    if not isinstance(value, int) or isinstance(value, bool):
+        raise CodemodeSourceError(f"{field} must be an integer.")
+    if not low <= value <= high:
+        raise CodemodeSourceError(f"{field} must be between {low} and {high}.")
+    return value
 
 
 def clamp_timeout(requested: int | None, host_limit: int | None) -> int | None:
@@ -103,6 +137,21 @@ def clamp_timeout(requested: int | None, host_limit: int | None) -> int | None:
     if host_limit is None:
         return requested
     return min(requested, host_limit)
+
+
+def clamp_int(requested: int | None, host_limit: int | None, *, floor: int = 1) -> int | None:
+    """Resolve a script-requested budget against the host's.
+
+    Same rule as :func:`clamp_timeout`: a script may ask for less than the host
+    allows and never more. ``floor`` is the smallest value the host will honor,
+    so a script cannot request a budget of zero and make itself unable to call
+    anything.
+    """
+    if requested is None:
+        return host_limit
+    if host_limit is None:
+        return requested
+    return max(floor, min(requested, host_limit))
 
 
 #: A Lark grammar for providers that support grammar-constrained tool input.

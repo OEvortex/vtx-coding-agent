@@ -45,6 +45,64 @@ for another agent copies over unchanged:
 | `oauth` | http | `clientId`, `clientSecret`, `callbackPort`, `scope` — only needed without dynamic registration. |
 | `enabled` | both | `false` keeps the entry without connecting it, so it can be re-enabled later. |
 | `timeout` | both | Per-request timeout in seconds. Default `60`. Progress notifications reset it. |
+| `exposure` | both | How this server's tools reach the model. Default `codemode`. See below. |
+| `tool_exposure` | both | Per-tool overrides of `exposure`, by exact name or `*` pattern. |
+
+### How a server's tools reach the model
+
+A connected server can publish far more tools than fit in a prompt. Declaring
+them all is unaffordable; declaring none makes the integration worthless. So
+each server says how its tools are offered, and each tool can override it.
+
+| `exposure` | Declared to the model | Callable from a script | Listed for the model |
+| --- | --- | --- | --- |
+| `direct` | yes | yes | — |
+| `codemode` | no | yes | **yes** |
+| `codemode-deferred` | no | yes | no |
+| `deferred` | no | yes | no, but `tool_search` finds it |
+| `hidden` | no | no | no |
+
+`codemode` is the default. It is the setting that makes a large tool set usable:
+the model writes one script that calls several of them, pays for one turn, and
+the intermediate results never enter the transcript at all. See
+[codemode](codemode.md).
+
+`tool_exposure` overrides per tool, and is what makes a broad server usable with
+care. Keys are tool names as the server offers them, or `*` patterns:
+
+```json
+{
+  "mcpServers": {
+    "docs": {
+      "url": "https://example.com/mcp",
+      "exposure": "codemode",
+      "tool_exposure": {
+        "delete_*": "hidden",
+        "search": "direct",
+        "reindex": "deferred"
+      }
+    }
+  }
+}
+```
+
+An exact name beats a pattern. Among patterns, the **first one in declaration
+order** wins — so put specific patterns first. `{"*": "codemode", "delete_*":
+"hidden"}` resolves deletes by the `*`, not by `delete_*`; written the other way
+round it means what it looks like.
+
+`{"exposure": "hidden", "tool_exposure": {"search": "codemode"}}` is the shape
+for a server you mostly want switched off: everything unreachable except the
+tools you name.
+
+### A tool that needs approval
+
+A script has nobody to ask, so a tool the permission gate would prompt for is
+**refused** inside a script, with a message telling the model to call it directly
+so the user can approve it. A script is a way to do the ungated calls together,
+not a way to get a gated one done unseen. A server that marks its tools
+`readOnlyHint` is never gated, so annotating honestly is what keeps a tool
+usable from a script.
 
 An unset `$VAR` expands to empty rather than failing, so a missing optional
 token leaves the header empty and lets the server answer 401 — which vtx reports

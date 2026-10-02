@@ -18,10 +18,12 @@ from .ask_user import AskUserParams, AskUserTool
 from .base import BaseTool
 from .codemode import CODEMODE_TOOL_NAME, CodemodeParams, CodemodeTool
 from .task import SubagentSpec, TaskParams, TaskTool
+from .tool_search import TOOL_SEARCH_TOOL_NAME, ToolSearchParams, ToolSearchTool
 from .web import SearchParams, WebSearchTool, WebTool
 
 __all__ = [
     "CODEMODE_TOOL_NAME",
+    "TOOL_SEARCH_TOOL_NAME",
     "AskUserParams",
     "AskUserTool",
     "BaseTool",
@@ -34,6 +36,8 @@ __all__ = [
     "SubagentSpec",
     "TaskParams",
     "TaskTool",
+    "ToolSearchParams",
+    "ToolSearchTool",
     "WebSearchTool",
     "WebTool",
     "get_all_tools",
@@ -219,3 +223,8 @@ register_tool(GoalTool(), is_default=True, parent_only=True)
 # uses it is a tool it will not think to use, and hiding it just removes a
 # capability it would otherwise reach for on its own.
 register_tool(CodemodeTool(), is_default=True, parent_only=False)
+# `tool_search` is the model-side route to tools that exist but are not declared.
+# Default-on for the same reason as `codemode`: with no MCP server connected it
+# finds nothing and says so in one line, which is a far smaller cost than a
+# model reporting a capability as missing when it was one search away.
+register_tool(ToolSearchTool(), is_default=True, parent_only=False)

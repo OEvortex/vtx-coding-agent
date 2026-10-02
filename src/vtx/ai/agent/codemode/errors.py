@@ -38,6 +38,10 @@ TIMEOUT: Final = "timeout"
 ABORTED: Final = "aborted"
 #: The worker process or its transport failed (spawn error, protocol error).
 SANDBOX: Final = "sandbox"
+#: The script is blocked on something that can never complete. Kept apart from
+#: TIMEOUT because the cause is provable in a millisecond instead of waited for,
+#: and because the fix is a different edit.
+STALLED: Final = "stalled"
 
 #: A tool the sandbox was not given was referenced.
 UNKNOWN_TOOL: Final = "unknown_tool"
@@ -56,6 +60,7 @@ KINDS: Final = (
     TIMEOUT,
     ABORTED,
     SANDBOX,
+    STALLED,
     UNKNOWN_TOOL,
     INVALID_INPUT,
     TOOL_FAILURE,
@@ -65,7 +70,7 @@ KINDS: Final = (
 
 #: Kinds that describe the execution rather than one tool call. These are
 #: terminal: they cannot be caught inside the script.
-SANDBOX_KINDS: Final = frozenset({SCRIPT, TIMEOUT, ABORTED, SANDBOX})
+SANDBOX_KINDS: Final = frozenset({SCRIPT, TIMEOUT, ABORTED, SANDBOX, STALLED})
 
 #: Kinds that describe one tool call. These are raised as exceptions inside the
 #: script, so ``try``/``except`` can branch on them.
@@ -88,6 +93,11 @@ _REMEDY: Final = {
     SANDBOX: (
         "The sandbox process failed, not your script. Retry once; if it persists, "
         "report it rather than rewriting working code."
+    ),
+    STALLED: (
+        "The script is waiting on a result that can never arrive: no tool call is "
+        "outstanding and no timer can fire. You awaited something that will never "
+        "settle -- await a tool call, or stop awaiting."
     ),
     UNKNOWN_TOOL: (
         "That tool is not in the sandbox. Check the declared tools for the exact "
@@ -203,6 +213,15 @@ class SandboxError(CodemodeError):
 
 class ScriptAborted(CodemodeError):  # noqa: N818 - see above
     kind = ABORTED
+
+
+class ScriptStalled(CodemodeError):  # noqa: N818 - see above
+    """Raised inside the worker when the script provably cannot make progress."""
+
+    kind = STALLED
+
+    def diagnostic(self) -> dict[str, Any]:
+        return {"kind": STALLED, "message": remedy_for(STALLED), "stack": None}
 
 
 class ScriptTimeout(CodemodeError):  # noqa: N818 - see above

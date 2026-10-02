@@ -91,6 +91,20 @@ concurrently. The rest of the module — the loop policy, the executor — is no
 `text(value)` appends to the output the model reads, in order. `print` goes to a
 discarded stream, so it is *not* shown to the model. Use `text`.
 
+`image(value)` appends an image the model can see. It takes a base64 data URI, an
+`{"image_url": ...}` object, or an image block taken straight out of an MCP
+result. This exists because a tool that returns a picture had it flattened to
+text before a script ever saw it, so there was no way to pass one on.
+
+### Grouping
+
+Tools are listed under their namespace, budgeted fairly across namespaces rather
+than by a single global cheapest-first pass. With two hundred MCP tools on one
+server and a dozen built-ins, a flat pass gives the cheap ones the budget and
+leaves a second server's tools out entirely with no sign they exist. Here every
+namespace is represented before any namespace is complete, and an empty one says
+`none shown` rather than vanishing.
+
 ### The store
 
 `store(key, value)` and `load(key)` carry JSON values between executions. The
@@ -124,6 +138,7 @@ everything as "the script broke":
 | `timeout` | the deadline expired; the process was killed |
 | `aborted` | the host signal fired, or the sandbox was closed |
 | `sandbox` | the worker process or its transport failed |
+| `stalled` | blocked on something nothing can complete |
 | `unknown_tool` | the sandbox was not given that tool |
 | `invalid_input` | the tool exists but rejected the arguments |
 | `tool_failure` | the tool ran and declined |
@@ -147,42 +162,29 @@ Only `message` crosses the boundary; an optional `detail` stays in your logs.
 Anything unclassified is sanitized rather than forwarded, because a raw Python
 traceback can leak host paths into the model's context.
 
-## Discovery
+## Finding a tool
 
-With many tools, dumping every signature into the prompt is unaffordable.
+Two routes, answering different questions.
 
-`runtime.declarations()` renders signatures within a token budget and reports
-whether the list is complete. `runtime.instructions()` adds the model-facing
-workflow, rules, and language section, and says `COMPLETE` or
-`PARTIAL - 12 of 340 shown` accordingly. That honesty matters: a model told the
-list is exhaustive will never look for anything else.
+**`tools.search`**, inside a script. BM25 over names, descriptions, and schema
+property names *and their descriptions* — so a query naming a parameter finds the
+tool that has it. An exact path (`orders.lookup` or `tools.orders_lookup`) is a
+lookup rather than a keyword match, which beats a fuzzy one when the model
+already knows the name. Every match carries the generated signature, so finding
+a tool and knowing how to call it are one round trip.
 
-`rank(query, tools)` is a BM25 ranker over tool names, descriptions, and input
-schema property names *and their descriptions* — so a query naming a parameter
-finds the tool that has it.
+It searches the whole callable set, not just what the catalog listed, and each
+match says whether it was listed. A tool that is callable but unlisted is
+exactly the one a model has least reason to know exists, so hiding it from the
+search that exists to surface it would make it unreachable in practice rather
+than merely unadvertised.
 
-### The `search` tool
-
-The sandbox always injects a `search` tool, even when the catalog fit entirely.
-A model reading a `PARTIAL` list needs a way to discover what was left out, and
-discovery advice that names a tool which does not exist is worse than no advice.
-
-```python
-matches = await tools.search(query="order status", limit=10, offset=0)
-# -> {"matches": [{"path": "tools.orders_lookup", "name": "orders.lookup",
-#                  "description": "...", "signature": "def tools...."}],
-#     "next": {"offset": 10}, "remaining": 4}
-```
-
-Each match carries the generated signature, so finding a tool and knowing how to
-call it are one round trip rather than two. An exact path (`orders.lookup` or
-`tools.orders_lookup`) is a lookup that returns that one tool, which beats a
-keyword match when the model already knows the name. An empty query browses
-alphabetically, and `namespace` scopes to one top-level prefix.
-
-The instructions advertise it only when the list is genuinely partial — a
-`COMPLETE` list is a claim the model should be able to act on without a second
-lookup.
+**`tool_search`**, as an ordinary tool call. It searches the same way, but a match
+is *activated*: the tool is declared to the model on the next request. That is
+the difference between "the model can find this if it thinks to look" and "the
+model is shown this once it has said what it wants". Both are always callable —
+`tools.search` is injected even when the catalog is complete, because advice that
+names a tool which does not exist is worse than no advice.
 
 ## The `codemode` tool
 
@@ -196,21 +198,82 @@ that catalog — a script that could start a script would nest without limit —
 and marks itself mutating, so the permission gate covers what a script does
 rather than just that it ran.
 
-Because a script can reach `bash`, it is denied by the read-only `plan` profile
-alongside the tools it can reach. A deny-only profile needs `codemode` in
-`tools_deny` explicitly; an allow-list profile is safe by construction.
+Because a script can reach `bash`, a profile that wants to keep the shell out
+of scripts has to say so. There is no longer a built-in `plan` profile to edit —
+vtx ships no built-in agents at all, and a profile is a file you write. An
+allow-list (`tools_allow`) is safe by construction; a deny-list must name
+`codemode` explicitly, because denying `bash` while allowing `codemode` has not
+restricted anything.
+
+### Tools inside a script are governed
+
+A tool a script calls is not exempt. It goes through the same extension hooks
+(`tool_call`, `tool_execution_start`/`_end`), the same permission decision, and
+the same argument rewriting as a call the model made directly.
+
+The case that matters is the permission gate. It answers *allow* or *prompt*,
+and **prompt is treated as a refusal** inside a script — a script has nobody to
+ask. The model is told to call the gated tool directly so the user can approve
+it. A script is a way to do the ungated calls together; it is not a way to get a
+gated one done without the user seeing it.
+
+A host that does not wire the gate up gets the old behavior: `adapt_tool` calls
+`tool.execute` directly. `governed_invoker` is the wrapper that fixes it.
+
+## MCP servers
+
+A connected MCP server's tools are callable from a script, and a connected
+server can publish more tools than fit in a prompt — which is the case code mode
+exists for. The sandbox groups them under the server's namespace, and the
+server's own `instructions` (its description of what its tools are for) becomes
+that section's header, so it reaches the model without costing anything when no
+script is written.
+
+### A script gets the result, not the rendering
+
+A tool result is flattened to text and truncated to 20KB for the model, which is
+right there: a model should not pay 20KB of context for a table it only needed
+three numbers from. A *script* is the opposite case, so an MCP tool's value
+crosses into the sandbox as the whole `CallToolResult`:
+
+```python
+# Declared as -> CallToolResult[list[int]]
+hits = await tools.mcp__docs__search(query="retries")
+if hits["isError"]:
+    text(hits["content"][0]["text"])   # the server said why
+else:
+    return hits["structuredContent"]
+```
+
+Three details make this work:
+
+- **`structuredContent` is the typed data.** When a tool declares an output
+  schema it is spelled into the declaration as `CallToolResult<...>`, so the
+  model knows to index in rather than parse a string.
+- **`isError` results resolve rather than raise.** A server that fails usually
+  says why in its result, and a script that can read that and branch is doing
+  something useful. Raising would discard the only explanation.
+- **`_meta` is stripped.** It is server plumbing that routinely carries cursors
+  and rate-limit state; a script has no use for it and the model's context is the
+  last place it should land.
+
+`image()` accepts an image block straight out of a result, so a tool that returns
+a screenshot can be forwarded without re-encoding it. Remote `http` URLs are
+refused — a script that could point the transcript at any host the model chose
+would be an exfiltration primitive, not a feature.
 
 ## Source options
 
 A script may begin with an options line:
 
 ```python
-# @options: {"timeout_ms": 5000}
+# @options: {"timeout_ms": 5000, "max_tool_calls": 20, "max_output_tokens": 4000}
 ```
 
-The sandbox does not act on it; the host does. A script may shorten the host's
-deadline but never extend it. The line is blanked rather than removed, so line
-numbers in a traceback still match what you wrote.
+The sandbox does not act on it; the host does. Every field is a *ceiling the
+script may lower*, never raise — a script that asked for an hour does not get an
+hour. The line is blanked rather than removed, so line numbers in a traceback
+still match what you wrote.
 
 Unknown fields are rejected rather than ignored — a model that sets a limit which
 is silently dropped will believe it configured something it did not.
@@ -265,17 +328,41 @@ this package and `sandbox.py`. `tests/test_codemode.py` asserts the two agree.
 
 ## Limits
 
-One knob, and it is not optional in spirit: a script with no deadline is a
-script that can wedge the session.
+Every knob is enforced. A limit that is accepted but does nothing is worse than
+no limit at all, because the model will believe it set one.
 
 | Limit | Default | Bounds |
 | --- | --- | --- |
-| `timeout_ms` | `30_000` | wall clock, enforced by killing the process; `None` disables |
+| `timeout_ms` | `30_000` | Wall clock, enforced by killing the process; `None` disables. |
+| `max_tool_calls` | `200` | Charged at *admission*, not completion — four calls already in flight have already been paid for, so checking at the end would let a script exceed the ceiling by exactly its own concurrency. |
+| `max_output_tokens` | `8_000` | Applies to the text a script emitted. The middle is cut and the fact is reported; a silently shortened result reads as a complete one. |
+| `memory_limit_bytes` | `512 MiB` | `RLIMIT_AS` inside the worker. A runaway allocation is otherwise only stopped by the deadline, so the user watches memory climb for all of it. Absent on Windows, where it degrades to the deadline. |
+| `detect_stalls` | `True` | See below. Off when chasing a suspected false positive. |
 
-A call-count budget and an output-size cap would both be reasonable additions,
-but neither is implemented, so neither is accepted — offering a limit that does
-nothing is worse than not having one. Both are straightforward to add at the
-host (a counter in `_serve`, a size check in `_result_from_frame`).
+A call that exceeds the budget is **refused, not truncated** — a catchable
+`ToolError` inside the script, so it can stop and adapt instead of dying.
+
+## Deadlock detection
+
+The sandbox has exactly two ways to resume a blocked script: a tool reply
+arriving, or a timer firing. A script that is blocked with **neither pending is
+not slow, it is dead** — so the run ends in a millisecond with a `stalled`
+diagnostic naming the cause, instead of sitting out the whole deadline and then
+reporting a `timeout`. That distinction matters: a timeout sends the model off
+splitting its work, when the actual bug is a promise that will never settle.
+
+`asyncio.sleep` is available here, unlike in the JavaScript reference whose VM
+has no timers, so a naive "blocked and no tool calls" check would call a
+legitimate wait a deadlock. Timers are what separate the two, and they live on a
+private loop attribute — so the check reports itself disabled when the internals
+move, rather than firing wrongly.
+
+## What a failure costs
+
+A failed run reports no store writes, but it *does* report the calls it made, and
+the TUI summary names the ones that failed. A script that half-ran usually
+already had real side effects, and "Script failed (script)" alone leaves the user
+no way to know whether the half that ran changed anything.
 
 ## Authority
 

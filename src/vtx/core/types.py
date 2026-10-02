@@ -201,6 +201,19 @@ class ToolResult(BaseModel):
     ui_details: str | None = None  # Collapsed multiline result body rendered below the header
     ui_details_full: str | None = None  # Expanded multiline result body rendered below the header
     file_changes: FileChanges | None = None  # Track +/- lines for edit/write tools
+    structured: Any | None = None
+    """The value a `codemode` script receives, when it differs from `result`.
+
+    `result` is a string because that is what a chat model reads, and flattening
+    is right there: a 20KB result should not cost 20KB of context. A *script* is
+    the opposite case -- it is cheap to filter a large structured value in code
+    and the whole point is not paying context for the parts it discards. A tool
+    that produces JSON sets this and the sandbox hands it over whole, untruncated.
+
+    Set it even on ``success=False``: an MCP tool that fails with ``isError``
+    still carries a result a script can branch on, and raising instead would
+    throw away the only information explaining the failure.
+    """
 
 
 # UI rendering model:

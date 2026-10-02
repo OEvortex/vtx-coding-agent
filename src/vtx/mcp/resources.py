@@ -157,7 +157,13 @@ class _ResourceTool(BaseTool):
     """Shared plumbing: argument reading, server lookup, and error reporting."""
 
     def __init__(
-        self, *, name: str, description: str, params_model: type[BaseModel], servers: Any
+        self,
+        *,
+        name: str,
+        description: str,
+        params_model: type[BaseModel],
+        servers: Any,
+        exposure: str = "codemode",
     ) -> None:
         self.name = name
         self.description = description
@@ -169,6 +175,12 @@ class _ResourceTool(BaseTool):
         self.prompt_guidelines = ()
         # Reading a resource cannot change the world, so it never prompts.
         self.mutating = False
+        # These three front every server that publishes resources, so their
+        # exposure is the widest of the group: a capability one connected server
+        # offers should not disappear because a second server is configured more
+        # narrowly.
+        self.exposure = exposure
+        self.namespace = "mcp"
 
     def _find_server(self, name: str) -> McpResourceServer:
         available = self._servers()
@@ -265,7 +277,7 @@ class _ResourceTool(BaseTool):
 
 
 class McpListResourcesTool(_ResourceTool):
-    def __init__(self, servers: Any) -> None:
+    def __init__(self, servers: Any, *, exposure: str = "codemode") -> None:
         super().__init__(
             name=LIST_MCP_RESOURCES_TOOL,
             description=(
@@ -276,6 +288,7 @@ class McpListResourcesTool(_ResourceTool):
             ),
             params_model=_list_params_model(),
             servers=servers,
+            exposure=exposure,
         )
 
     async def _run(self, params: Any, cancel_event: asyncio.Event | None) -> ToolResult:
@@ -283,7 +296,7 @@ class McpListResourcesTool(_ResourceTool):
 
 
 class McpListResourceTemplatesTool(_ResourceTool):
-    def __init__(self, servers: Any) -> None:
+    def __init__(self, servers: Any, *, exposure: str = "codemode") -> None:
         super().__init__(
             name=LIST_MCP_RESOURCE_TEMPLATES_TOOL,
             description=(
@@ -293,6 +306,7 @@ class McpListResourceTemplatesTool(_ResourceTool):
             ),
             params_model=_list_params_model(),
             servers=servers,
+            exposure=exposure,
         )
 
     async def _run(self, params: Any, cancel_event: asyncio.Event | None) -> ToolResult:
@@ -300,7 +314,7 @@ class McpListResourceTemplatesTool(_ResourceTool):
 
 
 class McpReadResourceTool(_ResourceTool):
-    def __init__(self, servers: Any) -> None:
+    def __init__(self, servers: Any, *, exposure: str = "codemode") -> None:
         super().__init__(
             name=READ_MCP_RESOURCE_TOOL,
             description=(
@@ -309,6 +323,7 @@ class McpReadResourceTool(_ResourceTool):
             ),
             params_model=_read_params_model(),
             servers=servers,
+            exposure=exposure,
         )
 
     async def _run(self, params: Any, cancel_event: asyncio.Event | None) -> ToolResult:
@@ -409,11 +424,39 @@ def create_mcp_resource_tools(manager: Any) -> list[BaseTool]:
         manager, "templates"
     ):
         return []
+    # Widest exposure among the servers they front. A `direct` server's
+    # resources are then declared as ordinary tool calls and a `codemode` one is
+    # reachable from a script; taking the narrowest would hide a capability a
+    # connected server genuinely publishes.
+    exposure = _widest_exposure(manager)
     return [
-        McpListResourcesTool(lambda: connected_resource_servers(manager, "resources")),
-        McpListResourceTemplatesTool(lambda: connected_resource_servers(manager, "templates")),
-        McpReadResourceTool(lambda: connected_resource_servers(manager, "resources")),
+        McpListResourcesTool(
+            lambda: connected_resource_servers(manager, "resources"), exposure=exposure
+        ),
+        McpListResourceTemplatesTool(
+            lambda: connected_resource_servers(manager, "templates"), exposure=exposure
+        ),
+        McpReadResourceTool(
+            lambda: connected_resource_servers(manager, "resources"), exposure=exposure
+        ),
     ]
+
+
+def _widest_exposure(manager: Any) -> str:
+    """The most permissive exposure across every connected server."""
+    from vtx.mcp.exposure import widest
+
+    values: list[str] = []
+    for connection in getattr(manager, "servers", {}).values():
+        config = getattr(connection, "config", None)
+        if (
+            config is None
+            or getattr(getattr(connection, "status", None), "state", "") != "connected"
+        ):
+            continue
+        exposure = getattr(config, "exposure", None)
+        values.append(exposure if isinstance(exposure, str) else "codemode")
+    return widest(*values) if values else "codemode"
 
 
 __all__ = [

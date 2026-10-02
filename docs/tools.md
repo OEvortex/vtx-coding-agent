@@ -198,8 +198,17 @@ network operation has to go through a tool.
 Side effects are real: a script that fails partway does not undo the calls that
 already ran. Marked mutating for the same reason `bash` is.
 
-Because a script can reach `bash`, it is denied outright by the read-only
-`plan` profile — see [agents.md](agents.md).
+Because a script can reach `bash`, a profile that wants to keep the shell out of
+scripts has to name `codemode` in `tools_deny`. There is no built-in `plan`
+profile to edit — vtx ships no built-in agents — see [agents.md](agents.md).
+
+Tools a script calls are governed like the model's own: the same extension
+hooks, the same argument rewriting, and the same permission decision, where
+*prompt* becomes a refusal because a script has nobody to ask.
+
+MCP servers contribute their tools to a script's tool set, grouped under the
+server's namespace; see [mcp.md](mcp.md) for the `exposure` setting that decides
+whether a tool is listed, merely callable, or hidden.
 
 See [codemode.md](codemode.md) for the sandbox contract, the failure taxonomy,
-and how the isolation is enforced.
+the enforced budgets, and how the isolation is enforced.
