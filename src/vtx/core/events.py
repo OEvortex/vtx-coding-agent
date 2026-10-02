@@ -276,13 +276,12 @@ class BackgroundTaskCompletedEvent:
 
 @dataclass
 class HostNoticeEvent:
-    """A parent-side RLM host-bridge notice surfaced to the UI.
+    """A parent-side host notice surfaced to the UI.
 
-    Yielded at turn boundaries when the parent drains queued host notices
-    (bash-done follow-ups, ``agent_message`` replies, refinement outcomes).
-    The notice text is also appended to the session as a synthetic
-    ``UserMessage`` so the model sees it on the next turn; this event is
-    for display only.
+    Yielded at turn boundaries when the parent has queued text for the model
+    (a finished background task, a sub-agent's reply). The notice text is also
+    appended to the session as a synthetic ``UserMessage`` so the model sees it
+    on the next turn; this event is for display only.
     """
 
     type: Literal["host_notice"] = "host_notice"

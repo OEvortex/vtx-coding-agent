@@ -42,8 +42,6 @@ CONFIG_DIR_NAME: str = "vtx"
 OnOverflowMode = Literal["continue", "pause"]
 AuthMode = Literal["auto", "required", "none"]
 PermissionMode = Literal["prompt", "auto"]
-AgentMode = Literal["tool_first"]
-AGENT_MODES: tuple[AgentMode, ...] = get_args(AgentMode)
 NotificationMode = Literal["on", "off"]
 PERMISSION_MODES: tuple[PermissionMode, ...] = get_args(PermissionMode)
 NOTIFICATION_MODES: tuple[NotificationMode, ...] = get_args(NotificationMode)
@@ -116,12 +114,6 @@ class UIConfig(BaseModel):
 class SystemPromptConfig(BaseModel):
     git_context: bool = False
     ponytail: bool = False
-
-
-class AgentModeConfig(BaseModel):
-    """Runtime mode for the agent."""
-
-    mode: AgentMode = "tool_first"
 
 
 class AuthConfig(BaseModel):
@@ -242,23 +234,6 @@ class TaskConfig(BaseModel):
     max_concurrent: int = Field(default=4, ge=0)
 
 
-class RefineConfig(BaseModel):
-    """Retired: continual-harness refinement.
-
-    The harness it refined is gone, so nothing reads these fields any more.
-    The class stays so a config file that still carries a ``refine:`` block
-    validates instead of erroring -- the same reasoning as
-    :func:`_migrate_v13_to_v14` for ``mode``. Delete the block from your
-    config; the defaults below are inert.
-    """
-
-    enabled: bool = True
-    turn_interval: int = Field(default=25, ge=1)
-    on_compact: bool = True
-    cooldown_minutes: float = Field(default=20.0, ge=0)
-    model: str | None = None
-
-
 class ConfigSchema(BaseModel):
     meta: MetaConfig
     llm: LLMConfig
@@ -266,7 +241,6 @@ class ConfigSchema(BaseModel):
     compaction: CompactionConfig
     agent: AgentConfig
     permissions: PermissionsConfig
-    refine: RefineConfig = RefineConfig()
     notifications: NotificationsConfig = NotificationsConfig()
     recap: RecapConfig = RecapConfig()
     last_selected: LastSelectedConfig = LastSelectedConfig()
@@ -280,9 +254,6 @@ class ConfigSchema(BaseModel):
     agents: AgentsConfig = AgentsConfig()
     # Sub-agent concurrency for the ``Task`` tool.
     task: TaskConfig = TaskConfig()
-    # Runtime mode. One value remains; see :func:`_migrate_v13_to_v14` for why
-    # the field is kept rather than removed.
-    mode: AgentMode = "tool_first"
 
 
 # =================================================================================================
@@ -372,10 +343,6 @@ class Config:
         return self._parsed.permissions
 
     @property
-    def refine(self) -> RefineConfig:
-        return self._parsed.refine
-
-    @property
     def notifications(self) -> NotificationsConfig:
         return self._parsed.notifications
 
@@ -398,10 +365,6 @@ class Config:
     @property
     def task(self) -> TaskConfig:
         return self._parsed.task
-
-    @property
-    def mode(self) -> AgentMode:
-        return self._parsed.mode
 
 
 # =================================================================================================
@@ -710,16 +673,14 @@ def _migrate_v12_to_v13(data: dict[str, Any]) -> dict[str, Any]:
 def _migrate_v13_to_v14(data: dict[str, Any]) -> dict[str, Any]:
     """Retire the REPL-first mode.
 
-    ``rlm`` became ``code_first`` in this step, and both are now gone: the
-    RLM kernel has been replaced by :mod:`vtx.ai.agent.codemode`, a confined
-    sandbox rather than a persistent one. ``mode`` is kept as a field so an
-    existing config file still loads, but there is only one runtime mode and
-    anything claiming otherwise is normalised to ``tool_first``.
+    ``rlm`` became ``code_first`` in this step, and both are gone: the RLM kernel
+    was replaced by :mod:`vtx.ai.agent.codemode`, a confined sandbox rather than
+    a persistent one, and that left no runtime mode to select. The key is
+    dropped rather than normalised, so a stale ``mode:`` line cannot sit in a
+    config suggesting a choice that no longer exists.
     """
     migrated = dict(data)
-
-    if migrated.get("mode") != "tool_first":
-        migrated["mode"] = "tool_first"
+    migrated.pop("mode", None)
 
     meta = migrated.get("meta")
     if not isinstance(meta, dict):
@@ -751,6 +712,25 @@ def _migrate_v14_to_v15(data: dict[str, Any]) -> dict[str, Any]:
         migrated["meta"] = {"config_version": 15}
     else:
         meta["config_version"] = 15
+    return migrated
+
+
+def _migrate_v15_to_v16(data: dict[str, Any]) -> dict[str, Any]:
+    """Drop the ``refine`` block.
+
+    Continual-harness refinement went with the RLM kernel: the harness it wrote
+    to, the ``refine`` tool, ``/refine``, and the auto-refine turn gate are all
+    gone. The block is removed rather than ignored, for the same reason
+    ``mode`` was in v14 -- a stale knob reads as a live one.
+    """
+    migrated = dict(data)
+    migrated.pop("refine", None)
+
+    meta = migrated.get("meta")
+    if not isinstance(meta, dict):
+        migrated["meta"] = {"config_version": 16}
+    else:
+        meta["config_version"] = 16
     return migrated
 
 
@@ -819,6 +799,10 @@ def _migrate_config_data(data: dict[str, Any]) -> tuple[dict[str, Any], int, int
         if current_version == 14:
             migrated = _migrate_v14_to_v15(migrated)
             current_version = 15
+            continue
+        if current_version == 15:
+            migrated = _migrate_v15_to_v16(migrated)
+            current_version = 16
             continue
         break
 

@@ -189,9 +189,7 @@ class SettingsCommands(CommandSupport):
         colored_badge_status = "on" if config.ui.colored_tool_badge else "off"
         git_context_status = "on" if config.llm.system_prompt.git_context else "off"
         ponytail_status = "on" if config.llm.system_prompt.ponytail else "off"
-        mode_status = config.mode
         return [
-            ListItem(value="mode", label="mode", description=mode_status),
             ListItem(
                 value="colored-tool-badge",
                 label="colored-tool-badge",
@@ -252,29 +250,6 @@ class SettingsCommands(CommandSupport):
         else:
             chat.add_info_message("Usage: /ponytail [on|off]", error=True)
 
-    def _select_mode(self, mode: str) -> None:
-        from vtx.ai.config import (
-            _atomic_write_text,
-            _ensure_config_file,
-            _read_config_data,
-            _serialize_config_yaml,
-            _set_config_version,
-            reload_config,
-        )
-
-        config_file = _ensure_config_file()
-        data = _read_config_data(config_file)
-        data["mode"] = mode
-        _set_config_version(data)
-        _atomic_write_text(config_file, _serialize_config_yaml(data))
-        reload_config()
-
-        chat = self.query_one("#chat-log", ChatLog)
-        chat.show_status(f"Mode changed to {mode}")
-        chat.add_info_message(
-            f"Mode changed to {mode}. Use /new or restart to apply fully.", warning=True
-        )
-
     def _handle_settings_select(self, item_value: str) -> SettingsSelectionResult:
         if item_value == "notifications":
             current_enabled = config.notifications.enabled
@@ -321,19 +296,6 @@ class SettingsCommands(CommandSupport):
         elif item_value == "thinking-lines":
             self._settings_active = True
             self._show_thinking_lines_picker()
-            return "reopened-picker"
-
-        elif item_value == "mode":
-            # One runtime mode remains. The entry stays in the picker so the
-            # layout does not shift, and selecting it explains why rather than
-            # toggling to a value that no longer exists.
-            chat = self.query_one("#chat-log", ChatLog)
-            chat.add_info_message(
-                "There is one runtime mode. The REPL-first mode was removed when "
-                "the RLM kernel was replaced by the codemode sandbox.",
-                warning=True,
-            )
-            self._show_settings_picker(selected_value=item_value)
             return "reopened-picker"
 
         elif item_value == "colored-tool-badge":

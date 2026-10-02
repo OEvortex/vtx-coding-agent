@@ -6,7 +6,6 @@ from .skills import (
     formatted_skills,
     formatted_skills_index,
     is_kernel_skill,
-    kernel_skills_available,
     load_skills,
     skills_for_mode,
 )
@@ -20,7 +19,6 @@ __all__ = [
     "formatted_skills",
     "formatted_skills_index",
     "is_kernel_skill",
-    "kernel_skills_available",
     "load_agent_mds",
     "load_skills",
     "skills_for_mode",

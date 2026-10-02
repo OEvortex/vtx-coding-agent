@@ -51,6 +51,11 @@ loads it, and then has nothing to call it with.
 is still readable. A `SKILL.md` body is instructions for a model, and the model
 can follow those directly.
 
+Vtx ships no python skills. All five that were bundled (`agent-message`,
+`agent-observe`, `compact`, `refine`, `edit`) were removed: the first four with
+the kernel that imported them, and `edit` after that, because a python skill with
+no interpreter is documentation for a module nothing can call.
+
 ## Discovery paths
 
 Loaded in priority order:

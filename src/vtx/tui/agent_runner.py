@@ -387,7 +387,7 @@ class AgentRunnerMixin:
         """Close the bracket: capture the end tree and record what changed.
 
         The recorded file list is a diff between the turn's start and end
-        trees, so edits made through bash, python or ipython are captured just
+        trees, so edits made through bash or a codemode script are captured just
         like edits made through the edit tool — none of the latter report which
         paths they touched.
         """

@@ -450,8 +450,6 @@ class ChatLog(VerticalScroll):
             ("/quit", "Quit (or ctrl+c twice)"),
             ("/clear", "Clear conversation history"),
             ("/compact", "Compact now (add focus text to steer the summary)"),
-            ("/refine", "Refine continual harness state (/refine <instructions>)"),
-            ("/harness", "Browse or delete harness entries (/harness show <id>)"),
             ("/model", "Change model (/model gpt-4o)"),
             ("/provider", "Filter /model by provider"),
             ("/themes", "Change UI theme (/themes gruvbox-dark)"),

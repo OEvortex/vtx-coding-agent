@@ -863,7 +863,7 @@ class Vtx(
         chat = self.query_one("#chat-log", ChatLog)
         expanded = chat.toggle_tool_output_expanded()
         status = "expanded" if expanded else "collapsed"
-        chat.show_status(f"Tool output and refinement edits {status}")
+        chat.show_status(f"Tool output {status}")
 
     def action_toggle_thinking(self) -> None:
         self._hide_thinking = not self._hide_thinking
@@ -1079,7 +1079,7 @@ class Vtx(
         manual_skill_query = ""
         if display_text.startswith("/") and not display_text.startswith("/skill:"):
             # Built-in commands win on a name collision: a skill must never
-            # shadow /compact, /refine and friends just by sharing a name.
+            # shadow /compact and friends just by sharing a name.
             # Skills are still routed for every name the router does not know,
             # which is how /goal reaches the goal skill.
             if self._handle_command(display_text):

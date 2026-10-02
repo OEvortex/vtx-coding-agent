@@ -400,11 +400,11 @@ class Session:
 
         The session log is append-only, so this does not add an entry; it
         rewrites the one named by *entry_id*. Used for context slots that hold
-        regenerable state — the continual-harness digest — where a fresh value
-        should replace the stale one rather than stack a second copy behind it.
-        A crash before the next rewrite leaves the previous value on disk, which
-        is recoverable: the digest is keyed by a state fingerprint, so a stale
-        copy is detected on resume and re-delivered.
+        regenerable state — the skills catalog — where a fresh value should
+        replace the stale one rather than stack a second copy behind it. A crash
+        before the next rewrite leaves the previous value on disk, which is
+        recoverable: the slot is keyed by a state fingerprint, so a stale copy is
+        detected on resume and re-delivered.
 
         Raises ``ValueError`` when the entry is missing or is not a message.
         """

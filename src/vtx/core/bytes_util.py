@@ -44,31 +44,3 @@ def truncate_bytes(data: str, max_bytes: int) -> str:
     while truncated and truncated[-1] & 0b11000000 == 0b10000000:
         truncated = truncated[:-1]
     return truncated.decode("utf-8", "replace")
-
-
-def spill_text(data: str, *, prefix: str = "vtx-rlm", suffix: str = ".txt") -> str | None:
-    """Write ``data`` to a private temp file and return its path, or ``None``.
-
-    Truncation throws the middle of a cell's output away, which loses work the
-    model cannot recover. Spilling the full text keeps it reachable: the caller
-    points the model at the path and it already has a paged reader.
-    """
-    import contextlib
-    import os
-    import tempfile
-
-    fd, path = tempfile.mkstemp(prefix=f"{prefix}-", suffix=suffix)
-    try:
-        with os.fdopen(fd, "w", encoding="utf-8", errors="replace") as handle:
-            handle.write(data)
-    except OSError:
-        # A partial file is worse than none: the model would be pointed at text
-        # that stops mid-stream with nothing marking the cut.
-        with contextlib.suppress(OSError):
-            os.unlink(path)
-        return None
-    # Cell output is model-influenced and lands in a shared temp dir, so it is
-    # owner-only. Best effort: a chmod failure does not invalidate the spill.
-    with contextlib.suppress(OSError):
-        os.chmod(path, 0o600)
-    return path

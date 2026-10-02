@@ -1,5 +1,5 @@
 meta:
-  config_version: 15
+  config_version: 16
 
 llm:
   default_provider: "openai-codex"
@@ -23,15 +23,6 @@ llm:
 compaction:
   on_overflow: "continue"
   threshold_percent: 80
-
-# Retired: continual-harness refinement. Removed with the RLM kernel; the
-# fields still validate so an older config file keeps loading, but nothing
-# reads them. Delete this block.
-refine:
-  enabled: true
-  turn_interval: 25
-  on_compact: true
-  cooldown_minutes: 20
 
 agent:
   max_turns: 500
@@ -100,15 +91,6 @@ agents:
 # and gives the TUI an honest running/queued split to display.
 task:
   max_concurrent: 4
-
-# Runtime mode for the agent. One value: the default surgical tool surface
-# (read, edit, write, bash, find, web, ask_user, task, goal, skill).
-#
-# The REPL-first mode (`rlm`, later `code_first`) was removed when its
-# persistent Python kernel was replaced by the codemode sandbox. The field is
-# kept so an older config still validates; the migration normalises any other
-# value to `tool_first`.
-mode: tool_first
 
 # Example: DeepSeek provider
 # export DEEPSEEK_API_KEY="sk-your-api-key"

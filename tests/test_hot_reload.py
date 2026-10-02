@@ -239,24 +239,12 @@ class TestRuntimeRebind:
         Session("s-reload", str(tmp_path), persist=False).set_system_prompt("x")
 
 
-class TestModeToolPolicy:
-    """One runtime mode remains, so the policy is a no-op. It is still tested
-    because ``/reload`` calls it after re-reading config, and a future mode
-    would reshape the live tool set from exactly this method."""
+class TestRebindToolSurface:
+    """A reload swaps the live tool surface for the rebuilt one.
 
-    def _runtime(self, tmp_path: Path):
-        from vtx.ai.agent.runtime import ConversationRuntime
-        from vtx.ai.agent.tools import get_tools_with_extensions
-
-        runtime = ConversationRuntime(cwd=str(tmp_path), tools=[])
-        runtime.tools = get_tools_with_extensions()
-        return runtime
-
-    def test_policy_leaves_the_surface_alone(self, tmp_path: Path):
-        runtime = self._runtime(tmp_path)
-        before = [t.name for t in runtime.tools]
-        runtime.apply_mode_tool_policy()
-        assert [t.name for t in runtime.tools] == before
+    There is no runtime mode any more, so nothing reshapes the surface beyond
+    the config the caller passes in.
+    """
 
     def test_rebind_keeps_the_rebuilt_surface(self, tmp_path: Path):
         from vtx.ai.agent.runtime import ConversationRuntime

@@ -45,7 +45,6 @@ class _Snapshot:
     skills: int
     tools: list[str]
     active_agent: str | None
-    mode: str
     settings: dict[str, str]
 
 
@@ -147,10 +146,9 @@ class ReloadCommands(CommandSupport):
         )
         self._tools = tools
 
-        # 8. Rebind, then refresh context and the system prompt in one step.
-        #    rebind_resources applies the mode tool policy, so a `mode:` edit in
-        #    config.yml switches the live tool surface over rather than only
-        #    changing what the prompt claims.
+        # 8. Rebind, then refresh context and the system prompt in one step, so a
+        #    tool edit in config.yml switches the live surface over rather than
+        #    only changing what the prompt claims.
         self._runtime.rebind_resources(
             tools=tools,
             extensions=loaded.bus,
@@ -218,7 +216,6 @@ class ReloadCommands(CommandSupport):
             skills=len(skills),
             tools=sorted(t.name for t in self._tools),
             active_agent=active.definition.name if active else None,
-            mode=config.mode,
             settings=self._settings_snapshot(),
         )
 
@@ -306,8 +303,6 @@ class ReloadCommands(CommandSupport):
             changes.append(f"agents {after.agents - before.agents:+d}")
         if before.commands != after.commands:
             changes.append(f"commands {after.commands - before.commands:+d}")
-        if before.mode != after.mode:
-            changes.append(f"mode {before.mode} -> {after.mode}")
 
         summary = "; ".join(changes) if changes else "no visible changes"
         chat.add_info_message(f"Reloaded config, extensions, agents, tools, skills. ({summary})")

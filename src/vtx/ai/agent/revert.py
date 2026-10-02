@@ -148,9 +148,9 @@ class TurnSnapshot:
     and end trees.
 
     ``files`` is a *worktree diff*, not a list of paths some tool reported. That
-    distinction is the whole point: bash, python and ipython all mutate files
-    without reporting anything, so an attribution-based list silently misses
-    most of what a turn actually changed.
+    distinction is the whole point: bash and a code-mode script both mutate files
+    without reporting anything, so an attribution-based list silently misses most
+    of what a turn actually changed.
     """
 
     turn: str
@@ -392,7 +392,7 @@ def stage(
 
     # Which files to put back, and from where. Derived from the per-turn
     # worktree diffs recorded by `record_turn_snapshot`, so bash, python and
-    # ipython edits are all included — none of them report `file_changes`.
+    # codemode edits are all included — none of them report `file_changes`.
     restore_map = plan(session, boundary_id)
     if not restore_map:
         # No turn at or after the boundary recorded a diff (a session resumed

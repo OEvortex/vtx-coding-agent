@@ -130,8 +130,6 @@ class ConversationRuntime:
         self._progress_callback = progress_callback
         self._background_manager = None  # installed via ensure_background_manager
         self._background_manager_token = None
-        # Declared up front: apply_mode_tool_policy() runs below and mirrors the
-        # final tool set onto the agent when one exists.
         self.agent: Agent | None = None
 
         # Resolve the initial agent (CLI > env > config > none). The CLI and
@@ -182,13 +180,6 @@ class ConversationRuntime:
         self.anthropic_compat_auth_mode: AuthMode = anthropic_compat_auth_mode
         self.extensions = extensions
 
-        # In RLM mode, collapse the active tool set to just the REPL so the
-        # model behaves like Prime Agent: one persistent ipython, no
-        # surgical tool surface.
-        self.apply_mode_tool_policy()
-
-        # Re-apply MCP tools: the mode policy rebuilt the set from the built-in
-        # and extension pools, neither of which knows about them.
         self._sync_mcp_tools()
 
         # Per-session extension list (the ones contributed to the active
@@ -362,11 +353,6 @@ class ConversationRuntime:
         # The filter rebuilt the set from the built-in and extension pools, so
         # the MCP tools have to be merged back in.
         self._sync_mcp_tools()
-
-        # In RLM mode, collapse the active tool set to just the REPL so the
-        # model behaves like Prime Agent: one persistent ipython, no
-        # surgical tool surface.
-        self.apply_mode_tool_policy()
 
         # Apply the agent's model/provider/thinking overrides.
         if active is not None:
@@ -1266,15 +1252,6 @@ class ConversationRuntime:
         self._apply_model_info(self.agent)
         return self.agent
 
-    def apply_mode_tool_policy(self) -> None:
-        """Refresh the tool set after a mode switch.
-
-        There is one runtime mode, so there is no surface to collapse. The
-        method stays because ``/reload`` calls it after re-reading config, and
-        a future mode would want the hook in exactly this place.
-        """
-        return None
-
     def reload_context(self) -> None:
         if self.agent is not None:
             self.agent.reload_context()
@@ -1298,7 +1275,7 @@ class ConversationRuntime:
         changes what the agent *is made of*, not what it has already said — so
         the whole runtime is never rebuilt, only rebound.
 
-        Order matters twice over. The mode tool policy has to run before
+        Order matters twice over. The tool list has to be settled before
         :meth:`reload_context`, because the prompt builder is called with the
         active tool set and a stale list would be baked into the new system
         prompt. And the header prompt is dropped afterwards, because it is
@@ -1322,10 +1299,6 @@ class ConversationRuntime:
         # A reload rebuilds the tool set from the built-in and extension pools;
         # MCP tools are in neither, so put them back.
         self._sync_mcp_tools()
-        # Picks up a `mode:` edit in config.yml: collapses the surface to the
-        # REPL in code_first, and leaves the freshly computed list alone in
-        # tool_first.
-        self.apply_mode_tool_policy()
         self.reload_context()
         # The header prompt is preferred over a fresh build, so a reload has to
         # drop it or the pre-reload prompt keeps being sent.

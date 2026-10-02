@@ -74,13 +74,19 @@ class SkillWarning:
 
 
 def is_kernel_skill(skill: Any) -> bool:
-    """Whether a skill is a Python-backed module callable from the kernel.
+    """Whether a skill is a Python-backed module with no way to run it.
 
-    A python skill ships a ``pyproject.toml`` plus ``src/<import_name>``, and is
-    imported into the persistent IPython kernel rather than read as
-    instructions. Its SKILL.md body is API documentation for that module
-    ("call ``await compact.run()`` from the REPL"), so it is only actionable
-    where the kernel exists.
+    A python skill ships a ``pyproject.toml`` plus ``src/<import_name>``, and its
+    SKILL.md body is API documentation for that module ("call
+    ``await compact.run()`` from the REPL") rather than instructions to follow.
+    It was imported into the persistent IPython kernel that the RLM mode
+    provided.
+
+    That kernel is gone -- :mod:`vtx.ai.agent.codemode` runs a confined script
+    in a subprocess instead -- so every python skill is now unrunnable and is
+    hidden from discovery. The predicate stays because it is how a skill is
+    recognised as unrunnable, which is a fact about the skill, not about a mode
+    that no longer exists.
     """
     return (
         getattr(skill, "kind", "markdown") == "python"
@@ -88,28 +94,15 @@ def is_kernel_skill(skill: Any) -> bool:
     )
 
 
-def kernel_skills_available(mode: str | None = None) -> bool:
-    """Whether a persistent Python kernel is available.
-
-    Always false. The kernel went with the RLM mode; the codemode sandbox
-    replaced it and runs a confined script in a subprocess rather than exposing
-    a long-lived interpreter. Retained so callers can keep asking the question
-    and get the honest answer.
-    """
-    return False
-
-
 def skills_for_mode(skills: list[Any], mode: str | None = None) -> list[Any]:
-    """Filter out skills the current mode cannot actually run.
+    """Filter out skills the agent cannot actually act on.
 
     Discovery surfaces (the mandatory prompt catalog, ``skill(action="list")``,
-    the ``/`` command list) must only offer skills the agent can act on. A
-    kernel skill is worse than absent: its description reads as generally
-    applicable and its body is a REPL API the agent has no tool to call, so
-    loading it spends context and then dead-ends.
+    the ``/`` command list) must only offer skills the agent can act on. An
+    unrunnable python skill is worse than absent: its description reads as
+    generally applicable and its body is API documentation for a module there is
+    no interpreter to call, so loading it spends context and then dead-ends.
     """
-    if kernel_skills_available(mode):
-        return list(skills)
     return [skill for skill in skills if not is_kernel_skill(skill)]
 
 
@@ -285,8 +278,8 @@ def _load_skill_from_dir(skill_dir: Path) -> tuple[Skill | None, list[SkillWarni
         # register_cmd is opt-in, as documented (AGENTS.md, docs/skills.md):
         # a skill is context for the agent, and only becomes a user-facing
         # /command when it asks to be. Defaulting this to True put all 56
-        # skills in the slash list, and let bundled kernel skills named
-        # `compact` and `refine` shadow the real /compact and /refine commands.
+        # skills in the slash list, and let a skill named `compact` shadow the
+        # real /compact command.
         register_cmd_raw = frontmatter.get("register_cmd", False)
         if isinstance(register_cmd_raw, str):
             register_cmd_value = register_cmd_raw.strip().lower()
@@ -625,15 +618,6 @@ def formatted_skills(skills: list[Skill]) -> str:
         "If a skill is manually triggered via slash command, its full content is already included",
         "in the user message, so you don't need to load it again.",
     ]
-    # Only explain the kernel import contract when a python skill is actually on
-    # offer. A tool-first agent gets no python skills at all, and telling it
-    # about modules it cannot import is a distraction, not a capability.
-    if any(is_kernel_skill(skill) for skill in skills):
-        rules.append(
-            "Skills with a python_import are prepared in the persistent Python kernel "
-            "when in RLM mode and can be called directly by that import name."
-        )
-
     lines = [
         "## Skills (mandatory)",
         "",
@@ -654,9 +638,9 @@ def formatted_skills(skills: list[Skill]) -> str:
 #: which lines fit, and being wrong only moves the cutoff by a few entries.
 CHARS_PER_TOKEN = 4
 
-#: Default ceiling for the RLM skills index, in estimated tokens. Sized to leave
-#: room for the rest of the code_first prompt: the index competes with the
-#: helper reference, the harness reference, and the bridge contract.
+#: Default ceiling for the compact skills index, in estimated tokens. The index
+#: is one line per skill, so it grows with the installed set; the ceiling keeps
+#: it from competing with the rest of the prompt.
 DEFAULT_SKILLS_INDEX_BUDGET_TOKENS = 1200
 
 
@@ -729,14 +713,12 @@ def formatted_skills_index(
     max_desc_chars: int = 120,
     budget_tokens: int | None = DEFAULT_SKILLS_INDEX_BUDGET_TOKENS,
 ) -> str:
-    """Compact one-line-per-skill index for RLM mode.
+    """Compact one-line-per-skill index, for when the full catalog is too large.
 
-    The full :func:`formatted_skills` catalog (~24k chars for a typical
-    install) is a fixed ~6k-token tax on every RLM turn. In RLM mode the
-    system prompt already documents the pre-imported modules and tells the
-    model to read SKILL.md on demand, so a routing index is enough: the
-    model reads the full file with ``read_file`` only for skills it will
-    actually use.
+    The full :func:`formatted_skills` catalog (~24k chars for a typical install)
+    is a fixed ~6k-token cost on every turn. Where the prompt already tells the
+    model to read SKILL.md on demand, a routing index is enough: it reads the
+    full file only for skills it will actually use.
 
     The index is capped at ``budget_tokens`` estimated tokens, spread across
     skill categories so a large category cannot crowd the others out of the
