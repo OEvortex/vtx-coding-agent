@@ -27,15 +27,30 @@ class SessionCommands(CommandSupport):
         if self._runtime.session:
             self._runtime.new_session()
             self._sync_runtime_state()
+            self._reset_codemode_store()
             info_bar = self.query_one("#compact-footer", InfoBar)
             info_bar.set_tokens(0, 0, 0, 0)
             info_bar.set_file_changes({})
         chat = self.query_one("#chat-log", ChatLog)
         chat.add_info_message("Conversation cleared")
 
+    def _reset_codemode_store(self) -> None:
+        """Drop the codemode session store.
+
+        The store is what carries `store(...)` writes between codemode calls,
+        and it is scoped to a conversation. Carrying it across `/clear` would
+        re-inject results from the previous conversation into a script that had
+        no way to know they were stale.
+        """
+        for tool in self._runtime.tools:
+            clear = getattr(tool, "clear_store", None)
+            if callable(clear):
+                clear()
+
     def _new_conversation(self) -> None:
         self._runtime.new_session()
         self._sync_runtime_state()
+        self._reset_codemode_store()
 
         chat = self.query_one("#chat-log", ChatLog)
         info_bar = self.query_one("#compact-footer", InfoBar)

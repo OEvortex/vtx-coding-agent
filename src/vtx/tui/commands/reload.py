@@ -157,6 +157,14 @@ class ReloadCommands(CommandSupport):
             active_agent=active,
         )
 
+        # 8b. `codemode` snapshots the tool set to build its sandbox, so it has
+        #     to be told. Without this a newly added tool is invisible to scripts
+        #     until the session ends, which reads as the reload not working.
+        for tool in self._runtime.tools:
+            refresh = getattr(tool, "refresh", None)
+            if callable(refresh):
+                refresh()
+
         # 9. The / list is built from skills and extension commands, both of
         #    which just changed.
         self._sync_slash_commands()

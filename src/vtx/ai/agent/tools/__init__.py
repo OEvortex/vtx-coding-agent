@@ -2,7 +2,8 @@
 
 Provides the :class:`BaseTool` contract, schema shaping for LLM tool
 definitions, dynamic tool registration/lookup APIs, and core harness tools
-(:class:`AskUserTool`, :class:`TaskTool`, :class:`WebTool`, :class:`GoalTool`).
+(:class:`AskUserTool`, :class:`TaskTool`, :class:`WebTool`, :class:`GoalTool`,
+:class:`CodemodeTool`).
 """
 
 from __future__ import annotations
@@ -15,13 +16,17 @@ from vtx.core.types import ToolDefinition
 from ..goal.tools import GoalParams, GoalTaskItem, GoalTool
 from .ask_user import AskUserParams, AskUserTool
 from .base import BaseTool
+from .codemode import CODEMODE_TOOL_NAME, CodemodeParams, CodemodeTool
 from .task import SubagentSpec, TaskParams, TaskTool
 from .web import SearchParams, WebSearchTool, WebTool
 
 __all__ = [
+    "CODEMODE_TOOL_NAME",
     "AskUserParams",
     "AskUserTool",
     "BaseTool",
+    "CodemodeParams",
+    "CodemodeTool",
     "GoalParams",
     "GoalTaskItem",
     "GoalTool",
@@ -169,6 +174,18 @@ def _slim_schema(node: Any) -> Any:
     return node
 
 
+def build_tool_description(tool: BaseTool) -> str:
+    """The description to send for ``tool``.
+
+    A tool may compute its own, because some are a function of state the static
+    attribute cannot express: ``codemode`` lists the tools a script can call,
+    and that set changes on reload. A description naming tools that no longer
+    exist is worse than no catalog at all.
+    """
+    builder = getattr(tool, "build_description", None)
+    return builder() if callable(builder) else tool.description
+
+
 def get_tool_definitions(tools: list[BaseTool]) -> list[ToolDefinition]:
     """Extract tool definitions with slimmed JSON schemas for LLM API calls."""
     defs: list[ToolDefinition] = []
@@ -182,7 +199,7 @@ def get_tool_definitions(tools: list[BaseTool]) -> list[ToolDefinition]:
         defs.append(
             ToolDefinition(
                 name=tool.name,
-                description=tool.description,
+                description=build_tool_description(tool),
                 parameters=_slim_schema(schema),
                 # A tool opts in by declaring ``constrained_sampling``; the
                 # provider decides whether it has a dialect for it.
@@ -197,3 +214,8 @@ register_tool(AskUserTool(), is_default=True, parent_only=True)
 register_tool(TaskTool(), is_default=True, parent_only=False)
 register_tool(WebTool(), is_default=True, parent_only=False)
 register_tool(GoalTool(), is_default=True, parent_only=True)
+# `codemode` composes the tools above rather than adding a capability of its own,
+# so it is default-off: a user who did not ask for orchestration should not get
+# it in the prompt. Opt in by name via `tools_allow`, a tool group, or an agent
+# profile. pi-mono registers it inactive for the same reason.
+register_tool(CodemodeTool(), is_default=False, parent_only=False)

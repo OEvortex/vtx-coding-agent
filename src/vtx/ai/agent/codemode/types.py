@@ -121,10 +121,14 @@ class Result:
 class Limits:
     """Resource budgets for one execution.
 
-    No default for ``timeout_ms``: a host that can kill the process should set
-    one, and a host that has its own budget may leave it unset. The sandbox
-    enforces a deadline either way -- ``None`` means no deadline, which is a
-    deliberate choice rather than an oversight.
+    One knob. ``timeout_ms`` is a wall-clock deadline enforced by killing the
+    process, so a busy loop and a hung tool call die the same way.
+
+    pi-mono's sandbox has three (``maxToolCalls``, ``maxOutputBytes`` as well);
+    neither of those is implemented here, so they are not offered rather than
+    accepted and ignored. Both are easy to add at the host — a counter in
+    ``_serve`` and a size check in ``_result_from_frame`` — if a caller needs
+    them.
     """
 
     timeout_ms: int | None = 30_000

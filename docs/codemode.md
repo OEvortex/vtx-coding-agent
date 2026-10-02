@@ -5,15 +5,13 @@ program that calls only the tools you inject, and the program runs somewhere it
 cannot reach anything you did not hand it.
 
 ```python
-const order = await tools.orders.lookup({ id: "order_42" })
-```
-
-The Python version:
-
-```python
 order = await tools.orders.lookup(id="order_42")
-return {"id": order["id"], needs_attention": order["status"] != "complete"}
+return {"id": order["id"], "needs_attention": order["status"] != "complete"}
 ```
+
+pi-mono does the same thing in JavaScript inside a QuickJS sandbox, so a script
+there reads `await tools.orders.lookup({ id: "order_42" })`. Same shape,
+different language.
 
 One model turn, one tool call, several real operations — plus any filtering and
 aggregation done in code instead of paid for in context.
@@ -167,6 +165,43 @@ list is exhaustive will never look for anything else.
 schema property names *and their descriptions* — so a query naming a parameter
 finds the tool that has it.
 
+### The `search` tool
+
+The sandbox always injects a `search` tool, even when the catalog fit entirely.
+A model reading a `PARTIAL` list needs a way to discover what was left out, and
+discovery advice that names a tool which does not exist is worse than no advice.
+
+```python
+matches = await tools.search(query="order status", limit=10, offset=0)
+# -> {"matches": [{"path": "tools.orders_lookup", "name": "orders.lookup",
+#                  "description": "...", "signature": "def tools...."}],
+#     "next": {"offset": 10}, "remaining": 4}
+```
+
+Each match carries the generated signature, so finding a tool and knowing how to
+call it are one round trip rather than two. An exact path (`orders.lookup` or
+`tools.orders_lookup`) is a lookup that returns that one tool, which beats a
+keyword match when the model already knows the name. An empty query browses
+alphabetically, and `namespace` scopes to one top-level prefix.
+
+The instructions advertise it only when the list is genuinely partial — a
+`COMPLETE` list is a claim the model should be able to act on without a second
+lookup.
+
+## The `codemode` tool
+
+The sandbox is registered in the tool registry, so the model reaches it the
+usual way. It is **default-off**, matching pi-mono, which registers it
+inactive: `codemode` composes the other tools rather than adding a capability of
+its own, so a user who did not ask for orchestration should not be handed it in
+the prompt. Opt in by name via `tools_allow`, a tool group, or an agent profile.
+
+When active, its description carries the live tool catalog, so the model can
+write a script in the same turn it learns what the script can call. It excludes
+itself from that catalog — a script that could start a script would nest without
+limit — and marks itself mutating, so the permission gate covers what a script
+does rather than just that it ran.
+
 ## Source options
 
 A script may begin with an options line:
@@ -232,16 +267,17 @@ this package and `sandbox.py`. `tests/test_codemode.py` asserts the two agree.
 
 ## Limits
 
-Three knobs, all optional.
+One knob, and it is not optional in spirit: a script with no deadline is a
+script that can wedge the session.
 
 | Limit | Default | Bounds |
 | --- | --- | --- |
-| `timeout_ms` | `30_000` | wall clock; `None` disables |
-| `maxToolCalls` | unlimited | — |
-| `maxOutputBytes` | unlimited | — |
+| `timeout_ms` | `30_000` | wall clock, enforced by killing the process; `None` disables |
 
-No limit has a default on purpose where it does not: execution budgets are host
-policy, not library policy.
+pi-mono's sandbox also has `maxToolCalls` and `maxOutputBytes`. Neither is
+implemented here, so neither is accepted — offering a limit that does nothing
+is worse than not having it. Both are straightforward to add at the host (a
+counter in `_serve`, a size check in `_result_from_frame`) if you need them.
 
 ## Authority
 

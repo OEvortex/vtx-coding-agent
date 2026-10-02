@@ -1,6 +1,6 @@
 # Tools
 
-Vtx ships 10 built-in tools. Nine are enabled by default; `grep` is built in but opt-in (enable it via an extension, agent `tools_allow`, or a custom tool list).
+Vtx ships 11 built-in tools. Nine are enabled by default; `grep` and `codemode` are built in but opt-in (enable either via an extension, agent `tools_allow`, or a custom tool list).
 
 | Tool | Does | Default |
 | --- | --- | --- |
@@ -15,6 +15,7 @@ Vtx ships 10 built-in tools. Nine are enabled by default; `grep` is built in but
 | `task` | Dispatch a sub-agent | yes |
 | `goal` | Persistent project goals: create, track tasks, complete with audit | yes |
 | `grep` | Search file contents (`ripgrep`) | no |
+| `codemode` | Run a confined script that calls the other tools | no |
 
 All tools are `BaseTool` subclasses with Pydantic params. The `mutating` flag drives permission gating: non-mutating tools run without approval, mutating tools follow the permission mode (see [permissions.md](permissions.md)).
 
@@ -171,3 +172,33 @@ One action-dispatched tool for the persistent goal system (see [goals.md](goals.
 | `subtasks` | list | `update_task`: attach subtasks under the target |
 
 `status="complete"` records the claim, then runs an independent auditor sub-agent over the workspace; the goal archives on `<approved/>` and stays open with feedback otherwise. The tool is non-mutating for permission purposes — archiving requires explicit user confirmation.
+
+## codemode
+
+Run a Python script that calls the agent's other tools. Write it as a function
+body: `return` the value you want back, and `await` any tool call, including
+several at once with `asyncio.gather`.
+
+Where every other tool is one operation, this is an interpreter. The payoff is
+that N tool calls cost one model turn instead of N, and that filtering, sorting,
+and aggregation happen in code rather than in the model's context.
+
+| Param | Type | Notes |
+| --- | --- | --- |
+| `code` | string | The script |
+
+Inside the script: `tools.<name>(**kwargs)` calls a tool, `tools.search(query=...)`
+finds tools when the catalog is partial, `text(value)` appends to the
+model-visible output, and `store`/`load` carry JSON values between calls.
+
+The sandbox has no filesystem, network, subprocess, `eval`/`exec`/`compile`, or
+`open`, and can only import a short standard-library allowlist — every file and
+network operation has to go through a tool.
+
+Side effects are real: a script that fails partway does not undo the calls that
+already ran. Marked mutating for the same reason `bash` is.
+
+Default-off, because it composes the other tools rather than adding a capability
+of its own. Opt in via `tools_allow`, a tool group, or an agent profile. See
+[codemode.md](codemode.md) for the sandbox contract, the failure taxonomy, and
+how the isolation is enforced.

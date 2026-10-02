@@ -49,7 +49,7 @@ Support modules: `tools_manager.py` (auto-download of `fd`/`rg` into `~/.vtx/bin
 | Module | Responsibility |
 |--------|----------------|
 | `runtime.py` | `ConversationRuntime` — composition root wiring provider, tools, extensions, agents; owns model/thinking switches, sessions, compaction and handoff entry points; resolves each model's real context window onto the engine. |
-| `tools/` | The 10 built-in `BaseTool` implementations plus the default registry (`DEFAULT_TOOLS`) (see [tools.md](tools.md)). |
+| `tools/` | The 11 built-in `BaseTool` implementations plus the default registry (`DEFAULT_TOOLS`) (see [tools.md](tools.md)). |
 | `prompts/` | Aliases to `vtx.ai.agent.prompts` (identity, ponytail, tooling, env, builder). |
 | `context/` | Aliases to `vtx.ai.agent.context` (`AGENTS.md` discovery, skills loading, git snapshot). |
 | `agents/` | Switchable handoff agents: schema (`AgentDef`), loader, registry, plus aliases for `discovery`/`activate` (see [agents.md](agents.md)). |

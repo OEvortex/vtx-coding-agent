@@ -492,6 +492,108 @@ def test_instructions_report_partiality():
     assert "tools.search" in text
 
 
+def test_the_advertised_search_tool_is_callable():
+    """The instructions must not name a tool that does not exist.
+
+    This was a real bug: the instructions told the model to call
+    ``tools.search(...)`` when the budget could not fit the catalog, and no such
+    tool was ever registered. The recovery advice was impossible to follow.
+    """
+    tools = [CodemodeTool(name=f"t{i}", description="x" * 200, execute=_echo) for i in range(10)]
+    sandbox = CodemodeSandbox(tools=tools, catalog_budget_tokens=50)
+    assert "tools.search" in sandbox.instructions()
+    # `tools` property is the injected set; search is appended at dispatch.
+    assert "search" not in {t.identifier() for t in sandbox.tools}
+
+
+@pytest.mark.asyncio
+async def test_search_is_reachable_from_inside_a_script():
+    tools = [
+        CodemodeTool(
+            name="github.list_issues", description="List repository issues", execute=_echo
+        ),
+        CodemodeTool(name="web_search", description="Search the web for news", execute=_echo),
+    ]
+    sandbox = CodemodeSandbox(tools=tools, catalog_budget_tokens=20)
+    result = await sandbox.execute(
+        "m = await tools.search(query='repository issues')\n"
+        "return [x['name'] for x in m['matches']]"
+    )
+    assert result.ok, result.diagnostic
+    assert result.value == ["github.list_issues"]
+
+
+@pytest.mark.asyncio
+async def test_search_accepts_an_exact_path_and_returns_a_signature():
+    tools = [CodemodeTool(name="web_search", description="Search the web", execute=_echo)]
+    sandbox = CodemodeSandbox(tools=tools, catalog_budget_tokens=20)
+    # An exact path wins over a keyword match: a model that already knows the
+    # name wants that tool, not the closest-ranked neighbour.
+    for query in ("web_search", "tools.web_search"):
+        result = await sandbox.execute(
+            f"m = await tools.search(query='{query}')\n"
+            "hit = m['matches'][0]\n"
+            "return [hit['name'], 'def tools.' in hit['signature']]"
+        )
+        assert result.ok, result.diagnostic
+        # A list, not a tuple: tuples do not survive the JSON boundary, and a
+        # test asserting a tuple here would be asserting the wrong contract.
+        assert result.value == ["web_search", True]
+
+
+@pytest.mark.asyncio
+async def test_search_with_an_empty_query_browses_the_catalog():
+    tools = [
+        CodemodeTool(name="b", description="second", execute=_echo),
+        CodemodeTool(name="a", description="first", execute=_echo),
+    ]
+    sandbox = CodemodeSandbox(tools=tools, catalog_budget_tokens=20)
+    result = await sandbox.execute(
+        "m = await tools.search(query='')\nreturn [x['name'] for x in m['matches']]"
+    )
+    assert result.ok, result.diagnostic
+    # Browsed alphabetically, so a model that does not know what it is looking
+    # for can still enumerate.
+    assert result.value == ["a", "b"]
+
+
+@pytest.mark.asyncio
+async def test_search_reports_a_next_page_when_truncated():
+    tools = [CodemodeTool(name=f"t{i}", description="shared", execute=_echo) for i in range(6)]
+    sandbox = CodemodeSandbox(tools=tools, catalog_budget_tokens=20)
+    result = await sandbox.execute(
+        "m = await tools.search(query='shared', limit=2)\n"
+        "return [len(m['matches']), m['next'], m['remaining'] > 0]"
+    )
+    assert result.ok, result.diagnostic
+    length, next_page, has_more = result.value
+    assert length == 2
+    assert next_page == {"offset": 2}
+    assert has_more is True
+
+
+def test_a_tool_cannot_take_the_reserved_search_name():
+    # A collision would shadow the built-in, so the instructions would describe a
+    # search that searched something else.
+    with pytest.raises(ValueError, match="reserved"):
+        CodemodeSandbox(tools=[CodemodeTool(name="search", description="mine", execute=_echo)])
+
+
+@pytest.mark.asyncio
+async def test_search_is_callable_even_when_the_catalog_is_complete():
+    # Always registered, so a speculative call from a model that misread a
+    # COMPLETE list finds the tool instead of an unknown-name error.
+    sandbox = CodemodeSandbox(
+        tools=[CodemodeTool(name="read", description="Read a file", execute=_echo)]
+    )
+    assert "tools.search" not in sandbox.instructions()
+    result = await sandbox.execute(
+        "m = await tools.search(query='read')\nreturn len(m['matches'])"
+    )
+    assert result.ok, result.diagnostic
+    assert result.value == 1
+
+
 def test_instructions_are_complete_when_the_budget_allows():
     tool = CodemodeTool(name="a", description="does a thing", execute=_echo)
     text = CodemodeSandbox(tools=[tool]).instructions()

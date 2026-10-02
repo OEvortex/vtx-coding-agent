@@ -29,6 +29,9 @@ from pathlib import Path
 from typing import Any
 
 from vtx.ai.agent.codemode import errors, jsonio
+from vtx.ai.agent.codemode.declarations import rank as rank_tools
+from vtx.ai.agent.codemode.declarations import render_signature
+from vtx.ai.agent.codemode.errors import InvalidInput
 from vtx.ai.agent.codemode.types import (
     MAX_STORE_TOTAL_CHARS,
     MAX_STORE_VALUE_CHARS,
@@ -62,6 +65,17 @@ _IS_WINDOWS = os.name == "nt"
 #: why this is not ``python -m``.
 SANDBOX_PATH = Path(__file__).with_name("sandbox.py")
 
+#: The tool the model calls to find tools the catalog budget could not inline.
+#: Always registered, including when the catalog is complete, so a speculative
+#: call never fails as an unknown tool -- and the instructions only advertise it
+#: when the list really is partial.
+#:
+#: Named plainly because the model has to write it: ``tools.search(...)`` is
+#: valid Python attribute access, and a ``$search`` spelling (the JavaScript
+#: implementations' convention) would not be. A caller tool that wants this
+#: name is rejected at construction rather than silently shadowed.
+SEARCH_TOOL_NAME = "search"
+
 
 class CodemodeSandbox:
     """A configured tool set plus its execution policy.
@@ -90,10 +104,121 @@ class CodemodeSandbox:
         self._timed_out = False
         self._aborted = False
         _reject_duplicate_identifiers(self._tools)
+        if any(tool.identifier() == SEARCH_TOOL_NAME for tool in self._tools):
+            raise ValueError(
+                f"{SEARCH_TOOL_NAME!r} is reserved for the sandbox's built-in tool "
+                "search; rename the tool"
+            )
 
     @property
     def tools(self) -> tuple[CodemodeTool, ...]:
+        """The injected tools, not including the built-in search tool."""
         return self._tools
+
+    @property
+    def _all_tools(self) -> tuple[CodemodeTool, ...]:
+        """Every tool the sandbox serves, search included.
+
+        Search is host-implemented rather than declared by the caller, so it is
+        appended here instead of in the constructor: a host cannot accidentally
+        shadow it, and it cannot be omitted by forgetting to pass it.
+        """
+        return (*self._tools, self._search_tool())
+
+    def _search_tool(self) -> CodemodeTool:
+        """The built-in tool-catalog search.
+
+        Always present. The instructions only *advertise* it when the catalog is
+        partial, but a speculative call from a model that misread the list should
+        find the tool rather than fail as an unknown name -- otherwise the
+        recovery advice ("search for it") is impossible to follow.
+        """
+
+        tools = self._tools
+
+        async def search(args: dict[str, Any], _signal: Any) -> Any:
+            query = args.get("query")
+            namespace = args.get("namespace")
+            limit = args.get("limit")
+            offset = args.get("offset")
+            if not isinstance(query, str):
+                raise InvalidInput(SEARCH_TOOL_NAME, detail="query must be a string")
+            if not isinstance(limit, int) or isinstance(limit, bool):
+                limit = 10
+            if not isinstance(offset, int) or isinstance(offset, bool) or offset < 0:
+                offset = 0
+            pool = (
+                [t for t in tools if t.name.split(".", 1)[0] == namespace]
+                if isinstance(namespace, str)
+                else list(tools)
+            )
+            # An exact path wins over a keyword match: a model that already knows
+            # the name wants that tool, not the closest-ranked neighbour. The
+            # accepted spellings are the ones the model could plausibly have
+            # copied out of the catalog.
+            exact = next(
+                (
+                    t
+                    for t in pool
+                    if t.name in (query, f"tools.{query}") or t.identifier() == query
+                ),
+                None,
+            )
+            if exact is not None:
+                page: list[CodemodeTool] = [exact]
+                remaining = 0
+            elif not query.strip():
+                # An empty query browses rather than matching nothing, which is
+                # how a model that does not know what it is looking for can
+                # enumerate a namespace.
+                ordered = sorted(pool, key=lambda t: t.name)
+                page = ordered[offset : offset + limit]
+                remaining = max(0, len(ordered) - (offset + limit))
+            else:
+                ranked = rank_tools(query, pool, limit=offset + limit + 1)
+                page = [match.tool for match in ranked[offset : offset + limit]]
+                # `rank` returns at most `limit` matches, so a next page exists
+                # exactly when it filled the requested window.
+                remaining = max(0, len(ranked) - (offset + limit))
+            return {
+                "matches": [
+                    {
+                        "path": f"tools.{tool.identifier()}",
+                        "name": tool.name,
+                        "description": tool.description,
+                        "signature": render_signature(tool),
+                    }
+                    for tool in page
+                ],
+                "next": {"offset": offset + limit} if remaining > 0 else None,
+                "remaining": remaining,
+            }
+
+        return CodemodeTool(
+            name=SEARCH_TOOL_NAME,
+            description=(
+                "Search the tools this sandbox was given. Use it when the tool "
+                "list in the instructions is marked PARTIAL."
+            ),
+            input_schema={
+                "type": "object",
+                "properties": {
+                    "query": {"type": "string", "description": "What the tool does"},
+                    "namespace": {
+                        "type": "string",
+                        "description": "Restrict to one top-level namespace",
+                    },
+                    "limit": {
+                        "type": "integer",
+                        "description": "Results to return",
+                        "default": 10,
+                    },
+                    "offset": {"type": "integer", "description": "Skip this many matches"},
+                },
+                "required": ["query"],
+            },
+            execute=search,
+        )
 
     def declarations(self) -> str:
         """Render the model-facing tool list within the catalog budget."""
@@ -108,12 +233,18 @@ class CodemodeSandbox:
         Ordered so the workflow is at the top and the catalog at the bottom.
         A model reads the first thing it sees and skips the rest, so the
         catalog being last is what keeps it from being read as instructions.
+
+        The search tool is mentioned only when the catalog is genuinely
+        partial. It is always *callable* -- a speculative call finds the tool
+        rather than an unknown-name error -- but advertising a discovery step
+        the model does not need costs it a turn for nothing.
         """
         from vtx.ai.agent.codemode.declarations import render_declarations
 
         body, complete = render_declarations(self._tools, budget_tokens=self._catalog_budget)
         total = len(self._tools)
         shown = body.count("def tools.") if body else 0
+        workflow = _WORKFLOW
         if complete:
             heading = f"## Available tools (COMPLETE list, {total} tools)"
         else:
@@ -121,12 +252,18 @@ class CodemodeSandbox:
             body = (
                 f"{body}\n\n"
                 f"{shown} of {total} tools are listed above. The rest are not; "
-                "you must find them with `tools.search` before you can call them."
+                f"find them with `tools.{SEARCH_TOOL_NAME}` before calling them."
             ).strip()
+            workflow = _WORKFLOW_PARTIAL
 
-        return f"""{_WORKFLOW}
+        # The search mention belongs only to the partial case. In the complete
+        # case it would advertise a discovery step the model does not need, and a
+        # `COMPLETE` list is a claim the model should be able to act on without a
+        # second lookup.
+        rules = _RULES if complete else _RULES_PARTIAL
+        return f"""{workflow}
 
-{_RULES}
+{rules}
 
 {_LANGUAGE}
 
@@ -228,7 +365,7 @@ class CodemodeSandbox:
             "type": _EXECUTE,
             "code": code,
             "tools": [
-                {"name": tool.name, "identifier": tool.identifier()} for tool in self._tools
+                {"name": tool.name, "identifier": tool.identifier()} for tool in self._all_tools
             ],
             "store": store,
         }
@@ -320,7 +457,7 @@ class CodemodeSandbox:
         args = raw_args if isinstance(raw_args, dict) else {}
         call_id = int(frame.get("id") or 0)
 
-        tool = next((t for t in self._tools if t.name == name), None)
+        tool = next((t for t in self._all_tools if t.name == name), None)
         if tool is None:
             # The sandbox only exposes declared names, so this means the script
             # reached past the namespace -- or the two sides disagree, which is
@@ -576,19 +713,29 @@ async def _reap(process: subprocess.Popen[bytes]) -> None:
 
 _WORKFLOW = """## Workflow
 
-1. Find the tool you need. If the tool list below is marked COMPLETE, pick from
-   it. If it is marked PARTIAL, call `tools.search(query=..., limit=...)` first
-   and read the signature it returns.
+1. Find the tool you need in the list below, which is marked COMPLETE.
 2. Call it by its exact name, as `tools.<identifier>(...)`. Arguments are
    keyword arguments; do not pass a positional dict.
 3. `return` only the fields you need. The return value is what the model sees,
    so returning a whole API payload wastes the call you just saved.
 """
 
-_RULES = """## Rules
+#: Same workflow, for a catalog the budget could not fit whole. The difference
+#: is step 1: the list is a subset, so the model has to search before it can
+#: assume a capability is absent.
+_WORKFLOW_PARTIAL = f"""## Workflow
 
-- The only tools are the ones listed or returned by `tools.search`. There is no
-  other way to reach a capability from inside the sandbox.
+1. Find the tool you need. The list below is marked PARTIAL and does not show
+   everything, so call `tools.{SEARCH_TOOL_NAME}(query=..., limit=...)` first and
+   read the signature it returns. Never conclude a capability is missing just
+   because it is not listed.
+2. Call it by its exact name, as `tools.<identifier>(...)`. Arguments are
+   keyword arguments; do not pass a positional dict.
+3. `return` only the fields you need. The return value is what the model sees,
+   so returning a whole API payload wastes the call you just saved.
+"""
+
+_RULES_BODY = """
 - Filter, sort, and aggregate collections in code. Do not make a tool call to
   compute something you can compute here.
 - A tool's result may be `Any`. Narrow it at runtime before you use it, or the
@@ -604,6 +751,18 @@ _RULES = """## Rules
 - `store(key, value)` and `load(key)` carry JSON values between executions.
   Writes are committed only if the script returns successfully.
 """
+
+_RULES = "## Rules" + _RULES_BODY
+
+#: Same rules, plus the one the partial case needs: how to find a tool that is
+#: not listed. Without it, a model reading a subset would conclude the missing
+#: capability does not exist -- which is the exact wrong conclusion.
+_RULES_PARTIAL = f"""## Rules
+
+- The only tools are the ones listed below or returned by
+  `tools.{SEARCH_TOOL_NAME}`. There is no other way to reach a capability from
+  inside the sandbox, so search before concluding something is unavailable.
+{_RULES_BODY}"""
 
 _LANGUAGE = """## Language
 
