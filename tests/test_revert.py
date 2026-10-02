@@ -11,10 +11,10 @@ from pathlib import Path
 
 import pytest
 
-from vtx.ai.agent import revert as rv
-from vtx.ai.agent.session import Session
-from vtx.ai.agent.snapshot import SnapshotStore, get_store
-from vtx.core.types import FileChanges, TextContent, ToolResultMessage, UserMessage
+from vtx.agent import revert as rv
+from vtx.agent.session import Session
+from vtx.agent.snapshot import SnapshotStore, get_store
+from vtx.protocol.types import FileChanges, TextContent, ToolResultMessage, UserMessage
 
 
 def _git(cwd: Path, *args: str) -> None:

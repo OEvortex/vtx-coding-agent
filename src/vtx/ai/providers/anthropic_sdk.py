@@ -11,8 +11,8 @@ from vtx.ai.sdk.anthropic import AnthropicSDK
 from vtx.ai.sdk.base import GenerationConfig
 from vtx.ai.sdk.base import Message as SDKMessage
 from vtx.ai.thinking import ANTHROPIC_MESSAGES
-from vtx.core.errors import format_error
-from vtx.core.types import (
+from vtx.protocol.errors import format_error
+from vtx.protocol.types import (
     AssistantMessage,
     ImageContent,
     Message,

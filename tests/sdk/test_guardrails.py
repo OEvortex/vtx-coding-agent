@@ -6,7 +6,7 @@ import asyncio
 
 import pytest
 
-from vtx.ai.agent.sdk import (
+from vtx.agent.sdk import (
     Agent,
     GuardrailFunctionOutput,
     InputGuardrailTripwireTriggered,
@@ -18,8 +18,8 @@ from vtx.ai.agent.sdk import (
     tool_input_guardrail,
     tool_output_guardrail,
 )
-from vtx.ai.agent.sdk.guardrails import run_input_guardrails, run_output_guardrails
-from vtx.ai.agent.sdk.guardrails.types import ToolGuardrailFunctionOutput
+from vtx.agent.sdk.guardrails import run_input_guardrails, run_output_guardrails
+from vtx.agent.sdk.guardrails.types import ToolGuardrailFunctionOutput
 
 
 @pytest.mark.asyncio

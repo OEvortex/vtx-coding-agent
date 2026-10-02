@@ -8,7 +8,7 @@ one-listing-per-change shape — including that a rendered list is joined as a
 string, since extending a list with one iterates it character by character.
 """
 
-from vtx.ai.agent.skills_refresh import (
+from vtx.agent.skills_refresh import (
     SKILLS_REFRESH_TAG,
     SkillSummary,
     build_skills_refresh_message,
@@ -158,7 +158,7 @@ def test_the_refresh_message_is_marked_as_a_system_event():
 
 
 def test_a_regular_message_is_not_a_refresh():
-    from vtx.core.types import UserMessage
+    from vtx.protocol.types import UserMessage
 
     assert not is_skills_refresh_message(UserMessage(content="hello"))
 

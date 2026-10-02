@@ -13,7 +13,7 @@ from vtx.core.compaction import (
     summary_progress,
 )
 from vtx.core.events import CompactionEndEvent, CompactionProgressEvent, CompactionStartEvent
-from vtx.core.types import TextPart
+from vtx.protocol.types import TextPart
 from vtx.tui.blocks import CompactionBlock, _format_elapsed, _short_section_title
 from vtx.tui.chat import ChatLog
 from vtx.tui.styles import get_styles
@@ -89,7 +89,7 @@ class TestCompactionHeader:
         assert "auto-compaction" in header
 
     def test_running_header_colour_escalates_past_threshold(self):
-        from vtx.ai.config import config
+        from vtx.core.config import config
 
         colors = config.ui.colors
         low = _make_block(tokens_before=100_000, context_window=200_000)

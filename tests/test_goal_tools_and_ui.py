@@ -8,10 +8,10 @@ from types import SimpleNamespace
 import pytest
 from rich.cells import cell_len
 
-from vtx.ai.agent.dispatcher import DispatcherContext, set_context
-from vtx.coding_agent.goal import storage
-from vtx.coding_agent.goal.service import GoalService
-from vtx.coding_agent.goal.tools import GoalParams, GoalTool
+from vtx.agent.dispatcher import DispatcherContext, set_context
+from vtx.agent.goal import storage
+from vtx.agent.goal.service import GoalService
+from vtx.agent.goal.tools import GoalParams, GoalTool
 from vtx.tui.goal_agents import REGISTRY
 from vtx.tui.goal_ui import format_usage, render_compact, render_expanded
 
@@ -75,7 +75,7 @@ def test_render_compact_and_expanded(goal_cwd: Path) -> None:
 
 
 def test_format_usage_hours_and_budget() -> None:
-    from vtx.coding_agent.goal.record import GoalRecord, GoalUsage
+    from vtx.agent.goal.record import GoalRecord, GoalUsage
 
     record = GoalRecord(id="x", mode="regular", status="active", objective="o")
     record.usage = GoalUsage(input_tokens=18_200, output_tokens=0, elapsed_ms=767_000)
@@ -88,7 +88,7 @@ def test_format_usage_hours_and_budget() -> None:
 
 def test_format_usage_scales_to_millions() -> None:
     """A long goal must not read as `27631.9K`."""
-    from vtx.coding_agent.goal.record import GoalRecord, GoalUsage
+    from vtx.agent.goal.record import GoalRecord, GoalUsage
 
     record = GoalRecord(id="x", mode="regular", status="active", objective="o")
     record.usage = GoalUsage(input_tokens=27_631_900, output_tokens=0, elapsed_ms=3_403_000)
@@ -381,7 +381,7 @@ def test_progress_bar_uses_a_slim_track(goal_cwd: Path) -> None:
 
 def test_activity_drops_the_repeated_date(goal_cwd: Path) -> None:
     """Six ledger lines from one sitting do not need six identical dates."""
-    from vtx.ai.agent.goal.storage import append_ledger, recent_activity
+    from vtx.agent.goal.storage import append_ledger, recent_activity
 
     service = GoalService(str(goal_cwd))
     record = service.create("Ship the thing")
@@ -535,7 +535,7 @@ def test_long_auditor_feedback_is_stored_whole(goal_cwd: Path) -> None:
 
 def test_snapshot_returns_full_objective_and_feedback(goal_cwd: Path) -> None:
     """`goal(action="get")` is the agent's only view; it must not clip."""
-    from vtx.coding_agent.goal.tools import _snapshot_text
+    from vtx.agent.goal.tools import _snapshot_text
 
     service = GoalService(str(goal_cwd))
     objective = "Do the thing. " * 100  # > the old 200-char cut
@@ -554,7 +554,7 @@ def test_snapshot_returns_full_objective_and_feedback(goal_cwd: Path) -> None:
 
 def test_short_clips_on_a_boundary_and_marks_the_clip() -> None:
     """Ledger-size summaries clip on a boundary and say that they did."""
-    from vtx.coding_agent.goal.tools import CLIPPED, _short
+    from vtx.agent.goal.tools import CLIPPED, _short
 
     text = "First paragraph.\n\nSecond paragraph is much longer than the limit here.\n\nThird."
     clipped = _short(text, 60)
@@ -565,7 +565,7 @@ def test_short_clips_on_a_boundary_and_marks_the_clip() -> None:
 
 
 def test_truncate_on_words_measures_cells_and_marks_cuts() -> None:
-    from vtx.coding_agent.goal.record import truncate_on_words
+    from vtx.agent.goal.record import truncate_on_words
 
     # Word boundary, not mid-token.
     assert (
@@ -582,7 +582,7 @@ def test_truncate_on_words_measures_cells_and_marks_cuts() -> None:
 
 
 def test_format_usage_empty_hides_display() -> None:
-    from vtx.coding_agent.goal.record import GoalRecord
+    from vtx.agent.goal.record import GoalRecord
 
     record = GoalRecord(id="x", mode="regular", status="active", objective="o")
     assert format_usage(record) == ""
@@ -596,7 +596,7 @@ def test_format_usage_empty_hides_display() -> None:
 @pytest.mark.asyncio
 async def test_goal_tool_full_lifecycle_archives_without_audit(goal_cwd: Path) -> None:
     _install_dispatcher(goal_cwd)
-    from vtx.coding_agent.goal.service import get_service
+    from vtx.agent.goal.service import get_service
 
     service = get_service(str(goal_cwd))
     service.focused_id = None
@@ -642,7 +642,7 @@ async def test_goal_tool_full_lifecycle_archives_without_audit(goal_cwd: Path) -
 @pytest.mark.asyncio
 async def test_goal_tool_rejects_unknown_action_and_missing_args(goal_cwd: Path) -> None:
     _install_dispatcher(goal_cwd)
-    from vtx.coding_agent.goal.service import get_service
+    from vtx.agent.goal.service import get_service
 
     get_service(str(goal_cwd)).focused_id = None
     bad_action = await GoalTool().execute(GoalParams(action="explode"))
@@ -655,7 +655,7 @@ async def test_goal_tool_rejects_unknown_action_and_missing_args(goal_cwd: Path)
 @pytest.mark.asyncio
 async def test_goal_tool_blocked_when_disabled(goal_cwd: Path) -> None:
     _install_dispatcher(goal_cwd)
-    from vtx.coding_agent.goal.service import get_service
+    from vtx.agent.goal.service import get_service
 
     service = get_service(str(goal_cwd))
     service.focused_id = None
@@ -667,7 +667,7 @@ async def test_goal_tool_blocked_when_disabled(goal_cwd: Path) -> None:
 @pytest.mark.asyncio
 async def test_goal_tool_conflict_when_already_focused(goal_cwd: Path) -> None:
     _install_dispatcher(goal_cwd)
-    from vtx.coding_agent.goal.service import get_service
+    from vtx.agent.goal.service import get_service
 
     service = get_service(str(goal_cwd))
     service.focused_id = None
@@ -680,7 +680,7 @@ async def test_goal_tool_conflict_when_already_focused(goal_cwd: Path) -> None:
 @pytest.mark.asyncio
 async def test_goal_tool_complete_does_not_pause_goal(goal_cwd: Path) -> None:
     _install_dispatcher(goal_cwd)
-    from vtx.coding_agent.goal.service import get_service
+    from vtx.agent.goal.service import get_service
 
     service = get_service(str(goal_cwd))
     service.focused_id = None
@@ -709,7 +709,7 @@ async def test_goal_tool_complete_does_not_pause_goal(goal_cwd: Path) -> None:
 @pytest.mark.asyncio
 async def test_goal_tool_is_scoped_to_the_calling_session(goal_cwd: Path) -> None:
     _install_dispatcher(goal_cwd, "session-a")
-    from vtx.coding_agent.goal.service import get_service
+    from vtx.agent.goal.service import get_service
 
     get_service(str(goal_cwd), "session-a").focused_id = None
     created = await GoalTool().execute(GoalParams(action="create", objective="mine only"))
@@ -736,7 +736,7 @@ async def test_goal_tool_is_scoped_to_the_calling_session(goal_cwd: Path) -> Non
 @pytest.mark.asyncio
 async def test_goal_tool_list_orphans_and_claim(goal_cwd: Path) -> None:
     _install_dispatcher(goal_cwd, "session-a")
-    from vtx.coding_agent.goal.service import get_service
+    from vtx.agent.goal.service import get_service
 
     service_a = get_service(str(goal_cwd), "session-a")
     service_a.focused_id = None
@@ -771,7 +771,7 @@ async def test_goal_tool_list_orphans_and_claim(goal_cwd: Path) -> None:
 @pytest.mark.asyncio
 async def test_goal_tool_claim_rejected_while_owner_is_live(goal_cwd: Path) -> None:
     _install_dispatcher(goal_cwd, "session-a")
-    from vtx.coding_agent.goal.service import get_service
+    from vtx.agent.goal.service import get_service
 
     service_a = get_service(str(goal_cwd), "session-a")
     service_a.focused_id = None
@@ -789,11 +789,11 @@ async def test_goal_tool_claim_rejected_while_owner_is_live(goal_cwd: Path) -> N
 async def test_run_completion_audit_verdict_parsing(goal_cwd: Path) -> None:
     from unittest.mock import MagicMock
 
+    from vtx.agent.goal.auditor import run_completion_audit
+    from vtx.agent.goal.record import GoalRecord
     from vtx.ai.base import ProviderConfig
-    from vtx.coding_agent.goal.auditor import run_completion_audit
-    from vtx.coding_agent.goal.record import GoalRecord
     from vtx.core import TurnEndEvent
-    from vtx.core.types import AssistantMessage, TextContent
+    from vtx.protocol.types import AssistantMessage, TextContent
 
     record = GoalRecord(id="test-goal", mode="regular", status="active", objective="Fix bug")
     mock_provider = MagicMock()
@@ -812,7 +812,7 @@ async def test_run_completion_audit_verdict_parsing(goal_cwd: Path) -> None:
         yield event
 
     with pytest.MonkeyPatch.context() as mp:
-        mp.setattr("vtx.ai.agent.loop.Agent.run", fake_run)
+        mp.setattr("vtx.agent.loop.Agent.run", fake_run)
         res = await run_completion_audit(
             record,
             cwd=str(goal_cwd),

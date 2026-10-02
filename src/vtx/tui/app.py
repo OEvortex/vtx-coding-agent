@@ -24,26 +24,26 @@ from textual.app import App, ComposeResult
 from textual.binding import Binding
 from textual.widgets import Input
 
-from vtx.ai import BaseProvider
-from vtx.ai.agent.agents import AgentRegistry, load_all_agents
-from vtx.ai.agent.context.skills import (
+from vtx.agent.agents import AgentRegistry, load_all_agents
+from vtx.agent.context.skills import (
     is_kernel_skill,
     load_builtin_cmd_skills,
     load_skills,
     merge_registered_skills,
     render_skill_prompt,
 )
-from vtx.ai.agent.extensions import load_for_runtime
-from vtx.ai.agent.prompts import is_deactivation_command
-from vtx.ai.agent.runtime import ConversationRuntime
-from vtx.ai.agent.session import Session
-from vtx.ai.agent.tools import get_tool, get_tools_with_extensions
-from vtx.ai.agent.tools_manager import get_tool_path
+from vtx.agent.extensions import load_for_runtime
+from vtx.agent.prompts import is_deactivation_command
+from vtx.agent.runtime import ConversationRuntime
+from vtx.agent.session import Session
+from vtx.agent.tools import get_tool, get_tools_with_extensions
+from vtx.agent.tools_manager import get_tool_path
+from vtx.ai import BaseProvider
 from vtx.ai.base import AuthMode
-from vtx.ai.config import config, consume_config_warnings, get_last_selected, set_ponytail
 from vtx.core import ApprovalResponse, AskUserResponse
-from vtx.core.types import ImageContent
+from vtx.core.config import config, consume_config_warnings, get_last_selected, set_ponytail
 from vtx.core.version import VERSION, format_version
+from vtx.protocol.types import ImageContent
 from vtx.tui.agent_runner import AgentRunnerMixin
 from vtx.tui.agents_panel import AgentsPanel
 from vtx.tui.ask_user import AskUserDialog
@@ -310,7 +310,7 @@ class Vtx(
 
         # Wire extension runtime actions so handlers can call
         # api.set_session_name(), api.set_model(), etc.
-        from vtx.ai.agent.extensions import (
+        from vtx.agent.extensions import (
             ExtensionActions,
             ExtensionCommandContextActions,
             ExtensionContextActions,
@@ -388,7 +388,7 @@ class Vtx(
         )
 
         # Hook system: bridge YAML hook configs onto the EventBus.
-        from vtx.ai.agent.hooks.bridge import HookBridge
+        from vtx.agent.hooks.bridge import HookBridge
 
         self._hook_bridge = HookBridge(
             bus=self._loaded_extensions.bus,
@@ -742,7 +742,7 @@ class Vtx(
         import contextlib
 
         with contextlib.suppress(Exception):
-            from vtx.ai.agent.goal.storage import release_lease
+            from vtx.agent.goal.storage import release_lease
 
             release_lease(self._cwd, self._goal_session_id())
 

@@ -12,10 +12,10 @@ from typing import Any
 
 from pydantic import BaseModel, Field
 
-from vtx.ai.agent.tools.base import BaseTool
-from vtx.coding_agent.config import config
-from vtx.core.gh_app import resolve_committer_vars
-from vtx.core.types import ToolResult
+from vtx.agent.tools.base import BaseTool
+from vtx.core.config import config
+from vtx.git.gh_app import resolve_committer_vars
+from vtx.protocol.types import ToolResult
 
 DEFAULT_TIMEOUT = 180
 MAX_OUTPUT_BYTES = 50 * 1024

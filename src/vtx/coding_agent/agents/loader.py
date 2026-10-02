@@ -14,8 +14,8 @@ from collections.abc import Callable
 from pathlib import Path
 from typing import Any
 
-from vtx.ai.agent.extensions import AGENT_CHANGED
-from vtx.ai.agent.tools.base import BaseTool
+from vtx.agent.extensions import AGENT_CHANGED
+from vtx.agent.tools.base import BaseTool
 from vtx.coding_agent.agents.api import AgentAPI, LoadedAgent
 from vtx.coding_agent.agents.schema import AgentDef
 
@@ -35,8 +35,8 @@ def _expected_stem(path: Path) -> str:
 
 def _wrap_callable_as_tool(fn: Callable[..., Any], fallback_name: str) -> BaseTool:
     """Use the SDK ``@tool`` machinery to wrap a plain callable."""
-    from vtx.ai.agent.sdk.tools import tool as sdk_tool
-    from vtx.ai.agent.tools.base import BaseTool
+    from vtx.agent.sdk.tools import tool as sdk_tool
+    from vtx.agent.tools.base import BaseTool
 
     raw = sdk_tool(fn, name=getattr(fn, "__name__", None) or fallback_name)
     assert isinstance(raw, BaseTool)
@@ -54,7 +54,7 @@ def _coerce_raw_tools(raw: list[Any] | None) -> dict[str, BaseTool]:
       a manager-pattern tool.
     * Anything else raises :class:`AgentLoadError`.
     """
-    from vtx.ai.agent.tools.base import BaseTool
+    from vtx.agent.tools.base import BaseTool
 
     if not raw:
         return {}
@@ -93,7 +93,7 @@ def load_agent(path: Path, *, cwd: str, config_dir: Path, on_event: Any = None) 
     module_name = f"vtx_agent_{abs(hash(path.as_posix()))}"
     spec = importlib.util.spec_from_file_location(module_name, str(path))
     if spec is None or spec.loader is None:
-        raise AgentLoadError(f"Could not import vtx.ai.agent at {path}")
+        raise AgentLoadError(f"Could not import vtx.agent at {path}")
 
     module = importlib.util.module_from_spec(spec)
     sys.modules[module_name] = module
@@ -169,11 +169,11 @@ def load_all_agents(
     Errors are collected, not raised: one bad agent should not block the
     rest. Mirrors :func:`vtx.extensions.load_all_extensions`.
     """
-    from vtx.coding_agent.agents.discovery import find_agent_paths
+    from vtx.agent.agents.discovery import find_agent_paths
     from vtx.core.paths import get_config_dir
 
     # No built-in profiles; see the note in
-    # :func:`vtx.ai.agent.agents.loader.load_all_agents`. Agents come only from
+    # :func:`vtx.agent.agents.loader.load_all_agents`. Agents come only from
     # `.vtx/agent/<name>.py`, so an empty cwd yields an empty registry.
     loaded_by_name: dict[str, LoadedAgent] = {}
 

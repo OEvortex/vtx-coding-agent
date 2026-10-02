@@ -1,6 +1,6 @@
 """Vtx — the minimalist coding agent harness."""
 
-from vtx.ai.agent.sdk import (
+from vtx.agent.sdk import (
     Agent,
     AllowlistApprove,
     AutoApprove,
@@ -86,7 +86,7 @@ from vtx.coding_agent import (
     set_thinking_lines,
     update_available_binaries,
 )
-from vtx.core import Message
+from vtx.protocol import Message
 
 __all__ = [
     "AVAILABLE_BINARIES",

@@ -12,7 +12,7 @@ from typing import TYPE_CHECKING, Any
 
 from textual import on
 
-from vtx.ai.agent.runtime import ConversationRuntime
+from vtx.agent.runtime import ConversationRuntime
 from vtx.tui.autocomplete import FilePathProvider, PullRequestProvider, SlashCommandProvider
 from vtx.tui.chat import ChatLog
 from vtx.tui.floating_list import FloatingList, ListItem
@@ -302,7 +302,7 @@ class CompletionUIMixin:
         if session is None or self._is_running:
             return None
         try:
-            from vtx.ai.agent import revert as rv
+            from vtx.agent import revert as rv
 
             boundary = rv.boundary_for_entry(session, entry_id)
             if boundary is None or boundary == rv.previous_boundary(session):

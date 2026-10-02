@@ -19,7 +19,7 @@ from pathlib import Path
 from typing import Any
 from urllib.parse import quote
 
-from vtx.ai.agent.tools.base import BaseTool
+from vtx.agent.tools.base import BaseTool
 from vtx.core.paths import get_config_dir
 from vtx.core.version import VERSION
 
@@ -557,7 +557,7 @@ class McpManager:
         no longer has. Built-in vtx tool names are reserved first, so an MCP
         tool can never shadow one.
         """
-        from vtx.ai.agent.tools import get_all_tools
+        from vtx.agent.tools import get_all_tools
 
         taken: set[str] = set(get_all_tools().keys())
         tools: list[BaseTool] = []

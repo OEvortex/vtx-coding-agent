@@ -55,15 +55,15 @@ from textual.containers import VerticalScroll
 from textual.screen import ModalScreen
 from textual.widgets import Static
 
-from vtx.ai.agent.goal.record import (
+from vtx.agent.goal.record import (
     GoalRecord,
     TaskRecord,
     count_tasks,
     current_task,
     truncate_on_words,
 )
-from vtx.ai.agent.goal.service import GoalService, get_service
-from vtx.ai.config import config
+from vtx.agent.goal.service import GoalService, get_service
+from vtx.core.config import config
 from vtx.tui.agents_panel import (
     TREE_GUTTER,
     render_agents,
@@ -74,7 +74,7 @@ from vtx.tui.agents_panel import (
 from vtx.tui.goal_agents import REGISTRY, SubagentRun
 
 if TYPE_CHECKING:
-    from vtx.tui.themes import ColorsConfig
+    from vtx.core.themes import ColorsConfig
 
 # Task markers: ✓ complete · ▸ current · ~ skipped · · pending
 TASK_MARKS = {"complete": "✓", "current": "▸", "skipped": "~", "pending": "·"}
@@ -711,7 +711,7 @@ def _subtask_progress(record: GoalRecord) -> tuple[int, int]:
 
 
 def _file_label(cwd: str, goal_id: str) -> str:
-    from vtx.ai.agent.goal.storage import find_goal_file
+    from vtx.agent.goal.storage import find_goal_file
 
     path = find_goal_file(cwd, goal_id)
     if path is None:
@@ -1037,7 +1037,7 @@ def render_expanded(
     verbatim and word-wrapped, under a hanging indent that lines the wrapped
     text up under the field it belongs to.
     """
-    from vtx.ai.agent.goal.storage import recent_activity
+    from vtx.agent.goal.storage import recent_activity
 
     c = _colors()
     done, total = count_tasks(record.tasks)

@@ -7,8 +7,8 @@ from pathlib import Path
 
 import pytest
 
-from vtx.coding_agent.goal import storage
-from vtx.coding_agent.goal.record import (
+from vtx.agent.goal import storage
+from vtx.agent.goal.record import (
     GoalRecord,
     count_tasks,
     create_record,
@@ -16,7 +16,7 @@ from vtx.coding_agent.goal.record import (
     normalize_task_ids,
     objective_title,
 )
-from vtx.coding_agent.goal.service import GoalError, GoalService, get_service, goal_progress
+from vtx.agent.goal.service import GoalError, GoalService, get_service, goal_progress
 
 
 @pytest.fixture()

@@ -13,12 +13,7 @@ from pathlib import Path
 
 import pytest
 
-from vtx.coding_agent.tools.background import (
-    BackgroundTaskManager,
-    get_manager,
-    reset_manager,
-    set_manager,
-)
+from vtx.agent.background import BackgroundTaskManager, get_manager, reset_manager, set_manager
 
 
 class FakeResult:
@@ -54,7 +49,7 @@ class TestManagerContextVars:
         without an explicit reset. A leak from a sibling test would
         silently break these isolated assertions.
         """
-        from vtx.coding_agent.tools.background import reset_manager
+        from vtx.agent.background import reset_manager
 
         reset_manager()
         yield
@@ -446,7 +441,7 @@ class TestCompletionListeners:
 
     @pytest.fixture(autouse=True)
     def _clean_contextvar(self):
-        from vtx.coding_agent.tools.background import reset_manager
+        from vtx.agent.background import reset_manager
 
         reset_manager()
         yield

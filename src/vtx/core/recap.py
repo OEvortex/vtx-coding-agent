@@ -10,8 +10,8 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 
-from vtx.core.abc import BaseProvider
-from vtx.core.types import (
+from vtx.protocol.abc import BaseProvider
+from vtx.protocol.types import (
     AssistantMessage,
     ImageContent,
     Message,

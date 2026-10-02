@@ -5,11 +5,11 @@ import json
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
-from vtx.ai.agent.runtime import ConversationRuntime
-from vtx.ai.agent.session import CompactionEntry, CustomMessageEntry, MessageEntry, Session
-from vtx.ai.agent.tools import BaseTool
-from vtx.ai.agent.tools import lookup_default_tool as get_tool
-from vtx.core.types import (
+from vtx.agent.runtime import ConversationRuntime
+from vtx.agent.session import CompactionEntry, CustomMessageEntry, MessageEntry, Session
+from vtx.agent.tools import BaseTool
+from vtx.agent.tools import lookup_default_tool as get_tool
+from vtx.protocol.types import (
     AssistantMessage,
     ImageContent,
     TextContent,
@@ -212,7 +212,7 @@ class SessionUIMixin:
         # process goes on serving a different session.
         if previous_goal_session and previous_goal_session != session.id:
             with contextlib.suppress(Exception):
-                from vtx.ai.agent.goal.storage import release_lease
+                from vtx.agent.goal.storage import release_lease
 
                 release_lease(self._cwd, previous_goal_session)
 

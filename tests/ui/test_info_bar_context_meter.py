@@ -4,8 +4,8 @@ from __future__ import annotations
 
 import pytest
 
-from vtx.ai.agent.config import get_harness_config
-from vtx.ai.config import config
+from vtx.core.config import config
+from vtx.core.harness_config import get_harness_config
 from vtx.tui.widgets import CONTEXT_METER_WIDTH, InfoBar
 
 

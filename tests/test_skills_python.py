@@ -1,6 +1,6 @@
 from pathlib import Path
 
-from vtx.ai.agent.context.skills import formatted_skills, load_skills
+from vtx.agent.context.skills import formatted_skills, load_skills
 from vtx.skill import CallableModule, wrap_skill_module
 
 
@@ -79,6 +79,6 @@ def test_python_skill_module_is_still_wrappable(tmp_path: Path):
     # And it is hidden from the prompt, because offering a skill the agent
     # cannot run spends context on a dead end.
     assert formatted_skills(res.skills) != ""  # formatting still works
-    from vtx.ai.agent.context.skills import skills_for_mode
+    from vtx.agent.context.skills import skills_for_mode
 
     assert skills_for_mode(res.skills) == []

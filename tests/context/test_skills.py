@@ -1,7 +1,7 @@
 import sys
 from pathlib import Path
 
-from vtx.coding_agent.context.skills import (
+from vtx.agent.context.skills import (
     Skill,
     _load_skill_from_dir,
     _parse_frontmatter,
@@ -347,7 +347,7 @@ description: Global skill
 ---
 """)
 
-        monkeypatch.setattr("vtx.ai.agent.context.skills.get_user_skills_dir", lambda: global_dir)
+        monkeypatch.setattr("vtx.agent.context.skills.get_user_skills_dir", lambda: global_dir)
 
         result = load_skills(str(repo))
 
@@ -373,7 +373,7 @@ description: Global version
 ---
 """)
 
-        monkeypatch.setattr("vtx.ai.agent.context.skills.get_user_skills_dir", lambda: global_dir)
+        monkeypatch.setattr("vtx.agent.context.skills.get_user_skills_dir", lambda: global_dir)
         if sys.platform == "win32":
             monkeypatch.setenv("USERPROFILE", str(tmp_path))
         else:
@@ -402,7 +402,7 @@ description: Planning-only mode
 """)
 
         monkeypatch.setattr(
-            "vtx.ai.agent.context.skills.get_user_skills_dir", lambda: home_dir / ".agents"
+            "vtx.agent.context.skills.get_user_skills_dir", lambda: home_dir / ".agents"
         )
         monkeypatch.setenv("HOME", str(home_dir))
 
@@ -418,7 +418,7 @@ description: Planning-only mode
         repo.mkdir()
         global_dir = tmp_path / "global"
 
-        monkeypatch.setattr("vtx.ai.agent.context.skills.get_user_skills_dir", lambda: global_dir)
+        monkeypatch.setattr("vtx.agent.context.skills.get_user_skills_dir", lambda: global_dir)
 
         result = load_skills(str(repo))
 
@@ -436,7 +436,7 @@ name: invalid-skill
 """)
 
         global_dir = tmp_path / "global"
-        monkeypatch.setattr("vtx.ai.agent.context.skills.get_user_skills_dir", lambda: global_dir)
+        monkeypatch.setattr("vtx.agent.context.skills.get_user_skills_dir", lambda: global_dir)
 
         result = load_skills(str(repo))
 
@@ -453,7 +453,7 @@ description: Uses directory fallback
 """)
 
         global_dir = tmp_path / "global"
-        monkeypatch.setattr("vtx.ai.agent.context.skills.get_user_skills_dir", lambda: global_dir)
+        monkeypatch.setattr("vtx.agent.context.skills.get_user_skills_dir", lambda: global_dir)
 
         result = load_skills(str(repo))
 

@@ -5,7 +5,7 @@ from __future__ import annotations
 import contextlib
 from typing import Literal
 
-from vtx.ai.config import (
+from vtx.core.config import (
     NOTIFICATION_MODES,
     PERMISSION_MODES,
     THINKING_LINES_OPTIONS,
@@ -22,7 +22,7 @@ from vtx.ai.config import (
     set_theme,
     set_thinking_lines,
 )
-from vtx.tui.themes import get_theme_options
+from vtx.core.themes import get_theme_options
 
 from ..chat import ChatLog
 from ..floating_list import FloatingList, ListItem

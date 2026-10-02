@@ -8,8 +8,8 @@ import glob
 import os
 from typing import TYPE_CHECKING, Any, Literal
 
-from vtx.ai.agent.tools_manager import ensure_tools
-from vtx.ai.config import update_available_binaries
+from vtx.agent.tools_manager import ensure_tools
+from vtx.core.config import update_available_binaries
 from vtx.core.update_check import get_newer_pypi_version
 from vtx.core.version import PACKAGE_NAME, VERSION
 from vtx.tui.blocks import LaunchWarning

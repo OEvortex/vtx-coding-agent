@@ -1,13 +1,13 @@
 import pytest
 
-from vtx.coding_agent.config import Config, config, reset_config, set_config, set_ponytail
-from vtx.coding_agent.context import Context
-from vtx.coding_agent.prompts import (
+from vtx.agent.context import Context
+from vtx.agent.prompts import (
     PONYTAIL_PROMPT,
     build_ponytail_section,
     build_system_prompt,
     is_deactivation_command,
 )
+from vtx.core.config import Config, config, reset_config, set_config, set_ponytail
 
 
 def test_system_prompt_excludes_ponytail_by_default():
@@ -86,8 +86,8 @@ def test_set_ponytail_persists(tmp_path, monkeypatch):
 
 @pytest.mark.asyncio
 async def test_register_hook_before_agent_start():
-    from vtx.ai.agent.extensions import BEFORE_AGENT_START, BeforeAgentStartEvent
-    from vtx.coding_agent.prompts.ponytail import register
+    from vtx.agent.extensions import BEFORE_AGENT_START, BeforeAgentStartEvent
+    from vtx.agent.prompts.ponytail import register
 
     handlers = {}
 
@@ -131,8 +131,8 @@ async def test_register_hook_before_agent_start():
 @pytest.mark.asyncio
 async def test_register_hook_input_deactivation(tmp_path, monkeypatch):
     monkeypatch.setenv("HOME", str(tmp_path))
-    from vtx.ai.agent.extensions import INPUT, InputEvent
-    from vtx.coding_agent.prompts.ponytail import register
+    from vtx.agent.extensions import INPUT, InputEvent
+    from vtx.agent.prompts.ponytail import register
 
     handlers = {}
     notifications = []

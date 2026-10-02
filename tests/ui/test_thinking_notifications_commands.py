@@ -1,8 +1,8 @@
 from contextlib import contextmanager
 from typing import Any, ClassVar, cast
 
-from vtx.coding_agent.config import config, reset_config
-from vtx.coding_agent.runtime import ConversationRuntime
+from vtx.agent.runtime import ConversationRuntime
+from vtx.core.config import config, reset_config
 from vtx.tui.commands import CommandsMixin
 from vtx.tui.floating_list import ListItem
 from vtx.tui.selection_mode import SelectionMode
@@ -219,7 +219,7 @@ def test_thinking_command_unmapped_reasoning_model_shows_only_default(monkeypatc
         supports_thinking=True,
         thinking_level_map=None,
     )
-    monkeypatch.setattr("vtx.ai.agent.runtime.get_model", lambda *args, **kwargs: test_model)
+    monkeypatch.setattr("vtx.agent.runtime.get_model", lambda *args, **kwargs: test_model)
 
     assert fake._runtime.effective_thinking_levels == ["default"]
     fake._handle_thinking_command("")
@@ -243,7 +243,7 @@ def test_thinking_command_non_thinking_model_shows_only_none(monkeypatch):
         supports_images=False,
         supports_thinking=False,
     )
-    monkeypatch.setattr("vtx.ai.agent.runtime.get_model", lambda *args, **kwargs: test_model)
+    monkeypatch.setattr("vtx.agent.runtime.get_model", lambda *args, **kwargs: test_model)
 
     assert fake._runtime.effective_thinking_levels == ["none"]
     fake._handle_thinking_command("")
@@ -262,7 +262,7 @@ def test_max_level_from_the_catalog_is_cyclable_without_crashing(monkeypatch):
     fake._runtime.thinking_level = "xhigh"
     fake._provider.thinking_levels = [*fake._provider.thinking_levels, "max"]
     monkeypatch.setattr(
-        "vtx.ai.agent.runtime.get_model",
+        "vtx.agent.runtime.get_model",
         lambda *args, **kwargs: Model(
             id="reasoning-max",
             provider="fake",
@@ -311,7 +311,7 @@ def test_level_outside_the_offered_set_is_clamped_not_raised(monkeypatch):
     fake._runtime.model = "reasoning-no-max"
     fake._runtime.model_provider = "fake"
     monkeypatch.setattr(
-        "vtx.ai.agent.runtime.get_model",
+        "vtx.agent.runtime.get_model",
         lambda *args, **kwargs: Model(
             id="reasoning-no-max",
             provider="fake",

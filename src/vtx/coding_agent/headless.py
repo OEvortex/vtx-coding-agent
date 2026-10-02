@@ -8,18 +8,21 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Any, TextIO
 
 import vtx.coding_agent.tools  # noqa: F401
-from vtx.ai.config import (
+from vtx.core.config import (
     _atomic_write_text,
     _ensure_config_file,
     _read_config_data,
     _serialize_config_yaml,
     _set_config_version,
+    config,
+    get_config,
+    get_last_selected,
+    reload_config,
 )
-from vtx.coding_agent.config import config, get_config, get_last_selected, reload_config
-from vtx.core.types import StopReason
+from vtx.protocol.types import StopReason
 
 if TYPE_CHECKING:
-    from vtx.ai.agent.extensions import LoadedExtensions
+    from vtx.agent.extensions import LoadedExtensions
     from vtx.ai.base import AuthMode
     from vtx.core.events import Event
 
@@ -52,7 +55,7 @@ async def render_run(
         TurnEndEvent,
     )
     from vtx.core.permissions import ApprovalResponse, AskUserResponse
-    from vtx.core.types import TextContent
+    from vtx.protocol.types import TextContent
 
     out = sys.stdout if out is None else out
     err = sys.stderr if err is None else err
@@ -135,7 +138,7 @@ async def run_headless(
     agent_files: list[str] | None = None,
     auto_discover_agents: bool = True,
 ) -> int:
-    from vtx.coding_agent.runtime import ConversationRuntime
+    from vtx.agent.runtime import ConversationRuntime
     from vtx.coding_agent.tools import DEFAULT_TOOLS, get_tools_with_extensions
 
     prompt = resolve_prompt(prompt_arg, stdin=sys.stdin)
@@ -171,8 +174,8 @@ async def run_headless(
         anthropic_auth = anthropic_compat_auth_mode or config.llm.auth.anthropic_compat
 
         # Load agents first so the active agent's tool surface is applied.
-        from vtx.ai.agent.agents import AgentRegistry, load_all_agents
-        from vtx.ai.agent.extensions import load_for_runtime
+        from vtx.agent.agents import AgentRegistry, load_all_agents
+        from vtx.agent.extensions import load_for_runtime
 
         agent_registry = AgentRegistry()
         if auto_discover_agents or agent_files:
@@ -185,7 +188,7 @@ async def run_headless(
         # Resolve the initial active agent: CLI > env > last_selected > config > none
         import os as _os
 
-        from vtx.coding_agent.config import get_last_selected as _get_last_selected
+        from vtx.core.config import get_last_selected as _get_last_selected
 
         ls = _get_last_selected()
         env_agent = _os.environ.get("VTX_AGENT")
@@ -236,7 +239,7 @@ async def run_headless(
         runtime.set_loaded_extensions(loaded_extensions)
 
         # Hook system: bridge YAML hook configs onto the extension EventBus.
-        from vtx.ai.agent.hooks.bridge import HookBridge
+        from vtx.agent.hooks.bridge import HookBridge
 
         hook_bridge = HookBridge(
             bus=loaded_extensions.bus,

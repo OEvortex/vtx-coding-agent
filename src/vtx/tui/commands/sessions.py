@@ -7,8 +7,8 @@ import contextlib
 from datetime import UTC, datetime
 from pathlib import Path
 
-from vtx.ai.agent.session import Session, SessionInfo
-from vtx.ai.config import config
+from vtx.agent.session import Session, SessionInfo
+from vtx.core.config import config
 from vtx.tui.chat import ChatLog
 from vtx.tui.clipboard import copy_to_clipboard
 from vtx.tui.commands.base import CommandSupport
@@ -243,7 +243,7 @@ class SessionCommands(CommandSupport):
         The boundary is not committed here, so ``/redo`` still works until the
         user sends their next prompt.
         """
-        from vtx.ai.agent import revert as rv
+        from vtx.agent import revert as rv
 
         chat = self._revert_chat()
         if self._is_running:
@@ -266,7 +266,7 @@ class SessionCommands(CommandSupport):
 
     def _handle_redo_command(self) -> None:
         """Step forward again, or clear the revert when already at the newest turn."""
-        from vtx.ai.agent import revert as rv
+        from vtx.agent import revert as rv
 
         chat = self._revert_chat()
         if self._is_running:
@@ -296,7 +296,7 @@ class SessionCommands(CommandSupport):
         """Post the in-chat revert marker with its file list and /redo hint."""
         from rich.text import Text
 
-        from vtx.ai.agent import revert
+        from vtx.agent import revert
 
         colors = config.ui.colors
         text = Text()

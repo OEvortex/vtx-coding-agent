@@ -26,7 +26,7 @@ import asyncio
 from collections.abc import AsyncIterator
 
 from vtx.ai.base import BaseProvider, LLMStream, ProviderConfig
-from vtx.core.types import (
+from vtx.protocol.types import (
     Message,
     StopReason,
     StreamDone,

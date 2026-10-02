@@ -3,8 +3,8 @@ from pathlib import Path
 
 import pytest
 
-from vtx.coding_agent.config import Config, set_config
 from vtx.core import notify
+from vtx.core.config import Config, set_config
 
 # core/__init__ re-exports the notify() function, which shadows the
 # core.notify submodule for `import vtx.core.notify as mod`; resolve

@@ -5,7 +5,7 @@ from __future__ import annotations
 from collections import deque
 from typing import TYPE_CHECKING, Any
 
-from vtx.core.types import ImageContent
+from vtx.protocol.types import ImageContent
 from vtx.tui.input import InputBox
 from vtx.tui.widgets import QueueDisplay
 

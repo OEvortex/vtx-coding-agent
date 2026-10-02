@@ -15,7 +15,7 @@ from __future__ import annotations
 import json
 from typing import Any
 
-from vtx.core.types import ImageContent, TextContent
+from vtx.protocol.types import ImageContent, TextContent
 
 from .types import CallToolResult, ContentBlock
 

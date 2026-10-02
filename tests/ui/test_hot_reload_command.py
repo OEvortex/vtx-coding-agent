@@ -67,7 +67,7 @@ def config_file(tmp_path: Path, monkeypatch):
     """
     from importlib import resources
 
-    import vtx.ai.config as config_mod
+    import vtx.core.config as config_mod
 
     xdg = tmp_path / "xdg"
     (xdg / "vtx").mkdir(parents=True)
@@ -75,7 +75,7 @@ def config_file(tmp_path: Path, monkeypatch):
     config_mod.reset_config()
     path = xdg / "vtx" / "config.yml"
     defaults = yaml.safe_load(
-        resources.files("vtx.ai.defaults").joinpath("config.yml").read_text("utf-8")
+        resources.files("vtx.core.defaults").joinpath("config.yml").read_text("utf-8")
     )
     path.write_text(yaml.safe_dump(defaults), encoding="utf-8")
     yield path
@@ -95,8 +95,8 @@ def _edit_config(path: Path, **overrides) -> None:
 
 @pytest.fixture
 def reload_app(tmp_path: Path):
-    from vtx.ai.agent.runtime import ConversationRuntime
-    from vtx.ai.agent.session import Session
+    from vtx.agent.runtime import ConversationRuntime
+    from vtx.agent.session import Session
 
     workdir = tmp_path / "work"
     workdir.mkdir(parents=True, exist_ok=True)
@@ -225,7 +225,7 @@ class TestReloadIsSafe:
         path = ext_dir / "probe_ext.py"
         path.write_text(
             "from pydantic import BaseModel\n"
-            "from vtx.ai.agent.tools.base import BaseTool, ToolResult\n"
+            "from vtx.agent.tools.base import BaseTool, ToolResult\n"
             "class P(BaseModel):\n    pass\n"
             "def register(api):\n"
             "    class T(BaseTool):\n"
@@ -239,7 +239,7 @@ class TestReloadIsSafe:
             encoding="utf-8",
         )
 
-        import vtx.ai.config as config_mod
+        import vtx.core.config as config_mod
         from vtx.tui.commands import reload as reload_mod
 
         monkeypatch.setattr(reload_mod, "reload_config", lambda: None)

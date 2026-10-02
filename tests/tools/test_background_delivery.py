@@ -19,9 +19,9 @@ from pathlib import Path
 
 import pytest
 
-from vtx.ai.agent.background import BackgroundTaskManager
-from vtx.ai.agent.loop import Agent
-from vtx.ai.agent.session import Session
+from vtx.agent.background import BackgroundTaskManager
+from vtx.agent.loop import Agent
+from vtx.agent.session import Session
 from vtx.ai.providers.mock import MockProvider
 from vtx.core import BackgroundTaskCompletedEvent
 

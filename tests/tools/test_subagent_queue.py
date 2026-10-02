@@ -1,10 +1,10 @@
-"""Tests for the sub-agent admission queue (vtx.ai.agent.subagents)."""
+"""Tests for the sub-agent admission queue (vtx.agent.subagents)."""
 
 import asyncio
 
 import pytest
 
-from vtx.ai.agent.subagents import SubagentScheduler
+from vtx.agent.subagents import SubagentScheduler
 
 
 class TestAdmission:

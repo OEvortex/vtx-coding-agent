@@ -21,11 +21,11 @@ from typing import Any, NamedTuple
 import pytest
 from pydantic import BaseModel
 
-from vtx.ai.agent.extensions import EventBus
-from vtx.ai.agent.runtime import ConversationRuntime
-from vtx.ai.agent.tools import get_all_tools
-from vtx.ai.agent.tools.base import BaseTool
-from vtx.core.types import ToolResult
+from vtx.agent.extensions import EventBus
+from vtx.agent.runtime import ConversationRuntime
+from vtx.agent.tools import get_all_tools
+from vtx.agent.tools.base import BaseTool
+from vtx.protocol.types import ToolResult
 
 pytestmark = pytest.mark.asyncio
 
@@ -130,7 +130,7 @@ async def test_a_search_cannot_promote_a_tool_the_profile_denied():
         runtime.tools = [t for t in runtime.tools if t.name != "mcp__docs__nuke"]
         runtime._wire_codemode()
 
-        from vtx.ai.agent.tools.tool_search import ToolSearchParams
+        from vtx.agent.tools.tool_search import ToolSearchParams
 
         search = get_all_tools()["tool_search"]
         result = await search.execute(ToolSearchParams(query="delete the docs corpus"))
@@ -154,7 +154,7 @@ async def test_a_search_does_promote_a_permitted_deferred_tool():
         runtime._sync_mcp_tools()
         before = [t.name for t in runtime.declared_tools()]
 
-        from vtx.ai.agent.tools.tool_search import ToolSearchParams
+        from vtx.agent.tools.tool_search import ToolSearchParams
 
         search = get_all_tools()["tool_search"]
         result = await search.execute(ToolSearchParams(query="rebuild the search index"))
@@ -170,7 +170,7 @@ async def test_builtins_are_still_declared_and_callable():
     # Exposure is an MCP concept. A built-in with no exposure must be entirely
     # unaffected by any of this -- it is declared to the model *and* callable
     # from a script, exactly as before.
-    from vtx.ai.agent.tools import get_default_tools, get_tools_with_extensions
+    from vtx.agent.tools import get_default_tools, get_tools_with_extensions
 
     runtime = ConversationRuntime(
         cwd=".",
@@ -203,7 +203,7 @@ async def test_a_hidden_tool_contributes_nothing_to_the_system_prompt():
         runtime._mcp_tools = [hidden]
         runtime._sync_mcp_tools()
 
-        from vtx.ai.agent.prompts import build_system_prompt
+        from vtx.agent.prompts import build_system_prompt
 
         with_hidden = build_system_prompt(".", tools=runtime.tools, context=None)
         assert "mcp__docs__nuke" not in with_hidden

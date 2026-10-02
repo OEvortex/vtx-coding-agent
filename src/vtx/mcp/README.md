@@ -1,6 +1,6 @@
 # vtx.mcp
 
-A small, standalone Model Context Protocol client for vtx. It does not depend on the official MCP SDK, and the harness in `vtx.ai.agent` does not depend on this package.
+A small, standalone Model Context Protocol client for vtx. It does not depend on the official MCP SDK, and the harness in `vtx.agent` does not depend on this package.
 
 The package provides a transport-neutral client core, stdio and Streamable HTTP transports, an in-memory testing transport, OAuth 2.1 sign-in, `mcp.json` loading with project trust, and an adapter that exposes a server's tools as vtx `BaseTool`s.
 

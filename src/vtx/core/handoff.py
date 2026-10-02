@@ -1,5 +1,5 @@
-from vtx.core.abc import BaseProvider
-from vtx.core.types import Message, TextPart, UserMessage
+from vtx.protocol.abc import BaseProvider
+from vtx.protocol.types import Message, TextPart, UserMessage
 
 HANDOFF_PROMPT_TEMPLATE = """You are creating a handoff to a NEW focused thread.
 

@@ -1,7 +1,7 @@
 from typing import Any, Protocol
 
+from vtx.agent.session import Session
 from vtx.ai import BaseProvider
-from vtx.ai.agent.session import Session
 from vtx.tui.selection_mode import SelectionMode
 
 

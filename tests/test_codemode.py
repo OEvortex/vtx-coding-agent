@@ -17,7 +17,7 @@ import asyncio
 
 import pytest
 
-from vtx.ai.agent.codemode import (
+from vtx.codemode import (
     CodemodeSandbox,
     CodemodeSourceError,
     CodemodeTool,
@@ -28,21 +28,6 @@ from vtx.ai.agent.codemode import (
     rank,
     render_declarations,
     to_identifier,
-)
-
-# Reaches a module by walking to a class whose __init__.__globals__ holds it.
-# This is the known CPython introspection surface described in the worker
-# module; it is the entry point for every escape probe below.
-_WALK = (
-    "def find(mod):\n"
-    "    for c in ().__class__.__base__.__subclasses__():\n"
-    "        try:\n"
-    "            g = c.__init__.__globals__\n"
-    "        except Exception:\n"
-    "            continue\n"
-    "        if mod in g:\n"
-    "            return g[mod]\n"
-    "    return None\n"
 )
 
 
@@ -290,126 +275,103 @@ async def test_output_survives_a_failure():
 
 
 # --------------------------------------------------------------------------
-# Escape attempts
+# Real Python
 # --------------------------------------------------------------------------
 
+# The script is an ordinary interpreter running as the user, not a walled
+# garden. These are the capabilities the removed confinement used to deny, and
+# they are the contract now: the model can reach the machine directly, and the
+# only thing it cannot reach is the harness, which is a different process.
 
-@pytest.mark.parametrize(
-    "code",
-    [
-        "import os",
-        "import subprocess",
-        "import socket",
-        "import ctypes",
-        "import sys",
-        "import shutil",
-        "import importlib",
-        "import pickle",
-    ],
-)
+
 @pytest.mark.asyncio
-async def test_privileged_imports_are_denied(code):
-    result = await _sandbox().execute(code)
-    assert not result.ok
-    assert "not available" in result.diagnostic.message
+async def test_the_script_is_real_python():
+    result = await _sandbox().execute(
+        "import statistics, pathlib\n"
+        "return [statistics.mean([1, 2, 3]), bool(pathlib.Path('pyproject.toml').read_text())]"
+    )
+    assert result.ok, result.diagnostic
+    assert result.value == [2, True]
 
 
-@pytest.mark.parametrize(
-    "code",
-    [
-        "open('/etc/passwd')",
-        "eval('1+1')",
-        "exec('x=1')",
-        "compile('1','','eval')",
-        "globals()",
-        "vars()",
-        "getattr(x, 'y')",
-        "breakpoint()",
-        "input()",
-    ],
-)
 @pytest.mark.asyncio
-async def test_dangerous_builtins_are_absent(code):
-    result = await _sandbox().execute(code)
+async def test_a_script_can_spawn_a_process():
+    result = await _sandbox().execute(
+        "import subprocess\n"
+        "return subprocess.run(['echo', 'hi'], capture_output=True, text=True).stdout.strip()"
+    )
+    assert result.ok, result.diagnostic
+    assert result.value == "hi"
+
+
+@pytest.mark.asyncio
+async def test_a_script_can_import_an_installed_package():
+    result = await _sandbox().execute("import yaml\nreturn yaml.safe_load('a: 1')")
+    assert result.ok, result.diagnostic
+    assert result.value == {"a": 1}
+
+
+@pytest.mark.asyncio
+async def test_a_filesystem_error_is_a_script_error_not_a_denial():
+    # Nothing is denying it any more. The model picked a path it cannot read,
+    # so it gets a stack and a line number -- the same answer as any other
+    # mistake, because that is what tells it what to change.
+    result = await _sandbox().execute("return open('/nope/does/not/exist').read()")
     assert not result.ok
     assert result.diagnostic.kind == "script"
+    assert "FileNotFoundError" in result.diagnostic.message
 
 
+@pytest.mark.asyncio
+async def test_importing_the_harness_yields_an_unconnected_copy():
+    # vtx is installed, so a script *can* import the harness's modules -- the
+    # same way prime-agent's runtime exposes `rlm.repl.emit` to a cell on
+    # purpose. What it cannot obtain is the host's live state: the running
+    # agent, the session, the TUI and the injected tools exist only in the
+    # other process, so a fresh import constructs a new, empty sandbox.
+    result = await _sandbox().execute(
+        "import vtx.codemode.host as host\n"
+        "sandbox = host.CodemodeSandbox(tools=[])\n"
+        "return sandbox.tools"
+    )
+    assert result.ok, result.diagnostic
+    assert result.value == []
+
+
+# --------------------------------------------------------------------------
+# Protocol framing
+# --------------------------------------------------------------------------
+#
+# The worker shares fds 0 and 1 with the script, so before the script runs it
+# moves both to /dev/null and hands the protocol private copies. Without that, a
+# script's ordinary output lands in the middle of a JSON frame and the host
+# reports a transport failure for a run that worked.
+
+
+@pytest.mark.asyncio
 @pytest.mark.parametrize(
-    ("code", "label"),
+    "code",
     [
-        (_WALK + "sp = find('subprocess')\nreturn sp.run(['id']).returncode", "subprocess.run"),
-        (_WALK + "sp = find('subprocess')\nreturn sp.call(['id'])", "subprocess.call"),
-        (_WALK + "sp = find('subprocess')\nreturn sp.Popen(['id']).wait()", "subprocess.Popen"),
-        (_WALK + "return find('os').popen('id').read()", "os.popen"),
-        (
-            _WALK + "o = find('os')\nfd = o.open('/etc/hostname', o.O_RDONLY)\n"
-            "d = o.read(fd, 10)\no.close(fd)\nreturn d.decode()",
-            "os.open + os.read",
-        ),
-        (
-            _WALK + "s = find('_socket')\nsock = s.socket(2, 1)\n"
-            "sock.connect(('127.0.0.1', 22))\nreturn 'connected'",
-            "_socket connect",
-        ),
-        (
-            _WALK + "o = find('os')\npid = o.fork()\n"
-            "if pid == 0:\n    o._exit(0)\nreturn o.waitpid(pid, 0)[1]",
-            "os.fork",
-        ),
-        (
-            _WALK + "o = find('os')\nreturn o.posix_spawn('/bin/true', ['/bin/true'], o.environ)",
-            "os.posix_spawn",
-        ),
-        (_WALK + "o = find('os')\nreturn sorted(o.listdir('/'))", "os.listdir"),
-        (_WALK + "o = find('os')\nreturn next(iter(o.scandir('/'))).name", "os.scandir"),
-        (_WALK + "return sorted(find('glob').glob('/etc/host*'))", "glob"),
+        "print('x' * 200_000)",
+        "import os\nos.write(1, b'raw fd write\\n')",
+        "import sys\nsys.stdout.write('direct write\\n')\nsys.stdout.flush()",
+        "import subprocess\n"
+        "subprocess.run(['sh', '-c', 'echo child stdout; echo child stderr >&2'])",
     ],
+    ids=["print", "os-write", "stdout-flush", "child-process"],
 )
-@pytest.mark.asyncio
-async def test_object_graph_walk_cannot_execute_or_connect(code, label):
-    """The attack surface is reachable; the authority behind it is not.
-
-    The probe walks the CPython object graph to the real ``os``/``subprocess``
-    module. That much is a known introspection surface and is accepted. What
-    must never happen is the operation succeeding -- so each case asserts the
-    run failed, which is the property that carries weight.
-    """
-    result = await _sandbox().execute(code, timeout_ms=10_000)
-    assert not result.ok, f"{label} escaped the sandbox"
+async def test_script_output_cannot_corrupt_the_protocol(code):
+    result = await _sandbox().execute(code, timeout_ms=20_000)
+    assert result.ok, result.diagnostic
 
 
 @pytest.mark.asyncio
-async def test_ctypes_is_not_reachable_at_all():
-    # Unlike os and subprocess, ctypes is never resident, so the walk cannot
-    # find it even before the audit hook would deny it.
-    result = await _sandbox().execute(_WALK + "return find('ctypes')")
-    assert result.ok
-    assert result.value is None
-
-
-@pytest.mark.asyncio
-async def test_relative_import_is_denied():
-    # Without this, `__package__ = "asyncio"` would reach asyncio.unix_events
-    # and from there subprocess.
-    result = await _sandbox().execute("__package__ = 'asyncio'\nfrom . import unix_events")
+async def test_input_reads_nothing_rather_than_a_protocol_frame():
+    # The bridge's reader owns the protocol fd. `input()` has to land on
+    # /dev/null, or it would take a tool reply and hang the call waiting for it.
+    result = await _sandbox().execute("return input('anything')")
     assert not result.ok
-
-
-@pytest.mark.asyncio
-async def test_print_does_not_leak_host_globals():
-    # `print` is the genuine builtin, so it has no __globals__ at all. That is
-    # the strongest form of the fix: before it, `print` was a host closure and
-    # `print.__globals__` was a direct hand-over of sys.modules.
-    result = await _sandbox().execute("return print.__globals__")
-    assert not result.ok
-    assert "has no attribute '__globals__'" in result.diagnostic.message
-
-
-@pytest.mark.asyncio
-async def test_audit_hook_cannot_be_removed():
-    result = await _sandbox().execute("import sys\nsys.addaudithook(lambda e, a: None)")
-    assert not result.ok
+    assert "EOF" in result.diagnostic.message
 
 
 # --------------------------------------------------------------------------
@@ -611,7 +573,7 @@ def _load_sandbox_module():
     """Import the worker by path, the same way the host launches it."""
     import importlib.util
 
-    from vtx.ai.agent.codemode import SANDBOX_PATH
+    from vtx.codemode import SANDBOX_PATH
 
     spec = importlib.util.spec_from_file_location("_codemode_sandbox", SANDBOX_PATH)
     module = importlib.util.module_from_spec(spec)
@@ -634,7 +596,7 @@ def test_the_sandbox_imports_nothing_from_the_package():
 def test_diagnostic_kinds_match_across_the_wire():
     # The worker is launched by path and cannot import this package, so the
     # kinds exist on both sides. This is the test that keeps them honest.
-    from vtx.ai.agent.codemode import errors
+    from vtx.codemode import errors
 
     sandbox = _load_sandbox_module()
     assert set(sandbox.KINDS) == set(errors.KINDS)
@@ -726,7 +688,7 @@ async def test_closed_sandbox_refuses_execution():
 
 @pytest.mark.asyncio
 async def test_oversized_input_store_is_refused_before_spawning():
-    from vtx.ai.agent.codemode import MAX_STORE_VALUE_CHARS
+    from vtx.codemode import MAX_STORE_VALUE_CHARS
 
     result = await _sandbox().execute("return 1", store={"k": "x" * (MAX_STORE_VALUE_CHARS + 1)})
     assert not result.ok
@@ -743,8 +705,8 @@ def test_the_stall_kind_is_mirrored_in_both_processes():
     import re
     from pathlib import Path
 
-    from vtx.ai.agent.codemode import errors
-    from vtx.ai.agent.codemode.sandbox import STALLED
+    from vtx.codemode import errors
+    from vtx.codemode.sandbox import STALLED
 
     names = (
         "SCRIPT",

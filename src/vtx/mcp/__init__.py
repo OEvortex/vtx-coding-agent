@@ -6,7 +6,7 @@ initialization, timeouts, cancellation, and the protocol helpers.
 
 This is a top-level package, sibling to ``vtx.coding_agent`` and ``vtx.tui``,
 because the tool adapter (:mod:`vtx.mcp.tool`) builds on the harness tool
-contract in ``vtx.ai.agent.tools``. The harness itself never imports this
+contract in ``vtx.agent.tools``. The harness itself never imports this
 package; the product layer wires it up. So the direction is
 ``core <- ai <- mcp``, with ``coding_agent`` and ``tui`` on top.
 

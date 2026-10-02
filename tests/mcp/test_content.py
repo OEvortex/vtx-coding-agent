@@ -1,7 +1,7 @@
 import pytest
 
-from vtx.core.types import ImageContent, TextContent
 from vtx.mcp.content import split_content, to_tool_content
+from vtx.protocol.types import ImageContent, TextContent
 
 
 def test_passes_text_and_images_through_and_replaces_other_blocks():

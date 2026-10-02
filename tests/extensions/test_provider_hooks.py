@@ -8,8 +8,8 @@ from __future__ import annotations
 
 import pytest
 
-import vtx.ai.agent.extensions as ext_mod
-from vtx.ai.agent.extensions import (
+import vtx.agent.extensions as ext_mod
+from vtx.agent.extensions import (
     BEFORE_PROVIDER_HEADERS,
     BEFORE_PROVIDER_REQUEST,
     EventBus,
@@ -167,7 +167,7 @@ async def test_bridge_is_idempotent():
 
 @pytest.mark.asyncio
 async def test_extension_api_helper_registers_handler():
-    from vtx.ai.agent.extensions import Extension, ExtensionAPI
+    from vtx.agent.extensions import Extension, ExtensionAPI
 
     bus = EventBus()
     api = ExtensionAPI(

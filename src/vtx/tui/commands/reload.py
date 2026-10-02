@@ -26,8 +26,8 @@ import importlib
 import sys
 from dataclasses import dataclass
 
-from vtx.ai.agent.tools import get_tools_with_extensions
-from vtx.ai.config import config, reload_config
+from vtx.agent.tools import get_tools_with_extensions
+from vtx.core.config import config, reload_config
 from vtx.tui.chat import ChatLog
 from vtx.tui.commands.base import CommandSupport
 from vtx.tui.widgets import InfoBar
@@ -67,7 +67,7 @@ class ReloadCommands(CommandSupport):
             )
             return
 
-        from vtx.ai.agent.extensions import SESSION_SHUTDOWN, load_for_runtime
+        from vtx.agent.extensions import SESSION_SHUTDOWN, load_for_runtime
 
         before = self._reload_snapshot()
 
@@ -110,7 +110,7 @@ class ReloadCommands(CommandSupport):
 
         # 5. Agents. Re-register their handlers on the *new* bus, since the one
         #    they registered on in step 1 is about to be unreachable.
-        from vtx.ai.agent.agents import load_all_agents
+        from vtx.agent.agents import load_all_agents
 
         agent_loaded, agent_errors = load_all_agents(
             cwd=self._cwd,

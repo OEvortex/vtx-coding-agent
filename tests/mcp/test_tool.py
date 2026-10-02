@@ -4,7 +4,6 @@ import json
 
 import pytest
 
-from vtx.core.types import ImageContent
 from vtx.mcp.tool import (
     MCP_OUTPUT_MAX_BYTES,
     McpTool,
@@ -14,6 +13,7 @@ from vtx.mcp.tool import (
     enrich_result,
     truncate_middle,
 )
+from vtx.protocol.types import ImageContent
 
 
 def _tool(definition: dict, call=None, server: str = "fs", timeout_ms: int = 60_000) -> McpTool:

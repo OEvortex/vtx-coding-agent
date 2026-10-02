@@ -7,12 +7,12 @@ from pathlib import Path
 
 import pytest
 
-from vtx.ai.agent.revert import commit as _commit
-from vtx.ai.agent.revert import current_state as _current_state
-from vtx.ai.agent.revert import record_turn_snapshot
-from vtx.ai.agent.session import Session
-from vtx.ai.agent.snapshot import SnapshotStore, get_store
-from vtx.core.types import FileChanges, TextContent, ToolResultMessage, UserMessage
+from vtx.agent.revert import commit as _commit
+from vtx.agent.revert import current_state as _current_state
+from vtx.agent.revert import record_turn_snapshot
+from vtx.agent.session import Session
+from vtx.agent.snapshot import SnapshotStore, get_store
+from vtx.protocol.types import FileChanges, TextContent, ToolResultMessage, UserMessage
 from vtx.tui.app import Vtx
 from vtx.tui.chat import ChatLog
 

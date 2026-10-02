@@ -1,6 +1,6 @@
 import json
 
-from vtx.coding_agent.config import get_config_dir
+from vtx.core.config import get_config_dir
 from vtx.tui.export import export_session_html
 
 CWD = "/tmp/export-proj"

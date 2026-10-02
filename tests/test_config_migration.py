@@ -2,7 +2,7 @@ from pathlib import Path
 
 import yaml
 
-from vtx.coding_agent.config import (
+from vtx.core.config import (
     CURRENT_CONFIG_VERSION,
     consume_config_warnings,
     get_config,

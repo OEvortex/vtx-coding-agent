@@ -12,7 +12,7 @@ from abc import ABC, abstractmethod
 from collections.abc import Sequence
 from dataclasses import dataclass
 
-from vtx.core.gh_cli import PullRequest, is_available, list_pull_requests
+from vtx.git.gh_cli import PullRequest, is_available, list_pull_requests
 from vtx.tui.floating_list import ListItem
 from vtx.tui.fuzzy import fuzzy_filter, fuzzy_match
 

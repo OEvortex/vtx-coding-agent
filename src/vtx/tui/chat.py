@@ -8,12 +8,12 @@ from textual.containers import VerticalScroll
 from textual.timer import Timer
 from textual.widgets import Label
 
-from vtx.ai.agent.context.skills import Skill
-from vtx.ai.agent.tools import BaseTool
-from vtx.ai.config import config
+from vtx.agent.context.skills import Skill
+from vtx.agent.tools import BaseTool
 from vtx.core import ApprovalResponse
+from vtx.core.config import config
 from vtx.core.paths import get_agents_dir
-from vtx.core.types import ImageContent
+from vtx.protocol.types import ImageContent
 from vtx.tui.blocks import (
     CompactionBlock,
     ContentBlock,

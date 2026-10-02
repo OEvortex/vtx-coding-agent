@@ -3,7 +3,7 @@ from dataclasses import dataclass, field
 from typing import Any, Literal
 
 from vtx.core.permissions import ApprovalResponse, AskUserQuestion, AskUserResponse
-from vtx.core.types import AssistantMessage, FileChanges, StopReason, ToolResultMessage, Usage
+from vtx.protocol.types import AssistantMessage, FileChanges, StopReason, ToolResultMessage, Usage
 
 # =================================================================================================
 # Agent Lifecycle Events

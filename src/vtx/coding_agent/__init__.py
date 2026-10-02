@@ -1,7 +1,6 @@
-from vtx.ai.agent.context.skills import register_skills_package
+from vtx.agent.context.skills import register_skills_package
 
-from . import tools as _tools  # noqa: F401
-from .config import (
+from ..core.config import (
     AVAILABLE_BINARIES,
     CONFIG_DIR_NAME,
     CURRENT_CONFIG_VERSION,
@@ -29,8 +28,9 @@ from .config import (
     set_thinking_lines,
     update_available_binaries,
 )
+from ..core.version import PACKAGE_NAME, VERSION, format_version
+from . import tools as _tools  # noqa: F401
 from .headless import _exit_code, render_run, resolve_prompt, run_headless
-from .version import PACKAGE_NAME, VERSION, format_version
 
 # Register coding agent skills package into harness
 register_skills_package("vtx.coding_agent")

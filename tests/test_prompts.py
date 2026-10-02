@@ -7,9 +7,8 @@ used by the runtime and tests.
 
 from __future__ import annotations
 
-from vtx.coding_agent.config import Config, reset_config, set_config
-from vtx.coding_agent.context import Context
-from vtx.coding_agent.prompts import (
+from vtx.agent.context import Context
+from vtx.agent.prompts import (
     BACKGROUND_TASKS,
     CONTEXT_AWARENESS,
     DEFAULT_VTX_BASE,
@@ -29,8 +28,9 @@ from vtx.coding_agent.prompts import (
     build_system_prompt,
     build_tool_guidelines_section,
 )
-from vtx.coding_agent.prompts.identity import _compose_default_base
+from vtx.agent.prompts.identity import _compose_default_base
 from vtx.coding_agent.tools import all_tools
+from vtx.core.config import Config, reset_config, set_config
 
 # ---------------------------------------------------------------------------
 # identity section constants
@@ -103,7 +103,7 @@ def test_no_shipped_tool_explodes_its_guidelines_into_characters():
 def test_a_string_valued_guideline_still_renders_as_one_bullet():
     """The builder normalizes rather than trusts, so a future tool that misses
     the comma degrades to one long line instead of one line per character."""
-    from vtx.ai.agent.tools.base import BaseTool
+    from vtx.agent.tools.base import BaseTool
 
     class StrGuidelines(BaseTool):
         name = "str-guidelines"

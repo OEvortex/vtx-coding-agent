@@ -17,7 +17,7 @@ from textual import events
 from textual.reactive import reactive
 from textual.widget import Widget
 
-from vtx.ai.config import config
+from vtx.core.config import config
 from vtx.tui.fuzzy import fuzzy_filter
 
 T = TypeVar("T")

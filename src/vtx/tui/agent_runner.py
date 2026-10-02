@@ -10,9 +10,8 @@ from collections import deque
 from collections.abc import Callable
 from typing import TYPE_CHECKING, Any
 
-from vtx.ai.agent.runtime import ConversationRuntime
-from vtx.ai.agent.tools import lookup_default_tool as get_tool
-from vtx.ai.config import config
+from vtx.agent.runtime import ConversationRuntime
+from vtx.agent.tools import lookup_default_tool as get_tool
 from vtx.core import (
     AgentEndEvent,
     AgentStartEvent,
@@ -44,8 +43,9 @@ from vtx.core import (
     TurnStartEvent,
     WarningEvent,
 )
+from vtx.core.config import config
 from vtx.core.notify import NotificationEvent, notify
-from vtx.core.types import ImageContent, StopReason, ToolResultMessage
+from vtx.protocol.types import ImageContent, StopReason, ToolResultMessage
 from vtx.tui.ask_user import AskUserDialog
 from vtx.tui.chat import ChatLog
 from vtx.tui.goal_agents import prune_finished_subagents
@@ -378,7 +378,7 @@ class AgentRunnerMixin:
         if not cwd:
             return None
         with contextlib.suppress(Exception):
-            from vtx.ai.agent.revert import capture_now
+            from vtx.agent.revert import capture_now
 
             return await asyncio.to_thread(capture_now, cwd)
         return None
@@ -396,7 +396,7 @@ class AgentRunnerMixin:
         if session is None or not start_tree or not cwd:
             return
         with contextlib.suppress(Exception):
-            from vtx.ai.agent.revert import record_turn_snapshot
+            from vtx.agent.revert import record_turn_snapshot
 
             await asyncio.to_thread(record_turn_snapshot, session, start_tree, cwd=cwd)
 
@@ -411,7 +411,7 @@ class AgentRunnerMixin:
         if session is None:
             return
         with contextlib.suppress(Exception):
-            from vtx.ai.agent.revert import commit, current_state
+            from vtx.agent.revert import commit, current_state
 
             if current_state(session) is not None:
                 commit(session)

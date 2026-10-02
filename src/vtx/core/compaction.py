@@ -14,8 +14,8 @@ import re
 from collections.abc import Callable
 from dataclasses import dataclass
 
-from vtx.core.abc import BaseProvider
-from vtx.core.types import Message, TextPart, Usage, UserMessage
+from vtx.protocol.abc import BaseProvider
+from vtx.protocol.types import Message, TextPart, Usage, UserMessage
 
 SUMMARIZATION_PROMPT = """You are producing a HANDOFF document for a coding session that is \
 about to run out of context. Everything before this point is about to be deleted. \

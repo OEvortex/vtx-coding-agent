@@ -12,8 +12,8 @@ on a local provider cache being present.
 
 import pytest
 
-from vtx.ai.agent import runtime as runtime_mod
-from vtx.ai.agent.runtime import ConversationRuntime
+from vtx.agent import runtime as runtime_mod
+from vtx.agent.runtime import ConversationRuntime
 from vtx.ai.models import ApiType, Model
 
 # The shape reported for stealth/space-bunny-alpha: reasoning on, and an effort

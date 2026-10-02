@@ -22,15 +22,15 @@ from pathlib import Path
 from typing import Any
 from urllib.parse import urlparse
 
-from vtx.ai.agent.tools.base import BaseTool
-from vtx.ai.agent.tools.schema import (
+from vtx.agent.tools.base import BaseTool
+from vtx.agent.tools.schema import (
     MAX_TOOL_NAME_LENGTH,
     json_schema_to_pydantic,
     normalize_object_schema,
     sanitize_tool_name,
 )
 from vtx.core.bytes_util import format_bytes
-from vtx.core.types import ToolResult
+from vtx.protocol.types import ToolResult
 
 from .client import McpRequestOptions
 from .content import split_content, to_tool_content
@@ -320,7 +320,7 @@ class McpTool(BaseTool):
         A script is not a chat model. It can read a dict, branch on
         ``isError``, and take ``content[0]["text"]`` without a parse -- and doing
         the filtering in code is the entire reason to write a script. Declaring
-        the real output shape here is what lets :mod:`vtx.ai.agent.codemode`
+        the real output shape here is what lets :mod:`vtx.codemode`
         render it rather than falling back to ``dict[str, Any]``.
         """
         return mcp_result_schema(self._definition.get("outputSchema"))

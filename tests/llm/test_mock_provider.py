@@ -3,7 +3,7 @@
 import pytest
 
 from vtx.ai.providers.mock import MockProvider
-from vtx.core.types import StreamDone, TextPart, ThinkPart, ToolCallDelta, ToolCallStart
+from vtx.protocol.types import StreamDone, TextPart, ThinkPart, ToolCallDelta, ToolCallStart
 
 
 @pytest.mark.asyncio

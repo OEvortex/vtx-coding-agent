@@ -19,9 +19,9 @@ from textual.message import Message
 from textual.widgets import Input, Label, TextArea
 from textual.widgets.text_area import TextAreaTheme
 
-from vtx.ai.config import config
+from vtx.core.config import config
 from vtx.core.image import resize_image
-from vtx.core.types import ImageContent
+from vtx.protocol.types import ImageContent
 from vtx.tui.autocomplete import (
     DEFAULT_COMMANDS,
     AutocompleteProvider,

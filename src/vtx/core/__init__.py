@@ -1,4 +1,10 @@
-from .errors import format_error
+"""Shared foundations: agent events, the permission gate, notifications, and the
+scratchpad directory.
+
+Message and event *types* live in :mod:`vtx.protocol` and tracing lives in
+:mod:`vtx.telemetry`; both are leaves that this package depends on.
+"""
+
 from .events import (
     AgentEndEvent,
     AgentStartEvent,
@@ -42,29 +48,6 @@ from .permissions import (
     check_permission,
 )
 from .scratchpad import get_scratchpad_dir, init_scratchpad, is_scratchpad_path
-from .tracing import Trace, current_trace, is_tracing_disabled, span
-from .tracing.exporters import ConsoleTraceProcessor, JSONLTraceProcessor
-from .tracing.processor import TraceProcessor
-from .types import (
-    AssistantMessage,
-    ImageContent,
-    Message,
-    StopReason,
-    StreamDone,
-    StreamError,
-    StreamPart,
-    TextContent,
-    TextPart,
-    ThinkingContent,
-    ThinkPart,
-    ToolCall,
-    ToolCallDelta,
-    ToolCallStart,
-    ToolDefinition,
-    ToolResultMessage,
-    Usage,
-    UserMessage,
-)
 
 __all__ = [
     "AgentEndEvent",
@@ -75,65 +58,38 @@ __all__ = [
     "AskUserOption",
     "AskUserQuestion",
     "AskUserResponse",
-    "AssistantMessage",
     "BackgroundTaskCompletedEvent",
     "CompactionEndEvent",
     "CompactionProgressEvent",
     "CompactionStartEvent",
-    "ConsoleTraceProcessor",
     "ErrorEvent",
     "HostNoticeEvent",
-    "ImageContent",
     "InterruptedEvent",
-    "JSONLTraceProcessor",
-    "Message",
     "NotificationEvent",
     "PermissionDecision",
     "RetryEvent",
     "SessionEndEvent",
     "SessionStartEvent",
-    "Span",
-    "StopReason",
-    "StreamDone",
-    "StreamError",
-    "StreamPart",
-    "TextContent",
     "TextDeltaEvent",
     "TextEndEvent",
-    "TextPart",
     "TextStartEvent",
-    "ThinkPart",
-    "ThinkingContent",
     "ThinkingDeltaEvent",
     "ThinkingEndEvent",
     "ThinkingStartEvent",
     "ToolApprovalEvent",
     "ToolArgsDeltaEvent",
     "ToolArgsTokenUpdateEvent",
-    "ToolCall",
-    "ToolCallDelta",
-    "ToolCallStart",
-    "ToolDefinition",
     "ToolEndEvent",
     "ToolOutputDeltaEvent",
     "ToolResultEvent",
-    "ToolResultMessage",
     "ToolStartEvent",
-    "Trace",
-    "TraceProcessor",
     "TurnEndEvent",
     "TurnStartEvent",
-    "Usage",
-    "UserMessage",
     "WarningEvent",
     "_is_safe_bash_command",
     "check_permission",
-    "current_trace",
-    "format_error",
     "get_scratchpad_dir",
     "init_scratchpad",
     "is_scratchpad_path",
-    "is_tracing_disabled",
     "notify",
-    "span",
 ]

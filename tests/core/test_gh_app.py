@@ -11,8 +11,8 @@ import pytest
 from cryptography.hazmat.primitives import serialization
 from cryptography.hazmat.primitives.asymmetric import rsa
 
-from vtx.core import gh_app
-from vtx.core.gh_app import (
+from vtx.git import gh_app
+from vtx.git.gh_app import (
     GitHubAppConfig,
     committer_env_vars,
     committer_identity,

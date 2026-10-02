@@ -13,8 +13,8 @@ from textual.screen import ModalScreen
 from textual.timer import Timer
 from textual.widgets import Label
 
-from vtx.ai.config import PermissionMode, config
-from vtx.core.git_branch import resolve_git_branch
+from vtx.core.config import PermissionMode, config
+from vtx.git.git_branch import resolve_git_branch
 from vtx.tui.chat import WITTY_ROTATE_EVERY_TICKS
 from vtx.tui.formatting import format_tokens
 from vtx.tui.status_lines import WITTY_STATUS_LINES, subagents_own_the_status_line
@@ -240,7 +240,7 @@ class InfoBar(Vertical):
 
     def _compaction_threshold_percent(self) -> float:
         # Lazy import: keeps the module importable without the agent config.
-        from vtx.ai.agent.config import get_harness_config
+        from vtx.core.harness_config import get_harness_config
 
         return get_harness_config().compaction_threshold_percent
 

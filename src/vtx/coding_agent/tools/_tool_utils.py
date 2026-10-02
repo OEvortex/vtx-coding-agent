@@ -2,7 +2,7 @@ import asyncio
 import os
 from contextlib import suppress
 
-from vtx.ai.agent.async_utils import OperationCancelledError, await_or_cancel
+from vtx.agent.async_utils import OperationCancelledError, await_or_cancel
 
 _SUBPROCESS_DRAIN_TIMEOUT_SECONDS = 1.0
 

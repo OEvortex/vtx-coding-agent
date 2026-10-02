@@ -9,9 +9,9 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING, Any
 
-from vtx.coding_agent.goal.record import objective_title
-from vtx.coding_agent.goal.service import GoalError, get_service
-from vtx.coding_agent.goal.storage import find_goal_file
+from vtx.agent.goal.record import objective_title
+from vtx.agent.goal.service import GoalError, get_service
+from vtx.agent.goal.storage import find_goal_file
 from vtx.tui.chat import ChatLog
 from vtx.tui.commands.base import CommandSupport
 
@@ -225,7 +225,7 @@ class GoalCommands(CommandSupport):
         record, service = self._focused_active_goal()
         if record is None or record.status != "active":
             return ""
-        from vtx.coding_agent.goal.prompts import goal_context_block
+        from vtx.agent.goal.prompts import goal_context_block
 
         return goal_context_block(service, record)
 
@@ -238,7 +238,7 @@ class GoalCommands(CommandSupport):
             return None
         if record.status != "active":
             return None
-        from vtx.coding_agent.goal.prompts import continuation_prompt
+        from vtx.agent.goal.prompts import continuation_prompt
 
         title = objective_title(record.objective, 60)
         display = f"◈ goal checkpoint · {title}"

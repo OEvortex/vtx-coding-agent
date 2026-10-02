@@ -18,7 +18,7 @@ from pathlib import Path
 
 import pytest
 
-from vtx.ai.agent.context.skills import _parse_frontmatter, load_builtin_cmd_skills, load_skills
+from vtx.agent.context.skills import _parse_frontmatter, load_builtin_cmd_skills, load_skills
 
 
 def _skills_root(tmp_path: Path) -> Path:

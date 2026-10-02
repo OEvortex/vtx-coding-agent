@@ -15,7 +15,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Literal
 
-from vtx.ai.agent.tools.base import BaseTool
+from vtx.agent.tools.base import BaseTool
 from vtx.coding_agent.agents.schema import AgentDef, PermissionAction, PermissionGate
 
 # ``CommandOutcome``, ``ExtensionTool``, and ``_json_schema_to_pydantic``
@@ -27,7 +27,7 @@ from vtx.coding_agent.agents.schema import AgentDef, PermissionAction, Permissio
 # the type-checker still sees it, but it isn't evaluated at class
 # construction.
 if TYPE_CHECKING:
-    from vtx.ai.agent.extensions import CommandOutcome
+    from vtx.agent.extensions import CommandOutcome
 
 NotifyLevel = Literal["info", "warning", "error"]
 
@@ -214,8 +214,8 @@ class AgentAPI:
         # by the absence of an explicit ``execute=`` argument; everything
         # else is taken from the decorator.
         if execute is None and description is not None and parameters is not None:
-            from vtx.ai.agent import ExtensionTool
-            from vtx.ai.agent.extensions import _json_schema_to_pydantic
+            from vtx.agent import ExtensionTool
+            from vtx.agent.extensions import _json_schema_to_pydantic
 
             def _decorator(fn: Callable[..., Any]) -> BaseTool:
                 params_model = _json_schema_to_pydantic(name, parameters)
@@ -241,8 +241,8 @@ class AgentAPI:
                 "(or use the @api.local_tool(...) decorator form)"
             )
 
-        from vtx.ai.agent import ExtensionTool
-        from vtx.ai.agent.extensions import _json_schema_to_pydantic
+        from vtx.agent import ExtensionTool
+        from vtx.agent.extensions import _json_schema_to_pydantic
 
         params_model = _json_schema_to_pydantic(name, parameters)
         tool = ExtensionTool(
@@ -296,7 +296,7 @@ class AgentAPI:
         def _wrap(
             fn: Callable[[str], CommandOutcome | str | None],
         ) -> Callable[[str], CommandOutcome]:
-            from vtx.ai.agent.extensions import CommandOutcome
+            from vtx.agent.extensions import CommandOutcome
 
             def _wrapper(args: str) -> CommandOutcome:
                 try:
@@ -372,7 +372,7 @@ class AgentAPI:
         Mirrors :meth:`vtx.extensions.ExtensionAPI.on` exactly. Supports
         both ``api.on(EVENT, handler)`` and ``@api.on(EVENT)`` forms.
         """
-        from vtx.ai.agent.extensions import ALL_EVENTS
+        from vtx.agent.extensions import ALL_EVENTS
 
         if event not in ALL_EVENTS:
             raise ValueError(f"Unknown event {event!r}. Valid events: {', '.join(ALL_EVENTS)}")
@@ -393,7 +393,7 @@ class AgentAPI:
 
     def on_agent_change(self, handler: Callable[..., Any] | None = None) -> Any:
         """Shortcut for ``api.on('agent_changed', handler)``."""
-        from vtx.ai.agent import AGENT_CHANGED
+        from vtx.agent import AGENT_CHANGED
 
         return self.on(AGENT_CHANGED, handler)
 

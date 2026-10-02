@@ -19,10 +19,10 @@ from pathlib import Path
 
 import pytest
 
-from vtx.ai.agent.codemode import CodemodeSandbox, adapt_tools
-from vtx.ai.agent.extensions import EventBus
-from vtx.ai.agent.runtime import ConversationRuntime
-from vtx.ai.agent.tools import get_all_tools
+from vtx.agent.extensions import EventBus
+from vtx.agent.runtime import ConversationRuntime
+from vtx.agent.tools import get_all_tools
+from vtx.codemode import CodemodeSandbox, adapt_tools
 from vtx.mcp.config import LoadedMcpConfig, validate_mcp_server_config
 from vtx.mcp.manager import McpManager
 
@@ -115,7 +115,7 @@ async def test_a_hidden_tool_is_callable_by_nobody(tmp_path):
         assert tools
         assert all(t.exposure == "hidden" for t in tools)
 
-    from vtx.ai.agent.tools import ToolSearchTool
+    from vtx.agent.tools import ToolSearchTool
 
     assert ToolSearchTool().searchable() == []
 
@@ -123,7 +123,7 @@ async def test_a_hidden_tool_is_callable_by_nobody(tmp_path):
 async def test_the_harness_tool_reaches_mcp_tools_through_the_runtime(tmp_path):
     # The end-to-end claim: a session with a connected server, using the
     # registered `codemode` tool, can call that server's tools from a script.
-    from vtx.ai.agent.tools.codemode import CodemodeParams
+    from vtx.agent.tools.codemode import CodemodeParams
 
     runtime = ConversationRuntime(
         cwd=str(tmp_path), model="gpt-test", tools=[], extensions=EventBus()
@@ -164,7 +164,7 @@ async def test_a_codemode_exposed_tool_is_not_declared_to_the_model(tmp_path, mo
     is still sent two hundred tool definitions per turn, which is the cost the
     exposure setting exists to remove.
     """
-    from vtx.ai.agent.tools import get_tool_definitions
+    from vtx.agent.tools import get_tool_definitions
 
     runtime = ConversationRuntime(
         cwd=str(tmp_path), model="gpt-test", tools=[], extensions=EventBus()
@@ -195,7 +195,7 @@ async def test_a_direct_exposed_tool_is_declared_and_still_callable(tmp_path, mo
     six, so `direct` does not withdraw a tool from the sandbox. It is only left
     out of the codemode catalog, since the model already has it in front of it.
     """
-    from vtx.ai.agent.tools import get_tool_definitions
+    from vtx.agent.tools import get_tool_definitions
 
     runtime = ConversationRuntime(
         cwd=str(tmp_path), model="gpt-test", tools=[], extensions=EventBus()
@@ -228,7 +228,7 @@ async def test_a_per_tool_override_beats_the_server_exposure(tmp_path, monkeypat
     name beats the pattern, so the one tool the operator wants composed arrives
     through a script rather than as its own tool definition.
     """
-    from vtx.ai.agent.tools import get_tool_definitions
+    from vtx.agent.tools import get_tool_definitions
 
     runtime = ConversationRuntime(
         cwd=str(tmp_path), model="gpt-test", tools=[], extensions=EventBus()

@@ -24,9 +24,9 @@ from typing import Any
 
 from pydantic import BaseModel
 
-from vtx.ai.agent.tools.base import BaseTool
-from vtx.ai.agent.tools.schema import json_schema_to_pydantic
-from vtx.core.types import ToolResult
+from vtx.agent.tools.base import BaseTool
+from vtx.agent.tools.schema import json_schema_to_pydantic
+from vtx.protocol.types import ToolResult
 
 from .client import McpRequestOptions
 from .content import split_content, to_tool_content

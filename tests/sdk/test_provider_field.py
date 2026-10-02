@@ -17,8 +17,8 @@ from dataclasses import fields
 
 import pytest
 
-from vtx.ai.agent.sdk import Agent, Runner
-from vtx.ai.agent.sdk.agent import _PROVIDER_DICT_KEYS
+from vtx.agent.sdk import Agent, Runner
+from vtx.agent.sdk.agent import _PROVIDER_DICT_KEYS
 from vtx.ai.providers.mock import MockProvider
 
 # ---------------------------------------------------------------------------

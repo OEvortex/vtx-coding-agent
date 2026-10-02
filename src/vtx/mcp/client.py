@@ -5,7 +5,7 @@ server-initiated requests, and the paginated list helpers. Knows nothing about
 stdio, HTTP, or OAuth -- it only talks to an :class:`McpTransport`.
 
 Cancellation is an ``asyncio.Event`` rather than an abort signal, which is the
-same shape :meth:`vtx.ai.agent.tools.base.BaseTool.execute` already takes, so a
+same shape :meth:`vtx.agent.tools.base.BaseTool.execute` already takes, so a
 tool call can hand the agent's interrupt straight through.
 """
 

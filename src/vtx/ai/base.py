@@ -21,7 +21,7 @@ except Exception:
     pass
 
 from vtx.ai.thinking import THINKING_LEVELS, clamp_thinking_level
-from vtx.core.types import (
+from vtx.protocol.types import (
     Message,
     StreamDone,
     StreamPart,
@@ -141,7 +141,7 @@ def is_local_base_url(base_url: str | None) -> bool:
 
 
 def make_http_client() -> httpx.AsyncClient | None:
-    from vtx.ai.config import config as vtx_config
+    from vtx.core.config import config as vtx_config
 
     # Returns None when verify is required so the SDK uses its own default client.
     if not vtx_config.llm.tls.insecure_skip_verify:
@@ -409,7 +409,7 @@ class BaseProvider(ABC):
         **kwargs: Any,
     ) -> Any:
         """Non-streaming chat completion with retry. Consumes stream internally."""
-        from vtx.core.types import ToolDefinition
+        from vtx.protocol.types import ToolDefinition
 
         converted_messages = self._convert_dict_messages(messages)
         system_prompt = None

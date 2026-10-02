@@ -1,5 +1,5 @@
-from vtx.ai.agent.session import Session
-from vtx.core.types import (
+from vtx.agent.session import Session
+from vtx.protocol.types import (
     AssistantMessage,
     FileChanges,
     TextContent,

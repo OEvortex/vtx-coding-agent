@@ -14,14 +14,14 @@ from typing import TYPE_CHECKING, Any
 
 from textual.timer import Timer
 
-from vtx.ai.config import config
+from vtx.core.config import config
 from vtx.core.recap import (
     RecapContext,
     build_recap_context,
     generate_recap,
     has_meaningful_activity,
 )
-from vtx.core.types import TextContent, UserMessage
+from vtx.protocol.types import TextContent, UserMessage
 from vtx.tui.chat import ChatLog
 from vtx.tui.status_lines import pick_recap_status_line
 

@@ -1,6 +1,6 @@
 """TUI-backed interactive UI primitives for extensions.
 
-Implements :class:`vtx.ai.agent.extensions.ExtensionUIContext` on top of the
+Implements :class:`vtx.agent.extensions.ExtensionUIContext` on top of the
 Textual app:
 
 - ``await ctx.ui.confirm(title, message)`` — yes/no modal dialog
@@ -28,7 +28,7 @@ from textual.containers import Vertical
 from textual.screen import ModalScreen
 from textual.widgets import Input, Label, OptionList, Static
 
-from vtx.ai.agent.extensions import ExtensionUIContext
+from vtx.agent.extensions import ExtensionUIContext
 
 log = logging.getLogger("tui.extension_ui")
 

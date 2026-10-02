@@ -4,10 +4,10 @@ from pathlib import Path
 import aiofiles
 from pydantic import BaseModel, Field
 
-from vtx.ai.agent.tools.base import BaseTool, ToolResult
-from vtx.coding_agent.config import config
+from vtx.agent.tools.base import BaseTool, ToolResult
 from vtx.coding_agent.tools._tool_utils import shorten_path
-from vtx.core.types import FileChanges
+from vtx.core.config import config
+from vtx.protocol.types import FileChanges
 
 
 class WriteParams(BaseModel):
@@ -32,7 +32,7 @@ class WriteTool(BaseTool):
         return shorten_path(params.path)
 
     def format_preview(self, params: WriteParams) -> str | None:
-        from vtx.coding_agent.diff_display import DIFF_BG_PAD_MARKER, blend_hex
+        from vtx.tui.diff_display import DIFF_BG_PAD_MARKER, blend_hex
 
         colors = config.ui.colors
         bg_added = blend_hex(colors.diff_added, colors.bg)

@@ -3,10 +3,10 @@ from rich.text import Text
 from textual.app import App, ComposeResult
 from textual.widgets import Label
 
-from vtx.coding_agent.diff_display import DIFF_BG_PAD_MARKER
-from vtx.core.types import ImageContent
+from vtx.protocol.types import ImageContent
 from vtx.tui.blocks import ToolBlock
 from vtx.tui.chat import ChatLog
+from vtx.tui.diff_display import DIFF_BG_PAD_MARKER
 from vtx.tui.styles import get_styles
 from vtx.tui.tool_output import format_expand_hint, truncate_tool_output_text
 

@@ -13,9 +13,9 @@ import json
 import pytest
 from pydantic import BaseModel, Field
 
-from vtx.ai.agent.tools import get_all_tools, get_default_tools, get_tool_definitions
-from vtx.ai.agent.tools.codemode import CODEMODE_TOOL_NAME, CodemodeParams, CodemodeTool
-from vtx.core.types import ToolResult
+from vtx.agent.tools import get_all_tools, get_default_tools, get_tool_definitions
+from vtx.agent.tools.codemode import CODEMODE_TOOL_NAME, CodemodeParams, CodemodeTool
+from vtx.protocol.types import ToolResult
 
 
 class Echo(BaseModel):
@@ -46,7 +46,7 @@ def echo_tool() -> EchoTool:
     Registered for the test's duration only: the registry is process-global, and
     a leaked entry would show up in every other test that inspects the tool set.
     """
-    from vtx.ai.agent.tools import register_tool, unregister_tool
+    from vtx.agent.tools import register_tool, unregister_tool
 
     tool = EchoTool()
     register_tool(tool, is_default=True)
@@ -161,10 +161,10 @@ async def test_timeout_is_reported_as_such(tool: CodemodeTool):
 
 
 @pytest.mark.asyncio
-async def test_a_blocked_import_is_reported_not_raised(tool: CodemodeTool):
-    result = await tool.execute(CodemodeParams(code="import os\nreturn 1"))
+async def test_a_runtime_error_is_reported_not_raised(tool: CodemodeTool):
+    result = await tool.execute(CodemodeParams(code="return 1 / 0"))
     assert not result.success
-    assert "sandbox" in result.result
+    assert "ZeroDivisionError" in result.result
 
 
 @pytest.mark.asyncio

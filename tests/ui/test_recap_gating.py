@@ -149,7 +149,7 @@ class TestWakeupPreemptsRecap:
         async with app.run_test(size=(100, 30)) as pilot:
             from datetime import UTC, datetime
 
-            from vtx.ai.agent.background import BackgroundTaskRecord
+            from vtx.agent.background import BackgroundTaskRecord
 
             # Simulate the recap being armed and a worker in flight.
             app._recap_timer = app.set_timer(30.0, app._on_recap_idle)

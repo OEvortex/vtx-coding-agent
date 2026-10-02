@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from vtx.ai import list_providers
-from vtx.ai.config import get_config, set_model_provider_filter
+from vtx.core.config import get_config, set_model_provider_filter
 from vtx.tui.chat import ChatLog
 from vtx.tui.commands.base import CommandSupport
 from vtx.tui.floating_list import ListItem

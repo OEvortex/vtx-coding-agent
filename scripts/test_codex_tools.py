@@ -9,7 +9,7 @@ import sys
 from vtx.ai import ProviderConfig, get_valid_codex_token_sync
 from vtx.ai.oauth.codex import is_codex_logged_in
 from vtx.ai.providers.openai_responses_sdk import OpenAIResponsesSDKProvider
-from vtx.core.types import ToolDefinition, UserMessage
+from vtx.protocol.types import ToolDefinition, UserMessage
 
 MODEL = "gpt-5.6-luna"
 TEST_MESSAGE = "What is the capital of France? Use the lookup tool."
@@ -54,7 +54,13 @@ async def main() -> None:
     finish_reason = "stop"
 
     async for part in stream:
-        from vtx.core.types import StreamDone, StreamError, TextPart, ToolCallDelta, ToolCallStart
+        from vtx.protocol.types import (
+            StreamDone,
+            StreamError,
+            TextPart,
+            ToolCallDelta,
+            ToolCallStart,
+        )
 
         if isinstance(part, StreamError):
             print(f"\n[api] STREAM ERROR: {part.error}")

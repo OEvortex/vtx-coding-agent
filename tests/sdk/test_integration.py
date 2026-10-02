@@ -5,7 +5,7 @@ from __future__ import annotations
 import pytest
 from pydantic import BaseModel
 
-from vtx.ai.agent.sdk import (
+from vtx.agent.sdk import (
     Agent,
     GuardrailFunctionOutput,
     JSONLSession,
@@ -92,7 +92,7 @@ async def test_structured_output_pattern() -> None:
         date: str
 
     from vtx.ai.base import BaseProvider, LLMStream, ProviderConfig
-    from vtx.core.types import StopReason, StreamDone, TextPart
+    from vtx.protocol.types import StopReason, StreamDone, TextPart
 
     class JsonProvider(BaseProvider):
         name = "json"
@@ -128,7 +128,7 @@ async def test_input_guardrail_in_run(text_provider) -> None:
     def block(data):
         return GuardrailFunctionOutput(tripwire_triggered="bad" in (data.input or ""))
 
-    from vtx.ai.agent.sdk import InputGuardrailTripwireTriggered
+    from vtx.agent.sdk import InputGuardrailTripwireTriggered
 
     agent = Agent(name="Bot", provider=text_provider, input_guardrails=[block])
     with pytest.raises(InputGuardrailTripwireTriggered):
@@ -140,7 +140,7 @@ async def test_input_guardrail_in_run(text_provider) -> None:
 @pytest.mark.asyncio
 async def test_run_sync_via_thread(text_provider) -> None:
     """``Runner.run_sync`` works from a synchronous context (or a running loop)."""
-    from vtx.ai.agent.sdk import Runner
+    from vtx.agent.sdk import Runner
 
     agent = Agent(name="Bot", provider=text_provider)
     result = Runner.run_sync(agent, "hi")

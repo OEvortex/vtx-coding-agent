@@ -1,8 +1,8 @@
 import pytest
 
-from vtx.ai.agent.dispatcher import set_context
-from vtx.ai.agent.tools import get_tool
-from vtx.coding_agent.config import get_config, reset_config
+from vtx.agent.dispatcher import set_context
+from vtx.agent.tools import get_tool
+from vtx.core.config import get_config, reset_config
 
 
 def pytest_runtest_setup(item):

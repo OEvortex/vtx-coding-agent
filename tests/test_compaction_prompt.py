@@ -19,7 +19,7 @@ from vtx.ai.base import BaseProvider, LLMStream, ProviderConfig
 from vtx.ai.sdk.openai import GenerationConfig
 from vtx.ai.sdk.openai_responses import OpenAIResponsesSDK
 from vtx.core.compaction import SUMMARIZATION_PROMPT, _strip_analysis, generate_summary
-from vtx.core.types import StopReason, StreamDone, TextPart, UserMessage
+from vtx.protocol.types import StopReason, StreamDone, TextPart, UserMessage
 
 
 def test_prompt_is_substantial():

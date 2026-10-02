@@ -15,9 +15,9 @@ from __future__ import annotations
 import pytest
 from pydantic import BaseModel
 
-from vtx.ai.agent.tools.base import BaseTool
-from vtx.ai.agent.tools.tool_search import ToolSearchTool
-from vtx.core.types import ToolResult
+from vtx.agent.tools.base import BaseTool
+from vtx.agent.tools.tool_search import ToolSearchTool
+from vtx.protocol.types import ToolResult
 
 
 class _Empty(BaseModel):
@@ -149,6 +149,6 @@ async def test_nothing_to_find_is_reported_as_such():
 
 
 def _params(query: str, limit: int = 8):
-    from vtx.ai.agent.tools.tool_search import ToolSearchParams
+    from vtx.agent.tools.tool_search import ToolSearchParams
 
     return ToolSearchParams(query=query, limit=limit)

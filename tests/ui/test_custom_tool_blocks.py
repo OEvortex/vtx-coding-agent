@@ -10,8 +10,8 @@ from pathlib import Path
 import pytest
 from textual.app import App, ComposeResult
 
-from vtx.ai.agent.extensions import Extension, ExtensionAPI, ExtensionTool
-from vtx.ai.agent.tools.base import BaseTool
+from vtx.agent.extensions import Extension, ExtensionAPI, ExtensionTool
+from vtx.agent.tools.base import BaseTool
 from vtx.coding_agent.agents.api import AgentAPI
 from vtx.coding_agent.agents.loader import load_agent
 from vtx.tui.blocks import ToolBlock
@@ -108,7 +108,7 @@ def _noop_params():
 
 def _make_ext_api(name: str = "ext_test") -> tuple[ExtensionAPI, Extension]:
     """Build a minimal ``ExtensionAPI`` wired to a real :class:`Extension`."""
-    from vtx.ai.agent import EventBus
+    from vtx.agent import EventBus
 
     ext = Extension(name=name, path=Path(f"/{name}.py"))
     api = ExtensionAPI(ext, bus=EventBus(), cwd=".", session_file=None, config_dir=Path("/"))

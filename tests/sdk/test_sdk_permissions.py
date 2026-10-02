@@ -2,13 +2,13 @@
 
 from __future__ import annotations
 
-from vtx.ai.agent.sdk.permissions import (
+from vtx.agent.sdk.permissions import (
     AllowlistApprove,
     AutoApprove,
     PermissionDecision,
     PromptApprove,
 )
-from vtx.ai.agent.sdk.tools import tool
+from vtx.agent.sdk.tools import tool
 
 
 def test_auto_approve_allows_everything() -> None:

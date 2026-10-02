@@ -4,7 +4,7 @@ import httpx
 import pytest
 
 from vtx.ai.base import make_http_client
-from vtx.coding_agent.config import Config, reset_config, set_config
+from vtx.core.config import Config, reset_config, set_config
 
 
 @pytest.fixture(autouse=True)

@@ -4,13 +4,13 @@ from typing import cast
 
 import pytest
 
-from vtx.ai.agent.loop import Agent, AgentConfig
-from vtx.ai.agent.session import CompactionEntry, Session
+from vtx.agent.loop import Agent, AgentConfig
+from vtx.agent.runtime import ConversationRuntime
+from vtx.agent.session import CompactionEntry, Session
 from vtx.ai.providers.mock import MockProvider
-from vtx.coding_agent.config import Config
-from vtx.coding_agent.runtime import ConversationRuntime
 from vtx.core.compaction import is_overflow
-from vtx.core.types import (
+from vtx.core.config import Config
+from vtx.protocol.types import (
     AssistantMessage,
     StopReason,
     TextContent,
@@ -240,7 +240,7 @@ class TestSessionCompactedMessages:
 
 class TestCompactionPersistence:
     def test_compaction_entry_round_trip(self, tmp_path, monkeypatch):
-        monkeypatch.setattr("vtx.ai.agent.session.Session.get_sessions_dir", lambda cwd: tmp_path)
+        monkeypatch.setattr("vtx.agent.session.Session.get_sessions_dir", lambda cwd: tmp_path)
 
         session = Session.create("/test/project")
         session.append_message(UserMessage(content="Hello"))
@@ -268,7 +268,7 @@ class TestCompactionPersistence:
         assert compaction_entries[0].details == {"model": "test"}
 
     def test_loaded_session_messages_are_compacted(self, tmp_path, monkeypatch):
-        monkeypatch.setattr("vtx.ai.agent.session.Session.get_sessions_dir", lambda cwd: tmp_path)
+        monkeypatch.setattr("vtx.agent.session.Session.get_sessions_dir", lambda cwd: tmp_path)
 
         session = Session.create("/test/project")
         session.append_message(UserMessage(content="Old"))
@@ -379,7 +379,7 @@ class TestCompactionUsageBacktracking:
         async def _fake_summary(*args, **kwargs):
             return "summary"
 
-        monkeypatch.setattr("vtx.coding_agent.runtime.generate_summary", _fake_summary)
+        monkeypatch.setattr("vtx.agent.runtime.generate_summary", _fake_summary)
 
         await app._do_compact()
 
@@ -424,7 +424,7 @@ class TestCompactionUsageBacktracking:
         async def _fake_summary(*args, **kwargs):
             return "summary"
 
-        monkeypatch.setattr("vtx.ai.agent.loop.generate_summary", _fake_summary)
+        monkeypatch.setattr("vtx.agent.loop.generate_summary", _fake_summary)
 
         events = [e async for e in agent._check_compaction(StopReason.STOP, "system", None)]
         assert [e.type for e in events] == ["compaction_start", "compaction_end"]
@@ -572,7 +572,7 @@ class TestCompactionProgressEvents:
 
     @pytest.mark.asyncio
     async def test_start_event_carries_context_and_overflow_trigger(self, monkeypatch):
-        monkeypatch.setattr("vtx.ai.agent.loop.generate_summary", self._streaming_summary([]))
+        monkeypatch.setattr("vtx.agent.loop.generate_summary", self._streaming_summary([]))
         agent = self._agent()
         events = [e async for e in agent._check_compaction(StopReason.STOP, "system", None)]
         start = events[0]
@@ -583,7 +583,7 @@ class TestCompactionProgressEvents:
 
     @pytest.mark.asyncio
     async def test_end_event_carries_the_summary(self, monkeypatch):
-        monkeypatch.setattr("vtx.ai.agent.loop.generate_summary", self._streaming_summary([]))
+        monkeypatch.setattr("vtx.agent.loop.generate_summary", self._streaming_summary([]))
         agent = self._agent()
         events = [e async for e in agent._check_compaction(StopReason.STOP, "system", None)]
         end = next(e for e in events if e.type == "compaction_end")
@@ -593,7 +593,7 @@ class TestCompactionProgressEvents:
     @pytest.mark.asyncio
     async def test_progress_events_are_emitted_and_precede_the_end(self, monkeypatch):
         monkeypatch.setattr(
-            "vtx.ai.agent.loop.generate_summary",
+            "vtx.agent.loop.generate_summary",
             self._streaming_summary(["<summary>\n## 1. Objective", " & Constraints\nbody"]),
         )
         agent = self._agent()
@@ -607,7 +607,7 @@ class TestCompactionProgressEvents:
     @pytest.mark.asyncio
     async def test_progress_sections_carry_the_started_headings(self, monkeypatch):
         monkeypatch.setattr(
-            "vtx.ai.agent.loop.generate_summary",
+            "vtx.agent.loop.generate_summary",
             self._streaming_summary(["<summary>\n## 1. Objective", " & Constraints\nbody"]),
         )
         agent = self._agent()
@@ -622,7 +622,7 @@ class TestCompactionProgressEvents:
         async def _boom(*args, **kwargs):
             raise RuntimeError("provider exploded")
 
-        monkeypatch.setattr("vtx.ai.agent.loop.generate_summary", _boom)
+        monkeypatch.setattr("vtx.agent.loop.generate_summary", _boom)
         agent = self._agent()
         events = [e async for e in agent._check_compaction(StopReason.STOP, "system", None)]
         end = next(e for e in events if e.type == "compaction_end")
@@ -631,7 +631,7 @@ class TestCompactionProgressEvents:
 
     @pytest.mark.asyncio
     async def test_no_progress_queue_leak_between_runs(self, monkeypatch):
-        monkeypatch.setattr("vtx.ai.agent.loop.generate_summary", self._streaming_summary([]))
+        monkeypatch.setattr("vtx.agent.loop.generate_summary", self._streaming_summary([]))
         agent = self._agent()
         [e async for e in agent._check_compaction(StopReason.STOP, "system", None)]
         assert len(agent._compaction_progress) == 0

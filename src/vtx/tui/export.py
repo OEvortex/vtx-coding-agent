@@ -14,7 +14,7 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any
 
-from vtx.ai.agent.tools import get_tool
+from vtx.agent.tools import get_tool
 from vtx.core.paths import get_config_dir
 
 MAX_RESULT_LINES = 10

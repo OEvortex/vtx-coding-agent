@@ -12,8 +12,8 @@ from vtx.ai.sdk.base import GenerationConfig
 from vtx.ai.sdk.base import Message as SDKMessage
 from vtx.ai.sdk.openai import OpenAISDK
 from vtx.ai.thinking import OPENAI_COMPLETIONS
-from vtx.core.errors import format_error
-from vtx.core.types import (
+from vtx.protocol.errors import format_error
+from vtx.protocol.types import (
     AssistantMessage,
     ImageContent,
     Message,

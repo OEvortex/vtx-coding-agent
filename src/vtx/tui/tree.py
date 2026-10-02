@@ -9,11 +9,17 @@ from textual.message import Message
 from textual.reactive import reactive
 from textual.widget import Widget
 
-from vtx.ai.agent.session import MessageEntry, SessionEntry, TreeNode
-from vtx.ai.agent.tools import lookup_default_tool as get_tool
-from vtx.ai.config import config
+from vtx.agent.session import MessageEntry, SessionEntry, TreeNode
+from vtx.agent.tools import lookup_default_tool as get_tool
+from vtx.core.config import config
 from vtx.core.paths import shorten_path
-from vtx.core.types import AssistantMessage, TextContent, ToolCall, ToolResultMessage, UserMessage
+from vtx.protocol.types import (
+    AssistantMessage,
+    TextContent,
+    ToolCall,
+    ToolResultMessage,
+    UserMessage,
+)
 
 
 @dataclass

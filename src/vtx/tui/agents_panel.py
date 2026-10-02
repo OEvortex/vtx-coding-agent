@@ -46,8 +46,8 @@ from rich.text import Text
 from textual.timer import Timer
 from textual.widgets import Static
 
-from vtx.ai.agent.tools.task import DEFAULT_SUBAGENT
-from vtx.ai.config import config
+from vtx.agent.tools.task import DEFAULT_SUBAGENT
+from vtx.core.config import config
 from vtx.tui.goal_agents import DONE_LINGER_SECONDS, REGISTRY, SubagentRun
 from vtx.tui.task_ui import SPINNER, describe_activity, format_tokens
 

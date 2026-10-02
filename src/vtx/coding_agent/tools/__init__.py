@@ -2,29 +2,29 @@
 
 Registers concrete tools (:class:`ReadTool`, :class:`EditTool`, :class:`WriteTool`,
 :class:`BashTool`, :class:`FindTool`, :class:`GrepTool`, :class:`SkillTool`) into the
-central harness tool registry at :mod:`vtx.ai.agent.tools`.
+central harness tool registry at :mod:`vtx.agent.tools`.
 """
 
 from __future__ import annotations
 
-from vtx.ai.agent.tools import (
-    BaseTool,
-    get_tool_definitions,
-    register_tool,
-    set_default_tool_lookup,
+from vtx.agent.background import (
+    BackgroundTaskManager,
+    BackgroundTaskRecord,
+    get_manager,
+    set_manager,
 )
+from vtx.agent.goal.tools import GoalTool
+from vtx.agent.tools import BaseTool, get_tool_definitions, register_tool, set_default_tool_lookup
+from vtx.agent.tools.ask_user import AskUserTool
+from vtx.agent.tools.task import TaskTool
+from vtx.agent.tools.web import WebSearchTool, WebTool
 
-from ..goal.tools import GoalTool
-from .ask_user import AskUserTool
-from .background import BackgroundTaskManager, BackgroundTaskRecord, get_manager, set_manager
 from .bash import BashTool
 from .edit import EditTool
 from .find import FindTool
 from .grep import GrepTool
 from .read import ReadTool
 from .skill import SkillTool
-from .task import TaskTool
-from .web import WebSearchTool, WebTool
 from .write import WriteTool
 
 __all__ = [
@@ -98,7 +98,7 @@ def get_tools_with_extensions(
 ) -> list[BaseTool]:
     tools = get_tools(default_names)
     if extension_tools:
-        # Name-match replacement, mirroring vtx.ai.agent.tools: an extension may
+        # Name-match replacement, mirroring vtx.agent.tools: an extension may
         # ship a tool whose name matches a built-in in order to override it.
         ext_names = {t.name for t in extension_tools}
         tools = [t for t in tools if t.name not in ext_names]

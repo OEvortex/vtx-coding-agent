@@ -1,6 +1,6 @@
-from vtx.coding_agent.config import get_config
 from vtx.core import AgentEndEvent, ToolApprovalEvent, TurnStartEvent
-from vtx.core.types import StopReason
+from vtx.core.config import get_config
+from vtx.protocol.types import StopReason
 from vtx.tui.app import Vtx
 
 

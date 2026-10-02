@@ -6,11 +6,11 @@ import aiofiles
 from pydantic import BaseModel, Field
 from rich.markup import escape
 
-from vtx.ai.agent.tools.base import BaseTool, ToolResult
-from vtx.coding_agent.config import config
-from vtx.coding_agent.diff_display import DIFF_BG_PAD_MARKER, blend_hex
+from vtx.agent.tools.base import BaseTool, ToolResult
 from vtx.coding_agent.tools._tool_utils import shorten_path
-from vtx.core.types import FileChanges
+from vtx.core.config import config
+from vtx.protocol.types import FileChanges
+from vtx.tui.diff_display import DIFF_BG_PAD_MARKER, blend_hex
 
 CONTEXT_LINES = 4
 

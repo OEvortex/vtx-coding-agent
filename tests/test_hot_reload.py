@@ -23,7 +23,7 @@ from pathlib import Path
 
 import pytest
 
-from vtx.ai.agent.extensions import (
+from vtx.agent.extensions import (
     EventBus,
     ExtensionLoadError,
     invalidate_extension_bytecode,
@@ -37,7 +37,7 @@ from vtx.tui.autocomplete import DEFAULT_COMMANDS
 _EXT_TEMPLATE = """\
 from pydantic import BaseModel
 
-from vtx.ai.agent.tools.base import BaseTool, ToolResult
+from vtx.agent.tools.base import BaseTool, ToolResult
 
 VERSION = {version!r}
 {probe_import}
@@ -90,7 +90,7 @@ def _probe(ext) -> str:
 
 
 def _header(cwd: Path, *, system_prompt: str | None, tools: list[str] | None):
-    from vtx.ai.agent.session import SessionHeader
+    from vtx.agent.session import SessionHeader
 
     return SessionHeader(
         id="s1", timestamp="t", cwd=str(cwd), system_prompt=system_prompt, tools=tools
@@ -190,11 +190,11 @@ class TestReloadIsWired:
 
 class TestRuntimeRebind:
     def test_rebind_swaps_tools_and_keeps_the_session(self, tmp_path: Path):
-        from vtx.ai.agent.runtime import ConversationRuntime
-        from vtx.ai.agent.tools import get_tools_with_extensions
+        from vtx.agent.runtime import ConversationRuntime
+        from vtx.agent.tools import get_tools_with_extensions
 
         runtime = ConversationRuntime(cwd=str(tmp_path), tools=[])
-        from vtx.ai.agent.session import Session
+        from vtx.agent.session import Session
 
         session = Session("s-keep", str(tmp_path), persist=False)
         runtime.session = session
@@ -208,8 +208,8 @@ class TestRuntimeRebind:
     def test_rebind_clears_the_cached_header_prompt(self, tmp_path: Path):
         """resolve_system_prompt prefers the header prompt over a fresh build, so
         a stale one would keep being sent after a reload."""
-        from vtx.ai.agent.runtime import ConversationRuntime
-        from vtx.ai.agent.session import Session
+        from vtx.agent.runtime import ConversationRuntime
+        from vtx.agent.session import Session
 
         runtime = ConversationRuntime(cwd=str(tmp_path), tools=[])
         session = Session("s-reload", str(tmp_path), persist=False)
@@ -221,9 +221,9 @@ class TestRuntimeRebind:
         assert session.system_prompt is None
 
     def test_rebind_records_the_new_tool_names(self, tmp_path: Path):
-        from vtx.ai.agent.runtime import ConversationRuntime
-        from vtx.ai.agent.session import Session
-        from vtx.ai.agent.tools import get_tools_with_extensions
+        from vtx.agent.runtime import ConversationRuntime
+        from vtx.agent.session import Session
+        from vtx.agent.tools import get_tools_with_extensions
 
         runtime = ConversationRuntime(cwd=str(tmp_path), tools=[])
         session = Session("s-reload", str(tmp_path), persist=False)
@@ -234,7 +234,7 @@ class TestRuntimeRebind:
         assert session.tools == ["read", "bash"]
 
     def test_set_system_prompt_is_a_noop_without_a_header(self, tmp_path: Path):
-        from vtx.ai.agent.session import Session
+        from vtx.agent.session import Session
 
         Session("s-reload", str(tmp_path), persist=False).set_system_prompt("x")
 
@@ -247,8 +247,8 @@ class TestRebindToolSurface:
     """
 
     def test_rebind_keeps_the_rebuilt_surface(self, tmp_path: Path):
-        from vtx.ai.agent.runtime import ConversationRuntime
-        from vtx.ai.agent.tools import get_tools_with_extensions
+        from vtx.agent.runtime import ConversationRuntime
+        from vtx.agent.tools import get_tools_with_extensions
 
         runtime = ConversationRuntime(cwd=str(tmp_path), tools=[])
         rebuilt = get_tools_with_extensions()

@@ -11,7 +11,7 @@ from rich.syntax import Syntax
 from rich.text import Text
 from rich.theme import Theme
 
-from vtx.ai.config import config
+from vtx.core.config import config
 from vtx.tui.latex import preprocess_latex
 
 _MARKDOWN_THEME: Theme | None = None

@@ -16,11 +16,11 @@ from textual.message import Message
 from textual.timer import Timer
 from textual.widgets import Label, ProgressBar, Static
 
-from vtx.ai.agent.tools.base import BaseTool
-from vtx.ai.config import config
+from vtx.agent.tools.base import BaseTool
 from vtx.core import ApprovalResponse
 from vtx.core.compaction import SUMMARY_SECTIONS
-from vtx.core.types import ImageContent
+from vtx.core.config import config
+from vtx.protocol.types import ImageContent
 from vtx.tui import task_ui
 from vtx.tui.ask_user import (
     INCOMPLETE_WARNING_PREFIX,
