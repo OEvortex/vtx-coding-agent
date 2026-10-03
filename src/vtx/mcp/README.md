@@ -1,13 +1,23 @@
 # vtx.mcp
 
-A small, standalone Model Context Protocol client for vtx. It does not depend on the official MCP SDK, and the harness in `vtx.agent` does not depend on this package.
+A small, standalone Model Context Protocol client for vtx. It does not depend on the official MCP SDK.
 
 The package provides a transport-neutral client core, stdio and Streamable HTTP transports, an in-memory testing transport, OAuth 2.1 sign-in, `mcp.json` loading with project trust, and an adapter that exposes a server's tools as vtx `BaseTool`s.
+
+The dependency runs one way at module scope: `vtx.mcp` imports `vtx.agent.tools.base.BaseTool` and the schema helpers, to wrap server tools. The edges back are deliberately function-local -- `vtx.agent.runtime` imports `vtx.mcp.manager`, and `vtx.agent.tools.codemode` and `vtx.agent.tools.tool_search` import `vtx.mcp.exposure` -- so a session with no `mcp.json` pays nothing for the integration.
+
+`vtx.mcp` is a top-level package, a sibling of `vtx.tui` and `vtx.coding_agent`; the product layer wires it up.
 
 ## Usage
 
 ```python
-from vtx.mcp import McpClient, McpClientOptions, StdioTransport, StdioTransportOptions
+from vtx.mcp import (
+    McpClient,
+    McpClientOptions,
+    Root,
+    StdioTransport,
+    StdioTransportOptions,
+)
 
 transport = StdioTransport(
     StdioTransportOptions(
@@ -73,7 +83,25 @@ Project entries replace global entries of the same name. Both use the `mcpServer
 }
 ```
 
-Set exactly one of `command` or `url`. Per-server keys: `enabled`, `timeout` (seconds), plus `args`/`env`/`cwd` for stdio or `headers`/`oauth` for HTTP. `$VAR` and `${VAR}` expand in `env` and `headers`, and an unset variable expands to empty rather than raising: a missing optional token should produce a 401 the user can see, not a crashed session. A malformed entry is dropped with a message in `LoadedMcpConfig.errors`; one bad server never takes out the rest.
+Set exactly one of `command` or `url`. Per-server keys: `enabled`, `timeout` (seconds), `exposure` and `tool_exposure`, plus `args`/`env`/`cwd` for stdio or `headers`/`oauth` for HTTP.
+
+`exposure` says how a server's tools reach the model, because a connected server can publish far more tools than fit in a prompt. `tool_exposure` overrides it per tool, by exact name or `*` pattern; an exact name beats a pattern, and among patterns the first in declaration order wins.
+
+```json
+{
+  "mcpServers": {
+    "docs": {
+      "url": "https://example.com/mcp",
+      "exposure": "codemode",
+      "tool_exposure": { "delete_*": "hidden", "search": "direct" }
+    }
+  }
+}
+```
+
+`codemode` is the default when a server says nothing. See `exposure.py` for the full taxonomy.
+
+`$VAR` and `${VAR}` expand in `env` and `headers`, and an unset variable expands to empty rather than raising: a missing optional token should produce a 401 the user can see, not a crashed session. A malformed entry is dropped with a message in `LoadedMcpConfig.errors`; one bad server never takes out the rest.
 
 A project `mcp.json` is a command vtx would run, so a file found in a repository the user merely opened is never read. Trust is granted by a person, once, per resolved path, with no implicit path to it. The store is keyed by `Path.resolve()`, so `~/proj`, `~/proj/`, and a symlink to it are one project, and a corrupt store fails closed.
 
@@ -85,15 +113,19 @@ A project `mcp.json` is a command vtx would run, so a file found in a repository
 
 ```python
 from vtx.mcp import McpTool, create_mcp_tool_name
+from vtx.mcp.tool import McpToolCaller
 
 tool = McpTool(
     server="filesystem",
     definition=definition,          # the raw MCP Tool object
     name=create_mcp_tool_name("filesystem", definition["name"], is_taken),
-    caller=connection.call_tool,
+    caller=McpToolCaller(server_name="filesystem", call=connection.call_tool),
     timeout_ms=60_000,
+    exposure="direct",
 )
 ```
+
+`caller` is an `McpToolCaller`, not a bare callable: the tool keeps the server name so a result can be attributed and permissioned without reaching back into the connection.
 
 The name is sanitized to the 64 characters of `[A-Za-z0-9_-]` that providers accept; a collision or a truncation gets a hash of the original server and tool appended, so it stays unique rather than merely shorter.
 
@@ -114,6 +146,7 @@ from vtx.mcp.oauth import (
     McpOAuthProvider,
     OAuthCallbackServer,
     OAuthClientMetadata,
+    FileOAuthStateStore,
     authorize_mcp,
     adapt_oauth_provider,
 )
@@ -126,7 +159,8 @@ provider = McpOAuthProvider(
     client_metadata=OAuthClientMetadata(
         redirect_uris=[callback.redirect_url], client_name="vtx"
     ),
-    on_redirect=open_browser,
+    store=FileOAuthStateStore(),   # otherwise the default MemoryOAuthStateStore
+    on_redirect=open_browser,      # your browser launcher; the URL is also printed
 )
 
 def connect():
@@ -152,7 +186,7 @@ client, connected = connect()
 await connected
 ```
 
-Inject an `OAuthStateStore` into `McpOAuthProvider` for durable credentials; `FileOAuthStateStore` is the default and keeps every server's tokens in `~/.vtx/mcp-auth.json`, one entry per server. The package does not open a browser or choose where credentials live -- the caller does both, which is how `/mcp signin` opens the URL and shows the result.
+`McpOAuthProvider` takes an `OAuthStateStore`. Its own default is `MemoryOAuthStateStore`, which does not survive the process; `McpManager` injects `FileOAuthStateStore`, which keeps every server's tokens in `~/.vtx/mcp-auth.json` (mode 0600, atomic replace), one entry per server URL. The package does not open a browser or choose where credentials live -- the caller does both, which is how `/mcp signin` opens the URL and shows the result.
 
 A 401, or a 403 whose challenge reports `insufficient_scope`, hands the transport an `UnauthorizedContext` carrying the rejected response and the token that was tried. A token that is no longer current means another request already refreshed it, so retrying beats refreshing again.
 
@@ -169,7 +203,7 @@ The OAuth implementation is adapted from the MIT-licensed Model Context Protocol
 - request cancellation, in both directions
 - Streamable HTTP sessions, the server-to-client GET stream with reconnection, and resumption of dropped response streams with `Last-Event-ID`
 - stdio shutdown per the spec (close stdin, then SIGTERM, then SIGKILL), applied to the server's whole process group
-- server `ping` and `roots/list` requests, the roots list re-read on every call
+- server `ping` and `roots/list` requests; a callable `roots` provider is re-read on every `roots/list`
 - `notifications/tools/list_changed` and other notifications through the generic notification API
 - OAuth protected-resource and authorization-server discovery
 - PKCE authorization code flow, dynamic client registration, token refresh, and step-up authorization for `insufficient_scope`
@@ -178,7 +212,7 @@ Batch JSON-RPC messages, legacy HTTP+SSE, acting as a server, sampling, and reso
 
 ## Operational notes
 
-- A stdio server is a child process holding a pipe. Leaking one orphans the process with the pipe open, so `McpManager.close()` is not optional. The child starts in its own session and is signalled by process *group*, so a server spawned through `npx` or `uvx` leaves no grandchildren holding the pipe. On Windows, where there are no process groups and no graceful signals, the child is terminated directly.
+- A stdio server is a child process holding a pipe. Leaking one orphans the process with the pipe open, so `McpManager.close()` is not optional. The child starts in its own session and is signalled by process *group*, so a server spawned through `npx` or `uvx` leaves no grandchildren holding the pipe. On Windows, where there are no process groups and no graceful signals, the tree is taken with `taskkill /T /F`. An `atexit` hook SIGTERMs anything still live.
 - An HTTP response whose body is an SSE stream is fetched with `client.send(..., stream=True)` and closed explicitly; leaving it inside an `async with` would close the stream the moment `send()` returns, and `send()` returns long before the server answers.
 - Messages are capped at 16 MiB each at the transport layer. stdio stderr is captured up to 64 KiB and attached to connection errors.
 - A listener that raises is reported and the transport keeps running; a bad listener cannot take down a connection.
