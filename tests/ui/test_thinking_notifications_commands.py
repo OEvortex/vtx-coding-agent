@@ -162,13 +162,11 @@ def test_thinking_command_without_argument_opens_picker():
 
     assert fake._selection_mode == SelectionMode.THINKING
     assert fake.completion_list.searchable is True
+    from vtx.coding_agent.tui.commands.settings import THINKING_LEVEL_DESCRIPTIONS
+
     assert [(item.value, item.label, item.description) for item in fake.completion_list.items] == [
-        ("none", "none", ""),
-        ("minimal", "minimal", ""),
-        ("low", "low ✓", ""),
-        ("medium", "medium", ""),
-        ("high", "high", ""),
-        ("xhigh", "xhigh", ""),
+        (level, f"{level} ✓" if level == "low" else level, THINKING_LEVEL_DESCRIPTIONS[level])
+        for level in ("none", "minimal", "low", "medium", "high", "xhigh")
     ]
 
 

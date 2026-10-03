@@ -77,6 +77,10 @@ class CommandsMixin(
         if cmd == "thinking":
             self._handle_thinking_command(args)
             return True
+        if cmd == "effort":
+            # Alias for /thinking; "effort" is what the wire calls it.
+            self._handle_thinking_command(args)
+            return True
         if cmd == "notifications":
             self._handle_notifications_command(args)
             return True

@@ -33,6 +33,21 @@ from .base import CommandSupport
 SettingsSelectionResult = Literal["reopened-picker", "closed"]
 
 
+# One place that explains what each effort level buys. The panel used to be a
+# bare list of bare names, so there was no way to tell "high" (more reasoning,
+# slower) from "max" (most reasoning, slowest) without external docs.
+THINKING_LEVEL_DESCRIPTIONS = {
+    "none": "no reasoning, fastest",
+    "minimal": "minimal reasoning",
+    "low": "light reasoning",
+    "medium": "balanced reasoning",
+    "high": "deep reasoning",
+    "xhigh": "very deep, slower",
+    "max": "maximum effort, slowest",
+    "default": "model decides",
+}
+
+
 class SettingsCommands(CommandSupport):
     def _handle_themes_command(self, args: str) -> None:
         chat = self.query_one("#chat-log", ChatLog)
@@ -81,6 +96,29 @@ class SettingsCommands(CommandSupport):
         chat = self.query_one("#chat-log", ChatLog)
         chat.show_status(f"Permission mode changed to {mode}")
 
+    def _thinking_availability(self) -> tuple[list[str], str]:
+        """Catalog levels this model advertises that vtx will not offer, and why.
+
+        Without this, a level that is merely *missing* looks the same as one that
+        is merely *unselected* — you cannot tell "this model cannot do that" from
+        "you have not picked it yet".
+        """
+        from vtx.ai.models import get_model
+        from vtx.ai.thinking import get_supported_thinking_levels
+
+        info = get_model(self._runtime.model, self._runtime.model_provider)
+        if info is None:
+            return [], "catalog entry not found, check the exact model id"
+        if not info.supports_thinking:
+            return [], "model has no reasoning support"
+
+        advertised = get_supported_thinking_levels(
+            reasoning=True, thinking_level_map=info.thinking_level_map
+        )
+        offered = set(self._runtime.effective_thinking_levels)
+        missing = ["none" if lvl == "off" else lvl for lvl in advertised]
+        return [lvl for lvl in missing if lvl not in offered], ""
+
     def _handle_thinking_command(self, args: str) -> None:
         chat = self.query_one("#chat-log", ChatLog)
         if self._runtime.provider is None:
@@ -103,13 +141,30 @@ class SettingsCommands(CommandSupport):
                 )
             return
 
+        current = self._runtime.thinking_level or ""
         items = [
             ListItem(
-                value=level, label=f"{level} ✓" if level == self._runtime.thinking_level else level
+                value=level,
+                label=f"{level} ✓" if level == current else level,
+                description=THINKING_LEVEL_DESCRIPTIONS.get(level, ""),
             )
             for level in valid_levels
         ]
-        self._show_selection_picker(items, SelectionMode.THINKING)
+        self._show_selection_picker(items, SelectionMode.THINKING, max_label_width=40)
+
+        # Say what the levels apply to. A bare list gave no way to tell whether
+        # a level was missing because the model lacks it or because nothing is
+        # selected yet, and the supported set changes per model.
+        model = self._runtime.model or "current model"
+        unavailable, reason = self._thinking_availability()
+        detail = ""
+        if reason:
+            detail = f" ({reason})"
+        elif unavailable:
+            detail = f" (not offered: {', '.join(unavailable)})"
+        chat.add_info_message(
+            f"Thinking effort for {model} - {len(valid_levels)} available{detail}, ctrl+t cycles"
+        )
 
     def _select_thinking_level(self, level: str) -> None:
         if self._runtime.provider is None:
