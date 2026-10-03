@@ -2,7 +2,7 @@
 
 ## Built-in catalog
 
-`src/ai/provider.yaml` defines **57 providers**. Each entry carries a slug, display name, base URL, API-key env var, known models, capability flags (tools/vision/thinking), and an optional dynamic model-catalog endpoint.
+`src/vtx/ai/provider.yaml` defines **57 providers**. Each entry carries a slug, display name, base URL, API-key env var, known models, capability flags (tools/vision/thinking), and an optional dynamic model-catalog endpoint.
 
 Highlights:
 
@@ -18,7 +18,7 @@ Run `vtx` and use `/provider` then `/model` to browse; `/model` auto-fetches eac
 
 Keys resolve in this order: config/CLI → provider env var → OAuth (if the provider supports it) → local-endpoint bypass. Logged-in credentials are cached as JSON/YAML files under `~/.vtx` (e.g. `copilot_auth.json`).
 
-Env vars recognized out of the box (`src/ai/base.py`):
+Env vars recognized out of the box (`src/vtx/ai/base.py`):
 
 | Provider | Env var |
 | --- | --- |
@@ -40,7 +40,7 @@ Base URLs on localhost / loopback are treated as local: no API key is required (
 
 ## OAuth logins
 
-Built-in login flows (`src/ai/oauth/`):
+Built-in login flows (`src/vtx/ai/oauth/`):
 
 - **GitHub Copilot** — `vtx` → `/login` → copilot; device flow, token refresh handled automatically.
 - **OpenAI (Codex)** — ChatGPT-style OAuth used by the default `openai-codex` provider.
@@ -87,4 +87,10 @@ vtx --provider openai --base-url http://localhost:8080/v1 \
 
 ## Thinking levels
 
-Levels cycle with `ctrl+t`: `none`, `minimal`, `low`, `medium`, `high`, `xhigh` — the provider/model advertises which subset it supports (detected per-model from [models.dev](https://models.dev) reasoning options); unsupported requests fall back to the provider's default.
+Levels cycle with `ctrl+t`: `none`, `minimal`, `low`, `medium`, `high`, `xhigh`, `max` — but vtx only ever *offers* the ones the selected model advertises, detected per-model from the [models.dev](https://models.dev) reasoning options and intersected with what the transport can express:
+
+- models that publish named efforts (OpenAI, Claude 4.6+) get exactly those tiers — `gpt-5-pro` offers only `high`, `gpt-5.6` offers up to `max`;
+- models that publish a thinking *token budget* instead of efforts (Claude Haiku/Sonnet 4.5) get a budget ladder, which the Anthropic API sends as `thinking.budget_tokens`;
+- models the catalog describes only as reasoning-capable, or not at all, offer `default` — vtx sends no reasoning parameter and lets the model decide, instead of guessing an effort that might be rejected.
+
+A level the current model doesn't support is never sent: it is clamped to the nearest supported one, so switching models or restoring a session can't fail a request.

@@ -1,8 +1,8 @@
 import pytest
 
-from vtx.coding_agent.config import Config, set_config
 from vtx.coding_agent.tools import BashTool, EditTool, ReadTool, WriteTool
 from vtx.core import PermissionDecision, _is_safe_bash_command, check_permission
+from vtx.core.config import Config, set_config
 
 
 class TestIsSafeBashCommand:

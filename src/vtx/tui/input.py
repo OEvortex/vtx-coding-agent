@@ -5,6 +5,7 @@ import base64
 import os
 import re
 from collections.abc import Callable
+from functools import partial
 from types import SimpleNamespace
 from typing import TYPE_CHECKING, Any, ClassVar, Protocol, cast
 
@@ -18,12 +19,13 @@ from textual.message import Message
 from textual.widgets import Input, Label, TextArea
 from textual.widgets.text_area import TextAreaTheme
 
-from vtx.ai.config import config
+from vtx.core.config import config
 from vtx.core.image import resize_image
-from vtx.core.types import ImageContent
+from vtx.protocol.types import ImageContent
 from vtx.tui.autocomplete import (
     DEFAULT_COMMANDS,
     AutocompleteProvider,
+    CompletionResult,
     FilePathProvider,
     PullRequestProvider,
     SlashCommand,
@@ -57,6 +59,8 @@ cast("dict[str, Any]", ANSI_SEQUENCES_KEYS).update(
 
 _PASTE_LINE_THRESHOLD = 5
 _PASTE_CHAR_THRESHOLD = 500
+# Matches pi-mono's attachment autocomplete debounce.
+_SLOW_AUTOCOMPLETE_DEBOUNCE_S = 0.02
 _PASTE_MARKER_RE = re.compile(r"\[paste #(\d+)(?: (\+\d+ lines|\d+ chars))?\]")
 _IMAGE_MARKER_RE = re.compile(r"\[image #(\d+)\]")
 _MAX_ATTACHED_IMAGES = 5
@@ -107,6 +111,15 @@ def _get_textarea_theme() -> TextAreaTheme:
 
 
 class Vtx(TextArea):
+    # Textual's TextArea binds ctrl+arrow for word motion but leaves the alt
+    # variants free; pi-mono binds both, and alt is what desktop keymaps send.
+    BINDINGS: ClassVar[list] = [
+        Binding("alt+left", "cursor_word_left", "Word left"),
+        Binding("alt+right", "cursor_word_right", "Word right"),
+        Binding("alt+backspace", "delete_word_left", "Delete word left"),
+        Binding("alt+delete", "delete_word_right", "Delete word right"),
+    ]
+
     class ScrollInfo(Message):
         def __init__(self, lines_above: int, lines_below: int) -> None:
             super().__init__()
@@ -254,6 +267,9 @@ class InputBox(Vertical):
         self._is_completing: bool = False
         self._autocomplete_enabled: bool = True
         self._suppress_autocomplete: int = 0  # Skip N autocomplete triggers
+        # Bumped per slow request so a late result that no longer matches the
+        # text is dropped instead of overwriting fresher suggestions.
+        self._autocomplete_token: int = 0
 
         # Tab path completion state
         self._path_complete = PathComplete()
@@ -349,6 +365,9 @@ class InputBox(Vertical):
     def set_completing(self, is_completing: bool) -> None:
         self._is_completing = is_completing
         if not is_completing:
+            # Invalidate any in-flight slow request so it can't reopen a
+            # list the user just dismissed.
+            self._autocomplete_token += 1
             self._active_provider = None
             self._completion_prefix = ""
             self._tab_completing = False
@@ -516,24 +535,64 @@ class InputBox(Vertical):
         text = textarea.text
         cursor_col = self._cursor_offset(text, textarea.selection.end)
 
-        # Check each provider
         for provider in self._providers:
-            if provider.should_trigger(text, cursor_col):
-                result = provider.get_suggestions(text, cursor_col)
-                if result and result.items:
-                    self._active_provider = provider
-                    self._completion_prefix = result.prefix
-                    self._is_completing = True
-                    # Post message for app to show/update the list
-                    self.post_message(self.CompletionUpdate(result.items))
-                    return
+            if not provider.should_trigger(text, cursor_col):
+                continue
+            if provider.slow:
+                # ``get_suggestions`` shells out (fd ~20ms, gh ~800ms on a
+                # cold cache) and used to run inline here, freezing the UI on
+                # every keystroke. Off-loop it, and let the token drop the
+                # result if the text moved on while it ran.
+                self._autocomplete_token += 1
+                # A callable, not a coroutine: run_worker(exclusive=True)
+                # cancels the previous request, and an already-created
+                # coroutine would be left un-awaited.
+                self.run_worker(
+                    partial(
+                        self._async_suggestions,
+                        provider,
+                        text,
+                        cursor_col,
+                        self._autocomplete_token,
+                    ),
+                    group="autocomplete",
+                    exclusive=True,
+                )
+                return
+            self._apply_suggestions(provider, provider.get_suggestions(text, cursor_col))
+            return
 
-        # No provider matched - hide completion
-        if self._is_completing:
-            self._is_completing = False
-            self._active_provider = None
-            self._completion_prefix = ""
-            self.post_message(self.CompletionHide())
+        self._hide_completion()
+
+    async def _async_suggestions(
+        self, provider: AutocompleteProvider, text: str, cursor_col: int, token: int
+    ) -> None:
+        # 20ms, matching pi-mono: coalesces a burst of keystrokes into one
+        # subprocess while staying under the threshold of feeling laggy.
+        await asyncio.sleep(_SLOW_AUTOCOMPLETE_DEBOUNCE_S)
+        result = await asyncio.to_thread(provider.get_suggestions, text, cursor_col)
+        if token != self._autocomplete_token or not self._autocomplete_enabled:
+            return
+        self._apply_suggestions(provider, result)
+
+    def _apply_suggestions(
+        self, provider: AutocompleteProvider, result: CompletionResult | None
+    ) -> None:
+        if not result or not result.items:
+            self._hide_completion()
+            return
+        self._active_provider = provider
+        self._completion_prefix = result.prefix
+        self._is_completing = True
+        self.post_message(self.CompletionUpdate(result.items))
+
+    def _hide_completion(self) -> None:
+        if not self._is_completing:
+            return
+        self._is_completing = False
+        self._active_provider = None
+        self._completion_prefix = ""
+        self.post_message(self.CompletionHide())
 
     # -------------------------------------------------------------------------
     # Key handling
@@ -693,14 +752,21 @@ class InputBox(Vertical):
             textarea.action_cursor_line_end()
 
     def action_tab_complete(self) -> None:
-        """Handle Tab key for path completion."""
+        """Tab accepts the highlighted completion, or falls back to path completion.
+
+        Tab used to only move the highlight, so the slash/at dropdowns could be
+        accepted with Enter but not Tab — the key every other shell uses to
+        accept a completion. Enter keeps submitting the message.
+        """
+        if self._is_completing:
+            self.post_message(self.CompletionSelect())
+            return
         self.run_worker(self._do_tab_complete())
 
     async def _do_tab_complete(self) -> None:
-        """Perform tab completion asynchronously."""
-        # If already completing, treat Tab as moving down in the list
+        """Perform path completion asynchronously."""
         if self._is_completing:
-            self.post_message(self.CompletionMove(1))
+            self.post_message(self.CompletionSelect())
             return
 
         textarea = self.query_one("#input-textarea", TextArea)

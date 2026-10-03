@@ -14,8 +14,8 @@ from collections.abc import Callable
 from pathlib import Path
 from typing import Any
 
-from vtx.ai.agent.extensions import AGENT_CHANGED
-from vtx.ai.agent.tools.base import BaseTool
+from vtx.agent.extensions import AGENT_CHANGED
+from vtx.agent.tools.base import BaseTool
 from vtx.coding_agent.agents.api import AgentAPI, LoadedAgent
 from vtx.coding_agent.agents.schema import AgentDef
 
@@ -35,8 +35,8 @@ def _expected_stem(path: Path) -> str:
 
 def _wrap_callable_as_tool(fn: Callable[..., Any], fallback_name: str) -> BaseTool:
     """Use the SDK ``@tool`` machinery to wrap a plain callable."""
-    from vtx.ai.agent.sdk.tools import tool as sdk_tool
-    from vtx.ai.agent.tools.base import BaseTool
+    from vtx.agent.sdk.tools import tool as sdk_tool
+    from vtx.agent.tools.base import BaseTool
 
     raw = sdk_tool(fn, name=getattr(fn, "__name__", None) or fallback_name)
     assert isinstance(raw, BaseTool)
@@ -54,7 +54,7 @@ def _coerce_raw_tools(raw: list[Any] | None) -> dict[str, BaseTool]:
       a manager-pattern tool.
     * Anything else raises :class:`AgentLoadError`.
     """
-    from vtx.ai.agent.tools.base import BaseTool
+    from vtx.agent.tools.base import BaseTool
 
     if not raw:
         return {}
@@ -93,7 +93,7 @@ def load_agent(path: Path, *, cwd: str, config_dir: Path, on_event: Any = None) 
     module_name = f"vtx_agent_{abs(hash(path.as_posix()))}"
     spec = importlib.util.spec_from_file_location(module_name, str(path))
     if spec is None or spec.loader is None:
-        raise AgentLoadError(f"Could not import vtx.ai.agent at {path}")
+        raise AgentLoadError(f"Could not import vtx.agent at {path}")
 
     module = importlib.util.module_from_spec(spec)
     sys.modules[module_name] = module
@@ -169,51 +169,13 @@ def load_all_agents(
     Errors are collected, not raised: one bad agent should not block the
     rest. Mirrors :func:`vtx.extensions.load_all_extensions`.
     """
-    from vtx.coding_agent.agents.discovery import find_agent_paths
+    from vtx.agent.agents.discovery import find_agent_paths
     from vtx.core.paths import get_config_dir
 
-    builtins = [
-        LoadedAgent(
-            definition=AgentDef(
-                name="plan",
-                description="Read-only plan formulation and investigation profile.",
-                icon="📋",
-                thinking_level="high",
-                tools_allow=["read", "find", "grep", "skill", "web", "ask_user"],
-                tools_deny=["bash", "write", "edit"],
-                instructions=(
-                    "You are Vtx in Plan mode. Your sole objective is to formulate a "
-                    "comprehensive, step-by-step execution plan to address the user's "
-                    "request. You are strictly in a read-only mode.\n"
-                    "\n"
-                    "## Operational Constraints\n"
-                    "- Do not write or edit any files, do not run bash commands, and do "
-                    "not execute code.\n"
-                    "- You are allowed to use read-only tools to gather context: `read`, `find`, "
-                    "`grep`, `skill`, `web`, and `ask_user`.\n"
-                    "- Avoid conversational filler. Start directly with progress or the plan.\n"
-                    "\n"
-                    "## Planning Guidelines\n"
-                    "1. **Investigate first:** Search the codebase to locate files, symbols, "
-                    "and conventions relevant to the task.\n"
-                    "2. **Draft the Plan:** Formulate a structured plan covering:\n"
-                    "   - **Objectives:** What needs to be achieved.\n"
-                    "   - **Proposed Changes:** Specific files to edit, add, or delete, "
-                    "referencing absolute paths and line numbers (e.g., `src/vtx/cli.py:42`).\n"
-                    "   - **Verification Steps:** How the changes should be tested (tests to run, "
-                    "syntax checks).\n"
-                    "   - **Risks & Edge Cases:** Potential side effects, dependencies, or "
-                    "architectural gotchas.\n"
-                    "3. **Refine:** Ensure the plan is detailed, precise, and immediately "
-                    "actionable for a developer or implementation agent."
-                ),
-                instructions_mode="replace",
-            ),
-            path=Path("<builtin>"),
-        )
-    ]
-
-    loaded_by_name: dict[str, LoadedAgent] = {a.definition.name: a for a in builtins}
+    # No built-in profiles; see the note in
+    # :func:`vtx.agent.agents.loader.load_all_agents`. Agents come only from
+    # `.vtx/agent/<name>.py`, so an empty cwd yields an empty registry.
+    loaded_by_name: dict[str, LoadedAgent] = {}
 
     paths = find_agent_paths(cwd=cwd, configured=configured, agent_dir=agent_dir)
     errors: list[str] = []

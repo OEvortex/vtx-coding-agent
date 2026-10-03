@@ -1,7 +1,7 @@
 """Anthropic SDK provider - wraps the SDK layer into vtx's BaseProvider interface."""
 
 from collections.abc import AsyncIterator
-from typing import Any, ClassVar
+from typing import Any
 
 from anthropic import APIConnectionError, APIStatusError
 
@@ -10,8 +10,9 @@ from vtx.ai.providers.sanitize import sanitize_surrogates
 from vtx.ai.sdk.anthropic import AnthropicSDK
 from vtx.ai.sdk.base import GenerationConfig
 from vtx.ai.sdk.base import Message as SDKMessage
-from vtx.core.errors import format_error
-from vtx.core.types import (
+from vtx.ai.thinking import ANTHROPIC_MESSAGES
+from vtx.protocol.errors import format_error
+from vtx.protocol.types import (
     AssistantMessage,
     ImageContent,
     Message,
@@ -35,7 +36,7 @@ from vtx.core.types import (
 
 class AnthropicSDKProvider(BaseProvider):
     name = "anthropic"
-    thinking_levels: ClassVar[list[str]] = ["none", "minimal", "low", "medium", "high", "xhigh"]
+    reasoning_style = ANTHROPIC_MESSAGES
 
     def __init__(self, config: ProviderConfig):
         super().__init__(config)
@@ -165,6 +166,7 @@ class AnthropicSDKProvider(BaseProvider):
         tools: list[ToolDefinition] | None = None,
         temperature: float | None = None,
         max_tokens: int | None = None,
+        thinking_level: str | None = None,
     ) -> LLMStream:
         sdk_messages = self._convert_messages(messages)
         sdk_tools = self._convert_tools(tools) if tools else None
@@ -175,7 +177,7 @@ class AnthropicSDKProvider(BaseProvider):
             model=self.config.model,
             temperature=temp if temp is not None else 0.7,
             max_tokens=max_tok,
-            thinking_level=self.config.thinking_level,
+            thinking_level=thinking_level or self.config.thinking_level,
             thinking_level_map=self.config.thinking_level_map,
         )
 

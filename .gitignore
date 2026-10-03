@@ -23,9 +23,12 @@ vtx-session-*
 .env
 .pytest_cache/
 .ruff_cache/
+.coverage
+.coverage.*
+htmlcov/
+Site/
 # One-off screenshots
 image.png
-site/node_modules/
 model-merge/
 vscode-vtx/node_modules/
 benchmark_results.json
@@ -33,6 +36,6 @@ benchmark_results.json
 # Local configuration files
 .vtx/
 
-# OpenJarvis private workspace (local-only; not pushed to hub)
-src/vtx/openjarvis/.zcode/
-.zcode/
+# jev lite snd
+jev lite snd/
+lol.py

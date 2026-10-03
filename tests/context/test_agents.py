@@ -1,6 +1,6 @@
 from pathlib import Path
 
-from vtx.coding_agent.context.agent_mds import (
+from vtx.agent.context.agent_mds import (
     ContextFile,
     _find_git_root,
     _get_stop_directory,
@@ -136,7 +136,7 @@ class TestLoadContextFileFromDir:
 class TestLoadAgentsFiles:
     def test_loads_from_cwd(self, tmp_path, monkeypatch):
         monkeypatch.setattr(
-            "vtx.coding_agent.context.agent_mds.get_config_dir", lambda: tmp_path / "config"
+            "vtx.agent.context.agent_mds.get_config_dir", lambda: tmp_path / "config"
         )
 
         project = tmp_path / "project"
@@ -151,7 +151,7 @@ class TestLoadAgentsFiles:
 
     def test_loads_from_ancestors(self, tmp_path, monkeypatch):
         monkeypatch.setattr(
-            "vtx.coding_agent.context.agent_mds.get_config_dir", lambda: tmp_path / "config"
+            "vtx.agent.context.agent_mds.get_config_dir", lambda: tmp_path / "config"
         )
 
         root = tmp_path / "repo"
@@ -172,9 +172,7 @@ class TestLoadAgentsFiles:
         config_dir = tmp_path / "config"
         config_dir.mkdir()
         (config_dir / "AGENTS.md").write_text("# Global rules")
-        monkeypatch.setattr(
-            "vtx.coding_agent.context.agent_mds.get_config_dir", lambda: config_dir
-        )
+        monkeypatch.setattr("vtx.agent.context.agent_mds.get_config_dir", lambda: config_dir)
 
         project = tmp_path / "project"
         project.mkdir()
@@ -190,9 +188,7 @@ class TestLoadAgentsFiles:
     def test_no_duplicates(self, tmp_path, monkeypatch):
         config_dir = tmp_path / "config"
         config_dir.mkdir()
-        monkeypatch.setattr(
-            "vtx.coding_agent.context.agent_mds.get_config_dir", lambda: config_dir
-        )
+        monkeypatch.setattr("vtx.agent.context.agent_mds.get_config_dir", lambda: config_dir)
 
         project = tmp_path / "project"
         project.mkdir()
@@ -206,7 +202,7 @@ class TestLoadAgentsFiles:
 
     def test_ordering_closest_last(self, tmp_path, monkeypatch):
         monkeypatch.setattr(
-            "vtx.coding_agent.context.agent_mds.get_config_dir", lambda: tmp_path / "config"
+            "vtx.agent.context.agent_mds.get_config_dir", lambda: tmp_path / "config"
         )
 
         root = tmp_path / "repo"
@@ -230,7 +226,7 @@ class TestLoadAgentsFiles:
 
     def test_ignores_dot_agents_context_files(self, tmp_path, monkeypatch):
         monkeypatch.setattr(
-            "vtx.coding_agent.context.agent_mds.get_config_dir", lambda: tmp_path / "config"
+            "vtx.agent.context.agent_mds.get_config_dir", lambda: tmp_path / "config"
         )
 
         project = tmp_path / "project"
@@ -244,7 +240,7 @@ class TestLoadAgentsFiles:
 
     def test_empty_when_no_files(self, tmp_path, monkeypatch):
         monkeypatch.setattr(
-            "vtx.coding_agent.context.agent_mds.get_config_dir", lambda: tmp_path / "config"
+            "vtx.agent.context.agent_mds.get_config_dir", lambda: tmp_path / "config"
         )
 
         project = tmp_path / "empty"

@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from vtx.tui.status_lines import (
+from vtx.coding_agent.tui.status_lines import (
     AGENT_STATUS_LINES,
     RECAP_STATUS_LINES,
     TOOL_ERROR_LINES,
@@ -24,7 +24,7 @@ EXPECTED_TOOLS = [
     "web",
     "web_search",
     "ask_user",
-    "task",
+    "delegate_subagent",
     "goal",
     "default",
 ]

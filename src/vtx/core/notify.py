@@ -24,10 +24,7 @@ def _platform() -> str:
 
 @cache
 def _sound_path(event: NotificationEvent) -> Path:
-    try:
-        return Path(str(resources.files("vtx.core.sounds").joinpath(_SOUND_FILES[event])))
-    except Exception:
-        return Path(str(resources.files("vtx.coding_agent.sounds").joinpath(_SOUND_FILES[event])))
+    return Path(str(resources.files("vtx.core.sounds").joinpath(_SOUND_FILES[event])))
 
 
 @cache
@@ -96,7 +93,7 @@ def _play_windows(sound_path: Path, volume: float) -> None:
 
 def notify(event: NotificationEvent) -> None:
     try:
-        from vtx.ai.config import config
+        from vtx.core.config import config
 
         volume = config.notifications.volume
     except Exception:

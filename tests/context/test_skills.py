@@ -1,7 +1,7 @@
 import sys
 from pathlib import Path
 
-from vtx.coding_agent.context.skills import (
+from vtx.agent.context.skills import (
     Skill,
     _load_skill_from_dir,
     _parse_frontmatter,
@@ -78,8 +78,10 @@ description:
 """
         result = _parse_frontmatter(content)
 
-        assert result["name"] == ""
-        assert result["description"] == ""
+        # YAML resolves a valueless key to None; the loader treats that the same
+        # as an empty string and falls back to the directory name.
+        assert result["name"] is None
+        assert result["description"] is None
 
     def test_comments_ignored(self):
         content = """---
@@ -104,7 +106,9 @@ cmd_info: slash hint # shown in menu
 """
         result = _parse_frontmatter(content)
 
-        assert result["register_cmd"] == "true"
+        # Real YAML strips the comment and coerces the scalar to a bool, where
+        # the old key/value scan kept the string "true".
+        assert result["register_cmd"] is True
         assert result["cmd_info"] == "slash hint"
 
     def test_inline_comment_marker_preserved_inside_quotes(self):
@@ -282,7 +286,8 @@ description: Uses directory name
 
         assert skill is not None
         assert skill.name == "fallback-skill"
-        assert skill.register_cmd is True
+        # Opt-in, as documented: no register_cmd means no slash command.
+        assert skill.register_cmd is False
         assert skill.cmd_info == ""
 
     def test_register_cmd_parses_truthy_strings(self, tmp_path):
@@ -342,9 +347,7 @@ description: Global skill
 ---
 """)
 
-        monkeypatch.setattr(
-            "vtx.coding_agent.context.skills.get_user_skills_dir", lambda: global_dir
-        )
+        monkeypatch.setattr("vtx.agent.context.skills.get_user_skills_dir", lambda: global_dir)
 
         result = load_skills(str(repo))
 
@@ -370,9 +373,7 @@ description: Global version
 ---
 """)
 
-        monkeypatch.setattr(
-            "vtx.coding_agent.context.skills.get_user_skills_dir", lambda: global_dir
-        )
+        monkeypatch.setattr("vtx.agent.context.skills.get_user_skills_dir", lambda: global_dir)
         if sys.platform == "win32":
             monkeypatch.setenv("USERPROFILE", str(tmp_path))
         else:
@@ -401,7 +402,7 @@ description: Planning-only mode
 """)
 
         monkeypatch.setattr(
-            "vtx.coding_agent.context.skills.get_user_skills_dir", lambda: home_dir / ".agents"
+            "vtx.agent.context.skills.get_user_skills_dir", lambda: home_dir / ".agents"
         )
         monkeypatch.setenv("HOME", str(home_dir))
 
@@ -417,9 +418,7 @@ description: Planning-only mode
         repo.mkdir()
         global_dir = tmp_path / "global"
 
-        monkeypatch.setattr(
-            "vtx.coding_agent.context.skills.get_user_skills_dir", lambda: global_dir
-        )
+        monkeypatch.setattr("vtx.agent.context.skills.get_user_skills_dir", lambda: global_dir)
 
         result = load_skills(str(repo))
 
@@ -437,9 +436,7 @@ name: invalid-skill
 """)
 
         global_dir = tmp_path / "global"
-        monkeypatch.setattr(
-            "vtx.coding_agent.context.skills.get_user_skills_dir", lambda: global_dir
-        )
+        monkeypatch.setattr("vtx.agent.context.skills.get_user_skills_dir", lambda: global_dir)
 
         result = load_skills(str(repo))
 
@@ -456,9 +453,7 @@ description: Uses directory fallback
 """)
 
         global_dir = tmp_path / "global"
-        monkeypatch.setattr(
-            "vtx.coding_agent.context.skills.get_user_skills_dir", lambda: global_dir
-        )
+        monkeypatch.setattr("vtx.agent.context.skills.get_user_skills_dir", lambda: global_dir)
 
         result = load_skills(str(repo))
 
@@ -646,8 +641,24 @@ class TestFormatSkillsForPrompt:
         assert "Only proceed without loading a skill if genuinely none are relevant" in result
         assert "<available_skills>" in result
         assert "</available_skills>" in result
-        assert "- test-skill" in result
-        assert "  general:" in result
+        assert "<name>test-skill</name>" in result
+        assert "<description>A test skill</description>" in result
+        # No <location>: skills are loaded by name via the skill tool, so the
+        # path in the catalog only invited the model to read the file directly.
+        assert "<location>" not in result
+
+    def test_names_each_skill_exactly_once(self):
+        """A grouped name index used to precede the XML, naming every skill a
+        second time with no description or path."""
+        skills = [
+            Skill(name="alpha", description="Alpha", path="/a/SKILL.md", category="workflows"),
+            Skill(name="beta", description="Beta", path="/b/SKILL.md", category="review"),
+        ]
+
+        result = formatted_skills(skills)
+
+        for skill in skills:
+            assert result.count(skill.name) == 1, skill.name
 
     def test_groups_skills_by_category(self):
         skills = [
@@ -659,22 +670,20 @@ class TestFormatSkillsForPrompt:
 
         result = formatted_skills(skills)
 
-        # categories appear as section headers, sorted alphabetically
-        review_idx = result.index("  review:")
-        workflows_idx = result.index("  workflows:")
-        assert review_idx < workflows_idx
-        assert "- alpha" in result
-        assert "- beta" in result
+        # Every skill is emitted as a <skill> tag, sorted by name.
+        assert "<name>alpha</name>" in result
+        assert "<name>beta</name>" in result
+        assert result.index("<name>alpha</name>") < result.index("<name>beta</name>")
 
     def test_uses_general_category_when_unset(self):
         skills = [Skill(name="orphan", description="Orphan desc", path="/o/SKILL.md")]
 
         result = formatted_skills(skills)
 
-        assert "  general:\n    - orphan" in result
+        assert "<name>orphan</name>" in result
+        assert result.count("<skill>") == 1
 
     def test_does_not_emit_xml_escapes_for_bracket_chars(self):
-        # The new index format is plain-text, so bracket/amp chars are kept verbatim.
         skills = [
             Skill(
                 name="test-skill", description='Uses <angle> & "quotes"', path="/path/to/SKILL.md"
@@ -683,9 +692,10 @@ class TestFormatSkillsForPrompt:
 
         result = formatted_skills(skills)
 
-        assert "&lt;angle&gt;" not in result
-        assert "<angle>" not in result
-        assert "& " not in result
+        # Descriptions are element text, so markup inside them is escaped.
+        assert "&lt;angle&gt;" in result
+        assert "&amp;" in result
+        assert "<description>Uses <angle>" not in result
 
     def test_returns_empty_when_all_skills_are_cmd_only(self):
         skills = [

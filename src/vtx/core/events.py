@@ -3,7 +3,7 @@ from dataclasses import dataclass, field
 from typing import Any, Literal
 
 from vtx.core.permissions import ApprovalResponse, AskUserQuestion, AskUserResponse
-from vtx.core.types import AssistantMessage, FileChanges, StopReason, ToolResultMessage, Usage
+from vtx.protocol.types import AssistantMessage, FileChanges, StopReason, ToolResultMessage, Usage
 
 # =================================================================================================
 # Agent Lifecycle Events
@@ -188,6 +188,16 @@ class AskUserEvent:
 @dataclass
 class CompactionStartEvent:
     type: Literal["compaction_start"] = "compaction_start"
+    tokens_before: int = 0
+    context_window: int = 0
+    trigger: str = ""  # "overflow" | "manual" | "kernel"
+
+
+@dataclass
+class CompactionProgressEvent:
+    type: Literal["compaction_progress"] = "compaction_progress"
+    chars: int = 0
+    sections_started: list[tuple[int, str]] = field(default_factory=list)
 
 
 @dataclass
@@ -197,6 +207,7 @@ class CompactionEndEvent:
     tokens_after: int = 0
     aborted: bool = False
     reason: str = ""  # why compaction aborted, empty on success
+    summary: str = ""
 
 
 # =================================================================================================
@@ -263,6 +274,21 @@ class BackgroundTaskCompletedEvent:
     notification_tag: str = "vtx:background-task-completion"
 
 
+@dataclass
+class HostNoticeEvent:
+    """A parent-side host notice surfaced to the UI.
+
+    Yielded at turn boundaries when the parent has queued text for the model
+    (a finished background task, a sub-agent's reply). The notice text is also
+    appended to the session as a synthetic ``UserMessage`` so the model sees it
+    on the next turn; this event is for display only.
+    """
+
+    type: Literal["host_notice"] = "host_notice"
+    kind: Literal["notice"] = "notice"
+    text: str = ""
+
+
 # =================================================================================================
 # Union Types
 # =================================================================================================
@@ -283,6 +309,7 @@ StreamEvent = (
     | ToolResultEvent
     | ToolApprovalEvent
     | AskUserEvent
+    | HostNoticeEvent
     | RetryEvent
     | TurnEndEvent
     | ErrorEvent
@@ -299,6 +326,7 @@ Event = (
     | AgentEndEvent
     | TurnStartEvent
     | CompactionStartEvent
+    | CompactionProgressEvent
     | CompactionEndEvent
     | StreamEvent
 )

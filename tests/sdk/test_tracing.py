@@ -7,7 +7,7 @@ from pathlib import Path
 
 import pytest
 
-from vtx.core.tracing import (
+from vtx.telemetry import (
     DEFAULT_WORKFLOW_NAME,
     add_trace_processor,
     current_span,
@@ -18,8 +18,8 @@ from vtx.core.tracing import (
     span,
     trace,
 )
-from vtx.core.tracing.exporters import ConsoleTraceProcessor, JSONLTraceProcessor
-from vtx.core.tracing.processor import get_default_processors, set_default_processors
+from vtx.telemetry.exporters import ConsoleTraceProcessor, JSONLTraceProcessor
+from vtx.telemetry.processor import get_default_processors, set_default_processors
 
 
 class _CollectingProcessor:

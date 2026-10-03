@@ -184,13 +184,34 @@ async def _openai_stream_chunks(
                 pass
 
 
-# Openai family slugs that route to OpenAI's API and accept the standard
-# ``reasoning_effort`` parameter via Chat Completions. The thinking
-# dispatch is whitelisted to these slugs only — for every other
-# openai_compat provider the level is intentionally not sent to the
-# wire (the picker still works, but the model uses its own default).
-_THINKING_ENABLED_SLUGS: frozenset[str] = frozenset({"openai", "openai-codex", "openai-responses"})
-_UNSET = object()  # sentinel: level absent from the effort map (= passthrough)
+def _tool_param(tool: dict[str, Any]) -> Any:
+    """One wire tool entry, preserving a grammar when the provider sent one.
+
+    ``ChatCompletionToolParam`` has no grammar field, and OpenAI's
+    grammar-constrained sampling extends the function object, so a grammar is
+    emitted as a plain dict. A tool without one still goes through the typed
+    constructor, keeping the existing shape and validation for the common case.
+    """
+    function = tool.get("function", {})
+    grammar = function.get("grammar")
+    if grammar is None:
+        return ChatCompletionToolParam(
+            type="function",
+            function={
+                "name": function["name"],
+                "description": function.get("description", ""),
+                "parameters": function["parameters"],
+            },
+        )
+    return {
+        "type": "function",
+        "function": {
+            "name": function["name"],
+            "description": function.get("description", ""),
+            "parameters": function["parameters"],
+            "grammar": grammar,
+        },
+    }
 
 
 class OpenAISDK(BaseLLMSDK):
@@ -248,17 +269,7 @@ class OpenAISDK(BaseLLMSDK):
         if config.stop_sequences:
             kwargs["stop"] = config.stop_sequences
         if tools:
-            kwargs["tools"] = [
-                ChatCompletionToolParam(
-                    type="function",
-                    function={
-                        "name": t["function"]["name"],
-                        "description": t["function"].get("description", ""),
-                        "parameters": t["function"]["parameters"],
-                    },
-                )
-                for t in tools
-            ]
+            kwargs["tools"] = [_tool_param(t) for t in tools]
             if config.tool_choice is not None:
                 kwargs["tool_choice"] = config.tool_choice
         self._apply_thinking_kwargs(kwargs, config)
@@ -268,30 +279,23 @@ class OpenAISDK(BaseLLMSDK):
         """Translate ``config.thinking_level`` into Chat Completions wire
         params via the shared resolver (:mod:`vtx.ai.thinking`).
 
-        Resolution order:
+        Every ``openai_compat`` provider in the catalog speaks the same
+        Chat Completions wire, so ``reasoning_effort`` is a standard field
+        they all understand — gating it on a slug allow-list left the level
+        silently unsent on every gateway, which is the same as the level not
+        working at all. The resolver already drops anything the transport
+        cannot express (explicitly unsupported levels, Anthropic-only token
+        budgets), so a level is sent only when it is actually sendable.
 
-        1. Per-model effort map (models.dev ``reasoning_options``): when the
-           catalog verifies this model's efforts, ``reasoning_effort`` is sent
-           on any OpenAI-compatible provider. Levels explicitly mapped to
-           ``None`` are omitted; mapped strings flow through verbatim; unmapped
-           standard levels pass through unchanged.
-        2. Legacy fallback without a map: only hardcoded slugs known to accept
-           Chat Completions ``reasoning_effort`` (``openai-codex`` /
-           ``openai-responses``) send the level; other providers stay silent
-           and the model uses its own default.
+        Note we send *only* the standard ``reasoning_effort`` field: an
+        earlier attempt used ``extra_body={'thinking': ...}``, a non-standard
+        shape that some gateways accepted while the model ignored it.
         """
-        if config.thinking_level_map is not None:
-            # Catalog-verified support: resolve through the per-model map.
-            kwargs.update(
-                resolve_reasoning_params(
-                    OPENAI_COMPLETIONS, config.thinking_level, level_map=config.thinking_level_map
-                )
+        kwargs.update(
+            resolve_reasoning_params(
+                OPENAI_COMPLETIONS, config.thinking_level, level_map=config.thinking_level_map
             )
-            return
-        # Legacy: no verified map — only hardcoded slugs known to accept Chat
-        # Completions ``reasoning_effort`` may receive it.
-        if self._provider_slug in _THINKING_ENABLED_SLUGS:
-            kwargs.update(resolve_reasoning_params(OPENAI_COMPLETIONS, config.thinking_level))
+        )
 
     async def generate(
         self, messages: list[Message], config: GenerationConfig, stream: bool = False

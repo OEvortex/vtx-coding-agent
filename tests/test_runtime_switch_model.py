@@ -1,9 +1,9 @@
 import pytest
 
+from vtx.agent.runtime import ConversationRuntime, create_provider
 from vtx.ai.base import BaseProvider, LLMStream, ProviderConfig
 from vtx.ai.models import ApiType
-from vtx.coding_agent.runtime import ConversationRuntime, create_provider
-from vtx.core.types import Message, ToolDefinition
+from vtx.protocol.types import Message, ToolDefinition
 
 
 class _FakeProvider(BaseProvider):
@@ -17,6 +17,7 @@ class _FakeProvider(BaseProvider):
         tools: list[ToolDefinition] | None = None,
         temperature: float | None = None,
         max_tokens: int | None = None,
+        thinking_level: str | None = None,
     ) -> LLMStream:
         return LLMStream()
 

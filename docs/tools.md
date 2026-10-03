@@ -12,11 +12,14 @@ Vtx ships 11 built-in tools. Ten are enabled by default; `grep` is built in but 
 | `skill` | Manage skill workflows | yes |
 | `web` | Web search (Exa neural) | yes |
 | `ask_user` | Ask the user a clarifying question | yes |
-| `task` | Dispatch a sub-agent | yes |
+| `delegate_subagent` | Dispatch an isolated sub-agent | yes |
 | `goal` | Persistent project goals: create, track tasks, complete with audit | yes |
+| `codemode` | Run a confined script that calls the other tools | yes |
 | `grep` | Search file contents (`ripgrep`) | no |
 
 All tools are `BaseTool` subclasses with Pydantic params. The `mutating` flag drives permission gating: non-mutating tools run without approval, mutating tools follow the permission mode (see [permissions.md](permissions.md)).
+
+MCP server tools join the same set. They are `BaseTool` subclasses like any other, so they are gated, rendered, and interruptible identically; a server that annotates a tool `readOnlyHint` gets it registered as non-mutating and therefore no approval prompt. Their names are `mcp__<server>__<tool>`. A connected server also brings three session-level tools for its *resources* — `list_mcp_resources`, `list_mcp_resource_templates`, and `read_mcp_resource` — which take a `server` argument rather than existing per server, so three cover any number of servers. They appear only when something is connected, since a tool that can only return an empty list is noise. See [mcp.md](mcp.md) for configuration and behaviour.
 
 ## read
 
@@ -84,16 +87,23 @@ Search file contents by regex via `ripgrep`. Max 100 results / 30 KB output.
 
 ## skill
 
-List, view, create, patch, edit, or delete skills. See [skills.md](skills.md) for the format.
+Load, list, view, create, patch, edit, or delete skills. See [skills.md](skills.md) for the format.
+
+`load` is the normal way to use a skill: the system prompt advertises skills by
+name and description only, and `load` returns the SKILL.md body, the skill's
+directory, and the files beside it, so relative paths inside a skill resolve
+without a separate read.
 
 | Param | Type | Notes |
 | --- | --- | --- |
-| `action` | enum | `list`, `view`, `create`, `patch`, `edit`, `delete` |
+| `action` | enum | `load`, `list`, `view`, `create`, `patch`, `edit`, `delete` |
 | `name` | string | Skill name; required except for `list` |
 | `content` | string | Full SKILL.md content; required for `create`/`edit` |
 | `old_string` / `new_string` | string | Find/replace pair for `patch` |
 | `file_path` | string | Supporting file to target (default: SKILL.md) |
 | `scope` | enum | `project` (`.agents/skills`) or `global` (`~/.agents/skills`) |
+
+`list` omits python skills, which are hidden because nothing can execute them — see [skills.md](skills.md#python-skills). `run` returns the skill file rather than executing it: the persistent Python kernel it used to hand off to was removed with the RLM mode.
 
 ## web
 
@@ -119,7 +129,7 @@ Ask the user a clarifying question and block on the answer. Rendered as an inter
 | `multi_select` | bool | Allow multiple selections |
 | `header` | string | Modal title tag (max 12 chars) |
 
-## task
+## delegate_subagent
 
 Dispatch a fresh sub-agent with its own tools, session and system prompt. It cannot see this conversation — put all context in `prompt`.
 
@@ -127,15 +137,15 @@ Dispatch a fresh sub-agent with its own tools, session and system prompt. It can
 | --- | --- | --- |
 | `description` | string, required | 3–5 word imperative label |
 | `prompt` | string, required | Full instructions incl. context |
-| `subagent_type` | string | Preset name or user agent; default `general-purpose` |
+| `subagent_type` | string | Name of an agent in `.vtx/agent/<name>.py`; default: the default sub-agent |
 | `model` | string | Model override (default: parent's) |
-| `background` | bool | Run concurrently; returns a task ID now, result arrives next turn |
+| `background` | bool | Run concurrently; returns a task ID now, result delivered when it lands |
 
-Built-in presets (overridable under `task.subagent_presets` in config):
+There are no built-in sub-agent presets: `subagent_type` is matched against the agents loaded from `.vtx/agent/` and `~/.vtx/agent/`, and an unknown or empty name runs the default sub-agent (the parent's tool surface and instructions, 200-turn budget).
 
-- **general-purpose** — full default tool set, 200-turn budget.
-- **Explore** — read-only investigation; tools limited to `read`, `find`, `skill`, `web`.
-- **Plan** — read-only planner that produces a step-by-step plan without touching files.
+At most `task.max_concurrent` sub-agents run at once (default 4, `0` = uncapped). The rest wait in a FIFO queue — the pinned **Agents** panel above the editor lists the running ones and the queued count, and the info bar repeats `N running, M queued agents`. A config reload resizes the live queue.
+
+With `background: true` the dispatch returns a `task_id` and the sub-agent keeps working after the turn ends. When it lands, the session resumes itself: the result is injected into the conversation and the agent gets a turn to act on it, so you do not have to send a message to collect an answer you already paid for. A wake-up turn can dispatch again, so cascading resumes stop after a few and the chat says so — the results are still there to read.
 
 Results are capped at 32,000 chars with the last 200 transcript lines attached.
 
@@ -162,3 +172,43 @@ One action-dispatched tool for the persistent goal system (see [goals.md](goals.
 | `subtasks` | list | `update_task`: attach subtasks under the target |
 
 `status="complete"` records the claim, then runs an independent auditor sub-agent over the workspace; the goal archives on `<approved/>` and stays open with feedback otherwise. The tool is non-mutating for permission purposes — archiving requires explicit user confirmation.
+
+## codemode
+
+Run a Python script that calls the agent's other tools. Write it as a function
+body: `return` the value you want back, and `await` any tool call, including
+several at once with `asyncio.gather`.
+
+Where every other tool is one operation, this is an interpreter. The payoff is
+that N tool calls cost one model turn instead of N, and that filtering, sorting,
+and aggregation happen in code rather than in the model's context.
+
+| Param | Type | Notes |
+| --- | --- | --- |
+| `code` | string | The script |
+
+Inside the script: `tools.<name>(**kwargs)` calls a tool, `tools.search(query=...)`
+finds tools when the catalog is partial, `text(value)` appends to the
+model-visible output, and `store`/`load` carry JSON values between calls.
+
+The sandbox has no filesystem, network, subprocess, `eval`/`exec`/`compile`, or
+`open`, and can only import a short standard-library allowlist — every file and
+network operation has to go through a tool.
+
+Side effects are real: a script that fails partway does not undo the calls that
+already ran. Marked mutating for the same reason `bash` is.
+
+Because a script can reach `bash`, a profile that wants to keep the shell out of
+scripts has to name `codemode` in `tools_deny`. There is no built-in `plan`
+profile to edit — vtx ships no built-in agents — see [agents.md](agents.md).
+
+Tools a script calls are governed like the model's own: the same extension
+hooks, the same argument rewriting, and the same permission decision, where
+*prompt* becomes a refusal because a script has nobody to ask.
+
+MCP servers contribute their tools to a script's tool set, grouped under the
+server's namespace; see [mcp.md](mcp.md) for the `exposure` setting that decides
+whether a tool is listed, merely callable, or hidden.
+
+See [codemode.md](codemode.md) for the sandbox contract, the failure taxonomy,
+the enforced budgets, and how the isolation is enforced.

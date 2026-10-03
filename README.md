@@ -83,7 +83,7 @@ vtx
 Run a single task headlessly:
 
 ```bash
-vtx -p "Write unit tests for src/ai/agent/tools/task.py"
+vtx -p "Write unit tests for src/vtx/agent/tools/task.py"
 ```
 
 ---
@@ -142,7 +142,7 @@ Custom providers show up in the `/model` picker and auto-fetch their model catal
 ## Build agents programmatically
 
 ```python
-from vtx.ai.agent.sdk import Agent, Runner, tool
+from vtx.agent.sdk import Agent, Runner, tool
 
 @tool
 def get_weather(city: str) -> str:

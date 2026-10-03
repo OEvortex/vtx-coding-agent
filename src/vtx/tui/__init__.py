@@ -1,50 +1,46 @@
-"""Vtx TUI — public surface for embedding or extending the Textual interface."""
+"""Vtx TUI — the base terminal-UI toolkit.
+
+Reusable Textual primitives with no knowledge of the agent, the model
+catalog, sessions, goals, or slash commands: input editing, fuzzy matching,
+overlay lists, LaTeX/formatting helpers, styling, and the block renderers for
+tool calls and results.
+
+This is a **base** package. It never imports :mod:`vtx.coding_agent`, so the
+agent harness can depend on it (see ``blocks.TaskToolBlock``). The coding
+agent's own screens and panels live in :mod:`vtx.coding_agent.tui`.
+"""
 
 from __future__ import annotations
 
 __all__ = [
     "DEFAULT_COMMANDS",
-    "ChatLog",
-    "CommandsMixin",
+    "AskUserDialog",
+    "AutocompleteProvider",
     "ContentBlock",
+    "FilePathProvider",
     "FloatingList",
     "HandoffLinkBlock",
-    "InfoBar",
     "InputBox",
     "LaunchWarning",
     "LaunchWarningsBlock",
     "ListItem",
-    "QueueDisplay",
+    "PullRequestProvider",
     "SelectionMode",
     "SlashCommand",
-    "StatusLine",
     "ThinkingBlock",
     "ToolBlock",
-    "TreeSelector",
     "UpdateAvailableBlock",
     "UserBlock",
-    "Vtx",
-    "export_session_html",
-    "format_path",
     "format_tokens",
     "get_styles",
     "preprocess_latex",
-    "run_tui",
     "stylize_badge_markers",
 ]
 
 _LAZY_MAP = {
-    "Vtx": ".app",
-    "run_tui": ".launch",
-    "ChatLog": ".chat",
     "InputBox": ".input",
-    "InfoBar": ".widgets",
-    "StatusLine": ".widgets",
-    "QueueDisplay": ".widgets",
-    "format_path": ".widgets",
     "FloatingList": ".floating_list",
     "ListItem": ".floating_list",
-    "TreeSelector": ".tree",
     "ContentBlock": ".blocks",
     "HandoffLinkBlock": ".blocks",
     "LaunchWarning": ".blocks",
@@ -54,14 +50,16 @@ _LAZY_MAP = {
     "UpdateAvailableBlock": ".blocks",
     "UserBlock": ".blocks",
     "stylize_badge_markers": ".blocks",
-    "CommandsMixin": ".commands",
+    "AskUserDialog": ".ask_user",
+    "DEFAULT_COMMANDS": ".autocomplete",
+    "SlashCommand": ".autocomplete",
+    "AutocompleteProvider": ".autocomplete",
+    "FilePathProvider": ".autocomplete",
+    "PullRequestProvider": ".autocomplete",
     "SelectionMode": ".selection_mode",
     "format_tokens": ".formatting",
     "get_styles": ".styles",
     "preprocess_latex": ".latex",
-    "export_session_html": ".export",
-    "DEFAULT_COMMANDS": ".autocomplete",
-    "SlashCommand": ".autocomplete",
 }
 
 

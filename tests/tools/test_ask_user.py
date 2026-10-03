@@ -3,7 +3,7 @@ import asyncio
 import pytest
 from pydantic import ValidationError
 
-from vtx.coding_agent.tools.ask_user import (
+from vtx.agent.tools.ask_user import (
     MAX_DESCRIPTION_CHARS,
     MAX_HEADER_CHARS,
     MAX_LABEL_CHARS,

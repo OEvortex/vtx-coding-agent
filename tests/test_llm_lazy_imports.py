@@ -18,7 +18,8 @@ def _module_loaded(loaded: set[str], module_name: str) -> bool:
 
 
 @pytest.mark.parametrize(
-    "import_target", ["vtx.ai", "vtx.tui.app", "vtx.coding_agent.cli", "vtx.coding_agent.headless"]
+    "import_target",
+    ["vtx.ai", "vtx.coding_agent.tui.app", "vtx.coding_agent.cli", "vtx.coding_agent.headless"],
 )
 def test_import_does_not_load_provider_sdks(import_target):
     loaded = _modules_loaded_after(import_target)

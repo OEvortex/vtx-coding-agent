@@ -5,7 +5,7 @@ Two primitives: **handoffs** (the model transfers the conversation to another ag
 ## Handoffs
 
 ```python
-from vtx.ai.agent.sdk import Agent, Runner, handoff
+from vtx.agent.sdk import Agent, Runner, handoff
 
 booking = Agent(name="booking", instructions="Book flights. Confirm before paying.")
 triage = Agent(

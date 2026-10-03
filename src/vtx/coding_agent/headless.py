@@ -5,21 +5,24 @@ import os
 import sys
 from collections.abc import AsyncIterator
 from pathlib import Path
-from typing import TYPE_CHECKING, TextIO
+from typing import TYPE_CHECKING, Any, TextIO
 
 import vtx.coding_agent.tools  # noqa: F401
-from vtx.ai.config import (
+from vtx.core.config import (
     _atomic_write_text,
     _ensure_config_file,
     _read_config_data,
     _serialize_config_yaml,
     _set_config_version,
+    config,
+    get_config,
+    get_last_selected,
+    reload_config,
 )
-from vtx.coding_agent.config import config, get_config, get_last_selected, reload_config
-from vtx.core.types import StopReason
+from vtx.protocol.types import StopReason
 
 if TYPE_CHECKING:
-    from vtx.ai.agent.extensions import LoadedExtensions
+    from vtx.agent.extensions import LoadedExtensions
     from vtx.ai.base import AuthMode
     from vtx.core.events import Event
 
@@ -52,7 +55,7 @@ async def render_run(
         TurnEndEvent,
     )
     from vtx.core.permissions import ApprovalResponse, AskUserResponse
-    from vtx.core.types import TextContent
+    from vtx.protocol.types import TextContent
 
     out = sys.stdout if out is None else out
     err = sys.stderr if err is None else err
@@ -95,6 +98,32 @@ def truncate(text: str, width: int = 100) -> str:
     return text[: width - 1] + "…"
 
 
+def _apply_project_trust(runtime: Any) -> None:
+    """Honor a project ``mcp.json`` only if it was trusted by hand before.
+
+    A headless run has no way to ask, so it never asks: it reads the same trust
+    store the TUI does. An untrusted project file produces one line on stderr
+    rather than silence, so its absence is not mistaken for "nothing to run".
+    """
+    from vtx.mcp.config import project_config_path
+    from vtx.mcp.trust import ProjectTrustStore
+
+    try:
+        trusted = ProjectTrustStore().is_trusted(runtime.cwd)
+    except OSError as exc:
+        print(f"warning: MCP project trust: {exc}", file=sys.stderr)
+        return
+    if trusted:
+        runtime.set_project_trusted(True)
+        return
+    if project_config_path(runtime.cwd).is_file():
+        print(
+            "warning: this project has a .vtx/mcp.json but is not trusted, so its "
+            "MCP servers were not started",
+            file=sys.stderr,
+        )
+
+
 async def run_headless(
     *,
     prompt_arg: str,
@@ -109,7 +138,7 @@ async def run_headless(
     agent_files: list[str] | None = None,
     auto_discover_agents: bool = True,
 ) -> int:
-    from vtx.coding_agent.runtime import ConversationRuntime
+    from vtx.agent.runtime import ConversationRuntime
     from vtx.coding_agent.tools import DEFAULT_TOOLS, get_tools_with_extensions
 
     prompt = resolve_prompt(prompt_arg, stdin=sys.stdin)
@@ -145,8 +174,8 @@ async def run_headless(
         anthropic_auth = anthropic_compat_auth_mode or config.llm.auth.anthropic_compat
 
         # Load agents first so the active agent's tool surface is applied.
-        from vtx.ai.agent.agents import AgentRegistry, load_all_agents
-        from vtx.ai.agent.extensions import load_for_runtime
+        from vtx.agent.agents import AgentRegistry, load_all_agents
+        from vtx.agent.extensions import load_for_runtime
 
         agent_registry = AgentRegistry()
         if auto_discover_agents or agent_files:
@@ -159,7 +188,7 @@ async def run_headless(
         # Resolve the initial active agent: CLI > env > last_selected > config > none
         import os as _os
 
-        from vtx.coding_agent.config import get_last_selected as _get_last_selected
+        from vtx.core.config import get_last_selected as _get_last_selected
 
         ls = _get_last_selected()
         env_agent = _os.environ.get("VTX_AGENT")
@@ -210,7 +239,7 @@ async def run_headless(
         runtime.set_loaded_extensions(loaded_extensions)
 
         # Hook system: bridge YAML hook configs onto the extension EventBus.
-        from vtx.ai.agent.hooks.bridge import HookBridge
+        from vtx.agent.hooks.bridge import HookBridge
 
         hook_bridge = HookBridge(
             bus=loaded_extensions.bus,
@@ -218,6 +247,26 @@ async def run_headless(
             global_path=Path.home() / ".vtx" / "hooks.yml",
         )
         await hook_bridge.load()
+
+        # Connect the configured MCP servers before the run starts, so their
+        # tools are in the first request rather than arriving mid-turn. The
+        # wait is bounded inside the manager, and a failure is reported on
+        # stderr rather than raised: a broken server must not fail a run.
+        _apply_project_trust(runtime)
+        try:
+            mcp_tools = await runtime.connect_mcp()
+        except Exception as exc:
+            print(f"warning: MCP startup failed: {exc}", file=sys.stderr)
+            mcp_tools = []
+        if mcp_tools:
+            contributing = sum(
+                1
+                for status in runtime.ensure_mcp_manager().statuses()
+                if status.state == "connected" and status.tool_count
+            )
+            print(f"mcp: {len(mcp_tools)} tool(s) from {contributing} server(s)", file=sys.stderr)
+        for message in runtime.ensure_mcp_manager().errors:
+            print(f"warning: MCP config: {message}", file=sys.stderr)
 
         try:
             init = runtime.initialize()

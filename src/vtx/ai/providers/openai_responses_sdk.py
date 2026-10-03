@@ -4,9 +4,8 @@ catalog marks the endpoint as Responses-style."""
 
 from __future__ import annotations
 
-from typing import ClassVar
-
 from vtx.ai.providers.openai_sdk import OpenAISDKProvider
+from vtx.ai.thinking import OPENAI_RESPONSES
 
 
 class OpenAIResponsesSDKProvider(OpenAISDKProvider):
@@ -22,15 +21,7 @@ class OpenAIResponsesSDKProvider(OpenAISDKProvider):
     """
 
     name = "openai-responses"
-    thinking_levels: ClassVar[list[str]] = [
-        "none",
-        "minimal",
-        "low",
-        "medium",
-        "high",
-        "xhigh",
-        "max",
-    ]
+    reasoning_style = OPENAI_RESPONSES
 
     def __init__(self, config):
         super().__init__(config)

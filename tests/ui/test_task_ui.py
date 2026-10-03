@@ -1,6 +1,5 @@
 """Tests for the Task tool UI renderers (vtx.tui.task_ui)."""
 
-import pytest
 from rich.text import Text
 
 from vtx.tui import task_ui
@@ -72,21 +71,29 @@ def test_stats_parts_order() -> None:
     ]
 
 
-def test_render_live_contains_spinner_and_sub_line() -> None:
-    text = task_ui.render_live(
-        {"turns": 2, "tool_uses": 3, "active_tool": "grep", "last_text": ""},
-        frame=1,
-        elapsed_ms=12_345,
+def test_render_receipt_is_static_running_line() -> None:
+    """The chat block is a receipt: no spinner, no live counters.
+
+    The pinned Agents panel owns the animated live view.
+    """
+    text = task_ui.render_receipt(
+        {"turns": 2, "tool_uses": 3, "active_tool": "grep", "last_text": ""}
     )
-    plain = text.plain
-    assert task_ui.SPINNER[1] in plain
-    assert "↻2" in plain
-    assert "3 tool uses" in plain
-    assert "12.3s" in plain
-    assert f"{task_ui.GLYPHS['sub_line']}  searching…" in plain
+    assert text.plain == f"  {task_ui.GLYPHS['sub_line']}  running…"
+    for frame in task_ui.SPINNER:
+        assert frame not in text.plain
+    assert "2" not in text.plain.replace(task_ui.GLYPHS["sub_line"], "")
 
 
-def test_render_finished_success() -> None:
+def test_render_receipt_reports_queue_position() -> None:
+    text = task_ui.render_receipt({"queued": True, "queue_position": 3})
+    assert "queued · 3 ahead of the cap" in text.plain
+
+    no_position = task_ui.render_receipt({"queued": True})
+    assert no_position.plain.strip().endswith("queued")
+
+
+def test_render_finished_is_one_line() -> None:
     stats = {
         "turns": 5,
         "tool_counts": {"read": 4, "grep": 3, "bash": 1},
@@ -94,20 +101,30 @@ def test_render_finished_success() -> None:
         "final_text": "Identified 3 core dispatch layers and mapped dependency lifecycle.",
     }
     text = task_ui.render_finished(stats, success=True, elapsed_ms=24_100)
-    expected_line_1 = (
-        f"{task_ui.GLYPHS['sub_line']} {task_ui.GLYPHS['turns']} 5 turns · 8 tool calls "
-        f"(4 reads, 3 searches, 1 bash)"
-    )
-    assert expected_line_1 in text.plain
-    assert (
-        "Summary: Identified 3 core dispatch layers and mapped dependency lifecycle." in text.plain
-    )
-    assert "[ctrl+] to inspect full transcript]" in text.plain
+    lines = text.plain.splitlines()
+    assert len(lines) == 1
+    assert lines[0].startswith(f"  {task_ui.GLYPHS['sub_line']} Done")
+    assert "5 turns · 8 tool calls (4 reads, 3 searches, 1 bash)" in lines[0]
+    assert "34.2k tokens · 24.1s" in lines[0]
+    assert "[ctrl+] transcript" in lines[0]
 
 
 def test_render_finished_error_includes_message() -> None:
     text = task_ui.render_finished({"turns": 1, "error": "boom"}, success=False, elapsed_ms=1_000)
-    assert "Error: boom" in text.plain
+    assert "Error" in text.plain
+    assert "boom" in text.plain
+
+
+def test_render_finished_late_background_error_is_an_error() -> None:
+    """A background dispatch already reported success; a later failure in the
+    sub-agent must still read as a failure."""
+    text = task_ui.render_finished(
+        {"turns": 1, "stop_label": "end_turn", "error": "Sub-agent raised: boom"},
+        success=True,
+        elapsed_ms=1_000,
+    )
+    assert "Error" in text.plain
+    assert "Sub-agent raised: boom" in text.plain
 
 
 def test_render_finished_stopped_on_interrupt() -> None:
@@ -121,15 +138,6 @@ def test_render_background_line() -> None:
     text = task_ui.render_background("task_abc")
     assert "Running in background (ID: task_abc)" in text.plain
     assert isinstance(text, Text)
-
-
-@pytest.mark.parametrize(
-    ("frame", "expected"),
-    [(0, task_ui.SPINNER[0]), (10, task_ui.SPINNER[0]), (13, task_ui.SPINNER[3])],
-)
-def test_spinner_frames_wrap(frame: int, expected: str) -> None:
-    text = task_ui.render_live({"turns": 0}, frame=frame, elapsed_ms=None)
-    assert expected in text.plain
 
 
 def test_render_finished_expanded() -> None:

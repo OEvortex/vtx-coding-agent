@@ -5,7 +5,7 @@ Run one prompt non-interactively — for scripts and CI. Implemented in `src/cod
 ## Usage
 
 ```bash
-vtx -p "Write unit tests for src/ai/agent/tools/task.py"
+vtx -p "Write unit tests for src/vtx/agent/tools/task.py"
 vtx --prompt                      # read the prompt from stdin
 echo "explain this diff" | vtx -p
 git diff | vtx -p "review this"

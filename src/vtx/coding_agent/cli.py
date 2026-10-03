@@ -6,8 +6,8 @@ import sys
 import vtx.coding_agent
 import vtx.coding_agent.tools  # noqa: F401
 from vtx.ai import PROVIDER_API_BY_NAME
-from vtx.coding_agent.config import config
-from vtx.coding_agent.version import VERSION
+from vtx.core.config import config
+from vtx.core.version import VERSION
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -125,7 +125,7 @@ def main() -> None:
         sub = sys.argv[1]
 
         if sub == "install":
-            from vtx.ai.agent.extension_manager import install_extension
+            from vtx.agent.extension_manager import install_extension
 
             name = sys.argv[2] if len(sys.argv) > 2 else None
             if not name:
@@ -140,7 +140,7 @@ def main() -> None:
             raise SystemExit(0)
 
         if sub == "uninstall":
-            from vtx.ai.agent.extension_manager import uninstall_extension
+            from vtx.agent.extension_manager import uninstall_extension
 
             name = sys.argv[2] if len(sys.argv) > 2 else None
             if not name:
@@ -154,7 +154,7 @@ def main() -> None:
             raise SystemExit(0)
 
         if sub == "list-extensions":
-            from vtx.ai.agent.extension_manager import list_installed
+            from vtx.agent.extension_manager import list_installed
 
             extensions = list_installed()
             if not extensions:
@@ -172,7 +172,7 @@ def main() -> None:
     args = parser.parse_args()
 
     if args.command == "update":
-        from vtx.coding_agent.self_update import self_update
+        from vtx.core.self_update import self_update
 
         ok, message = self_update()
         if ok:
@@ -202,7 +202,7 @@ def main() -> None:
         raise SystemExit(0)
 
     if args.list_extensions:
-        from vtx.ai.agent.extension_manager import list_installed
+        from vtx.agent.extension_manager import list_installed
 
         extensions = list_installed()
         if not extensions:
@@ -214,7 +214,7 @@ def main() -> None:
         raise SystemExit(0)
 
     if args.prompt is not None:
-        from vtx.ai.agent.extensions import load_for_runtime
+        from vtx.agent.extensions import load_for_runtime
         from vtx.coding_agent.headless import run_headless
 
         loaded = load_for_runtime(
@@ -243,7 +243,7 @@ def main() -> None:
             )
         )
 
-    from vtx.tui.launch import run_tui
+    from vtx.coding_agent.tui.launch import run_tui
 
     run_tui(args)
 

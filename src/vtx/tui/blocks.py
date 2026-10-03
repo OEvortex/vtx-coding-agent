@@ -1,22 +1,26 @@
 import contextlib
+import re
 import textwrap
 import time
 from collections.abc import Callable, Iterable
 from dataclasses import dataclass
 from typing import Literal
 
+from rich.spinner import Spinner
 from rich.style import Style
 from rich.text import Text
 from textual import events
 from textual.app import ComposeResult
+from textual.content import Content
 from textual.message import Message
 from textual.timer import Timer
-from textual.widgets import Label, Static
+from textual.widgets import Label, ProgressBar, Static
 
-from vtx.ai.agent.tools.base import BaseTool
-from vtx.ai.config import config
+from vtx.agent.tools.base import BaseTool
 from vtx.core import ApprovalResponse
-from vtx.core.types import ImageContent
+from vtx.core.compaction import SUMMARY_SECTIONS
+from vtx.core.config import config
+from vtx.protocol.types import ImageContent
 from vtx.tui import task_ui
 from vtx.tui.ask_user import (
     INCOMPLETE_WARNING_PREFIX,
@@ -34,6 +38,7 @@ from vtx.tui.formatting import (
     format_bash_command,
     format_markdown,
     format_markdown_block,
+    format_tokens,
     markdown_render_width,
     strip_markdown_for_collapsed_text,
 )
@@ -87,11 +92,13 @@ def stylize_badge_markers(text: Text, markers: Iterable[str]) -> None:
 class _StreamingMarkdownMixin:
     """Block-cached markdown streaming.
 
-    The current unfinished line is buffered until a newline arrives. Completed text is
-    split at stable block boundaries (blank lines outside code fences). Closed blocks
-    are rendered once and cached, so each refresh only re-renders the open tail block,
-    coalesced into the next frame. `_flush_streaming` does one full render at the end,
-    so the final display never carries streaming artifacts.
+    Completed text is split at stable block boundaries (blank lines outside code
+    fences). Closed blocks are rendered once and cached, so each refresh only
+    re-renders the still-open block: the uncommitted tail plus the line currently
+    being written. Every delta schedules an update, coalesced into the next refresh
+    frame, so text shows up as it arrives instead of waiting on a newline.
+    `_flush_streaming` does one full render at the end, so the final display never
+    carries streaming artifacts.
     """
 
     _pending: str
@@ -118,9 +125,6 @@ class _StreamingMarkdownMixin:
     def _streaming_update_label(self, display: Text) -> None:
         raise NotImplementedError
 
-    def _streaming_pending_style(self) -> str | None:
-        return None
-
     def _refresh_completed_display(self) -> None:
         width = markdown_render_width()
         if width != self._committed_width:  # cached renders are stale after a resize
@@ -137,16 +141,22 @@ class _StreamingMarkdownMixin:
                 self._committed_blocks.append(block)
             self._committed_len = boundary
 
-        tail = self._completed[self._committed_len :]
+        # The still-open block spans the uncommitted tail *and* the line being written
+        # right now, so a partial line is rendered on every delta rather than held back
+        # until the newline that would close it.
+        open_text = self._completed[self._committed_len :] + self._pending
         parts = [*self._committed_blocks]
-        if tail.strip():
-            tail_block = format_markdown_block(tail, width)
-            if tail_block.plain:
-                parts.append(tail_block)
+        if open_text.strip():
+            open_block = format_markdown_block(open_text, width)
+            if open_block.plain:
+                parts.append(open_block)
         self._completed_display = Text("\n\n").join(parts) if parts else Text()
 
     def _render_streaming_display(self) -> Text:
         display = self._completed_display.copy()
+        # Only reserve the next line when the current one is closed. With a partial
+        # line pending the open block already ends with that text, so a trailing
+        # newline would just add a blank line under live output.
         completed_needs_separator = self._completed.endswith("\n") or self._completed.endswith(
             "\r"
         )
@@ -183,7 +193,11 @@ class _StreamingMarkdownMixin:
         if last_nl != -1:
             self._completed += self._pending[: last_nl + 1]
             self._pending = self._pending[last_nl + 1 :]
-            self._schedule_streaming_update()
+
+        # Unconditional: the newline only decides what is eligible for block caching,
+        # not whether anything is renderable. Gating this on a newline left the text
+        # invisible until the line closed, which is what made streaming look buffered.
+        self._schedule_streaming_update()
 
     def _flush_streaming(self) -> Text:
         self._stream_finalized = True
@@ -255,9 +269,6 @@ class ThinkingBlock(_StreamingMarkdownMixin, Static):
     def _streaming_update_label(self, display: Text) -> None:
         self.label.update(display)
         return None
-
-    def _streaming_pending_style(self) -> str | None:
-        return f"{config.ui.colors.dim} italic"
 
     async def append(self, text: str) -> None:
         self._content += text
@@ -389,6 +400,7 @@ class ToolBlock(Static):
         # could never type into these fields.
         self._ask_user_input_visible: bool = False
         self._live_output: str = ""
+        self._live_render_pending: bool = False
         self.add_class("tool-block")
         self._set_state(None)
 
@@ -951,6 +963,26 @@ class ToolBlock(Static):
             lines = self._live_output.split("\n")
             if len(lines) > 100:
                 self._live_output = "\n".join(lines[-100:])
+        self._request_live_render()
+
+    def _request_live_render(self) -> None:
+        """Coalesce the live re-render into the next frame.
+
+        A chatty tool emits output deltas far faster than the screen refreshes
+        (the turn drains the tool's output queue with no throttle), and each
+        render is a full split of the accumulated buffer plus a Rich build and
+        a widget update. Doing that per delta saturates the event loop, and
+        because key events, the spinner and Esc are all served by that same
+        loop, the whole app stops responding. One render per frame is
+        indistinguishable to the eye.
+        """
+        if self._live_render_pending:
+            return
+        self._live_render_pending = True
+        self.call_after_refresh(self._flush_live_render)
+
+    def _flush_live_render(self) -> None:
+        self._live_render_pending = False
         self._render_live_output()
 
     def set_live_output(self, text: str) -> None:
@@ -1237,23 +1269,19 @@ class LaunchWarningsBlock(Static):
 
 
 class TaskToolBlock(ToolBlock):
-    """Task tool block with live and finished sub-agent rendering.
+    """Dispatch receipt for one sub-agent.
 
-    Running (animated ~8fps by a Textual timer)::
+    The scrollback keeps the *receipt* — what was dispatched, and how it ended
+    — and nothing else::
 
-        ⠙ haiku · ↻2 · 3 tool uses · 12.3s
-          ⎿  reading, running command…
+        ▸ Explore  Map public API surface
+          ⎿  Running in background (ID: 623586f8-8334-468)
 
-    Finished::
-
-        ✓ general-purpose · ↻5 · 7 tool uses · 33.8k token · 45.6s
-          ⎿  Done
-
-    Expanding the block (ctrl+]) still shows the full transcript from
-    ``ui_details_full``.
+    Live counters, the spinner and per-agent activity live in the pinned
+    Agents panel (:mod:`vtx.coding_agent.tui.agents_panel`), which shows every sub-agent at
+    once instead of one block per dispatch. This block repaints only when a
+    progress event arrives, so it costs nothing while the panel animates.
     """
-
-    LIVE_TICK_SECONDS = 0.08
 
     def __init__(self, **kwargs) -> None:
         super().__init__(**kwargs)
@@ -1261,8 +1289,10 @@ class TaskToolBlock(ToolBlock):
         self._task_finished: dict | None = None
         self._task_started: float | None = None
         self._task_elapsed_ms: float | None = None
-        self._live_timer: Timer | None = None
-        self._spinner_frame: int = 0
+        # A background dispatch finalizes its tool result immediately, long
+        # before the sub-agent ends. This tracks the sub-agent's own end so
+        # the receipt doesn't read as "finished" at 0 turns / 0 tool calls.
+        self._subagent_ended: bool = False
 
     def on_mount(self) -> None:
         if self._success is None and not self._awaiting_approval:
@@ -1275,7 +1305,6 @@ class TaskToolBlock(ToolBlock):
                     "tool_uses": 0,
                     "tokens": 0,
                 }
-            self._ensure_live_timer()
             self._render_result_output()
 
     def _format_header(self, truncate: bool = True) -> Text:
@@ -1305,17 +1334,18 @@ class TaskToolBlock(ToolBlock):
         desc = self._call_msg or ""
 
         result.append(f"{icon} ", style=icon_style)
-        result.append(f"{task_ui.GLYPHS['badge']} {subagent_name}", style=name_style)
+        result.append(subagent_name, style=name_style)
         if desc:
             result.append("  ")
             result.append(desc, style=Style(color=colors.dim))
 
-        if self._success is not None and self._task_finished is not None:
+        finished = self._task_finished or {}
+        if self._subagent_ended and finished:
             metrics: list[str] = []
             elapsed_ms = self._current_elapsed_ms()
             if elapsed_ms is not None:
                 metrics.append(task_ui.format_ms(elapsed_ms))
-            tokens = self._task_finished.get("tokens")
+            tokens = finished.get("tokens")
             if tokens:
                 metrics.append(task_ui.format_tokens(tokens))
             if metrics:
@@ -1324,19 +1354,18 @@ class TaskToolBlock(ToolBlock):
         return result
 
     def set_task_progress(self, stats: dict) -> None:
-        """Render a progress snapshot from :meth:`ChatLog.apply_task_progress`."""
+        """Fold a progress snapshot from :meth:`ChatLog.apply_task_progress`."""
         if self._task_started is None:
             self._task_started = time.monotonic()
         if stats.get("ended"):
+            self._subagent_ended = True
             elapsed = stats.get("elapsed_ms")
             self._task_elapsed_ms = (
                 elapsed if elapsed is not None else (time.monotonic() - self._task_started) * 1000
             )
             self._task_finished = dict(stats)
-            self._stop_live_timer()
         else:
             self._task_stats = dict(stats)
-            self._ensure_live_timer()
         self._render_result_output()
         # Update header in case subagent name resolved
         with contextlib.suppress(Exception):
@@ -1351,10 +1380,13 @@ class TaskToolBlock(ToolBlock):
         ui_details_full: str | None = None,
         images: list | None = None,
     ) -> None:
-        if self._task_started is not None and self._task_elapsed_ms is None:
+        if (
+            self._subagent_ended
+            and self._task_started is not None
+            and self._task_elapsed_ms is None
+        ):
             self._task_elapsed_ms = (time.monotonic() - self._task_started) * 1000
-        self._stop_live_timer()
-        if self._task_finished is None:
+        if self._subagent_ended and self._task_finished is None:
             self._task_finished = dict(self._task_stats or {})
             self._task_finished["ended"] = True
             if not success and ui_summary:
@@ -1367,23 +1399,6 @@ class TaskToolBlock(ToolBlock):
             ui_details_full=ui_details_full,
             images=images,
         )
-
-    def _ensure_live_timer(self) -> None:
-        if self._live_timer is None:
-            self._live_timer = self.set_interval(self.LIVE_TICK_SECONDS, self._on_live_tick)
-
-    def _stop_live_timer(self) -> None:
-        if self._live_timer is not None:
-            self._live_timer.stop()
-            self._live_timer = None
-
-    def _on_live_tick(self) -> None:
-        # Animate only while a sub-agent is actually in flight.
-        if self._task_finished is not None or self._task_stats is None:
-            self._stop_live_timer()
-            return
-        self._spinner_frame += 1
-        self._render_result_output()
 
     def _current_elapsed_ms(self) -> float | None:
         if self._task_elapsed_ms is not None:
@@ -1415,20 +1430,300 @@ class TaskToolBlock(ToolBlock):
             rendered = task_ui.render_finished(
                 self._task_finished,
                 self._success,
-                self._current_elapsed_ms(),
+                self._task_elapsed_ms,
                 result_text=result_text,
                 expanded=self._expanded,
             )
             self._show_body(rendered, finished=True)
             return
 
-        # Live in-flight view; also resumes over an already-finalized
-        # background block so late progress stays visible.
+        # A background dispatch already returned its tool result (the
+        # "Running in background (ID: …)" receipt) while the sub-agent is
+        # still going. Show that receipt, not a frozen 0-turn summary.
+        if self._success is not None and not self._awaiting_approval:
+            super()._render_result_output()
+            return
+
         if self._task_stats is not None and not self._awaiting_approval:
-            rendered = task_ui.render_live(
-                self._task_stats, self._spinner_frame, self._current_elapsed_ms()
-            )
-            self._show_body(rendered, finished=False)
+            self._show_body(task_ui.render_receipt(self._task_stats), finished=False)
             return
 
         super()._render_result_output()
+
+
+# ---------------------------------------------------------------------------
+# Compaction
+# ---------------------------------------------------------------------------
+
+COMPACTION_TICK_MS = 100
+
+_TRIGGER_LABELS = {
+    "overflow": "auto-compaction",
+    "manual": "requested",
+    "kernel": "kernel request",
+}
+
+
+def _short_section_title(title: str) -> str:
+    """Condense a mandated summary heading to a checklist-sized label."""
+    head = re.split(r"\s*[&,(-]", title, maxsplit=1)[0].strip()
+    if head.lower().startswith("all "):
+        head = head[4:]
+    return head[:14]
+
+
+def _format_elapsed(seconds: float) -> str:
+    if seconds < 10:
+        return f"{seconds:.1f}s"
+    if seconds < 60:
+        return f"{int(seconds)}s"
+    return f"{int(seconds // 60)}m{int(seconds % 60):02d}s"
+
+
+class CompactionBlock(Static):
+    """Context-compaction UI.
+
+    While the handoff summary is generated this shows an indeterminate bar and
+    a live checklist of the sections the summarization prompt mandates, so a
+    60-second wait shows work instead of a spinner. Afterwards it shows the
+    token delta and, on expand, the summary itself — the one artifact
+    compaction produces and the user otherwise never sees.
+    """
+
+    ALLOW_SELECT = True
+    can_focus = False
+
+    def __init__(
+        self,
+        *,
+        tokens_before: int = 0,
+        context_window: int = 0,
+        trigger: str = "overflow",
+        **kwargs,
+    ) -> None:
+        super().__init__(**kwargs)
+        self._tokens_before = tokens_before
+        self._context_window = context_window
+        self._trigger = trigger
+        self._tokens_after: int | None = None
+        self._summary: str = ""
+        self._error: str = ""
+        self._finished = False
+        self._expanded = False
+        self._chars = 0
+        self._sections: list[tuple[int, str]] = []
+        self._started_at = time.monotonic()
+        self._elapsed = 0.0
+        self._pulse_frame = 0
+        self._pulse_timer: Timer | None = None
+        self._spinner = Spinner("dots")
+        self.add_class("compaction-block", "-running")
+        self._refresh()
+
+    # -- Compose ---------------------------------------------------------
+
+    def compose(self) -> ComposeResult:
+        yield Label(self._format_header(), id="compaction-header")
+        yield ProgressBar(total=None, show_percentage=False, show_eta=False, id="compaction-bar")
+        yield Label("", id="compaction-sections")
+        yield Label("", id="compaction-summary", classes="-hidden")
+
+    # -- Pulse -----------------------------------------------------------
+
+    def on_mount(self, event: events.Mount) -> None:
+        del event
+        # Children exist now, so paint the initial state the timer will keep up to.
+        self._refresh()
+        self._pulse_timer = self.set_interval(COMPACTION_TICK_MS / 1000.0, self._tick_pulse)
+
+    def on_unmount(self) -> None:
+        self._stop_pulse()
+
+    def _stop_pulse(self) -> None:
+        timer, self._pulse_timer = self._pulse_timer, None
+        if timer is not None:
+            with contextlib.suppress(Exception):
+                timer.stop()
+
+    def _tick_pulse(self) -> None:
+        if self._finished:
+            self._stop_pulse()
+            return
+        self._pulse_frame += 1
+        self._refresh()
+
+    def _current_elapsed(self) -> float:
+        if self._finished:
+            return self._elapsed
+        return time.monotonic() - self._started_at
+
+    # -- State transitions -----------------------------------------------
+
+    def update_progress(self, chars: int, sections: list[tuple[int, str]]) -> None:
+        """Record streaming progress from the summary generation."""
+        if self._finished:
+            return
+        self._chars = chars
+        # The contract is cumulative, but never let a partial update clear a
+        # checklist the user has already watched fill in.
+        self._sections = sections or self._sections
+        self._refresh()
+
+    def finish(
+        self,
+        *,
+        tokens_before: int | None = None,
+        tokens_after: int,
+        summary: str = "",
+        error: str = "",
+    ) -> None:
+        """Settle the block: success shows the token delta, failure the reason."""
+        if self._finished:
+            return
+        self._finished = True
+        self._elapsed = time.monotonic() - self._started_at
+        self._error = error
+        if tokens_before is not None:
+            self._tokens_before = tokens_before
+        if error:
+            self.remove_class("-running")
+            self.add_class("-error")
+        else:
+            self._tokens_after = tokens_after
+            self._summary = summary
+            self.remove_class("-running")
+            self.add_class("-done")
+        self._stop_pulse()
+        self._refresh()
+
+    def toggle_expanded(self) -> bool:
+        """Toggle summary visibility. No-op until compaction has finished."""
+        if not self._finished or self._error or not self._summary:
+            return False
+        self._expanded = not self._expanded
+        self._render_summary()
+        self._refresh()
+        return self._expanded
+
+    def on_click(self, event: events.Click) -> None:
+        event.stop()
+        self.toggle_expanded()
+
+    # -- Rendering -------------------------------------------------------
+
+    def _refresh(self) -> None:
+        with contextlib.suppress(Exception):
+            self.query_one("#compaction-header", Label).update(self._format_header(), layout=False)
+            self._render_sections()
+        if self._finished:
+            with contextlib.suppress(Exception):
+                self._render_bar()
+
+    def _render_bar(self) -> None:
+        bar = self.query_one("#compaction-bar", ProgressBar)
+        if self._finished:
+            before = self._tokens_before or 1
+            bar.update(total=before, progress=self._tokens_after or 0)
+        else:
+            bar.update(total=None, progress=0)
+
+    def _render_sections(self) -> None:
+        label = self.query_one("#compaction-sections", Label)
+        label.set_class(self._finished or bool(self._error), "-hidden")
+        if self._finished:
+            label.update("")
+            return
+        label.update(self._format_sections())
+
+    def _render_summary(self) -> None:
+        with contextlib.suppress(Exception):
+            self._render_summary_unsafe()
+
+    def _render_summary_unsafe(self) -> None:
+        label = self.query_one("#compaction-summary", Label)
+        if not self._expanded or not self._summary:
+            label.add_class("-hidden")
+            return
+        label.remove_class("-hidden")
+        label.update(format_markdown_block(self._summary, markdown_render_width()))
+
+    def _format_header(self) -> Content:
+        colors = config.ui.colors
+        parts: list[Content | tuple[str, str]] = [Content.assemble(("⇊ ", colors.spinner))]
+
+        if self._error:
+            parts.append(Content.assemble(("Compaction failed", f"{colors.failed} bold")))
+            parts.append(Content.assemble((f": {self._error}", colors.dim)))
+            return Content.assemble(*parts)
+
+        if not self._finished:
+            parts.append(Content.assemble(("Compacting", f"{colors.running} bold")))
+            parts.append(
+                Content.assemble((f"  {_format_elapsed(self._current_elapsed())}", colors.dim))
+            )
+            if self._context_window:
+                pct = int(self._tokens_before * 100 / self._context_window)
+                parts.append(
+                    Content.assemble(
+                        (
+                            f"  {format_tokens(self._tokens_before)}"
+                            f"/{format_tokens(self._context_window)} ({pct}%)",
+                            colors.notice if pct >= 80 else colors.muted,
+                        )
+                    )
+                )
+            parts.append(
+                Content.assemble(
+                    (f"  {_TRIGGER_LABELS.get(self._trigger, self._trigger)}", colors.dim)
+                )
+            )
+            return Content.assemble(*parts)
+
+        before = self._tokens_before
+        after = self._tokens_after or 0
+        parts.append(Content.assemble(("Compacted", f"{colors.accent} bold")))
+        parts.append(
+            Content.assemble((f"  {format_tokens(before)} → {format_tokens(after)}", colors.fg))
+        )
+        if before > 0:
+            saved = 100 - int(after * 100 / before)
+            parts.append(Content.assemble((f"  (−{saved}%)", colors.success)))  # noqa: RUF001
+        parts.append(Content.assemble((f"  {_format_elapsed(self._elapsed)}", colors.dim)))
+        if self._summary:
+            parts.append(
+                Content.assemble(
+                    (
+                        "  ctrl+o to collapse" if self._expanded else "  ⏎ view summary",
+                        colors.muted,
+                    )
+                )
+            )
+        return Content.assemble(*parts)
+
+    def _format_sections(self) -> Content:
+        colors = config.ui.colors
+        if not self._sections:
+            return Content.assemble(("drafting handoff…", colors.dim))
+        done = {num for num, _ in self._sections}
+        active_num = max(done) + 1
+        active = self._spinner.render(time.time()) if self._spinner else ""
+        width = max(24, self.size.width or 80)
+        plain_width = 0
+        parts: list[Content | tuple[str, str]] = []
+        for num, title in SUMMARY_SECTIONS:
+            label = _short_section_title(title)
+            if num in done:
+                text, style = f"✓ {label}", colors.success
+            elif num == active_num:
+                text, style = f"{active} {label}", colors.running
+            else:
+                text, style = label, colors.dim
+            cost = len(text) + (3 if parts else 0)
+            if plain_width + cost > width - 1:
+                parts.append(("…", colors.dim))
+                break
+            if parts:
+                parts.append((" · ", colors.dim))
+            parts.append(Content.assemble((text, style)))
+            plain_width += cost
+        return Content.assemble(*parts)

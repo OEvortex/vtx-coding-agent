@@ -1,6 +1,6 @@
 # Extensions & hooks
 
-Extensions are Python files that hook into Vtx at startup: register tools and slash commands, intercept lifecycle events, or gate tool calls. Implemented in `src/ai/agent/extensions.py`; the extension manager in `extension_manager.py`.
+Extensions are Python files that hook into Vtx at startup: register tools and slash commands, intercept lifecycle events, or gate tool calls. Implemented in `src/vtx/agent/extensions.py`; the extension manager in `extension_manager.py`.
 
 ## Discovery
 
@@ -115,6 +115,13 @@ def setup(api):
 `session_start`, `session_end`, `agent_start`, `agent_end`, `turn_start`, `turn_end`, `tool_call`, `tool_result`, `compaction_start`, `compaction_end`, `agent_activated`, `agent_changed`, `tool_group_changed`.
 
 `tool_call` and `tool_result` are blocking events: handlers run before the action completes and may veto it.
+
+## Retired: refinement events
+
+Refinement and the continual harness it wrote to were removed with the RLM
+mode. `session_before_refine` and `refine_complete` are no longer emitted; the
+name constants still exist, so an extension that subscribes to them loads without
+error and simply never fires.
 
 ## Provider request hooks
 

@@ -5,13 +5,12 @@ from typing import Any
 
 import pytest
 
-from vtx.ai.agent.context_governance import _MAX_TOOL_RESULT_CHARS
-from vtx.ai.agent.loop import Agent
-from vtx.ai.agent.session import Session
-from vtx.ai.agent.turn import prepare_for_model, run_single_turn
+from vtx.agent.context_governance import _MAX_TOOL_RESULT_CHARS
+from vtx.agent.loop import Agent
+from vtx.agent.session import Session
+from vtx.agent.turn import prepare_for_model, run_single_turn
 from vtx.ai.base import BaseProvider, LLMStream, ProviderConfig
 from vtx.ai.providers.mock import MockProvider
-from vtx.coding_agent.config import Config, reset_config, set_config
 from vtx.coding_agent.tools import BashTool, ReadTool
 from vtx.core import (
     AgentEndEvent,
@@ -34,7 +33,8 @@ from vtx.core import (
     TurnStartEvent,
     WarningEvent,
 )
-from vtx.core.types import (
+from vtx.core.config import Config, reset_config, set_config
+from vtx.protocol.types import (
     AssistantMessage,
     Message,
     StopReason,
@@ -80,6 +80,7 @@ class StreamPartsProvider(BaseProvider):
         tools: list[ToolDefinition] | None = None,
         temperature: float | None = None,
         max_tokens: int | None = None,
+        thinking_level: str | None = None,
     ) -> LLMStream:
         async def iterator() -> AsyncIterator[StreamPart]:
             for part in self._parts:
@@ -266,7 +267,7 @@ async def test_agent_with_thinking(tools, in_memory_session, max_turns_one):
 
 @pytest.mark.asyncio
 async def test_agent_with_images(tools, in_memory_session):
-    from vtx.core.types import ImageContent
+    from vtx.protocol.types import ImageContent
 
     provider = MockProvider(scenario="simple_text")
     images = [ImageContent(data="base64data", mime_type="image/png")]
@@ -290,7 +291,7 @@ async def test_agent_with_images(tools, in_memory_session):
 
 @pytest.mark.asyncio
 async def test_agent_with_image_only_prompt_omits_empty_text(tools, in_memory_session):
-    from vtx.core.types import ImageContent, TextContent
+    from vtx.protocol.types import ImageContent, TextContent
 
     provider = MockProvider(scenario="simple_text")
     images = [ImageContent(data="base64data", mime_type="image/png")]
@@ -902,7 +903,7 @@ async def test_session_runtime_checkpoint_roundtrip(in_memory_session):
 @pytest.mark.asyncio
 async def test_agent_restores_checkpoint_on_resume(in_memory_session):
     """A stale active checkpoint becomes a continuation prompt on next run."""
-    from vtx.ai.agent.loop import Agent
+    from vtx.agent.loop import Agent
 
     in_memory_session.append_runtime_checkpoint(
         partial_content=[],
@@ -977,7 +978,7 @@ async def test_context_governance_budgets_oversized_result():
 @pytest.mark.asyncio
 async def test_agent_hook_lifecycle_fires(sample_messages, tools):
     """AgentHook lifecycle methods fire around a turn; finalize can rewrite."""
-    from vtx.ai.agent.hooks.agent_hook import AgentHook, CompositeHook
+    from vtx.agent.hooks.agent_hook import AgentHook, CompositeHook
 
     fired: list[str] = []
 
@@ -1022,7 +1023,7 @@ async def test_agent_hook_lifecycle_fires(sample_messages, tools):
 @pytest.mark.asyncio
 async def test_agent_hook_error_isolation(sample_messages, tools):
     """A failing hook is isolated and does not crash the turn."""
-    from vtx.ai.agent.hooks.agent_hook import AgentHook, CompositeHook
+    from vtx.agent.hooks.agent_hook import AgentHook, CompositeHook
 
     class Boom(AgentHook):
         async def before_iteration(self, ctx):
@@ -1043,8 +1044,8 @@ def test_hook_bridge_end_to_end_post_tool_use_rewrite(tmp_path):
     This is the integration contract the refactor must preserve: bus → bridge
     → command hook → turn's PostToolUse output rewrite feeds the model.
     """
-    from vtx.ai.agent import EventBus
-    from vtx.ai.agent.hooks.bridge import HookBridge
+    from vtx.agent import EventBus
+    from vtx.agent.hooks.bridge import HookBridge
 
     hooks_yml = tmp_path / "hooks.yml"
     hooks_yml.write_text(

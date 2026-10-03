@@ -1,6 +1,6 @@
 # Monorepo structure
 
-Vtx is a single Python distribution (`vtx-coding-agent`) built from four import packages under `src/`, plus a website and examples.
+Vtx is a single Python distribution (`vtx-coding-agent`) built from five import packages under `src/`, plus a website and examples.
 
 ```
 vtx-coding-agent/
@@ -13,32 +13,40 @@ vtx-coding-agent/
 │   │       │           #   tools/, prompts/, context/, extensions/,
 │   │       │           #   agents/ (handoff profiles), hooks/
 │   │       └── sdk/    #   the VTX Agentic SDK (docs/sdk/)
+│   ├── mcp/            # Model Context Protocol client: protocol core,
+│   │                   # stdio / Streamable HTTP transports, mcp.json,
+│   │                   # and the BaseTool adapter (docs/mcp.md)
 │   ├── coding_agent/   # app shell: cli.py (entry point), config.py,
 │   │                   # headless.py, themes.py, defaults/config.yml
 │   ├── core/           # types, events, permissions, compaction, handoff,
 │   │                   # paths, notify, scratchpad, tracing/ — imports nothing internal
 │   └── tui/            # Textual app: app.py + mixins, chat/blocks rendering,
 │                       # input, commands/, tree selector, export
-├── tests/              # pytest: tools/, ui/, sdk/, llm/, context/, extensions/
+├── tests/              # pytest: tools/, ui/, sdk/, llm/, context/, extensions/, mcp/
 ├── examples/           # sdk/, extensions/, agents/ runnable samples
-├── Site/               # vite+react website that renders docs/*.md
-├── docs/               # these docs (indexed by Site/src/content/docs)
-└── pyproject.toml      # hatchling; wheel packages = the four src dirs
+├── docs/               # these docs
+└── pyproject.toml      # hatchling; wheel packages = the src dirs
 ```
 
 ## Dependency direction
 
-`core` ← `ai` ← `coding_agent` / `tui`. `core` never imports from the other three; `ai` never imports `tui`. The TUI talks to the harness through `ConversationRuntime` and typed events only.
+`core` ← `ai` ← `mcp` ← `coding_agent` / `tui`. `core` never imports from the
+others; `ai` never imports `tui` or `mcp`. `mcp` sits beside `coding_agent`
+rather than inside `ai` because its `McpTool` adapter builds on the harness tool
+contract in `agent.tools` — and the harness itself never imports `vtx.mcp`.
+`ConversationRuntime` reaches it through a lazy import so the loop is not
+closed. The TUI talks to the harness through `ConversationRuntime` and typed
+events only.
 
 ## Entry points
 
 - `vtx = coding_agent.cli:main` — parses flags, then dispatches to `tui.launch.run_tui` or `coding_agent.headless.run_headless`.
-- SDK consumers import `from vtx.ai.agent.sdk import Agent, Runner, tool`.
+- SDK consumers import `from vtx.agent.sdk import Agent, Runner, tool`.
 
 ## Why this shape
 
 The pre-split monolith mixed provider plumbing with UI state. The split keeps:
 
 - `core` dependency-free so tools/tests can use message types without an LLM stack;
-- all agent logic in one place (`ai.agent`) shared by TUI, headless, sub-agents and the SDK;
+- all agent logic in one place (`vtx.agent`) shared by TUI, headless, sub-agents and the SDK;
 - the CLI/config/themes shell thin enough to swap (that's how headless mode exists at all).

@@ -3,14 +3,14 @@ from typing import Any, Literal, cast
 
 import pytest
 
-from vtx.ai.agent.session import CustomMessageEntry, Session
+from vtx.agent.prompts import build_system_prompt
+from vtx.agent.runtime import ConversationRuntime
+from vtx.agent.session import CustomMessageEntry, Session
 from vtx.ai.base import LLMStream
 from vtx.ai.providers.mock import MockProvider
-from vtx.coding_agent.prompts import build_system_prompt
-from vtx.coding_agent.runtime import ConversationRuntime
+from vtx.coding_agent.tui.commands import CommandsMixin
 from vtx.core.handoff import HANDOFF_PROMPT_TEMPLATE, generate_handoff_prompt
-from vtx.core.types import AssistantMessage, StopReason, TextContent, TextPart, UserMessage
-from vtx.tui.commands import CommandsMixin
+from vtx.protocol.types import AssistantMessage, StopReason, TextContent, TextPart, UserMessage
 
 
 class _FakeFooter:
@@ -210,7 +210,9 @@ async def test_do_handoff_creates_link_entries_and_prefills_prompt(monkeypatch):
     async def _fake_handoff(messages, _provider_obj, system_prompt, query):
         return "Task: Implement phase two"
 
-    monkeypatch.setattr("vtx.coding_agent.runtime.generate_handoff_prompt", _fake_handoff)
+    # create_handoff lives on the harness runtime, which imports
+    # generate_handoff_prompt directly.
+    monkeypatch.setattr("vtx.agent.runtime.generate_handoff_prompt", _fake_handoff)
 
     original_session = app._session
     assert original_session is not None
@@ -293,7 +295,7 @@ def test_clear_conversation_creates_session_with_persisted_system_prompt(monkeyp
             tools=tools,
         )
 
-    monkeypatch.setattr("vtx.coding_agent.runtime.Session.create", _fake_create)
+    monkeypatch.setattr("vtx.agent.runtime.Session.create", _fake_create)
 
     session = Session.in_memory("/test/project", provider="mock", model_id="mock-model")
     provider = MockProvider()

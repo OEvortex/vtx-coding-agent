@@ -21,14 +21,15 @@ from __future__ import annotations
 # extension's ``register(api)``) would otherwise try to pull
 # ``vtx.extensions`` mid-init, which itself imports back into
 # ``vtx.tools``.
-from .activate import (
+from vtx.agent.agents.activate import (
     active_permission_gates,
     active_permission_mode,
     compose_active_commands,
     compose_active_tools,
 )
+from vtx.agent.agents.discovery import find_agent_paths
+
 from .api import AgentAPI, LoadedAgent
-from .discovery import find_agent_paths
 from .loader import AgentLoadError, load_agent, load_all_agents
 from .registry import AgentRegistry
 from .schema import AGENT_NAME_RE, MAX_AGENT_NAME_LEN, AgentDef, PermissionAction, PermissionGate
@@ -60,7 +61,7 @@ def __getattr__(name: str) -> str:
     # ``vtx.agents`` -> back to ``vtx.extensions`` (partially
     # initialized) at module load.
     if name in ("AGENT_ACTIVATED", "AGENT_CHANGED", "TOOL_GROUP_CHANGED"):
-        from vtx.ai.agent import extensions as _extensions
+        from vtx.agent import extensions as _extensions
 
         value = getattr(_extensions, name)
         globals()[name] = value

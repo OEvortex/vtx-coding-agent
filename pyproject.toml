@@ -5,11 +5,6 @@ build-backend = "hatchling.build"
 [tool.hatch.build.targets.wheel]
 packages = ["src/vtx"]
 
-[tool.hatch.build.targets.sdist]
-exclude = [
-    "Site/node_modules",
-]
-
 [tool.hatch.build]
 artifacts = []
 
@@ -106,6 +101,7 @@ dev = [
  "pyright>=1.1.408",
  "pytest>=9.0.2",
  "pytest-asyncio>=1.3.0",
+ "pytest-cov>=6.0.0",
  "ruff>=0.15.8",
  "twine>=5.1.1",
 ]
@@ -132,13 +128,11 @@ select = [
 
 [tool.ruff.lint.per-file-ignores]
 "src/vtx/tui/latex.py" = ["RUF001"]
-"src/vtx/coding_agent/prompts/identity.py" = ["E501"]
-"src/vtx/coding_agent/prompts/env.py" = ["E501"]
-"src/vtx/coding_agent/prompts/rlm.py" = ["E501"]
-"src/vtx/ai/agent/sdk/**/*.py" = ["N818"]
+"src/vtx/agent/prompts/identity.py" = ["E501"]
+"src/vtx/agent/prompts/env.py" = ["E501"]
+"src/vtx/agent/sdk/**/*.py" = ["N818"]
 "src/vtx/ai/_httpcore_patch.py" = ["N806", "N812", "SIM117", "RUF002", "RUF003", "B009", "E501"]
 "tests/ui/test_latex.py" = ["RUF001"]
-"tests/ui/test_ipython_block.py" = ["E501"]
 "tests/sdk/**/*.py" = ["N818", "E501"]
 
 [tool.ruff.lint.isort]

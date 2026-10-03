@@ -9,7 +9,7 @@ Vtx stores config in `~/.vtx/config.yml` (created with defaults on first run). E
 | `default_provider` | `"openai-codex"` | Any provider slug from [providers.md](providers.md) or a custom provider |
 | `default_model` | `"gpt-5.5"` | Model ID passed to the provider |
 | `default_base_url` | `""` | Override the provider's endpoint (local models etc.) |
-| `default_thinking_level` | `"low"` | One of the provider's supported thinking levels (`none`, `minimal`, `low`, `medium`, `high`, `xhigh`) |
+| `default_thinking_level` | `"low"` | One of the model's supported thinking levels (`none`, `minimal`, `low`, `medium`, `high`, `xhigh`, `max`, or `default` for "let the model decide") — see [providers.md](providers.md#thinking-levels) |
 | `tool_call_idle_timeout_seconds` | `180` | Abort a stalled tool-call stream after this idle time |
 | `request_timeout_seconds` | `600` | HTTP request timeout |
 | `auth.openai_compat` | `"auto"` | `auto` / `required` / `none` — whether OpenAI-compatible endpoints need an API key |
@@ -33,6 +33,7 @@ The window is the active model's real context window from the catalog (e.g. 1M-c
 | --- | --- | --- |
 | `max_turns` | `500` | Hard turn budget per run |
 | `default_context_window` | `200000` | Fallback when the model's window is unknown |
+
 
 ## `ui`
 
@@ -95,7 +96,12 @@ See [agents.md](agents.md).
 
 ## `task`
 
-Built-in sub-agent presets for the `task` tool. Each preset accepts: `description`, `instructions`, `instructions_mode` (`append`/`replace`), `tools_allow`/`tools_deny`, `model`, `thinking_level`, `max_turns`. Defaults define `general-purpose`, `Explore` and `Plan` — see [tools.md](tools.md#task).
+```yaml
+task:
+  max_concurrent: 4  # sub-agents running at once; the rest queue FIFO (0 = no cap)
+```
+
+There are no sub-agent presets to configure. A `delegate_subagent` tool's `subagent_type` is resolved against the agents in `.vtx/agent/` and `~/.vtx/agent/` (see [agents.md](agents.md)); an unknown or empty name runs the default sub-agent. `max_concurrent` bounds how many sub-agents run at once — a config reload resizes the live queue, and the pinned Agents panel plus the info bar show the running/queued split — see [tools.md](tools.md#delegate_subagent).
 
 ## Internal state
 
@@ -103,7 +109,7 @@ Built-in sub-agent presets for the `task` tool. Each preset accepts: `descriptio
 
 ## Loading & migration
 
-Config is deep-merged over defaults, then migrated through versioned migrations (`meta.config_version`, currently 12). Migrations back up the old file before writing. Invalid YAML falls back to defaults with a warning shown at launch.
+Config is deep-merged over defaults, then migrated through versioned migrations (`meta.config_version`, currently 15). Migrations back up the old file before writing. Invalid YAML falls back to defaults with a warning shown at launch.
 
 ## CLI overrides
 

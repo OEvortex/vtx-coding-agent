@@ -16,6 +16,10 @@ When the user calls `/goal` or asks for goal-driven execution:
 1. **Actively use the `goal` tool** for all goal state and task tracking.
 2. **Do not abandon goal tracking midway** — keep task status (`start`, `complete`, `skipped`) and evidence synchronized with actual work.
 3. Drive the goal to its verified conclusion.
+4. **Goals are session-scoped.** Everything you create belongs to this session
+   only. If the user refers to a goal from an earlier session, use
+   `list_orphans` + `claim` (with their confirmation) instead of assuming it is
+   already loaded.
 
 ---
 
@@ -97,6 +101,23 @@ goal(action="update", status="revise", objective="Updated objective description"
 goal(action="archive")
 ```
 Immediately archives the focused goal, moving it to `.vtx/goals/archived/`. Use this when the user asks to kill, cancel, or discard the goal without requiring completion verification.
+
+---
+
+### 6. `list_orphans` / `claim` — Adopt Goals From An Earlier Session
+
+Goals are **bound to the session that created them**. Two vtx instances running in
+the same project never see or touch each other's goals, and a brand-new session
+starts with an empty pool.
+
+```python
+goal(action="list_orphans")                        # goals left by exited sessions
+goal(action="claim", goal_id="a1b2c3d4e5f6")        # take one over (also focuses it)
+```
+
+Call `list_orphans` when the user asks about a goal from a previous session (or
+when the user says they already had one going). Only claim after the user
+explicitly asks to continue it — never adopt a goal silently.
 
 ---
 

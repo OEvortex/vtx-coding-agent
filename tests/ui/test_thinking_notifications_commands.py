@@ -1,12 +1,12 @@
 from contextlib import contextmanager
 from typing import Any, ClassVar, cast
 
-from vtx.coding_agent.config import config, reset_config
-from vtx.coding_agent.runtime import ConversationRuntime
-from vtx.tui.commands import CommandsMixin
+from vtx.agent.runtime import ConversationRuntime
+from vtx.coding_agent.tui.commands import CommandsMixin
+from vtx.coding_agent.tui.widgets import InfoBar
+from vtx.core.config import config, reset_config
 from vtx.tui.floating_list import ListItem
 from vtx.tui.selection_mode import SelectionMode
-from vtx.tui.widgets import InfoBar
 
 
 class FakeChat:
@@ -162,13 +162,11 @@ def test_thinking_command_without_argument_opens_picker():
 
     assert fake._selection_mode == SelectionMode.THINKING
     assert fake.completion_list.searchable is True
+    from vtx.coding_agent.tui.commands.settings import THINKING_LEVEL_DESCRIPTIONS
+
     assert [(item.value, item.label, item.description) for item in fake.completion_list.items] == [
-        ("none", "none", ""),
-        ("minimal", "minimal", ""),
-        ("low", "low ✓", ""),
-        ("medium", "medium", ""),
-        ("high", "high", ""),
-        ("xhigh", "xhigh", ""),
+        (level, f"{level} ✓" if level == "low" else level, THINKING_LEVEL_DESCRIPTIONS[level])
+        for level in ("none", "minimal", "low", "medium", "high", "xhigh")
     ]
 
 
@@ -219,7 +217,7 @@ def test_thinking_command_unmapped_reasoning_model_shows_only_default(monkeypatc
         supports_thinking=True,
         thinking_level_map=None,
     )
-    monkeypatch.setattr("vtx.ai.agent.runtime.get_model", lambda *args, **kwargs: test_model)
+    monkeypatch.setattr("vtx.agent.runtime.get_model", lambda *args, **kwargs: test_model)
 
     assert fake._runtime.effective_thinking_levels == ["default"]
     fake._handle_thinking_command("")
@@ -243,8 +241,99 @@ def test_thinking_command_non_thinking_model_shows_only_none(monkeypatch):
         supports_images=False,
         supports_thinking=False,
     )
-    monkeypatch.setattr("vtx.ai.agent.runtime.get_model", lambda *args, **kwargs: test_model)
+    monkeypatch.setattr("vtx.agent.runtime.get_model", lambda *args, **kwargs: test_model)
 
     assert fake._runtime.effective_thinking_levels == ["none"]
     fake._handle_thinking_command("")
     assert [(item.value, item.label) for item in fake.completion_list.items] == [("none", "none")]
+
+
+def test_max_level_from_the_catalog_is_cyclable_without_crashing(monkeypatch):
+    """Regression for the ``ctrl+t`` crash: models.dev advertised the ``max``
+    effort, the cycle offered it, and the provider raised
+    ``ValueError: Invalid thinking level 'max'``."""
+    from vtx.ai.models import ApiType, Model
+
+    fake = FakeCommands()
+    fake._runtime.model = "reasoning-max"
+    fake._runtime.model_provider = "fake"
+    fake._runtime.thinking_level = "xhigh"
+    fake._provider.thinking_levels = [*fake._provider.thinking_levels, "max"]
+    monkeypatch.setattr(
+        "vtx.agent.runtime.get_model",
+        lambda *args, **kwargs: Model(
+            id="reasoning-max",
+            provider="fake",
+            api=ApiType(ApiType.OPENAI_SDK),
+            base_url="https://api.example.com",
+            max_tokens=4096,
+            supports_images=False,
+            supports_thinking=True,
+            thinking_level_map={
+                "off": "none",
+                "minimal": "minimal",
+                "low": "low",
+                "medium": "medium",
+                "high": "high",
+                "xhigh": "xhigh",
+                "max": "max",
+            },
+        ),
+    )
+
+    assert fake._runtime.effective_thinking_levels == [
+        "none",
+        "minimal",
+        "low",
+        "medium",
+        "high",
+        "xhigh",
+        "max",
+    ]
+    fake._handle_thinking_command("max")
+
+    provider = cast(Any, fake._provider)
+    session = cast(Any, fake._session)
+    assert provider.thinking_level == "max"
+    assert fake._runtime.thinking_level == "max"
+    assert session.thinking_levels == ["max"]
+    assert fake.footer._thinking_level == "max"
+
+
+def test_level_outside_the_offered_set_is_clamped_not_raised(monkeypatch):
+    """A level restored from a session (or left over from another model) must
+    degrade to the nearest supported one instead of taking the app down."""
+    from vtx.ai.models import ApiType, Model
+
+    fake = FakeCommands()
+    fake._runtime.model = "reasoning-no-max"
+    fake._runtime.model_provider = "fake"
+    monkeypatch.setattr(
+        "vtx.agent.runtime.get_model",
+        lambda *args, **kwargs: Model(
+            id="reasoning-no-max",
+            provider="fake",
+            api=ApiType(ApiType.OPENAI_SDK),
+            base_url="https://api.example.com",
+            max_tokens=4096,
+            supports_images=False,
+            supports_thinking=True,
+            thinking_level_map={
+                "off": "none",
+                "low": "low",
+                "high": "high",
+                "xhigh": None,
+                "max": None,
+            },
+        ),
+    )
+
+    assert "max" not in fake._runtime.effective_thinking_levels
+    fake._handle_thinking_command("max")
+    assert cast(Any, fake.chat).errors  # rejected by the picker
+    assert cast(Any, fake._provider).thinking_level == "low"
+
+    # The path a restored session or a model switch takes: clamp, never raise.
+    fake._runtime.set_thinking_level("max")
+    assert cast(Any, fake._provider).thinking_level == "high"
+    assert fake._runtime.thinking_level == "high"

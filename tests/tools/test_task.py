@@ -16,8 +16,8 @@ from typing import Any
 import pytest
 from pydantic import ValidationError
 
-import vtx.coding_agent.tools.task as _mod
-from vtx.coding_agent.tools.task import (
+import vtx.agent.tools.task as _mod
+from vtx.agent.tools.task import (
     MAX_RESULT_CHARS,
     SubagentSpec,
     TaskParams,
@@ -35,7 +35,7 @@ from vtx.coding_agent.tools.task import (
 class TestTaskParamsValidation:
     def test_minimal(self):
         p = TaskParams(description="Find the auth bug", prompt="Look at the login flow.")
-        assert p.subagent_type == "general-purpose"
+        assert p.subagent_type == ""
         assert p.model is None
 
     def test_all_fields(self):
@@ -59,8 +59,9 @@ class TestTaskParamsValidation:
             TaskParams(description="x", prompt="")
 
     def test_subagent_type_default(self):
+        # Empty means "the default sub-agent" — there are no built-in presets.
         p = TaskParams(description="x", prompt="y")
-        assert p.subagent_type == "general-purpose"
+        assert p.subagent_type == ""
 
     def test_background_defaults_to_false(self):
         # The default must keep existing callers on the blocking path.
@@ -91,21 +92,33 @@ class TestResolveSubagentSpec:
         assert spec.name == "reviewer"
         assert spec.description == "Custom reviewer"
 
-    def test_unknown_type_falls_back_to_general_purpose(self):
+    def test_unknown_type_falls_back_to_default(self):
         spec = _resolve_subagent_spec("does-not-exist", None)
-        assert spec.name == "general-purpose"
+        assert spec.name == "subagent"
 
-    def test_empty_type_falls_back_to_general_purpose(self):
+    def test_empty_type_falls_back_to_default(self):
         spec = _resolve_subagent_spec("", None)
-        assert spec.name == "general-purpose"
+        assert spec.name == "subagent"
 
-    def test_no_registry_falls_back_to_preset(self):
-        spec = _resolve_subagent_spec("Plan", None)
-        assert spec.name == "Plan"
+    def test_no_registry_ignores_former_preset_names(self):
+        # "Plan"/"Explore" used to be built-in presets. They are just names now:
+        # without a matching agent file they run the default sub-agent.
+        assert _resolve_subagent_spec("Plan", None).name == "subagent"
+        assert _resolve_subagent_spec("Explore", None).name == "subagent"
 
-    def test_preset_used_when_registry_empty(self):
-        spec = _resolve_subagent_spec("Explore", None)
-        assert spec.name == "Explore"
+    def test_registry_agent_is_used_when_name_matches(self):
+        from vtx.coding_agent.agents import AgentDef, AgentRegistry, LoadedAgent
+
+        reg = AgentRegistry()
+        reg.agents = [
+            LoadedAgent(
+                definition=AgentDef(name="explore", description="Read-only search"),
+                path=Path("/e.py"),
+            )
+        ]
+        spec = _resolve_subagent_spec("explore", reg)
+        assert spec.name == "explore"
+        assert spec.description == "Read-only search"
 
 
 # ---------------------------------------------------------------------------
@@ -115,18 +128,18 @@ class TestResolveSubagentSpec:
 
 class TestParentContext:
     def teardown_method(self):
-        from vtx.ai.agent.dispatcher import set_context
+        from vtx.agent.dispatcher import set_context
 
         set_context(None)
 
     def test_default_is_none(self):
-        from vtx.ai.agent.dispatcher import get_context, set_context
+        from vtx.agent.dispatcher import get_context, set_context
 
         set_context(None)
         assert get_context() is None
 
     def test_set_and_get(self):
-        from vtx.ai.agent.dispatcher import DispatcherContext, get_context, set_context
+        from vtx.agent.dispatcher import DispatcherContext, get_context, set_context
 
         ctx = DispatcherContext(
             provider=object(),
@@ -141,7 +154,7 @@ class TestParentContext:
         assert get_context() is ctx
 
     def test_set_none_clears(self):
-        from vtx.ai.agent.dispatcher import DispatcherContext, get_context, set_context
+        from vtx.agent.dispatcher import DispatcherContext, get_context, set_context
 
         set_context(
             DispatcherContext(
@@ -187,17 +200,25 @@ class _FakeRunResult:
 
     def __post_init__(self):
         if self.usage is None:
-            from vtx.core.types import Usage
+            from vtx.protocol.types import Usage
 
             self.usage = Usage()
         if self.stop_reason is None:
-            from vtx.core.types import StopReason
+            from vtx.protocol.types import StopReason
 
             self.stop_reason = StopReason.STOP
 
 
+@pytest.fixture(autouse=True)
+def _reset_subagent_runner():
+    """The runner override is module-global; clear it so one test's stub
+    cannot leak into the next."""
+    yield
+    _mod.set_subagent_runner(None)
+
+
 def _install_dispatcher_ctx() -> None:
-    from vtx.ai.agent.dispatcher import DispatcherContext, set_context
+    from vtx.agent.dispatcher import DispatcherContext, set_context
 
     set_context(
         DispatcherContext(
@@ -214,12 +235,12 @@ def _install_dispatcher_ctx() -> None:
 
 class TestTaskToolExecute:
     def teardown_method(self):
-        from vtx.ai.agent.dispatcher import set_context
+        from vtx.agent.dispatcher import set_context
 
         set_context(None)
 
     def test_no_dispatcher_context(self):
-        from vtx.ai.agent.dispatcher import set_context
+        from vtx.agent.dispatcher import set_context
 
         # Force the no-context branch even if another test leaked one.
         set_context(None)
@@ -241,7 +262,7 @@ class TestTaskToolExecute:
         async def _boom(*args, **kwargs):
             return _FakeRunResult(final_text="", error="upstream 500", transcript=["  → bash"])
 
-        monkeypatch.setattr(_mod, "_run_subagent", _boom)
+        _mod.set_subagent_runner(_boom)
 
         tool = TaskTool()
         result = asyncio.run(tool.execute(TaskParams(description="x", prompt="y")))
@@ -250,7 +271,7 @@ class TestTaskToolExecute:
         assert "→ bash" in (result.ui_details_full or "")
 
     def test_execute_returns_final_text(self, monkeypatch):
-        from vtx.core.types import StopReason, Usage
+        from vtx.protocol.types import StopReason, Usage
 
         _install_dispatcher_ctx()
 
@@ -263,7 +284,7 @@ class TestTaskToolExecute:
                 session_id="abc12345",
             )
 
-        monkeypatch.setattr(_mod, "_run_subagent", _ok)
+        _mod.set_subagent_runner(_ok)
 
         tool = TaskTool()
         result = asyncio.run(
@@ -272,7 +293,7 @@ class TestTaskToolExecute:
         assert result.success is True
         assert result.result == "Here is the answer."
         assert "3 turns" in (result.ui_summary or "")
-        assert "Explore" in (result.ui_details_full or "")
+        assert "subagent" in (result.ui_details_full or "")
         assert "abc12345" in (result.ui_details_full or "")
 
     def test_execute_truncates_long_text_silently(self, monkeypatch):
@@ -286,7 +307,7 @@ class TestTaskToolExecute:
         async def _ok(*args, **kwargs):
             return _FakeRunResult(final_text=huge, turns=1, session_id="s")
 
-        monkeypatch.setattr(_mod, "_run_subagent", _ok)
+        _mod.set_subagent_runner(_ok)
 
         tool = TaskTool()
         result = asyncio.run(tool.execute(TaskParams(description="x", prompt="y")))
@@ -296,7 +317,7 @@ class TestTaskToolExecute:
         assert "truncated" not in (result.result or "")
 
     def test_execute_does_not_leak_metadata_to_llm(self, monkeypatch):
-        from vtx.core.types import StopReason, Usage
+        from vtx.protocol.types import StopReason, Usage
 
         _install_dispatcher_ctx()
 
@@ -309,7 +330,7 @@ class TestTaskToolExecute:
                 session_id="abc12345",
             )
 
-        monkeypatch.setattr(_mod, "_run_subagent", _ok)
+        _mod.set_subagent_runner(_ok)
 
         tool = TaskTool()
         result = asyncio.run(
@@ -317,22 +338,14 @@ class TestTaskToolExecute:
         )
         assert result.success is True
         assert result.result == "Here is the answer."
-        forbidden = (
-            "turns",
-            "tokens",
-            "abc12345",
-            "Explore",
-            "session",
-            "model",
-            "general-purpose",
-        )
+        forbidden = ("turns", "tokens", "abc12345", "Explore", "session", "model", "subagent")
         for needle in forbidden:
             assert needle.lower() not in (result.result or "").lower(), (
                 f"result leaked {needle!r}: {result.result!r}"
             )
 
     def test_execute_progress_callback_runs(self, monkeypatch):
-        from vtx.ai.agent.dispatcher import DispatcherContext, set_context
+        from vtx.agent.dispatcher import DispatcherContext, set_context
 
         seen: list[tuple[str, dict]] = []
 
@@ -343,7 +356,7 @@ class TestTaskToolExecute:
                 pc(tool_call_id, {"kind": "subagent_start", "subagent": "x"})
             return _FakeRunResult(final_text="done", turns=1, session_id="s")
 
-        monkeypatch.setattr(_mod, "_run_subagent", _ok)
+        _mod.set_subagent_runner(_ok)
         ctx = DispatcherContext(
             provider=_FakeProvider(),
             model="m",
@@ -366,8 +379,8 @@ class TestTaskToolExecute:
         part in the final turn concatenated, with ``ThinkingContent``
         filtered out, and earlier mid-run turns' text discarded.
         """
-        from vtx.ai.agent.dispatcher import DispatcherContext
-        from vtx.core.types import (
+        from vtx.agent.dispatcher import DispatcherContext
+        from vtx.protocol.types import (
             AssistantMessage,
             StopReason,
             TextContent,
@@ -418,10 +431,9 @@ class TestTaskToolExecute:
         monkeypatch.setattr(_mod, "_build_subagent_system_prompt", lambda *a, **kw: "system")
         monkeypatch.setattr(_mod, "_create_subagent_session", lambda *a, **kw: _StubSession())
         monkeypatch.setattr(_mod, "_resolve_api_and_base_url", lambda *a, **kw: ("openai", None))
-        monkeypatch.setattr(
-            "vtx.coding_agent.runtime.create_provider", lambda *a, **kw: _FakeProvider()
-        )
-        monkeypatch.setattr("vtx.ai.agent.loop.Agent", lambda *a, **kw: _FakeSubAgent(*a, **kw))
+        # create_provider is called from the harness runtime.
+        monkeypatch.setattr("vtx.agent.runtime.create_provider", lambda *a, **kw: _FakeProvider())
+        monkeypatch.setattr("vtx.agent.loop.Agent", lambda *a, **kw: _FakeSubAgent(*a, **kw))
 
         real_ctx = DispatcherContext(
             provider=_FakeProvider(),
@@ -459,7 +471,7 @@ class TestTaskToolExecute:
 
 class TestSubagentSystemPrompt:
     def test_directive_is_appended_to_base_prompt(self):
-        from vtx.ai.agent.dispatcher import DispatcherContext
+        from vtx.agent.dispatcher import DispatcherContext
 
         ctx = DispatcherContext(
             provider=object(),
@@ -478,7 +490,7 @@ class TestSubagentSystemPrompt:
         assert "Return ONLY your final answer" in out
 
     def test_directive_added_when_spec_replaces_base(self):
-        from vtx.ai.agent.dispatcher import DispatcherContext
+        from vtx.agent.dispatcher import DispatcherContext
 
         ctx = DispatcherContext(
             provider=object(),
@@ -502,7 +514,7 @@ class TestSubagentSystemPrompt:
         assert "Return ONLY your final answer" in out
 
     def test_spec_instructions_preserved_alongside_directive(self):
-        from vtx.ai.agent.dispatcher import DispatcherContext
+        from vtx.agent.dispatcher import DispatcherContext
 
         ctx = DispatcherContext(
             provider=object(),

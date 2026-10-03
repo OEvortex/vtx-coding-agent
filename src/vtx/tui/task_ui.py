@@ -16,10 +16,10 @@ from typing import TYPE_CHECKING
 from rich.style import Style
 from rich.text import Text
 
-from vtx.ai.config import config
+from vtx.core.config import config
 
 if TYPE_CHECKING:
-    from vtx.tui.themes import ColorsConfig
+    from vtx.core.themes import ColorsConfig
 
 # Semantic indicator glyphs.
 GLYPHS = {
@@ -179,21 +179,22 @@ def stats_parts(stats: dict) -> list[str]:
     return parts
 
 
-def render_live(stats: dict, frame: int, elapsed_ms: float | None) -> Text:
-    """Running agent: spinner + dim stats, then a ⎿ activity continuation."""
+def render_receipt(stats: dict) -> Text:
+    """Dispatch receipt shown in chat while a sub-agent is in flight.
+
+    Deliberately static. The pinned Agents panel owns the live view — running
+    counters, the spinner, per-agent activity — so an animated block in the
+    scrollback repeated it, and with a fan-out of a dozen sub-agents it buried
+    the conversation under a dozen identical spinners.
+    """
     colors: ColorsConfig = config.ui.colors
-    parts = list(stats_parts(stats))
-    if elapsed_ms is not None:
-        parts.append(format_ms(elapsed_ms))
-
     text = Text()
-    spinner = SPINNER[frame % len(SPINNER)]
-    text.append(spinner, style=Style(color=colors.accent))
-    if parts:
-        text.append(" " + " · ".join(parts), style=Style(color=colors.dim))
-
-    activity = describe_activity(stats.get("active_tool"), stats.get("last_text", ""))
-    text.append(f"\n  {GLYPHS['sub_line']}  {activity}", style=Style(color=colors.dim))
+    if stats.get("queued"):
+        position = stats.get("queue_position") or 0
+        detail = f"queued · {position} ahead of the cap" if position else "queued"
+    else:
+        detail = "running…"
+    text.append(f"  {GLYPHS['sub_line']}  {detail}", style=Style(color=colors.dim))
     return text
 
 
@@ -204,8 +205,12 @@ def render_finished(
     result_text: str = "",
     expanded: bool = False,
 ) -> Text:
-    """Finished agent: outcome icon + stats, then a ⎿ status continuation."""
-    colors = config.ui.colors
+    """Finished agent: one line of counters, plus an error line if it failed.
+
+    Expanding (ctrl+]) shows the full transcript instead, which is the only
+    place the sub-agent's own words are worth quoting at length.
+    """
+    colors: ColorsConfig = config.ui.colors
     stop_label = stats.get("stop_label")
     error_msg = stats.get("error")
 
@@ -247,53 +252,33 @@ def render_finished(
                 )
         return text
 
-    # Collapsed view: structured summary layout matching enhanced proposal
-    text = Text()
     turns = stats.get("turns") or 0
     tool_counts = stats.get("tool_counts") or {}
     tool_breakdown = format_tool_breakdown(tool_counts)
     if not tool_counts and stats.get("tool_uses"):
-        tool_uses = stats.get("tool_uses")
+        tool_uses = stats["tool_uses"]
         tool_breakdown = f"{tool_uses} tool use{'' if tool_uses == 1 else 's'}"
 
-    # Line 1: Turns + Tool calls breakdown
-    turns_str = f"{turns} turn{'s' if turns != 1 else ''}"
-    text.append(
-        f"  {GLYPHS['sub_line']} {GLYPHS['turns']} {turns_str} · {tool_breakdown}",
-        style=Style(color=colors.dim),
-    )
-
-    # Line 2: Summary or Error
     if stop_label in ("interrupted", "cancelled"):
-        text.append(f"\n  {GLYPHS['sub_line']} Stopped", style=Style(color=colors.dim))
-    elif success is False or stop_label == "error":
-        msg = f"Error: {error_msg}" if error_msg else "Sub-agent encountered an error."
-        text.append(f"\n  {GLYPHS['sub_line']} {msg}", style=Style(color=colors.failed))
+        outcome = "Stopped"
+    elif success is False or stop_label == "error" or error_msg:
+        outcome = "Error"
     else:
-        full_output = result_text or stats.get("final_text", "")
-        summary = extract_summary_line(full_output)
-        if summary:
-            text.append(
-                f"\n  {GLYPHS['sub_line']} Summary: {summary}", style=Style(color=colors.dim)
-            )
-        else:
-            detail = "Wrapped up (turn limit)" if stop_label == "length" else "Done"
-            text.append(f"\n  {GLYPHS['sub_line']} {detail}", style=Style(color=colors.dim))
+        outcome = "Done"
 
-    # Line 3: Output & Transcript inspection hint
-    full_output = result_text or stats.get("final_text", "")
-    transcript = stats.get("transcript") or []
-    files_count = detect_files_referenced(full_output, transcript)
-    files_prefix = (
-        f"{files_count} file{'s' if files_count != 1 else ''} referenced · "
-        if files_count > 0
-        else ""
-    )
-    text.append(
-        f"\n  {GLYPHS['sub_line']} Output: {files_prefix}[ctrl+] to inspect full transcript]",
-        style=Style(color=colors.dim),
-    )
+    text = Text()
+    text.append(f"  {GLYPHS['sub_line']} {outcome}", style=Style(color=colors.dim))
+    parts = [f"{turns} turn{'s' if turns != 1 else ''}", tool_breakdown]
+    tokens = stats.get("tokens") or 0
+    if tokens:
+        parts.append(format_tokens(tokens))
+    if elapsed_ms is not None:
+        parts.append(format_ms(elapsed_ms))
+    text.append(" · " + " · ".join(parts), style=Style(color=colors.muted))
+    text.append(" · [ctrl+] transcript", style=Style(color=colors.dim))
 
+    if error_msg:
+        text.append(f"\n  {GLYPHS['sub_line']} {error_msg}", style=Style(color=colors.failed))
     return text
 
 

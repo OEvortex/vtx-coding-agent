@@ -2,7 +2,7 @@ from pathlib import Path
 
 import yaml
 
-from vtx.coding_agent.config import (
+from vtx.core.config import (
     CURRENT_CONFIG_VERSION,
     consume_config_warnings,
     get_config,
@@ -224,3 +224,101 @@ llm:
 
     warnings = consume_config_warnings()
     assert any("Migrated config" in warning for warning in warnings)
+
+
+def test_v13_mode_key_is_dropped(tmp_path, monkeypatch):
+    """v14 retired the REPL-first mode and removes the key.
+
+    Dropped rather than normalised, so a stale ``mode:`` line cannot sit in a
+    config suggesting a choice that no longer exists.
+    """
+    home = tmp_path / "home"
+    config_dir = home / ".vtx"
+    config_dir.mkdir(parents=True)
+    config_file = config_dir / "config.yml"
+    config_file.write_text("meta:\n  config_version: 13\n\nmode: rlm\n", encoding="utf-8")
+
+    monkeypatch.setattr(Path, "home", lambda: home)
+    reset_config()
+
+    get_config()
+
+    # The rewrite is what the user sees on disk, so assert on it rather than on
+    # a config attribute: Config does not expose its own version.
+    written = yaml.safe_load(config_file.read_text(encoding="utf-8"))
+    assert written["meta"]["config_version"] == CURRENT_CONFIG_VERSION
+    assert "mode" not in written
+
+    reset_config()
+
+
+def test_v15_refine_block_is_dropped(tmp_path, monkeypatch):
+    """v16 removes the refine block; an old config still loads without it."""
+    home = tmp_path / "home"
+    config_dir = home / ".vtx"
+    config_dir.mkdir(parents=True)
+    config_file = config_dir / "config.yml"
+    config_file.write_text(
+        "meta:\n  config_version: 15\n\nrefine:\n  enabled: true\n  turn_interval: 25\n",
+        encoding="utf-8",
+    )
+
+    monkeypatch.setattr(Path, "home", lambda: home)
+    reset_config()
+
+    get_config()
+
+    written = yaml.safe_load(config_file.read_text(encoding="utf-8"))
+    assert written["meta"]["config_version"] == CURRENT_CONFIG_VERSION
+    assert "refine" not in written
+
+    reset_config()
+
+
+def test_v12_config_migrates_all_the_way(tmp_path, monkeypatch):
+    """A pre-refine config loses both retired keys in one load."""
+    home = tmp_path / "home"
+    config_dir = home / ".vtx"
+    config_dir.mkdir(parents=True)
+    config_file = config_dir / "config.yml"
+    config_file.write_text(
+        "meta:\n  config_version: 12\n\nmode: rlm\n\nrefine:\n  enabled: false\n", encoding="utf-8"
+    )
+
+    monkeypatch.setattr(Path, "home", lambda: home)
+    reset_config()
+
+    get_config()
+
+    written = yaml.safe_load(config_file.read_text(encoding="utf-8"))
+    assert written["meta"]["config_version"] == CURRENT_CONFIG_VERSION
+    assert "mode" not in written
+    assert "refine" not in written
+
+    reset_config()
+
+    reset_config()
+
+
+def test_current_version_config_ignores_a_stale_mode_key(tmp_path, monkeypatch):
+    """A config already at the current version keeps loading with a stray key.
+
+    Migration only runs up the version chain, so a ``mode:`` line in a file
+    already stamped v16 is not rewritten. It is still inert -- the schema has no
+    such field, so it is dropped on read rather than becoming an error.
+    """
+    home = tmp_path / "home"
+    config_dir = home / ".vtx"
+    config_dir.mkdir(parents=True)
+    config_file = config_dir / "config.yml"
+    config_file.write_text(
+        f"meta:\n  config_version: {CURRENT_CONFIG_VERSION}\n\nmode: nonsense\n", encoding="utf-8"
+    )
+
+    monkeypatch.setattr(Path, "home", lambda: home)
+    reset_config()
+
+    assert get_config().agent.max_turns > 0
+    assert not hasattr(get_config(), "mode")
+
+    reset_config()

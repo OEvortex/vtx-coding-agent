@@ -1,6 +1,6 @@
 """TUI styles for vtx."""
 
-from vtx.ai.config import config
+from vtx.core.config import config
 
 
 def _blend_hex(base: str, overlay: str, overlay_weight: float) -> str:
@@ -26,7 +26,7 @@ def get_styles() -> str:
 Screen {{
     layout: grid;
     grid-size: 1;
-    grid-rows: 1fr auto auto auto auto auto;
+    grid-rows: 1fr auto auto auto auto auto auto;
     background: transparent;
     color: {colors.fg};
 }}
@@ -195,54 +195,6 @@ Screen {{
     height: 0;
 }}
 
-/* IPython cell (RLM mode) — modern card-style rendering of the ipython tool. */
-.ipython-cell-block {{
-    margin-top: 1;
-    padding: 0;
-    width: 100%;
-}}
-
-.ipython-cell-block.-pending,
-.ipython-cell-block.-success,
-.ipython-cell-block.-error {{
-    background: {colors.tool_bg.pending};
-}}
-
-.ipython-cell-block.-with-details {{
-    background: {colors.tool_bg.pending};
-    padding: 1;
-    margin-top: 1;
-}}
-
-.ipython-cell-block.-success.-with-details {{
-    background: {colors.tool_bg.success};
-}}
-
-.ipython-cell-block.-error.-with-details {{
-    background: {colors.tool_bg.error};
-}}
-
-.ipython-cell-block #tool-header {{
-    padding: 0 1;
-}}
-
-.ipython-cell-block #tool-output {{
-    color: {colors.fg};
-    padding: 0 1 1 1;
-}}
-
-.ipython-cell-block #tool-footer {{
-    padding: 0 1 1 1;
-    color: {colors.dim};
-    text-style: italic;
-}}
-
-.ipython-cell-block #tool-footer.-hidden {{
-    display: none;
-    height: 0;
-    padding: 0;
-}}
-
 /* Modern tool block overrides */
 .tool-block.-with-details {{
     padding: 0;
@@ -254,12 +206,66 @@ Screen {{
     height: 0;
 }}
 
-/* Compaction message */
-.compaction-message {{
-    background: {colors.panel};
+/* Compaction block */
+.compaction-block {{
     padding: 1 1;
     margin-top: 1;
     width: 100%;
+    background: {colors.panel};
+}}
+
+.compaction-block #compaction-header,
+.compaction-block #compaction-sections,
+.compaction-block #compaction-summary {{
+    width: 100%;
+}}
+
+.compaction-block #compaction-bar {{
+    width: auto;
+    max-width: 100%;
+    height: 1;
+    margin-top: 1;
+}}
+
+.compaction-block #compaction-bar Bar {{
+    width: 40;
+    max-width: 100%;
+    height: 1;
+}}
+
+.compaction-block #compaction-bar Bar > .bar--bar {{
+    color: {colors.accent};
+    background: {colors.editor};
+}}
+
+.compaction-block #compaction-bar Bar > .bar--indeterminate {{
+    color: {colors.accent};
+    background: {colors.editor};
+}}
+
+.compaction-block #compaction-bar Bar > .bar--complete {{
+    color: {colors.success};
+    background: {colors.editor};
+}}
+
+.compaction-block #compaction-sections {{
+    margin-top: 1;
+    height: auto;
+}}
+
+.compaction-block #compaction-sections.-hidden {{
+    display: none;
+    height: 0;
+}}
+
+.compaction-block #compaction-summary {{
+    margin-top: 1;
+    height: auto;
+}}
+
+.compaction-block #compaction-summary.-hidden {{
+    display: none;
+    height: 0;
 }}
 
 /* Agent details */
@@ -342,6 +348,16 @@ Screen {{
 #exit-hint {{
     color: {colors.dim};
     width: auto;
+}}
+
+/* Pinned sub-agent strip: a standing view of the fan-out, above the editor. */
+#agents-panel {{
+    height: auto;
+    padding: 0 1;
+}}
+
+#agents-panel.-visible {{
+    display: block;
 }}
 
 /* Input area */

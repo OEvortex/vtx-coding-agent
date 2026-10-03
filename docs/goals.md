@@ -56,6 +56,8 @@ Press `Ctrl+Shift+G` to post the expanded dashboard to the chat log: progress ba
 
 Task markers: `✓` complete, `▸` current, `~` skipped, `·` pending.
 
+When the goal dispatches sub-agents, the beacon also lists the live ones and the queued count. That view is not goal-specific: the pinned **Agents** panel under the status line shows the same rows for any session with sub-agents in flight, and the info bar carries the `N running, M queued agents` summary. See [tools.md](tools.md#delegate_subagent).
+
 ## Auto-continue
 
 While a focused goal is active, vtx keeps working instead of returning control after every turn: when the agent stops short of the objective, a small checkpoint turn is scheduled that points it at the next step. Pressing `Esc` pauses the goal, so auto-continue never runs away from you. Ask the agent to resume to restart it.

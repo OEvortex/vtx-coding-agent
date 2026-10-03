@@ -1,8 +1,8 @@
 from collections import deque
 from typing import Any, cast
 
-from vtx.core.types import ImageContent
-from vtx.tui.queue_ui import QueueUIMixin
+from vtx.coding_agent.tui.queue_ui import QueueUIMixin
+from vtx.protocol.types import ImageContent
 
 
 class FakeQueueDisplay:

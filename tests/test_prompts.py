@@ -7,9 +7,8 @@ used by the runtime and tests.
 
 from __future__ import annotations
 
-from vtx.coding_agent.config import Config, reset_config, set_config
-from vtx.coding_agent.context import Context
-from vtx.coding_agent.prompts import (
+from vtx.agent.context import Context
+from vtx.agent.prompts import (
     BACKGROUND_TASKS,
     CONTEXT_AWARENESS,
     DEFAULT_VTX_BASE,
@@ -29,8 +28,9 @@ from vtx.coding_agent.prompts import (
     build_system_prompt,
     build_tool_guidelines_section,
 )
-from vtx.coding_agent.prompts.identity import _compose_default_base
+from vtx.agent.prompts.identity import _compose_default_base
 from vtx.coding_agent.tools import all_tools
+from vtx.core.config import Config, reset_config, set_config
 
 # ---------------------------------------------------------------------------
 # identity section constants
@@ -87,6 +87,40 @@ def test_tool_guidelines_dedupes_and_preserves_order():
 def test_tool_guidelines_empty_when_no_tools():
     assert build_tool_guidelines_section(None) == ""
     assert build_tool_guidelines_section([]) == ""
+
+
+def test_no_shipped_tool_explodes_its_guidelines_into_characters():
+    """`prompt_guidelines = ("a" "b")` without the trailing comma is a str, and
+    iterating a str yields one bullet per character. It is invisible at the
+    definition site and ruins the whole section at the prompt site."""
+    offenders = [
+        tool.name for tool in all_tools if isinstance(getattr(tool, "prompt_guidelines", ()), str)
+    ]
+
+    assert offenders == []
+
+
+def test_a_string_valued_guideline_still_renders_as_one_bullet():
+    """The builder normalizes rather than trusts, so a future tool that misses
+    the comma degrades to one long line instead of one line per character."""
+    from vtx.agent.tools.base import BaseTool
+
+    class StrGuidelines(BaseTool):
+        name = "str-guidelines"
+
+        def __init__(self):
+            self.prompt_guidelines = "one long guideline that is not a tuple at all"
+
+        async def execute(self, params, cancel_event=None, on_output=None):  # pragma: no cover
+            raise NotImplementedError
+
+    section = build_tool_guidelines_section([StrGuidelines()])
+
+    assert section.splitlines() == [
+        TOOL_USAGE_HEADER,
+        "",
+        "- one long guideline that is not a tuple at all",
+    ]
 
 
 # ---------------------------------------------------------------------------
@@ -182,8 +216,7 @@ def test_build_system_prompt_includes_mandatory_skills_block(tmp_path):
     assert "Before replying, scan the skills below" in prompt
     assert "Only proceed without loading a skill if genuinely none are relevant" in prompt
     assert "<available_skills>" in prompt
-    assert "  workflows:" in prompt
-    assert "- demo" in prompt
+    assert "<name>demo</name>" in prompt
     assert "</available_skills>" in prompt
 
 
@@ -194,6 +227,6 @@ def test_build_system_prompt_includes_bundled_skills(tmp_path):
 
     prompt = build_system_prompt(str(tmp_path), context=ctx, tools=all_tools)
 
-    assert "- init" in prompt
-    assert "- review" in prompt
-    assert "- skill-builder" in prompt
+    assert "<name>init</name>" in prompt
+    assert "<name>review</name>" in prompt
+    assert "<name>skill-builder</name>" in prompt

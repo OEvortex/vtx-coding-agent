@@ -1,4 +1,4 @@
-from vtx.coding_agent.config import Config, reset_config, set_config
+from vtx.core.config import Config, reset_config, set_config
 from vtx.tui.styles import get_styles
 
 

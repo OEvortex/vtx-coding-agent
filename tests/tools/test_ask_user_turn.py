@@ -12,12 +12,12 @@ from collections.abc import AsyncIterator
 
 import pytest
 
-from vtx.ai.agent.tools.base import BaseTool
-from vtx.ai.agent.turn import run_single_turn
+from vtx.agent.tools.ask_user import AskUserTool
+from vtx.agent.tools.base import BaseTool
+from vtx.agent.turn import run_single_turn
 from vtx.ai.base import BaseProvider, LLMStream, ProviderConfig
-from vtx.coding_agent.tools.ask_user import AskUserTool
 from vtx.core import AskUserEvent, AskUserResponse, ToolResultEvent, TurnEndEvent
-from vtx.core.types import (
+from vtx.protocol.types import (
     Message,
     StopReason,
     StreamDone,
@@ -47,6 +47,7 @@ class _ScriptedProvider(BaseProvider):
         tools: list[ToolDefinition] | None = None,
         temperature: float | None = None,
         max_tokens: int | None = None,
+        thinking_level: str | None = None,
     ) -> LLMStream:
         async def iterator() -> AsyncIterator[StreamPart]:
             for part in self._parts:

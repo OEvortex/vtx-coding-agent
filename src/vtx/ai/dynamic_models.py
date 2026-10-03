@@ -598,7 +598,9 @@ def _parse_models(
         # thinking-level map for per-model effort support.
         thinking_level_map = None
         if spec:
-            thinking_level_map = parse_models_dev_reasoning_options(spec.get("reasoning_options"))
+            thinking_level_map = parse_models_dev_reasoning_options(
+                spec.get("reasoning_options"), max_tokens=max_tokens
+            )
 
         # 4. Supports images
         supports_images = None

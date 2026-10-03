@@ -3,15 +3,15 @@ import os
 
 from pydantic import BaseModel, Field
 
-from vtx.ai.agent.tools.base import BaseTool
-from vtx.ai.agent.tools_manager import ensure_tool
+from vtx.agent.tools.base import BaseTool
+from vtx.agent.tools_manager import ensure_tool
 from vtx.coding_agent.tools._tool_utils import (
     ToolCancelledError,
     communicate_or_cancel,
     shorten_path,
     truncate_lines_by_bytes,
 )
-from vtx.core.types import ToolResult
+from vtx.protocol.types import ToolResult
 
 MAX_RESULTS = 100
 MAX_OUTPUT_BYTES = 20 * 1024

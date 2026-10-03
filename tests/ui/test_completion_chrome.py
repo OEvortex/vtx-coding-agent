@@ -5,9 +5,9 @@ from typing import Any, cast
 
 import pytest
 
-from vtx.ai.agent.session import SessionInfo
-from vtx.coding_agent.runtime import ConversationRuntime
-from vtx.tui.app import Vtx
+from vtx.agent.runtime import ConversationRuntime
+from vtx.agent.session import SessionInfo
+from vtx.coding_agent.tui.app import Vtx
 from vtx.tui.autocomplete import (
     FilePathProvider,
     PullRequestProvider,

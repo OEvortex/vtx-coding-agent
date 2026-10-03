@@ -55,16 +55,17 @@ def _count_renders(monkeypatch) -> list[str]:
     return calls
 
 
-def test_content_block_buffers_partial_line_until_newline():
+def test_content_block_streams_partial_line_without_newline():
     block = ContentBlock()
     updates = _capture_updates(block)
 
     block._append_streaming("hello")
 
-    assert updates == []
+    assert updates
+    assert _normalize(updates[-1].plain) == "hello"
 
 
-def test_content_block_commits_completed_lines_and_buffers_tail():
+def test_content_block_commits_completed_lines_and_keeps_tail_live():
     block = ContentBlock()
     updates = _capture_updates(block)
 
@@ -72,7 +73,16 @@ def test_content_block_commits_completed_lines_and_buffers_tail():
 
     assert updates
     assert "hello" in updates[-1].plain
-    assert not updates[-1].plain.endswith("wor")
+    assert _normalize(updates[-1].plain).endswith("wor")
+
+
+def test_content_block_grows_tail_one_delta_at_a_time():
+    block = ContentBlock()
+    updates = _capture_updates(block)
+
+    for char in "streaming":
+        block._append_streaming(char)
+        assert _normalize(updates[-1].plain).endswith(char)
 
 
 def test_content_block_flush_finalizes_display():
@@ -93,6 +103,7 @@ def test_streaming_update_is_coalesced_until_refresh():
 
     block._append_streaming("a\n")
     block._append_streaming("b\n")
+    block._append_streaming("c")
 
     assert len(callbacks) == 1
     assert updates == []
@@ -101,15 +112,17 @@ def test_streaming_update_is_coalesced_until_refresh():
 
     assert "a" in updates[-1].plain
     assert "b" in updates[-1].plain
+    assert _normalize(updates[-1].plain).endswith("c")
 
 
-def test_thinking_block_buffers_partial_line_until_newline():
+def test_thinking_block_streams_partial_line_without_newline():
     block = ThinkingBlock()
     updates = _capture_updates(block)
 
     block._append_streaming("thinking")
 
-    assert updates == []
+    assert updates
+    assert _normalize(updates[-1].plain) == "thinking"
 
 
 def test_boundary_after_blank_line_between_paragraphs():
@@ -136,6 +149,16 @@ def test_committed_blocks_are_not_rerendered(monkeypatch):
     _stream_lines(block, "first para\n\nsecond para\n\nthird")
 
     assert sum("first para" in call for call in calls) <= 2
+
+
+def test_partial_line_joins_committed_blocks_without_gap():
+    block = ContentBlock()
+    updates = _capture_updates(block)
+
+    block._append_streaming("first para\n\nsecond para is still")
+
+    normalized = _normalize(updates[-1].plain)
+    assert normalized == "first para\n\nsecond para is still"
 
 
 def test_render_empty_delta_does_not_create_blank_gap():

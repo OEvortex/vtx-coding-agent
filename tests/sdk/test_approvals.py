@@ -4,8 +4,8 @@ from __future__ import annotations
 
 import pytest
 
-from vtx.ai.agent.sdk.approvals import ApprovalDecision, RunState, ToolApprovalItem
-from vtx.core.types import ToolCall
+from vtx.agent.sdk.approvals import ApprovalDecision, RunState, ToolApprovalItem
+from vtx.protocol.types import ToolCall
 
 
 def _make_approval(

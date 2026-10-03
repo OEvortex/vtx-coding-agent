@@ -1,5 +1,6 @@
 import asyncio
 import json
+import logging
 import os
 from abc import ABC, abstractmethod
 from collections.abc import AsyncIterator
@@ -19,7 +20,8 @@ try:
 except Exception:
     pass
 
-from vtx.core.types import (
+from vtx.ai.thinking import THINKING_LEVELS, clamp_thinking_level
+from vtx.protocol.types import (
     Message,
     StreamDone,
     StreamPart,
@@ -31,7 +33,13 @@ from vtx.core.types import (
     Usage,
 )
 
-DEFAULT_THINKING_LEVELS: list[str] = ["none", "minimal", "low", "medium", "high", "xhigh"]
+# The full effort enum a transport can express. Every provider starts from this
+# list; per-model narrowing happens in ``vtx.ai.thinking.resolve_thinking_levels``
+# (models.dev ``reasoning_options``) so the offered levels and the levels a
+# provider accepts can never diverge.
+DEFAULT_THINKING_LEVELS: list[str] = list(THINKING_LEVELS)
+
+log = logging.getLogger("ai.base")
 
 # Provider-agnostic request/response types.
 
@@ -133,7 +141,7 @@ def is_local_base_url(base_url: str | None) -> bool:
 
 
 def make_http_client() -> httpx.AsyncClient | None:
-    from vtx.ai.config import config as vtx_config
+    from vtx.core.config import config as vtx_config
 
     # Returns None when verify is required so the SDK uses its own default client.
     if not vtx_config.llm.tls.insecure_skip_verify:
@@ -258,6 +266,9 @@ class LLMStream(AsyncIterator["StreamPart"]):
 class BaseProvider(ABC):
     name: str
     thinking_levels: ClassVar[list[str]] = DEFAULT_THINKING_LEVELS
+    # Wire protocol this provider speaks, used to decide which thinking levels
+    # have a wire spelling at all (see ``vtx.ai.thinking.resolve_thinking_levels``).
+    reasoning_style: ClassVar[str | None] = None
 
     def __init__(self, config: ProviderConfig):
         self.config = config
@@ -266,13 +277,27 @@ class BaseProvider(ABC):
     def thinking_level(self) -> str:
         return self.config.thinking_level
 
-    def set_thinking_level(self, level: str) -> None:
-        if level not in self.thinking_levels and level != "default":
-            raise ValueError(
-                f"Invalid thinking level '{level}' for {self.name}. "
-                f"Valid levels: {self.thinking_levels}"
+    def set_thinking_level(self, level: str) -> str:
+        """Apply ``level`` and return the level actually in effect.
+
+        An unsupported level is clamped to the nearest one this transport can
+        express rather than raising: a level can reach us from a restored
+        session, a model switch or a stale catalog entry, and a bad *state
+        restore* must never take the TUI down with it.
+        """
+        if level == "default":
+            self.config.thinking_level = level
+            return level
+        applied = clamp_thinking_level(level, self.thinking_levels)
+        if applied != level:
+            log.warning(
+                "Thinking level %r is not supported by %s; clamped to %r",
+                level,
+                self.name,
+                applied,
             )
-        self.config.thinking_level = level
+        self.config.thinking_level = applied
+        return applied
 
     def cycle_thinking_level(self) -> str:
         levels = self.thinking_levels
@@ -280,9 +305,7 @@ class BaseProvider(ABC):
             levels.index(self.config.thinking_level) if self.config.thinking_level in levels else 0
         )
         next_idx = (current_idx + 1) % len(levels)
-        new_level = levels[next_idx]
-        self.config.thinking_level = new_level
-        return new_level
+        return self.set_thinking_level(levels[next_idx])
 
     async def stream(
         self,
@@ -292,6 +315,7 @@ class BaseProvider(ABC):
         tools: list[ToolDefinition] | None = None,
         temperature: float | None = None,
         max_tokens: int | None = None,
+        thinking_level: str | None = None,
     ) -> LLMStream:
         from vtx.ai.rate_limit import rate_limit_manager
 
@@ -302,6 +326,7 @@ class BaseProvider(ABC):
             tools=tools,
             temperature=temperature,
             max_tokens=max_tokens,
+            thinking_level=thinking_level,
         )
 
     @abstractmethod
@@ -313,6 +338,7 @@ class BaseProvider(ABC):
         tools: list[ToolDefinition] | None = None,
         temperature: float | None = None,
         max_tokens: int | None = None,
+        thinking_level: str | None = None,
     ) -> LLMStream: ...
 
     @abstractmethod
@@ -383,7 +409,7 @@ class BaseProvider(ABC):
         **kwargs: Any,
     ) -> Any:
         """Non-streaming chat completion with retry. Consumes stream internally."""
-        from vtx.core.types import ToolDefinition
+        from vtx.protocol.types import ToolDefinition
 
         converted_messages = self._convert_dict_messages(messages)
         system_prompt = None

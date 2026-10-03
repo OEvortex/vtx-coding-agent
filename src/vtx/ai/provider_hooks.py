@@ -13,7 +13,7 @@ request. Listeners registered here can:
 Retries reuse the prepared values: listeners are *not* re-fired on
 transient-error retries.
 
-The extension bridge (:func:`vtx.ai.agent.extensions.install_provider_bridge`)
+The extension bridge (:func:`vtx.agent.extensions.install_provider_bridge`)
 registers itself here when extensions load, so these hook points are also
 reachable via ``api.on("before_provider_headers", ...)`` /
 ``api.on("before_provider_request", ...)`` with full ``ctx`` support.

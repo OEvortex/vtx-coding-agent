@@ -9,7 +9,6 @@ a paginated list with arrow indicator and counter. Used for:
 - Any other searchable list
 """
 
-from collections.abc import Sequence
 from dataclasses import dataclass
 from typing import TypeVar
 
@@ -18,7 +17,8 @@ from textual import events
 from textual.reactive import reactive
 from textual.widget import Widget
 
-from vtx.ai.config import config
+from vtx.core.config import config
+from vtx.tui.fuzzy import fuzzy_filter
 
 T = TypeVar("T")
 
@@ -172,14 +172,22 @@ class FloatingList[T](Widget):
         self._search_enabled = False
         self._search_query = ""
 
+    def _filter_items(self, query: str) -> list[ListItem[T]]:
+        """Search the searchable list, matching label and description.
+
+        Multi-token, so "gruv dark" narrows instead of matching nothing.
+        """
+        if not query:
+            return self._all_items
+        return fuzzy_filter(
+            self._all_items, query, lambda item: f"{item.label} {item.description}"
+        )
+
     def set_search_query(self, query: str) -> None:
         if not self._search_enabled:
             return
         self._search_query = query
-        if not query:
-            self._items = self._all_items
-        else:
-            self._items = self._fuzzy_filter(query, self._all_items)
+        self._items = self._filter_items(query)
         self._label_width = self._compute_label_width()
         self._description_width = self._compute_description_width()
         self._selected_index = 0
@@ -324,44 +332,6 @@ class FloatingList[T](Widget):
             text.append(description, style=f"bold {selected_color}" if is_selected else dim_color)
 
         return text
-
-    @staticmethod
-    def _fuzzy_match(query: str, candidate: str) -> tuple[float, Sequence[int]]:
-        q = query.lower()
-        c = candidate.lower()
-        positions: list[int] = []
-        idx = 0
-        for char in q:
-            idx = c.find(char, idx)
-            if idx == -1:
-                return (0.0, [])
-            positions.append(idx)
-            idx += 1
-
-        # Simple scoring: consecutive matches and early matches score higher
-        score = float(len(positions))
-        if positions and positions[0] == 0:
-            score *= 1.2
-        groups = 1
-        for i in range(1, len(positions)):
-            if positions[i] != positions[i - 1] + 1:
-                groups += 1
-        if len(positions) > 1:
-            score *= 1 + (len(positions) - groups + 1) / len(positions)
-        return (score, positions)
-
-    @classmethod
-    def _fuzzy_filter(cls, query: str, items: list[ListItem[T]]) -> list[ListItem[T]]:
-        scored = []
-        for item in items:
-            # Match against both label and description
-            label_score, _ = cls._fuzzy_match(query, item.label)
-            desc_score, _ = cls._fuzzy_match(query, item.description)
-            best = max(label_score, desc_score * 0.8)
-            if best > 0:
-                scored.append((best, item))
-        scored.sort(key=lambda x: -x[0])
-        return [item for _, item in scored]
 
     def watch__visible(self, visible: bool) -> None:
         if visible:

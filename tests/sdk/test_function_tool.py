@@ -7,9 +7,9 @@ import asyncio
 import pytest
 from pydantic import BaseModel
 
-from vtx.ai.agent.sdk import tool
-from vtx.ai.agent.sdk.tools import FunctionTool, _format_call_from_dict
-from vtx.core.types import ToolResult
+from vtx.agent.sdk import tool
+from vtx.agent.sdk.tools import FunctionTool, _format_call_from_dict
+from vtx.protocol.types import ToolResult
 
 
 def test_tool_decorator_basic() -> None:

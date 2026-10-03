@@ -194,9 +194,10 @@ def test_stream_function_call_lifecycle_emits_tool_call():
     tool_chunks = [c for c in chunks if c["type"] == "tool_calls"]
     assert len(tool_chunks) == 1
     tc = tool_chunks[0]["tool_calls"][0]
-    assert tc["id"] == "call_1"
-    assert tc["name"] == "get_weather"
-    assert json.loads(tc["arguments"]) == {"city": "sf"}
+    # ToolCall is a dataclass (vtx.ai.sdk.base), not a dict.
+    assert tc.id == "call_1"
+    assert tc.name == "get_weather"
+    assert json.loads(tc.arguments) == {"city": "sf"}
     assert state["has_function_call"] is True
 
 

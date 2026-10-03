@@ -173,6 +173,7 @@ class RateLimitManager:
         tools=None,
         temperature: float | None = None,
         max_tokens: int | None = None,
+        thinking_level: str | None = None,
     ) -> LLMStream:
         """Call ``provider._stream_impl`` with internal rate-limit retries.
 
@@ -190,6 +191,7 @@ class RateLimitManager:
                     tools=tools,
                     temperature=temperature,
                     max_tokens=max_tokens,
+                    thinking_level=thinking_level,
                 )
                 self.reset(provider_name)
                 return stream

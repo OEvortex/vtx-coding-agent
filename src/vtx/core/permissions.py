@@ -2,7 +2,7 @@ import shlex
 from dataclasses import dataclass, field
 from enum import Enum
 
-from vtx.core.abc import BaseTool
+from vtx.protocol.abc import BaseTool
 
 
 class PermissionDecision(Enum):
@@ -177,7 +177,7 @@ def check_permission(
 ) -> PermissionDecision:
     if config is None:
         try:
-            from vtx.ai.config import config as _config
+            from vtx.core.config import config as _config
 
             config = _config
         except Exception:

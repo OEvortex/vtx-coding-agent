@@ -3,7 +3,7 @@ from typing import Protocol, cast
 import pytest
 from textual._ansi_sequences import ANSI_SEQUENCES_KEYS
 
-from vtx.core.types import ImageContent
+from vtx.protocol.types import ImageContent
 from vtx.tui import prompt_history as ph
 from vtx.tui.input import InputBox
 

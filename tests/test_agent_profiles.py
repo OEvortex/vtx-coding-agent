@@ -11,8 +11,8 @@ from textwrap import dedent
 
 import pytest
 
-from vtx.ai.agent.extensions import AGENT_START, EventBus, ExtensionCommand, ExtensionTool
-from vtx.ai.agent.tools import BaseTool
+from vtx.agent.extensions import AGENT_START, EventBus, ExtensionCommand, ExtensionTool
+from vtx.agent.tools import BaseTool
 from vtx.coding_agent.agents import (
     AGENT_ACTIVATED,
     AGENT_CHANGED,
@@ -27,7 +27,7 @@ from vtx.coding_agent.agents import (
     load_all_agents,
 )
 from vtx.coding_agent.agents.schema import AGENT_NAME_RE
-from vtx.core.types import ToolResult
+from vtx.protocol.types import ToolResult
 
 # =============================================================================
 # Schema
@@ -256,7 +256,7 @@ def test_load_agent_event_handler_is_wired(tmp_path: Path):
         dedent(
             """
             from vtx.coding_agent.agents import AgentDef
-            from vtx.ai.agent import AGENT_START
+            from vtx.agent import AGENT_START
 
             AGENT = AgentDef(name="code-review", description="x")
 
@@ -328,7 +328,6 @@ def test_load_all_agents_collects_errors(tmp_path: Path):
     )
     names = {a.definition.name for a in loaded}
     assert "good" in names
-    assert "plan" in names
     assert len(errors) == 1
 
 
@@ -459,7 +458,7 @@ def test_compose_active_tools_local_tools_bypass_allow_deny():
     """A local tool the agent contributes is never stripped by its own
     allow/deny filters. The allow/deny lists target the base pool, not
     the agent's own contributions."""
-    from vtx.ai.agent.extensions import _json_schema_to_pydantic
+    from vtx.agent.extensions import _json_schema_to_pydantic
 
     pool = _builtin_pool()
     base = ["read", "write", "bash"]
@@ -495,7 +494,7 @@ def test_compose_active_tools_local_tools_bypass_allow_deny():
 
 
 def test_compose_active_tools_includes_local_tool():
-    from vtx.ai.agent.extensions import _json_schema_to_pydantic
+    from vtx.agent.extensions import _json_schema_to_pydantic
 
     pool = _builtin_pool()
     base = ["read", "bash"]
@@ -523,7 +522,7 @@ def test_compose_active_tools_includes_local_tool():
 
 
 def test_compose_active_commands_merges_local():
-    from vtx.ai.agent.extensions import CommandOutcome
+    from vtx.agent.extensions import CommandOutcome
 
     def _make_handler(s: str):
         def _h(args: str) -> CommandOutcome:
@@ -581,7 +580,7 @@ def test_when_predicate_unsupported_expression_raises():
 
 def test_extension_register_local_tool(tmp_path: Path):
     """The cross-agent local_tool API in ExtensionAPI."""
-    from vtx.ai.agent.extensions import load_extension
+    from vtx.agent.extensions import load_extension
 
     ext = tmp_path / "ext.py"
     ext.write_text(
@@ -613,7 +612,7 @@ def test_extension_register_local_tool(tmp_path: Path):
 
 
 def test_agent_events_in_all_events():
-    from vtx.ai.agent.extensions import ALL_EVENTS
+    from vtx.agent.extensions import ALL_EVENTS
 
     assert AGENT_ACTIVATED in ALL_EVENTS
     assert AGENT_CHANGED in ALL_EVENTS
@@ -771,6 +770,6 @@ def test_registry_tool_group_cycle_no_groups():
 
 
 def test_tool_group_changed_event_in_all_events():
-    from vtx.ai.agent.extensions import ALL_EVENTS, TOOL_GROUP_CHANGED
+    from vtx.agent.extensions import ALL_EVENTS, TOOL_GROUP_CHANGED
 
     assert TOOL_GROUP_CHANGED in ALL_EVENTS

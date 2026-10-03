@@ -1,7 +1,7 @@
 """OpenAI SDK provider - wraps the SDK layer into vtx's BaseProvider interface."""
 
 from collections.abc import AsyncIterator
-from typing import Any, ClassVar
+from typing import Any
 
 from openai import APIConnectionError, APIError, APIStatusError
 
@@ -11,8 +11,9 @@ from vtx.ai.providers.sanitize import sanitize_surrogates
 from vtx.ai.sdk.base import GenerationConfig
 from vtx.ai.sdk.base import Message as SDKMessage
 from vtx.ai.sdk.openai import OpenAISDK
-from vtx.core.errors import format_error
-from vtx.core.types import (
+from vtx.ai.thinking import OPENAI_COMPLETIONS
+from vtx.protocol.errors import format_error
+from vtx.protocol.types import (
     AssistantMessage,
     ImageContent,
     Message,
@@ -36,9 +37,7 @@ from vtx.core.types import (
 
 class OpenAISDKProvider(BaseProvider):
     name = "openai"
-    # Full OpenAI-style effort enum. The picker filters by per-model
-    # capability (Model.supports_thinking) before showing these.
-    thinking_levels: ClassVar[list[str]] = ["none", "minimal", "low", "medium", "high", "xhigh"]
+    reasoning_style = OPENAI_COMPLETIONS
 
     def __init__(self, config: ProviderConfig):
         super().__init__(config)
@@ -179,17 +178,25 @@ class OpenAISDKProvider(BaseProvider):
         )
 
     def _convert_tools(self, tools: list[ToolDefinition]) -> list[dict[str, Any]]:
-        return [
-            {
-                "type": "function",
-                "function": {
-                    "name": tool.name,
-                    "description": tool.description,
-                    "parameters": tool.parameters,
-                },
+        converted: list[dict[str, Any]] = []
+        for tool in tools:
+            function: dict[str, Any] = {
+                "name": tool.name,
+                "description": tool.description,
+                "parameters": tool.parameters,
             }
-            for tool in tools
-        ]
+            grammar = (
+                tool.constrained_sampling.for_provider(self.config.provider)
+                if tool.constrained_sampling
+                else None
+            )
+            if grammar is not None:
+                # Carried alongside the function so the SDK can decide the wire
+                # shape; a provider with no dialect leaves the tool unconstrained
+                # rather than guessing at a format.
+                function["grammar"] = {"type": "lark", "definition": grammar}
+            converted.append({"type": "function", "function": function})
+        return converted
 
     async def _stream_impl(
         self,
@@ -199,6 +206,7 @@ class OpenAISDKProvider(BaseProvider):
         tools: list[ToolDefinition] | None = None,
         temperature: float | None = None,
         max_tokens: int | None = None,
+        thinking_level: str | None = None,
     ) -> LLMStream:
         sdk_messages = self._convert_messages(messages, system_prompt)
         sdk_tools = self._convert_tools(tools) if tools else None
@@ -209,7 +217,7 @@ class OpenAISDKProvider(BaseProvider):
             model=self.config.model,
             temperature=temp or 0.7,
             max_tokens=max_tok,
-            thinking_level=self.config.thinking_level,
+            thinking_level=thinking_level or self.config.thinking_level,
             thinking_level_map=self.config.thinking_level_map,
         )
 

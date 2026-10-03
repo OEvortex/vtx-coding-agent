@@ -1,6 +1,5 @@
-from vtx.ai.config import _read_config_data
-from vtx.coding_agent.config import config, reset_config
-from vtx.tui.commands import CommandsMixin
+from vtx.coding_agent.tui.commands import CommandsMixin
+from vtx.core.config import _read_config_data, config, reset_config
 
 
 class FakeChat:

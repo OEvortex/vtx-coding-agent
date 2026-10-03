@@ -6,13 +6,15 @@ from typing import Literal
 
 from pydantic import BaseModel, Field, model_validator
 
-from vtx.ai.agent.tools.base import BaseTool, ToolResult
-from vtx.coding_agent.context.skills import (
+from vtx.agent.context.skills import (
     get_user_skills_dir,
     load_builtin_cmd_skills,
     load_skills,
     merge_registered_skills,
+    skills_for_mode,
+    strip_frontmatter,
 )
+from vtx.agent.tools.base import BaseTool, ToolResult
 
 
 class SkillParams(BaseModel):
@@ -24,13 +26,14 @@ class SkillParams(BaseModel):
                 data[key] = None
         return data
 
-    action: Literal["list", "view", "create", "patch", "edit", "delete", "run"] = Field(
+    action: Literal["load", "list", "view", "create", "patch", "edit", "delete", "run"] = Field(
         description=(
-            "Action: 'list' (discover), 'view' (read), 'create' (new skill), "
+            "Action: 'load' (inject a skill's instructions into context, the normal way "
+            "to use one), 'list' (discover), 'view' (raw file read), 'create' (new skill), "
             "'patch' (find-replace), 'edit' (overwrite), 'delete' (remove), "
             "or 'run' (execute skill instructions in REPL)"
         ),
-        default="view",
+        default="load",
     )
     name: str | None = Field(
         description="Skill name (lowercase/hyphens, e.g. 'review'). Required except for 'list'.",
@@ -54,17 +57,42 @@ class SkillParams(BaseModel):
     )
 
 
+MAX_SKILL_FILES = 10
+
+
+def _sibling_files(skill_dir: Path, *, exclude: str) -> list[str]:
+    """Files beside the SKILL.md, sampled and capped.
+
+    The model can `read` anything in the directory; this only tells it what is
+    there, so a skill that points at `reference/api.md` does not also cost a
+    directory listing to discover. Capped because the point is orientation, not
+    an inventory, and an uncapped list is unbounded context on a big skill.
+    """
+    try:
+        found = sorted(
+            f.relative_to(skill_dir).as_posix()
+            for f in skill_dir.rglob("*")
+            if f.is_file() and f.name != exclude and "__pycache__" not in f.parts
+        )
+    except OSError:
+        return []
+    return found[:MAX_SKILL_FILES]
+
+
 class SkillTool(BaseTool):
     name = "skill"
     tool_icon = "⚙"
     params = SkillParams
-    mutating = True  # Can modify skills, though list/view are read-only
+    mutating = True  # Can modify skills, though load/list/view are read-only
     prompt_guidelines = ()
     description = (
-        "Inspect and manage skill workflows. Use 'list' to discover available skills, "
-        "'view' to read instructions, 'create'/'edit' to author full SKILL.md files, "
-        "'patch' for targeted replacements, 'delete' to remove a skill, or 'run' to "
-        "execute a skill's instructions in the REPL."
+        "Load a skill's instructions into the conversation. Call action='load' with the skill "
+        "name from <available_skills> when a task matches its description; the output is the "
+        "full skill body plus the skill's directory and the files beside it, so relative paths "
+        "inside the skill resolve without a separate read. Also manages skills: 'list' to "
+        "discover, 'view' for a raw file read, 'create'/'edit' to author SKILL.md files, "
+        "'patch' for targeted replacements, 'delete' to remove a skill, 'run' to execute a "
+        "skill's instructions in the REPL."
     )
 
     def format_call(self, params: SkillParams) -> str:
@@ -82,6 +110,9 @@ class SkillTool(BaseTool):
             result = load_skills(cwd)
             builtin = load_builtin_cmd_skills()
             all_skills = merge_registered_skills(result.skills, builtin.skills)
+            # A python skill is a kernel module, not a set of instructions. With
+            # no kernel it can only dead-end, so don't offer it for discovery.
+            all_skills = skills_for_mode(all_skills)
             lines = ["Available skills:"]
             for skill in sorted(all_skills, key=lambda s: s.name):
                 path_str = str(skill.path)
@@ -106,7 +137,7 @@ class SkillTool(BaseTool):
         # Helper to find skill directory
         def find_skill_dir(name: str) -> tuple[Path | None, bool]:
             # 1. Project skills
-            from vtx.coding_agent.context.skills import _project_skill_dirs
+            from vtx.agent.context.skills import _project_skill_dirs
 
             project_dirs = _project_skill_dirs(Path(cwd))
             for skills_dir in project_dirs:
@@ -145,6 +176,36 @@ class SkillTool(BaseTool):
 
         skill_dir, is_builtin = find_skill_dir(params.name)
 
+        # Handle 'load' action: the model's normal way to use a skill.
+        if params.action == "load":
+            if not skill_dir:
+                msg = f"Skill '{params.name}' not found."
+                return ToolResult(success=False, result=msg, ui_summary=f"[red]{msg}[/red]")
+
+            target_file = params.file_path or "SKILL.md"
+            target_path = skill_dir / target_file
+            try:
+                body = strip_frontmatter(target_path.read_text(encoding="utf-8"))
+            except Exception as e:
+                msg = f"Failed to read skill file: {e}"
+                return ToolResult(success=False, result=msg, ui_summary=f"[red]{msg}[/red]")
+
+            files = _sibling_files(skill_dir, exclude=target_path.name)
+            lines = [
+                f'<skill_content name="{params.name}">',
+                "",
+                body.strip(),
+                "",
+                f"Base directory for this skill: {skill_dir}",
+                "Relative paths in this skill (scripts/, reference/) are relative to this base",
+                "directory, not the current working directory.",
+            ]
+            if files:
+                lines += ["", "Files in this skill directory:"]
+                lines += [f"- {name}" for name in files]
+            lines.append("</skill_content>")
+            return ToolResult(success=True, result="\n".join(lines))
+
         # Handle 'view' action
         if params.action == "view":
             if not skill_dir:
@@ -164,8 +225,19 @@ class SkillTool(BaseTool):
                 msg = f"Failed to read skill file: {e}"
                 return ToolResult(success=False, result=msg, ui_summary=f"[red]{msg}[/red]")
 
-        # Handle 'run' action - execute skill in REPL
+        # Handle 'run' action - hand the skill to the model
         if params.action == "run":
+            # `run` used to hand the skill to the persistent Python kernel.
+            # That kernel went with the RLM mode, so there is nothing to run it
+            # in. Say so and return the file rather than failing outright: a
+            # markdown skill's body is instructions, and the model can follow
+            # them itself.
+            msg = (
+                "action='run' needs the persistent Python kernel, which no longer "
+                "exists. Returning the skill file instead -- use action='view' if "
+                "you only want the path."
+            )
+
             if not skill_dir:
                 msg = f"Skill '{params.name}' not found."
                 return ToolResult(success=False, result=msg, ui_summary=f"[red]{msg}[/red]")
@@ -178,25 +250,15 @@ class SkillTool(BaseTool):
                 msg = f"Failed to read skill file: {e}"
                 return ToolResult(success=False, result=msg, ui_summary=f"[red]{msg}[/red]")
 
-            # Execute the skill instructions via REPL
-            try:
-                from vtx.ai.agent.tools.ipython import IpythonTool
-
-                tool = IpythonTool()
-                # Wrap skill content in a Python comment block for the REPL
-                repl_code = (
-                    f"# Skill: {params.name}\n"
-                    f"# Path: {target_path}\n\n"
-                    f"{skill_content}\n\n"
-                    "print('Skill executed successfully')"
-                )
-                result = await tool.execute(tool.params(code=repl_code))
-                return ToolResult(
-                    success=True, result=result.result, ui_summary=f"Ran skill '{params.name}'"
-                )
-            except Exception as e:
-                msg = f"Failed to run skill in REPL: {e}"
-                return ToolResult(success=False, result=msg, ui_summary=f"[red]{msg}[/red]")
+            # Executing a skill meant running its body in the persistent kernel, which
+            # went with the RLM mode. A python skill has no runtime now, and a
+            # markdown skill's body is instructions for a model rather than
+            # code, so the file is handed back and the model reads it.
+            return ToolResult(
+                success=True,
+                result=f"{msg}\n\n---\n{skill_content}",
+                ui_summary=f"Read skill '{params.name}'",
+            )
 
         # Mutating actions: 'create', 'edit', 'patch', 'delete'
         if is_builtin:

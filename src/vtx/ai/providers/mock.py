@@ -26,7 +26,7 @@ import asyncio
 from collections.abc import AsyncIterator
 
 from vtx.ai.base import BaseProvider, LLMStream, ProviderConfig
-from vtx.core.types import (
+from vtx.protocol.types import (
     Message,
     StopReason,
     StreamDone,
@@ -57,6 +57,7 @@ class MockProvider(BaseProvider):
         tools: list[ToolDefinition] | None = None,
         temperature: float | None = None,
         max_tokens: int | None = None,
+        thinking_level: str | None = None,
     ) -> LLMStream:
         self._attempt_count += 1
         self._last_messages = list(messages)

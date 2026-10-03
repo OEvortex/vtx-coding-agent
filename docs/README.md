@@ -14,12 +14,14 @@ This folder is the reference companion to the top-level [README](../README.md). 
 | Doc | What it covers |
 | --- | --- |
 | [tools.md](tools.md) | The built-in tools — parameters, mutating flag, and worked examples |
+| [codemode.md](codemode.md) | The confined script sandbox — tool injection, the failure taxonomy, and how isolation is enforced |
 | [goals.md](goals.md) | Persistent goals — guided drafts, task trees, auto-continue, completion audit, dashboard |
 | [permissions.md](permissions.md) | The `prompt`/`auto` modes, safe-command allowlist, and the approval decision flow |
 | [sessions.md](sessions.md) | JSONL session format, session tree, resume, handoff, `/export`, compaction, idle recap |
 | [skills.md](skills.md) | Authoring skills — frontmatter, `$ARGUMENTS`, `register_cmd`, discovery paths |
 | [agents.md](agents.md) | Switchable handoff agents — `.vtx/agent/<name>.py`, `Shift+Tab` cycling |
 | [extensions.md](extensions.md) | Python extensions, the `ExtensionAPI`, lifecycle events, YAML hooks |
+| [mcp.md](mcp.md) | MCP servers — `mcp.json`, `/mcp`, tool naming, permissions, failure behaviour |
 | [theming.md](theming.md) | The full theme catalog and palette tokens |
 | [headless.md](headless.md) | The `-p`/`--prompt` non-interactive flow, exit codes, stdin handling |
 | [local-models.md](local-models.md) | Ollama, llama.cpp and vLLM setup for local models |

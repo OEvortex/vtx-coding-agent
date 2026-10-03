@@ -1,7 +1,7 @@
 import pytest
 
 from vtx.ai.providers.mock import MockProvider
-from vtx.coding_agent.config import Config
+from vtx.core.config import Config
 from vtx.core.recap import (
     RECENT_MESSAGE_WINDOW,
     TOOL_RESULT_EDGE_CHARS,
@@ -9,7 +9,13 @@ from vtx.core.recap import (
     generate_recap,
     has_meaningful_activity,
 )
-from vtx.core.types import AssistantMessage, TextContent, ToolCall, ToolResultMessage, UserMessage
+from vtx.protocol.types import (
+    AssistantMessage,
+    TextContent,
+    ToolCall,
+    ToolResultMessage,
+    UserMessage,
+)
 
 
 def _assistant(text: str) -> AssistantMessage:

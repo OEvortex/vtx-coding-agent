@@ -12,9 +12,11 @@ import pytest
 from vtx.ai.dynamic_models import DynamicModelEntry, _parse_models
 from vtx.ai.thinking import (
     EXTENDED_THINKING_LEVELS,
+    THINKING_LEVELS,
     clamp_thinking_level,
     get_supported_thinking_levels,
     parse_models_dev_reasoning_options,
+    resolve_thinking_levels,
 )
 
 # =============================================================================
@@ -43,8 +45,47 @@ def test_toggle_style_has_no_effort_equivalent():
     assert parse_models_dev_reasoning_options([{"type": "toggle"}]) is None
 
 
-def test_budget_tokens_only_yields_none():
-    assert parse_models_dev_reasoning_options([{"type": "budget_tokens", "min": 1024}]) is None
+def test_budget_tokens_convert_to_a_budget_ladder():
+    """Claude Haiku/Sonnet 4.5 publish a token budget instead of named
+    efforts; the ladder keeps them adjustable (opencode does the same with its
+    budget variants) instead of dropping the model to "default"."""
+    mapping = parse_models_dev_reasoning_options([{"type": "budget_tokens", "min": 1024}])
+    assert mapping is not None
+    assert mapping["off"] == "none"
+    assert mapping["low"] == "budget:2048"
+    assert mapping["high"] == "budget:8192"
+
+
+def test_budget_tokens_respect_the_model_output_limit():
+    # budget_tokens must stay strictly below max_tokens, so levels above
+    # 6144 - 1024 are not offered.
+    mapping = parse_models_dev_reasoning_options(
+        [{"type": "budget_tokens", "min": 1024}], max_tokens=6144
+    )
+    assert mapping is not None
+    assert mapping["low"] == "budget:2048"
+    assert mapping["medium"] == "budget:4096"
+    assert mapping["high"] is None
+    assert mapping["max"] is None
+
+
+def test_budget_minimum_drops_smaller_levels():
+    mapping = parse_models_dev_reasoning_options([{"type": "budget_tokens", "min": 4096}])
+    assert mapping is not None
+    assert mapping["minimal"] is None
+    assert mapping["low"] is None
+    assert mapping["medium"] == "budget:4096"
+
+
+def test_effort_wins_over_budget_tokens():
+    options = [
+        {"type": "effort", "values": ["low", "medium", "high"]},
+        {"type": "budget_tokens", "min": 1024},
+    ]
+    mapping = parse_models_dev_reasoning_options(options)
+    assert mapping is not None
+    assert mapping["high"] == "high"
+    assert mapping["xhigh"] is None
 
 
 def test_empty_or_missing_options_yield_none():
@@ -118,12 +159,89 @@ def test_canonical_level_order_is_preserved():
 
 
 # =============================================================================
+# resolve_thinking_levels — the offered set (picker / cycle / restore)
+# =============================================================================
+
+_FULL_MAP = {
+    "off": "none",
+    "minimal": "minimal",
+    "low": "low",
+    "medium": "medium",
+    "high": "high",
+    "xhigh": "xhigh",
+    "max": "max",
+}
+
+
+def test_offered_levels_use_the_none_spelling():
+    levels = resolve_thinking_levels(
+        reasoning=True, thinking_level_map={"off": "none", "high": "high"}
+    )
+    assert levels == ["none", "minimal", "low", "medium", "high"]
+
+
+def test_offered_levels_include_max_when_the_catalog_advertises_it():
+    """Regression: a models.dev map advertising ``max`` used to be offered by
+    the cycle while the provider rejected it with a ValueError."""
+    assert resolve_thinking_levels(reasoning=True, thinking_level_map=_FULL_MAP) == list(
+        THINKING_LEVELS
+    )
+
+
+def test_offered_levels_never_exceed_what_the_transport_expresses():
+    # A transport without the ``max`` tier drops it instead of offering a level
+    # it would reject.
+    assert resolve_thinking_levels(
+        reasoning=True,
+        thinking_level_map=_FULL_MAP,
+        provider_levels=["none", "minimal", "low", "medium", "high", "xhigh"],
+    ) == ["none", "minimal", "low", "medium", "high", "xhigh"]
+
+
+def test_offered_levels_default_only_without_verified_efforts():
+    """A reasoning model the catalog never described effort levels for: don't
+    guess an effort it might 400 on, let it keep its own default."""
+    assert resolve_thinking_levels(reasoning=True, thinking_level_map=None) == ["default"]
+    all_unsupported = {level: None for level in EXTENDED_THINKING_LEVELS}
+    assert resolve_thinking_levels(reasoning=True, thinking_level_map=all_unsupported) == [
+        "default"
+    ]
+
+
+def test_offered_levels_for_non_reasoning_models():
+    assert resolve_thinking_levels(reasoning=False, thinking_level_map=_FULL_MAP) == ["none"]
+
+
+def test_offered_levels_keep_catalog_order():
+    mapping = {"max": "max", "high": "high", "off": "none"}
+    assert resolve_thinking_levels(reasoning=True, thinking_level_map=mapping) == [
+        "none",
+        "minimal",
+        "low",
+        "medium",
+        "high",
+        "max",
+    ]
+
+
+# =============================================================================
 # clamp_thinking_level
 # =============================================================================
 
 
 def test_clamp_exact_match():
     assert clamp_thinking_level("high", ["off", "low", "high"]) == "high"
+
+
+def test_clamp_speaks_the_supported_vocabulary():
+    """``none`` is the off level in the provider/UI vocabulary, ``off`` in the
+    catalog vocabulary. Clamping must answer in the caller's spelling instead
+    of falling through to "lowest available"."""
+    assert clamp_thinking_level("none", ["none", "minimal", "low", "high"]) == "none"
+    assert clamp_thinking_level("off", ["none", "minimal", "low", "high"]) == "none"
+    assert clamp_thinking_level("max", list(THINKING_LEVELS)) == "max"
+    # A level below the supported floor must not be promoted to it.
+    assert clamp_thinking_level("none", ["low", "medium", "high"]) == "low"
 
 
 @pytest.mark.parametrize(
@@ -183,9 +301,9 @@ def _sdk(slug):
     return OpenAISDK(api_key="test-key", provider_slug=slug)
 
 
-def test_map_authorizes_effort_on_unwhitelisted_provider():
-    """models.dev-verified support must send reasoning_effort even when the
-    provider slug is not in the hardcoded whitelist."""
+def test_map_authorizes_effort_on_any_provider():
+    """models.dev-verified support must send reasoning_effort on every
+    openai_compat provider."""
     sdk = _sdk("kilo")
     kwargs: dict = {}
     sdk._apply_thinking_kwargs(
@@ -238,19 +356,49 @@ def test_mapped_string_is_sent_verbatim():
     assert kwargs["reasoning_effort"] == "medium-reasoning"
 
 
-def test_no_map_keeps_legacy_slug_whitelist():
-    """Without a verified map, non-whitelisted slugs stay silent (no change)."""
-    sdk = _sdk("kilo")
+def test_no_map_still_sends_level_on_any_slug():
+    """Without a verified map the level still goes out on every openai_compat
+    provider. The old slug allow-list meant the level was silently dropped on
+    all but three providers, which is indistinguishable from it not working.
+    """
+    for slug in ("kilo", "zenmux", "openrouter", "groq", "openai", "openai-codex"):
+        kwargs: dict = {}
+        _sdk(slug)._apply_thinking_kwargs(
+            kwargs, GenerationConfig(model="m", thinking_level="high")
+        )
+        assert kwargs["reasoning_effort"] == "high", f"{slug!r} dropped the thinking level"
+
+
+def test_verified_none_effort_is_not_swallowed():
+    """The reported bug: choosing "off" left the model thinking.
+
+    A catalog-verified ``none`` effort is the only documented way to stop
+    reasoning, so it must reach the wire rather than being dropped like the
+    unsupported/off-by-omission case.
+    """
     kwargs: dict = {}
-    sdk._apply_thinking_kwargs(kwargs, GenerationConfig(model="m", thinking_level="high"))
+    _sdk("kilo")._apply_thinking_kwargs(
+        kwargs,
+        GenerationConfig(
+            model="gpt-5.1",
+            thinking_level="none",
+            thinking_level_map={"off": "none", "low": "low", "high": "high"},
+        ),
+    )
+    assert kwargs["reasoning_effort"] == "none"
+
+
+def test_unsupported_off_still_omits_reasoning_effort():
+    """When the catalog does not verify a ``none`` effort, omission is correct:
+    the model keeps its own default rather than us guessing a spelling."""
+    kwargs: dict = {}
+    _sdk("kilo")._apply_thinking_kwargs(
+        kwargs,
+        GenerationConfig(
+            model="m", thinking_level="none", thinking_level_map={"off": None, "low": "low"}
+        ),
+    )
     assert "reasoning_effort" not in kwargs
-
-
-def test_no_map_whitelisted_slug_still_sends():
-    sdk = _sdk("openai-codex")
-    kwargs: dict = {}
-    sdk._apply_thinking_kwargs(kwargs, GenerationConfig(model="m", thinking_level="high"))
-    assert kwargs["reasoning_effort"] == "high"
 
 
 def test_default_level_omits_reasoning_effort():
