@@ -66,3 +66,56 @@ def test_fd_query_uses_separator_class_for_paths():
 
     assert FilePathProvider._fd_query("vtx/tui") == r"vtx[\\/]tui"
     assert FilePathProvider._fd_query("src/") == r"src[\\/]"
+
+
+def test_whole_token_match_outranks_a_longer_name_that_shares_its_prefix():
+    """`claude-opus-5` must beat `claude-opus-5-batch`, not tie with it.
+
+    All twelve `claude-opus-5*` ids scored identically before, because the
+    exact-match bonus compared the query against the whole "label description"
+    string the picker searches, which can never be equal. The winner was
+    whichever the sort happened to keep.
+    """
+    exact = fuzzy_match("claude-opus-5", "claude-opus-5 openai")[0]
+    batch = fuzzy_match("claude-opus-5", "claude-opus-5-batch openai")[0]
+    fast = fuzzy_match("claude-opus-5", "claude-opus-5-fast openai")[0]
+    assert exact > batch
+    assert exact > fast
+
+
+def test_whole_token_bonus_survives_a_namespace_prefix():
+    exact = fuzzy_match("claude-opus-5", "anthropic/claude-opus-5 openrouter")[0]
+    batch = fuzzy_match("claude-opus-5", "anthropic/claude-opus-5-batch openrouter")[0]
+    assert exact > batch
+
+
+def test_exact_full_string_still_wins():
+    assert fuzzy_match("gpt-5.5", "gpt-5.5")[0] > fuzzy_match("gpt-5.5", "gpt-5.5-chat openai")[0]
+
+
+def test_partial_token_still_matches_without_the_exact_bonus():
+    """Subsequence matching is unchanged; only the bonus got stricter."""
+    assert fuzzy_match("opus5", "claude-opus-5 openai")[0] > NO_MATCH
+
+
+def test_contiguous_run_beats_a_earlier_stray_character():
+    """The match must land on 'claude', not the 'c' inside 'anthropic'.
+
+    Greedy subsequence walking found the 'c' of "anthropic" first and never
+    reached the real run, so every boundary bonus was misplaced and the exact
+    model scored the same as its `-batch` variant.
+    """
+    _, positions = fuzzy_match("claude-opus-5", "anthropic/claude-opus-5 openrouter")
+    assert positions == tuple(range(10, 23))
+
+
+def test_namespaced_exact_match_outranks_its_batch_variant():
+    exact = fuzzy_match("claude-opus-5", "anthropic/claude-opus-5 openrouter")[0]
+    batch = fuzzy_match("claude-opus-5", "anthropic/claude-opus-5-batch openrouter")[0]
+    assert exact > batch
+
+
+def test_subsequence_still_matches_when_nothing_is_contiguous():
+    score, positions = fuzzy_match("gpt5", "gpt-5 openai")
+    assert score > NO_MATCH
+    assert positions == (0, 1, 2, 4)

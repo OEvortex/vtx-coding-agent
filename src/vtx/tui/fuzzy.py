@@ -19,6 +19,10 @@ T = TypeVar("T")
 NO_MATCH = 0.0
 
 _WORD_BOUNDARY = re.compile(r"[\s\-_./:]")
+# Stricter than _WORD_BOUNDARY: only these end a token cleanly. A hyphen, dot or
+# underscore *continues* an identifier, so `claude-opus-5` must not be treated as
+# a whole word inside `claude-opus-5-fast`.
+_TOKEN_EDGE = re.compile(r"[\s/:]")
 _TOKEN_SPLIT = re.compile(r"[\s/]+")
 
 
@@ -37,17 +41,30 @@ def fuzzy_match(query: str, text: str) -> tuple[float, Sequence[int]]:
     needle = query.lower()
     haystack = text.lower()
 
-    positions: list[int] = []
+    # Prefer a contiguous run. Greedy subsequence walking anchors on the first
+    # occurrence of each character, so "claude-opus-5" inside
+    # "anthropic/claude-opus-5" starts at the "c" of *anthropic* and never
+    # reaches the real run, which misplaced every boundary bonus. Nearly every
+    # typed query is contiguous, so try that first and fall back to the
+    # subsequence walk only when it is not.
+    contiguous_at = haystack.find(needle)
+    if contiguous_at != -1:
+        positions: list[int] = list(range(contiguous_at, contiguous_at + len(needle)))
+    else:
+        positions = []
+        cursor = 0
+        for char in needle:
+            index = haystack.find(char, cursor)
+            if index == -1:
+                return (NO_MATCH, ())
+            positions.append(index)
+            cursor = index + 1
+
     score = 0.0
     last_index = -1
     consecutive = 0
-    cursor = 0
 
-    for char in needle:
-        index = haystack.find(char, cursor)
-        if index == -1:
-            return (NO_MATCH, ())
-
+    for index in positions:
         if last_index >= 0 and index == last_index + 1:
             consecutive += 1
             score += consecutive * 5
@@ -60,12 +77,22 @@ def fuzzy_match(query: str, text: str) -> tuple[float, Sequence[int]]:
             score += 10
 
         score -= index * 0.1
-        positions.append(index)
         last_index = index
-        cursor = index + 1
 
-    if needle == haystack:
-        score += 100
+    if positions:
+        start, end = positions[0], positions[-1]
+        # The query covering exactly one whole token ("claude-opus-5" in
+        # "anthropic/claude-opus-5 openrouter") must outrank the same run inside
+        # a longer name. The old `needle == haystack` bonus could never fire
+        # here, because callers search "label description", so all twelve
+        # `claude-opus-5*` ids tied on score and the winner was arbitrary.
+        whole_token = (
+            end - start + 1 == len(needle)
+            and (start == 0 or bool(_TOKEN_EDGE.match(haystack[start - 1])))
+            and (end == len(haystack) - 1 or bool(_TOKEN_EDGE.match(haystack[end + 1])))
+        )
+        if whole_token:
+            score += 100
     return (score, tuple(positions))
 
 
