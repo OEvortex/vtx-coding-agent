@@ -1,82 +1,67 @@
 # vtx.git
 
-Git and GitHub integration only: branch detection, a `gh` CLI wrapper, and GitHub App authentication for bot commit attribution.
+Everything vtx needs from git and the GitHub API, and nothing else: the current branch label for status lines, open pull requests for the `@`-mention picker, and GitHub App identity for bot commits. It runs no git operations of its own - no `add`, no `commit`, no `push`, no `diff`. The bash tool does that; this package only supplies the branch name and the commit identity that get injected into its environment.
 
-Three small modules, no agent code:
+Three modules, and `__init__.py` is a docstring with no re-exports, so **import from the submodules**, never from the package root:
 
-- `git_branch.py` - resolve the current branch name from git metadata, including worktrees.
-- `gh_cli.py` - list open pull requests through the `gh` binary, for the `@`-mention PR picker.
-- `gh_app.py` - GitHub App identity: JWT minting, installation tokens, bot commit identity, and the `GIT_AUTHOR_*`/`GIT_COMMITTER_*` env vars the bash tool injects.
+- `vtx.git.git_branch` - read branch metadata straight off disk, including worktrees.
+- `vtx.git.gh_cli` - shell out to the `gh` binary for the PR picker.
+- `vtx.git.gh_app` - JWT minting, installation tokens, bot user identity, and the `GIT_AUTHOR_*` / `GIT_COMMITTER_*` env vars.
 
-Not responsible for:
-
-- **Git operations.** Nothing here runs `git add`, `git commit`, `git push`, or `git diff`. The bash tool does that; this package only supplies the branch label and the commit identity.
-- **Session or project state.** Session persistence is `vtx.agent`.
-- **General HTTP.** The only network calls are to `https://api.github.com` in `gh_app.py`.
-- **Token storage.** There is no credential vault. The App private key PEM path is read from a JSON file and the key itself lives wherever GitHub's manifest flow put it.
-
-## Dependencies
-
-- Imports: standard library, `jwt` (PyJWT), `requests`, and two places in `vtx.core`: `vtx.core.config.AVAILABLE_BINARIES` (`gh_cli.py`) and `vtx.core.paths.get_config_dir` (`gh_app.py`). So `vtx.git` is **not** a leaf - it sits above `vtx.core`.
-- Imported by: only 3 files - `vtx.coding_agent.tools`, `vtx.coding_agent.tui`, and `vtx.tui`.
-- Note `vtx/git/__init__.py` contains only a docstring. Import from the submodules: `from vtx.git.git_branch import resolve_git_branch`.
-
-## Public surface
-
-### `vtx.git.git_branch`
-
-| Name | Description |
-|------|-------------|
-| `GitPaths` | Frozen dataclass: `repo_dir`, `common_git_dir`, `head_path`. |
-| `find_git_paths(cwd) -> GitPaths \| None` | Walk up from `cwd` to find git metadata. Handles a real `.git` directory, and a `.git` **file** pointing elsewhere (the worktree/submodule case, resolved through `commondir`). Returns `None` if no repo or no `HEAD`. |
-| `resolve_git_branch(cwd) -> str` | The branch name, `"detached"` for a non-symbolic `HEAD`, or `""` outside a repo. If `HEAD` says `ref: refs/heads/.invalid` it shells out to `git symbolic-ref --short HEAD` (1s timeout). |
-
-### `vtx.git.gh_cli`
-
-| Name | Description |
-|------|-------------|
-| `PullRequest` | Frozen dataclass: `number`, `branch`, `title`. |
-| `PullRequest.chat_reference()` | One-line label, e.g. `PR#12 feat/x "Add thing"`. Multi-line titles collapse to the first line plus `... (N lines hidden)`. |
-| `is_available() -> bool` | True when `"gh"` is in `core.config.AVAILABLE_BINARIES`. |
-| `list_pull_requests(cwd=".") -> list[PullRequest]` | `gh pr list --json number,headRefName,title --limit 50`, 2s timeout. Cached per-`cwd` for 30 seconds. Returns `[]` on any failure (missing binary, timeout, non-zero exit, bad JSON). |
-
-### `vtx.git.gh_app`
-
-| Name | Description |
-|------|-------------|
-| `GitHubAppConfig` | Frozen-ish dataclass: `app_id`, `app_slug`, `pem_path`, `commit_as_bot=True`, `push_remote_owner`, `push_remote_repo`. |
-| `GitHubAppConfig.load(path=None)` | Read config JSON; `None` when the file is absent. |
-| `GitHubAppConfig.save(path=None)` | Write config JSON, `chmod 0600`. |
-| `GitHubAppConfig.pem` | The RSA private key text. |
-| `is_configured() -> bool` | A config exists *and* its PEM is readable. |
-| `make_jwt(cfg) -> str` | 10-minute RS256 JWT (`iat` backdated 30s) signed with the App key, `iss` = App ID. |
-| `get_installation_token(cfg, owner, repo) -> str` | Mint or reuse a 1h installation token. Cached in-process; refreshes 5 minutes before the real expiry. |
-| `get_bot_user_id(cfg, jwt_token=None) -> int` | Numeric ID of the `slug[bot]` machine account. Cached 1h in memory and 24h on disk (keyed by App ID). This is the **bot user's** ID, not the App ID - using the App ID yields an unverified commit without the `[bot]` badge. |
-| `committer_identity(cfg) -> (name, email, bot_user_id)` | `("<slug>[bot]", "<bot_id>+<slug>[bot]@users.noreply.github.com", bot_user_id)`. |
-| `committer_env_vars(cfg) -> dict[str, str]` | The four `GIT_AUTHOR_*`/`GIT_COMMITTER_*` vars, or `{}` when `commit_as_bot` is off or identity resolution raises. |
-| `resolve_committer_vars() -> dict[str, str]` | Entry point used by the bash tool's environment builder: loads the config from disk then delegates to `committer_env_vars`. Fails closed with `{}`. |
-
-Config and the bot-id cache live under `get_config_dir() / "gh_app"` (normally `~/.vtx/gh_app/config.json` and `bot_user_id.json`). The config file is written `0600`; the bot-id cache is not.
+It is **not** a leaf: `gh_cli` reads `vtx.core.config.AVAILABLE_BINARIES` and `gh_app` reads `vtx.core.paths.get_config_dir`, so it sits above `vtx.core`.
 
 ## Usage
+
+Everything below runs from inside a repo. `main` is whatever your checkout is on.
+
+```python
+from vtx.git.git_branch import find_git_paths, resolve_git_branch
+
+print(resolve_git_branch("."))
+# 'main'
+
+paths = find_git_paths(".")
+print(paths.repo_dir, paths.common_git_dir, paths.head_path)
+# /home/you/project /home/you/project/.git /home/you/project/.git/HEAD
+```
+
+Branch resolution never raises and never shells out on the normal path. It reads `.git/HEAD` by walking up from `cwd`, so it is fast enough to call on every status render.
+
+Three return values, and they mean different things:
 
 ```python
 from vtx.git.git_branch import resolve_git_branch
 
-print(resolve_git_branch("."))  # "main", "detached", or "" outside a repo
+resolve_git_branch("/home/you/project")  # 'main' - a normal branch
+resolve_git_branch("/tmp")                # '' - no repo found
+# a repo whose HEAD holds a raw sha: 'detached'
 ```
 
-PR picker data, with every failure mode degrading to an empty list:
+`find_git_paths` handles a `.git` **file** pointing elsewhere, which is what a worktree or submodule has: it follows `gitdir:`, then follows that directory's `commondir` back to the real git directory, so `common_git_dir` is the shared `.git` and not the worktree's stub. It returns `None` - not an exception - when there is no repo, or when there is a repo but no `HEAD`.
+
+One case falls through to the `git` binary: some setups write `ref: refs/heads/.invalid` into `HEAD` rather than a real branch, and that placeholder is resolved by `git --no-optional-locks symbolic-ref --short HEAD` with a 1 second timeout. A timeout or a non-zero exit yields `"detached"`.
+
+## Pull requests
+
+`gh_cli` wraps one command: `gh pr list --json number,headRefName,title --limit 50`, with a 2 second timeout. Every failure mode - `gh` missing, timeout, non-zero exit, malformed JSON - returns `[]`. Nothing raises.
 
 ```python
 from vtx.git.gh_cli import is_available, list_pull_requests
 
 if is_available():
     for pr in list_pull_requests("."):
-        print(pr.chat_reference())   # PR#12 feat/x "Add thing"
+        print(pr.chat_reference())
+        # PR#12 feat/x "Add thing"
 ```
 
-Bot commit identity - this is what the bash tool calls before each command:
+- `PullRequest` is a frozen dataclass of `number`, `branch`, `title`.
+- `chat_reference()` renders the one-line label the picker inserts into a message. A multi-line title collapses to its first line plus `... (N lines hidden)`, because the label goes in a chat input.
+- `is_available()` is just `"gh" in AVAILABLE_BINARIES`, which is detected once at import - call `vtx.core.config.update_available_binaries()` if `gh` was installed after startup.
+- `list_pull_requests(cwd=".")` caches **one** result for 30 seconds, keyed by `cwd`. The cache holds a single entry, so alternating between two directories re-runs the command each time. Results are only cached on success; a failure is not.
+
+## GitHub App identity
+
+`gh_app` signs bot commits so a vtx-made commit is attributed and verified as the App rather than as a raw token.
 
 ```python
 from vtx.git.gh_app import is_configured, resolve_committer_vars
@@ -85,6 +70,22 @@ if is_configured():
     env = resolve_committer_vars()
     # {'GIT_AUTHOR_NAME': 'vtx-gh[bot]',
     #  'GIT_AUTHOR_EMAIL': '<id>+vtx-gh[bot]@users.noreply.github.com',
-    #  'GIT_COMMITTER_NAME': ..., 'GIT_COMMITTER_EMAIL': ...}
-    # {} when the app is not installed or the API call fails
+    #  'GIT_COMMITTER_NAME': 'vtx-gh[bot]',
+    #  'GIT_COMMITTER_EMAIL': '<id>+vtx-gh[bot]@users.noreply.github.com'}
 ```
+
+`resolve_committer_vars()` is the entry point the bash tool's environment builder calls. It loads the config from disk and delegates, and it **fails closed**: any problem returns `{}`, which means the commit is made as the ambient git identity rather than crashing the command.
+
+- `GitHubAppConfig` is the config dataclass: `app_id`, `app_slug`, `pem_path`, `commit_as_bot=True`, `push_remote_owner`, `push_remote_repo`.
+- `GitHubAppConfig.load(path=None)` reads the JSON config, returning `None` when the file is absent. `.save(path=None)` writes it with `chmod 0600`. `.pem` reads and returns the RSA private key text.
+- `is_configured()` is stricter than "the config file exists" - it also checks that the PEM is readable, so a config whose key was deleted reports `False`.
+- `make_jwt(cfg)` mints a 10 minute RS256 JWT signed with the App key, `iss` set to the App ID and `iat` backdated 30 seconds to tolerate clock skew.
+- `get_installation_token(cfg, owner, repo)` returns a 1 hour installation token, cached in-process and refreshed 5 minutes before the real expiry.
+- `get_bot_user_id(cfg, jwt_token=None)` returns the numeric ID of the `slug[bot]` **machine account**, cached 1 hour in memory and 24 hours on disk keyed by App ID. This is the one that is easy to get wrong: using the App ID here produces an unverified commit with no `[bot]` badge.
+- `committer_identity(cfg)` returns `(name, email, bot_user_id)` for that same machine account; `committer_env_vars(cfg)` renders those into the four `GIT_*` vars, or `{}` when `commit_as_bot` is off or identity resolution raises.
+
+Config and the bot-id cache live under `get_config_dir() / "gh_app"`, normally `~/.vtx/gh_app/config.json` and `bot_user_id.json`. The config is written `0600`; the bot-id cache is not.
+
+## Not here
+
+Nothing in this package runs git. Session and project state are `vtx.agent`. The only network calls anywhere in it are to `https://api.github.com` from `gh_app`. There is no credential vault - the PEM path lives in a JSON file and the key itself is wherever GitHub's manifest flow left it.
