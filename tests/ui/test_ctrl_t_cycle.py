@@ -60,7 +60,19 @@ def test_single_offered_level_reports_instead_of_doing_nothing():
     app = FakeApp(FakeRuntime(["none"], level="none"))
     app.action_cycle_thinking_level()
     assert app.selected == []
-    assert app.chat.statuses == ["Thinking level: none"]
+    assert len(app.chat.statuses) == 1
+    # It must say the key is inert, not just report a level: "Thinking level:
+    # none" looks the same on every press and reads as a dead key.
+    status = app.chat.statuses[0]
+    assert "fixed at none" in status
+    assert "nothing to cycle" in status
+
+
+def test_no_offered_level_says_the_model_has_none():
+    app = FakeApp(FakeRuntime([], level="none"))
+    app.action_cycle_thinking_level()
+    assert app.selected == []
+    assert app.chat.statuses == ["Thinking level unavailable for this model"]
 
 
 def test_missing_provider_reports_instead_of_doing_nothing():

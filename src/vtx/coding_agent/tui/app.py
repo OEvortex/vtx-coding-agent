@@ -892,9 +892,16 @@ class Vtx(
         levels = self._runtime.effective_thinking_levels
         if len(levels) < 2:
             # One level means there is nothing to cycle to (a non-reasoning
-            # model, or one whose catalog advertises no effort control). Report
-            # it: a silent no-op is indistinguishable from a dead key.
-            chat.show_status(f"Thinking level: {levels[0] if levels else 'unavailable'}")
+            # model, or one whose catalog advertises no effort control). A bare
+            # "Thinking level: none" reads like a successful state report and
+            # looks identical on every press, so repeat-pressing it is
+            # indistinguishable from a dead key. Say the key is inert here.
+            if not levels:
+                chat.show_status("Thinking level unavailable for this model")
+            else:
+                chat.show_status(
+                    f"Thinking level is fixed at {levels[0]} for this model, nothing to cycle"
+                )
             return
 
         current = self._runtime.thinking_level or "none"
