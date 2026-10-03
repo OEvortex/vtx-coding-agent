@@ -33,6 +33,7 @@ This folder is the reference companion to the top-level [README](../README.md). 
 | [architecture.md](architecture.md) | Package map, message types, turn lifecycle, event stream |
 | [storage-layout.md](storage-layout.md) | Every file Vtx touches on disk — config, sessions, models, auth |
 | [development.md](development.md) | Build, test, lint, typecheck, and release Vtx itself |
+| [developer/monorepo.md](developer/monorepo.md) | Stale: describes the pre-restructuring five-package layout. Use [architecture.md](architecture.md) instead |
 | [e2e-test-coverage-review.md](e2e-test-coverage-review.md) | State of the tmux e2e harness and recommended additions |
 
 ## SDK

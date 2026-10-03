@@ -29,7 +29,7 @@
 </p>
 
 <p align="center">
-  A coding agent that keeps its system prompt lean — around <b>~2,600 tokens</b> for the whole runtime —
+  A coding agent that keeps its system prompt lean — under <b>1k tokens</b> for the base system prompt —
   so your context window stays free for what matters: <i>your code</i>.
 </p>
 
@@ -37,7 +37,7 @@
 
 ## Why Vtx?
 
-Most coding agents bury you in thousands of hidden prompt tokens before you type a single line. **Vtx is transparent about its footprint.** The full runtime — base system prompt, tool guidelines, environment block, and all tool definitions — fits in roughly **2,600 tokens** (o200k_base). That means:
+Most coding agents bury you in thousands of hidden prompt tokens before you type a single line. **Vtx is transparent about its footprint.** The prompt text lives in one place — `src/vtx/agent/prompts/identity.py` — and is deliberately small: the base system prompt is well under **1k tokens**, before the environment block and tool definitions are added. That means:
 
 - More of the model's context is spent on *your* files, not boilerplate instructions.
 - Faster, cheaper turns with any provider you choose.
@@ -49,12 +49,12 @@ Vtx is also **modular**: a keyboard-driven TUI, a headless CLI, a Python SDK, an
 
 ## Features
 
-- **Lean by design** — ~2,600-token runtime; no hidden prompt bloat.
-- **10 surgical default tools** — `read`, `edit`, `write`, `bash`, `find`, `skill`, `web`, `ask_user`, `task`, `goal`. (`grep` is a built-in but not enabled by default.)
+- **Lean by design** — a sub-1k-token base system prompt; no hidden prompt bloat.
+- **10 surgical default tools** — `read`, `edit`, `write`, `bash`, `find`, `skill`, `web`, `ask_user`, `delegate_subagent`, `goal`. The harness also ships `codemode` and `tool_search`. (`grep` is a built-in but not enabled by default.)
 - **TUI & CLI** — a Textual-powered terminal UI, plus a non-interactive headless mode for scripts and CI.
-- **Any model, any endpoint** — 50+ built-in providers (OpenAI, Anthropic, Azure, DeepSeek, Copilot, Zhipu, Groq, Mistral, Together, Ollama, …) plus OpenAI/Anthropic-compatible custom providers and local models (Ollama, llama.cpp, vLLM).
+- **Any model, any endpoint** — 60+ built-in providers (OpenAI, Anthropic, DeepSeek, Copilot, Zhipu, Groq, Mistral, Together, Ollama, …) plus OpenAI/Anthropic-compatible custom providers and local models (Ollama, llama.cpp, vLLM).
 - **Dynamic context** — auto-loads `AGENTS.md`/`CLAUDE.md` guidelines and triggers modular `Skills`.
-- **Switchable handoff agents** — named profiles (review, security audit, fast impl) cycled live with `Shift+Tab`, or activated with `/agent <name>`.
+- **Switchable handoff agents** — profiles you write in `.vtx/agent/<name>.py` (instructions, tool allow/deny list, optional model override), cycled live with `Shift+Tab`, or activated with `/agent <name>`. No profiles ship built in.
 - **Task sub-agents** — delegate self-contained work to isolated sessions that stream progress back.
 - **Persistent goals** — give the agent a durable, file-backed objective with a task tree, live status widget, auto-continue checkpoints, and an independent completion audit. See [docs/goals.md](docs/goals.md).
 - **Safe by default** — `prompt` permission mode gates mutating tools; destructive commands are blocked.
@@ -94,7 +94,7 @@ vtx -p "Write unit tests for src/vtx/agent/tools/task.py"
 | --- | --- | --- | --- |
 | `read` | Read/paginate files, view images | `web` | Web search (Exa neural) |
 | `edit` | Precise search-and-replace | `ask_user` | Ask a clarifying question |
-| `write` | Create/overwrite files | `task` | Dispatch a sub-agent |
+| `write` | Create/overwrite files | `delegate_subagent` | Dispatch a sub-agent |
 | `find` | Glob file discovery | `skill` | Manage skill workflows |
 | `bash` | Run shell commands | `goal` | Persistent goals: plan, track, complete w/ audit |
 
@@ -108,7 +108,7 @@ See [docs/tools.md](docs/tools.md) for full parameter specs.
 
 - Press **`Alt+Ctrl+P`** to cycle between **`prompt`** (asks before mutating) and **`auto`** (unrestricted) mode.
 - Type **`/permissions`** to open the permission menu and switch mode explicitly.
-- Set the default in `config.yml` (`permissions.mode: prompt | auto`).
+- Set the default in `~/.vtx/config.yml` (`permissions.mode: prompt | auto`).
 
 Destructive commands (`rm -rf`, `git reset --hard`, force-push, dropping tables) are blocked unless you explicitly ask. See [docs/permissions.md](docs/permissions.md).
 
@@ -168,8 +168,30 @@ See the [SDK docs](docs/sdk/README.md).
 
 | Topic | Link |
 | --- | --- |
-| Documentation index | [docs/index.md](docs/index.md) |
-| Monorepo structure | [docs/developer/monorepo.md](docs/developer/monorepo.md) |
+| Documentation index | [docs/README.md](docs/README.md) |
+| Tour by audience | [docs/index.md](docs/index.md) |
+| Architecture and the ten packages | [docs/architecture.md](docs/architecture.md) |
+
+---
+
+## Repository layout
+
+One distribution (`vtx-coding-agent`), ten packages under `src/vtx`:
+
+| Package | Role |
+| --- | --- |
+| `vtx.protocol` | Leaf. Message, stream and tool-contract types. Imports nothing from `vtx`. |
+| `vtx.telemetry` | Leaf. Spans, processors, console and JSONL exporters. |
+| `vtx.git` | Git and GitHub integration, `gh` CLI wrapper, GitHub App auth. |
+| `vtx.core` | Agent events, permission gate, compaction, config schema and paths, theme registry. |
+| `vtx.ai` | The LLM layer: provider catalog, OAuth, SDK adapters, model catalog, tool parsing. |
+| `vtx.codemode` | The confined script sandbox and its tool discovery layer. |
+| `vtx.agent` | The product-neutral harness: loop, turn engine, sessions, tool registry, prompts, extensions, goals, SDK. |
+| `vtx.mcp` | MCP client: server config, transports, tool exposure, trust prompt. |
+| `vtx.tui` | Base terminal-UI toolkit: editing, fuzzy matching, overlays, block renderers. Knows nothing about the agent. |
+| `vtx.coding_agent` | The product layer: CLI entry point, headless runner, concrete filesystem tools, the TUI app. |
+
+Dependencies flow `protocol`/`telemetry` -> `core`, `git`, `ai` -> `agent` -> `coding_agent`, with `mcp` and `tui` above. Most packages carry their own `README.md` with the public surface and internal notes; start with [docs/architecture.md](docs/architecture.md) for the full map.
 
 ---
 
