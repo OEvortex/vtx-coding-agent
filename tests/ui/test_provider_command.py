@@ -6,11 +6,11 @@ from typing import TYPE_CHECKING, cast
 import pytest
 
 import vtx.ai.model_fetcher as model_fetcher_module
-import vtx.coding_agent.tui.commands.models as models_module
+import vtx.tui.commands.models as models_module
 from vtx.ai import list_providers
-from vtx.coding_agent.tui.commands import CommandsMixin
-from vtx.coding_agent.tui.commands.providers import _ALL_SLUG
 from vtx.core.config import get_config
+from vtx.tui.commands import CommandsMixin
+from vtx.tui.commands.providers import _ALL_SLUG
 from vtx.tui.floating_list import ListItem
 from vtx.tui.selection_mode import SelectionMode
 
@@ -249,7 +249,7 @@ def test_model_picker_filters_to_one_provider(monkeypatch):
             ),
         ]
 
-    monkeypatch.setattr("vtx.coding_agent.tui.commands.models.get_all_models", _stub_all_models)
+    monkeypatch.setattr("vtx.tui.commands.models.get_all_models", _stub_all_models)
 
     fake._select_provider_set("kilo")
     fake._handle_model_command("")

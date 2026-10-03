@@ -12,8 +12,8 @@ from vtx.agent.dispatcher import DispatcherContext, set_context
 from vtx.agent.goal import storage
 from vtx.agent.goal.service import GoalService
 from vtx.agent.goal.tools import GoalParams, GoalTool
-from vtx.coding_agent.tui.goal_agents import REGISTRY
-from vtx.coding_agent.tui.goal_ui import format_usage, render_compact, render_expanded
+from vtx.tui.goal_agents import REGISTRY
+from vtx.tui.goal_ui import format_usage, render_compact, render_expanded
 
 
 @pytest.fixture()
@@ -188,7 +188,7 @@ def test_beacon_and_agents_panel_use_one_grammar(goal_cwd: Path) -> None:
     different header, different label weight: two unrelated widgets. Both are
     now built from `strip_header` and `tree_prefix`.
     """
-    from vtx.coding_agent.tui.agents_panel import render_agents
+    from vtx.tui.agents_panel import render_agents
 
     service = GoalService(str(goal_cwd))
     record = service.create("Ship the thing")
@@ -245,8 +245,8 @@ def test_witty_lines_are_suppressed_during_a_fanout() -> None:
     The two rotate on independent timers, so they visibly contradict: the line
     read "asking the user" while the row beneath it read `grep`.
     """
-    from vtx.coding_agent.tui.goal_agents import SubagentRegistry
-    from vtx.coding_agent.tui.status_lines import subagents_own_the_status_line
+    from vtx.tui.goal_agents import SubagentRegistry
+    from vtx.tui.status_lines import subagents_own_the_status_line
 
     registry = SubagentRegistry()
     assert subagents_own_the_status_line() is False
@@ -283,7 +283,7 @@ def test_beacon_is_indented_like_the_chat_log(goal_cwd: Path) -> None:
     `margin: 0 1` as well, the beacon's rail landed at column 2 while every
     block above it sat at column 1, and the two read as one broken edge.
     """
-    from vtx.coding_agent.tui.goal_ui import GoalWidget
+    from vtx.tui.goal_ui import GoalWidget
 
     css = " ".join(GoalWidget.DEFAULT_CSS.split())
     assert "margin" not in css, "a margin double-indents the beacon against the chat log"
@@ -369,7 +369,7 @@ def test_blocked_reason_is_visible(goal_cwd: Path) -> None:
 
 def test_progress_bar_uses_a_slim_track(goal_cwd: Path) -> None:
     """Half-cell rounding, so the bar creeps instead of stuttering in 8% jumps."""
-    from vtx.coding_agent.tui.goal_ui import progress_bar_text
+    from vtx.tui.goal_ui import progress_bar_text
 
     bar = progress_bar_text(50, 10).plain
     assert bar.count("━") + bar.count("─") == 10
@@ -405,7 +405,7 @@ def test_activity_drops_the_repeated_date(goal_cwd: Path) -> None:
 
 
 def test_compact_shows_spawned_subagents(goal_cwd: Path) -> None:
-    from vtx.coding_agent.tui.goal_agents import REGISTRY
+    from vtx.tui.goal_agents import REGISTRY
 
     REGISTRY.clear()
     try:
@@ -430,7 +430,7 @@ def test_compact_shows_spawned_subagents(goal_cwd: Path) -> None:
 
 
 def test_expanded_lists_subagent_stats(goal_cwd: Path) -> None:
-    from vtx.coding_agent.tui.goal_agents import REGISTRY
+    from vtx.tui.goal_agents import REGISTRY
 
     REGISTRY.clear()
     try:
@@ -468,7 +468,7 @@ def test_expanded_lists_subagent_stats(goal_cwd: Path) -> None:
 
 
 def test_subagent_registry_never_evicts_running_agents() -> None:
-    from vtx.coding_agent.tui.goal_agents import SubagentRegistry
+    from vtx.tui.goal_agents import SubagentRegistry
 
     registry = SubagentRegistry(max_tracked=2)
     registry.record("a", {"kind": "subagent_start", "subagent": "a"})
@@ -487,7 +487,7 @@ def test_subagent_registry_never_evicts_running_agents() -> None:
 
 def test_subagent_registry_keeps_same_named_runs_apart() -> None:
     """Four `Explore` fan-outs are four rows, not one smeared row."""
-    from vtx.coding_agent.tui.goal_agents import SubagentRegistry
+    from vtx.tui.goal_agents import SubagentRegistry
 
     registry = SubagentRegistry()
     for i in range(4):
@@ -500,7 +500,7 @@ def test_subagent_registry_keeps_same_named_runs_apart() -> None:
 
 
 def test_subagent_registry_ignores_malformed_events() -> None:
-    from vtx.coding_agent.tui.goal_agents import SubagentRegistry
+    from vtx.tui.goal_agents import SubagentRegistry
 
     registry = SubagentRegistry()
     assert registry.record("x", {}) is None

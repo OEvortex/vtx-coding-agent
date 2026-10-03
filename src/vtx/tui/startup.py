@@ -9,13 +9,13 @@ import os
 from typing import TYPE_CHECKING, Any, Literal
 
 from vtx.agent.tools_manager import ensure_tools
-from vtx.coding_agent.tui.chat import ChatLog
-from vtx.coding_agent.tui.widgets import InfoBar, format_path
 from vtx.core.config import update_available_binaries
 from vtx.core.update_check import get_newer_pypi_version
 from vtx.core.version import PACKAGE_NAME, VERSION
 from vtx.tui.blocks import LaunchWarning
+from vtx.tui.chat import ChatLog
 from vtx.tui.input import InputBox
+from vtx.tui.widgets import InfoBar, format_path
 
 _CHANGELOG_URL = "https://github.com/OEvortex/vtx-coding-agent/blob/main/CHANGELOG.md"
 

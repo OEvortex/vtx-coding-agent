@@ -12,10 +12,10 @@ from __future__ import annotations
 
 import pytest
 
-from vtx.coding_agent.tui.agent_runner import _BACKGROUND_WAKEUP_PROMPT, MAX_BACKGROUND_WAKEUPS
-from vtx.coding_agent.tui.app import Vtx
-from vtx.coding_agent.tui.chat import ChatLog
-from vtx.coding_agent.tui.goal_agents import REGISTRY
+from vtx.tui.agent_runner import _BACKGROUND_WAKEUP_PROMPT, MAX_BACKGROUND_WAKEUPS
+from vtx.tui.app import Vtx
+from vtx.tui.chat import ChatLog
+from vtx.tui.goal_agents import REGISTRY
 
 
 @pytest.fixture

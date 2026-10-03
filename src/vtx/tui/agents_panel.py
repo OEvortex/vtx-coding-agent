@@ -47,8 +47,8 @@ from textual.timer import Timer
 from textual.widgets import Static
 
 from vtx.agent.tools.task import DEFAULT_SUBAGENT
-from vtx.coding_agent.tui.goal_agents import DONE_LINGER_SECONDS, REGISTRY, SubagentRun
 from vtx.core.config import config
+from vtx.tui.goal_agents import DONE_LINGER_SECONDS, REGISTRY, SubagentRun
 from vtx.tui.task_ui import SPINNER, describe_activity, format_tokens
 
 #: Rows shown before the rest collapse into a ``+N more`` line. The panel is a

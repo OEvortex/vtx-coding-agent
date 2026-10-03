@@ -40,7 +40,7 @@ that wires everything together.
 ## Entry points
 
 - `vtx = vtx.coding_agent.cli:main` — parses flags, then dispatches to
-  `coding_agent.tui.launch.run_tui` or `coding_agent.headless.run_headless`.
+  `vtx.tui.launch.run_tui` or `coding_agent.headless.run_headless`.
 - SDK consumers import `from vtx.agent.sdk import Agent, Runner, tool`.
 
 ## Why this shape

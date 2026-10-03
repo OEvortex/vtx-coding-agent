@@ -8,9 +8,9 @@ from vtx.agent.runtime import ConversationRuntime
 from vtx.agent.session import CustomMessageEntry, Session
 from vtx.ai.base import LLMStream
 from vtx.ai.providers.mock import MockProvider
-from vtx.coding_agent.tui.commands import CommandsMixin
 from vtx.core.handoff import HANDOFF_PROMPT_TEMPLATE, generate_handoff_prompt
 from vtx.protocol.types import AssistantMessage, StopReason, TextContent, TextPart, UserMessage
+from vtx.tui.commands import CommandsMixin
 
 
 class _FakeFooter:

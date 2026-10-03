@@ -12,7 +12,7 @@ convention in :mod:`vtx.tui.task_ui`.
 The rules the whole module follows:
 
 - **One grammar, shared with the Agents panel.** Every strip above the editor
-  is drawn from :mod:`vtx.coding_agent.tui.agents_panel` — one ``● Header``, one ``│ ├─``
+  is drawn from :mod:`vtx.tui.agents_panel` — one ``● Header``, one ``│ ├─``
   tree, bold labels, dim activity, muted counters. The goal beacon used to
   carry its own ``▌`` rail and its own shaded ``vtx-goal`` chip, so it and the
   ``Agents`` panel sitting directly below it had different left edges,
@@ -63,15 +63,15 @@ from vtx.agent.goal.record import (
     truncate_on_words,
 )
 from vtx.agent.goal.service import GoalService, get_service
-from vtx.coding_agent.tui.agents_panel import (
+from vtx.core.config import config
+from vtx.tui.agents_panel import (
     TREE_GUTTER,
     render_agents,
     strip_header,
     tree_prefix,
     tree_prefix_cells,
 )
-from vtx.coding_agent.tui.goal_agents import REGISTRY, SubagentRun
-from vtx.core.config import config
+from vtx.tui.goal_agents import REGISTRY, SubagentRun
 
 if TYPE_CHECKING:
     from vtx.core.themes import ColorsConfig
@@ -690,7 +690,7 @@ def pct_of(done: int, total: int) -> int:
 def _agent_rows(agents: list[SubagentRun], inner: int) -> list[Text]:
     """Compact sub-agent block: live rows, then the queued/finished counts.
 
-    Shares :func:`~vtx.coding_agent.tui.agents_panel.render_agents` with the pinned panel so
+    Shares :func:`~vtx.tui.agents_panel.render_agents` with the pinned panel so
     the beacon and the standing view can never disagree about a run, and so
     both draw their rows from the same grammar.
     """

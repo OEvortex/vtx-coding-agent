@@ -11,7 +11,7 @@ The fix inverts the order: report first, update the widgets best-effort.
 
 import types
 
-from vtx.coding_agent.tui.commands.settings import SettingsCommands
+from vtx.tui.commands.settings import SettingsCommands
 
 
 class _FakeChat:

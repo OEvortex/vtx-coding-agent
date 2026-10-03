@@ -1,8 +1,8 @@
 # vtx.tui
 
-The base terminal-UI toolkit: reusable Textual primitives for text entry, inline completion, scrollback blocks, and rich-text formatting. Nothing here knows about agents, models, sessions, goals, or slash commands. Use it to build a Textual app that takes typed input with a completion overlay; `vtx.coding_agent.tui` builds the product interface on top of exactly these pieces. The harness `vtx.agent` already depends on this package for `blocks.TaskToolBlock` and for `tool_output` truncation.
+One flat package with the whole Textual interface: the reusable primitives (text entry, inline completion, scrollback blocks, rich-text formatting) and the app that composes them. The harness `vtx.agent` depends on this package for `blocks.TaskToolBlock` and for `tool_output` truncation.
 
-`vtx.tui` never imports `vtx.coding_agent`. That is load-bearing rather than cosmetic: a base-to-product edge would mean the harness imports the product.
+Two ways in. Reuse the primitives to build your own app — everything above "The app" is app-agnostic. Or run the shipped one: `from vtx.tui import Vtx, run_tui`.
 
 ## Usage
 
@@ -90,6 +90,20 @@ Typing `/mod` puts `/model` in the overlay and `enter` submits it. `InputBox` is
 - `get_styles()` returns the app CSS built from the configured palette; `styles.STYLES` is the module-level cache of it. Call `get_styles()` again after a theme change.
 - `copy_to_clipboard(text)` and `read_clipboard_image()` handle X11, Wayland, macOS, and Windows.
 - `AskUserDialog` is the questionnaire state machine behind the `ask_user` dialog. It is pure Python with no Textual imports: the UI layer feeds it keypresses and renders `rows()`. One dialog owns 1-4 questions plus an optional Submit review tab; `handle_key(key, custom_value=...)` returns whether it consumed the key, and `build_answers()` / `build_response()` produce the result. The full keyboard contract is in the module docstring.
+
+## The app
+
+Everything above is primitives. The rest composes them into the coding agent's interactive interface.
+
+- `app.Vtx` is the `App`: bindings, CSS, key routing, and the mixin stack. `run_tui(args)` is the console entry point.
+- The app is split into mixins so each concern owns its own state: `agent_runner.AgentRunnerMixin` (streaming a turn, tool dispatch, approval, background wakeups), `session_ui.SessionUIMixin` (new/clear/resume/compact), `startup.StartupMixin` (tool install, update check, launch warnings), `recap.RecapMixin` (idle session recap), `completion_ui.CompletionUIMixin` (wiring `InputBox` providers to the overlay).
+- `chat.ChatLog` is the scrollback pane that appends blocks and tracks streaming state.
+- `widgets` holds `InfoBar` (model, tokens/context meter, branch, permission mode, file changes), `StatusLine` (spinner, witty line, exit hints), `QueueDisplay`, and `FileChangesModal`.
+- `tree.TreeSelector` is the `/tree` session browser; `agents_panel.AgentsPanel` is the pinned per-sub-agent panel; `goal_ui` is the goal dashboard and beacon.
+- `commands/` is the slash-command registry: `base.CommandSupport` is the duck-typed mixin base, and `CommandsMixin` combines `settings`, `models`, `sessions`, `auth`, `providers`, `agents`, `switch`, `update`, `reload`, `mcp`, and `goals`. Each module is one `CommandSupport` subclass.
+- `app_protocol.Vtx` is the Protocol the mixins are typed against; depend on it, not the concrete App, to write your own.
+- `export.export_session_html(path)` renders a session JSONL to a standalone HTML transcript.
+- `extension_ui.TextualExtensionUI` is the modal screens extensions get to declare their own UI.
 
 ## Notes on use
 

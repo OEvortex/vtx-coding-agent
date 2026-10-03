@@ -17,7 +17,7 @@ import pytest
 
 from vtx.agent.extensions import TOOL_CALL as EVENT_TOOL_CALL
 from vtx.agent.extensions import ExtensionUIContext, HandlerContext
-from vtx.coding_agent.tui.extension_ui import ExtensionConfirmScreen, TextualExtensionUI
+from vtx.tui.extension_ui import ExtensionConfirmScreen, TextualExtensionUI
 
 # =============================================================================
 # Base no-ops (headless mode)
@@ -200,7 +200,7 @@ async def test_confirm_resolves_false_on_dismiss_false():
 
 @pytest.mark.asyncio
 async def test_select_returns_chosen_option():
-    from vtx.coding_agent.tui.extension_ui import ExtensionSelectScreen
+    from vtx.tui.extension_ui import ExtensionSelectScreen
 
     app = FakeApp()
     ui = TextualExtensionUI(app)
@@ -214,7 +214,7 @@ async def test_select_returns_chosen_option():
 
 @pytest.mark.asyncio
 async def test_input_returns_text():
-    from vtx.coding_agent.tui.extension_ui import ExtensionInputScreen
+    from vtx.tui.extension_ui import ExtensionInputScreen
 
     app = FakeApp()
     ui = TextualExtensionUI(app)
@@ -288,7 +288,7 @@ async def test_noop_custom_returns_none():
 async def test_custom_wraps_widget_instance_and_returns_result():
     from textual.widget import Widget
 
-    from vtx.coding_agent.tui.extension_ui import ExtensionCustomScreen
+    from vtx.tui.extension_ui import ExtensionCustomScreen
 
     app = FakeApp()
     ui = TextualExtensionUI(app)
@@ -307,7 +307,7 @@ async def test_custom_wraps_widget_instance_and_returns_result():
 async def test_custom_widget_class_is_instantiated_and_wrapped():
     from textual.widget import Widget
 
-    from vtx.coding_agent.tui.extension_ui import ExtensionCustomScreen
+    from vtx.tui.extension_ui import ExtensionCustomScreen
 
     class MyWidget(Widget):
         pass
@@ -350,7 +350,7 @@ async def test_custom_screen_subclass_pushed_directly():
 async def test_custom_callable_factory_used():
     from textual.widget import Widget
 
-    from vtx.coding_agent.tui.extension_ui import ExtensionCustomScreen
+    from vtx.tui.extension_ui import ExtensionCustomScreen
 
     def make():
         return Widget()

@@ -90,7 +90,17 @@ def test_description_explains_each_recovery():
     # sentence rather than a generic "the script failed".
     assert "tools.search" in description
     assert "traceback" in description.lower()
-    assert "ran too long" in description
+    assert "too long" in description
+
+
+def test_description_tells_the_two_timeouts_apart():
+    description = get_all_tools()[CODEMODE_TOOL_NAME].build_description()
+    # An exhausted compute budget and an expired wall clock want opposite
+    # remedies -- do less work, versus stop waiting on a tool that never came
+    # back -- and the description is the only place the model is told which is
+    # which before it hits one.
+    assert "waiting on tool calls is not what was counted" in description
+    assert "never came back" in description
 
 
 def test_constrained_sampling_is_declared_for_openai():

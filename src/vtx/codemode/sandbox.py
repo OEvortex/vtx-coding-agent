@@ -60,6 +60,10 @@ RESULT = "result"
 #: Diagnostic kinds. Mirrored in vtx/ai/agent/codemode/errors.py -- keep in sync.
 SCRIPT = "script"
 TIMEOUT = "timeout"
+#: The absolute wall-clock ceiling. The worker never raises this -- the host
+#: kills the process and reports it -- but it is mirrored so a kind the model
+#: can be shown is a kind the worker knows the name of.
+WALL_CLOCK = "wall_clock"
 ABORTED = "aborted"
 SANDBOX = "sandbox"
 UNKNOWN_TOOL = "unknown_tool"
@@ -75,6 +79,7 @@ STALLED = "stalled"
 KINDS = (
     SCRIPT,
     TIMEOUT,
+    WALL_CLOCK,
     ABORTED,
     SANDBOX,
     STALLED,
@@ -93,8 +98,15 @@ _REMEDY = {
         "number in your own source; fix that line and run again."
     ),
     TIMEOUT: (
-        "The deadline expired and the process was killed. Narrow the work: fetch "
-        "less, split the job across calls, or filter in steps rather than one pass."
+        "The script spent its whole compute budget and was killed. Waiting on tool "
+        "calls does not count against that budget -- this is your own work taking "
+        "too long. Do less of it: fetch less, split the job across calls, or "
+        "filter in steps rather than one pass."
+    ),
+    WALL_CLOCK: (
+        "The run hit its absolute time limit and was killed. A call you were "
+        "waiting on never came back. Call the slow tool directly instead of "
+        "wrapping it in a script, or ask for less of it."
     ),
     ABORTED: "The run was cancelled. Nothing was written to the store.",
     SANDBOX: (

@@ -6,7 +6,7 @@ type either ``/agent crs`` or ``/switch crs`` to activate the CRS agent.
 
 from __future__ import annotations
 
-from vtx.coding_agent.tui.commands.agents import AgentCommands
+from vtx.tui.commands.agents import AgentCommands
 
 
 class SwitchCommands(AgentCommands):

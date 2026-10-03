@@ -4,9 +4,9 @@ from vtx.agent.loop import Agent
 from vtx.agent.runtime import ConversationRuntime
 from vtx.agent.session import Session
 from vtx.ai.providers.mock import MockProvider
-from vtx.coding_agent.tui.session_ui import SessionUIMixin
-from vtx.coding_agent.tui.widgets import InfoBar
 from vtx.protocol.types import AssistantMessage, TextContent
+from vtx.tui.session_ui import SessionUIMixin
+from vtx.tui.widgets import InfoBar
 
 
 class _FakeChat:

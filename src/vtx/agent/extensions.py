@@ -1586,7 +1586,7 @@ def _not_initialized(*args: Any, **kwargs: Any) -> Any:
 class ExtensionUIContext:
     """UI surface for extensions (``ctx.ui``).
 
-    The real TUI-backed implementation (:class:`vtx.coding_agent.tui.extension_ui.
+    The real TUI-backed implementation (:class:`vtx.tui.extension_ui.
     TextualExtensionUI`) is installed by the host via
     ``EventBus.set_ui_context``; this base class provides safe no-op
     fallbacks so extensions can call UI methods without mode checks.

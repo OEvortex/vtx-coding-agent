@@ -13,12 +13,12 @@ from textual.screen import ModalScreen
 from textual.timer import Timer
 from textual.widgets import Label
 
-from vtx.coding_agent.tui.chat import WITTY_ROTATE_EVERY_TICKS
-from vtx.coding_agent.tui.status_lines import WITTY_STATUS_LINES, subagents_own_the_status_line
-from vtx.coding_agent.tui.status_lines import pick_witty_line as _pick_witty_line
 from vtx.core.config import PermissionMode, config
 from vtx.git.git_branch import resolve_git_branch
+from vtx.tui.chat import WITTY_ROTATE_EVERY_TICKS
 from vtx.tui.formatting import format_tokens
+from vtx.tui.status_lines import WITTY_STATUS_LINES, subagents_own_the_status_line
+from vtx.tui.status_lines import pick_witty_line as _pick_witty_line
 
 if TYPE_CHECKING:
     from vtx.agent.session import Session

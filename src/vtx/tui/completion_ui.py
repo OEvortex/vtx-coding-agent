@@ -13,13 +13,13 @@ from typing import TYPE_CHECKING, Any
 from textual import on
 
 from vtx.agent.runtime import ConversationRuntime
-from vtx.coding_agent.tui.chat import ChatLog
-from vtx.coding_agent.tui.tree import TreeSelector
-from vtx.coding_agent.tui.widgets import InfoBar, StatusLine, format_path
 from vtx.tui.autocomplete import FilePathProvider, PullRequestProvider, SlashCommandProvider
+from vtx.tui.chat import ChatLog
 from vtx.tui.floating_list import FloatingList, ListItem
 from vtx.tui.input import InputBox
 from vtx.tui.selection_mode import SelectionMode
+from vtx.tui.tree import TreeSelector
+from vtx.tui.widgets import InfoBar, StatusLine, format_path
 
 log = logging.getLogger("tui.completion")
 

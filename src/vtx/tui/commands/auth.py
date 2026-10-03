@@ -40,8 +40,8 @@ from vtx.ai import (
 from vtx.ai import is_cline_logged_in as has_saved_cline_credentials
 from vtx.ai import is_codex_logged_in as has_saved_codex_credentials
 from vtx.ai import is_copilot_logged_in as has_saved_copilot_credentials
-from vtx.coding_agent.tui.chat import ChatLog
-from vtx.coding_agent.tui.commands.base import CommandSupport
+from vtx.tui.chat import ChatLog
+from vtx.tui.commands.base import CommandSupport
 from vtx.tui.floating_list import ListItem
 from vtx.tui.input import InputBox
 from vtx.tui.selection_mode import SelectionMode

@@ -2,11 +2,11 @@ from contextlib import contextmanager
 from typing import Any, ClassVar, cast
 
 from vtx.agent.runtime import ConversationRuntime
-from vtx.coding_agent.tui.commands import CommandsMixin
-from vtx.coding_agent.tui.widgets import InfoBar
 from vtx.core.config import config, reset_config
+from vtx.tui.commands import CommandsMixin
 from vtx.tui.floating_list import ListItem
 from vtx.tui.selection_mode import SelectionMode
+from vtx.tui.widgets import InfoBar
 
 
 class FakeChat:
@@ -162,7 +162,7 @@ def test_thinking_command_without_argument_opens_picker():
 
     assert fake._selection_mode == SelectionMode.THINKING
     assert fake.completion_list.searchable is True
-    from vtx.coding_agent.tui.commands.settings import THINKING_LEVEL_DESCRIPTIONS
+    from vtx.tui.commands.settings import THINKING_LEVEL_DESCRIPTIONS
 
     assert [(item.value, item.label, item.description) for item in fake.completion_list.items] == [
         (level, f"{level} ✓" if level == "low" else level, THINKING_LEVEL_DESCRIPTIONS[level])
