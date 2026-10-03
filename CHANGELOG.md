@@ -4,6 +4,17 @@ All notable changes to Vtx are documented in this file. The format is based on
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project
 adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Fixed
+- **HTML in a reply no longer renders as nothing** — rich has no handler for `html_block`, so it fell through to an unknown element and rendered empty. A model answering inside a `<div>` produced a reply with holes in it and nothing on screen to say anything was missing; `<div>hello</div>` rendered as an empty string, and a block between two paragraphs lost its contents entirely. HTML blocks are now unwrapped to their inner text.
+- **`<br>` is a line break again** — inline HTML is dispatched through a different path than the block element map, so every `<br>` was silently deleted and welded the two halves of a line together: `line1<br>line2` rendered as `line1line2`. It is the most common tag in model output, so this lost one break per occurrence. Other inline tags (`<b>`, `<span>`) were leaving two to four phantom blank lines before the text.
+- **A reply can mention `<br>` again** — the fix above stripped tags without knowing about inline code spans, so a tag shown in backticks was erased too and the span rendered empty. Found by writing the demo in `scripts/lol.py` and reading its own output back. Transformation now applies only to the gaps between code spans.
+- **A four-backtick fence is no longer closed by its inner three-backtick one** — the streaming scanner tracked fences by "does this line start with ```" rather than by length, so a blank line inside the outer fence read as a block boundary. The stream split mid-block and rendered soft breaks collapsed (`more echo two` on one line) until finalisation corrected it. Fences now close only on a run at least as long as the one that opened them, and a line merely *beginning* with a fence while talking about fences no longer defeats the block cache.
+- **Markdown tables keep their values** — markdown-it requires the delimiter row to match the header width and silently truncates body rows to it. One stray pipe degraded an entire table into raw `|---|` prose, and an extra body cell was discarded with no indication anything was lost. Widths are reconciled before parsing; extra cells fold into the last column, short rows pad, and column alignment is preserved.
+- **A codemode script's return value keeps its newlines** — the returned value was unconditionally `json.dumps`'d, so a script returning prose came back as a single escaped line (`"line one\nline two"`), the information destroyed before anything reached the renderer. Strings now pass through unchanged; every non-string value renders exactly as before.
+- **A horizontal rule is visible** — `markdown.hr` used `colors.border` at **1.55:1** contrast against the background, effectively invisible, and fainter than the table rule beside it at 4.12:1, which inverted the visual hierarchy. Now `colors.muted` at 6.15:1.
+
 ## [1.2.0] - 2026-10-03
 
 ### Added

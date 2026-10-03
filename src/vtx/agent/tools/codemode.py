@@ -497,6 +497,12 @@ def _render_value(value: Any) -> str | None:
 
     if value is None:
         return None
+    # A returned string is the common case (`return "..."`). JSON-encoding it
+    # escapes every newline to a literal \n and wraps the whole value in quotes,
+    # so a script returning prose came back as one unreadable escaped line - and
+    # the newlines were already gone before anything reached the renderer.
+    if isinstance(value, str):
+        return value
     try:
         return json.dumps(value, indent=2, ensure_ascii=False, default=str)
     except (TypeError, ValueError):
