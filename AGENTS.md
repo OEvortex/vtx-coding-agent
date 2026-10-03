@@ -34,7 +34,7 @@
 
 ## Codebase Search
 
-Use vortexa in bash (not grep/rg/file reads) to search code or understand a repo. It
+Use vortexa in bash (instead of repo-wide grep/rg) to search code or understand a repo. It
 indexes the current directory (or pass --root <dir>).
 Vortexa is super fast and accurate at code searching and finding relevant context. It can be used to find code, understand code, and explore code relationships so prefer using it.
 

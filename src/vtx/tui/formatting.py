@@ -169,12 +169,45 @@ _DELIM_CELL_RE = re.compile(r"^\s*:?-{1,}:?\s*$")
 
 
 def _split_row(line: str) -> list[str]:
+    """Cells of a table row, splitting only on real cell separators.
+
+    A plain ``split("|")`` broke rows the parser handles correctly: an escaped
+    ``\\|`` and a pipe inside a code span are both content, and cutting on them
+    invented an extra cell that the repair step then merged back with a space --
+    so a well-formed row came out rewritten, with the pipe gone.
+    """
     body = line.strip()
     if body.startswith("|"):
         body = body[1:]
-    if body.endswith("|"):
+    if body.endswith("|") and not body.endswith("\\|"):
         body = body[:-1]
-    return body.split("|")
+    cells: list[str] = []
+    current: list[str] = []
+    i = 0
+    while i < len(body):
+        char = body[i]
+        if char == "\\" and i + 1 < len(body):
+            current.append(body[i : i + 2])
+            i += 2
+            continue
+        if char == "`":
+            run = 0
+            while i + run < len(body) and body[i + run] == "`":
+                run += 1
+            end = body.find("`" * run, i + run)
+            if end != -1:
+                current.append(body[i : end + run])
+                i = end + run
+                continue
+        if char == "|":
+            cells.append("".join(current))
+            current = []
+            i += 1
+            continue
+        current.append(char)
+        i += 1
+    cells.append("".join(current))
+    return cells
 
 
 def _join_row(cells: list[str]) -> str:
@@ -276,7 +309,15 @@ class CustomMarkdown(Markdown):
     }
 
 
-_INLINE_TAG_RE = re.compile(r"</?[a-zA-Z][^>]*>|<!--.*?-->", re.S)
+# Only names that are actually HTML. A blanket ``</?[a-zA-Z][^>]*>`` also ate
+# autolinks (``<https://...>``, ``<user@host>``) and plain angle-bracket text
+# (``List<T>``, ``a < b > c``), trading one silent deletion for another. The
+# attribute clause requires whitespace, so ``<a@b.com>`` is left alone too.
+_INLINE_TAG_RE = re.compile(
+    r"</?(?:b|i|u|s|em|strong|span|small|sub|sup|kbd|mark|code|a|font|del|ins|abbr)"
+    r"(?:\s[^<>]*)?/?>|<!--.*?-->",
+    re.S | re.I,
+)
 # Inline code spans: a `<br>` shown in backticks is content the writer is
 # *describing*, and stripping it leaves an empty code span. Split on these
 # and only transform the segments outside them.

@@ -602,6 +602,12 @@ class AgentRunnerMixin:
                     )
                 else:
                     chat.finish_compaction(tokens_before=tb, tokens_after=ta, summary=sm)
+                    # The bar's context figure came from the last TurnEndEvent,
+                    # which is the pre-compaction footprint. Re-read it from the
+                    # session now that the summary has replaced the history, or
+                    # the meter keeps showing the old size until the user sends
+                    # another message.
+                    info_bar.sync_tokens_from_session(self._runtime.session)
 
             case RetryEvent(attempt=a, total_attempts=t, delay=d, error=e):
                 msg = f"Request failed (attempt {a}/{t}), retrying in {d}s; Error: {e}"

@@ -486,6 +486,12 @@ class SessionCommands(CommandSupport):
                 tokens_after=result.tokens_after,
                 summary=result.summary,
             )
+            # Same reason as the auto-compaction path in agent_runner: the bar
+            # still holds the pre-compaction footprint, and nothing would
+            # correct it until the user sent another message.
+            self.query_one("#compact-footer", InfoBar).sync_tokens_from_session(
+                self._runtime.session
+            )
         except Exception as e:
             chat.finish_compaction(tokens_before=0, tokens_after=0, error=str(e))
 

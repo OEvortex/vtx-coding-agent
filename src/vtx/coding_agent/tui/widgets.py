@@ -2,7 +2,7 @@ import asyncio
 import contextlib
 import os
 import time
-from typing import ClassVar
+from typing import TYPE_CHECKING, ClassVar
 
 from rich.spinner import Spinner
 from rich.text import Text
@@ -19,6 +19,9 @@ from vtx.coding_agent.tui.status_lines import pick_witty_line as _pick_witty_lin
 from vtx.core.config import PermissionMode, config
 from vtx.git.git_branch import resolve_git_branch
 from vtx.tui.formatting import format_tokens
+
+if TYPE_CHECKING:
+    from vtx.agent.session import Session
 
 # Cells in the InfoBar context gauge. Small enough to sit inline with the
 # token counters without crowding the row.
@@ -360,6 +363,32 @@ class InfoBar(Vertical):
         self._context_tokens = context_tokens if context_tokens > 0 else None
         with contextlib.suppress(Exception):
             self._label_row1_right.update(self._format_row1_right())
+
+    def sync_tokens_from_session(self, session: "Session | None") -> None:
+        """Re-derive every counter from the session's current entries.
+
+        ``update_tokens`` only ever sees a turn's provider-reported usage, so
+        anything that shrinks the conversation out from under it -- a
+        compaction most of all -- leaves the bar quoting the pre-shrink
+        number until the next turn reports fresh usage. The session log is
+        the source of truth for what the model will actually be sent, so
+        paths that rewrite it must re-read it here rather than waiting for
+        the user to send another message.
+
+        Best-effort, like every other info-bar update: the bar is a display,
+        and a session that went away mid-refresh must not break the caller.
+        """
+        if session is None:
+            return
+        with contextlib.suppress(Exception):
+            totals = session.token_totals()
+            self.set_tokens(
+                totals.input_tokens,
+                totals.output_tokens,
+                totals.context_tokens,
+                totals.cache_read_tokens,
+                totals.cache_write_tokens,
+            )
 
     def set_model(self, model: str, provider: str | None = None) -> None:
         self._model = model

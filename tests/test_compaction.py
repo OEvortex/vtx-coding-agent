@@ -8,9 +8,12 @@ from vtx.agent.loop import Agent, AgentConfig
 from vtx.agent.runtime import ConversationRuntime
 from vtx.agent.session import CompactionEntry, Session
 from vtx.ai.providers.mock import MockProvider
+from vtx.coding_agent.tui.agent_runner import AgentRunnerMixin
 from vtx.coding_agent.tui.commands import CommandsMixin
+from vtx.coding_agent.tui.widgets import InfoBar
 from vtx.core.compaction import is_overflow
 from vtx.core.config import Config
+from vtx.core.events import CompactionEndEvent
 from vtx.protocol.types import (
     AssistantMessage,
     StopReason,
@@ -317,6 +320,9 @@ class _TestCommandsApp(CommandsMixin):
         self._agent = SimpleNamespace(system_prompt=system_prompt)
         self._is_running = False
         self._chat = chat
+        # A real, unmounted InfoBar: it renders into suppressed lookups, so
+        # the counters are readable without standing up a Textual app.
+        self.info_bar = InfoBar(".", "mock-model", context_window=200_000)
         self._runtime = ConversationRuntime(
             cwd=str(session.cwd),
             model="mock-model",
@@ -331,8 +337,11 @@ class _TestCommandsApp(CommandsMixin):
         self._runtime.agent = cast(Agent, self._agent)
 
     def query_one(self, selector: str, cls):
-        assert selector == "#chat-log"
-        return self._chat
+        if selector == "#chat-log":
+            return self._chat
+        if selector == "#compact-footer":
+            return self.info_bar
+        raise LookupError(selector)
 
     def _sync_runtime_state(self) -> None:
         self._provider = self._runtime.provider
@@ -436,6 +445,184 @@ class TestCompactionUsageBacktracking:
         compaction_entries = [e for e in session.entries if isinstance(e, CompactionEntry)]
         assert len(compaction_entries) == 1
         assert compaction_entries[0].tokens_before == 3650
+
+
+# ---------------------------------------------------------------------------
+# The info bar must track compaction without waiting for the next message
+# ---------------------------------------------------------------------------
+
+
+class _FakeChatAndStatus:
+    """Stand-ins for the chat log and status line in the event renderer."""
+
+    def __init__(self) -> None:
+        self.compaction_calls: list[tuple[int, int]] = []
+        self.started: list[tuple[int, int, str]] = []
+        self.errors: list[str] = []
+
+    def start_compaction(
+        self, *, tokens_before: int = 0, context_window: int = 0, trigger: str = ""
+    ) -> None:
+        self.started.append((tokens_before, context_window, trigger))
+
+    def update_compaction_progress(self, _chars: int, _sections: list) -> None:
+        return None
+
+    def finish_compaction(
+        self, *, tokens_before: int = 0, tokens_after: int = 0, **_kwargs
+    ) -> None:
+        self.compaction_calls.append((tokens_before, tokens_after))
+
+    def end_block(self) -> None:
+        return None
+
+    def add_info_message(self, message: str, error: bool = False, **_kwargs) -> None:
+        if error:
+            self.errors.append(message)
+
+    def set_agent_state(self, _state: str | None) -> None:
+        return None
+
+    def set_active_tool(self, _name: str | None) -> None:
+        return None
+
+
+class _TestRunnerApp(AgentRunnerMixin):
+    """Hosts ``_render_agent_event`` without the real Textual app.
+
+    The method only touches the chat log, status line and info bar, so three
+    query_one targets are all it needs.
+    """
+
+    def __init__(self, session: Session) -> None:
+        self._runtime = SimpleNamespace(session=session)
+        self.chat = _FakeChatAndStatus()
+        self.status = _FakeChatAndStatus()
+        self.info_bar = InfoBar(".", "mock-model", context_window=200_000)
+        # Per-run state the renderer reads; a real run sets these in
+        # _run_agent_inner before the first event arrives.
+        self._current_block_type = None
+        self._turn_started = None
+
+    def query_one(self, selector: str, cls):
+        if selector == "#chat-log":
+            return self.chat
+        if selector == "#status-line":
+            return self.status
+        if selector == "#compact-footer":
+            return self.info_bar
+        raise LookupError(selector)
+
+
+def _session_awaiting_compaction() -> Session:
+    """A session whose last turn pushed it to 180k of a 200k window."""
+    session = Session.in_memory()
+    session.append_message(UserMessage(content="hi"))
+    session.append_message(
+        AssistantMessage(
+            content=[TextContent(text="a long answer")],
+            usage=Usage(input_tokens=180_000, output_tokens=500),
+        )
+    )
+    return session
+
+
+class TestInfoBarFollowsCompaction:
+    """The context figure must shrink the moment compaction lands.
+
+    ``InfoBar.update_tokens`` only ever sees a turn's provider usage, so after
+    a compaction the bar kept quoting the pre-shrink number until the user sent
+    another message. Each test asserts against the rendered row rather than the
+    private field, because the rendered row is what the user actually reads.
+    """
+
+    @pytest.mark.asyncio
+    async def test_auto_compaction_updates_the_bar_without_a_new_message(self, monkeypatch):
+        session = _session_awaiting_compaction()
+        app = _TestRunnerApp(session)
+        # The bar is mid-turn: 180k is what the last TurnEndEvent reported.
+        app.info_bar.update_tokens(180_000, 500)
+        assert "180k/200k" in app.info_bar._format_row1_right().plain
+
+        async def _fake_summary(*args, **kwargs):
+            return "short summary"
+
+        monkeypatch.setattr("vtx.agent.loop.generate_summary", _fake_summary)
+
+        for event in await _auto_compaction_events(session):
+            await app._render_agent_event(event, app.chat, app.status, app.info_bar)
+
+        row = app.info_bar._format_row1_right().plain
+        assert "180k/200k" not in row
+        assert app.info_bar._context_tokens is not None
+        assert app.info_bar._context_tokens < 180_000
+
+    @pytest.mark.asyncio
+    async def test_manual_compact_updates_the_bar_without_a_new_message(
+        self, monkeypatch, fake_chat
+    ):
+        session = _session_awaiting_compaction()
+        provider = MockProvider()
+        app = _TestCommandsApp(session=session, provider=provider, chat=fake_chat)
+        app.info_bar.update_tokens(180_000, 500)
+        assert "180k/200k" in app.info_bar._format_row1_right().plain
+
+        async def _fake_summary(*args, **kwargs):
+            return "short summary"
+
+        monkeypatch.setattr("vtx.agent.runtime.generate_summary", _fake_summary)
+
+        await app._do_compact()
+
+        row = app.info_bar._format_row1_right().plain
+        assert "180k/200k" not in row
+        assert app.info_bar._context_tokens is not None
+        assert app.info_bar._context_tokens < 180_000
+
+    @pytest.mark.asyncio
+    async def test_a_failed_compaction_leaves_the_bar_alone(self, monkeypatch, fake_chat):
+        """A failed compaction kept the history, so the old figure still holds."""
+        session = _session_awaiting_compaction()
+        provider = MockProvider()
+        app = _TestCommandsApp(session=session, provider=provider, chat=fake_chat)
+        app.info_bar.update_tokens(180_000, 500)
+
+        async def _boom(*args, **kwargs):
+            raise RuntimeError("provider 500")
+
+        monkeypatch.setattr("vtx.agent.runtime.generate_summary", _boom)
+
+        await app._do_compact()
+
+        assert "180k/200k" in app.info_bar._format_row1_right().plain
+
+    @pytest.mark.asyncio
+    async def test_an_aborted_auto_compaction_leaves_the_bar_alone(self, monkeypatch):
+        session = _session_awaiting_compaction()
+        app = _TestRunnerApp(session)
+        app.info_bar.update_tokens(180_000, 500)
+
+        await app._render_agent_event(
+            CompactionEndEvent(tokens_before=180_500, aborted=True, reason="boom"),
+            app.chat,
+            app.status,
+            app.info_bar,
+        )
+
+        assert "180k/200k" in app.info_bar._format_row1_right().plain
+        assert app.chat.compaction_calls == [(180_500, 0)]
+
+
+async def _auto_compaction_events(session: Session) -> list[CompactionEndEvent]:
+    """Drive the real agent compaction path and collect its events."""
+    agent = Agent(
+        provider=MockProvider(),
+        tools=[],
+        session=session,
+        system_prompt="system",
+        config=AgentConfig(context_window=200_000, max_output_tokens=1),
+    )
+    return [e async for e in agent._check_compaction(StopReason.STOP, "system", None)]
 
 
 # ---------------------------------------------------------------------------
