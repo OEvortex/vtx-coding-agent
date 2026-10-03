@@ -37,4 +37,3 @@ A triggered guardrail raises — and the runner surfaces — typed exceptions:
 
 Each carries the guardrail name and `output_info`.
 
-Runnable example: [`examples/sdk/04_guardrails.py`](../../examples/sdk/04_guardrails.py).

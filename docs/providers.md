@@ -2,7 +2,7 @@
 
 ## Built-in catalog
 
-`src/vtx/ai/provider.yaml` defines **57 providers**. Each entry carries a slug, display name, base URL, API-key env var, known models, capability flags (tools/vision/thinking), and an optional dynamic model-catalog endpoint.
+`src/vtx/ai/provider.yaml` defines **59 providers**. Each entry carries a slug, display name, base URL, API-key env var, known models, capability flags (tools/vision/thinking), and an optional dynamic model-catalog endpoint.
 
 Highlights:
 
@@ -94,3 +94,17 @@ Levels cycle with `ctrl+t`: `none`, `minimal`, `low`, `medium`, `high`, `xhigh`,
 - models the catalog describes only as reasoning-capable, or not at all, offer `default` — vtx sends no reasoning parameter and lets the model decide, instead of guessing an effort that might be rejected.
 
 A level the current model doesn't support is never sent: it is clamped to the nearest supported one, so switching models or restoring a session can't fail a request.
+
+### Model ids are matched exactly
+
+`get_model()` looks a model id up **verbatim**. It does not fuzzy-match, strip a
+namespace, or try suffixes. Because 3,735 of the 6,361 catalog ids are
+namespace-prefixed (`stealth/space-bunny-alpha`) and only 2,626 are bare
+(`space-bunny-alpha`), an id that misses the catalog silently falls back to the
+provider's raw effort enum instead of the catalog's per-model reasoning options —
+so the offered levels are whatever that provider accepts, not what the model's
+catalog entry says it supports.
+
+`/thinking` surfaces this rather than failing quietly: when the catalog entry is
+missing it reports `catalog entry not found, check the exact model id`. Copy the
+id from the `/model` picker instead of typing it from memory.

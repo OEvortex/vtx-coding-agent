@@ -1,6 +1,6 @@
 # Headless mode
 
-Run one prompt non-interactively — for scripts and CI. Implemented in `src/coding_agent/headless.py`.
+Run one prompt non-interactively — for scripts and CI. Implemented in `src/vtx/coding_agent/headless.py`.
 
 ## Usage
 

@@ -1,6 +1,6 @@
 # Configuration
 
-Vtx stores config in `~/.vtx/config.yml` (created with defaults on first run). Every field below is verified against `src/coding_agent/defaults/config.yml` (schema version 12).
+Vtx stores config in `~/.vtx/config.yml` (created with defaults on first run). Every field below is verified against `src/vtx/core/defaults/config.yml` (schema version 16).
 
 ## `llm`
 
@@ -15,8 +15,8 @@ Vtx stores config in `~/.vtx/config.yml` (created with defaults on first run). E
 | `auth.openai_compat` | `"auto"` | `auto` / `required` / `none` — whether OpenAI-compatible endpoints need an API key |
 | `auth.anthropic_compat` | `"auto"` | Same for Anthropic-compatible endpoints |
 | `tls.insecure_skip_verify` | `false` | Skip TLS verification (self-signed certs on local providers). CLI: `--insecure-skip-verify` |
-| `system_prompt.content` | `""` | Custom base prompt; empty uses the built-in identity. Extra sections are still appended |
 | `system_prompt.git_context` | `true` | Attach a git status/diff snapshot to the system prompt |
+| `system_prompt.ponytail` | `false` | Append the lazy-senior-developer persona section to the system prompt |
 
 ## `compaction`
 
@@ -109,7 +109,7 @@ There are no sub-agent presets to configure. A `delegate_subagent` tool's `subag
 
 ## Loading & migration
 
-Config is deep-merged over defaults, then migrated through versioned migrations (`meta.config_version`, currently 15). Migrations back up the old file before writing. Invalid YAML falls back to defaults with a warning shown at launch.
+Config is deep-merged over defaults, then migrated through versioned migrations (`meta.config_version`, currently 16). Migrations back up the old file before writing. Invalid YAML falls back to defaults with a warning shown at launch.
 
 ## CLI overrides
 

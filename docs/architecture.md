@@ -20,18 +20,23 @@ Vtx is a minimalist coding-agent harness built around a small, transparent runti
 ### Dependency direction
 
 ```
-protocol, telemetry          (leaves)
+protocol, telemetry          (leaves, import nothing from vtx)
    ↓
-core, git                   ai ──→ core
-   ↓                          ↓
-mcp ───────────────────────→  agent ──→ codemode
-   ↓                          ↓
-tui ───────────────────────→  coding_agent
+core ←────────────────── git        ai ──→ core
+   ↓                        ↓           ↓
+mcp ──→ agent  ←── ai     tui ──→ agent      agent ──→ codemode
+   ↓         ↑               ↓         ↑          ↑
+   ↓         └─── codemode ───┘         └──────────┘
+   ↓                     coding_agent ──→ agent, ai, core, git, mcp, tui
 ```
 
-The harness (`vtx.agent`) never imports `vtx.coding_agent`; product code injects everything engine-side (system-prompt builder, context loader, tool registry, user config knobs). Every remaining upward edge — `agent → mcp`, `agent → tui`, `core → agent`, `codemode → agent` — is a **function-local** import, so no module-level cycle exists and layering stays verifiable. `vtx.core` reaches upward only from `config.py`, which merges user YAML into the harness knobs in `core/harness_config.py` and resolves provider catalogs and subagent limits.
+The harness (`vtx.agent`) never imports `vtx.coding_agent`; product code injects everything engine-side (system-prompt builder, context loader, tool registry, user config knobs).
 
-Enforced by `.github/workflows/ci.yml`. The one runtime seam that used to break it — the sub-agent runner, where three call sites re-imported `vtx.coding_agent.tools.task` looking for a divergent `_run_subagent` — is now an explicit `set_subagent_runner()` hook in `vtx.agent.tools.task`. That module re-exported the same function object, so the lookup could never differ; the back-edge existed only to keep old monkeypatches working. `vtx.coding_agent.prompts.rlm` moved to `vtx.agent.prompts.rlm` for the same reason.
+Not every upward edge is function-local. Four are ordinary module-level imports, and they are all narrow: `mcp → agent` (`vtx.agent.tools.base.BaseTool` and the schema helpers, for wrapping server tools), `tui → agent` (`tui/blocks.py` renders tool calls) and `tui → git` (`tui/autocomplete.py` completes PR refs), and `git → core` (`core/paths.get_config_dir`, `core/config.AVAILABLE_BINARIES`). None of them closes a cycle, so layering stays verifiable.
+
+Four more are deliberately deferred to keep it that way: `agent → mcp`, `agent → tui`, `core → agent`, and `codemode → agent` are all **function-local** imports. `vtx.core` reaches upward only from `config.py`, which merges user YAML into the harness knobs in `core/harness_config.py` and resolves provider catalogs and subagent limits.
+
+The one runtime seam that used to break it — the sub-agent runner, where three call sites re-imported `vtx.coding_agent.tools.task` looking for a divergent `_run_subagent` — is now an explicit `set_subagent_runner()` hook in `vtx.agent.tools.task`. That module re-exported the same function object, so the lookup could never differ; the back-edge existed only to keep old monkeypatches working.
 
 The harness used to live at `vtx.ai.agent`, nested inside the LLM package, which made `vtx.ai` a 116-module grab bag holding the entire runtime. It is now a sibling of `vtx.ai`, so `vtx.ai` holds only AI code. Likewise every module that duplicated a harness module has been removed rather than aliased: `coding_agent/{prompts,context,goal}`, `runtime.py`, `version.py`, `config.py`, `defaults/`, `gh_cli.py`, `git_branch.py`, `self_update.py`, `diff_display.py`, and `themes.py` each have a single home. One module path per concern, one implementation to keep correct.
 
@@ -54,11 +59,14 @@ Both drive the same `ConversationRuntime` → `Agent` stack.
 | `dispatcher.py` | Per-task context (`DispatcherContext`) so tools like `delegate_subagent` can reach provider/model/session info. |
 | `context_governance.py` | Budgets oversized tool results before they are sent back to the model. |
 | `extensions.py`, `extension_manager.py` | Extension discovery, the `ExtensionAPI`, and the event bus (see [extensions.md](extensions.md)). |
+| `prompts/`, `context/` | System-prompt assembly and the AGENTS.md / skills / git context loaders. |
+| `goal/` | The persistent goal system: storage, record, service, auditor, and the `GoalTool` (see [goals.md](goals.md)). |
+| `agents/` | Handoff-agent schema (`AgentDef`), discovery, loader, registry (see [agents.md](agents.md)). |
 | `hooks/` | `.vtx/hooks.yml` declarative hooks and the `AgentHook` protocol (see [extensions.md](extensions.md)). |
 | `sdk/` | The programmatic multi-agent SDK (see [sdk/README.md](sdk/README.md)). |
 | `tools/` | Tool contract only: `BaseTool` and JSON-schema slimming for LLM tool definitions. Concrete tools live in the coding agent. |
 | `background.py` | Background-task notification tag shared between parent and sub-agents. |
-| `codemode/` | Confined script execution — the sandbox, its isolation layers, and the discovery/catalog layer (see [codemode.md](codemode.md)). Promoted to its own `vtx.codemode` package; the harness imports it one-way. |
+| `subagents.py` | `SubagentScheduler`, the FIFO admission queue capped by `task.max_concurrent`. |
 
 Support modules: `tools_manager.py` (auto-download of `fd`/`rg` into `~/.vtx/bin`). Harness-owned runtime knobs (max turns, compaction policy, idle timeout) live in `core/harness_config.py` with product-neutral defaults, and `core/config.py` mirrors user YAML into them. Package-version resolution lives in `core/version.py`, which every package reads from.
 
@@ -70,7 +78,7 @@ Support modules: `tools_manager.py` (auto-download of `fd`/`rg` into `~/.vtx/bin
 | `headless.py` | One prompt in, text out; exit code reflects the stop reason. |
 | `tools/` | The built-in `BaseTool` implementations (`bash`, `edit`, `find`, `grep`, `read`, `write`, `skill`) plus the default registry (`DEFAULT_TOOLS`) (see [tools.md](tools.md)). |
 | `builtin_skills/` | The skills package registered into the harness at import time. |
-| `agents/` | Switchable handoff agents: schema (`AgentDef`), loader, registry (see [agents.md](agents.md)). |
+| `agents/` | Thin re-export of the harness agent layer (`vtx.agent.agents`) — schema, `AgentDef`, loader, registry — kept as the product-facing import path (see [agents.md](agents.md)). |
 
 The composition root is `vtx.agent.runtime`, not `coding_agent/runtime.py`; prompt, context, and goal assembly likewise live under `vtx.agent.{prompts,context,goal}`.
 
@@ -79,7 +87,7 @@ The composition root is `vtx.agent.runtime`, not `coding_agent/runtime.py`; prom
 | Module | Responsibility |
 |--------|----------------|
 | `base.py` | `BaseProvider.stream()` returns an `LLMStream` of `StreamPart`s; `ProviderConfig`; env-var API key map; local-endpoint detection. |
-| `provider.yaml` / `provider_catalog.py` | 57 built-in providers plus user YAML overrides from `~/.vtx/providers/*.yaml`. |
+| `provider.yaml` / `provider_catalog.py` | 62 built-in providers: 59 declared in `provider.yaml` with a base URL and API-key env var, plus 3 OAuth providers (`github-copilot`, `codex`, `cline`) defined in code. User YAML in `~/.vtx/providers/*.yaml` merges on top. |
 | `providers/openai_sdk.py`, `anthropic_sdk.py` | Streaming adapters over the official SDKs; `mock.py` for offline runs/tests; `sanitize.py` cleans provider payloads. |
 | `oauth/` | Device/code login flows for GitHub Copilot, OpenAI (Codex), Cline (WorkOS), and dynamic providers. |
 | `dynamic_models.py` | Live model catalogs fetched from provider endpoints / models.dev, cached ~6 h under `~/.vtx/models/`. |

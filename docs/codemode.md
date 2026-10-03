@@ -72,19 +72,17 @@ Two things the adapter does **not** do:
 
 ## What a script gets
 
-Inside the sandbox the script has `tools`, `store`, `load`, `text`, and `asyncio`,
-plus a stripped `__builtins__`. It does **not** have the filesystem, the network,
-subprocesses, `os`, `sys`, `eval`, `exec`, `compile`, `open`, `getattr`, or any
-third-party package.
+`tools`, `store`, `load`, `text`, and `asyncio` are pre-bound, because those are
+what a script is for: composing tool calls and shuttling values between them.
 
-`import` works for a small standard-library allowlist (`json`, `re`, `math`,
-`datetime`, `itertools`, `functools`, `collections`, `textwrap`, `string`,
-`statistics`, `urllib.parse`, and a few more). Everything else raises with a
-message naming the module.
+Beyond that, a script is ordinary Python. It has the **full standard library**,
+installed third-party packages, the filesystem, subprocesses and the network -
+see [How it is confined](#how-it-is-confined) for why that is deliberate. There is
+no import allowlist; `import os`, `import pathlib`, `import requests` all work.
 
-`asyncio` is pre-bound rather than importable: `gather`, `sleep`, `wait_for`, and
-`wait` are available, because `gather` is how independent tool calls run
-concurrently. The rest of the module — the loop policy, the executor — is not.
+`asyncio` is bound for convenience rather than necessity: `gather`, `sleep`,
+`wait_for` and `wait` are what a script reaches for, and `gather` is how
+independent tool calls run concurrently. The whole module is importable too.
 
 ### Output
 
@@ -280,51 +278,36 @@ is silently dropped will believe it configured something it did not.
 
 ## How it is confined
 
-There is no wasm boundary in CPython, so confinement is three layers.
+**A script runs as ordinary Python. There is no interpreter-level confinement.**
 
-**A separate process per execution.** The script cannot reach host memory. A
-deadline is a `kill`, not a cooperative request, so `while True:`, a pathological
-regex, and a runaway C extension all die the same way.
+This is worth stating first because everything else follows from it, and because
+an earlier version of this document claimed otherwise. There is no
+`sys.addaudithook`, no replaced `__builtins__`, and no import allowlist: a script
+has full builtins, the full standard library, installed third-party packages,
+the filesystem, subprocesses and the network, running as the user. Verified by
+execution - a script can `import os, pathlib, subprocess`, read `os.environ`,
+write files and call `eval`.
 
-**`sys.addaudithook`.** Installed before the script is compiled, denying
-filesystem contents *and* discovery (`open`, `os.listdir`, `os.scandir`,
-`os.walk`, `glob.glob`), every route to a second process, sockets, `ctypes`,
-`marshal`, and the guard's own removal. Auditing is a CPython-level event, so it
-fires however the operation is reached.
+That is deliberate, and follows `ref/prime-agent`: a coding agent driving the
+developer's own interpreter, where restricting the interpreter costs more model
+capability than it buys. **A script is as trusted as the person running it.** It
+is an isolation boundary for the *host*, not a security sandbox against the
+*model*.
 
-**A stripped namespace.** `__builtins__` is replaced with an allowlist, which
-removes `eval`, `exec`, `compile`, `open`, `getattr`, `globals`, and
-`__import__` in one move rather than by enumerating dangerous names.
+**What a script cannot reach is the host's live state** - the running agent, the
+session, the TUI, and every tool - because all of that lives in the other
+process. That is what the one real boundary buys:
 
-### What is accepted
+**A separate process per execution.** A deadline is a `kill`, not a cooperative
+request, so `while True:`, a pathological regex, and a runaway C extension all
+die the same way rather than outliving the timeout.
 
-The CPython object graph is reachable. A script can walk
-`().__class__.__base__.__subclasses__()` to a class whose `__init__.__globals__`
-holds `os` or `subprocess`. This is a known introspection surface and cannot be
-closed from Python.
-
-It is not a hole, because the audit hook is the authority boundary and it fires
-on the *operation*, not on how the object was reached. Verified against the
-walked graph: `subprocess.run`/`Popen`/`os.popen` all raise `open`;
-`_socket.socket().connect()` raises `socket.connect`; `os.open` + `os.read`
-raises `open`; `os.fork` raises `os.fork`; `ctypes` and `_posixsubprocess` are
-never resident at all.
-
-What does leak is metadata that raises no audit event: `os.stat`, `os.access`,
-`os.readlink`, `os.getcwd`, `os.uname`, `os.environ`. A script can confirm that
-a path it already knows exists and read its size. No contents, no execution, no
-network. Closing that needs a syscall filter (seccomp), which a portable
-implementation cannot assume.
-
-### Launch cost
-
-The worker is a standalone module that imports nothing from `vtx`, launched by
-file path rather than with `-m`. `python -m` would import `vtx/__init__` first,
-which pulls in the agent SDK and costs ~1.5s on every execution; running the file
-directly lands near 140ms.
-
-That constraint is why the protocol constants and diagnostic kinds appear in both
-this package and `sandbox.py`. `tests/test_codemode.py` asserts the two agree.
+If you need a capability withheld, `exposure` is the control that does it:
+`codemode` makes a tool reachable from a script, `hidden` makes it unreachable
+from scripts and from the model, and the permission gate still runs per call
+inside the script (see [Tools inside a script are governed](#tools-inside-a-script-are-governed)).
+The launcher is the file path rather than `-m`, so a run does not import the
+agent SDK first; see [Launch cost](#launch-cost).
 
 ## Limits
 

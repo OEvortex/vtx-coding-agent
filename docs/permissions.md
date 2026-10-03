@@ -20,6 +20,13 @@ For each tool call:
 3. `bash`: the command is parsed and checked against the safe lists (below). A read-only command with no shell punctuation → **allow**; anything else → **prompt**.
 4. Every other mutating tool (`edit`, `write`, `skill`) → **prompt**.
 
+The mutating set is exactly five: `bash`, `codemode`, `edit`, `skill`, `write`.
+Everything else — `read`, `find`, `grep`, `web`, `web_search`, `ask_user`,
+`tool_search`, `delegate_subagent`, `goal` — is non-mutating and runs without
+approval. `codemode` is marked mutating because a script can call `bash`, and the
+decision is re-made per tool call inside the script rather than once for the whole
+script.
+
 In `auto` mode steps 3–4 allow without asking.
 
 ## Safe command lists

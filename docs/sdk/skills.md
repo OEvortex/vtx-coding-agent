@@ -22,4 +22,3 @@ agent = Agent(
 
 The model then reads a skill's body from its file path when it decides the workflow applies — or you can inject specific skills into `instructions` yourself. `$ARGUMENTS` substitution and frontmatter rules behave exactly as documented in [../skills.md](../skills.md).
 
-Runnable example: [`examples/sdk/08_skills.py`](../../examples/sdk/08_skills.py).

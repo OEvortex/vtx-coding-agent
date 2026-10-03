@@ -38,4 +38,3 @@ Rejected calls return a "denied by user" tool result so the model can pick anoth
 
 Skip interruptions entirely with a `PermissionPolicy` — see [permissions.md](permissions.md). Policies decide synchronously per call; approvals hand the decision to your code between runs.
 
-Runnable example: [`examples/sdk/06_approvals.py`](../../examples/sdk/06_approvals.py).

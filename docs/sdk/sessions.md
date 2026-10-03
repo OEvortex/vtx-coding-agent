@@ -35,4 +35,3 @@ result = await Runner.run(agent, "What did I just say?", session=ses)   # rememb
 
 History is loaded, merged with the new input (`RunConfig.session_input_callback` can filter), and appended after the run. `SessionSettings(limit=N)` caps how many items load per run.
 
-Runnable example: [`examples/sdk/05_sessions.py`](../../examples/sdk/05_sessions.py).

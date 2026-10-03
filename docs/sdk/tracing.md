@@ -37,4 +37,3 @@ disable_tracing()                          # or RunConfig(tracing_disabled=True)
 RunConfig(trace_include_sensitive_data=False)   # keep payloads out of traces
 ```
 
-Runnable example: [`examples/sdk/07_tracing.py`](../../examples/sdk/07_tracing.py).

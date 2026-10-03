@@ -57,4 +57,3 @@ main = Agent(
 
 `as_tool(tool_name=None, tool_description=None, max_turns=None, custom_output_extractor=None)` — the extractor maps the sub-run's result to your preferred string.
 
-Full runnable versions: [`examples/sdk/02_multi_agent_handoff.py`](../../examples/sdk/02_multi_agent_handoff.py), [`03_multi_agent_manager.py`](../../examples/sdk/03_multi_agent_manager.py).

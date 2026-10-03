@@ -1,6 +1,6 @@
 # Tools
 
-Vtx ships 11 built-in tools. Ten are enabled by default; `grep` is built in but opt-in (enable it via an extension, agent `tools_allow`, or a custom tool list).
+Vtx ships 14 built-in tools. Twelve are enabled by default. Two are built in but opt-in — `grep` and `web_search` (enable them via an extension, agent `tools_allow`, or a custom tool list).
 
 | Tool | Does | Default |
 | --- | --- | --- |
@@ -15,7 +15,9 @@ Vtx ships 11 built-in tools. Ten are enabled by default; `grep` is built in but 
 | `delegate_subagent` | Dispatch an isolated sub-agent | yes |
 | `goal` | Persistent project goals: create, track tasks, complete with audit | yes |
 | `codemode` | Run a confined script that calls the other tools | yes |
+| `tool_search` | Find tools that exist but are not in the declared tool list | yes |
 | `grep` | Search file contents (`ripgrep`) | no |
+| `web_search` | Alias of `web`, same tool | no |
 
 All tools are `BaseTool` subclasses with Pydantic params. The `mutating` flag drives permission gating: non-mutating tools run without approval, mutating tools follow the permission mode (see [permissions.md](permissions.md)).
 
@@ -116,7 +118,24 @@ Web search through Exa's MCP endpoint. Needs internet access.
 | `search_type` | string | `auto` (default), `neural`, or `keyword` |
 | `livecrawl` | string | `fallback` (default), `always`, or `never` |
 
-An alias named `web_search` is registered for the same tool.
+A second registration named `web_search` wraps the same Exa search. It is a
+distinct `BaseTool` with its own params and is not enabled by default; `web` is
+the one that ships on.
+
+## tool_search
+
+Find a tool the session can reach but was not offered, described by what it does
+rather than by name. The usual reason a tool is missing is a connected MCP server
+whose tools were withheld by its `exposure` setting.
+
+| Param | Type | Notes |
+| --- | --- | --- |
+| `query` | string, required | What the tool should do, in words |
+| `limit` | int | 1–50, default 8 |
+
+The search text covers each tool's description and its parameter descriptions, so
+a query naming a field finds the tool that has it. Matches come back grouped by
+the server that owns them.
 
 ## ask_user
 
@@ -151,7 +170,10 @@ Results are capped at 32,000 chars with the last 200 transcript lines attached.
 
 ## goal
 
-One action-dispatched tool for the persistent goal system (see [goals.md](goals.md)). All actions operate on the focused goal; only the top-level session has this tool.
+One action-dispatched tool for the persistent goal system (see [goals.md](goals.md)). All actions operate on the focused goal.
+
+Like `delegate_subagent`, `goal` is parent-only: a sub-agent never receives it.
+`ask_user` is parent-only for the same reason — a sub-agent has nobody to ask.
 
 | Param | Type | Notes |
 | --- | --- | --- |

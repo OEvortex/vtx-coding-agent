@@ -55,4 +55,4 @@ agent.build_system_prompt(tools=[...])       # full lean vtx-style prompt
 agent.all_tools()                            # tools + handoff tools compiled
 ```
 
-Providers are resolved lazily: dicts go through the Vtx catalog (57 built-ins), so `{name: "ollama"}` just works for local models.
+Providers are resolved lazily: dicts go through the Vtx catalog (62 built-ins - 59 in `provider.yaml` plus `github-copilot`, `codex`, `cline`), so `{name: "ollama"}` just works for local models.

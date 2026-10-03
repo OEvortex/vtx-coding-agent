@@ -1,10 +1,10 @@
 # Theming
 
-Themes live in `src/coding_agent/themes.py`. Switch with `/settings` → themes or `ui.theme` in config.
+Themes live in `src/vtx/core/themes.py`. Switch with `/settings` → themes or `ui.theme` in config.
 
-## Built-in themes (25)
+## Built-in themes (27)
 
-`ayu`, `catppuccin-frappe`, `catppuccin-latte`, `catppuccin-macchiato`, `catppuccin-mocha`, `dracula`, `everforest`, `flexoki`, `github-dark`, `github-light`, `gruvbox-dark`, `gruvbox-light`, `kanagawa`, `kanagawa-dragon`, `monokai`, `nightowl`, `nord`, `one-dark`, `one-light`, `palenight`, `rosepine`, `solarized-dark`, `solarized-light`, `tokyo-day`, `tokyo-night`
+`titanium`, `titanium-light`, `ayu`, `catppuccin-frappe`, `catppuccin-latte`, `catppuccin-macchiato`, `catppuccin-mocha`, `dracula`, `everforest`, `flexoki`, `github-dark`, `github-light`, `gruvbox-dark`, `gruvbox-light`, `kanagawa`, `kanagawa-dragon`, `monokai`, `nightowl`, `nord`, `one-dark`, `one-light`, `palenight`, `rosepine`, `solarized-dark`, `solarized-light`, `tokyo-day`, `tokyo-night`
 
 Preview them all with `uv run python scripts/show_themes.py`.
 

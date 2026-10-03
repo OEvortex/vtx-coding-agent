@@ -36,7 +36,7 @@ The `provider` field accepts:
 - a dict — built-in providers need `{name, api_key}`; custom ones add `sdk` and `base_url`,
 - `None` — fall back to env vars / config.
 
-An offline-runnable version using `ai.providers.mock.MockProvider` lives at [`examples/sdk/01_quickstart.py`](../../examples/sdk/01_quickstart.py), with seven more examples covering handoffs, manager patterns, guardrails, sessions, approvals, tracing and skills in [`examples/sdk/`](../../examples/sdk).
+To run without a provider key or network, pass `ai.providers.mock.MockProvider` as the `sdk` field; it is a real provider that streams scripted responses.
 
 ## Doc map
 
