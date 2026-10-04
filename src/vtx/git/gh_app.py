@@ -26,11 +26,33 @@ import os
 import time
 from dataclasses import dataclass
 from pathlib import Path
-
-import jwt
-import requests
+from typing import Any
 
 from vtx.core.paths import get_config_dir
+
+# NOTE: ``requests`` is imported optionally and ``jwt`` at its point of use.
+# Both ship only in the ``msteams`` extra, but this module is reachable from
+# ``tools/bash.py`` at import time, so an unconditional module-scope import made
+# a plain ``pip install vtx-coding-agent`` fail at ``import vtx``. Every caller
+# fails closed without them (``resolve_committer_vars`` returns ``{}`` when no
+# app is configured), so a plain install never needs either. Do not make these
+# hard imports; keep ``requests`` as a module attribute, the test suite patches
+# ``gh_app.requests.get`` as its HTTP seam.
+try:  # pragma: no cover - trivial guard
+    import requests
+except ImportError:  # the `msteams` extra is not installed
+    requests = None  # type: ignore[assignment]
+
+
+def _requests() -> Any:
+    """The ``requests`` module, or a message naming the extra that carries it."""
+    if requests is None:
+        raise RuntimeError(
+            "GitHub App support needs `requests`, which ships in the `msteams` extra. "
+            "Install it with: pip install 'vtx-coding-agent[msteams]'"
+        )
+    return requests
+
 
 _APP_DIR = get_config_dir() / "gh_app"
 _CONFIG_PATH = _APP_DIR / "config.json"
@@ -105,6 +127,8 @@ def is_configured() -> bool:
 
 def make_jwt(cfg: GitHubAppConfig) -> str:
     """Sign a short-lived (10 min) JWT with the App's private key."""
+    import jwt
+
     now = int(time.time())
     payload = {"iat": now - 30, "exp": now + 600, "iss": cfg.app_id}
     return jwt.encode(payload, cfg.pem, algorithm="RS256")
@@ -135,7 +159,7 @@ def get_installation_token(cfg: GitHubAppConfig, owner: str, repo: str) -> str:
 
     jwt_token = make_jwt(cfg)
     installation_id = _resolve_installation_id(cfg, jwt_token, owner, repo)
-    r = requests.post(
+    r = _requests().post(
         f"{_GITHUB_API}/app/installations/{installation_id}/access_tokens",
         headers=_headers(jwt_token),
         json={"repository": f"{owner}/{repo}"},
@@ -158,13 +182,13 @@ def get_installation_token(cfg: GitHubAppConfig, owner: str, repo: str) -> str:
 
 def _resolve_installation_id(cfg: GitHubAppConfig, jwt_token: str, owner: str, repo: str) -> int:
     """Find the installation ID for this app on owner/repo."""
-    r = requests.get(
+    r = _requests().get(
         f"{_GITHUB_API}/repos/{owner}/{repo}/installation", headers=_headers(jwt_token), timeout=5
     )
     if r.status_code == 200:
         return int(r.json()["id"])
     # Fallback: list installations and match by slug + repo.
-    r = requests.get(f"{_GITHUB_API}/app/installations", headers=_headers(jwt_token), timeout=5)
+    r = _requests().get(f"{_GITHUB_API}/app/installations", headers=_headers(jwt_token), timeout=5)
     r.raise_for_status()
     for inst in r.json():
         if inst.get("app_slug") != cfg.app_slug:
@@ -232,7 +256,7 @@ def get_bot_user_id(cfg: GitHubAppConfig, jwt_token: str | None = None) -> int:
     if jwt_token is None:
         jwt_token = make_jwt(cfg)
     encoded = f"{cfg.app_slug}%5Bbot%5D"  # URL-encode [ and ]
-    r = requests.get(f"{_GITHUB_API}/users/{encoded}", headers=_headers(jwt_token), timeout=5)
+    r = _requests().get(f"{_GITHUB_API}/users/{encoded}", headers=_headers(jwt_token), timeout=5)
     r.raise_for_status()
     bot_id = int(r.json()["id"])
     _cached_bot_id = (cfg.app_slug, bot_id)

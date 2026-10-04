@@ -4,6 +4,11 @@ All notable changes to Vtx are documented in this file. The format is based on
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project
 adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Fixed
+- **A plain `pip install` can `import vtx` again** — `vtx/git/gh_app.py` imported `jwt` and `requests` at module scope, but both ship only in the `msteams` extra and neither is a core dependency. Because `tools/bash.py` imports that module for `resolve_committer_vars` at import time, `import vtx` raised `ModuleNotFoundError: No module named 'jwt'` on any install without the extra — so the published wheel could not be imported at all, and `vtx --version` could not run. `requests` is now imported optionally and `jwt` at its point of use. Every caller already fails closed without them (`resolve_committer_vars` returns `{}` when no app is configured), so an unconfigured install never needs either; one that *is* configured now gets a message naming the extra instead of an `AttributeError`. Present in 1.2.0 and 1.2.1.
+
 ## [1.2.1] - 2026-10-04
 
 ### Fixed
