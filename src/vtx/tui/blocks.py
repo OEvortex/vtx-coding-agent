@@ -1740,8 +1740,8 @@ _HEATMAP_WEIGHTS = (0.0, 0.25, 0.45, 0.7, 1.0)
 #: Weekday initials, index 0 = Sunday to match the column alignment below.
 _DAY_INITIALS = ("s", "m", "t", "w", "t", "f", "s")
 
-#: Weekday labels, index 0 = Sunday to match the grid rows.
-_HEATMAP_LABELLED_ROWS = tuple(range(7))
+#: Rows carrying a weekday label -- Mon/Wed/Fri, as GitHub does.
+_HEATMAP_LABELLED_ROWS = (1, 3, 5)
 
 
 def _heat_color(level: int) -> str:
@@ -1806,9 +1806,29 @@ class UsageBlock(Static):
     def compose(self) -> ComposeResult:
         yield Label(self._build())
 
+    def on_resize(self) -> None:
+        with contextlib.suppress(Exception):
+            self.query_one(Label).update(self._build())
+
+    def _available_width(self) -> int:
+        sources = [
+            getattr(self.size, "width", 0),
+            getattr(self.content_size, "width", 0),
+            getattr(self.container_size, "width", 0),
+        ]
+        with contextlib.suppress(Exception):
+            app = self.app
+            if app and hasattr(app, "size") and app.size.width:
+                sources.append(app.size.width)
+
+        for source in sources:
+            if source and source > 0:
+                return source
+        return 120
+
     # -- pieces ----------------------------------------------------------------
 
-    def _summary_cards(self) -> Text:
+    def _summary_cards(self, available_width: int = 120) -> Text:
         from vtx.tui.formatting import format_tokens
 
         colors = config.ui.colors
@@ -1817,46 +1837,141 @@ class UsageBlock(Static):
             ("Last 30 days", self._report.last_30_days),
             ("Lifetime", self._report.lifetime),
         )
-        # Three compact columns keep the overview dashboard-like while fitting
-        # comfortably in the usual terminal width.
-        width = 29
-        gap = "  "
+
+        card_gap = 2
+        min_card_w = 28
+        max_card_w = 34
+
+        horizontal = available_width >= (min_card_w * 3 + card_gap * 2)
         text = Text()
-        for index, (title, usage) in enumerate(summaries):
-            if index:
-                text.append(gap, style=colors.dim)
-            text.append(title, style=f"{colors.muted} bold")
-            text.append(" " * max(1, width - len(title)), style="")
-        text.append("\n")
 
-        for index, (_, usage) in enumerate(summaries):
-            if index:
-                text.append(gap)
-            value = f"{format_tokens(usage.total_tokens)} tokens"
-            text.append(value, style=f"{colors.fg} bold")
-            text.append(" " * max(1, width - len(value)))
-        text.append("\n")
+        if horizontal:
+            card_w = min(max_card_w, max(min_card_w, (available_width - card_gap * 2) // 3))
+            inner_w = card_w - 2
 
-        for index, (_, usage) in enumerate(summaries):
-            if index:
-                text.append(gap)
-            turn = f"{usage.turns:,} {'turn' if usage.turns == 1 else 'turns'}"
-            text.append(turn, style=colors.dim)
-            text.append(" " * max(1, width - len(turn)))
-        text.append("\n")
+            # Row 0: Top border with card title embedded
+            for idx, (title, _) in enumerate(summaries):
+                if idx:
+                    text.append(" " * card_gap)
+                title_part = f"─ {title} "
+                fill = "─" * max(0, inner_w - len(title_part))
+                text.append("╭", style=colors.border)
+                text.append(title_part, style=f"{colors.fg} bold")
+                text.append(fill, style=colors.border)
+                text.append("╮", style=colors.border)
+            text.append("\n")
 
-        for index, (_, usage) in enumerate(summaries):
-            if index:
-                text.append("  │  ", style=colors.border)
-            detail = (
-                f"↑{format_tokens(usage.input_tokens)} "
-                f"↓{format_tokens(usage.output_tokens)} "
-                f"◈{format_tokens(usage.cache_read_tokens)}"
-            )
-            text.append(detail, style=colors.dim)
+            # Row 1: Total tokens
+            for idx, (_, usage) in enumerate(summaries):
+                if idx:
+                    text.append(" " * card_gap)
+                val = f" {format_tokens(usage.total_tokens)} tokens"
+                fill = " " * max(0, inner_w - len(val))
+                text.append("│", style=colors.border)
+                text.append(val, style=f"{colors.fg} bold")
+                text.append(fill)
+                text.append("│", style=colors.border)
+            text.append("\n")
+
+            # Row 2: Turns
+            for idx, (_, usage) in enumerate(summaries):
+                if idx:
+                    text.append(" " * card_gap)
+                turns_suffix = "turn" if usage.turns == 1 else "turns"
+                t_str = f" {usage.turns:,} {turns_suffix}"
+                fill = " " * max(0, inner_w - len(t_str))
+                text.append("│", style=colors.border)
+                text.append(t_str, style=colors.dim)
+                text.append(fill)
+                text.append("│", style=colors.border)
+            text.append("\n")
+
+            # Row 3: Breakdown
+            for idx, (_, usage) in enumerate(summaries):
+                if idx:
+                    text.append(" " * card_gap)
+                detail = (
+                    f" ↑ {format_tokens(usage.input_tokens)}"
+                    f"  ↓ {format_tokens(usage.output_tokens)}"
+                    f"  ◈ {format_tokens(usage.cache_read_tokens)}"
+                )
+                fill = " " * max(0, inner_w - len(detail))
+                text.append("│", style=colors.border)
+                text.append(detail, style=colors.dim)
+                text.append(fill)
+                text.append("│", style=colors.border)
+            text.append("\n")
+
+            # Row 4: Bottom border
+            for idx, _ in enumerate(summaries):
+                if idx:
+                    text.append(" " * card_gap)
+                b_fill = "─" * inner_w
+                text.append(f"╰{b_fill}╯", style=colors.border)
+        else:
+            card_w = min(max_card_w, max(min_card_w, available_width - 2))
+            inner_w = card_w - 2
+            for idx, (title, usage) in enumerate(summaries):
+                if idx:
+                    text.append("\n")
+                title_part = f"─ {title} "
+                fill = "─" * max(0, inner_w - len(title_part))
+                text.append("╭", style=colors.border)
+                text.append(title_part, style=f"{colors.fg} bold")
+                text.append(fill, style=colors.border)
+                text.append("╮\n", style=colors.border)
+
+                val = f" {format_tokens(usage.total_tokens)} tokens"
+                fill = " " * max(0, inner_w - len(val))
+                text.append("│", style=colors.border)
+                text.append(val, style=f"{colors.fg} bold")
+                text.append(fill)
+                text.append("│\n", style=colors.border)
+
+                turns_suffix = "turn" if usage.turns == 1 else "turns"
+                t_str = f" {usage.turns:,} {turns_suffix}"
+                fill = " " * max(0, inner_w - len(t_str))
+                text.append("│", style=colors.border)
+                text.append(t_str, style=colors.dim)
+                text.append(fill)
+                text.append("│\n", style=colors.border)
+
+                detail = (
+                    f" ↑ {format_tokens(usage.input_tokens)}"
+                    f"  ↓ {format_tokens(usage.output_tokens)}"
+                    f"  ◈ {format_tokens(usage.cache_read_tokens)}"
+                )
+                fill = " " * max(0, inner_w - len(detail))
+                text.append("│", style=colors.border)
+                text.append(detail, style=colors.dim)
+                text.append(fill)
+                text.append("│\n", style=colors.border)
+
+                b_fill = "─" * inner_w
+                text.append(f"╰{b_fill}╯", style=colors.border)
+
         return text
 
-    def _heatmap(self) -> Text:
+    def _columns(self, available_width: int) -> tuple[list, object]:
+        from datetime import date, timedelta
+
+        end = date.today()
+        start = end - timedelta(days=self._days - 1)
+        start -= timedelta(days=(start.weekday() + 1) % 7)
+        window_start = end - timedelta(days=self._days - 1)
+
+        columns = [start + timedelta(days=7 * w) for w in range((end - start).days // 7 + 1)]
+
+        gutter_width = 4
+        col_width = 2
+        max_fit_cols = max(6, (available_width - gutter_width - 2) // col_width)
+        if len(columns) > max_fit_cols:
+            columns = columns[-max_fit_cols:]
+            window_start = max(window_start, columns[0])
+
+        return columns, window_start
+
+    def _heatmap(self, available_width: int = 120) -> Text:
         """Weeks as columns, weekdays as rows -- GitHub's contribution shape.
 
         Loops weekdays outermost so each weekday label lands once in the left
@@ -1868,75 +1983,99 @@ class UsageBlock(Static):
         colors = config.ui.colors
         report = self._report
         end = date.today()
-        # Start on the Sunday on or before `days` ago so every column is a
-        # whole week; a ragged first column reads as a rendering bug.
-        start = end - timedelta(days=self._days - 1)
-        start -= timedelta(days=(start.weekday() + 1) % 7)
-        window_start = end - timedelta(days=self._days - 1)
 
-        columns = ((start + timedelta(days=7 * w)) for w in range((end - start).days // 7 + 1))
-        column_days = list(columns)
+        columns, window_start = self._columns(available_width)
 
         cuts = _thresholds([d.total_tokens for d in report.days.values()])
         cells = {day: _heat_level(d.total_tokens, cuts) for day, d in report.days.items()}
 
-        text = Text()
-        # Month labels sit above the first column of each new month.
-        text.append("    ")
+        gutter_width = 4
+        col_width = 2
+        total_cols = len(columns)
+        base_width = gutter_width + total_cols * col_width
+
+        # Build month header line with labels placed directly over start weeks
+        header_chars = [" "] * base_width
         last_month = ""
-        for week_start in column_days:
-            # A leading column can be almost entirely before the window (the
-            # window is snapped back to a Sunday). Label it with the month of
-            # its first day that is actually in range -- not the month the
-            # column starts in, which is one the user cannot see any of.
+        next_allowed_pos = gutter_width
+        for w, week_start in enumerate(columns):
             visible = [
                 week_start + timedelta(days=i)
                 for i in range(7)
                 if window_start <= week_start + timedelta(days=i) <= end
             ]
             month = visible[0].strftime("%b") if visible else ""
-            # Every week column is 3 wide (one cell + gap) so the month names
-            # above land on the column they label.
-            text.append(month if month and month != last_month else "   ")
-            last_month = month or last_month
-        text.append("\n")
+            if month and month != last_month:
+                pos = gutter_width + w * col_width
+                if pos >= next_allowed_pos:
+                    while len(header_chars) < pos + len(month):
+                        header_chars.append(" ")
+                    for ci, ch in enumerate(month):
+                        header_chars[pos + ci] = ch
+                    next_allowed_pos = pos + len(month) + 1
+                    last_month = month
+
+        header_str = "".join(header_chars)
+        total_width = max(len(header_str), base_width)
+        if len(header_str) < total_width:
+            header_str += " " * (total_width - len(header_str))
+
+        text = Text()
+        text.append(header_str + "\n", style=colors.dim)
 
         for weekday in range(7):
-            # Keep all seven rows labeled so the yearly grid is easy to scan.
+            row_text = Text()
             if weekday in _HEATMAP_LABELLED_ROWS:
-                text.append(f"  {_DAY_INITIALS[weekday]} ", style=colors.dim)
+                row_text.append(f"  {_DAY_INITIALS[weekday]} ", style=colors.dim)
             else:
-                text.append("    ", style=colors.dim)
-            for week_start in column_days:
+                row_text.append("    ", style=colors.dim)
+
+            for week_start in columns:
                 cell_day = week_start + timedelta(days=weekday)
-                if cell_day > end:
-                    text.append("   ")
+                if cell_day < window_start or cell_day > end:
+                    row_text.append("  ")
                 elif cell_day in cells:
                     level = cells[cell_day]
                     shade = _heat_color(level)
-                    text.append(f"{_HEATMAP_GLYPHS[level]}  ", style=shade)
+                    row_text.append(f"{_HEATMAP_GLYPHS[level]} ", style=shade)
                 else:
-                    # Past the window, or a day with no usage: an empty slot
-                    # rather than a zero-intensity cell, so "nothing" and
-                    # "nothing yet" look the same as they should.
-                    text.append("   ")
+                    shade = _heat_color(0)
+                    row_text.append(f"{_HEATMAP_GLYPHS[0]} ", style=shade)
+
+            pad = total_width - len(row_text.plain)
+            if pad > 0:
+                row_text.append(" " * pad)
+            text.append_text(row_text)
             text.append("\n")
 
-        text.append("    less ")
+        text.append("    less ", style=colors.dim)
         for level in range(len(_HEATMAP_GLYPHS)):
             shade = _heat_color(level)
-            text.append(f"{_HEATMAP_GLYPHS[level]}  ", style=shade)
-        text.append("  more", style=colors.dim)
+            text.append(f"{_HEATMAP_GLYPHS[level]} ", style=shade)
+        text.append(" more", style=colors.dim)
         return text
 
     def _build(self) -> Text:
+        from datetime import date
+
         colors = config.ui.colors
         report = self._report
+        available_width = self._available_width()
+        columns, _ = self._columns(available_width)
+
+        if self._days <= 31:
+            subtitle = "Token activity · last 30 days"
+        elif len(columns) >= 50:
+            subtitle = "Token activity · last 12 months"
+        else:
+            months = max(1, round((date.today() - columns[0]).days / 30.4))
+            subtitle = f"Token activity · last {months} months"
+
         text = Text()
-        text.append("Token usage\n", style=f"{colors.fg} bold")
-        text.append(self._summary_cards())
+        text.append("Token usage\n\n", style=f"{colors.fg} bold")
+        text.append_text(self._summary_cards(available_width))
         text.append("\n\n")
-        text.append("Token activity · last 12 months\n", style=f"{colors.fg} bold")
-        text.append(self._heatmap())
-        text.append(f"\n{report.sessions_scanned:,} sessions scanned", style=colors.dim)
+        text.append(f"{subtitle}\n", style=f"{colors.fg} bold")
+        text.append_text(self._heatmap(available_width))
+        text.append(f"\n{report.sessions_scanned:,} sessions scanned\n", style=colors.dim)
         return text

@@ -115,6 +115,16 @@ Screen {{
     width: 100%;
 }}
 
+/* Usage block */
+.usage-block {{
+    padding: 1 1 0 1;
+    width: 100%;
+}}
+
+.usage-block Label {{
+    width: auto;
+}}
+
 /* Tool block */
 .tool-block {{
     padding: 0 1;
