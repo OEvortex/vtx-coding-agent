@@ -1727,3 +1727,211 @@ class CompactionBlock(Static):
             parts.append(Content.assemble((text, style)))
             plain_width += cost
         return Content.assemble(*parts)
+
+
+# GitHub-style contribution cell glyphs, lightest first. Shaded blocks read as
+# a heat ramp in any terminal that has truecolor; the theme blend below
+# provides the actual color.
+_HEATMAP_GLYPHS = ("░", "▒", "▓", "█")
+
+#: Blends of background toward accent, one per heat level (plus level 0 = dim).
+_HEATMAP_WEIGHTS = (0.0, 0.25, 0.45, 0.7, 1.0)
+
+#: Weekday initials, index 0 = Sunday to match the column alignment below.
+_DAY_INITIALS = ("s", "m", "t", "w", "t", "f", "s")
+
+#: Rows carrying a weekday label -- Mon/Wed/Fri, as GitHub does.
+_HEATMAP_LABELLED_ROWS = (1, 3, 5)
+
+
+def _heat_color(level: int) -> str:
+    colors = config.ui.colors
+    if level <= 0:
+        return colors.border
+    from vtx.tui.styles import _blend_hex
+
+    return _blend_hex(colors.bg, colors.accent, overlay_weight=_HEATMAP_WEIGHTS[level])
+
+
+def _heat_level(value: int, thresholds: list[int]) -> int:
+    """Bucket a value against quartile-ish thresholds derived from the data.
+
+    Thresholds come from the window's own distribution rather than fixed
+    round numbers, so a history of 200M-token days and one of 2M-token days
+    both produce a readable gradient instead of one flat colour or one
+    saturated block.
+    """
+    level = 0
+    for threshold in thresholds:
+        if value >= threshold:
+            level += 1
+    return min(level, len(_HEATMAP_GLYPHS) - 1)
+
+
+def _thresholds(values: list[int]) -> list[int]:
+    """Three ascending cut points at the 50th/75th/90th percentile of non-zero days."""
+    positives = sorted(v for v in values if v > 0)
+    if not positives:
+        return []
+
+    def pick(fraction: float) -> int:
+        return positives[min(len(positives) - 1, int(len(positives) * fraction))]
+
+    # Equal cut points would collapse levels; nudge duplicates so the ramp
+    # stays monotonic.
+    cuts = [pick(0.5), pick(0.75), pick(0.9)]
+    for i in range(1, len(cuts)):
+        if cuts[i] <= cuts[i - 1]:
+            cuts[i] = cuts[i - 1] + 1
+    return cuts
+
+
+class UsageBlock(Static):
+    """``/usage``: this session, the last 30 days, and all time.
+
+    The grid is a contribution heatmap -- one cell per day, columns are weeks,
+    rows are weekdays -- because a month of totals alone cannot show *when* the
+    work happened, and that shape is what makes a glance answer "was I busy
+    last week" without reading a number.
+    """
+
+    ALLOW_SELECT = True
+    can_focus = False
+
+    def __init__(self, report, session_totals, days: int, **kwargs) -> None:
+        super().__init__(**kwargs)
+        self._report = report
+        self._session = session_totals
+        self._days = days
+        self.add_class("usage-block")
+
+    def compose(self) -> ComposeResult:
+        yield Label(self._build())
+
+    # -- pieces ----------------------------------------------------------------
+
+    def _summary_rows(self, title: str, usage, *, emphasise: bool) -> Text:
+        from vtx.tui.formatting import format_tokens
+
+        colors = config.ui.colors
+        text = Text()
+        text.append(f"{title}  ", style=f"{colors.notice} bold" if emphasise else colors.muted)
+        text.append(
+            f"{format_tokens(usage.total_tokens)}", style=colors.fg if emphasise else colors.muted
+        )
+        text.append("  ", style="")
+        text.append(f"{usage.turns:,}", style=colors.dim)
+        text.append(f" {'turn' if usage.turns == 1 else 'turns'}", style=colors.dim)
+        return text
+
+    def _breakdown(self, usage) -> Text:
+        from vtx.tui.formatting import format_tokens
+
+        colors = config.ui.colors
+        text = Text()
+        text.append("     in ", style=colors.dim)
+        text.append(format_tokens(usage.input_tokens), style=colors.dim)
+        text.append("  out ", style=colors.dim)
+        text.append(format_tokens(usage.output_tokens), style=colors.dim)
+        if usage.cache_read_tokens:
+            text.append("  cached ", style=colors.dim)
+            text.append(format_tokens(usage.cache_read_tokens), style=colors.dim)
+        return text
+
+    def _heatmap(self) -> Text:
+        """Weeks as columns, weekdays as rows -- GitHub's contribution shape.
+
+        Loops weekdays outermost so each weekday label lands once in the left
+        gutter. Iterating the other way (the obvious way) drops a label in the
+        middle of every column.
+        """
+        from datetime import date, timedelta
+
+        colors = config.ui.colors
+        report = self._report
+        end = max(report.days) if report.days else date.today()
+        # Start on the Sunday on or before `days` ago so every column is a
+        # whole week; a ragged first column reads as a rendering bug.
+        start = end - timedelta(days=self._days - 1)
+        start -= timedelta(days=(start.weekday() + 1) % 7)
+        window_start = end - timedelta(days=self._days - 1)
+
+        columns = ((start + timedelta(days=7 * w)) for w in range((end - start).days // 7 + 1))
+        column_days = list(columns)
+
+        cuts = _thresholds([d.total_tokens for d in report.days.values()])
+        cells = {day: _heat_level(d.total_tokens, cuts) for day, d in report.days.items()}
+
+        text = Text()
+        # Month labels sit above the first column of each new month.
+        text.append("    ")
+        last_month = ""
+        for week_start in column_days:
+            # A leading column can be almost entirely before the window (the
+            # window is snapped back to a Sunday). Label it with the month of
+            # its first day that is actually in range -- not the month the
+            # column starts in, which is one the user cannot see any of.
+            visible = [
+                week_start + timedelta(days=i)
+                for i in range(7)
+                if window_start <= week_start + timedelta(days=i) <= end
+            ]
+            month = visible[0].strftime("%b") if visible else ""
+            # Every column is 3 wide (2 glyphs + gap) so the month names
+            # above land on the column they label.
+            text.append(month if month and month != last_month else "   ")
+            last_month = month or last_month
+        text.append("\n")
+
+        for weekday in range(7):
+            # Mon/Wed/Fri only, the same rows GitHub labels.
+            if weekday in _HEATMAP_LABELLED_ROWS:
+                text.append(f"  {_DAY_INITIALS[weekday]} ", style=colors.dim)
+            else:
+                text.append("    ", style=colors.dim)
+            for week_start in column_days:
+                cell_day = week_start + timedelta(days=weekday)
+                if cell_day > end:
+                    text.append("   ")
+                elif cell_day in cells:
+                    level = cells[cell_day]
+                    shade = _heat_color(level)
+                    text.append(f"{_HEATMAP_GLYPHS[level] * 2} ", style=f"{shade} {shade}")
+                else:
+                    # Past the window, or a day with no usage: an empty slot
+                    # rather than a zero-intensity cell, so "nothing" and
+                    # "nothing yet" look the same as they should.
+                    text.append("   ")
+            text.append("\n")
+
+        text.append("    less ")
+        for level in range(len(_HEATMAP_GLYPHS)):
+            shade = _heat_color(level)
+            text.append(f"{_HEATMAP_GLYPHS[level] * 2} ", style=f"{shade} {shade}")
+        text.append("  more", style=colors.dim)
+        return text
+
+    def _build(self) -> Text:
+        colors = config.ui.colors
+        report = self._report
+        text = Text()
+        text.append("Token usage\n", style=f"{colors.notice} bold")
+
+        text.append(self._summary_rows("Session ", self._session, emphasise=True))
+        text.append("\n")
+        text.append(self._breakdown(self._session))
+        text.append("\n\n")
+
+        text.append(self._summary_rows("Last 30 days", report.last_30_days, emphasise=True))
+        text.append("\n")
+        text.append(self._breakdown(report.last_30_days))
+        text.append("\n\n")
+
+        text.append(self._summary_rows("Lifetime  ", report.lifetime, emphasise=True))
+        text.append("\n")
+        text.append(self._breakdown(report.lifetime))
+        text.append("\n\n")
+
+        text.append(self._heatmap())
+        text.append(f"\n{report.sessions_scanned:,} sessions scanned", style=colors.dim)
+        return text

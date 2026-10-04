@@ -392,6 +392,7 @@ DEFAULT_COMMANDS = [
     SlashCommand("undo", "revert the last turn and its file changes"),
     SlashCommand("redo", "step forward again after an /undo"),
     SlashCommand("session", "show session info and stats"),
+    SlashCommand("usage", "token usage: this session, 30 days, lifetime"),
     SlashCommand("login", "login to a provider"),
     SlashCommand("logout", "logout from a provider"),
     SlashCommand("export", "export session to HTML"),

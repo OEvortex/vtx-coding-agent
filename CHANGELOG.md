@@ -6,7 +6,11 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Added
+- **`/usage`** — token usage for the current session, the last 30 days, and all time, on a contribution-style heatmap: one cell per day, columns are weeks, rows are weekdays, and the shade is that day's total. `/session` stays for file paths and message counts, so nothing that answered a question before stopped answering it. The grid exists because a month of totals cannot show *when* the work happened, and that shape is what lets a glance answer "was I busy last week" without reading a number. Cell intensity is bucketed against the window's own 50th/75th/90th percentiles rather than fixed round numbers, so a history of 200M-token days and one of 2M-token days both render as a readable gradient instead of one flat colour. The history is reconstructed from the session logs — the only durable record of usage — rather than a side-ledger that could drift from them; the scan skips any line without `usage`, which on real data is most of them, and runs in a worker thread because a few seconds on the event loop is a freeze.
+
 ### Fixed
+- **`last 30 days` in `/usage` was not 30 days** — it was accumulated inside the grid's own window, so any grid narrower than 30 days silently shrank the number reported beside it. The rolling window is now computed independently.
 - **A plain `pip install` can `import vtx` again** — `vtx/git/gh_app.py` imported `jwt` and `requests` at module scope, but both ship only in the `msteams` extra and neither is a core dependency. Because `tools/bash.py` imports that module for `resolve_committer_vars` at import time, `import vtx` raised `ModuleNotFoundError: No module named 'jwt'` on any install without the extra — so the published wheel could not be imported at all, and `vtx --version` could not run. `requests` is now imported optionally and `jwt` at its point of use. Every caller already fails closed without them (`resolve_committer_vars` returns `{}` when no app is configured), so an unconfigured install never needs either; one that *is* configured now gets a message naming the extra instead of an `AttributeError`. Present in 1.2.0 and 1.2.1.
 
 ## [1.2.1] - 2026-10-04

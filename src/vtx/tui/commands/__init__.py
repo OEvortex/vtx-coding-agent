@@ -106,6 +106,9 @@ class CommandsMixin(
         if cmd == "session":
             self._show_session_info()
             return True
+        if cmd == "usage":
+            self.run_worker(self.action_usage(), exclusive=True)
+            return True
         if cmd == "login":
             self._handle_login_command(args)
             return True

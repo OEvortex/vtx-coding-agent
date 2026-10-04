@@ -16,6 +16,7 @@ from vtx.tui.floating_list import FloatingList, ListItem
 from vtx.tui.input import InputBox
 from vtx.tui.selection_mode import SelectionMode
 from vtx.tui.tree import TreeSelector
+from vtx.tui.usage_stats import DailyUsage
 from vtx.tui.widgets import InfoBar, StatusLine, format_path
 
 
@@ -178,6 +179,42 @@ class SessionCommands(CommandSupport):
             cache_write_tokens=token_totals.cache_write_tokens,
             total_tokens=token_totals.total_tokens,
         )
+
+    async def action_usage(self) -> None:
+        """``/usage``: this session, the last 30 days, and all time.
+
+        The aggregate is read from every session log, which takes seconds on a
+        large history -- enough to freeze the event loop, so it runs in a
+        worker thread and the transcript says so while it works.
+        """
+        import asyncio
+
+        from vtx.tui.blocks import UsageBlock
+        from vtx.tui.usage_stats import HEATMAP_DAYS, aggregate_usage
+
+        chat = self.query_one("#chat-log", ChatLog)
+        pending = chat.add_info_message("Reading session history...")
+        try:
+            report = await asyncio.to_thread(aggregate_usage)
+        except Exception as exc:
+            pending.remove()
+            chat.add_info_message(f"Could not read usage: {exc}", error=True)
+            return
+        pending.remove()
+
+        session_totals = None
+        if self._runtime.session:
+            totals = self._runtime.session.token_totals()
+            session_totals = DailyUsage(
+                input_tokens=totals.input_tokens,
+                output_tokens=totals.output_tokens,
+                cache_read_tokens=totals.cache_read_tokens,
+                cache_write_tokens=totals.cache_write_tokens,
+            )
+        if session_totals is None:
+            session_totals = DailyUsage()
+
+        chat.mount(UsageBlock(report, session_totals, HEATMAP_DAYS))
 
     def _build_resume_items(self) -> list[ListItem]:
         sessions = Session.list(self._cwd)
