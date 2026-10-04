@@ -1740,8 +1740,8 @@ _HEATMAP_WEIGHTS = (0.0, 0.25, 0.45, 0.7, 1.0)
 #: Weekday initials, index 0 = Sunday to match the column alignment below.
 _DAY_INITIALS = ("s", "m", "t", "w", "t", "f", "s")
 
-#: Rows carrying a weekday label -- Mon/Wed/Fri, as GitHub does.
-_HEATMAP_LABELLED_ROWS = (1, 3, 5)
+#: Weekday labels, index 0 = Sunday to match the grid rows.
+_HEATMAP_LABELLED_ROWS = tuple(range(7))
 
 
 def _heat_color(level: int) -> str:
@@ -1787,12 +1787,10 @@ def _thresholds(values: list[int]) -> list[int]:
 
 
 class UsageBlock(Static):
-    """``/usage``: this session, the last 30 days, and all time.
+    """``/usage``: session, rolling-month and lifetime totals with a yearly grid.
 
     The grid is a contribution heatmap -- one cell per day, columns are weeks,
-    rows are weekdays -- because a month of totals alone cannot show *when* the
-    work happened, and that shape is what makes a glance answer "was I busy
-    last week" without reading a number.
+    rows are weekdays -- so activity patterns are visible at a glance.
     """
 
     ALLOW_SELECT = True
@@ -1810,32 +1808,52 @@ class UsageBlock(Static):
 
     # -- pieces ----------------------------------------------------------------
 
-    def _summary_rows(self, title: str, usage, *, emphasise: bool) -> Text:
+    def _summary_cards(self) -> Text:
         from vtx.tui.formatting import format_tokens
 
         colors = config.ui.colors
-        text = Text()
-        text.append(f"{title}  ", style=f"{colors.notice} bold" if emphasise else colors.muted)
-        text.append(
-            f"{format_tokens(usage.total_tokens)}", style=colors.fg if emphasise else colors.muted
+        summaries = (
+            ("Session", self._session),
+            ("Last 30 days", self._report.last_30_days),
+            ("Lifetime", self._report.lifetime),
         )
-        text.append("  ", style="")
-        text.append(f"{usage.turns:,}", style=colors.dim)
-        text.append(f" {'turn' if usage.turns == 1 else 'turns'}", style=colors.dim)
-        return text
-
-    def _breakdown(self, usage) -> Text:
-        from vtx.tui.formatting import format_tokens
-
-        colors = config.ui.colors
+        # Three compact columns keep the overview dashboard-like while fitting
+        # comfortably in the usual terminal width.
+        width = 29
+        gap = "  "
         text = Text()
-        text.append("     in ", style=colors.dim)
-        text.append(format_tokens(usage.input_tokens), style=colors.dim)
-        text.append("  out ", style=colors.dim)
-        text.append(format_tokens(usage.output_tokens), style=colors.dim)
-        if usage.cache_read_tokens:
-            text.append("  cached ", style=colors.dim)
-            text.append(format_tokens(usage.cache_read_tokens), style=colors.dim)
+        for index, (title, usage) in enumerate(summaries):
+            if index:
+                text.append(gap, style=colors.dim)
+            text.append(title, style=f"{colors.muted} bold")
+            text.append(" " * max(1, width - len(title)), style="")
+        text.append("\n")
+
+        for index, (_, usage) in enumerate(summaries):
+            if index:
+                text.append(gap)
+            value = f"{format_tokens(usage.total_tokens)} tokens"
+            text.append(value, style=f"{colors.fg} bold")
+            text.append(" " * max(1, width - len(value)))
+        text.append("\n")
+
+        for index, (_, usage) in enumerate(summaries):
+            if index:
+                text.append(gap)
+            turn = f"{usage.turns:,} {'turn' if usage.turns == 1 else 'turns'}"
+            text.append(turn, style=colors.dim)
+            text.append(" " * max(1, width - len(turn)))
+        text.append("\n")
+
+        for index, (_, usage) in enumerate(summaries):
+            if index:
+                text.append("  │  ", style=colors.border)
+            detail = (
+                f"↑{format_tokens(usage.input_tokens)} "
+                f"↓{format_tokens(usage.output_tokens)} "
+                f"◈{format_tokens(usage.cache_read_tokens)}"
+            )
+            text.append(detail, style=colors.dim)
         return text
 
     def _heatmap(self) -> Text:
@@ -1849,7 +1867,7 @@ class UsageBlock(Static):
 
         colors = config.ui.colors
         report = self._report
-        end = max(report.days) if report.days else date.today()
+        end = date.today()
         # Start on the Sunday on or before `days` ago so every column is a
         # whole week; a ragged first column reads as a rendering bug.
         start = end - timedelta(days=self._days - 1)
@@ -1877,14 +1895,14 @@ class UsageBlock(Static):
                 if window_start <= week_start + timedelta(days=i) <= end
             ]
             month = visible[0].strftime("%b") if visible else ""
-            # Every column is 3 wide (2 glyphs + gap) so the month names
+            # Every week column is 3 wide (one cell + gap) so the month names
             # above land on the column they label.
             text.append(month if month and month != last_month else "   ")
             last_month = month or last_month
         text.append("\n")
 
         for weekday in range(7):
-            # Mon/Wed/Fri only, the same rows GitHub labels.
+            # Keep all seven rows labeled so the yearly grid is easy to scan.
             if weekday in _HEATMAP_LABELLED_ROWS:
                 text.append(f"  {_DAY_INITIALS[weekday]} ", style=colors.dim)
             else:
@@ -1896,7 +1914,7 @@ class UsageBlock(Static):
                 elif cell_day in cells:
                     level = cells[cell_day]
                     shade = _heat_color(level)
-                    text.append(f"{_HEATMAP_GLYPHS[level] * 2} ", style=f"{shade} {shade}")
+                    text.append(f"{_HEATMAP_GLYPHS[level]}  ", style=shade)
                 else:
                     # Past the window, or a day with no usage: an empty slot
                     # rather than a zero-intensity cell, so "nothing" and
@@ -1907,7 +1925,7 @@ class UsageBlock(Static):
         text.append("    less ")
         for level in range(len(_HEATMAP_GLYPHS)):
             shade = _heat_color(level)
-            text.append(f"{_HEATMAP_GLYPHS[level] * 2} ", style=f"{shade} {shade}")
+            text.append(f"{_HEATMAP_GLYPHS[level]}  ", style=shade)
         text.append("  more", style=colors.dim)
         return text
 
@@ -1915,23 +1933,10 @@ class UsageBlock(Static):
         colors = config.ui.colors
         report = self._report
         text = Text()
-        text.append("Token usage\n", style=f"{colors.notice} bold")
-
-        text.append(self._summary_rows("Session ", self._session, emphasise=True))
-        text.append("\n")
-        text.append(self._breakdown(self._session))
+        text.append("Token usage\n", style=f"{colors.fg} bold")
+        text.append(self._summary_cards())
         text.append("\n\n")
-
-        text.append(self._summary_rows("Last 30 days", report.last_30_days, emphasise=True))
-        text.append("\n")
-        text.append(self._breakdown(report.last_30_days))
-        text.append("\n\n")
-
-        text.append(self._summary_rows("Lifetime  ", report.lifetime, emphasise=True))
-        text.append("\n")
-        text.append(self._breakdown(report.lifetime))
-        text.append("\n\n")
-
+        text.append("Token activity · last 12 months\n", style=f"{colors.fg} bold")
         text.append(self._heatmap())
         text.append(f"\n{report.sessions_scanned:,} sessions scanned", style=colors.dim)
         return text

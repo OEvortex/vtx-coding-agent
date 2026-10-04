@@ -23,9 +23,8 @@ from typing import Any
 
 from vtx.core.paths import get_config_dir
 
-#: Days shown in the contribution grid. A month is a wide enough window to
-#: show a rhythm and short enough that a cell stays legible.
-HEATMAP_DAYS = 30
+#: A year gives the activity grid enough history to show long term patterns.
+HEATMAP_DAYS = 365
 
 
 @dataclass
