@@ -294,16 +294,19 @@ class OpenAIResponsesSDK(BaseLLMSDK):
         elif etype in ("response.completed", "response.incomplete"):
             resp_obj = event.get("response") or {}
             usage = resp_obj.get("usage") or {}
+            # input_tokens already includes the cached prefix, same as
+            # chat/completions prompt_tokens; peel it off so the cache counts
+            # stay siblings of input instead of being counted twice downstream.
+            itd = usage.get("input_tokens_details") or {}
+            otd = usage.get("output_tokens_details") or {}
+            prompt = max(usage.get("input_tokens", 0) - (itd.get("cached_tokens") or 0), 0)
             usage_dict: dict[str, Any] = {
-                "prompt_tokens": usage.get("input_tokens", 0),
+                "prompt_tokens": prompt,
                 "completion_tokens": usage.get("output_tokens", 0),
                 "total_tokens": usage.get(
                     "total_tokens", usage.get("input_tokens", 0) + usage.get("output_tokens", 0)
                 ),
             }
-            # Surface cached/reasoning token details
-            itd = usage.get("input_tokens_details") or {}
-            otd = usage.get("output_tokens_details") or {}
             if itd.get("cached_tokens"):
                 usage_dict["cached_tokens"] = itd["cached_tokens"]
             if otd.get("reasoning_tokens"):

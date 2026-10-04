@@ -72,6 +72,15 @@ def _normalize_usage(usage: Any) -> dict[str, Any]:
     ``model_dump()`` keeps cache and reasoning counts nested under
     ``prompt_tokens_details``/``completion_tokens_details``, but every consumer
     (``openai_sdk._process_stream``, ``tui/export``) reads flat keys.
+
+    ``input_tokens`` is also made *exclusive* of the cached prefix. OpenAI
+    reports ``prompt_tokens`` as the whole prompt, cached part included, while
+    the rest of the codebase (and Anthropic) treats ``input_tokens`` and the
+    cache counts as siblings that add up. Passing OpenAI's number straight
+    through therefore double counts every cache read, in every total derived
+    from it -- context meters, session totals, /usage, goal budgets. Cache
+    *writes* are subtracted too, same reasoning; Anthropic's `input_tokens`
+    excludes both already, so nothing is subtracted there.
     """
     try:
         data = usage.model_dump()
@@ -79,16 +88,20 @@ def _normalize_usage(usage: Any) -> dict[str, Any]:
         data = dict(usage) if isinstance(usage, dict) else {}
     prompt = data.get("prompt_tokens", 0) or data.get("input_tokens", 0)
     completion = data.get("completion_tokens", 0) or data.get("output_tokens", 0)
+    ptd = data.get("prompt_tokens_details") or {}
+    cached = ptd.get("cached_tokens") or 0
+    written = ptd.get("cache_write_tokens") or ptd.get("cache_creation_input_tokens") or 0
+    # Clamped: a gateway reporting overlapping detail fields must not be able
+    # to drive input negative, which would then read as a huge cache total.
     out: dict[str, Any] = {
-        "input_tokens": prompt,
+        "input_tokens": max(prompt - cached - written, 0),
         "output_tokens": completion,
         "total_tokens": data.get("total_tokens", prompt + completion),
     }
-    ptd = data.get("prompt_tokens_details") or {}
-    if ptd.get("cached_tokens"):
-        out["cached_tokens"] = ptd["cached_tokens"]
-    if ptd.get("cache_write_tokens"):
-        out["cache_write_tokens"] = ptd["cache_write_tokens"]
+    if cached:
+        out["cached_tokens"] = cached
+    if written:
+        out["cache_write_tokens"] = written
     ctd = data.get("completion_tokens_details") or {}
     if ctd.get("reasoning_tokens"):
         out["reasoning_tokens"] = ctd["reasoning_tokens"]

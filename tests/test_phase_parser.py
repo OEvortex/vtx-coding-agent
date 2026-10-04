@@ -506,11 +506,14 @@ def test_stream_usage_flattens_cached_tokens():
     }
     usage = _normalize_usage(CompletionUsage.model_validate(raw))
 
-    assert usage["input_tokens"] == 157
+    # input excludes the cached prefix, so the two siblings still add back up
+    # to the prompt the provider billed (8 uncached + 149 cached = 157).
+    assert usage["input_tokens"] == 8
     assert usage["output_tokens"] == 29
     assert usage["total_tokens"] == 186
     # Flat key the provider actually reads.
     assert usage["cached_tokens"] == 149
+    assert usage["input_tokens"] + usage["cached_tokens"] == 157
     assert "prompt_tokens_details" not in usage
 
 
@@ -519,3 +522,34 @@ def test_stream_usage_survives_missing_cache_details():
     usage = _normalize_usage(CompletionUsage.model_validate(raw))
 
     assert usage == {"input_tokens": 10, "output_tokens": 2, "total_tokens": 12}
+
+
+def test_responses_stream_peels_cached_out_of_input():
+    """The Responses API reports cached tokens inside ``input_tokens`` too.
+
+    Same invariant as ``_normalize_usage``: cache counts must be siblings of
+    input, or every total that sums them double counts the cached prefix.
+    """
+    from vtx.ai.sdk.openai_responses import OpenAIResponsesSDK
+
+    state = OpenAIResponsesSDK._new_stream_state()
+    chunks = OpenAIResponsesSDK._stream_step(
+        OpenAIResponsesSDK.__new__(OpenAIResponsesSDK),
+        state,
+        {
+            "type": "response.completed",
+            "response": {
+                "usage": {
+                    "input_tokens": 73093,
+                    "output_tokens": 245,
+                    "input_tokens_details": {"cached_tokens": 71927},
+                    "output_tokens_details": {},
+                }
+            },
+        },
+    )
+    usage = next(c["usage"] for c in chunks if c["type"] == "usage")
+    assert usage["prompt_tokens"] == 1166
+    assert usage["cached_tokens"] == 71927
+    # The siblings still add back up to what the provider billed.
+    assert usage["prompt_tokens"] + usage["cached_tokens"] == 73093
