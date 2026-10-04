@@ -9,8 +9,11 @@ like a rendering bug and reads as one.
 from __future__ import annotations
 
 import json
+import os
 import re
 from datetime import UTC, date, datetime, timedelta
+from pathlib import Path
+from types import SimpleNamespace
 
 import pytest
 
@@ -193,3 +196,44 @@ def test_daily_usage_total_is_the_sum_of_its_parts() -> None:
     )
     assert usage.total_tokens == 1_925_000
     assert usage.turns == 7
+
+
+def test_token_format_uses_1024_units() -> None:
+    from vtx.tui.formatting import format_tokens
+
+    assert format_tokens(1023) == "1023"
+    assert format_tokens(1024) == "1k"
+    assert format_tokens(1536) == "1.5k"
+    assert format_tokens(1 << 20) == "1M"
+    assert format_tokens(3 * (1 << 30)) == "3B"
+    assert format_tokens(2 * (1 << 40)) == "2T"
+
+
+@pytest.mark.asyncio
+async def test_session_turns_come_from_message_counts(monkeypatch) -> None:
+    """Regression: the panel showed ``0 turns`` for a live session.
+
+    ``token_totals()`` carries no turn count, so it must come from
+    ``message_counts()``; leaving it unset silently rendered zero.
+    """
+    from vtx.tui.commands.sessions import SessionCommands
+
+    session = SimpleNamespace(
+        token_totals=lambda: SimpleNamespace(
+            input_tokens=100, output_tokens=20, cache_read_tokens=5, cache_write_tokens=0
+        ),
+        message_counts=lambda: SimpleNamespace(assistant_messages=3),
+    )
+    chat = SimpleNamespace(
+        add_info_message=lambda *a, **k: SimpleNamespace(remove=lambda: None),
+        mount=lambda block: mounted.append(block),
+    )
+    mounted: list[UsageBlock] = []
+    commands = SimpleNamespace(
+        _runtime=SimpleNamespace(session=session), query_one=lambda *a, **k: chat
+    )
+    monkeypatch.setattr("vtx.tui.usage_stats._sessions_root", lambda: Path(os.devnull))
+
+    await SessionCommands.action_usage(commands)  # type: ignore[arg-type]
+
+    assert mounted and "3 turns" in ANSI.sub("", mounted[0]._build().plain)

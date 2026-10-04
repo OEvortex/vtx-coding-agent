@@ -580,8 +580,14 @@ def format_bash_command(text: str, width: int | None = None) -> Text:
 
 
 def format_tokens(n: int) -> str:
-    if n >= 1_000_000:
-        return f"{int(n / 1_000_000)}m"
-    elif n >= 1_000:
-        return f"{int(n / 1_000)}k"
+    """Compact token count on 1024-based units: ``940``, ``33.8k``, ``1.2M``.
+
+    1024 rather than 1000 because that is how tokenizers actually bill, so a
+    "1M context" model is really 1048576 and reading `976k` against it is the
+    honest number. Trailing ``.0`` is dropped so round magnitudes stay two or
+    three characters wide -- the info bar has a fixed width budget.
+    """
+    for cutoff, unit in ((1 << 40, "T"), (1 << 30, "B"), (1 << 20, "M"), (1 << 10, "k")):
+        if n >= cutoff:
+            return f"{n / cutoff:.1f}".replace(".0", "") + unit
     return str(n)

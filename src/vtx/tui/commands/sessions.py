@@ -202,7 +202,10 @@ class SessionCommands(CommandSupport):
             return
         pending.remove()
 
-        session_totals = None
+        # `token_totals` carries no turn count, so the count is taken from the
+        # same assistant messages the tokens are summed over -- asking twice
+        # instead of guessing "0 turns" for a session that clearly had some.
+        session_totals = DailyUsage()
         if self._runtime.session:
             totals = self._runtime.session.token_totals()
             session_totals = DailyUsage(
@@ -210,9 +213,8 @@ class SessionCommands(CommandSupport):
                 output_tokens=totals.output_tokens,
                 cache_read_tokens=totals.cache_read_tokens,
                 cache_write_tokens=totals.cache_write_tokens,
+                turns=self._runtime.session.message_counts().assistant_messages,
             )
-        if session_totals is None:
-            session_totals = DailyUsage()
 
         chat.mount(UsageBlock(report, session_totals, HEATMAP_DAYS))
 
