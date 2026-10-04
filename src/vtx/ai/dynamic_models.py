@@ -369,11 +369,38 @@ def _supports_images(raw: dict[str, Any]) -> bool:
     return isinstance(modalities, list) and "image" in modalities
 
 
+def _flatten_entry(raw: dict[str, Any]) -> dict[str, Any]:
+    """Hoist a nested model object up to the top level.
+
+    Codex returns ``{"model": {...}, "providers": [...]}`` -- the model fields
+    (slug, context window, modalities) sit one level down, where every reader
+    in :func:`_parse_models` looks for them at the top. Outer keys win, so a
+    provider that already reports flat fields is untouched.
+    """
+    nested = raw.get("model")
+    if not isinstance(nested, dict):
+        return raw
+    flat = dict(nested)
+    # Codex names its display label display_name; _entry_name reads "name".
+    if "name" not in flat and isinstance(flat.get("display_name"), str):
+        flat["name"] = flat["display_name"]
+    # _parse_models reads the OpenAI key names; Codex uses its own.
+    if "context_length" not in flat and isinstance(flat.get("context_window"), int):
+        flat["context_length"] = flat["context_window"]
+    if "max_completion_tokens" not in flat and isinstance(flat.get("max_output_tokens"), int):
+        flat["max_completion_tokens"] = flat["max_output_tokens"]
+    flat.update({k: v for k, v in raw.items() if k != "model"})
+    return flat
+
+
 def _entry_id(raw: dict[str, Any]) -> str:
-    model_id = raw.get("id")
-    if isinstance(model_id, str) and model_id:
-        return model_id
-    return raw.get("name") or raw.get("model") or ""
+    # "slug" first: Codex's "id" is an opaque UUID, the slug is the model name
+    # you actually pass to the API. Providers using OpenAI's shape have no slug.
+    for key in ("slug", "id", "name", "model"):
+        value = raw.get(key)
+        if isinstance(value, str) and value:
+            return value
+    return ""
 
 
 def _entry_name(raw: dict[str, Any], model_id: str) -> str:
@@ -534,7 +561,8 @@ def _parse_models(
         models_dev = _read_models_dev_sync()
 
     entries: list[DynamicModelEntry] = []
-    for raw in raw_models:
+    for raw_entry in raw_models:
+        raw = _flatten_entry(raw_entry)
         model_id = _entry_id(raw)
         if not model_id:
             continue
