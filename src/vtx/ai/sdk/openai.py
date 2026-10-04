@@ -66,6 +66,35 @@ async def _retry_on_transient(coro_factory, max_retries: int = _MAX_RETRIES) -> 
         raise last_error
 
 
+def _normalize_usage(usage: Any) -> dict[str, Any]:
+    """Flatten OpenAI chat/completions usage into the SDK's canonical token names.
+
+    ``model_dump()`` keeps cache and reasoning counts nested under
+    ``prompt_tokens_details``/``completion_tokens_details``, but every consumer
+    (``openai_sdk._process_stream``, ``tui/export``) reads flat keys.
+    """
+    try:
+        data = usage.model_dump()
+    except Exception:
+        data = dict(usage) if isinstance(usage, dict) else {}
+    prompt = data.get("prompt_tokens", 0) or data.get("input_tokens", 0)
+    completion = data.get("completion_tokens", 0) or data.get("output_tokens", 0)
+    out: dict[str, Any] = {
+        "input_tokens": prompt,
+        "output_tokens": completion,
+        "total_tokens": data.get("total_tokens", prompt + completion),
+    }
+    ptd = data.get("prompt_tokens_details") or {}
+    if ptd.get("cached_tokens"):
+        out["cached_tokens"] = ptd["cached_tokens"]
+    if ptd.get("cache_write_tokens"):
+        out["cache_write_tokens"] = ptd["cache_write_tokens"]
+    ctd = data.get("completion_tokens_details") or {}
+    if ctd.get("reasoning_tokens"):
+        out["reasoning_tokens"] = ctd["reasoning_tokens"]
+    return out
+
+
 async def _openai_stream_chunks(
     stream: AsyncIterator[ChatCompletionChunk],
 ) -> AsyncGenerator[dict[str, Any], None]:
@@ -87,7 +116,7 @@ async def _openai_stream_chunks(
     try:
         async for chunk in stream:
             if chunk.usage:
-                yield {"type": "usage", "usage": chunk.usage.model_dump()}
+                yield {"type": "usage", "usage": _normalize_usage(chunk.usage)}
             if not chunk.choices:
                 continue
             choice = chunk.choices[0]
@@ -333,24 +362,7 @@ class OpenAISDK(BaseLLMSDK):
                     or ""
                 )
                 usage = completion.usage
-                # Surface cached/reasoning token details when present (OpenAI
-                # prompt_tokens_details.cached_tokens, completion_tokens_details.reasoning_tokens)
-                usage_dict: dict[str, Any] | None = None
-                if usage:
-                    usage_dict = {
-                        "input_tokens": usage.prompt_tokens,
-                        "output_tokens": usage.completion_tokens,
-                        "total_tokens": usage.total_tokens,
-                    }
-                    try:
-                        ptd = getattr(usage, "prompt_tokens_details", None)
-                        if ptd and getattr(ptd, "cached_tokens", None):
-                            usage_dict["cached_tokens"] = ptd.cached_tokens
-                        ctd = getattr(usage, "completion_tokens_details", None)
-                        if ctd and getattr(ctd, "reasoning_tokens", None):
-                            usage_dict["reasoning_tokens"] = ctd.reasoning_tokens
-                    except Exception:
-                        pass
+                usage_dict: dict[str, Any] | None = _normalize_usage(usage) if usage else None
                 return GenerationResponse(
                     content=content,
                     model=completion.model,
@@ -412,22 +424,7 @@ class OpenAISDK(BaseLLMSDK):
                             )
                         )
                 usage = completion.usage
-                usage_dict2: dict[str, Any] | None = None
-                if usage:
-                    usage_dict2 = {
-                        "input_tokens": usage.prompt_tokens,
-                        "output_tokens": usage.completion_tokens,
-                        "total_tokens": usage.total_tokens,
-                    }
-                    try:
-                        ptd = getattr(usage, "prompt_tokens_details", None)
-                        if ptd and getattr(ptd, "cached_tokens", None):
-                            usage_dict2["cached_tokens"] = ptd.cached_tokens
-                        ctd = getattr(usage, "completion_tokens_details", None)
-                        if ctd and getattr(ctd, "reasoning_tokens", None):
-                            usage_dict2["reasoning_tokens"] = ctd.reasoning_tokens
-                    except Exception:
-                        pass
+                usage_dict2: dict[str, Any] | None = _normalize_usage(usage) if usage else None
                 return GenerationResponse(
                     content=content,
                     model=completion.model,
