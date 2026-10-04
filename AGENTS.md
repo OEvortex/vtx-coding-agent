@@ -8,14 +8,10 @@
 
 ## Testing
 
-- After making breaking changes, run only the tests relevant to those changes using:
-  `uv run --no-sync python -m pytest -p no:cacheprovider path/to/test_file.py`
-  (`--no-sync` skips the env re-sync check, `-p no:cacheprovider` skips lock-file writes)
-- For larger runs (multiple files or the full suite), add `-n auto` to parallelize with
-  pytest-xdist: `uv run --no-sync python -m pytest -q -n auto`. Don't use `-n auto` for a
-  single small test file — worker startup costs more than it saves there.
 - If the user asks for e2e tests then run the vtx-tmux e2e test if available
 - Never run the full test suite unless the user explicitly asks for it. It is slow and resource intensive.
+- Test only those files that are relevant to the changes made. If you are unsure, ask the user for clarification.
+- Don't run tests that are not relevant to the changes made. If you are unsure, ask the user for clarification.
 
 ## Skills
 
@@ -28,18 +24,22 @@
 
 ## Pushing
 
-- If the user asks you to push code, run these first before doing so: `uv run ruff format .`, `uv run ruff check .`, `uvx ty check  .` and `uv run python -m pytest` in parallel (same tool call)
-- Only if these all pass without issues should you push otherwise report the warnings/errors back to user and ask for next steps
+- If the user asks to push code, run these checks first, in this order, one at a time:
+  1. `uv run ruff format .`
+  2. `uv run ruff check .`
+  3. `uvx ty check .`
+  4. `uv run python -m pytest <paths for the test files relevant to the staged changes>`
+- Never run the full test suite as part of a push check. Target only the test files that cover what changed; if you cannot tell which tests apply, ask the user.
+- If any step fails, stop and report the warnings/errors back to the user, then ask for next steps. Only push when every step passes without issues.
 
 ## Codebase Search
 
-Use vortexa in bash (not grep/rg/file reads) to search code or understand a repo. It
+Use vortexa in bash (instead of repo-wide grep/rg) to search code or understand a repo. It
 indexes the current directory (or pass --root <dir>).
-Vortexa is super fast and accurant in code searching and finding relevent context. It can be used to find code, understand code, and explore code relationships so preffer using it.
+Vortexa is super fast and accurate at code searching and finding relevant context. It can be used to find code, understand code, and explore code relationships so prefer using it.
 
   vortexa resolve "<query>" --plain          # default: matches + tests + callers/callees + deps
   vortexa search "<query>" --hybrid --plain  # ranked hits + per-file graph context
   vortexa explain "<file>:<line>|<symbol>"   # deep dive into a known location
 
-Install: pip install vortexa  (add [full] for tree-sitter AST chunking).
-query should always be a deatiled NLP query, not a simple string. For example, "functions that call `foo` and are called by `bar`" is a good query, while "foo" is not.
+Use vortexa to find code, understand code, and explore code relationships so prefer using it over grep/rg to find exact code files and lines and then use rg to search within those files if needed and read necessary files to understand the code. Vortexa is super fast and accurate at code searching and finding relevant context.

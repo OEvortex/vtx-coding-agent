@@ -25,6 +25,8 @@ import json
 import logging
 from dataclasses import dataclass
 
+from vtx.protocol.types import UserMessage
+
 log = logging.getLogger("ai.agent.skills_refresh")
 
 SKILLS_REFRESH_TAG = "vtx:skills-refresh"
@@ -130,14 +132,12 @@ def format_summaries(summaries: tuple[SkillSummary, ...]) -> str:
     return "\n".join(lines)
 
 
-def build_skills_refresh_message(text: str) -> object:
+def build_skills_refresh_message(text: str) -> UserMessage:
     """Wrap catalog-change text as a context message.
 
     Same convention as the harness digest: the model is told this is a system
     event rather than something the user typed.
     """
-    from vtx.protocol.types import UserMessage
-
     return UserMessage(
         content=(
             f"<{SKILLS_REFRESH_TAG}>\n"

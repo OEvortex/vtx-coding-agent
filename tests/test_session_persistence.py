@@ -687,3 +687,66 @@ def test_session_list_includes_parent_session_id(tmp_path, monkeypatch):
 
     assert by_id[parent_id].parent_session_id is None
     assert by_id[child.id].parent_session_id == parent_id
+
+
+def test_checkpoint_survives_crash_during_first_turn(tmp_path, monkeypatch):
+    """A crash before the first assistant message must not lose the run.
+
+    Regression: ``_persist_entry`` skipped every entry until an assistant
+    message existed, so a crash during turn 1 left no session file on disk at
+    all -- the user's prompt and any tool results produced so far were gone.
+    """
+    monkeypatch.setattr("vtx.agent.session.Session.get_sessions_dir", lambda cwd: tmp_path)
+
+    session = Session.create("/test/project")
+    session.append_message(UserMessage(content="fix the bug"))
+    session.append_runtime_checkpoint(
+        partial_content=[], tool_results=[{"tool_name": "bash"}], text_so_far="half done"
+    )
+
+    assert session.session_file is not None
+    reopened = Session.load(session.session_file)
+
+    checkpoint = reopened.load_runtime_checkpoint()
+    assert checkpoint is not None, "crash during turn 1 lost the checkpoint"
+    assert checkpoint.text_so_far == "half done"
+    # The user's own prompt survives too, not just the checkpoint.
+    assert [m.content for m in reopened.messages] == ["fix the bug"]
+
+
+def test_clean_finish_does_not_offer_resume_after_reopen(tmp_path, monkeypatch):
+    """Clearing a checkpoint must survive the reopen, not just live in memory.
+
+    Regression: ``clear_runtime_checkpoint`` flipped ``is_active`` in place,
+    which an append-only JSONL log never writes back. Every finished run
+    therefore still looked interrupted on the next open, and the model got a
+    bogus "resume from where you left off" prompt.
+    """
+    monkeypatch.setattr("vtx.agent.session.Session.get_sessions_dir", lambda cwd: tmp_path)
+
+    session = Session.create("/test/project")
+    session.append_message(UserMessage(content="go"))
+    session.append_message(AssistantMessage(content=[TextContent(text="done")]))
+    session.append_runtime_checkpoint(partial_content=[], tool_results=[], text_so_far="half")
+    session.clear_runtime_checkpoint()
+
+    assert session.session_file is not None
+    reopened = Session.load(session.session_file)
+    assert reopened.load_runtime_checkpoint() is None
+
+
+def test_only_the_newest_checkpoint_decides_resume(tmp_path, monkeypatch):
+    """A newer inactive tombstone wins over an older active checkpoint."""
+    monkeypatch.setattr("vtx.agent.session.Session.get_sessions_dir", lambda cwd: tmp_path)
+
+    session = Session.create("/test/project")
+    session.append_message(UserMessage(content="go"))
+    session.append_message(AssistantMessage(content=[TextContent(text="one")]))
+    session.append_runtime_checkpoint(partial_content=[], tool_results=[], text_so_far="first")
+    session.append_runtime_checkpoint(partial_content=[], tool_results=[], text_so_far="second")
+    # Second turn finished; the first checkpoint must not resurface.
+    session.clear_runtime_checkpoint()
+
+    assert session.session_file is not None
+    reopened = Session.load(session.session_file)
+    assert reopened.load_runtime_checkpoint() is None

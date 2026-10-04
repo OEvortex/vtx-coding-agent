@@ -8,9 +8,9 @@ from typing import Any
 
 import pytest
 
-from vtx.coding_agent.tui.app import Vtx
-from vtx.coding_agent.tui.commands.settings import THINKING_LEVEL_DESCRIPTIONS
+from vtx.tui.app import Vtx
 from vtx.tui.autocomplete import DEFAULT_COMMANDS
+from vtx.tui.commands.settings import THINKING_LEVEL_DESCRIPTIONS
 
 LEVELS = ["low", "medium", "high", "xhigh", "max"]
 _PROVIDER = object()
@@ -59,7 +59,7 @@ def _app(levels: list[str] | None = None) -> FakeApp:
 
 def _borrow(name: str):
     """Bind a real SettingsCommands method onto the fake."""
-    from vtx.coding_agent.tui.commands.settings import SettingsCommands
+    from vtx.tui.commands.settings import SettingsCommands
 
     return getattr(SettingsCommands, name)
 
@@ -147,7 +147,7 @@ def test_both_commands_route_to_the_thinking_handler(cmd):
     """
     import inspect
 
-    from vtx.coding_agent.tui.commands import CommandsMixin
+    from vtx.tui.commands import CommandsMixin
 
     src = inspect.getsource(CommandsMixin._handle_command)
     branch = src.split(f'cmd == "{cmd}"')[1]

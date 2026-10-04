@@ -360,10 +360,21 @@ class CodemodeSandbox:
             return _sandbox_failure("The sandbox process could not be started.")
 
         self._timed_out = False
+        #: Distinguishes the two deadlines for the diagnostic. The wall clock is
+        #: the one that fires while the script is blocked on a tool call, which
+        #: is exactly the case the compute budget deliberately tolerates.
+        self._wall_clock = False
         self._aborted = False
         try:
             return await self._pump(
-                process, code, values, deadline_ms, call_budget, output_budget, signal
+                process,
+                code,
+                values,
+                deadline_ms,
+                call_budget,
+                output_budget,
+                signal,
+                self._limits.wall_clock_ms,
             )
         finally:
             await _reap(process)
@@ -417,6 +428,7 @@ class CodemodeSandbox:
         call_budget: int | None,
         output_budget: int | None,
         signal: asyncio.Event | None,
+        wall_clock_ms: int | None,
     ) -> Result:
         """Drive the worker: send the request, answer tool calls, read the result."""
         assert process.stdin is not None
@@ -439,15 +451,22 @@ class CodemodeSandbox:
             return _sandbox_failure("The sandbox process closed its input before the script ran.")
 
         state = _Execution(call_budget=call_budget, output_budget=output_budget)
+        budget_task = (
+            asyncio.create_task(self._on_budget(process, timeout_ms, state))
+            if timeout_ms is not None and timeout_ms > 0
+            else None
+        )
+        wall_task = (
+            asyncio.create_task(self._on_wall_clock(process, wall_clock_ms))
+            if wall_clock_ms is not None and wall_clock_ms > 0
+            else None
+        )
         # Tool calls run as tasks, not inline. Awaiting each one before reading
         # the next frame serializes the host, which makes `asyncio.gather` in
         # the script buy nothing: the worker would send four calls, and the
         # parent would run them one at a time.
         inflight: dict[asyncio.Task[None], int] = {}
-        timeout_task: asyncio.Task[None] | None = None
         abort_task: asyncio.Task[None] | None = None
-        if timeout_ms is not None and timeout_ms > 0:
-            timeout_task = asyncio.create_task(self._on_deadline(process, timeout_ms))
         if signal is not None:
             abort_task = asyncio.create_task(self._on_abort(process, signal))
 
@@ -458,7 +477,14 @@ class CodemodeSandbox:
                     return self._terminal_failure()
                 kind = frame.get("type")
                 if kind == _TOOL_CALL:
+                    # Marked in flight before the task exists, so the compute
+                    # budget cannot charge a slice between the frame arriving and
+                    # the task starting. `leave_call` on completion is what
+                    # resumes the clock, and it must fire for cancelled tasks too
+                    # -- hence the callback rather than a line after the await.
+                    state.enter_call()
                     task = asyncio.create_task(self._serve_and_reply(process, frame, state))
+                    task.add_done_callback(lambda _: state.leave_call())
                     inflight[task] = int(frame.get("id") or 0)
                 elif kind == _RESULT:
                     # Drain before reporting: a tool the script started and did
@@ -475,10 +501,13 @@ class CodemodeSandbox:
             await _terminate(process)
             raise
         finally:
-            for task in (*inflight, timeout_task, abort_task):
+            # The clock tasks are cancelled as well. On the normal path the process has
+            # already exited, and a budget task left running would sit against a
+            # dead process for the rest of the wall clock.
+            for task in (*inflight, budget_task, wall_task, abort_task):
                 if task is not None:
                     task.cancel()
-            pending = [task for task in (*inflight, timeout_task, abort_task) if task is not None]
+            pending = [t for t in (*inflight, budget_task, wall_task, abort_task) if t is not None]
             if pending:
                 await asyncio.gather(*pending, return_exceptions=True)
 
@@ -544,7 +573,14 @@ class CodemodeSandbox:
             return refuse(errors.UnknownTool(name))
 
         try:
-            args = coerce_json(args, what=f"{name} arguments")
+            # coerce_json is typed JsonValue, but a dict coerces to a dict; the
+            # re-check keeps that guarantee visible to the type checker and
+            # turns a host/sandbox disagreement into a refusal rather than a
+            # call with the wrong argument shape.
+            coerced = coerce_json(args, what=f"{name} arguments")
+            if not isinstance(coerced, dict):
+                return refuse(errors.InvalidOutput(f"{name} arguments"))
+            args = coerced
         except errors.ToolError as exc:
             return refuse(exc)
 
@@ -575,11 +611,53 @@ class CodemodeSandbox:
         record("ok", duration_ms=_elapsed_ms(started))
         return reply(True, value=value)
 
-    async def _on_deadline(self, process: subprocess.Popen[bytes], timeout_ms: int) -> None:
-        await asyncio.sleep(timeout_ms / 1000)
+    async def _on_budget(
+        self, process: subprocess.Popen[bytes], timeout_ms: int, state: _Execution
+    ) -> None:
+        """Charge the script's own compute time against ``timeout_ms``.
+
+        Time blocked on a tool call is not charged: the script is waiting on the
+        host, and a `gather` over four sub-agents routinely waits minutes. What
+        is left is the budget's actual subject -- a busy loop, a pathological
+        regex, a runaway C extension -- with the wall-clock ceiling as backstop.
+        """
+        remaining_ms = float(timeout_ms)
+        loop = asyncio.get_running_loop()
+        while remaining_ms > 0:
+            if state.blocked:
+                await state.resumed.wait()
+                continue
+            started = loop.time()
+            try:
+                await asyncio.wait_for(state.suspended.wait(), remaining_ms / 1000)
+            except TimeoutError:
+                break
+            remaining_ms -= (loop.time() - started) * 1000
+        if self._timed_out:
+            # The wall clock already fired and killed the process; there is no
+            # budget left to report and no reason to signal a dead process again.
+            return
         # Mark the deadline as reached before killing, so the read loop reports
         # the timeout rather than a generic "exited without returning".
+        #
+        # The kill happens immediately even with tool calls outstanding -- that is
+        # the entire point of this deadline. Draining them first would turn a
+        # spent budget back into an unbounded wait, which is the failure the
+        # wall clock exists to catch.
         self._timed_out = True
+        await _terminate(process)
+
+    async def _on_wall_clock(self, process: subprocess.Popen[bytes], wall_clock_ms: int) -> None:
+        """The absolute ceiling: tool time included, nothing pauses it.
+
+        This is what keeps a tool that never returns from holding the process
+        open, which is the one failure the compute budget deliberately tolerates.
+        """
+        await asyncio.sleep(wall_clock_ms / 1000)
+        if self._timed_out:
+            return
+        self._timed_out = True
+        self._wall_clock = True
         await _terminate(process)
 
     async def _on_abort(self, process: subprocess.Popen[bytes], signal: asyncio.Event) -> None:
@@ -596,9 +674,11 @@ class CodemodeSandbox:
         it ran too long.
         """
         if self._timed_out:
-            return Result(
-                ok=False, diagnostic=Diagnostic(errors.TIMEOUT, errors.remedy_for(errors.TIMEOUT))
-            )
+            # The two deadlines need different next moves: an exhausted compute
+            # budget means the script's own work was too much, while the wall
+            # clock means something it was waiting on never came back.
+            kind = errors.WALL_CLOCK if self._wall_clock else errors.TIMEOUT
+            return Result(ok=False, diagnostic=Diagnostic(kind, errors.remedy_for(kind)))
         if self._aborted:
             return Result(
                 ok=False, diagnostic=Diagnostic(errors.ABORTED, errors.remedy_for(errors.ABORTED))
@@ -640,16 +720,51 @@ class _Execution:
     lose the increments.
     """
 
-    __slots__ = ("by_id", "call_budget", "output_budget", "spent")
+    __slots__ = (
+        "by_id",
+        "call_budget",
+        "output_budget",
+        "outstanding",
+        "resumed",
+        "spent",
+        "suspended",
+    )
 
     def __init__(self, *, call_budget: int | None, output_budget: int | None) -> None:
         self.call_budget = call_budget
         self.output_budget = output_budget
         self.spent = 0
+        #: Tool calls admitted but not yet replied. Nonzero means the script is
+        #: blocked on the host rather than running, which is what lets the compute
+        #: budget distinguish "slow" from "waiting".
+        self.outstanding = 0
+        #: Set while ``outstanding`` is nonzero; ``resumed`` is its inverse.
+        #: Both are per-execution state, so a deadline task can wait on either
+        #: without coordinating with the tool-call tasks beyond the counter.
+        self.suspended = asyncio.Event()
+        self.resumed = asyncio.Event()
+        self.resumed.set()
         #: Protocol id -> the host's record of that call, in completion order.
         #: Keyed by id rather than appended to a list because concurrent calls
         #: finish out of order, and the id is the only thing both sides agree on.
         self.by_id: dict[int, ToolCall] = {}
+
+    @property
+    def blocked(self) -> bool:
+        return self.outstanding > 0
+
+    def enter_call(self) -> None:
+        """Mark a tool call as in flight, so the compute budget pauses."""
+        self.outstanding += 1
+        self.suspended.set()
+        self.resumed.clear()
+
+    def leave_call(self) -> None:
+        """Mark a tool call as answered. The last one resumes the clock."""
+        self.outstanding = max(0, self.outstanding - 1)
+        if not self.outstanding:
+            self.suspended.clear()
+            self.resumed.set()
 
     def admit(self) -> errors.ToolError | None:
         """Claim one call against the budget, or refuse it.

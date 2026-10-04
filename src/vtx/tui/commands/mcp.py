@@ -20,8 +20,8 @@ from __future__ import annotations
 import asyncio
 import webbrowser
 
-from ..chat import ChatLog
-from .base import CommandSupport
+from vtx.tui.chat import ChatLog
+from vtx.tui.commands.base import CommandSupport
 
 
 class McpCommands(CommandSupport):

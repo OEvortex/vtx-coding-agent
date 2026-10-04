@@ -42,6 +42,7 @@ from vtx.codemode.errors import (
     STALLED,
     TIMEOUT,
     UNKNOWN_TOOL,
+    WALL_CLOCK,
 )
 from vtx.codemode.types import Diagnostic
 from vtx.protocol.types import ImageContent, ToolResult
@@ -122,8 +123,13 @@ _RECOVERY = {
     ),
     INVALID_INPUT: "The arguments were wrong. Re-read the signature and fix them.",
     TIMEOUT: (
-        "It ran too long. Do less per call: fetch less, or split the work across "
-        "several codemode calls."
+        "Your own work took too long, and waiting on tool calls is not what was "
+        "counted. Do less per call: fetch less, or split the work across several "
+        "codemode calls."
+    ),
+    WALL_CLOCK: (
+        "The run hit its absolute time limit. The call you were waiting on never "
+        "came back — call that tool directly instead of wrapping it in a script."
     ),
     ABORTED: "You interrupted it.",
 }
@@ -149,6 +155,11 @@ Inside the script:
   writes are kept only if the script returns successfully.
 - A first line of `# @options: {{"max_tool_calls": 20}}` lowers your own budgets.
   You can ask for less than the limits below, never more.
+
+A slow tool is not your problem: the compute budget below is charged only while
+your code is running, so time spent waiting on tool calls does not count against
+it. Wrapping a slow tool in a script is the wrong shape — call it directly and do
+the filtering in your own next step.
 
 The script is real Python: full standard library, installed packages, the
 filesystem, subprocesses, and the network, running as the same user as any
@@ -208,11 +219,17 @@ class CodemodeTool(BaseTool):
         max_tool_calls: int | None = 200,
         max_output_tokens: int | None = 8_000,
         memory_limit_bytes: int | None = 512 * 1024 * 1024,
+        wall_clock_ms: int | None = 30 * 60_000,
     ) -> None:
         self._timeout_ms = timeout_ms
         self._catalog_budget = catalog_budget_tokens
         self._limits = Limits(
             timeout_ms=timeout_ms,
+            # Deliberately generous. The compute budget is what bounds a runaway
+            # script; this only stops a tool call that never returns from holding
+            # the process open forever, and a long one has to be a real wait
+            # rather than a fast tool that should not have been wrapped.
+            wall_clock_ms=wall_clock_ms,
             max_tool_calls=max_tool_calls,
             max_output_tokens=max_output_tokens,
             memory_limit_bytes=memory_limit_bytes,
@@ -497,6 +514,12 @@ def _render_value(value: Any) -> str | None:
 
     if value is None:
         return None
+    # A returned string is the common case (`return "..."`). JSON-encoding it
+    # escapes every newline to a literal \n and wraps the whole value in quotes,
+    # so a script returning prose came back as one unreadable escaped line - and
+    # the newlines were already gone before anything reached the renderer.
+    if isinstance(value, str):
+        return value
     try:
         return json.dumps(value, indent=2, ensure_ascii=False, default=str)
     except (TypeError, ValueError):

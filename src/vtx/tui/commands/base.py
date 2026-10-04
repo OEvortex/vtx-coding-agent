@@ -7,11 +7,11 @@ from typing import TYPE_CHECKING, Any, TypeVar, cast
 
 from vtx.agent.runtime import ConversationRuntime
 from vtx.agent.session import Session
-from vtx.coding_agent.tui.chat import ChatLog
-from vtx.coding_agent.tui.widgets import InfoBar
+from vtx.tui.chat import ChatLog
 from vtx.tui.floating_list import ListItem
 from vtx.tui.input import InputBox
 from vtx.tui.selection_mode import SelectionMode
+from vtx.tui.widgets import InfoBar
 
 Choice = TypeVar("Choice", bound=str)
 
@@ -58,7 +58,7 @@ class CommandSupport:
             searchable: bool = False,
             max_label_width: int | None = None,
         ) -> None: ...
-        def _hide_completion_list(self, *, restore_info_bar: bool = True) -> None: ...
+        def _hide_completion_list(self, *, restore_footer: bool = True) -> None: ...
         def _is_chat_at_bottom(self) -> bool: ...
         def _restore_chat_scroll_after_refresh(self, was_at_bottom: bool) -> None: ...
 

@@ -144,8 +144,16 @@ class Limits:
     Every knob here is enforced. A limit that is accepted but does nothing is
     worse than no limit at all, because the model will believe it set one.
 
-    ``timeout_ms`` is a wall-clock deadline enforced by killing the process, so
-    a busy loop and a hung tool call die the same way.
+    ``timeout_ms`` bounds the script's *own* execution -- the time it spends
+    running Python rather than blocked on a tool call -- and is enforced by
+    killing the process, so a busy loop and a hung C extension die the same way.
+    Tool latency is deliberately not charged to it: a script blocked on four
+    sub-agents is waiting on the host, not burning its own budget, and charging
+    it made ``asyncio.gather`` over slow tools impossible to finish.
+
+    ``wall_clock_ms`` is the backstop that makes that trade safe. It is an
+    absolute ceiling on the whole execution, tool time included, so a tool call
+    that never returns still cannot hold the process open forever.
 
     ``max_tool_calls`` bounds fan-out. A script that issues a thousand calls in
     one turn is not doing the work the model asked for; it is spending the
@@ -162,6 +170,9 @@ class Limits:
     """
 
     timeout_ms: int | None = 30_000
+    #: 30 minutes. Long enough that no legitimate fan-out reaches it, short
+    #: enough that a tool call which never returns still ends the run.
+    wall_clock_ms: int | None = 30 * 60_000
     max_tool_calls: int | None = None
     max_output_tokens: int | None = None
     memory_limit_bytes: int | None = None

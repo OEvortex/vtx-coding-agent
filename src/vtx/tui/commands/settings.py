@@ -23,12 +23,11 @@ from vtx.core.config import (
     set_thinking_lines,
 )
 from vtx.core.themes import get_theme_options
+from vtx.tui.chat import ChatLog
+from vtx.tui.commands.base import CommandSupport
 from vtx.tui.floating_list import FloatingList, ListItem
 from vtx.tui.selection_mode import SelectionMode
-
-from ..chat import ChatLog
-from ..widgets import InfoBar
-from .base import CommandSupport
+from vtx.tui.widgets import InfoBar
 
 SettingsSelectionResult = Literal["reopened-picker", "closed"]
 

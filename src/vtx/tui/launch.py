@@ -8,8 +8,8 @@ import time
 from rich.console import Console
 
 from vtx.agent.extensions import SESSION_SHUTDOWN
-from vtx.coding_agent.tui.app import Vtx
 from vtx.core.config import config
+from vtx.tui.app import Vtx
 
 _LOGO = [
     "██╗   ██╗████████╗██╗  ██╗",

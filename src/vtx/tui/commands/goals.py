@@ -12,8 +12,8 @@ from typing import TYPE_CHECKING, Any
 from vtx.agent.goal.record import objective_title
 from vtx.agent.goal.service import GoalError, get_service
 from vtx.agent.goal.storage import find_goal_file
-from vtx.coding_agent.tui.chat import ChatLog
-from vtx.coding_agent.tui.commands.base import CommandSupport
+from vtx.tui.chat import ChatLog
+from vtx.tui.commands.base import CommandSupport
 
 if TYPE_CHECKING:
     from textual.screen import Screen
@@ -31,7 +31,17 @@ class GoalCommands(CommandSupport):
         @property
         def screen_stack(self) -> list[Screen[Any]]: ...
 
-        def push_screen(self, screen: Screen[Any]) -> Any: ...
+        # Mirrors Textual's App.push_screen signature rather than narrowing it:
+        # GoalCommands is mixed into Vtx, which subclasses App, so a narrower
+        # declaration here is a Liskov violation against the real base method.
+        def push_screen(
+            self,
+            screen: Screen[Any] | str,
+            callback: Any = None,
+            wait_for_dismiss: bool = False,
+            *,
+            mode: str | None = None,
+        ) -> Any: ...
 
         def _run_agent(self, prompt: str, images: list[Any] | None = None) -> Any: ...
         def _update_queue_display(self) -> None: ...
@@ -74,7 +84,7 @@ class GoalCommands(CommandSupport):
         sees the key. That is fine: the action below is written as a real
         toggle, so the same chord closes it either way.
         """
-        from vtx.coding_agent.tui.goal_ui import GoalDashboardScreen
+        from vtx.tui.goal_ui import GoalDashboardScreen
 
         for screen in reversed(self.screen_stack):
             if isinstance(screen, GoalDashboardScreen):
@@ -291,7 +301,7 @@ class GoalCommands(CommandSupport):
         scrollback. An overlay can be taken back, so the toggle is real now and
         the chat log stays a conversation.
         """
-        from vtx.coding_agent.tui.goal_ui import GoalDashboardScreen
+        from vtx.tui.goal_ui import GoalDashboardScreen
 
         open_dashboard = self._open_goal_dashboard()
         if open_dashboard is not None:

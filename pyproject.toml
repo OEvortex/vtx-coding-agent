@@ -20,7 +20,7 @@ default = true
 
 [project]
 name = "vtx-coding-agent"
-version = "1.2.0"
+version = "1.2.1"
 description = "Minimalist coding agent harness with a Textual TUI and headless CLI. Native vtx event loop. <1k-token system prompt, 50+ LLM providers, AGENTS.md + skills context, session tree, prompt/auto permissions."
 readme = "README.md"
 requires-python = ">=3.12"
@@ -128,6 +128,9 @@ select = [
 
 [tool.ruff.lint.per-file-ignores]
 "src/vtx/tui/latex.py" = ["RUF001"]
+"src/vtx/tui2/latex.py" = ["RUF001"]
+"src/vtx/tui2/chat.py" = ["RUF001"]
+"src/vtx/tui2/input.py" = ["RUF001", "RUF002"]
 "src/vtx/agent/prompts/identity.py" = ["E501"]
 "src/vtx/agent/prompts/env.py" = ["E501"]
 "src/vtx/agent/sdk/**/*.py" = ["N818"]

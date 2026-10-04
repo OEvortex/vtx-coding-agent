@@ -711,6 +711,7 @@ def test_the_stall_kind_is_mirrored_in_both_processes():
     names = (
         "SCRIPT",
         "TIMEOUT",
+        "WALL_CLOCK",
         "ABORTED",
         "SANDBOX",
         "STALLED",
@@ -730,3 +731,8 @@ def test_the_stall_kind_is_mirrored_in_both_processes():
     assert STALLED in errors.SANDBOX_KINDS
     assert STALLED not in errors.TOOL_KINDS
     assert STALLED in errors.KINDS
+
+    # The wall clock is terminal too: it is the host killing the process, which
+    # is not something a script gets to handle.
+    assert errors.WALL_CLOCK in errors.SANDBOX_KINDS
+    assert errors.WALL_CLOCK not in errors.TOOL_KINDS

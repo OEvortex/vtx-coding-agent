@@ -14,7 +14,8 @@
 
 from __future__ import annotations
 
-from ..chat import ChatLog
+from vtx.tui.chat import ChatLog
+
 from .agents import AgentCommands
 from .auth import AuthCommands
 from .base import CommandSupport

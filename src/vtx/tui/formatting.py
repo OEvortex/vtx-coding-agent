@@ -2,10 +2,19 @@ import re
 import shutil
 from typing import ClassVar
 
+from markdown_it.token import Token
 from rich import box
 from rich._loop import loop_first
 from rich.console import Console, ConsoleOptions, RenderResult
-from rich.markdown import CodeBlock, Heading, ListElement, ListItem, Markdown, TableElement
+from rich.markdown import (
+    CodeBlock,
+    Heading,
+    ListElement,
+    ListItem,
+    Markdown,
+    MarkdownElement,
+    TableElement,
+)
 from rich.segment import Segment
 from rich.style import Style
 from rich.syntax import Syntax
@@ -44,7 +53,7 @@ def get_markdown_theme() -> Theme:
                 "markdown.block_quote": Style(color=colors.muted),
                 "markdown.item.bullet": Style(color=colors.accent),
                 "markdown.item.number": Style(color=colors.accent),
-                "markdown.hr": Style(color=colors.border),
+                "markdown.hr": Style(color=colors.muted),
                 "markdown.table.header": Style(bold=True, color=colors.markdown_heading),
                 "markdown.table.border": Style(color=colors.dim),
             }
@@ -137,11 +146,153 @@ class VtxTableElement(TableElement):
                 heading.stylize("markdown.table.header")
                 table.add_column(heading)
 
+        ncols = len(self.header.row.cells) if self.header and self.header.row else 0
         if self.body is not None:
             for row in self.body.rows:
-                table.add_row(*[element.content for element in row.cells])
+                cells = [element.content for element in row.cells]
+                if ncols:
+                    # A ragged row silently dropped its overflow and padded short
+                    # rows into noise. Fold extras into the last column and pad
+                    # the rest, so no value the model wrote disappears.
+                    if len(cells) > ncols:
+                        overflow = cells[ncols - 1 :]
+                        merged = Text(" ".join(c.plain.strip() for c in overflow))
+                        cells = [*cells[: ncols - 1], merged]
+                    elif len(cells) < ncols:
+                        cells = cells + [Text("")] * (ncols - len(cells))
+                table.add_row(*cells)
 
         yield table
+
+
+_DELIM_CELL_RE = re.compile(r"^\s*:?-{1,}:?\s*$")
+
+
+def _split_row(line: str) -> list[str]:
+    """Cells of a table row, splitting only on real cell separators.
+
+    A plain ``split("|")`` broke rows the parser handles correctly: an escaped
+    ``\\|`` and a pipe inside a code span are both content, and cutting on them
+    invented an extra cell that the repair step then merged back with a space --
+    so a well-formed row came out rewritten, with the pipe gone.
+    """
+    body = line.strip()
+    if body.startswith("|"):
+        body = body[1:]
+    if body.endswith("|") and not body.endswith("\\|"):
+        body = body[:-1]
+    cells: list[str] = []
+    current: list[str] = []
+    i = 0
+    while i < len(body):
+        char = body[i]
+        if char == "\\" and i + 1 < len(body):
+            current.append(body[i : i + 2])
+            i += 2
+            continue
+        if char == "`":
+            run = 0
+            while i + run < len(body) and body[i + run] == "`":
+                run += 1
+            end = body.find("`" * run, i + run)
+            if end != -1:
+                current.append(body[i : end + run])
+                i = end + run
+                continue
+        if char == "|":
+            cells.append("".join(current))
+            current = []
+            i += 1
+            continue
+        current.append(char)
+        i += 1
+    cells.append("".join(current))
+    return cells
+
+
+def _join_row(cells: list[str]) -> str:
+    return "| " + " | ".join(c.strip() for c in cells) + " |"
+
+
+def _is_delimiter_row(cells: list[str]) -> bool:
+    return bool(cells) and all(_DELIM_CELL_RE.match(c) for c in cells)
+
+
+def _normalize_tables(text: str) -> str:
+    """Repair ragged markdown tables before the parser rejects them.
+
+    markdown-it requires the delimiter row to have exactly as many cells as the
+    header, and silently truncates body rows to that width. So one stray pipe
+    degrades a whole table into raw ``|---|`` prose, and an extra body cell
+    vanishes with no sign anything was lost. Both are the model being slightly
+    off, which is the normal case, so the widths are reconciled here instead.
+
+    Fenced code is left exactly as written: a table shown in a code sample is
+    content, not a table.
+    """
+    lines = text.splitlines(keepends=True)
+    fence = [in_f for _, in_fence in _iter_outside_fences(text) for in_f in (in_fence,)]
+    i = 0
+    while i < len(lines) - 1:
+        if fence[i] or fence[i + 1] or "|" not in lines[i] or "|" not in lines[i + 1]:
+            i += 1
+            continue
+        hcells = _split_row(lines[i])
+        dcells = _split_row(lines[i + 1])
+        if not _is_delimiter_row(dcells):
+            i += 1
+            continue
+        ncols = len(hcells)
+        if len(dcells) != ncols:
+            if len(dcells) > ncols:
+                fixed = dcells[:ncols]
+            else:
+                fixed = dcells + [dcells[-1]] * (ncols - len(dcells))
+            lines[i + 1] = _join_row(fixed) + _eol(lines[i + 1])
+        j = i + 2
+        while j < len(lines) and not fence[j] and lines[j].strip() and "|" in lines[j]:
+            cells = _split_row(lines[j])
+            if len(cells) > ncols:
+                merged = cells[ncols - 1 :]
+                cells = [*cells[: ncols - 1], " ".join(c.strip() for c in merged)]
+            elif len(cells) < ncols:
+                cells = cells + [""] * (ncols - len(cells))
+            lines[j] = _join_row(cells) + _eol(lines[j])
+            j += 1
+        i = j
+    return "".join(lines)
+
+
+def _eol(line: str) -> str:
+    """The line terminator of ``line`` ("" if it had none)."""
+    body = line.rstrip("\r\n")
+    return line[len(body) :]
+
+
+_HTML_TAG_RE = re.compile(r"<[^>]*>")
+_BR_TAGS = frozenset({"<br>", "<br/>", "<br />"})
+
+
+class HtmlBlock(MarkdownElement):
+    """Render an HTML block as its inner text rather than nothing.
+
+    Rich has no handler for ``html_block``, so it fell through to an unknown
+    element and rendered empty - a ``<div>`` wrapper made the whole block,
+    including the readable text inside it, vanish from the reply with nothing on
+    screen to say so. Unwrapping keeps the content.
+    """
+
+    def __init__(self, content: str = "") -> None:
+        self.content = content
+
+    @classmethod
+    def create(cls, markdown: Markdown, token: Token) -> "HtmlBlock":
+        return cls(str(token.content))
+
+    def __rich_console__(self, console: Console, options: ConsoleOptions) -> RenderResult:
+        text = _HTML_TAG_RE.sub("", self.content).strip()
+        if text:
+            yield Text(text)
 
 
 class CustomMarkdown(Markdown):
@@ -153,8 +304,68 @@ class CustomMarkdown(Markdown):
         "list_item_open": PlainListItem,
         "fence": PlainCodeBlock,
         "code_block": PlainCodeBlock,
+        "html_block": HtmlBlock,
         "table_open": VtxTableElement,
     }
+
+
+# Only names that are actually HTML. A blanket ``</?[a-zA-Z][^>]*>`` also ate
+# autolinks (``<https://...>``, ``<user@host>``) and plain angle-bracket text
+# (``List<T>``, ``a < b > c``), trading one silent deletion for another. The
+# attribute clause requires whitespace, so ``<a@b.com>`` is left alone too.
+_INLINE_TAG_RE = re.compile(
+    r"</?(?:b|i|u|s|em|strong|span|small|sub|sup|kbd|mark|code|a|font|del|ins|abbr)"
+    r"(?:\s[^<>]*)?/?>|<!--.*?-->",
+    re.S | re.I,
+)
+# Inline code spans: a `<br>` shown in backticks is content the writer is
+# *describing*, and stripping it leaves an empty code span. Split on these
+# and only transform the segments outside them.
+_CODE_SPAN_RE = re.compile(r"(`+)(?!`)(.*?)(?<!`)\1(?!`)", re.S)
+_BR_INLINE_RE = re.compile(r"<\s*br\s*/?\s*>", re.I)
+
+
+def _apply_outside_code(text: str, fn) -> str:
+    """Apply ``fn`` to the parts of ``text`` that are not inline code spans."""
+    parts: list[str] = []
+    pos = 0
+    for match in _CODE_SPAN_RE.finditer(text):
+        parts.append(fn(text[pos : match.start()]))
+        parts.append(match.group(0))
+        pos = match.end()
+    parts.append(fn(text[pos:]))
+    return "".join(parts)
+
+
+def _clean_inline_html(segment: str) -> str:
+    return _INLINE_TAG_RE.sub("", _BR_INLINE_RE.sub("  \n", segment))
+
+
+def _normalize_inline_html(text: str) -> str:
+    """Turn inline HTML into markdown so nothing is silently dropped.
+
+    Rich dispatches inline children through a different branch than the block
+    ``elements`` map, so an inline tag cannot be hooked there. Without this,
+    every ``<br>`` was deleted -- the most common tag in model output -- welding
+    ``line1<br>line2`` into ``line1line2``, and any other inline tag left two
+    blank lines where it had been.
+
+    Fenced code is left exactly as written: a ``<div>`` shown in a code sample
+    is content, not markup.
+    """
+    out = []
+    for line, in_fence in _iter_outside_fences(text):
+        if in_fence:
+            out.append(line)
+            continue
+        # Work on the line without its terminator, then put the terminator back;
+        # dropping it would run every line of the reply together.
+        body = line.rstrip("\r\n")
+        ending = line[len(body) :]
+        # Rewrite only the gaps between inline code spans, so a tag the writer
+        # is describing in backticks is left alone.
+        out.append(_apply_outside_code(body, _clean_inline_html) + ending)
+    return "".join(out)
 
 
 def _strip_inline_code_ticks_in_headings(text: str) -> str:
@@ -197,6 +408,8 @@ def markdown_render_width() -> int:
 
 def format_markdown(text: str, width: int | None = None) -> Text:
     text = preprocess_latex(text)
+    text = _normalize_inline_html(text)
+    text = _normalize_tables(text)
     sanitized = _strip_inline_code_ticks_in_headings(text)
     md = CustomMarkdown(sanitized)
     if width is None:
@@ -208,6 +421,52 @@ def format_markdown(text: str, width: int | None = None) -> Text:
     return Text.from_ansi(rendered.rstrip("\n"))
 
 
+_FENCE_OPEN = re.compile(r"^\s{0,3}(`{3,}|~{3,})(.*)$")
+
+
+def _iter_outside_fences(text: str):
+    """Yield ``(line, in_fence)`` for each line, tracking fences by length.
+
+    Two bugs lived in the old "does this line start with three backticks" check.
+    A line that merely begins with a fence while talking about fences toggled
+    the state, so the rest of the reply was never stable and the whole block
+    cache was defeated. And inside a four-backtick fence the inner
+    three-backtick fence closed it early, so a blank line inside the outer
+    fence read as a block boundary and the stream split mid-block, collapsing
+    soft breaks until finalisation.
+
+    A fence closes only on a run at least as long as the one that opened it.
+    """
+    fence_len = 0
+    fence_char = ""
+    for line in text.splitlines(keepends=True):
+        stripped = line.rstrip("\n")
+        m = _FENCE_OPEN.match(stripped)
+        if fence_len:
+            closes = (
+                m
+                and stripped.lstrip().startswith(fence_char * fence_len)
+                and fence_char not in m.group(2)
+            )
+            if closes:
+                fence_len = 0
+                fence_char = ""
+            yield line, True
+            continue
+        if m:
+            marker = m.group(1)
+            fence_char = marker[0]
+            fence_len = len(marker)
+            if fence_char in m.group(2):
+                fence_len = 0
+                fence_char = ""
+                yield line, False
+                continue
+            yield line, True
+            continue
+        yield line, False
+
+
 def find_stable_block_boundary(text: str) -> int:
     """Offset just after the last blank line outside a code fence, 0 if none.
 
@@ -216,12 +475,8 @@ def find_stable_block_boundary(text: str) -> int:
     """
     boundary = 0
     offset = 0
-    in_fence = False
-    for line in text.splitlines(keepends=True):
-        stripped = line.strip()
-        if stripped.startswith(("```", "~~~")):
-            in_fence = not in_fence
-        elif not stripped and not in_fence:
+    for line, in_fence in _iter_outside_fences(text):
+        if not in_fence and not line.strip():
             boundary = offset + len(line)
         offset += len(line)
     return boundary

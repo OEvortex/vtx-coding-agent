@@ -133,7 +133,8 @@ everything as "the script broke":
 | kind | means |
 | --- | --- |
 | `script` | the script raised or failed to compile |
-| `timeout` | the deadline expired; the process was killed |
+| `timeout` | the compute budget expired; the process was killed |
+| `wall_clock` | the absolute ceiling expired while the script was waiting |
 | `aborted` | the host signal fired, or the sandbox was closed |
 | `sandbox` | the worker process or its transport failed |
 | `stalled` | blocked on something nothing can complete |
@@ -300,7 +301,9 @@ process. That is what the one real boundary buys:
 
 **A separate process per execution.** A deadline is a `kill`, not a cooperative
 request, so `while True:`, a pathological regex, and a runaway C extension all
-die the same way rather than outliving the timeout.
+die the same way rather than outliving the timeout. The budget counts only the
+script's own running time — see [Two deadlines](#two-deadlines) — and an absolute
+ceiling covers what it does not count.
 
 If you need a capability withheld, `exposure` is the control that does it:
 `codemode` makes a tool reachable from a script, `hidden` makes it unreachable
@@ -316,7 +319,8 @@ no limit at all, because the model will believe it set one.
 
 | Limit | Default | Bounds |
 | --- | --- | --- |
-| `timeout_ms` | `30_000` | Wall clock, enforced by killing the process; `None` disables. |
+| `timeout_ms` | `30_000` | The script's *own* compute time, enforced by killing the process; `None` disables. Time blocked on a tool call is not charged — see [Two deadlines](#two-deadlines). |
+| `wall_clock_ms` | `1_800_000` | Absolute ceiling on the whole execution, tool time included. Nothing pauses it. Host-only: a script cannot widen it. |
 | `max_tool_calls` | `200` | Charged at *admission*, not completion — four calls already in flight have already been paid for, so checking at the end would let a script exceed the ceiling by exactly its own concurrency. |
 | `max_output_tokens` | `8_000` | Applies to the text a script emitted. The middle is cut and the fact is reported; a silently shortened result reads as a complete one. |
 | `memory_limit_bytes` | `512 MiB` | `RLIMIT_AS` inside the worker. A runaway allocation is otherwise only stopped by the deadline, so the user watches memory climb for all of it. Absent on Windows, where it degrades to the deadline. |
@@ -324,6 +328,36 @@ no limit at all, because the model will believe it set one.
 
 A call that exceeds the budget is **refused, not truncated** — a catchable
 `ToolError` inside the script, so it can stop and adapt instead of dying.
+
+## Two deadlines
+
+`timeout_ms` is not a wall clock, and the distinction is the whole reason a
+script can delegate to a sub-agent.
+
+The budget is charged only while the script is *running*. The moment a tool call
+is outstanding the clock pauses, and it resumes with whatever was left when the
+last reply lands. So `asyncio.gather` over four sub-agents waits as long as the
+slowest one takes without spending a millisecond of the budget.
+
+The reason is that the time is not the script's. A script blocked on a tool call
+is waiting on the host, and under a single wall-clock deadline the host killed
+the process while it was still waiting — then cancelled every in-flight call in
+the same breath, so a fan-out died as a unit and a slow tool could never be
+composed with a fast one.
+
+That makes `timeout_ms` a bound on exactly what it was always for: a busy loop, a
+pathological regex, a runaway C extension. Those spend their whole life running,
+and a loop still dies on schedule.
+
+The cost is that nothing bounds a tool call which never returns, so
+`wall_clock_ms` does. It is absolute, nothing pauses it, and it reports
+`wall_clock` rather than `timeout`, because the two failures want opposite
+remedies: a `timeout` means the script's own work was too much and should be
+split, while a `wall_clock` means it was waiting on something that never came
+back and should stop waiting on it.
+
+At the defaults that ceiling is 30 minutes, which no legitimate fan-out reaches.
+It is a backstop, not a budget.
 
 ## Deadlock detection
 

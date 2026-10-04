@@ -14,7 +14,7 @@ from __future__ import annotations
 import pytest
 from textual.app import App, ComposeResult
 
-from vtx.coding_agent.tui.chat import ChatLog
+from vtx.tui.chat import ChatLog
 from vtx.tui.styles import get_styles
 
 

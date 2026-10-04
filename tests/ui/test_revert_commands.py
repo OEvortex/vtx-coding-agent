@@ -12,9 +12,9 @@ from vtx.agent.revert import current_state as _current_state
 from vtx.agent.revert import record_turn_snapshot
 from vtx.agent.session import Session
 from vtx.agent.snapshot import SnapshotStore, get_store
-from vtx.coding_agent.tui.app import Vtx
-from vtx.coding_agent.tui.chat import ChatLog
 from vtx.protocol.types import FileChanges, TextContent, ToolResultMessage, UserMessage
+from vtx.tui.app import Vtx
+from vtx.tui.chat import ChatLog
 
 
 @pytest.fixture()

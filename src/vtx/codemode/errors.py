@@ -32,8 +32,13 @@ from typing import Any, Final
 
 #: The script raised, or could not be compiled.
 SCRIPT: Final = "script"
-#: The deadline expired; the worker process was killed.
+#: The script's own compute budget expired; the worker process was killed.
+#: Time spent blocked on a tool call is not charged to it.
 TIMEOUT: Final = "timeout"
+#: The absolute wall-clock ceiling expired. Kept apart from TIMEOUT because it
+#: fires while the script is *waiting* -- usually on a tool that never returned --
+#: and the fix is to change which tool it waits on, not to make the script do less.
+WALL_CLOCK: Final = "wall_clock"
 #: The host signal fired or the sandbox was closed.
 ABORTED: Final = "aborted"
 #: The worker process or its transport failed (spawn error, protocol error).
@@ -58,6 +63,7 @@ HOST_UNAVAILABLE: Final = "host_unavailable"
 KINDS: Final = (
     SCRIPT,
     TIMEOUT,
+    WALL_CLOCK,
     ABORTED,
     SANDBOX,
     STALLED,
@@ -70,7 +76,7 @@ KINDS: Final = (
 
 #: Kinds that describe the execution rather than one tool call. These are
 #: terminal: they cannot be caught inside the script.
-SANDBOX_KINDS: Final = frozenset({SCRIPT, TIMEOUT, ABORTED, SANDBOX, STALLED})
+SANDBOX_KINDS: Final = frozenset({SCRIPT, TIMEOUT, WALL_CLOCK, ABORTED, SANDBOX, STALLED})
 
 #: Kinds that describe one tool call. These are raised as exceptions inside the
 #: script, so ``try``/``except`` can branch on them.
@@ -86,8 +92,15 @@ _REMEDY: Final = {
         "number in your own source; fix that line and run again."
     ),
     TIMEOUT: (
-        "The deadline expired and the process was killed. Narrow the work: fetch "
-        "less, split the job across calls, or filter in steps rather than one pass."
+        "The script spent its whole compute budget and was killed. Waiting on tool "
+        "calls does not count against that budget -- this is your own work taking "
+        "too long. Do less of it: fetch less, split the job across calls, or "
+        "filter in steps rather than one pass."
+    ),
+    WALL_CLOCK: (
+        "The run hit its absolute time limit and was killed. A call you were "
+        "waiting on never came back. Call the slow tool directly instead of "
+        "wrapping it in a script, or ask for less of it."
     ),
     ABORTED: "The run was cancelled. Nothing was written to the store.",
     SANDBOX: (

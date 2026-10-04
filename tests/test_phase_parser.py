@@ -9,6 +9,8 @@ multi-turn round-trip from provider → ThinkingContent → wire format.
 
 from __future__ import annotations
 
+from openai.types.completion_usage import CompletionUsage
+
 from vtx.ai.base import ProviderConfig
 from vtx.ai.phase_parser import (
     INLINE_THINK_SIGNATURE,
@@ -21,7 +23,7 @@ from vtx.ai.phase_parser import (
     ThinkStart,
 )
 from vtx.ai.providers.openai_sdk import OpenAISDKProvider
-from vtx.ai.sdk.openai import _openai_stream_chunks
+from vtx.ai.sdk.openai import _normalize_usage, _openai_stream_chunks
 from vtx.protocol.types import AssistantMessage, TextContent, ThinkingContent
 
 # =================================================================================================
@@ -480,3 +482,40 @@ def test_streamed_inline_thinking_round_trips_through_sdk() -> None:
     assert "<think>" in converted.content
     assert "Let me think about this." in converted.content
     assert "Hi there!" in converted.content
+
+
+def test_stream_usage_flattens_cached_tokens():
+    """Streamed usage must expose cached tokens flat, as every consumer reads.
+
+    Regression: the stream path emitted ``chunk.usage.model_dump()``, which nests
+    cache counts under ``prompt_tokens_details``. ``OpenAISDKProvider`` read the
+    flat ``cached_tokens`` key, so cache usage always resolved to 0 and the TUI
+    meter never rendered its ``R…`` segment.
+    """
+    # Shape as emitted by Kilo's gateway (cached_tokens always nested).
+    raw = {
+        "prompt_tokens": 157,
+        "completion_tokens": 29,
+        "total_tokens": 186,
+        "prompt_tokens_details": {
+            "cached_tokens": 149,
+            "cache_write_tokens": 0,
+            "audio_tokens": 0,
+        },
+        "completion_tokens_details": {"reasoning_tokens": 0},
+    }
+    usage = _normalize_usage(CompletionUsage.model_validate(raw))
+
+    assert usage["input_tokens"] == 157
+    assert usage["output_tokens"] == 29
+    assert usage["total_tokens"] == 186
+    # Flat key the provider actually reads.
+    assert usage["cached_tokens"] == 149
+    assert "prompt_tokens_details" not in usage
+
+
+def test_stream_usage_survives_missing_cache_details():
+    raw = {"prompt_tokens": 10, "completion_tokens": 2, "total_tokens": 12}
+    usage = _normalize_usage(CompletionUsage.model_validate(raw))
+
+    assert usage == {"input_tokens": 10, "output_tokens": 2, "total_tokens": 12}

@@ -621,3 +621,62 @@ def test_stale_cache_not_discarded_offline(monkeypatch: pytest.MonkeyPatch, tmp_
     assert models[0].id == "old-model"
     assert models[0].provider == "oldprov"
     assert models[0].context_window == 64000
+
+
+def test_parse_models_unwraps_nested_model_object():
+    """Codex nests the model under ``model``; the slug is the usable id.
+
+    Regression: ``_entry_id`` returned that nested dict, and ``_parse_models``
+    passed it to ``model_id.lower()`` -- so ``/model refresh`` died with
+    ``'dict' object has no attribute 'lower'`` instead of listing models.
+    """
+    raw = [
+        {
+            "model": {
+                "id": "70fb623f-6774-46c6-85d7-e8e58080d48e",
+                "slug": "claude-fable-5.1",
+                "display_name": "Claude Fable 5.1",
+                "output_modalities": ["text"],
+                "context_window": 1_000_000,
+                "max_output_tokens": 128_000,
+                "input_modalities": ["text", "image"],
+            },
+            "providers": [{"provider": "experiential_cloud"}],
+        }
+    ]
+
+    entries = _parse_models(raw)
+
+    assert [e.id for e in entries] == ["claude-fable-5.1"]
+    # Metadata is hoisted too, not just the id.
+    entry = entries[0]
+    assert entry.name == "Claude Fable 5.1"
+    assert entry.context_window == 1_000_000
+    assert entry.max_tokens == 128_000
+    assert entry.supports_images is True
+
+
+def test_parse_models_skips_entry_with_no_usable_id():
+    """An entry with no id-like field at all is skipped, not a crash."""
+    raw = [{"model": {"cost": 0}, "providers": []}]
+
+    assert _parse_models(raw) == []
+
+
+def test_parse_models_leaves_flat_entries_untouched():
+    """OpenAI-shaped providers (no nesting) keep parsing exactly as before."""
+    raw = [
+        {
+            "id": "stealth/space-bunny-alpha",
+            "name": "Space Bunny Alpha",
+            "context_length": 1_000_000,
+            "top_provider": {"max_completion_tokens": 524_288},
+            "architecture": {"input_modalities": ["text", "image"], "output_modalities": ["text"]},
+        }
+    ]
+
+    entry = _parse_models(raw)[0]
+
+    assert entry.id == "stealth/space-bunny-alpha"
+    assert entry.context_window == 1_000_000
+    assert entry.max_tokens == 524_288

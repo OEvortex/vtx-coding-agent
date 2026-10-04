@@ -1,20 +1,20 @@
 # vtx.coding_agent
 
-The product layer: the `vtx` console script, the headless runner, the concrete built-in tools and their default registry, the built-in skills package, the handoff-agent loader, and the Textual interface under `vtx.coding_agent.tui`. Use it to run the agent, or to embed its tools in something else.
+The product layer: the `vtx` console script, the headless runner, the concrete built-in tools and their default registry, the built-in skills package, and the handoff-agent loader. Use it to run the agent, or to embed its tools in something else. The Textual interface is `vtx.tui`.
 
 Everything here is wiring and choice. The engine it drives - the loop, the session store, the provider adapters - is `vtx.agent` and `vtx.ai`. Importing `vtx.coding_agent.tools` has the side effect of registering the built-in tools into the harness registry, so the tools exist the moment you import them.
 
 ```
-vtx.coding_agent          CLI, headless runner, built-in tools, skills, UI
+vtx.coding_agent          CLI, headless runner, built-in tools, skills
+   |- vtx.tui             the Textual interface (app shell + primitives)
    |- vtx.agent           harness (loop, sessions, tools, goals, extensions)
    |- vtx.ai              providers and the model catalog
    |- vtx.core            config, permissions, events
    |- vtx.git             branch metadata
    |- vtx.mcp             MCP client
-   |- vtx.tui             base UI toolkit
 ```
 
-The UI is split out into `vtx.coding_agent.tui`; this package's non-UI modules know nothing about it.
+This package holds the wiring and the choices; the UI is `vtx.tui`, documented in its own README. `cli.py:run_tui_command` is the only thing here that reaches for it.
 
 ## Usage
 
@@ -80,9 +80,11 @@ The registry API is `get_tools(default_names)`, `get_tool(name)`, `get_tools_wit
 
 `builtin_skills/` is registered into the harness by `register_skills_package("vtx.coding_agent")` at package import. It ships `cloud/google-colab`, `cloud/modal`, `code-review/review`, `general/github`, `meta/goal`, `meta/skill-builder`, and `setup/init`. `/goal` is one of these skills rather than a built-in command, which is why it is absent from the app's command router.
 
-## The interface: `vtx.coding_agent.tui`
+## The interface: `vtx.tui`
 
-`__all__` exports `Vtx`, `run_tui`, `ChatLog`, `InfoBar`, `StatusLine`, `QueueDisplay`, `format_path`, `TreeSelector`, `CommandsMixin`, and `export_session_html`, all lazily.
+See `vtx/tui/README.md`. `vtx.tui.__all__` exports `Vtx`, `run_tui`, `ChatLog`, `InfoBar`, `StatusLine`, `QueueDisplay`, `format_path`, `TreeSelector`, `CommandsMixin`, and `export_session_html`, all lazily.
+
+<details><summary>Module map</summary>
 
 - `app.py` holds `Vtx`, the `App` subclass that composes the widget tree, wires the runtime, and routes input. It is also where `BINDINGS` lives.
 - `launch.py` has `run_tui(args)` and the exit summary printed after the app closes; `startup.py` has the background chores - binary download, update check, file-path scan, git-branch refresh, launch warnings.
@@ -93,6 +95,8 @@ The registry API is `get_tools(default_names)`, `get_tool(name)`, `get_tools_wit
 - `goal_ui.py` has `GoalWidget` (the above-editor beacon) and `GoalDashboardScreen` (the `ctrl+shift+g` overlay), sharing one presentation model.
 - `completion_ui.py` handles the completion-list and selection-mode picker messages. Its `@on` handlers are re-bound in the `Vtx` class body, because Textual's metaclass only scans the namespace of classes it creates.
 - `extension_ui.py` is `TextualExtensionUI`, implementing `ExtensionUIContext` over the app: confirm / select / input dialogs, chat notifications, and a persistent status/widget footer bar.
+
+</details>
 - `export.py` is `export_session_html`, a standalone exporter that parses session JSONL directly and takes the tool registry as its only vtx dependency. `recap.py` arms a 30s idle timer after a run and drafts a "where you left off" summary with a cheap one-off model call. `app_protocol.py` is the protocol the agent runner and mixins are typed against.
 
 ### Key bindings

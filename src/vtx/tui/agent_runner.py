@@ -12,9 +12,6 @@ from typing import TYPE_CHECKING, Any
 
 from vtx.agent.runtime import ConversationRuntime
 from vtx.agent.tools import lookup_default_tool as get_tool
-from vtx.coding_agent.tui.chat import ChatLog
-from vtx.coding_agent.tui.goal_agents import prune_finished_subagents
-from vtx.coding_agent.tui.widgets import InfoBar, StatusLine
 from vtx.core import (
     AgentEndEvent,
     AgentStartEvent,
@@ -50,6 +47,9 @@ from vtx.core.config import config
 from vtx.core.notify import NotificationEvent, notify
 from vtx.protocol.types import ImageContent, StopReason, ToolResultMessage
 from vtx.tui.ask_user import AskUserDialog
+from vtx.tui.chat import ChatLog
+from vtx.tui.goal_agents import prune_finished_subagents
+from vtx.tui.widgets import InfoBar, StatusLine
 
 _NOTIFY_EVENTS = (AgentEndEvent, ToolApprovalEvent, BackgroundTaskCompletedEvent)
 
@@ -602,6 +602,12 @@ class AgentRunnerMixin:
                     )
                 else:
                     chat.finish_compaction(tokens_before=tb, tokens_after=ta, summary=sm)
+                    # The bar's context figure came from the last TurnEndEvent,
+                    # which is the pre-compaction footprint. Re-read it from the
+                    # session now that the summary has replaced the history, or
+                    # the meter keeps showing the old size until the user sends
+                    # another message.
+                    info_bar.sync_tokens_from_session(self._runtime.session)
 
             case RetryEvent(attempt=a, total_attempts=t, delay=d, error=e):
                 msg = f"Request failed (attempt {a}/{t}), retrying in {d}s; Error: {e}"

@@ -15,7 +15,7 @@ Vtx is a minimalist coding-agent harness built around a small, transparent runti
 | `vtx.agent` | The product-neutral agent harness: loop, turn engine, session store, tool registry, prompt/context assembly, extensions, hooks, goals, and the programmatic SDK. |
 | `vtx.mcp` | MCP client: server config, transports (stdio, in-memory, streamable HTTP), tool/resource exposure, OAuth, and the trust prompt. |
 | `vtx.tui` | **Base** terminal-UI toolkit: input editing and tab completion, fuzzy matching, overlay lists, LaTeX/formatting helpers, clipboard, styling, and the block renderers for tool calls and results. Knows nothing about the agent, models, sessions, goals, or slash commands. |
-| `vtx.coding_agent` | The product layer: CLI entry point (`coding_agent.cli:main`), headless runner, the concrete filesystem tools and their default registry, the built-in skills package, and its own interface under `coding_agent.tui` (app shell, chat pane, panels, dialogs, slash commands). |
+| `vtx.coding_agent` | The product layer: CLI entry point (`coding_agent.cli:main`), headless runner, the concrete filesystem tools and their default registry, the built-in skills package, and | its own concrete choices (which tools ship, which skills bundle). The interface itself is `vtx.tui`. |
 
 ### Dependency direction
 
@@ -42,7 +42,7 @@ The harness used to live at `vtx.ai.agent`, nested inside the LLM package, which
 
 ## Two run surfaces
 
-- **TUI** (`vtx`, `coding_agent.tui.launch.run_tui`) — the interactive Textual app.
+- **TUI** (`vtx`, `vtx.tui.launch.run_tui`) — the interactive Textual app.
 - **Headless** (`vtx -p "..."`, `coding_agent.headless`) — one prompt in, text out, exit code reflects the stop reason.
 
 Both drive the same `ConversationRuntime` → `Agent` stack.
@@ -115,7 +115,7 @@ Completion has two halves, and both are load-bearing. `BackgroundTaskManager` ex
 
 Every dispatch passes through `agent.subagents.SubagentScheduler`, a FIFO admission queue capped by `task.max_concurrent` (default 4, `0` = uncapped). A sub-agent over the cap waits for a slot *before* it builds a session or a provider, so "running" and "queued" are real counts.
 
-Both counters, plus a live row per sub-agent (name, description, turns/tool/token counters, current activity), render in the pinned **Agents** panel (`coding_agent/tui/agents_panel.py`) above the editor, fed from the process-wide `coding_agent/tui/goal_agents.REGISTRY`. The registry keys runs by tool-call id, so four concurrent `Explore` agents are four rows. The goal beacon renders the same rows from the same registry while a goal is focused; the chat log keeps only a static dispatch receipt per call.
+Both counters, plus a live row per sub-agent (name, description, turns/tool/token counters, current activity), render in the pinned **Agents** panel (`vtx/tui/agents_panel.py`) above the editor, fed from the process-wide `vtx/tui/goal_agents.REGISTRY`. The registry keys runs by tool-call id, so four concurrent `Explore` agents are four rows. The goal beacon renders the same rows from the same registry while a goal is focused; the chat log keeps only a static dispatch receipt per call.
 
 ## Compaction
 

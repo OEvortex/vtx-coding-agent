@@ -8,7 +8,6 @@ plus the public show/rerender/hide API that the agent runner calls.
 import pytest
 from textual.app import App, ComposeResult
 
-from vtx.coding_agent.tui.chat import ChatLog
 from vtx.core import AskUserOption, AskUserQuestion
 from vtx.tui.ask_user import (
     NEXT_LABEL,
@@ -19,6 +18,7 @@ from vtx.tui.ask_user import (
     AskUserDialog,
 )
 from vtx.tui.blocks import ToolBlock
+from vtx.tui.chat import ChatLog
 from vtx.tui.input import AskUserInput
 from vtx.tui.styles import get_styles
 

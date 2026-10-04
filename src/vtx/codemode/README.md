@@ -94,13 +94,13 @@ asyncio.run(main())
 
 - `truncate_middle(text, budget_tokens) -> (str, bool)` cuts the middle out of over-long output, keeping head and tail, and returns the flag so truncation is reported rather than silent.
 
-- `Limits` carries `timeout_ms=30_000`, `max_tool_calls=None`, `max_output_tokens=None`, `memory_limit_bytes=None`, `detect_stalls=True`. Those are this package's defaults; the familiar `max_tool_calls=200`, `max_output_tokens=8_000`, `memory_limit_bytes=512 MiB` are the harness tool's constructor defaults, not these. A per-execution cap of `MAX_CONCURRENT_TOOL_CALLS = 8` in-flight tool calls is a fixed interpreter-side semaphore, not a host knob, and nested tool calls are refused past depth 16.
+- `Limits` carries `timeout_ms=30_000`, `wall_clock_ms=30 * 60_000`, `max_tool_calls=None`, `max_output_tokens=None`, `memory_limit_bytes=None`, `detect_stalls=True`. Those are this package's defaults; the familiar `max_tool_calls=200`, `max_output_tokens=8_000`, `memory_limit_bytes=512 MiB` are the harness tool's constructor defaults, not these. A per-execution cap of `MAX_CONCURRENT_TOOL_CALLS = 8` in-flight tool calls is a fixed interpreter-side semaphore, not a host knob, and nested tool calls are refused past depth 16.
 
 ## Results and diagnostics
 
 `Result` carries `ok`, `value`, `output`, `calls`, `diagnostic`, `store_writes`, `store_deletes`, and `output_truncated`; `.apply_to_store(store)` commits the staged writes. `ToolCall` is one admitted call - `name`, `status`, `kind`, `message`, `duration_ms`, `.ok`. `Diagnostic` is `kind`, `message`, `stack`: a failure as data, never a raw traceback.
 
-`errors.KINDS` is the ten kinds host and worker mirror: `script`, `timeout`, `aborted`, `sandbox`, `stalled`, `unknown_tool`, `invalid_input`, `tool_failure`, `invalid_output`, `host_unavailable`. The exceptions behind them are `CodemodeError` (base), `ToolError(message, *, detail=None, kind="tool_failure")` with subclasses `UnknownTool(name)`, `InvalidInput(name, *, detail=None)`, `InvalidOutput(what, *, detail=None)`, `HostUnavailable(detail=None)`, plus `ScriptError(message, *, stack=None)`, `SandboxError`, `ScriptAborted`, `ScriptStalled`, and `ScriptTimeout`. The same names are injected into the script so it can branch on them:
+`errors.KINDS` is the eleven kinds host and worker mirror: `script`, `timeout`, `wall_clock`, `aborted`, `sandbox`, `stalled`, `unknown_tool`, `invalid_input`, `tool_failure`, `invalid_output`, `host_unavailable`. The exceptions behind them are `CodemodeError` (base), `ToolError(message, *, detail=None, kind="tool_failure")` with subclasses `UnknownTool(name)`, `InvalidInput(name, *, detail=None)`, `InvalidOutput(what, *, detail=None)`, `HostUnavailable(detail=None)`, plus `ScriptError(message, *, stack=None)`, `SandboxError`, `ScriptAborted`, `ScriptStalled`, and `ScriptTimeout`. The same names are injected into the script so it can branch on them:
 
 ```python
 try:
@@ -124,9 +124,13 @@ await sandbox.execute("await tools.nonexistent()")
 
 ## Limits
 
-`timeout_ms` is enforced by the host: `SIGTERM` to the process group (`start_new_session=True`, so the host is not reachable either) then `SIGKILL` after a 1.0s grace period. `None` disables it. `max_tool_calls` is spent at **admission**, not at completion, so a script cannot exceed the ceiling by its own concurrency; over budget is a catchable `ToolError` inside the script rather than a truncated result. `max_output_tokens` applies to the `text()` output and sets `Result.output_truncated` (floor 256). `memory_limit_bytes` is an `RLIMIT_AS` applied by the worker before the script compiles, clamped to the existing hard limit and absent on Windows, where it degrades to the deadline. `clamp_timeout` and `clamp_int` are the min-wins resolvers behind the `execute()` overrides.
+`timeout_ms` is the script's own **compute** budget, not a wall clock: it is charged only while the script is running, and pauses for as long as any tool call is outstanding (`_Execution.enter_call` / `leave_call` drive it). That is what lets `asyncio.gather` over slow tools - a fan-out to sub-agents - finish at all; the host used to kill the process mid-wait and cancel every in-flight call with it. It is still enforced by the host as `SIGTERM` to the process group (`start_new_session=True`, so the host is not reachable either) then `SIGKILL` after a 1.0s grace period. `None` disables it.
 
-The one thing the process boundary buys that interpreter-level confinement could not is that a deadline is a `kill`: `while True:`, a catastrophic regex, and a blocking syscall all end the same way.
+`wall_clock_ms` is the backstop for what that pause no longer bounds: an absolute ceiling, tool time included, that nothing pauses. It reports the distinct `wall_clock` kind rather than `timeout`, because the remedy is opposite - stop waiting on that tool, rather than do less work. It is host-only and a script cannot widen it.
+
+`max_tool_calls` is spent at **admission**, not at completion, so a script cannot exceed the ceiling by its own concurrency; over budget is a catchable `ToolError` inside the script rather than a truncated result. `max_output_tokens` applies to the `text()` output and sets `Result.output_truncated` (floor 256). `memory_limit_bytes` is an `RLIMIT_AS` applied by the worker before the script compiles, clamped to the existing hard limit and absent on Windows, where it degrades to the deadline. `clamp_timeout` and `clamp_int` are the min-wins resolvers behind the `execute()` overrides.
+
+The one thing the process boundary buys that interpreter-level confinement could not is that a deadline is a `kill`: `while True:`, a catastrophic regex, and a blocking syscall all end the same way. Pausing the budget for tool calls does not soften that - code that spends its life running spends its whole budget running.
 
 ## Store
 

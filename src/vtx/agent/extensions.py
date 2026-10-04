@@ -1032,14 +1032,14 @@ class ExtensionRunner:
 
         for pending in self._runtime.pending_provider_registrations:
             try:
-                if provider_actions and provider_actions.register_provider:
+                if provider_actions is not None:
                     provider_actions.register_provider(pending.name, pending.config)
             except Exception as exc:
                 self._emit_error(pending.extension_path, "register_provider", exc)
         self._runtime.pending_provider_registrations.clear()
         for pending in self._runtime.pending_native_provider_registrations:
             try:
-                if provider_actions and provider_actions.register_native_provider:
+                if provider_actions is not None:
                     provider_actions.register_native_provider(pending.provider)
             except Exception as exc:
                 self._emit_error(pending.extension_path, "register_provider", exc)
@@ -1586,7 +1586,7 @@ def _not_initialized(*args: Any, **kwargs: Any) -> Any:
 class ExtensionUIContext:
     """UI surface for extensions (``ctx.ui``).
 
-    The real TUI-backed implementation (:class:`vtx.coding_agent.tui.extension_ui.
+    The real TUI-backed implementation (:class:`vtx.tui.extension_ui.
     TextualExtensionUI`) is installed by the host via
     ``EventBus.set_ui_context``; this base class provides safe no-op
     fallbacks so extensions can call UI methods without mode checks.

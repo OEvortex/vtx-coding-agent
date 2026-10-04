@@ -1,7 +1,7 @@
-from vtx.coding_agent.tui.app import Vtx
 from vtx.core import AgentEndEvent, ToolApprovalEvent, TurnStartEvent
 from vtx.core.config import get_config
 from vtx.protocol.types import StopReason
+from vtx.tui.app import Vtx
 
 
 def _make_app() -> Vtx:

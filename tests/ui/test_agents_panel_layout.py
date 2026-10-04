@@ -12,11 +12,11 @@ import time
 
 import pytest
 
-from vtx.coding_agent.tui import agents_panel
-from vtx.coding_agent.tui.agents_panel import AgentsPanel
-from vtx.coding_agent.tui.app import Vtx
-from vtx.coding_agent.tui.goal_agents import REGISTRY
-from vtx.coding_agent.tui.widgets import InfoBar
+from vtx.tui import agents_panel
+from vtx.tui.agents_panel import AgentsPanel
+from vtx.tui.app import Vtx
+from vtx.tui.goal_agents import REGISTRY
+from vtx.tui.widgets import InfoBar
 
 
 @pytest.fixture
@@ -117,7 +117,7 @@ async def test_panel_retires_once_everything_lands(tmp_path, clean_registry) -> 
         assert panel.has_class("-visible")
 
         # ...then the strip gives its space back.
-        from vtx.coding_agent.tui.goal_agents import DONE_LINGER_SECONDS
+        from vtx.tui.goal_agents import DONE_LINGER_SECONDS
 
         run = REGISTRY.runs()[0]
         run.ended_at = time.monotonic() - DONE_LINGER_SECONDS - 1

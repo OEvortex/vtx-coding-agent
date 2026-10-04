@@ -142,6 +142,99 @@ async def test_stall_detection_can_be_turned_off():
     assert result.ok
 
 
+# ---- compute budget vs wall clock -----------------------------------------
+
+
+async def test_a_slow_tool_is_not_charged_to_the_compute_budget():
+    # The reason the budget is not wall clock. A 1.2s fan-out under a 600ms
+    # budget used to be killed mid-flight, taking every in-flight call with it --
+    # so `asyncio.gather` over anything slow was structurally impossible, and a
+    # sub-agent could never be delegated to from inside a script.
+    sandbox = CodemodeSandbox(
+        tools=[_tool(delay=0.6)], limits=Limits(timeout_ms=600, wall_clock_ms=30_000)
+    )
+    loop = asyncio.get_running_loop()
+    start = loop.time()
+    result = await sandbox.execute(
+        "r = await asyncio.gather(*[tools.echo(n=i) for i in range(2)])\nreturn len(r)"
+    )
+    assert result.ok, result.diagnostic
+    assert result.value == 2
+    # Sanity: the wait really did exceed the budget, so this is not a pass
+    # because the clock was never consulted.
+    assert loop.time() - start > 0.6
+
+
+async def test_a_sequential_run_of_slow_tools_still_finishes():
+    # Time between calls is the script's own, but each blocked stretch is not,
+    # so four slow calls in a row are bounded by the compute spent *between*
+    # them -- which is essentially nil.
+    sandbox = CodemodeSandbox(
+        tools=[_tool(delay=0.4)], limits=Limits(timeout_ms=300, wall_clock_ms=30_000)
+    )
+    result = await sandbox.execute("\n".join(["await tools.echo(n=1)"] * 4) + "\nreturn 'done'")
+    assert result.ok, result.diagnostic
+    assert result.value == "done"
+
+
+async def test_the_compute_budget_still_kills_a_busy_loop():
+    # Pausing for tool calls must not have disarmed the deadline: a `while True`
+    # spends its whole life running, which is exactly what the budget is for.
+    sandbox = CodemodeSandbox(tools=[_tool()], limits=Limits(timeout_ms=500))
+    result = await sandbox.execute("while True:\n    pass")
+    assert not result.ok
+    assert result.diagnostic.kind == "timeout"
+
+
+async def test_the_wall_clock_catches_a_tool_that_never_returns():
+    # The backstop for the case the compute budget deliberately tolerates. The
+    # script is blocked the whole time, so the budget never advances and only the
+    # absolute ceiling can end this -- with a distinct kind, because the fix is
+    # to stop waiting on that tool rather than to make the script do less.
+    never = SandboxTool(
+        name="hang",
+        description="Never returns",
+        execute=lambda args, _signal: asyncio.Event().wait(),
+        input_schema={"type": "object", "properties": {}},
+    )
+    sandbox = CodemodeSandbox(tools=[never], limits=Limits(timeout_ms=300, wall_clock_ms=700))
+    result = await sandbox.execute("await tools.hang()\nreturn 'unreachable'")
+    assert not result.ok
+    assert result.diagnostic.kind == "wall_clock"
+
+
+async def test_the_wall_clock_diagnostic_names_the_slow_call():
+    # A timeout sends the model off splitting its work; this must not, because
+    # the work was already as small as it can be.
+    never = SandboxTool(
+        name="hang",
+        description="Never returns",
+        execute=lambda args, _signal: asyncio.Event().wait(),
+        input_schema={"type": "object", "properties": {}},
+    )
+    sandbox = CodemodeSandbox(tools=[never], limits=Limits(timeout_ms=300, wall_clock_ms=600))
+    result = await sandbox.execute("await tools.hang()\nreturn 1")
+    assert not result.ok
+    assert "never came back" in (result.diagnostic.message or "")
+
+
+async def test_the_wall_clock_defaults_to_thirty_minutes():
+    # Not a number anyone should have to remember: it is the backstop, so it
+    # wants to be unreachable in practice rather than tuned.
+    assert Limits().wall_clock_ms == 30 * 60_000
+
+
+async def test_a_script_cannot_widen_the_wall_clock():
+    # It is host policy for the same reason the compute budget is: a model that
+    # can inflate the ceiling has no ceiling. `timeout_ms` stays the only knob a
+    # script gets, and it cannot exceed the host either.
+    sandbox = CodemodeSandbox(
+        tools=[_tool()], limits=Limits(timeout_ms=1_000, wall_clock_ms=5_000)
+    )
+    result = await sandbox.execute('# @options: {"timeout_ms": 600000}\nreturn 1')
+    assert result.ok
+
+
 # ---- image() -------------------------------------------------------------
 
 

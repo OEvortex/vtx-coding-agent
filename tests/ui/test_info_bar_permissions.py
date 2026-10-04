@@ -1,5 +1,5 @@
-from vtx.coding_agent.tui.widgets import InfoBar
 from vtx.core.config import Config, reset_config, set_config
+from vtx.tui.widgets import InfoBar
 
 
 def test_footer_shows_auto_permission_mode_before_file_changes():
