@@ -573,7 +573,14 @@ class CodemodeSandbox:
             return refuse(errors.UnknownTool(name))
 
         try:
-            args = coerce_json(args, what=f"{name} arguments")
+            # coerce_json is typed JsonValue, but a dict coerces to a dict; the
+            # re-check keeps that guarantee visible to the type checker and
+            # turns a host/sandbox disagreement into a refusal rather than a
+            # call with the wrong argument shape.
+            coerced = coerce_json(args, what=f"{name} arguments")
+            if not isinstance(coerced, dict):
+                return refuse(errors.InvalidOutput(f"{name} arguments"))
+            args = coerced
         except errors.ToolError as exc:
             return refuse(exc)
 
