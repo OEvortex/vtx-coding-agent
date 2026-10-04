@@ -17,7 +17,7 @@ from __future__ import annotations
 
 import json
 from dataclasses import dataclass, field
-from datetime import UTC, date, datetime, timedelta
+from datetime import date, datetime, timedelta
 from pathlib import Path
 from typing import Any
 
@@ -70,7 +70,10 @@ def _entry_date(entry: Any) -> date | None:
         raw = entry.get("timestamp")
         if isinstance(raw, str):
             try:
-                return datetime.fromisoformat(raw).astimezone(UTC).date()
+                # Local, not UTC: "yesterday's usage" is a question about the
+                # user's clock. Logs are stored in UTC, so a session that runs
+                # at 00:30 IST would otherwise be filed under the day before.
+                return datetime.fromisoformat(raw).astimezone().date()
             except ValueError:
                 pass
     return None
@@ -78,7 +81,7 @@ def _entry_date(entry: Any) -> date | None:
 
 def _session_date(path: Path) -> date | None:
     try:
-        return datetime.fromisoformat(path.stem[:10]).astimezone(UTC).date()
+        return datetime.fromisoformat(path.stem[:10]).date()
     except ValueError:
         return None
 
@@ -158,7 +161,7 @@ def aggregate_usage(days: int = HEATMAP_DAYS, *, today: date | None = None) -> U
     Blocking: ~1s for 30 days and ~3s lifetime on a large history. Call from a
     worker thread.
     """
-    now = today or datetime.now(UTC).date()
+    now = today or date.today()
     root = _sessions_root()
     paths = sorted(root.glob("*/*.jsonl")) if root.exists() else []
     raw = _scan(paths)

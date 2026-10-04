@@ -36,8 +36,17 @@ USAGE_DAYS = (
 )
 
 
-def _usage_entry(day: date, *, inp: int, out: int, cached: int = 0) -> str:
-    ts = datetime.combine(day, datetime.min.time(), tzinfo=UTC).isoformat()
+def _usage_entry(day: date | datetime, *, inp: int, out: int, cached: int = 0) -> str:
+    """One assistant message carrying usage, stamped so it reads back as ``day``.
+
+    A plain date becomes *local* midnight, because that is how the aggregator
+    buckets: stamping it UTC midnight would shift the day for anyone west of
+    Greenwich and the fixture would silently test the wrong column.
+    """
+    if isinstance(day, datetime):
+        ts = day.astimezone(UTC).isoformat()
+    else:
+        ts = datetime.combine(day, datetime.min.time()).astimezone().isoformat()
     return json.dumps(
         {
             "type": "message",
@@ -237,3 +246,24 @@ async def test_session_turns_come_from_message_counts(monkeypatch) -> None:
     await SessionCommands.action_usage(commands)  # type: ignore[arg-type]
 
     assert mounted and "3 turns" in ANSI.sub("", mounted[0]._build().plain)
+
+
+def test_days_follow_the_local_clock_not_utc(tmp_path, monkeypatch) -> None:
+    """A late-evening session must land on the user's day, not UTC's.
+
+    Logs store UTC timestamps; bucketing them as UTC files any work between
+    midnight and the UTC offset under the day before, which is why the "last
+    30 days" total and the heatmap disagreed with the calendar.
+    """
+    monkeypatch.setattr("vtx.tui.usage_stats._sessions_root", lambda: tmp_path)
+    sub = tmp_path / "proj"
+    sub.mkdir()
+    instant = datetime(2026, 10, 4, 19, 0, tzinfo=UTC)  # 00:30 IST on the 5th
+    expected = instant.astimezone().date()
+    (sub / "2026-10-04T00-00-00_abc.jsonl").write_text(
+        _usage_entry(instant, inp=1000, out=25) + "\n", encoding="utf-8"
+    )
+
+    report = aggregate_usage(today=expected)
+    assert set(report.days) == {expected}
+    assert report.last_30_days.total_tokens == 1025
