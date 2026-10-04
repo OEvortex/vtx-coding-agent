@@ -31,7 +31,17 @@ class GoalCommands(CommandSupport):
         @property
         def screen_stack(self) -> list[Screen[Any]]: ...
 
-        def push_screen(self, screen: Screen[Any]) -> Any: ...
+        # Mirrors Textual's App.push_screen signature rather than narrowing it:
+        # GoalCommands is mixed into Vtx, which subclasses App, so a narrower
+        # declaration here is a Liskov violation against the real base method.
+        def push_screen(
+            self,
+            screen: Screen[Any] | str,
+            callback: Any = None,
+            wait_for_dismiss: bool = False,
+            *,
+            mode: str | None = None,
+        ) -> Any: ...
 
         def _run_agent(self, prompt: str, images: list[Any] | None = None) -> Any: ...
         def _update_queue_display(self) -> None: ...

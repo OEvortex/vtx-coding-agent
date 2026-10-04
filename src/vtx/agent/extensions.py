@@ -1032,14 +1032,14 @@ class ExtensionRunner:
 
         for pending in self._runtime.pending_provider_registrations:
             try:
-                if provider_actions and provider_actions.register_provider:
+                if provider_actions is not None:
                     provider_actions.register_provider(pending.name, pending.config)
             except Exception as exc:
                 self._emit_error(pending.extension_path, "register_provider", exc)
         self._runtime.pending_provider_registrations.clear()
         for pending in self._runtime.pending_native_provider_registrations:
             try:
-                if provider_actions and provider_actions.register_native_provider:
+                if provider_actions is not None:
                     provider_actions.register_native_provider(pending.provider)
             except Exception as exc:
                 self._emit_error(pending.extension_path, "register_provider", exc)
