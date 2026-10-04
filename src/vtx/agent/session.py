@@ -346,7 +346,10 @@ class Session:
         has_assistant = any(
             isinstance(e, MessageEntry) and e.message.role == "assistant" for e in self._entries
         ) or isinstance(entry, LeafEntry)
-        if not has_assistant:
+        # Checkpoints are durable work-in-progress and must reach disk even
+        # before the first assistant message exists, otherwise a crash during
+        # turn 1 loses the whole run -- the gate above used to drop them.
+        if not has_assistant and not isinstance(entry, RuntimeCheckpointEntry):
             return
 
         # If earlier entries were skipped (e.g., pre-assistant user/custom messages),
@@ -518,17 +521,38 @@ class Session:
         return entry.id
 
     def clear_runtime_checkpoint(self) -> None:
-        """Drop active checkpoints once a turn completes normally."""
-        for entry in self.active_entries:
-            if isinstance(entry, RuntimeCheckpointEntry) and entry.is_active:
-                entry.is_active = False
+        """Drop active checkpoints once a turn completes normally.
+
+        Appends an inactive tombstone instead of flipping the flag in place.
+        The JSONL log is append-only, so an in-place mutation would never be
+        written back and a reopened session would still see the checkpoint as
+        active and spuriously resume a run that actually finished.
+        """
+        if not any(
+            isinstance(e, RuntimeCheckpointEntry) and e.is_active for e in self.active_entries
+        ):
+            return
+        self._append_entry(
+            RuntimeCheckpointEntry(
+                id=self._generate_entry_id(),
+                parent_id=self._leaf_id,
+                timestamp=_now_iso(),
+                is_active=False,
+            )
+        )
 
     def load_runtime_checkpoint(self) -> RuntimeCheckpointEntry | None:
-        """Return the latest active runtime checkpoint, if any."""
-        for entry in reversed(self.active_entries):
-            if isinstance(entry, RuntimeCheckpointEntry) and entry.is_active:
-                return entry
-        return None
+        """Return the latest runtime checkpoint, if it is still active.
+
+        Only the newest checkpoint is consulted: an inactive one is a
+        tombstone written by :meth:`clear_runtime_checkpoint` when a turn
+        completed normally.
+        """
+        latest: RuntimeCheckpointEntry | None = None
+        for entry in self.active_entries:
+            if isinstance(entry, RuntimeCheckpointEntry):
+                latest = entry
+        return latest if latest is not None and latest.is_active else None
 
     def move_to(self, entry_id: str | None) -> None:
         if entry_id is not None and entry_id not in self._by_id:
