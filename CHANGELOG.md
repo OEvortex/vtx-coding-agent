@@ -4,7 +4,7 @@ All notable changes to Vtx are documented in this file. The format is based on
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project
 adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased]
+## [1.2.1] - 2026-10-04
 
 ### Fixed
 - **Cached tokens were never counted from a streamed response** — the chat/completions stream path yielded `chunk.usage.model_dump()`, which nests cache counts under `prompt_tokens_details`, while every consumer read the flat `cached_tokens` key. `cache_read_tokens` therefore always resolved to 0 and the context meter's `R…` segment never appeared, even when the provider was serving most of the prompt from cache. A new `_normalize_usage` flattens the payload at the one choke point, and the two duplicated normalization blocks in the non-streaming paths now route through it as well. The non-streaming and Responses paths were already correct; only streaming was affected.
