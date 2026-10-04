@@ -267,3 +267,19 @@ def test_days_follow_the_local_clock_not_utc(tmp_path, monkeypatch) -> None:
     report = aggregate_usage(today=expected)
     assert set(report.days) == {expected}
     assert report.last_30_days.total_tokens == 1025
+
+
+def test_card_shows_exact_total_next_to_the_compact_one() -> None:
+    """The compact total alone is unverifiable at scale.
+
+    At 2.7B, one decimal place swallows output: input and total both render
+    ``2.7B``, so the breakdown appears not to add up. The exact count makes the
+    arithmetic checkable instead of something to squint at.
+    """
+    from vtx.tui.blocks import _total_line
+
+    usage = DailyUsage(input_tokens=2_894_436_029, output_tokens=12_844_767)
+    line = _total_line(usage)
+    assert "2.7B" in line
+    assert f"{usage.total_tokens:,}" in line
+    assert f"{usage.total_tokens:,}" == "2,907,280,796"

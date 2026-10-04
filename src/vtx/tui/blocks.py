@@ -1786,6 +1786,19 @@ def _thresholds(values: list[int]) -> list[int]:
     return cuts
 
 
+def _total_line(usage) -> str:
+    """Compact total plus the exact count.
+
+    The compact form alone is a trap at scale: at 2.7B one decimal place
+    swallows output entirely, so ``2.7B`` appears as both the input figure and
+    the total and the breakdown looks like it does not add up. The exact
+    number is what makes the arithmetic checkable; the short one is what fits.
+    """
+    from vtx.tui.formatting import format_tokens
+
+    return f" {format_tokens(usage.total_tokens)} · {usage.total_tokens:,}"
+
+
 class UsageBlock(Static):
     """``/usage``: session, rolling-month and lifetime totals with a yearly grid.
 
@@ -1865,7 +1878,7 @@ class UsageBlock(Static):
             for idx, (_, usage) in enumerate(summaries):
                 if idx:
                     text.append(" " * card_gap)
-                val = f" {format_tokens(usage.total_tokens)} tokens"
+                val = _total_line(usage)
                 fill = " " * max(0, inner_w - len(val))
                 text.append("│", style=colors.border)
                 text.append(val, style=f"{colors.fg} bold")
@@ -1921,7 +1934,7 @@ class UsageBlock(Static):
                 text.append(fill, style=colors.border)
                 text.append("╮\n", style=colors.border)
 
-                val = f" {format_tokens(usage.total_tokens)} tokens"
+                val = _total_line(usage)
                 fill = " " * max(0, inner_w - len(val))
                 text.append("│", style=colors.border)
                 text.append(val, style=f"{colors.fg} bold")
