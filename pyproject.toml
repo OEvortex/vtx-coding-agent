@@ -20,7 +20,7 @@ default = true
 
 [project]
 name = "vtx-coding-agent"
-version = "1.2.1"
+version = "1.2.2"
 description = "Minimalist coding agent harness with a Textual TUI and headless CLI. Native vtx event loop. <1k-token system prompt, 50+ LLM providers, AGENTS.md + skills context, session tree, prompt/auto permissions."
 readme = "README.md"
 requires-python = ">=3.12"
@@ -58,6 +58,7 @@ dependencies = [
     "textual>=8.0.0",
     "tiktoken>=0.12.0,<1.0.0",
     "typer>=0.20.0,<1.0.0",
+    "PyJWT",
 ]
 
 [project.optional-dependencies]

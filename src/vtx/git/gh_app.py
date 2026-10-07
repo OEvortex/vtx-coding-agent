@@ -41,7 +41,7 @@ from vtx.core.paths import get_config_dir
 try:  # pragma: no cover - trivial guard
     import requests
 except ImportError:  # the `msteams` extra is not installed
-    requests = None  # type: ignore[assignment]
+    requests = None  # type: ignore
 
 
 def _requests() -> Any:

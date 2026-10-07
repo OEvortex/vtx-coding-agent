@@ -85,7 +85,7 @@ class TestCompactionHeader:
         block = _make_block(tokens_before=138_200, context_window=200_000, trigger="overflow")
         header = block._format_header().plain
         assert "Compacting" in header
-        assert "138k/200k (69%)" in header
+        assert "135k/195.3k (69%)" in header
         assert "auto-compaction" in header
 
     def test_running_header_colour_escalates_past_threshold(self):
@@ -103,7 +103,7 @@ class TestCompactionHeader:
         block.finish(tokens_after=20_000, summary="x")
         header = block._format_header().plain
         assert "Compacted" in header
-        assert "100k → 20k" in header
+        assert "97.7k → 19.5k" in header
         assert f"(−{80}%)" in header  # noqa: RUF001
         assert "view summary" in header
 

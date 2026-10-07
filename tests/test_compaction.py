@@ -542,7 +542,7 @@ class TestInfoBarFollowsCompaction:
         app = _TestRunnerApp(session)
         # The bar is mid-turn: 180k is what the last TurnEndEvent reported.
         app.info_bar.update_tokens(180_000, 500)
-        assert "180k/200k" in app.info_bar._format_row1_right().plain
+        assert "176.3k/195.3k" in app.info_bar._format_row1_right().plain
 
         async def _fake_summary(*args, **kwargs):
             return "short summary"
@@ -553,7 +553,7 @@ class TestInfoBarFollowsCompaction:
             await app._render_agent_event(event, app.chat, app.status, app.info_bar)
 
         row = app.info_bar._format_row1_right().plain
-        assert "180k/200k" not in row
+        assert "176.3k/195.3k" not in row
         assert app.info_bar._context_tokens is not None
         assert app.info_bar._context_tokens < 180_000
 
@@ -565,7 +565,7 @@ class TestInfoBarFollowsCompaction:
         provider = MockProvider()
         app = _TestCommandsApp(session=session, provider=provider, chat=fake_chat)
         app.info_bar.update_tokens(180_000, 500)
-        assert "180k/200k" in app.info_bar._format_row1_right().plain
+        assert "176.3k/195.3k" in app.info_bar._format_row1_right().plain
 
         async def _fake_summary(*args, **kwargs):
             return "short summary"
@@ -575,7 +575,7 @@ class TestInfoBarFollowsCompaction:
         await app._do_compact()
 
         row = app.info_bar._format_row1_right().plain
-        assert "180k/200k" not in row
+        assert "176.3k/195.3k" not in row
         assert app.info_bar._context_tokens is not None
         assert app.info_bar._context_tokens < 180_000
 
@@ -594,7 +594,7 @@ class TestInfoBarFollowsCompaction:
 
         await app._do_compact()
 
-        assert "180k/200k" in app.info_bar._format_row1_right().plain
+        assert "176.3k/195.3k" in app.info_bar._format_row1_right().plain
 
     @pytest.mark.asyncio
     async def test_an_aborted_auto_compaction_leaves_the_bar_alone(self, monkeypatch):
@@ -609,7 +609,7 @@ class TestInfoBarFollowsCompaction:
             app.info_bar,
         )
 
-        assert "180k/200k" in app.info_bar._format_row1_right().plain
+        assert "176.3k/195.3k" in app.info_bar._format_row1_right().plain
         assert app.chat.compaction_calls == [(180_500, 0)]
 
 

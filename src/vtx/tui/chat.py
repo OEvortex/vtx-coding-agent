@@ -460,6 +460,7 @@ class ChatLog(VerticalScroll):
             ("/handoff", "Start focused handoff in new session"),
             ("/resume", "Resume a session"),
             ("/session", "Show session info and stats"),
+            ("/usage", "Token usage: session, 30 days, lifetime"),
             ("/login", "Login to a provider"),
             ("/logout", "Logout from a provider"),
             ("/export", "Export session to HTML file"),
@@ -988,7 +989,8 @@ class ChatLog(VerticalScroll):
         self.mount(label)
         self._scroll_if_anchored(animate=False)
 
-    def add_info_message(self, message: str, error: bool = False, warning: bool = False) -> None:
+    def add_info_message(self, message: str, error: bool = False, warning: bool = False) -> Label:
+        """Mount a status line. Returns it so a caller can retract it later."""
         info_color = config.ui.colors.info
         error_color = config.ui.colors.error
         notice_color = config.ui.colors.notice
@@ -1013,6 +1015,7 @@ class ChatLog(VerticalScroll):
         label.add_class("info-message")
         self.mount(label)
         self._scroll_if_anchored(animate=False)
+        return label
 
     def clear_tool_blocks(self) -> None:
         self._tool_blocks.clear()

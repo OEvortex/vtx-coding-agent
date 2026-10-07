@@ -2579,7 +2579,7 @@ wheels = [
 
 [[package]]
 name = "vtx-coding-agent"
-version = "1.2.1"
+version = "1.2.2"
 source = { editable = "." }
 dependencies = [
     { name = "aiofiles" },
@@ -2603,6 +2603,7 @@ dependencies = [
     { name = "prompt-toolkit" },
     { name = "pydantic" },
     { name = "pydantic-settings" },
+    { name = "pyjwt" },
     { name = "pypdf" },
     { name = "pytest-xdist" },
     { name = "python-docx" },
@@ -2684,6 +2685,7 @@ requires-dist = [
     { name = "pycryptodome", marker = "extra == 'weixin'", specifier = ">=3.20.0" },
     { name = "pydantic", specifier = ">=2.12.5" },
     { name = "pydantic-settings", specifier = ">=2.12.0,<3.0.0" },
+    { name = "pyjwt" },
     { name = "pyjwt", marker = "extra == 'msteams'", specifier = ">=2.0,<3.0" },
     { name = "pymupdf", marker = "extra == 'pdf'", specifier = ">=1.25.0" },
     { name = "pypdf", specifier = ">=5.0.0,<6.0.0" },
