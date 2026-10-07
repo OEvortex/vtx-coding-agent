@@ -58,6 +58,7 @@ dependencies = [
     "textual>=8.0.0",
     "tiktoken>=0.12.0,<1.0.0",
     "typer>=0.20.0,<1.0.0",
+    "PyJWT",
 ]
 
 [project.optional-dependencies]
