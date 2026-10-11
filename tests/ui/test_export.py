@@ -157,9 +157,10 @@ def test_export_renders_a_codemode_cell(tmp_path):
 
     html = _export(tmp_path)
 
-    assert '<div class="codemode-prompt">In [1]:</div>' in html
+    assert '<div class="codemode-title">codemode</div>' in html
     assert "rows = await tools.search(" in html
-    assert '<div class="codemode-prompt">Out [1]:</div>' in html
     assert "search 0.4s" in html
+    # The returned value lands in the compact output section, no "Out" prompt.
+    assert '<div class="codemode-output">3</div>' in html
     # The script is the payload, so the arguments blob is not what gets shown.
     assert '<div class="tool-call-args">' not in html

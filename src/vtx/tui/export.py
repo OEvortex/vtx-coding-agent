@@ -142,7 +142,7 @@ a { color: var(--blue); }
 }
 .tool-result.error { color: var(--red); }
 .codemode-cell { margin-top: 2px; }
-.codemode-prompt { color: var(--yellow); font-weight: 600; }
+.codemode-title { color: var(--yellow); font-weight: 600; }
 .codemode-source {
   color: var(--fg);
   white-space: pre-wrap;
@@ -150,14 +150,7 @@ a { color: var(--blue); }
   overflow-x: auto;
   margin-top: 2px;
 }
-.codemode-stdout { color: var(--fg2); white-space: pre-wrap; font-size: 11px; }
-.codemode-value {
-  color: var(--fg);
-  white-space: pre-wrap;
-  font-size: 11px;
-  overflow-x: auto;
-  margin-top: 2px;
-}
+.codemode-output { color: var(--fg3); white-space: pre-wrap; font-size: 11px; }
 .codemode-error { color: var(--red); white-space: pre-wrap; font-size: 11px; margin-top: 4px; }
 .codemode-trace { color: var(--fg4); white-space: pre-wrap; font-size: 11px; margin-top: 2px; }
 """
@@ -383,9 +376,10 @@ def _format_name(name: str) -> str:
 def _codemode_parts(ui_data: dict[str, Any]) -> dict[str, Any]:
     """Flatten one codemode ``ui_data`` payload into the export cell's parts.
 
-    Same collapse rules as the terminal cell: clip the long parts rather than
+    Same collapse rules as the terminal block: clip the long parts rather than
     dropping them, and keep the tool-call trace on one line so a forty-call
-    script does not turn into forty lines of export.
+    script does not turn into forty lines of export. Printed lines and the
+    returned value are one output section, as they are in the terminal.
     """
     calls = [c for c in ui_data.get("calls") or [] if isinstance(c, dict)]
     trace = ""
@@ -410,10 +404,14 @@ def _codemode_parts(ui_data: dict[str, Any]) -> dict[str, Any]:
         stack = str(error.get("stack") or "")
         error_text = f"{head}\n\n{_truncate(stack, 12)}" if stack.strip() else head
 
+    output = "\n".join(str(t) for t in ui_data.get("printed") or [] if str(t).strip())
+    value = str(ui_data.get("value") or "")
+    if value:
+        output = f"{output}\n{value}" if output else value
+
     return {
         "code": _truncate(str(ui_data.get("code") or ""), 24),
-        "value": _truncate(str(ui_data.get("value") or ""), 12),
-        "stdout": _truncate("\n".join(str(t) for t in ui_data.get("printed") or []), 8),
+        "output": _truncate(output, 5),
         "error": error_text,
         "trace": trace,
         "error_status": bool(error),
@@ -508,7 +506,6 @@ class HtmlBuilder:
         self._parts: list[str] = []
         self._assistant_open = False
         self._last_block_kind: str | None = None
-        self._codemode_cells = 0
 
     def _append(self, text: str) -> None:
         self._parts.append(text)
@@ -584,33 +581,28 @@ class HtmlBuilder:
         self,
         *,
         code: str,
-        value: str = "",
-        stdout: str = "",
+        output: str = "",
         error: str = "",
         trace: str = "",
         error_status: bool = False,
     ) -> None:
-        """One ``codemode`` call as a notebook cell: ``In`` the script, ``Out`` the value.
+        """One ``codemode`` call: the script, its nested calls, its output.
 
         Mirrors :class:`vtx.tui.codemode_block` so an exported session reads the
         same way the terminal did, instead of the script arriving as a JSON
         argument blob with its newlines escaped onto one line.
         """
         self.open_assistant()
-        self._codemode_cells += 1
-        cell = self._codemode_cells
         parts = ['<div class="tool-block"><div class="codemode-cell">']
-        parts.append(f'<div class="codemode-prompt">In [{cell}]:</div>')
-        parts.append(f'<pre class="codemode-source">{_esc(code)}</pre>')
-        if stdout:
-            parts.append(f'<div class="codemode-stdout">{_esc(stdout)}</div>')
-        if error_status:
-            parts.append(f'<div class="codemode-error">{_esc(error)}</div>')
-        elif value:
-            parts.append(f'<div class="codemode-prompt">Out [{cell}]:</div>')
-            parts.append(f'<pre class="codemode-value">{_esc(value)}</pre>')
+        parts.append('<div class="codemode-title">codemode</div>')
+        if code:
+            parts.append(f'<pre class="codemode-source">{_esc(code)}</pre>')
         if trace:
             parts.append(f'<div class="codemode-trace">{_esc(trace)}</div>')
+        if output:
+            parts.append(f'<div class="codemode-output">{_esc(output)}</div>')
+        if error_status:
+            parts.append(f'<div class="codemode-error">{_esc(error)}</div>')
         parts.append("</div></div>")
         self._append("".join(parts))
 

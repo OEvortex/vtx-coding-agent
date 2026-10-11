@@ -41,6 +41,7 @@ def mounted():
     yield host
     host.dispose()
 
+
 #: What each exposure is supposed to mean, as a row. Written out rather than
 #: computed from the implementation, so a change to the rules that also changes
 #: this table has to be a deliberate edit rather than a tautology.

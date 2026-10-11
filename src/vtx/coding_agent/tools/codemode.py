@@ -372,7 +372,7 @@ class CodemodeTool(BaseTool):
         Every other tool can summarise a call in one line because the line *is*
         the call; here the script is the call, so a first-line preview showed
         the user a fragment of the thing they were approving and running. The
-        notebook block (:mod:`vtx.tui.codemode_block`) owns how much of it to
+        codemode block (:mod:`vtx.tui.codemode_block`) owns how much of it to
         draw, and other consumers (the tool tree, the header) clip on their own.
 
         Parsed rather than string-trimmed so the ``# @options:`` line the model
@@ -561,7 +561,7 @@ def _render_value(value: Any) -> str | None:
 
 
 def _ui_payload(source: Any, result: Any, *, duration_ms: int, images: int) -> dict[str, Any]:
-    """Everything the notebook cell needs, as JSON-safe data.
+    """Everything the codemode block needs, as JSON-safe data.
 
     The block owns layout, which means the tool hands it the run rather than a
     pre-rendered string: the same payload drives the collapsed cell, the
