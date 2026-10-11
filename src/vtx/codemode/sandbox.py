@@ -44,6 +44,7 @@ import queue
 import sys
 import threading
 import traceback
+from concurrent.futures import ThreadPoolExecutor
 from textwrap import indent
 from typing import Any
 
@@ -393,7 +394,6 @@ class _ToolBridge:
 
     def __init__(self, stream: Any) -> None:
         self._lock = threading.Lock()
-        self._slots = threading.BoundedSemaphore(MAX_CONCURRENT_TOOL_CALLS)
         self._next_id = 0
         self._calls: list[_CallResult] = []
         # Per-thread: a depth guard shared across threads would make one
@@ -402,6 +402,17 @@ class _ToolBridge:
         self._pending: dict[int, queue.SimpleQueue[Any]] = {}
         self._closed = False
         self._stream = stream
+        # A fixed pool, not `asyncio.to_thread`. The round trip blocks on the
+        # parent's reply, so every in-flight call costs a thread, and thread
+        # stacks are charged against `memory_limit_bytes` (RLIMIT_AS). The
+        # default executor grows a thread per concurrent call, so a script that
+        # gathered forty of them hit "can't start new thread" before a single
+        # tool had answered -- a wall the script cannot see and cannot edit
+        # around, which is the worst kind to fail on. Calls past the cap queue,
+        # so `MAX_CONCURRENT_TOOL_CALLS` is now what its name says.
+        self._pool = ThreadPoolExecutor(
+            max_workers=MAX_CONCURRENT_TOOL_CALLS, thread_name_prefix="codemode-call"
+        )
         self._reader = threading.Thread(
             target=self._read_loop, name="codemode-reader", daemon=True
         )
@@ -449,12 +460,13 @@ class _ToolBridge:
         # event loop thread. Waiting inline would park the loop for the
         # duration of the call and `asyncio.gather` would run the calls one
         # after another -- the concurrency would exist on paper and nowhere
-        # else.
+        # else. The pool bounds how many of those waits exist at once.
         async def call(**kwargs: Any) -> Any:
             depth = getattr(self._depth, "value", 0)
             if depth >= _MAX_CALL_DEPTH:
                 raise InvalidInput(declared, detail="tool calls nested too deeply")
-            return await asyncio.to_thread(self._dispatch, declared, kwargs)
+            loop = asyncio.get_running_loop()
+            return await loop.run_in_executor(self._pool, self._dispatch, declared, kwargs)
 
         call.__name__ = identifier
         return call
@@ -511,6 +523,10 @@ class _ToolBridge:
             self._pending.clear()
         for inbox in waiting:
             inbox.put(None)
+        # Queued-but-unstarted calls are dropped rather than awaited: the script
+        # is over, and a pool thread starting one now would block the process
+        # from exiting until its (never arriving) reply timed out.
+        self._pool.shutdown(wait=False, cancel_futures=True)
 
 
 class _Tools:

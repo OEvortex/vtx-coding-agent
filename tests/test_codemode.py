@@ -48,6 +48,11 @@ async def _slow(args, _signal):
     return "slept"
 
 
+async def _probe(args, _signal):
+    await asyncio.sleep(0.01)
+    return {"n": args.get("n")}
+
+
 def _sandbox(**kwargs):
     kwargs.setdefault("limits", Limits(timeout_ms=20_000))
     return CodemodeSandbox(**kwargs)
@@ -133,6 +138,44 @@ async def test_sequential_calls_are_slower_than_concurrent_ones():
     )
     elapsed = loop.time() - start
     assert result.ok
+    assert elapsed < 1.2
+
+
+@pytest.mark.asyncio
+async def test_a_wide_gather_survives_the_memory_cap():
+    # A tool call costs a thread in the worker, and a thread's stack is charged
+    # against `memory_limit_bytes` (RLIMIT_AS). Dispatching on the default
+    # executor spent one thread per concurrent call, so a gather wider than the
+    # cap died with "can't start new thread" -- after nine calls, with the rest
+    # never sent, on a script that had done nothing wrong. The dispatch pool
+    # queues the excess instead.
+    sandbox = CodemodeSandbox(
+        limits=Limits(timeout_ms=30_000, memory_limit_bytes=512 * 1024 * 1024),
+        tools=[CodemodeTool(name="probe", description="Returns a number", execute=_probe)],
+    )
+    result = await sandbox.execute(
+        "return len(await asyncio.gather(*[tools.probe(n=i) for i in range(40)]))"
+    )
+    assert result.ok, result.diagnostic
+    assert result.value == 40
+    assert len(result.calls) == 40
+
+
+@pytest.mark.asyncio
+async def test_a_wide_gather_is_queued_rather_than_serialized():
+    # The other half: capping threads must not turn a gather into a queue of
+    # one. Same reasoning as the 4-call test above -- 16 x 150ms has to finish
+    # well inside the serial 2.4s.
+    sandbox = _sandbox(tools=[CodemodeTool(name="slow", description="Sleeps", execute=_slow)])
+    loop = asyncio.get_running_loop()
+    start = loop.time()
+    result = await sandbox.execute(
+        "await asyncio.gather(*[tools.slow(delay=0.15) for _ in range(16)])\nreturn 1",
+        timeout_ms=20_000,
+    )
+    elapsed = loop.time() - start
+    assert result.ok
+    assert result.value == 1
     assert elapsed < 1.2
 
 

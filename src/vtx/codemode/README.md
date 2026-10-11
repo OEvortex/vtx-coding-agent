@@ -94,7 +94,7 @@ asyncio.run(main())
 
 - `truncate_middle(text, budget_tokens) -> (str, bool)` cuts the middle out of over-long output, keeping head and tail, and returns the flag so truncation is reported rather than silent.
 
-- `Limits` carries `timeout_ms=30_000`, `wall_clock_ms=30 * 60_000`, `max_tool_calls=None`, `max_output_tokens=None`, `memory_limit_bytes=None`, `detect_stalls=True`. Those are this package's defaults; the familiar `max_tool_calls=200`, `max_output_tokens=8_000`, `memory_limit_bytes=512 MiB` are the harness tool's constructor defaults, not these. A per-execution cap of `MAX_CONCURRENT_TOOL_CALLS = 8` in-flight tool calls is a fixed interpreter-side semaphore, not a host knob, and nested tool calls are refused past depth 16.
+- `Limits` carries `timeout_ms=30_000`, `wall_clock_ms=30 * 60_000`, `max_tool_calls=None`, `max_output_tokens=None`, `memory_limit_bytes=None`, `detect_stalls=True`. Those are this package's defaults; the familiar `max_tool_calls=200`, `max_output_tokens=8_000`, `memory_limit_bytes=512 MiB` are the harness tool's constructor defaults, not these. A per-execution cap of `MAX_CONCURRENT_TOOL_CALLS = 8` in-flight tool calls is a fixed interpreter-side property, not a host knob, and nested tool calls are refused past depth 16. Calls past the cap queue on a fixed dispatch pool rather than each taking a thread of its own: thread stacks are charged against `memory_limit_bytes`, so a script gathering forty tools at once used to die with `can't start new thread` before any of them answered.
 
 ## Results and diagnostics
 
