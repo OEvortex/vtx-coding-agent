@@ -12,10 +12,11 @@ Vtx is a minimalist coding-agent harness built around a small, transparent runti
 | `vtx.core` | Shared foundations: agent events, the permission gate, notifications, the scratchpad dir, compaction, handoff prompts, paths, the user config schema and its defaults, the theme palette registry, harness knobs, and package-version resolution. |
 | `vtx.ai` | LLM layer only: provider catalog, OAuth, SDK adapters, model catalog, rate limits, tool parsing. No harness code. |
 | `vtx.codemode` | Confined script execution: the sandbox, its isolation layers, and the discovery/catalog layer (see [codemode.md](codemode.md)). |
-| `vtx.agent` | The product-neutral agent harness: loop, turn engine, session store, tool registry, prompt/context assembly, extensions, hooks, goals, and the programmatic SDK. |
+| `vtx.agent` | The product-neutral agent harness: loop, turn engine, session store, tool registry, prompt/context assembly, the `AgentHook` protocol, goals, and the programmatic SDK. |
 | `vtx.mcp` | MCP client: server config, transports (stdio, in-memory, streamable HTTP), tool/resource exposure, OAuth, and the trust prompt. |
 | `vtx.tui` | **Base** terminal-UI toolkit: input editing and tab completion, fuzzy matching, overlay lists, LaTeX/formatting helpers, clipboard, styling, and the block renderers for tool calls and results. Knows nothing about the agent, models, sessions, goals, or slash commands. |
 | `vtx.coding_agent` | The product layer: CLI entry point (`coding_agent.cli:main`), headless runner, the concrete filesystem tools and their default registry, the built-in skills package, and | its own concrete choices (which tools ship, which skills bundle). The interface itself is `vtx.tui`. |
+| `vtx.plugins` | **Above everything.** The plugin kernel (`Context`, `EventHub`, plugin rows, patch layers, profiles, install gate) plus `vtx.plugins.builtins`, which re-expresses the subsystems above as rows. It depends on `core`, `agent`, and `ai`; nothing in `vtx` depends on it. |
 
 ### Dependency direction
 
@@ -40,6 +41,40 @@ The one runtime seam that used to break it — the sub-agent runner, where three
 
 The harness used to live at `vtx.ai.agent`, nested inside the LLM package, which made `vtx.ai` a 116-module grab bag holding the entire runtime. It is now a sibling of `vtx.ai`, so `vtx.ai` holds only AI code. Likewise every module that duplicated a harness module has been removed rather than aliased: `coding_agent/{prompts,context,goal}`, `runtime.py`, `version.py`, `config.py`, `defaults/`, `gh_cli.py`, `git_branch.py`, `self_update.py`, `diff_display.py`, and `themes.py` each have a single home. One module path per concern, one implementation to keep correct.
 
+## The plugin composition
+
+`vtx` boots a composition rather than a fixed object graph. A profile's ordered
+bundles are concatenated, then the profile's own patch layer is applied, then any
+`--patch` overlays; the last write for a row id wins.
+
+| Layer | Where it lives | Owns |
+|---|---|---|
+| Bundles `base`, `tui`, `headless`, `minimal` | `vtx.plugins.builtins` | The service providers and the built-in tool rows |
+| Profile patch | `~/.vtx/profiles/<name>/cordis.yml` | The user's own row overrides |
+| `--patch` overlays | wherever you keep them | Per-invocation overrides |
+
+Activation is service-availability driven, so row order carries no load
+semantics: a row mounts as soon as every service it names exists. The service
+table lives on the root `Context`; each row hangs off it as a scope, so a row's
+teardown unwinds only that row. See [plugins.md](plugins.md).
+
+```
+cli.py --boot(profile, patches)--> PluginHost
+                                  |-- Context (service table)
+                                  |    |-- scope: tools       -> ctx.tools
+                                  |    |-- scope: llm         -> ctx.llm
+                                  |    |-- scope: agent-loop  -> ctx.agentLoop
+                                  |    |-- scope: tool-read   -> registers on ctx.tools
+                                  |    `-- scope: extension:<stem> -> ctx.extensions
+                                  `-- status()  --dump-config
+```
+
+A Python extension file is not a second mechanism: discovery runs before mount,
+appends one `extension:<stem>` row per file to the profile's list, and those rows
+mount in the same pass. `ConversationRuntime` then reads `ctx.prompts` and
+`ctx.agentLoop` off the mounted composition and falls back to the built-in path
+when no row provides them. See [extensions.md](extensions.md).
+
 ## Two run surfaces
 
 - **TUI** (`vtx`, `vtx.tui.launch.run_tui`) — the interactive Textual app.
@@ -54,21 +89,22 @@ Both drive the same `ConversationRuntime` → `Agent` stack.
 | `loop.py` | `Agent.run(query)` — the interactive turn loop: streams events per turn, runs compaction between turns, queues follow-ups and steering. Product-agnostic: system prompt and context are injected. |
 | `turn.py` | `run_single_turn` — one turn: stream from the provider, execute tool calls, emit events. Handles retries, empty-response recovery, length recovery, mid-turn injections. |
 | `agent_runner.py` | `run_agent_turn(spec)` — thin stateless wrapper over `run_single_turn` used by sub-agents and tests. |
-| `runtime.py` | `ConversationRuntime` — composition root wiring provider, tools, extensions, agents; owns model/thinking switches, sessions, compaction and handoff entry points; resolves each model's real context window onto the engine. |
+| `runtime.py` | `ConversationRuntime` — composition root wiring provider, tools and agents; reads `ctx.prompts` and `ctx.agentLoop` off the running plugin composition, falling back to the built-in path; owns model/thinking switches, sessions, compaction and handoff entry points; resolves each model's real context window onto the engine. |
 | `session.py` | JSONL session persistence with a branching tree of entries (see [sessions.md](sessions.md)). |
 | `dispatcher.py` | Per-task context (`DispatcherContext`) so tools like `delegate_subagent` can reach provider/model/session info. |
 | `context_governance.py` | Budgets oversized tool results before they are sent back to the model. |
-| `extensions.py`, `extension_manager.py` | Extension discovery, the `ExtensionAPI`, and the event bus (see [extensions.md](extensions.md)). |
 | `prompts/`, `context/` | System-prompt assembly and the AGENTS.md / skills / git context loaders. |
 | `goal/` | The persistent goal system: storage, record, service, auditor, and the `GoalTool` (see [goals.md](goals.md)). |
 | `agents/` | Handoff-agent schema (`AgentDef`), discovery, loader, registry (see [agents.md](agents.md)). |
-| `hooks/` | `.vtx/hooks.yml` declarative hooks and the `AgentHook` protocol (see [extensions.md](extensions.md)). |
+| `hooks/` | The in-process `AgentHook` protocol and the `HookBridge` the TUI and headless runner still use; the `.vtx/hooks.yml` loader is a plugin row (see [extensions.md](extensions.md)). |
 | `sdk/` | The programmatic multi-agent SDK (see [sdk/README.md](sdk/README.md)). |
 | `tools/` | Tool contract only: `BaseTool` and JSON-schema slimming for LLM tool definitions. Concrete tools live in the coding agent. |
 | `background.py` | Background-task notification tag shared between parent and sub-agents. |
 | `subagents.py` | `SubagentScheduler`, the FIFO admission queue capped by `task.max_concurrent`. |
 
 Support modules: `tools_manager.py` (auto-download of `fd`/`rg` into `~/.vtx/bin`). Harness-owned runtime knobs (max turns, compaction policy, idle timeout) live in `core/harness_config.py` with product-neutral defaults, and `core/config.py` mirrors user YAML into them. Package-version resolution lives in `core/version.py`, which every package reads from.
+
+Extension discovery, the `ExtensionAPI` and the event hub are not in this package — they are `vtx.plugins`, and an extension file is one plugin row (see [extensions.md](extensions.md)).
 
 ## Coding-agent layer (`vtx.coding_agent`)
 

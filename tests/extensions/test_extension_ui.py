@@ -15,8 +15,9 @@ import asyncio
 
 import pytest
 
-from vtx.agent.extensions import TOOL_CALL as EVENT_TOOL_CALL
-from vtx.agent.extensions import ExtensionUIContext, HandlerContext
+from vtx.plugins.api import ExtensionUIContext
+from vtx.plugins.bus import HandlerContext
+from vtx.plugins.event_contract import TOOL_CALL as EVENT_TOOL_CALL
 from vtx.tui.extension_ui import ExtensionConfirmScreen, TextualExtensionUI
 
 # =============================================================================
@@ -46,7 +47,7 @@ def test_noop_ui_non_blocking_surfaces():
 
 
 def _make_bus():
-    from vtx.agent.extensions import EventBus
+    from vtx.plugins.bus import EventBus
 
     return EventBus()
 

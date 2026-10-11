@@ -21,10 +21,10 @@ from typing import Any, NamedTuple
 import pytest
 from pydantic import BaseModel
 
-from vtx.agent.extensions import EventBus
 from vtx.agent.runtime import ConversationRuntime
 from vtx.agent.tools import get_all_tools
 from vtx.agent.tools.base import BaseTool
+from vtx.plugins.bus import EventBus
 from vtx.protocol.types import ToolResult
 
 pytestmark = pytest.mark.asyncio

@@ -71,7 +71,7 @@ class ToolGovernance:
         return self._tool
 
     async def __call__(self, args: dict[str, Any], signal: Any) -> Any:
-        from vtx.agent.extensions import TOOL_CALL, TOOL_EXECUTION_END, TOOL_EXECUTION_START
+        from vtx.plugins.event_contract import TOOL_CALL, TOOL_EXECUTION_END, TOOL_EXECUTION_START
 
         tool = self._tool
         name = tool.name

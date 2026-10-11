@@ -13,7 +13,6 @@ from vtx.agent.agents import AgentRegistry, LoadedAgent
 from vtx.agent.agents.activate import _filter as _agent_tool_filter
 from vtx.agent.agents.activate import compose_active_commands
 from vtx.agent.context import Context
-from vtx.agent.extensions import MODEL_SELECT, THINKING_LEVEL_SELECT, EventBus, LoadedExtensions
 from vtx.agent.loop import Agent
 from vtx.agent.prompts import build_system_prompt
 from vtx.agent.session import CompactionEntry, CustomMessageEntry, MessageEntry, Session
@@ -35,9 +34,26 @@ from vtx.core.compaction import SummaryProgress, generate_summary
 from vtx.core.config import add_recent_model, get_last_selected, set_last_selected
 from vtx.core.config import config as vtx_config
 from vtx.core.handoff import generate_handoff_prompt
+from vtx.plugins.bus import EventBus
+from vtx.plugins.event_contract import MODEL_SELECT, THINKING_LEVEL_SELECT
+from vtx.plugins.extensions import LoadedExtensions
 from vtx.protocol.types import AssistantMessage, TextContent, UserMessage
 
 log = logging.getLogger("agent.runtime")
+
+
+def _active_plugin_host() -> Any:
+    """The composition the process booted, or ``None``.
+
+    Imported lazily and defensively: ``vtx.agent`` must stay usable without a
+    composition mounted, which is how the SDK and the tests drive it.
+    """
+    try:
+        from vtx.plugins.bootstrap import active_host
+
+        return active_host()
+    except Exception:  # pragma: no cover - a broken composition must not brick the runtime
+        return None
 
 
 def default_base_url_for_api(api_type: ApiType) -> str | None:
@@ -161,12 +177,17 @@ class ConversationRuntime:
         active_agent: LoadedAgent | None = None,
         agent_extensions: list | None = None,
         progress_callback: Callable[[str, dict], None] | None = None,
+        plugins: Any = None,
     ) -> None:
         self.cwd = cwd
         self._progress_callback = progress_callback
         self._background_manager = None  # installed via ensure_background_manager
         self._background_manager_token = None
         self.agent: Agent | None = None
+        #: The plugin composition this runtime reads its seams from. Falls back
+        #: to whatever the process booted, so an embedder that passes nothing
+        #: still gets the composed tool set.
+        self.plugins = plugins if plugins is not None else _active_plugin_host()
 
         # Resolve the initial agent (CLI > env > config > none). The CLI and
         # the launch path may pass an explicit ``active_agent``; otherwise we
@@ -425,14 +446,25 @@ class ConversationRuntime:
         if active is not None and active.definition.skills and self.context is not None:
             names = set(active.definition.skills)
             agent_skills = [s for s in self.context.skills if s.name in names or s.path in names]
-        new_prompt = build_system_prompt(
-            self.cwd,
-            context=self.context,
-            tools=self.declared_tools(),
-            extra_instructions=extra,
-            extra_instructions_mode=mode,
-            skills=agent_skills,
-        )
+        prompts = self._prompt_service()
+        if prompts is None:
+            new_prompt = build_system_prompt(
+                self.cwd,
+                context=self.context,
+                tools=self.declared_tools(),
+                extra_instructions=extra,
+                extra_instructions_mode=mode,
+                skills=agent_skills,
+            )
+        else:
+            new_prompt = prompts.build(
+                self.cwd,
+                self.declared_tools(),
+                context=None,
+                extra_instructions=extra,
+                extra_instructions_mode=mode,
+                skills=agent_skills,
+            )
         # Agent._system_prompt is intentionally a private attribute we
         # rebuild on activation; the type checker doesn't know that.
         if self.agent is not None:
@@ -538,7 +570,7 @@ class ConversationRuntime:
 
         Used by the TUI to route ``/foo`` invocations.
         """
-        from vtx.agent.extensions import ExtensionCommand
+        from vtx.agent.agents.api import ExtensionCommand
 
         if not hasattr(self, "_cached_extensions") or self._cached_extensions is None:
             # No extension bus; just return agent-local commands.
@@ -552,27 +584,58 @@ class ConversationRuntime:
         self._cached_extensions = loaded
         self._agent_extensions = list(loaded.extensions)
 
+    @property
+    def plugin_ctx(self) -> Any:
+        """The composition's root context, or ``None`` when none is mounted."""
+        host = self.plugins
+        return host.base if host is not None else None
+
+    def _prompt_service(self) -> Any:
+        """``ctx.prompts`` when the composition provides one, else ``None``."""
+        ctx = self.plugin_ctx
+        if ctx is not None and "prompts" in ctx:
+            return ctx.prompts
+        return None
+
     def resolve_system_prompt(
         self, session: Session | None = None, context: Context | None = None
     ) -> str:
         active = self.active_agent
         extra = active.definition.instructions if active is not None else None
         mode = active.definition.instructions_mode if active is not None else "append"
-        if active is not None:
-            return build_system_prompt(
+        skills = self._agent_skills(active, context)
+        prompts = self._prompt_service()
+        if prompts is None:
+            built = build_system_prompt(
                 self.cwd,
                 context=context,
                 tools=self.declared_tools(),
                 extra_instructions=extra,
                 extra_instructions_mode=mode,
+                skills=skills,
             )
-        return (session.system_prompt if session else None) or build_system_prompt(
-            self.cwd,
-            context=context,
-            tools=self.declared_tools(),
-            extra_instructions=extra,
-            extra_instructions_mode=mode,
-        )
+        else:
+            built = prompts.build(
+                self.cwd,
+                self.declared_tools(),
+                context=None,
+                extra_instructions=extra,
+                extra_instructions_mode=mode,
+                skills=skills,
+            )
+        # An active agent's instructions are per-session state, so a cached
+        # prompt from a different agent would be wrong; without one, the session
+        # header's prompt is authoritative and cheaper than a rebuild.
+        if active is not None:
+            return built
+        return (session.system_prompt if session else None) or built
+
+    def _agent_skills(self, active: Any, context: Any) -> list[Any] | None:
+        """The skill subset the active agent lists, or ``None`` for all of them."""
+        if active is None or not getattr(active.definition, "skills", None) or context is None:
+            return None
+        names = set(active.definition.skills)
+        return [s for s in context.skills if s.name in names or s.path in names]
 
     def set_project_trusted(self, trusted: bool) -> None:
         """Whether a project-local ``.vtx/mcp.json`` may be read.
@@ -879,16 +942,31 @@ class ConversationRuntime:
         self, provider: BaseProvider, session: Session, context: Context | None = None
     ) -> Agent:
         context = context or Context.load(self.cwd)
-        agent = Agent(
-            provider=provider,
-            # The declared set, not the pool: `Agent` is what sends the request.
-            tools=self.declared_tools(),
-            session=session,
-            cwd=self.cwd,
-            context=context,
-            system_prompt=self.resolve_system_prompt(session, context=context),
-            extensions=self.extensions,
-        )
+        # The declared set, not the pool: `Agent` is what sends the request.
+        tools = self.declared_tools()
+        system_prompt = self.resolve_system_prompt(session, context=context)
+        loop = self.plugin_ctx.agentLoop if "agentLoop" in (self.plugin_ctx or {}) else None
+        if loop is not None:
+            # The composition's driver, not the built-in one.
+            agent = loop.create(
+                provider,
+                tools,
+                session,
+                cwd=self.cwd,
+                context=context,
+                system_prompt=system_prompt,
+                extensions=self.extensions,
+            )
+        else:
+            agent = Agent(
+                provider=provider,
+                tools=tools,
+                session=session,
+                cwd=self.cwd,
+                context=context,
+                system_prompt=system_prompt,
+                extensions=self.extensions,
+            )
         self._apply_model_info(agent)
         return agent
 

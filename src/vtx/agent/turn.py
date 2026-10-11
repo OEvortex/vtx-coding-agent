@@ -36,17 +36,6 @@ from pydantic import ValidationError
 
 from vtx.agent.async_utils import OperationCancelledError, await_or_cancel
 from vtx.agent.context_governance import prepare_for_model
-from vtx.agent.extensions import (
-    MESSAGE_END,
-    MESSAGE_START,
-    PERMISSION_DENIED,
-    PERMISSION_REQUEST,
-    TOOL_CALL,
-    TOOL_EXECUTION_END,
-    TOOL_EXECUTION_START,
-    TOOL_RESULT,
-    EventBus,
-)
 from vtx.agent.hooks.agent_hook import AgentHook, AgentHookContext, AgentRunHookContext
 from vtx.agent.tools import BaseTool, get_tool_definitions, lookup_default_tool
 from vtx.ai import BaseProvider
@@ -81,6 +70,17 @@ from vtx.core.permissions import (
     AskUserResponse,
     PermissionDecision,
     check_permission,
+)
+from vtx.plugins.bus import EventBus
+from vtx.plugins.event_contract import (
+    MESSAGE_END,
+    MESSAGE_START,
+    PERMISSION_DENIED,
+    PERMISSION_REQUEST,
+    TOOL_CALL,
+    TOOL_EXECUTION_END,
+    TOOL_EXECUTION_START,
+    TOOL_RESULT,
 )
 from vtx.protocol.errors import format_error
 from vtx.protocol.types import (

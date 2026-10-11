@@ -28,7 +28,7 @@ from textual.containers import Vertical
 from textual.screen import ModalScreen
 from textual.widgets import Input, Label, OptionList, Static
 
-from vtx.agent.extensions import ExtensionUIContext
+from vtx.plugins.api import ExtensionUIContext
 
 log = logging.getLogger("tui.extension_ui")
 

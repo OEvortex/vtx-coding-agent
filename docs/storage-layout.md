@@ -13,11 +13,13 @@ Vtx keeps its state under a single config directory (`~/.vtx`) plus project-loca
 | `~/.vtx/models/` | Cached dynamic model catalogs (~6 h TTL) |
 | `~/.vtx/scratchpads/vtx-scratchpad-*` | Per-session scratch space |
 | `~/.vtx/agent/*.py` | Global handoff agent profiles (see [agents.md](agents.md)) |
-| `~/.vtx/agent/extensions/*.py` | Global extensions (see [extensions.md](extensions.md)) |
+| `~/.vtx/agent/extensions/*.py` | Global extensions; each file is one plugin row (see [extensions.md](extensions.md)) |
+| `~/.vtx/profiles/<name>/bundle.txt` | A plugin profile's ordered bundle list |
+| `~/.vtx/profiles/<name>/cordis.yml` | The profile's own patch layer — the user's row overrides (see [plugins.md](plugins.md)) |
+| `~/.vtx/profiles/<name>/compatibility.json` | Exact `package@version` → vtx version exemptions granted by `vtx plugin allow-version` |
 | `~/.vtx/skills/<name>/` | Skills in the legacy vtx location |
 | `~/.vtx/bin/` | Auto-downloaded binaries (`fd`, `rg`) |
 | `~/.vtx/hooks.yml` | Global hook config (project `.vtx/hooks.yml` takes precedence) |
-| `~/.vtx/installed_extensions.yml` | `vtx install` ledger |
 
 ## Project-local
 
@@ -25,7 +27,7 @@ Vtx keeps its state under a single config directory (`~/.vtx`) plus project-loca
 |------|---------|
 | `.vtx/providers/*.yaml` | Project custom providers (highest precedence) |
 | `.vtx/agent/*.py` | Project handoff agents, walked up to the git root |
-| `.vtx/extensions/*.py` | Project extensions |
+| `.vtx/extensions/*.py` | Project extensions; each file is one plugin row (see [extensions.md](extensions.md)) |
 | `.vtx/hooks.yml` | Project hooks |
 | `.vtx/goals/active_goal_*.md`, `archived/`, `ledger.jsonl`, `settings.json` | Persistent goal system (see [goals.md](goals.md)) |
 | `AGENTS.md` / `CLAUDE.md` | Project guidelines, discovered from git root down to cwd |

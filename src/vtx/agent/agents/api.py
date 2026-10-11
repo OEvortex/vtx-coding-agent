@@ -17,6 +17,7 @@ from typing import TYPE_CHECKING, Any, Literal
 
 from vtx.agent.agents.schema import AgentDef, PermissionAction, PermissionGate
 from vtx.agent.tools.base import BaseTool
+from vtx.plugins.api import CommandOutcome, ExtensionCommand, ExtensionTool
 
 # ``CommandOutcome``, ``ExtensionTool``, and ``_json_schema_to_pydantic``
 # come from :mod:`vtx.extensions`, but importing them at module load
@@ -25,7 +26,7 @@ from vtx.agent.tools.base import BaseTool
 # string annotations everywhere else (under ``from __future__ import
 # annotations``).
 if TYPE_CHECKING:
-    from vtx.agent.extensions import CommandOutcome
+    from vtx.plugins.api import CommandOutcome
 
 NotifyLevel = Literal["info", "warning", "error"]
 
@@ -178,8 +179,8 @@ class AgentAPI:
             raise ValueError("Tool name must be a non-empty string")
 
         if execute is None and description is not None and parameters is not None:
-            from vtx.agent import ExtensionTool
-            from vtx.agent.extensions import _json_schema_to_pydantic
+            from vtx.agent.tools.schema import _json_schema_to_pydantic
+            from vtx.plugins.api import ExtensionTool
 
             def _decorator(fn: Callable[..., Any]) -> BaseTool:
                 params_model = _json_schema_to_pydantic(name, parameters)
@@ -205,8 +206,8 @@ class AgentAPI:
                 "(or use the @api.local_tool(...) decorator form)"
             )
 
-        from vtx.agent import ExtensionTool
-        from vtx.agent.extensions import _json_schema_to_pydantic
+        from vtx.agent.tools.schema import _json_schema_to_pydantic
+        from vtx.plugins.api import ExtensionTool
 
         params_model = _json_schema_to_pydantic(name, parameters)
         tool = ExtensionTool(
@@ -240,7 +241,7 @@ class AgentAPI:
         def _wrap(
             fn: Callable[[str], CommandOutcome | str | None],
         ) -> Callable[[str], CommandOutcome]:
-            from vtx.agent.extensions import CommandOutcome
+            from vtx.agent.agents.api import CommandOutcome
 
             def _wrapper(args: str) -> CommandOutcome:
                 try:
@@ -303,7 +304,7 @@ class AgentAPI:
 
     def on(self, event: str, handler: Callable[..., Any] | None = None) -> Any:
         """Subscribe ``handler`` to a lifecycle event for this agent."""
-        from vtx.agent.extensions import ALL_EVENTS
+        from vtx.plugins.event_contract import ALL_EVENTS
 
         if event not in ALL_EVENTS:
             raise ValueError(f"Unknown event {event!r}. Valid events: {', '.join(ALL_EVENTS)}")
@@ -343,4 +344,12 @@ class AgentAPI:
                 log.info(f"{self._loaded.definition.name}: {message}")
 
 
-__all__ = ["AgentAPI", "LoadedAgent", "NotifyLevel", "_when_predicate"]
+__all__ = [
+    "AgentAPI",
+    "CommandOutcome",
+    "ExtensionCommand",
+    "ExtensionTool",
+    "LoadedAgent",
+    "NotifyLevel",
+    "_when_predicate",
+]

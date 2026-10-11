@@ -122,9 +122,9 @@ def is_deactivation_command(text: str) -> bool:
 
 def register(api: Any) -> None:
     """Register Ponytail lifecycle hooks via the Vtx Python Extension API."""
-    from vtx.agent.extensions import BEFORE_AGENT_START, INPUT
     from vtx.core.config import config as vtx_config
     from vtx.core.config import set_ponytail
+    from vtx.plugins.event_contract import BEFORE_AGENT_START, INPUT
 
     @api.on(INPUT)
     async def _on_input(event: Any, payload: Any = None, ctx: Any = None) -> None:

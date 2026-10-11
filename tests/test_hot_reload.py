@@ -20,15 +20,17 @@ from __future__ import annotations
 
 import asyncio
 from pathlib import Path
+from typing import Any
 
 import pytest
 
-from vtx.agent.extensions import (
-    EventBus,
+from vtx.plugins.api import ExtensionActions, ExtensionAPI, ExtensionRecord
+from vtx.plugins.context import Context
+from vtx.plugins.extensions import (
     ExtensionLoadError,
     invalidate_extension_bytecode,
-    load_extension,
     load_for_runtime,
+    load_module,
 )
 from vtx.tui.autocomplete import DEFAULT_COMMANDS
 
@@ -74,14 +76,55 @@ def _write_package(pkg: Path, version: str) -> None:
 
 
 def _load(path: Path, *, fresh: bool = False):
-    return load_extension(
-        path,
-        bus=EventBus(),
-        cwd=str(path.parent),
-        session_file=None,
-        config_dir=path.parent,
-        fresh=fresh,
+    """Import one extension module and run its ``register`` against a record.
+
+    The return is the :class:`ExtensionRecord`, which is what ``api.register_tool``
+    populated — the old loader returned a shim module with a ``tools`` dict, and
+    this is the same information without the shim.
+    """
+    if fresh:
+        invalidate_extension_bytecode(path)
+    module = load_module(path)
+    record = ExtensionRecord(path.stem, path)
+    actions = ExtensionActions()
+    api = ExtensionAPI(
+        path.stem, _probe_ctx(record, actions), record, actions, cwd=str(path.parent)
     )
+    module.register(api)
+    return record
+
+
+def _probe_ctx(record: ExtensionRecord, actions: ExtensionActions) -> Any:
+    """A context whose tool service reads straight from the record.
+
+    A hot-reload probe only cares what the extension registered; giving it a
+    real composition would tie the module to whichever host happens to be
+    loaded.
+    """
+    from vtx.plugins.services import ToolService
+
+    tools = ToolService()
+    tools._owned = record.tools
+
+    class _ProbeContext(Context):
+        """A context whose only service is the probe's own tool table."""
+
+        def provide(self, key, service):
+            # Do not publish: nothing else should see a probe's registrations.
+            return service
+
+        def __contains__(self, key):
+            return key == "tools"
+
+        def __getitem__(self, key):
+            if key == "tools":
+                return tools
+            raise KeyError(key)
+
+        def get(self, key, default=None):
+            return tools if key == "tools" else default
+
+    return _ProbeContext()
 
 
 def _probe(ext) -> str:

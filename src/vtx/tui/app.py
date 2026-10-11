@@ -32,7 +32,6 @@ from vtx.agent.context.skills import (
     merge_registered_skills,
     render_skill_prompt,
 )
-from vtx.agent.extensions import load_for_runtime
 from vtx.agent.prompts import is_deactivation_command
 from vtx.agent.runtime import ConversationRuntime
 from vtx.agent.session import Session
@@ -43,6 +42,7 @@ from vtx.ai.base import AuthMode
 from vtx.core import ApprovalResponse, AskUserResponse
 from vtx.core.config import config, consume_config_warnings, get_last_selected, set_ponytail
 from vtx.core.version import VERSION, format_version
+from vtx.plugins.extensions import load_for_runtime
 from vtx.protocol.types import ImageContent
 from vtx.tui.agent_runner import AgentRunnerMixin
 from vtx.tui.agents_panel import AgentsPanel
@@ -225,11 +225,11 @@ class Vtx(
         # caller passed via ``extra_extension_paths``). Extension tools get
         # merged with the built-ins and the agent loop has an EventBus to
         # fire tool_call / tool_result / agent_* hooks through.
-        self._loaded_extensions = load_for_runtime(
-            cwd=self._cwd,
-            extra_paths=[*config.extensions, *(extra_extension_paths or [])],
-            auto_discover=auto_discover_extensions,
-        )
+        # Discovery already ran in the composition's boot, which read
+        # ``config.extensions``, ``--extension``, and ``--no-extensions``. This
+        # reads back what it found, to report failures and merge the extension
+        # tools into the built-in set.
+        self._loaded_extensions = load_for_runtime(cwd=self._cwd)
         for err in self._loaded_extensions.errors:
             self._launch_warnings.append(LaunchWarning(f"extension: {err}"))
 
@@ -308,14 +308,15 @@ class Vtx(
         self._extension_ui = TextualExtensionUI(self)
         self._loaded_extensions.bus.set_ui_context(self._extension_ui, cwd=self._cwd, mode="tui")
 
+        # Publish this app into the plugin composition so a plugin can notify
+        # and list the built-in commands without importing the TUI.
+        from vtx.plugins import active_host
+        from vtx.plugins.tui import install as install_ui
+
+        install_ui(self, active_host())
         # Wire extension runtime actions so handlers can call
-        # api.set_session_name(), api.set_model(), etc.
-        from vtx.agent.extensions import (
-            ExtensionActions,
-            ExtensionCommandContextActions,
-            ExtensionContextActions,
-            ExtensionProviderActions,
-        )
+        # api.set_session_name(), api.set_model(), etc. Actions are bound by the
+        # name a handler calls them by, so ``ctx`` needs no action types.
 
         def _extension_set_model(model_id: Any) -> bool:
             """Resolve a model id to catalog info and apply it via switch_model."""
@@ -338,53 +339,42 @@ class Vtx(
             self._runtime.set_thinking_level(str(level))
             self._refresh_thinking_level_display()
 
-        runner = self._loaded_extensions.runner
-        assert runner is not None
-        runner.bind_core(
-            actions=ExtensionActions(
-                send_message=lambda *a, **kw: None,
-                send_user_message=lambda *a, **kw: None,
-                append_entry=lambda *a, **kw: None,
-                set_session_name=self._runtime.set_session_name,
-                get_session_name=self._runtime.get_session_name,
-                set_label=lambda *a, **kw: None,
-                get_active_tools=lambda: self._runtime.tools,
-                get_all_tools=lambda: self._runtime.tools,
-                set_active_tools=lambda *a, **kw: None,
-                refresh_tools=lambda: None,
-                get_commands=lambda: {},
-                set_model=_extension_set_model,
-                get_thinking_level=lambda: self._runtime.thinking_level,
-                set_thinking_level=_extension_set_thinking_level,
-            ),
-            context_actions=ExtensionContextActions(
-                get_model=lambda: self._runtime.model,
-                get_scoped_models=lambda: [],
-                is_idle=lambda: not self._is_running,
-                is_project_trusted=lambda: False,
-                get_signal=lambda: self._cancel_event,
-                abort=lambda: self._request_interrupt(),
-                has_pending_messages=lambda: False,
-                shutdown=lambda: None,
-                get_context_usage=lambda: None,
-                compact=lambda options: None,
-                get_system_prompt=lambda: self._runtime.resolve_system_prompt(),
-            ),
-            provider_actions=ExtensionProviderActions(
-                register_provider=lambda *a, **kw: None,
-                register_native_provider=lambda *a, **kw: None,
-                unregister_provider=lambda *a, **kw: None,
-            ),
-        )
-        runner.bind_command_context(
-            actions=ExtensionCommandContextActions(
-                wait_for_idle=lambda: asyncio.ensure_future(asyncio.sleep(0)),
-                new_session=lambda *a, **kw: asyncio.ensure_future(asyncio.sleep(0)),
-                fork=lambda *a, **kw: asyncio.ensure_future(asyncio.sleep(0)),
-                navigate_tree=lambda *a, **kw: asyncio.ensure_future(asyncio.sleep(0)),
-                switch_session=lambda *a, **kw: asyncio.ensure_future(asyncio.sleep(0)),
-                reload=lambda: asyncio.ensure_future(asyncio.sleep(0)),
-            )
+        # Bound on the composition's actions object, so every mounted extension
+        # shares one set and a reload rebinds in place.
+        self._loaded_extensions.actions.bind_many(
+            send_message=lambda *a, **kw: None,
+            send_user_message=lambda *a, **kw: None,
+            append_entry=lambda *a, **kw: None,
+            set_session_name=self._runtime.set_session_name,
+            get_session_name=self._runtime.get_session_name,
+            set_label=lambda *a, **kw: None,
+            get_active_tools=lambda: self._runtime.tools,
+            get_all_tools=lambda: self._runtime.tools,
+            set_active_tools=lambda *a, **kw: None,
+            refresh_tools=lambda: None,
+            get_commands=lambda: {},
+            set_model=_extension_set_model,
+            get_thinking_level=lambda: self._runtime.thinking_level,
+            set_thinking_level=_extension_set_thinking_level,
+            get_model=lambda: self._runtime.model,
+            get_scoped_models=lambda: [],
+            is_idle=lambda: not self._is_running,
+            is_project_trusted=lambda: self._runtime._project_trusted,
+            get_signal=lambda: self._cancel_event,
+            abort=lambda: self._request_interrupt(),
+            has_pending_messages=lambda: False,
+            shutdown=lambda: None,
+            get_context_usage=lambda: None,
+            compact=lambda options: None,
+            get_system_prompt=lambda: self._runtime.resolve_system_prompt(),
+            pending_providers=lambda: [],
+            get_flag=lambda name: None,
+            wait_for_idle=lambda: asyncio.ensure_future(asyncio.sleep(0)),
+            new_session=lambda *a, **kw: asyncio.ensure_future(asyncio.sleep(0)),
+            fork=lambda *a, **kw: asyncio.ensure_future(asyncio.sleep(0)),
+            navigate_tree=lambda *a, **kw: asyncio.ensure_future(asyncio.sleep(0)),
+            switch_session=lambda *a, **kw: asyncio.ensure_future(asyncio.sleep(0)),
+            reload=lambda: asyncio.ensure_future(asyncio.sleep(0)),
         )
 
         # Hook system: bridge YAML hook configs onto the EventBus.

@@ -53,9 +53,9 @@ __all__ = [
 
 def __getattr__(name: str) -> str:
     if name in ("AGENT_ACTIVATED", "AGENT_CHANGED", "TOOL_GROUP_CHANGED"):
-        from vtx.agent import extensions as _extensions
+        from vtx.plugins import event_contract as _contract
 
-        value = getattr(_extensions, name)
+        value = getattr(_contract, name)
         globals()[name] = value
         return value
     raise AttributeError(f"module 'vtx.agent.agents' has no attribute {name!r}")

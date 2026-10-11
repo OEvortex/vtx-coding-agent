@@ -15,11 +15,11 @@ from collections.abc import AsyncIterator, Callable
 from dataclasses import dataclass, field
 from typing import Any
 
-from vtx.agent.extensions import EventBus
 from vtx.agent.hooks.agent_hook import AgentHook
 from vtx.agent.tools import BaseTool
 from vtx.ai import BaseProvider
 from vtx.core.events import Event, StreamEvent
+from vtx.plugins.bus import EventBus
 from vtx.protocol.types import AssistantMessage, Message, StopReason, ToolResultMessage
 
 

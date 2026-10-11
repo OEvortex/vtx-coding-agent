@@ -66,6 +66,9 @@ def isolate_user_config(monkeypatch: pytest.MonkeyPatch, tmp_path) -> None:
     monkeypatch.setattr("pathlib.Path.home", lambda: home)
     monkeypatch.delenv("XDG_CONFIG_HOME", raising=False)
     reset_config()
+    from vtx.agent.tools import get_all_tools
+
+    tools_before = frozenset(get_all_tools())
     # The dispatcher context must be cleared: it is a plain module global, not a
     # contextvar, so a test that installs a live session leaves it installed for
     # every later test in the same xdist worker. Without this reset the suite's
@@ -84,6 +87,22 @@ def isolate_user_config(monkeypatch: pytest.MonkeyPatch, tmp_path) -> None:
         codemode.permission = None
         codemode.cancel_event = None
         codemode.refresh()
+
+    # Same class of leak again, and the widest of them. The tool registry is a
+    # module global, and a plugin row's teardown only calls ``ToolService.forget``,
+    # which is composition-scoped on purpose: registration also writes this
+    # process-wide registry because legacy consumers read it, so a row unloading
+    # must not erase what it did not create. The consequence for tests is that any
+    # test which mounts a tool leaves it here, and xdist decides which later test
+    # in the same worker reads a catalog that now contains somebody's stub. A
+    # duck-typed stub with no ``params`` is enough to break that reader outright,
+    # and whether it breaks depends on the shard, so the suite goes intermittently
+    # red for no reason a reader could see. Snapshot and restore instead of asking
+    # each test to remember.
+    from vtx.agent import tools as tools_module
+
+    for name in tools_module.get_all_tools().keys() - tools_before:
+        tools_module.unregister_tool(name)
 
 
 @pytest.fixture

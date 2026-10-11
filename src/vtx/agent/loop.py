@@ -19,16 +19,6 @@ from typing import Any
 
 from vtx.agent.agent_runner import AgentRunSpec, run_agent_turn
 from vtx.agent.background import BACKGROUND_NOTIFICATION_TAG
-from vtx.agent.extensions import (
-    AGENT_END,
-    AGENT_SETTLED,
-    AGENT_START,
-    COMPACTION_END,
-    COMPACTION_START,
-    TURN_END,
-    TURN_START,
-    EventBus,
-)
 from vtx.agent.session import CompactionEntry, MessageEntry, Session
 from vtx.agent.skills_refresh import SkillsCatalogState
 from vtx.agent.tools import BaseTool
@@ -48,6 +38,16 @@ from vtx.core.events import (
     TurnStartEvent,
 )
 from vtx.core.harness_config import get_harness_config
+from vtx.plugins.bus import EventBus
+from vtx.plugins.event_contract import (
+    AGENT_END,
+    AGENT_SETTLED,
+    AGENT_START,
+    COMPACTION_END,
+    COMPACTION_START,
+    TURN_END,
+    TURN_START,
+)
 from vtx.protocol.errors import format_error
 from vtx.protocol.types import (
     AssistantMessage,

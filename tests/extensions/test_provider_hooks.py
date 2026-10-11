@@ -6,30 +6,29 @@ onto the extension EventBus.
 
 from __future__ import annotations
 
+from pathlib import Path
+
 import pytest
 
-import vtx.agent.extensions as ext_mod
-from vtx.agent.extensions import (
-    BEFORE_PROVIDER_HEADERS,
-    BEFORE_PROVIDER_REQUEST,
-    EventBus,
-    install_provider_bridge,
-)
+from vtx.ai import provider_hooks
 from vtx.ai.provider_hooks import (
+    install_provider_bridge,
     prepare_request,
     register_headers_listener,
     register_request_listener,
     reset_listeners,
 )
+from vtx.plugins.bus import EventBus
+from vtx.plugins.event_contract import BEFORE_PROVIDER_HEADERS, BEFORE_PROVIDER_REQUEST
 
 
 @pytest.fixture(autouse=True)
 def _clean_registry():
     reset_listeners()
-    ext_mod._PROVIDER_BRIDGE_BUS = None
+    provider_hooks._bridge_bus = None
     yield
     reset_listeners()
-    ext_mod._PROVIDER_BRIDGE_BUS = None
+    provider_hooks._bridge_bus = None
 
 
 # =============================================================================
@@ -167,11 +166,15 @@ async def test_bridge_is_idempotent():
 
 @pytest.mark.asyncio
 async def test_extension_api_helper_registers_handler():
-    from vtx.agent.extensions import Extension, ExtensionAPI
+    from vtx.plugins.api import ExtensionActions, ExtensionAPI, ExtensionRecord
+    from vtx.plugins.context import Context
 
     bus = EventBus()
+    record = ExtensionRecord("t", Path("/tmp/t.py"))
+    # The API registers on its context's hub, which is the bus's hub — that is
+    # the whole relationship between the two in the plugin design.
     api = ExtensionAPI(
-        Extension(name="t", path="/tmp/t.py"), bus, cwd="/tmp", session_file=None, config_dir=None
+        "t", Context(hub=bus._hub), record, ExtensionActions(), cwd="/tmp", session_file=None
     )
 
     @api.on_before_provider_request

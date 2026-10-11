@@ -4,10 +4,10 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from vtx.agent.extensions import EventBus
 from vtx.agent.runtime import ConversationRuntime
 from vtx.coding_agent.agents import AgentDef, AgentRegistry, LoadedAgent
 from vtx.core.config import set_last_selected
+from vtx.plugins.bus import EventBus
 
 
 def _registry_with_agents(*names: str) -> AgentRegistry:

@@ -11,7 +11,7 @@ from textwrap import dedent
 
 import pytest
 
-from vtx.agent.extensions import AGENT_START, EventBus, ExtensionCommand, ExtensionTool
+from vtx.agent.agents.api import ExtensionCommand
 from vtx.agent.tools import BaseTool
 from vtx.coding_agent.agents import (
     AGENT_ACTIVATED,
@@ -27,6 +27,8 @@ from vtx.coding_agent.agents import (
     load_all_agents,
 )
 from vtx.coding_agent.agents.schema import AGENT_NAME_RE
+from vtx.plugins.api import ExtensionTool
+from vtx.plugins.event_contract import AGENT_START
 from vtx.protocol.types import ToolResult
 
 # =============================================================================
@@ -458,7 +460,7 @@ def test_compose_active_tools_local_tools_bypass_allow_deny():
     """A local tool the agent contributes is never stripped by its own
     allow/deny filters. The allow/deny lists target the base pool, not
     the agent's own contributions."""
-    from vtx.agent.extensions import _json_schema_to_pydantic
+    from vtx.agent.tools.schema import _json_schema_to_pydantic
 
     pool = _builtin_pool()
     base = ["read", "write", "bash"]
@@ -494,7 +496,7 @@ def test_compose_active_tools_local_tools_bypass_allow_deny():
 
 
 def test_compose_active_tools_includes_local_tool():
-    from vtx.agent.extensions import _json_schema_to_pydantic
+    from vtx.agent.tools.schema import _json_schema_to_pydantic
 
     pool = _builtin_pool()
     base = ["read", "bash"]
@@ -522,7 +524,7 @@ def test_compose_active_tools_includes_local_tool():
 
 
 def test_compose_active_commands_merges_local():
-    from vtx.agent.extensions import CommandOutcome
+    from vtx.agent.agents.api import CommandOutcome
 
     def _make_handler(s: str):
         def _h(args: str) -> CommandOutcome:
@@ -580,7 +582,7 @@ def test_when_predicate_unsupported_expression_raises():
 
 def test_extension_register_local_tool(tmp_path: Path):
     """The cross-agent local_tool API in ExtensionAPI."""
-    from vtx.agent.extensions import load_extension
+    from vtx.plugins.extensions import load_extension
 
     ext = tmp_path / "ext.py"
     ext.write_text(
@@ -598,10 +600,7 @@ def test_extension_register_local_tool(tmp_path: Path):
             """
         ).strip()
     )
-    bus = EventBus()
-    loaded = load_extension(
-        ext, bus=bus, cwd=str(tmp_path), session_file=None, config_dir=tmp_path
-    )
+    loaded = load_extension(ext, cwd=str(tmp_path))
     assert "code-review" in loaded.local_tools
     assert "secrets_scan" in loaded.local_tools["code-review"]
 
@@ -612,7 +611,7 @@ def test_extension_register_local_tool(tmp_path: Path):
 
 
 def test_agent_events_in_all_events():
-    from vtx.agent.extensions import ALL_EVENTS
+    from vtx.plugins.event_contract import ALL_EVENTS
 
     assert AGENT_ACTIVATED in ALL_EVENTS
     assert AGENT_CHANGED in ALL_EVENTS
@@ -770,6 +769,6 @@ def test_registry_tool_group_cycle_no_groups():
 
 
 def test_tool_group_changed_event_in_all_events():
-    from vtx.agent.extensions import ALL_EVENTS, TOOL_GROUP_CHANGED
+    from vtx.plugins.event_contract import ALL_EVENTS, TOOL_GROUP_CHANGED
 
     assert TOOL_GROUP_CHANGED in ALL_EVENTS

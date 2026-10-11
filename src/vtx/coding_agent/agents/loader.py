@@ -14,10 +14,10 @@ from collections.abc import Callable
 from pathlib import Path
 from typing import Any
 
-from vtx.agent.extensions import AGENT_CHANGED
 from vtx.agent.tools.base import BaseTool
 from vtx.coding_agent.agents.api import AgentAPI, LoadedAgent
 from vtx.coding_agent.agents.schema import AgentDef
+from vtx.plugins.event_contract import AGENT_CHANGED
 
 log = logging.getLogger("agent.agents")
 

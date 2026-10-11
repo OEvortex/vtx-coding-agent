@@ -2,6 +2,7 @@ import argparse
 import asyncio
 import os
 import sys
+from typing import Any
 
 import vtx.coding_agent
 import vtx.coding_agent.tools  # noqa: F401
@@ -17,20 +18,36 @@ def build_parser() -> argparse.ArgumentParser:
         "update", help="Self-update vtx to the latest stable PyPI release and exit"
     )
 
-    install_parser = subparsers.add_parser(
-        "install", help="Install a vtx extension or agent package"
+    plugin_parser = subparsers.add_parser(
+        "plugin", help="Manage plugin profiles, bundles, and rows"
     )
-    install_parser.add_argument(
-        "name", help="Extension or agent package name (tries vtx-<name> then <name>)"
+    plugin_sub = plugin_parser.add_subparsers(dest="plugin_command")
+    plugin_sub.add_parser("profiles", help="List known profiles and bundles")
+    plugin_sub.add_parser(
+        "init", help="Create a profile directory with an empty patch layer"
+    ).add_argument("name", metavar="NAME", help="Profile name")
+    plugin_sub.add_parser("path", help="Print a profile's directory").add_argument(
+        "name", metavar="NAME", help="Profile name"
     )
-    install_parser.add_argument(
-        "--upgrade", action="store_true", help="Upgrade if already installed"
+    enable_cmd = plugin_sub.add_parser("enable", help="Enable a row in the profile patch")
+    enable_cmd.add_argument("row_id", metavar="ROW_ID")
+    disable_cmd = plugin_sub.add_parser("disable", help="Disable a row in the profile patch")
+    disable_cmd.add_argument("row_id", metavar="ROW_ID")
+    install_cmd = plugin_sub.add_parser(
+        "install", help="Install a plugin package from PyPI or a git URL"
     )
-
-    uninstall_parser = subparsers.add_parser("uninstall", help="Uninstall a vtx extension")
-    uninstall_parser.add_argument("name", help="Extension package name to uninstall")
-
-    subparsers.add_parser("list-extensions", help="List installed extensions")
+    install_cmd.add_argument("spec", metavar="PACKAGE_OR_URL")
+    install_cmd.add_argument("--upgrade", action="store_true")
+    allow_cmd = plugin_sub.add_parser(
+        "allow-version", help="Permit one exact package@version on one exact vtx version"
+    )
+    allow_cmd.add_argument("target", metavar="PACKAGE@VERSION")
+    allow_cmd.add_argument("--vtx-version", required=True, metavar="VERSION")
+    allow_cmd.add_argument("--accept-risk", action="store_true")
+    revoke_cmd = plugin_sub.add_parser("revoke-version", help="Revoke a version exemption")
+    revoke_cmd.add_argument("target", metavar="PACKAGE@VERSION")
+    revoke_cmd.add_argument("--vtx-version", required=True, metavar="VERSION")
+    plugin_sub.add_parser("version-exemptions", help="List this profile's version exemptions")
 
     parser.add_argument("--model", "-m", help="Model to use")
     parser.add_argument("--provider", choices=sorted(PROVIDER_API_BY_NAME), help="Provider to use")
@@ -111,63 +128,60 @@ def build_parser() -> argparse.ArgumentParser:
         "--list-agents", action="store_true", help="List all available agents and exit"
     )
     parser.add_argument(
-        "--list-extensions", action="store_true", help="List installed extensions and exit"
+        "--list-extensions",
+        action="store_true",
+        help="List the extensions this composition loaded, then exit",
+    )
+    parser.add_argument(
+        "--profile",
+        default=None,
+        metavar="NAME",
+        help="Plugin profile to boot (default: 'default'; see `vtx plugin profiles`)",
+    )
+    parser.add_argument(
+        "--patch",
+        action="append",
+        default=[],
+        dest="plugin_patches",
+        metavar="PATH",
+        help="Apply a plugin patch layer after the profile's own layer (repeatable)",
+    )
+    parser.add_argument(
+        "--dump-config",
+        action="store_true",
+        help="Print the composed plugin row list for the selected profile and exit",
     )
     parser.add_argument("--version", action="version", version=f"vtx {VERSION}")
     return parser
+
+
+def _print_loaded_extensions(host: Any) -> int:
+    """Print what extension discovery contributed to the mounted composition."""
+    from vtx.plugins.extensions import load_for_runtime
+
+    loaded = load_for_runtime(cwd=os.getcwd())
+    rows = loaded.describe()
+    if not rows:
+        print("No extensions loaded.")
+    for row in rows:
+        print(f"{row['name']}  {row['path']}")
+        for kind in ("tools", "commands", "handlers"):
+            if row[kind]:
+                print(f"  {kind}: {', '.join(row[kind])}")
+    for err in loaded.errors:
+        print(f"extension error: {err}", file=sys.stderr)
+    host.dispose()
+    return 0
 
 
 def main() -> None:
     parser = build_parser()
 
     # Handle subcommands before full parsing.
-    if len(sys.argv) > 1 and sys.argv[1] in ("install", "uninstall", "list-extensions"):
-        sub = sys.argv[1]
+    if len(sys.argv) > 1 and sys.argv[1] == "plugin":
+        from vtx.coding_agent.plugin_cmd import run_plugin_command
 
-        if sub == "install":
-            from vtx.agent.extension_manager import install_extension
-
-            name = sys.argv[2] if len(sys.argv) > 2 else None
-            if not name:
-                parser.error("install requires a package name")
-            upgrade = "--upgrade" in sys.argv
-            ok, msg, _ = install_extension(name, upgrade=upgrade)
-            if ok:
-                print(f"vtx install: {msg}")
-            else:
-                print(f"vtx install failed: {msg}", file=sys.stderr)
-                raise SystemExit(1)
-            raise SystemExit(0)
-
-        if sub == "uninstall":
-            from vtx.agent.extension_manager import uninstall_extension
-
-            name = sys.argv[2] if len(sys.argv) > 2 else None
-            if not name:
-                parser.error("uninstall requires a package name")
-            ok, msg = uninstall_extension(name)
-            if ok:
-                print(f"vtx uninstall: {msg}")
-            else:
-                print(f"vtx uninstall failed: {msg}", file=sys.stderr)
-                raise SystemExit(1)
-            raise SystemExit(0)
-
-        if sub == "list-extensions":
-            from vtx.agent.extension_manager import list_installed
-
-            extensions = list_installed()
-            if not extensions:
-                print("No installed extensions.")
-            else:
-                for ext in extensions:
-                    version = f" ({ext.version})" if ext.version else ""
-                    print(f"{ext.name}{version}  source={ext.source}")
-                    if ext.extensions:
-                        print(f"  extensions: {', '.join(ext.extensions)}")
-                    if ext.agents:
-                        print(f"  agents: {', '.join(ext.agents)}")
-            raise SystemExit(0)
+        raise SystemExit(run_plugin_command(sys.argv[2:]))
 
     args = parser.parse_args()
 
@@ -201,21 +215,61 @@ def main() -> None:
             print(f"agent error: {err}", file=sys.stderr)
         raise SystemExit(0)
 
-    if args.list_extensions:
-        from vtx.agent.extension_manager import list_installed
+    from vtx.plugins import boot as boot_plugins
+    from vtx.plugins.profile import DEFAULT_PROFILE, dump_config
 
-        extensions = list_installed()
-        if not extensions:
-            print("No installed extensions.")
-        else:
-            for ext in extensions:
-                version = f" ({ext.version})" if ext.version else ""
-                print(f"{ext.name}{version}  source={ext.source}")
+    if args.dump_config:
+        profile = args.profile or DEFAULT_PROFILE
+        records = dump_config(profile, args.plugin_patches)
+        # Extension rows are discovered at boot, not stored in the profile, so
+        # they are not in ``records``. Print them too, or this listing would
+        # under-report a tree whose headline claim is that everything is a row.
+        from vtx.plugins.extensions import ExtensionService
+
+        discovered = ExtensionService().load(
+            cwd=os.getcwd(),
+            auto_discover=not getattr(args, "no_extensions", False),
+            extra_paths=[*config.extensions, *list(getattr(args, "extension_paths", None) or [])],
+            entry_points=False,
+        )
+        for spec in discovered:
+            records.append(
+                {
+                    "id": spec.name,
+                    "name": spec.meta.get("path", spec.name),
+                    "disabled": False,
+                    "config": {},
+                }
+            )
+        for row in records:
+            state = "disabled" if row.get("disabled") else "enabled"
+            print(f"{row['id']}\t[{state}]\t{row['name']}")
         raise SystemExit(0)
 
+    try:
+        # ``config.extensions`` is the user's ``~/.vtx/config.yml`` list; it was
+        # merged in by the runtime callers before discovery moved here, and the
+        # composition is now the only place extensions are discovered.
+        host = boot_plugins(
+            args.profile,
+            args.plugin_patches,
+            cwd=os.getcwd(),
+            extension_paths=[
+                *config.extensions,
+                *list(getattr(args, "extension_paths", None) or []),
+            ],
+            auto_discover_extensions=not getattr(args, "no_extensions", False),
+        )
+    except Exception as exc:
+        print(f"vtx: plugin composition failed: {exc}", file=sys.stderr)
+        raise SystemExit(1) from exc
+
+    if args.list_extensions:
+        raise SystemExit(_print_loaded_extensions(host))
+
     if args.prompt is not None:
-        from vtx.agent.extensions import load_for_runtime
         from vtx.coding_agent.headless import run_headless
+        from vtx.plugins.extensions import load_for_runtime
 
         loaded = load_for_runtime(
             cwd=os.getcwd(),

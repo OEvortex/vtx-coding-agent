@@ -1,23 +1,43 @@
 # Extensions & hooks
 
-Extensions are Python files that hook into Vtx at startup: register tools and slash commands, intercept lifecycle events, or gate tool calls. Implemented in `src/vtx/agent/extensions.py`; the extension manager in `extension_manager.py`.
+An extension is a **plugin**. A Python file that exposes `register(api)` is
+discovered before the mount pass and mounted as its own row of the running
+composition, so its tools, its slash commands and its event handlers land in the
+same registries every built-in row uses. There is no second extension system
+behind it — [plugins.md](plugins.md) is the contract, this page is the authoring
+surface.
+
+An extension loads in-process with the user's own permissions. That is
+deliberate and unchanged, and it is the reason a plugin you install is a plugin
+you must trust.
 
 ## Discovery
 
 Loaded in this order (project wins on collision):
 
-1. `<cwd>/.vtx/extensions/*.py` (walked up to the git root)
+1. `<cwd>/.vtx/extensions/*.py` (and `*/__init__.py`)
 2. `~/.vtx/agent/extensions/*.py`
 3. `extensions:` entries in config
 4. `--extension/-e PATH` CLI flags
+5. entry points a package declares, under the `vtx.extensions` group or the older
+   `…agent.extensions` group
 
-`--no-extensions` skips auto-discovery. Installed packages (below) land in the same global directory.
+Each discovered file becomes a row named `extension:<stem>`, appended to the
+profile's rows before they mount, so its teardown is the host's teardown.
+`vtx --dump-config` prints the rows the profile declares; the extension rows
+themselves are discovered at boot, so `vtx --list-extensions` is what lists them.
+`--no-extensions` skips auto-discovery; only the paths you passed explicitly
+still load.
+
+A module that raises during import or during `register` is recorded as an error
+rather than raised: its half-built record is discarded, the other rows still
+mount, and the failure is named on stderr.
 
 ## Writing an extension
 
 ```python
 # .vtx/extensions/audit.py
-def setup(api):
+def register(api):
     @api.on("tool_call")
     def audit(event):
         print("tool:", event["name"])
@@ -37,24 +57,30 @@ def setup(api):
     )
 ```
 
-The `ExtensionAPI`:
+The `ExtensionAPI` is a thin view onto the composition's `ctx`, so everything
+registered through it is a reversible effect owned by the row:
 
 | Method | Does |
 | --- | --- |
-| `on(event, handler)` | Subscribe to a lifecycle event; return `{"block": True, "reason": ...}` from `tool_call`/`tool_result` handlers to block or rewrite |
-| `register_tool(name, description, parameters, execute=..., mutating=..., label=...)` | Add an LLM-callable tool (JSON schema → pydantic) |
-| `register_local_tool(agent, ...)` | Same, but scoped to one handoff agent |
-| `register_command(name, description, handler)` | Add a `/slash` command; return a string or `CommandOutcome(output, success, exit_after)` |
-| `notify(message, level)` | Surface info/warning/error to the user |
+| `on(event, handler)` | Subscribe to a lifecycle event on the composition's `EventHub`; return `{"block": True, "reason": ...}` from a blocking handler to stop the work, or `{"args": {...}}` / `{"output": ...}` to rewrite it |
+| `register_tool(name, description, parameters, execute=..., mutating=..., label=...)` | Add an LLM-callable tool (JSON schema → pydantic); registering a built-in's name replaces it |
+| `register_local_tool(agent, name, ...)` | Same, but scoped to one handoff agent |
+| `register_command(name, description, handler)` | Add a `/slash` command on `ctx.commands`; return a string or `CommandOutcome(output, success, exit_after)` |
+| `notify(message, level)` | Surface info/warning/error through `ctx.ui` |
+| `ui` | The interactive surface described below, or `None` when no TUI is installed |
+| `on_session_start(...)` and the other `on_*` shorthands | `on(<event>, handler)` with the event filled in |
+| `register_shortcut(...)`, `register_flag(...)` | Keyboard shortcuts and config flags |
+| `register_provider(name, config)` | Queue a provider the runtime adopts on the next reload |
+| `send_message(...)`, `append_entry(...)`, `set_session_name(...)`, `exec(...)` | Act on the live session |
 
 ## Interactive UI (`ctx.ui`)
 
 Handlers declared with **three** parameters — `(event, payload, ctx)` — also
-receive a context whose `ctx.ui` exposes interactive dialogs and prompts.
-Two-argument handlers keep working unchanged.
+receive the extension API, whose `ctx.ui` exposes interactive dialogs and
+prompts. Two-argument handlers keep working unchanged.
 
 ```python
-def setup(api):
+def register(api):
     @api.on("tool_call")
     async def gate(event, payload, ctx):
         if payload["name"] == "bash" and "rm -rf" in str(payload.get("args", {})):
@@ -98,11 +124,13 @@ Return a value from the component with `self.screen.dismiss(result)`.
 from textual.containers import Vertical
 from textual.widgets import Button, Label, Static
 
+
 class ColorPicker(Static):
     def on_button_pressed(self, event: Button.Pressed) -> None:
         self.screen.dismiss(event.button.label)  # value returned to the handler
 
-def setup(api):
+
+def register(api):
     @api.on("session_start")
     async def pick_color(event, payload, ctx):
         color = await ctx.ui.custom(ColorPicker("Pick a theme color"))
@@ -112,11 +140,26 @@ def setup(api):
 
 ## Lifecycle events
 
-`session_start`, `session_end`, `agent_start`, `agent_end`, `turn_start`, `turn_end`, `tool_call`, `tool_result`, `compaction_start`, `compaction_end`, `agent_activated`, `agent_changed`, `tool_group_changed`.
+| Group | Events |
+| --- | --- |
+| Session | `session_start`, `session_end`, `session_info_changed`, `session_before_switch`, `session_before_fork`, `session_before_tree`, `session_tree`, `session_before_compact`, `session_compact`, `session_compact_failed`, `session_shutdown` |
+| Agent | `agent_start`, `agent_end`, `agent_settled`, `before_agent_start`, `agent_activated`, `agent_changed`, `tool_group_changed` |
+| Turn and message | `turn_start`, `turn_end`, `message_start`, `message_update`, `message_end` |
+| Tool | `tool_call`, `tool_result`, `tool_execution_start`, `tool_execution_update`, `tool_execution_end` |
+| Permission | `permission_request`, `permission_denied` |
+| Compaction | `compaction_start`, `compaction_end` |
+| Provider | `before_provider_headers`, `before_provider_request`, `after_provider_response` |
+| Input and selection | `input`, `user_bash`, `model_select`, `thinking_level_select` |
+| Context | `context`, `project_trust`, `resources_discover` |
 
-`tool_call` and `tool_result` are blocking events: handlers run before the action completes and may veto it.
+`vtx.plugins.event_contract.ALL_EVENTS` is the authoritative list.
 
-## Retired: refinement events
+`tool_call`, `tool_result`, `user_bash` and `input` are blocking events:
+handlers run before the action completes and may veto or rewrite it. Each event
+name has exactly one dispatch mode on the hub, declared once by the kernel; see
+the mode table in [plugins.md](plugins.md).
+
+### Retired: refinement events
 
 Refinement and the continual harness it wrote to were removed with the RLM
 mode. `session_before_refine` and `refine_complete` are no longer emitted; the
@@ -130,7 +173,7 @@ useful for gateway tracing headers, custom auth injection, or forcing
 request parameters:
 
 ```python
-def setup(api):
+def register(api):
     @api.on_before_provider_headers
     def trace(event, payload):
         payload["headers"]["x-session-id"] = "my-trace-id"
@@ -147,7 +190,9 @@ def setup(api):
 | `before_provider_request` | `provider`, `model`, `payload` (full wire payload; mutate in place) | `{"payload": {...}}` to replace |
 
 Both fire once per request after the payload is fully built and before it
-is sent, across all transports (OpenAI SDK, Anthropic HTTP).
+is sent, across all transports (OpenAI SDK, Anthropic HTTP). The extensions row
+installs the bridge from the composition's event hub to the transport registry;
+with no composition mounted the transport registry is untouched.
 Retries reuse the prepared values — handlers are not re-fired. Handlers
 run in load order and later ones chain off earlier replacements.
 
@@ -175,13 +220,21 @@ Event names (11): `SessionStart`, `SessionEnd`, `TurnStart`, `TurnEnd`, `PreTool
 
 Python code can also subclass `AgentHook` (`before_run`, `after_iteration`, `on_stream`, `finalize_content`, …) and pass instances via the runtime — that's what the SDK uses for tracing.
 
-## Extension manager
+Loading `hooks.yml` is itself a row (`hooks`), so a profile can disable or
+replace it like anything else. The `AgentHook` protocol and the bridge the TUI
+and the headless runner use live in `vtx.agent.hooks`.
 
-```bash
-vtx install <name>            # tries vtx-<name> then <name> on PyPI; GitHub URLs work too
-vtx install <name> --upgrade
-vtx uninstall <name>
-vtx list-extensions
+## Installing
+
+```sh
+vtx plugin install <spec>       # PyPI name or git URL, into the active environment
 ```
 
-PyPI installs go through `uv pip` into the active environment; GitHub sources are cloned. The ledger is `~/.vtx/installed_extensions.yml`.
+Installing is gated on the plugin's declared vtx version range; an
+incompatible plugin refuses and prints the command that grants an exemption for
+exactly that pair. `vtx --list-extensions` prints the extension rows the running
+composition mounted, and `/reload` re-discovers in place — unloading the
+previous pass first, so a removed extension's tools and handlers are actually
+gone rather than shadowed.
+
+See the install and compatibility sections of [plugins.md](plugins.md).

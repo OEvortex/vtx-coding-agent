@@ -1044,8 +1044,8 @@ def test_hook_bridge_end_to_end_post_tool_use_rewrite(tmp_path):
     This is the integration contract the refactor must preserve: bus → bridge
     → command hook → turn's PostToolUse output rewrite feeds the model.
     """
-    from vtx.agent import EventBus
     from vtx.agent.hooks.bridge import HookBridge
+    from vtx.plugins.bus import EventBus
 
     hooks_yml = tmp_path / "hooks.yml"
     hooks_yml.write_text(

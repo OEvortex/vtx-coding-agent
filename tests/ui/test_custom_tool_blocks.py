@@ -10,10 +10,10 @@ from pathlib import Path
 import pytest
 from textual.app import App, ComposeResult
 
-from vtx.agent.extensions import Extension, ExtensionAPI, ExtensionTool
 from vtx.agent.tools.base import BaseTool
 from vtx.coding_agent.agents.api import AgentAPI
 from vtx.coding_agent.agents.loader import load_agent
+from vtx.plugins.api import ExtensionAPI, ExtensionRecord, ExtensionTool
 from vtx.tui.blocks import ToolBlock
 from vtx.tui.chat import ChatLog
 from vtx.tui.styles import get_styles
@@ -106,13 +106,23 @@ def _noop_params():
 # ---------------------------------------------------------------------------
 
 
-def _make_ext_api(name: str = "ext_test") -> tuple[ExtensionAPI, Extension]:
-    """Build a minimal ``ExtensionAPI`` wired to a real :class:`Extension`."""
-    from vtx.agent import EventBus
+def _make_ext_api(name: str = "ext_test") -> tuple[ExtensionAPI, ExtensionRecord]:
+    """Build a minimal ``ExtensionAPI`` over a real record and a tool service."""
+    from vtx.plugins.api import ExtensionActions
+    from vtx.plugins.bus import EventBus
+    from vtx.plugins.context import Context
+    from vtx.plugins.services import ToolService
 
-    ext = Extension(name=name, path=Path(f"/{name}.py"))
-    api = ExtensionAPI(ext, bus=EventBus(), cwd=".", session_file=None, config_dir=Path("/"))
-    return api, ext
+    record = ExtensionRecord(name, Path(f"/{name}.py"))
+    tools = ToolService()
+    # Read straight from the record so an assertion on ``ext.tools`` reflects
+    # exactly what the extension registered.
+    tools._owned = record.tools
+    ctx = Context()
+    ctx.provide("tools", tools)
+    api = ExtensionAPI(name, ctx, record, ExtensionActions(), cwd=".", session_file=None)
+    api._bus = EventBus()
+    return api, record
 
 
 class TestRegisterToolUiBlock:

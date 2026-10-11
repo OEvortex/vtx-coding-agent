@@ -7,7 +7,8 @@ Everything here is wiring and choice. The engine it drives - the loop, the sessi
 ```
 vtx.coding_agent          CLI, headless runner, built-in tools, skills
    |- vtx.tui             the Textual interface (app shell + primitives)
-   |- vtx.agent           harness (loop, sessions, tools, goals, extensions)
+   |- vtx.agent           harness (loop, sessions, tools, goals, hooks)
+   |- vtx.plugins         plugin kernel; extensions are rows in it
    |- vtx.ai              providers and the model catalog
    |- vtx.core            config, permissions, events
    |- vtx.git             branch metadata
@@ -52,9 +53,11 @@ vtx --continue                         # resume the most recent session
 vtx --resume 4f2a -m anthropic/claude-opus-5
 ```
 
-Subcommands are `vtx update` (self-update to the latest stable PyPI release and exit), `vtx install <name>` (tries `vtx-<name>` then `<name>`; `--upgrade`), `vtx uninstall <name>`, and `vtx list-extensions`.
+Subcommands are `vtx update` (self-update to the latest stable PyPI release and exit) and `vtx plugin ...` — `profiles`, `init NAME`, `path NAME`, `enable ROW`, `disable ROW`, `install SPEC`, `allow-version`, `revoke-version`, `version-exemptions` (see `plugin_cmd.py` and [docs/plugins.md](../../docs/plugins.md)).
 
-Flags are `--model/-m`, `--provider`, `--api-key/-k`, `--base-url/-u`, `--prompt/-p`, `--openai-compat-auth` and `--anthropic-compat-auth` (`auto`/`required`/`none`), `--insecure-skip-verify`, `--continue/-c`, `--resume/-r`, `--extension/-e` (repeatable), `--no-extensions`, `--agent/-a`, `--agent-file` (repeatable), `--no-agents`, `--list-agents`, `--list-extensions`, and `--version`.
+Flags are `--model/-m`, `--provider`, `--api-key/-k`, `--base-url/-u`, `--prompt/-p`, `--openai-compat-auth` and `--anthropic-compat-auth` (`auto`/`required`/`none`), `--insecure-skip-verify`, `--continue/-c`, `--resume/-r`, `--extension/-e` (repeatable), `--no-extensions`, `--agent/-a`, `--agent-file` (repeatable), `--no-agents`, `--list-agents`, `--list-extensions`, `--profile`, `--patch`, `--dump-config`, and `--version`.
+
+The CLI's first job is composition: it resolves `--profile` and `--patch`, calls `vtx.plugins.boot`, and only then builds a runtime. Extension files are discovered inside that boot and mounted as rows; `--list-extensions` prints the ones that mounted, with their tools, commands and handlers. See [docs/extensions.md](../../docs/extensions.md).
 
 With `-p` the run goes to `headless.run_headless`; otherwise to `tui.launch.run_tui`. `--continue` and `--resume` are rejected together with `-p`.
 
@@ -76,7 +79,7 @@ The registry API is `get_tools(default_names)`, `get_tool(name)`, `get_tools_wit
 
 ## Handoff agents and skills
 
-`agents/` loads switchable agents from `.vtx/agent/<name>.py`: a bundle of system-prompt instructions, model/provider/thinking/max-turns overrides, a tool allow/deny list, agent-scoped tools and slash commands, and agent-scoped extensions. There are no built-in profiles. `load_all_agents(cwd=..., configured=...)` returns `(loaded, errors)` and collects errors rather than raising, so one bad agent file does not block the rest; `vtx --list-agents` prints that pair.
+`agents/` loads switchable agents from `.vtx/agent/<name>.py`: a bundle of system-prompt instructions, model/provider/thinking/max-turns overrides, a tool allow/deny list, agent-scoped tools and slash commands, and agent-scoped extensions. There are no built-in profiles. `load_all_agents(cwd=..., configured=...)` returns `(loaded, errors)` and collects errors rather than raising, so one bad agent file does not block the rest; `vtx --list-agents` prints that pair. An agent's `extensions` are mounted as rows of the running composition, scoped to that agent.
 
 `builtin_skills/` is registered into the harness by `register_skills_package("vtx.coding_agent")` at package import. It ships `cloud/google-colab`, `cloud/modal`, `code-review/review`, `general/github`, `meta/goal`, `meta/skill-builder`, and `setup/init`. `/goal` is one of these skills rather than a built-in command, which is why it is absent from the app's command router.
 
@@ -117,7 +120,7 @@ The editor's own bindings live on `InputBox` in `vtx.tui.input`.
 
 `commands/` splits handling by domain into `CommandsMixin`: `settings.py`, `models.py`, `sessions.py`, `auth.py`, `providers.py`, `agents.py`, `switch.py`, `update.py`, `reload.py`, `mcp.py`, and `goals.py`.
 
-Routing is two-stage. `Vtx` first tries `CommandsMixin._handle_command`, so a built-in always wins a name collision with a skill; anything the router does not know falls through to the skill system, which is how `/goal` works. Extension commands get the last swing, so an extension can shadow a built-in - and a handler that raises is reported in the chat log rather than crashing the app.
+Routing is two-stage. `Vtx` first tries `CommandsMixin._handle_command`, so a built-in always wins a name collision with a skill; anything the router does not know falls through to the skill system, which is how `/goal` works. Extension commands — whatever registered on `ctx.commands` — get the last swing, so an extension can shadow a built-in - and a handler that raises is reported in the chat log rather than crashing the app.
 
 Routable commands are `help`, `quit`/`exit`/`q`, `clear`, `model`, `provider`, `new`, `settings`, `themes`, `permissions`, `thinking`, `effort`, `notifications`, `ponytail`, `handoff`, `resume`, `tree`, `undo`, `redo`, `session`, `login`, `logout`, `export`, `copy`, `compact`, `recap`, `agent`, `switch`, `update`, `reload`, and `mcp`.
 

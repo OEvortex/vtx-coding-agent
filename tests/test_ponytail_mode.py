@@ -86,8 +86,8 @@ def test_set_ponytail_persists(tmp_path, monkeypatch):
 
 @pytest.mark.asyncio
 async def test_register_hook_before_agent_start():
-    from vtx.agent.extensions import BEFORE_AGENT_START, BeforeAgentStartEvent
     from vtx.agent.prompts.ponytail import register
+    from vtx.plugins.event_contract import BEFORE_AGENT_START, BeforeAgentStartEvent
 
     handlers = {}
 
@@ -131,8 +131,8 @@ async def test_register_hook_before_agent_start():
 @pytest.mark.asyncio
 async def test_register_hook_input_deactivation(tmp_path, monkeypatch):
     monkeypatch.setenv("HOME", str(tmp_path))
-    from vtx.agent.extensions import INPUT, InputEvent
     from vtx.agent.prompts.ponytail import register
+    from vtx.plugins.event_contract import INPUT, InputEvent
 
     handlers = {}
     notifications = []

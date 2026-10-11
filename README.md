@@ -3,7 +3,7 @@
 A coding agent harness: a keyboard-driven terminal UI, a headless CLI for scripts and CI, and a Python SDK, built on one agent runtime that ships ten packages under a single `vtx-coding-agent` distribution. The base system prompt is 665 tokens.
 
 * **[`vtx.coding_agent`](src/vtx/coding_agent)**: Product layer. CLI entry point, headless runner, filesystem tools, the TUI app
-* **[`vtx.agent`](src/vtx/agent)**: Product-neutral harness. Agent loop, turn engine, sessions, tool registry, prompts, extensions, goals, SDK
+* **[`vtx.agent`](src/vtx/agent)**: Product-neutral harness. Agent loop, turn engine, sessions, tool registry, prompts, hooks, goals, SDK
 * **[`vtx.ai`](src/vtx/ai)**: LLM layer. Provider catalog, OAuth, SDK adapters, model catalog, tool parsing
 
 To learn more:
@@ -16,20 +16,48 @@ To learn more:
 
 | Package | Description |
 |---------|-------------|
+| **[@vtx.plugins](src/vtx/plugins)** | The plugin kernel: `Context`, `EventHub`, plugin rows, patch layers, profiles, and the boot composition |
 | **[@vtx.protocol](src/vtx/protocol)** | Leaf. Message, stream, and tool-contract types. Imports nothing from `vtx` |
 | **[@vtx.telemetry](src/vtx/telemetry)** | Leaf. Spans, processors, console and JSONL exporters |
 | **[@vtx.git](src/vtx/git)** | Git and GitHub integration: `gh` CLI wrapper, GitHub App auth |
 | **[@vtx.core](src/vtx/core)** | Agent events, permission gate, compaction, config schema and paths, theme registry |
 | **[@vtx.ai](src/vtx/ai)** | The LLM layer: provider catalog, OAuth, SDK adapters, model catalog, tool parsing |
 | **[@vtx.codemode](src/vtx/codemode)** | The script sandbox and its tool discovery layer |
-| **[@vtx.agent](src/vtx/agent)** | Product-neutral harness: loop, turn engine, sessions, tool registry, prompts, extensions, goals, SDK |
+| **[@vtx.agent](src/vtx/agent)** | Product-neutral harness: loop, turn engine, sessions, tool registry, prompts, hooks, goals, SDK |
 | **[@vtx.mcp](src/vtx/mcp)** | MCP client: server config, transports, tool exposure, trust prompt |
 | **[@vtx.tui](src/vtx/tui)** | Base terminal-UI toolkit: editing, fuzzy matching, overlays, block renderers. Knows nothing about the agent |
 | **[@vtx.coding_agent](src/vtx/coding_agent)** | Product layer: CLI entry point, headless runner, concrete filesystem tools, the TUI app |
 
-Dependencies flow `protocol` and `telemetry` into `core`, `git`, and `ai`; those into `agent`; `agent` into `coding_agent`, with `mcp` and `tui` sitting above. Each package carries its own README with the public surface and internal notes.
+Dependencies flow `protocol` and `telemetry` into `core`, `git`, and `ai`; those into `agent`; `agent` into `coding_agent`, with `mcp`, `tui`, and `plugins` above. Each package carries its own README with the public surface and internal notes.
 
 Ten tools are registered by default: `read`, `edit`, `write`, `bash`, `find`, `skill`, `web`, `ask_user`, `delegate_subagent`, `goal`. The harness also registers `codemode` and `tool_search`. The sub-agent tool is defined internally as `task` and exposed to the model under the name `delegate_subagent`. Agent profiles are only ever loaded from `.vtx/agent/<name>.py`; none ship built in. There are 62 built-in providers: 59 declared in `src/vtx/ai/provider.yaml` plus `github-copilot`, `codex`, and `cline`, which are constructed in code because they need host OAuth. Configuration lives in `~/.vtx/config.yml`.
+
+## Everything is a row
+
+`vtx` boots a **plugin composition**: a profile's ordered bundles, then the
+profile's own patch layer, then `--patch` overlays, last write per row id. Every
+subsystem — the tool registry, the provider seam, the session log, the
+permission gate, the agent loop — is a row that says its name on the command
+line.
+
+```sh
+vtx --dump-config                     # the composed row list
+vtx plugin --profile default disable tool-grep
+vtx --profile minimal                 # a four-row composition, for embedding
+```
+
+A plugin is a `Plugin` object with a name, an `inject` list, and an
+`apply(ctx, config)`; it never imports another plugin. Registrations are
+reversible effects, so unmounting a row unwinds exactly what it registered. See
+[plugins.md](docs/plugins.md).
+
+A Python extension file is a row too, not a second system. A `.vtx/extensions/*.py`
+(or `~/.vtx/agent/extensions/*.py`, or an entry point) exposing `register(api)` is
+discovered before mount and mounted as `extension:<stem>`, so its tools, slash
+commands and event handlers land in the composition's one tool registry, one
+command registry and one event hub. Installing one is `vtx plugin install <spec>`,
+gated on the version range the plugin declares. See
+[extensions.md](docs/extensions.md).
 
 ## Install
 

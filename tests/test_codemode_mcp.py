@@ -19,12 +19,12 @@ from pathlib import Path
 
 import pytest
 
-from vtx.agent.extensions import EventBus
 from vtx.agent.runtime import ConversationRuntime
 from vtx.agent.tools import get_all_tools
 from vtx.codemode import CodemodeSandbox, adapt_tools
 from vtx.mcp.config import LoadedMcpConfig, validate_mcp_server_config
 from vtx.mcp.manager import McpManager
+from vtx.plugins.bus import EventBus
 
 FIXTURES = Path(__file__).parent / "mcp" / "fixtures"
 STDIO_SERVER = FIXTURES / "stdio_server.py"

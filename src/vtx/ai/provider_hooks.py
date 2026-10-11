@@ -13,8 +13,8 @@ request. Listeners registered here can:
 Retries reuse the prepared values: listeners are *not* re-fired on
 transient-error retries.
 
-The extension bridge (:func:`vtx.agent.extensions.install_provider_bridge`)
-registers itself here when extensions load, so these hook points are also
+The composition bridge (:func:`vtx.plugins.extensions.install_provider_bridge`)
+registers itself here when the extensions row mounts, so these hook points are
 reachable via ``api.on("before_provider_headers", ...)`` /
 ``api.on("before_provider_request", ...)`` with full ``ctx`` support.
 """
@@ -62,6 +62,52 @@ def reset_listeners() -> None:
     """Remove all listeners (test isolation helper)."""
     _headers_listeners.clear()
     _request_listeners.clear()
+
+
+_bridge_bus: Any = None
+
+
+def install_provider_bridge(bus: Any) -> None:
+    """Expose these hook points to the composition's event bus.
+
+    Wires this registry to ``bus`` so ``before_provider_headers`` and
+    ``before_provider_request`` handlers run with full context support right
+    before an LLM request is sent. Idempotent: only the first bus in a process is
+    bridged, matching the one active runtime.
+
+    Called by the extensions row, so a plugin that registers
+    ``api.on("before_provider_request", ...)`` reaches the transport.
+    """
+    global _bridge_bus
+    if _bridge_bus is not None:
+        return
+    _bridge_bus = bus
+
+    from vtx.plugins.event_contract import BEFORE_PROVIDER_HEADERS, BEFORE_PROVIDER_REQUEST
+
+    async def on_headers(headers: dict[str, str | None], context: dict[str, Any]) -> None:
+        await bus.emit(
+            BEFORE_PROVIDER_HEADERS,
+            provider=context.get("provider", ""),
+            model=context.get("model", ""),
+            headers=headers,
+        )
+
+    async def on_request(payload: dict[str, Any], context: dict[str, Any]) -> dict[str, Any]:
+        merged = await bus.emit(
+            BEFORE_PROVIDER_REQUEST,
+            provider=context.get("provider", ""),
+            model=context.get("model", ""),
+            payload=payload,
+        )
+        # Handlers either mutate ``payload["payload"]`` in place — already
+        # visible, since the same object is passed — or return
+        # ``{"payload": {...}}``, which the bus writes back for chaining.
+        result = merged.get("payload")
+        return {"payload": result if isinstance(result, dict) else payload}
+
+    register_headers_listener(on_headers)
+    register_request_listener(on_request)
 
 
 async def _run(fn: Callable[..., Any], *args: Any) -> Any:

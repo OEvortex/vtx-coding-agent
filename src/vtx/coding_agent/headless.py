@@ -22,9 +22,9 @@ from vtx.core.config import (
 from vtx.protocol.types import StopReason
 
 if TYPE_CHECKING:
-    from vtx.agent.extensions import LoadedExtensions
     from vtx.ai.base import AuthMode
     from vtx.core.events import Event
+    from vtx.plugins.extensions import LoadedExtensions
 
 # NOTE: agent.* / ai.* / most protocol.* imports are deliberately deferred
 # into functions. Module-level imports here would re-enter agent.extensions
@@ -175,7 +175,7 @@ async def run_headless(
 
         # Load agents first so the active agent's tool surface is applied.
         from vtx.agent.agents import AgentRegistry, load_all_agents
-        from vtx.agent.extensions import load_for_runtime
+        from vtx.plugins.extensions import load_for_runtime
 
         agent_registry = AgentRegistry()
         if auto_discover_agents or agent_files:
@@ -205,9 +205,10 @@ async def run_headless(
 
         tools = get_tools_with_extensions(DEFAULT_TOOLS)
 
-        loaded_extensions = load_for_runtime(
-            cwd=os.getcwd(), extra_paths=list(config.extensions), auto_discover=True
-        )
+        # Discovery already ran in the composition's boot, which read
+        # ``config.extensions`` and the ``--extension`` paths. This only reads
+        # back what it found, to report failures and merge the extension tools.
+        loaded_extensions = load_for_runtime(cwd=os.getcwd())
         for err in loaded_extensions.errors:
             print(f"extension error: {err}", file=sys.stderr)
 

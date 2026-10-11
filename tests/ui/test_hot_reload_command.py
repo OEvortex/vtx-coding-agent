@@ -97,12 +97,22 @@ def _edit_config(path: Path, **overrides) -> None:
 def reload_app(tmp_path: Path):
     from vtx.agent.runtime import ConversationRuntime
     from vtx.agent.session import Session
+    from vtx.plugins import boot, reset
+    from vtx.plugins.tui import install as install_ui
 
     workdir = tmp_path / "work"
     workdir.mkdir(parents=True, exist_ok=True)
+    # The reload command re-discovers into the *running* composition, so one must
+    # be mounted — that is the whole point of the command being a plugin-row
+    # operation rather than a private loader.
+    host = boot(cwd=str(workdir))
     runtime = ConversationRuntime(cwd=str(workdir), tools=[])
     runtime.session = Session("s-reload", str(workdir), persist=False)
-    return _ReloadApp(workdir, runtime), runtime
+    app = _ReloadApp(workdir, runtime)
+    install_ui(app, host)
+    app._loaded_extensions = None
+    yield app, runtime
+    reset()
 
 
 def _reload(app) -> None:

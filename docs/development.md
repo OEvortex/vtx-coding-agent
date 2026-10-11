@@ -22,13 +22,16 @@ src/vtx/
   ai/             # LLM layer only: providers, OAuth, SDK adapters, model catalog
   codemode/       # confined script execution: sandbox, isolation, discovery
   agent/          # harness: loop, turn, session, runtime, tools, prompts, context,
-                  #   extensions, hooks, goals, SDK
+                  #   hooks, goals, SDK
   mcp/            # MCP client: config, transports, exposure, OAuth, trust
+  plugins/        # plugin kernel (Context, EventHub, rows, profiles, install) +
+                  #   builtins/, where vtx's own subsystems become rows
   tui/            # BASE Textual toolkit: input, blocks, fuzzy, overlay lists,
                   #   latex, formatting, clipboard, styling, autocomplete
   coding_agent/   # CLI entry (coding_agent.cli:main), headless, concrete fs tools,
                   #   tui/ = the product UI (app, chat, panels, dialogs, commands/)
-tests/            # pytest suite mirroring src (tools/, ui/, sdk/, llm/, context/, extensions/, core/, mcp/)
+tests/            # pytest suite mirroring src (tools/, ui/, sdk/, llm/, context/,
+                  #   extensions/, plugins/, core/, mcp/)
 scripts/          # install.sh / install.ps1, show_themes.py
 .agents/skills/   # repo skills incl. the tmux e2e harness
 ```

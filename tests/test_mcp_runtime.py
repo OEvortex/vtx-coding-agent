@@ -14,8 +14,8 @@ from pathlib import Path
 
 import pytest
 
-from vtx.agent.extensions import EventBus
 from vtx.agent.runtime import ConversationRuntime
+from vtx.plugins.bus import EventBus
 
 FIXTURES = Path(__file__).parent / "mcp" / "fixtures"
 STDIO_SERVER = FIXTURES / "stdio_server.py"

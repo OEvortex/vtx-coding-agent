@@ -67,7 +67,8 @@ class ReloadCommands(CommandSupport):
             )
             return
 
-        from vtx.agent.extensions import SESSION_SHUTDOWN, load_for_runtime
+        from vtx.plugins.event_contract import SESSION_SHUTDOWN
+        from vtx.plugins.extensions import reload_extensions
 
         before = self._reload_snapshot()
 
@@ -101,8 +102,8 @@ class ReloadCommands(CommandSupport):
         # 4. Extensions. `fresh=True` additionally drops each package
         #    extension's __pycache__, so a submodule edit of the same byte
         #    length is not served from stale bytecode.
-        loaded = load_for_runtime(
-            cwd=self._cwd, extra_paths=[*config.extensions], auto_discover=True, fresh=True
+        loaded = reload_extensions(
+            cwd=self._cwd, extra_paths=[*config.extensions], auto_discover=True
         )
         for err in loaded.errors:
             chat.add_info_message(f"extension: {err}", error=True)

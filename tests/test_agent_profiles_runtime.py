@@ -8,7 +8,6 @@ from textwrap import dedent
 
 import pytest
 
-from vtx.agent.extensions import EventBus
 from vtx.agent.runtime import ConversationRuntime
 from vtx.coding_agent.agents import (
     AGENT_ACTIVATED,
@@ -18,6 +17,7 @@ from vtx.coding_agent.agents import (
     LoadedAgent,
     load_all_agents,
 )
+from vtx.plugins.bus import EventBus
 
 # =============================================================================
 # Loader
@@ -227,15 +227,15 @@ def test_cli_list_agents_empty(monkeypatch, tmp_path: Path, capsys):
 
 
 def test_agent_activated_event_in_all_events():
-    from vtx.agent.extensions import ALL_EVENTS
+    from vtx.plugins.event_contract import ALL_EVENTS
 
     assert AGENT_ACTIVATED in ALL_EVENTS
     assert AGENT_CHANGED in ALL_EVENTS
 
 
 def test_loaded_agent_wire_handlers():
-    from vtx.agent import AGENT_START
     from vtx.coding_agent.agents.api import LoadedAgent
+    from vtx.plugins.event_contract import AGENT_START
 
     agent = LoadedAgent(definition=AgentDef(name="a", description="x"), path=Path("/x.py"))
 
@@ -256,9 +256,9 @@ def test_loaded_agent_wire_handlers():
 
 
 def test_runtime_set_active_agent_updates_agent_tools(monkeypatch, tmp_path: Path):
-    from vtx.agent import EventBus
     from vtx.agent.runtime import ConversationRuntime
     from vtx.coding_agent.agents import AgentRegistry
+    from vtx.plugins.bus import EventBus
 
     registry = AgentRegistry()
     registry.agents = [
@@ -304,10 +304,10 @@ def test_runtime_set_active_agent_updates_agent_tools(monkeypatch, tmp_path: Pat
 def test_agent_tool_list_does_not_leak_across_switches(monkeypatch, tmp_path: Path):
     """Switching FROM a restrictive agent (plan) TO a default agent must not
     carry over tools that only the restrictive agent should have."""
-    from vtx.agent import EventBus
     from vtx.agent.runtime import ConversationRuntime
     from vtx.coding_agent.agents import AgentRegistry
     from vtx.coding_agent.tools import DEFAULT_TOOLS
+    from vtx.plugins.bus import EventBus
 
     registry = AgentRegistry()
     registry.agents = [_make_agent("plan", tools_allow=["read", "find", "grep", "skill"])]
@@ -354,10 +354,10 @@ def test_agent_tool_list_does_not_leak_across_switches(monkeypatch, tmp_path: Pa
 def test_runtime_set_active_agent_updates_system_prompt(monkeypatch, tmp_path: Path):
     from typing import Any, cast
 
-    from vtx.agent import EventBus
     from vtx.agent.context import Context
     from vtx.agent.runtime import ConversationRuntime
     from vtx.coding_agent.agents import AgentRegistry
+    from vtx.plugins.bus import EventBus
 
     registry = AgentRegistry()
     registry.agents = [

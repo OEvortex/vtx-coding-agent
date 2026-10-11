@@ -13,7 +13,9 @@ from textwrap import dedent
 
 import pytest
 
-from vtx.agent.extensions import (
+from vtx.agent.tools.schema import _json_schema_to_pydantic
+from vtx.plugins.bus import EventBus
+from vtx.plugins.event_contract import (
     AGENT_END,
     AGENT_START,
     COMPACTION_END,
@@ -24,9 +26,9 @@ from vtx.agent.extensions import (
     TOOL_RESULT,
     TURN_END,
     TURN_START,
-    EventBus,
+)
+from vtx.plugins.extensions import (
     ExtensionLoadError,
-    _json_schema_to_pydantic,
     discover_extension_paths,
     load_all_extensions,
     load_extension,
@@ -230,10 +232,7 @@ def test_load_extension_simple(tmp_path: Path):
         ).strip()
     )
 
-    bus = EventBus()
-    loaded = load_extension(
-        ext, bus=bus, cwd=str(tmp_path), session_file=None, config_dir=tmp_path
-    )
+    loaded = load_extension(ext, cwd=str(tmp_path))
     assert loaded.name == "hello"
     assert "hello" in loaded.commands
     outcome = loaded.commands["hello"].handler("")
@@ -263,10 +262,7 @@ def test_load_extension_registering_tool(tmp_path: Path):
         ).strip()
     )
 
-    bus = EventBus()
-    loaded = load_extension(
-        ext, bus=bus, cwd=str(tmp_path), session_file=None, config_dir=tmp_path
-    )
+    loaded = load_extension(ext, cwd=str(tmp_path))
     assert "greet" in loaded.tools
 
     # Execute the registered tool end-to-end
@@ -285,17 +281,15 @@ def test_load_extension_registering_tool(tmp_path: Path):
 def test_load_extension_missing_register(tmp_path: Path):
     ext = tmp_path / "bad.py"
     ext.write_text("def something_else(api): pass\n")
-    bus = EventBus()
     with pytest.raises(ExtensionLoadError, match="does not export"):
-        load_extension(ext, bus=bus, cwd=str(tmp_path), session_file=None, config_dir=tmp_path)
+        load_extension(ext, cwd=str(tmp_path))
 
 
 def test_load_extension_broken_import(tmp_path: Path):
     ext = tmp_path / "broken.py"
     ext.write_text("this is not python\n")
-    bus = EventBus()
     with pytest.raises(ExtensionLoadError, match="failed to import"):
-        load_extension(ext, bus=bus, cwd=str(tmp_path), session_file=None, config_dir=tmp_path)
+        load_extension(ext, cwd=str(tmp_path))
 
 
 def test_load_extension_register_throws(tmp_path: Path):
@@ -308,16 +302,15 @@ def test_load_extension_register_throws(tmp_path: Path):
             """
         ).strip()
     )
-    bus = EventBus()
     with pytest.raises(ExtensionLoadError, match="register\\(api\\) raised"):
-        load_extension(ext, bus=bus, cwd=str(tmp_path), session_file=None, config_dir=tmp_path)
+        load_extension(ext, cwd=str(tmp_path))
 
 
 def test_load_all_extensions_collects_errors(tmp_path: Path):
     (tmp_path / "good.py").write_text("def register(api): pass\n")
     (tmp_path / "bad.py").write_text("def register(api): raise RuntimeError('nope')\n")
 
-    exts, errors, _bus = load_all_extensions(cwd=str(tmp_path), configured=[str(tmp_path)])
+    exts, errors, _bus = load_all_extensions(cwd=str(tmp_path), extra_paths=[str(tmp_path)])
     assert len(exts) == 1
     assert exts[0].name == "good"
     assert len(errors) == 1

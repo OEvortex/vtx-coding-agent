@@ -27,7 +27,7 @@ from vtx.coding_agent.agents.schema import AgentDef, PermissionAction, Permissio
 # the type-checker still sees it, but it isn't evaluated at class
 # construction.
 if TYPE_CHECKING:
-    from vtx.agent.extensions import CommandOutcome
+    from vtx.agent.agents.api import CommandOutcome
 
 NotifyLevel = Literal["info", "warning", "error"]
 
@@ -214,8 +214,8 @@ class AgentAPI:
         # by the absence of an explicit ``execute=`` argument; everything
         # else is taken from the decorator.
         if execute is None and description is not None and parameters is not None:
-            from vtx.agent import ExtensionTool
-            from vtx.agent.extensions import _json_schema_to_pydantic
+            from vtx.agent.tools.schema import _json_schema_to_pydantic
+            from vtx.plugins.api import ExtensionTool
 
             def _decorator(fn: Callable[..., Any]) -> BaseTool:
                 params_model = _json_schema_to_pydantic(name, parameters)
@@ -241,8 +241,8 @@ class AgentAPI:
                 "(or use the @api.local_tool(...) decorator form)"
             )
 
-        from vtx.agent import ExtensionTool
-        from vtx.agent.extensions import _json_schema_to_pydantic
+        from vtx.agent.tools.schema import _json_schema_to_pydantic
+        from vtx.plugins.api import ExtensionTool
 
         params_model = _json_schema_to_pydantic(name, parameters)
         tool = ExtensionTool(
@@ -296,7 +296,7 @@ class AgentAPI:
         def _wrap(
             fn: Callable[[str], CommandOutcome | str | None],
         ) -> Callable[[str], CommandOutcome]:
-            from vtx.agent.extensions import CommandOutcome
+            from vtx.agent.agents.api import CommandOutcome
 
             def _wrapper(args: str) -> CommandOutcome:
                 try:
@@ -372,7 +372,7 @@ class AgentAPI:
         Mirrors :meth:`vtx.extensions.ExtensionAPI.on` exactly. Supports
         both ``api.on(EVENT, handler)`` and ``@api.on(EVENT)`` forms.
         """
-        from vtx.agent.extensions import ALL_EVENTS
+        from vtx.plugins.event_contract import ALL_EVENTS
 
         if event not in ALL_EVENTS:
             raise ValueError(f"Unknown event {event!r}. Valid events: {', '.join(ALL_EVENTS)}")

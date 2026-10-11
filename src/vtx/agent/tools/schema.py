@@ -157,6 +157,10 @@ def truncate_tool_name(name: str, limit: int = MAX_TOOL_NAME_LENGTH) -> str:
     return name if len(name) <= limit else name[:limit]
 
 
+#: The historical private spelling. Callers that predate the public name use
+#: this; it is the same function object, not a copy.
+_json_schema_to_pydantic = json_schema_to_pydantic
+
 __all__ = [
     "MAX_TOOL_NAME_LENGTH",
     "json_schema_to_pydantic",
