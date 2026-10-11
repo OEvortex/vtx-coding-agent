@@ -9,10 +9,53 @@ category: meta
 # Vtx Self-Extension
 
 You can add capability to yourself. This skill is the decision flow and the safety
-boundary. Detail lives in `references/`.
+boundary. Detail lives in `references/`: `skill-authoring.md`, `plugin-rows.md`, and
+`extensions.md` for the three surfaces, and `references/docs/` for the full 23-page
+reference set that ships with the package.
 
 User-provided focus or constraints (honor these):
 $ARGUMENTS
+
+## Where the truth lives
+
+The full reference set ships **inside this skill** at `references/docs/`. In the repo that
+path is a symlink to the repository's `docs/` directory, so there is one source of truth;
+the build follows it and the wheel carries the pages as real files, which is why they are
+present in an installed `vtx` where `docs/` is not. Read the page that owns the thing you
+are touching rather than guessing - the pages were generated from the source, so they are
+the cheapest way to be right.
+
+| When you need... | Read |
+|---|---|
+| The documentation index | `references/docs/README.md` |
+| To install, connect a model, or run Vtx for the first time | `references/docs/quickstart.md` |
+| The skill frontmatter contract, discovery, precedence | `references/docs/skills.md` |
+| The plugin kernel, service keys, event modes, patch language | `references/docs/plugins.md` |
+| `ExtensionAPI`, discovery paths, `/reload` scope | `references/docs/extensions.md` |
+| How a tool reaches the model, or a tool's exact schema | `references/docs/tools.md` |
+| A CLI flag, subcommand, or exit code | `references/docs/cli.md` |
+| A config field or its default | `references/docs/configuration.md` |
+| A provider, its auth, or a model id | `references/docs/providers.md` |
+| The composition, the agent loop, or how `/reload` works | `references/docs/how-vtx-works.md` |
+| An agent profile, sub-agents, or handoff | `references/docs/agents.md` |
+| A permission mode, rule, or the mutating-tool gate | `references/docs/permissions.md` |
+| Session persistence, resume, snapshots, revert | `references/docs/sessions.md` |
+| The goal system | `references/docs/goals.md` |
+| A slash command or a keybinding | `references/docs/slash-commands.md`, `references/docs/keybindings.md` |
+| Themes and UI settings | `references/docs/theming.md` |
+| MCP servers, transports, auth, trust | `references/docs/mcp.md` |
+| The codemode sandbox and tool exposure | `references/docs/codemode.md` |
+| Headless mode and exit codes | `references/docs/headless.md` |
+| The SDK, `Agent`, `Runner`, guardrails, tracing | `references/docs/sdk.md` |
+| Repo layout, how to add a tool or a row, dev commands | `references/docs/development.md` |
+| Where Vtx writes files on disk | `references/docs/storage-layout.md` |
+
+These pages link to each other by bare filename, so opening any one in this directory keeps
+every cross-link working. The repo's `docs/` and the CLI-facing `AGENTS.md` are not
+installed; if you need the repo itself, it is `github.com/OEvortex/vtx-coding-agent`.
+
+Cite `path:line` for anything you claim. If a page and the code disagree, the code wins and
+the page is a bug worth reporting.
 
 ## The authorization boundary
 

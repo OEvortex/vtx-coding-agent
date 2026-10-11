@@ -3,7 +3,7 @@
 The real self-extension surface. A plugin row is one addressable line in a profile's row
 list; every subsystem - the tool registry, the provider seam, the permission gate, the
 session log - is itself a row, so a plugin replaces a subsystem rather than patching it.
-Full reference: `docs/plugins.md`.
+Full reference: `references/docs/plugins.md` (bundled copy of the repo's `docs/plugins.md`).
 
 ## Two shapes
 
