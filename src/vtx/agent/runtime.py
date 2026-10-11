@@ -1157,6 +1157,65 @@ class ConversationRuntime:
         except ValueError:
             return ApiType(ApiType.OPENAI_SDK)
 
+    def apply_provider_settings(
+        self,
+        *,
+        base_url: str | None,
+        openai_compat_auth_mode: AuthMode,
+        anthropic_compat_auth_mode: AuthMode,
+    ) -> list[str]:
+        """Re-apply the provider settings config owns, rebuilding the provider.
+
+        ``reload_config()`` updates the in-memory config, but the live provider
+        was built from the *old* values: an edited ``default_base_url`` or auth
+        mode would change nothing until the provider happened to be recreated
+        by a model switch. This swaps the settings in place and rebuilds only
+        when something actually moved, so a reload that touched no provider
+        settings costs nothing and keeps the session's provider identity.
+
+        The api key is deliberately not touched: it comes from the CLI, the
+        environment, or an OAuth login rather than from ``config.yml``.
+        """
+        changed: list[str] = []
+        if self.base_url != base_url:
+            self.base_url = base_url
+            changed.append("base_url")
+        if self.openai_compat_auth_mode != openai_compat_auth_mode:
+            self.openai_compat_auth_mode = openai_compat_auth_mode
+            changed.append("openai_compat auth")
+        if self.anthropic_compat_auth_mode != anthropic_compat_auth_mode:
+            self.anthropic_compat_auth_mode = anthropic_compat_auth_mode
+            changed.append("anthropic_compat auth")
+        if not changed or self.provider is None:
+            return changed
+
+        provider_config = self._provider_config(
+            model=self.model,
+            provider=self.model_provider,
+            base_url=self.base_url,
+            session_id=self.session.id if self.session else None,
+        )
+        try:
+            api_type = self._current_provider_api_type() or resolve_provider_api_type(
+                self.model_provider or ""
+            )
+            replacement = create_provider(api_type, provider_config)
+        except (ValueError, KeyError) as exc:
+            # The old provider keeps working; an unrecoverable gateway config
+            # surfaces on the next turn as its own error, which is a better
+            # story than a reload that bricks the session.
+            log.warning("Could not rebuild provider from reloaded settings: %s", exc)
+            return changed
+
+        replacement.set_thinking_level(self.thinking_level)
+        self.provider = replacement
+        if self.agent is not None:
+            # The loop reads the provider off itself, so swapping only the
+            # runtime's slot would leave the next turn using the old one.
+            self.agent.provider = replacement
+        self._sync_provider_session_id()
+        return changed
+
     def create_session(self) -> Session:
         selected_model = get_model(self.model, self.model_provider)
         model_provider = (

@@ -153,6 +153,12 @@ class Vtx(
             )
         )
         self._api_key = api_key
+        # Raw CLI overrides, kept separate from the effective values below: a
+        # reload re-derives the effective ones from config, and the CLI ones
+        # have to keep winning over an edited config.yml.
+        self._cli_api_key = api_key
+        self._cli_base_url = base_url
+        self._cli_auth_modes = (openai_compat_auth_mode, anthropic_compat_auth_mode)
         self._base_url = base_url or config.llm.default_base_url or None
         self._resume_session = resume_session
         self._continue_recent = continue_recent
@@ -305,76 +311,8 @@ class Vtx(
         # handlers declared as (event, payload, ctx) receive a context whose
         # .ui shows real modal dialogs backed by this Textual app.
         self._extension_ui = TextualExtensionUI(self)
-        self._loaded_extensions.bus.set_ui_context(self._extension_ui, cwd=self._cwd, mode="tui")
-
-        # Publish this app into the plugin composition so a plugin can notify
-        # and list the built-in commands without importing the TUI.
-        from vtx.plugins import active_host
-        from vtx.plugins.tui import install as install_ui
-
-        install_ui(self, active_host())
-        # Wire extension runtime actions so handlers can call
-        # api.set_session_name(), api.set_model(), etc. Actions are bound by the
-        # name a handler calls them by, so ``ctx`` needs no action types.
-
-        def _extension_set_model(model_id: Any) -> bool:
-            """Resolve a model id to catalog info and apply it via switch_model."""
-            from vtx.ai.dynamic_models import find_dynamic_model
-            from vtx.ai.models import get_model
-
-            info = get_model(str(model_id), None)
-            if info is None:
-                info = find_dynamic_model(str(model_id), None)
-            if info is None:
-                return False
-            self._runtime.switch_model(info)
-            # switch_model may clamp the level; the bar renders the old value
-            # until it is re-read.
-            self._refresh_thinking_level_display()
-            return True
-
-        def _extension_set_thinking_level(level: Any) -> None:
-            """Apply an extension's level change and re-read the display."""
-            self._runtime.set_thinking_level(str(level))
-            self._refresh_thinking_level_display()
-
-        # Bound on the composition's actions object, so every mounted extension
-        # shares one set and a reload rebinds in place.
-        self._loaded_extensions.actions.bind_many(
-            send_message=lambda *a, **kw: None,
-            send_user_message=lambda *a, **kw: None,
-            append_entry=lambda *a, **kw: None,
-            set_session_name=self._runtime.set_session_name,
-            get_session_name=self._runtime.get_session_name,
-            set_label=lambda *a, **kw: None,
-            get_active_tools=lambda: self._runtime.tools,
-            get_all_tools=lambda: self._runtime.tools,
-            set_active_tools=lambda *a, **kw: None,
-            refresh_tools=lambda: None,
-            get_commands=lambda: {},
-            set_model=_extension_set_model,
-            get_thinking_level=lambda: self._runtime.thinking_level,
-            set_thinking_level=_extension_set_thinking_level,
-            get_model=lambda: self._runtime.model,
-            get_scoped_models=lambda: [],
-            is_idle=lambda: not self._is_running,
-            is_project_trusted=lambda: self._runtime._project_trusted,
-            get_signal=lambda: self._cancel_event,
-            abort=lambda: self._request_interrupt(),
-            has_pending_messages=lambda: False,
-            shutdown=lambda: None,
-            get_context_usage=lambda: None,
-            compact=lambda options: None,
-            get_system_prompt=lambda: self._runtime.resolve_system_prompt(),
-            pending_providers=lambda: [],
-            get_flag=lambda name: None,
-            wait_for_idle=lambda: asyncio.ensure_future(asyncio.sleep(0)),
-            new_session=lambda *a, **kw: asyncio.ensure_future(asyncio.sleep(0)),
-            fork=lambda *a, **kw: asyncio.ensure_future(asyncio.sleep(0)),
-            navigate_tree=lambda *a, **kw: asyncio.ensure_future(asyncio.sleep(0)),
-            switch_session=lambda *a, **kw: asyncio.ensure_future(asyncio.sleep(0)),
-            reload=lambda: asyncio.ensure_future(asyncio.sleep(0)),
-        )
+        self._install_extension_surface()
+        self._bind_extension_actions()
 
         # Hook system: bridge YAML hook configs onto the EventBus.
         from vtx.agent.hooks.bridge import HookBridge
@@ -412,6 +350,109 @@ class Vtx(
         )
         footer._active_agent = active_name
         yield footer
+
+    def _install_extension_surface(self) -> None:
+        """Publish the app's interactive surface into the extension bus.
+
+        Called at startup and again on every ``/reload``: a reload rebuilds the
+        extension rows on a fresh bus, and a handler registered on that bus
+        would otherwise see a no-op ``ctx.ui`` and a TUI that never hears from
+        its plugins again.
+        """
+        # Publish this app into the plugin composition so a plugin can notify
+        # and list the built-in commands without importing the TUI.
+        from vtx.plugins import active_host
+        from vtx.plugins.tui import install as install_ui
+
+        install_ui(self, active_host())
+        bus = self._loaded_extensions.bus
+        if bus is not None:
+            bus.set_ui_context(self._extension_ui, cwd=self._cwd, mode="tui")
+
+    def _bind_extension_actions(self) -> None:
+        """Bind the named runtime actions an extension handler can call.
+
+        Bound on the composition's actions object, so every mounted extension
+        shares one set. Re-run on ``/reload``: the reload replaces
+        ``_loaded_extensions`` with a fresh record whose actions start empty,
+        and an extension calling ``api.set_model(...)`` against unbound actions
+        would silently do nothing.
+        """
+        actions = getattr(self._loaded_extensions, "actions", None)
+        if actions is None:
+            return
+
+        def _extension_set_model(model_id: Any) -> bool:
+            """Resolve a model id to catalog info and apply it via switch_model."""
+            from vtx.ai.dynamic_models import find_dynamic_model
+            from vtx.ai.models import get_model
+
+            info = get_model(str(model_id), None)
+            if info is None:
+                info = find_dynamic_model(str(model_id), None)
+            if info is None:
+                return False
+            self._runtime.switch_model(info)
+            # switch_model may clamp the level; the bar renders the old value
+            # until it is re-read.
+            self._refresh_thinking_level_display()
+            return True
+
+        def _extension_set_thinking_level(level: Any) -> None:
+            """Apply an extension's level change and re-read the display."""
+            self._runtime.set_thinking_level(str(level))
+            self._refresh_thinking_level_display()
+
+        actions.bind_many(
+            send_message=lambda *a, **kw: None,
+            send_user_message=lambda *a, **kw: None,
+            append_entry=lambda *a, **kw: None,
+            set_session_name=self._runtime.set_session_name,
+            get_session_name=self._runtime.get_session_name,
+            set_label=lambda *a, **kw: None,
+            get_active_tools=lambda: self._runtime.tools,
+            get_all_tools=lambda: self._runtime.tools,
+            set_active_tools=lambda *a, **kw: None,
+            refresh_tools=lambda: None,
+            get_commands=lambda: {},
+            set_model=_extension_set_model,
+            get_thinking_level=lambda: self._runtime.thinking_level,
+            set_thinking_level=_extension_set_thinking_level,
+            get_model=lambda: self._runtime.model,
+            get_scoped_models=lambda: [],
+            is_idle=lambda: not self._is_running,
+            is_project_trusted=lambda: self._runtime._project_trusted,
+            get_signal=lambda: self._cancel_event,
+            abort=lambda: self._request_interrupt(),
+            has_pending_messages=lambda: False,
+            shutdown=lambda: None,
+            get_context_usage=lambda: None,
+            compact=lambda options: None,
+            get_system_prompt=lambda: self._runtime.resolve_system_prompt(),
+            pending_providers=lambda: [],
+            get_flag=lambda name: None,
+            wait_for_idle=lambda: asyncio.ensure_future(asyncio.sleep(0)),
+            new_session=lambda *a, **kw: asyncio.ensure_future(asyncio.sleep(0)),
+            fork=lambda *a, **kw: asyncio.ensure_future(asyncio.sleep(0)),
+            navigate_tree=lambda *a, **kw: asyncio.ensure_future(asyncio.sleep(0)),
+            switch_session=lambda *a, **kw: asyncio.ensure_future(asyncio.sleep(0)),
+            reload=lambda: asyncio.ensure_future(asyncio.sleep(0)),
+        )
+
+    def _config_provider_settings(self) -> tuple[str | None, AuthMode, AuthMode]:
+        """The provider settings config owns, with the CLI overrides applied.
+
+        ``/reload`` re-derives these rather than trusting what the runtime was
+        built with, so an edited ``default_base_url`` or auth mode lands. A
+        value the user passed on the command line keeps winning: the CLI is a
+        deliberate per-invocation override.
+        """
+        cli_base_url, cli_auth_modes = self._cli_base_url, self._cli_auth_modes
+        return (
+            cli_base_url or config.llm.default_base_url or None,
+            cli_auth_modes[0] or config.llm.auth.openai_compat,
+            cli_auth_modes[1] or config.llm.auth.anthropic_compat,
+        )
 
     @staticmethod
     def _thinking_level_class(level: str) -> str:

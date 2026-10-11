@@ -19,6 +19,7 @@ Event mapping (extension EventBus → hook system):
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import logging
 import os
 from pathlib import Path
@@ -70,6 +71,20 @@ class HookBridge:
         self.registry = HookRegistry()
         self.runtime = HookRuntime(self.registry)
         self._registered_handlers: dict[str, Any] = {}
+        #: Hooks registered by the last ``load()``. Starts at zero: a session
+        #: with no hooks.yml has nothing loaded, which is also what a diff
+        #: against "no hooks before" reads as.
+        self.loaded_count = 0
+
+    def rebind(self, bus: Any) -> None:
+        """Point the bridge at a fresh bus, after ``unload()``.
+
+        A reload rebuilds the extension surface, and the handlers this bridge
+        registers must land on the bus the next turn emits through. Call
+        ``unload()`` first so the previous subscriptions are gone rather than
+        firing twice from two buses.
+        """
+        self._bus = bus
 
     async def load(self) -> None:
         """Load hook configs from YAML and register EventBus handlers."""
@@ -89,6 +104,9 @@ class HookBridge:
 
         total = sum(len(hooks) for hooks in snapshot.events.values())
         log.debug("HookBridge loaded %d hook(s) from config", total)
+        #: How many hooks the last ``load()`` registered. A reload report needs
+        #: a number it can diff, and the registry exposes no count of its own.
+        self.loaded_count = total
 
         # Wire EventBus events → hook runtime dispatch.  Register
         # unconditionally for any event present in the snapshot; the
@@ -186,9 +204,16 @@ class HookBridge:
         )
 
     async def unload(self) -> None:
-        """Clear all registered handlers and reset the registry."""
+        """Clear all registered handlers, unsubscribing them from the bus."""
+        for key, handler in list(self._registered_handlers.items()):
+            ext_event = key.split(":", 1)[0]
+            off = getattr(self._bus, "off", None)
+            if callable(off):
+                with contextlib.suppress(Exception):
+                    off(ext_event, handler)
         await self.registry.clear()
         self._registered_handlers.clear()
+        self.loaded_count = 0
 
 
 # ---------------------------------------------------------------------------

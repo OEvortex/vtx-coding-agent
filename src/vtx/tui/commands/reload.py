@@ -1,4 +1,4 @@
-"""``/reload`` — re-apply config, extensions, agents, tools, and context in place.
+"""``/reload`` — re-apply config, extensions, agents, tools, hooks, and the TUI.
 
 An explicit command rather than a background watcher. Both halves of that
 choice matter here:
@@ -12,6 +12,22 @@ choice matter here:
   runtime is rebuilt with the *previous* flag values, then ``session_start`` is
   re-emitted. Extensions get a chance to release whatever they cached, and a
   reload never silently resets a choice the user made.
+
+"Everything" is a real inventory, and it is larger than the obvious four:
+
+* **config** -- re-read from disk, then pushed at the widgets that cache it.
+* **extensions** -- re-discovered, with the import cache and __pycache__
+  invalidated so a submodule edit is really re-read.
+* **agents** -- re-loaded, with the active profile preserved when it resolves.
+* **tools** -- rebuilt from every pool, with ``codemode``'s sandbox told to
+  re-snapshot and MCP reconnected.
+* **skills** -- re-read from disk with the AGENTS.md context they ride with.
+* **hooks** -- ``hooks.yml`` re-read and re-registered on the fresh bus.
+* **providers** -- the custom-provider files re-scanned, whose cache would
+  otherwise keep a deleted provider alive forever.
+* **the TUI** -- theme, permissions, slash commands, the footer's agent badge,
+  and the two surfaces extensions were bound to at startup: the action set
+  they call by name, and the ``ctx.ui`` their dialogs come from.
 
 The one part that needs handling beyond the obvious: a Python extension's
 submodules. The loader re-executes the entry module every time, so an edited
@@ -46,6 +62,8 @@ class _Snapshot:
     tools: list[str]
     active_agent: str | None
     settings: dict[str, str]
+    providers: int
+    hooks: int
 
 
 class ReloadCommands(CommandSupport):
@@ -99,15 +117,30 @@ class ReloadCommands(CommandSupport):
         except Exception as exc:
             chat.add_info_message(f"config reload failed: {exc}", error=True)
 
-        # 4. Extensions. `fresh=True` additionally drops each package
-        #    extension's __pycache__, so a submodule edit of the same byte
-        #    length is not served from stale bytecode.
+        # 3b. Custom providers. The catalog caches its file scan by design (it
+        #     is read on every keystroke in the model picker), so an edited or
+        #     deleted ``~/.vtx/providers/*.yaml`` is invisible until this asks
+        #     for a re-read. Before the extensions load: an extension's
+        #     register() may register a provider of its own.
+        _reload_custom_providers(chat)
+
+        # 4. Extensions. A package extension's __pycache__ is dropped as it
+        #    loads, so a submodule edit of the same byte length is not served
+        #    from stale bytecode.
         loaded = reload_extensions(
             cwd=self._cwd, extra_paths=[*config.extensions], auto_discover=True
         )
         for err in loaded.errors:
             chat.add_info_message(f"extension: {err}", error=True)
         self._loaded_extensions = loaded
+
+        # 4b. The reload rebuilt the extension surface, and two things were
+        #     bound to the old one at startup: the actions an extension calls
+        #     by name, and the interactive ctx.ui. Both start empty on a fresh
+        #     record, so without these an extension's set_model() call would
+        #     silently do nothing and its dialogs would never appear.
+        self._install_extension_surface()
+        self._bind_extension_actions()
 
         # 5. Agents. Re-register their handlers on the *new* bus, since the one
         #    they registered on in step 1 is about to be unreachable.
@@ -181,6 +214,28 @@ class ReloadCommands(CommandSupport):
         # 10. Push the settings that live outside the config object.
         applied_settings = self._apply_reloaded_settings(before.settings)
 
+        # 10b. The provider was built from the old config values; an edited
+        #      default_base_url or auth mode has to be swapped in, or it
+        #      changes nothing until the next model switch.
+        base_url, openai_auth, anthropic_auth = self._config_provider_settings()
+        provider_changed = self._runtime.apply_provider_settings(
+            base_url=base_url,
+            openai_compat_auth_mode=openai_auth,
+            anthropic_compat_auth_mode=anthropic_auth,
+        )
+
+        # 10c. The footer shows the active handoff agent, which a reload may
+        #      have swapped. Compose set it once; keep it honest.
+        footer_agent = active.definition.name if active is not None else ""
+        with contextlib.suppress(Exception):
+            self.query_one("#compact-footer", InfoBar).set_agent(footer_agent)
+
+        # 10d. Hooks. hooks.yml is not part of config.yml either, so /reload is
+        #      the only thing that picks up an edit to it. The previous
+        #      subscriptions are removed first -- rebinding without unloading
+        #      is how a bridge ends up firing every hook twice.
+        self.run_worker(self._reload_hooks(), exclusive=False)
+
         after = self._reload_snapshot()
 
         # 11. Extensions re-initialize against the new module objects.
@@ -192,7 +247,23 @@ class ReloadCommands(CommandSupport):
                 reason="reload",
             )
 
-        self._report_reload(before, after, applied_settings)
+        self._report_reload(before, after, applied_settings, provider_changed)
+
+    async def _reload_hooks(self) -> None:
+        """Re-read ``hooks.yml`` onto the reloaded bus, reporting the outcome."""
+        chat = self.query_one("#chat-log", ChatLog)
+        bridge = getattr(self, "_hook_bridge", None)
+        if bridge is None:
+            return
+        try:
+            await bridge.unload()
+            bridge.rebind(self._loaded_extensions.bus)
+            await bridge.load()
+        except Exception as exc:
+            chat.add_info_message(f"hook reload failed: {exc}", error=True)
+            return
+        loaded = getattr(bridge, "loaded_count", 0)
+        chat.add_info_message(f"Hooks: {loaded} active.")
 
     async def _reload_mcp(self, chat: ChatLog) -> None:
         """Re-read ``mcp.json`` and reconnect, reporting the outcome."""
@@ -219,6 +290,11 @@ class ReloadCommands(CommandSupport):
             skills = []
         active = self._runtime.agent_registry.active
         loaded = getattr(self, "_loaded_extensions", None)
+        bridge = getattr(self, "_hook_bridge", None)
+        try:
+            providers = len(_catalog_slugs())
+        except Exception:
+            providers = 0
         return _Snapshot(
             commands=len(getattr(loaded, "all_commands", {})),
             agents=len(self._runtime.agent_registry.agents),
@@ -226,6 +302,8 @@ class ReloadCommands(CommandSupport):
             tools=sorted(t.name for t in self._tools),
             active_agent=active.definition.name if active else None,
             settings=self._settings_snapshot(),
+            providers=providers,
+            hooks=int(getattr(bridge, "loaded_count", 0) or 0),
         )
 
     @staticmethod
@@ -295,7 +373,11 @@ class ReloadCommands(CommandSupport):
             sys.modules.pop(name, None)
 
     def _report_reload(
-        self, before: _Snapshot, after: _Snapshot, applied_settings: list[str]
+        self,
+        before: _Snapshot,
+        after: _Snapshot,
+        applied_settings: list[str],
+        provider_changed: list[str] | None = None,
     ) -> None:
         chat = self.query_one("#chat-log", ChatLog)
         changes: list[str] = []
@@ -312,9 +394,16 @@ class ReloadCommands(CommandSupport):
             changes.append(f"agents {after.agents - before.agents:+d}")
         if before.commands != after.commands:
             changes.append(f"commands {after.commands - before.commands:+d}")
+        if before.providers != after.providers:
+            changes.append(f"providers {after.providers - before.providers:+d}")
+        if before.hooks != after.hooks:
+            changes.append(f"hooks {after.hooks - before.hooks:+d}")
 
         summary = "; ".join(changes) if changes else "no visible changes"
-        chat.add_info_message(f"Reloaded config, extensions, agents, tools, skills. ({summary})")
+        chat.add_info_message(
+            "Reloaded config, extensions, agents, tools, skills, "
+            f"hooks, providers, UI. ({summary})"
+        )
         # Name the settings that were pushed at live widgets, so a theme or
         # permission change in config.yml is visibly confirmed rather than
         # silently assumed.
@@ -322,6 +411,25 @@ class ReloadCommands(CommandSupport):
             chat.add_info_message("Applied settings: " + ", ".join(applied_settings))
         else:
             chat.add_info_message("Settings unchanged.")
+        if provider_changed:
+            chat.add_info_message("Provider settings updated: " + ", ".join(provider_changed))
+
+
+def _reload_custom_providers(chat: ChatLog) -> int:
+    """Re-read the custom provider files, reporting the count. Never fatal."""
+    from vtx.ai.provider_catalog import reload_custom_providers
+
+    try:
+        return reload_custom_providers()
+    except Exception as exc:
+        chat.add_info_message(f"provider reload failed: {exc}", error=True)
+        return 0
+
+
+def _catalog_slugs() -> list[str]:
+    from vtx.ai.provider_catalog import custom_provider_slugs
+
+    return custom_provider_slugs()
 
 
 __all__ = ["ReloadCommands"]

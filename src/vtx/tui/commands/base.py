@@ -7,6 +7,7 @@ from typing import TYPE_CHECKING, Any, TypeVar, cast
 
 from vtx.agent.runtime import ConversationRuntime
 from vtx.agent.session import Session
+from vtx.ai.base import AuthMode
 from vtx.tui.chat import ChatLog
 from vtx.tui.floating_list import ListItem
 from vtx.tui.input import InputBox
@@ -30,6 +31,7 @@ class CommandSupport:
     _runtime: ConversationRuntime
     _session: Session | None
     _loaded_extensions: Any
+    _hook_bridge: Any
 
     # Methods from App - declared for type checking
     if TYPE_CHECKING:
@@ -51,6 +53,9 @@ class CommandSupport:
         def _render_session_entries(self, session: Session) -> None: ...
         def _apply_theme(self, theme_id: str) -> None: ...
         def _apply_thinking_level_style(self, level: str) -> None: ...
+        def _install_extension_surface(self) -> None: ...
+        def _bind_extension_actions(self) -> None: ...
+        def _config_provider_settings(self) -> tuple[str | None, AuthMode, AuthMode]: ...
         def _show_completion_list(
             self,
             items: list[ListItem],

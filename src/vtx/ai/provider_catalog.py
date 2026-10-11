@@ -65,6 +65,12 @@ _order_cache: list[str] | None = None
 # Custom providers registered at runtime (highest precedence).
 _custom_cache: dict[str, ProviderInfo] = {}
 
+# Slugs contributed by the providers *files*, as opposed to a runtime
+# :func:`register_custom_provider` call. A reload re-reads the files and must
+# drop a provider whose file was deleted, while keeping one an extension (or a
+# test) registered from Python.
+_file_provider_slugs: set[str] = set()
+
 
 def _parse_entry(entry: dict) -> ProviderInfo:
     """Build a :class:`ProviderInfo` from a raw catalog dict entry."""
@@ -581,12 +587,39 @@ def load_custom_providers() -> int:
     count = 0
     for info in _load_custom_provider_files():
         _custom_cache[info.slug] = info
+        _file_provider_slugs.add(info.slug)
         _sync_dynamic_provider(info)
         count += 1
     if count:
         global _cache
         _cache = None
     return count
+
+
+def reload_custom_providers() -> int:
+    """Re-read the custom provider YAML files, replacing the file-derived ones.
+
+    The file scan is deliberately one-shot: catalog lookups happen on every
+    keystroke in the model picker and re-globbing the providers directory each
+    time would be per-keystroke I/O. The cost of that choice is that an edit
+    under ``~/.vtx/providers`` is invisible until something asks for a reload,
+    and a *deleted* file's provider stays in the catalog forever. This is that
+    something: it drops only the file-derived providers, re-reads the
+    directories, and mirrors whatever changed into the dynamic fetcher.
+
+    Providers registered from Python (an extension's ``register_custom_provider``
+    call) survive: they are re-registered by a reload of the extension itself.
+    """
+    global _cache, _order_cache, _loaded_custom_files
+    for slug in list(_file_provider_slugs):
+        _unsync_dynamic_provider(slug)
+        _custom_cache.pop(slug, None)
+    _file_provider_slugs.clear()
+    _cache = None
+    _order_cache = None
+    # Reset the one-shot latch so _ensure_custom_files_loaded actually scans.
+    _loaded_custom_files = False
+    return load_custom_providers()
 
 
 def _unsync_dynamic_provider(slug: str) -> None:
@@ -617,6 +650,11 @@ def _load() -> dict[str, ProviderInfo]:
     providers = _load_builtin()
     providers.update(_custom_cache)
     return providers
+
+
+def custom_provider_slugs() -> list[str]:
+    """Slugs of every registered custom provider, for a count in a reload report."""
+    return sorted(_custom_cache)
 
 
 def find_model(model_id: str, provider: str | None = None) -> Model | None:

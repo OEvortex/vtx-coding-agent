@@ -74,6 +74,10 @@ class ExtensionBus:
         self._ui_context: Any = None
         self._cwd: str = ""
         self._mode: str = "print"
+        # The wrapped form ``on`` handed to the hub, kept per handler so ``off``
+        # can remove exactly what was added. ``_wrap`` builds a fresh closure on
+        # every call, so rebuilding it here would not match what the hub holds.
+        self._subscriptions: dict[str, list[tuple[Callable[..., Any], Callable[..., Any]]]] = {}
 
     # ---- registration ----------------------------------------------------
 
@@ -85,7 +89,7 @@ class ExtensionBus:
         receives a :class:`HandlerContext`.
         """
         if event not in ALL_EVENTS:
-            raise ValueError(f"Unknown event {event!r}. Valid events: {', '.join(ALL_EVENTS)}")
+            raise ValueError(f"Unknown event {event!r}. Valid events are: {', '.join(ALL_EVENTS)}")
         if handler is None:
 
             def decorator(fn: Callable[..., Any]) -> Callable[..., Any]:
@@ -93,8 +97,27 @@ class ExtensionBus:
                 return fn
 
             return decorator
-        self._hub.on(event, self._wrap(event, handler))
+        wrapped = self._wrap(event, handler)
+        self._hub.on(event, wrapped)
+        self._subscriptions.setdefault(event, []).append((handler, wrapped))
         return handler
+
+    def off(self, event: str, handler: Callable[..., Any]) -> None:
+        """Unsubscribe a handler previously passed to :meth:`on`.
+
+        A no-op when the handler was never subscribed, so a teardown path can
+        call it defensively. Without this the only way to remove a handler was
+        to rebuild the hub, which left a caller that registered directly --
+        rather than through a plugin row -- with no way to unregister.
+        """
+        subscriptions = self._subscriptions.get(event, [])
+        for index, (registered, wrapped) in enumerate(subscriptions):
+            if registered is handler:
+                del subscriptions[index]
+                if not subscriptions:
+                    self._subscriptions.pop(event, None)
+                self._hub.off(event, wrapped)
+                return
 
     def _wrap(self, event: str, handler: Callable[..., Any]) -> Callable[..., Any]:
         """Adapt one handler to the hub's single-argument calling convention.

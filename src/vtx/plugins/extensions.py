@@ -216,6 +216,15 @@ class ExtensionService:
         def apply(ctx: Any, config: Any) -> Any:
             record = loaded.record(module_name, path)
             try:
+                if path.name == "__init__.py":
+                    # A package extension's submodules are imported by name, and
+                    # the import system validates their bytecode against the
+                    # source's mtime and size -- so an edit that keeps the same
+                    # length in the same mtime tick is served from __pycache__
+                    # and a reload reports success while running the previous
+                    # submodule. Dropping the cache first is what makes the
+                    # re-read real; Python regenerates it on the next import.
+                    invalidate_extension_bytecode(path)
                 module = load_module(path, module_name)
                 register = getattr(module, "register", None)
                 if register is None:

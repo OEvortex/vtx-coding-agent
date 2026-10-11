@@ -5,6 +5,8 @@ from __future__ import annotations
 import asyncio
 from pathlib import Path
 
+import pytest
+
 from vtx.agent.hooks import (
     HOOK_EVENTS,
     HookConfig,
@@ -18,6 +20,8 @@ from vtx.agent.hooks import (
     run_hook_handlers,
     validate_hook_configs,
 )
+from vtx.agent.hooks.bridge import HookBridge
+from vtx.plugins.bus import ExtensionBus
 
 
 def test_hook_event_registry_exposes_expected_events():
@@ -329,3 +333,65 @@ def test_hook_http_handler_requires_httpx(monkeypatch):
     # reported the missing-dependency blocking error. Both are valid; we just
     # assert a structured result came back.
     assert isinstance(result, HookResult)
+
+
+class TestBridgeUnload:
+    """A reload unsubscribes the bridge's handlers instead of stacking more."""
+
+    def _bridge(self, tmp_path: Path) -> HookBridge:
+        bus = ExtensionBus()
+        return HookBridge(
+            bus,
+            project_path=tmp_path / "project-hooks.yml",
+            global_path=tmp_path / "global-hooks.yml",
+        )
+
+    def _write_hooks(self, path: Path, *, count: int = 1) -> None:
+        # The on-disk schema is lowercase event keys with the typed event name
+        # inside each entry — the same shape the loader reads in production.
+        hooks = "\n".join(
+            "  - event: SessionStart\n    type: command\n    command: echo start"
+            for _ in range(count)
+        )
+        path.write_text(f"session_start:\n{hooks}\n", encoding="utf-8")
+
+    @pytest.mark.asyncio
+    async def test_unload_removes_the_bus_subscriptions(self, tmp_path: Path):
+        bridge = self._bridge(tmp_path)
+        self._write_hooks(bridge._project_path)
+        await bridge.load()
+        assert bridge.loaded_count == 1
+        assert bridge._bus.handler_count("session_start") == 1
+
+        await bridge.unload()
+        # The registry and the bus both go quiet: a reload that only cleared the
+        # registry would fire every hook twice from two bridges.
+        assert bridge.loaded_count == 0
+        assert bridge._bus.handler_count("session_start") == 0
+
+    @pytest.mark.asyncio
+    async def test_a_reload_re_registers_rather_than_doubling(self, tmp_path: Path):
+        bridge = self._bridge(tmp_path)
+        self._write_hooks(bridge._project_path, count=2)
+        await bridge.load()
+        await bridge.unload()
+        bridge.rebind(ExtensionBus())
+        await bridge.load()
+        assert bridge.loaded_count == 2
+        assert bridge._bus.handler_count("session_start") == 1
+
+    @pytest.mark.asyncio
+    async def test_a_deleted_hooks_file_silences_the_bridge(self, tmp_path: Path):
+        bridge = self._bridge(tmp_path)
+        self._write_hooks(bridge._project_path)
+        await bridge.load()
+        bridge._project_path.unlink()
+        await bridge.unload()
+        await bridge.load()
+        assert bridge.loaded_count == 0
+        assert bridge._bus.handler_count("session_start") == 0
+
+
+def test_the_bridge_reports_a_count_that_starts_at_zero(tmp_path: Path):
+    bridge = TestBridgeUnload()._bridge(tmp_path)
+    assert bridge.loaded_count == 0

@@ -44,6 +44,11 @@ class _ReloadApp(ReloadCommands, App):
         self._sync_calls = 0
         self._loaded_extensions = None
         self.applied_themes: list[str] = []
+        # What the reload command expects of a full host: the three surfaces it
+        # re-binds after the extension surface is rebuilt. The real Vtx installs
+        # these; a double records the calls so the wiring is still covered.
+        self.surface_installs = 0
+        self.action_binds = 0
 
     def compose(self) -> ComposeResult:
         yield ChatLog(id="chat-log")
@@ -55,6 +60,21 @@ class _ReloadApp(ReloadCommands, App):
 
     def _apply_theme(self, theme_id: str) -> None:
         self.applied_themes.append(theme_id)
+
+    def _install_extension_surface(self) -> None:
+        self.surface_installs += 1
+
+    def _bind_extension_actions(self) -> None:
+        self.action_binds += 1
+
+    def _config_provider_settings(self) -> tuple[str | None, str, str]:
+        from vtx.core.config import config
+
+        return (
+            config.llm.default_base_url or None,
+            config.llm.auth.openai_compat,
+            config.llm.auth.anthropic_compat,
+        )
 
 
 @pytest.fixture
@@ -95,9 +115,11 @@ def _edit_config(path: Path, **overrides) -> None:
 
 @pytest.fixture
 def reload_app(tmp_path: Path):
+    from vtx.agent.hooks.bridge import HookBridge
     from vtx.agent.runtime import ConversationRuntime
     from vtx.agent.session import Session
     from vtx.plugins import boot, reset
+    from vtx.plugins.extensions import load_for_runtime
     from vtx.plugins.tui import install as install_ui
 
     workdir = tmp_path / "work"
@@ -111,12 +133,104 @@ def reload_app(tmp_path: Path):
     app = _ReloadApp(workdir, runtime)
     install_ui(app, host)
     app._loaded_extensions = None
+    # A real bridge on the composition's bus, so the hooks reload path runs
+    # against the same bus the reloaded extensions register on.
+    app._hook_bridge = HookBridge(
+        load_for_runtime(cwd=str(workdir)).bus,
+        project_path=workdir / ".vtx" / "hooks.yml",
+        global_path=tmp_path / "global-hooks.yml",
+    )
     yield app, runtime
     reset()
 
 
 def _reload(app) -> None:
     app._handle_reload_command("")
+
+
+class TestEverythingIsReloaded:
+    """ "Reload everything" is an inventory; each row has to actually move."""
+
+    @pytest.mark.asyncio
+    async def test_the_extension_surface_is_rebound(self, config_file, reload_app):
+        # A reload replaces the extension record with a fresh one whose actions
+        # and UI context start empty; without the rebind an extension's
+        # set_model() call silently does nothing.
+        app, _runtime = reload_app
+        async with app.run_test() as pilot:
+            await pilot.pause()
+            _reload(app)
+            await pilot.pause()
+            assert app.surface_installs >= 1
+            assert app.action_binds >= 1
+
+    @pytest.mark.asyncio
+    async def test_an_edited_base_url_reaches_the_runtime(self, config_file, reload_app):
+        app, runtime = reload_app
+        _edit_config(config_file, **{"llm.default_base_url": "https://edited.example/v1"})
+        async with app.run_test() as pilot:
+            await pilot.pause()
+            _reload(app)
+            await pilot.pause()
+            assert runtime.base_url == "https://edited.example/v1"
+
+    @pytest.mark.asyncio
+    async def test_an_unchanged_base_url_is_not_reported(self, config_file, reload_app):
+        app, runtime = reload_app
+        _edit_config(config_file, **{"llm.default_base_url": "https://edited.example/v1"})
+        async with app.run_test() as pilot:
+            await pilot.pause()
+            _reload(app)
+            await pilot.pause()
+            first = runtime.base_url
+            chat = pilot.app.query_one("#chat-log", ChatLog)
+            # The report is per-reload; the second one changed nothing.
+            messages_before = list(chat.children)
+            _reload(app)
+            await pilot.pause()
+            assert runtime.base_url == first
+            assert len(chat.children) > len(messages_before)
+
+    @pytest.mark.asyncio
+    async def test_a_hooks_file_is_picked_up(self, config_file, reload_app):
+        # hooks.yml is not part of config.yml, so /reload is the only thing that
+        # picks up an edit to it.
+        app, _runtime = reload_app
+        hooks = Path(app._cwd) / ".vtx" / "hooks.yml"
+        hooks.parent.mkdir(parents=True, exist_ok=True)
+        hooks.write_text(
+            "session_start:\n  - event: SessionStart\n    type: command\n    command: echo hi\n",
+            encoding="utf-8",
+        )
+        async with app.run_test() as pilot:
+            await pilot.pause()
+            _reload(app)
+            await pilot.pause()
+            assert app._hook_bridge.loaded_count == 1
+            # Registered on the reloaded bus, and only once.
+            assert app._hook_bridge._bus.handler_count("session_start") == 1
+            _reload(app)
+            await pilot.pause()
+            assert app._hook_bridge._bus.handler_count("session_start") == 1
+
+    @pytest.mark.asyncio
+    async def test_a_custom_provider_file_is_picked_up(self, config_file, reload_app, monkeypatch):
+        from vtx.ai.provider_catalog import custom_provider_slugs
+
+        app, _runtime = reload_app
+        xdg = Path(app._cwd) / "xdg"
+        monkeypatch.setenv("XDG_CONFIG_HOME", str(xdg))
+        (xdg / "vtx" / "providers").mkdir(parents=True, exist_ok=True)
+        (xdg / "vtx" / "providers" / "probe.yaml").write_text(
+            "slug: probe-gw\ndisplay_name: Probe\nfamily: openai_compat\n"
+            "base_url: https://probe.example/v1\napi_key_env: PROBE_KEY\n",
+            encoding="utf-8",
+        )
+        async with app.run_test() as pilot:
+            await pilot.pause()
+            _reload(app)
+            await pilot.pause()
+            assert "probe-gw" in custom_provider_slugs()
 
 
 class TestModeSwitch:

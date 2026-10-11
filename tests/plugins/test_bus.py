@@ -393,3 +393,69 @@ def test_emit_sync_still_honours_a_block():
 
     assert bus.emit_sync(TOOL_CALL) == {"block": True, "reason": "nope"}
     assert reached == []
+
+
+# --------------------------------------------------------------------------
+# Unsubscription
+# --------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_off_removes_exactly_the_handler_it_was_given():
+    """A reload unsubscribes what a bridge registered; anything else has to stay."""
+    bus = ExtensionBus()
+    kept: list[str] = []
+
+    def dropped(event, payload):
+        kept.append("dropped")
+
+    def survivor(event, payload):
+        kept.append("survivor")
+
+    bus.on(TOOL_CALL, dropped)
+    bus.on(TOOL_CALL, survivor)
+    bus.off(TOOL_CALL, dropped)
+
+    assert bus.handler_count(TOOL_CALL) == 1
+    await bus.emit(TOOL_CALL, tool_name="bash")
+    assert kept == ["survivor"]
+
+
+@pytest.mark.asyncio
+async def test_off_is_a_no_op_for_a_handler_that_was_never_subscribed():
+    """Teardown calls it defensively; an unknown handler must not raise."""
+    bus = ExtensionBus()
+    bus.on(TOOL_CALL, lambda event, payload: None)
+    bus.off(TOOL_CALL, lambda event, payload: None)
+    assert bus.handler_count(TOOL_CALL) == 1
+
+
+@pytest.mark.asyncio
+async def test_a_decorated_handler_can_be_removed_by_the_name_it_was_bound_to():
+    """``on`` returns the handler, not the wrapper the hub holds, so ``off`` must
+    map back to the wrapper or the subscription is impossible to remove."""
+    bus = ExtensionBus()
+
+    @bus.on(TOOL_CALL)
+    def handler(event, payload):
+        return {"args": {"x": 1}}
+
+    bus.off(TOOL_CALL, handler)
+    assert bus.handler_count(TOOL_CALL) == 0
+    assert await bus.emit(TOOL_CALL, tool_name="bash") == {}
+
+
+@pytest.mark.asyncio
+async def test_a_second_subscription_of_the_same_handler_is_removed_one_at_a_time():
+    bus = ExtensionBus()
+
+    def handler(event, payload):
+        return None
+
+    bus.on(TOOL_CALL, handler)
+    bus.on(TOOL_CALL, handler)
+    assert bus.handler_count(TOOL_CALL) == 2
+    bus.off(TOOL_CALL, handler)
+    assert bus.handler_count(TOOL_CALL) == 1
+    bus.off(TOOL_CALL, handler)
+    assert bus.handler_count(TOOL_CALL) == 0
