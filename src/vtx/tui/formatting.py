@@ -1,5 +1,7 @@
 import re
 import shutil
+import string
+import unicodedata
 from typing import Any, ClassVar
 
 from markdown_it.token import Token
@@ -322,6 +324,7 @@ _INLINE_TAG_RE = re.compile(
 # and only transform the segments outside them.
 _CODE_SPAN_RE = re.compile(r"(`+)(?!`)(.*?)(?<!`)\1(?!`)", re.S)
 _BR_INLINE_RE = re.compile(r"<\s*br\s*/?\s*>", re.I)
+_ASCII_PUNCT = frozenset(string.punctuation)
 
 
 def _apply_outside_code(text: str, fn) -> str:
@@ -391,13 +394,153 @@ def _strip_inline_code_ticks_in_headings(text: str) -> str:
     return "".join(processed)
 
 
+class _DelimRun:
+    """One run of ``*`` or ``_`` plus the flanking rules that decide its role.
+
+    ``lo``/``hi`` are the slice of the run still standing after it has been
+    matched against an opener or a closer; the rest of the run is markup and
+    gets dropped when the text is rebuilt.
+    """
+
+    __slots__ = ("char", "start", "end", "lo", "hi", "orig_length", "can_open", "can_close")
+
+    def __init__(self, char: str, start: int, end: int, can_open: bool, can_close: bool) -> None:
+        self.char = char
+        self.start = start
+        self.end = end
+        self.lo = start
+        self.hi = end
+        self.orig_length = end - start
+        self.can_open = can_open
+        self.can_close = can_close
+
+
+def _is_punct(ch: str) -> bool:
+    """CommonMark "punctuation": ASCII punctuation or any Unicode P*/S* character."""
+    return ch in _ASCII_PUNCT or unicodedata.category(ch)[0] in ("P", "S")
+
+
+def _scan_delim_runs(text: str) -> list[_DelimRun]:
+    runs: list[_DelimRun] = []
+    i, n = 0, len(text)
+    while i < n:
+        char = text[i]
+        if char not in "*_":
+            i += 1
+            continue
+        j = i
+        while j < n and text[j] == char:
+            j += 1
+        before = text[i - 1] if i else ""
+        after = text[j] if j < n else ""
+        before_space = not before or before.isspace()
+        after_space = not after or after.isspace()
+        before_punct = bool(before) and _is_punct(before)
+        after_punct = bool(after) and _is_punct(after)
+        left = not after_space and (not after_punct or before_space or before_punct)
+        right = not before_space and (not before_punct or after_space or after_punct)
+        if char == "_":
+            # Intraword `_` is never emphasis. Without this guard the old
+            # `(?<!_)_([^_]+)_(?!_)` regex ate the underscores out of every
+            # snake_case identifier: `L_O_L` rendered as `LOL`, and
+            # `snake_case_name` welded into `snakecasename`.
+            can_open = left and (not right or before_punct)
+            can_close = right and (not left or after_punct)
+        else:
+            can_open, can_close = left, right
+        runs.append(_DelimRun(char, i, j, can_open, can_close))
+        i = j
+    return runs
+
+
+def _blocks_by_rule_of_three(opener: _DelimRun, closer: _DelimRun) -> bool:
+    if not (closer.can_open or opener.can_close):
+        return False
+    if closer.orig_length % 3 == 0:
+        return False
+    return (opener.orig_length + closer.orig_length) % 3 == 0
+
+
+def _strip_emphasis(text: str) -> str:
+    """Drop emphasis delimiters, keeping the words between them.
+
+    Delimiter runs are matched with the CommonMark flanking rules rather than
+    by regex, so ``**bold**``, ``_italic_`` and ``__bold__`` still collapse while
+    identifiers that merely contain the character survive intact.
+    """
+    runs = _scan_delim_runs(text)
+    if not runs:
+        return text
+
+    openers: list[int] = []
+    closer_idx = 0
+    while closer_idx < len(runs):
+        closer = runs[closer_idx]
+        if not closer.can_close:
+            if closer.can_open:
+                openers.append(closer_idx)
+            closer_idx += 1
+            continue
+
+        found = None
+        for pos in range(len(openers) - 1, -1, -1):
+            candidate = runs[openers[pos]]
+            if candidate.char != closer.char or not candidate.can_open:
+                continue
+            if _blocks_by_rule_of_three(candidate, closer):
+                continue
+            found = pos
+            break
+
+        if found is None:
+            if closer.can_open:
+                openers.append(closer_idx)
+            closer_idx += 1
+            continue
+
+        opener_idx = openers.pop(found)
+        opener = runs[opener_idx]
+        used = 2 if opener.hi - opener.lo >= 2 and closer.hi - closer.lo >= 2 else 1
+        opener.hi -= used  # an opener spends its delimiters from the right
+        closer.lo += used  # a closer spends its delimiters from the left
+        # Whatever sat between the matched pair is now inside the emphasis and
+        # can never pair outwards again: in `_a*b1_*` the inner `*` is literal,
+        # so it must not later close the trailing one.
+        openers = [i for i in openers if not opener.start < runs[i].start < closer.start]
+        if opener.hi > opener.lo:
+            # `***x***` spends two, then one: a part-used opener keeps its
+            # place in the queue so the leftovers can still pair up.
+            openers.insert(found, opener_idx)
+        if closer.lo >= closer.hi:
+            closer_idx += 1
+
+    out: list[str] = []
+    pos = 0
+    for run in runs:
+        out.append(text[pos : run.start])
+        if run.lo < run.hi:
+            out.append(text[run.lo : run.hi])
+        pos = run.end
+    out.append(text[pos:])
+    return "".join(out)
+
+
 def strip_markdown_for_collapsed_text(text: str) -> str:
-    text = re.sub(r"\*\*([^*]+)\*\*", r"\1", text)
-    text = re.sub(r"__([^_]+)__", r"\1", text)
-    text = re.sub(r"(?<!\*)\*([^*]+)\*(?!\*)", r"\1", text)
-    text = re.sub(r"(?<!_)_([^_]+)_(?!_)", r"\1", text)
-    text = re.sub(r"`([^`]+)`", r"\1", text)
-    return text
+    """Flatten one line of markdown down to the words it shows.
+
+    A code span is unwrapped rather than rewritten: `_a_` inside backticks is
+    something the writer is *describing*, so only the ticks come off. Matching
+    the ticks first also keeps a lone fence line (``` on its own) intact,
+    because it is not a code span and there are no ticks to remove.
+    """
+    parts: list[str] = []
+    pos = 0
+    for match in _CODE_SPAN_RE.finditer(text):
+        parts.append(_strip_emphasis(text[pos : match.start()]))
+        parts.append(match.group(2))
+        pos = match.end()
+    parts.append(_strip_emphasis(text[pos:]))
+    return "".join(parts)
 
 
 def markdown_render_width() -> int:

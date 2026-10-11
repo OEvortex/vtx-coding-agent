@@ -201,6 +201,11 @@ vtx plugin enable tool-wordcount
 
 `enable` and `disable` rewrite only the `disabled` flag of the matching row (`src/vtx/coding_agent/plugin_cmd.py:78-100`).
 
+Not every tool row disables its tool: `tool-web`, `tool-goal`, `tool-ask-user`, and
+`tool-subagent` register their tools at import time (`src/vtx/agent/tools/__init__.py:220-223`),
+so the row unmounts while the tool stays live. For a tool row, assert on the live tool set
+(`ctx.tools.assemble()`), not on the row listing - see [plugins.md](plugins.md).
+
 ### 4. Test it
 
 ```python

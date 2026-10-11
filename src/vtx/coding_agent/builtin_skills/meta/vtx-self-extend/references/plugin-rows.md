@@ -146,6 +146,22 @@ vtx --profile minimal                 # boot the minimal composition
 `enable`/`disable` rewrite only the `disabled` flag, appending an `override` when there is
 none yet and leaving the rest of the file alone, so repeated toggles do not accumulate.
 
+### Disabling a row is not always disabling its tool
+
+Four tool rows are **inert as disables**: `tool-web`, `tool-goal`, `tool-ask-user`, and
+`tool-subagent`. `src/vtx/agent/tools/__init__.py:220-223` registers `WebTool`,
+`AskUserTool`, `GoalTool`, and `TaskTool` into the global registry at *import time* with
+`is_default=True`, so `vtx plugin disable tool-web` unmounts the row while the tool stays
+registered and in the default set - `--dump-config` shows `[disabled]` and the model still
+has the tool. Service rows, and the coding-agent tool rows (`tool-read`, `tool-edit`,
+`tool-write`, `tool-bash`, `tool-find`, `tool-grep`, `tool-skill`, `tool-codemode`,
+`tool-search`), disable correctly.
+
+So verify a disable with the live tool set, not the row list: `vtx --dump-config` must show
+`[disabled]` *and* the tool's name must be absent from `ctx.tools.assemble()`. A row that
+does not take effect is a bug to report, not something to work around by editing
+`src/vtx/**`.
+
 Shipped profiles: `default` (`base` + `tui`), `headless` (`base`), `minimal`.
 
 ## Version compatibility gate

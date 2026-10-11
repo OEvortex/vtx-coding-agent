@@ -81,7 +81,7 @@ When the catalog is too large, `formatted_skills_index` renders one line per ski
 
 ## The `skill` tool
 
-The `skill` tool is registered by the `tool-skill` plugin row (`src/vtx/plugins/builtins/__init__.py:49`), so `vtx plugin disable tool-skill` removes it from the composition.
+The `skill` tool is registered by the `tool-skill` plugin row (`src/vtx/plugins/builtins/__init__.py:49`), so `vtx plugin disable tool-skill` removes it from the composition. That row does take effect, unlike four others - see [plugins.md](plugins.md).
 
 | Action | Parameters | What it does |
 |---|---|---|

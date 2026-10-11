@@ -236,6 +236,12 @@ vtx plugin: unknown row 'bogus-row'; run `vtx --dump-config` to list them
 
 Missing arguments produce `enable needs a row id` / `disable needs a row id`.
 
+Not every tool row disables its tool. `tool-web`, `tool-goal`, `tool-ask-user`, and
+`tool-subagent` are inert: their tools are registered at import time with
+`is_default=True` (`src/vtx/agent/tools/__init__.py:220-223`), so the row unmounts and
+the tool stays live. Verify with the live tool set (`ctx.tools.assemble()`), not with
+`[disabled]` in the row listing alone - see [plugins.md](plugins.md).
+
 ### `vtx plugin install`
 
 ```sh

@@ -111,7 +111,10 @@ public surface, so a bug there will not be caught by anything in this repo.
    hard rule in `AGENTS.md`, and it applies to a skill's scripts and a plugin's code.
 3. **Verify it loads.**
    - Skill: `/reload` picks up new and edited skills with no restart.
-   - Plugin row: `vtx --dump-config` must list your row id; then `/reload`.
+   - Plugin row: `vtx --dump-config` must list your row id with the expected
+     `[enabled]` / `[disabled]` state; then `/reload`. For a tool row, also confirm the
+     name is in `ctx.tools.assemble()` - the composed row list and the live tool set are
+     not the same thing (see the caveat under "Undo").
    - `vtx plugin profiles` / `vtx plugin path <name>` confirms the profile and its path.
 4. **Test only the file that changed.** Never run the full suite - `AGENTS.md` forbids
    it and it is slow. Run the one test module that covers the seam you touched.
@@ -125,7 +128,16 @@ a single command:
 - Skill: delete the directory. Nothing references it.
 - Plugin row: `vtx plugin --profile <name> disable <row-id>`. This rewrites only the
   `disabled` flag in `cordis.yml` and leaves the rest of the file alone, so repeated
-  toggles do not accumulate.
+  toggles do not accumulate. **Four tool rows are inert as disables**: `tool-web`,
+  `tool-goal`, `tool-ask-user`, and `tool-subagent`. `src/vtx/agent/tools/__init__.py:220-223`
+  registers `WebTool`, `AskUserTool`, `GoalTool`, and `TaskTool` at *import time* with
+  `is_default=True`, so disabling the row unmounts it while the tool stays in the global
+  registry and in the default set - `--dump-config` shows `[disabled]` and the model
+  still has the tool. Service rows and the coding-agent tool rows (`tool-read`,
+  `tool-edit`, `tool-write`, `tool-bash`, `tool-find`, `tool-grep`, `tool-skill`,
+  `tool-codemode`, `tool-search`) disable correctly. Verify with
+  `ctx.tools.assemble()`, not with the row list alone; report a row that does not take
+  effect rather than editing `src/vtx/**` to work around it.
 - Extension: `unregister_provider`-style calls exist but several are uncalled internally;
   prefer a plugin row so teardown is wired for you.
 

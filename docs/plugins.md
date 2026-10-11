@@ -244,6 +244,20 @@ vtx --profile minimal                 # boot the minimal composition
 (`src/vtx/coding_agent/plugin_cmd.py:78`). Every row keeps exactly one home in the file,
 so repeated toggles do not accumulate.
 
+**Disabling a tool row is not always disabling the tool.** Four tool rows are inert as
+disables: `tool-web`, `tool-goal`, `tool-ask-user`, and `tool-subagent`.
+`src/vtx/agent/tools/__init__.py:220-223` registers `WebTool`, `AskUserTool`, `GoalTool`,
+and `TaskTool` at *import time* with `is_default=True`, so disabling the row unmounts it
+while the tool stays in the global registry and in the default set - `--dump-config`
+shows `[disabled]` and the model still has the tool. Service rows, and the coding-agent
+tool rows (`tool-read`, `tool-edit`, `tool-write`, `tool-bash`, `tool-find`,
+`tool-grep`, `tool-skill`, `tool-codemode`, `tool-search`), disable correctly.
+
+So verify a disable against the live tool set, not the row list: `--dump-config` must show
+`[disabled]` *and* the tool's name must be absent from `ctx.tools.assemble()`
+(`src/vtx/plugins/services.py:118`). A row that does not take effect is a bug worth
+reporting, not something to paper over in `src/vtx/**`.
+
 `--dump-config` prints the tree your machine boots, and **any row it prints can be
 replaced by a patch of your own**.
 

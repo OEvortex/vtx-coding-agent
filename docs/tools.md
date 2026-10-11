@@ -41,6 +41,18 @@ list, or let `tool_search` surface it.
 A tool marked **mutating** changes state and is therefore routed through the permission
 gate before it runs. See [permissions.md](permissions.md).
 
+### Turning a tool off is not always one command
+
+Every tool above belongs to a plugin row, so `vtx plugin disable <row-id>` is the way to
+remove one - except that four rows do not take effect. `web`, `ask_user`, `goal`, and
+`delegate_subagent` are also registered at *import time* with `is_default=True`
+(`src/vtx/agent/tools/__init__.py:220-223`), so `vtx plugin disable tool-web`,
+`tool-goal`, `tool-ask-user`, and `tool-subagent` unmount their rows while the tools stay
+in the registry and the model keeps calling them. `tool-read`, `tool-edit`, `tool-write`,
+`tool-bash`, `tool-find`, `tool-grep`, `tool-skill`, `tool-codemode`, `tool-search`, and
+every service row disable correctly. Confirm a disable with `ctx.tools.assemble()`; see
+[plugins.md](plugins.md).
+
 ## How a tool is described to the model
 
 Each tool carries a JSON Schema derived from its `params` pydantic model
