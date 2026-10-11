@@ -574,3 +574,170 @@ class TestFormatTranscript:
         assert "more" in out
         assert "tool_0" in out
         assert "tool_499" not in out
+
+
+# ---------------------------------------------------------------------------
+# Sub-agent token usage must reach the dispatching session
+# ---------------------------------------------------------------------------
+
+
+class TestSubagentUsageChargedToParent:
+    """A sub-agent's tokens must land in the session that dispatched it.
+
+    ``/usage``'s "this session" figure is ``parent.token_totals()``, which sees
+    only the parent's own assistant messages. A sub-agent runs in its own
+    persisted session, so without an explicit charge a session that dispatched
+    one reports a cost that excludes it - and disagrees with the lifetime figure,
+    which is read from every session log and does include them.
+    """
+
+    def teardown_method(self):
+        from vtx.agent.dispatcher import set_context
+
+        set_context(None)
+
+    def _result(self, **kw: Any) -> Any:
+        from vtx.protocol.types import StopReason, Usage
+
+        kw.setdefault("final_text", "answer")
+        kw.setdefault("turns", 3)
+        kw.setdefault("usage", Usage(input_tokens=500, output_tokens=200))
+        kw.setdefault("stop_reason", StopReason.STOP)
+        kw.setdefault("transcript", [])
+        kw.setdefault("error", None)
+        kw.setdefault("session_id", "abc12345")
+        kw.setdefault("duration_ms", 1.0)
+        return _FakeRunResult(**kw)
+
+    def _ctx(self, session: Any) -> Any:
+        from vtx.agent.dispatcher import DispatcherContext
+
+        return DispatcherContext(
+            provider=_FakeProvider(),
+            model="m",
+            model_provider="fake",
+            base_url=None,
+            thinking_level="high",
+            agent_registry=None,
+            cwd=".",
+            session=session,
+        )
+
+    def test_charge_lands_on_the_parent_session(self):
+        from vtx.agent.session import Session
+
+        parent = Session.in_memory()
+        _mod._charge_parent_session(
+            self._ctx(parent), self._result(), tool_call_id="tc1", label="find the bug"
+        )
+
+        totals = parent.token_totals()
+        assert totals.input_tokens == 500
+        assert totals.output_tokens == 200
+
+    def test_failed_subagent_still_charges_the_parent(self):
+        """The tokens were spent whether or not the run succeeded."""
+        from vtx.agent.session import Session
+        from vtx.protocol.types import Usage
+
+        parent = Session.in_memory()
+        _mod._charge_parent_session(
+            self._ctx(parent),
+            self._result(error="upstream 500", usage=Usage(input_tokens=77, output_tokens=3)),
+            tool_call_id="tc1",
+            label="x",
+        )
+
+        totals = parent.token_totals()
+        assert totals.input_tokens == 77
+        assert totals.output_tokens == 3
+
+    def test_charge_does_not_inflate_the_parent_turn_count(self):
+        from vtx.agent.session import Session
+
+        parent = Session.in_memory()
+        _mod._charge_parent_session(
+            self._ctx(parent), self._result(turns=9), tool_call_id="tc1", label="x"
+        )
+
+        assert parent.message_counts().assistant_messages == 0
+        assert parent.token_totals().input_tokens == 500
+
+    def test_context_without_a_session_is_a_no_op(self):
+        """A headless harness with no runtime session must not raise."""
+        _mod._charge_parent_session(self._ctx(None), self._result(), tool_call_id=None, label="x")
+
+    def test_run_subagent_charges_the_parent_end_to_end(self, monkeypatch):
+        """The wiring, through the real ``_run_subagent``.
+
+        Same stub shape as the final-text test above: builders and the provider
+        are replaced, the agent loop is stubbed, and the real runner does the
+        rest. The parent here is a stub exposing only ``record_subagent_usage``,
+        which is exactly the surface the runtime hands the dispatcher.
+        """
+        from vtx.agent.dispatcher import DispatcherContext
+        from vtx.core import AgentEndEvent, TurnEndEvent
+        from vtx.protocol.types import AssistantMessage, StopReason, TextContent, Usage
+
+        charged: dict[str, Any] = {}
+
+        class _RecordingParent:
+            def record_subagent_usage(self, **kwargs: Any) -> None:
+                charged.update(kwargs)
+
+        class _StubAgent:
+            def __init__(self, *a: Any, **kw: Any) -> None:
+                pass
+
+            def run(self, *a: Any, **kw: Any):
+                async def _gen():
+                    yield TurnEndEvent(
+                        assistant_message=AssistantMessage(
+                            content=[TextContent(text="found it")],
+                            usage=Usage(input_tokens=700, output_tokens=250),
+                        )
+                    )
+                    yield AgentEndEvent(stop_reason=StopReason.STOP)
+
+                return _gen()
+
+        class _StubSession:
+            id = "sub-session-12345"
+
+        monkeypatch.setattr(_mod, "_build_subagent_tool_list", lambda *a, **kw: [])
+        monkeypatch.setattr(_mod, "_build_subagent_system_prompt", lambda *a, **kw: "system")
+        monkeypatch.setattr(_mod, "_create_subagent_session", lambda *a, **kw: _StubSession())
+        monkeypatch.setattr(_mod, "_resolve_api_and_base_url", lambda *a, **kw: ("openai", None))
+        monkeypatch.setattr("vtx.agent.runtime.create_provider", lambda *a, **kw: _FakeProvider())
+        monkeypatch.setattr("vtx.agent.loop.Agent", lambda *a, **kw: _StubAgent())
+
+        parent = _RecordingParent()
+        ctx = DispatcherContext(
+            provider=_FakeProvider(),
+            model="m",
+            model_provider="fake",
+            base_url=None,
+            thinking_level="high",
+            agent_registry=None,
+            cwd=".",
+            session=parent,
+        )
+
+        async def main():
+            return await _mod._run_subagent(
+                parent_ctx=ctx,
+                spec=_mod.SubagentSpec(name="general-purpose", description="x", max_turns=5),
+                prompt="p",
+                cancel_event=None,
+                model_override=None,
+                progress_callback=None,
+                tool_call_id="t1",
+                label="find the bug",
+            )
+
+        asyncio.run(main())
+
+        assert int(charged["input_tokens"]) == 700
+        assert int(charged["output_tokens"]) == 250
+        assert charged["task_id"] == "t1"
+        assert charged["label"] == "find the bug"

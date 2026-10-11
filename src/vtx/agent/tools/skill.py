@@ -14,6 +14,7 @@ from vtx.agent.context.skills import (
     strip_frontmatter,
 )
 from vtx.agent.tools.base import BaseTool, ToolResult
+from vtx.core.paths import get_config_dir
 
 
 class SkillParams(BaseModel):
@@ -147,24 +148,17 @@ class SkillTool(BaseTool):
                 return skill_dir, False
 
             # 3. Vtx config skills (~/.vtx/skills/ - synced builtins)
-            from vtx.coding_agent import get_config_dir as get_vtx_config_dir
-
-            vtx_skills_dir = (get_vtx_config_dir() / "skills").resolve(strict=False)
+            vtx_skills_dir = (get_config_dir() / "skills").resolve(strict=False)
             skill_dir = vtx_skills_dir / name
             if (skill_dir / "SKILL.md").is_file():
                 return skill_dir, True
 
-            # 4. Builtin skills (search recursively through category folders)
-            from importlib import resources
-
-            try:
-                builtin_resource = resources.files("vtx.coding_agent").joinpath("builtin_skills")
-                with resources.as_file(builtin_resource) as builtin_root:
-                    for candidate in builtin_root.rglob(name):
-                        if candidate.is_dir() and (candidate / "SKILL.md").is_file():
-                            return candidate, True
-            except Exception:
-                pass
+            # 4. Builtin skills from registered packages (vtx.coding_agent
+            #    registers its bundled skills on import), searched recursively
+            #    through their category folders.
+            for builtin in load_builtin_cmd_skills().skills:
+                if builtin.name == name:
+                    return Path(builtin.path).parent, True
 
             return None, False
 

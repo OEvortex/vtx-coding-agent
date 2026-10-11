@@ -99,3 +99,67 @@ def test_export_renders_generic_custom_message_as_system_message(tmp_path):
 
     assert "some system note" in html
     assert 'class="system-msg"' in html
+
+
+def test_export_renders_a_codemode_cell(tmp_path):
+    _write_session(
+        [
+            _entry(
+                "e1", None, type="message", message={"role": "user", "content": "find dead code"}
+            ),
+            _entry(
+                "e2",
+                "e1",
+                type="message",
+                message={
+                    "role": "assistant",
+                    "content": [
+                        {
+                            "type": "tool_call",
+                            "id": "call_1",
+                            "name": "codemode",
+                            "arguments": {"code": "return 1"},
+                        }
+                    ],
+                },
+            ),
+            _entry(
+                "e3",
+                "e2",
+                type="message",
+                message={
+                    "role": "tool_result",
+                    "tool_call_id": "call_1",
+                    "tool_name": "codemode",
+                    "content": [{"type": "text", "text": "1"}],
+                    "ui_data": {
+                        "code": "rows = await tools.search(query='dead code')\nreturn len(rows)",
+                        "value": "3",
+                        "printed": [],
+                        "calls": [
+                            {
+                                "name": "search",
+                                "ok": True,
+                                "kind": None,
+                                "message": None,
+                                "duration_ms": 412,
+                            }
+                        ],
+                        "error": None,
+                        "images": 0,
+                        "output_truncated": False,
+                        "duration_ms": 900,
+                    },
+                },
+            ),
+        ]
+    )
+
+    html = _export(tmp_path)
+
+    assert '<div class="codemode-prompt">In [1]:</div>' in html
+    assert "rows = await tools.search(" in html
+    assert '<div class="codemode-prompt">Out [1]:</div>' in html
+    assert "search 0.4s" in html
+    # The script is the payload, so the arguments blob is not what gets shown.
+    assert '<div class="tool-call-args">' not in html

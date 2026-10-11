@@ -1,8 +1,10 @@
-"""Concrete built-in tools of the Vtx coding agent.
+"""Compatibility surface for the Vtx coding agent's built-in tools.
 
-Registers concrete tools (:class:`ReadTool`, :class:`EditTool`, :class:`WriteTool`,
-:class:`BashTool`, :class:`FindTool`, :class:`GrepTool`, :class:`SkillTool`) into the
-central harness tool registry at :mod:`vtx.agent.tools`.
+The concrete tool implementations live in :mod:`vtx.agent.tools`; the plugin
+rows in :mod:`vtx.plugins.builtins.tools` mount them into the scoped registry.
+This module keeps the historical ``vtx.coding_agent.tools`` import path
+working: importing it has the side effect of registering the built-in tools
+into the harness registry, so the tools exist the moment you import them.
 """
 
 from __future__ import annotations
@@ -14,18 +16,24 @@ from vtx.agent.background import (
     set_manager,
 )
 from vtx.agent.goal.tools import GoalTool
-from vtx.agent.tools import BaseTool, get_tool_definitions, register_tool, set_default_tool_lookup
-from vtx.agent.tools.ask_user import AskUserTool
-from vtx.agent.tools.task import TaskTool
-from vtx.agent.tools.web import WebSearchTool, WebTool
-
-from .bash import BashTool
-from .edit import EditTool
-from .find import FindTool
-from .grep import GrepTool
-from .read import ReadTool
-from .skill import SkillTool
-from .write import WriteTool
+from vtx.agent.tools import (
+    AskUserTool,
+    BaseTool,
+    BashTool,
+    EditTool,
+    FindTool,
+    GrepTool,
+    ReadTool,
+    SkillTool,
+    TaskTool,
+    WebSearchTool,
+    WebTool,
+    WriteTool,
+    get_tool_definitions,
+    get_tools_with_extensions,
+    register_tool,
+    set_default_tool_lookup,
+)
 
 __all__ = [
     "DEFAULT_TOOLS",
@@ -90,21 +98,6 @@ def get_tools(names: list[str]) -> list[BaseTool]:
 
 def get_tool(tool_name: str) -> BaseTool | None:
     return tools_by_name.get(tool_name)
-
-
-def get_tools_with_extensions(
-    default_names: list[str], extension_tools: list[BaseTool] | None = None
-) -> list[BaseTool]:
-    tools = get_tools(default_names)
-    if extension_tools:
-        # Name-match replacement, mirroring vtx.agent.tools: an extension may
-        # ship a tool whose name matches a built-in in order to override it.
-        ext_names = {t.name for t in extension_tools}
-        tools = [t for t in tools if t.name not in ext_names]
-        for ext_tool in extension_tools:
-            if not any(t.name == ext_tool.name for t in tools):
-                tools.append(ext_tool)
-    return tools
 
 
 # Auto-register all coding-agent concrete tools into the harness registry

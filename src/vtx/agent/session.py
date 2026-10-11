@@ -105,6 +105,12 @@ class CustomMessageEntry(EntryBase):
 #: shows the notices the model was given at the time.
 REFINEMENT_NOTICE_CUSTOM_TYPE = "refinement_notice"
 
+#: Custom entry charging a sub-agent's token usage to the session that
+#: dispatched it. Not model-facing and not display-facing: it exists so
+#: `Session.token_totals` can report what this session actually cost, which a
+#: sub-agent's own session log cannot contribute.
+SUBAGENT_USAGE_CUSTOM_TYPE = "subagent_usage"
+
 
 class HarnessStateEntry(EntryBase):
     """Retired: the continual-harness write record.
@@ -344,7 +350,17 @@ class Session:
         # Checkpoints are durable work-in-progress and must reach disk even
         # before the first assistant message exists, otherwise a crash during
         # turn 1 loses the whole run -- the gate above used to drop them.
-        if not has_assistant and not isinstance(entry, RuntimeCheckpointEntry):
+        # A sub-agent usage charge is the same shape of fact: accounting for
+        # work already spent, so losing it under-reports the session forever.
+        is_usage_charge = (
+            isinstance(entry, CustomMessageEntry)
+            and entry.custom_type == SUBAGENT_USAGE_CUSTOM_TYPE
+        )
+        if (
+            not has_assistant
+            and not isinstance(entry, RuntimeCheckpointEntry)
+            and not is_usage_charge
+        ):
             return
 
         # If earlier entries were skipped (e.g., pre-assistant user/custom messages),
@@ -691,6 +707,50 @@ class Session:
 
         return None
 
+    def record_subagent_usage(
+        self,
+        *,
+        input_tokens: int = 0,
+        output_tokens: int = 0,
+        cache_read_tokens: int = 0,
+        cache_write_tokens: int = 0,
+        turns: int = 0,
+        task_id: str | None = None,
+        label: str | None = None,
+    ) -> None:
+        """Charge a completed sub-agent's token usage to this session.
+
+        A sub-agent runs in its own persisted session, so its assistant
+        messages - and therefore its usage - never land in this transcript.
+        `token_totals` reads only this session's entries, so without this the
+        session's own cost would silently exclude every sub-agent it dispatched.
+
+        The sub-agent's own session log still carries the per-message breakdown,
+        and `aggregate_usage` reads that file separately, so this record does not
+        double-count the lifetime total - it only makes the per-session figure
+        honest. Turns are recorded for the transcript but deliberately not fed
+        back into `message_counts`, which reports the model's own turns.
+        """
+        if not any((input_tokens, output_tokens, cache_read_tokens, cache_write_tokens)):
+            return
+        entry = CustomMessageEntry(
+            id=self._generate_entry_id(),
+            parent_id=self._leaf_id,
+            timestamp=_now_iso(),
+            custom_type=SUBAGENT_USAGE_CUSTOM_TYPE,
+            content=label or "sub-agent",
+            display=False,
+            details={
+                "input_tokens": int(input_tokens),
+                "output_tokens": int(output_tokens),
+                "cache_read_tokens": int(cache_read_tokens),
+                "cache_write_tokens": int(cache_write_tokens),
+                "turns": int(turns),
+                "task_id": task_id,
+            },
+        )
+        self._append_entry(entry)
+
     def token_totals(self) -> SessionTokenTotals:
         input_tokens = 0
         output_tokens = 0
@@ -705,6 +765,19 @@ class Session:
                     output_tokens += usage.output_tokens
                     cache_read_tokens += usage.cache_read_tokens
                     cache_write_tokens += usage.cache_write_tokens
+            elif (
+                isinstance(entry, CustomMessageEntry)
+                and entry.custom_type == SUBAGENT_USAGE_CUSTOM_TYPE
+            ):
+                # A sub-agent runs in its own session, so its tokens never
+                # appear as an assistant message here. `record_subagent_usage`
+                # charges them to this session instead, or `/usage` would
+                # report this session as if the sub-agent had cost nothing.
+                details = entry.details or {}
+                input_tokens += int(details.get("input_tokens") or 0)
+                output_tokens += int(details.get("output_tokens") or 0)
+                cache_read_tokens += int(details.get("cache_read_tokens") or 0)
+                cache_write_tokens += int(details.get("cache_write_tokens") or 0)
 
         # For context_tokens, find the last compaction entry
         last_compaction: CompactionEntry | None = None

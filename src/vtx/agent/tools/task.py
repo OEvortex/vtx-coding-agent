@@ -225,6 +225,44 @@ def _create_subagent_session(parent_ctx: DispatcherContext) -> Session:
     )
 
 
+def _charge_parent_session(
+    parent_ctx: DispatcherContext,
+    result: SubagentRunResult,
+    *,
+    tool_call_id: str | None,
+    label: str,
+) -> None:
+    """Charge a finished sub-agent's tokens to the session that dispatched it.
+
+    A sub-agent runs in its own persisted session, so its assistant messages -
+    and its usage - never land in the dispatching session's transcript.
+    ``Session.token_totals`` reads only that session's entries, so "this session"
+    in ``/usage`` would exclude every sub-agent it dispatched and disagree with
+    the lifetime figure, which is read from every session log and does include
+    them.
+
+    The sub-agent's own log still carries the per-message breakdown and
+    ``aggregate_usage`` reads that file separately, so this does not double-count
+    the lifetime total. Charged even on failure, because the tokens were spent
+    either way. A context with no session (headless harnesses without a runtime)
+    is a no-op rather than an error.
+    """
+    parent_session = getattr(parent_ctx, "session", None)
+    record = getattr(parent_session, "record_subagent_usage", None)
+    if not callable(record):
+        return
+    with contextlib.suppress(Exception):
+        record(
+            input_tokens=result.usage.input_tokens,
+            output_tokens=result.usage.output_tokens,
+            cache_read_tokens=result.usage.cache_read_tokens,
+            cache_write_tokens=result.usage.cache_write_tokens,
+            turns=result.turns,
+            task_id=tool_call_id,
+            label=label,
+        )
+
+
 @dataclass
 class SubagentRunResult:
     """Internal result of a sub-agent run."""
@@ -482,6 +520,9 @@ async def _run_admitted_subagent(
         _emit("error", error=result.error)
 
     result.duration_ms = (time.monotonic() - started_at) * 1000
+
+    _charge_parent_session(parent_ctx, result, tool_call_id=tool_call_id, label=label)
+
     _emit(
         "subagent_end",
         turns=result.turns,

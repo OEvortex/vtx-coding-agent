@@ -1,6 +1,6 @@
 import re
 import shutil
-from typing import ClassVar
+from typing import Any, ClassVar
 
 from markdown_it.token import Token
 from rich import box
@@ -624,10 +624,10 @@ def _format_bash_command_tokens(command: str) -> Text:
 
 
 _PYTHEME_KEY: str | None = None
-_PYTHEME: type | None = None
+_PYTHEME: Any = None
 
 
-def get_python_theme() -> type:
+def get_python_theme() -> Any:
     """A Pygments style for Python source, built from the active vtx theme.
 
     The one Rich theme that ships with no dependencies (``ansi_dark``) paints the
@@ -643,45 +643,51 @@ def get_python_theme() -> type:
     from pygments.token import Token
 
     key = config.ui.theme
-    if _PYTHEME is not None and _PYTHEME_KEY == key:
+    if _PYTHEME is not None and key == _PYTHEME_KEY:
         return _PYTHEME
 
     colors = config.ui.colors
     syntax = colors.syntax_colors
 
-    class VtxPythonStyle(PygmentsStyle):
-        background_color = None
-        styles = {
-            Token: colors.fg,
-            Token.Comment: f"{colors.dim} italic",
-            Token.Comment.Preproc: f"{syntax.option} italic",
-            Token.Keyword: f"bold {syntax.option}",
-            Token.Keyword.Constant: syntax.variable,
-            Token.Keyword.Namespace: f"bold {syntax.option}",
-            Token.Operator: syntax.operator,
-            Token.Operator.Word: f"bold {syntax.option}",
-            Token.Punctuation: colors.muted,
-            Token.Name: colors.fg,
-            Token.Name.Builtin: f"bold {syntax.command}",
-            Token.Name.Builtin.Pseudo: colors.dim,
-            Token.Name.Class: f"bold {syntax.command}",
-            Token.Name.Function: f"bold {syntax.command}",
-            Token.Name.Decorator: f"bold {syntax.variable}",
-            Token.Name.Exception: f"bold {colors.error}",
-            Token.Name.Attribute: syntax.variable,
-            Token.Name.Tag: f"bold {syntax.option}",
-            Token.Literal.String: syntax.string,
-            Token.Literal.String.Doc: f"{syntax.string} italic",
-            Token.Literal.String.Escape: f"bold {syntax.variable}",
-            Token.Literal.Number: syntax.variable,
-            Token.Generic.Heading: f"bold {colors.title}",
-            Token.Generic.Subheading: f"bold {syntax.option}",
-            Token.Error: colors.error,
-        }
+    styles: dict[Any, str] = {
+        # Pygments' metaclass resolves unlisted tokens against the root, so this
+        # is what keeps whitespace and punctuation the theme's own foreground
+        # rather than black.
+        Token: colors.fg,
+        Token.Comment: f"{colors.dim} italic",
+        Token.Comment.Preproc: f"{syntax.option} italic",
+        Token.Keyword: f"bold {syntax.option}",
+        Token.Keyword.Constant: syntax.variable,
+        Token.Keyword.Namespace: f"bold {syntax.option}",
+        Token.Operator: syntax.operator,
+        Token.Operator.Word: f"bold {syntax.option}",
+        Token.Punctuation: colors.muted,
+        Token.Name: colors.fg,
+        Token.Name.Builtin: f"bold {syntax.command}",
+        Token.Name.Builtin.Pseudo: colors.dim,
+        Token.Name.Class: f"bold {syntax.command}",
+        Token.Name.Function: f"bold {syntax.command}",
+        Token.Name.Decorator: f"bold {syntax.variable}",
+        Token.Name.Exception: f"bold {colors.error}",
+        Token.Name.Attribute: syntax.variable,
+        Token.Name.Tag: f"bold {syntax.option}",
+        Token.Literal.String: syntax.string,
+        Token.Literal.String.Doc: f"{syntax.string} italic",
+        Token.Literal.String.Escape: f"bold {syntax.variable}",
+        Token.Literal.Number: syntax.variable,
+        Token.Generic.Heading: f"bold {colors.title}",
+        Token.Generic.Subheading: f"bold {syntax.option}",
+        Token.Error: colors.error,
+    }
 
+    # Built with ``type`` rather than a subclass body because pygments resolves
+    # ``styles`` in its metaclass at class-creation time. Three-argument ``type``
+    # still picks up the base's metaclass, so the token table gets built.
+    _PYTHEME = type(
+        "VtxPythonStyle", (PygmentsStyle,), {"background_color": None, "styles": styles}
+    )
     _PYTHEME_KEY = key
-    _PYTHEME = VtxPythonStyle
-    return VtxPythonStyle
+    return _PYTHEME
 
 
 def format_python_source(code: str, width: int | None = None) -> Text:
@@ -699,13 +705,7 @@ def format_python_source(code: str, width: int | None = None) -> Text:
     if not source.strip():
         return Text()
 
-    syntax = Syntax(
-        source,
-        "python",
-        theme=get_python_theme(),
-        word_wrap=True,
-        padding=0,
-    )
+    syntax = Syntax(source, "python", theme=get_python_theme(), word_wrap=True, padding=0)
     console = Console(force_terminal=True, no_color=False, color_system="truecolor", width=width)
     with console.capture() as capture:
         console.print(syntax)

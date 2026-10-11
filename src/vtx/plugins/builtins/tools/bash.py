@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from vtx.coding_agent.tools.bash import BashTool
+from vtx.agent.tools.bash import BashTool
 from vtx.plugins.builtins.tools._register import mount_tool
 from vtx.plugins.plugin import plugin
 

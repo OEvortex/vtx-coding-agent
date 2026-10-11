@@ -141,6 +141,39 @@ async def test_a_script_calling_a_real_tool(tool: CodemodeTool, echo_tool: EchoT
 
 
 @pytest.mark.asyncio
+async def test_ui_payload_carries_the_cell(tool: CodemodeTool, echo_tool: EchoTool):
+    # The notebook block owns layout, so it is handed the run rather than a
+    # pre-rendered string. JSON-safe because it is persisted with the session.
+    script = (
+        "# @options: {\"timeout_ms\": 1000}\ntext('calling')\nreturn await tools.echo(value='hi')"
+    )
+    result = await tool.execute(CodemodeParams(code=script))
+    data = result.ui_data
+    assert data is not None
+    assert json.loads(json.dumps(data)) == data
+    assert data["code"] == "\ntext('calling')\nreturn await tools.echo(value='hi')"
+    assert data["printed"] == ["calling"]
+    assert json.loads(data["value"]) == {"echoed": "hi"}
+    assert data["calls"][0]["name"] == "echo"
+    assert data["calls"][0]["ok"] is True
+    assert isinstance(data["duration_ms"], int)
+    assert data["error"] is None
+
+
+@pytest.mark.asyncio
+async def test_ui_payload_describes_a_failure(tool: CodemodeTool):
+    result = await tool.execute(CodemodeParams(code="return tools.nope()"))
+    assert not result.success
+    data = result.ui_data
+    assert data is not None
+    assert data["error"]["kind"] == "unknown_tool"
+    assert data["value"] is None
+    # Output produced before the failure is still worth having, so the payload
+    # carries it even though the run failed.
+    assert isinstance(data["printed"], list)
+
+
+@pytest.mark.asyncio
 async def test_store_persists_across_calls(tool: CodemodeTool):
     first = await tool.execute(CodemodeParams(code="store('k', [1, 2])\nreturn 'set'"))
     assert first.success
@@ -198,9 +231,23 @@ async def test_refresh_rebuilds_the_sandbox(tool: CodemodeTool):
     assert tool._get_sandbox() is not before
 
 
-def test_format_call_leads_with_the_first_line(tool: CodemodeTool):
-    assert tool.format_call(CodemodeParams(code="rows = await tools.read(p=1)\nreturn rows")) == (
-        "script: rows = await tools.read(p=1)"
+def test_format_call_shows_the_whole_script(tool: CodemodeTool):
+    # The script is the call, so the header is the script -- trimmed of the
+    # options line, which is sandbox configuration rather than code.
+    assert (
+        tool.format_call(
+            CodemodeParams(
+                code='# @options: {"timeout_ms": 1000}\nrows = await tools.read(p=1)\nreturn rows'
+            )
+        )
+        == "rows = await tools.read(p=1)\nreturn rows"
+    )
+
+
+def test_format_call_survives_a_bad_options_line(tool: CodemodeTool):
+    assert (
+        tool.format_call(CodemodeParams(code="# @options: nope\nreturn 1"))
+        == "# @options: nope\nreturn 1"
     )
 
 

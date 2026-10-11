@@ -624,6 +624,11 @@ class ChatLog(VerticalScroll):
     ) -> None:
         block = self._tool_blocks.get(tool_id)
         if block:
+            # Set before the result renders: the block's own ``_render_result_output``
+            # reads it, and an extension block that overrides ``set_result``
+            # without forwarding this attribute still renders through the base
+            # path unchanged.
+            block.ui_data = ui_data
             block.set_result(
                 ui_summary,
                 ui_details,
@@ -631,12 +636,11 @@ class ChatLog(VerticalScroll):
                 markup=markup,
                 ui_details_full=ui_details_full,
                 images=images,
-                ui_data=ui_data,
             )
-            if ui_details:
+            if block.has_class("-with-details"):
                 # All ToolStartEvents arrive during streaming before any
                 # results, so later siblings were mounted compact.  Now that
-                # this block has detail output, the next tool needs its
+                # this block has body output, the next tool needs its
                 # margin back so the detail block doesn't run into it.
                 next_sibling = self._next_child(block)
                 if isinstance(next_sibling, ToolBlock):

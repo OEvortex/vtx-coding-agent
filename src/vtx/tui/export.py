@@ -141,6 +141,25 @@ a { color: var(--blue); }
   border-top: 1px solid var(--bg2);
 }
 .tool-result.error { color: var(--red); }
+.codemode-cell { margin-top: 2px; }
+.codemode-prompt { color: var(--yellow); font-weight: 600; }
+.codemode-source {
+  color: var(--fg);
+  white-space: pre-wrap;
+  font-size: 11px;
+  overflow-x: auto;
+  margin-top: 2px;
+}
+.codemode-stdout { color: var(--fg2); white-space: pre-wrap; font-size: 11px; }
+.codemode-value {
+  color: var(--fg);
+  white-space: pre-wrap;
+  font-size: 11px;
+  overflow-x: auto;
+  margin-top: 2px;
+}
+.codemode-error { color: var(--red); white-space: pre-wrap; font-size: 11px; margin-top: 4px; }
+.codemode-trace { color: var(--fg4); white-space: pre-wrap; font-size: 11px; margin-top: 2px; }
 """
 
 _RICH_TAG_RE = re.compile(r"\[/?(?:[a-zA-Z0-9#._-]+)\]")
@@ -361,6 +380,46 @@ def _format_name(name: str) -> str:
     return " ".join(word.capitalize() for word in name.split("_"))
 
 
+def _codemode_parts(ui_data: dict[str, Any]) -> dict[str, Any]:
+    """Flatten one codemode ``ui_data`` payload into the export cell's parts.
+
+    Same collapse rules as the terminal cell: clip the long parts rather than
+    dropping them, and keep the tool-call trace on one line so a forty-call
+    script does not turn into forty lines of export.
+    """
+    calls = [c for c in ui_data.get("calls") or [] if isinstance(c, dict)]
+    trace = ""
+    if calls:
+        parts = []
+        for call in calls[:8]:
+            label = str(call.get("name") or "?")
+            duration = call.get("duration_ms")
+            if isinstance(duration, int | float):
+                label += f" {duration / 1000:.1f}s"
+            if not call.get("ok", True):
+                label += f" ({call.get('kind') or 'error'})"
+            parts.append(label)
+        if len(calls) > 8:
+            parts.append(f"+{len(calls) - 8} more")
+        trace = " · ".join(parts)
+
+    error = ui_data.get("error") or {}
+    error_text = ""
+    if isinstance(error, dict) and error:
+        head = f"{error.get('kind') or 'error'}: {error.get('message') or ''}".rstrip(": ")
+        stack = str(error.get("stack") or "")
+        error_text = f"{head}\n\n{_truncate(stack, 12)}" if stack.strip() else head
+
+    return {
+        "code": _truncate(str(ui_data.get("code") or ""), 24),
+        "value": _truncate(str(ui_data.get("value") or ""), 12),
+        "stdout": _truncate("\n".join(str(t) for t in ui_data.get("printed") or []), 8),
+        "error": error_text,
+        "trace": trace,
+        "error_status": bool(error),
+    }
+
+
 def _iter_content_parts(content: Any) -> list[dict[str, Any]]:
     if isinstance(content, list):
         return [part for part in content if isinstance(part, dict)]
@@ -449,6 +508,7 @@ class HtmlBuilder:
         self._parts: list[str] = []
         self._assistant_open = False
         self._last_block_kind: str | None = None
+        self._codemode_cells = 0
 
     def _append(self, text: str) -> None:
         self._parts.append(text)
@@ -519,6 +579,40 @@ class HtmlBuilder:
             klass = "tool-result error" if error else "tool-result"
             parts.append(f'<div class="{klass}">{_esc(result_text)}</div>')
         self._append(f'<div class="tool-block">{"".join(parts)}</div>')
+
+    def codemode_block(
+        self,
+        *,
+        code: str,
+        value: str = "",
+        stdout: str = "",
+        error: str = "",
+        trace: str = "",
+        error_status: bool = False,
+    ) -> None:
+        """One ``codemode`` call as a notebook cell: ``In`` the script, ``Out`` the value.
+
+        Mirrors :class:`vtx.tui.codemode_block` so an exported session reads the
+        same way the terminal did, instead of the script arriving as a JSON
+        argument blob with its newlines escaped onto one line.
+        """
+        self.open_assistant()
+        self._codemode_cells += 1
+        cell = self._codemode_cells
+        parts = ['<div class="tool-block"><div class="codemode-cell">']
+        parts.append(f'<div class="codemode-prompt">In [{cell}]:</div>')
+        parts.append(f'<pre class="codemode-source">{_esc(code)}</pre>')
+        if stdout:
+            parts.append(f'<div class="codemode-stdout">{_esc(stdout)}</div>')
+        if error_status:
+            parts.append(f'<div class="codemode-error">{_esc(error)}</div>')
+        elif value:
+            parts.append(f'<div class="codemode-prompt">Out [{cell}]:</div>')
+            parts.append(f'<pre class="codemode-value">{_esc(value)}</pre>')
+        if trace:
+            parts.append(f'<div class="codemode-trace">{_esc(trace)}</div>')
+        parts.append("</div></div>")
+        self._append("".join(parts))
 
     def system_section(self, system_prompt: str | None, tools: list[Any] | None) -> None:
         self.close_assistant()
@@ -642,6 +736,11 @@ class ExportRenderer:
                     else _format_name(tool_name)
                 )
                 args = _format_tool_call_args(tool_call)
+
+                ui_data = message.get("ui_data")
+                if isinstance(ui_data, dict) and ui_data.get("code"):
+                    self.builder.codemode_block(**_codemode_parts(ui_data))
+                    return
 
                 if message.get("is_error"):
                     text = _extract_text_content(message.get("content")).strip()

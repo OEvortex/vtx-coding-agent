@@ -22,6 +22,7 @@ from __future__ import annotations
 
 import asyncio
 import inspect
+import time
 from collections.abc import Callable, Sequence
 from typing import Any, ClassVar
 
@@ -373,8 +374,16 @@ class CodemodeTool(BaseTool):
         the user a fragment of the thing they were approving and running. The
         notebook block (:mod:`vtx.tui.codemode_block`) owns how much of it to
         draw, and other consumers (the tool tree, the header) clip on their own.
+
+        Parsed rather than string-trimmed so the ``# @options:`` line the model
+        wrote for the sandbox does not show up in the cell while it runs and
+        then vanish when it finishes.
         """
-        return params.code.strip()[:8000]
+        try:
+            body = parse_source(params.code).code.strip()
+        except Exception:
+            body = params.code.strip()
+        return body[:8000]
 
     def format_preview(self, params: CodemodeParams) -> str | None:
         """The script itself, at approval time.
@@ -549,6 +558,44 @@ def _render_value(value: Any) -> str | None:
         return json.dumps(value, indent=2, ensure_ascii=False, default=str)
     except (TypeError, ValueError):
         return str(value)
+
+
+def _ui_payload(source: Any, result: Any, *, duration_ms: int, images: int) -> dict[str, Any]:
+    """Everything the notebook cell needs, as JSON-safe data.
+
+    The block owns layout, which means the tool hands it the run rather than a
+    pre-rendered string: the same payload drives the collapsed cell, the
+    ``ctrl+o`` expansion, and a re-render after a resize. Only JSON-safe values,
+    because it is persisted with the session and replayed back into the block.
+    """
+    error = result.diagnostic
+    return {
+        "code": source.code,
+        "value": _render_value(result.value),
+        "printed": [
+            str(item.get("text", ""))
+            for item in result.output
+            if item.get("type") == "text" and str(item.get("text", "")).strip()
+        ],
+        "calls": [
+            {
+                "name": call.name,
+                "ok": call.ok,
+                "kind": call.kind,
+                "message": call.message,
+                "duration_ms": call.duration_ms,
+            }
+            for call in result.calls
+        ],
+        "error": (
+            {"kind": error.kind, "message": error.message, "stack": error.stack}
+            if error is not None
+            else None
+        ),
+        "images": images,
+        "output_truncated": bool(result.output_truncated),
+        "duration_ms": duration_ms,
+    }
 
 
 __all__ = ["CODEMODE_TOOL_NAME", "SEARCH_HELPER", "CodemodeParams", "CodemodeTool"]

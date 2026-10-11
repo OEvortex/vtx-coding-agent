@@ -22,10 +22,12 @@ machine are shared machinery and stay shared.
 
 from __future__ import annotations
 
+import contextlib
 from typing import Any
 
 from rich.style import Style
 from rich.text import Text
+from textual import events
 from textual.widgets import Label
 
 from vtx.core.config import config
@@ -95,18 +97,19 @@ class CodemodeToolBlock(ToolBlock):
 
         Call count and duration are the two facts that decide how the user reads
         the cell below: three tool calls and two seconds is a different story
-        from three tool calls and ninety seconds.
+        from three tool calls and ninety seconds. A failure reuses the tool's own
+        one-line summary, which is the one that says what already ran and was not
+        undone.
         """
         colors = config.ui.colors
-        data = self._ui_data or {}
 
         if self._success is None:
             return Text(" running...", style=Style(color=colors.dim))
         if self._success is False:
-            error = data.get("error") or {}
-            kind = str(error.get("kind") or "failed")
-            return Text(f" {kind}", style=Style(color=colors.failed, bold=True))
+            summary = self._ui_summary or (self.ui_data or {}).get("error", {}).get("kind")
+            return Text(f" {summary or 'failed'}", style=Style(color=colors.failed, bold=True))
 
+        data = self.ui_data or {}
         calls = self._calls(data)
         bits: list[str] = []
         if calls:
@@ -125,6 +128,14 @@ class CodemodeToolBlock(ToolBlock):
         # running. Rendering here rather than only in set_result is the whole
         # difference between a cell that appears and one that pops in at the end.
         self._render_result_output()
+
+    def on_resize(self, event: events.Resize) -> None:
+        del event
+        # The base class only repaints a result it holds as detail strings. A
+        # codemode cell draws its own body, so without this it keeps the line
+        # wrap from whatever width it was last rendered at.
+        if self.ui_data or self._call_msg:
+            self._render_result_output()
 
     def _render_result_output(self) -> None:
         try:
@@ -149,7 +160,7 @@ class CodemodeToolBlock(ToolBlock):
         output.update(cell)
 
     def _render_cell(self) -> Text | None:
-        data = self._ui_data or {}
+        data = self.ui_data or {}
         code = str(data.get("code") or self._call_msg or "")
         value = data.get("value")
         printed = [str(item) for item in (data.get("printed") or []) if str(item).strip()]
@@ -166,7 +177,7 @@ class CodemodeToolBlock(ToolBlock):
         text.append(prompt, style=Style(color=colors.accent, bold=True))
 
         limit = WIDE_CODE_LINES if self._expanded else CODE_LINES
-        shown, hidden = _clip_lines(code, limit)
+        shown, hidden = _clip_lines(code.lstrip("\n"), limit)
         source = format_python_source(shown, body_width)
         if source.plain:
             text.append_text(_prefixed(source, "", indent))
@@ -182,14 +193,15 @@ class CodemodeToolBlock(ToolBlock):
         if value:
             out_prompt = f"Out [{self._execution}]: "
             shown, hidden = _clip_lines(
-                str(value), WIDE_VALUE_LINES if self._expanded else VALUE_LINES
+                _squash_value(str(value), body_width - len(out_prompt)),
+                WIDE_VALUE_LINES if self._expanded else VALUE_LINES,
             )
             text.append("\n\n")
             text.append(out_prompt, style=Style(color=colors.accent, bold=True))
-            text.append_text(_prefixed(Text(shown), "", " " * (len(out_prompt) - 1)))
+            text.append_text(_prefixed(Text(shown), "", " " * len(out_prompt)))
             if hidden:
                 text.append("\n")
-                text.append(" " * (len(out_prompt) - 1))
+                text.append(" " * len(out_prompt))
                 text.append_text(format_expand_hint(hidden))
 
         if isinstance(error, dict) and error:
@@ -231,18 +243,16 @@ class CodemodeToolBlock(ToolBlock):
 
         text = Text()
         text.append("\n\n")
-        text.append(f"{indent}{'─' * max(8, min(body_width, 48))}\n", style=Style(color=colors.failed))
+        text.append(
+            f"{indent}{'─' * max(8, min(body_width, 48))}\n", style=Style(color=colors.failed)
+        )
         text.append(f"{indent}{head}", style=Style(color=colors.failed, bold=True))
 
         stack = str(error.get("stack") or "")
         if stack.strip():
-            shown, hidden = _clip_lines(
-                stack, WIDE_STACK_LINES if self._expanded else STACK_LINES
-            )
+            shown, hidden = _clip_lines(stack, WIDE_STACK_LINES if self._expanded else STACK_LINES)
             text.append("\n\n")
-            text.append_text(
-                _prefixed(Text(shown, style=Style(color=colors.dim)), indent, indent)
-            )
+            text.append_text(_prefixed(Text(shown, style=Style(color=colors.dim)), indent, indent))
             if hidden:
                 text.append("\n")
                 text.append(indent)
@@ -306,14 +316,12 @@ class CodemodeToolBlock(ToolBlock):
             getattr(self.content_size, "width", 0),
             getattr(self.container_size, "width", 0),
         ]
-        try:
+        # Both of these raise in a bare unit test, where the block is neither
+        # mounted nor in an app; silence beats a crashed render.
+        with contextlib.suppress(Exception):
             widths.append(self.query_one("#tool-output", Label).size.width)
-        except Exception:
-            pass
-        try:
+        with contextlib.suppress(Exception):
             widths.append(self.app.size.width)
-        except Exception:
-            pass
 
         for width in widths:
             if width and width > 0:
@@ -328,6 +336,20 @@ def _clip_lines(text: str, limit: int) -> tuple[str, int]:
     if len(lines) <= limit:
         return text, 0
     return "\n".join(lines[:limit]), len(lines) - limit
+
+
+def _squash_value(value: str, width: int) -> str:
+    """Fold a short pretty-printed value back onto one line.
+
+    ``json.dumps(indent=2)`` is what the model reads and is right for anything
+    big, but a five-element list became five lines in a notebook cell where
+    IPython would have printed one. The pretty form is kept whenever the folded
+    one would not fit, so nothing that needs its lines loses them.
+    """
+    folded = " ".join(value.split())
+    if len(folded) <= width:
+        return folded
+    return value
 
 
 def _prefixed(text: Text, first: str, rest: str) -> Text:

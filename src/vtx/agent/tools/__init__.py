@@ -3,7 +3,9 @@
 Provides the :class:`BaseTool` contract, schema shaping for LLM tool
 definitions, dynamic tool registration/lookup APIs, and core harness tools
 (:class:`AskUserTool`, :class:`TaskTool`, :class:`WebTool`, :class:`GoalTool`,
-:class:`CodemodeTool`).
+:class:`CodemodeTool`, plus the file/system tools :class:`BashTool`,
+:class:`ReadTool`, :class:`EditTool`, :class:`WriteTool`, :class:`FindTool`,
+:class:`GrepTool`, and :class:`SkillTool`).
 """
 
 from __future__ import annotations
@@ -16,10 +18,17 @@ from vtx.protocol.types import ToolDefinition
 
 from .ask_user import AskUserParams, AskUserTool
 from .base import BaseTool
+from .bash import BashParams, BashTool
 from .codemode import CODEMODE_TOOL_NAME, CodemodeParams, CodemodeTool
+from .edit import EditParams, EditTool
+from .find import FindParams, FindTool
+from .grep import GrepParams, GrepTool
+from .read import ReadParams, ReadTool
+from .skill import SkillParams, SkillTool
 from .task import SubagentSpec, TaskParams, TaskTool
 from .tool_search import TOOL_SEARCH_TOOL_NAME, ToolSearchParams, ToolSearchTool
 from .web import SearchParams, WebSearchTool, WebTool
+from .write import WriteParams, WriteTool
 
 __all__ = [
     "CODEMODE_TOOL_NAME",
@@ -27,12 +36,24 @@ __all__ = [
     "AskUserParams",
     "AskUserTool",
     "BaseTool",
+    "BashParams",
+    "BashTool",
     "CodemodeParams",
     "CodemodeTool",
+    "EditParams",
+    "EditTool",
+    "FindParams",
+    "FindTool",
+    "GrepParams",
+    "GrepTool",
     "GoalParams",
     "GoalTaskItem",
     "GoalTool",
+    "ReadParams",
+    "ReadTool",
     "SearchParams",
+    "SkillParams",
+    "SkillTool",
     "SubagentSpec",
     "TaskParams",
     "TaskTool",
@@ -40,6 +61,8 @@ __all__ = [
     "ToolSearchTool",
     "WebSearchTool",
     "WebTool",
+    "WriteParams",
+    "WriteTool",
     "get_all_tools",
     "get_default_tools",
     "get_parent_only_tools",
