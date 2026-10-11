@@ -24,37 +24,32 @@ typed after the skill name (or the query passed to the `skill` tool).
 
 Constraints enforced at load time: name ≤ 64 chars, description ≤ 1024 chars, category ≤ 32 chars. The directory name should match `name`; mismatches produce a warning.
 
-## Python skills
+## Skills are instructions only
 
-A skill that also ships a `pyproject.toml` and `src/<import_name>/__init__.py` is
-loaded as a **python skill** rather than as instructions.
+There is no Python-backed skill runtime. A skill directory that also ships a
+`pyproject.toml` and `src/<import_name>/__init__.py` is not treated specially: the
+loader reads only `SKILL.md`, so those files are ignored and the body is read as
+instructions.
 
 ```
 .agents/skills/word-count/
-├── SKILL.md          # API reference for the module
-├── pyproject.toml
-└── src/word_count/__init__.py
+├── SKILL.md          # instructions, not an API reference
+├── pyproject.toml    # ignored
+└── src/word_count/   # ignored
 ```
 
-Python skills are discovered and importable, but nothing executes them. They were
-imported into the persistent Python kernel that the RLM mode provided; that
-kernel is gone, replaced by the codemode sandbox, which runs a confined script
-rather than exposing a long-lived interpreter.
+Python skills existed earlier. They were imported into the persistent Python kernel
+that the RLM mode provided; that kernel is gone, replaced by the codemode sandbox,
+which runs a confined script rather than exposing a long-lived interpreter. The loader
+no longer reads `pyproject.toml`, and a body written as API docs ("call
+`await my.run()`") will dead-end because there is nothing to call it with.
 
-So python skills are **hidden from every discovery surface** — the system-prompt
-catalog, the `skill` tool's `list`, and the `/` command menu — and
-`register_cmd: true` does not force one back in. Advertising one would spend
-context on a dead end: the description reads as generally applicable, the agent
-loads it, and then has nothing to call it with.
+For executable behavior, use a plugin row — see [plugins.md](plugins.md).
 
-`skill(action="run")` returns the file instead of running it, so a python skill
-is still readable. A `SKILL.md` body is instructions for a model, and the model
-can follow those directly.
-
-Vtx ships no python skills. All five that were bundled (`agent-message`,
-`agent-observe`, `compact`, `refine`, `edit`) were removed: the first four with
-the kernel that imported them, and `edit` after that, because a python skill with
-no interpreter is documentation for a module nothing can call.
+Vtx shipped no python skills even before the support was removed: all five that were
+bundled (`agent-message`, `agent-observe`, `compact`, `refine`, `edit`) went with the
+kernel that imported them, and `edit` after that, because a python skill with no
+interpreter is documentation for a module nothing can call.
 
 ## Discovery paths
 

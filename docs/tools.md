@@ -105,7 +105,7 @@ without a separate read.
 | `file_path` | string | Supporting file to target (default: SKILL.md) |
 | `scope` | enum | `project` (`.agents/skills`) or `global` (`~/.agents/skills`) |
 
-`list` omits python skills, which are hidden because nothing can execute them — see [skills.md](skills.md#python-skills). `run` returns the skill file rather than executing it: the persistent Python kernel it used to hand off to was removed with the RLM mode.
+`list` shows every skill. `run` returns the skill file rather than executing it: the persistent Python kernel it used to hand off to was removed with the RLM mode, and a skill is instructions rather than code.
 
 ## web
 

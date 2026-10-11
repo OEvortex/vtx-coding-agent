@@ -4,8 +4,8 @@ Three defects these lock down:
 
 - ``register_cmd`` is documented as opt-in (AGENTS.md, docs/skills.md) but
   defaulted to ``True``, so every skill became a user-facing ``/command`` and
-  bundled kernel skills named ``compact`` / ``refine`` shadowed the real
-  ``/compact`` and ``/refine`` commands.
+  bundled skills named ``compact`` / ``refine`` shadowed the real ``/compact``
+  and ``/refine`` commands.
 - The frontmatter parser was a naive key/value scan that truncated YAML folded
   block scalars (``description: >``) to a bare ``">"``, wiping the description
   of every skill that used them.
@@ -33,16 +33,6 @@ def _write_markdown_skill(tmp_path: Path, name: str, frontmatter: str) -> None:
     (skill_dir / "SKILL.md").write_text(f"---\n{frontmatter}\n---\n# {name}\n")
 
 
-def _write_python_skill(tmp_path: Path, name: str, frontmatter: str) -> None:
-    skill_dir = _skills_root(tmp_path) / name
-    skill_dir.mkdir(parents=True)
-    (skill_dir / "SKILL.md").write_text(f"---\n{frontmatter}\n---\n# {name}\n")
-    (skill_dir / "pyproject.toml").write_text(f'[project]\nname = "{name}"\nversion = "0.1.0"\n')
-    src = skill_dir / "src" / name.replace("-", "_")
-    src.mkdir(parents=True)
-    (src / "__init__.py").write_text("def run() -> None:\n    return None\n")
-
-
 # ---------------------------------------------------------------------------
 # register_cmd is opt-in
 # ---------------------------------------------------------------------------
@@ -64,28 +54,29 @@ def test_register_cmd_opts_in(tmp_path: Path):
     assert res.skills[0].register_cmd is True
 
 
-def test_python_skill_never_registers_by_default(tmp_path: Path):
-    """A kernel skill is imported by name; ``/compact`` must not reach it.
+def test_skill_never_registers_by_default(tmp_path: Path):
+    """A skill must not default-register and shadow a built-in command.
 
     Regression guard: the bundled ``compact`` and ``refine`` python skills
     default-registered and shadowed the real /compact and /refine commands.
+    Python skills are gone, so the guard is now about any named skill - the
+    shadowing defect was register_cmd defaulting on, not the skill kind.
     """
-    _write_python_skill(tmp_path, "compact", "name: compact\ndescription: Compact from the REPL")
+    _write_markdown_skill(tmp_path, "compact", "name: compact\ndescription: Compact from the REPL")
     res = load_skills(cwd=str(tmp_path))
     assert len(res.skills) == 1
-    assert res.skills[0].kind == "python"
     assert res.skills[0].register_cmd is False
 
 
-def test_python_skill_can_still_opt_in(tmp_path: Path):
-    _write_python_skill(
+def test_skill_can_still_opt_in(tmp_path: Path):
+    _write_markdown_skill(
         tmp_path, "compact", "name: compact\ndescription: Compact\nregister_cmd: true"
     )
     res = load_skills(cwd=str(tmp_path))
     assert res.skills[0].register_cmd is True
 
 
-def test_bundled_kernel_skills_do_not_shadow_commands():
+def test_bundled_skills_do_not_shadow_commands():
     """The real bug: no bundled skill may claim a built-in command name."""
     builtins = {
         "agent",
@@ -122,16 +113,23 @@ def test_bundled_kernel_skills_do_not_shadow_commands():
     assert collisions == [], f"skills shadow built-in commands: {collisions}"
 
 
-def test_no_bundled_python_skills_remain():
-    """Every bundled python skill is gone.
+def test_no_bundled_skill_ships_a_python_package():
+    """No bundled skill carries the files that used to make it a python skill.
 
-    There were five: ``agent-message``, ``agent-observe``, ``compact``, ``refine``
-    and ``edit``. The first four went with the RLM kernel that imported them, and
-    ``edit`` went after that because a python skill with no kernel is API
-    documentation for a module nothing can call.
+    There were five python skills: ``agent-message``, ``agent-observe``,
+    ``compact``, ``refine`` and ``edit``. The first four went with the RLM kernel
+    that imported them, and ``edit`` went after that because a python skill with
+    no kernel is API documentation for a module nothing can call. The loader no
+    longer reads ``pyproject.toml`` at all, so a stale one would be dead weight
+    that reads as a supported way to build a skill.
     """
-    skills = load_builtin_cmd_skills().skills
-    assert [s.name for s in skills if s.kind == "python"] == []
+    builtin_root = (
+        Path(__file__).resolve().parents[1] / "src" / "vtx" / "coding_agent" / "builtin_skills"
+    )
+    offenders = sorted(
+        str(p.relative_to(builtin_root)) for p in builtin_root.rglob("pyproject.toml")
+    )
+    assert offenders == [], f"bundled skills still shipping python packages: {offenders}"
 
 
 # ---------------------------------------------------------------------------

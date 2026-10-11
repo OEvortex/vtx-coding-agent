@@ -18,12 +18,7 @@ from __future__ import annotations
 
 from typing import Any
 
-from vtx.agent.context import (
-    Context,
-    formatted_agent_mds,
-    formatted_git_context,
-    formatted_skills,
-)
+from vtx.agent.context import Context, formatted_agent_mds, formatted_git_context, formatted_skills
 from vtx.agent.tools import BaseTool
 from vtx.core.config import config as vtx_config
 

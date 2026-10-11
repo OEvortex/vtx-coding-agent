@@ -482,6 +482,73 @@ def find_stable_block_boundary(text: str) -> int:
     return boundary
 
 
+def split_open_fence(text: str) -> tuple[int, int, str, bool]:
+    """Locate the cacheable part of a fenced code block at the head of *text*.
+
+    Returns ``(body_len, stable, marker, closed)``:
+
+    - ``body_len`` offset just after the fence's opening line, ``0`` when
+      *text* does not open into a fence.
+    - ``stable``  offset just after the last line that can be rendered once and
+      kept: the opener plus every newline-terminated line after it, extended
+      past the closing line when one has already arrived.
+    - ``marker``  the opening line without its newline, so a fragment can be
+      re-wrapped with it and still render as a code block.
+    - ``closed``  True when ``stable`` includes the fence's closing line.
+
+    A code fence is the one streaming construct that grows without ever
+    producing a blank line, so :func:`find_stable_block_boundary` leaves it in
+    the open block forever and every refresh re-renders the entire file. Lines
+    inside a fence are inert -- nothing arriving later can change how an
+    already-terminated one renders -- which makes them safe to commit one at a
+    time and turns a quadratic re-render into a linear pass.
+
+    Only newline-terminated lines are stable. A partially written line is the
+    live tail by definition, and a half-written opener would otherwise be
+    cached as if it were complete.
+    """
+    fence_len = 0
+    fence_char = ""
+    marker = ""
+    body_len = 0
+    stable = 0
+    offset = 0
+    for raw in text.splitlines(keepends=True):
+        if not raw.endswith("\n"):
+            break  # still streaming into this line
+        line = raw[:-1]
+        m = _FENCE_OPEN.match(line)
+        if fence_len:
+            if (
+                m
+                and line.lstrip().startswith(fence_char * fence_len)
+                and fence_char not in m.group(2)
+            ):
+                fence_len = 0
+                fence_char = ""
+                end = offset + len(raw)
+                return body_len, end, marker, True
+            offset += len(raw)
+            stable = offset
+            continue
+        if m:
+            mark = m.group(1)
+            char = mark[0]
+            if char in m.group(2):
+                # A fence character in the info string makes this a plain line.
+                offset += len(raw)
+                continue
+            fence_char = char
+            fence_len = len(mark)
+            marker = line
+            offset += len(raw)
+            body_len = offset
+            stable = offset
+            continue
+        break  # ordinary prose: the fence never opened
+    return body_len, stable, marker, False
+
+
 def format_markdown_block(text: str, width: int) -> Text:
     """Render a markdown fragment with blank edge lines stripped.
 

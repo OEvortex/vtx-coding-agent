@@ -48,12 +48,13 @@ when the model must *act* differently, not merely *know* differently.
 
 ## Two hard constraints on the surface you pick
 
-**1. Do not write a `kind: python` skill.** Vtx parses it and then hides it from the
-prompt as unrunnable, because there is no persistent kernel any more
-(`is_kernel_skill`, `src/vtx/agent/context/skills.py:76`; the filter is in
-`skills_for_mode` at `:97`). A python skill is worse than absent: its description reads
-as generally applicable and its body dead-ends. If you need executable behavior, that
-is a plugin row, not a python skill.
+**1. A skill is markdown instructions only.** Vtx has no Python-backed skill
+runtime. The old mechanism - a `pyproject.toml` plus `src/<import_name>/` that got
+imported into a persistent IPython kernel - went with the RLM mode, and the loader
+no longer reads those files at all. If you drop a `pyproject.toml` in a skill
+directory it is simply ignored, and the SKILL.md body is treated as instructions,
+so a body written as API docs ("call `await my.run()`") will dead-end. If you need
+executable behavior, write a plugin row, not a python skill.
 
 **2. Prefer `ctx.on(...)` over `ExtensionAPI.on_*`.** The plugin `EventHub` is the live
 dispatch path and is what the built-ins use (`src/vtx/plugins/builtins/hooks.py:114`).

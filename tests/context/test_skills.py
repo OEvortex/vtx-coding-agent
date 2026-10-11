@@ -7,7 +7,6 @@ from vtx.agent.context.skills import (
     _parse_frontmatter,
     _validate_skill,
     formatted_skills,
-    is_kernel_skill,
     load_builtin_cmd_skills,
     load_skills,
     merge_registered_skills,

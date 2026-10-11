@@ -40,6 +40,7 @@ from vtx.tui.formatting import (
     format_markdown_block,
     format_tokens,
     markdown_render_width,
+    split_open_fence,
     strip_markdown_for_collapsed_text,
 )
 from vtx.tui.input import AskUserInput
@@ -107,6 +108,9 @@ class _StreamingMarkdownMixin:
     _committed_blocks: list[Text]
     _committed_len: int
     _committed_width: int
+    _fence_blocks: list[Text]
+    _fence_len: int
+    _fence_marker: str
     _stream_update_pending: bool
     _stream_finalized: bool
     # Provided by Textual's Static widget at runtime
@@ -119,8 +123,14 @@ class _StreamingMarkdownMixin:
         self._committed_blocks = []
         self._committed_len = 0
         self._committed_width = 0
+        self._reset_fence_cache()
         self._stream_update_pending = False
         self._stream_finalized = False
+
+    def _reset_fence_cache(self) -> None:
+        self._fence_blocks = []
+        self._fence_len = 0
+        self._fence_marker = ""
 
     def _streaming_update_label(self, display: Text) -> None:
         raise NotImplementedError
@@ -130,6 +140,7 @@ class _StreamingMarkdownMixin:
         if width != self._committed_width:  # cached renders are stale after a resize
             self._committed_blocks = []
             self._committed_len = 0
+            self._reset_fence_cache()
             self._committed_width = width
 
         boundary = find_stable_block_boundary(self._completed)
@@ -140,17 +151,58 @@ class _StreamingMarkdownMixin:
             if block.plain:
                 self._committed_blocks.append(block)
             self._committed_len = boundary
+            # A blank line can never fall inside a fence, so this only runs while
+            # the open block sits outside one and the fence cache starts over.
+            self._reset_fence_cache()
 
-        # The still-open block spans the uncommitted tail *and* the line being written
-        # right now, so a partial line is rendered on every delta rather than held back
-        # until the newline that would close it.
         open_text = self._completed[self._committed_len :] + self._pending
+        tail, separator = self._refresh_fence_cache(open_text, width)
+
         parts = [*self._committed_blocks]
-        if open_text.strip():
-            open_block = format_markdown_block(open_text, width)
+        if self._fence_blocks:
+            parts.append(Text("\n").join(self._fence_blocks))
+        if tail.strip():
+            open_block = format_markdown_block(tail, width)
             if open_block.plain:
                 parts.append(open_block)
-        self._completed_display = Text("\n\n").join(parts) if parts else Text()
+        self._completed_display = Text(separator).join(parts) if parts else Text()
+
+    def _refresh_fence_cache(self, open_text: str, width: int) -> tuple[str, str]:
+        """Fold completed code-fence lines into the cache.
+
+        Returns the live tail — already re-wrapped with the fence marker while it
+        is still inside one — plus the separator the display parts join with.
+        Blank lines inside a fence are illegal, so the block-boundary rule never
+        fires there and without this the whole file is re-rendered on every
+        single refresh.
+        """
+        body_len, stable, marker, closed = split_open_fence(open_text)
+
+        if not marker or closed:
+            if closed and (self._fence_marker != marker or self._fence_len != stable):
+                # The closer just arrived. Re-render the fence once as a single
+                # block so the tail after it is ordinary markdown again; one
+                # whole-fence render per close is still linear.
+                block = format_markdown_block(open_text[:stable], width)
+                self._reset_fence_cache()
+                if block.plain:
+                    self._fence_blocks.append(block)
+                self._fence_len = stable
+                self._fence_marker = marker
+            elif not marker:
+                self._reset_fence_cache()
+            return open_text[stable:], "\n\n"
+
+        if marker != self._fence_marker:
+            self._reset_fence_cache()
+            self._fence_marker = marker
+        if stable > self._fence_len:
+            # Re-wrap with the opener so the fragment still renders as code.
+            chunk = format_markdown_block(f"{marker}\n{open_text[body_len:stable]}", width)
+            if chunk.plain:
+                self._fence_blocks.append(chunk)
+            self._fence_len = stable
+        return f"{marker}\n{open_text[stable:]}", "\n"
 
     def _render_streaming_display(self) -> Text:
         display = self._completed_display.copy()
