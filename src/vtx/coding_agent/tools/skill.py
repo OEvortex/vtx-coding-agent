@@ -11,7 +11,6 @@ from vtx.agent.context.skills import (
     load_builtin_cmd_skills,
     load_skills,
     merge_registered_skills,
-    skills_for_mode,
     strip_frontmatter,
 )
 from vtx.agent.tools.base import BaseTool, ToolResult
@@ -110,9 +109,6 @@ class SkillTool(BaseTool):
             result = load_skills(cwd)
             builtin = load_builtin_cmd_skills()
             all_skills = merge_registered_skills(result.skills, builtin.skills)
-            # A python skill is a kernel module, not a set of instructions. With
-            # no kernel it can only dead-end, so don't offer it for discovery.
-            all_skills = skills_for_mode(all_skills)
             lines = ["Available skills:"]
             for skill in sorted(all_skills, key=lambda s: s.name):
                 path_str = str(skill.path)

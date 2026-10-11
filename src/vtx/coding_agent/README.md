@@ -81,7 +81,9 @@ The registry API is `get_tools(default_names)`, `get_tool(name)`, `get_tools_wit
 
 `agents/` loads switchable agents from `.vtx/agent/<name>.py`: a bundle of system-prompt instructions, model/provider/thinking/max-turns overrides, a tool allow/deny list, agent-scoped tools and slash commands, and agent-scoped extensions. There are no built-in profiles. `load_all_agents(cwd=..., configured=...)` returns `(loaded, errors)` and collects errors rather than raising, so one bad agent file does not block the rest; `vtx --list-agents` prints that pair. An agent's `extensions` are mounted as rows of the running composition, scoped to that agent.
 
-`builtin_skills/` is registered into the harness by `register_skills_package("vtx.coding_agent")` at package import. It ships `cloud/google-colab`, `cloud/modal`, `code-review/review`, `general/github`, `meta/goal`, `meta/skill-builder`, and `setup/init`. `/goal` is one of these skills rather than a built-in command, which is why it is absent from the app's command router.
+`builtin_skills/` is registered into the harness by `register_skills_package("vtx.coding_agent")` at package import. It ships `cloud/google-colab`, `cloud/modal`, `code-review/review`, `general/github`, `meta/goal`, `meta/skill-builder`, `meta/vtx-self-extend`, and `setup/init`. `/goal` is one of these skills rather than a built-in command, which is why it is absent from the app's command router.
+
+`meta/vtx-self-extend` is the harness's own self-extension skill: it tells the model which surface to reach for when it needs a capability it does not have (a skill, a plugin row, or an extension), how a registered tool actually reaches the provider, and which paths are forbidden. It is bundled so that any agent composed on the vtx harness - the coding agent, the SDK runner, a sub-agent - inherits it without the project having to ship a copy.
 
 ## The interface: `vtx.tui`
 

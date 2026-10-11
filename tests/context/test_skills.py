@@ -7,6 +7,7 @@ from vtx.agent.context.skills import (
     _parse_frontmatter,
     _validate_skill,
     formatted_skills,
+    is_kernel_skill,
     load_builtin_cmd_skills,
     load_skills,
     merge_registered_skills,
@@ -500,6 +501,43 @@ class TestBuiltinCommandSkills:
             "coding_agent/builtin_skills/general/github/SKILL.md"
         )
         assert result.warnings == []
+
+    def test_loads_builtin_self_extend_skill(self):
+        """The harness self-extension skill ships bundled and loads warning-free.
+
+        A bad frontmatter unloads a skill silently, so this pins the fields the
+        model depends on: the description (which is the only routing signal) and
+        the category that places it next to skill-builder.
+        """
+        result = load_builtin_cmd_skills()
+
+        skill = next((s for s in result.skills if s.name == "vtx-self-extend"), None)
+        assert skill is not None
+        assert skill.register_cmd is True
+        assert skill.cmd_info
+        assert skill.bundled is True
+        assert skill.category == "meta"
+        assert skill.description
+        assert skill.path.replace("\\", "/").endswith(
+            "coding_agent/builtin_skills/meta/vtx-self-extend/SKILL.md"
+        )
+        assert result.warnings == []
+
+    def test_self_extend_skill_references_ship_with_it(self):
+        """The reference files the body links must exist in the shipped skill."""
+        skill_dir = (
+            Path(__file__).resolve().parents[2]
+            / "src"
+            / "vtx"
+            / "coding_agent"
+            / "builtin_skills"
+            / "meta"
+            / "vtx-self-extend"
+        )
+        body = (skill_dir / "SKILL.md").read_text(encoding="utf-8")
+        for name in ("skill-authoring.md", "plugin-rows.md", "extensions.md"):
+            assert f"references/{name}" in body, f"SKILL.md links references/{name}"
+            assert (skill_dir / "references" / name).is_file(), f"references/{name} is missing"
 
 
 class TestBundledSkillPromptRendering:

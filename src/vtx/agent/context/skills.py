@@ -47,13 +47,6 @@ def _parse_bool(value: Any) -> bool:
 
 
 @dataclass
-class SkillPythonMetadata:
-    import_name: str
-    package_path: str
-    pyproject_path: str
-
-
-@dataclass
 class Skill:
     path: str
     name: str
@@ -63,47 +56,12 @@ class Skill:
     include_in_prompt: bool = True
     bundled: bool = False
     category: str = DEFAULT_SKILL_CATEGORY
-    kind: str = "markdown"  # "markdown" | "python"
-    python: SkillPythonMetadata | None = None
 
 
 @dataclass
 class SkillWarning:
     path: str
     message: str
-
-
-def is_kernel_skill(skill: Any) -> bool:
-    """Whether a skill is a Python-backed module with no way to run it.
-
-    A python skill ships a ``pyproject.toml`` plus ``src/<import_name>``, and its
-    SKILL.md body is API documentation for that module ("call
-    ``await compact.run()`` from the REPL") rather than instructions to follow.
-    It was imported into the persistent IPython kernel that the RLM mode
-    provided.
-
-    That kernel is gone -- :mod:`vtx.codemode` runs a confined script
-    in a subprocess instead -- so every python skill is now unrunnable and is
-    hidden from discovery. The predicate stays because it is how a skill is
-    recognised as unrunnable, which is a fact about the skill, not about a mode
-    that no longer exists.
-    """
-    return (
-        getattr(skill, "kind", "markdown") == "python"
-        and getattr(skill, "python", None) is not None
-    )
-
-
-def skills_for_mode(skills: list[Any], mode: str | None = None) -> list[Any]:
-    """Filter out skills the agent cannot actually act on.
-
-    Discovery surfaces (the mandatory prompt catalog, ``skill(action="list")``,
-    the ``/`` command list) must only offer skills the agent can act on. An
-    unrunnable python skill is worse than absent: its description reads as
-    generally applicable and its body is API documentation for a module there is
-    no interpreter to call, so loading it spends context and then dead-ends.
-    """
-    return [skill for skill in skills if not is_kernel_skill(skill)]
 
 
 @dataclass
@@ -245,36 +203,6 @@ def _load_skill_from_dir(skill_dir: Path) -> tuple[Skill | None, list[SkillWarni
         if not description or not description.strip():
             return None, warnings
 
-        # Detect Python-backed skill:
-        # Detect Python-backed skill: pyproject.toml + src/<import_name>/__init__.py
-        kind = "markdown"
-        python_meta: SkillPythonMetadata | None = None
-        pyproject_path = skill_dir / "pyproject.toml"
-        if pyproject_path.is_file():
-            import_name = name.replace("-", "_")
-            if not re.match(r"^[A-Za-z_][A-Za-z0-9_]*$", import_name):
-                warnings.append(
-                    SkillWarning(
-                        str(pyproject_path), f'python skill import name "{import_name}" is invalid'
-                    )
-                )
-            else:
-                pkg_init_path = skill_dir / "src" / import_name / "__init__.py"
-                if pkg_init_path.is_file():
-                    kind = "python"
-                    python_meta = SkillPythonMetadata(
-                        import_name=import_name,
-                        package_path=str(skill_dir),
-                        pyproject_path=str(pyproject_path),
-                    )
-                else:
-                    warnings.append(
-                        SkillWarning(
-                            str(pyproject_path),
-                            f"python skill package src/{import_name}/__init__.py not found",
-                        )
-                    )
-
         # register_cmd is opt-in, as documented (AGENTS.md, docs/skills.md):
         # a skill is context for the agent, and only becomes a user-facing
         # /command when it asks to be. Defaulting this to True put all 56
@@ -297,8 +225,6 @@ def _load_skill_from_dir(skill_dir: Path) -> tuple[Skill | None, list[SkillWarni
             cmd_info=cmd_info,
             include_in_prompt=not cmd_only,
             category=category,
-            kind=kind,
-            python=python_meta,
         )
         return skill, warnings
 
@@ -522,8 +448,6 @@ def load_builtin_cmd_skills(package_names: str | list[str] | None = None) -> Loa
                             include_in_prompt=skill.include_in_prompt,
                             bundled=True,
                             category=skill.category,
-                            kind=skill.kind,
-                            python=skill.python,
                         )
                         for skill in result.skills
                     ]
@@ -590,8 +514,7 @@ def formatted_skills(skills: list[Skill]) -> str:
 
     # One listing only. A grouped name index used to precede the XML, which
     # named every skill a second time with no description or path, so the
-    # catalog shipped doubled on every turn. The XML is the listing; the python
-    # import it carries per entry is what the index used to add.
+    # catalog shipped doubled on every turn. The XML is the listing.
     #
     # No <location>. The catalog names skills for the `skill` tool to load by,
     # and the tool resolves the path itself; shipping the path as well made the
@@ -602,10 +525,6 @@ def formatted_skills(skills: list[Skill]) -> str:
         skill_tags.append("  <skill>")
         skill_tags.append(f"    <name>{escape_xml(skill.name)}</name>")
         skill_tags.append(f"    <description>{escape_xml(skill.description)}</description>")
-        if skill.kind == "python" and skill.python:
-            skill_tags.append(
-                f"    <python_import>{escape_xml(skill.python.import_name)}</python_import>"
-            )
         skill_tags.append("  </skill>")
 
     rules = [
@@ -648,8 +567,6 @@ def _skill_index_line(skill: Skill, max_desc_chars: int) -> str:
     desc = re.sub(r"\s+", " ", skill.description or "").strip()
     if len(desc) > max_desc_chars:
         desc = desc[: max_desc_chars - 3].rstrip() + "..."
-    if skill.kind == "python" and skill.python:
-        return f"- {skill.name} (python `{skill.python.import_name}`): {desc}"
     return f"- {skill.name}: {desc}"
 
 
