@@ -39,6 +39,26 @@ Your script is executed as the body of an async function. The source is indented
 
 The returned value must be JSON-safe: `coerce_json` rejects `NaN`/`Infinity` and non-string dict keys, and caps nesting at 32 levels (`src/vtx/codemode/jsonio.py:20-60`). Both host and worker import the same definition, so they cannot disagree.
 
+## How a run is displayed
+
+The `codemode` tool block in the TUI is a notebook cell (`src/vtx/tui/codemode_block.py:55`). The script is the payload of the call, so the whole script is shown, syntax-highlighted in the active theme, under an IPython-style prompt:
+
+```
+⟩ In [7]: rows = await tools.search(query="find dead code", limit=5)
+          return sorted(r["name"] for r in rows)
+    Out[7]: ["edit", "grep", "read"]
+    ⎿ search 0.4s
+```
+
+- `In [n]` appears as soon as the tool call ends, before execution, so the script is on screen while it runs.
+- `Out[n]` holds the returned value, folded onto one line when it fits. `text()` output appears above it, as stdout does in IPython.
+- The `⎿` line is the tool-call trace: names with durations in the collapsed cell, one line each with `✓`/`✗` and the failure reason after `ctrl+o`.
+- A failure replaces the `Out` prompt with a rule, the diagnostic, and the script's own traceback  --  clipped until expanded, never dropped.
+
+Long scripts and long values are clipped with the shared `ctrl+o` hint; the same cell is what `/export` renders, so a session transcript exports as a notebook rather than as an escaped JSON argument (`src/vtx/tui/export.py`).
+
+The tool hands the block the run itself through `ToolResult.ui_data` (`src/vtx/protocol/types.py:219`), a JSON-safe dict of `code`, `value`, `printed`, `calls`, `error`, `images`, `output_truncated`, and `duration_ms`. That payload is persisted with the session, so a resumed session replays the same cell.
+
 ## Limits and per-script options
 
 `Limits` sets the defaults for every `execute()` (`src/vtx/codemode/types.py:141-183`):

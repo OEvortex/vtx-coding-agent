@@ -32,6 +32,18 @@ STDIO_SERVER = FIXTURES / "stdio_server.py"
 pytestmark = pytest.mark.asyncio
 
 
+@pytest.fixture(autouse=True)
+def mounted():
+    """The coding tools -- ``codemode`` included -- register through the plugin
+    rows, so reading them from the registry needs a mounted composition rather
+    than an import side effect."""
+    from vtx.plugins import boot
+
+    host = boot()
+    yield host
+    host.dispose()
+
+
 def _config(**server_extras: dict) -> LoadedMcpConfig:
     """One stdio server pointing at the fixture, plus any extra config keys.
 
@@ -123,7 +135,7 @@ async def test_a_hidden_tool_is_callable_by_nobody(tmp_path):
 async def test_the_harness_tool_reaches_mcp_tools_through_the_runtime(tmp_path):
     # The end-to-end claim: a session with a connected server, using the
     # registered `codemode` tool, can call that server's tools from a script.
-    from vtx.agent.tools.codemode import CodemodeParams
+    from vtx.coding_agent.tools.codemode import CodemodeParams
 
     runtime = ConversationRuntime(
         cwd=str(tmp_path), model="gpt-test", tools=[], extensions=EventBus()

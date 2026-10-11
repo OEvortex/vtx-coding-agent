@@ -15,6 +15,7 @@ from vtx.agent.context.skills import (
 )
 from vtx.agent.tools.base import BaseTool, ToolResult
 from vtx.core.paths import get_config_dir
+from vtx.plugins import mount_tool, plugin
 
 
 class SkillParams(BaseModel):
@@ -325,3 +326,11 @@ class SkillTool(BaseTool):
 
         msg = f"Unsupported action '{params.action}'."
         return ToolResult(success=False, result=msg, ui_summary=f"[red]{msg}[/red]")
+
+
+@plugin(name="tool-skill", inject=("tools",))
+def apply(ctx, config):
+    mount_tool(ctx, SkillTool(), is_default=True, parent_only=False)
+
+
+PLUGIN = apply

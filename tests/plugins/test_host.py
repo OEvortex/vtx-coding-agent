@@ -20,7 +20,7 @@ def test_a_row_mounts_once_the_service_it_names_exists():
 
 
 def test_a_row_whose_service_never_appears_fails_the_mount():
-    rows = [_row("orphan", "vtx.plugins.builtins.tools.read:PLUGIN")]
+    rows = [_row("orphan", "vtx.coding_agent.tools.read:PLUGIN")]
     with pytest.raises(ServiceMissingError, match="orphan"):
         PluginHost(rows).mount()
 
@@ -28,7 +28,7 @@ def test_a_row_whose_service_never_appears_fails_the_mount():
 def test_mount_order_follows_service_availability_not_row_order():
     # The consumer is listed first; it must still mount after its provider.
     rows = [
-        _row("consumer", "vtx.plugins.builtins.tools.read:PLUGIN"),
+        _row("consumer", "vtx.coding_agent.tools.read:PLUGIN"),
         _row("provider", "vtx.plugins.builtins.services.tools:PLUGIN"),
     ]
     host = PluginHost(rows)
@@ -54,7 +54,7 @@ def test_dispose_unwinds_every_row_and_removes_provided_services():
 def test_unmount_takes_one_row_and_leaves_the_rest():
     rows = [
         _row("tools", "vtx.plugins.builtins.services.tools:PLUGIN"),
-        _row("read", "vtx.plugins.builtins.tools.read:PLUGIN"),
+        _row("read", "vtx.coding_agent.tools.read:PLUGIN"),
     ]
     host = PluginHost(rows)
     host.mount()

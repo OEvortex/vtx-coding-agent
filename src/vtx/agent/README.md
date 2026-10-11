@@ -208,6 +208,6 @@ Reconciling is a behaviour decision, not a move: someone has to decide whether t
 `vtx.agent` imports `vtx.protocol`, `vtx.ai`, `vtx.core` and `vtx.codemode` at module level, plus function-local `vtx.mcp` and `vtx.tui`. Two edges look like violations and are not:
 
 - `vtx.core.config` calls `vtx.agent.subagents.set_limit` to resize the scheduler on config reload.
-- `tools/task.py` imports `vtx.tui.blocks.TaskToolBlock` inside the `ui_block` property, and `tools/web.py` imports `vtx.tui.tool_output` escaping helpers inside a formatter. Both name rendering widgets; neither creates an import cycle.
+- `tools/task.py` imports `vtx.tui.blocks.TaskToolBlock` inside the `ui_block` property, and `tools/web.py` imports `vtx.tui.tool_output` escaping helpers inside a formatter. Both name rendering widgets; neither creates an import cycle. `tools/codemode.py` follows the same pattern for `vtx.tui.codemode_block.CodemodeToolBlock`.
 
 Layering is enforced in CI.

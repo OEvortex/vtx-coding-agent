@@ -5,12 +5,13 @@ from pydantic import BaseModel, Field
 
 from vtx.agent.tools.base import BaseTool
 from vtx.agent.tools_manager import ensure_tool
-from vtx.agent.tools._tool_utils import (
+from vtx.coding_agent.tools._tool_utils import (
     ToolCancelledError,
     communicate_or_cancel,
     shorten_path,
     truncate_lines_by_bytes,
 )
+from vtx.plugins import mount_tool, plugin
 from vtx.protocol.types import ToolResult
 
 MAX_RESULTS = 100
@@ -217,3 +218,14 @@ class GrepTool(BaseTool[GrepParams]):
         if used_fallback:
             ui_summary += f" ({used_fallback} fallback)"
         return ToolResult(success=True, result=truncated_str, ui_summary=ui_summary)
+
+
+@plugin(name="tool-grep", inject=("tools",))
+def apply(ctx, config):
+    """Registered but not in the default set: grep costs a wide search, and the
+    model reaches for `find` first. Disabling the row removes it from the
+    composition without touching the harness registry."""
+    mount_tool(ctx, GrepTool(), is_default=False, parent_only=False)
+
+
+PLUGIN = apply

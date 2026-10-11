@@ -10,7 +10,7 @@ from __future__ import annotations
 
 import pytest
 
-from vtx.agent.tools.codemode import _render_value
+from vtx.coding_agent.tools.codemode import _render_value
 from vtx.tui.formatting import find_stable_block_boundary, format_markdown
 
 

@@ -5,7 +5,6 @@ import sys
 from typing import Any
 
 import vtx.coding_agent
-import vtx.coding_agent.tools  # noqa: F401
 from vtx.ai import PROVIDER_API_BY_NAME
 from vtx.core.config import config
 from vtx.core.version import VERSION

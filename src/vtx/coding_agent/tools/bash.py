@@ -15,6 +15,7 @@ from pydantic import BaseModel, Field
 from vtx.agent.tools.base import BaseTool
 from vtx.core.config import config
 from vtx.git.gh_app import resolve_committer_vars
+from vtx.plugins import mount_tool, plugin
 from vtx.protocol.types import ToolResult
 
 DEFAULT_TIMEOUT = 180
@@ -411,3 +412,11 @@ class BashTool(BaseTool):
         finally:
             if proc is not None:
                 await _kill_process_tree(proc)
+
+
+@plugin(name="tool-bash", inject=("tools",))
+def apply(ctx, config):
+    mount_tool(ctx, BashTool(), is_default=True, parent_only=False)
+
+
+PLUGIN = apply

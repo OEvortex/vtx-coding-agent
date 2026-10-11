@@ -225,7 +225,7 @@ class CodemodeToolBlock(ToolBlock):
 
         calls = self._calls(data)
         if calls:
-            text.append_text(self._render_trace(calls, indent, body_width))
+            text.append_text(self._render_trace(calls, indent))
 
         return text
 
@@ -259,7 +259,7 @@ class CodemodeToolBlock(ToolBlock):
                 text.append_text(format_expand_hint(hidden))
         return text
 
-    def _render_trace(self, calls: list[dict], indent: str, body_width: int) -> Text:
+    def _render_trace(self, calls: list[dict], indent: str) -> Text:
         """The nested tool calls: one summary line, one line each when expanded.
 
         The collapsed line is the summary that used to be the only thing shown,

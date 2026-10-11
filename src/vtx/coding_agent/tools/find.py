@@ -5,12 +5,13 @@ from pydantic import BaseModel, Field
 
 from vtx.agent.tools.base import BaseTool
 from vtx.agent.tools_manager import ensure_tool
-from vtx.agent.tools._tool_utils import (
+from vtx.coding_agent.tools._tool_utils import (
     ToolCancelledError,
     communicate_or_cancel,
     shorten_path,
     truncate_lines_by_bytes,
 )
+from vtx.plugins import mount_tool, plugin
 from vtx.protocol.types import ToolResult
 
 MAX_RESULTS = 100
@@ -129,3 +130,11 @@ class FindTool(BaseTool):
         display = f"[dim]({count} files)[/dim]"
 
         return ToolResult(success=True, result=result_text, ui_summary=display)
+
+
+@plugin(name="tool-find", inject=("tools",))
+def apply(ctx, config):
+    mount_tool(ctx, FindTool(), is_default=True, parent_only=False)
+
+
+PLUGIN = apply

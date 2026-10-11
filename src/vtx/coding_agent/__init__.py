@@ -29,7 +29,6 @@ from ..core.config import (
     update_available_binaries,
 )
 from ..core.version import PACKAGE_NAME, VERSION, format_version
-from . import tools as _tools  # noqa: F401
 from .headless import _exit_code, render_run, resolve_prompt, run_headless
 
 # Register coding agent skills package into harness

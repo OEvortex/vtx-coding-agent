@@ -326,6 +326,11 @@ available (`src/vtx/agent/tools/codemode.py:104`).
 The sandbox is a subprocess, not a persistent interpreter. There is no state between
 two `codemode` calls. See [codemode.md](codemode.md).
 
+In the TUI the call renders as a notebook cell — `In [n]:` with the script and
+`Out[n]:` with what it returned, plus the tool-call trace — because the script is the
+call. `ctrl+o` expands it. Details in
+[codemode.md](codemode.md#how-a-run-is-displayed).
+
 ## `tool_search`
 
 Find a tool by describing what you need, rather than guessing its name.

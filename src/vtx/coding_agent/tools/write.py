@@ -5,8 +5,9 @@ import aiofiles
 from pydantic import BaseModel, Field
 
 from vtx.agent.tools.base import BaseTool, ToolResult
-from vtx.agent.tools._tool_utils import shorten_path
+from vtx.coding_agent.tools._tool_utils import shorten_path
 from vtx.core.config import config
+from vtx.plugins import mount_tool, plugin
 from vtx.protocol.types import FileChanges
 
 
@@ -95,3 +96,11 @@ class WriteTool(BaseTool):
             ui_summary=display,
             file_changes=FileChanges(path=str(file_path), added=n_lines, removed=old_line_count),
         )
+
+
+@plugin(name="tool-write", inject=("tools",))
+def apply(ctx, config):
+    mount_tool(ctx, WriteTool(), is_default=True, parent_only=False)
+
+
+PLUGIN = apply

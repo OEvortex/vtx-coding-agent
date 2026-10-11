@@ -1,11 +1,11 @@
-"""Harness-level tool infrastructure, dynamic registry, and built-in harness tools.
+"""Harness-level tool infrastructure, dynamic registry, and harness-native tools.
 
 Provides the :class:`BaseTool` contract, schema shaping for LLM tool
-definitions, dynamic tool registration/lookup APIs, and core harness tools
-(:class:`AskUserTool`, :class:`TaskTool`, :class:`WebTool`, :class:`GoalTool`,
-:class:`CodemodeTool`, plus the file/system tools :class:`BashTool`,
-:class:`ReadTool`, :class:`EditTool`, :class:`WriteTool`, :class:`FindTool`,
-:class:`GrepTool`, and :class:`SkillTool`).
+definitions, dynamic tool registration/lookup APIs, and the tools every
+vtx-based product can use (:class:`AskUserTool`, :class:`TaskTool`,
+:class:`WebTool`, :class:`GoalTool`). Product-specific tools -- the coding
+agent's file and workspace tools -- live with the product that ships them and
+register through the plugin composition; see :mod:`vtx.plugins`.
 """
 
 from __future__ import annotations
@@ -18,17 +18,15 @@ from vtx.protocol.types import ToolDefinition
 
 from .ask_user import AskUserParams, AskUserTool
 from .base import BaseTool
-from .bash import BashParams, BashTool
-from .codemode import CODEMODE_TOOL_NAME, CodemodeParams, CodemodeTool
-from .edit import EditParams, EditTool
-from .find import FindParams, FindTool
-from .grep import GrepParams, GrepTool
-from .read import ReadParams, ReadTool
-from .skill import SkillParams, SkillTool
 from .task import SubagentSpec, TaskParams, TaskTool
-from .tool_search import TOOL_SEARCH_TOOL_NAME, ToolSearchParams, ToolSearchTool
 from .web import SearchParams, WebSearchTool, WebTool
-from .write import WriteParams, WriteTool
+
+#: Well-known names of the session-wired tools. The tools themselves ship in
+#: the product package (:mod:`vtx.coding_agent.tools`), but the names are
+#: harness-level: the runtime resolves them from the registry without importing
+#: a product package.
+CODEMODE_TOOL_NAME = "codemode"
+TOOL_SEARCH_TOOL_NAME = "tool_search"
 
 __all__ = [
     "CODEMODE_TOOL_NAME",
@@ -36,33 +34,15 @@ __all__ = [
     "AskUserParams",
     "AskUserTool",
     "BaseTool",
-    "BashParams",
-    "BashTool",
-    "CodemodeParams",
-    "CodemodeTool",
-    "EditParams",
-    "EditTool",
-    "FindParams",
-    "FindTool",
-    "GrepParams",
-    "GrepTool",
     "GoalParams",
     "GoalTaskItem",
     "GoalTool",
-    "ReadParams",
-    "ReadTool",
     "SearchParams",
-    "SkillParams",
-    "SkillTool",
     "SubagentSpec",
     "TaskParams",
     "TaskTool",
-    "ToolSearchParams",
-    "ToolSearchTool",
     "WebSearchTool",
     "WebTool",
-    "WriteParams",
-    "WriteTool",
     "get_all_tools",
     "get_default_tools",
     "get_parent_only_tools",
@@ -241,13 +221,3 @@ register_tool(AskUserTool(), is_default=True, parent_only=True)
 register_tool(TaskTool(), is_default=True, parent_only=False)
 register_tool(WebTool(), is_default=True, parent_only=False)
 register_tool(GoalTool(), is_default=True, parent_only=True)
-# `codemode` composes the tools above rather than adding a capability of its
-# own, but it is default-on: a tool the model has to be told about before it
-# uses it is a tool it will not think to use, and hiding it just removes a
-# capability it would otherwise reach for on its own.
-register_tool(CodemodeTool(), is_default=True, parent_only=False)
-# `tool_search` is the model-side route to tools that exist but are not declared.
-# Default-on for the same reason as `codemode`: with no MCP server connected it
-# finds nothing and says so in one line, which is a far smaller cost than a
-# model reporting a capability as missing when it was one search away.
-register_tool(ToolSearchTool(), is_default=True, parent_only=False)

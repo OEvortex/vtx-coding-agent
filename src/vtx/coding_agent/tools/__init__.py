@@ -1,10 +1,15 @@
-"""Compatibility surface for the Vtx coding agent's built-in tools.
+"""The Vtx coding agent's built-in tools.
 
-The concrete tool implementations live in :mod:`vtx.agent.tools`; the plugin
-rows in :mod:`vtx.plugins.builtins.tools` mount them into the scoped registry.
-This module keeps the historical ``vtx.coding_agent.tools`` import path
-working: importing it has the side effect of registering the built-in tools
-into the harness registry, so the tools exist the moment you import them.
+Each tool module here owns both its implementation and its plugin row (the
+``PLUGIN`` export), so all registration goes through the plugins system: the
+base bundle in :mod:`vtx.plugins.builtins` addresses these rows as
+``vtx.coding_agent.tools.<mod>:PLUGIN``, and mounting the composition is what
+puts the tools in the registry. Importing this package registers nothing.
+
+The module keeps the historical import path working: ``all_tools``,
+``tools_by_name``, ``get_tools`` and :data:`DEFAULT_TOOLS` describe the
+documented built-in set for consumers that want the catalog without mounting a
+composition.
 """
 
 from __future__ import annotations
@@ -19,21 +24,22 @@ from vtx.agent.goal.tools import GoalTool
 from vtx.agent.tools import (
     AskUserTool,
     BaseTool,
-    BashTool,
-    EditTool,
-    FindTool,
-    GrepTool,
-    ReadTool,
-    SkillTool,
     TaskTool,
     WebSearchTool,
     WebTool,
-    WriteTool,
     get_tool_definitions,
     get_tools_with_extensions,
-    register_tool,
-    set_default_tool_lookup,
 )
+
+from .bash import BashTool
+from .codemode import CodemodeTool
+from .edit import EditTool
+from .find import FindTool
+from .grep import GrepTool
+from .read import ReadTool
+from .skill import SkillTool
+from .tool_search import ToolSearchTool
+from .write import WriteTool
 
 __all__ = [
     "DEFAULT_TOOLS",
@@ -42,12 +48,14 @@ __all__ = [
     "BackgroundTaskManager",
     "BackgroundTaskRecord",
     "BashTool",
+    "CodemodeTool",
     "EditTool",
     "FindTool",
     "GrepTool",
     "ReadTool",
     "SkillTool",
     "TaskTool",
+    "ToolSearchTool",
     "WebSearchTool",
     "WebTool",
     "WriteTool",
@@ -73,6 +81,8 @@ all_tools: list[BaseTool] = [
     AskUserTool(),
     TaskTool(),
     GoalTool(),
+    CodemodeTool(),
+    ToolSearchTool(),
 ]
 
 tools_by_name: dict[str, BaseTool] = {tool.name: tool for tool in all_tools}
@@ -98,12 +108,3 @@ def get_tools(names: list[str]) -> list[BaseTool]:
 
 def get_tool(tool_name: str) -> BaseTool | None:
     return tools_by_name.get(tool_name)
-
-
-# Auto-register all coding-agent concrete tools into the harness registry
-for _t in all_tools:
-    register_tool(
-        _t, is_default=(_t.name in DEFAULT_TOOLS), parent_only=(_t.name in PARENT_ONLY_TOOLS)
-    )
-
-set_default_tool_lookup(get_tool)

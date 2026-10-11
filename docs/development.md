@@ -157,7 +157,7 @@ class WordCountTool(BaseTool[WordCountParams]):
         return ToolResult(success=True, result=str(len(params.text.split())))
 ```
 
-`ToolResult` takes `success`, `result`, and the optional UI fields (`src/vtx/protocol/types.py:196-205`).
+`ToolResult` takes `success`, `result`, and the optional UI fields (`src/vtx/protocol/types.py:196-227`). `ui_summary` is the one line appended to the tool header and `ui_details` / `ui_details_full` are the collapsed and expanded body; a tool that ships its own `ui_block` hands it the run itself through `ui_data`, a JSON-safe dict the block lays out however it likes (`CodemodeToolBlock` is the reference).
 
 ### 2. The row
 

@@ -28,6 +28,7 @@ from typing import Any, ClassVar
 
 from pydantic import BaseModel, Field
 
+from vtx.agent.tools import CODEMODE_TOOL_NAME
 from vtx.agent.tools.base import BaseTool
 from vtx.codemode import CODEMODE_SOURCE_GRAMMAR, CodemodeSandbox, Limits, parse_source
 
@@ -46,9 +47,8 @@ from vtx.codemode.errors import (
     WALL_CLOCK,
 )
 from vtx.codemode.types import Diagnostic
+from vtx.plugins import mount_tool, plugin
 from vtx.protocol.types import ImageContent, ToolResult
-
-CODEMODE_TOOL_NAME = "codemode"
 
 
 def _registered_tools() -> list[BaseTool]:
@@ -599,3 +599,14 @@ def _ui_payload(source: Any, result: Any, *, duration_ms: int, images: int) -> d
 
 
 __all__ = ["CODEMODE_TOOL_NAME", "SEARCH_HELPER", "CodemodeParams", "CodemodeTool"]
+
+
+@plugin(name="tool-codemode", inject=("tools",))
+def apply(ctx, config):
+    """``codemode`` composes other tools rather than adding a capability of its
+    own, but it is default-on: a tool the model has to be told about before it
+    uses it is a tool it will not think to use."""
+    mount_tool(ctx, CodemodeTool(), is_default=True)
+
+
+PLUGIN = apply

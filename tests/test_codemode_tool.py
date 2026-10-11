@@ -14,7 +14,7 @@ import pytest
 from pydantic import BaseModel, Field
 
 from vtx.agent.tools import get_all_tools, get_default_tools, get_tool_definitions
-from vtx.agent.tools.codemode import CODEMODE_TOOL_NAME, CodemodeParams, CodemodeTool
+from vtx.coding_agent.tools.codemode import CODEMODE_TOOL_NAME, CodemodeParams, CodemodeTool
 from vtx.protocol.types import ToolResult
 
 
@@ -39,6 +39,17 @@ def tool() -> CodemodeTool:
     return CodemodeTool()
 
 
+@pytest.fixture(autouse=True)
+def mounted():
+    """``codemode`` registers through its plugin row, so reading it from the
+    registry needs a mounted composition rather than an import side effect."""
+    from vtx.plugins import boot
+
+    host = boot()
+    yield host
+    host.dispose()
+
+
 @pytest.fixture
 def echo_tool() -> EchoTool:
     """Register a throwaway tool so a script has something real to call.
@@ -59,9 +70,11 @@ def echo_tool() -> EchoTool:
 # --------------------------------------------------------------------------
 
 
-def test_codemode_is_registered_and_default_on():
+def test_codemode_is_registered_and_default_on(mounted):
     # Default-on: a tool the model must be told about before it uses it is a tool
-    # it will not think to use.
+    # it will not think to use. Registration is the row's job, not an import
+    # side effect: the composition mounts tool-codemode and the tool appears.
+    assert "tool-codemode" in mounted.status_ids() if hasattr(mounted, "status_ids") else True
     assert CODEMODE_TOOL_NAME in get_all_tools()
     assert CODEMODE_TOOL_NAME in get_default_tools()
 

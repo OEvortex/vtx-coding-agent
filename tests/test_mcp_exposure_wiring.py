@@ -29,6 +29,18 @@ from vtx.protocol.types import ToolResult
 
 pytestmark = pytest.mark.asyncio
 
+
+@pytest.fixture(autouse=True)
+def mounted():
+    """The coding tools -- ``codemode`` and ``tool_search`` included -- register
+    through the plugin rows, so reading them from the registry needs a mounted
+    composition rather than an import side effect."""
+    from vtx.plugins import boot
+
+    host = boot()
+    yield host
+    host.dispose()
+
 #: What each exposure is supposed to mean, as a row. Written out rather than
 #: computed from the implementation, so a change to the rules that also changes
 #: this table has to be a deliberate edit rather than a tautology.
@@ -130,7 +142,7 @@ async def test_a_search_cannot_promote_a_tool_the_profile_denied():
         runtime.tools = [t for t in runtime.tools if t.name != "mcp__docs__nuke"]
         runtime._wire_codemode()
 
-        from vtx.agent.tools.tool_search import ToolSearchParams
+        from vtx.coding_agent.tools.tool_search import ToolSearchParams
 
         search = get_all_tools()["tool_search"]
         result = await search.execute(ToolSearchParams(query="delete the docs corpus"))
@@ -154,7 +166,7 @@ async def test_a_search_does_promote_a_permitted_deferred_tool():
         runtime._sync_mcp_tools()
         before = [t.name for t in runtime.declared_tools()]
 
-        from vtx.agent.tools.tool_search import ToolSearchParams
+        from vtx.coding_agent.tools.tool_search import ToolSearchParams
 
         search = get_all_tools()["tool_search"]
         result = await search.execute(ToolSearchParams(query="rebuild the search index"))

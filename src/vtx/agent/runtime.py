@@ -17,6 +17,7 @@ from vtx.agent.loop import Agent
 from vtx.agent.prompts import build_system_prompt
 from vtx.agent.session import CompactionEntry, CustomMessageEntry, MessageEntry, Session
 from vtx.agent.tools import CODEMODE_TOOL_NAME, TOOL_SEARCH_TOOL_NAME, BaseTool, get_tool
+from vtx.agent.tools.base import CodemodeWiredTool, ToolSearchWiredTool
 from vtx.ai import (
     ApiType,
     BaseProvider,
@@ -140,23 +141,21 @@ def _script_callable(tool: BaseTool) -> bool:
 def _harness_codemode() -> Any:
     """The harness's own ``codemode`` tool, or ``None``.
 
-    Narrowed by type rather than by name lookup. The registry is global, so an
-    extension can register something also called ``codemode``; handing *it* this
-    session's tool list and permission config would wire an unrelated tool into
-    the agent's governance.
+    Narrowed by wiring surface rather than by name lookup. The registry is
+    global, so an extension can register something also called ``codemode``;
+    handing *it* this session's tool list and permission config would wire an
+    unrelated tool into the agent's governance. The surface is declared in
+    :mod:`vtx.agent.tools.base` because the tool itself ships in the product
+    package, which the harness must not import.
     """
-    from vtx.agent.tools.codemode import CodemodeTool as HarnessCodemodeTool
-
     tool = get_tool(CODEMODE_TOOL_NAME)
-    return tool if isinstance(tool, HarnessCodemodeTool) else None
+    return tool if isinstance(tool, CodemodeWiredTool) else None
 
 
 def _harness_tool_search() -> Any:
     """The harness's own ``tool_search`` tool, or ``None``. See :func:`_harness_codemode`."""
-    from vtx.agent.tools.tool_search import ToolSearchTool as HarnessToolSearch
-
     tool = get_tool(TOOL_SEARCH_TOOL_NAME)
-    return tool if isinstance(tool, HarnessToolSearch) else None
+    return tool if isinstance(tool, ToolSearchWiredTool) else None
 
 
 class ConversationRuntime:

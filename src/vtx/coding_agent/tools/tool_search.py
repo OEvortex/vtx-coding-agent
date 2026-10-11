@@ -26,13 +26,13 @@ from typing import Any, ClassVar
 
 from pydantic import BaseModel, Field
 
+from vtx.agent.tools import TOOL_SEARCH_TOOL_NAME
 from vtx.agent.tools.base import BaseTool
 from vtx.codemode.declarations import rank
 from vtx.codemode.integration import base_tool_schema
 from vtx.codemode.types import CodemodeTool
+from vtx.plugins import mount_tool, plugin
 from vtx.protocol.types import ToolResult
-
-TOOL_SEARCH_TOOL_NAME = "tool_search"
 
 DEFAULT_LIMIT = 8
 
@@ -212,3 +212,13 @@ def _signature(tool: CodemodeTool) -> str:
 
 
 __all__ = ["DEFAULT_LIMIT", "TOOL_SEARCH_TOOL_NAME", "ToolSearchParams", "ToolSearchTool"]
+
+
+@plugin(name="tool-search", inject=("tools",))
+def apply(ctx, config):
+    """Registered but not in the default set: the harness mounts it alongside
+    ``codemode``, which is what makes deferred tools reachable."""
+    mount_tool(ctx, ToolSearchTool(), is_default=True, parent_only=False)
+
+
+PLUGIN = apply

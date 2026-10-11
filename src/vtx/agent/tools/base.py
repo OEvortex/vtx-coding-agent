@@ -1,9 +1,35 @@
 import asyncio
 from abc import ABC, abstractmethod
+from typing import Any, Protocol, runtime_checkable
 
 from pydantic import BaseModel
 
 from vtx.protocol.types import ToolResult
+
+
+@runtime_checkable
+class CodemodeWiredTool(Protocol):
+    """The wiring surface the runtime uses to point ``codemode`` at a live session.
+
+    Declared in the harness so :mod:`vtx.agent.runtime` can recognise the
+    session-wired tools by shape. The tools themselves ship in the product
+    package (:mod:`vtx.coding_agent.tools`), and the harness never imports a
+    product, so an ``isinstance`` against the concrete class is not available.
+    """
+
+    tool_source: Any
+    extensions: Any
+    permission: Any
+
+    def refresh(self) -> None: ...
+
+
+@runtime_checkable
+class ToolSearchWiredTool(Protocol):
+    """The wiring surface for ``tool_search``. See :class:`CodemodeWiredTool`."""
+
+    tool_source: Any
+    activate: Any
 
 
 class BaseTool[T: BaseModel](ABC):

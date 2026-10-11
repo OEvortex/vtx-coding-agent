@@ -7,12 +7,13 @@ from pydantic import BaseModel, Field
 
 from vtx.agent.tools.base import BaseTool, ToolResult
 from vtx.agent.tools_manager import ensure_tool
-from vtx.agent.tools._tool_utils import (
+from vtx.coding_agent.tools._tool_utils import (
     ToolCancelledError,
     communicate_or_cancel,
     shorten_path,
 )
 from vtx.core.image import is_image_file, read_and_process_image
+from vtx.plugins import mount_tool, plugin
 from vtx.protocol.types import ImageContent
 
 MAX_CHARS_PER_LINE = 2000
@@ -230,3 +231,11 @@ class ReadTool(BaseTool):
         return ToolResult(
             success=True, result=content, ui_summary=f"[dim]({lines_read} lines)[/dim]"
         )
+
+
+@plugin(name="tool-read", inject=("tools",))
+def apply(ctx, config):
+    mount_tool(ctx, ReadTool(), is_default=True, parent_only=False)
+
+
+PLUGIN = apply

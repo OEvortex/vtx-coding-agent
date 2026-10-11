@@ -40,19 +40,21 @@ BASE: list[Row] = [
     Row(id="extensions", name="vtx.plugins.builtins.services.extensions:PLUGIN"),
     Row(id="hooks", name="vtx.plugins.builtins.hooks:PLUGIN"),
     # ---- tools ----------------------------------------------------------
-    Row(id="tool-read", name="vtx.plugins.builtins.tools.read:PLUGIN"),
-    Row(id="tool-edit", name="vtx.plugins.builtins.tools.edit:PLUGIN"),
-    Row(id="tool-write", name="vtx.plugins.builtins.tools.write:PLUGIN"),
-    Row(id="tool-bash", name="vtx.plugins.builtins.tools.bash:PLUGIN"),
-    Row(id="tool-find", name="vtx.plugins.builtins.tools.find:PLUGIN"),
-    Row(id="tool-grep", name="vtx.plugins.builtins.tools.grep:PLUGIN"),
-    Row(id="tool-skill", name="vtx.plugins.builtins.tools.skill:PLUGIN"),
+    # Coding-agent tools: the row addresses the owning product package, so the
+    # plugin system never imports a product to mount one.
+    Row(id="tool-read", name="vtx.coding_agent.tools.read:PLUGIN"),
+    Row(id="tool-edit", name="vtx.coding_agent.tools.edit:PLUGIN"),
+    Row(id="tool-write", name="vtx.coding_agent.tools.write:PLUGIN"),
+    Row(id="tool-bash", name="vtx.coding_agent.tools.bash:PLUGIN"),
+    Row(id="tool-find", name="vtx.coding_agent.tools.find:PLUGIN"),
+    Row(id="tool-grep", name="vtx.coding_agent.tools.grep:PLUGIN"),
+    Row(id="tool-skill", name="vtx.coding_agent.tools.skill:PLUGIN"),
     Row(id="tool-web", name="vtx.plugins.builtins.tools.web:PLUGIN"),
     Row(id="tool-ask-user", name="vtx.plugins.builtins.tools.ask_user:PLUGIN"),
     # Default-on but not always declared: the harness mounts them beside the
     # tools above so the model can find and reach everything else.
-    Row(id="tool-search", name="vtx.plugins.builtins.tools.tool_search:PLUGIN"),
-    Row(id="tool-codemode", name="vtx.plugins.builtins.tools.codemode:PLUGIN"),
+    Row(id="tool-search", name="vtx.coding_agent.tools.tool_search:PLUGIN"),
+    Row(id="tool-codemode", name="vtx.coding_agent.tools.codemode:PLUGIN"),
     Row(id="tool-goal", name="vtx.plugins.builtins.tools.goal:PLUGIN"),
     Row(id="tool-subagent", name="vtx.plugins.builtins.tools.subagent:PLUGIN"),
 ]
@@ -77,8 +79,8 @@ MINIMAL: list[Row] = [
         name="vtx.plugins.builtins.services.llm:PLUGIN",
         config={"default_provider": None},
     ),
-    Row(id="tool-read", name="vtx.plugins.builtins.tools.read:PLUGIN"),
-    Row(id="tool-bash", name="vtx.plugins.builtins.tools.bash:PLUGIN"),
+    Row(id="tool-read", name="vtx.coding_agent.tools.read:PLUGIN"),
+    Row(id="tool-bash", name="vtx.coding_agent.tools.bash:PLUGIN"),
 ]
 
 #: The shipped bundles, addressable by name from a profile.

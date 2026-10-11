@@ -25,6 +25,7 @@ Composition, mounting, and layering::
 from __future__ import annotations
 
 from vtx.plugins.bootstrap import active_context, active_host, boot, reset, shutdown
+from vtx.plugins.builtins.tools._register import mount_tool
 from vtx.plugins.context import STANDARD_KEYS, Context
 from vtx.plugins.errors import (
     ConfigError,
@@ -85,6 +86,7 @@ __all__ = [
     "load_profile",
     "load_yaml",
     "load_yaml_file",
+    "mount_tool",
     "plugin",
     "profile_dir",
     "profiles_dir",

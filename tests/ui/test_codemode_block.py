@@ -12,7 +12,7 @@ from __future__ import annotations
 import pytest
 from textual.app import App, ComposeResult
 
-from vtx.agent.tools.codemode import CodemodeTool
+from vtx.coding_agent.tools.codemode import CodemodeTool
 from vtx.tui.blocks import ToolBlock
 from vtx.tui.chat import ChatLog
 from vtx.tui.codemode_block import CODE_LINES, CodemodeToolBlock

@@ -6,8 +6,9 @@ from vtx.core.config import config
 
 def format_expand_hint(hidden_lines: int) -> Text:
     colors = config.ui.colors
+    unit = "line" if hidden_lines == 1 else "lines"
     text = Text()
-    text.append(f"... ({hidden_lines} lines hidden • ", style=colors.dim)
+    text.append(f"... ({hidden_lines} {unit} hidden • ", style=colors.dim)
     text.append("ctrl+o", style=colors.muted)
     text.append(" to expand)", style=colors.dim)
     return text
