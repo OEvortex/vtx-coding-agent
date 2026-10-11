@@ -189,15 +189,6 @@ def is_overflow(usage: Usage, context_window: int, threshold_percent: float) -> 
     return count >= (threshold_percent / 100.0) * context_window
 
 
-def _calculate_context_tokens(usage: Usage) -> int:
-    return (
-        usage.input_tokens
-        + usage.output_tokens
-        + usage.cache_read_tokens
-        + usage.cache_write_tokens
-    )
-
-
 _ANALYSIS_RE = re.compile(r"<analysis>.*?</analysis>", re.DOTALL)
 
 

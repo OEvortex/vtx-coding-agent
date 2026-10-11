@@ -196,9 +196,13 @@ class _StreamingMarkdownMixin:
         if marker != self._fence_marker:
             self._reset_fence_cache()
             self._fence_marker = marker
+            # Start just past the opener: the cached chunks are re-wrapped with
+            # the marker, so the opener itself is rendered exactly once, by the
+            # chunk that follows it.
+            self._fence_len = body_len
         if stable > self._fence_len:
             # Re-wrap with the opener so the fragment still renders as code.
-            chunk = format_markdown_block(f"{marker}\n{open_text[body_len:stable]}", width)
+            chunk = format_markdown_block(f"{marker}\n{open_text[self._fence_len:stable]}", width)
             if chunk.plain:
                 self._fence_blocks.append(chunk)
             self._fence_len = stable
@@ -1035,10 +1039,6 @@ class ToolBlock(Static):
 
     def _flush_live_render(self) -> None:
         self._live_render_pending = False
-        self._render_live_output()
-
-    def set_live_output(self, text: str) -> None:
-        self._live_output = text
         self._render_live_output()
 
     def _render_live_output(self) -> None:

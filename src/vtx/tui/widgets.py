@@ -421,9 +421,6 @@ class InfoBar(Vertical):
         with contextlib.suppress(Exception):
             self._label_row2_right.update(self._format_row2_right())
 
-    def set_thinking_visibility(self, hide_thinking: bool) -> None:
-        self._hide_thinking = hide_thinking
-
     def set_permission_mode(self, mode: PermissionMode) -> None:
         self._permission_mode = mode
         with contextlib.suppress(Exception):

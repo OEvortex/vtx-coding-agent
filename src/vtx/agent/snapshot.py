@@ -207,16 +207,6 @@ class SnapshotStore:
             log.debug("snapshots unavailable: %s is not a git work tree", self.cwd)
         return self._available
 
-    def is_project_repo(self) -> bool:
-        """True when the project has its own git history (distinct from the shadow)."""
-        code, out = _run(["rev-parse", "--absolute-git-dir"], cwd=self.cwd)
-        if code != 0:
-            return False
-        try:
-            return Path(_text(out).strip()).resolve() != Path(self.git_dir).resolve()
-        except OSError:
-            return False
-
     # ------------------------------------------------------------------
     # capture
     # ------------------------------------------------------------------
@@ -239,16 +229,60 @@ class SnapshotStore:
 
     def _capture(self) -> str | None:
         git_dir = self.git_dir
-        code, out = _run(["add", "-A", "--", "."], git_dir=git_dir, work_tree=self.cwd)
+        oversized = self._oversized_paths(git_dir)
+        args = ["add", "-A", "--", "."]
+        if oversized:
+            # Excluded *before* staging, not dropped afterwards. `git add`
+            # hashes every path it stages, so un-staging a large blob
+            # afterwards — which is what this module used to do — still pays a
+            # full read of the file, on every capture, for the life of the
+            # session. One 200 MB file left the worktree scan at ~10 s per
+            # turn; skipping it at the pathspec costs nothing.
+            args += [f":(exclude,literal){rel}" for rel in oversized]
+        code, out = _run(args, git_dir=git_dir, work_tree=self.cwd)
         if code != 0:
             log.warning("snapshot add failed with code %s", code)
             return None
+        for rel in oversized:
+            # A path excluded from the add keeps whatever index entry it had,
+            # so drop it explicitly to keep it out of the tree.
+            self._unstage(git_dir, rel)
         self._drop_oversized_blobs(git_dir)
         code, out = _run(["write-tree"], git_dir=git_dir)
         if code != 0:
             return None
         tree = _text(out).strip()
         return tree or None
+
+    def _oversized_paths(self, git_dir: str) -> list[str]:
+        """Project-relative paths over :data:`MAX_BLOB_BYTES`.
+
+        Found from git's own candidate lists and a ``stat``, never by reading
+        the files — the point is to avoid reading them. Both lists are the ones
+        ``git add -A`` would stage: untracked-but-not-ignored, and tracked paths
+        whose worktree content differs from the index.
+        """
+        candidates: set[str] = set()
+        for args in (
+            ["ls-files", "-o", "--exclude-standard", "-z"],
+            ["diff", "--name-only", "-z"],
+        ):
+            code, out = _run(args, git_dir=git_dir, work_tree=self.cwd)
+            if code == 0:
+                candidates.update(item for item in _text(out).split("\0") if item)
+        oversized: list[str] = []
+        for rel in sorted(candidates):
+            path = self._safe_path(rel)
+            # A symlink's own size is the link, not its target; git stores the
+            # target path as a blob, and dropping it is not worth the surprise.
+            if path is None or path.is_symlink():
+                continue
+            try:
+                if path.stat().st_size > MAX_BLOB_BYTES:
+                    oversized.append(rel)
+            except OSError:
+                continue
+        return oversized
 
     def _drop_oversized_blobs(self, git_dir: str) -> None:
         """Unstage blobs over :data:`MAX_BLOB_BYTES` so they are never hashed.

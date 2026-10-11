@@ -466,6 +466,3 @@ Notification {{
     layer: notification;
 }}
 """
-
-
-STYLES = get_styles()

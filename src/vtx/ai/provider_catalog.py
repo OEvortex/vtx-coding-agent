@@ -589,20 +589,6 @@ def load_custom_providers() -> int:
     return count
 
 
-def list_custom_providers() -> list[ProviderInfo]:
-    """Return currently registered custom providers."""
-    return list(_custom_cache.values())
-
-
-def clear_custom_providers() -> None:
-    """Remove all runtime-registered custom providers."""
-    global _cache
-    for slug in list(_custom_cache):
-        _unsync_dynamic_provider(slug)
-    _custom_cache.clear()
-    _cache = None
-
-
 def _unsync_dynamic_provider(slug: str) -> None:
     """Remove a custom provider from the dynamic model fetcher, if present."""
     try:

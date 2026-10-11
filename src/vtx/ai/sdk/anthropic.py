@@ -311,30 +311,6 @@ class AnthropicSDK(BaseLLMSDK):
         payload.update(thinking_params)
         return payload
 
-    @staticmethod
-    def _apply_thinking_payload(payload: dict[str, Any], config: GenerationConfig) -> None:
-        """Translate ``config.thinking_level`` into the Anthropic-native
-        ``thinking`` block via the shared resolver
-        (:func:`vtx.ai.thinking.resolve_reasoning_params`).
-
-        Uses ``type: "enabled" + budget_tokens`` — the documented form
-        across current Claude models. Budgets come from the shared
-        ``ANTHROPIC_BUDGETS`` table (minimal=1024 … xhigh=16384) and are
-        clamped to stay strictly below ``max_tokens``. Older models that
-        reject manual thinking return 400, which surfaces normally.
-
-        Reference:
-          https://platform.claude.com/docs/en/build-with-claude/extended-thinking
-        """
-        payload.update(
-            resolve_reasoning_params(
-                ANTHROPIC_MESSAGES,
-                config.thinking_level,
-                level_map=config.thinking_level_map,
-                max_tokens=payload.get("max_tokens"),
-            )
-        )
-
     async def generate(
         self, messages: list[Message], config: GenerationConfig, stream: bool = False
     ) -> GenerationResponse | AsyncGenerator:

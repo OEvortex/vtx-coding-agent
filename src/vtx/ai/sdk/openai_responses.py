@@ -42,7 +42,6 @@ from vtx.ai.thinking import clamp_thinking_level, get_supported_thinking_levels,
 logger = logging.getLogger(__name__)
 
 _DEFAULT_MODEL = "gpt-5"
-ADAPTER = "openai-responses"
 
 
 class OpenAIResponsesSDK(BaseLLMSDK):

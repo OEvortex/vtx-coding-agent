@@ -37,11 +37,6 @@ def get_harness_config() -> HarnessConfig:
     return _config
 
 
-def set_harness_config(config: HarnessConfig) -> None:
-    global _config
-    _config = config
-
-
 def apply_harness_settings(
     *,
     max_turns: int | None = None,

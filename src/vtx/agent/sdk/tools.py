@@ -33,13 +33,6 @@ F = TypeVar("F", bound=Callable[..., Any])
 _OPTIONAL_RE = re.compile(r"Optional\[(?P<inner>[^\]]+)\]|^Union\[(?P<inner2>[^\]]+),\s*None\]$")
 
 
-def _strip_optional(annotation: str) -> str:
-    m = _OPTIONAL_RE.match(annotation.strip())
-    if m:
-        return m.group("inner") or m.group("inner2") or annotation
-    return annotation
-
-
 def _function_to_params_model(func: Callable[..., Any]) -> tuple[type[BaseModel], dict[str, Any]]:
     """Build a Pydantic model from a function's signature."""
     sig = inspect.signature(func)

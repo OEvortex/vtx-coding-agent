@@ -841,16 +841,6 @@ def _append_field(text: Text, width: int, label: str, value: str, color: str) ->
         text.append_text(row)
 
 
-def top_level_total(record: GoalRecord) -> int:
-    """Count of top-level tasks — the plan's headline number.
-
-    Subtasks are not counted: the plan the agent committed to is the list of
-    top-level tasks, and inflating the denominator with subtasks made a goal
-    look further from done every time it decomposed a task.
-    """
-    return sum(1 for t in record.tasks if not t.parent_id)
-
-
 def _task_contract(task) -> str:
     note = task.note.strip()
     if note.lower().startswith("contract:"):

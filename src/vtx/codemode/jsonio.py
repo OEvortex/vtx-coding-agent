@@ -71,23 +71,3 @@ def dumps(value: Any) -> str:
     a frame the parent cannot parse.
     """
     return json.dumps(value, ensure_ascii=False, allow_nan=False, separators=(",", ":"))
-
-
-def store_fits(
-    value: Any, *, max_value_chars: int, max_total_chars: int, existing_total: int
-) -> str | None:
-    """Return a rejection reason for a store write, or ``None`` when it fits.
-
-    A store the script can grow without bound is a memory leak with a
-    one-shot-per-execution shape: nothing would ever evict the old values.
-    """
-    try:
-        encoded = dumps(value)
-    except (TypeError, ValueError) as exc:
-        return f"value is not JSON: {exc}"
-    if len(encoded) > max_value_chars:
-        return f"value is {len(encoded)} characters, limit is {max_value_chars}"
-    total = existing_total + len(encoded)
-    if total > max_total_chars:
-        return f"store would total {total} characters, limit is {max_total_chars}"
-    return None

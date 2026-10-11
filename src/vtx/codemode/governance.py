@@ -25,22 +25,13 @@ from __future__ import annotations
 import asyncio
 import contextlib
 from collections.abc import Awaitable, Callable
-from typing import TYPE_CHECKING, Any, Final
+from typing import TYPE_CHECKING, Any
 
 from vtx.codemode.errors import ToolError
 
 if TYPE_CHECKING:
     # Annotations-only (PEP 563); see integration.py.
     from vtx.agent.tools import BaseTool
-
-#: How a host reports a tool call it refused to run. Distinct from a tool that
-#: ran and failed, because the model should ask the user rather than retry.
-BLOCKED: Final = "blocked"
-#: How a host reports a tool that needs a decision it cannot make unattended.
-#: A script has no user to prompt, so this is reported rather than auto-approved:
-#: silently running a gated call would be the exact failure this module exists
-#: to prevent.
-UNAPPROVABLE: Final = "unapprovable"
 
 
 class ToolGovernance:

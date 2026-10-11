@@ -172,10 +172,6 @@ def tool_exposure(config_exposure: str | None, overrides: dict[str, str], tool_n
     return config_exposure or "codemode"
 
 
-def is_valid_name(name: object) -> bool:
-    return isinstance(name, str) and bool(_NAME_RE.match(name))
-
-
 def declared_to_model(exposure: object) -> bool:
     """Whether a tool with this exposure is sent to the provider as a tool call.
 

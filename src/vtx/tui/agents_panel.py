@@ -58,8 +58,6 @@ MAX_ROWS = 5
 #: Longest task label the row will show before ellipsizing.
 MAX_TITLE_WIDTH = 34
 
-#: Narrowest task label worth showing before other segments start losing cells.
-MIN_LABEL_WIDTH = 10
 
 #: Longest live activity (tool call or streaming response) a row will show.
 MAX_ACTIVITY_WIDTH = 46
@@ -268,20 +266,6 @@ def should_show(runs: Sequence[SubagentRun], *, now: float | None = None) -> boo
         return True
     ended = [run.ended_at for run in runs if run.ended_at is not None]
     return bool(ended) and (now - max(ended)) < DONE_LINGER_SECONDS
-
-
-def _fit_metrics(metrics: str, budget: int) -> str:
-    """Drop leading ``·``-separated counters until ``metrics`` fits ``budget``.
-
-    The duration is kept longest: "is it stuck?" is the question a watcher
-    actually has, and the tool count is the first thing worth losing.
-    """
-    if budget <= 0:
-        return ""
-    parts = metrics.split(" · ")
-    while len(parts) > 1 and len(" · ".join(parts)) > budget:
-        parts.pop(0)
-    return " · ".join(parts) if len(" · ".join(parts)) <= budget else ""
 
 
 def _last_field(fields: tuple[str, str, str, str]) -> int:

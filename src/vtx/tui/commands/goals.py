@@ -91,13 +91,6 @@ class GoalCommands(CommandSupport):
                 return screen
         return None
 
-    def _chat_width(self) -> int:
-        """Chat log content width in cells, for wrapping dashboard prose."""
-        try:
-            return max(20, self._goal_chat().content_size.width)
-        except Exception:
-            return 80
-
     # ------------------------------------------------------------------
     # selection callbacks (used by CompletionUIMixin)
     # ------------------------------------------------------------------

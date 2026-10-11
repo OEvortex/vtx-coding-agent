@@ -6,7 +6,7 @@ file, and these blocks only orient the agent for the current turn.
 
 from __future__ import annotations
 
-from .record import GoalRecord, count_tasks, current_task, objective_title
+from .record import GoalRecord, current_task
 from .service import GoalService, goal_progress
 
 
@@ -96,50 +96,6 @@ Guide a short drafting process:
 
 {tweak_note}
 </vtx-goal-drafting>"""
-
-
-def drafting_prompt(
-    *, mode: str = "regular", seed: str = "", tweak_record: GoalRecord | None = None
-) -> str:
-    seed_block = f": {seed.strip()}" if seed.strip() else ""
-    sisyphus_note = (
-        ", written as numbered ordered steps that preserve dependencies"
-        if mode == "sisyphus"
-        else ""
-    )
-    set_tasks_hint = ""
-    if not tweak_record:
-        set_tasks_hint = (
-            ', then goal(action="set_tasks") with the proposed tasks'
-            if mode != "sisyphus"
-            else ', then goal(action="set_tasks") with the ordered steps'
-        )
-    tweak_note = ""
-    if tweak_record is not None:
-        done, total = count_tasks(tweak_record.tasks)
-        tweak_note = (
-            f"This is a revision of the focused goal "
-            f'"{objective_title(tweak_record.objective)}" ({done}/{total} tasks done).\n'
-            "Keep the existing task list unless the change requires replacing it.\n"
-            "After confirmation apply the revision with\n"
-            'goal(action="update", status="revise", objective=...) and/or\n'
-            'goal(action="set_tasks").\n'
-        )
-    return DRAFTING_TEMPLATE.format(
-        mode=mode,
-        seed_block=seed_block,
-        sisyphus_note=sisyphus_note,
-        set_tasks_hint=set_tasks_hint,
-        tweak_note=tweak_note,
-    )
-
-
-UNFOCUSED_BANNER = (
-    "<vtx-goal-unfocused>"
-    "This project has open goals but no session focus. Tell the user to pick "
-    "one before working toward any of them."
-    "</vtx-goal-unfocused>"
-)
 
 
 AUDITOR_SYSTEM_PROMPT = """\

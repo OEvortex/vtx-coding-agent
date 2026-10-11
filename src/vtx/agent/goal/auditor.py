@@ -19,7 +19,6 @@ from .record import GoalRecord
 log = logging.getLogger("agent.goal.auditor")
 
 AUDIT_TOOLS = ("read", "grep", "find", "bash")
-MAX_AUDIT_TURNS = 30
 
 
 @dataclass

@@ -51,7 +51,6 @@ from typing import Any
 # Wire protocol. Mirrored in vtx/ai/agent/codemode/protocol.py.
 # --------------------------------------------------------------------------
 
-EXECUTE = "execute"
 TOOL_RESULT = "tool_result"
 TOOL_CALL = "tool_call"
 TEXT = "text"

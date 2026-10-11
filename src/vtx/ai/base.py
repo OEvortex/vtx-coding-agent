@@ -1,5 +1,4 @@
 import asyncio
-import json
 import logging
 import os
 from abc import ABC, abstractmethod
@@ -54,23 +53,6 @@ class ToolCallRequest:
     extra_content: dict[str, Any] | None = None
     provider_specific_fields: dict[str, Any] | None = None
     function_provider_specific_fields: dict[str, Any] | None = None
-
-    def has_valid_name(self) -> bool:
-        return isinstance(self.name, str) and bool(self.name)
-
-    def to_openai_tool_call(self) -> dict[str, Any]:
-        args = self.arguments
-        if isinstance(args, dict):
-            args = json.dumps(args)
-        func: dict[str, Any] = {"name": self.name, "arguments": args}
-        if self.function_provider_specific_fields:
-            func["provider_specific_fields"] = self.function_provider_specific_fields
-        payload: dict[str, Any] = {"id": self.id, "type": "function", "function": func}
-        if self.extra_content:
-            payload["extra_content"] = self.extra_content
-        if self.provider_specific_fields:
-            payload["provider_specific_fields"] = self.provider_specific_fields
-        return payload
 
 
 @dataclass(slots=True)
@@ -344,11 +326,6 @@ class BaseProvider(ABC):
     @abstractmethod
     def should_retry_for_error(self, error: Exception) -> bool: ...
 
-    @staticmethod
-    def get_default_model() -> str:
-        """Return the default model name for this provider."""
-        return ""
-
     @property
     def generation(self) -> Any:
         """Return generation settings (max_tokens, temperature, etc.)."""
@@ -367,32 +344,6 @@ class BaseProvider(ABC):
     def generation(self, value: Any) -> None:
         """Allow providers to store custom generation settings."""
         self._generation = value
-
-    @classmethod
-    def is_arrearage_response(cls, response: Any) -> bool:
-        """Check if the LLM response indicates an arrears/out-of-quota error."""
-
-        finish_reason = getattr(response, "finish_reason", None)
-        if finish_reason != "error":
-            return False
-        error_kind = getattr(response, "error_kind", None) or ""
-        text = str(getattr(response, "content", "") or "").lower()
-        markers = (
-            "insufficient_quota",
-            "rate_limit",
-            "403",
-            "payment",
-            "billing",
-            "account",
-            "quota",
-            "exceeded",
-            "out of credits",
-            "arrear",
-            "429",
-        )
-        if error_kind and any(m in error_kind.lower() for m in markers):
-            return True
-        return bool(text and any(m in text for m in markers))
 
     async def chat_with_retry(
         self,

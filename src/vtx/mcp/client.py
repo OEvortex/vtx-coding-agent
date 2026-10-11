@@ -565,15 +565,6 @@ class McpClient:
 
     # ---- listener registration -------------------------------------------
 
-    def set_request_handler(self, method: str, handler: RequestHandler) -> Callable[[], None]:
-        self._request_handlers[method] = handler
-
-        def dispose() -> None:
-            if self._request_handlers.get(method) is handler:
-                del self._request_handlers[method]
-
-        return dispose
-
     def on_notification(self, method: str, listener: NotificationListener) -> Callable[[], None]:
         self._notification_listeners.setdefault(method, []).append(listener)
 

@@ -222,10 +222,6 @@ class BackgroundTaskManager:
         self._ensure_rehydrated()
         return self._records.get(task_id)
 
-    def list_tasks(self) -> list[BackgroundTaskRecord]:
-        self._ensure_rehydrated()
-        return sorted(self._records.values(), key=lambda r: r.created_at, reverse=True)
-
     def _ensure_rehydrated(self) -> None:
         if self._rehydrated:
             return

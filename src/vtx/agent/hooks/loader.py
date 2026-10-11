@@ -174,19 +174,3 @@ class HookConfigManager:
             settings_hooks=settings_hooks,
         )
         return copy.deepcopy(self._snapshot)
-
-    async def reload_if_changed(
-        self, settings_hooks: dict[str, list[HookConfig]] | None = None
-    ) -> HookSnapshot:
-        return await self.load(settings_hooks=settings_hooks)
-
-    async def diff_snapshot(self) -> list[str]:
-        snapshot = self.snapshot or HookSnapshot()
-        runtime = HookSnapshot(
-            events={
-                event: [entry.config for entry in entries]
-                for event, entries in self.registry._entries.items()
-                if entries
-            }
-        )
-        return [str(entry) for entry in snapshot.diff(runtime)]

@@ -16,12 +16,6 @@ def _find_executable(name: str) -> bool:
         return False
 
 
-def _in_venv() -> bool:
-    if os.environ.get("VIRTUAL_ENV"):
-        return True
-    return sys.prefix != sys.base_prefix
-
-
 def _is_uv_tool(package: str) -> bool:
     try:
         proc = subprocess.run(["uv", "tool", "list"], capture_output=True, text=True, check=False)

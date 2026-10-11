@@ -129,13 +129,6 @@ def set_limit(limit: int) -> None:
     get_scheduler().set_limit(limit)
 
 
-def reset_scheduler() -> None:
-    global _scheduler
-    if _scheduler is not None:
-        _scheduler.reset()
-    _scheduler = None
-
-
 def _configured_limit() -> int:
     try:
         from vtx.core.config import config

@@ -24,7 +24,6 @@ from urllib.parse import parse_qs, urlencode, urlparse
 
 import aiohttp
 
-from vtx.ai.provider_hooks import register_headers_listener
 from vtx.core.paths import get_config_dir
 
 _CLIENT_ID = os.getenv("CODEX_APP_SERVER_LOGIN_CLIENT_ID", "app_EMoamEEZ73f0CkXaXp7hrann")
@@ -571,18 +570,3 @@ def get_valid_codex_token_sync() -> str | None:
     if creds and creds.access:
         return creds.access
     return None
-
-
-@register_headers_listener
-def _add_codex_originator_header(headers: dict[str, str | None], context: dict[str, Any]) -> None:
-    if context.get("provider") == "codex":
-        headers["originator"] = os.getenv(
-            "CODEX_INTERNAL_ORIGINATOR_OVERRIDE", _DEFAULT_ORIGINATOR
-        )
-        headers["User-Agent"] = f"{_DEFAULT_ORIGINATOR}/{_CODEX_CLI_VERSION} (linux x86_64)"
-        headers["Accept"] = "text/event-stream"
-        headers["OpenAI-Beta"] = "responses=experimental"
-
-        creds = load_codex_credentials()
-        if creds and creds.account_id:
-            headers["ChatGPT-Account-ID"] = creds.account_id

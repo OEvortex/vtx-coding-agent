@@ -2,20 +2,11 @@ import asyncio
 import os
 from contextlib import suppress
 
-from vtx.agent.async_utils import OperationCancelledError, await_or_cancel
-
 _SUBPROCESS_DRAIN_TIMEOUT_SECONDS = 1.0
 
 
 class ToolCancelledError(Exception):
     pass
-
-
-async def await_task_or_cancel(work: asyncio.Task, cancel_event: asyncio.Event | None):
-    try:
-        return await await_or_cancel(work, cancel_event)
-    except OperationCancelledError as e:
-        raise ToolCancelledError from e
 
 
 async def communicate_or_cancel(
@@ -66,10 +57,6 @@ def shorten_path(path: str) -> str:
     if path.startswith(home):
         return "~" + path[len(home) :]
     return path
-
-
-def truncate_text(text: str, n: int = 80) -> str:
-    return text[:77] + "..." if len(text) > n else text
 
 
 def truncate_lines_by_bytes(

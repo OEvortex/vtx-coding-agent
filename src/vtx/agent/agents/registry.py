@@ -96,21 +96,6 @@ class AgentRegistry:
                 cb(new)
         return new
 
-    def set_active_tool_group(self, group_name: str | None) -> bool:
-        """Switch the active tool group within the active agent profile."""
-        if self._active is None:
-            return False
-        groups = self._active.definition.tool_groups or {}
-        if group_name is not None and group_name not in groups:
-            return False
-        if self._active.definition.active_tool_group == group_name:
-            return False
-        self._active.definition.active_tool_group = group_name
-        for cb in self._on_change:
-            with contextlib.suppress(Exception):
-                cb(self._active)
-        return True
-
     def switch(self, name_or_agent: str | LoadedAgent | None) -> bool:
         """Make an agent active by name or instance."""
         target_name = (

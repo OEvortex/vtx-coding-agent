@@ -21,7 +21,6 @@ reachable via ``api.on("before_provider_headers", ...)`` /
 
 from __future__ import annotations
 
-import contextlib
 import inspect
 import logging
 from collections.abc import Callable
@@ -46,16 +45,6 @@ def register_request_listener(fn: RequestListener) -> RequestListener:
     """Register a listener receiving ``(payload, context) -> {"payload": ...} | None``."""
     _request_listeners.append(fn)
     return fn
-
-
-def unregister_headers_listener(fn: HeadersListener) -> None:
-    with contextlib.suppress(ValueError):
-        _headers_listeners.remove(fn)
-
-
-def unregister_request_listener(fn: RequestListener) -> None:
-    with contextlib.suppress(ValueError):
-        _request_listeners.remove(fn)
 
 
 def reset_listeners() -> None:

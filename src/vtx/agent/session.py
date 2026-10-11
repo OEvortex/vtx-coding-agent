@@ -122,11 +122,6 @@ class HarnessStateEntry(EntryBase):
     refinements: builtins.list[dict[str, Any]] = field(default_factory=list)
 
 
-#: Retired alongside :class:`HarnessStateEntry`. Nothing reads it; kept so the
-#: name still resolves for an out-of-tree caller.
-HARNESS_STATE_CUSTOM_TYPE = "harness_state"
-
-
 class SessionInfoEntry(EntryBase):
     type: Literal["session_info"] = "session_info"
     name: str | None = None

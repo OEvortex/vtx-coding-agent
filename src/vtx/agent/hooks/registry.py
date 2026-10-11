@@ -59,21 +59,6 @@ class HookRegistry:
                 registration_order=self._counter,
             )
 
-    async def register_handler(
-        self, event: str, config: HookConfig, handler: Callable[..., Any]
-    ) -> RegisteredHook:
-        return await self.register(event=event, config=config, handler=handler)
-
-    async def deregister(self, event: str, config: HookConfig) -> bool:
-        if event not in self._entries:
-            return False
-        async with self._lock:
-            before = len(self._entries[event])
-            self._entries[event] = [
-                entry for entry in self._entries[event] if not _entry_matches(entry, config)
-            ]
-            return len(self._entries[event]) != before
-
     async def get_hooks(self, event: str, tool_name: str | None = None) -> list[RegisteredHook]:
         if event not in self._entries:
             return []

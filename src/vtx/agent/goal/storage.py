@@ -26,7 +26,6 @@ import logging
 import os
 import re
 import time
-from datetime import datetime
 from pathlib import Path
 
 from .record import GoalRecord, utc_now_iso
@@ -40,7 +39,6 @@ META_END = "-->"
 #: machine lost power mid-run) and its goals are up for claim.
 LEASE_TTL_SECONDS = 120
 
-_SECTION_RE = re.compile(r"^##\s+(.+?)\s*$", re.MULTILINE)
 _SAFE_ID_RE = re.compile(r"^[A-Za-z0-9_.-]+$")
 
 
@@ -409,15 +407,3 @@ def save_settings(cwd: str, settings: dict) -> None:
     tmp = settings_path(cwd).with_suffix(".tmp")
     tmp.write_text(json.dumps(clean, indent=2) + "\n", encoding="utf-8")
     os.replace(tmp, settings_path(cwd))
-
-
-def format_file_timestamp(name: str) -> str:
-    """Extract a compact timestamp from ``active_goal_20260826-100359_ab12.md``."""
-    match = re.search(r"active_goal_(\d{8})-(\d{6})_", name)
-    if not match:
-        return ""
-    try:
-        dt = datetime.strptime(match.group(1) + match.group(2), "%Y%m%d%H%M%S")
-    except ValueError:
-        return ""
-    return dt.strftime("%Y-%m-%d %H:%M")

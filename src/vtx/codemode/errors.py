@@ -254,18 +254,3 @@ _EXCEPTION_KINDS: Final = {
     "SandboxError": SANDBOX,
     "ScriptError": SCRIPT,
 }
-
-
-def kind_for_exception(name: str) -> str:
-    """Return the diagnostic kind for a script-visible exception class name.
-
-    Unrecognized names are sanitized to :data:`SANDBOX`: a name the sandbox
-    does not know is either a defect or something the model raised on purpose,
-    and neither should leak its text.
-    """
-    return _EXCEPTION_KINDS.get(name, SANDBOX)
-
-
-def to_diagnostic(error: BaseException) -> dict[str, Any]:
-    """Project a host-side exception into a model-facing diagnostic dict."""
-    return error.diagnostic()  # ty:ignore[unresolved-attribute]

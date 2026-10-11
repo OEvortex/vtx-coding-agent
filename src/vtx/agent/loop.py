@@ -467,15 +467,6 @@ class Agent:
             self.session.append_message(synthetic)
         return out
 
-    def queue_follow_up(self, message: UserMessage) -> None:
-        """Queue a follow-up user message for mid-turn injection.
-
-        Picked up by the engine's injection callback while a turn is running,
-        so sub-agent completions / queued prompts are fed into the live turn
-        instead of waiting for the next one.
-        """
-        self._pending_queue.append(message)
-
     def _drain_injection_messages(self) -> list[UserMessage]:
         """Return and clear queued follow-up messages for the engine.
 

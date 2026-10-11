@@ -25,7 +25,6 @@ from vtx.tui.blocks import (
     UpdateAvailableBlock,
     UserBlock,
 )
-from vtx.tui.input import AskUserInput
 from vtx.tui.status_lines import WITTY_STATUS_LINES, pick_witty_line, subagents_own_the_status_line
 
 __all__ = ["MAX_CHILDREN", "PRUNE_TO", "WITTY_ROTATE_EVERY_TICKS", "WITTY_STATUS_LINES", "ChatLog"]
@@ -603,11 +602,6 @@ class ChatLog(VerticalScroll):
             await self._current_block.append(text)
             self._request_scroll()
 
-    def set_block_content(self, text: str) -> None:
-        if self._current_block:
-            self._current_block.set_content(text)
-            self._request_scroll()
-
     def append_tool_output(self, tool_id: str, delta: str) -> None:
         """Stream incremental output to a running tool block in real-time."""
         block = self._tool_blocks.get(tool_id)
@@ -724,17 +718,6 @@ class ChatLog(VerticalScroll):
         block = self._tool_blocks.get(tool_id)
         if block:
             block.set_ask_user_custom_value(value)
-
-    def focus_ask_user_input(self, tool_id: str) -> bool:
-        """Focus an inline ask_user input; returns True if it was focused."""
-        block = self._tool_blocks.get(tool_id)
-        if not block:
-            return False
-        try:
-            block.query_one("#ask-user-input", AskUserInput).focus()
-            return True
-        except Exception:
-            return False
 
     def apply_task_progress(self, tool_call_id: str, event: dict) -> None:
         """Render a Task-tool sub-agent event into the parent tool block.
@@ -929,66 +912,6 @@ class ChatLog(VerticalScroll):
         self.mount(label)
         self._scroll_if_anchored(animate=False)
 
-    def add_harness_entries(
-        self, entries: list, *, title: str = "Harness entries", empty: str = "  (none)"
-    ) -> None:
-        """Render harness entries as a browsable list.
-
-        Shows the ids because they are what ``/harness delete`` takes, and the
-        scope because a global entry is asserted to every future session while
-        a local one dies with this one — the difference decides whether a bad
-        entry is worth deleting at all.
-
-        Titles and summaries are wrapped here rather than left to Rich. Rich
-        wraps at the label's measured width, which can exceed the visible area,
-        and it starts the continuation at column 0, so a long memory summary
-        runs off the right edge and wraps back to the far left.
-        """
-        import textwrap
-
-        from rich.text import Text
-
-        colors = config.ui.colors
-        # 4 for the label's own padding, 1 so a full line never hits the edge.
-        width = max(40, (self.content_size.width or self.size.width or 80) - 5)
-        indent = "    "
-
-        def wrap(value: str, max_lines: int) -> str:
-            lines = textwrap.wrap(
-                value, width=width, initial_indent=indent, subsequent_indent=indent
-            )
-            if not lines:
-                return ""
-            if len(lines) > max_lines:
-                lines = lines[:max_lines]
-                lines[-1] = lines[-1][: width - len(indent) - 1].rstrip() + "..."
-            return "\n".join(lines)
-
-        text = Text()
-        text.append(f"[{title}]\n", style=colors.notice)
-        if not entries:
-            text.append(empty + "\n", style=colors.dim)
-        for entry in entries:
-            text.append(f"  {entry.id}", style=colors.accent)
-            text.append(f"  {entry.kind}/{entry.path}", style=colors.dim)
-            text.append(f"  [{entry.scope}]", style=colors.muted)
-            text.append(f"  v{entry.version}\n", style=colors.dim)
-            title_lines = wrap(entry.title, 2)
-            if title_lines:
-                text.append(title_lines + "\n", style=colors.fg)
-            summary = entry.content.strip().replace("\n", " ")
-            summary_lines = wrap(summary, 4)
-            if summary_lines:
-                text.append(summary_lines + "\n", style=colors.muted)
-        count = len(entries)
-        noun = "entry" if count == 1 else "entries"
-        text.append(f"\n{count} {noun} · /harness show <id> · /harness delete <id>\n")
-        label = Label(text)
-        label.add_class("info-message")
-        label.add_class("harness-entries")
-        self.mount(label)
-        self._scroll_if_anchored(animate=False)
-
     def add_info_message(self, message: str, error: bool = False, warning: bool = False) -> Label:
         """Mount a status line. Returns it so a caller can retract it later."""
         info_color = config.ui.colors.info
@@ -1016,6 +939,3 @@ class ChatLog(VerticalScroll):
         self.mount(label)
         self._scroll_if_anchored(animate=False)
         return label
-
-    def clear_tool_blocks(self) -> None:
-        self._tool_blocks.clear()

@@ -270,7 +270,6 @@ def _eol(line: str) -> str:
 
 
 _HTML_TAG_RE = re.compile(r"<[^>]*>")
-_BR_TAGS = frozenset({"<br>", "<br/>", "<br />"})
 
 
 class HtmlBlock(MarkdownElement):

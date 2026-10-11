@@ -119,9 +119,6 @@ class SessionCommands(CommandSupport):
     def _resolve_system_prompt(self, session: Session | None = None) -> str:
         return self._runtime.resolve_system_prompt(session)
 
-    def _create_new_session(self) -> Session:
-        return self._runtime.create_session()
-
     async def _do_handoff(self, query: str) -> None:
         chat = self.query_one("#chat-log", ChatLog)
         info_bar = self.query_one("#compact-footer", InfoBar)

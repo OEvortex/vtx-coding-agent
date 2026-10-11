@@ -313,12 +313,11 @@ class AgentRunnerMixin:
             except Exception as e:
                 chat.add_info_message(str(e), error=True)
 
-            # Close the turn's snapshot bracket once the tools have settled, so
-            # the recorded file list is exactly what this turn changed.
-            await self._finish_turn_snapshot(turn_start_tree)
-
-            self._charge_goal_turn_usage((time.monotonic() - turn_started) * 1000.0)
-
+            # Acknowledge the stop before the bookkeeping below. Closing the
+            # snapshot bracket shells out to `git add -A` over the whole
+            # project, and having it sit between Esc and "Interrupted by user"
+            # is what made stopping feel like it had hung: the agent was
+            # already cancelled while the UI still looked busy.
             if was_interrupted and not self._abort_shown:
                 chat.add_aborted_message("Interrupted by user")
                 self._abort_shown = True
@@ -328,6 +327,12 @@ class AgentRunnerMixin:
             self._steer_event = None
             self._clear_approval_state()
             status.set_status("idle")
+
+            # Close the turn's snapshot bracket once the tools have settled, so
+            # the recorded file list is exactly what this turn changed.
+            await self._finish_turn_snapshot(turn_start_tree)
+
+            self._charge_goal_turn_usage((time.monotonic() - turn_started) * 1000.0)
 
             if was_interrupted:
                 self._pending_queue.clear()
