@@ -202,7 +202,9 @@ class _StreamingMarkdownMixin:
             self._fence_len = body_len
         if stable > self._fence_len:
             # Re-wrap with the opener so the fragment still renders as code.
-            chunk = format_markdown_block(f"{marker}\n{open_text[self._fence_len:stable]}", width)
+            chunk = format_markdown_block(
+                f"{marker}\n{open_text[self._fence_len : stable]}", width
+            )
             if chunk.plain:
                 self._fence_blocks.append(chunk)
             self._fence_len = stable

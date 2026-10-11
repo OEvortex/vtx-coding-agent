@@ -12,13 +12,20 @@ from pathlib import Path
 import pytest
 
 from vtx.agent import revert as rv
+from vtx.agent import snapshot as snapshot_module
 from vtx.agent.session import Session
-from vtx.agent.snapshot import SnapshotStore, get_store
+from vtx.agent.snapshot import MAX_BLOB_BYTES, SnapshotStore, _run, _text, get_store
 from vtx.protocol.types import FileChanges, TextContent, ToolResultMessage, UserMessage
 
 
 def _git(cwd: Path, *args: str) -> None:
     subprocess.run(["git", *args], cwd=cwd, check=True, capture_output=True)
+
+
+def _tree_paths(store: SnapshotStore, tree: str) -> set[str]:
+    """Every path recorded in a snapshot tree, for membership assertions."""
+    code, out = _run(["ls-tree", "-r", "--name-only", tree], git_dir=store.git_dir)
+    return set(_text(out).split("\n")) if code == 0 else set()
 
 
 @pytest.fixture()
@@ -120,6 +127,106 @@ class TestSnapshotStore:
         (project / "debug.log").write_text("noise")
         after = store.capture()
         assert store.files(before or "", after or "") == []
+
+    def test_oversized_file_is_excluded_from_the_tree(
+        self, project: Path, store: SnapshotStore
+    ) -> None:
+        """A blob over the cap must not reach the snapshot.
+
+        The size check has to happen at the pathspec, before ``git add``
+        stages the path. Un-staging it afterwards still hashes the file, so an
+        oversized blob that changed every turn cost a full read of it on every
+        capture -- multi-second stalls on the path between a prompt and the
+        agent's first token.
+        """
+        (project / "big.bin").write_bytes(b"x" * (MAX_BLOB_BYTES + 1))
+        assert store._oversized_paths(store.git_dir) == ["big.bin"]
+
+        before = store.capture()
+        assert store.files(before or "", store.capture() or "") == []
+        assert "big.bin" not in _tree_paths(store, before or "")
+
+    def test_oversized_tracked_file_is_excluded_too(
+        self, project: Path, store: SnapshotStore
+    ) -> None:
+        """The tracked-but-modified case, not just the untracked one."""
+        big = project / "tracked.bin"
+        big.write_bytes(b"a" * (MAX_BLOB_BYTES + 1))
+        _git(project, "add", "-A")
+        _git(project, "-c", "user.email=t@t", "-c", "user.name=t", "commit", "-qm", "big")
+
+        big.write_bytes(b"b" * (MAX_BLOB_BYTES + 2))
+        assert store._oversized_paths(store.git_dir) == ["tracked.bin"]
+        before = store.capture()
+        assert store.files(before or "", store.capture() or "") == []
+        assert "tracked.bin" not in _tree_paths(store, before or "")
+
+    def test_files_under_the_cap_are_still_snapshotted(
+        self, project: Path, store: SnapshotStore
+    ) -> None:
+        """The exclusion is a size gate, not a blanket skip."""
+        (project / "edge.bin").write_bytes(b"x" * MAX_BLOB_BYTES)
+        before = store.capture()
+        assert store._oversized_paths(store.git_dir) == []
+        assert "edge.bin" in _tree_paths(store, before or "")
+
+    def test_oversized_exclusion_still_reports_the_other_edits(
+        self, project: Path, store: SnapshotStore
+    ) -> None:
+        """Excluding a big file must not hide the rest of the turn's work."""
+        before = store.capture()
+        (project / "big.bin").write_bytes(b"x" * (MAX_BLOB_BYTES + 1))
+        (project / "a.txt").write_text("a1\n")
+        after = store.capture()
+        assert store.files(before or "", after or "") == ["a.txt"]
+
+    def test_oversized_path_is_never_handed_to_git_add(
+        self, project: Path, store: SnapshotStore, monkeypatch
+    ) -> None:
+        """The exclusion must reach ``git add``, not a cleanup pass after it.
+
+        Dropping the blob from the index once it is already staged produces the
+        same tree, so a tree-level assertion cannot tell the cheap fix from the
+        expensive one. This asserts the staging call itself never names the
+        oversized path, which is what keeps git from reading it.
+        """
+        (project / "big.bin").write_bytes(b"x" * (MAX_BLOB_BYTES + 1))
+        adds: list[list[str]] = []
+        real_run = _run
+
+        def recording_run(args, **kwargs):
+            if args and args[0] == "add":
+                adds.append(list(args))
+            return real_run(args, **kwargs)
+
+        monkeypatch.setattr(snapshot_module, "_run", recording_run)
+        store.capture()
+
+        assert adds, "expected a staging call"
+        for call in adds:
+            # git may only ever see the path inside an exclude pathspec; a bare
+            # occurrence is a path it would read and hash.
+            staged = [part for part in call[2:] if not part.startswith(":(")]
+            assert "big.bin" not in staged, call
+        assert any(":(exclude,literal)big.bin" in call for call in adds), adds
+
+    def test_normal_capture_stages_the_whole_tree(
+        self, project: Path, store: SnapshotStore, monkeypatch
+    ) -> None:
+        """No oversized file means no pathspec surgery at all."""
+        adds: list[list[str]] = []
+        real_run = _run
+
+        def recording_run(args, **kwargs):
+            if args and args[0] == "add":
+                adds.append(list(args))
+            return real_run(args, **kwargs)
+
+        monkeypatch.setattr(snapshot_module, "_run", recording_run)
+        (project / "small.txt").write_text("fine\n")
+        store.capture()
+
+        assert adds == [["add", "-A", "--", "."]]
 
     def test_diff_reports_status_and_line_counts(
         self, project: Path, store: SnapshotStore
