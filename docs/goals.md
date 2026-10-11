@@ -132,7 +132,7 @@ uv run python -m pytest tests/plugins/ -q
 
 # Tasks
 
-- [x] t1  Add the version gate in plugin_cmd.py  — uv run ruff check src/vtx/coding_agent/plugin_cmd.py
+- [x] t1  Add the version gate in plugin_cmd.py   --  uv run ruff check src/vtx/coding_agent/plugin_cmd.py
 - [ ] t2  Print the exact remediation command
 - [ ] t3  Cover both failure paths with tests
 ```
@@ -276,7 +276,7 @@ runs first (`src/vtx/agent/goal/tools.py:492-581`):
 Approved:
 
 ```text
-Independent audit APPROVED — goal archived as complete.
+Independent audit APPROVED  --  goal archived as complete.
 .vtx/goals/archived/active_goal_20261011-074313_7195939d6aed.md
 
 Auditor summary:
@@ -286,7 +286,7 @@ Auditor summary:
 Not approved, and this is the case worth knowing about:
 
 ```text
-Independent audit requires more work — goal stays open with feedback.
+Independent audit requires more work  --  goal stays open with feedback.
 Task progress was 1/3 (33%).
 Address every item below, then call goal(action="update", status="complete") again.
 

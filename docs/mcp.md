@@ -4,6 +4,8 @@ MCP connects Vtx to external tool servers over the Model Context Protocol. This 
 
 The harness itself never imports `vtx.mcp`. The product layer wires a manager and registers each server's tools into the tool registry as ordinary `BaseTool` instances (`src/vtx/mcp/manager.py:500`), so a remote call flows through the same permission gate, argument validation, and TUI rendering as a local one (`src/vtx/mcp/tool.py:1-11`).
 
+Read [codemode.md](codemode.md) for what `exposure: codemode` means in practice, [configuration.md](configuration.md) for the file settings this page shares, and [headless.md](headless.md) for how servers connect in a scripted run.
+
 ## Configuration
 
 Vtx reads two files, both shaped the same:
@@ -125,7 +127,7 @@ class AuthProvider(Protocol):
     async def on_unauthorized(self, context: UnauthorizedContext) -> None: ...
 ```
 
-`UnauthorizedContext` carries `response`, `server_url`, `token`, and `fetch` (`src/vtx/mcp/auth.py:14`). If `context.token` is already **different** from the token that just failed, a concurrent refresh won and there is nothing to do — the transport re-runs the request rather than re-authenticating (`src/vtx/mcp/auth.py:13-26`).
+`UnauthorizedContext` carries `response`, `server_url`, `token`, and `fetch` (`src/vtx/mcp/auth.py:14`). If `context.token` is already **different** from the token that just failed, a concurrent refresh won and there is nothing to do  --  the transport re-runs the request rather than re-authenticating (`src/vtx/mcp/auth.py:13-26`).
 
 The transport re-authenticates on a 401, and on a 403 whose `WWW-Authenticate` advertises a scope, as a step-up.
 
@@ -178,7 +180,7 @@ This project would start:
 Trust /home/me/proj/.vtx/mcp.json and start these? /mcp trust again to confirm.
 ```
 
-(`src/vtx/tui/commands/mcp.py:218-243`). A single press that both showed the commands and granted would let anyone who could get one keystroke in run them (`src/vtx/tui/commands/mcp.py:227-229`). `inspect_project_config` is the function that makes this possible — it parses and validates but refuses to connect (`src/vtx/mcp/config.py:318-330`).
+(`src/vtx/tui/commands/mcp.py:218-243`). A single press that both showed the commands and granted would let anyone who could get one keystroke in run them (`src/vtx/tui/commands/mcp.py:227-229`). `inspect_project_config` is the function that makes this possible  --  it parses and validates but refuses to connect (`src/vtx/mcp/config.py:318-330`).
 
 ## Tool exposure
 
@@ -202,7 +204,7 @@ An individual tool's exposure resolves exact-name-beats-pattern, then first-patt
 
 A tool is named `mcp__<server>__<tool>`, sanitized to `[A-Za-z0-9_-]` and capped at 64 characters for provider limits. Sanitizing can collide (`a.b` and `a_b` both become `a_b`), so a name already taken or too long gets an 8-character hash suffix derived from the *original* server and tool, which keeps it unique rather than merely shorter (`src/vtx/mcp/tool.py:52-75`).
 
-Results are capped at `MCP_OUTPUT_MAX_BYTES = 20 * 1024` and truncated in the middle so both ends survive (`src/vtx/mcp/tool.py:42`, `114-132`). A large opaque payload is written to a file and replaced with a resource link the model can read instead — strictly more useful than the first 20K of a dump (`src/vtx/mcp/tool.py:96-113`, `164-174`).
+Results are capped at `MCP_OUTPUT_MAX_BYTES = 20 * 1024` and truncated in the middle so both ends survive (`src/vtx/mcp/tool.py:42`, `114-132`). A large opaque payload is written to a file and replaced with a resource link the model can read instead  --  strictly more useful than the first 20K of a dump (`src/vtx/mcp/tool.py:96-113`, `164-174`).
 
 Two annotations change behavior rather than display: `readOnlyHint` makes the tool non-mutating so it skips the approval prompt, and `destructiveHint` forces one even under a permissive mode (`src/vtx/mcp/tool.py:8-11`).
 
@@ -216,7 +218,7 @@ Three session-level tools let the model use a server's resources without declari
 | `list_mcp_resource_templates` | `server` | Its URI templates |
 | `read_mcp_resource` | `server`, `uri` | The contents |
 
-MCP App resources — `ui://` URIs, or a mime type carrying `profile=mcp-app` — are filtered out of resource listings because they are UI payloads, not model-readable content (`src/vtx/mcp/resources.py:44-55`). A resource tool spanning several servers resolves to its **widest** member's exposure, so a group never resolves to its narrowest (`src/vtx/mcp/exposure.py:90-105`).
+MCP App resources  --  `ui://` URIs, or a mime type carrying `profile=mcp-app`  --  are filtered out of resource listings because they are UI payloads, not model-readable content (`src/vtx/mcp/resources.py:44-55`). A resource tool spanning several servers resolves to its **widest** member's exposure, so a group never resolves to its narrowest (`src/vtx/mcp/exposure.py:90-105`).
 
 ## The `/mcp` commands
 
@@ -255,7 +257,7 @@ An untrusted project file is reported as untrusted rather than silently ignored,
 | `scope` | `global` or `project` |
 | `authorization_url` | The URL a pending sign-in needs |
 
-`startup_wait_seconds` bounds `connect_all`. A server still connecting at the deadline reports `connecting`, keeps running in the background, and contributes its tools when it lands — one slow server must not hold up a session (`src/vtx/mcp/manager.py:452-457`, `500-514`).
+`startup_wait_seconds` bounds `connect_all`. A server still connecting at the deadline reports `connecting`, keeps running in the background, and contributes its tools when it lands  --  one slow server must not hold up a session (`src/vtx/mcp/manager.py:452-457`, `500-514`).
 
 ## Worked example
 
@@ -309,7 +311,7 @@ async def main():
 asyncio.run(main())
 ```
 
-In a TUI session the same configuration is reached with `/mcp trust` (twice), then confirmed with `/mcp`. In a CI run, codemode connects the servers before the agent starts and prints `mcp: N tool(s) from M server(s)` to stderr — see [headless.md](headless.md).
+In a TUI session the same configuration is reached with `/mcp trust` (twice), then confirmed with `/mcp`. In a CI run, codemode connects the servers before the agent starts and prints `mcp: N tool(s) from M server(s)` to stderr  --  see [headless.md](headless.md).
 
 ## Known gaps
 

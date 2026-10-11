@@ -8,8 +8,8 @@ A coding agent harness: a keyboard-driven terminal UI, a headless CLI for script
 
 To learn more:
 
-* [Read the documentation](docs/README.md), or start from [docs/index.md](docs/index.md) for a tour by audience
-* [Read the architecture map](docs/architecture.md) for the ten packages and their dependency direction
+* [Read the documentation](docs/README.md), or start from [docs/quickstart.md](docs/quickstart.md) to get running
+* [Read how Vtx works](docs/how-vtx-works.md) for the ten packages, the plugin composition, and their dependency direction
 * Ask the agent to explain itself
 
 ## All Packages

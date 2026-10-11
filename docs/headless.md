@@ -94,9 +94,9 @@ Approvals are auto-**denied** rather than auto-approved, so a tool that needs pe
 
 | Code | Meaning |
 |---|---|
-| `0` | `StopReason.STOP` — a clean turn |
+| `0` | `StopReason.STOP`  --  a clean turn |
 | `1` | `StopReason.ERROR`, or any stop reason not in the table |
-| `3` | `StopReason.LENGTH` — hit the output limit |
+| `3` | `StopReason.LENGTH`  --  hit the output limit |
 | `2` | Not a stop reason: an empty prompt, an MCP-independent provider or agent-init failure |
 
 (`src/vtx/coding_agent/headless.py:34-38`, `src/vtx/coding_agent/headless.py:145-147`, `283-285`)
@@ -112,7 +112,7 @@ Distinguish the ones you own from the ones Vtx owns: `0`/`1`/`3` are model outco
 
 ## Permissions during a run
 
-Headless cannot show approval prompts, so it forces `permissions.mode = auto` for the duration of the run only. It rewrites the config, runs, then restores the previous mode in a `finally` — the saved file is never left in the auto state and the mode is not persisted (`src/vtx/coding_agent/headless.py:150-157`, `305-312`).
+Headless cannot show approval prompts, so it forces `permissions.mode = auto` for the duration of the run only. It rewrites the config, runs, then restores the previous mode in a `finally`  --  the saved file is never left in the auto state and the mode is not persisted (`src/vtx/coding_agent/headless.py:150-157`, `305-312`).
 
 ## MCP and project trust
 
@@ -175,5 +175,5 @@ Headless runs emit `session_start` and `session_end` so YAML hooks and extension
 
 - Approvals are denied, not queued. There is no way to pre-approve a tool for a headless run except by setting `permissions.mode: auto` in your config beforehand, which then also affects interactive sessions.
 - `--continue` and `--resume` are unusable with `-p`, so a headless run cannot resume a TUI session. It always starts a fresh session.
-- The `session_start`/`session_end` emission is wrapped in `contextlib.suppress(Exception)` in teardown (`src/vtx/coding_agent/headless.py:296-302`), so a failing hook is invisible to your script — it will not change the exit code.
+- The `session_start`/`session_end` emission is wrapped in `contextlib.suppress(Exception)` in teardown (`src/vtx/coding_agent/headless.py:296-302`), so a failing hook is invisible to your script  --  it will not change the exit code.
 - A denial of an approval is reported on stderr but does not by itself set a nonzero exit: the run continues and ends `STOP`, which is exit `0`. Check stderr, not just the status.

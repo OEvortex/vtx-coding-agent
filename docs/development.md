@@ -2,7 +2,7 @@
 
 This page covers the repository layout, the commands used to format, lint, type-check and test, and how to extend the harness by adding a tool or a plugin row.
 
-Read [plugins.md](plugins.md) for the composition model in depth, [tools.md](tools.md) for the built-in tool surface, and [storage-layout.md](storage-layout.md) for where each piece writes on disk.
+Read [plugins.md](plugins.md) for the composition model in depth, [tools.md](tools.md) for the built-in tool surface, and [storage-layout.md](storage-layout.md) for where each piece writes on disk. For the user-facing command surface, read [cli.md](cli.md); for what `config.yml` can hold, read [configuration.md](configuration.md).
 
 ## Repository layout
 
@@ -13,7 +13,7 @@ The package is a src layout with one package per subsystem (`pyproject.toml:5-6`
 | `src/vtx/core/` | Config schema and migration, path resolution, themes, notifications (`src/vtx/core/__init__.py:1`) |
 | `src/vtx/agent/` | The product-neutral harness: turn loop, sessions, tools, extensions, SDK (`src/vtx/agent/__init__.py:1`) |
 | `src/vtx/ai/` | Provider layer: base provider, catalog, dynamic model limits, OAuth |
-| `src/vtx/codemode/` | Script execution in a confined subprocess (`src/vtx/codemode/__init__.py:1`) |
+| `src/vtx/codemode/` | Script execution in a child process; see [codemode.md](codemode.md) for its actual threat model (`src/vtx/codemode/__init__.py:1`) |
 | `src/vtx/coding_agent/` | The vtx product: CLI, headless runner, agents, tool wiring, `vtx plugin` |
 | `src/vtx/mcp/` | Model Context Protocol client, transports, trust, exposure (`src/vtx/mcp/__init__.py:1`) |
 | `src/vtx/plugins/` | The plugin kernel: rows, profiles, host, extension loader (`src/vtx/plugins/__init__.py:1`) |
@@ -62,7 +62,7 @@ The settings that matter:
 
 ## How a composition boots
 
-`boot()` is the single entry point for mounting a composition (`src/vtx/plugins/bootstrap.py:22-51`):
+`boot()` is the single entry point for mounting a composition (`src/vtx/plugins/bootstrap.py:23-52`):
 
 ```python
 from vtx.plugins import boot, active_context, shutdown
@@ -75,10 +75,10 @@ shutdown()
 
 What it does, in order:
 
-1. Picks the profile name from the argument, then `VTX_PROFILE`, then `default` (`src/vtx/plugins/bootstrap.py:35`).
-2. Composes the row list with `load_profile(name, patches)` (`src/vtx/plugins/bootstrap.py:36`, `src/vtx/plugins/profile.py:123-139`).
-3. Runs extension discovery *before* mount so discovered rows mount in the same pass (`src/vtx/plugins/bootstrap.py:38-46`).
-4. Mounts and stores the host as the active one (`src/vtx/plugins/bootstrap.py:47-51`).
+1. Picks the profile name from the argument, then `VTX_PROFILE`, then `default` (`src/vtx/plugins/bootstrap.py:38`).
+2. Composes the row list with `load_profile(name, patches)` (`src/vtx/plugins/bootstrap.py:39`, `src/vtx/plugins/profile.py:123-139`).
+3. Runs extension discovery *before* mount so discovered rows mount in the same pass (`src/vtx/plugins/bootstrap.py:43-50`).
+4. Mounts and stores the host as the active one (`src/vtx/plugins/bootstrap.py:51-52`).
 
 ### Bundles and profiles
 
@@ -89,7 +89,7 @@ A profile is an ordered list of bundles; a bundle is a list of rows.
 | `base` | Services (`tools`, `llm`, `sessions`, `permissions`, `prompts`, `compaction`, `skills`, `telemetry`, `sandbox`, `mcp`, `agents`, `agent-loop`, `session-projections`, `goals`, `extensions`, `hooks`) plus the tool rows (`src/vtx/plugins/builtins/__init__.py:20-58`) |
 | `tui` | `ui` and `commands` rows (`src/vtx/plugins/builtins/__init__.py:62-65`) |
 | `headless` | Adds nothing; a serverless run boots `base` alone (`src/vtx/plugins/builtins/__init__.py:69-70`) |
-| `minimal` | `tools`, `llm`, `tool-read`, `tool-bash` — the smallest composition with a registry, a provider seam and a shell (`src/vtx/plugins/builtins/__init__.py:73-82`) |
+| `minimal` | `tools`, `llm`, `tool-read`, `tool-bash`  --  the smallest composition with a registry, a provider seam and a shell (`src/vtx/plugins/builtins/__init__.py:73-82`) |
 
 | Profile | Bundles |
 |---|---|
@@ -179,7 +179,7 @@ def apply(ctx, config):
 PLUGIN = apply
 ```
 
-`mount_tool` registers the tool and unwinds the registration with the row, so disabling and re-enabling leaves exactly one `wordcount` instead of two (`src/vtx/plugins/builtins/tools/_register.py:13-18`). `inject=("tools",)` is what delays the row until `ctx.tools` exists (`src/vtx/plugins/plugin.py:43-55`).
+`mount_tool` registers the tool and unwinds the registration with the row, so disabling and re-enabling leaves exactly one `wordcount` instead of two (`src/vtx/plugins/builtins/tools/_register.py:13-18`). `inject=("tools",)` is what delays the row until `ctx.tools` exists: a row whose injected keys are missing waits, and if nothing can progress the host fails with the blockers named (`src/vtx/plugins/host.py:80-96`).
 
 ### 3. Mount it in your profile
 
@@ -224,7 +224,7 @@ uv run python -m pytest tests/test_wordcount.py
 
 ## Add a service row
 
-A service row provides one `ctx.<key>`. The fifteen standard keys are the ones with a typed property on `Context`; any other key works too (`src/vtx/plugins/context.py:21-42`, `:74-87`). The rows in `src/vtx/plugins/builtins/services/` are the reference implementations — each claims exactly one key.
+A service row provides one `ctx.<key>`. The fifteen standard keys are the ones with a typed property on `Context`; any other key works too (`src/vtx/plugins/context.py:21-42`, `:74-87`). The rows in `src/vtx/plugins/builtins/services/` are the reference implementations  --  each claims exactly one key.
 
 ```python
 # mypkg/services.py
@@ -240,23 +240,24 @@ class SlugConfig(BaseModel):
 
 
 class SlugService:
-    def __init__(self) -> None:
+    def __init__(self, prefix: str) -> None:
+        self.prefix = prefix
         self.calls = 0
 
     def slug(self, name: str) -> str:
         self.calls += 1
-        return self.prefix + "-" + name
+        return f"{self.prefix}-{name}"
 
 
 @plugin(name="slug", config=SlugConfig)
-def apply(ctx, config: SlugConfig | None):
-    ctx.provide("slug", SlugService())
+def apply(ctx, config: SlugConfig):
+    ctx.provide("slug", SlugService(config.prefix))
 
 
 PLUGIN = apply
 ```
 
-Row config is validated against the pydantic model the plugin declares (`src/vtx/plugins/loader.py:295-300`); a plugin with no declared schema accepts any mapping. Override just the fields you care about:
+`config` arrives as the validated instance of whatever model the plugin declares, because the host validates the row's config before calling `apply` (`src/vtx/plugins/host.py:99-103`, `src/vtx/plugins/loader.py:295-300`). Override just the fields you care about:
 
 ```yaml
 - override:
@@ -265,20 +266,22 @@ Row config is validated against the pydantic model the plugin declares (`src/vtx
         prefix: "job"
 ```
 
+Mounting the two rows above and printing `host.base["slug"].slug("nightly")` gives `job-nightly`, because `override` merges `config` instead of replacing it (`src/vtx/plugins/loader.py:275-279`).
+
 ## Hot reload
 
 `/reload` re-applies config, extensions, agents, tools, skills and MCP in place (`src/vtx/tui/commands/reload.py:54-195`). The order is the safety property (`src/vtx/tui/commands/reload.py:10-14`):
 
 1. Refuse while a turn is running, rather than swapping the tool set under a live loop (`src/vtx/tui/commands/reload.py:62-68`).
 2. Emit `session_shutdown` so extensions can release what they cached (`src/vtx/tui/commands/reload.py:79-85`).
-3. Drop imported extension modules — everything prefixed `vtx_ext_`, which is what makes a new submodule visible (`src/vtx/tui/commands/reload.py:93`, `:288-295`).
+3. Drop imported extension modules  --  everything prefixed `vtx_ext_`, which is what makes a new submodule visible (`src/vtx/tui/commands/reload.py:93`, `:288-295`).
 4. Reload config first, because extension and agent discovery read it (`src/vtx/tui/commands/reload.py:97-98`).
 5. Reload extensions with `fresh=True`, which also drops each package's `__pycache__` (`src/vtx/tui/commands/reload.py:105-107`).
 6. Reload agents and re-register them on the new bus (`src/vtx/tui/commands/reload.py:116-122`).
 7. Rebuild the tool set and rebind the runtime, so a tool edit in `config.yml` switches the live surface over (`src/vtx/tui/commands/reload.py:143-159`).
 8. Call `refresh()` on any tool that has it; `codemode` snapshots the tool set to build its sandbox and needs to be told (`src/vtx/tui/commands/reload.py:164-167`).
 9. Reconnect MCP in a worker, because a connection can take seconds and `mcp.json` is not part of `config.yml` (`src/vtx/tui/commands/reload.py:173-179`).
-10. Push the settings that live outside the config object — theme, permission mode, thinking lines, tool badge, notifications, ponytail, git context (`src/vtx/tui/commands/reload.py:182`, `:231-251`).
+10. Push the settings that live outside the config object  --  theme, permission mode, thinking lines, tool badge, notifications, ponytail, git context (`src/vtx/tui/commands/reload.py:182`, `:253-286`).
 11. Emit `session_start` so extensions re-initialize against the new module objects (`src/vtx/tui/commands/reload.py:187-193`).
 
 The command then prints a before/after diff: added and removed tools, skill and agent counts, and which settings were applied (`src/vtx/tui/commands/reload.py:297-324`).

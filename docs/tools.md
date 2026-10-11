@@ -391,5 +391,5 @@ See [skills.md](skills.md) for the full authoring contract.
 - `grep` and `web_search` are off by default, so an agent that needs them must have
   them enabled by profile or find them with `tool_search`.
 - A tool that a plugin registers by overriding a built-in's name replaces it
-  (`ToolService.assemble`, `src/vtx/plugins/services.py:118`), which is powerful but
+  (`ToolService.assemble`, `src/vtx/plugins/services.py:118`), which is also also
   means a buggy plugin can silently take `bash` away.

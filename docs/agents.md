@@ -224,19 +224,20 @@ Three consequences worth internalising:
 - **Deny runs before allow.** A name that appears in both lists is removed: deny wins for
   anything that is not one of the agent's own local tools.
 - **`active_tool_group` beats `tools_allow` entirely.** If the group is set and non-empty,
-  `tools_allow` is not consulted at all (`src/vtx/agent/runtime.py:385-393`):
+  `tools_allow` is not consulted at all (`src/vtx/agent/runtime.py:385-393`).
 
-  ```python
-  allow = None
-  if active is not None:
-      group = active.definition.active_tool_group
-      if group and active.definition.tool_groups:
-          group_tools = active.definition.tool_groups.get(group)
-          if group_tools:
-              allow = list(group_tools)
-      if allow is None and active.definition.tools_allow:
-          allow = list(active.definition.tools_allow)
-  ```
+```python
+# excerpt from _compose_tool_allow, dedented
+allow = None
+if active is not None:
+    group = active.definition.active_tool_group
+    if group and active.definition.tool_groups:
+        group_tools = active.definition.tool_groups.get(group)
+        if group_tools:
+            allow = list(group_tools)
+    if allow is None and active.definition.tools_allow:
+        allow = list(active.definition.tools_allow)
+```
 
 Note that this mapping lives in the runtime, not in `compose_active_tools`. A caller that
 goes through `compose_active_tools` directly - the SDK, or anything building a sub-agent's
@@ -511,7 +512,7 @@ vtx --agent reviewer
 ```
 
 ```text
-Active agent: reviewer — Read-only reviewer: audits a diff and reports findings without editing anything
+Active agent: reviewer  --  Read-only reviewer: audits a diff and reports findings without editing anything
 ```
 
 ```text

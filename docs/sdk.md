@@ -2,7 +2,7 @@
 
 The SDK is the programmatic interface to the Vtx agent runtime. This page covers the top-level exports, the `Agent` and `Runner` classes, tool registration, guardrails, handoffs, approvals, permissions, sessions, and tracing, ending with a minimal program that runs as written.
 
-The SDK drives the same engine the TUI and headless modes use — the native turn runner's event stream — and layers guardrails, handoffs, approvals, and session persistence on top of it (`src/vtx/agent/sdk/runner.py:377-433`). Nothing here needs the TUI, and none of it requires an extensions graph. If you want the composition of subsystems the CLI boots, read [plugins.md](plugins.md); if you are looking for the built-in tools, they are in [tools.md](tools.md).
+The SDK drives the same engine the TUI and headless modes use  --  the native turn runner's event stream  --  and layers guardrails, handoffs, approvals, and session persistence on top of it (`src/vtx/agent/sdk/runner.py:377-433`). Nothing here needs the TUI, and none of it requires an extensions graph. If you want the composition of subsystems the CLI boots, read [plugins.md](plugins.md); if you are looking for the built-in tools, they are in [tools.md](tools.md).
 
 ## Minimal program
 
@@ -46,7 +46,7 @@ print(result.final_output)
 | Items | `MessageOutputItem`, `ToolCallItem`, `ToolCallOutputItem`, `HandoffCallItem`, `HandoffOutputItem`, `ReasoningItem` |
 | Tracing | `Trace`, `Span`, `trace`, `span`, `add_trace_processor`, `enable_tracing`, `disable_tracing`, `TraceProcessor`, `ConsoleTraceProcessor`, `JSONLTraceProcessor` |
 
-`vtx` also exports the headless entry points (`run_headless`, `render_run`, `resolve_prompt`) — see [headless.md](headless.md).
+`vtx` also exports the headless entry points (`run_headless`, `render_run`, `resolve_prompt`)  --  see [headless.md](headless.md).
 
 ## Runner
 
@@ -119,7 +119,7 @@ print("\n", result.final_output, result.usage)
 | `_ToolCallStart` | `tool_call_id`, `tool_name` |
 | `_ToolCallEnd` | `tool_call_id`, `tool_name`, `arguments` |
 | `_ToolResult` | `tool_call_id`, `tool_name`, `output`, `is_error` |
-| `_RunFinished` | `result` — consumed by `RunStreamed`, not yielded to you |
+| `_RunFinished` | `result`  --  consumed by `RunStreamed`, not yielded to you |
 
 Reading `.result` before the iterator is exhausted raises a `RuntimeError` telling you to iterate first (`src/vtx/agent/sdk/runner.py:250-258`).
 
@@ -268,7 +268,7 @@ class ToolGuardrailFunctionOutput:
 
 `reject_content` is the usual choice: it gives the model something actionable instead of ending the run, and the runner reads the `message` back into the tool result as `{"rejected_message": ...}` (`src/vtx/agent/sdk/guardrails/types.py:37-47`). Use `raise_exception` when a result must not reach the model at all.
 
-The data payloads are the dataclasses `_InputGuardrailData`, `_OutputGuardrailData`, `_ToolInputGuardrailData`, and `_ToolOutputGuardrailData` (`src/vtx/agent/sdk/guardrails/types.py:54-84`). Your decorated function takes the same fields in the same order, so name the parameters as they appear. Note that `_ToolInputGuardrailData.tool_arguments` is a **JSON string** (`str | None`), not a dict — parse it before inspecting it.
+The data payloads are the dataclasses `_InputGuardrailData`, `_OutputGuardrailData`, `_ToolInputGuardrailData`, and `_ToolOutputGuardrailData` (`src/vtx/agent/sdk/guardrails/types.py:54-84`). Your decorated function takes the same fields in the same order, so name the parameters as they appear. Note that `_ToolInputGuardrailData.tool_arguments` is a **JSON string** (`str | None`), not a dict  --  parse it before inspecting it.
 
 ## Handoffs
 
@@ -302,7 +302,7 @@ The runner detects a handoff by tool name: anything starting with `transfer_to_`
 [handoff from Support → Billing. Take over the conversation from here.]
 ```
 
-That is why every handoff tool name must keep the `transfer_to_` prefix — the prefix is the protocol. With `RunConfig(nest_handoff_history=True)`, the prior transcript collapses into a single summary block instead of being carried forward (`src/vtx/agent/sdk/run_config.py:40-41`).
+That is why every handoff tool name must keep the `transfer_to_` prefix  --  the prefix is the protocol. With `RunConfig(nest_handoff_history=True)`, the prior transcript collapses into a single summary block instead of being carried forward (`src/vtx/agent/sdk/run_config.py:40-41`).
 
 ## Approvals
 
@@ -330,7 +330,7 @@ if result.interruptions:
 | `approve(*items)` / `reject(*items)` | Queue decisions |
 | `decision_for(call_id)` | Consume and return one decision |
 
-A `ToolApprovalItem`'s `to_input_item` raises — an approval prompt is never replayed into a model request (`approvals.py:45`). A rejected call returns a "denied by user" tool result so the model can pick another path (`src/vtx/agent/README.md:96`).
+A `ToolApprovalItem`'s `to_input_item` raises  --  an approval prompt is never replayed into a model request (`approvals.py:45`). A rejected call returns a "denied by user" tool result so the model can pick another path (`src/vtx/agent/README.md:96`).
 
 ## Permissions
 

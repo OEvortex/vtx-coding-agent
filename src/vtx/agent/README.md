@@ -60,7 +60,7 @@ print(stream.result.final_output)
 - **`SessionSettings(limit=...)`** caps how much history a session replays into a run.
 - **`RunConfig`** is the per-run knob bag: `max_turns` (default 50), `permission_policy`, `session_settings`, `tracing_disabled`, `trace_include_sensitive_data`, `nest_handoff_history`, `session_input_callback`, `custom`.
 
-`docs/sdk/` covers the SDK in depth: `runner.md`, `agents.md`, `tools.md`, `multi_agent.md`, `approvals.md`, `permissions.md`, `guardrails.md`, `sessions.md`, `skills.md`, `tracing.md`.
+[docs/sdk.md](../../docs/sdk.md) covers the SDK in depth: the runner, agents and handoffs, tools, approvals, permissions, guardrails, sessions, skills, and tracing.
 
 ## Approvals and permissions
 

@@ -2,9 +2,11 @@
 
 Codemode runs model-written Python in a worker process, where the only capability the script is given is calling injected tools. This page covers how a script is admitted and run, the governance gate its tool calls pass through, and how to drive the sandbox directly from your own code. To see how codemode is exposed to the model as a tool, read [tools.md](tools.md).
 
-Runs as the user who launched vtx, with the full standard library, installed third-party packages, the filesystem, `subprocess`, the network, and `eval`. There is no `sys.addaudithook`, no stripped `__builtins__`, and no import allowlist. Treat it as a **capability grant, not a containment mechanism** (`src/vtx/codemode/README.md:1`). What a script genuinely cannot reach is the host's live state — the running agent, the session, the TUI, and the tool registry all live in the other process.
+Read [mcp.md](mcp.md) for how MCP servers reach a script, [plugins.md](plugins.md) for the row that mounts the tool, and [storage-layout.md](storage-layout.md) for the disk footprint of one.
 
-Since the python-skill mechanism was removed, codemode is the only execution path left: a `pyproject.toml` in a skill directory is ignored and skills are markdown instructions only (`docs/skills.md:5`, `src/vtx/coding_agent/tools/skill.py:226`). If you want executable behavior, write a plugin row — see [plugins.md](plugins.md).
+Runs as the user who launched vtx, with the full standard library, installed third-party packages, the filesystem, `subprocess`, the network, and `eval`. There is no `sys.addaudithook`, no stripped `__builtins__`, and no import allowlist. Treat it as a **capability grant, not a containment mechanism** (`src/vtx/codemode/README.md:1`). What a script genuinely cannot reach is the host's live state  --  the running agent, the session, the TUI, and the tool registry all live in the other process.
+
+Since the python-skill mechanism was removed, codemode is the only execution path left: a `pyproject.toml` in a skill directory is ignored and skills are markdown instructions only (`docs/skills.md:5`, `src/vtx/coding_agent/tools/skill.py:226`). If you want executable behavior, write a plugin row  --  see [plugins.md](plugins.md).
 
 ## How a script is admitted
 
@@ -14,7 +16,7 @@ The worker is `src/vtx/codemode/sandbox.py`. The host spawns one subprocess per 
 subprocess.Popen([self._python, str(SANDBOX_PATH)], ...)
 ```
 
-(`src/vtx/codemode/host.py:399-400`). `python -m vtx.codemode.sandbox` imports the parent package chain first — including the agent SDK — which costs roughly 1.5 seconds against about 30 ms for the by-path launch (`src/vtx/codemode/host.py:67`). The worker therefore imports nothing from `vtx`. It re-implements the error taxonomy locally so the same class identity can be reconstructed across the wire (`src/vtx/codemode/sandbox.py:241`).
+(`src/vtx/codemode/host.py:399-400`). `python -m vtx.codemode.sandbox` imports the parent package chain first  --  including the agent SDK  --  which costs roughly 1.5 seconds against about 30 ms for the by-path launch (`src/vtx/codemode/host.py:67`). The worker therefore imports nothing from `vtx`. It re-implements the error taxonomy locally so the same class identity can be reconstructed across the wire (`src/vtx/codemode/sandbox.py:241`).
 
 The worker's `__name__` is `__codemode__` (`src/vtx/codemode/sandbox.py:264`), and it speaks newline-delimited JSON on fds 0 and 1. Before the script runs, `_reserve_fds` dups stdin to a protocol reader and stdout's fd to `_PROTOCOL_FD`, then points fds 0 and 1 at `/dev/null` so that stray `print` output or a child process writing to stdout cannot corrupt the frames (`src/vtx/codemode/sandbox.py:267-291`). Each frame is emitted with a single `os.write` (`src/vtx/codemode/sandbox.py:309`).
 
@@ -22,7 +24,7 @@ Your script is executed as the body of an async function. The source is indented
 
 - `return value` at the top level of the script sets `result.value`.
 - Assigning to a variable named `result` does nothing; `result.value` is then `None`.
-- Defining your own `async def runner()` does nothing either — only the script body's own return is read.
+- Defining your own `async def runner()` does nothing either  --  only the script body's own return is read.
 
 `sandbox.py` provides these globals to the script:
 
@@ -58,15 +60,15 @@ The script can ask for less, never more, through an options line at the top of t
 
 | Option | Bounds |
 |---|---|
-| `timeout_ms` | 1000 – 600000 (`src/vtx/codemode/source.py:32-33`) |
-| `max_output_tokens` | 256 – 200000 (`src/vtx/codemode/source.py:38-39`) |
-| `max_tool_calls` | 1 – 1000 (`src/vtx/codemode/source.py:43-44`) |
+| `timeout_ms` | 1000 - 600000 (`src/vtx/codemode/source.py:32-33`) |
+| `max_output_tokens` | 256 - 200000 (`src/vtx/codemode/source.py:38-39`) |
+| `max_tool_calls` | 1 - 1000 (`src/vtx/codemode/source.py:43-44`) |
 
 `clamp_timeout` and `clamp_int` apply the "min wins" rule against the host limit (`src/vtx/codemode/source.py:129-154`). Send the constraints to the model as a grammar with `CODEMODE_SOURCE_GRAMMAR` from `vtx.codemode.source` (`src/vtx/codemode/source.py:160-171`).
 
 ## The ToolRunner protocol
 
-The sandbox never touches your tool classes. It hands you a `ToolRunner`-shaped callable — anything implementing:
+The sandbox never touches your tool classes. It hands you a `ToolRunner`-shaped callable  --  anything implementing:
 
 ```python
 @runtime_checkable
@@ -89,15 +91,15 @@ Default catalog budget is 2000 tokens (`src/vtx/codemode/declarations.py:143`). 
 
 ## The governance gate
 
-A script's tool calls must obey the same rules as the model's own. Before the change that introduced this gate, a tool called by a script went straight to `execute()` and skipped the extension hooks, the permission gate, and cost accounting — a single approved `codemode` call could do anything any exposed tool could (`src/vtx/codemode/governance.py:1-21`).
+A script's tool calls must obey the same rules as the model's own. Before the change that introduced this gate, a tool called by a script went straight to `execute()` and skipped the extension hooks, the permission gate, and cost accounting  --  a single approved `codemode` call could do anything any exposed tool could (`src/vtx/codemode/governance.py:1-21`).
 
 `ToolGovernance` wraps one tool and one dispatcher. Per call it runs three steps (`src/vtx/codemode/governance.py:64-119`):
 
-1. **Permission gate** — call the host's `permission` callable, normally `vtx.core.permissions.check_permission` (`src/vtx/codemode/governance.py:192-194`). `ALLOW` runs the call. Any other answer, or a gate that raised, becomes a refusal (`src/vtx/codemode/governance.py:144-174`).
-2. **Extension hooks** — emit `TOOL_EXECUTION_START` then `TOOL_CALL`. A handler may return `{"block": True}` with an optional `reason`, which raises `f"{name} was not run: {reason}"`, or `{"args": {...}}` to rewrite the arguments. A handler that rewrites arguments for the model must rewrite them for the script too (`src/vtx/codemode/governance.py:83-101`).
-3. **Run the tool**, then announce `TOOL_EXECUTION_END`. Exceptions from that end-hook are swallowed — an extension's bug must not turn a tool that worked into a failure the script retries (`src/vtx/codemode/governance.py:124-142`).
+1. **Permission gate**  --  call the host's `permission` callable, normally `vtx.core.permissions.check_permission` (`src/vtx/codemode/governance.py:192-194`). `ALLOW` runs the call. Any other answer, or a gate that raised, becomes a refusal (`src/vtx/codemode/governance.py:144-174`).
+2. **Extension hooks**  --  emit `TOOL_EXECUTION_START` then `TOOL_CALL`. A handler may return `{"block": True}` with an optional `reason`, which raises `f"{name} was not run: {reason}"`, or `{"args": {...}}` to rewrite the arguments. A handler that rewrites arguments for the model must rewrite them for the script too (`src/vtx/codemode/governance.py:83-101`).
+3. **Run the tool**, then announce `TOOL_EXECUTION_END`. Exceptions from that end-hook are swallowed  --  an extension's bug must not turn a tool that worked into a failure the script retries (`src/vtx/codemode/governance.py:124-142`).
 
-`_decide`'s third case is the one that matters. `check_permission` answers ALLOW or PROMPT, and PROMPT means "ask the user" — which a script has nobody to ask. So PROMPT is treated as a refusal and the model is told to call the tool directly so the user can approve it (`src/vtx/codemode/governance.py:144-154`). A script is not a way to get a gated call done without asking; it is a way to do the ungated ones together (`src/vtx/codemode/governance.py:153-154`).
+`_decide`'s third case is the one that matters. `check_permission` answers ALLOW or PROMPT, and PROMPT means "ask the user"  --  which a script has nobody to ask. So PROMPT is treated as a refusal and the model is told to call the tool directly so the user can approve it (`src/vtx/codemode/governance.py:144-154`). A script is not a way to get a gated call done without asking; it is a way to do the ungated ones together (`src/vtx/codemode/governance.py:153-154`).
 
 Anything the tool raises that is not a `ToolError` is wrapped as `f"{name} failed"` with the traceback kept in `detail`, not in the message: `detail` never crosses the wire into the model's context, because a traceback can carry paths and credentials (`src/vtx/codemode/governance.py:109-114`).
 

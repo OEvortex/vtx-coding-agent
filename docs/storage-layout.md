@@ -2,7 +2,7 @@
 
 This page lists every path Vtx writes to and reads from, and names the function that resolves each one.
 
-Paths come from the running code, not from convention, so treat the `Resolved by` column as the source of truth. For what the files mean, read [configuration.md](configuration.md), [sessions.md](sessions.md), [skills.md](skills.md), [goals.md](goals.md), and [mcp.md](mcp.md).
+Paths come from the running code, not from convention, so treat the `Resolved by` column as the source of truth. For what the files mean, read [configuration.md](configuration.md), [sessions.md](sessions.md), [skills.md](skills.md), [goals.md](goals.md), and [mcp.md](mcp.md). For what a run writes to them, read [headless.md](headless.md) and [sdk.md](sdk.md); for what a plugin adds to that set, read [plugins.md](plugins.md).
 
 ## The three roots
 
@@ -30,7 +30,7 @@ The directory name is the constant `CONFIG_DIR_NAME = "vtx"` (`src/vtx/core/path
 
 ## Global tree
 
-Everything under `~/.vtx`, unless an env var above moved it.
+Everything under `~/.vtx`, unless one of the env vars listed below moved it.
 
 | Path | What | Resolved by |
 |---|---|---|
@@ -65,6 +65,8 @@ Two of these are read rather than written as whole directories: the usage heatma
 
 Global `AGENTS.md` or `CLAUDE.md` context files are read straight out of `~/.vtx` (`src/vtx/agent/context/agent_mds.py:87-89`), so `~/.vtx/AGENTS.md` is global project instructions.
 
+Any directory in this table can be named without guessing: `vtx plugin path default` prints the profile directory (`src/vtx/coding_agent/plugin_cmd.py:50-52`). See [plugins.md](plugins.md) for what the two files in it mean, [cli.md](cli.md) for the flags that override them, and [development.md](development.md) for the commands that read this tree.
+
 ## Project tree
 
 Everything here is relative to the working directory and is *not* moved by the config dir.
@@ -94,7 +96,7 @@ safe_cwd = cwd.replace("/", "-").replace("\\", "-").strip("-")
 sessions_dir = get_config_dir() / "sessions" / safe_cwd
 ```
 
-So `/home/me/proj` becomes `home-me-proj`, and the session files inside are named `<file_timestamp>_<session_id>.jsonl` where the timestamp is local time with dashes for separators (`src/vtx/agent/session.py:892-895`).
+So `/home/me/proj` becomes `home-me-proj`, and the session files inside are named `<file_timestamp>_<session_id>.jsonl`, where the timestamp is the session's UTC start time formatted `%Y-%m-%dT%H-%M-%S` (`src/vtx/agent/session.py:43-44`, `:892-895`).
 
 ## Discovery order
 
@@ -113,7 +115,7 @@ Agents follow the same shape (`src/vtx/agent/agents/discovery.py:40-100`): proje
 | `XDG_CONFIG_HOME` | Moves the global root to `$XDG_CONFIG_HOME/vtx` (`src/vtx/core/paths.py:13-19`) |
 | `HOME` | Sets the global root to `$HOME/.vtx` (`src/vtx/core/paths.py:20-24`) |
 | `VTX_MODELS_CACHE_DIR` | Replaces `~/.vtx/models` for every model catalog cache (`src/vtx/ai/dynamic_models.py:307-313`, `src/vtx/ai/model_fetcher.py:53-58`, `src/vtx/ai/oauth/cline.py:429-431`) |
-| `VTX_PROFILE` | Selects the profile, and therefore which `profiles/<name>/` is read (`src/vtx/plugins/bootstrap.py:35`) |
+| `VTX_PROFILE` | Selects the profile, and therefore which `profiles/<name>/` is read (`src/vtx/plugins/bootstrap.py:38`) |
 
 ## Worked example
 
@@ -161,7 +163,7 @@ The interesting lines are the first four: they name the exact directories this i
 
 ## Known gaps
 
-- Nothing under `~/.vtx` is encrypted or user-locked beyond the session directory's `0700`. Tokens in `codex_auth.json`, `copilot_auth.json` and `mcp-auth.json` are plain files, and the GitHub bot-id cache is written with default permissions (`src/vtx/git/README.md:87`).
+- Almost nothing under `~/.vtx` is encrypted. The OAuth tokens in `codex_auth.json`, `copilot_auth.json`, `cline_auth.json` and `mcp-auth.json` are plain files at default permissions, and even the GitHub App config is only tightened after the write, with a `chmod 0600` rather than an exclusive create (`src/vtx/git/gh_app.py:108-109`). Its bot-id cache gets no permissions treatment at all (`src/vtx/git/gh_app.py:228`, `src/vtx/git/README.md:87`).
 - The dynamic-auth key file does not follow one root. It prefers `~/vtx/dynamic_auth.yml` (a bare `vtx` in the home directory, outside the config dir), then `$XDG_CONFIG_HOME/vtx/dynamic_auth.json`, then `~/.vtx/dynamic_auth.json` (`src/vtx/ai/oauth/dynamic.py:52-72`). Only the third is what the rest of the layout would predict.
 - `get_agents_dir()` ignores `XDG_CONFIG_HOME` entirely, so setting it moves the config root but leaves skills reading `~/.agents/skills` (`src/vtx/core/paths.py:47-67`).
 - Session directories are keyed by the resolved-at-session-start working directory, so moving a project invalidates its history rather than following it (`src/vtx/agent/session.py:238`).
