@@ -127,6 +127,7 @@ class SessionUIMixin:
                         markup=markup,
                         ui_details_full=ui_details_full,
                         images=images or None,
+                        ui_data=message.ui_data,
                     )
             elif isinstance(entry, CompactionEntry):
                 chat.add_compaction_message(

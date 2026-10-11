@@ -104,6 +104,7 @@ def _budget_tool_result(message: ToolResultMessage) -> ToolResultMessage:
         ui_summary=message.ui_summary,
         ui_details=message.ui_details,
         ui_details_full=message.ui_details_full,
+        ui_data=message.ui_data,
         is_error=message.is_error,
         file_changes=message.file_changes,
     )

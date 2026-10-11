@@ -440,6 +440,7 @@ class ToolBlock(Static):
         self._ui_summary: str | None = None
         self._ui_details: str | None = None
         self._ui_details_full: str | None = None
+        self._ui_data: dict | None = None
         self._images: list[ImageContent] | None = None
         self._result_markup: bool = True
         self._expanded: bool = expanded
@@ -1078,6 +1079,7 @@ class ToolBlock(Static):
         markup: bool = True,
         ui_details_full: str | None = None,
         images: list[ImageContent] | None = None,
+        ui_data: dict | None = None,
     ) -> None:
         self._live_output = ""
         self._ui_summary = ui_summary
@@ -1087,6 +1089,7 @@ class ToolBlock(Static):
         self._result_markup = markup
         self._success = success
         self._awaiting_approval = False
+        self._ui_data = ui_data
         self._set_state(success)
         self._render_result_output()
         self._safe_update(
@@ -1433,6 +1436,7 @@ class TaskToolBlock(ToolBlock):
         markup: bool = True,
         ui_details_full: str | None = None,
         images: list | None = None,
+        ui_data: dict | None = None,
     ) -> None:
         if (
             self._subagent_ended
@@ -1452,6 +1456,7 @@ class TaskToolBlock(ToolBlock):
             markup=markup,
             ui_details_full=ui_details_full,
             images=images,
+            ui_data=ui_data,
         )
 
     def _current_elapsed_ms(self) -> float | None:
@@ -1511,11 +1516,7 @@ class TaskToolBlock(ToolBlock):
 
 COMPACTION_TICK_MS = 100
 
-_TRIGGER_LABELS = {
-    "overflow": "auto-compaction",
-    "manual": "requested",
-    "kernel": "kernel request",
-}
+_TRIGGER_LABELS = {"overflow": "auto-compaction", "manual": "requested"}
 
 
 def _short_section_title(title: str) -> str:

@@ -310,6 +310,7 @@ async def _execute_tool(
             ui_summary=result.ui_summary,
             ui_details=result.ui_details,
             ui_details_full=result.ui_details_full,
+            ui_data=result.ui_data,
             is_error=not result.success,
             file_changes=result.file_changes,
         ), result.file_changes
@@ -1187,6 +1188,7 @@ class _TurnRunner:
                                 ui_summary=result.ui_summary,
                                 ui_details=result.ui_details,
                                 ui_details_full=result.ui_details_full,
+                                ui_data=result.ui_data,
                                 is_error=result.is_error,
                                 file_changes=result.file_changes,
                             )

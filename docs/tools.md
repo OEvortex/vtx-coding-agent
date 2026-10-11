@@ -349,7 +349,7 @@ Load, create, and patch skills. Mutating, because `create`, `edit`, `patch`, and
 
 | Parameter | Type | Default | Description |
 |---|---|---|---|
-| `action` | enum | `"load"` | `load`, `list`, `view`, `create`, `patch`, `edit`, `delete`, `run` |
+| `action` | enum | `"load"` | `load`, `list`, `view`, `create`, `patch`, `edit`, `delete` |
 | `name` | `str \| None` | `None` | Skill name (lowercase/hyphens). Required except for `list` |
 | `content` | `str \| None` | `None` | Full SKILL.md content; required for `create` and `edit` |
 | `old_string` | `str \| None` | `None` | Unique exact text to replace; required for `patch` |
@@ -372,10 +372,6 @@ Load, create, and patch skills. Mutating, because `create`, `edit`, `patch`, and
 ```json
 {"action": "patch", "name": "my-skill", "old_string": "Steps.", "new_string": "1. Do this."}
 ```
-
-`action: "run"` returns the skill file rather than executing it, because there is no
-persistent Python kernel any more (`src/vtx/coding_agent/tools/skill.py:229`). A
-skill's body is instructions for a model, and the model reads them.
 
 See [skills.md](skills.md) for the full authoring contract.
 

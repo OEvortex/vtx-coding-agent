@@ -560,6 +560,7 @@ class AgentRunnerMixin:
                         success,
                         markup=markup,
                         ui_details_full=ui_details_full,
+                        ui_data=r.ui_data,
                     )
                 status.set_active_tool(None)
                 if fc:

@@ -620,6 +620,7 @@ class ChatLog(VerticalScroll):
         markup: bool = True,
         ui_details_full: str | None = None,
         images: list[ImageContent] | None = None,
+        ui_data: dict | None = None,
     ) -> None:
         block = self._tool_blocks.get(tool_id)
         if block:
@@ -630,6 +631,7 @@ class ChatLog(VerticalScroll):
                 markup=markup,
                 ui_details_full=ui_details_full,
                 images=images,
+                ui_data=ui_data,
             )
             if ui_details:
                 # All ToolStartEvents arrive during streaming before any

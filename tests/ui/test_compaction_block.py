@@ -284,8 +284,12 @@ class TestCompactionBlockMounted:
 
 class TestCompactionEvents:
     def test_start_event_carries_context(self):
-        event = CompactionStartEvent(tokens_before=1000, context_window=2000, trigger="kernel")
-        assert (event.tokens_before, event.context_window, event.trigger) == (1000, 2000, "kernel")
+        event = CompactionStartEvent(tokens_before=1000, context_window=2000, trigger="overflow")
+        assert (event.tokens_before, event.context_window, event.trigger) == (
+            1000,
+            2000,
+            "overflow",
+        )
 
     def test_end_event_carries_summary(self):
         event = CompactionEndEvent(tokens_before=10, tokens_after=2, summary="s")

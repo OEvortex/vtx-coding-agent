@@ -190,7 +190,7 @@ class CompactionStartEvent:
     type: Literal["compaction_start"] = "compaction_start"
     tokens_before: int = 0
     context_window: int = 0
-    trigger: str = ""  # "overflow" | "manual" | "kernel"
+    trigger: str = ""  # "overflow" | "manual"
 
 
 @dataclass

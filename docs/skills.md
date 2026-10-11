@@ -178,6 +178,5 @@ for path, message in result.warnings:
 - The bundled skills are synced to `~/.vtx/skills/` on every context load, so editing a copy there changes what the model sees until the next sync overwrites it.
 - `sync_builtin_skills` swallows every exception (`src/vtx/agent/context/skills.py:371`), so a copy failure leaves a stale or missing bundled tree with no diagnostic.
 - The compact index drops skills once the budget is spent. A skill omitted from it is still installed and still loadable by name, but the model is never told it exists except through the omitted count.
-- `skill(action="run")` has no runtime. It returns the file and a message; it does not execute anything.
 
 See [plugins.md](plugins.md) for the row that registers the `skill` tool, [extensions.md](extensions.md) for the `ExtensionAPI` surface, [configuration.md](configuration.md) for config files, [cli.md](cli.md) for the command-line flags, and [tools.md](tools.md) for the tool contract.

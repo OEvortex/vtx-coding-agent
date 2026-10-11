@@ -25,12 +25,11 @@ class SkillParams(BaseModel):
                 data[key] = None
         return data
 
-    action: Literal["load", "list", "view", "create", "patch", "edit", "delete", "run"] = Field(
+    action: Literal["load", "list", "view", "create", "patch", "edit", "delete"] = Field(
         description=(
             "Action: 'load' (inject a skill's instructions into context, the normal way "
             "to use one), 'list' (discover), 'view' (raw file read), 'create' (new skill), "
-            "'patch' (find-replace), 'edit' (overwrite), 'delete' (remove), "
-            "or 'run' (execute skill instructions in REPL)"
+            "'patch' (find-replace), 'edit' (overwrite), or 'delete' (remove)"
         ),
         default="load",
     )
@@ -90,8 +89,7 @@ class SkillTool(BaseTool):
         "full skill body plus the skill's directory and the files beside it, so relative paths "
         "inside the skill resolve without a separate read. Also manages skills: 'list' to "
         "discover, 'view' for a raw file read, 'create'/'edit' to author SKILL.md files, "
-        "'patch' for targeted replacements, 'delete' to remove a skill, 'run' to execute a "
-        "skill's instructions in the REPL."
+        "'patch' for targeted replacements, and 'delete' to remove a skill."
     )
 
     def format_call(self, params: SkillParams) -> str:
@@ -220,41 +218,6 @@ class SkillTool(BaseTool):
             except Exception as e:
                 msg = f"Failed to read skill file: {e}"
                 return ToolResult(success=False, result=msg, ui_summary=f"[red]{msg}[/red]")
-
-        # Handle 'run' action - hand the skill to the model
-        if params.action == "run":
-            # `run` used to hand the skill to the persistent Python kernel.
-            # That kernel went with the RLM mode, so there is nothing to run it
-            # in. Say so and return the file rather than failing outright: a
-            # markdown skill's body is instructions, and the model can follow
-            # them itself.
-            msg = (
-                "action='run' needs the persistent Python kernel, which no longer "
-                "exists. Returning the skill file instead -- use action='view' if "
-                "you only want the path."
-            )
-
-            if not skill_dir:
-                msg = f"Skill '{params.name}' not found."
-                return ToolResult(success=False, result=msg, ui_summary=f"[red]{msg}[/red]")
-
-            target_file = params.file_path or "SKILL.md"
-            target_path = skill_dir / target_file
-            try:
-                skill_content = target_path.read_text(encoding="utf-8")
-            except Exception as e:
-                msg = f"Failed to read skill file: {e}"
-                return ToolResult(success=False, result=msg, ui_summary=f"[red]{msg}[/red]")
-
-            # Executing a skill meant running its body in the persistent kernel, which
-            # went with the RLM mode. A python skill has no runtime now, and a
-            # markdown skill's body is instructions for a model rather than
-            # code, so the file is handed back and the model reads it.
-            return ToolResult(
-                success=True,
-                result=f"{msg}\n\n---\n{skill_content}",
-                ui_summary=f"Read skill '{params.name}'",
-            )
 
         # Mutating actions: 'create', 'edit', 'patch', 'delete'
         if is_builtin:

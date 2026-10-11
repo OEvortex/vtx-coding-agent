@@ -366,8 +366,15 @@ class CodemodeTool(BaseTool):
         )
 
     def format_call(self, params: CodemodeParams) -> str:
-        first = params.code.strip().split("\n", 1)[0]
-        return f"script: {first[:60]}" if first else "script: (empty)"
+        """The whole script.
+
+        Every other tool can summarise a call in one line because the line *is*
+        the call; here the script is the call, so a first-line preview showed
+        the user a fragment of the thing they were approving and running. The
+        notebook block (:mod:`vtx.tui.codemode_block`) owns how much of it to
+        draw, and other consumers (the tool tree, the header) clip on their own.
+        """
+        return params.code.strip()[:8000]
 
     def format_preview(self, params: CodemodeParams) -> str | None:
         """The script itself, at approval time.
@@ -378,6 +385,12 @@ class CodemodeTool(BaseTool):
         """
         text = params.code.strip()
         return text if len(text) <= 4000 else text[:4000] + "\n# ... truncated"
+
+    @property
+    def ui_block(self) -> type | None:  # type: ignore[override]
+        from vtx.tui.codemode_block import CodemodeToolBlock
+
+        return CodemodeToolBlock
 
     # -- execution --------------------------------------------------------
 
@@ -395,6 +408,7 @@ class CodemodeTool(BaseTool):
 
         sandbox = self._get_sandbox()
         self.cancel_event = cancel_event
+        started = time.monotonic()
         result = await sandbox.execute(
             source.code,
             store=self._store,
@@ -403,6 +417,13 @@ class CodemodeTool(BaseTool):
             max_output_tokens=source.max_output_tokens,
             signal=cancel_event,
         )
+        # Measured here rather than read from the sandbox: the wall clock of a
+        # run includes the host-side tool calls, which is exactly the number
+        # that tells the user why a cell took ninety seconds.
+        duration_ms = int((time.monotonic() - started) * 1000)
+
+        images = _result_images(result)
+        ui_data = _ui_payload(source, result, duration_ms=duration_ms, images=len(images))
 
         if not result.ok:
             # `ok=False` guarantees a diagnostic, but the type cannot see that, and
@@ -419,15 +440,15 @@ class CodemodeTool(BaseTool):
             return ToolResult(
                 success=False,
                 result="\n".join(body),
-                images=_result_images(result) or None,
+                images=images or None,
                 ui_summary=_failure_summary(result, diagnostic),
+                ui_data=ui_data,
             )
 
         # Commit the store only on success: a script that half-ran must not leave
         # state behind that the model believes was never written.
         result.apply_to_store(self._store)
 
-        images = _result_images(result)
         parts = [item.get("text", "") for item in result.output if item.get("type") == "text"]
         value_repr = _render_value(result.value)
         if value_repr is not None:
@@ -439,7 +460,11 @@ class CodemodeTool(BaseTool):
             # the whole of.
             body = f"{body}\n\n[Output truncated to fit the model's context.]"
         return ToolResult(
-            success=True, result=body, images=images or None, ui_summary=_success_summary(result)
+            success=True,
+            result=body,
+            images=images or None,
+            ui_summary=_success_summary(result),
+            ui_data=ui_data,
         )
 
 

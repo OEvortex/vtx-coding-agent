@@ -133,6 +133,7 @@ class ToolResultMessage(BaseModel):
     ui_summary: str | None = None  # One-line UI text rendered on tool header line
     ui_details: str | None = None  # Collapsed multiline UI text rendered below the header
     ui_details_full: str | None = None  # Expanded multiline UI text rendered below the header
+    ui_data: dict[str, Any] | None = None  # Structured payload for a tool's custom ui_block
     is_error: bool = False
     file_changes: FileChanges | None = None
 
@@ -215,6 +216,16 @@ class ToolResult(BaseModel):
     throw away the only information explaining the failure.
     """
 
+    ui_data: dict[str, Any] | None = None
+    """Structured payload for a tool that ships its own ``ui_block``.
+
+    ``ui_summary`` and ``ui_details`` are strings because most tools are lines of
+    prose. A block that lays out real structure -- a notebook cell, a timeline, a
+    tree -- needs the underlying data instead, and pre-rendering that into markup
+    would make an escape-hatch string the interface. Only JSON-safe values, so it
+    survives a session file unchanged.
+    """
+
 
 # UI rendering model:
 #
@@ -225,6 +236,8 @@ class ToolResult(BaseModel):
 # - format_call(params): short call text shown on the header line
 # - ui_summary: one-line result summary appended to the same header line
 # - ui_details: multiline result body shown below the header
+# - ui_data: structured payload for a tool with its own ui_block, which owns
+#   the layout instead of receiving strings (see blocks.ToolBlock)
 #
 # Example (read):
 #   → Read ~/src/vtx/turn.py:150-204 (55 lines)
