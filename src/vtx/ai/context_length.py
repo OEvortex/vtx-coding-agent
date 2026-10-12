@@ -6,9 +6,11 @@ caches them. Provides lookup by model ID with fuzzy matching fallback.
 
 from __future__ import annotations
 
+import asyncio
 import json
 import logging
 import threading
+import time
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
@@ -20,6 +22,9 @@ logger = logging.getLogger(__name__)
 MODELS_DEV_API_URL = "https://models.dev/api.json"
 CACHE_FILE = "models_dev_limits.json"
 CACHE_TTL_SECONDS = 24 * 60 * 60  # 24 hours
+# How often a long-lived process re-attempts a refresh after its cache went
+# stale, so a session older than the TTL still picks up new models/efforts.
+STALE_RECHECK_SECONDS = 60 * 60
 
 
 def safe_max_output_tokens(context: int) -> int:
@@ -46,6 +51,12 @@ class ContextLengthManager:
         self._limits: dict[str, TokenLimits] = {}
         self._loaded = False
         self._lock = threading.Lock()
+        # Stale-while-revalidate state. ``_stale`` means "what is loaded is
+        # usable but a refresh is due"; it is the difference between serving
+        # yesterday's catalog and serving nothing at all.
+        self._stale = True
+        self._refreshing = False
+        self._last_refresh_attempt = 0.0
 
     def _get_cache_path(self) -> Path:
         from vtx.core.paths import get_config_dir
@@ -55,15 +66,14 @@ class ContextLengthManager:
     def _load_from_cache(self) -> bool:
         path = self._get_cache_path()
         try:
-            import time
-
-            if path.exists() and (path.stat().st_mtime + CACHE_TTL_SECONDS) > time.time():
-                data = json.loads(path.read_text(encoding="utf-8"))
-                self._parse_limits(data)
-                return True
+            if not path.exists():
+                return False
+            data = json.loads(path.read_text(encoding="utf-8"))
+            self._stale = (path.stat().st_mtime + CACHE_TTL_SECONDS) <= time.time()
         except Exception:
-            pass
-        return False
+            return False
+        self._parse_limits(data)
+        return True
 
     def _save_to_cache(self, data: dict[str, Any]) -> None:
         try:
@@ -74,12 +84,15 @@ class ContextLengthManager:
             logger.debug("Failed to save models.dev cache: %s", exc)
 
     def _fetch_and_parse(self) -> None:
+        self._last_refresh_attempt = time.time()
         try:
             req = Request(MODELS_DEV_API_URL, headers={"User-Agent": "vtx/1.0"})
             with urlopen(req, timeout=10) as resp:
                 data = json.loads(resp.read().decode("utf-8"))
-                self._parse_limits(data)
-                self._save_to_cache(data)
+                with self._lock:
+                    self._parse_limits(data)
+                    self._save_to_cache(data)
+                self._stale = False
                 logger.info("Loaded model limits from models.dev")
         except (URLError, Exception) as exc:
             logger.debug("Failed to fetch model limits: %s", exc)
@@ -118,28 +131,58 @@ class ContextLengthManager:
                         thinking_level_map=thinking_level_map,
                     )
 
+    def _schedule_refresh(self) -> None:
+        """Fetch models.dev without blocking the caller.
+
+        The TUI resolves limits from the event loop (``_handle_model_command``
+        lives there), and a 10s ``urlopen`` on that thread freezes the picker
+        and looks like "/model does not work". So inside a running loop the
+        fetch runs in a daemon thread and lands in ``_limits`` when it
+        finishes; outside a loop there is nothing to block, so stay inline.
+        """
+        try:
+            asyncio.get_running_loop()
+        except RuntimeError:
+            self._fetch_and_parse()
+            return
+        if self._refreshing:
+            return
+        self._refreshing = True
+        threading.Thread(
+            target=self._refresh_in_background, name="vtx-models-dev", daemon=True
+        ).start()
+
+    def _refresh_in_background(self) -> None:
+        try:
+            self._fetch_and_parse()
+        finally:
+            self._refreshing = False
+
     def ensure_loaded(self) -> None:
         if self._loaded:
+            self._refresh_if_due()
             return
         with self._lock:
             if self._loaded:
                 return
-            if not self._load_from_cache():
-                # Avoid blocking the Textual UI thread on fresh pip/uv-tool
-                # installs where no cache exists yet. The TUI calls
-                # get_limits() synchronously from _handle_model_command which
-                # runs on the event loop; a 10s urlopen there freezes the
-                # picker and looks like "/model does not work" while
-                # "/model refresh" (which runs in a worker thread) succeeds.
-                # Defer network fetch to the background refresh path.
-                try:
-                    import asyncio
-
-                    asyncio.get_running_loop()
-                    # Inside TUI - skip network, load remains empty.
-                except RuntimeError:
-                    self._fetch_and_parse()
             self._loaded = True
+            loaded = self._load_from_cache()
+        if not loaded or self._stale:
+            self._schedule_refresh()
+
+    def _refresh_if_due(self) -> None:
+        """Re-check an expired cache on later lookups, rate-limited.
+
+        Without this a process started with an empty cache would call
+        ``_schedule_refresh`` once, fail offline, and then never try again for
+        as long as it lives - the picker would run on empty limits forever.
+        """
+        if not self._stale or self._refreshing:
+            return
+        since = time.time() - self._last_refresh_attempt
+        if self._last_refresh_attempt and since < STALE_RECHECK_SECONDS:
+            return
+        self._schedule_refresh()
 
     def get_limits(self, model: str) -> TokenLimits:
         self.ensure_loaded()

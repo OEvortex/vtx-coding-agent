@@ -443,7 +443,6 @@ def _raw_model_list(payload: Any, response_format: str) -> list[dict[str, Any]]:
 # Models.dev specifications URL
 MODELS_DEV_URL = "https://models.dev/models.json"
 
-
 _FETCH_TIMEOUT = httpx.Timeout(FETCH_TIMEOUT_SECONDS, connect=3.0)
 
 # In-memory cache for models.dev to avoid re-reading/parsing per provider.
@@ -511,21 +510,69 @@ async def _fetch_models_dev(client: httpx.AsyncClient | None = None) -> dict[str
 
 
 def _read_models_dev_sync() -> dict[str, Any]:
+    """Merge both models.dev caches: flat specs + effort metadata.
+
+    The ``models.json`` file only holds specs, while ``models_dev_limits.json``
+    holds the ``reasoning_options`` block that carries effort metadata. Both
+    are flattened and merged; the limits spec wins because it is the only one
+    that can carry a ``reasoning_options`` block.
+    """
+    flat = _load_flat_models_dev()
+    limits = _load_limits_models_dev()
+    if not flat:
+        return limits
+    if not limits:
+        return flat
+    merged = dict(flat)
+    merged.update(limits)
+    return merged
+
+
+def _load_flat_models_dev() -> dict[str, Any]:
     path = get_cache_dir() / "models_dev.json"
     try:
         if path.exists():
-            return json.loads(path.read_text(encoding="utf-8"))
-    except Exception:
-        pass
-    try:
-        from vtx.core.paths import get_config_dir
-
-        limits_path = get_config_dir() / "models_dev_limits.json"
-        if limits_path.exists():
-            return json.loads(limits_path.read_text(encoding="utf-8"))
+            data = json.loads(path.read_text(encoding="utf-8"))
+            return data if isinstance(data, dict) else {}
     except Exception:
         pass
     return {}
+
+
+def _load_limits_models_dev() -> dict[str, Any]:
+    """Flatten the nested models.dev limits cache into ``model_id -> spec``.
+
+    ``models_dev_limits.json`` is written by :mod:`vtx.ai.context_length` and
+    nests specs per provider, so ``grok-4.5`` sits under ``xai``. The flat
+    ``models.json`` spells the same model ``"xai/grok-4.5"``, so both the bare
+    id and the provider-prefixed id are emitted; that is what lets the two
+    caches merge instead of sitting side by side under different keys.
+    """
+    from vtx.core.paths import get_config_dir
+
+    path = get_config_dir() / "models_dev_limits.json"
+    data: Any = None
+    try:
+        if path.exists():
+            data = json.loads(path.read_text(encoding="utf-8"))
+    except Exception:
+        return {}
+    if not isinstance(data, dict):
+        return {}
+    flat: dict[str, Any] = {}
+    for provider_name, provider_data in data.items():
+        if not isinstance(provider_data, dict):
+            continue
+        models = provider_data.get("models")
+        if not isinstance(models, dict):
+            continue
+        for model_id, model_info in models.items():
+            if not isinstance(model_info, dict):
+                continue
+            flat[model_id] = model_info
+            prefixed = f"{provider_name}/{model_id}"
+            flat.setdefault(prefixed, model_info)
+    return flat
 
 
 def _find_spec_in_models_dev(model_id: str, models_dev: dict[str, Any]) -> dict[str, Any] | None:

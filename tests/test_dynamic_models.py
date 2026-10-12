@@ -186,6 +186,87 @@ def test_parse_models_uses_models_dev_for_minimax_m3() -> None:
     assert entry.max_tokens == 64000
 
 
+def test_read_models_dev_merges_effort_metadata(monkeypatch, tmp_path: Path) -> None:
+    """The effort map must come from the limits cache, not just the flat one.
+
+    ``models.json`` publishes specs but no ``reasoning_options``; the verified
+    effort block lives in ``models_dev_limits.json``. Reading only the flat
+    file left every model with ``thinking_level_map=None``, so ``/thinking``
+    offered just "default" - a level that is offered but never sent.
+    """
+    import json
+
+    from vtx.ai.dynamic_models import _read_models_dev_sync
+
+    monkeypatch.setenv("VTX_MODELS_CACHE_DIR", str(tmp_path))
+    monkeypatch.setattr("vtx.core.paths.get_config_dir", lambda: tmp_path)
+    (tmp_path / "models_dev.json").write_text(
+        json.dumps(
+            {
+                "xai/grok-4.5": {
+                    "id": "xai/grok-4.5",
+                    "reasoning": True,
+                    "limit": {"context": 500000, "output": 50000},
+                }
+            }
+        ),
+        encoding="utf-8",
+    )
+    (tmp_path / "models_dev_limits.json").write_text(
+        json.dumps(
+            {
+                "xai": {
+                    "models": {
+                        "grok-4.5": {
+                            "reasoning": True,
+                            "reasoning_options": [
+                                {"type": "effort", "values": ["low", "medium", "high"]}
+                            ],
+                            "limit": {"context": 500000, "output": 50000},
+                        }
+                    }
+                }
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    merged = _read_models_dev_sync()
+    assert merged["xai/grok-4.5"]["reasoning_options"] == [
+        {"type": "effort", "values": ["low", "medium", "high"]}
+    ]
+
+    parsed = _parse_models([{"id": "xai/grok-4.5", "name": "Grok"}], models_dev=merged)
+    assert parsed[0].thinking_level_map == {
+        "off": None,
+        "minimal": None,
+        "low": "low",
+        "medium": "medium",
+        "high": "high",
+        "xhigh": None,
+        "max": None,
+    }
+
+
+def test_read_models_dev_survives_missing_limits_cache(monkeypatch, tmp_path: Path) -> None:
+    """A missing limits cache is not fatal: the flat specs still parse."""
+    import json
+
+    from vtx.ai.dynamic_models import _read_models_dev_sync
+
+    monkeypatch.setenv("VTX_MODELS_CACHE_DIR", str(tmp_path))
+    monkeypatch.setattr("vtx.core.paths.get_config_dir", lambda: tmp_path)
+    (tmp_path / "models_dev.json").write_text(
+        json.dumps({"xai/grok-4.5": {"id": "xai/grok-4.5", "reasoning": True}}), encoding="utf-8"
+    )
+
+    merged = _read_models_dev_sync()
+
+    assert merged["xai/grok-4.5"]["id"] == "xai/grok-4.5"
+    parsed = _parse_models([{"id": "xai/grok-4.5", "name": "Grok"}], models_dev=merged)
+    assert parsed[0].thinking_level_map is None
+
+
 # =================================================================================================
 # Cache IO
 # =================================================================================================
