@@ -86,8 +86,16 @@ def test_the_default_tool_set_matches_the_documented_one(mounted):
         "delegate_subagent",
         "goal",
         "codemode",
-        "tool_search",
     }
+
+
+def test_tool_search_is_registered_but_not_default_on(mounted):
+    # A declaration is paid on every turn, so the search tool is mounted only
+    # for sessions that have something to find (ConversationRuntime
+    # .declared_tools). Registered, so an extension can still override the name
+    # and so `_harness_tool_search` can wire it.
+    assert "tool_search" in mounted.base.tools.names()
+    assert "tool_search" not in mounted.base.tools.defaults()
 
 
 def test_parent_only_tools_stay_parent_only(mounted):

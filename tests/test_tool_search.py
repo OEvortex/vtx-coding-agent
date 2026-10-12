@@ -114,7 +114,10 @@ async def test_a_match_is_activated_so_the_next_turn_can_call_it():
     result = await search.execute(_params("search the docs"))
     assert result.success
     assert activated == ["mcp__docs__search"]
-    assert "now in your tool list" in result.result
+    # pi-mono's wording: the tool is offered on the next call, which is what
+    # activation actually means here.
+    assert "available from your next call" in result.result
+    assert result.ui_data == {"loaded": ["mcp__docs__search"]}
 
 
 @pytest.mark.asyncio
@@ -146,6 +149,63 @@ async def test_nothing_to_find_is_reported_as_such():
     result = await search.execute(_params("anything"))
     assert result.success
     assert "No further tools are available" in result.result
+
+
+@pytest.mark.asyncio
+async def test_an_empty_query_is_refused_rather_than_answered_with_nothing():
+    # "Found nothing" would teach the model the wrong lesson: it asked for
+    # nothing. pi-mono throws; vtx answers with a failure the model can act on.
+    search = ToolSearchTool()
+    search.tool_source = lambda: [_mcp_tool("mcp__docs__search", "Search the docs", "codemode")]
+    result = await search.execute(_params("   "))
+    assert not result.success
+    assert "must not be empty" in result.result
+
+
+@pytest.mark.asyncio
+async def test_the_result_reads_like_pi_monos():
+    # pi-mono's shape: a loaded count, then one line per match carrying the tool
+    # and the first line of its description, then this product's signature.
+    search = ToolSearchTool()
+    search.tool_source = lambda: [
+        _mcp_tool("mcp__a__search", "Search the docs", "codemode"),
+        _mcp_tool("mcp__b__list", "List issues", "codemode"),
+    ]
+    result = await search.execute(_params("search the docs"))
+    assert result.result.startswith("Loaded 1 tool. They are available from your next call:")
+    assert result.result.count("- ") == 0, "bullets belong to the UI body, not the model text"
+    assert "\nmcp__a__search: Search the docs\n" in result.result
+    assert "def tools.mcp__a__search" in result.result
+
+
+@pytest.mark.asyncio
+async def test_the_ui_body_lists_what_was_loaded():
+    # pi-mono attaches `details: { loaded }` to a call and renders the tool's
+    # name plus description. The collapsed body is that list; the expanded body
+    # also carries the signature; `ui_data` carries the names.
+    search = ToolSearchTool()
+    search.tool_source = lambda: [
+        _mcp_tool("mcp__a__search", "Search the docs", "codemode"),
+        _mcp_tool("mcp__b__list", "List issues", "codemode"),
+    ]
+    result = await search.execute(_params("search the docs"))
+    assert result.ui_details == "- mcp__a__search: Search the docs"
+    assert result.ui_details_full and "def tools.mcp__a__search" in result.ui_details_full
+    assert result.ui_data == {"loaded": ["mcp__a__search"]}
+    assert "loaded 1: mcp__a__search" in result.ui_summary
+
+
+@pytest.mark.asyncio
+async def test_the_ui_body_caps_the_summary_names():
+    search = ToolSearchTool()
+    search.tool_source = lambda: [
+        _mcp_tool(f"mcp__s__t{i}", f"Tool number {i}", "codemode") for i in range(6)
+    ]
+    result = await search.execute(_params("tool number"))
+    assert result.ui_summary.startswith("loaded 6: ")
+    assert result.ui_summary.endswith("...")
+    assert result.ui_details and result.ui_details.count("\n- ") == 5
+    assert len(result.ui_data["loaded"]) == 6
 
 
 def _params(query: str, limit: int = 8):

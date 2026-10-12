@@ -16,6 +16,14 @@ something asks for it by name.
 That is the difference between "the model can find this if it thinks to look"
 and "the model is shown this once it has said what it wants". With a large tool
 set, only the second one scales.
+
+Its result block follows pi-mono's ``tool_search``: a loaded count, then one
+line per match naming the tool and the first line of its description, then the
+rendered signature this product keeps, because finding a tool and knowing how
+to call it should be one round trip -- a model that has to search again for the
+parameter names has spent the turn it was trying to save. ``ui_details`` and
+``ui_details_full`` carry the collapsed and expanded body, and ``ui_data``
+carries the loaded names, the detail pi-mono attaches to a call as ``details``.
 """
 
 from __future__ import annotations
@@ -55,18 +63,19 @@ class ToolSearchTool(BaseTool):
 
     name = TOOL_SEARCH_TOOL_NAME
     description = (
-        "Find tools that are available but not listed, by what they do. Use it "
-        "when a capability you need is missing from your tool list -- a connected "
-        "MCP server's tools are often reachable without being declared."
+        "Searches tool metadata with BM25 to find tools that are not loaded yet, "
+        "and loads the matches so they are offered on your next call. Use it when "
+        "a capability you need is missing from your tool list: a connected MCP "
+        "server's tools are often reachable without being declared, and for MCP "
+        "tool discovery always use this tool."
     )
     params = ToolSearchParams
     mutating = False
     needs_approval = False
     tool_icon = "⌕"
     prompt_guidelines = (
-        "`tool_search` finds tools that exist but are not in your tool list, such "
-        "as a connected MCP server's. Use it before reporting a capability as "
-        "unavailable.",
+        "`tool_search` loads tools that are not offered yet. Use it before "
+        "reporting a capability as unavailable.",
     )
 
     #: A capable model should write the query as raw prose rather than as a
@@ -133,6 +142,13 @@ number: /-?\d+/
     async def execute(
         self, params: ToolSearchParams, cancel_event: asyncio.Event | None = None
     ) -> ToolResult:
+        if not params.query.strip():
+            # An empty query matches nothing, and "found nothing" teaches the
+            # wrong lesson: the model asked for nothing. pi-mono refuses it
+            # rather than ranking against an empty term list.
+            msg = "query must not be empty"
+            return ToolResult(success=False, result=msg, ui_summary=f"[red]{msg}[/red]")
+
         candidates = self.searchable()
         if not candidates:
             return ToolResult(
@@ -141,7 +157,8 @@ number: /-?\d+/
                     "No further tools are available. Everything this session can "
                     "reach is already in your tool list."
                 ),
-                ui_summary="tool_search: nothing to find",
+                ui_summary="[dim]nothing to find[/dim]",
+                ui_data=_loaded_data([]),
             )
 
         documents = [_as_codemode_tool(tool) for tool in candidates]
@@ -156,28 +173,52 @@ number: /-?\d+/
                     "a tool's parameters are searched too, so naming a field finds "
                     "the tool that has it."
                 ),
-                ui_summary="tool_search: no matches",
+                ui_summary="[dim]no matches[/dim]",
+                ui_data=_loaded_data([]),
             )
 
         found = [match.tool.name for match in matches]
         if self.activate is not None:
             # Load them. Without this the model has been told about a tool it
-            # still cannot call, which is worse than not finding it: the next
-            # turn would fail on an unknown tool name.
+            # still cannot call -- it would name one that no request offers,
+            # which is worse than not finding it at all.
             self.activate(found)
 
-        lines = [
-            f"Found {len(found)} tool{'' if len(found) == 1 else 's'}."
-            + (" They are now in your tool list." if self.activate is not None else "")
+        bullets = [f"- {m.tool.identifier()}: {_first_line(m.tool.description)}" for m in matches]
+        sections = [
+            f"{m.tool.identifier()}: {_first_line(m.tool.description)}\n{_signature(m.tool)}"
+            for m in matches
         ]
-        for match in matches:
-            tool = match.tool
-            lines.append(f"\n{tool.identifier()}\n{_signature(tool)}")
+        body = "\n\n".join(sections)
         return ToolResult(
             success=True,
-            result="\n".join(lines),
-            ui_summary=f"tool_search: {', '.join(found[:4])}",
+            result=f"{_headline(matches)}\n\n{body}",
+            ui_summary=f"loaded {len(found)}:{_summary_names(found)}",
+            ui_details="\n".join(bullets),
+            ui_details_full=body,
+            ui_data=_loaded_data(found),
         )
+
+
+def _headline(matches: Sequence[Any]) -> str:
+    """pi-mono's "Loaded N tools. They are available from your next call:"."""
+    plural = "" if len(matches) == 1 else "s"
+    return f"Loaded {len(matches)} tool{plural}. They are available from your next call:"
+
+
+def _loaded_data(names: Sequence[str]) -> dict[str, Any]:
+    """What pi-mono attaches to a ``tool_search`` call as ``details``."""
+    return {"loaded": list(names)}
+
+
+def _summary_names(found: Sequence[str]) -> str:
+    return " " + ", ".join(found[:4]) + ("..." if len(found) > 4 else "")
+
+
+def _first_line(description: str | None) -> str:
+    """The description's opening line, as pi-mono's result lists it."""
+    text = (description or "").strip()
+    return text.splitlines()[0] if text else ""
 
 
 def _as_codemode_tool(tool: BaseTool) -> CodemodeTool:
@@ -216,9 +257,18 @@ __all__ = ["DEFAULT_LIMIT", "TOOL_SEARCH_TOOL_NAME", "ToolSearchParams", "ToolSe
 
 @plugin(name="tool-search", inject=("tools",))
 def apply(ctx, config):
-    """Registered but not in the default set: the harness mounts it alongside
-    ``codemode``, which is what makes deferred tools reachable."""
-    mount_tool(ctx, ToolSearchTool(), is_default=True, parent_only=False)
+    """Registered but not in the default set: the harness declares it only when
+    there is something for it to find.
+
+    A tool declaration is paid on every turn, and this tool's whole purpose is
+    finding tools a large MCP server has not offered. A session with no
+    script-discoverable tools would pay that for nothing, so it is registered
+    (an extension can still override the name, and ``_harness_tool_search``
+    finds it) while ``ConversationRuntime.declared_tools`` is what decides
+    whether the model is shown it -- the same rule pi-mono uses, activating
+    ``tool_search`` for a server with ``deferred`` exposure.
+    """
+    mount_tool(ctx, ToolSearchTool(), is_default=False, parent_only=False)
 
 
 PLUGIN = apply

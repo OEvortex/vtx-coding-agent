@@ -51,8 +51,10 @@ BASE: list[Row] = [
     Row(id="tool-skill", name="vtx.coding_agent.tools.skill:PLUGIN"),
     Row(id="tool-web", name="vtx.plugins.builtins.tools.web:PLUGIN"),
     Row(id="tool-ask-user", name="vtx.plugins.builtins.tools.ask_user:PLUGIN"),
-    # Default-on but not always declared: the harness mounts them beside the
-    # tools above so the model can find and reach everything else.
+    # Registered but not default-on: the harness declares ``tool_search`` only
+    # when the session has tools it has not been offered (see
+    # ``ConversationRuntime.declared_tools``), and ``codemode`` is what makes the
+    # script-reachable ones reachable.
     Row(id="tool-search", name="vtx.coding_agent.tools.tool_search:PLUGIN"),
     Row(id="tool-codemode", name="vtx.coding_agent.tools.codemode:PLUGIN"),
     Row(id="tool-goal", name="vtx.plugins.builtins.tools.goal:PLUGIN"),

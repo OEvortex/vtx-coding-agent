@@ -762,6 +762,11 @@ class ConversationRuntime:
         # which becomes hidden later is still cleaned out of the live set.
         self._mcp_tool_names = {t.name for t in self._mcp_tools}
         self._wire_codemode()
+        # Wired here rather than from inside ``_wire_codemode``: the search tool
+        # does not need the sandbox, and a profile that mounts ``tool_search``
+        # without ``codemode`` (``minimal``) still has to be able to load a
+        # ``deferred`` tool it finds.
+        self._wire_tool_search()
         if self.agent is not None:
             self.agent.tools = self.declared_tools()
         if self.agent is not None and self.context is not None:
@@ -778,7 +783,36 @@ class ConversationRuntime:
         """
         from vtx.mcp.exposure import declared_to_model
 
-        return [t for t in self.tools if declared_to_model(getattr(t, "exposure", None))]
+        declared = [t for t in self.tools if declared_to_model(getattr(t, "exposure", None))]
+        search = self._tool_search_if_useful()
+        if search is not None and not any(t.name == search.name for t in declared):
+            declared.append(search)
+        return declared
+
+    def _tool_search_if_useful(self) -> BaseTool | None:
+        """``tool_search``, but only when there is something for it to find.
+
+        The tool is registered rather than default-on, so a session that has
+        nothing to search never pays for it: a declaration is sent on every turn,
+        and the tool's entire job is finding tools this session has *not* been
+        offered. A session with a ``codemode``, ``codemode-deferred`` or
+        ``deferred`` MCP server is exactly the case it exists for, which is the
+        only case it appears in -- the rule pi-mono uses, activating
+        ``tool_search`` for a server with ``deferred`` exposure.
+
+        An agent profile that denies it by name keeps it denied. The pool the
+        search draws from is built by that profile's filter, and re-adding a
+        tool a profile named would be the same un-deny ``_activate_tools`` was
+        fixed to close.
+        """
+        from vtx.mcp.exposure import SCRIPT_DISCOVERABLE
+
+        if not any(getattr(t, "exposure", None) in SCRIPT_DISCOVERABLE for t in self.tools):
+            return None
+        active = self.active_agent
+        if active is not None and TOOL_SEARCH_TOOL_NAME in (active.definition.tools_deny or []):
+            return None
+        return get_tool(TOOL_SEARCH_TOOL_NAME)
 
     def _wire_codemode(self) -> None:
         """Point the ``codemode`` tool at this session's live tool set.
@@ -807,7 +841,6 @@ class ConversationRuntime:
         tool.extensions = self.extensions
         tool.permission = self._codemode_permission
         self._codemode_wired = True
-        self._wire_tool_search()
         refresh = getattr(tool, "refresh", None)
         if callable(refresh):
             # Rebuild now rather than waiting for the next fingerprint check, so
@@ -826,6 +859,10 @@ class ConversationRuntime:
         unknown name. Reporting a capability it cannot reach is worse than
         staying quiet about it, so finding and loading are one operation or the
         search is not worth having.
+
+        Called from ``_sync_mcp_tools`` rather than from ``_wire_codemode``,
+        because the tool is declared on its own terms and a composition with no
+        ``codemode`` row still has MCP servers to search.
         """
         tool = _harness_tool_search()
         if tool is None:
@@ -834,7 +871,7 @@ class ConversationRuntime:
         tool.activate = self._activate_tools
 
     def _activate_tools(self, names: Sequence[str]) -> None:
-        """Add tools to the live set and rebuild the prompt.
+        """Declare the named tools and rebuild the prompt.
 
         The prompt is rebuilt because the newly-loaded tool's description has to
         be in the *next* request, not the one that searched for it.
@@ -845,12 +882,28 @@ class ConversationRuntime:
         description was enough to un-deny it. The pool a search draws from is
         already this set, so a match is by construction something this session is
         allowed to have.
+
+        Promotion re-exposes the tool as ``direct``, and that is where the load
+        actually happens. ``declared_tools`` filters on exposure, so appending a
+        ``deferred`` tool to the pool left it exactly as unreachable as before:
+        the search would say "available from your next call" and the next request
+        would not offer it. ``direct`` is still script-callable, so a script keeps
+        composing what a search found, and the tool drops out of
+        ``searchable()`` -- it is declared now, so there is nothing left to find.
+
+        A match is in the pool by construction, so there is no append: it used to
+        add every match a second time, which became a duplicate tool definition
+        the moment a promoted tool was declared.
         """
         allowed = {t.name: t for t in self.tools}
         fresh = [allowed[name] for name in names if name in allowed]
         if not fresh:
             return
-        self.tools = [*self.tools, *fresh]
+        for tool in fresh:
+            if getattr(tool, "exposure", None) is not None:
+                # `exposure` is an MCP-tool attribute the harness never imports,
+                # so it is set dynamically rather than assigned.
+                setattr(tool, "exposure", "direct")  # noqa: B010
         if self.agent is not None:
             self.agent.tools = self.declared_tools()
         if self.agent is not None and self.context is not None:

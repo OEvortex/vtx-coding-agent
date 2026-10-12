@@ -186,17 +186,19 @@ Trust /home/me/proj/.vtx/mcp.json and start these? /mcp trust again to confirm.
 
 Every tool a server offers is reachable from a codemode script. Exposure controls whether it is also **declared to the model** as an ordinary tool, because declaring a two-hundred-tool server tool-by-tool costs two hundred definitions on every turn (`src/vtx/mcp/exposure.py:73-77`).
 
-| Exposure | Declared to model | Listed in codemode catalog | Findable by in-sandbox search |
-|---|---|---|---|
-| `direct` | yes | no | yes |
-| `codemode` (default) | no | yes | yes |
-| `codemode-deferred` | no | no | yes |
-| `deferred` | no | no | yes |
-| `hidden` | no | no | no |
+| Exposure | Declared to model | Listed in codemode catalog | Findable by in-sandbox search | Findable by `tool_search` |
+|---|---|---|---|---|
+| `direct` | yes | no | yes | no |
+| `codemode` (default) | no | yes | yes | yes |
+| `codemode-deferred` | no | no | yes | yes |
+| `deferred` | no | no | yes | yes |
+| `hidden` | no | no | no | no |
 
 (`src/vtx/mcp/exposure.py:56-87`)
 
 `direct` is script-callable but deliberately unlisted in the catalog: advertising it there would describe something the model already has in front of it (`src/vtx/mcp/exposure.py:63-70`). A deferred tool is unlisted but still findable, or "deferred" would mean "unfindable" and the only route left would be guessing the name (`src/vtx/mcp/exposure.py:82-86`).
+
+The two discovery routes differ in what they can *do*. `tools.search` runs inside a script, so a tool it finds is callable in that script and nowhere else. `tool_search` runs as an ordinary tool call and **loads** its matches, so they are declared to the model on the next call -- which is the only way a `deferred` tool ever becomes a direct call. It is declared only when there is something to find: a session whose servers are all `direct` or `hidden` never sees it (`src/vtx/agent/runtime.py:770`).
 
 An individual tool's exposure resolves exact-name-beats-pattern, then first-pattern-in-declaration-order among the patterns, then the server's own `exposure`, then `codemode` (`src/vtx/mcp/exposure.py:158-172`). The ordering rule is stated rather than left to dict order: `{"delete_*": "hidden", "*": "codemode"}` reads as "everything codemode except deletes", which is the opposite of what flipped iteration order would mean (`src/vtx/mcp/exposure.py:161-165`).
 

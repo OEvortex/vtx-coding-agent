@@ -31,12 +31,23 @@ vtx --dump-config | grep -E "id:|disabled:"
 | `delegate_subagent` | yes | no | Run a sub-agent, foreground or background |
 | `goal` | yes | no | Manage the session goal |
 | `codemode` | yes | no | Run a Python script in a confined sandbox |
-| `tool_search` | yes | no | Find a tool by what it does |
+| `tool_search` | on demand | no | Find a tool by what it does |
 
 The default set is resolved by the plugin composition
 (`ctx.tools.defaults()`, `src/vtx/plugins/services.py:118`). `grep` and `web_search`
 are registered but off by default; turn one on by naming it in your profile's tool
 list, or let `tool_search` surface it.
+
+`tool_search` is the one row that is neither simply on nor simply off. It is
+*registered*, so it can be overridden and wired, but it is declared to the model
+only when the session has tools it has not been offered: `tool-search` is off by
+default and `ConversationRuntime.declared_tools` adds it back when an MCP server's
+tools are `codemode`, `codemode-deferred`, or `deferred`
+(`src/vtx/agent/runtime.py:770`). A declaration is sent on every turn, so a session
+with nothing to search should not pay for the tool that finds it -- the same rule
+pi-mono uses, activating `tool_search` for a `deferred` server. Name it in a
+profile's tool list to force it on; `tools_deny: ["tool_search"]` keeps it off
+whatever is connected.
 
 A tool marked **mutating** changes state and is therefore routed through the permission
 gate before it runs. See [permissions.md](permissions.md).
@@ -345,11 +356,15 @@ call. `ctrl+o` expands it. Details in
 
 ## `tool_search`
 
-Find a tool by describing what you need, rather than guessing its name.
+Find a tool by describing what you need, rather than guessing its name. Ranks the
+tools this session has not been offered with the same BM25 ranker as the sandbox's
+`tools.search`, and *loads* a match so it is declared on your next call -- which is
+why this exists at all: `tools.search` can call a tool from inside a script, and
+only this one can change what you are offered.
 
 | Parameter | Type | Default | Description |
 |---|---|---|---|
-| `query` | `str` | required | What the tool should do, in words |
+| `query` | `str` | required | What the tool should do, in words. An empty query is refused, not answered with nothing |
 | `limit` | `int` | `8` | Maximum matches to return (1-50) |
 
 ```json
@@ -358,6 +373,24 @@ Find a tool by describing what you need, rather than guessing its name.
 
 This is the right first move when a capability might exist but the name is not
 obvious - it is cheaper than a wrong call.
+
+A call returns the loaded count, one line per match naming the tool and the first
+line of its description, and the rendered signature, so finding it and calling it
+are one step:
+
+```text
+Loaded 1 tool. They are available from your next call:
+
+read: Read a file or list a directory
+def tools.read(path: str, offset: int = 0, limit: int = 2000) -> str:
+    """Read a file or list a directory"""
+    # path: Path to read
+    # offset: Start line
+```
+
+The collapsed block in the TUI shows just the one-line-per-tool list; `ctrl+o`
+expands it to the signatures. Both shapes follow pi-mono's `tool_search`, whose
+call carries the same `{loaded: [...]}` detail.
 
 ## `skill`
 

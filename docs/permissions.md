@@ -104,7 +104,7 @@ that writes something and forgets the flag is gated. The default set:
 | `web`, `web_search` | `False` | never | `src/vtx/agent/tools/web.py:93` |
 | `ask_user` | `False` | never | `src/vtx/agent/tools/ask_user.py:191` |
 | `delegate_subagent` | `False` | never | `src/vtx/agent/tools/task.py:504` |
-| `tool_search` | `False` | never | `src/vtx/agent/tools/tool_search.py:63` |
+| `tool_search` | `False` | never | `src/vtx/coding_agent/tools/tool_search.py:74` |
 | `codemode` | `True` | always | `src/vtx/agent/tools/codemode.py:188` |
 
 Two of those need a note.

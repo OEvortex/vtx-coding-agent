@@ -127,8 +127,11 @@ async def test_a_hidden_tool_is_callable_by_nobody(tmp_path):
         assert tools
         assert all(t.exposure == "hidden" for t in tools)
 
-    from vtx.agent.tools import ToolSearchTool
+    from vtx.coding_agent.tools.tool_search import ToolSearchTool
 
+    # The registry is global, so a fresh instance sees whatever is registered;
+    # `searchable()` draws from it and a bare registration with no MCP tools has
+    # nothing to offer.
     assert ToolSearchTool().searchable() == []
 
 

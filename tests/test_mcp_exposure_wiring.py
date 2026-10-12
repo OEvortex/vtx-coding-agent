@@ -173,10 +173,84 @@ async def test_a_search_does_promote_a_permitted_deferred_tool():
         result = await search.execute(ToolSearchParams(query="rebuild the search index"))
 
         assert "mcp__docs__reindex" in (result.result or "")
-        assert "now in your tool list" in result.result
+        # pi-mono's wording: the tool is offered on the next call, which is what
+        # activation means here.
+        assert "available from your next call" in result.result
         assert "mcp__docs__reindex" not in before
+        # The promise has to be true: a `deferred` tool that was only appended to
+        # the pool would still be filtered out of the next request by
+        # `declared_tools`, and the model would be told about a call it cannot
+        # make. Once, and only once.
+        after = [t.name for t in runtime.declared_tools()]
+        assert after.count("mcp__docs__reindex") == 1
+        # Still composable into a script, and nothing left to search for.
+        assert "mcp__docs__reindex" in {
+            t.name for t in get_all_tools()["codemode"].session_tools()
+        }
+        assert "mcp__docs__reindex" not in {
+            t.name for t in get_all_tools()["tool_search"].searchable()
+        }
+        # A session with a deferred tool is the one case where the search tool is
+        # worth its declaration, so the gate lets it in.
+        assert "tool_search" in before
     finally:
         await runtime.close()
+
+
+async def test_tool_search_is_declared_only_when_there_is_something_to_find():
+    # Registered, not default-on: a declaration is paid every turn, so a session
+    # with nothing to search must not pay for a tool whose whole job is finding
+    # what it has not been offered. pi-mono applies the same rule.
+    deferred = _runtime_with(_mcp_tool("mcp__docs__reindex", "deferred"))
+    direct = _runtime_with(_mcp_tool("mcp__docs__search", "direct"))
+    empty = _runtime_with()
+    try:
+        assert "tool_search" in _names(deferred)
+        assert "tool_search" not in _names(direct)
+        assert "tool_search" not in _names(empty)
+    finally:
+        for runtime in (deferred, direct, empty):
+            await runtime.close()
+
+
+async def test_an_agent_profile_that_denies_tool_search_keeps_it_out():
+    # The gate must not be a way around a profile's tools_deny, the same
+    # un-deny `_activate_tools` was fixed to close.
+    from pathlib import Path
+
+    from vtx.coding_agent.agents import AgentDef, AgentRegistry, LoadedAgent
+
+    agent = LoadedAgent(
+        definition=AgentDef(name="denied", description="No searching", tools_deny=["tool_search"]),
+        path=Path("/tmp/denied.py"),
+    )
+    registry = AgentRegistry()
+    registry.agents = [agent]
+    runtime = ConversationRuntime(
+        cwd=".",
+        model="gpt-test",
+        tools=[],
+        extensions=EventBus(),
+        agent_registry=registry,
+        active_agent=agent,
+    )
+    try:
+        runtime._mcp_tools = [_mcp_tool("mcp__docs__reindex", "deferred")]
+        runtime._sync_mcp_tools()
+        assert "tool_search" not in _names(runtime)
+    finally:
+        await runtime.close()
+
+
+def _runtime_with(*mcp_tools: BaseTool) -> ConversationRuntime:
+    runtime = ConversationRuntime(cwd=".", model="gpt-test", tools=[], extensions=EventBus())
+    runtime._mcp_tools = list(mcp_tools)
+    runtime._sync_mcp_tools()
+    return runtime
+
+
+def _names(runtime: ConversationRuntime) -> list[str]:
+    return [t.name for t in runtime.declared_tools()]
 
 
 async def test_builtins_are_still_declared_and_callable():
