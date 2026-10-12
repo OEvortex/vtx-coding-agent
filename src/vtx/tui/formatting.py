@@ -402,7 +402,7 @@ class _DelimRun:
     gets dropped when the text is rebuilt.
     """
 
-    __slots__ = ("char", "start", "end", "lo", "hi", "orig_length", "can_open", "can_close")
+    __slots__ = ("can_close", "can_open", "char", "end", "hi", "lo", "orig_length", "start")
 
     def __init__(self, char: str, start: int, end: int, can_open: bool, can_close: bool) -> None:
         self.char = char
@@ -533,6 +533,8 @@ def strip_markdown_for_collapsed_text(text: str) -> str:
     the ticks first also keeps a lone fence line (``` on its own) intact,
     because it is not a code span and there are no ticks to remove.
     """
+    if "*" not in text and "_" not in text and "`" not in text:
+        return text
     parts: list[str] = []
     pos = 0
     for match in _CODE_SPAN_RE.finditer(text):

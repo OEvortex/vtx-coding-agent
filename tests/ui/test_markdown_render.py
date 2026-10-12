@@ -8,7 +8,12 @@ from __future__ import annotations
 
 import pytest
 
-from vtx.tui.formatting import MARKDOWN_THEME, CustomMarkdown, format_markdown
+from vtx.tui.formatting import (
+    MARKDOWN_THEME,
+    CustomMarkdown,
+    format_markdown,
+    strip_markdown_for_collapsed_text,
+)
 
 HEADINGS = "# One\n## Two\n### Three\n#### Four\n##### Five\n###### Six"
 
@@ -78,3 +83,63 @@ def test_fenced_code_block_is_not_reinterpreted():
     """A pipe table syntax inside a fence must stay literal code."""
     plain = format_markdown("```\n| not | a table |\n```", width=48).plain
     assert "| not | a table |" in plain
+
+
+# --- collapsed thinking: markdown flattened to its words -----------------------
+#
+# The old implementation matched `_..._` with a regex that ran anywhere in a
+# word, so every snake_case identifier lost its underscores: `L_O_L` showed up
+# as `LOL` and `snake_case_name` welded into `snakecasename`. Intraword `_` is
+# not emphasis in CommonMark, and neither is an unmatched one.
+
+
+@pytest.mark.parametrize(
+    "src",
+    [
+        "L_O_L",
+        "snake_case_name",
+        "MULTI_word_identifier",
+        "def foo_bar(baz_qux):",
+        "some/path/my_file_name.py",
+        "self._private_method()",
+        "trailing_",
+        "_leading",
+        "2 * 3 * 4",
+    ],
+)
+def test_identifiers_keep_their_underscores(src):
+    assert strip_markdown_for_collapsed_text(src) == src
+
+
+@pytest.mark.parametrize(
+    "src,expected",
+    [
+        ("_italic_", "italic"),
+        ("__bold__", "bold"),
+        ("**bold**", "bold"),
+        ("*italic*", "italic"),
+        ("a _italic_ b", "a italic b"),
+        ("a __bold__ b", "a bold b"),
+        ("***both***", "both"),
+        ("(*paren*)", "(paren)"),
+        ("**L_O_L**", "L_O_L"),
+    ],
+)
+def test_emphasis_still_collapses(src, expected):
+    assert strip_markdown_for_collapsed_text(src) == expected
+
+
+def test_code_span_loses_only_its_backticks():
+    """`_a_` in backticks is something the writer is describing, not emphasis."""
+    assert strip_markdown_for_collapsed_text("`_a_`") == "_a_"
+
+
+def test_lone_fence_line_is_not_a_code_span():
+    assert strip_markdown_for_collapsed_text("```") == "```"
+
+
+def test_collapsed_thinking_matches_the_expanded_render():
+    """The two views must agree on the words, or collapsing changes the text."""
+    src = "Reading L_O_L from snake_case_name, then _tracing_ __init__.py"
+    collapsed = strip_markdown_for_collapsed_text(src)
+    assert collapsed == format_markdown(src, width=80).plain.strip()
