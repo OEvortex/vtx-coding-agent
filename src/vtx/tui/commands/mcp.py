@@ -9,8 +9,6 @@ the things worth having a verb for::
     /mcp reconnect <n>   reconnect one server
     /mcp signin <n>      authorize a remote server (opens a browser)
     /mcp signout <n>     discard that server's stored credentials
-    /mcp trust           allow this project's .vtx/mcp.json to run
-    /mcp untrust         stop reading it
     /mcp enable <n>      enable a server and save it to its mcp.json
     /mcp disable <n>     disable a server and save it
 """
@@ -25,10 +23,6 @@ from vtx.tui.commands.base import CommandSupport
 
 
 class McpCommands(CommandSupport):
-    #: True once ``/mcp trust`` has shown what it would run. The grant needs a
-    #: second press, so this stands in for a confirmation the caller has to make.
-    _mcp_trust_offered: bool = False
-
     def _handle_mcp_command(self, args: str) -> None:
         chat = self.query_one("#chat-log", ChatLog)
         parts = args.split()
@@ -64,15 +58,9 @@ class McpCommands(CommandSupport):
                 return
             self.run_worker(self._mcp_sign_out(chat, target), exclusive=False)
             return
-        if action == "trust":
-            self.run_worker(self._mcp_trust(chat, True), exclusive=False)
-            return
-        if action == "untrust":
-            self.run_worker(self._mcp_trust(chat, False), exclusive=False)
-            return
         chat.add_info_message(
             "Usage: /mcp [list | reload | reconnect <name> | signin <name> | "
-            "signout <name> | trust | untrust | enable <name> | disable <name>]",
+            "signout <name> | enable <name> | disable <name>]",
             warning=True,
         )
 
@@ -94,11 +82,6 @@ class McpCommands(CommandSupport):
                 scope = "" if status.scope == "global" else f"  [{status.scope}]"
                 lines.append(f"  {status.name}{scope}  {status.describe()}")
             chat.add_info_message("MCP servers:\n" + "\n".join(lines))
-
-        # An untrusted project file is reported even though nothing in it is
-        # running. Staying silent about it would make the feature undiscoverable
-        # and leave a checked-in mcp.json looking like it had no effect.
-        self._report_project_config(chat)
 
         for message in manager.errors:
             chat.add_info_message(f"config: {message}", error=True)
@@ -170,91 +153,6 @@ class McpCommands(CommandSupport):
         chat.add_info_message(f"{name}: {connection.status.describe()}")
 
     # ---- OAuth ------------------------------------------------------------
-
-    def _project_file(self):
-        from vtx.mcp.config import project_config_path
-
-        return project_config_path(self._runtime.cwd)
-
-    def _report_project_config(self, chat: ChatLog) -> None:
-        """Say whether this project has an ``mcp.json`` and whether it is honored."""
-        from vtx.mcp.config import inspect_project_config
-
-        path = self._project_file()
-        if not path.is_file() or self._runtime.project_trusted:
-            return
-        count = len(inspect_project_config(self._runtime.cwd).servers)
-        chat.add_info_message(
-            f"{path} defines {count} MCP server{'' if count == 1 else 's'}, "
-            "but this project is not trusted so none of them are running. "
-            "Run /mcp trust to see what it would start.",
-            warning=True,
-        )
-
-    async def _mcp_trust(self, chat: ChatLog, trust: bool) -> None:
-        """Grant or revoke trust for this project's ``mcp.json``.
-
-        The grant path prints every command it would run before doing it. Trust
-        here means "run these commands", so a prompt that does not name them is
-        not a decision the user can actually make.
-        """
-        from vtx.mcp.config import inspect_project_config
-        from vtx.mcp.trust import ProjectTrustStore
-
-        runtime = self._runtime
-        path = self._project_file()
-        store = ProjectTrustStore()
-
-        if not trust:
-            if not store.untrust(runtime.cwd):
-                chat.add_info_message("This project was not trusted.", warning=True)
-                return
-            tools = await runtime.apply_project_trust(False)
-            chat.add_info_message(
-                f"No longer reading {path}. {len(tools)} tool"
-                f"{'' if len(tools) == 1 else 's'} available."
-            )
-            self._mcp_list(chat)
-            return
-
-        if not path.is_file():
-            chat.add_info_message(f"No {path} to trust.", warning=True)
-            return
-
-        pending = inspect_project_config(runtime.cwd)
-        for message in pending.errors:
-            chat.add_info_message(f"config: {message}", error=True)
-        if not pending.servers:
-            chat.add_info_message(f"{path} defines no usable MCP servers.", warning=True)
-            return
-
-        lines = ["This project would start:"]
-        for config in pending.servers:
-            if config.is_stdio:
-                command = " ".join([config.command or "", *config.args]).strip()
-                lines.append(f"  {config.name}: {command}")
-                if config.cwd:
-                    lines.append(f"    in {config.cwd}")
-            else:
-                lines.append(f"  {config.name}: {config.url}")
-        lines.append(f"\nTrust {path} and start these? /mcp trust again to confirm.")
-        chat.add_info_message("\n".join(lines), warning=True)
-
-        # Deliberately one-shot: the first /mcp trust shows the commands, the
-        # second is the confirmation. A single press that both shows and grants
-        # would let anyone who could get a keystroke in run the commands.
-        if not self._mcp_trust_offered:
-            self._mcp_trust_offered = True
-            return
-
-        self._mcp_trust_offered = False
-        record = store.trust(runtime.cwd)
-        tools = await runtime.apply_project_trust(True)
-        chat.add_info_message(
-            f"Trusted {record.path} (since {record.trusted_at}). "
-            f"{len(tools)} tool{'' if len(tools) == 1 else 's'} available."
-        )
-        self._mcp_list(chat)
 
     async def _mcp_sign_in(self, chat: ChatLog, name: str) -> None:
         manager = self._runtime.ensure_mcp_manager()

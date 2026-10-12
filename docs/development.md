@@ -15,7 +15,7 @@ The package is a src layout with one package per subsystem (`pyproject.toml:5-6`
 | `src/vtx/ai/` | Provider layer: base provider, catalog, dynamic model limits, OAuth |
 | `src/vtx/codemode/` | Script execution in a child process; see [codemode.md](codemode.md) for its actual threat model (`src/vtx/codemode/__init__.py:1`) |
 | `src/vtx/coding_agent/` | The vtx product: CLI, headless runner, agents, tool wiring, `vtx plugin` |
-| `src/vtx/mcp/` | Model Context Protocol client, transports, trust, exposure (`src/vtx/mcp/__init__.py:1`) |
+| `src/vtx/mcp/` | Model Context Protocol client, transports, config loading, exposure (`src/vtx/mcp/__init__.py:1`) |
 | `src/vtx/plugins/` | The plugin kernel: rows, profiles, host, extension loader (`src/vtx/plugins/__init__.py:1`) |
 | `src/vtx/protocol/` | Wire vocabulary: message and event types shared by every layer |
 | `src/vtx/telemetry/` | `Trace` / `Span` primitives and the processor chain (`src/vtx/telemetry/__init__.py:1`) |

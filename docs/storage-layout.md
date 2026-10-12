@@ -46,7 +46,6 @@ Everything under `~/.vtx`, unless one of the env vars listed below moved it.
 | `agent/*.py` | Global agent files and packages | `src/vtx/agent/agents/discovery.py:17`, `:54` |
 | `agent/extensions/*.py` | Global extensions | `src/vtx/plugins/extensions.py:9`, `:288` |
 | `mcp.json` | Global MCP server config | `src/vtx/mcp/config.py:53`, `:306` |
-| `trusted-projects.json` | Which projects may run their own `mcp.json` | `src/vtx/mcp/trust.py:33`, `:62` |
 | `mcp-auth.json` | MCP OAuth credentials | `src/vtx/mcp/oauth/provider.py:45`, `:98` |
 | `hooks.yml` | Global YAML hooks | `src/vtx/plugins/builtins/hooks.py:29`, `:42` |
 | `providers/*.yaml` | User-wide custom provider catalog | `src/vtx/ai/provider_catalog.py:436-441` |
@@ -80,7 +79,7 @@ Everything here is relative to the working directory and is *not* moved by the c
 | `.vtx/goals/leases/<session_id>.json` | Which live sessions own which goals; a lease older than 120s is stale | `src/vtx/agent/goal/storage.py:40`, `:231-289` |
 | `.vtx/extensions/*.py` | Project extensions | `src/vtx/plugins/extensions.py:8`, `:304` |
 | `.vtx/agent/*.py` | Project agents, walked up to the git root | `src/vtx/agent/agents/discovery.py:15`, `:46-51` |
-| `.vtx/mcp.json` | Project MCP config, honored only once the project is trusted | `src/vtx/mcp/config.py:54`, `:309-315` |
+| `.vtx/mcp.json` | Project MCP config, read on every start | `src/vtx/mcp/config.py:54`, `:294-311` |
 | `.vtx/hooks.yml` | Project YAML hooks, loaded before the global one | `src/vtx/plugins/builtins/hooks.py:42-43` |
 | `.vtx/providers/*.yaml` | Project-local custom provider catalog | `src/vtx/ai/provider_catalog.py:443-445` |
 | `.agents/skills/<name>/SKILL.md` | Project skills, one directory per skill | `src/vtx/agent/context/skills.py:309-318`, `:407-411` |
@@ -143,7 +142,7 @@ sessions = Session.get_sessions_dir(str(Path.cwd()))
 print("sessions dir:", sessions)
 print("session files:", sorted(p.name for p in sessions.glob("*.jsonl")))
 
-mcp = load_mcp_config(cwd=str(Path.cwd()), project_trusted=True)
+mcp = load_mcp_config(cwd=str(Path.cwd()))
 print("mcp servers:", [s.name for s in mcp.servers])
 
 SKIP = {"sessions", "tasks", "snapshots", "models"}

@@ -114,18 +114,11 @@ Distinguish the ones you own from the ones Vtx owns: `0`/`1`/`3` are model outco
 
 Headless cannot show approval prompts, so it forces `permissions.mode = auto` for the duration of the run only. It rewrites the config, runs, then restores the previous mode in a `finally`  --  the saved file is never left in the auto state and the mode is not persisted (`src/vtx/coding_agent/headless.py:150-157`, `305-312`).
 
-## MCP and project trust
+## MCP
 
 MCP connects before the run. A broken server prints `warning: MCP startup failed: ...` on stderr and the run continues (`src/vtx/coding_agent/headless.py:257-262`). Config problems from any server are printed as `warning: MCP config: ...` (`headless.py:269-270`).
 
-Project trust is honored, never asked for. `_apply_project_trust` reads the same trust store the TUI uses, and an untrusted project `mcp.json` produces one warning line rather than silence, so its absence is not mistaken for "nothing to run" (`src/vtx/coding_agent/headless.py:101-124`):
-
-```text
-warning: this project has a .vtx/mcp.json but is not trusted, so its
-MCP servers were not started
-```
-
-Run `/mcp trust` in the TUI once before relying on a project's servers in CI. See [mcp.md](mcp.md).
+Both `~/.vtx/mcp.json` and `<cwd>/.vtx/mcp.json` are read, the same as in a TUI session, and their servers are connected with nothing to grant. There is one OAuth caveat: `signin` is interactive, so a remote server needing a browser must be signed in from the TUI once, after which `~/.vtx/mcp-auth.json` carries the tokens and a scripted run reuses them. See [mcp.md](mcp.md).
 
 ## Scripted example
 

@@ -1,9 +1,9 @@
 """Tests for the /mcp slash command.
 
-The command layer is where the OAuth and trust flows become something a person
-can actually reach, and it is where the two-press trust confirmation lives, so
-the assertions are about what the user is shown and in what order -- not about
-the protocol underneath, which the tests in ``tests/mcp`` already cover.
+The command layer is where the OAuth flow becomes something a person can
+actually reach, so the assertions are about what the user is shown and in what
+order -- not about the protocol underneath, which the tests in ``tests/mcp``
+already cover.
 """
 
 from __future__ import annotations
@@ -141,26 +141,11 @@ class FakeRuntime:
     def __init__(self, cwd: str, manager: FakeManager | None = None) -> None:
         self.cwd = cwd
         self._manager = manager or FakeManager({}, config_dir=Path(cwd))
-        self.project_trusted = False
-        self.trust_applied: list[bool] = []
         self.tools: list[Any] = []
         self.reloads = 0
 
     def ensure_mcp_manager(self) -> FakeManager:
         return self._manager
-
-    @property
-    def project_trusted_flag(self) -> bool:
-        return self.project_trusted
-
-    def set_project_trusted(self, trusted: bool) -> None:
-        self.project_trusted = trusted
-
-    async def apply_project_trust(self, trusted: bool) -> list[Any]:
-        self.trust_applied.append(trusted)
-        self.project_trusted = trusted
-        self.reloads += 1
-        return self.tools
 
     def sync_mcp_tools(self, tools: list[Any]) -> None:
         self.tools = tools
@@ -328,7 +313,7 @@ async def test_signout_on_an_unknown_server_says_so(tmp_path):
     assert "No MCP server named" in commands.chat.everything
 
 
-# ---- trust ----------------------------------------------------------------
+# ---- a project's servers just run -----------------------------------------
 
 
 def _project_file(tmp_path, servers: dict) -> None:
@@ -337,105 +322,31 @@ def _project_file(tmp_path, servers: dict) -> None:
     path.write_text(json.dumps({"mcpServers": servers}), encoding="utf-8")
 
 
-async def test_an_untrusted_project_file_is_reported(tmp_path):
-    """Silence would make the feature undiscoverable."""
+async def test_a_project_server_is_listed_without_any_grant(tmp_path):
+    """There is no trust step any more: a project's mcp.json is read on start,
+    so a server it defines is running like any other, and `/mcp` says which file
+    it came from -- the scope, not a permission."""
     _project_file(tmp_path, {"fs": {"command": "npx", "args": ["-y", "pkg"]}})
+    manager = FakeManager(
+        {"fs": FakeConnection("fs", state="connected", tool_count=3, scope="project")},
+        config_dir=tmp_path,
+    )
+    commands = FakeCommands(FakeRuntime(str(tmp_path), manager))
+    commands._handle_mcp_command("")
+    body = commands.chat.everything
+    assert "fs" in body and "[project]" in body and "connected (3 tools)" in body
+    assert "trust" not in body.lower()
+
+
+async def test_no_project_file_means_nothing_extra_is_said(tmp_path):
     commands = FakeCommands(FakeRuntime(str(tmp_path)))
     commands._handle_mcp_command("")
-    assert "not trusted" in commands.chat.everything
-    assert "/mcp trust" in commands.chat.everything
+    assert "trust" not in commands.chat.everything.lower()
 
 
-async def test_a_trusted_project_file_is_not_reported(tmp_path):
-    _project_file(tmp_path, {"fs": {"command": "npx", "args": ["-y", "pkg"]}})
-    runtime = FakeRuntime(str(tmp_path))
-    runtime.set_project_trusted(True)
-    commands = FakeCommands(runtime)
-    commands._handle_mcp_command("")
-    assert "not trusted" not in commands.chat.everything
-
-
-async def test_no_project_file_means_nothing_to_report(tmp_path):
+async def test_trust_is_not_a_subcommand_any_more(tmp_path):
+    """A command that no longer exists has to fail as unknown, not silently
+    do nothing: the muscle memory is the thing most likely to linger."""
     commands = FakeCommands(FakeRuntime(str(tmp_path)))
-    commands._handle_mcp_command("")
-    assert "not trusted" not in commands.chat.everything
-
-
-async def test_trust_lists_the_commands_before_granting(tmp_path, monkeypatch):
-    """One press shows; a second grants. Anything less is not a decision."""
-    _project_file(
-        tmp_path,
-        {
-            "fs": {"command": "npx", "args": ["-y", "server-filesystem", "."]},
-            "api": {"url": "https://api.example.com/mcp"},
-        },
-    )
-    monkeypatch.setattr(
-        "vtx.mcp.trust.ProjectTrustStore.path", property(lambda self: tmp_path / "t.json")
-    )
-    runtime = FakeRuntime(str(tmp_path))
-    commands = FakeCommands(runtime)
-
-    await commands._mcp_trust(commands.chat, True)
-    first = commands.chat.everything
-    assert "would start" in first
-    assert "npx -y server-filesystem ." in first
-    assert "https://api.example.com/mcp" in first
-    # The first press grants nothing.
-    assert runtime.trust_applied == []
-
-    await commands._mcp_trust(commands.chat, True)
-    assert runtime.trust_applied == [True]
-    assert "Trusted" in commands.chat.everything
-
-
-async def test_trusting_something_with_nothing_to_trust(tmp_path, monkeypatch):
-    monkeypatch.setattr(
-        "vtx.mcp.trust.ProjectTrustStore.path", property(lambda self: tmp_path / "t.json")
-    )
-    commands = FakeCommands(FakeRuntime(str(tmp_path)))
-    await commands._mcp_trust(commands.chat, True)
-    assert "No " in commands.chat.everything and "to trust" in commands.chat.everything
-
-
-async def test_trusting_a_broken_project_file_explains_why(tmp_path, monkeypatch):
-    path = tmp_path / ".vtx" / "mcp.json"
-    path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text("{ not json", encoding="utf-8")
-    monkeypatch.setattr(
-        "vtx.mcp.trust.ProjectTrustStore.path", property(lambda self: tmp_path / "t.json")
-    )
-    commands = FakeCommands(FakeRuntime(str(tmp_path)))
-    await commands._mcp_trust(commands.chat, True)
-    assert commands.chat.errors
-    assert "defines no usable MCP servers" in commands.chat.everything
-
-
-async def test_untrust_revokes_and_reloads(tmp_path, monkeypatch):
-    from vtx.mcp.trust import ProjectTrustStore
-
-    _project_file(tmp_path, {"fs": {"command": "true"}})
-    monkeypatch.setattr(
-        "vtx.mcp.trust.ProjectTrustStore.path", property(lambda self: tmp_path / "t.json")
-    )
-    # Revoking only makes sense against something that was granted, so use the
-    # real store rather than asserting on a mock's return value.
-    ProjectTrustStore().trust(tmp_path)
-
-    runtime = FakeRuntime(str(tmp_path))
-    runtime.set_project_trusted(True)
-    commands = FakeCommands(runtime)
-
-    await commands._mcp_trust(commands.chat, False)
-    assert runtime.trust_applied == [False]
-    assert "No longer reading" in commands.chat.everything
-    assert ProjectTrustStore().is_trusted(tmp_path) is False
-
-
-async def test_untrusting_something_never_trusted_says_so(tmp_path, monkeypatch):
-    monkeypatch.setattr(
-        "vtx.mcp.trust.ProjectTrustStore.path", property(lambda self: tmp_path / "t.json")
-    )
-    commands = FakeCommands(FakeRuntime(str(tmp_path)))
-    await commands._mcp_trust(commands.chat, False)
-    assert "was not trusted" in commands.chat.everything
+    commands._handle_mcp_command("trust")
+    assert "Usage: /mcp" in commands.chat.everything

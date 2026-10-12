@@ -62,7 +62,6 @@ AGENT_ACTIVATED = "agent_activated"
 AGENT_CHANGED = "agent_changed"
 TOOL_GROUP_CHANGED = "tool_group_changed"
 # Additional lifecycle events
-PROJECT_TRUST = "project_trust"
 RESOURCES_DISCOVER = "resources_discover"
 CONTEXT = "context"
 BEFORE_PROVIDER_REQUEST = "before_provider_request"
@@ -108,7 +107,6 @@ ALL_EVENTS: tuple[str, ...] = (
     AGENT_ACTIVATED,
     AGENT_CHANGED,
     TOOL_GROUP_CHANGED,
-    PROJECT_TRUST,
     RESOURCES_DISCOVER,
     CONTEXT,
     BEFORE_PROVIDER_REQUEST,
@@ -263,12 +261,6 @@ class ToolExecutionEndEvent:
 
 
 @dataclass
-class ProjectTrustEvent:
-    type: Literal["project_trust"] = "project_trust"
-    cwd: str = ""
-
-
-@dataclass
 class ResourcesDiscoverEvent:
     type: Literal["resources_discover"] = "resources_discover"
     cwd: str = ""
@@ -418,12 +410,6 @@ class BeforeAgentStartEventResult:
 
 
 @dataclass
-class ProjectTrustEventResult:
-    trusted: str = "undecided"
-    remember: bool = False
-
-
-@dataclass
 class ResourcesDiscoverResult:
     skill_paths: list[str] = field(default_factory=list)
     prompt_paths: list[str] = field(default_factory=list)
@@ -552,7 +538,6 @@ def event_class_map() -> dict[str, type[Any]]:
             AGENT_ACTIVATED: AgentActivatedEvent,
             AGENT_CHANGED: AgentChangedEvent,
             TOOL_GROUP_CHANGED: ToolGroupChangedEvent,
-            PROJECT_TRUST: ProjectTrustEvent,
             RESOURCES_DISCOVER: ResourcesDiscoverEvent,
             CONTEXT: ContextEvent,
             BEFORE_PROVIDER_REQUEST: BeforeProviderRequestEvent,

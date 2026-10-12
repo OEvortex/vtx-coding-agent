@@ -1,8 +1,8 @@
 """MCP through the runtime, which is where the pieces meet.
 
 ``tests/mcp`` covers the client, the manager, and the flows in isolation. What
-is left is the composition: the runtime building a manager that honours project
-trust, the tool set landing where the agent can see it, and a trust change
+is left is the composition: the runtime building a manager that reads both
+config files, the tool set landing where the agent can see it, and a reload
 taking effect on a live session rather than at the next restart.
 """
 
@@ -37,75 +37,29 @@ def _echo_server(name: str = "echo") -> dict:
     return {"command": sys.executable, "args": [str(STDIO_SERVER)]}
 
 
-# ---- project trust through the runtime ------------------------------------
+# ---- a project's servers start on their own -------------------------------
 
 
-async def test_a_project_server_does_not_start_without_trust(tmp_path, monkeypatch):
-    """The security property, at the layer that actually builds the manager."""
+async def test_a_project_server_starts_on_connect(tmp_path):
+    """No grant, no prompt: the file is read and the server is started."""
     _write_mcp(tmp_path, {"echo": _echo_server()})
-    monkeypatch.setattr(
-        "vtx.mcp.trust.ProjectTrustStore.path", property(lambda self: tmp_path / "trust.json")
-    )
 
     runtime = _runtime(tmp_path)
     try:
-        assert await runtime.connect_mcp() == []
-        assert runtime.project_trusted is False
-    finally:
-        await runtime.close()
-
-
-async def test_trusting_a_project_makes_its_servers_start(tmp_path, monkeypatch):
-    _write_mcp(tmp_path, {"echo": _echo_server()})
-    monkeypatch.setattr(
-        "vtx.mcp.trust.ProjectTrustStore.path", property(lambda self: tmp_path / "trust.json")
-    )
-
-    runtime = _runtime(tmp_path)
-    try:
-        assert await runtime.connect_mcp() == []
-
-        # A granted trust is useless if it waits for a restart, so the runtime
-        # rebuilds the servers as part of applying it.
-        tools = await runtime.apply_project_trust(True)
-        assert runtime.project_trusted is True
+        tools = await runtime.connect_mcp()
         assert "mcp__echo__echo" in [t.name for t in tools]
     finally:
         await runtime.close()
 
 
-async def test_revoking_trust_removes_the_servers_tools(tmp_path, monkeypatch):
-    _write_mcp(tmp_path, {"echo": _echo_server()})
-    monkeypatch.setattr(
-        "vtx.mcp.trust.ProjectTrustStore.path", property(lambda self: tmp_path / "trust.json")
-    )
+async def test_disabling_a_server_keeps_it_from_running(tmp_path):
+    """The only remaining control over a project server is `enabled`, which is
+    what `exposure` and `enabled` were always for once the gate is gone."""
+    _write_mcp(tmp_path, {"echo": {**_echo_server(), "enabled": False}})
 
     runtime = _runtime(tmp_path)
     try:
-        trusted = await runtime.apply_project_trust(True)
-        assert [t.name for t in trusted if t.name.startswith("mcp__")] == ["mcp__echo__echo"]
-
-        revoked = await runtime.apply_project_trust(False)
-        assert not [t for t in revoked if t.name.startswith("mcp__")]
-        assert runtime.project_trusted is False
-    finally:
-        await runtime.close()
-
-
-async def test_trust_granted_before_any_mcp_work_still_takes_effect(tmp_path, monkeypatch):
-    """The result must not depend on whether connect_mcp ran first.
-
-    A grant that reports success while starting nothing is worse than one that
-    fails, so this goes straight to apply_project_trust with no prior connect.
-    """
-    _write_mcp(tmp_path, {"echo": _echo_server()})
-    monkeypatch.setattr(
-        "vtx.mcp.trust.ProjectTrustStore.path", property(lambda self: tmp_path / "trust.json")
-    )
-    runtime = _runtime(tmp_path)
-    try:
-        tools = await runtime.apply_project_trust(True)
-        assert [t.name for t in tools if t.name.startswith("mcp__")] == ["mcp__echo__echo"]
+        assert await runtime.connect_mcp() == []
     finally:
         await runtime.close()
 

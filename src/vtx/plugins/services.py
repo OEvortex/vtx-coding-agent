@@ -547,7 +547,7 @@ class MCPService:
         self._manager = manager
         return manager
 
-    def connect(self, *, cwd: str, project_trusted: bool = False) -> Any:
+    def connect(self, *, cwd: str) -> Any:
         """Build and attach the manager described by the loaded MCP config.
 
         Returns the manager, or ``None`` when this machine declares no servers.
@@ -556,7 +556,7 @@ class MCPService:
             return self._manager
         from vtx.mcp.manager import McpManager
 
-        manager = McpManager(cwd=cwd, project_trusted=project_trusted)
+        manager = McpManager(cwd=cwd)
         self._manager = manager
         return manager
 

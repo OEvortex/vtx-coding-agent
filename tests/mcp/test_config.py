@@ -90,14 +90,11 @@ def test_loads_global_then_project_with_project_winning(tmp_path: Path):
     )
     _write(project / ".vtx" / "mcp.json", {"mcpServers": {"a": {"command": "project-a"}}})
 
-    # Untrusted: the project file is not read at all.
-    untrusted = load_mcp_config(cwd=str(project), project_trusted=False, config_dir=config_dir)
-    assert {s.name: s.command for s in untrusted.servers} == {"a": "global-a", "b": "global-b"}
-    assert all(s.scope == "global" for s in untrusted.servers)
-
-    trusted = load_mcp_config(cwd=str(project), project_trusted=True, config_dir=config_dir)
-    assert {s.name: s.command for s in trusted.servers} == {"a": "project-a", "b": "global-b"}
-    by_name = {s.name: s for s in trusted.servers}
+    # Both files are read unconditionally: a project's servers are configured
+    # the moment the project is opened, so a project entry needs no grant.
+    loaded = load_mcp_config(cwd=str(project), config_dir=config_dir)
+    assert {s.name: s.command for s in loaded.servers} == {"a": "project-a", "b": "global-b"}
+    by_name = {s.name: s for s in loaded.servers}
     assert by_name["a"].scope == "project"
     assert by_name["b"].scope == "global"
 

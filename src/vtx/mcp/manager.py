@@ -463,7 +463,6 @@ class McpManager:
         *,
         cwd: str,
         config: LoadedMcpConfig | None = None,
-        project_trusted: bool = False,
         config_dir: Path | None = None,
         startup_wait_seconds: float = DEFAULT_STARTUP_WAIT_SECONDS,
         oauth_provider_factory: Any = None,
@@ -474,10 +473,7 @@ class McpManager:
         # Kept so reload() re-reads the same files this manager was built from;
         # dropping them would silently switch to the real ~/.vtx/mcp.json.
         self.config_dir = config_dir or get_config_dir()
-        self.project_trusted = project_trusted
-        self.config = config or load_mcp_config(
-            cwd=cwd, project_trusted=project_trusted, config_dir=self.config_dir
-        )
+        self.config = config or load_mcp_config(cwd=cwd, config_dir=self.config_dir)
         self.errors = list(self.config.errors)
         self.roots: list[Root] = [{"uri": cwd_to_uri(cwd), "name": cwd}]
         self.servers: dict[str, McpServerConnection] = {}
@@ -513,21 +509,11 @@ class McpManager:
             )
         return self.rebuild_tools()
 
-    def set_project_trusted(self, trusted: bool) -> None:
-        """Whether a project-local ``mcp.json`` is read by :meth:`reload`.
-
-        The manager keeps its own copy because it is what does the reading, so a
-        change made elsewhere only takes effect if it is pushed here.
-        """
-        self.project_trusted = trusted
-
     async def reload(self) -> list[BaseTool]:
         """Re-read config, reconnect, and return the new tool list."""
         await self.close()
         self._closed = False
-        fresh = load_mcp_config(
-            cwd=self.cwd, project_trusted=self.project_trusted, config_dir=self.config_dir
-        )
+        fresh = load_mcp_config(cwd=self.cwd, config_dir=self.config_dir)
         self.config = fresh
         self.errors = list(fresh.errors)
         self.servers = {}

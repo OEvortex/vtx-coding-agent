@@ -1,6 +1,6 @@
 # MCP
 
-MCP connects Vtx to external tool servers over the Model Context Protocol. This page covers the config format, the three transports, authentication including OAuth, the project trust model, how tools are exposed to the model, resource access, and the `/mcp` commands that manage it all.
+MCP connects Vtx to external tool servers over the Model Context Protocol. This page covers the config format, the three transports, authentication including OAuth, how a project's servers are started, how tools are exposed to the model, resource access, and the `/mcp` commands that manage it all.
 
 The harness itself never imports `vtx.mcp`. The product layer wires a manager and registers each server's tools into the tool registry as ordinary `BaseTool` instances (`src/vtx/mcp/manager.py:500`), so a remote call flows through the same permission gate, argument validation, and TUI rendering as a local one (`src/vtx/mcp/tool.py:1-11`).
 
@@ -13,7 +13,7 @@ Vtx reads two files, both shaped the same:
 | Scope | Path | Read when |
 |---|---|---|
 | Global | `~/.vtx/mcp.json` | Always |
-| Project | `<cwd>/.vtx/mcp.json` | Only when the project is trusted (`src/vtx/mcp/config.py:309`) |
+| Project | `<cwd>/.vtx/mcp.json` | Always, on the same start |
 
 Both hold a single top-level `mcpServers` key. A project entry **replaces** a global entry with the same name; the project file is read second, so the replacement is the precedence rule (`src/vtx/mcp/config.py:289-291`).
 
@@ -166,21 +166,20 @@ transport = StreamableHttpTransport(
 
 Or drive the whole thing yourself with `OAuthCallbackServer.listen()`, `authorize_mcp(provider, OAuthFlowOptions(...))`, `generate_pkce`, `exchange_authorization_code`, `refresh_authorization`, `register_client`, and `start_authorization` (`src/vtx/mcp/oauth/__init__.py:9-23`). Treat an authorization error as terminal only when it is one of `OAuthInsecureEndpointError` (a plaintext endpoint), `OAuthIssuerMismatchError` (the metadata issuer does not match the server), or `OAuthRegistrationError` (`src/vtx/mcp/oauth/__init__.py:52-59`).
 
-## Trust
+## What runs when
 
-A project `mcp.json` can launch code, so Vtx never reads it implicitly. A project becomes trusted once per path, stored in `~/.vtx/trusted-projects.json` (`TRUST_STORE_FILENAME`, `src/vtx/mcp/trust.py:33`). `project_key(cwd)` is the `resolve()`d path, so a symlinked entry cannot smuggle in a different directory (`src/vtx/mcp/trust.py:36`). A corrupt store fails closed: it reads as empty and every project is untrusted (`src/vtx/mcp/trust.py:101-119`).
+Both files are read on every start and their servers connect, so a project that
+checks in a `.vtx/mcp.json` is configured the moment you open it -- there is no
+grant to give and nothing to confirm.
 
-`/mcp trust` is deliberately two-step. The first press parses the project file **without** connecting to anything and lists exactly what it would start:
+That is a deliberate trade, and it is worth being explicit about: a project
+`mcp.json` names commands, so opening a repository runs whatever it declares.
+The controls that remain are the ones that were always about *what* runs rather
+than *whether* to look:
 
-```text
-This project would start:
-  fs: npx -y @modelcontextprotocol/server-filesystem .
-  linear: https://mcp.linear.app/mcp
-
-Trust /home/me/proj/.vtx/mcp.json and start these? /mcp trust again to confirm.
-```
-
-(`src/vtx/tui/commands/mcp.py:218-243`). A single press that both showed the commands and granted would let anyone who could get one keystroke in run them (`src/vtx/tui/commands/mcp.py:227-229`). `inspect_project_config` is the function that makes this possible  --  it parses and validates but refuses to connect (`src/vtx/mcp/config.py:318-330`).
+- `"enabled": false` on a server keeps it from starting (`/mcp disable <name>` writes exactly that).
+- `exposure` and `tool_exposure` decide what its tools can reach -- `direct`, `codemode`, `codemode-deferred`, `deferred`, or `hidden` (see [Tool exposure](#tool-exposure)).
+- `/mcp` lists every configured server with its state, and a project entry is marked `[project]` so you can see which file it came from.
 
 ## Tool exposure
 
@@ -233,8 +232,6 @@ There is no `vtx mcp` CLI subcommand. MCP is managed from the TUI.
 | `/mcp reconnect <name>` | | Reconnect one server |
 | `/mcp signin <name>` | `sign-in`, `login`, `auth` | Authorize a remote server; opens a browser |
 | `/mcp signout <name>` | `sign-out`, `logout` | Discard the server's stored credentials |
-| `/mcp trust` | | Two-step grant for this project's `mcp.json` |
-| `/mcp untrust` | | Stop reading the project file |
 | `/mcp enable <name>` | | Enable and save to its `mcp.json` |
 | `/mcp disable <name>` | | Disable and save |
 
@@ -242,7 +239,7 @@ There is no `vtx mcp` CLI subcommand. MCP is managed from the TUI.
 
 `/mcp signin` on a stdio server is refused with `runs as a local process, so there is nothing to sign in to` (`src/vtx/tui/commands/mcp.py:268-274`). The authorize URL is echoed either way: a browser is a convenience, the terminal is the channel that is certain to be readable (`src/vtx/tui/commands/mcp.py:277-285`). A sign-in that reached a redirect but never finished leaves `authorization_url` on the status so `/mcp` can show the link again (`src/vtx/tui/commands/mcp.py:104-113`).
 
-An untrusted project file is reported as untrusted rather than silently ignored, so a checked-in `mcp.json` does not look like it had no effect (`src/vtx/tui/commands/mcp.py:89-97`).
+Every server is reported, including a project one and the file it came from, so a checked-in `mcp.json` never looks like it had no effect.
 
 ## Statuses
 
@@ -295,7 +292,7 @@ from vtx.mcp.manager import McpManager
 
 async def main():
     # global `~/.vtx/mcp.json` plus `<cwd>/.vtx/mcp.json`, both validated on read
-    manager = McpManager(cwd=".", project_trusted=True)
+    manager = McpManager(cwd=".")
     print("config dir:", manager.config_dir)
     for message in manager.errors:
         print("config error:", message)
@@ -313,7 +310,7 @@ async def main():
 asyncio.run(main())
 ```
 
-In a TUI session the same configuration is reached with `/mcp trust` (twice), then confirmed with `/mcp`. In a CI run, codemode connects the servers before the agent starts and prints `mcp: N tool(s) from M server(s)` to stderr  --  see [headless.md](headless.md).
+In a TUI session the same configuration is confirmed with `/mcp`: both servers are listed, `[project]` marking the ones from `<cwd>/.vtx/mcp.json`. In a CI run, codemode connects the servers before the agent starts and prints `mcp: N tool(s) from M server(s)` to stderr  --  see [headless.md](headless.md).
 
 ## Known gaps
 

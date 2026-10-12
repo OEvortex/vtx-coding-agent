@@ -95,12 +95,10 @@ Turning ponytail or git context on only takes effect on the next new conversatio
 | `/mcp disable` | `<name>` | Disable a server and write it to its `mcp.json` (`src/vtx/tui/commands/mcp.py:49`) | No |
 | `/mcp signin` | `<name>` | Authorize a remote server; opens a browser and always prints the URL (`src/vtx/tui/commands/mcp.py:55`) | No |
 | `/mcp signout` | `<name>` | Discard a server's stored credentials (`src/vtx/tui/commands/mcp.py:61`) | No |
-| `/mcp trust` | | Show what this project's `.vtx/mcp.json` would start, then trust it on the second press (`src/vtx/tui/commands/mcp.py:194`) | No |
-| `/mcp untrust` | | Stop reading this project's `.vtx/mcp.json` (`src/vtx/tui/commands/mcp.py:70`) | No |
 
 `/mcp` also accepts the aliases `list`, `ls`, `sign-in`, `login`, `auth`, `sign-out`, and `logout`. An unknown action prints the usage line. `signin` on a stdio server is refused: it runs as a local process, so there is nothing to sign in to.
 
-`/mcp trust` is deliberately two-step: the first press lists the commands it would run, the second confirms. `/reload` refuses while a turn is running and says to press Escape first.
+A project's `.vtx/mcp.json` is read on every start and its servers are connected, so there is no trust step to run. `/reload` refuses while a turn is running and says to press Escape first.
 
 ## Skill-registered commands
 

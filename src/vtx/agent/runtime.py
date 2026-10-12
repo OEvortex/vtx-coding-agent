@@ -231,7 +231,6 @@ class ConversationRuntime:
         self._mcp_tools: list[BaseTool] = []
         self._mcp_tool_names: set[str] = set()
         self._mcp_manager: Any = None
-        self._project_trusted = False
         self.openai_compat_auth_mode: AuthMode = openai_compat_auth_mode
         self.anthropic_compat_auth_mode: AuthMode = anthropic_compat_auth_mode
         self.extensions = extensions
@@ -636,39 +635,6 @@ class ConversationRuntime:
         names = set(active.definition.skills)
         return [s for s in context.skills if s.name in names or s.path in names]
 
-    def set_project_trusted(self, trusted: bool) -> None:
-        """Whether a project-local ``.vtx/mcp.json`` may be read.
-
-        A project MCP server is a command vtx would execute. Reading one out of
-        a repository the user merely opened would mean running code they did
-        not ask to run, so this is False until a person grants trust -- see
-        :mod:`vtx.mcp.trust`.
-        """
-        self._project_trusted = trusted
-
-    @property
-    def project_trusted(self) -> bool:
-        return self._project_trusted
-
-    async def apply_project_trust(self, trusted: bool) -> list[BaseTool]:
-        """Set trust and rebuild the servers, so it takes effect now.
-
-        A separate method from :meth:`set_project_trusted` because granting
-        trust is useless if the already-built manager keeps its untrusted
-        configuration until the next restart. The manager holds its own copy of
-        the flag and does the reading, so it has to be told too -- setting only
-        the runtime's would reload the same untrusted config.
-
-        The manager is built if it does not exist yet, so the result does not
-        depend on whether anything has touched MCP first: a grant made before
-        the first ``connect_mcp`` has to work, or it reports success while
-        starting nothing.
-        """
-        self._project_trusted = trusted
-        manager = self.ensure_mcp_manager()
-        manager.set_project_trusted(trusted)
-        return await self.reload_mcp()
-
     # ---- MCP -------------------------------------------------------------
 
     @property
@@ -687,7 +653,7 @@ class ConversationRuntime:
             # import would close the dependency loop.
             from vtx.mcp.manager import McpManager
 
-            self._mcp_manager = McpManager(cwd=self.cwd, project_trusted=self._project_trusted)
+            self._mcp_manager = McpManager(cwd=self.cwd)
             self._mcp_manager.on_tools_changed(self._on_mcp_tools_changed)
         return self._mcp_manager
 

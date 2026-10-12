@@ -65,7 +65,7 @@ With `-p` the run goes to `headless.run_headless`; otherwise to `tui.launch.run_
 
 `headless.py` exports `resolve_prompt(prompt_arg, *, stdin)`, `render_run(events, *, out, err)`, and `run_headless(...)`. `run_headless` returns an exit code derived from the `StopReason`: `0` for a normal stop, `1` for an error or an unmapped reason, `3` for a length stop, and `2` for an empty prompt. `render_run` is the piece to reuse if you want the event stream without the CLI.
 
-Headless cannot show approval prompts, so it forces auto-approval for the run by writing the config file, running, and restoring it; the saved config is not mutated. A project with a `.vtx/mcp.json` that is not trusted prints a warning to stderr rather than starting its servers.
+Headless cannot show approval prompts, so it forces auto-approval for the run by writing the config file, running, and restoring it; the saved config is not mutated. A project's `.vtx/mcp.json` is read like any other, so its servers start with the run.
 
 ## Built-in tools
 

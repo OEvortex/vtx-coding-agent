@@ -11,9 +11,8 @@ def apply(ctx, config):
     """Publish the MCP seam.
 
     Building the manager is deferred to :meth:`MCPService.connect`, which the
-    host calls once it knows the working directory and whether the project is
-    trusted. Import-time connection would run a repository's MCP server before
-    the user had agreed to trust it.
+    host calls once it knows the working directory. Import-time connection
+    would build a manager for a directory that may not be the one in use.
     """
     mcp = MCPService()
     ctx.effect(mcp.reset)

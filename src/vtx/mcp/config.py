@@ -3,8 +3,13 @@
 Two files, both optional:
 
 1. ``~/.vtx/mcp.json`` -- per-user servers
-2. ``<project>/.vtx/mcp.json`` -- per-project servers, read only when the
-   project is trusted
+2. ``<project>/.vtx/mcp.json`` -- per-project servers
+
+Both are read on every start and their servers connect without a prompt, so a
+project that checks in an ``mcp.json`` is configured the moment it is opened.
+What controls whether a server runs is ``enabled`` on that server, and what
+controls what its tools can reach is ``exposure`` -- never a gate on reading the
+file in the first place.
 
 Both use the ``mcpServers`` shape shared by other MCP clients, so a config a
 user already has for Claude Desktop, Cursor, or another agent copies over
@@ -291,10 +296,12 @@ def _read_config_file(
         servers[name] = config
 
 
-def load_mcp_config(
-    *, cwd: str, project_trusted: bool = False, config_dir: Path | None = None
-) -> LoadedMcpConfig:
-    """Load global, then (when trusted) project configuration.
+def load_mcp_config(*, cwd: str, config_dir: Path | None = None) -> LoadedMcpConfig:
+    """Load global, then project configuration.
+
+    Both files are read unconditionally: a project server is configured the
+    moment the project is opened, so the only way to keep one from running is
+    ``"enabled": false`` on the server, or ``exposure: hidden`` on its tools.
 
     A disabled server is still returned with ``enabled=False`` so it can be
     re-enabled later without the user retyping it.
@@ -304,30 +311,14 @@ def load_mcp_config(
     base = config_dir or get_config_dir()
 
     _read_config_file(base / MCP_CONFIG_FILENAME, "global", servers, errors)
-    if project_trusted:
-        _read_config_file(
-            Path(cwd) / PROJECT_CONFIG_DIRNAME / MCP_CONFIG_FILENAME, "project", servers, errors
-        )
+    _read_config_file(
+        Path(cwd) / PROJECT_CONFIG_DIRNAME / MCP_CONFIG_FILENAME, "project", servers, errors
+    )
     return LoadedMcpConfig(servers=list(servers.values()), errors=errors)
 
 
 def project_config_path(cwd: str | Path) -> Path:
     return Path(cwd) / PROJECT_CONFIG_DIRNAME / MCP_CONFIG_FILENAME
-
-
-def inspect_project_config(cwd: str | Path) -> LoadedMcpConfig:
-    """Parse a project ``mcp.json`` *without* honoring it.
-
-    Trust is a decision about running code, so the file is parsed and validated
-    but never connected -- this exists so ``/mcp trust`` can show what trusting
-    would actually launch. That list is the whole point: a trust prompt that
-    says "trust this project?" without naming the commands is a prompt nobody
-    can answer.
-    """
-    servers: dict[str, McpServerConfig] = {}
-    errors: list[str] = []
-    _read_config_file(project_config_path(cwd), "project", servers, errors)
-    return LoadedMcpConfig(servers=list(servers.values()), errors=errors)
 
 
 def update_mcp_server_config(path: Path, name: str, patch: dict[str, Any]) -> None:

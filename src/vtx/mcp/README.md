@@ -2,7 +2,7 @@
 
 A small, standalone Model Context Protocol client. It does not depend on the official MCP SDK or on any other vtx package beyond `vtx.agent.tools.base`, which it needs only to wrap server tools as vtx tools. Use it to speak MCP from a script; `vtx.coding_agent` wires it up for the product.
 
-The package provides a transport-neutral client core, stdio and Streamable HTTP transports, an in-memory testing transport, OAuth 2.1 sign-in, `mcp.json` loading with project trust, and the adapter that turns a server's tools into `BaseTool`s. The dependency runs one way: `vtx.agent.runtime` imports `vtx.mcp.manager` and `vtx.agent.tools.codemode` and `vtx.agent.tools.tool_search` import `vtx.mcp.exposure`, all function-locally, so a session with no `mcp.json` pays nothing for the integration.
+The package provides a transport-neutral client core, stdio and Streamable HTTP transports, an in-memory testing transport, OAuth 2.1 sign-in, `mcp.json` loading, and the adapter that turns a server's tools into `BaseTool`s. The dependency runs one way: `vtx.agent.runtime` imports `vtx.mcp.manager` and `vtx.agent.tools.codemode` and `vtx.agent.tools.tool_search` import `vtx.mcp.exposure`, all function-locally, so a session with no `mcp.json` pays nothing for the integration.
 
 An MCP transport owns framing and I/O: it delivers individual JSON-RPC messages to `McpClient`. The client owns request correlation, initialization, timeouts, cancellation, server requests, and the protocol-level helpers. Keeping that line sharp is what lets one client drive a subprocess, an HTTP endpoint, and a test pair.
 
@@ -67,15 +67,15 @@ Most callers do not build clients by hand. `McpManager` reads config, owns one c
 ```python
 from vtx.mcp import McpManager
 
-manager = McpManager(cwd="/path/to/project", project_trusted=False)
+manager = McpManager(cwd="/path/to/project")
 tools = await manager.connect_all()   # bounded, never raises
 # ... later ...
 await manager.close()                  # closes child processes too
 ```
 
-`connect_all` is bounded by `startup_wait_seconds` (10s by default). A server still connecting at the deadline reports `connecting` and contributes its tools when it lands, because one slow server must not hold up a session. `McpManager` never raises on a bad server: `statuses()` reports each one and `/mcp` prints that report. Also available: `all_tools`, `get`, `reload`, `rebuild_tools`, `set_project_trusted`, `sign_in`, and `on_tools_changed`, for `notifications/tools/list_changed`.
+`connect_all` is bounded by `startup_wait_seconds` (10s by default). A server still connecting at the deadline reports `connecting` and contributes its tools when it lands, because one slow server must not hold up a session. `McpManager` never raises on a bad server: `statuses()` reports each one and `/mcp` prints that report. Also available: `all_tools`, `get`, `reload`, `rebuild_tools`, `sign_in`, and `on_tools_changed`, for `notifications/tools/list_changed`.
 
-Servers come from two optional files, `~/.vtx/mcp.json` for every project and `<project>/.vtx/mcp.json` for this project only and **only when the project is trusted**. Project entries replace global entries of the same name. Both use the `mcpServers` shape every other MCP client reads, so a config you already have for Claude Desktop or Cursor copies over unchanged.
+Servers come from two optional files, `~/.vtx/mcp.json` for every project and `<project>/.vtx/mcp.json` for this project only. Both are read on every start, so a project's servers are connected as soon as it is opened; `"enabled": false` on a server is what keeps one from running. Project entries replace global entries of the same name. Both use the `mcpServers` shape every other MCP client reads, so a config you already have for Claude Desktop or Cursor copies over unchanged.
 
 ```json
 {
@@ -93,7 +93,7 @@ Servers come from two optional files, `~/.vtx/mcp.json` for every project and `<
 }
 ```
 
-Set exactly one of `command` or `url`. Per-server keys are `enabled`, `timeout` (seconds), `exposure` and `tool_exposure`, plus `args`/`env`/`cwd` for stdio or `headers`/`oauth` for HTTP. `validate_mcp_server_config` and `load_mcp_config(cwd=..., project_trusted=..., config_dir=...)` are the entry points if you want the parsing without the manager.
+Set exactly one of `command` or `url`. Per-server keys are `enabled`, `timeout` (seconds), `exposure` and `tool_exposure`, plus `args`/`env`/`cwd` for stdio or `headers`/`oauth` for HTTP. `validate_mcp_server_config` and `load_mcp_config(cwd=..., config_dir=...)` are the entry points if you want the parsing without the manager.
 
 `$VAR` and `${VAR}` expand in `env` and `headers`, and an unset variable expands to empty rather than raising: a missing optional token should produce a 401 the user can see, not a crashed session. A malformed entry is dropped with a message in `LoadedMcpConfig.errors`; one bad server never takes out the rest.
 
@@ -250,4 +250,4 @@ Errors are typed: `McpError` is the base, with `McpTimeoutError`, `McpAbortError
 uv run --no-sync python -m pytest -p no:cacheprovider tests/mcp -q
 ```
 
-`tests/mcp` covers client correlation, timeouts, and cancellation; each transport; config validation; project trust; tool adaptation; resources; OAuth; and manager lifecycle. `tests/mcp/fixtures` holds the fake servers, `helpers.py` the shared wiring.
+`tests/mcp` covers client correlation, timeouts, and cancellation; each transport; config validation; tool adaptation; resources; OAuth; and manager lifecycle. `tests/mcp/fixtures` holds the fake servers, `helpers.py` the shared wiring.

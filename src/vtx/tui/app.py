@@ -421,7 +421,6 @@ class Vtx(
             get_model=lambda: self._runtime.model,
             get_scoped_models=lambda: [],
             is_idle=lambda: not self._is_running,
-            is_project_trusted=lambda: self._runtime._project_trusted,
             get_signal=lambda: self._cancel_event,
             abort=lambda: self._request_interrupt(),
             has_pending_messages=lambda: False,
