@@ -17,6 +17,7 @@ import base64
 import hashlib
 import logging
 import tempfile
+from collections.abc import Callable, Iterable
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
@@ -29,6 +30,7 @@ from vtx.agent.tools.schema import (
     normalize_object_schema,
     sanitize_tool_name,
 )
+from vtx.codemode.declarations import to_identifier
 from vtx.core.bytes_util import format_bytes
 from vtx.protocol.types import ToolResult
 
@@ -73,6 +75,67 @@ def create_mcp_tool_name(server: str, tool: str, is_taken=None) -> str:
             suffix += 1
         candidate = unique
     return candidate
+
+
+class ToolNameRegistry:
+    """The names already handed out, tracked in both the name and the script space.
+
+    A tool is addressable two ways, and both have to be unique. Its *name* is
+    what the provider validates and what a direct tool call uses. Its
+    *identifier* is the Python attribute a codemode script calls it by, and
+    :func:`vtx.codemode.declarations.to_identifier` is deliberately many-to-one:
+    it collapses ``-``, ``.``, and ``__`` alike to ``_`` because that is what
+    makes ``list-issues`` readable as ``tools.list_issues``. The consequence is
+    that two names can be distinct and still share an identifier -- an MCP
+    server offering both ``web-search`` and ``web_search`` is the ordinary case,
+    not a contrived one.
+
+    The sandbox refuses such a pair outright rather than shadowing one tool with
+    the other, and it is right to: a shadowed tool looks callable in the catalog
+    and is not. So the collision is resolved here, while the name is still being
+    minted, by handing the second tool the hash suffix :func:`create_mcp_tool_name`
+    already appends for a taken name. Tracking only the name space would let the
+    pair through and break every subsequent codemode call.
+
+    Checking ``__contains__`` against both spaces is also what makes the
+    ``lambda n: ...`` a caller passes for ``is_taken`` sufficient: it needs to
+    answer "is this name unusable", not "is this exact string spoken for".
+    """
+
+    def __init__(self, names: Iterable[str] = ()) -> None:
+        self._names: set[str] = set()
+        self._identifiers: set[str] = set()
+        for name in names:
+            self.add(name)
+
+    def __contains__(self, name: str) -> bool:
+        return name in self._names or to_identifier(name) in self._identifiers
+
+    def __call__(self, name: str) -> bool:
+        """Answer the ``is_taken`` predicate :func:`create_mcp_tool_name` takes."""
+        return name in self
+
+    def add(self, name: str) -> None:
+        """Claim a name, and the identifier it maps to, for the rest of the session."""
+        self._names.add(name)
+        self._identifiers.add(to_identifier(name))
+
+    def claiming(self, outer: Callable[[str], bool] | None = None) -> Callable[[str], bool]:
+        """A predicate that consults this registry, then ``outer``.
+
+        For a caller that is handed a predicate it cannot add to -- ``build_tools``
+        gets ``is_taken`` from the manager and never sees the registry behind it.
+        Without somewhere to record what it mints, every tool in one listing asks
+        the same stale question and two that sanitize alike both take the
+        unsuffixed name. Claims still go through :meth:`add` on this registry, so
+        the caller keeps deciding *when* a name is claimed (only once the tool is
+        real), and the returned predicate only reads.
+        """
+
+        def is_taken(name: str) -> bool:
+            return name in self or (outer is not None and outer(name))
+
+        return is_taken
 
 
 def _is_text_mime_type(mime_type: str | None) -> bool:
@@ -440,6 +503,7 @@ __all__ = [
     "MCP_OUTPUT_MAX_BYTES",
     "McpTool",
     "McpToolCaller",
+    "ToolNameRegistry",
     "convert_mcp_result",
     "create_mcp_tool_name",
     "enrich_result",

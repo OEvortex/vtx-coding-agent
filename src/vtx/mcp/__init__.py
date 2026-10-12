@@ -64,7 +64,7 @@ from .jsonrpc import (
     parse_jsonrpc_message,
 )
 from .manager import McpManager, McpServerConnection, McpServerStatus
-from .tool import MCP_OUTPUT_MAX_BYTES, McpTool, create_mcp_tool_name
+from .tool import MCP_OUTPUT_MAX_BYTES, McpTool, ToolNameRegistry, create_mcp_tool_name
 from .transport import DEFAULT_MAX_MESSAGE_BYTES, McpTransport, TransportEvents
 from .transports.in_memory import InMemoryTransport, create_in_memory_transport_pair
 from .transports.stdio import StdioTransport, StdioTransportOptions
@@ -146,6 +146,7 @@ __all__ = [
     "StreamableHttpTransport",
     "StreamableHttpTransportOptions",
     "Tool",
+    "ToolNameRegistry",
     "TransportEvents",
     "UnauthorizedContext",
     "create_in_memory_transport_pair",

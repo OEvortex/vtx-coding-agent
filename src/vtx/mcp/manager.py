@@ -27,7 +27,7 @@ from .client import McpClient, McpClientOptions, McpRequestOptions
 from .config import LoadedMcpConfig, McpServerConfig, load_mcp_config
 from .jsonrpc import McpConnectionClosedError
 from .tasks import spawn
-from .tool import McpTool, McpToolCaller, create_mcp_tool_name
+from .tool import McpTool, McpToolCaller, ToolNameRegistry, create_mcp_tool_name
 from .transports.stdio import StdioTransport, StdioTransportOptions
 from .transports.streamable_http import (
     McpAuthRequiredError,
@@ -402,18 +402,29 @@ class McpServerConnection:
         Sanitizing can collide inside one server (``a.b`` and ``a_b`` both
         become ``a_b``), so ``is_taken`` is consulted as tools are built rather
         than relying on the name being unique.
+
+        ``is_taken`` is only ever *asked*, never added to, so on its own it would
+        answer from the same stale view for every tool in the list and two that
+        sanitize alike would both take the unsuffixed name -- the first pair to
+        collide inside a single server got the same name twice. Each name minted
+        here is claimed in a local registry that the next tool's check consults
+        first, so a collision is visible within one listing as well as across
+        servers.
         """
+        minted = ToolNameRegistry()
+        is_taken = minted.claiming(is_taken)
         built: list[McpTool] = []
         for definition in self.definitions:
             tool_name = str(definition.get("name") or "")
             if not tool_name:
                 continue
             try:
+                name = create_mcp_tool_name(self.config.name, tool_name, is_taken)
                 built.append(
                     McpTool(
                         server=self.config.name,
                         definition=definition,
-                        name=create_mcp_tool_name(self.config.name, tool_name, is_taken),
+                        name=name,
                         caller=McpToolCaller(server_name=self.config.name, call=self.call_tool),
                         timeout_ms=self.config.timeout_seconds * 1000,
                         exposure=self.config.exposure_of(tool_name),
@@ -424,6 +435,10 @@ class McpServerConnection:
                 # A tool whose input schema we cannot model is skipped with a
                 # reason rather than taking the whole server down.
                 log.warning("Skipping MCP tool %s/%s: %s", self.config.name, tool_name, exc)
+                continue
+            # Claimed only once the tool is real: a schema that failed to model
+            # left no name behind, so the next tool may still use it.
+            minted.add(name)
         self.tools = built
         self.status.tool_count = len(built)
         return built
@@ -542,16 +557,22 @@ class McpManager:
         tool between listings, and a stale entry would call a tool the server
         no longer has. Built-in vtx tool names are reserved first, so an MCP
         tool can never shadow one.
+
+        The reservation is a :class:`ToolNameRegistry` rather than a set of names
+        because uniqueness has to hold in the identifier space too: a script
+        reaches a tool by the Python name its identifier maps to, so an MCP tool
+        whose identifier matched a built-in's would shadow it inside every
+        codemode script while remaining invisible here.
         """
         from vtx.agent.tools import get_all_tools
 
-        taken: set[str] = set(get_all_tools().keys())
+        taken = ToolNameRegistry(get_all_tools().keys())
         tools: list[BaseTool] = []
         for connection in self.servers.values():
             if connection.status.state != "connected" or connection.client is None:
                 connection.tools = []
                 continue
-            for tool in connection.build_tools(taken.__contains__):
+            for tool in connection.build_tools(taken):
                 taken.add(tool.name)
             tools.extend(connection.tools)
 

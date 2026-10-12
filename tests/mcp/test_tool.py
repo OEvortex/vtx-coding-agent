@@ -4,16 +4,52 @@ import json
 
 import pytest
 
+from vtx.codemode import CodemodeSandbox
+from vtx.codemode.declarations import to_identifier
+from vtx.codemode.types import CodemodeTool
+from vtx.mcp.manager import McpManager, McpServerConfig, McpServerConnection, McpServerStatus
 from vtx.mcp.tool import (
     MCP_OUTPUT_MAX_BYTES,
     McpTool,
     McpToolCaller,
+    ToolNameRegistry,
     convert_mcp_result,
     create_mcp_tool_name,
     enrich_result,
     truncate_middle,
 )
 from vtx.protocol.types import ImageContent
+
+
+async def _unreachable(args, signal):
+    raise AssertionError("a name-minting test must never execute a tool")
+
+
+def _connection(config_overrides: dict, definitions: list[dict]) -> McpServerConnection:
+    """A connection holding a fixed listing, with no transport behind it.
+
+    ``build_tools`` only reads ``config``, ``definitions`` and ``status``, so a
+    listing can be posed directly instead of standing up a server to publish it.
+    """
+
+    async def call(_name, _args, _options):
+        return {"content": []}
+
+    connection = McpServerConnection.__new__(McpServerConnection)
+    connection.config = McpServerConfig(
+        **{"name": "s", "url": "http://unused", "command": None, "args": [], **config_overrides}
+    )
+    connection.definitions = [
+        {"name": d["name"], "description": "", "inputSchema": d.get("inputSchema", {})}
+        for d in definitions
+    ]
+    connection.status = McpServerStatus(name=connection.config.name, state="connected")
+    connection.status.instructions = None
+    connection.tools = []
+    # A sentinel rather than a real client: rebuild_tools only tests it for None.
+    connection.client = object()
+    connection.call_tool = call
+    return connection
 
 
 def _tool(definition: dict, call=None, server: str = "fs", timeout_ms: int = 60_000) -> McpTool:
@@ -60,6 +96,104 @@ def test_sanitization_collision_inside_one_server_is_resolved():
         names.append(name)
     assert names[0] == "mcp__s__a_b"
     assert names[1] != names[0]
+
+
+def test_a_collision_is_resolved_inside_one_listing_without_a_caller_registry():
+    # build_tools is handed a predicate it cannot add to, so a plain `taken` set
+    # would answer from the same stale view for every tool and both would take
+    # the unsuffixed name. The registry build_tools mints into is what makes the
+    # second claim visible to the second tool.
+    connection = _connection({"name": "s"}, [{"name": "a.b"}, {"name": "a_b"}])
+    names = [t.name for t in connection.build_tools(lambda _n: False)]
+    assert names[0] == "mcp__s__a_b"
+    assert names[1] != names[0]
+    assert len(set(names)) == 2
+
+
+def test_names_sharing_a_codemode_identifier_are_disambiguated():
+    # `web-search` and `web_search` are distinct names but the same identifier,
+    # because to_identifier collapses `-` to `_`. The sandbox refuses such a pair
+    # outright, so the collision has to be resolved while the name is minted --
+    # this is the pair that broke every codemode call in a real session.
+    connection = _connection(
+        {"name": "ddg-search"}, [{"name": "web-search"}, {"name": "web_search"}]
+    )
+    tools = connection.build_tools(ToolNameRegistry())
+    assert [t.name for t in tools] == [
+        "mcp__ddg-search__web-search",
+        "mcp__ddg-search__web_search_1b7fd911",
+    ]
+    identifiers = [to_identifier(t.name) for t in tools]
+    assert len(set(identifiers)) == 2
+    # And the pair the sandbox actually accepts: this is the assertion that
+    # failed with "both map to identifier 'mcp__ddg_search__web_search'".
+    CodemodeSandbox(
+        tools=[CodemodeTool(name=t.name, description="d", execute=_unreachable) for t in tools]
+    )
+
+
+def test_an_identifier_collision_across_servers_is_disambiguated():
+    # Two servers whose names sanitize alike: `a-b` and `a_b` both reach the
+    # registry as `mcp__a-b__read` / `mcp__a_b__read`, and those share an
+    # identifier too. Whichever is built second must be renamed, or the pair
+    # would break the sandbox for every script in the session.
+    taken = ToolNameRegistry()
+    first = create_mcp_tool_name("a-b", "read", taken)
+    taken.add(first)
+    second = create_mcp_tool_name("a_b", "read", taken)
+    assert first != second
+    assert to_identifier(first) != to_identifier(second)
+    assert len(first) <= 64 and len(second) <= 64
+
+
+def test_the_whole_rebuilt_tool_set_is_identifier_unique():
+    # The reported failure, end to end: one registry is shared across every
+    # server by rebuild_tools, so collisions are caught both inside a listing
+    # and between servers. Any duplicate identifier here means CodemodeSandbox
+    # refuses to construct and every codemode call in the session fails.
+    servers = {
+        "ddg-search": ["web-search", "web_search"],
+        "a-b": ["read"],
+        "a_b": ["read"],
+        "other": ["plain-tool", "plain.tool", "plainXtool"],
+    }
+    manager = McpManager.__new__(McpManager)
+    manager.servers = {
+        name: _connection({"name": name}, [{"name": n} for n in tools])
+        for name, tools in servers.items()
+    }
+
+    names = [t.name for t in manager.rebuild_tools()]
+    identifiers = [to_identifier(n) for n in names]
+
+    assert len(set(names)) == len(names)
+    assert len(set(identifiers)) == len(identifiers)
+    CodemodeSandbox(
+        tools=[CodemodeTool(name=n, description="d", execute=_unreachable) for n in names]
+    )
+
+
+def test_registry_separates_names_that_share_an_identifier():
+    registry = ToolNameRegistry()
+    registry.add("mcp__s__web-search")
+    assert "mcp__s__web_search" in registry
+    assert registry("mcp__s__web_search") is True
+
+
+def test_registry_leaves_a_genuinely_distinct_name_alone():
+    registry = ToolNameRegistry(["mcp__s__web-search"])
+    assert "mcp__s__web" not in registry
+
+
+def test_a_suffixed_name_stays_within_the_provider_limit():
+    # Disambiguation is not allowed to buy uniqueness by exceeding the 64
+    # characters a provider will accept.
+    registry = ToolNameRegistry()
+    long_name = "mcp__" + "s" * 40 + "__" + "t" * 40
+    registry.add(long_name)
+    other = create_mcp_tool_name("s" * 40, "t" * 40, registry)
+    assert len(other) <= 64
+    assert other != long_name
 
 
 def test_name_never_exceeds_the_provider_limit():
