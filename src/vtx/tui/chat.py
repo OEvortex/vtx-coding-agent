@@ -5,6 +5,7 @@ from typing import Literal
 from rich.spinner import Spinner
 from rich.text import Text
 from textual.containers import VerticalScroll
+from textual.css.query import NoMatches
 from textual.timer import Timer
 from textual.widgets import Label
 
@@ -345,10 +346,14 @@ class ChatLog(VerticalScroll):
         # Remove trailing newline
         text.rstrip()
 
-        label = Label(text)
-        label.add_class("info-message")
-        label.add_class("loaded-resources")
-        self.mount(label)
+        try:
+            label = self.query_one("#loaded-resources", Label)
+            label.update(text)
+        except NoMatches:
+            label = Label(text, id="loaded-resources")
+            label.add_class("info-message")
+            label.add_class("loaded-resources")
+            self.mount(label)
 
     def add_agent_details(self, *, rows: list[dict], active: str | None) -> None:
         """Render the ``/agent list`` table."""
