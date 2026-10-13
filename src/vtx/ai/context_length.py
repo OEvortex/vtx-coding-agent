@@ -192,8 +192,12 @@ class ContextLengthManager:
             return self._limits[model]
 
         # 2) fuzzy fallback: normalize hyphens and match substrings
+        # Snapshot first. The background models.dev refresh writes into this
+        # same dict from its own thread, and iterating the live mapping raised
+        # "dictionary changed size during iteration" on the startup path that
+        # resolves a context window while the refresh lands.
         model_lower = model.lower()
-        for model_id, limits in self._limits.items():
+        for model_id, limits in list(self._limits.items()):
             mid = model_id.lower().replace("-", "")
             if model_lower.replace("-", "") in mid or mid in model_lower.replace("-", ""):
                 return limits

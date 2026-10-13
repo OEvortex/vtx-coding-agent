@@ -172,3 +172,52 @@ async def test_missing_cache_fetches_without_blocking_the_loop(cache, monkeypatc
 
     assert manager.get_limits("grok-5.1").context == 900000
     assert manager._stale is False
+
+
+def test_fuzzy_lookup_survives_a_concurrent_refresh(cache):
+    """A background refresh inserting limits must not break the fuzzy match.
+
+    The refresh thread and the reader share ``_limits``; a lookup that misses
+    exact-match iterates it, and an insert landing mid-iteration used to raise
+    ``RuntimeError: dictionary changed size during iteration``. On startup that
+    error surfaced as an unexplained launch warning, which is where it was
+    reported from.
+    """
+    manager, path = cache
+    _write_cache(path, CATALOG, age_seconds=0)
+    manager.get_limits("grok-4.5")  # loads the cache, so _limits is populated
+
+    # A big table makes the reader's iteration long enough that the writer is
+    # guaranteed to be inserting while it runs.
+    for index in range(400):
+        manager.register(f"seeded-{index}", 1000 + index)
+
+    error: list[BaseException] = []
+    start_barrier = threading.Barrier(2)
+    stop = threading.Event()
+
+    def _writer() -> None:
+        start_barrier.wait(timeout=10)
+        index = 0
+        while not stop.is_set():
+            # Same shape as the refresh path: a new key mid-iteration.
+            manager.register(f"model-{index}", 1000 + index)
+            index += 1
+
+    def _reader() -> None:
+        start_barrier.wait(timeout=10)
+        try:
+            for _ in range(20):
+                manager.get_limits("definitely-not-in-the-catalog")
+        except BaseException as exc:  # noqa: BLE001 - the test asserts on it
+            error.append(exc)
+
+    writer = threading.Thread(target=_writer, daemon=True)
+    reader = threading.Thread(target=_reader, daemon=True)
+    reader.start()
+    writer.start()
+    reader.join(timeout=30)
+    stop.set()
+    writer.join(timeout=30)
+
+    assert not error, f"concurrent refresh broke the lookup: {error!r}"

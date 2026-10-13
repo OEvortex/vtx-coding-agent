@@ -1,12 +1,12 @@
 import time
 from collections.abc import Sequence
 from pathlib import Path
-from typing import Any, Literal
+from typing import Literal
 
 from rich.align import Align
+from rich.cells import cell_len
 from rich.console import Group
 from rich.spinner import Spinner
-from rich.table import Table
 from rich.text import Text
 from textual.containers import VerticalScroll
 from textual.css.query import NoMatches
@@ -30,6 +30,7 @@ from vtx.tui.blocks import (
     UpdateAvailableBlock,
     UserBlock,
 )
+from vtx.tui.brand import VTX_LOGO
 from vtx.tui.status_lines import WITTY_STATUS_LINES, pick_witty_line, subagents_own_the_status_line
 
 __all__ = ["MAX_CHILDREN", "PRUNE_TO", "WITTY_ROTATE_EVERY_TICKS", "WITTY_STATUS_LINES", "ChatLog"]
@@ -54,17 +55,9 @@ def _format_skill_label(skill: Skill) -> str:
 # Five-row block wordmark. The old three-line kerning-less mark read as noise
 # at this size; a full-height one still collapses to a compact masthead because
 # the version and the hints share its rows instead of stacking under it.
-LOGO_LINES = (
-    "█   █ █████ █   █",
-    "█   █   █   █   █",
-    "█   █   █    █ █",
-    " █ █    █    █ █",
-    "  █   █████ █   █",
-)
-
-# The launch hints: the six that pay for themselves, not the full keymap (that
-# is /help). Two per row, dim key then muted description, so the columns stay
-# aligned and no key is stated with two meanings.
+#: The launch hints: the six that pay for themselves, not the full keymap (that
+#: is /help). Two per row, dim key then muted description, so the columns stay
+#: aligned and no key is stated with two meanings.
 LAUNCH_HINTS = (
     ("/", "commands"),
     ("@", "files"),
@@ -77,70 +70,69 @@ LAUNCH_HINTS = (
 EMPTY_STATE_HINTS = ("fix failing tests", "explain this repo")
 
 
-def _runtime_header_metadata(runtime: Any) -> tuple[str | None, str | None]:
-    """`(model, agent)` for the welcome header, from whatever the runtime knows.
-
-    The footer already carries both in its persistent row; the header repeats
-    them only where a fresh session starts, which is the moment the user
-    actually looks for them.
-    """
-    model = getattr(runtime, "model", "") or ""
-    provider = getattr(runtime, "model_provider", "") or ""
-    model_label = f"({provider}) {model}" if provider and model else (model or None)
-
-    active = getattr(runtime, "active_agent", None)
-    agent_name = getattr(getattr(active, "definition", None), "name", None)
-    return model_label, agent_name or None
-
-
-def _brand_block(version: str, dim_color: str, muted_color: str) -> Table:
-    """The wordmark on the left, version and launch hints in a column beside it.
-
-    Same shape as the brand splash in the reference agents (prime-agent): the
-    mark keeps its place and the metadata shares its rows, so the whole launch
-    header is five lines tall instead of a logo with a stack of prose under it.
-    """
-    title = Text("VTX", style=dim_color)
-    if version:
-        title.append(f" {version}", style=muted_color)
-
-    column: list[Any] = [title]
-    if config.ui.show_welcome_shortcuts:
-        column.append(_shortcut_grid(LAUNCH_HINTS, dim_color, muted_color))
-
-    block = Table.grid(padding=(0, 2))
-    block.add_column()
-    block.add_column()
-    for index in range(max(len(LOGO_LINES), len(column))):
-        logo = (
-            Text(LOGO_LINES[index], style=config.ui.colors.accent)
-            if index < len(LOGO_LINES)
-            else Text("")
-        )
-        info = column[index] if index < len(column) else Text("")
-        block.add_row(logo, info)
-    return block
-
-
-def _shortcut_grid(pairs: Sequence[tuple[str, str]], dim_color: str, muted_color: str) -> Table:
+def _hint_rows(pairs: Sequence[tuple[str, str]]) -> list[Text]:
     """Keybinding hints as aligned `key  description` cells, two pairs per row.
 
-    Dim key then muted description, the same treatment the refs give their
-    startup hints, and it keeps columns aligned when one key is longer than
-    its neighbours (the old ` • `-joined rows slid as soon as one grew).
+    Dim key then muted description, the same treatment the reference agents give
+    their startup hints, and the columns stay aligned when one key is longer
+    than its neighbours.
     """
-    grid = Table.grid(padding=(0, 2))
-    for _ in range(4):
-        grid.add_column()
+    dim_color = config.ui.colors.dim
+    muted_color = config.ui.colors.muted
+    key_width = max(len(key) for key, _ in pairs)
+    desc_width = max(len(desc) for _, desc in pairs)
+
+    rows: list[Text] = []
     for start in range(0, len(pairs), 2):
-        cells: list[Text] = []
-        for key, description in pairs[start : start + 2]:
-            cells.append(Text(key, style=dim_color))
-            cells.append(Text(description, style=muted_color))
-        while len(cells) < 4:
-            cells.append(Text(""))
-        grid.add_row(*cells)
-    return grid
+        row = Text()
+        for slot, (key, description) in enumerate(pairs[start : start + 2]):
+            if slot:
+                row.append("   ")
+            row.append(f"{key:<{key_width}}", style=dim_color)
+            row.append(" ")
+            row.append(f"{description:<{desc_width}}", style=muted_color)
+        rows.append(row)
+    return rows
+
+
+def _masthead_lines(version: str, *, empty_state: bool) -> list[Text]:
+    """The launch header: the wordmark, its version, the hints beside it.
+
+    Rows are built flat (no nested tables) and every row is padded to one
+    width. Both matter: a Rich `Align` centers each line against the terminal
+    width on its own, so unequal rows end up with different indents and the wordmark
+    floats away from its hints, which is how this block looked broken in a wide
+    terminal until each row was made the same width.
+    """
+    accent_color = config.ui.colors.accent
+    dim_color = config.ui.colors.dim
+    muted_color = config.ui.colors.muted
+
+    hint_rows = _hint_rows(LAUNCH_HINTS) if config.ui.show_welcome_shortcuts else []
+    rows: list[Text] = []
+    for index, logo_line in enumerate(VTX_LOGO):
+        row = Text(logo_line, style=accent_color)
+        if index == 0 and version:
+            row.append("   ")
+            row.append(version, style=muted_color)
+        hint = hint_rows[index - 1] if 1 <= index <= len(hint_rows) else None
+        if hint is not None:
+            row.append("  ")
+            row.append_text(hint)
+        rows.append(row)
+
+    if empty_state:
+        hints = " · ".join(f'"{hint}"' for hint in EMPTY_STATE_HINTS)
+        rows.append(Text(""))
+        rows.append(Text(f"Try: {hints}", style=dim_color))
+
+    # One width for every row is what makes the centered block share a left
+    # edge. `pad_right` pads in place and returns None, so the widest row is
+    # measured before anything is padded.
+    width = max(cell_len(row.plain) for row in rows)
+    for row in rows:
+        row.pad_right(width - cell_len(row.plain))
+    return rows
 
 
 def _append_aligned_section(
@@ -356,21 +348,12 @@ class ChatLog(VerticalScroll):
         self._spinner_state = None
 
     def add_session_info(self, version: str, *, empty_state: bool = False) -> None:
-        # The welcome block reads as a masthead, so it sits centered rather than
-        # hugging the left gutter the way a transcript line does. Textual's
-        # `text-align` does not reach a Rich renderable, so the Group itself is
-        # centered: Rich's Align pads to the console width at render time, which
-        # also re-centers on a terminal resize.
-        renderables: list[Any] = [
-            _brand_block(version, config.ui.colors.dim, config.ui.colors.muted)
-        ]
-
-        if empty_state:
-            hints = " · ".join(f'"{hint}"' for hint in EMPTY_STATE_HINTS)
-            renderables.append(Text(""))
-            renderables.append(Text(f"Try: {hints}", style=config.ui.colors.dim))
-
-        info_label = Label(Align(Group(*renderables), align="center"))
+        # Centered as a masthead rather than hugging the gutter like a transcript
+        # line. Textual's `text-align` does not reach a Rich renderable, so Rich's
+        # Align pads at render time; every row is pre-padded to one width, so the
+        # block keeps a single left edge and re-centers on a resize.
+        masthead = Group(*_masthead_lines(version, empty_state=empty_state))
+        info_label = Label(Align(masthead, align="center"))
         info_label.add_class("session-info")
         self.mount(info_label, before=0)
 

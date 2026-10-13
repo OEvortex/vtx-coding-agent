@@ -15,6 +15,7 @@ from vtx.agent.context.skills import Skill
 from vtx.agent.tools.base import BaseTool
 from vtx.core.paths import get_agents_dir
 from vtx.protocol.types import ToolResult
+from vtx.tui.brand import VTX_LOGO
 from vtx.tui.chat import ChatLog
 from vtx.tui.commands.catalog import skill_sections, tool_label, tool_sections
 from vtx.tui.styles import get_styles
@@ -61,9 +62,9 @@ async def test_header_is_centered_with_hints_beside_the_wordmark():
 
         rows = _render_plain(pilot.app.query_one(".session-info", Label)).split("\n")
 
-        # The wordmark's five rows, widened by the hint cells that share them,
+        # The wordmark's six rows, widened by the hint cells that share them,
         # then a blank and the empty-state hint line.
-        assert len(rows) == 9, f"wordmark rows + blank + hint expected:\n{rows}"
+        assert len(rows) == 8, f"wordmark rows + blank + hint expected:\n{rows}"
 
         # The masthead is centered as a block in the 100-column terminal: its
         # left edge leaves as little room as its right edge. The wordmark's own
@@ -76,11 +77,12 @@ async def test_header_is_centered_with_hints_beside_the_wordmark():
             f"left edge {left} does not center a {width}-wide masthead:\n{rows}"
         )
 
-        # The wordmark keeps its own column on five of those rows, beside the
-        # version and the hints.
-        logo_rows = [row for row in rows[:7] if row.lstrip().startswith("█")]
-        assert len(logo_rows) == 5, f"wordmark column missing:\n{rows}"
-        assert "v1.2.2" in rows[0] and rows[0].count("VTX") == 1
+        # The wordmark keeps its own column on all six rows, and the version
+        # rides the first one rather than restating the name in text.
+        for index in range(6):
+            assert rows[index].lstrip().startswith(VTX_LOGO[index].strip()), f"\n{rows}"
+        assert "v1.2.2" in rows[0]
+        assert "VTX" not in "".join(rows), "the logo spells it; the title must not repeat it"
 
         # Hints share the wordmark's rows instead of stacking under it: no key
         # is repeated, so none is stated with two meanings.
@@ -104,7 +106,7 @@ async def test_header_omits_empty_state_hint_when_resuming():
 
         rows = _render_plain(pilot.app.query_one(".session-info", Label)).split("\n")
         assert not any("Try:" in row for row in rows)
-        assert len(rows) == 7, f"wordmark rows only, no hint line:\n{rows}"
+        assert len(rows) == 6, f"wordmark rows only, no hint line:\n{rows}"
 
 
 @pytest.mark.asyncio

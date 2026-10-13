@@ -10,15 +10,9 @@ from rich.console import Console
 from vtx.core.config import config
 from vtx.plugins.event_contract import SESSION_SHUTDOWN
 from vtx.tui.app import Vtx
+from vtx.tui.brand import VTX_LOGO
 
-_LOGO = [
-    "██╗   ██╗████████╗██╗  ██╗",
-    "██║   ██║╚══██╔══╝╚██╗██╔╝",
-    "██║   ██║   ██║    ╚███╔╝ ",
-    "╚██╗ ██╔╝   ██║    ██╔██╗ ",
-    " ╚████╔╝    ██║   ██╔╝ ██╗",
-    "  ╚═══╝     ╚═╝   ╚═╝  ╚═╝",
-]
+_LOGO = VTX_LOGO
 
 
 def _format_duration(seconds: float) -> str:
