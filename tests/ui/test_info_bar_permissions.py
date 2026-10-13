@@ -11,7 +11,7 @@ def test_footer_shows_auto_permission_mode_before_file_changes():
     finally:
         reset_config()
 
-    assert "✓ auto" in line2.plain
+    assert "approvals: auto" in line2.plain
     assert "+2" in line2.plain
     assert "-1" in line2.plain
 
@@ -21,7 +21,7 @@ def test_footer_shows_prompt_permission_mode_without_file_changes():
     footer._permission_mode = "prompt"
     line2 = footer._format_row2_left()
 
-    assert "⏹ prompt" in line2.plain
+    assert "approvals: prompt" in line2.plain
 
 
 def test_footer_updates_permission_mode_without_layout():

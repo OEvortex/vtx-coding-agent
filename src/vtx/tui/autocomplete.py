@@ -379,6 +379,8 @@ class FilePathProvider(AutocompleteProvider):
 # Default slash commands
 DEFAULT_COMMANDS = [
     SlashCommand("help", "show available commands"),
+    SlashCommand("skills", "list loaded skills by category"),
+    SlashCommand("tools", "list loaded tools by source"),
     SlashCommand("quit", "quit the application", "ctrl+c,c"),
     SlashCommand("clear", "clear conversation history"),
     SlashCommand("model", "change model"),

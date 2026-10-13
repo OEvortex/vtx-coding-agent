@@ -89,6 +89,8 @@ Turning ponytail or git context on only takes effect on the next new conversatio
 | `/reload` | | Re-apply config, extensions, agents, tools, skills, and MCP servers in place, then report what changed (`src/vtx/tui/commands/reload.py:54`) | No |
 | `/update` | | Check for and install the latest vtx release (`src/vtx/tui/commands/update.py:15`) | No |
 | `/mcp` | | List every configured MCP server, its state, and its tool count (`src/vtx/tui/commands/mcp.py:43`) | No |
+| `/skills` | | List the loaded skills grouped by category, local ones marked (`src/vtx/tui/commands/catalog.py:34`) | No |
+| `/tools` | | List the loaded tools: built-ins first, then one group per MCP server (`src/vtx/tui/commands/catalog.py:53`) | No |
 | `/mcp reload` | | Re-read `mcp.json` and reconnect every server (`src/vtx/tui/commands/mcp.py:46`) | No |
 | `/mcp reconnect` | `<name>` | Rebuild one server's connection and re-derive the tool set (`src/vtx/tui/commands/mcp.py:49`) | No |
 | `/mcp enable` | `<name>` | Enable a server and write `enabled: true` into its `mcp.json` (`src/vtx/tui/commands/mcp.py:49`) | No |

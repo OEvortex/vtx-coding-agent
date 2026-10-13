@@ -65,6 +65,9 @@ _PASTE_MARKER_RE = re.compile(r"\[paste #(\d+)(?: (\+\d+ lines|\d+ chars))?\]")
 _IMAGE_MARKER_RE = re.compile(r"\[image #(\d+)\]")
 _MAX_ATTACHED_IMAGES = 5
 _SKILL_TRIGGER_MARKER = "\u2063"
+#: What an empty prompt offers. The input is the first thing a new user reads,
+#: so it names the three ways in rather than starting blank.
+DEFAULT_PLACEHOLDER = "Ask anything · / commands · @ files"
 _SHELL_COMMAND_CLASS = "-shell-command"
 _TEXTAREA_THEME = "vtx-input"
 
@@ -301,6 +304,7 @@ class InputBox(Vertical):
         textarea.cursor_blink = False
         textarea.show_line_numbers = False
         textarea.highlight_cursor_line = False
+        textarea.placeholder = DEFAULT_PLACEHOLDER
 
     def refresh_theme(self) -> None:
         textarea = self.query_one("#input-textarea", TextArea)
@@ -360,7 +364,8 @@ class InputBox(Vertical):
         self._autocomplete_enabled = enabled
 
     def set_placeholder(self, value: str) -> None:
-        self.query_one("#input-textarea", TextArea).placeholder = value
+        """An empty value restores the default prompt, which is what the reset paths want."""
+        self.query_one("#input-textarea", TextArea).placeholder = value or DEFAULT_PLACEHOLDER
 
     def set_completing(self, is_completing: bool) -> None:
         self._is_completing = is_completing

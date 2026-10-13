@@ -10,6 +10,7 @@
 - update.py   - /update
 - reload.py   - /reload
 - mcp.py      - /mcp
+- catalog.py  - /skills, /tools
 """
 
 from __future__ import annotations
@@ -19,6 +20,7 @@ from vtx.tui.chat import ChatLog
 from .agents import AgentCommands
 from .auth import AuthCommands
 from .base import CommandSupport
+from .catalog import CatalogCommands
 from .goals import GoalCommands
 from .mcp import McpCommands
 from .models import ModelCommands
@@ -42,6 +44,7 @@ class CommandsMixin(
     GoalCommands,
     ReloadCommands,
     McpCommands,
+    CatalogCommands,
 ):
     def _handle_command(self, text: str) -> bool:
         parts = text[1:].split(maxsplit=1)
@@ -53,6 +56,12 @@ class CommandsMixin(
             return True
         if cmd == "help":
             self._show_help()
+            return True
+        if cmd == "skills":
+            self._handle_skills_command()
+            return True
+        if cmd == "tools":
+            self._handle_tools_command()
             return True
         if cmd == "clear":
             self._clear_conversation()
@@ -183,6 +192,7 @@ class CommandsMixin(
 
 __all__ = [
     "AuthCommands",
+    "CatalogCommands",
     "CommandSupport",
     "CommandsMixin",
     "GoalCommands",

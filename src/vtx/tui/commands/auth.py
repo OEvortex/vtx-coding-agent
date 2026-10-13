@@ -231,7 +231,7 @@ class AuthCommands(CommandSupport):
         # Restore the input box to its normal state.
         try:
             input_box = self.query_one("#input-box", InputBox)
-            input_box.set_placeholder("")
+            input_box.set_placeholder("")  # restores the default placeholder
             input_box.set_autocomplete_enabled(True)
             input_box.clear()
         except Exception:

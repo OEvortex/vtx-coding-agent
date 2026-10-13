@@ -39,6 +39,26 @@ def get_git_branch(cwd: str) -> str:
     return resolve_git_branch(cwd)
 
 
+#: Where a long path stops for the footer, before it eats the token columns.
+MAX_CWD_DISPLAY = 28
+
+
+def shorten_path_middle(path: str, max_width: int = MAX_CWD_DISPLAY) -> str:
+    """`~/a/very/deep/project` -> `…/deep/project` at the given width.
+
+    The head is what the user navigated, and the tail is what identifies the
+    repo, so the middle goes first.
+    """
+    if len(path) <= max_width:
+        return path
+    if max_width <= 1:
+        return path[:max_width]
+    tail = path.split("/")
+    while tail and len("/".join(tail)) + 1 > max_width - 1:
+        tail.pop(0)
+    return "…/" + "/".join(tail)
+
+
 class FileChangesModal(ModalScreen[None]):
     BINDINGS: ClassVar[list] = [("escape", "dismiss_modal", "Close")]
 
@@ -202,10 +222,13 @@ class InfoBar(Vertical):
             yield Label(self._format_row2_right(), id="info-row2-right")
 
     def _format_row1_left(self) -> Text:
-        result = Text(self._cwd)
+        result = Text(shorten_path_middle(self._cwd))
         if self._git_branch:
-            result.append(" ", style="")
-            result.append(f"(⌥ {self._git_branch})", style=config.ui.colors.accent)
+            # A plain parenthesised branch, not a "⌥" sigil: the sigil read as a
+            # key name, and everyone already knows "(branch)" from git itself.
+            result.append(" (")
+            result.append(self._git_branch, style=config.ui.colors.accent)
+            result.append(")")
         return result
 
     def _format_row1_right(self) -> Text:
@@ -218,15 +241,18 @@ class InfoBar(Vertical):
             parts.append(meter)
 
         # Context size
+        window = format_tokens(self._context_window)
         if self._context_tokens is not None:
-            ctx = f"{format_tokens(self._context_tokens)}/{format_tokens(self._context_window)}"
+            percent = round(100 * self._context_tokens / (self._context_window or 1))
+            ctx = f"ctx {percent}% of {window}"
         else:
-            ctx = f"--/{format_tokens(self._context_window)}"
+            ctx = f"ctx --% of {window}"
         parts.append(Text(ctx))
 
+        # Spell out the counters: "↑0 ↓0" needs the user to know the arrows.
         input_t = format_tokens(self._input_tokens)
         output_t = format_tokens(self._output_tokens)
-        usage = f"↑{input_t} ↓{output_t}"
+        usage = f"in {input_t} · out {output_t}"
         if self._cache_read_tokens > 0:
             usage += f" R{format_tokens(self._cache_read_tokens)}"
         if self._cache_write_tokens > 0:
@@ -313,9 +339,9 @@ class InfoBar(Vertical):
     def _format_permission_mode(self) -> Text:
         result = Text()
         if self._permission_mode == "auto":
-            result.append("✓ auto", style=config.ui.colors.badge.label)
+            result.append("✓ approvals: auto", style=config.ui.colors.badge.label)
         else:
-            result.append("⏹ prompt", style=config.ui.colors.notice)
+            result.append("⏹ approvals: prompt", style=config.ui.colors.notice)
         return result
 
     def _format_row2_right(self) -> Text:
@@ -327,7 +353,8 @@ class InfoBar(Vertical):
         if self._model_provider:
             model_text = f"({self._model_provider}) {self._model}"
         result.append(model_text)
-        result.append(f" • {self._thinking_level}")
+        # "low" alone reads as a mode the user forgot to set.
+        result.append(f" • thinking: {self._thinking_level}")
         return result
 
     def update_tokens(

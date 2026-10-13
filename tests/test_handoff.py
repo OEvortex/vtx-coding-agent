@@ -128,7 +128,7 @@ class _FakeChat:
     async def remove_all_children(self) -> None:
         return None
 
-    def add_session_info(self, version: str, *, runtime=None) -> None:
+    def add_session_info(self, version: str, *, empty_state: bool = False) -> None:
         return None
 
     def add_loaded_resources(self, context_paths, skills, tools) -> None:

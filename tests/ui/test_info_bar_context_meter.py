@@ -78,4 +78,4 @@ def test_meter_is_included_in_row1_right() -> None:
     bar.set_tokens(0, 0, context_tokens=100_000)
     row = bar._format_row1_right().plain
     assert "▕" in row
-    assert "97.7k/195.3k" in row
+    assert "ctx 50% of 195.3k" in row

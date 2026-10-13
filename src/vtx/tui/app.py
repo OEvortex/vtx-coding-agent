@@ -678,7 +678,12 @@ class Vtx(
         self._sync_slash_commands()
 
         chat = self.query_one("#chat-log", ChatLog)
-        chat.add_session_info(VERSION, runtime=self._runtime)
+        chat.add_session_info(
+            VERSION,
+            # A resumed or continued session already has a transcript above the
+            # prompt, so the empty-state prompts would sit under real content.
+            empty_state=not (self._resume_session or self._continue_recent),
+        )
 
         if self._runtime.context:
             chat.add_loaded_resources(

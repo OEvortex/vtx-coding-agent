@@ -1,4 +1,5 @@
 import time
+from collections.abc import Sequence
 from pathlib import Path
 from typing import Any, Literal
 
@@ -50,18 +51,30 @@ def _format_skill_label(skill: Skill) -> str:
     return skill.name
 
 
-LOGO_LINES = ("░█░█░███░█░█", "░█░█░░█░░░█░", "░░█░░░█░░█░█")
+# Five-row block wordmark. The old three-line kerning-less mark read as noise
+# at this size; a full-height one still collapses to a compact masthead because
+# the version and the hints share its rows instead of stacking under it.
+LOGO_LINES = (
+    "█   █ █████ █   █",
+    "█   █   █   █   █",
+    "█   █   █    █ █",
+    " █ █    █    █ █",
+    "  █   █████ █   █",
+)
 
-# Brand lines the reference agents use: a dim label, a muted value, and the
-# labels padded to one width so the column reads as a list, not as prose.
-META_LABEL_WIDTH = 7
+# The launch hints: the six that pay for themselves, not the full keymap (that
+# is /help). Two per row, dim key then muted description, so the columns stay
+# aligned and no key is stated with two meanings.
+LAUNCH_HINTS = (
+    ("/", "commands"),
+    ("@", "files"),
+    ("↑/↓", "history"),
+    ("esc", "interrupt"),
+    ("shift+enter", "newline"),
+    ("ctrl+c x2", "exit"),
+)
 
-
-def _meta_line(label: str, value: str, dim_color: str, muted_color: str) -> Text:
-    line = Text()
-    line.append(f"{label:<{META_LABEL_WIDTH}}", style=dim_color)
-    line.append(value, style=muted_color)
-    return line
+EMPTY_STATE_HINTS = ("fix failing tests", "explain this repo")
 
 
 def _runtime_header_metadata(runtime: Any) -> tuple[str | None, str | None]:
@@ -80,42 +93,36 @@ def _runtime_header_metadata(runtime: Any) -> tuple[str | None, str | None]:
     return model_label, agent_name or None
 
 
-def _brand_block(
-    version: str,
-    model: str | None,
-    agent: str | None,
-    accent_color: str,
-    dim_color: str,
-    muted_color: str,
-) -> Table:
-    """Logo on the left, session metadata in a column beside it.
+def _brand_block(version: str, dim_color: str, muted_color: str) -> Table:
+    """The wordmark on the left, version and launch hints in a column beside it.
 
-    Same shape as the brand splash in the reference agents (prime-agent):
-    the mark keeps its place, and version/model/agent read as a list rather
-    than eating a line each under a bare logo.
+    Same shape as the brand splash in the reference agents (prime-agent): the
+    mark keeps its place and the metadata shares its rows, so the whole launch
+    header is five lines tall instead of a logo with a stack of prose under it.
     """
-    title = Text()
-    title.append("VTX", style=accent_color)
+    title = Text("VTX", style=dim_color)
     if version:
-        title.append(f" v{version}", style=dim_color)
+        title.append(f" {version}", style=muted_color)
 
-    meta: list[Text] = [title]
-    if model:
-        meta.append(_meta_line("model", model, dim_color, muted_color))
-    if agent:
-        meta.append(_meta_line("agent", agent, dim_color, muted_color))
+    column: list[Any] = [title]
+    if config.ui.show_welcome_shortcuts:
+        column.append(_shortcut_grid(LAUNCH_HINTS, dim_color, muted_color))
 
     block = Table.grid(padding=(0, 2))
     block.add_column()
     block.add_column()
-    for index in range(max(len(LOGO_LINES), len(meta))):
-        logo = Text(LOGO_LINES[index], style=accent_color) if index < len(LOGO_LINES) else Text("")
-        info = meta[index] if index < len(meta) else Text("")
+    for index in range(max(len(LOGO_LINES), len(column))):
+        logo = (
+            Text(LOGO_LINES[index], style=config.ui.colors.accent)
+            if index < len(LOGO_LINES)
+            else Text("")
+        )
+        info = column[index] if index < len(column) else Text("")
         block.add_row(logo, info)
     return block
 
 
-def _shortcut_grid(pairs: list[tuple[str, str]], dim_color: str, muted_color: str) -> Table:
+def _shortcut_grid(pairs: Sequence[tuple[str, str]], dim_color: str, muted_color: str) -> Table:
     """Keybinding hints as aligned `key  description` cells, two pairs per row.
 
     Dim key then muted description, the same treatment the refs give their
@@ -152,8 +159,12 @@ def _append_aligned_section(
         return
     max_key_len = max(len(k) for k, _ in rows)
     for key, value in rows:
-        padded_key = key.ljust(max_key_len)
-        text.append(f"  {padded_key}  ", style=dim_color)
+        if not value:
+            # A name-only row (a tools listing) keeps the column without a
+            # dangling separator.
+            text.append(f"  {key}\n", style=dim_color)
+            continue
+        text.append(f"  {key.ljust(max_key_len)}  ", style=dim_color)
         text.append(f"{value}\n", style=muted_color)
 
 
@@ -344,51 +355,21 @@ class ChatLog(VerticalScroll):
         self._spinner_tool = None
         self._spinner_state = None
 
-    def add_session_info(self, version: str, *, runtime: Any = None) -> None:
-        accent_color = config.ui.colors.accent
-        dim_color = config.ui.colors.dim
-        muted_color = config.ui.colors.muted
-
-        model, agent = _runtime_header_metadata(runtime) if runtime is not None else (None, None)
-
-        renderables: list[Any] = [
-            _brand_block(version, model, agent, accent_color, dim_color, muted_color)
-        ]
-
-        if config.ui.show_welcome_shortcuts:
-            shortcut_rows = (
-                (
-                    ("/", "slash commands"),
-                    ("@", "files/dirs"),
-                    ("tab", "complete paths"),
-                    ("↑/↓", "history"),
-                ),
-                (
-                    ("shift+tab", "switch agent"),
-                    ("esc", "to interrupt"),
-                    ("shift+enter", "add newline"),
-                ),
-                (
-                    ("ctrl+c", "clear input"),
-                    ("ctrl+c x2", "exit"),
-                    ("enter", "queue"),
-                    ("alt+enter", "steer"),
-                ),
-                (
-                    ("↑/↓", "select queue"),
-                    ("ctrl+t", "cycle thinking"),
-                    ("ctrl+shift+t", "toggle thinking"),
-                ),
-            )
-            pairs = [item for row in shortcut_rows for item in row]
-            renderables.append(Text(""))
-            renderables.append(_shortcut_grid(pairs, dim_color, muted_color))
-
-        # The welcome block reads as a brand header, so it sits centered rather
-        # than hugging the left gutter the way a transcript line does. Textual's
+    def add_session_info(self, version: str, *, empty_state: bool = False) -> None:
+        # The welcome block reads as a masthead, so it sits centered rather than
+        # hugging the left gutter the way a transcript line does. Textual's
         # `text-align` does not reach a Rich renderable, so the Group itself is
         # centered: Rich's Align pads to the console width at render time, which
         # also re-centers on a terminal resize.
+        renderables: list[Any] = [
+            _brand_block(version, config.ui.colors.dim, config.ui.colors.muted)
+        ]
+
+        if empty_state:
+            hints = " · ".join(f'"{hint}"' for hint in EMPTY_STATE_HINTS)
+            renderables.append(Text(""))
+            renderables.append(Text(f"Try: {hints}", style=config.ui.colors.dim))
+
         info_label = Label(Align(Group(*renderables), align="center"))
         info_label.add_class("session-info")
         self.mount(info_label, before=0)
@@ -396,50 +377,67 @@ class ChatLog(VerticalScroll):
     def add_loaded_resources(
         self, context_paths: list[str], skills: list[Skill], tools: list[BaseTool]
     ) -> None:
+        """One-line summary of what this session loaded.
+
+        The full tool surface and the ~50-skill catalog used to print here and
+        pushed the prompt off the bottom of a short terminal; both are now one
+        line each behind `/tools` and `/skills`, which is where a list that
+        long belongs. The counts stay because "what is actually wired into this
+        turn" is the question this line answers.
+        """
         if not context_paths and not skills and not tools:
             return
 
-        dim_color = config.ui.colors.dim
-        notice_color = config.ui.colors.notice
-        text = Text()
-
+        parts: list[str] = []
         if tools:
-            text.append("[Tools]\n", style=notice_color)
-            text.append("  ", style=dim_color)
-            # Sorted, like the ref agents' startup listings: the tool surface is
-            # long and changes order as MCP servers connect, so an order nobody
-            # chose makes an appended tool impossible to spot.
-            text.append(", ".join(sorted(tool.name for tool in tools)), style=dim_color)
-            text.append("\n", style=dim_color)
-
-        if context_paths:
-            if tools:
-                text.append("\n")
-            text.append("[Context]\n", style=notice_color)
-            for path in context_paths:
-                text.append(f"  {path}\n", style=dim_color)
-
+            parts.append(f"{len(tools)} tools")
         if skills:
-            if context_paths or tools:
-                text.append("\n")
-            text.append("[Skills]\n", style=notice_color)
-            text.append("  ", style=dim_color)
-            text.append(
-                ", ".join(sorted(_format_skill_label(skill) for skill in skills)), style=dim_color
-            )
-            text.append("\n", style=dim_color)
+            parts.append(f"{len(skills)} skills")
+        if context_paths:
+            files = len(context_paths)
+            if files == 1:
+                name = Path(context_paths[0]).name
+                parts.append(f"1 context file ({name})")
+            else:
+                parts.append(f"{files} context files")
 
-        # Remove trailing newline
-        text.rstrip()
+        summary = " · ".join(parts)
+        expand = [cmd for cmd, present in (("/tools", tools), ("/skills", skills)) if present]
+        if expand:
+            summary += "  " + ", ".join(expand)
 
+        # The header is re-rendered when the tool surface grows after startup
+        # (MCP connect, session resume); the newer list supersedes the older
+        # one rather than stacking a duplicate block beneath it.
+        content = Align(Text(summary, style=config.ui.colors.dim), align="center")
         try:
             label = self.query_one("#loaded-resources", Label)
-            label.update(text)
+            label.update(content)
         except NoMatches:
-            label = Label(text, id="loaded-resources")
+            label = Label(content, id="loaded-resources")
             label.add_class("info-message")
             label.add_class("loaded-resources")
             self.mount(label)
+
+    def add_catalog_details(self, sections: list[tuple[str, list[tuple[str, str]]]]) -> None:
+        """Print a `/skills`-style listing: one section per group, aligned rows.
+
+        Same aligned-section treatment `/help` uses, so a catalog printed mid
+        session reads like the rest of the transcript rather than as a dump.
+        """
+        colors = dict(
+            notice_color=config.ui.colors.notice,
+            dim_color=config.ui.colors.dim,
+            muted_color=config.ui.colors.muted,
+        )
+        text = Text("\n")
+        for title, rows in sections:
+            _append_aligned_section(text, title, rows, **colors)
+        label = Label(text)
+        label.add_class("info-message")
+        label.add_class("loaded-resources")
+        self.mount(label)
+        self._scroll_if_anchored(animate=False)
 
     def add_agent_details(self, *, rows: list[dict], active: str | None) -> None:
         """Render the ``/agent list`` table."""
