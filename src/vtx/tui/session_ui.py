@@ -241,7 +241,7 @@ class SessionUIMixin:
 
         await chat.remove_all_children()
 
-        chat.add_session_info(getattr(self, "VERSION", ""))
+        chat.add_session_info(getattr(self, "VERSION", ""), runtime=self._runtime)
 
         if self._runtime.agent:
             chat.add_loaded_resources(

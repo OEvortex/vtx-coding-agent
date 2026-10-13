@@ -678,7 +678,7 @@ class Vtx(
         self._sync_slash_commands()
 
         chat = self.query_one("#chat-log", ChatLog)
-        chat.add_session_info(VERSION)
+        chat.add_session_info(VERSION, runtime=self._runtime)
 
         if self._runtime.context:
             chat.add_loaded_resources(

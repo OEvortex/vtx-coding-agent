@@ -335,7 +335,7 @@ class CompletionUIMixin:
         input_box.set_autocomplete_enabled(True)
         input_box.set_completing(False)
         await chat.remove_all_children()
-        chat.add_session_info(getattr(self, "VERSION", ""))
+        chat.add_session_info(getattr(self, "VERSION", ""), runtime=self._runtime)
         if self._runtime.context:
             chat.add_loaded_resources(
                 context_paths=[format_path(f.path) for f in self._runtime.context.agents_files],

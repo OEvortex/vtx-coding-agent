@@ -1,8 +1,10 @@
 import time
 from pathlib import Path
-from typing import Literal
+from typing import Any, Literal
 
+from rich.console import Group
 from rich.spinner import Spinner
+from rich.table import Table
 from rich.text import Text
 from textual.containers import VerticalScroll
 from textual.css.query import NoMatches
@@ -45,6 +47,92 @@ def _format_skill_label(skill: Skill) -> str:
     if skill_path.is_relative_to(global_skills_dir):
         return f"{skill.name} (global)"
     return skill.name
+
+
+LOGO_LINES = ("░█░█░███░█░█", "░█░█░░█░░░█░", "░░█░░░█░░█░█")
+
+# Brand lines the reference agents use: a dim label, a muted value, and the
+# labels padded to one width so the column reads as a list, not as prose.
+META_LABEL_WIDTH = 7
+
+
+def _meta_line(label: str, value: str, dim_color: str, muted_color: str) -> Text:
+    line = Text()
+    line.append(f"{label:<{META_LABEL_WIDTH}}", style=dim_color)
+    line.append(value, style=muted_color)
+    return line
+
+
+def _runtime_header_metadata(runtime: Any) -> tuple[str | None, str | None]:
+    """`(model, agent)` for the welcome header, from whatever the runtime knows.
+
+    The footer already carries both in its persistent row; the header repeats
+    them only where a fresh session starts, which is the moment the user
+    actually looks for them.
+    """
+    model = getattr(runtime, "model", "") or ""
+    provider = getattr(runtime, "model_provider", "") or ""
+    model_label = f"({provider}) {model}" if provider and model else (model or None)
+
+    active = getattr(runtime, "active_agent", None)
+    agent_name = getattr(getattr(active, "definition", None), "name", None)
+    return model_label, agent_name or None
+
+
+def _brand_block(
+    version: str,
+    model: str | None,
+    agent: str | None,
+    accent_color: str,
+    dim_color: str,
+    muted_color: str,
+) -> Table:
+    """Logo on the left, session metadata in a column beside it.
+
+    Same shape as the brand splash in the reference agents (prime-agent):
+    the mark keeps its place, and version/model/agent read as a list rather
+    than eating a line each under a bare logo.
+    """
+    title = Text()
+    title.append("VTX", style=accent_color)
+    if version:
+        title.append(f" v{version}", style=dim_color)
+
+    meta: list[Text] = [title]
+    if model:
+        meta.append(_meta_line("model", model, dim_color, muted_color))
+    if agent:
+        meta.append(_meta_line("agent", agent, dim_color, muted_color))
+
+    block = Table.grid(padding=(0, 2))
+    block.add_column()
+    block.add_column()
+    for index in range(max(len(LOGO_LINES), len(meta))):
+        logo = Text(LOGO_LINES[index], style=accent_color) if index < len(LOGO_LINES) else Text("")
+        info = meta[index] if index < len(meta) else Text("")
+        block.add_row(logo, info)
+    return block
+
+
+def _shortcut_grid(pairs: list[tuple[str, str]], dim_color: str, muted_color: str) -> Table:
+    """Keybinding hints as aligned `key  description` cells, two pairs per row.
+
+    Dim key then muted description, the same treatment the refs give their
+    startup hints, and it keeps columns aligned when one key is longer than
+    its neighbours (the old ` • `-joined rows slid as soon as one grew).
+    """
+    grid = Table.grid(padding=(0, 2))
+    for _ in range(4):
+        grid.add_column()
+    for start in range(0, len(pairs), 2):
+        cells: list[Text] = []
+        for key, description in pairs[start : start + 2]:
+            cells.append(Text(key, style=dim_color))
+            cells.append(Text(description, style=muted_color))
+        while len(cells) < 4:
+            cells.append(Text(""))
+        grid.add_row(*cells)
+    return grid
 
 
 def _append_aligned_section(
@@ -255,23 +343,18 @@ class ChatLog(VerticalScroll):
         self._spinner_tool = None
         self._spinner_state = None
 
-    def add_session_info(self, version: str) -> None:
-        info_text = Text()
-        accent = config.ui.colors.accent
-        dim = config.ui.colors.dim
-        muted = config.ui.colors.muted
+    def add_session_info(self, version: str, *, runtime: Any = None) -> None:
+        accent_color = config.ui.colors.accent
+        dim_color = config.ui.colors.dim
+        muted_color = config.ui.colors.muted
 
-        # Logo
-        logo_lines = ("░█░█░███░█░█", "░█░█░░█░░░█░", "░░█░░░█░░█░█")
-        for i, line in enumerate(logo_lines):
-            info_text.append(line, style=accent)
-            if i == len(logo_lines) - 1:
-                info_text.append(f" {version}", style=dim)
-            info_text.append("\n")
+        model, agent = _runtime_header_metadata(runtime) if runtime is not None else (None, None)
+
+        renderables: list[Any] = [
+            _brand_block(version, model, agent, accent_color, dim_color, muted_color)
+        ]
 
         if config.ui.show_welcome_shortcuts:
-            info_text.append("\n")
-
             shortcut_rows = (
                 (
                     ("/", "slash commands"),
@@ -296,19 +379,11 @@ class ChatLog(VerticalScroll):
                     ("ctrl+shift+t", "toggle thinking"),
                 ),
             )
+            pairs = [item for row in shortcut_rows for item in row]
+            renderables.append(Text(""))
+            renderables.append(_shortcut_grid(pairs, dim_color, muted_color))
 
-            for row_idx, row in enumerate(shortcut_rows):
-                for item_idx, (key, desc) in enumerate(row):
-                    if item_idx > 0:
-                        info_text.append(" • ", style=dim)
-                    info_text.append(key, style=muted)
-                    info_text.append(f" {desc}", style=dim)
-                if row_idx < len(shortcut_rows) - 1:
-                    info_text.append("\n")
-
-        info_text.rstrip()
-
-        info_label = Label(info_text)
+        info_label = Label(Group(*renderables))
         info_label.add_class("session-info")
         self.mount(info_label, before=0)
 
@@ -325,7 +400,10 @@ class ChatLog(VerticalScroll):
         if tools:
             text.append("[Tools]\n", style=notice_color)
             text.append("  ", style=dim_color)
-            text.append(", ".join(tool.name for tool in tools), style=dim_color)
+            # Sorted, like the ref agents' startup listings: the tool surface is
+            # long and changes order as MCP servers connect, so an order nobody
+            # chose makes an appended tool impossible to spot.
+            text.append(", ".join(sorted(tool.name for tool in tools)), style=dim_color)
             text.append("\n", style=dim_color)
 
         if context_paths:
@@ -340,7 +418,9 @@ class ChatLog(VerticalScroll):
                 text.append("\n")
             text.append("[Skills]\n", style=notice_color)
             text.append("  ", style=dim_color)
-            text.append(", ".join(_format_skill_label(skill) for skill in skills), style=dim_color)
+            text.append(
+                ", ".join(sorted(_format_skill_label(skill) for skill in skills)), style=dim_color
+            )
             text.append("\n", style=dim_color)
 
         # Remove trailing newline

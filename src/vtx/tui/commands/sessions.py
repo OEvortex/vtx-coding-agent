@@ -72,7 +72,7 @@ class SessionCommands(CommandSupport):
         info_bar.set_file_changes({})
         info_bar.set_thinking_level(self._runtime.thinking_level)
 
-        chat.add_session_info(getattr(self, "VERSION", ""))
+        chat.add_session_info(getattr(self, "VERSION", ""), runtime=self._runtime)
 
         self._runtime.reload_context()
         self._sync_runtime_state()
