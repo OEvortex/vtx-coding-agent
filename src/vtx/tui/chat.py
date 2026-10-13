@@ -2,6 +2,7 @@ import time
 from pathlib import Path
 from typing import Any, Literal
 
+from rich.align import Align
 from rich.console import Group
 from rich.spinner import Spinner
 from rich.table import Table
@@ -383,7 +384,12 @@ class ChatLog(VerticalScroll):
             renderables.append(Text(""))
             renderables.append(_shortcut_grid(pairs, dim_color, muted_color))
 
-        info_label = Label(Group(*renderables))
+        # The welcome block reads as a brand header, so it sits centered rather
+        # than hugging the left gutter the way a transcript line does. Textual's
+        # `text-align` does not reach a Rich renderable, so the Group itself is
+        # centered: Rich's Align pads to the console width at render time, which
+        # also re-centers on a terminal resize.
+        info_label = Label(Align(Group(*renderables), align="center"))
         info_label.add_class("session-info")
         self.mount(info_label, before=0)
 

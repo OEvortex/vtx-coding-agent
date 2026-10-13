@@ -61,8 +61,19 @@ async def test_header_shows_brand_metadata_and_aligned_hints():
         # Metadata labels align: "coding" starts where the model id starts.
         assert rows[1].index("(") == rows[2].index("coding")
 
-        # The logo keeps its own column on the first three rows.
-        assert all(row.startswith("░") for row in rows[:3])
+        # The whole block is centered in the terminal: every row starts at the
+        # same indent, and that indent is the terminal width minus the block
+        # width, halved.
+        indents = {len(row) - len(row.lstrip()) for row in rows if row.strip()}
+        assert len(indents) == 1, f"indents differ, block is ragged:\n{rendered}"
+        indent = indents.pop()
+        assert indent > 0, f"block should be centered, not hugging the gutter:\n{rendered}"
+        block_width = max(len(row.rstrip()) for row in rows) - indent
+        assert indent * 2 + block_width in range(98, 103), (
+            f"indent {indent} does not center a {block_width}-wide block:\n{rendered}"
+        )
+        # The logo keeps its own column at the start of every brand row.
+        assert all(row.lstrip().startswith("░") for row in rows[:3])
 
         # Hint keys stay in their own column: every hint row's first glyph
         # sits at the same offset, so a long key cannot slide the description.
