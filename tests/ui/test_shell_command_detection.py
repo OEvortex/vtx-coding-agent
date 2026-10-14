@@ -6,6 +6,19 @@ from vtx.coding_agent.tools.bash import BashTool
 from vtx.tui.app import Vtx
 
 
+@pytest.fixture
+def bash_tool_registered():
+    """Give ``_execute_shell_command`` a bash tool to find.
+
+    The method resolves it from the global registry, which the plugin
+    composition fills in at boot. These tests run without a composition, so the
+    lookup returns ``None`` and the method takes the "no shell tool registered"
+    early return before it ever calls ``set_status("running")``.
+    """
+    with patch("vtx.tui.agent_runner.get_tool", return_value=BashTool()):
+        yield
+
+
 def test_handle_shell_command_execution():
     """Test that _handle_shell_command properly handles shell command execution"""
     # Create a mock app instance
@@ -87,7 +100,7 @@ def test_handle_shell_command_when_running():
 
 
 @pytest.mark.asyncio
-async def test_execute_shell_command_basic():
+async def test_execute_shell_command_basic(bash_tool_registered):
     """Test that _execute_shell_command properly executes basic shell commands"""
     # Create a mock app instance
     app = Mock()
@@ -136,7 +149,7 @@ async def test_execute_shell_command_basic():
 
 
 @pytest.mark.asyncio
-async def test_execute_shell_command_with_llm():
+async def test_execute_shell_command_with_llm(bash_tool_registered):
     """Test that _execute_shell_command sends output to LLM when using !!"""
     # Create a mock app instance
     app = Mock()
@@ -185,7 +198,7 @@ async def test_execute_shell_command_with_llm():
 
 
 @pytest.mark.asyncio
-async def test_execute_shell_command_logs_to_session():
+async def test_execute_shell_command_logs_to_session(bash_tool_registered):
     """Shell commands and their output are persisted so resume and /export include them"""
     app = Mock()
     app._is_running = False
@@ -220,7 +233,7 @@ async def test_execute_shell_command_logs_to_session():
 
 
 @pytest.mark.asyncio
-async def test_execute_shell_command_interruption_resets_state_and_skips_llm():
+async def test_execute_shell_command_interruption_resets_state_and_skips_llm(bash_tool_registered):
     app = Mock()
     app._is_running = False
     app._interrupt_requested = True

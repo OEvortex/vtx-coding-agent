@@ -209,7 +209,7 @@ def test_fuzzy_lookup_survives_a_concurrent_refresh(cache):
         try:
             for _ in range(20):
                 manager.get_limits("definitely-not-in-the-catalog")
-        except BaseException as exc:  # noqa: BLE001 - the test asserts on it
+        except BaseException as exc:  # the test asserts on any error that leaks
             error.append(exc)
 
     writer = threading.Thread(target=_writer, daemon=True)
