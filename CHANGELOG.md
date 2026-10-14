@@ -4,7 +4,7 @@ All notable changes to Vtx are documented in this file. The format is based on
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project
 adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased]
+## [1.3.0] - 2026-10-14
 
 ### Added
 - **`/skills` and `/tools`, for what this session actually loaded** — the launch header used to print every tool name and all ~50 skill names, which pushed the prompt off a short terminal and said nothing before the first message. Both commands now list them on demand: `skill_sections()` groups skills by category with counts in the title and marks project/`.agents` skills `(local)`, while `tool_sections()` prints built-ins first and then one section per MCP server, labelling entries `server > tool` via `tool_label()` so the `mcp__ddg-search__web_search` wire naming stops leaking into the UI (providers only accept `[A-Za-z0-9_-]`; the separator belongs to the provider, not to the user). Rendered by `ChatLog.add_catalog_details()`, which reuses `/help`'s `_append_aligned_section` layout so a mid-session catalog reads like the rest of the transcript.
