@@ -4,8 +4,10 @@ import os
 import sys
 from typing import Any
 
-import vtx.coding_agent
-from vtx.ai import PROVIDER_API_BY_NAME
+# ``vtx.ai.providers`` rather than ``vtx.ai``: the barrel also imports the
+# provider oauth clients (aiohttp), which this only needs the API-type catalog
+# from. Importing the barrel here cost ~165ms on every startup.
+from vtx.ai.providers import PROVIDER_API_BY_NAME
 from vtx.core.config import config
 from vtx.core.version import VERSION
 
