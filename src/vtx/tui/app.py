@@ -1180,10 +1180,6 @@ class Vtx(
                 query_text = render_skill_prompt(selected_skill, skill_query)
                 highlighted_skill = selected_skill.name
 
-        # Lazily inject tools for registered skills that need them.
-        if selected_skill_name == "goal":
-            self._inject_lazy_tools(["goal"])
-
         if self._is_running:
             if event.steer:
                 if len(self._steer_queue) >= QueueDisplay.MAX_QUEUE:
