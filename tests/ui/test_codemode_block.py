@@ -200,7 +200,7 @@ class TestOutput:
             assert "==>" not in _body(block)
 
     @pytest.mark.asyncio
-    async def test_output_keeps_its_tail_so_the_value_survives_the_preview(self):
+    async def test_output_keeps_its_head_so_the_value_survives_the_preview(self):
         async with _TestApp().run_test() as pilot:
             block = await _start(pilot, CodemodeTool())
             _finish(
@@ -210,9 +210,11 @@ class TestOutput:
             )
             await pilot.pause()
             body = _body(block)
-            # The returned value is the last item; previewing the head would
-            # throw away the one thing the script produced an answer about.
-            assert "finding 0" not in body
+            # The returned value is the last *text* item and the console
+            # chatter (if any) comes after it. Previewing the head keeps the
+            # findings and the answer visible; previewing the tail would hide
+            # both behind a wall of console output.
+            assert "finding 0" in body
             assert "ANSWER" in body
             assert "ctrl+o to expand" in body
 

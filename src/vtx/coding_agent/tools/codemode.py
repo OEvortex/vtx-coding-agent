@@ -464,10 +464,30 @@ class CodemodeTool(BaseTool):
         # state behind that the model believes was never written.
         result.apply_to_store(self._store)
 
-        parts = [item.get("text", "") for item in result.output if item.get("type") == "text"]
+        text_items = [
+            str(item.get("text", ""))
+            for item in result.output
+            if item.get("type") == "text" and not item.get("console")
+        ]
         value_repr = _render_value(result.value)
         if value_repr is not None:
-            parts.append(value_repr)
+            text_items.append(value_repr)
+        console_items = [
+            str(item.get("text", ""))
+            for item in result.output
+            if item.get("type") == "text" and item.get("console")
+        ]
+
+        parts: list[str] = []
+        total = len(text_items)
+        for index, item in enumerate(text_items, 1):
+            if total > 1:
+                parts.append(f"==> text {index}/{total} <==")
+            parts.append(item)
+        if console_items:
+            parts.append("<console_output>")
+            parts.extend(console_items)
+            parts.append("</console_output>")
         body = "\n".join(p for p in parts if p)
         if result.output_truncated:
             # Said out loud, because a silently shortened result is read as a
@@ -623,7 +643,16 @@ def _ui_payload(source: Any, result: Any, *, duration_ms: int, images: int) -> d
         "printed": [
             str(item.get("text", ""))
             for item in result.output
-            if item.get("type") == "text" and str(item.get("text", "")).strip()
+            if item.get("type") == "text"
+            and not item.get("console")
+            and str(item.get("text", "")).strip()
+        ],
+        "console": [
+            str(item.get("text", ""))
+            for item in result.output
+            if item.get("type") == "text"
+            and item.get("console")
+            and str(item.get("text", "")).strip()
         ],
         "calls": [
             {

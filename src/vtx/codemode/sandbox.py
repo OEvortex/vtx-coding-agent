@@ -38,12 +38,14 @@ host reports a transport failure for a script that ran fine.
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import json
 import os
 import queue
 import sys
 import threading
 import traceback
+from collections.abc import Callable
 from concurrent.futures import ThreadPoolExecutor
 from textwrap import indent
 from typing import Any
@@ -295,6 +297,118 @@ def _reserve_fds() -> Any:
     global _PROTOCOL_FD
     _PROTOCOL_FD = protocol_out
     return protocol_in
+
+
+class _ConsoleStream:
+    """``sys.stdout`` for the duration of a script, captured as output.
+
+    Python's ``print`` is the most idiomatic thing a model reaches for, and
+    before this existed a script that printed got nothing back at all -- while
+    the instructions told it to use ``text()`` instead. That is a poor trade:
+    the model has to be told about a second channel when the obvious one works.
+
+    fd 1 is already ``/dev/null`` (:func:`_reserve_fds`) so nothing a script
+    writes there can corrupt the protocol, and this sits on top so that
+    ``print``, ``sys.stdout.write`` and anything else holding a reference to
+    ``sys.stdout`` land in the output instead of the void. Writes that bypass
+    Python entirely -- ``os.write(1, ...)``, a child process -- still go to
+    ``/dev/null``, which is the right answer: they are not going to be
+    reconstructable text anyway.
+
+    Only whole lines are emitted, because ``print("a", end="")`` must not
+    produce three output items for one call.
+    """
+
+    def __init__(self, output: list[dict[str, Any]], write_frame: Callable[[dict], None]) -> None:
+        self._output = output
+        self._frame = write_frame
+        self._pending = ""
+        self._closed = False
+
+    # -- the file-object surface `print` reaches for -----------------------
+
+    def write(self, data: str) -> int:
+        if self._closed:
+            return 0
+        self._pending += data
+        while "\n" in self._pending:
+            line, _, self._pending = self._pending.partition("\n")
+            self._emit(line.rstrip("\r"))
+        return len(data)
+
+    def flush(self) -> None:
+        # Buffered writers flush at the end; a partial last line is still
+        # something the script meant to say.
+        if self._pending and not self._closed:
+            self._emit(self._pending.rstrip("\r"))
+            self._pending = ""
+
+    def isatty(self) -> bool:
+        return False
+
+    def writable(self) -> bool:
+        return not self._closed
+
+    def readable(self) -> bool:
+        return False
+
+    def seekable(self) -> bool:
+        return False
+
+    def close(self) -> None:
+        self.flush()
+        self._closed = True
+
+    @property
+    def encoding(self) -> str:
+        return "utf-8"
+
+    def fileno(self) -> int:
+        # Deliberately not a real fd. Something that needs one -- a C extension
+        # writing directly, a subprocess inheriting it -- must not be handed the
+        # protocol's, and /dev/null's is the safe answer.
+        raise OSError("codemode output is captured, not a real file")
+
+    def _emit(self, line: str) -> None:
+        self._output.append({"type": "text", "text": line, "console": True})
+        self._frame({"type": TEXT, "value": line, "console": True})
+
+
+class _NullStream:
+    """A write-only sink that keeps a full file-object surface.
+
+    Stands in for ``sys.stderr``. stderr is not shown: a traceback the script
+    did not raise is a debugging aid, and a script that fails hard enough to
+    want one gets the real one in ``error.stack``.
+    """
+
+    def write(self, data: str) -> int:
+        return len(data)
+
+    def flush(self) -> None:
+        return None
+
+    def isatty(self) -> bool:
+        return False
+
+    def writable(self) -> bool:
+        return True
+
+    def readable(self) -> bool:
+        return False
+
+    def seekable(self) -> bool:
+        return False
+
+    def close(self) -> None:
+        return None
+
+    @property
+    def encoding(self) -> str:
+        return "utf-8"
+
+    def fileno(self) -> int:
+        raise OSError("codemode stderr is discarded, not a real file")
 
 
 # --------------------------------------------------------------------------
@@ -904,6 +1018,8 @@ def run(request: dict[str, Any], *, stdin: Any = None) -> dict[str, Any]:
         output.append({"type": "text", "text": rendered})
         write_frame({"type": TEXT, "value": rendered})
 
+    console = _ConsoleStream(output, write_frame)
+
     def image(value: Any) -> None:
         """Append an image to the output the model sees.
 
@@ -939,10 +1055,22 @@ def run(request: dict[str, Any], *, stdin: Any = None) -> dict[str, Any]:
 
     value: Any = None
     error: dict[str, Any] | None = None
+    # Swap stdout for the capture for exactly as long as the script runs, so a
+    # `print` reaches the output instead of the /dev/null fd 1 now points at.
+    real_stdout, real_stderr = sys.stdout, sys.stderr
+    sys.stdout = console  # type: ignore[assignment]
+    sys.stderr = _NullStream()  # type: ignore[assignment]
     try:
         value = _exec_script(code, namespace, bridge, detect_stalls=detect_stalls)
     except BaseException as exc:
         error = _script_diagnostic(exc)
+    finally:
+        # Flush before restoring: a script whose last act was a partial write
+        # still said something, and closing afterwards would lose it.
+        with contextlib.suppress(Exception):
+            console.close()
+        sys.stdout = real_stdout
+        sys.stderr = real_stderr
 
     # Release the reader before the process exits, so a blocked read thread
     # cannot keep it alive past the terminal frame.

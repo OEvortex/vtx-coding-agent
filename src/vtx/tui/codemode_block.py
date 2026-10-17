@@ -390,7 +390,6 @@ class CodemodeToolBlock(ToolBlock):
         data = self.ui_data or {}
         code = str(data.get("code") or self._call_msg or "")
         calls = self._calls()
-        output = self._output(data)
         error = data.get("error")
 
         parts: list[Text] = []
@@ -398,8 +397,9 @@ class CodemodeToolBlock(ToolBlock):
             parts.append(self._render_script(code))
         if calls:
             parts.append(self._render_calls(calls))
-        if output:
-            parts.append(self._render_output(output))
+        output_blocks = self._output(data)
+        if output_blocks:
+            parts.append(self._render_output(output_blocks))
         if isinstance(error, dict) and error:
             parts.append(self._render_error(error))
         images = self._image_count(data)
@@ -532,8 +532,8 @@ class CodemodeToolBlock(ToolBlock):
 
     # -- the output --------------------------------------------------------
 
-    def _output(self, data: dict) -> list[tuple[str | None, str]]:
-        """What the script produced, as ``(label, body)`` items.
+    def _output(self, data: dict) -> list[Text]:
+        """What the script produced, as a list of wrapped blocks.
 
         The printed items and the returned value arrive as separate things and
         are put back into one list, value last, because that is what a script
@@ -541,11 +541,17 @@ class CodemodeToolBlock(ToolBlock):
         ``==> text N/M <==`` only when there is more than one, because with a
         single item the label restates what the shape already says.
 
-        Kept as pairs rather than pre-joined lines because the preview has to
+        Console output (``print``) is grouped at the end, in a
+        ``<console_output>`` block, because that is where it belongs: the model
+        sees it after the returned value, and a human scanning the block reads
+        findings, then the answer, then the chatter.
+
+        Kept as blocks rather than pre-joined lines because the preview has to
         cut *between* items: a budget counted in lines lands the cut between a
         label and the text it names, leaving ``scanned 42 files`` headed by
         ``==> text 2/3 <==`` and the first item's label gone entirely.
         """
+        colors = config.ui.colors
         items: list[str] = []
         for chunk in data.get("printed") or []:
             text = str(chunk).rstrip("\n")
@@ -554,32 +560,38 @@ class CodemodeToolBlock(ToolBlock):
         value = str(data.get("value") or "")
         if value:
             items.append(value)
-        if not items:
-            return []
-        total = len(items)
-        return [
-            (f"==> text {index}/{total} <==" if total > 1 else None, body)
-            for index, body in enumerate(items, 1)
-        ]
+        console = [str(c).rstrip("\n") for c in (data.get("console") or []) if str(c).strip()]
 
-    def _render_output(self, items: list[tuple[str | None, str]]) -> Text:
+        blocks: list[Text] = []
+        total = len(items)
+        for index, body in enumerate(items, 1):
+            label = f"==> text {index}/{total} <==" if total > 1 else ""
+            content = f"{label}\n{body}" if label else body
+            blocks.append(Text(content, style=Style(color=colors.dim)))
+        if console:
+            blocks.append(
+                Text(
+                    "<console_output>\n" + "\n".join(console) + "\n</console_output>",
+                    style=Style(color=colors.dim),
+                )
+            )
+        return blocks
+
+    def _render_output(self, blocks: list[Text]) -> Text:
         """The run's output, dimmed, as one wrapped block.
 
         Withheld entirely while the script runs: half-written JSON flickering
         into place is worse than a moment's wait, and the call list above is
         already saying what is happening.
         """
-        colors = config.ui.colors
         if self._success is None:
             return Text()
         width = self._body_width()
-        blocks = [
-            _wrap(
-                Text(label + "\n" + body if label else body, style=Style(color=colors.dim)), width
-            )
-            for label, body in items
-        ]
-        return _indent(_preview_items(blocks, OUTPUT_PREVIEW_LINES, self._expanded), BODY_INDENT)
+        wrapped = [_wrap(block, width) for block in blocks]
+        return _indent(
+            _preview_items(wrapped, OUTPUT_PREVIEW_LINES, self._expanded, keep="start"),
+            BODY_INDENT,
+        )
 
     # -- the failure -------------------------------------------------------
 
@@ -737,35 +749,89 @@ def _earlier_calls_hint(hidden: int) -> Text:
     return text
 
 
-def _preview_items(blocks: list[Text], limit: int, expanded: bool) -> Text:
-    """Keep the last ``limit`` wrapped lines of ``blocks``, cutting whole items.
+def _preview_items(blocks: list[Text], limit: int, expanded: bool, keep: str = "start") -> Text:
+    """Keep ``limit`` wrapped lines of ``blocks``, cutting whole items.
 
     Whole items, because an item is a labelled claim about the run and half an
-    item is a label pointing at nothing. The tail is kept because the returned
-    value is the last item and is the answer.
+    item is a label pointing at nothing. The end kept depends on which end
+    carries the answer: the returned value is the last *text* item, so keeping
+    the head is what keeps it in view as long as the early items are short
+    enough to leave room. The console chatter is last and is the first thing
+    dropped, which is the right order to drop it in.
+
+    One guarantee on top of the count: the last text item (the answer) is
+    always kept, even when the early items alone fill the budget. An answer
+    that disappears behind ``... (N more lines, ctrl+o to expand)`` is an
+    answer that has to be expanded to be read, which defeats the point of a
+    preview. If the answer itself is bigger than the budget it is shown in
+    full and the hint is dropped, because a preview that hides the answer is
+    worse than no preview at all.
 
     The count in the hint is lines, not items, because a line is what the
     reader is counting on screen.
     """
-    if expanded:
+    if expanded or not blocks:
         return Text("\n").join(blocks)
+
+    heights = [len(block.split("\n", allow_blank=True)) for block in blocks]
+    total = sum(heights)
+
+    # The answer is the last block that is not the console chatter. Keep it
+    # pinned so it survives the cut; everything else competes for the rest.
+    if blocks and _is_console_block(blocks[-1]) and len(blocks) >= 2:
+        answer_index = len(blocks) - 2
+    else:
+        answer_index = len(blocks) - 1
+    answer_index = max(0, min(answer_index, len(blocks) - 1))
+
     kept: list[Text] = []
     used = 0
-    for block in reversed(blocks):
-        height = len(block.split("\n", allow_blank=True))
-        if kept and used + height > limit:
+    for index, block in enumerate(blocks):
+        if index == answer_index:
+            continue
+        height = heights[index]
+        if used + height > limit:
             break
         kept.append(block)
         used += height
         if used >= limit:
             break
-    kept.reverse()
-    hidden = sum(
-        len(block.split("\n", allow_blank=True)) for block in blocks[: len(blocks) - len(kept)]
-    )
-    if not kept or not hidden:
+
+    answer_height = heights[answer_index]
+    answer_block = blocks[answer_index]
+    if answer_block not in kept:
+        # Make room for the answer by dropping earlier items from the end of
+        # the kept set, one at a time, until it fits or there is nothing left
+        # to drop. An answer that disappears behind the hint is an answer that
+        # has to be expanded to be read.
+        while kept and used + answer_height > limit:
+            dropped = kept.pop()
+            used -= heights[blocks.index(dropped)]
+        if used + answer_height <= limit or not kept:
+            kept.append(answer_block)
+            used += answer_height
+        # Otherwise the answer itself is bigger than the whole budget; show it
+        # alone, because a preview that hides the answer is worse than no
+        # preview at all.
+        elif answer_height > limit:
+            kept = [answer_block]
+            used = answer_height
+
+    # Restore original order.
+    kept_set = {id(b) for b in kept}
+    kept = [b for b in blocks if id(b) in kept_set]
+
+    hidden = total - sum(heights[blocks.index(b)] for b in kept)
+    if hidden <= 0 or not kept:
         return Text("\n").join(kept)
-    return Text("\n").join([*kept, _expand_hint(hidden)])
+    hint = _expand_hint(hidden)
+    if keep == "start":
+        return Text("\n").join([*kept, hint])
+    return Text("\n").join([hint, *kept])
+
+
+def _is_console_block(block: Text) -> bool:
+    return block.plain.lstrip().startswith("<console_output>")
 
 
 def _preview(text: Text, limit: int, keep: str, expanded: bool = False) -> Text:

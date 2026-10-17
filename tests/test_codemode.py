@@ -102,13 +102,15 @@ async def test_text_appends_output_in_order():
 
 
 @pytest.mark.asyncio
-async def test_print_is_not_model_visible():
-    # `text` is the output channel. `print` goes to a discarded stream, so the
-    # model does not see it -- which is what keeps stdout free for protocol
-    # frames.
+async def test_print_is_captured_as_console_output():
+    # `print` is the most idiomatic thing a model reaches for, and it must not
+    # be discarded -- but it must not corrupt the protocol either. The worker
+    # moves fd 1 to /dev/null and captures `sys.stdout` into a console item,
+    # so `print` reaches the result without touching the wire format.
     result = await _sandbox().execute("print('noise')\ntext('signal')\nreturn 1")
     assert result.value == 1
-    assert [item["text"] for item in result.output] == ["signal"]
+    assert [item["text"] for item in result.output if not item.get("console")] == ["signal"]
+    assert [item["text"] for item in result.output if item.get("console")] == ["noise"]
 
 
 @pytest.mark.asyncio
