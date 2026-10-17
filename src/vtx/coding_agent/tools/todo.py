@@ -5,10 +5,8 @@ import contextlib
 from typing import Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
-from rich.markup import escape
 
 from vtx.agent.tools.base import BaseTool
-from vtx.core.config import config
 from vtx.plugins import mount_tool, plugin
 from vtx.protocol.types import ToolResult
 
@@ -150,50 +148,31 @@ class TodoParams(BaseModel):
 
 
 def format_todo_tree(tasks: list[TaskRecord]) -> str:
-    active_tasks = [t for t in tasks if t.status != "deleted"]
-    if not active_tasks:
-        return "[dim]No tasks[/dim]"
+    """The task list as plain text, one task per line.
 
-    try:
-        colors = config.ui.colors
-        success_col = colors.success
-        notice_col = colors.notice
-        dim_col = colors.dim
-    except Exception:
-        success_col = "#00ff88"
-        notice_col = "#ffb347"
-        dim_col = "#6b7280"
+    Plain text with no Rich markup on purpose: this string is what a session
+    export writes into its tool-result block, where ``[dim]…[/dim]`` would land
+    in the markdown as literal brackets. The TUI does not read it — the todo
+    block renders from :mod:`vtx.tui.todo_ui`, which can colour, animate and
+    measure the rows instead of flattening them to a string first.
+    """
+    from vtx.tui.todo_ui import render_list
 
-    lines: list[str] = []
-    total = len(active_tasks)
-    for i, item in enumerate(active_tasks):
-        is_last = i == total - 1
-        branch = "└── " if is_last else "├── "
-        subject_escaped = escape(item.subject)
-        branch_markup = f"[{dim_col}]{branch}[/{dim_col}]"
+    if not [t for t in tasks if t.status != "deleted"]:
+        return "No tasks"
+    return render_list(tasks, width=1000).plain
 
-        dep_info = (
-            f" [{dim_col}]⛓ #{','.join(map(str, item.blocked_by))}[/{dim_col}]"
-            if item.blocked_by
-            else ""
-        )
 
-        if item.status == "completed":
-            icon_markup = f"[{success_col}]✓[/{success_col}]"
-            task_markup = f"[strike {dim_col}]{subject_escaped}[/strike {dim_col}]"
-            lines.append(f"{branch_markup}{icon_markup} {task_markup}{dep_info}")
-        elif item.status == "in_progress":
-            icon_markup = f"[{notice_col}]◐[/{notice_col}]"
-            active_markup = (
-                f" [{dim_col}]({escape(item.active_form)})[/{dim_col}]" if item.active_form else ""
-            )
-            task_markup = f"{subject_escaped}{active_markup}"
-            lines.append(f"{branch_markup}{icon_markup} {task_markup}{dep_info}")
-        else:
-            icon_markup = f"[{dim_col}]○[/{dim_col}]"
-            lines.append(f"{branch_markup}{icon_markup} {subject_escaped}{dep_info}")
+def _format_todo_delta(delta: dict[str, Any], tasks: list[TaskRecord]) -> str:
+    """``ui_details`` for the in-chat block: only what this call changed.
 
-    return "\n".join(lines)
+    Empty when the call changed no statuses, which the block renders as no
+    body at all. A twenty-task plan updated every few seconds would otherwise
+    print its own state two hundred times into the scrollback.
+    """
+    from vtx.tui.todo_ui import render_delta
+
+    return render_delta(delta, tasks, width=1000).plain
 
 
 class TodoTool(BaseTool):
@@ -203,22 +182,36 @@ class TodoTool(BaseTool):
     mutating = False
     prompt_guidelines = (
         "todo with create|update|list|get|delete|clear actions to track multi-step work",
-        "keep exactly one task in_progress at a time",
+        "plan the whole task list in ONE call with action='set' and a todos array, then "
+        "update individual tasks with action='update' — do not create tasks one call at a time",
+        "keep exactly one task in_progress at a time; starting a task demotes the others",
+        "always pass activeForm (present continuous, e.g. 'Running the tests') alongside subject "
+        "(imperative, e.g. 'Run the tests') so the running task reads as live work",
         "mark tasks completed immediately when done rather than in batches",
         "call todo(action='update', id=N, status='completed') to complete a task",
-        "never complete a task if tests are failing",
+        "never complete a task if tests are failing — leave it in_progress instead",
+        "skip the todo tool for work that is a single trivial step or purely conversational",
     )
     description = (
-        "Track tasks with the rpiv-todo schema. Actions: 'create' (needs subject), "
+        "Track tasks with the rpiv-todo schema. Actions: "
+        "'set' (batch plan — pass the whole todos array, replaces the list), "
+        "'create' (needs subject), "
         "'update' (needs id + field to update), 'list' (returns tasks, filters by status), "
         "'get' (needs id, returns task with dependencies), 'delete' (tombstones by id), "
-        "'clear' (resets all tasks)."
+        "'clear' (resets all tasks). "
+        "Status is one of pending | in_progress | completed | deleted; a task can only move "
+        "forward, and exactly one task may be in_progress."
     )
 
     def __init__(self) -> None:
         super().__init__()
         self._tasks: list[TaskRecord] = []
         self._next_id: int = 1
+        #: Pre-mutation baseline for the call in flight, read by
+        #: ``_build_result`` to work out what changed and by ``execute`` to keep
+        #: exactly one task running.
+        self._before: dict[int, str] = {}
+        self._demoted: list[int] = []
         global _current_todo_tool
         _current_todo_tool = self
 
@@ -265,12 +258,35 @@ class TodoTool(BaseTool):
                     queue.append(b)
         return False
 
+    def _enforce_single_in_progress(self, keep_id: int | None = None) -> list[int]:
+        """Demote every ``in_progress`` task but ``keep_id`` back to pending.
+
+        The rule that exactly one task is running is what makes the strip's
+        single accented row mean anything. Gemini rejects a list with two
+        ``in_progress`` entries; rejecting spends a full round trip to tell the
+        model something it can be told by fixing it here instead, and the
+        model that learns "two in_progress is an error" learns it by burning a
+        turn. So the extra rows are demoted and reported back in the result text,
+        which the model reads on its next call.
+        """
+        demoted: list[int] = []
+        for task in self._tasks:
+            if task.status != "in_progress":
+                continue
+            if keep_id is not None and task.id == keep_id:
+                continue
+            task.status = "pending"
+            demoted.append(task.id)
+        return demoted
+
     async def execute(
         self, params: TodoParams, cancel_event: asyncio.Event | None = None
     ) -> ToolResult:
         del cancel_event
         action = params.action
         raw_params = params.model_dump(by_alias=True, exclude_none=True)
+        self._before = self._snapshot()
+        self._demoted = []
 
         # Batch compatibility mode
         if action == "set" or (params.todos is not None and action != "create"):
@@ -304,12 +320,24 @@ class TodoTool(BaseTool):
                 self._tasks.append(task)
                 self._next_id = max(self._next_id + 1, task.id + 1)
 
+            # A batch may arrive with several tasks marked running. Keep the
+            # first: it is the one the model listed first, and in execution
+            # order that is the one it meant to start with.
+            first_running = next((t.id for t in self._tasks if t.status == "in_progress"), None)
+            self._demoted = self._enforce_single_in_progress(keep_id=first_running)
+
             total = sum(1 for t in self._tasks if t.status != "deleted")
             completed = sum(1 for t in self._tasks if t.status == "completed")
+            note = (
+                f" (demoted #{',#'.join(map(str, self._demoted))} to pending; only one task runs "
+                f"at a time)"
+                if self._demoted
+                else ""
+            )
             return self._build_result(
                 action="set",
                 raw_params=raw_params,
-                content_text=f"Todos updated: {completed}/{total} completed",
+                content_text=f"Todos updated: {completed}/{total} completed{note}",
                 error=None,
             )
 
@@ -514,6 +542,14 @@ class TodoTool(BaseTool):
             else:
                 content_text = f"Updated #{task.id}"
 
+            # Starting a task demotes whatever was running. Doing it here rather
+            # than rejecting the call means marking task 7 started never costs
+            # the model a turn to fix a mistake it made about task 4.
+            if new_status == "in_progress":
+                self._demoted = self._enforce_single_in_progress(keep_id=task.id)
+                if self._demoted:
+                    content_text += f" · demoted #{',#'.join(map(str, self._demoted))} to pending"
+
             return self._build_result(
                 action=action, raw_params=raw_params, content_text=content_text, error=None
             )
@@ -607,28 +643,75 @@ class TodoTool(BaseTool):
         dep_part = f" ⛓ #{','.join(map(str, task.blocked_by))}" if task.blocked_by else ""
         return f"[{task.status}] #{task.id} {task.subject}{active_part}{dep_part}"
 
+    def _snapshot(self) -> dict[int, str]:
+        """``{id: status}`` for the live tasks, taken before a mutation.
+
+        The block in the scrollback prints what changed rather than the whole
+        list, so it needs to know what "changed" means against the previous
+        state. Deltas are keyed by id here because the ids are stable; Crush
+        keys by subject text because the model rewrites its whole array each
+        call, and this tool is driven by ids instead.
+        """
+        return {t.id: t.status for t in self._tasks if t.status != "deleted"}
+
     def _build_result(
-        self, action: str, raw_params: dict[str, Any], content_text: str, error: str | None
+        self,
+        action: str,
+        raw_params: dict[str, Any],
+        content_text: str,
+        error: str | None,
+        before: dict[int, str] | None = None,
     ) -> ToolResult:
-        active_tasks = [t for t in self._tasks if t.status != "deleted"]
-        total = len(active_tasks)
-        completed = sum(1 for t in active_tasks if t.status == "completed")
-        summary = f"({completed}/{total})" if total > 0 else "(0/0)"
+        live = [t for t in self._tasks if t.status != "deleted"]
+        total = len(live)
+        completed = sum(1 for t in live if t.status == "completed")
+        before = self._before if before is None else before
+
+        just_completed = [
+            t.id for t in live if t.status == "completed" and before.get(t.id) != "completed"
+        ]
+        just_added = [t.id for t in live if t.id not in before]
+        current = next((t for t in live if t.status == "in_progress"), None)
+        just_started = (
+            current.id if current is not None and before.get(current.id) != "in_progress" else None
+        )
+
+        # Ids rather than the strings themselves: the block re-renders the real
+        # rows out of ``ui_data``, so it can show a completed task struck
+        # through instead of a bare check mark and a subject it has to match up
+        # by text.
+        delta: dict[str, Any] = {
+            "is_new": not before and total > 0,
+            "all_completed": total > 0 and completed == total,
+            "just_started": just_started,
+            "just_completed": just_completed,
+            "just_added": just_added,
+            "completed": completed,
+            "total": total,
+        }
 
         details: dict[str, Any] = {
             "action": action,
             "params": raw_params,
             "tasks": [t.model_dump(by_alias=True, exclude_none=True) for t in self._tasks],
             "nextId": self._next_id,
+            "delta": delta,
         }
         if error:
             details["error"] = error
 
-        ui_details = format_todo_tree(self._tasks)
+        # Plain text, not markup: these strings reach a session export, where
+        # Rich tags would land in the markdown as literal brackets.
+        ui_details = format_todo_tree(self._tasks) if error else _format_todo_delta(delta, live)
+        ui_details_full = format_todo_tree(self._tasks)
 
         for cb in list(_todo_refresh_callbacks):
             with contextlib.suppress(Exception):
                 cb()
+
+        summary = f"{completed}/{total}" if total > 0 else "0/0"
+        if self._demoted:
+            details["demoted"] = list(self._demoted)
 
         return ToolResult(
             success=(error is None),
@@ -636,6 +719,7 @@ class TodoTool(BaseTool):
             structured=details,
             ui_summary=summary,
             ui_details=ui_details,
+            ui_details_full=ui_details_full,
             ui_data=details,
         )
 
