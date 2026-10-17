@@ -98,7 +98,9 @@ asyncio.run(main())
 
 ## Results and diagnostics
 
-`Result` carries `ok`, `value`, `output`, `calls`, `diagnostic`, `store_writes`, `store_deletes`, and `output_truncated`; `.apply_to_store(store)` commits the staged writes. `ToolCall` is one admitted call - `name`, `status`, `kind`, `message`, `duration_ms`, `.ok`. `Diagnostic` is `kind`, `message`, `stack`: a failure as data, never a raw traceback.
+`Result` carries `ok`, `value`, `output`, `calls`, `diagnostic`, `store_writes`, `store_deletes`, and `output_truncated`; `.apply_to_store(store)` commits the staged writes. `ToolCall` is one admitted call - `name`, `status` (`running` from admission until the reply, then `ok`/`error`, or `cancelled` for a call the script never awaited), `kind`, `message`, `duration_ms`, `args` (compact JSON, cut to `ARGS_PREVIEW_CHARS`), `.ok`, `.running`. `Diagnostic` is `kind`, `message`, `stack`: a failure as data, never a raw traceback.
+
+`execute(..., on_progress=cb)` calls `cb` with each `ToolCall` as it is admitted and again when it finishes. It exists for an interactive caller drawing the fan-out as it happens, and is skipped entirely when `None`. A sink that raises is swallowed: it is user-interface code on the far side of the sandbox boundary, and its failure is not the script's.
 
 `errors.KINDS` is the eleven kinds host and worker mirror: `script`, `timeout`, `wall_clock`, `aborted`, `sandbox`, `stalled`, `unknown_tool`, `invalid_input`, `tool_failure`, `invalid_output`, `host_unavailable`. The exceptions behind them are `CodemodeError` (base), `ToolError(message, *, detail=None, kind="tool_failure")` with subclasses `UnknownTool(name)`, `InvalidInput(name, *, detail=None)`, `InvalidOutput(what, *, detail=None)`, `HostUnavailable(detail=None)`, plus `ScriptError(message, *, stack=None)`, `SandboxError`, `ScriptAborted`, `ScriptStalled`, and `ScriptTimeout`. The same names are injected into the script so it can branch on them:
 

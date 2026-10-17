@@ -27,6 +27,7 @@ GLYPHS = {
     "compactions": "⇊",
     "success": "✓",
     "failure": "✗",
+    "running": "…",
     "stopped": "■",
     "sub_line": "⎿",
     "tool_call": "▸",

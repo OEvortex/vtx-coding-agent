@@ -76,9 +76,26 @@ class ToolRunner(Protocol):
         ...
 
 
+#: Characters of a call's arguments kept on the record. The arguments are shown
+#: to the user next to the call, and a script that passes a megabyte of data
+#: inline would otherwise carry that megabyte through the session transcript.
+ARGS_PREVIEW_CHARS = 200
+
+
 @dataclass(frozen=True)
 class ToolCall:
-    """One tool call the sandbox admitted, in call order."""
+    """One tool call the sandbox admitted, in call order.
+
+    ``status`` is ``"running"`` from the moment the host admits a call until it
+    replies, then ``"ok"`` or ``"error"``. The running state exists for the
+    user, not the model: a fan-out of eight slow calls renders as eight rows
+    that are visibly in flight rather than as a block that has said nothing for
+    thirty seconds.
+
+    ``args`` is the call's arguments as compact JSON, cut to
+    :data:`ARGS_PREVIEW_CHARS`. A reader who cannot see *what* was called cannot
+    tell two greps in a loop apart, and the name alone does not say it.
+    """
 
     name: str
     status: str
@@ -87,10 +104,15 @@ class ToolCall:
     #: Wall time for the call, in milliseconds. Measured rather than assumed so
     #: the model can see which of several parallel calls was the slow one.
     duration_ms: int | None = None
+    args: str | None = None
 
     @property
     def ok(self) -> bool:
         return self.status == "ok"
+
+    @property
+    def running(self) -> bool:
+        return self.status == "running"
 
 
 @dataclass(frozen=True)

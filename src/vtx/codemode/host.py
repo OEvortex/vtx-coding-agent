@@ -25,7 +25,7 @@ import os
 import subprocess
 import sys
 import time
-from collections.abc import Mapping, Sequence
+from collections.abc import Callable, Mapping, Sequence
 from pathlib import Path
 from typing import Any
 
@@ -35,6 +35,7 @@ from vtx.codemode.declarations import render_signature
 from vtx.codemode.errors import InvalidInput
 from vtx.codemode.source import clamp_int, clamp_timeout
 from vtx.codemode.types import (
+    ARGS_PREVIEW_CHARS,
     MAX_STORE_TOTAL_CHARS,
     MAX_STORE_VALUE_CHARS,
     CodemodeTool,
@@ -59,6 +60,11 @@ _RESULT = "result"
 #: process to exit on its own, short enough that a wedged one is not the
 #: user's problem.
 _TERM_GRACE_SECONDS = 1.0
+
+#: Receives one call as it starts and again as it finishes. Called from several
+#: concurrent tool-call tasks, so an implementation must not assume the calls
+#: arrive one at a time or in call order.
+ProgressCallback = Callable[[ToolCall], None]
 
 #: Windows has no SIGKILL; ``kill()`` maps to TerminateProcess there.
 _IS_WINDOWS = os.name == "nt"
@@ -330,6 +336,7 @@ class CodemodeSandbox:
         max_tool_calls: int | None = None,
         max_output_tokens: int | None = None,
         signal: asyncio.Event | None = None,
+        on_progress: ProgressCallback | None = None,
     ) -> Result:
         """Run one program and return its :class:`Result`.
 
@@ -341,6 +348,12 @@ class CodemodeSandbox:
         The three budget overrides are the script's own requests. Each is
         resolved against the sandbox's limit with min-wins, so a script can ask
         for less and never for more.
+
+        ``on_progress`` is called with each :class:`ToolCall` as it is admitted
+        (``status="running"``) and again when it finishes. It exists so an
+        interactive caller can draw the fan-out as it happens; a caller with no
+        user to show it to should leave it ``None``, because nothing is computed
+        for it otherwise.
         """
         if self._closed:
             return _sandbox_failure("The sandbox is closed.")
@@ -375,6 +388,7 @@ class CodemodeSandbox:
                 output_budget,
                 signal,
                 self._limits.wall_clock_ms,
+                on_progress,
             )
         finally:
             await _reap(process)
@@ -429,6 +443,7 @@ class CodemodeSandbox:
         output_budget: int | None,
         signal: asyncio.Event | None,
         wall_clock_ms: int | None,
+        on_progress: ProgressCallback | None = None,
     ) -> Result:
         """Drive the worker: send the request, answer tool calls, read the result."""
         assert process.stdin is not None
@@ -450,7 +465,9 @@ class CodemodeSandbox:
         except (BrokenPipeError, OSError):
             return _sandbox_failure("The sandbox process closed its input before the script ran.")
 
-        state = _Execution(call_budget=call_budget, output_budget=output_budget)
+        state = _Execution(
+            call_budget=call_budget, output_budget=output_budget, on_progress=on_progress
+        )
         budget_task = (
             asyncio.create_task(self._on_budget(process, timeout_ms, state))
             if timeout_ms is not None and timeout_ms > 0
@@ -546,9 +563,20 @@ class CodemodeSandbox:
         raw_args = frame.get("args")
         args = raw_args if isinstance(raw_args, dict) else {}
         call_id = int(frame.get("id") or 0)
+        #: What the script passed, captured before the call runs so a live row
+        #: can show it and so a refusal still says what it refused.
+        args_preview = _args_preview(args)
 
-        def record(status: str, **fields: Any) -> None:
-            state.by_id[call_id] = ToolCall(name=name, status=status, **fields)
+        def record(status: str, **fields: Any) -> ToolCall:
+            call = ToolCall(name=name, status=status, args=args_preview, **fields)
+            state.by_id[call_id] = call
+            if state.on_progress is not None:
+                # A progress sink is user-interface code on the far side of the
+                # sandbox boundary. A raise there must not fail a call the
+                # script is otherwise waiting on.
+                with contextlib.suppress(Exception):
+                    state.on_progress(call)
+            return call
 
         def reply(ok: bool, value: Any = None, error: Any = None) -> dict[str, Any]:
             return {"type": _TOOL_RESULT, "id": call_id, "ok": ok, "value": value, "error": error}
@@ -568,8 +596,8 @@ class CodemodeSandbox:
         tool = next((t for t in self._all_tools if t.name == name), None)
         if tool is None:
             # The sandbox only exposes declared names, so this means the script
-            # reached past the namespace -- or the two sides disagree, which is
-            # a host defect. Either way it is not the script's input problem.
+            # reached past the namespace -- or the two sides disagree, which is a
+            # host defect. Either way it is not the script's input problem.
             return refuse(errors.UnknownTool(name))
 
         try:
@@ -585,6 +613,10 @@ class CodemodeSandbox:
             return refuse(exc)
 
         started = time.monotonic()
+        # Announced before the call so a slow tool shows as in flight. Reported
+        # after argument validation, because a call that never ran should never
+        # be drawn as one that did.
+        record("running")
         try:
             value = await tool.execute(args, None)
         except errors.ToolError as exc:
@@ -723,6 +755,7 @@ class _Execution:
     __slots__ = (
         "by_id",
         "call_budget",
+        "on_progress",
         "output_budget",
         "outstanding",
         "resumed",
@@ -730,9 +763,19 @@ class _Execution:
         "suspended",
     )
 
-    def __init__(self, *, call_budget: int | None, output_budget: int | None) -> None:
+    def __init__(
+        self,
+        *,
+        call_budget: int | None,
+        output_budget: int | None,
+        on_progress: ProgressCallback | None = None,
+    ) -> None:
         self.call_budget = call_budget
         self.output_budget = output_budget
+        #: Optional live view of the run, called as each call starts and
+        #: finishes. Absent for headless callers, which is why every use is
+        #: guarded rather than assumed.
+        self.on_progress = on_progress
         self.spent = 0
         #: Tool calls admitted but not yet replied. Nonzero means the script is
         #: blocked on the host rather than running, which is what lets the compute
@@ -789,6 +832,29 @@ def _elapsed_ms(started: float) -> int:
     return max(0, round((time.monotonic() - started) * 1000))
 
 
+def _args_preview(args: Mapping[str, Any]) -> str | None:
+    """``args`` as compact JSON for display, or ``None`` when there is nothing to show.
+
+    Compact because this sits in a column beside the call name, and because a
+    row of pretty-printed arguments is a stack of lines per call in a run that
+    may make forty. Cut to :data:`ARGS_PREVIEW_CHARS` because a script can pass
+    an entire file's contents inline and the transcript should not grow by it.
+
+    Unserializable arguments render as ``?`` rather than propagating: the value
+    was coerced JSON on the way in, so this is belt-and-braces, and a preview
+    that fails is not worth failing a call over.
+    """
+    if not args:
+        return None
+    try:
+        text = json.dumps(args, separators=(",", ":"), ensure_ascii=False, default=str)
+    except (TypeError, ValueError):
+        return "?"
+    if len(text) > ARGS_PREVIEW_CHARS:
+        return text[: ARGS_PREVIEW_CHARS - 1] + "…"
+    return text
+
+
 def _result_from_frame(
     frame: Mapping[str, Any], state: _Execution, output_budget: int | None = None
 ) -> Result:
@@ -814,10 +880,15 @@ def _result_from_frame(
     calls = tuple(
         ToolCall(
             name=recorded.name,
-            status=recorded.status,
+            # A call the script started and never awaited is cancelled, not
+            # running: the worker has exited, so nothing will ever reply. Left
+            # as "running" it would draw a row that spins forever on a run that
+            # is already over.
+            status="cancelled" if recorded.running else recorded.status,
             kind=by_id.get(call_id, {}).get("kind") if call_id is not None else None,
             message=by_id.get(call_id, {}).get("message") if call_id is not None else None,
             duration_ms=recorded.duration_ms,
+            args=recorded.args,
         )
         for call_id, recorded in state.by_id.items()
     )

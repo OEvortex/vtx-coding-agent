@@ -845,6 +845,14 @@ def _script_stack(exc: BaseException) -> str:
     script_frames = [f for f in frames if f.filename == "<codemode>"]
     if not script_frames:
         return ""
+    # The script is compiled inside a generated ``async def``, which occupies
+    # line 1 of the compiled source, so every frame the script owns is one
+    # higher than the line the model wrote. Discount it here: a traceback that
+    # names line 4 for a `raise` the model wrote on line 3 sends it to edit the
+    # wrong line, and the TUI's line-number gutter would disagree with the
+    # traceback printed directly above it.
+    for frame in script_frames:
+        frame.lineno = max(1, frame.lineno - 1)
     lines = traceback.format_list(script_frames)
     return f"Traceback (most recent call last):\n{''.join(lines)}{type(exc).__name__}: {exc}"
 

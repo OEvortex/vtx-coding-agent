@@ -77,6 +77,7 @@ from vtx.codemode.source import (
     parse_source,
 )
 from vtx.codemode.types import (
+    ARGS_PREVIEW_CHARS,
     MAX_STORE_TOTAL_CHARS,
     MAX_STORE_VALUE_CHARS,
     CodemodeTool,
@@ -87,6 +88,7 @@ from vtx.codemode.types import (
 )
 
 __all__ = [
+    "ARGS_PREVIEW_CHARS",
     "CODEMODE_SOURCE_GRAMMAR",
     "MAX_STORE_TOTAL_CHARS",
     "MAX_STORE_VALUE_CHARS",

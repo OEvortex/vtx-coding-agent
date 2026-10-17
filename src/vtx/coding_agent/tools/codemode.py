@@ -22,6 +22,7 @@ from __future__ import annotations
 
 import asyncio
 import inspect
+import json
 import time
 from collections.abc import Callable, Sequence
 from typing import Any, ClassVar
@@ -404,7 +405,11 @@ class CodemodeTool(BaseTool):
     # -- execution --------------------------------------------------------
 
     async def execute(
-        self, params: CodemodeParams, cancel_event: asyncio.Event | None = None
+        self,
+        params: CodemodeParams,
+        cancel_event: asyncio.Event | None = None,
+        on_output: Callable[[str], None] | None = None,
+        **kwargs: Any,
     ) -> ToolResult:
         try:
             source = parse_source(params.code)
@@ -425,6 +430,7 @@ class CodemodeTool(BaseTool):
             max_tool_calls=source.max_tool_calls,
             max_output_tokens=source.max_output_tokens,
             signal=cancel_event,
+            on_progress=_progress_sink(on_output) if on_output is not None else None,
         )
         # Measured here rather than read from the sandbox: the wall clock of a
         # run includes the host-side tool calls, which is exactly the number
@@ -475,6 +481,43 @@ class CodemodeTool(BaseTool):
             ui_summary=_success_summary(result),
             ui_data=ui_data,
         )
+
+
+#: Marks a live-progress frame on the tool's output channel. The channel is a
+#: text delta, and a nested call is data; the sentinel is what lets the block
+#: tell "the script called grep" from "the script printed a line". Chosen to be
+#: something a script cannot plausibly emit as its first characters.
+PROGRESS_SENTINEL = "\x00vtx-codemode-call\x00"
+
+
+def _progress_sink(on_output: Callable[[str], None]) -> Callable[[Any], None]:
+    """Wrap the tool's live-output channel into a sandbox progress callback.
+
+    The sandbox reports each call twice, as it starts and as it finishes, and
+    the TUI needs both: a row that only appears on completion is a row that says
+    nothing for the length of a slow tool, which is precisely when the user is
+    watching.
+
+    JSON rather than a formatted line because the block has to read the fields
+    back, and a format it then has to re-parse is two places to keep in step.
+    The frame is newline-terminated so several calls arriving in one drain
+    arrive as several lines.
+    """
+
+    def publish(call: Any) -> None:
+        frame = json.dumps(
+            {
+                "name": call.name,
+                "status": call.status,
+                "args": call.args,
+                "kind": call.kind,
+                "message": call.message,
+                "duration_ms": call.duration_ms,
+            }
+        )
+        on_output(f"{PROGRESS_SENTINEL}{frame}\n")
+
+    return publish
 
 
 def _result_images(result: Any) -> list[ImageContent]:
@@ -586,9 +629,11 @@ def _ui_payload(source: Any, result: Any, *, duration_ms: int, images: int) -> d
             {
                 "name": call.name,
                 "ok": call.ok,
+                "status": call.status,
                 "kind": call.kind,
                 "message": call.message,
                 "duration_ms": call.duration_ms,
+                "args": call.args,
             }
             for call in result.calls
         ],
@@ -602,7 +647,13 @@ def _ui_payload(source: Any, result: Any, *, duration_ms: int, images: int) -> d
     }
 
 
-__all__ = ["CODEMODE_TOOL_NAME", "SEARCH_HELPER", "CodemodeParams", "CodemodeTool"]
+__all__ = [
+    "CODEMODE_TOOL_NAME",
+    "PROGRESS_SENTINEL",
+    "SEARCH_HELPER",
+    "CodemodeParams",
+    "CodemodeTool",
+]
 
 
 @plugin(name="tool-codemode", inject=("tools",))

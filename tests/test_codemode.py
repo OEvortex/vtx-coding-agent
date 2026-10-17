@@ -18,10 +18,12 @@ import asyncio
 import pytest
 
 from vtx.codemode import (
+    ARGS_PREVIEW_CHARS,
     CodemodeSandbox,
     CodemodeSourceError,
     CodemodeTool,
     Limits,
+    ToolCall,
     ToolError,
     clamp_timeout,
     parse_source,
@@ -56,6 +58,13 @@ async def _probe(args, _signal):
 def _sandbox(**kwargs):
     kwargs.setdefault("limits", Limits(timeout_ms=20_000))
     return CodemodeSandbox(**kwargs)
+
+
+def _tool(name, execute, schema=None):
+    """One sandbox tool, with the smallest declaration that still calls."""
+    return CodemodeTool(
+        name=name, description=name, execute=execute, input_schema=schema or {"type": "object"}
+    )
 
 
 # --------------------------------------------------------------------------
@@ -287,6 +296,26 @@ async def test_script_error_reports_the_failing_line():
     assert not result.ok
     assert result.diagnostic.kind == "script"
     assert "ValueError" in result.diagnostic.message
+
+
+@pytest.mark.asyncio
+async def test_a_traceback_line_is_the_line_the_model_wrote():
+    # The script is compiled inside a generated `async def`, so its frames are
+    # naturally one ahead of the source. A traceback naming line 4 for a raise
+    # on line 3 sends the model -- and anyone reading the TUI's numbered script
+    # above it -- to edit the wrong line.
+    source = "a = 1\nb = 2\nraise ValueError('boom')\nd = 4\n"
+    result = await _sandbox().execute(source)
+    assert "line 3, in __codemode_main__" in result.diagnostic.stack
+
+
+@pytest.mark.asyncio
+async def test_a_traceback_line_survives_an_options_line():
+    # The options line is blanked rather than removed, so it still counts: line
+    # 4 here is line 4 of what the model wrote, not line 3.
+    source = '# @options: {"timeout_ms": 5000}\na = 1\nb = 2\nraise ValueError("boom")\n'
+    result = await _sandbox().execute(source)
+    assert "line 4, in __codemode_main__" in result.diagnostic.stack
 
 
 @pytest.mark.asyncio
@@ -779,3 +808,88 @@ def test_the_stall_kind_is_mirrored_in_both_processes():
     # is not something a script gets to handle.
     assert errors.WALL_CLOCK in errors.SANDBOX_KINDS
     assert errors.WALL_CLOCK not in errors.TOOL_KINDS
+
+
+# --------------------------------------------------------------------------
+# Live progress
+# --------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_a_call_is_announced_before_it_is_answered():
+    seen: list[ToolCall] = []
+    result = await _sandbox(tools=[_tool("slow", _slow, {"type": "object"})]).execute(
+        "await tools.slow(delay=0.05)", on_progress=seen.append
+    )
+    assert result.ok
+    # Two frames for one call. Without the first, a slow tool is a block that
+    # says nothing for as long as the tool takes.
+    assert [(call.name, call.status) for call in seen] == [("slow", "running"), ("slow", "ok")]
+
+
+@pytest.mark.asyncio
+async def test_progress_carries_the_arguments_the_script_passed():
+    seen: list[ToolCall] = []
+    await _sandbox(tools=[_tool("echo", _echo, {"type": "object"})]).execute(
+        "await tools.echo(text='hi')", on_progress=seen.append
+    )
+    assert [call.args for call in seen] == ['{"text":"hi"}'] * 2
+
+
+@pytest.mark.asyncio
+async def test_a_refused_call_is_never_announced_as_running():
+    seen: list[ToolCall] = []
+    # The budget is spent at admission, so a refused call never reaches the tool
+    # and must never be drawn as one that did.
+    await _sandbox(tools=[_tool("echo", _echo, {"type": "object"})]).execute(
+        "await tools.echo(text='hi')", max_tool_calls=0, on_progress=seen.append
+    )
+    assert [call.status for call in seen] == ["error"]
+
+
+@pytest.mark.asyncio
+async def test_a_call_the_script_never_awaits_is_simply_not_recorded():
+    result = await _sandbox(tools=[_tool("slow", _slow, {"type": "object"})]).execute(
+        "t = tools.slow(delay=5)\nreturn 'not waiting'\n"
+    )
+    # The worker exits before the frame is ever read, so there is nothing to
+    # report -- and nothing to leave spinning.
+    assert result.ok
+    assert result.calls == ()
+
+
+def test_a_record_the_host_never_answered_is_reported_as_cancelled():
+    # Not reachable through execute(), which drains in-flight calls before it
+    # builds a result. Guarded anyway: a row left "running" on a run that is
+    # already over would spin forever, and the only thing standing between that
+    # and a real report is this mapping.
+    from vtx.codemode.host import _Execution, _result_from_frame
+
+    state = _Execution(call_budget=None, output_budget=None)
+    state.by_id[1] = ToolCall(name="slow", status="running", args="{}")
+    result = _result_from_frame({"ok": True, "calls": [], "output": []}, state)
+    assert [call.status for call in result.calls] == ["cancelled"]
+
+
+@pytest.mark.asyncio
+async def test_arguments_are_cut_so_a_script_cannot_grow_the_record():
+    # The record rides along in the session transcript; a megabyte of inline
+    # data would ride with it.
+    result = await _sandbox(tools=[_tool("echo", _echo, {"type": "object"})]).execute(
+        f"await tools.echo(text='{'x' * 5000}')"
+    )
+    assert len(result.calls[0].args) == ARGS_PREVIEW_CHARS
+
+
+@pytest.mark.asyncio
+async def test_a_progress_sink_that_raises_does_not_fail_the_call():
+    def explode(_call):
+        raise RuntimeError("the UI is on fire")
+
+    result = await _sandbox(tools=[_tool("echo", _echo, {"type": "object"})]).execute(
+        "return await tools.echo(text='hi')", on_progress=explode
+    )
+    # A display bug on the far side of the sandbox boundary is not the script's
+    # problem and must not be charged to it.
+    assert result.ok
+    assert result.value == {"said": "hi"}
