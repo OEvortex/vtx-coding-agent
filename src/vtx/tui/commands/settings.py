@@ -111,6 +111,11 @@ class SettingsCommands(CommandSupport):
         if not info.supports_thinking:
             return [], "model has no reasoning support"
 
+        # No verified effort metadata from models.dev: the model keeps its own
+        # default, so there is no specific level to report as withheld.
+        if not info.thinking_level_map:
+            return [], ""
+
         advertised = get_supported_thinking_levels(
             reasoning=True, thinking_level_map=info.thinking_level_map
         )

@@ -215,7 +215,7 @@ def resolve_thinking_levels(
     if not reasoning:
         return ["none"]
 
-    if thinking_level_map is None:
+    if not thinking_level_map:
         return ["default"]
 
     derived = get_supported_thinking_levels(reasoning=True, thinking_level_map=thinking_level_map)

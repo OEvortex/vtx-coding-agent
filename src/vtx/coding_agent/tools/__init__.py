@@ -37,6 +37,7 @@ from .find import FindTool
 from .grep import GrepTool
 from .read import ReadTool
 from .skill import SkillTool
+from .todo import TodoTool
 from .tool_search import ToolSearchTool
 from .write import WriteTool
 
@@ -54,6 +55,7 @@ __all__ = [
     "ReadTool",
     "SkillTool",
     "TaskTool",
+    "TodoTool",
     "ToolSearchTool",
     "WebSearchTool",
     "WebTool",
@@ -75,6 +77,7 @@ all_tools: list[BaseTool] = [
     FindTool(),
     GrepTool(),
     SkillTool(),
+    TodoTool(),
     WebTool(),
     WebSearchTool(),
     AskUserTool(),
@@ -91,6 +94,7 @@ DEFAULT_TOOLS: list[str] = [
     "bash",
     "find",
     "skill",
+    "todo",
     "web",
     "ask_user",
     "delegate_subagent",

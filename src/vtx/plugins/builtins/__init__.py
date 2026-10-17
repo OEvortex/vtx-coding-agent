@@ -48,6 +48,7 @@ BASE: list[Row] = [
     Row(id="tool-find", name="vtx.coding_agent.tools.find:PLUGIN"),
     Row(id="tool-grep", name="vtx.coding_agent.tools.grep:PLUGIN"),
     Row(id="tool-skill", name="vtx.coding_agent.tools.skill:PLUGIN"),
+    Row(id="tool-todo", name="vtx.coding_agent.tools.todo:PLUGIN"),
     Row(id="tool-web", name="vtx.plugins.builtins.tools.web:PLUGIN"),
     Row(id="tool-ask-user", name="vtx.plugins.builtins.tools.ask_user:PLUGIN"),
     # Registered but not default-on: the harness declares ``tool_search`` only

@@ -192,6 +192,10 @@ Screen {{
     padding: 0 0 0 2;
 }}
 
+.todo-block #tool-output {{
+    padding: 0;
+}}
+
 #tool-output.-diff-output {{
     padding: 0 0 0 2;
 }}
