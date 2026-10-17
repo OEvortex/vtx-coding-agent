@@ -61,6 +61,7 @@ from vtx.tui.session_ui import SessionUIMixin
 from vtx.tui.startup import StartupMixin
 from vtx.tui.styles import get_styles
 from vtx.tui.subagents import record_subagent_event
+from vtx.tui.todo_panel import TodoPanel
 from vtx.tui.tree import TreeSelector
 from vtx.tui.widgets import InfoBar, QueueDisplay, StatusLine, format_path
 
@@ -331,6 +332,7 @@ class Vtx(
         yield ChatLog(id="chat-log")
         yield QueueDisplay(id="queue-display")
         yield StatusLine(id="status-line")
+        yield TodoPanel(id="todo-panel")
         yield AgentsPanel(id="agents-panel")
         yield InputBox(cwd=self._cwd, id="input-box")
         yield FloatingList(window_size=10, label_width=6, id="completion-list")
@@ -596,6 +598,17 @@ class Vtx(
             return
         footer.set_subagents(running, queued)
 
+    def _refresh_todo_panel(self) -> None:
+        """Repaint the pinned Todos strip."""
+        try:
+            panel = self.query_one("#todo-panel", TodoPanel)
+        except Exception:
+            return
+        panel.refresh_panel()
+
+    def _todo_progress_callback(self, *args, **kwargs) -> None:
+        self._refresh_todo_panel()
+
     def _sync_agent_counts(self) -> None:
         """Push the panel's running/queued counts into the info bar."""
         try:
@@ -728,6 +741,14 @@ class Vtx(
         agents_panel = self.query_one("#agents-panel", AgentsPanel)
         agents_panel.refresh_panel()
         self.set_interval(0.5, self._sync_agent_counts)
+
+        try:
+            from vtx.coding_agent.tools.todo import register_todo_refresh
+
+            register_todo_refresh(self._refresh_todo_panel)
+            self._refresh_todo_panel()
+        except Exception:
+            pass
 
         # A sub-agent that finishes after this turn ends has to be able to wake
         # the session, or its result sits unread until the user types something.

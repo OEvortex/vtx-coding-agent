@@ -147,7 +147,6 @@ def test_export_renders_a_codemode_cell(tmp_path):
                         ],
                         "error": None,
                         "images": 0,
-                        "output_truncated": False,
                         "duration_ms": 900,
                     },
                 },
@@ -160,7 +159,8 @@ def test_export_renders_a_codemode_cell(tmp_path):
     assert '<div class="codemode-title">codemode</div>' in html
     assert "rows = await tools.search(" in html
     assert "search 0.4s" in html
-    # The returned value lands in the compact output section, no "Out" prompt.
-    assert '<div class="codemode-output">3</div>' in html
+    # The returned value lands in its own section, as it does in the terminal.
+    assert '<div class="codemode-label">value</div>' in html
+    assert '<div class="codemode-value">3</div>' in html
     # The script is the payload, so the arguments blob is not what gets shown.
     assert '<div class="tool-call-args">' not in html

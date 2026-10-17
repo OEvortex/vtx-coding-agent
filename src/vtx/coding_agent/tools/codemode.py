@@ -564,9 +564,14 @@ def _ui_payload(source: Any, result: Any, *, duration_ms: int, images: int) -> d
     """Everything the codemode block needs, as JSON-safe data.
 
     The block owns layout, which means the tool hands it the run rather than a
-    pre-rendered string: the same payload drives the collapsed cell, the
-    ``ctrl+o`` expansion, and a re-render after a resize. Only JSON-safe values,
-    because it is persisted with the session and replayed back into the block.
+    pre-rendered string: the same payload drives the body and a re-render after
+    a resize. Only JSON-safe values, because it is persisted with the session
+    and replayed back into the block.
+
+    Deliberately absent: any truncation flag. The block renders the whole run,
+    so telling it how much of the run was withheld would only ever be a notice
+    about the sandbox's own ``max_output_tokens`` -- which the model-facing
+    result text already carries, where the model is the one who has to know.
     """
     error = result.diagnostic
     return {
@@ -593,7 +598,6 @@ def _ui_payload(source: Any, result: Any, *, duration_ms: int, images: int) -> d
             else None
         ),
         "images": images,
-        "output_truncated": bool(result.output_truncated),
         "duration_ms": duration_ms,
     }
 

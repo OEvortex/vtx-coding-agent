@@ -41,23 +41,32 @@ The returned value must be JSON-safe: `coerce_json` rejects `NaN`/`Infinity` and
 
 ## How a run is displayed
 
-The `codemode` tool block in the TUI is a notebook cell (`src/vtx/tui/codemode_block.py:55`). The script is the payload of the call, so the whole script is shown, syntax-highlighted in the active theme, under an IPython-style prompt:
+The `codemode` tool block in the TUI shows the run rather than a receipt for it (`src/vtx/tui/codemode_block.py`). The header is the same one every other tool gets — icon, name, then the facts that decide how the body is read — and the body is the run in labelled sections:
 
 ```
-⟩ In [7]: rows = await tools.search(query="find dead code", limit=5)
-          return sorted(r["name"] for r in rows)
-    Out[7]: ["edit", "grep", "read"]
-    ⎿ search 0.4s
+⟩ codemode  3 tool calls · 1.2s
+  ⎿ script
+      rows = await tools.search(query="find dead code")
+      return sorted(r["name"] for r in rows)
+  ⎿ calls
+      ✓  search    0.4s
+      ✓  read      0.1s
+      ✗  bash      1.2s   exit 1 · tool_failure
+  ⎿ output
+      scanned 42 files
+  ⎿ value
+      { "tools": ["edit", "grep", "read"], "hits": 12 }
 ```
 
-- `In [n]` appears as soon as the tool call ends, before execution, so the script is on screen while it runs.
-- `Out[n]` holds the returned value, folded onto one line when it fits. `text()` output appears above it, as stdout does in IPython.
-- The `⎿` line is the tool-call trace: names with durations in the collapsed cell, one line each with `✓`/`✗` and the failure reason after `ctrl+o`.
-- A failure replaces the `Out` prompt with a rule, the diagnostic, and the script's own traceback  --  clipped until expanded, never dropped.
+- `script` appears as soon as the tool call ends, before execution, so the script is on screen while it runs.
+- Sections are named because a script's output has four different kinds of content in it. A reader who cannot tell a printed line from a returned value is reading noise, so `text()` output and the returned value are separate sections rather than one blob.
+- `calls` is a table: names padded, durations right-aligned, `✓`/`✗` per call and a failure's own message and kind after it.
+- `error` carries the diagnostic and the script's own traceback — the part the model already reads, and the part the user decides the next script's trustworthiness from.
+- A short pretty-printed value folds onto one line; anything that needs its lines keeps them.
 
-Long scripts and long values are clipped with the shared `ctrl+o` hint; the same cell is what `/export` renders, so a session transcript exports as a notebook rather than as an escaped JSON argument (`src/vtx/tui/export.py`).
+**Nothing is clipped.** A script that printed four hundred lines printed them because the model asked for them, and hiding the tail hides exactly the line that decided the outcome with no second chance to ask for it, so `ctrl+o` has nothing left to expand. What bounds a codemode cell is the sandbox's own `max_output_tokens`, not a cap drawn in the renderer. The same cell is what `/export` renders, so a session transcript exports as a code cell rather than as an escaped JSON argument (`src/vtx/tui/export.py`).
 
-The tool hands the block the run itself through `ToolResult.ui_data` (`src/vtx/protocol/types.py:219`), a JSON-safe dict of `code`, `value`, `printed`, `calls`, `error`, `images`, `output_truncated`, and `duration_ms`. That payload is persisted with the session, so a resumed session replays the same cell.
+The tool hands the block the run itself through `ToolResult.ui_data` (`src/vtx/protocol/types.py:219`), a JSON-safe dict of `code`, `value`, `printed`, `calls`, `error`, `images`, and `duration_ms`. That payload is persisted with the session, so a resumed session replays the same cell. There is deliberately no truncation flag in it: the block renders the whole run, so a flag could only ever be a notice about the sandbox's own cap — and that notice belongs in the model-facing result text, where the model is the one who has to know its own context was shortened.
 
 ## Limits and per-script options
 

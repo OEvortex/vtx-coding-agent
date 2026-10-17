@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import contextlib
 from typing import Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
@@ -10,6 +11,24 @@ from vtx.agent.tools.base import BaseTool
 from vtx.core.config import config
 from vtx.plugins import mount_tool, plugin
 from vtx.protocol.types import ToolResult
+
+_current_todo_tool = None
+_todo_refresh_callbacks: list = []
+
+
+def current_todo_tool():
+    return _current_todo_tool
+
+
+def register_todo_refresh(cb):
+    if cb not in _todo_refresh_callbacks:
+        _todo_refresh_callbacks.append(cb)
+
+
+def unregister_todo_refresh(cb):
+    with contextlib.suppress(ValueError):
+        _todo_refresh_callbacks.remove(cb)
+
 
 StatusType = Literal["pending", "in_progress", "completed", "deleted"]
 ActionType = Literal["create", "update", "list", "get", "delete", "clear", "set"]
@@ -200,6 +219,8 @@ class TodoTool(BaseTool):
         super().__init__()
         self._tasks: list[TaskRecord] = []
         self._next_id: int = 1
+        global _current_todo_tool
+        _current_todo_tool = self
 
     @property
     def _todos(self) -> list[TaskRecord]:
@@ -604,6 +625,10 @@ class TodoTool(BaseTool):
             details["error"] = error
 
         ui_details = format_todo_tree(self._tasks)
+
+        for cb in list(_todo_refresh_callbacks):
+            with contextlib.suppress(Exception):
+                cb()
 
         return ToolResult(
             success=(error is None),

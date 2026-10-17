@@ -143,16 +143,24 @@ a { color: var(--blue); }
 .tool-result.error { color: var(--red); }
 .codemode-cell { margin-top: 2px; }
 .codemode-title { color: var(--yellow); font-weight: 600; }
+.codemode-label {
+  color: var(--fg4);
+  font-size: 10px;
+  letter-spacing: 0.04em;
+  margin-top: 8px;
+  margin-bottom: 2px;
+}
 .codemode-source {
   color: var(--fg);
   white-space: pre-wrap;
   font-size: 11px;
   overflow-x: auto;
-  margin-top: 2px;
 }
-.codemode-output { color: var(--fg3); white-space: pre-wrap; font-size: 11px; }
-.codemode-error { color: var(--red); white-space: pre-wrap; font-size: 11px; margin-top: 4px; }
-.codemode-trace { color: var(--fg4); white-space: pre-wrap; font-size: 11px; margin-top: 2px; }
+.codemode-output,
+.codemode-value { color: var(--fg3); white-space: pre-wrap; font-size: 11px; }
+.codemode-error { color: var(--red); white-space: pre-wrap; font-size: 11px; }
+.codemode-trace { color: var(--fg4); white-space: pre-wrap; font-size: 11px; }
+.codemode-note { color: var(--fg4); font-size: 11px; margin-top: 4px; }
 """
 
 _RICH_TAG_RE = re.compile(r"\[/?(?:[a-zA-Z0-9#._-]+)\]")
@@ -376,45 +384,43 @@ def _format_name(name: str) -> str:
 def _codemode_parts(ui_data: dict[str, Any]) -> dict[str, Any]:
     """Flatten one codemode ``ui_data`` payload into the export cell's parts.
 
-    Same collapse rules as the terminal block: clip the long parts rather than
-    dropping them, and keep the tool-call trace on one line so a forty-call
-    script does not turn into forty lines of export. Printed lines and the
-    returned value are one output section, as they are in the terminal.
+    The same sections the terminal block draws, in the same order, and nothing
+    clipped: an exported transcript is a record of what ran, and a hidden tail
+    is not a record. The call trace stays one row per call so a forty-call
+    script reads as a list rather than as a paragraph.
     """
     calls = [c for c in ui_data.get("calls") or [] if isinstance(c, dict)]
-    trace = ""
-    if calls:
-        parts = []
-        for call in calls[:8]:
-            label = str(call.get("name") or "?")
-            duration = call.get("duration_ms")
-            if isinstance(duration, int | float):
-                label += f" {duration / 1000:.1f}s"
-            if not call.get("ok", True):
-                label += f" ({call.get('kind') or 'error'})"
-            parts.append(label)
-        if len(calls) > 8:
-            parts.append(f"+{len(calls) - 8} more")
-        trace = " · ".join(parts)
+    trace = []
+    for call in calls:
+        name = str(call.get("name") or "?")
+        duration = call.get("duration_ms")
+        if isinstance(duration, int | float):
+            name += f" {duration / 1000:.1f}s"
+        if not call.get("ok", True):
+            detail = " · ".join(
+                str(part) for part in (call.get("message"), call.get("kind")) if part
+            )
+            name += f" ({detail})" if detail else " (failed)"
+        trace.append(name)
 
     error = ui_data.get("error") or {}
     error_text = ""
     if isinstance(error, dict) and error:
         head = f"{error.get('kind') or 'error'}: {error.get('message') or ''}".rstrip(": ")
         stack = str(error.get("stack") or "")
-        error_text = f"{head}\n\n{_truncate(stack, 12)}" if stack.strip() else head
+        error_text = f"{head}\n\n{stack}" if stack.strip() else head
 
-    output = "\n".join(str(t) for t in ui_data.get("printed") or [] if str(t).strip())
+    printed = "\n".join(str(t) for t in ui_data.get("printed") or [] if str(t).strip())
     value = str(ui_data.get("value") or "")
-    if value:
-        output = f"{output}\n{value}" if output else value
 
     return {
-        "code": _truncate(str(ui_data.get("code") or ""), 24),
-        "output": _truncate(output, 5),
+        "code": str(ui_data.get("code") or ""),
+        "output": printed,
+        "value": value,
         "error": error_text,
         "trace": trace,
         "error_status": bool(error),
+        "images": int(ui_data.get("images") or 0),
     }
 
 
@@ -582,9 +588,11 @@ class HtmlBuilder:
         *,
         code: str,
         output: str = "",
+        value: str = "",
         error: str = "",
-        trace: str = "",
+        trace: list[str] | None = None,
         error_status: bool = False,
+        images: int = 0,
     ) -> None:
         """One ``codemode`` call: the script, its nested calls, its output.
 
@@ -595,14 +603,32 @@ class HtmlBuilder:
         self.open_assistant()
         parts = ['<div class="tool-block"><div class="codemode-cell">']
         parts.append('<div class="codemode-title">codemode</div>')
+
+        def label(text: str) -> None:
+            parts.append(f'<div class="codemode-label">{text}</div>')
+
         if code:
+            label("script")
             parts.append(f'<pre class="codemode-source">{_esc(code)}</pre>')
         if trace:
-            parts.append(f'<div class="codemode-trace">{_esc(trace)}</div>')
+            label("calls")
+            joined = "\n".join(trace)
+            parts.append(f'<pre class="codemode-trace">{_esc(joined)}</pre>')
         if output:
+            label("output")
             parts.append(f'<div class="codemode-output">{_esc(output)}</div>')
+        if value:
+            label("value")
+            parts.append(f'<div class="codemode-value">{_esc(value)}</div>')
         if error_status:
+            label("error")
             parts.append(f'<div class="codemode-error">{_esc(error)}</div>')
+        if images:
+            noun = "image" if images == 1 else "images"
+            parts.append(
+                f'<div class="codemode-note">{images} {noun} attached to the result</div>'
+            )
+
         parts.append("</div></div>")
         self._append("".join(parts))
 

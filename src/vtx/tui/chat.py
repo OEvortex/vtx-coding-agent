@@ -185,6 +185,9 @@ class ChatLog(VerticalScroll):
         # id; the block for that id must already exist (mounted when
         # the parent turn streamed the tool call).
         self._task_live: dict[str, dict] = {}
+        # The currently opened todo block, reused for subsequent todo tool
+        # calls so the list updates in place instead of stacking blocks.
+        self._todo_block: ToolBlock | None = None
 
     def on_mount(self) -> None:
         self.anchor()
@@ -220,6 +223,9 @@ class ChatLog(VerticalScroll):
         if len(children) <= MAX_CHILDREN:
             return
         to_remove = children[: len(children) - PRUNE_TO]
+        # Keep the pinned todo block alive across pruning.
+        if self._todo_block is not None and self._todo_block in to_remove:
+            to_remove = [c for c in to_remove if c is not self._todo_block]
         active_tool_ids = {tid for tid, block in self._tool_blocks.items() if block in to_remove}
         for tid in active_tool_ids:
             del self._tool_blocks[tid]
@@ -238,6 +244,7 @@ class ChatLog(VerticalScroll):
         self._last_status_label = None
         self._recap_labels = []
         self._compaction_block = None
+        self._todo_block = None
 
     def on_click(self, event) -> None:
         event.stop()
@@ -652,6 +659,18 @@ class ChatLog(VerticalScroll):
         custom blocks can introspect the bound :class:`BaseTool` (e.g.
         to call ``self.tool.format_call(params)``).
         """
+        is_todo = name == "todo" or (tool is not None and getattr(tool, "name", None) == "todo")
+
+        # Reuse the currently opened todo block for subsequent todo calls, so
+        # the list updates in place instead of mounting a new block each time.
+        if is_todo and self._todo_block is not None and self._todo_block in self.children:
+            block = self._todo_block
+            if tool is not None:
+                block.tool = tool
+            self._tool_blocks[tool_id] = block
+            block.add_class("pinned")
+            return block
+
         block_cls = tool.ui_block if (tool is not None and tool.ui_block) else ToolBlock
         block = block_cls(
             name=name, call_msg=call_msg, icon=icon, expanded=self._tool_output_expanded, tool=tool
@@ -664,9 +683,14 @@ class ChatLog(VerticalScroll):
         if isinstance(previous, ToolBlock) and not previous.has_class("-with-details"):
             block.add_class("-compact")
 
+        if is_todo:
+            block.add_class("pinned")
+
         self.mount(block)
         self._scroll_if_anchored(animate=False)
         self._tool_blocks[tool_id] = block
+        if is_todo:
+            self._todo_block = block
         return block
 
     async def append_to_current(self, text: str) -> None:

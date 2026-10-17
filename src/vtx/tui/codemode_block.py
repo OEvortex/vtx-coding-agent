@@ -2,29 +2,49 @@
 
 Codemode is the one tool whose *input* is the work. A one-line header summary is
 right for ``bash`` -- ``$ git status`` says what ran -- but the interesting part
-of a script is the script, and until now that was truncated to its first line
-and its result flattened into "Script ok (3 tool calls)", so the user watched a
-turn produce output they could never read. This block shows the run properly::
+of a script is the script, so this block shows the run rather than a receipt for
+it::
 
     ⟩ codemode  3 tool calls · 1.2s
-      rows = await tools.search(query="find x")
-      return [r["name"] for r in rows]
+      ⎿ script
+          rows = await tools.search(query="find dead code")
+          return [r["name"] for r in rows]
+      ⎿ calls
+          ✓  search    0.4s
+          ✓  read      0.1s
+          ✗  bash      1.2s   exit 1 · tool_failure
+      ⎿ output
+          scanned 42 files
+      ⎿ value
+          { "tools": ["edit", "grep", "read"], "hits": 12 }
 
-      ✓ search 0.4s
-      ✓ read 1.2s
+Four things hold it together, and each is a deliberate departure from the plain
+receipt other tools get:
 
-      ⎿ ["read", "grep", "edit"]
+**Sections are labelled, not implied.** ``script`` / ``calls`` / ``output`` /
+``value`` / ``error`` are named because a script's output has four distinct
+provenance-free kinds of content in it, and a reader who cannot tell a printed
+line from a returned value is reading noise. The ``⎿`` marker and its two-column
+indent are the same vocabulary every other tool detail uses, so the block sits in
+the scrollback without looking like it came from somewhere else.
 
-The script is the call, so it leads. The nested tool calls follow as a
-checklist -- what ran, whether it worked, what it cost -- and the script's own
-output closes the block. Every section is clipped until ``ctrl+o`` expands it;
-the caps exist so a forty-call script does not bury the turn that ran it. The
-output is compact by default: the model reads the full text result in context,
-the user reads a preview and expands when it matters.
+**Names and durations line up.** Tool names are padded and durations
+right-aligned into a column, because a call list is a table and a table whose
+numbers jitter is not a table.
+
+**Nothing is clipped.** A script that printed four hundred lines printed them
+because the model asked for them; hiding the tail to protect the scrollback hides
+exactly the line that decided the outcome, and the user has no second chance to
+ask for it. ``ctrl+o`` therefore has nothing left to expand. What bounds a
+codemode cell is the sandbox's own ``max_output_tokens``, not a cap drawn here.
+
+**A failure keeps its cause.** The diagnostic and the script's own traceback are
+shown in full under ``error``, because the user is the one who decides whether
+to trust the next script.
 
 Anything this block does not own falls through to :class:`ToolBlock`: the
-permission preview, the ask_user dialog, images, and the expansion state
-machine are shared machinery and stay shared.
+permission preview, the ask_user dialog, images, and the expansion state machine
+are shared machinery and stay shared.
 """
 
 from __future__ import annotations
@@ -40,34 +60,18 @@ from vtx.core.config import config
 from vtx.tui.blocks import ToolBlock
 from vtx.tui.formatting import format_python_source
 from vtx.tui.task_ui import GLYPHS, format_ms
-from vtx.tui.tool_output import format_expand_hint
 
-#: Indent for every line of the body, so the block aligns with how tool details
-#: render elsewhere in the scrollback.
+#: Column the ``⎿`` section markers sit in, so the block aligns with how tool
+#: details render everywhere else in the scrollback.
 BODY_INDENT = "  "
 
-#: Source lines visible in a collapsed run. Generous on purpose: the script is
-#: the payload, so the cap exists only so a 200-line script does not bury the
-#: turn that ran it.
-CODE_LINES = 12
-#: Lines of script output, same reasoning. Compact by default; ``ctrl+o`` is the
-#: explicit "show me everything".
-OUTPUT_LINES = 5
-#: Nested calls listed when collapsed. The most recent ones are the interesting
-#: ones -- a script that fails usually fails near its tail.
-CALL_PREVIEW_COUNT = 8
+#: Column a section's content sits in, under its label rather than under the
+#: marker -- the same two-step the approval and ask-user bodies use.
+SECTION_INDENT = "  " + "  "
 
-#: Expanded multiples. ``ctrl+o`` is an explicit "show me everything".
-WIDE_CODE_LINES = 80
-WIDE_OUTPUT_LINES = 40
-
-#: Traceback lines under a failed run, collapsed and expanded.
-STACK_LINES = 5
-WIDE_STACK_LINES = 40
-
-#: Width of the rule drawn above a traceback, bounded so a very wide terminal
-#: does not get a 200-column divider.
-ERROR_RULE_WIDTH = 48
+#: Smallest body the block will lay out for. A 20-column terminal is not a real
+#: target, but the arithmetic must not go negative on the way there.
+MIN_BODY_WIDTH = 24
 
 
 class CodemodeToolBlock(ToolBlock):
@@ -113,10 +117,10 @@ class CodemodeToolBlock(ToolBlock):
         colors = config.ui.colors
 
         if self._success is None:
-            return Text(" running...", style=Style(color=colors.dim))
+            return Text("  running…", style=Style(color=colors.dim))
         if self._success is False:
             summary = self._ui_summary or (self.ui_data or {}).get("error", {}).get("kind")
-            return Text(f" {summary or 'failed'}", style=Style(color=colors.failed, bold=True))
+            return Text(f"  {summary or 'failed'}", style=Style(color=colors.failed, bold=True))
 
         data = self.ui_data or {}
         calls = self._calls(data)
@@ -126,7 +130,7 @@ class CodemodeToolBlock(ToolBlock):
         duration = data.get("duration_ms")
         if isinstance(duration, int | float) and duration:
             bits.append(format_ms(duration))
-        return Text(" " + " · ".join(bits or ["ok"]), style=Style(color=colors.dim))
+        return Text("  " + " · ".join(bits or ["ok"]), style=Style(color=colors.dim))
 
     # -- result ------------------------------------------------------------
 
@@ -170,175 +174,174 @@ class CodemodeToolBlock(ToolBlock):
         output.update(cell)
 
     def _render_cell(self) -> Text | None:
+        """The run, as labelled sections.
+
+        Each section is rendered on its own and joined, rather than appended
+        into one growing buffer: a section that decides it has nothing to say
+        must not leave a stray blank line behind, and the join is where the
+        spacing between sections is decided, once.
+        """
         data = self.ui_data or {}
         code = str(data.get("code") or self._call_msg or "")
-        output_text = self._output_text(data)
+        printed = self._printed(data)
+        value = self._value(data)
         error = data.get("error")
-        if not code.strip() and not output_text and not error:
-            return None
-
-        colors = config.ui.colors
-        body_width = max(24, self._cell_width() - len(BODY_INDENT))
-
-        text = Text()
-
-        # The script itself: highlighted, indented, clipped.
-        limit = WIDE_CODE_LINES if self._expanded else CODE_LINES
-        shown, hidden = _clip_lines(code.lstrip("\n"), limit)
-        source = format_python_source(shown, body_width)
-        if source.plain:
-            text.append_text(_prefixed(source, BODY_INDENT, BODY_INDENT))
-            if hidden:
-                text.append("\n")
-                text.append(BODY_INDENT)
-                text.append_text(format_expand_hint(hidden))
-
-        # The nested tool calls, one per line, as a checklist.
         calls = self._calls(data)
+        images = self._image_count(data)
+
+        sections: list[Text] = []
+        if code.strip():
+            sections.append(self._render_script(code))
         if calls:
-            text.append_text(self._render_trace(calls))
-
-        # The script's own output: printed lines plus the returned value.
-        if output_text:
-            text.append_text(self._render_output(output_text, body_width))
-
+            sections.append(self._render_calls(calls))
+        if printed:
+            sections.append(self._render_plain("output", printed))
+        if value:
+            sections.append(self._render_plain("value", _squash_value(value, self._body_width())))
         if isinstance(error, dict) and error:
-            text.append_text(self._render_error(error, body_width))
-
-        if data.get("output_truncated"):
-            text.append("\n\n")
-            text.append(
-                f"{BODY_INDENT}{GLYPHS['sub_line']} [Output truncated to fit the model's context]",
-                style=Style(color=colors.notice),
+            sections.append(self._render_error(error))
+        if images:
+            sections.append(
+                self._render_note(
+                    f"{images} image{'' if images == 1 else 's'} attached to the result"
+                )
             )
 
-        images = data.get("images")
-        if isinstance(images, int) and images > 0:
-            label = "image" if images == 1 else "images"
-            text.append("\n\n")
-            text.append(
-                f"{BODY_INDENT}{GLYPHS['sub_line']} {images} {label} attached to the result",
-                style=Style(color=colors.dim),
-            )
+        if not sections:
+            return None
+        return Text("\n").join(sections)
 
+    # -- sections ----------------------------------------------------------
+
+    def _section_label(self, label: str) -> Text:
+        """The ``⎿ name`` line every section opens with."""
+        colors = config.ui.colors
+        line = Text()
+        line.append(f"{BODY_INDENT}{GLYPHS['sub_line']} ", style=Style(color=colors.dim))
+        line.append(label, style=Style(color=colors.muted))
+        return line
+
+    def _render_script(self, code: str) -> Text:
+        """The script itself: highlighted, in full, under ``script``.
+
+        Rendered as one block rather than line by line so a triple-quoted
+        string is highlighted as the string it is. The width is paid for in
+        columns *before* rendering, so the returned text already wraps at the
+        right place and every line can carry the same indent.
+        """
+        text = self._section_label("script")
+        text.append("\n")
+        source = format_python_source(code.lstrip("\n"), self._body_width())
+        text.append_text(_indent(source, SECTION_INDENT))
         return text
 
-    def _output_text(self, data: dict) -> str:
-        """Printed lines plus the returned value, as one compact section.
+    def _render_calls(self, calls: list[dict]) -> Text:
+        """The nested tool calls as a checklist: what ran, how long, why not.
 
-        They are one section rather than two because the model reads both in
-        its result text as a single body, and the user asking "what did this
-        script produce?" asks about the whole of it.
-        """
-        parts = [str(item) for item in (data.get("printed") or []) if str(item).strip()]
-        value = data.get("value")
-        if value:
-            parts.append(str(value))
-        return "\n".join(part.rstrip("\n") for part in parts if part.strip())
-
-    def _render_trace(self, calls: list[dict]) -> Text:
-        """The nested tool calls: one line each, most recent last.
-
-        A failure reuses the call's own failure message and every line carries
-        its duration, which is what tells a model which call to avoid next
-        time. Collapsed shows the tail of a long run -- the calls that decided
-        the outcome -- with the earlier ones counted, because forty of them in
-        a scrollback are not.
+        A failure carries its own failure message and kind, which is what tells
+        a model which call to avoid next time. Names are padded and durations
+        right-aligned into a column so a twenty-call run reads as a table
+        rather than a list of lines that happen to end in a number.
         """
         colors = config.ui.colors
-        text = Text()
-        text.append("\n\n")
+        text = self._section_label("calls")
 
-        shown = calls if self._expanded else calls[-CALL_PREVIEW_COUNT:]
-        if len(shown) < len(calls):
-            earlier = len(calls) - len(shown)
-            text.append(f"{BODY_INDENT}... ({earlier} earlier calls, ")
-            text.append("ctrl+o", style=colors.muted)
-            text.append(" to expand)", style=colors.dim)
+        names = [str(call.get("name") or "?") for call in calls]
+        name_width = max(len(name) for name in names)
+        durations = [
+            format_ms(call["duration_ms"])
+            for call in calls
+            if isinstance(call.get("duration_ms"), int | float)
+        ]
+        duration_width = max((len(item) for item in durations), default=0)
 
-        for index, call in enumerate(shown):
-            # Every row sits on its own line; the blank-line separation from the
-            # code above was paid for up front.
-            if index:
-                text.append("\n")
-            text.append(BODY_INDENT)
+        for index, call in enumerate(calls):
+            text.append("\n")
+            text.append(SECTION_INDENT)
             ok = bool(call.get("ok", True))
             text.append(
                 GLYPHS["success"] if ok else GLYPHS["failure"],
                 style=Style(color=colors.success if ok else colors.failed),
             )
-            text.append(" ")
-            text.append(str(call.get("name") or "?"))
-            if not ok and call.get("message"):
-                text.append(f" - {call['message']}", style=Style(color=colors.failed))
-            if not ok and call.get("kind"):
-                text.append(f" ({call['kind']})", style=Style(color=colors.dim))
+            text.append("  ")
+            text.append(names[index].ljust(name_width))
             duration = call.get("duration_ms")
             if isinstance(duration, int | float):
-                text.append(f"  {format_ms(duration)}", style=Style(color=colors.dim))
+                text.append(f"  {format_ms(duration).rjust(duration_width)}", style=colors.dim)
+            if not ok:
+                message = str(call.get("message") or "").strip()
+                kind = str(call.get("kind") or "").strip()
+                detail = " · ".join(part for part in (message, kind) if part)
+                if detail:
+                    text.append(f"   {detail}", style=Style(color=colors.failed))
         return text
 
-    def _render_output(self, output_text: str, body_width: int) -> Text:
-        """The script's output under the sub-line marker, dimmed.
+    def _render_plain(self, label: str, body: str) -> Text:
+        """A text section under its own name, dimmed and indented."""
+        text = self._section_label(label)
+        text.append("\n")
+        text.append_text(
+            _indent(Text(body, style=Style(color=config.ui.colors.dim)), SECTION_INDENT)
+        )
+        return text
 
-        Wrapped long lines stay on one logical line of source: a script that
-        prints one long JSON line is the common case, and clipping on logical
-        lines alone would show a fragment that reads as corruption. Short
-        pretty-printed values are folded onto one line first, because that is
-        what the script meant to say.
-        """
+    def _render_note(self, body: str) -> Text:
+        """A one-line remark that belongs to the run but is not a section."""
         colors = config.ui.colors
         text = Text()
-        text.append("\n\n")
         text.append(f"{BODY_INDENT}{GLYPHS['sub_line']} ", style=Style(color=colors.dim))
-
-        marker = f"{BODY_INDENT}{GLYPHS['sub_line']} "
-        indent = " " * len(marker)
-        shown, hidden = _clip_lines(
-            _squash_value(output_text, body_width - len(indent)),
-            WIDE_OUTPUT_LINES if self._expanded else OUTPUT_LINES,
-        )
-        text.append_text(_prefixed(Text(shown, style=Style(color=colors.muted)), "", indent))
-        if hidden:
-            text.append("\n")
-            text.append(indent)
-            text.append_text(format_expand_hint(hidden))
+        text.append(body, style=Style(color=colors.dim))
         return text
 
-    def _render_error(self, error: dict, body_width: int) -> Text:
-        """The failure half of the run: a rule, the diagnostic, the traceback.
+    def _render_error(self, error: dict) -> Text:
+        """The failure half of the run: the diagnostic, then the traceback.
 
         The traceback is the part the model already reads, and the user is the
         one who decides whether to trust the next script, so it is shown too --
-        clipped until expanded, never dropped.
+        whole, because a traceback cut off mid-frame is not a traceback.
         """
         colors = config.ui.colors
         kind = str(error.get("kind") or "error")
         message = str(error.get("message") or "")
-        head = f"{kind}: {message}" if message else kind
+        head = f"{kind} · {message}" if message else kind
 
-        text = Text()
-        text.append("\n\n")
-        text.append(
-            f"{BODY_INDENT}{'─' * max(8, min(body_width, ERROR_RULE_WIDTH))}\n",
-            style=Style(color=colors.failed),
-        )
-        text.append(f"{BODY_INDENT}{head}", style=Style(color=colors.failed, bold=True))
+        text = self._section_label("error")
+        text.append("\n")
+        text.append(SECTION_INDENT)
+        text.append(head, style=Style(color=colors.failed, bold=True))
 
         stack = str(error.get("stack") or "")
         if stack.strip():
-            shown, hidden = _clip_lines(stack, WIDE_STACK_LINES if self._expanded else STACK_LINES)
-            text.append("\n\n")
-            text.append_text(
-                _prefixed(Text(shown, style=Style(color=colors.dim)), BODY_INDENT, BODY_INDENT)
-            )
-            if hidden:
-                text.append("\n")
-                text.append(BODY_INDENT)
-                text.append_text(format_expand_hint(hidden))
+            text.append("\n")
+            text.append_text(_indent(Text(stack, style=Style(color=colors.dim)), SECTION_INDENT))
         return text
 
-    # -- internals ---------------------------------------------------------
+    # -- payload -----------------------------------------------------------
+
+    def _printed(self, data: dict) -> str:
+        """What the script wrote with ``text()``, one entry per line."""
+        lines = [str(item).rstrip("\n") for item in (data.get("printed") or [])]
+        return "\n".join(line for line in lines if line.strip())
+
+    def _value(self, data: dict) -> str:
+        """The returned value as the tool rendered it for the model.
+
+        Read from ``ui_data`` rather than re-derived, so the block and the model
+        are looking at the same bytes: a value the tool already stringified
+        must not be stringified differently here.
+        """
+        value = data.get("value")
+        return str(value) if value else ""
+
+    def _image_count(self, data: dict) -> int:
+        """How many images the script emitted.
+
+        Named for the count rather than the images themselves because
+        ``ToolBlock._images`` already holds the real image payload the base
+        class renders, and shadowing it would break that.
+        """
+        images = data.get("images")
+        return images if isinstance(images, int) and images > 0 else 0
 
     def _calls(self, data: dict) -> list[dict]:
         calls = data.get("calls")
@@ -346,8 +349,10 @@ class CodemodeToolBlock(ToolBlock):
             return []
         return [call for call in calls if isinstance(call, dict)]
 
-    def _cell_width(self) -> int:
-        """Columns this block may draw in.
+    # -- geometry ----------------------------------------------------------
+
+    def _body_width(self) -> int:
+        """Columns a section's content may draw in.
 
         Re-measured every render rather than cached: the block is mounted once
         and the terminal resizes under it, and a body rendered at the old width
@@ -367,24 +372,34 @@ class CodemodeToolBlock(ToolBlock):
 
         for width in widths:
             if width and width > 0:
-                # The block has a one-column padding on each side.
-                return max(24, width - 2)
+                # The block has a one-column padding on each side, and the
+                # section content pays for its own indent before it wraps.
+                return max(MIN_BODY_WIDTH, width - 2 - len(SECTION_INDENT))
         return 96
 
 
-def _clip_lines(text: str, limit: int) -> tuple[str, int]:
-    """The first ``limit`` lines of ``text`` plus how many were held back."""
-    lines = text.split("\n")
-    if len(lines) <= limit:
-        return text, 0
-    return "\n".join(lines[:limit]), len(lines) - limit
+def _indent(text: Text, indent: str) -> Text:
+    """Prefix every line of ``text`` with ``indent``.
+
+    Rich wraps to the width it was handed, so the indent has to be paid for in
+    columns *before* rendering. Doing it here -- line by line, after the wrap
+    -- keeps the continuation lines aligned under their own content rather than
+    under the section marker.
+    """
+    out = Text()
+    for index, line in enumerate(text.split("\n", allow_blank=True)):
+        if index:
+            out.append("\n")
+        out.append(indent)
+        out.append_text(line)
+    return out
 
 
 def _squash_value(value: str, width: int) -> str:
     """Fold a short pretty-printed value back onto one line.
 
     ``json.dumps(indent=2)`` is what the model reads and is right for anything
-    big, but a five-element list became five lines where one was meant. The
+    big, but a three-element list became three lines where one was meant. The
     pretty form is kept whenever the folded one would not fit, so nothing that
     needs its lines loses them.
     """
@@ -392,20 +407,3 @@ def _squash_value(value: str, width: int) -> str:
     if len(folded) <= width:
         return folded
     return value
-
-
-def _prefixed(text: Text, first: str, rest: str) -> Text:
-    """Prefix ``text``'s first line with ``first`` and the rest with ``rest``.
-
-    Rich wraps a ``Syntax`` render to the width it was given, so the indent has
-    to be paid for in columns *before* rendering -- this puts it back, line by
-    line, with the continuation lines aligned under the body rather than under
-    the marker.
-    """
-    out = Text()
-    for index, line in enumerate(text.split("\n", allow_blank=True)):
-        if index:
-            out.append("\n")
-        out.append(first if index == 0 else rest)
-        out.append_text(line)
-    return out
