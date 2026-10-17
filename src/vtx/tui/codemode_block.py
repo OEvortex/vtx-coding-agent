@@ -22,11 +22,11 @@ Four things hold it together, and each is a deliberate departure from the plain
 receipt other tools get:
 
 **Sections are labelled, not implied.** ``script`` / ``calls`` / ``output`` /
-``value`` / ``error`` are named because a script's output has four distinct
-provenance-free kinds of content in it, and a reader who cannot tell a printed
-line from a returned value is reading noise. The ``⎿`` marker and its two-column
-indent are the same vocabulary every other tool detail uses, so the block sits in
-the scrollback without looking like it came from somewhere else.
+``value`` / ``error`` are named because a script's output mixes four kinds of
+content that look alike and mean different things, and a reader who cannot tell
+a printed line from a returned value is reading noise. The ``⎿`` marker and its
+two-column indent are the same vocabulary every other tool detail uses, so the
+block sits in the scrollback without looking like it came from somewhere else.
 
 **Names and durations line up.** Tool names are padded and durations
 right-aligned into a column, because a call list is a table and a table whose
@@ -51,6 +51,7 @@ from __future__ import annotations
 
 import contextlib
 
+from rich.console import Console
 from rich.style import Style
 from rich.text import Text
 from textual import events
@@ -72,6 +73,11 @@ SECTION_INDENT = "  " + "  "
 #: Smallest body the block will lay out for. A 20-column terminal is not a real
 #: target, but the arithmetic must not go negative on the way there.
 MIN_BODY_WIDTH = 24
+
+#: Asked where a line breaks, never drawn through. Shared across renders
+#: because it holds no state and building one per render would show up in the
+#: time a long script takes to paint.
+_WRAP_CONSOLE = Console(force_terminal=True, no_color=True, color_system=None)
 
 
 class CodemodeToolBlock(ToolBlock):
@@ -224,15 +230,15 @@ class CodemodeToolBlock(ToolBlock):
     def _render_script(self, code: str) -> Text:
         """The script itself: highlighted, in full, under ``script``.
 
-        Rendered as one block rather than line by line so a triple-quoted
-        string is highlighted as the string it is. The width is paid for in
-        columns *before* rendering, so the returned text already wraps at the
-        right place and every line can carry the same indent.
+        Rendered as one block rather than line by line so a triple-quoted string
+        is highlighted as the string it is, and wrapped to the content column
+        rather than the block's, so a long line folds in the same place on
+        every repaint instead of drifting with the terminal.
         """
         text = self._section_label("script")
         text.append("\n")
         source = format_python_source(code.lstrip("\n"), self._body_width())
-        text.append_text(_indent(source, SECTION_INDENT))
+        text.append_text(self._section_body(source))
         return text
 
     def _render_calls(self, calls: list[dict]) -> Text:
@@ -242,6 +248,16 @@ class CodemodeToolBlock(ToolBlock):
         a model which call to avoid next time. Names are padded and durations
         right-aligned into a column so a twenty-call run reads as a table
         rather than a list of lines that happen to end in a number.
+
+        The columns come from this run's own widest name and widest duration,
+        so the table is as narrow as its content rather than as the widest name
+        the tool has ever been called under.
+
+        A failure's reason goes inline when the table leaves it room, and drops
+        to its own row underneath when it does not. Hanging it off a reason
+        column wider than the terminal would push the wrap past the right edge,
+        and a row that runs off the edge is the one row the reader most needs
+        to be able to read.
         """
         colors = config.ui.colors
         text = self._section_label("calls")
@@ -254,6 +270,16 @@ class CodemodeToolBlock(ToolBlock):
             if isinstance(call.get("duration_ms"), int | float)
         ]
         duration_width = max((len(item) for item in durations), default=0)
+        # Column a failure's reason starts at, or wraps back to: the indent, the
+        # glyph, the gap after it, the name column, and the gap past the
+        # duration column.
+        reason_column = len(SECTION_INDENT) + 3 + name_width + 2 + duration_width + 3
+        # Where a dropped-down reason hangs instead: under the name it belongs
+        # to, so it still reads as that call's row.
+        reason_gap = len(SECTION_INDENT) + 3
+        # The narrowest a reason may be and still be readable as a sentence.
+        min_reason_width = 24
+        inline_reason = self._body_width() - reason_column >= min_reason_width
 
         for index, call in enumerate(calls):
             text.append("\n")
@@ -272,17 +298,25 @@ class CodemodeToolBlock(ToolBlock):
                 message = str(call.get("message") or "").strip()
                 kind = str(call.get("kind") or "").strip()
                 detail = " · ".join(part for part in (message, kind) if part)
-                if detail:
-                    text.append(f"   {detail}", style=Style(color=colors.failed))
+                if not detail:
+                    continue
+                reason = _wrap(
+                    Text(detail, style=Style(color=colors.failed)),
+                    self._body_width() - (reason_column if inline_reason else reason_gap),
+                )
+                if inline_reason:
+                    text.append("   ")
+                    text.append_text(_hang(reason, reason_column))
+                else:
+                    text.append("\n")
+                    text.append_text(_indent(reason, " " * reason_gap))
         return text
 
     def _render_plain(self, label: str, body: str) -> Text:
         """A text section under its own name, dimmed and indented."""
         text = self._section_label(label)
         text.append("\n")
-        text.append_text(
-            _indent(Text(body, style=Style(color=config.ui.colors.dim)), SECTION_INDENT)
-        )
+        text.append_text(self._section_body(Text(body, style=Style(color=config.ui.colors.dim))))
         return text
 
     def _render_note(self, body: str) -> Text:
@@ -307,14 +341,26 @@ class CodemodeToolBlock(ToolBlock):
 
         text = self._section_label("error")
         text.append("\n")
-        text.append(SECTION_INDENT)
-        text.append(head, style=Style(color=colors.failed, bold=True))
+        text.append_text(
+            self._section_body(Text(head, style=Style(color=colors.failed, bold=True)))
+        )
 
         stack = str(error.get("stack") or "")
         if stack.strip():
             text.append("\n")
-            text.append_text(_indent(Text(stack, style=Style(color=colors.dim)), SECTION_INDENT))
+            text.append_text(self._section_body(Text(stack, style=Style(color=colors.dim))))
         return text
+
+    def _section_body(self, text: Text) -> Text:
+        """Wrap ``text`` to the content column and indent every resulting line.
+
+        The wrap is done here rather than left to the ``Label`` because the
+        label only knows the block's width, not that this text is indented
+        under a section label: a line left to the label wraps back to the
+        block's own margin and the section loses its shape exactly where it is
+        hardest to read.
+        """
+        return _indent(_wrap(text, self._body_width()), SECTION_INDENT)
 
     # -- payload -----------------------------------------------------------
 
@@ -357,40 +403,90 @@ class CodemodeToolBlock(ToolBlock):
         Re-measured every render rather than cached: the block is mounted once
         and the terminal resizes under it, and a body rendered at the old width
         keeps its stale wrap until something else forces a repaint.
+
+        The label is the authority, because it is the thing that draws and its
+        own left padding is the ``#tool-output`` indent from the stylesheet --
+        already taken out of its reported width, and not something to subtract
+        again. The block's width is the fallback for an unmounted block, and it
+        is the wider of the two, so the block's own padding comes off there.
         """
+        label_width = 0
+        # Raises in a bare unit test, where the block is neither mounted nor in
+        # an app; silence beats a crashed render.
+        with contextlib.suppress(Exception):
+            label_width = self.query_one("#tool-output", Label).size.width
+
         widths = [
-            getattr(self.size, "width", 0),
+            label_width,
+            getattr(self.size, "width", 0) - 2,
             getattr(self.content_size, "width", 0),
             getattr(self.container_size, "width", 0),
         ]
-        # Both of these raise in a bare unit test, where the block is neither
-        # mounted nor in an app; silence beats a crashed render.
         with contextlib.suppress(Exception):
-            widths.append(self.query_one("#tool-output", Label).size.width)
-        with contextlib.suppress(Exception):
-            widths.append(self.app.size.width)
+            widths.append(self.app.size.width - 2)
 
         for width in widths:
             if width and width > 0:
-                # The block has a one-column padding on each side, and the
-                # section content pays for its own indent before it wraps.
-                return max(MIN_BODY_WIDTH, width - 2 - len(SECTION_INDENT))
+                return max(MIN_BODY_WIDTH, width - len(SECTION_INDENT))
         return 96
+
+
+def _wrap(text: Text, width: int) -> Text:
+    """Word-wrap ``text`` at ``width``, preserving every line break it already has.
+
+    A ``Label`` wraps to its own width, but it cannot know that this text has
+    been indented under a section label and so has less room than the block
+    does: left alone, a long line wraps back to the block's margin and the
+    section loses its shape precisely where the text is hardest to read.
+    Wrapping here is what lets the indent be the same on every physical line.
+
+    Word boundaries are Rich's, because Rich is what will draw it and a
+    different rule would move the break somewhere else on the next repaint.
+    """
+    out = Text()
+    for index, line in enumerate(text.split("\n", allow_blank=True)):
+        if index:
+            out.append("\n")
+        if not line.plain:
+            out.append("")
+            continue
+        wrapped = _WRAP_CONSOLE.render_lines(line, _WRAP_CONSOLE.options.update_width(width))
+        for position, segment in enumerate(wrapped):
+            if position:
+                out.append("\n")
+            # ``render_lines`` pads to the full width; that padding is not
+            # content, and leaving it in would be re-wrapped on the next pass.
+            out.append_text(Text("".join(part.text for part in segment).rstrip()))
+    return out
 
 
 def _indent(text: Text, indent: str) -> Text:
     """Prefix every line of ``text`` with ``indent``.
 
-    Rich wraps to the width it was handed, so the indent has to be paid for in
-    columns *before* rendering. Doing it here -- line by line, after the wrap
-    -- keeps the continuation lines aligned under their own content rather than
-    under the section marker.
+    Applied after the wrap, so a continuation line lands under its own content
+    rather than under the section marker its first line hangs from.
     """
     out = Text()
     for index, line in enumerate(text.split("\n", allow_blank=True)):
         if index:
             out.append("\n")
         out.append(indent)
+        out.append_text(line)
+    return out
+
+
+def _hang(text: Text, column: int) -> Text:
+    """Indent every line of ``text`` to ``column``, except the first.
+
+    For a field that follows a row already on screen -- a failure's reason
+    after its name and duration -- where the wrapped remainder belongs under
+    the field it continues, not under the row it started on.
+    """
+    out = Text()
+    for index, line in enumerate(text.split("\n", allow_blank=True)):
+        if index:
+            out.append("\n")
+            out.append(" " * column)
         out.append_text(line)
     return out
 

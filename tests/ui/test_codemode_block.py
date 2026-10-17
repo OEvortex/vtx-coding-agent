@@ -231,8 +231,20 @@ class TestFinishedCell:
                 block,
                 ui_data=_payload(
                     calls=[
-                        {"name": "a", "ok": True, "kind": None, "message": None, "duration_ms": 40},
-                        {"name": "b", "ok": True, "kind": None, "message": None, "duration_ms": 4000},
+                        {
+                            "name": "a",
+                            "ok": True,
+                            "kind": None,
+                            "message": None,
+                            "duration_ms": 40,
+                        },
+                        {
+                            "name": "b",
+                            "ok": True,
+                            "kind": None,
+                            "message": None,
+                            "duration_ms": 4000,
+                        },
                     ]
                 ),
             )
@@ -290,6 +302,97 @@ class TestFailedCell:
             assert "line 0" in body
             assert "line 29" in body
             assert "hidden" not in body
+
+
+class TestNarrowTerminals:
+    """A block that wraps correctly is the one that stays readable.
+
+    The cap removal is what makes this matter: previously a long line was
+    clipped rather than wrapped, so nothing in this block ever had to survive
+    a narrow terminal.
+    """
+
+    @pytest.mark.asyncio
+    async def test_no_rendered_line_exceeds_the_block(self):
+        long_word = "x" * 300
+        long_out = "scanned a great many files and found " + long_word
+        async with _TestApp().run_test(size=(70, 60)) as pilot:
+            block = await _start(pilot, CodemodeTool())
+            _finish(
+                pilot,
+                block,
+                ui_data=_payload(
+                    code="results = " + long_word,
+                    printed=[long_out],
+                    value=long_out,
+                    calls=[
+                        {
+                            "name": "an_extremely_long_tool_name_here",
+                            "ok": False,
+                            "kind": "tool_failure",
+                            "message": (
+                                "a failure message that is quite long indeed and keeps going"
+                            ),
+                            "duration_ms": 123,
+                        }
+                    ],
+                    error={
+                        "kind": "script",
+                        "message": "RuntimeError: " + "why " * 40,
+                        "stack": "",
+                    },
+                ),
+            )
+            await pilot.pause()
+            await pilot.pause()
+            width = block.query_one("#tool-output").size.width
+            assert width, "the block must be laid out before its width means anything"
+            for line in _body(block).split("\n"):
+                assert len(line) <= width, f"line overflows {width} columns: {line!r}"
+
+    @pytest.mark.asyncio
+    async def test_a_wrapped_line_keeps_its_section_indent(self):
+        async with _TestApp().run_test(size=(70, 60)) as pilot:
+            block = await _start(pilot, CodemodeTool())
+            _finish(
+                pilot, block, ui_data=_payload(printed=[" ".join(f"word{i}" for i in range(40))])
+            )
+            await pilot.pause()
+            await pilot.pause()
+            output = _body(block).split("⎿ output")[1].split("⎿ value")[0]
+            lines = [line for line in output.split("\n") if line.strip()]
+            assert len(lines) > 1, "this output should have had to wrap"
+            # The wrapped remainder hangs under its own content, not back at the
+            # block's margin where a bare Label would have put it.
+            assert all(line.startswith(SECTION_INDENT) for line in lines)
+
+    @pytest.mark.asyncio
+    async def test_a_failure_reason_hangs_under_its_own_row(self):
+        async with _TestApp().run_test(size=(70, 60)) as pilot:
+            block = await _start(pilot, CodemodeTool())
+            _finish(
+                pilot,
+                block,
+                ui_data=_payload(
+                    calls=[
+                        {
+                            "name": "read",
+                            "ok": False,
+                            "kind": "tool_failure",
+                            "message": " ".join(f"reason{i}" for i in range(30)),
+                            "duration_ms": 10,
+                        }
+                    ]
+                ),
+            )
+            await pilot.pause()
+            await pilot.pause()
+            rows = [
+                line for line in _body(block).split("\n") if "read" in line or "reason" in line
+            ]
+            assert len(rows) > 1, "this reason should have had to wrap"
+            # Every row is indented at least as far as the glyph it belongs to.
+            assert all(line.startswith(SECTION_INDENT) for line in rows)
 
 
 class TestAttachments:

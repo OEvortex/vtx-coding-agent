@@ -4,6 +4,15 @@ All notable changes to Vtx are documented in this file. The format is based on
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project
 adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Changed
+- **The codemode cell is a labelled run, and it clips nothing** — `CodemodeToolBlock` in `src/vtx/tui/codemode_block.py` lays the body out as five named sections — `script`, `calls`, `output`, `value`, `error` — each opened with the shared `⎿` marker at the same column every other tool detail uses. Printed output and the returned value are now separate sections: they are different claims about the run, and the previous single section merged them into one line where a printed message and a returned value were indistinguishable. `calls` is a table, with names padded and durations right-aligned into a column computed from that run's own widest name and widest duration rather than from any global maximum, so the table is as narrow as its content. Every section wraps at its own content width (`_wrap` asks Rich where a line breaks, then `_indent` applies the indent) rather than at the block's, because a `Label` only knows the block's width and a line left to it wraps back to the block's margin — the section loses its shape exactly where the text is hardest to read. A failure's reason hangs off its own row when the table leaves it room and drops to a row underneath when it does not, rather than pushing the wrap past the right edge.
+
+  Every cap is gone: `CODE_LINES`, `OUTPUT_LINES`, `CALL_PREVIEW_COUNT`, `STACK_LINES`, their `WIDE_*` expanded variants, the `... (N lines hidden • ctrl+o to expand)` hints, and the `⎿ [Output truncated to fit the model's context]` notice. `ctrl+o` therefore has nothing left to expand for this tool. A script that printed four hundred lines printed them because the model asked for them, and the caps hid the tail — which is where the line that decided the outcome lives, with no second chance to ask for it. What bounds a codemode cell is the sandbox's own `max_output_tokens` (`src/vtx/codemode/README.md:131`), and the model-facing result text still says so, where the model is the one who has to know its own context was shortened. `output_truncated` is gone from `_ui_payload` for the same reason: the block renders the whole run, so a flag could only ever be a notice about a cap it no longer applies.
+
+- **Exported codemode runs mirror the terminal cell, and stop clipping** — `_codemode_parts` in `src/vtx/tui/export.py` now returns the same five parts the terminal draws (`code` / `trace` / `output` / `value` / `error` / `images`), `HtmlBuilder.codemode_block` emits each under a `.codemode-label` heading, and the per-call trace became a list of rows rather than one `·`-joined line capped at eight calls plus `+N more`. The 24-line code cap and the 5-line output and 12-line stack caps are gone. An exported transcript is a record of what ran, and a hidden tail is not a record.
+
 ## [1.3.0] - 2026-10-14
 
 ### Added
