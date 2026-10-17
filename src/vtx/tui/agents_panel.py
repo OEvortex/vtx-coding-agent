@@ -31,8 +31,7 @@ Three rules earn their keep here:
   report about them, and a screen full of "queued" would crowd out the agents
   actually working.
 
-Rendering is a pure function of the registry, so the same rows serve the panel,
-the goal beacon, and tests.
+Rendering is a pure function of the registry, so the same rows serve the panel and tests.
 """
 
 from __future__ import annotations
@@ -79,7 +78,6 @@ TICK_SECONDS = 0.12
 LINGER_TICK_SECONDS = 0.5
 
 #: The grammar every strip above the editor is built from. These are public
-#: because the goal beacon is drawn from the same vocabulary: one `● Header`,
 #: one `│ ├─` tree, bold labels, dim activity, muted counters. A second strip
 #: with its own shape directly below the first reads as two unrelated widgets
 #: rather than as one panel.
@@ -93,7 +91,7 @@ def strip_header(label: str) -> Text:
     """`● Agents` — the accent dot and bold word that head a pinned strip.
 
     The dot carries the accent, the word carries the weight. A shaded chip
-    behind the word (` vtx-goal `) reads heavier and pulls the eye to the
+    behind the word reads heavier and pulls the eye to the
     least important part of the row: the strip's own name.
     """
     colors = config.ui.colors

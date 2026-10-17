@@ -7,7 +7,7 @@ Everything here is wiring and choice. The engine it drives - the loop, the sessi
 ```
 vtx.coding_agent          CLI, headless runner, built-in tools, skills
    |- vtx.tui             the Textual interface (app shell + primitives)
-   |- vtx.agent           harness (loop, sessions, tools, goals, hooks)
+   |- vtx.agent           harness (loop, sessions, tools, hooks)
    |- vtx.plugins         plugin kernel; extensions are rows in it
    |- vtx.ai              providers and the model catalog
    |- vtx.core            config, permissions, events
@@ -69,11 +69,11 @@ Headless cannot show approval prompts, so it forces auto-approval for the run by
 
 ## Built-in tools
 
-`tools/__init__.py` instantiates the registry at import time. `all_tools` is `read`, `edit`, `write`, `bash`, `find`, `grep`, `skill`, `web`, `web_search`, `ask_user`, `delegate_subagent`, `goal`. `DEFAULT_TOOLS` is that list minus `grep`, which is registered but not enabled by default. `PARENT_ONLY_TOOLS` is `frozenset({"delegate_subagent", "goal"})` - those two are not offered to a sub-agent.
+`tools/__init__.py` instantiates the registry at import time. `all_tools` is `read`, `edit`, `write`, `bash`, `find`, `grep`, `skill`, `web`, `web_search`, `ask_user`, `delegate_subagent`. `DEFAULT_TOOLS` is that list minus `grep`, which is registered but not enabled by default. `PARENT_ONLY_TOOLS` is `frozenset({"delegate_subagent"})` - not offered to a sub-agent.
 
 Every tool is passed to `vtx.agent.tools.register_tool` with `is_default` from `DEFAULT_TOOLS` and `parent_only` from `PARENT_ONLY_TOOLS`.
 
-The seven filesystem tools are local to this package: `ReadTool`, `EditTool`, `WriteTool`, `BashTool`, `FindTool`, `GrepTool`, `SkillTool`. `WebTool`, `WebSearchTool`, `AskUserTool`, `TaskTool`, and `GoalTool` come from `vtx.agent.tools`.
+The seven filesystem tools are local to this package: `ReadTool`, `EditTool`, `WriteTool`, `BashTool`, `FindTool`, `GrepTool`, `SkillTool`. `WebTool`, `WebSearchTool`, `AskUserTool`, and `TaskTool` come from `vtx.agent.tools`.
 
 The registry API is `get_tools(default_names)`, `get_tool(name)`, `get_tools_with_extensions(default_names, extension_tools=None)`, `tools_by_name`, and `get_tool_definitions`. `get_tools_with_extensions` replaces by name match, so an extension can override a built-in. The background-task re-exports (`BackgroundTaskManager`, `BackgroundTaskRecord`, `get_manager`, `set_manager`) are here too.
 
@@ -81,7 +81,7 @@ The registry API is `get_tools(default_names)`, `get_tool(name)`, `get_tools_wit
 
 `agents/` loads switchable agents from `.vtx/agent/<name>.py`: a bundle of system-prompt instructions, model/provider/thinking/max-turns overrides, a tool allow/deny list, agent-scoped tools and slash commands, and agent-scoped extensions. There are no built-in profiles. `load_all_agents(cwd=..., configured=...)` returns `(loaded, errors)` and collects errors rather than raising, so one bad agent file does not block the rest; `vtx --list-agents` prints that pair. An agent's `extensions` are mounted as rows of the running composition, scoped to that agent.
 
-`builtin_skills/` is registered into the harness by `register_skills_package("vtx.coding_agent")` at package import. It ships `cloud/google-colab`, `cloud/modal`, `code-review/review`, `general/github`, `meta/goal`, `meta/skill-builder`, `meta/vtx-self-extend`, and `setup/init`. `/goal` is one of these skills rather than a built-in command, which is why it is absent from the app's command router.
+`builtin_skills/` is registered into the harness by `register_skills_package("vtx.coding_agent")` at package import. It ships `cloud/google-colab`, `cloud/modal`, `code-review/review`, `general/github`, `meta/skill-builder`, `meta/vtx-self-extend`, and `setup/init`.
 
 `meta/vtx-self-extend` is the harness's own self-extension skill: it tells the model which surface to reach for when it needs a capability it does not have (a skill, a plugin row, or an extension), how a registered tool actually reaches the provider, and which paths are forbidden. It is bundled so that any agent composed on the vtx harness - the coding agent, the SDK runner, a sub-agent - inherits it without the project having to ship a copy.
 
@@ -96,8 +96,6 @@ See `vtx/tui/README.md`. `vtx.tui.__all__` exports `Vtx`, `run_tui`, `ChatLog`, 
 - `chat.py` is `ChatLog`, the scrollback that mounts the `vtx.tui.blocks` widgets; `session_ui.py` renders persisted sessions into it.
 - `widgets.py` has `InfoBar`, `StatusLine`, `QueueDisplay`, `FileChangesModal`, `format_path`, and `get_git_branch`; `status_lines.py` has the context-aware status-line text for model and agent lifecycle states, per-tool activity, and per-tool error lines.
 - `tree.py` is `TreeSelector`, the session-tree navigator. `queue_ui.py` holds the pending and steer message queue state and its rendering. `agent_runner.py` drives agent runs, forwards agent events to the chat UI, and handles the `!` / `!!` shell commands.
-- `agents_panel.py` is `AgentsPanel`, the pinned strip listing every sub-agent in flight; `goal_agents.py` is the live sub-agent registry fed by the `delegate_subagent` progress callback, keyed by dispatch `tool_call_id`.
-- `goal_ui.py` has `GoalWidget` (the above-editor beacon) and `GoalDashboardScreen` (the `ctrl+shift+g` overlay), sharing one presentation model.
 - `completion_ui.py` handles the completion-list and selection-mode picker messages. Its `@on` handlers are re-bound in the `Vtx` class body, because Textual's metaclass only scans the namespace of classes it creates.
 - `extension_ui.py` is `TextualExtensionUI`, implementing `ExtensionUIContext` over the app: confirm / select / input dialogs, chat notifications, and a persistent status/widget footer bar.
 
@@ -112,7 +110,6 @@ From the `BINDINGS` table on `Vtx`:
 - `left` / `right` tree page up / down
 - `ctrl+t` cycle thinking level, `ctrl+shift+t` toggle thinking
 - `ctrl+o` toggle tool output
-- `ctrl+shift+g` toggle the goal dashboard
 - `shift+tab` cycle handoff agent
 - `alt+ctrl+p` cycle permission mode, `alt+ctrl+g` cycle tool group
 
@@ -120,13 +117,13 @@ The editor's own bindings live on `InputBox` in `vtx.tui.input`.
 
 ### Slash commands
 
-`commands/` splits handling by domain into `CommandsMixin`: `settings.py`, `models.py`, `sessions.py`, `auth.py`, `providers.py`, `agents.py`, `switch.py`, `update.py`, `reload.py`, `mcp.py`, and `goals.py`.
+`commands/` splits handling by domain into `CommandsMixin`: `settings.py`, `models.py`, `sessions.py`, `auth.py`, `providers.py`, `agents.py`, `switch.py`, `update.py`, `reload.py`, and `mcp.py`.
 
-Routing is two-stage. `Vtx` first tries `CommandsMixin._handle_command`, so a built-in always wins a name collision with a skill; anything the router does not know falls through to the skill system, which is how `/goal` works. Extension commands — whatever registered on `ctx.commands` — get the last swing, so an extension can shadow a built-in - and a handler that raises is reported in the chat log rather than crashing the app.
+Routing is two-stage. `Vtx` first tries `CommandsMixin._handle_command`, so a built-in always wins a name collision with a skill; anything the router does not know falls through to the skill system, Extension commands — whatever registered on `ctx.commands` — get the last swing, so an extension can shadow a built-in - and a handler that raises is reported in the chat log rather than crashing the app.
 
 Routable commands are `help`, `quit`/`exit`/`q`, `clear`, `model`, `provider`, `new`, `settings`, `themes`, `permissions`, `thinking`, `effort`, `notifications`, `ponytail`, `handoff`, `resume`, `tree`, `undo`, `redo`, `session`, `login`, `logout`, `export`, `copy`, `compact`, `recap`, `agent`, `switch`, `update`, `reload`, and `mcp`.
 
-`DEFAULT_COMMANDS` in `vtx.tui.autocomplete` is the autocomplete list, and it is deliberately **not** the same set. `/effort` is a routable alias of `/thinking` - "effort" is what the wire calls it - and it is not advertised in autocomplete, because `/settings` is the discoverable entry point for the thinking and permissions sub-commands. `/goal` and `/switch` are handled but likewise not advertised.
+`DEFAULT_COMMANDS` in `vtx.tui.autocomplete` is the autocomplete list, and it is deliberately **not** the same set. `/effort` is a routable alias of `/thinking` - "effort" is what the wire calls it - and it is not advertised in autocomplete, because `/settings` is the discoverable entry point for the thinking and permissions sub-commands. `/switch` is handled but likewise not advertised.
 
 ### Thinking levels
 

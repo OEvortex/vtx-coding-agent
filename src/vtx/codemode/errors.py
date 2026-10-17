@@ -9,7 +9,7 @@ failed).
 
 **Tool-level** kinds describe one admitted tool call: ``unknown_tool``,
 ``invalid_input``, ``tool_failure``, ``invalid_output``, ``host_unavailable``.
-A cell that says ``Tool not found: goal`` and one that says ``goal
+A cell that says ``Tool not found: grep`` and one that says ``grep
 refused: not your session`` need three different responses — try a different
 name, change the arguments, or stop and report. Collapsing them into one
 traceback loses the only information the model needs to choose.

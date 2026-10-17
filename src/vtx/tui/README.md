@@ -74,7 +74,7 @@ Typing `/mod` puts `/model` in the overlay and `enter` submits it. `InputBox` is
 - `FloatingList` and `ListItem(value, label, description, prefix, prefix_style)` are the overlay. It is hidden until `show(items)` and paginates with an arrow indicator and a position counter; `show(items, searchable=True)` adds a second filter layer over the full item set. The parent owns `show`/`hide`, calls `move_up()`/`move_down()`, and reads `selected_item`. `hide()` clears the items, so read the selection before hiding it.
 - `PathComplete` is the tab-completion engine: tilde expansion, a directory-listing cache (`clear_cache`, `invalidate`), and a longest-common-prefix replacement when several paths match. `extract_path_fragment(text)` and `get_base_path(fragment)` are static helpers.
 - `PromptHistory` is append-only, persisted to `~/.vtx/prompt-history.jsonl`, capped at `MAX_HISTORY_ENTRIES` (50). `append`, `navigate`, `is_browsing` are the API.
-- `SelectionMode` is a `StrEnum` naming every picker the app can be in (session, model, theme, login, permissions, thinking, settings, tree, provider, and the four goal modes). It is the shared vocabulary between the app and its overlays.
+- `SelectionMode` is a `StrEnum` naming every picker the app can be in (session, model, theme, login, permissions, thinking, settings, tree, provider). It is the shared vocabulary between the app and its overlays.
 
 ## Rendering
 
@@ -100,8 +100,8 @@ Everything above is primitives. The rest composes them into the coding agent's i
 - The app is split into mixins so each concern owns its own state: `agent_runner.AgentRunnerMixin` (streaming a turn, tool dispatch, approval, background wakeups), `session_ui.SessionUIMixin` (new/clear/resume/compact), `startup.StartupMixin` (tool install, update check, launch warnings), `recap.RecapMixin` (idle session recap), `completion_ui.CompletionUIMixin` (wiring `InputBox` providers to the overlay).
 - `chat.ChatLog` is the scrollback pane that appends blocks and tracks streaming state.
 - `widgets` holds `InfoBar` (model, tokens/context meter, branch, permission mode, file changes), `StatusLine` (spinner, witty line, exit hints), `QueueDisplay`, and `FileChangesModal`.
-- `tree.TreeSelector` is the `/tree` session browser; `agents_panel.AgentsPanel` is the pinned per-sub-agent panel; `goal_ui` is the goal dashboard and beacon.
-- `commands/` is the slash-command registry: `base.CommandSupport` is the duck-typed mixin base, and `CommandsMixin` combines `settings`, `models`, `sessions`, `auth`, `providers`, `agents`, `switch`, `update`, `reload`, `mcp`, and `goals`. Each module is one `CommandSupport` subclass.
+- `tree.TreeSelector` is the `/tree` session browser; `agents_panel.AgentsPanel` is the pinned per-sub-agent panel.
+- `commands/` is the slash-command registry: `base.CommandSupport` is the duck-typed mixin base, and `CommandsMixin` combines `settings`, `models`, `sessions`, `auth`, `providers`, `agents`, `switch`, `update`, `reload`, and `mcp`. Each module is one `CommandSupport` subclass.
 - `app_protocol.Vtx` is the Protocol the mixins are typed against; depend on it, not the concrete App, to write your own.
 - `export.export_session_html(path)` renders a session JSONL to a standalone HTML transcript.
 - `extension_ui.TextualExtensionUI` is the modal screens extensions get to declare their own UI.

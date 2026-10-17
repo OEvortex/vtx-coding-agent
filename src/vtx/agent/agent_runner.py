@@ -1,7 +1,7 @@
 """Provider-agnostic single-turn execution engine.
 
 A thin, transport-free function that runs one LLM turn and yields its events.
-The product/transport loop in :mod:`vtx.loop` owns sessions, UI events, goals
+The product/transport loop in :mod:`vtx.loop` owns sessions, UI events,
 and persistence; this module owns only the turn itself.
 
 Today this delegates to :func:`vtx.turn.run_single_turn` so behavior is

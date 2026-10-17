@@ -1,6 +1,6 @@
 # `vtx.agent`
 
-The product-neutral agent harness behind vtx. It owns the turn loop, the composition root, the `BaseTool` contract, prompt and context assembly, sessions, sub-agent dispatch, hooks, goals, and a programmatic SDK. It never imports `vtx.coding_agent` or `vtx.tui` at module level, so both the TUI and the headless runner drive the same `ConversationRuntime` without the harness depending on either. This package used to be nested at `vtx.ai.agent`, which made `vtx.ai` a 116-module grab bag holding the whole runtime; it is now a top-level sibling of `vtx.ai`, which now contains only provider code.
+The product-neutral agent harness behind vtx. It owns the turn loop, the composition root, the `BaseTool` contract, prompt and context assembly, sessions, sub-agent dispatch, hooks, and a programmatic SDK. It never imports `vtx.coding_agent` or `vtx.tui` at module level, so both the TUI and the headless runner drive the same `ConversationRuntime` without the harness depending on either. This package used to be nested at `vtx.ai.agent`, which made `vtx.ai` a 116-module grab bag holding the whole runtime; it is now a top-level sibling of `vtx.ai`, which now contains only provider code.
 
 ## Usage
 
@@ -119,13 +119,13 @@ Three modules, in order:
 
 `tools/base.py` (`BaseTool`) is the contract; `tools/__init__.py` is the global registry (`register_tool`, `register_tools`, `unregister_tool`, `get_tool`, `get_all_tools`, `get_default_tools`, `get_parent_only_tools`, `get_tool_definitions`) plus the JSON-schema slimming that keeps LLM tool definitions small. `tools/schema.py` converts JSON schema to Pydantic for argument validation.
 
-The harness-native tools live here: `ask_user`, `delegate_subagent`, `web`, `goal`, `codemode`, `tool_search`. **The concrete filesystem tools do not.** `bash`, `edit`, `read`, `write`, `find`, `grep` and `skill` live in `vtx/coding_agent/tools/` and register themselves into the registry at import time, which is why a process that imports the coding agent sees a wider default tool set than a bare `import vtx.agent.tools`.
+The harness-native tools live here: `ask_user`, `delegate_subagent`, `web`, `codemode`, `tool_search`. **The concrete filesystem tools do not.** `bash`, `edit`, `read`, `write`, `find`, `grep` and `skill` live in `vtx/coding_agent/tools/` and register themselves into the registry at import time, which is why a process that imports the coding agent sees a wider default tool set than a bare `import vtx.agent.tools`.
 
-`get_parent_only_tools()` returns `{"ask_user", "goal", "delegate_subagent"}`. Sub-agents inherit the parent's tool surface minus these, so a sub-agent cannot recursively spawn one.
+`get_parent_only_tools()` returns `{"ask_user", "delegate_subagent"}`. Sub-agents inherit the parent's tool surface minus these, so a sub-agent cannot recursively spawn one.
 
 ## Sub-agents
 
-`delegate_subagent` (`tools/task.py`, class `TaskTool`) is the only dispatch path. It was renamed from `task` because that name collided with the goal system's task list - a model told to "check the task" could mean the todo list or the dispatcher.
+`delegate_subagent` (`tools/task.py`, class `TaskTool`) is the only dispatch path. It was renamed from `task` to avoid ambiguity with the todo list - a model told to "check the task" could mean the todo list or the dispatcher.
 
 There are **no built-in sub-agent presets**. `subagent_type` resolves against user-defined agents in `.vtx/agent/` and `~/.vtx/agent/`; an empty or unknown name runs a default sub-agent with the parent's tool surface minus the parent-only tools, capped at `DEFAULT_MAX_TURNS = 200`. Results are truncated to `MAX_RESULT_CHARS = 32_000`, and transcripts are shown up to `MAX_TRANSCRIPT_LINES = 200` with a "... (n more)" tail.
 
@@ -151,63 +151,3 @@ That hook replaced three call sites that re-imported `vtx.agent.tools.task` look
 
 Sub-agents auto-approve their own approval prompts and answer `ask_user` with an empty response. They have no way to reach the user's terminal.
 
-## Goals
-
-Goals are **session-scoped**. `GoalService` (`goal/service.py`) is bound to one vtx session, so a goal created by session A is invisible to every other instance working the same project. Parallel sessions never fight over focus or mutate each other's work.
-
-- Storage is markdown goal files plus an append-only JSONL ledger under `.vtx/goals/` (`storage.py`). `GoalService` is the sole mutation boundary and mutates clones, so a failed write commits nothing.
-- Each record carries its owning `session_id`. Ownership is backed by a liveness lease under `.vtx/goals/leases/<session_id>.json`, renewed on every `pool()` read with a 120-second TTL. `claimable()` excludes goals whose owner still holds a lease, so **a running instance never offers another instance's goal away**.
-- Goals left by a dead session surface as orphans. The `goal` tool exposes `list_orphans` and `claim`, and the TUI announces claimable goals at startup without claiming or focusing anything.
-- Before archiving, `goal/auditor.py` dispatches an independent read-only sub-agent to re-check the objective, the task evidence and the verification contract against the real workspace, ending in `<approved/>` or `<disapproved/>`.
-
-One tool with an `action` parameter covers the lifecycle:
-
-```text
-goal(action="create",      objective=..., mode=..., verification=..., token_budget=...)
-goal(action="get")
-goal(action="update",      status=..., reason=..., completion_summary=..., ...)
-goal(action="set_tasks",   tasks=[{title, id?, parent_id?}, ...])
-goal(action="update_task", task_id=..., task_status=..., evidence=..., ...)
-goal(action="list_orphans")
-goal(action="claim",       goal_id=...)
-```
-
-All actions operate on the focused goal. Focus is user-owned; no tool can set it.
-
-## Hooks
-
-`hooks/` is the declarative and in-process hook surface. `.vtx/hooks.yml` is parsed by `loader.py` and `registry.py` (`HookConfig`, `HookResult`, `HookSnapshot`) against the 11 `HOOK_EVENTS`; `agent_hook.py` declares the in-process `AgentHook` protocol with `AgentHookContext` and `AgentRunHookContext`; `runtime.py` builds the context a handler receives; `bridge.py` maps composition events onto hook events and is what the TUI and the headless runner still call. `CompositeHook` fans one call out to several hooks.
-
-Loading `hooks.yml` is itself a plugin row (`hooks`, `vtx/plugins/builtins/hooks.py`), so a profile can disable or replace it like any other row.
-
-## Extensions are not here
-
-The extension system is `vtx.plugins`, not this package. `vtx/plugins/extensions.py` discovers `.vtx/extensions/*.py` and appends one `extension:<stem>` row per file to the profile's list; `vtx/plugins/api.py` is the `ExtensionAPI` handed to `register(api)`, implemented over the composition's `Context` so registrations land on the one tool registry, one command registry and one `EventHub`. The event names are `vtx.plugins.event_contract.ALL_EVENTS`. See `docs/extensions.md` for the authoring surface and `docs/plugins.md` for the kernel.
-
-## Configuration split
-
-There is no `config.py` in this package, on purpose.
-
-- Harness tunables - max turns, context-window defaults, compaction and idle policy - are `HarnessConfig` in `vtx/core/harness_config.py`, with product-neutral defaults.
-- The user-facing YAML schema and loader are `vtx/core/config.py`, which mirrors user config into the harness object via `apply_harness_settings` on load.
-
-Model catalog and provider adapters are `vtx.ai`. The JavaScript sandbox is `vtx.codemode`.
-
-## Known wart: the duplicated agent-profile package
-
-`vtx/coding_agent/agents/{api,loader,registry,schema}.py` is a **divergent fork** of `vtx/agent/agents/`. All four files differ from their `vtx.agent` counterparts.
-
-Production uses the `vtx.agent` copy: `runtime.py` imports `AgentRegistry` and `LoadedAgent` from there, and `tools/task.py` resolves sub-agent profiles against it. The fork is used by `coding_agent/cli.py` and by five test modules (`tests/test_agent_profiles.py`, `tests/test_agent_profiles_runtime.py`, `tests/test_agent_profiles_tui.py`, `tests/tools/test_task.py`, `tests/ui/test_custom_tool_blocks.py`).
-
-The divergence is not cosmetic. The fork's `AgentDef` declares `tools`, `skills`, `tool_groups` and `active_tool_group` a second time, after a first declaration of the same four fields, so the two copies parse the same keys through different code paths. The fork's `AgentRegistry` also lacks `on_change`, `set_active_tool_group` and `switch`, all of which exist on the `vtx.agent` copy and are used by `ConversationRuntime.cycle_active_tool_group`. Both copies end up with the same 24 Pydantic fields.
-
-Reconciling is a behaviour decision, not a move: someone has to decide whether the duplicate declarations are load-bearing for any profile format in the wild, then delete the loser and repoint the five test modules. Until that is decided, editing `vtx/agent/agents/` alone will silently not change what the CLI sees.
-
-## Two deliberate upward edges
-
-`vtx.agent` imports `vtx.protocol`, `vtx.ai`, `vtx.core` and `vtx.codemode` at module level, plus function-local `vtx.mcp` and `vtx.tui`. Two edges look like violations and are not:
-
-- `vtx.core.config` calls `vtx.agent.subagents.set_limit` to resize the scheduler on config reload.
-- `tools/task.py` imports `vtx.tui.blocks.TaskToolBlock` inside the `ui_block` property, and `tools/web.py` imports `vtx.tui.tool_output` escaping helpers inside a formatter. Both name rendering widgets; neither creates an import cycle. `tools/codemode.py` follows the same pattern for `vtx.tui.codemode_block.CodemodeToolBlock`.
-
-Layering is enforced in CI.

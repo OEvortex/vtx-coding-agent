@@ -127,9 +127,9 @@ a single command:
 - Skill: delete the directory. Nothing references it.
 - Plugin row: `vtx plugin --profile <name> disable <row-id>`. This rewrites only the
   `disabled` flag in `cordis.yml` and leaves the rest of the file alone, so repeated
-  toggles do not accumulate. **Four tool rows are inert as disables**: `tool-web`,
-  `tool-goal`, `tool-ask-user`, and `tool-subagent`. `src/vtx/agent/tools/__init__.py:220-223`
-  registers `WebTool`, `AskUserTool`, `GoalTool`, and `TaskTool` at *import time* with
+  toggles do not accumulate. **Three tool rows are inert as disables**: `tool-web`,
+  `tool-ask-user`, and `tool-subagent`. `src/vtx/agent/tools/__init__.py:220-223`
+  registers `WebTool`, `AskUserTool`, and `TaskTool` at *import time* with
   `is_default=True`, so disabling the row unmounts it while the tool stays in the global
   registry and in the default set - `--dump-config` shows `[disabled]` and the model
   still has the tool. Service rows and the coding-agent tool rows (`tool-read`,

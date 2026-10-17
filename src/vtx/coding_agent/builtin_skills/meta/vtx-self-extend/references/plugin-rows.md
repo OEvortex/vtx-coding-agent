@@ -56,7 +56,7 @@ unwinds newest-first.
 ## Service keys you can consume
 
 `tools`, `llm`, `sessions`, `permissions`, `prompts`, `compaction`, `skills`,
-`telemetry`, `sandbox`, `mcp`, `agents`, `agentLoop`, `sessionProjections`, `goals`,
+`telemetry`, `sandbox`, `mcp`, `agents`, `agentLoop`, `sessionProjections`,
 `ui`, `commands`. Read through `ctx.<key>`; `ctx.agentLoop` and `ctx.agent_loop` are the
 same service.
 
@@ -148,9 +148,9 @@ none yet and leaving the rest of the file alone, so repeated toggles do not accu
 
 ### Disabling a row is not always disabling its tool
 
-Four tool rows are **inert as disables**: `tool-web`, `tool-goal`, `tool-ask-user`, and
+Three tool rows are **inert as disables**: `tool-web`, `tool-ask-user`, and
 `tool-subagent`. `src/vtx/agent/tools/__init__.py:220-223` registers `WebTool`,
-`AskUserTool`, `GoalTool`, and `TaskTool` into the global registry at *import time* with
+`AskUserTool` and `TaskTool` into the global registry at *import time* with
 `is_default=True`, so `vtx plugin disable tool-web` unmounts the row while the tool stays
 registered and in the default set - `--dump-config` shows `[disabled]` and the model still
 has the tool. Service rows, and the coding-agent tool rows (`tool-read`, `tool-edit`,
