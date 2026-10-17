@@ -20,7 +20,6 @@ from vtx.agent.background import (
     get_manager,
     set_manager,
 )
-from vtx.agent.goal.tools import GoalTool
 from vtx.agent.tools import (
     AskUserTool,
     BaseTool,
@@ -80,7 +79,6 @@ all_tools: list[BaseTool] = [
     WebSearchTool(),
     AskUserTool(),
     TaskTool(),
-    GoalTool(),
     CodemodeTool(),
     ToolSearchTool(),
 ]
@@ -96,10 +94,9 @@ DEFAULT_TOOLS: list[str] = [
     "web",
     "ask_user",
     "delegate_subagent",
-    "goal",
 ]
 
-PARENT_ONLY_TOOLS: frozenset[str] = frozenset({"delegate_subagent", "goal"})
+PARENT_ONLY_TOOLS: frozenset[str] = frozenset({"delegate_subagent"})
 
 
 def get_tools(names: list[str]) -> list[BaseTool]:

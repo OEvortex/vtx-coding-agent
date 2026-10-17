@@ -3,7 +3,7 @@
 Provides the :class:`BaseTool` contract, schema shaping for LLM tool
 definitions, dynamic tool registration/lookup APIs, and the tools every
 vtx-based product can use (:class:`AskUserTool`, :class:`TaskTool`,
-:class:`WebTool`, :class:`GoalTool`). Product-specific tools -- the coding
+:class:`WebTool`). Product-specific tools -- the coding
 agent's file and workspace tools -- live with the product that ships them and
 register through the plugin composition; see :mod:`vtx.plugins`.
 """
@@ -13,7 +13,6 @@ from __future__ import annotations
 from collections.abc import Sequence
 from typing import Any
 
-from vtx.agent.goal.tools import GoalParams, GoalTaskItem, GoalTool
 from vtx.protocol.types import ToolDefinition
 
 from .ask_user import AskUserParams, AskUserTool
@@ -34,9 +33,6 @@ __all__ = [
     "AskUserParams",
     "AskUserTool",
     "BaseTool",
-    "GoalParams",
-    "GoalTaskItem",
-    "GoalTool",
     "SearchParams",
     "SubagentSpec",
     "TaskParams",
@@ -220,4 +216,3 @@ def get_tool_definitions(tools: list[BaseTool]) -> list[ToolDefinition]:
 register_tool(AskUserTool(), is_default=True, parent_only=True)
 register_tool(TaskTool(), is_default=True, parent_only=False)
 register_tool(WebTool(), is_default=True, parent_only=False)
-register_tool(GoalTool(), is_default=True, parent_only=True)

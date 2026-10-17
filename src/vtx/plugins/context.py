@@ -27,7 +27,6 @@ STANDARD_KEYS: frozenset[str] = frozenset(
         "agentLoop",
         "commands",
         "compaction",
-        "goals",
         "llm",
         "mcp",
         "permissions",
@@ -253,10 +252,6 @@ class Context:
     @property
     def telemetry(self) -> Any:
         return self.require("telemetry")
-
-    @property
-    def goals(self) -> Any:
-        return self.require("goals")
 
 
 class _Missing:

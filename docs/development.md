@@ -86,7 +86,7 @@ A profile is an ordered list of bundles; a bundle is a list of rows.
 
 | Bundle | Contents |
 |---|---|
-| `base` | Services (`tools`, `llm`, `sessions`, `permissions`, `prompts`, `compaction`, `skills`, `telemetry`, `sandbox`, `mcp`, `agents`, `agent-loop`, `session-projections`, `goals`, `extensions`, `hooks`) plus the tool rows (`src/vtx/plugins/builtins/__init__.py:20-58`) |
+| `base` | Services (`tools`, `llm`, `sessions`, `permissions`, `prompts`, `compaction`, `skills`, `telemetry`, `sandbox`, `mcp`, `agents`, `agent-loop`, `session-projections`, `extensions`, `hooks`) plus the tool rows (`src/vtx/plugins/builtins/__init__.py:20-58`) |
 | `tui` | `ui` and `commands` rows (`src/vtx/plugins/builtins/__init__.py:62-65`) |
 | `headless` | Adds nothing; a serverless run boots `base` alone (`src/vtx/plugins/builtins/__init__.py:69-70`) |
 | `minimal` | `tools`, `llm`, `tool-read`, `tool-bash`  --  the smallest composition with a registry, a provider seam and a shell (`src/vtx/plugins/builtins/__init__.py:73-82`) |
@@ -201,7 +201,7 @@ vtx plugin enable tool-wordcount
 
 `enable` and `disable` rewrite only the `disabled` flag of the matching row (`src/vtx/coding_agent/plugin_cmd.py:78-100`).
 
-Not every tool row disables its tool: `tool-web`, `tool-goal`, `tool-ask-user`, and
+Not every tool row disables its tool: `tool-web`, `tool-ask-user`, and
 `tool-subagent` register their tools at import time (`src/vtx/agent/tools/__init__.py:220-223`),
 so the row unmounts while the tool stays live. For a tool row, assert on the live tool set
 (`ctx.tools.assemble()`), not on the row listing - see [plugins.md](plugins.md).

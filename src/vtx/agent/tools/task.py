@@ -536,9 +536,8 @@ async def _run_admitted_subagent(
 
 
 class TaskTool(BaseTool[TaskParams]):
-    # Renamed from `task`, which collided with the goal system's task list: a
-    # model told to "check the task" could mean the todo list or the dispatcher.
-    # `delegate_subagent` says what the tool actually does.
+    # Renamed from `task` to `delegate_subagent`, which says what the tool
+    # actually does.
     name = "delegate_subagent"
     params = TaskParams
     tool_icon = "▸"

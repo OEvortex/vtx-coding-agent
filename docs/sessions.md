@@ -41,15 +41,14 @@ The session id is a full UUID; the short 8-character ids you see in the UI are *
 ids, generated separately (`uuid4().hex[:8]`, `src/vtx/agent/session.py:232-234`).
 
 Two kinds of state are deliberately *not* in the project: working-tree snapshots live in a
-separate shadow git repo under `~/.vtx/snapshots/`, and goal records live in
-`.vtx/goals/` inside the project. See `snapshots` and `goals.md`.
+separate shadow git repo under `~/.vtx/snapshots/`. See `snapshots`.
 
 ## The file format
 
 One JSON object per line, UTF-8, no array wrapper. The first line is always the header:
 
 ```json
-{"type":"header","version":1,"id":"5f3a1c2e-8b90-4c11-9d2f-1a2b3c4d5e6f","timestamp":"2026-10-11T10:47:12.000000+00:00","cwd":"/home/user/proj","system_prompt":"You are Vtx...","tools":["read","edit","write","bash","find","skill","web","ask_user","delegate_subagent","goal"],"initial_thinking_level":"high"}
+{"type":"header","version":1,"id":"5f3a1c2e-8b90-4c11-9d2f-1a2b3c4d5e6f","timestamp":"2026-10-11T10:47:12.000000+00:00","cwd":"/home/user/proj","system_prompt":"You are Vtx...","tools":["read","edit","write","bash","find","skill","web","ask_user","delegate_subagent"],"initial_thinking_level":"high"}
 ```
 
 `SessionHeader` fields (`src/vtx/agent/session.py:47-55`):
@@ -85,7 +84,7 @@ Every later line is an entry, and every entry carries the same three base fields
 | `thinking_level_change` | `thinking_level: str` | `/thinking` changes the level |
 | `model_change` | `provider`, `model_id`, `base_url` | `/model` switches model |
 | `compaction` | `summary`, `first_kept_entry_id`, `tokens_before`, `tokens_after`, `details` | `/compact` succeeds |
-| `custom_message` | `custom_type`, `content`, `display`, `details` | Handoff links, goal focus, revert records, `!` shell runs |
+| `custom_message` | `custom_type`, `content`, `display`, `details` | Handoff links, revert records, `!` shell runs |
 | `session_info` | `name` | A session is named |
 | `leaf` | `target_id` | The active branch point moves |
 | `runtime_checkpoint` | `is_active`, `partial_content`, `tool_results`, `text_so_far` | Mid-turn, after each tool batch |
@@ -270,7 +269,7 @@ the types Vtx itself writes:
 | `shell_command` | `!cmd` / `!!cmd` in the editor | yes | A manual shell run, with `command`, `output`, `success` in `details` (`src/vtx/tui/agent_runner.py:726-736`) |
 | `handoff_backlink` | `/handoff` | no | This session was created by a handoff; `details.target_session_id` points at the parent (`src/vtx/agent/runtime.py:1671`) |
 | `handoff_forward_link` | `/handoff` | no | This session handed off; `details` points at the child |
-| `vtx-goal-focus` | The goal system | no | `{"focusedGoalId": ..., "reason": ...}`, persists focus across restarts (`src/vtx/tui/commands/goals.py:137-160`) |
+
 | `vtx-revert-snapshot` | Undo, before reverting | no | A `TurnSnapshot`: turn start/end trees and the worktree diff |
 | `vtx-revert` | Undo and redo | no | A `RevertState`: boundary, staged tree, `files_available`, `original_tree` |
 | `refinement_notice` | Retired | yes | Was model-facing; `Session.messages` still converts it back (`src/vtx/agent/session.py:102-107`) |
@@ -417,7 +416,7 @@ seconds = max(5.0, float(config.recap.idle_seconds))
 Two behaviours worth knowing:
 
 - **A sub-agent in flight suppresses the recap.** `_subagents_in_flight()` checks
-  `vtx.tui.goal_agents.REGISTRY.has_live()` (`src/vtx/tui/recap.py:54-68`), because the
+  `vtx.tui.subagents.REGISTRY.has_live()` (`src/vtx/tui/recap.py:54-68`), because the
   recap would otherwise land in the chat *instead of* the sub-agent's result reaching the
   agent.
 - **The next prompt dismisses it.** `_dismiss_recap()` cancels the timer and the worker,
@@ -473,6 +472,6 @@ session` (`src/vtx/tui/commands/sessions.py:394`).
   `cwd` is invisible, even though the id is a UUID.
 
 Related pages: [configuration.md](configuration.md) for the storage and recap settings,
-[goals.md](goals.md) for the goal records a session focuses on, [agents.md](agents.md) for
+[agents.md](agents.md) for
 the handoff prompt and agent profiles, [cli.md](cli.md) for the resume flags, and
-[tools.md](tools.md) for the `goal` and `delegate_subagent` tools a session drives.
+[tools.md](tools.md) for the `delegate_subagent` tool a session drives.

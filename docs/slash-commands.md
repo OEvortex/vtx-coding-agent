@@ -133,12 +133,10 @@ The built-in skills that register commands are:
 | `/modal` | run code on Modal cloud | Run Python code in the cloud with Modal serverless containers |
 | `/review` | review code changes | Review code changes and return prioritized, actionable findings |
 | `/github` | (description, truncated) | Run GitHub CLI commands, manage repositories, issues, PRs, releases, actions |
-| `/goal` | create or manage a project goal | Create and manage persistent project goals with tasks, verification, and audits |
 | `/skill-builder` | scaffold a new skill | Create a new Vtx skill (SKILL.md) with the correct frontmatter, body, and conventions |
 | `/vtx-self-extend` | extend Vtx itself | Add capability to Vtx itself - a skill, a plugin row, or an extension |
 | `/init` | guided AGENTS.md setup | Create or update AGENTS.md for this repository |
 
-`/goal` additionally lazily injects the `goal` tool for the active turn (`src/vtx/tui/app.py:1139`).
 
 A skill can also be invoked explicitly with the `/skill:<name> <query>` form. This only works for skills that set `register_cmd`; a skill without it is agent context alone and cannot be invoked this way (`src/vtx/tui/app.py:1098`):
 

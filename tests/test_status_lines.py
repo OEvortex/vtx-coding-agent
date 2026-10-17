@@ -25,7 +25,6 @@ EXPECTED_TOOLS = [
     "web_search",
     "ask_user",
     "delegate_subagent",
-    "goal",
     "default",
 ]
 

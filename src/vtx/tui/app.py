@@ -53,8 +53,6 @@ from vtx.tui.commands import CommandsMixin
 from vtx.tui.completion_ui import CompletionUIMixin
 from vtx.tui.extension_ui import TextualExtensionUI
 from vtx.tui.floating_list import FloatingList
-from vtx.tui.goal_agents import record_subagent_event
-from vtx.tui.goal_ui import GoalWidget
 from vtx.tui.input import InputBox
 from vtx.tui.queue_ui import QueueUIMixin
 from vtx.tui.recap import RecapMixin
@@ -62,6 +60,7 @@ from vtx.tui.selection_mode import SelectionMode
 from vtx.tui.session_ui import SessionUIMixin
 from vtx.tui.startup import StartupMixin
 from vtx.tui.styles import get_styles
+from vtx.tui.subagents import record_subagent_event
 from vtx.tui.tree import TreeSelector
 from vtx.tui.widgets import InfoBar, QueueDisplay, StatusLine, format_path
 
@@ -89,7 +88,6 @@ class Vtx(
         ("escape", "interrupt_agent", "Interrupt"),
         Binding("left", "tree_page_up", "Tree page up", priority=True),
         Binding("right", "tree_page_down", "Tree page down", priority=True),
-        Binding("ctrl+shift+g", "toggle_goal_dashboard", "Toggle goal dashboard", priority=True),
         Binding("ctrl+t", "cycle_thinking_level", "Cycle thinking level", priority=True),
         Binding("ctrl+o", "toggle_tool_output", "Toggle tool output", priority=True),
         Binding("ctrl+shift+t", "toggle_thinking", "Toggle thinking", priority=True),
@@ -331,7 +329,6 @@ class Vtx(
 
     def compose(self) -> ComposeResult:
         yield ChatLog(id="chat-log")
-        yield GoalWidget(id="goal-widget")
         yield QueueDisplay(id="queue-display")
         yield StatusLine(id="status-line")
         yield AgentsPanel(id="agents-panel")
@@ -574,10 +571,8 @@ class Vtx(
             self._runtime._rebuild_system_prompt()
 
     def _task_progress_callback(self, tool_call_id: str, event: dict) -> None:
-        # The registry feeds two pinned views: the Agents panel (always) and
-        # the goal beacon (only while a goal is focused). Fold the event in
-        # before touching widgets, so a not-yet-mounted screen can't cost us
-        # the state.
+        # The registry feeds the Agents panel. Fold the event in before
+        # touching widgets, so a not-yet-mounted screen can't cost us the state.
         record_subagent_event(tool_call_id, event)
         self._refresh_agents_panel()
         try:
@@ -727,19 +722,6 @@ class Vtx(
 
         self.set_interval(_GIT_BRANCH_REFRESH_INTERVAL_SECONDS, self._refresh_git_branch)
 
-        # Goal system: bind focus persistence, restore/resolve focus, mount
-        # the above-editor beacon, and refresh it periodically for elapsed
-        # time / token accounting display.
-        try:
-            self._init_goal_state()
-        except Exception as exc:
-            chat.add_info_message(f"Goal system init failed: {exc}", error=True)
-        goal_widget = self.query_one("#goal-widget", GoalWidget)
-        goal_widget.set_cwd(self._cwd)
-        goal_widget.set_session_id(self._goal_session_id())
-        goal_widget.refresh_goal(self._cwd)
-        self.set_interval(5.0, lambda: goal_widget.refresh_goal())
-
         # Sub-agents: the pinned panel repaints itself while anything is in
         # flight; this low-rate tick only keeps the info-bar counts honest
         # when a run ends without a final progress event.
@@ -764,16 +746,9 @@ class Vtx(
 
         Called by Textual as the app is being torn down. Cancels any
         still-running background sub-agents so they do not outlive
-        the parent session. Also releases this session's goal ownership
-        lease so goals it created become claimable right away instead of
-        waiting out the lease TTL.
+        the parent session.
         """
         import contextlib
-
-        with contextlib.suppress(Exception):
-            from vtx.agent.goal.storage import release_lease
-
-            release_lease(self._cwd, self._goal_session_id())
 
         with contextlib.suppress(Exception):
             self.unwatch_background_tasks()
@@ -860,10 +835,6 @@ class Vtx(
             self.query_one("#tree-selector", TreeSelector).action_cancel()
             return
         if self._is_running:
-            # pi-goal-x parity: pressing Esc during active work pauses the
-            # focused goal so auto-continue does not immediately restart it.
-            if callable(getattr(self, "_pause_goal_on_interrupt", None)):
-                self._pause_goal_on_interrupt()
             self._request_interrupt()
 
     def _request_interrupt(self, status_message: str | None = "Interrupting...") -> None:
@@ -1110,14 +1081,12 @@ class Vtx(
             return
 
         # Route registered skill commands typed as /<name> before hardcoded
-        # commands so skills like /goal work through the skill system.
         manual_skill_name = None
         manual_skill_query = ""
         if display_text.startswith("/") and not display_text.startswith("/skill:"):
             # Built-in commands win on a name collision: a skill must never
             # shadow /compact and friends just by sharing a name.
             # Skills are still routed for every name the router does not know,
-            # which is how /goal reaches the goal skill.
             if self._handle_command(display_text):
                 return
             parts = display_text[1:].split(maxsplit=1)

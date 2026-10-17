@@ -223,11 +223,21 @@ def resolve_thinking_levels(
         return ["default"]
 
     wire = [_as_catalog_level(lvl) for lvl in (provider_levels or THINKING_LEVELS)]
-    offered = [
-        "none" if lvl == "off" else lvl
-        for lvl in derived
-        if lvl in wire and _is_sendable(lvl, thinking_level_map, style)
-    ]
+    offered: list[str] = []
+    for lvl in derived:
+        if lvl not in wire or not _is_sendable(lvl, thinking_level_map, style):
+            continue
+        # "none" is only a real, sendable level when the catalog explicitly
+        # verified a `none` effort (or a spelling for it). Offering it for a
+        # model that never advertised it leaves the picker showing "none" while
+        # the wire layer silently sends nothing — i.e. the model keeps thinking.
+        if (
+            lvl == "off"
+            and _resolve_effort("off", level_map=thinking_level_map, default_when_unmapped=None)
+            != "none"
+        ):
+            continue
+        offered.append("none" if lvl == "off" else lvl)
     return offered or ["default"]
 
 

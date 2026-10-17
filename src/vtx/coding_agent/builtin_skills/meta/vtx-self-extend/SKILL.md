@@ -40,7 +40,6 @@ the cheapest way to be right.
 | An agent profile, sub-agents, or handoff | `references/docs/agents.md` |
 | A permission mode, rule, or the mutating-tool gate | `references/docs/permissions.md` |
 | Session persistence, resume, snapshots, revert | `references/docs/sessions.md` |
-| The goal system | `references/docs/goals.md` |
 | A slash command or a keybinding | `references/docs/slash-commands.md`, `references/docs/keybindings.md` |
 | Themes and UI settings | `references/docs/theming.md` |
 | MCP servers, transports, auth, trust | `references/docs/mcp.md` |

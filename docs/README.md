@@ -40,8 +40,7 @@ Vtx expects to be changed. Three surfaces, smallest first:
 - [Extensions](extensions.md) - the `ExtensionAPI` surface, for providers and
   renderers.
 
-[Agents](agents.md) covers handoff agents and sub-agents. [Goals](goals.md) covers the
-persistent objective system.
+[Agents](agents.md) covers handoff agents and sub-agents.
 
 ## Automate or embed
 

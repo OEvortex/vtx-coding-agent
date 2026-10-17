@@ -29,7 +29,6 @@ vtx --dump-config | grep -E "id:|disabled:"
 | `web_search` | no | no | Same search, different name |
 | `ask_user` | yes | no | Ask the user a question mid-turn |
 | `delegate_subagent` | yes | no | Run a sub-agent, foreground or background |
-| `goal` | yes | no | Manage the session goal |
 | `codemode` | yes | no | Run a Python script in a confined sandbox |
 | `tool_search` | on demand | no | Find a tool by what it does |
 
@@ -55,10 +54,10 @@ gate before it runs. See [permissions.md](permissions.md).
 ### Turning a tool off is not always one command
 
 Every tool above belongs to a plugin row, so `vtx plugin disable <row-id>` is the way to
-remove one - except that four rows do not take effect. `web`, `ask_user`, `goal`, and
+remove one - except that three rows do not take effect. `web`, `ask_user`, and
 `delegate_subagent` are also registered at *import time* with `is_default=True`
 (`src/vtx/agent/tools/__init__.py:220-223`), so `vtx plugin disable tool-web`,
-`tool-goal`, `tool-ask-user`, and `tool-subagent` unmount their rows while the tools stay
+`tool-ask-user`, and `tool-subagent` unmount their rows while the tools stay
 in the registry and the model keeps calling them. `tool-read`, `tool-edit`, `tool-write`,
 `tool-bash`, `tool-find`, `tool-grep`, `tool-skill`, `tool-codemode`, `tool-search`, and
 every service row disable correctly. Confirm a disable with `ctx.tools.assemble()`; see
@@ -302,28 +301,6 @@ the result arrives on a later turn.
 
 ```json
 {"description": "Audit dependencies", "prompt": "List every dependency in pyproject.toml with a newer release.", "background": true}
-```
-
-## `goal`
-
-Create and manage a persistent, multi-turn project goal with tasks, verification, and
-audits.
-
-| Parameter | Type | Default | Description |
-|---|---|---|---|
-| `action` | `str` | required | `create`, `get`, `update`, `set_tasks`, `update_task`, `update`, or `list_orphans` |
-| `objective` | `str \| None` | `None` | Complete goal objective and outcome to achieve |
-| `mode` | `str \| None` | `None` | `regular` (open-ended) or `sisyphus` (strict sequential) |
-| `verification` | `str \| None` | `None` | Completion contract or test command required for verification |
-| `token_budget` | `int \| None` | `None` | Optional total-token ceiling |
-| `status` | `str \| None` | `None` | `active`, `complete`, `blocked`, `paused`, or `revise` |
-
-```json
-{"action": "create", "objective": "Make `vtx plugin install` refuse an incompatible plugin with an actionable message", "verification": "uv run python -m pytest tests/plugins/", "mode": "regular"}
-```
-
-```json
-{"action": "set_tasks", "tasks": [{"id": "t1", "text": "Add the version gate"}, {"id": "t2", "text": "Print the exemption command"}]}
 ```
 
 ## `codemode`

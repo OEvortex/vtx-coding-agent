@@ -42,9 +42,8 @@ carried a `plan` profile the user never asked for, and editing the shipped list 
 the only way to change what the agent could be.
 ```
 
-If you want the agent to stop and agree on a plan before acting, that is a goal with a
-verification contract (`goals.md`) or a `permission_gate` on the tool that would act
-(`agents.md`), not a permission mode.
+If you want the agent to stop and agree on a plan before acting, that is a
+`permission_gate` on the tool that would act (`agents.md`), not a permission mode.
 
 ## The base decision
 

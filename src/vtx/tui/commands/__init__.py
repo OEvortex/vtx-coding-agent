@@ -21,7 +21,6 @@ from .agents import AgentCommands
 from .auth import AuthCommands
 from .base import CommandSupport
 from .catalog import CatalogCommands
-from .goals import GoalCommands
 from .mcp import McpCommands
 from .models import ModelCommands
 from .providers import ProviderCommands
@@ -41,7 +40,6 @@ class CommandsMixin(
     SwitchCommands,
     AgentCommands,
     UpdateCommands,
-    GoalCommands,
     ReloadCommands,
     McpCommands,
     CatalogCommands,
@@ -195,7 +193,6 @@ __all__ = [
     "CatalogCommands",
     "CommandSupport",
     "CommandsMixin",
-    "GoalCommands",
     "ModelCommands",
     "ProviderCommands",
     "ReloadCommands",

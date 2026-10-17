@@ -15,7 +15,7 @@ import pytest
 from vtx.tui.agent_runner import _BACKGROUND_WAKEUP_PROMPT, MAX_BACKGROUND_WAKEUPS
 from vtx.tui.app import Vtx
 from vtx.tui.chat import ChatLog
-from vtx.tui.goal_agents import REGISTRY
+from vtx.tui.subagents import REGISTRY
 
 
 @pytest.fixture

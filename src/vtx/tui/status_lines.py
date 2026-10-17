@@ -232,18 +232,6 @@ TOOL_STATUS_LINES: dict[str, tuple[str, ...]] = {
         "Assigning the problem you'll take credit for...",
         "Monitoring progress because you can't wait...",
     ),
-    "goal": (
-        "Tracking the objective you'll abandon next sprint...",
-        "Auditing progress on the feature you never finished...",
-        "Strategizing the plan you'll forget by Friday...",
-        "Evaluating the roadmap you made up on the spot...",
-        "Verifying criteria you clearly didn't define...",
-        "Calibrating the milestone you'll move next week...",
-        "Reviewing the checklist you only half-checked...",
-        "Aligning tasks with the North Star you lost...",
-        "Checking dependencies you didn't know existed...",
-        "Updating milestones because this is taking forever...",
-    ),
     "default": (
         "Executing whatever you asked for...",
         "Running the thing you'll ask me to do again...",
@@ -410,18 +398,6 @@ TOOL_ERROR_LINES: dict[str, tuple[str, ...]] = {
         "Lost connection because your internet is unstable...",
         "Cancelled because you changed your mind halfway...",
     ),
-    "goal": (
-        "Snag because your goal is undefined...",
-        "Rejected because you marked it done without doing it...",
-        "Unexpected block because you forgot to push...",
-        "Milestone failed because your checklist is empty...",
-        "Validation error because your criteria contradict each other...",
-        "Consistency check failed because you edited the task tree manually...",
-        "Could not update because you're offline...",
-        "Unsatisfied because you asked for too much...",
-        "Alignment failed because your goals keep changing...",
-        "Spotted pending tasks because you never finish anything...",
-    ),
     "default": (
         "Went sideways because you didn't specify the tool...",
         "Wild exception because your input was garbage...",
@@ -460,7 +436,7 @@ def subagents_own_the_status_line() -> bool:
     not. This is the same reasoning that defers an idle recap during a
     fan-out: the user is not watching an idle screen.
     """
-    from vtx.tui.goal_agents import REGISTRY
+    from vtx.tui.subagents import REGISTRY
 
     return REGISTRY.has_live()
 

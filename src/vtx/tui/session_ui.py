@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import contextlib
 import json
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
@@ -42,7 +41,6 @@ class SessionUIMixin:
     # Methods from other mixins/main class
     def _sync_runtime_state(self) -> None: ...
     def _apply_thinking_level_style(self, level: str) -> None: ...
-    def _restore_goal_state(self, session: Session) -> None: ...
 
     def _resolve_system_prompt(self, session: Session | None = None) -> str:
         return self._runtime.resolve_system_prompt(session)
@@ -198,24 +196,12 @@ class SessionUIMixin:
         status = self.query_one("#status-line", StatusLine)
         input_box = self.query_one("#input-box", InputBox)
 
-        previous = getattr(self._runtime, "session", None)
-        previous_goal_session = str(getattr(previous, "id", "") or "")
-
         try:
             session = self._runtime.load_session(session_path)
         except Exception as exc:
             chat.add_info_message(f"Failed to load session: {exc}", error=True)
             input_box.focus()
             return
-
-        # The outgoing session no longer holds the goal pool, so drop its
-        # ownership lease — otherwise its goals stay un-claimable while this
-        # process goes on serving a different session.
-        if previous_goal_session and previous_goal_session != session.id:
-            with contextlib.suppress(Exception):
-                from vtx.agent.goal.storage import release_lease
-
-                release_lease(self._cwd, previous_goal_session)
 
         self._sync_runtime_state()
         self._current_block_type = None
@@ -253,9 +239,5 @@ class SessionUIMixin:
             )
 
         self._render_session_entries(session)
-        # Goal focus is session-scoped: re-apply it from persisted entries.
-        self._goal_charged_totals = None
-        if callable(getattr(self, "_restore_goal_state", None)):
-            self._restore_goal_state(session)
         chat.add_info_message("Resumed session")
         input_box.focus()

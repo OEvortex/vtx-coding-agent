@@ -13,6 +13,6 @@ package owns the tool.
 
 from __future__ import annotations
 
-from vtx.plugins.builtins.tools import ask_user, goal, subagent, web
+from vtx.plugins.builtins.tools import ask_user, subagent, web
 
-__all__ = ["ask_user", "goal", "subagent", "web"]
+__all__ = ["ask_user", "subagent", "web"]

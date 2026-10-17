@@ -63,7 +63,7 @@ class RecapMixin:
         was visible to the user and invisible to the model. That reads as
         "the notification never arrived" when the notification worked fine.
         """
-        from vtx.tui.goal_agents import REGISTRY
+        from vtx.tui.subagents import REGISTRY
 
         return REGISTRY.has_live()
 

@@ -149,12 +149,10 @@ You do not need `/reload` for a catalog change to reach a running turn. Each run
 | `modal` | `cloud` | yes |
 | `review` | `review` | yes |
 | `github` | `general` | yes |
-| `goal` | `meta` | yes |
 | `skill-builder` | `meta` | yes |
 | `vtx-self-extend` | `meta` | yes |
 | `init` | `setup` | yes |
 
-`/goal` is one of these skills rather than a built-in command, which is why it is absent from the app's command router (`src/vtx/coding_agent/README.md:84`).
 
 ## Public API
 

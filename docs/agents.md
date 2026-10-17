@@ -348,7 +348,7 @@ sub-agent, which is the parent minus the parent-only tools.
 | `model` | `str \| None` | `None` | Model override (`task.py:33`) |
 | `background` | `bool` | `False` | Return a `task_id` immediately (`task.py:34`) |
 
-The sub-agent loses the parent-only tools, `delegate_subagent` and `goal`
+The sub-agent loses the parent-only tool, `delegate_subagent`
 (`src/vtx/coding_agent/tools/__init__.py:84`), inherits the parent's thinking level or
 `"high"` (`task.py:207-225`), and gets a directive appended that forbids preamble, because
 only its final text reaches the parent (`SUBAGENT_FINAL_ANSWER_DIRECTIVE`,

@@ -22,7 +22,6 @@ Owner: the `Vtx` application class, `src/vtx/tui/app.py:71`, `BINDINGS` at `src/
 | `escape` | `interrupt_agent` | no | Cancel the tree selector if open, otherwise interrupt the running turn (`src/vtx/tui/app.py:813`) |
 | `left` | `tree_page_up` | yes | Page up in the session tree, only while `_selection_mode == TREE` (`src/vtx/tui/app.py:805`) |
 | `right` | `tree_page_down` | yes | Page down in the session tree, same guard (`src/vtx/tui/app.py:809`) |
-| `ctrl+shift+g` | `toggle_goal_dashboard` | yes | Open the goal dashboard overlay, or close it if already open (`src/vtx/tui/commands/goals.py:288`) |
 | `ctrl+t` | `cycle_thinking_level` | yes | Cycle the thinking effort to the next level the model offers (`src/vtx/tui/app.py:870`) |
 | `ctrl+o` | `toggle_tool_output` | yes | Expand or collapse tool output blocks (`src/vtx/tui/app.py:846`) |
 | `ctrl+shift+t` | `toggle_thinking` | yes | Show or hide thinking blocks (`src/vtx/tui/app.py:852`) |
@@ -77,7 +76,6 @@ Owner: `src/vtx/tui/tree.py:42`. Opens from `/tree`. All are `Binding` objects w
 
 | Owner | Key | Action | Priority | What it does |
 |---|---|---|---|---|
-| `GoalDashboardScreen` (`src/vtx/tui/goal_ui.py:1209`) | `escape` | `close_dashboard` | yes | Dismiss the goal dashboard. Priority is required because the app binds `escape` to interrupt (`src/vtx/tui/goal_ui.py:1210`); the action is at `src/vtx/tui/goal_ui.py:1267` |
 | `FileChangesModal` (`src/vtx/tui/widgets.py:43`) | `escape` | `dismiss_modal` | no | Close the file-changes modal (`src/vtx/tui/widgets.py:130`) |
 | `ExtensionConfirmScreen` (`src/vtx/tui/extension_ui.py:39`) | `y` | `yes` | no | Confirm (`src/vtx/tui/extension_ui.py:79`) |
 | `ExtensionConfirmScreen` | `enter` | `yes` | no | Confirm |
@@ -146,7 +144,7 @@ The queue holds at most 5 entries (`src/vtx/tui/widgets.py:490`); beyond that, s
 - `alt+enter` for steer submission depends on the terminal reporting it distinctly from `enter`; terminals that do not distinguish modifiers will submit normally.
 - The `ask_user` key set includes two spellings of the same physical key (`ctrl+]` and `ctrl+right_square_bracket`) because Textual can report either name. They are not separate keys.
 - The `ctrl+c` double-press window (2.0 s) and `ctrl+d` double-press window (2.0 s) are hardcoded constants (`src/vtx/tui/app.py:175`), not configurable.
-- `escape` has no `priority=True`, so a focused extension screen or future modal can swallow it. The goal dashboard and tree selector both opt in with priority for exactly this reason.
+- `escape` has no `priority=True`, so a focused extension screen or future modal can swallow it. The tree selector opts in with priority for exactly this reason.
 - Textual's own `ctrl+q` is not overridden, so it exits the app without the double-press confirmation `ctrl+c` requires.
 
 ## See also

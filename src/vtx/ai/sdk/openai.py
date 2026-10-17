@@ -78,7 +78,7 @@ def _normalize_usage(usage: Any) -> dict[str, Any]:
     the rest of the codebase (and Anthropic) treats ``input_tokens`` and the
     cache counts as siblings that add up. Passing OpenAI's number straight
     through therefore double counts every cache read, in every total derived
-    from it -- context meters, session totals, /usage, goal budgets. Cache
+    from it -- context meters, session totals, /usage, budgets. Cache
     *writes* are subtracted too, same reasoning; Anthropic's `input_tokens`
     excludes both already, so nothing is subtracted there.
     """

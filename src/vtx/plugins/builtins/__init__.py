@@ -36,7 +36,6 @@ BASE: list[Row] = [
     Row(id="agents", name="vtx.plugins.builtins.services.agents:PLUGIN"),
     Row(id="agent-loop", name="vtx.plugins.builtins.services.agent_loop:PLUGIN"),
     Row(id="session-projections", name="vtx.plugins.builtins.services.projections:PLUGIN"),
-    Row(id="goals", name="vtx.plugins.builtins.services.goals:PLUGIN"),
     Row(id="extensions", name="vtx.plugins.builtins.services.extensions:PLUGIN"),
     Row(id="hooks", name="vtx.plugins.builtins.hooks:PLUGIN"),
     # ---- tools ----------------------------------------------------------
@@ -57,7 +56,6 @@ BASE: list[Row] = [
     # script-reachable ones reachable.
     Row(id="tool-search", name="vtx.coding_agent.tools.tool_search:PLUGIN"),
     Row(id="tool-codemode", name="vtx.coding_agent.tools.codemode:PLUGIN"),
-    Row(id="tool-goal", name="vtx.plugins.builtins.tools.goal:PLUGIN"),
     Row(id="tool-subagent", name="vtx.plugins.builtins.tools.subagent:PLUGIN"),
 ]
 

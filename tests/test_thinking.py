@@ -461,3 +461,24 @@ def test_provider_info_to_model_attaches_thinking_level_map():
     }
     model = _provider_info_to_model(p, "test-reasoning-model")
     assert model.thinking_level_map == {"off": "none", "high": "high"}
+
+
+def test_unverified_none_effort_is_not_offered():
+    """A model that never advertised a `none` effort must not show "none" in
+    the picker: selecting it would send nothing and leave the model thinking."""
+    assert "none" not in resolve_thinking_levels(
+        reasoning=True, thinking_level_map={"high": "high"}
+    )
+    assert resolve_thinking_levels(reasoning=True, thinking_level_map={"high": "high"}) == [
+        "minimal",
+        "low",
+        "medium",
+        "high",
+    ]
+
+
+def test_reflection_free_model_shows_none():
+    """A model with no reasoning support (reflection/beam-free) offers only
+    "none" — there is nothing to turn on."""
+    assert resolve_thinking_levels(reasoning=False) == ["none"]
+    assert get_supported_thinking_levels(reasoning=False) == ["off"]

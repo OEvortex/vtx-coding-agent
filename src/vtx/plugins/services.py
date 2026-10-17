@@ -416,44 +416,6 @@ class ProjectionService:
 
 
 # --------------------------------------------------------------------------
-# ctx.goals
-# --------------------------------------------------------------------------
-
-
-class GoalService:
-    """``ctx.goals`` — the same-session objective and its lifecycle.
-
-    A goal is one objective for the whole session, not per agent: a sub-agent
-    inherits its parent's, so the service hands out the single active record
-    rather than one per caller.
-    """
-
-    def __init__(self) -> None:
-        self._records: dict[str, Any] = {}
-        self._active: str | None = None
-
-    def set(self, session_id: str, record: Any) -> Any:
-        self._records[session_id] = record
-        self._active = session_id
-        return record
-
-    def get(self, session_id: str) -> Any | None:
-        return self._records.get(session_id)
-
-    def clear(self, session_id: str) -> bool:
-        if self._active == session_id:
-            self._active = None
-        return self._records.pop(session_id, None) is not None
-
-    @property
-    def active(self) -> Any | None:
-        return self._records.get(self._active) if self._active else None
-
-    def sessions(self) -> list[str]:
-        return sorted(self._records)
-
-
-# --------------------------------------------------------------------------
 # ctx.skills
 # --------------------------------------------------------------------------
 
@@ -611,7 +573,6 @@ class AgentService:
 __all__ = [
     "AgentService",
     "CompactionService",
-    "GoalService",
     "LLMService",
     "MCPService",
     "PermissionService",

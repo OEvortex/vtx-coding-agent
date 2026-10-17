@@ -96,7 +96,7 @@ Full reference, generated from the source:
 | | |
 |---|---|
 | [Slash commands](docs/slash-commands.md) | [Keybindings](docs/keybindings.md) | [Theming](docs/theming.md) |
-| [Sessions](docs/sessions.md) | [Goals](docs/goals.md) | [Permissions](docs/permissions.md) |
+| [Sessions](docs/sessions.md) | [Permissions](docs/permissions.md) |
 | [Agents & sub-agents](docs/agents.md) | [Headless / CI](docs/headless.md) | [MCP](docs/mcp.md) |
 
 **Extending it**

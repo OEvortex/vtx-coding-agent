@@ -6,7 +6,7 @@ import pytest
 
 from vtx.plugins import boot
 from vtx.plugins.builtins.commands import CommandService
-from vtx.plugins.services import GoalService, MCPService
+from vtx.plugins.services import MCPService
 from vtx.plugins.tui import BUILTIN_COMMANDS, TUIChannel, install, uninstall
 
 # --------------------------------------------------------------------------
@@ -62,42 +62,6 @@ def test_connect_is_idempotent():
     service = MCPService()
     service.set_manager("already")
     assert service.connect(cwd="/tmp") == "already"
-
-
-# --------------------------------------------------------------------------
-# ctx.goals
-# --------------------------------------------------------------------------
-
-
-def test_a_goal_is_one_record_per_session():
-    service = GoalService()
-    service.set("s1", {"objective": "ship it"})
-    assert service.get("s1") == {"objective": "ship it"}
-    assert service.get("other") is None
-
-
-def test_the_active_goal_follows_the_last_set():
-    service = GoalService()
-    service.set("s1", "first")
-    service.set("s2", "second")
-    assert service.active == "second"
-    assert service.sessions() == ["s1", "s2"]
-
-
-def test_clearing_the_active_session_leaves_no_active_goal():
-    service = GoalService()
-    service.set("s1", "only")
-    assert service.clear("s1") is True
-    assert service.active is None
-    assert service.clear("s1") is False
-
-
-def test_clearing_a_non_active_session_keeps_the_active_one():
-    service = GoalService()
-    service.set("s1", "first")
-    service.set("s2", "second")
-    service.clear("s1")
-    assert service.active == "second"
 
 
 # --------------------------------------------------------------------------

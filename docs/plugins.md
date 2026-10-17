@@ -99,7 +99,6 @@ schema reports every offending field, with the row id, at load time.
 | `agents` | `builtins/services/agents.py` | Agent profiles and the active selection |
 | `agentLoop` | `builtins/services/agent_loop.py` | The driver `ConversationRuntime._new_agent` calls |
 | `sessionProjections` | `builtins/services/projections.py` | Incremental folds over the log |
-| `goals` | `builtins/services/goals.py` | The same-session objective |
 | `ui` | `builtins/ui.py` | The interactive channel (`notify`, `ask`) |
 | `commands` | `builtins/commands.py` | Slash commands that cost no model turn |
 
@@ -245,8 +244,8 @@ vtx --profile minimal                 # boot the minimal composition
 so repeated toggles do not accumulate.
 
 **Disabling a tool row is not always disabling the tool.** Four tool rows are inert as
-disables: `tool-web`, `tool-goal`, `tool-ask-user`, and `tool-subagent`.
-`src/vtx/agent/tools/__init__.py:220-223` registers `WebTool`, `AskUserTool`, `GoalTool`,
+disables: `tool-web`, `tool-ask-user`, and `tool-subagent`.
+`src/vtx/agent/tools/__init__.py:220-223` registers `WebTool`, `AskUserTool`,
 and `TaskTool` at *import time* with `is_default=True`, so disabling the row unmounts it
 while the tool stays in the global registry and in the default set - `--dump-config`
 shows `[disabled]` and the model still has the tool. Service rows, and the coding-agent

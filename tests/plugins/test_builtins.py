@@ -68,7 +68,6 @@ def test_vtxs_own_tools_come_from_rows(mounted):
         "web",
         "ask_user",
         "delegate_subagent",
-        "goal",
     ):
         assert expected in names, expected
 
@@ -84,7 +83,6 @@ def test_the_default_tool_set_matches_the_documented_one(mounted):
         "web",
         "ask_user",
         "delegate_subagent",
-        "goal",
         "codemode",
     }
 
@@ -99,7 +97,7 @@ def test_tool_search_is_registered_but_not_default_on(mounted):
 
 
 def test_parent_only_tools_stay_parent_only(mounted):
-    assert {"delegate_subagent", "goal"} <= mounted.base.tools.parent_only()
+    assert {"delegate_subagent"} <= mounted.base.tools.parent_only()
 
 
 def test_a_third_party_row_mounts_as_a_peer_of_a_builtin(tmp_path, monkeypatch):

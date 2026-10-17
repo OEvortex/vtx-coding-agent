@@ -48,7 +48,7 @@ from vtx.core.notify import NotificationEvent, notify
 from vtx.protocol.types import ImageContent, StopReason, ToolResultMessage
 from vtx.tui.ask_user import AskUserDialog
 from vtx.tui.chat import ChatLog
-from vtx.tui.goal_agents import prune_finished_subagents
+from vtx.tui.subagents import prune_finished_subagents
 from vtx.tui.widgets import InfoBar, StatusLine
 
 _NOTIFY_EVENTS = (AgentEndEvent, ToolApprovalEvent, BackgroundTaskCompletedEvent)
@@ -109,16 +109,10 @@ class AgentRunnerMixin:
         def _update_queue_display(self) -> None: ...
         def _clear_approval_state(self) -> None: ...
         def _show_pending_update_notice_if_idle(self) -> None: ...
-        def _goal_context_block(self) -> str: ...
-        def _goal_auto_continue_prompt(self) -> tuple[str, str] | None: ...
-        def _charge_goal_usage(
-            self, *, input_tokens: int, output_tokens: int, elapsed_ms: float
-        ) -> None: ...
         def _format_tool_result_text(
             self, message: ToolResultMessage
         ) -> tuple[str, str | None]: ...
         async def _load_session_by_id(self, session_id: str) -> None: ...
-        def _goal_session_id(self) -> str: ...
 
     def _should_notify_for_event(self, event: object) -> bool:
         return self._notification_event_type(event) is not None
@@ -163,7 +157,10 @@ class AgentRunnerMixin:
         if self._bg_wakeup_chain >= MAX_BACKGROUND_WAKEUPS:
             self._note_background_backlog()
             return
-        if getattr(record, "parent_session_id", None) not in (None, self._goal_session_id()):
+        if getattr(record, "parent_session_id", None) not in (
+            None,
+            str(getattr(getattr(self._runtime, "session", None), "id", "") or ""),
+        ):
             # A task from a different session cannot be continued here.
             return
 
@@ -284,17 +281,9 @@ class AgentRunnerMixin:
                 self._cancel_event.set()
 
             status.set_status("working")
-            turn_started = time.monotonic()
             turn_start_tree = await self._begin_turn_snapshot()
 
-            # Goal state rides along with every user prompt (pi-goal-x
-            # injects once per turn; here the block prepends to the query).
-            goal_block = ""
-            try:
-                goal_block = self._goal_context_block()
-            except Exception:
-                goal_block = ""
-            outgoing_prompt = f"{goal_block}\n\n{current_prompt}" if goal_block else current_prompt
+            outgoing_prompt = current_prompt
 
             try:
                 async for event in agent.run(
@@ -332,8 +321,6 @@ class AgentRunnerMixin:
             # the recorded file list is exactly what this turn changed.
             await self._finish_turn_snapshot(turn_start_tree)
 
-            self._charge_goal_turn_usage((time.monotonic() - turn_started) * 1000.0)
-
             if was_interrupted:
                 self._pending_queue.clear()
                 self._steer_queue.clear()
@@ -342,19 +329,6 @@ class AgentRunnerMixin:
 
             queued = self._dequeue_next_prompt()
             if queued is None:
-                # Auto-continue: a focused active goal schedules the next
-                # checkpoint turn instead of returning control to the user.
-                checkpoint = None
-                try:
-                    checkpoint = self._goal_auto_continue_prompt()
-                except Exception:
-                    checkpoint = None
-                if checkpoint is not None and not self._pending_session_switch_id:
-                    display, checkpoint_query = checkpoint
-                    chat.show_status(f"◈ {display}")
-                    current_prompt = checkpoint_query
-                    current_images = None
-                    continue
                 break
             next_display, next_query, next_images = queued
             chat.add_user_message(next_display)
@@ -431,33 +405,6 @@ class AgentRunnerMixin:
             return None
         self._update_queue_display()
         return queued
-
-    def _charge_goal_turn_usage(self, elapsed_ms: float) -> None:
-        """Charge this turn's token delta to the focused goal (best-effort).
-
-        Session totals are cumulative; only the difference since the last
-        charge is billed so a goal never double-charges an interval.
-        """
-        charge = getattr(self, "_charge_goal_usage", None)
-        if not callable(charge):
-            return
-        input_tokens = output_tokens = 0
-        session = getattr(self._runtime, "session", None)
-        if session is not None:
-            totals = session.token_totals()
-            input_tokens = totals.input_tokens
-            output_tokens = totals.output_tokens
-        previous = getattr(self, "_goal_charged_totals", None)
-        if previous is None:
-            self._goal_charged_totals = (input_tokens, output_tokens)
-            return
-        delta_in = max(0, input_tokens - previous[0])
-        delta_out = max(0, output_tokens - previous[1])
-        self._goal_charged_totals = (input_tokens, output_tokens)
-        if delta_in <= 0 and delta_out <= 0:
-            return
-        with contextlib.suppress(Exception):
-            charge(input_tokens=delta_in, output_tokens=delta_out, elapsed_ms=max(0.0, elapsed_ms))
 
     async def _render_agent_event(
         self, event: object, chat: ChatLog, status: StatusLine, info_bar: InfoBar

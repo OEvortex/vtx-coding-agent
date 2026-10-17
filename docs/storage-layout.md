@@ -2,7 +2,7 @@
 
 This page lists every path Vtx writes to and reads from, and names the function that resolves each one.
 
-Paths come from the running code, not from convention, so treat the `Resolved by` column as the source of truth. For what the files mean, read [configuration.md](configuration.md), [sessions.md](sessions.md), [skills.md](skills.md), [goals.md](goals.md), and [mcp.md](mcp.md). For what a run writes to them, read [headless.md](headless.md) and [sdk.md](sdk.md); for what a plugin adds to that set, read [plugins.md](plugins.md).
+Paths come from the running code, not from convention, so treat the `Resolved by` column as the source of truth. For what the files mean, read [configuration.md](configuration.md), [sessions.md](sessions.md), [skills.md](skills.md), and [mcp.md](mcp.md). For what a run writes to them, read [headless.md](headless.md) and [sdk.md](sdk.md); for what a plugin adds to that set, read [plugins.md](plugins.md).
 
 ## The three roots
 
@@ -72,11 +72,6 @@ Everything here is relative to the working directory and is *not* moved by the c
 
 | Path | What | Resolved by |
 |---|---|---|
-| `.vtx/goals/active_goal_<ts>_<id>.md` | Open goals, human-editable markdown with a JSON metadata block | `src/vtx/agent/goal/storage.py:45-48`, `:71-74` |
-| `.vtx/goals/archived/<same-name>.md` | Completed or cleared goals | `src/vtx/agent/goal/storage.py:51-54`, `:211-223` |
-| `.vtx/goals/ledger.jsonl` | Append-only activity ledger | `src/vtx/agent/goal/storage.py:57-58`, `:297-309` |
-| `.vtx/goals/settings.json` | Per-project goal settings | `src/vtx/agent/goal/storage.py:61-62`, `:391-409` |
-| `.vtx/goals/leases/<session_id>.json` | Which live sessions own which goals; a lease older than 120s is stale | `src/vtx/agent/goal/storage.py:40`, `:231-289` |
 | `.vtx/extensions/*.py` | Project extensions | `src/vtx/plugins/extensions.py:8`, `:304` |
 | `.vtx/agent/*.py` | Project agents, walked up to the git root | `src/vtx/agent/agents/discovery.py:15`, `:46-51` |
 | `.vtx/mcp.json` | Project MCP config, read on every start | `src/vtx/mcp/config.py:54`, `:294-311` |
@@ -125,18 +120,6 @@ uv run python - <<'PY'
 from pathlib import Path
 
 from vtx.core.paths import get_agents_dir, get_config_dir
-from vtx.agent.goal.storage import goals_dir, ledger_path
-from vtx.agent.session import Session
-from vtx.mcp.config import load_mcp_config
-
-root = get_config_dir()
-print("global root:", root)
-print("legacy agents dir:", get_agents_dir())
-
-project = Path.cwd() / ".vtx"
-print("project root:", project)
-print("goals dir:", goals_dir(str(Path.cwd())))
-print("goal ledger:", ledger_path(str(Path.cwd())))
 
 sessions = Session.get_sessions_dir(str(Path.cwd()))
 print("sessions dir:", sessions)
@@ -166,7 +149,5 @@ The interesting lines are the first four: they name the exact directories this i
 - The dynamic-auth key file does not follow one root. It prefers `~/vtx/dynamic_auth.yml` (a bare `vtx` in the home directory, outside the config dir), then `$XDG_CONFIG_HOME/vtx/dynamic_auth.json`, then `~/.vtx/dynamic_auth.json` (`src/vtx/ai/oauth/dynamic.py:52-72`). Only the third is what the rest of the layout would predict.
 - `get_agents_dir()` ignores `XDG_CONFIG_HOME` entirely, so setting it moves the config root but leaves skills reading `~/.agents/skills` (`src/vtx/core/paths.py:47-67`).
 - Session directories are keyed by the resolved-at-session-start working directory, so moving a project invalidates its history rather than following it (`src/vtx/agent/session.py:238`).
-- `~/.vtx/goals` exists on installs that ran an older build; the current code writes goals to `<cwd>/.vtx/goals` and never reads the global copy (`src/vtx/agent/goal/storage.py:45-48`).
-- Goal leases are advisory: a lease is a file whose mtime is compared against a 120-second TTL, so a machine whose clock jumps can release someone else's goal early (`src/vtx/agent/goal/storage.py:38-40`, `:275-289`).
 - Agent discovery promises more than the code delivers. `_add`'s comment says "configured beats auto-discovered", but configured paths are added last and `_add` keeps the first occurrence, so a configured agent loses to a project or global agent with the same name (`src/vtx/agent/agents/discovery.py:66-72`, `:96-100`). The `find_agent_paths` docstring also claims the loader dedupes "last seen wins", which never comes into play because duplicates are already gone (`src/vtx/agent/agents/discovery.py:44-47`, `src/vtx/agent/agents/loader.py:184-190`).
 - `load_skills` reports a name collision but keeps going, so a mistyped duplicate skill is easy to miss unless you read the warnings (`src/vtx/agent/context/skills.py:392-405`).

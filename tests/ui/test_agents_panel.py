@@ -12,7 +12,7 @@ from vtx.tui.agents_panel import (
     should_show,
     visible_runs,
 )
-from vtx.tui.goal_agents import SubagentRegistry
+from vtx.tui.subagents import SubagentRegistry
 from vtx.tui.widgets import InfoBar
 
 
@@ -237,7 +237,7 @@ def test_panel_shows_while_a_subagent_is_queued_or_running() -> None:
 
 def test_pruning_drops_old_finished_runs_but_never_live_ones() -> None:
     """Turn-boundary housekeeping must not blink out a background sub-agent."""
-    from vtx.tui.goal_agents import REGISTRY
+    from vtx.tui.subagents import REGISTRY
 
     REGISTRY.clear()
     try:
@@ -254,7 +254,7 @@ def test_pruning_drops_old_finished_runs_but_never_live_ones() -> None:
 
 
 def test_turn_boundary_keeps_a_background_subagent_alive() -> None:
-    from vtx.tui.goal_agents import REGISTRY, prune_finished_subagents
+    from vtx.tui.subagents import REGISTRY, prune_finished_subagents
 
     REGISTRY.clear()
     try:
@@ -337,7 +337,7 @@ class PanelApp(App[None]):
 
 @pytest.mark.asyncio
 async def test_panel_hides_until_a_subagent_is_in_flight() -> None:
-    from vtx.tui.goal_agents import REGISTRY
+    from vtx.tui.subagents import REGISTRY
 
     REGISTRY.clear()
     try:

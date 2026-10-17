@@ -17,8 +17,8 @@ from __future__ import annotations
 import pytest
 
 from vtx.tui.app import Vtx
-from vtx.tui.goal_agents import REGISTRY
 from vtx.tui.recap import RecapMixin
+from vtx.tui.subagents import REGISTRY
 
 
 @pytest.fixture

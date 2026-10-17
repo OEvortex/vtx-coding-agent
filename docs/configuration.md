@@ -53,7 +53,6 @@ The migration chain and what each step does:
 | 7 | 8 | Add `ui.model_provider_filter`, default `""` (`src/vtx/core/config.py:563`) |
 | 8 | 9 | Add the `agents:` block and `last_selected.agent` (`src/vtx/core/config.py:582`) |
 | 9 | 10 | No-op. Sub-agent presets removed (`src/vtx/core/config.py:615`) |
-| 10 | 11 | No-op. Goal config removed (`src/vtx/core/config.py:628`) |
 | 11 | 12 | Add the `recent_models` block (`src/vtx/core/config.py:640`) |
 | 12 | 13 | Add a top-level `mode` key (`src/vtx/core/config.py:659`) |
 | 13 | 14 | Drop the top-level `mode` key. The RLM runtime mode is gone (`src/vtx/core/config.py:675`) |
