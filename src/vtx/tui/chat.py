@@ -25,6 +25,7 @@ from vtx.tui.blocks import (
     HandoffLinkBlock,
     LaunchWarning,
     LaunchWarningsBlock,
+    RunSummaryBlock,
     ThinkingBlock,
     ToolBlock,
     UpdateAvailableBlock,
@@ -188,6 +189,16 @@ class ChatLog(VerticalScroll):
         # The currently opened todo block, reused for subsequent todo tool
         # calls so the list updates in place instead of stacking blocks.
         self._todo_block: ToolBlock | None = None
+        # Merged run summary tracking
+        self._current_run_summary: RunSummaryBlock | None = None
+        self._current_run_summaries: list[RunSummaryBlock] = []
+        self._current_run_tools: list[ToolBlock] = []
+        self._current_run_thoughts: list[ThinkingBlock] = []
+        self._current_run_thoughts_count: int = 0
+        self._current_run_tools_count: int = 0
+        self._current_run_additions: int = 0
+        self._current_run_removals: int = 0
+        self._current_run_failures: int = 0
 
     def on_mount(self) -> None:
         self.anchor()
@@ -245,6 +256,7 @@ class ChatLog(VerticalScroll):
         self._recap_labels = []
         self._compaction_block = None
         self._todo_block = None
+        self.reset_run_tracking()
 
     def on_click(self, event) -> None:
         event.stop()
@@ -577,6 +589,7 @@ class ChatLog(VerticalScroll):
         self._scroll_if_anchored(animate=False)
 
     def add_user_message(self, content: str, highlighted_skill: str | None = None) -> UserBlock:
+        self.start_agent_run()
         block = UserBlock(content, highlighted_skill=highlighted_skill)
         self.mount(block)
         self._anchor_released = False
@@ -616,6 +629,7 @@ class ChatLog(VerticalScroll):
     def start_thinking(self) -> ThinkingBlock:
         block = ThinkingBlock()
         self.mount(block)
+        self.record_thought_block(block)
         self._scroll_if_anchored(animate=False)
         self._current_block = block
         return block
@@ -623,10 +637,12 @@ class ChatLog(VerticalScroll):
     def add_thinking(self, content: str) -> ThinkingBlock:
         block = ThinkingBlock(content, finalized=True)
         self.mount(block)
+        self.record_thought_block(block)
         self._scroll_if_anchored(animate=False)
         return block
 
     def start_content(self) -> ContentBlock:
+        self.ensure_run_summary_before_content()
         block = ContentBlock()
         self.mount(block)
         self._scroll_if_anchored(animate=False)
@@ -634,6 +650,7 @@ class ChatLog(VerticalScroll):
         return block
 
     def add_content(self, content: str) -> ContentBlock:
+        self.ensure_run_summary_before_content()
         block = ContentBlock(content, finalized=True)
         self.mount(block)
         self._scroll_if_anchored(animate=False)
@@ -687,6 +704,7 @@ class ChatLog(VerticalScroll):
             block.add_class("pinned")
 
         self.mount(block)
+        self.record_tool_block(block)
         self._scroll_if_anchored(animate=False)
         self._tool_blocks[tool_id] = block
         if is_todo:
@@ -733,6 +751,7 @@ class ChatLog(VerticalScroll):
                 ui_details_full=ui_details_full,
                 images=images,
             )
+            self.record_tool_result(tool_id, success)
             if block.has_class("-with-details"):
                 # All ToolStartEvents arrive during streaming before any
                 # results, so later siblings were mounted compact.  Now that
@@ -764,6 +783,117 @@ class ChatLog(VerticalScroll):
         expanded = not self._tool_output_expanded
         self.set_tool_output_expanded(expanded)
         return expanded
+
+    def reset_run_tracking(self) -> None:
+        """Reset state tracking for merged run summary."""
+        self._current_run_summary = None
+        self._current_run_summaries = []
+        self._current_run_tools = []
+        self._current_run_thoughts = []
+        self._current_run_thoughts_count = 0
+        self._current_run_tools_count = 0
+        self._current_run_additions = 0
+        self._current_run_removals = 0
+        self._current_run_failures = 0
+
+    def start_agent_run(self) -> None:
+        """Called when a user prompt initiates an agent run."""
+        self.reset_run_tracking()
+
+    def _get_current_run_stats(self):
+        from vtx.tui.run_summary import RunSummaryStats
+
+        return RunSummaryStats(
+            thoughts=self._current_run_thoughts_count,
+            tools=self._current_run_tools_count,
+            edit_additions=self._current_run_additions,
+            edit_removals=self._current_run_removals,
+            failures=self._current_run_failures,
+        )
+
+    def record_thought_block(self, block: ThinkingBlock) -> None:
+        self._current_run_thoughts.append(block)
+        self._current_run_thoughts_count += 1
+
+    def record_tool_block(self, block: ToolBlock) -> None:
+        self._current_run_tools.append(block)
+        self._current_run_tools_count += 1
+
+    def record_tool_result(self, tool_id: str, success: bool, fc=None) -> None:
+        if not success:
+            self._current_run_failures += 1
+        if fc:
+            self._current_run_additions += getattr(fc, "added", 0)
+            self._current_run_removals += getattr(fc, "removed", 0)
+
+    def ensure_run_summary_before_content(self) -> None:
+        """Before commentary/prose content starts, ensure a summary block exists."""
+        if not config.ui.merged_turn_summary:
+            return
+        summary = RunSummaryBlock(self._get_current_run_stats())
+        # Start hidden while the run is active
+        summary.add_class("-hidden")
+        self.mount(summary)
+        self._current_run_summary = summary
+        self._current_run_summaries.append(summary)
+        self._scroll_if_anchored(animate=False)
+
+    def finish_agent_run(self) -> None:
+        """Called on AgentEndEvent to finalize merged run disclosures."""
+        if not config.ui.merged_turn_summary:
+            return
+
+        # If there were tool or thought runs but no commentary content followed,
+        # attach a summary block at the end
+        if not self._current_run_summaries and (
+            self._current_run_thoughts or self._current_run_tools
+        ):
+            summary = RunSummaryBlock(self._get_current_run_stats())
+            summary.add_class("-hidden")
+            self.mount(summary)
+            self._current_run_summary = summary
+            self._current_run_summaries.append(summary)
+
+        # Make all run summaries visible
+        for summary in self._current_run_summaries:
+            summary.remove_class("-hidden")
+
+        # Collapse thoughts and tools into the summary row if collapse_after_turn is True
+        if config.ui.collapse_after_turn:
+            for thought in self._current_run_thoughts:
+                thought.add_class("-hidden")
+            for tool in self._current_run_tools:
+                tool.set_run_collapsed(True)
+
+        self._scroll_if_anchored(animate=False)
+
+    def toggle_run_disclosure(self, summary_block: RunSummaryBlock) -> None:
+        """Toggle all thoughts and finalized tools for the whole run."""
+        # Find which run this summary belongs to. If it's the current run, use its tracked lists;
+        # otherwise query all thinking blocks and tool blocks in the chat log.
+        if summary_block in self._current_run_summaries:
+            thoughts = self._current_run_thoughts
+            tools = self._current_run_tools
+        else:
+            thoughts = list(self.query(ThinkingBlock))
+            tools = list(self.query(ToolBlock))
+
+        # Check if anything is open
+        is_open = any(not t.has_class("-hidden") for t in thoughts) or any(
+            not b.has_class("-run-collapsed") for b in tools
+        )
+
+        should_open = not is_open
+        for t in thoughts:
+            if should_open:
+                t.remove_class("-hidden")
+            else:
+                t.add_class("-hidden")
+
+        for b in tools:
+            b.set_run_collapsed(not should_open)
+
+        self._scroll_if_anchored(animate=False)
 
     def update_tool_call_msg(self, tool_id: str, call_msg: str) -> None:
         block = self._tool_blocks.get(tool_id)

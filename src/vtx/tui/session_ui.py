@@ -170,6 +170,8 @@ class SessionUIMixin:
                 elif entry.display:
                     chat.add_info_message(entry.content)
 
+        chat.finish_agent_run()
+
     async def _load_session_by_id(self, session_id: str) -> None:
         chat = self.query_one("#chat-log", ChatLog)
         input_box = self.query_one("#input-box", InputBox)

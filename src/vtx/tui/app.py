@@ -47,7 +47,7 @@ from vtx.tui.agent_runner import AgentRunnerMixin
 from vtx.tui.agents_panel import AgentsPanel
 from vtx.tui.ask_user import AskUserDialog
 from vtx.tui.autocomplete import DEFAULT_COMMANDS, SlashCommand
-from vtx.tui.blocks import HandoffLinkBlock, LaunchWarning
+from vtx.tui.blocks import HandoffLinkBlock, LaunchWarning, RunSummaryBlock
 from vtx.tui.chat import ChatLog
 from vtx.tui.commands import CommandsMixin
 from vtx.tui.completion_ui import CompletionUIMixin
@@ -632,6 +632,14 @@ class Vtx(
         selection = self.screen.get_selected_text()
         if selection:
             self.copy_to_clipboard(selection)
+
+    @on(RunSummaryBlock.Toggled)
+    def _on_run_summary_toggled(self, event: RunSummaryBlock.Toggled) -> None:
+        try:
+            chat = self.query_one("#chat-log", ChatLog)
+            chat.toggle_run_disclosure(event.block)
+        except Exception:
+            pass
 
     def on_mount(self) -> None:
         self._fd_path = get_tool_path("fd")

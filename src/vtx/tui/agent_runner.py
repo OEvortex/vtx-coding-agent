@@ -512,6 +512,7 @@ class AgentRunnerMixin:
                 status.set_active_tool(None)
                 if fc:
                     info_bar.update_file_changes(fc.path, fc.added, fc.removed)
+                    chat.record_tool_result(id, success=r.is_error is False if r else True, fc=fc)
 
             case TurnEndEvent():
                 if event.assistant_message and event.assistant_message.usage:
@@ -586,6 +587,7 @@ class AgentRunnerMixin:
                 self._current_block_type = None
                 status.set_active_tool(None)
                 status.set_agent_state(None)
+                chat.finish_agent_run()
 
         return was_interrupted
 

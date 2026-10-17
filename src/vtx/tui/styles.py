@@ -61,6 +61,24 @@ Screen {{
     text-style: italic;
 }}
 
+/* Run summary block */
+.run-summary-block {{
+    padding: 0 1;
+    margin: 1 0 0 0;
+    width: 100%;
+}}
+
+.run-summary-block.-hidden {{
+    display: none;
+    height: 0;
+    margin: 0;
+    border: none;
+}}
+
+.run-summary-block:hover {{
+    text-style: underline;
+}}
+
 /* Content block */
 .content-block {{
     padding: 0 1;
@@ -142,6 +160,14 @@ Screen {{
 .tool-block.-error {{
     background: transparent;
     color: {colors.dim};
+    border: none;
+}}
+
+.tool-block.-run-collapsed {{
+    display: none;
+    height: 0;
+    margin: 0;
+    padding: 0;
     border: none;
 }}
 

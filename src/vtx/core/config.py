@@ -95,6 +95,10 @@ class UIConfig(BaseModel):
     # to hide all its models, or "provider:model" to hide a specific model.
     # Hidden models remain usable via config defaults or session resume.
     hidden_models: list[str] = []
+    # When true, interleaved cumulative run progress summaries are displayed.
+    merged_turn_summary: bool = True
+    # When true, tools are automatically collapsed upon turn completion in merged run summaries.
+    collapse_after_turn: bool = True
     # Provider slug whose models appear in the /model picker. Empty (default)
     # shows every provider; a non-empty slug restricts the picker to that one
     # provider. Pick via the /provider dropdown (or set directly).

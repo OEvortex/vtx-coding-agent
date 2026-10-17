@@ -1,10 +1,12 @@
+from __future__ import annotations
+
 import contextlib
 import re
 import textwrap
 import time
 from collections.abc import Callable, Iterable
 from dataclasses import dataclass
-from typing import Literal
+from typing import Any, Literal
 
 from rich.spinner import Spinner
 from rich.style import Style
@@ -349,6 +351,36 @@ class ThinkingBlock(_StreamingMarkdownMixin, Static):
             self.label.update(self._format_collapsed())
         else:
             self.label.update(text)
+
+
+class RunSummaryBlock(Static):
+    ALLOW_SELECT = True
+    can_focus = False
+
+    class Toggled(Message):
+        def __init__(self, block: RunSummaryBlock) -> None:
+            super().__init__()
+            self.block = block
+
+    def __init__(self, stats: Any = None, **kwargs) -> None:
+        super().__init__(**kwargs)
+        from vtx.tui.run_summary import RunSummaryStats, format_merged_summary_text
+
+        self._stats = stats or RunSummaryStats()
+        self._format_func = format_merged_summary_text
+        self.add_class("run-summary-block")
+
+    def compose(self) -> ComposeResult:
+        yield Label(self._format_func(self._stats), id="run-summary-label", markup=False)
+
+    def update_stats(self, stats: Any) -> None:
+        self._stats = stats
+        with contextlib.suppress(Exception):
+            self.query_one("#run-summary-label", Label).update(self._format_func(self._stats))
+
+    def on_click(self, event: events.Click) -> None:
+        event.stop()
+        self.post_message(self.Toggled(self))
 
 
 class ContentBlock(_StreamingMarkdownMixin, Static):
@@ -1117,6 +1149,13 @@ class ToolBlock(Static):
         self._expanded = expanded
         self._render_result_output()
 
+    def set_run_collapsed(self, collapsed: bool) -> None:
+        """Collapse or reveal the entire tool block in merged run summary mode."""
+        if collapsed:
+            self.add_class("-run-collapsed")
+        else:
+            self.remove_class("-run-collapsed")
+
     def on_resize(self, event: events.Resize) -> None:
         del event
         if self._ui_details or self._ui_details_full:
@@ -1261,7 +1300,7 @@ class HandoffLinkBlock(Static):
     class LinkSelected(Message):
         def __init__(
             self,
-            block: "HandoffLinkBlock",
+            block: HandoffLinkBlock,
             target_session_id: str,
             query: str,
             direction: Literal["back", "forward"],
