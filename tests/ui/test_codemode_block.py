@@ -1,11 +1,10 @@
 """The ``codemode`` tool block.
 
-The point under test is that a codemode call reads as an execution rather than
-as a one-line receipt: the script is on screen, its nested calls are on screen
-with their durations, and its output is on screen — all of it, because the block
-clips nothing. Everything goes through :meth:`ChatLog.set_tool_result`, which is
-the path the runner and session replay both take, so the ``ui_data`` hand-off is
-covered by the same assertions.
+The point under test is that a codemode call reads as a *run* rather than as a
+one-line receipt: the script, its nested calls, its output, and how long it all
+took -- in that order, one block, no section furniture. Everything goes through
+:meth:`ChatLog.set_tool_result`, which is the path the runner and session replay
+both take, so the ``ui_data`` hand-off is covered by the same assertions.
 """
 
 from __future__ import annotations
@@ -18,7 +17,7 @@ from textual.app import App, ComposeResult
 from vtx.coding_agent.tools.codemode import PROGRESS_SENTINEL, CodemodeTool
 from vtx.tui.blocks import ToolBlock
 from vtx.tui.chat import ChatLog
-from vtx.tui.codemode_block import SECTION_INDENT, CodemodeToolBlock
+from vtx.tui.codemode_block import BODY_INDENT, CodemodeToolBlock
 from vtx.tui.styles import get_styles
 from vtx.tui.task_ui import GLYPHS
 
@@ -73,6 +72,22 @@ def _body(block: CodemodeToolBlock) -> str:
     return block.query_one("#tool-output").visual.plain
 
 
+def _call_row(body: str, name: str) -> str:
+    """The one call row for ``name``, stripped.
+
+    The script itself mentions the tool names too, so a row is found by its
+    status glyph rather than by the name being absent from the rest of the block.
+    """
+    glyphs = (GLYPHS["success"], GLYPHS["failure"], GLYPHS["running"], GLYPHS["cancelled"])
+    rows = [
+        line.strip()
+        for line in body.split("\n")
+        if line.lstrip().startswith(glyphs) and line.split()[1] == name
+    ]
+    assert len(rows) == 1, f"expected one row for {name}, got {rows!r}"
+    return rows[0]
+
+
 async def _start(pilot, tool: CodemodeTool, code: str = SCRIPT) -> CodemodeToolBlock:
     chat = pilot.app.query_one("#chat-log", ChatLog)
     params = tool.params(code=code)
@@ -93,144 +108,140 @@ class TestBlockSelection:
 
     @pytest.mark.asyncio
     async def test_every_other_tool_keeps_the_default_block(self):
-        # A codemode call gets the script-the-call treatment, but every other
-        # tool keeps the plain receipt; this is what stops the registry growing
-        # a custom block per tool.
+        # A codemode call gets the whole-run treatment, but every other tool
+        # keeps the plain receipt; this is what stops the registry growing a
+        # custom block per tool.
         async with _TestApp().run_test() as pilot:
             chat = pilot.app.query_one("#chat-log", ChatLog)
             block = chat.start_tool("read", "r1", "some/file.py", icon="→")
             assert type(block) is ToolBlock
 
 
-class TestPendingCell:
+class TestShape:
+    """The block has no section furniture; the blank lines are the only rule."""
+
     @pytest.mark.asyncio
-    async def test_script_shows_while_it_runs(self):
+    async def test_the_run_reads_top_to_bottom_with_no_labels(self):
         async with _TestApp().run_test() as pilot:
             block = await _start(pilot, CodemodeTool())
-            # ToolEndEvent lands before execution, which is when the script
-            # becomes known. Showing it there is the difference between a
-            # script that appears and a receipt that pops in at the end.
+            _finish(pilot, block, ui_data=_payload(), summary="Script ok (3 tool calls)")
+            await pilot.pause()
+            body = _body(block)
+            # `script` / `calls` / `output` / `value` restated what the shape
+            # already says, four times over, on an eleven-line run.
+            for label in ("⎿", "script", "calls", "output", "value"):
+                assert label not in body
+            # Order is what carries the meaning instead: what was written, what
+            # it called, what came back, how long it took.
+            assert body.index(FIRST_LINE) < body.index("search")
+            assert body.index("search") < body.index("3 tools")
+            assert body.index("3 tools") < body.index("Took")
+
+    @pytest.mark.asyncio
+    async def test_every_region_is_separated_by_one_blank_line(self):
+        async with _TestApp().run_test() as pilot:
+            block = await _start(pilot, CodemodeTool())
+            _finish(pilot, block, ui_data=_payload(), summary="Script ok (3 tool calls)")
+            await pilot.pause()
+            lines = _body(block).split("\n")
+            script_end = lines.index(f"{BODY_INDENT}return [r['name'] for r in rows]")
+            assert lines[script_end + 1] == "", "the call list must not hug the script"
+            assert lines[-1] == f"{BODY_INDENT}Took 1.2s"
+
+    @pytest.mark.asyncio
+    async def test_content_is_indented_like_every_other_tool_detail(self):
+        async with _TestApp().run_test() as pilot:
+            block = await _start(pilot, CodemodeTool())
+            _finish(pilot, block, ui_data=_payload(), summary="Script ok (3 tool calls)")
+            await pilot.pause()
+            body = _body(block)
+            assert body.startswith(f"{BODY_INDENT}{FIRST_LINE}")
+            # Every non-blank line sits in the content column, including the
+            # clock, which is otherwise a caption flush to the margin.
+            for line in body.split("\n"):
+                assert not line.strip() or line.startswith(BODY_INDENT), line
+
+
+class TestOutput:
+    """A printed line and a returned value are not the same claim about a run."""
+
+    @pytest.mark.asyncio
+    async def test_the_returned_value_is_the_last_output_item(self):
+        async with _TestApp().run_test() as pilot:
+            block = await _start(pilot, CodemodeTool())
+            _finish(pilot, block, ui_data=_payload(value=None, printed=["3 tools", "done"]))
+            await pilot.pause()
+            body = _body(block)
+            assert "3 tools" in body
+            assert "done" in body
+            # A script that only prints is not returning the printed lines, and
+            # the block must not read as though it were.
+            assert "value" not in body
+
+    @pytest.mark.asyncio
+    async def test_more_than_one_item_is_labelled_so_they_can_be_told_apart(self):
+        async with _TestApp().run_test() as pilot:
+            block = await _start(pilot, CodemodeTool())
+            _finish(pilot, block, ui_data=_payload())
+            await pilot.pause()
+            body = _body(block)
+            assert "==> text 1/2 <==" in body
+            assert "==> text 2/2 <==" in body
+            # The value is the last item, so it is the answer the reader wants.
+            assert body.index("==> text 2/2 <==") < body.index('["edit", "grep", "read"]')
+
+    @pytest.mark.asyncio
+    async def test_a_single_item_is_not_labelled(self):
+        async with _TestApp().run_test() as pilot:
+            block = await _start(pilot, CodemodeTool())
+            _finish(pilot, block, ui_data=_payload(value=None, printed=["3 tools"]))
+            await pilot.pause()
+            # With one item the label restates the only fact already on screen.
+            assert "==>" not in _body(block)
+
+    @pytest.mark.asyncio
+    async def test_output_keeps_its_tail_so_the_value_survives_the_preview(self):
+        async with _TestApp().run_test() as pilot:
+            block = await _start(pilot, CodemodeTool())
+            _finish(
+                pilot,
+                block,
+                ui_data=_payload(value="ANSWER", printed=[f"finding {i}" for i in range(30)]),
+            )
+            await pilot.pause()
+            body = _body(block)
+            # The returned value is the last item; previewing the head would
+            # throw away the one thing the script produced an answer about.
+            assert "finding 0" not in body
+            assert "ANSWER" in body
+            assert "ctrl+o to expand" in body
+
+    @pytest.mark.asyncio
+    async def test_a_preview_never_splits_an_item_from_its_label(self):
+        async with _TestApp().run_test() as pilot:
+            block = await _start(pilot, CodemodeTool())
+            _finish(
+                pilot,
+                block,
+                ui_data=_payload(value="ANSWER", printed=[f"finding {i}" for i in range(6)]),
+            )
+            await pilot.pause()
+            lines = _body(block).split("\n")
+            # Every label in view is immediately followed by the text it names.
+            for index, line in enumerate(lines[:-1]):
+                if line.strip().startswith("==> text"):
+                    assert lines[index + 1].strip(), "a label with nothing under it"
+
+    @pytest.mark.asyncio
+    async def test_output_is_withheld_until_the_run_ends(self):
+        async with _TestApp().run_test() as pilot:
+            block = await _start(pilot, CodemodeTool())
             block.update_call_msg(SCRIPT)
             await pilot.pause()
-            assert "running" in _header(block)
-            assert FIRST_LINE in _body(block)
+            assert "3 tools" not in _body(block)
 
 
-class TestFinishedCell:
-    @pytest.mark.asyncio
-    async def test_the_header_names_the_tool_and_what_it_did(self):
-        async with _TestApp().run_test() as pilot:
-            block = await _start(pilot, CodemodeTool())
-            _finish(pilot, block, ui_data=_payload(value=None), summary="Script ok (3 tool calls)")
-            await pilot.pause()
-            # No IPython numbering: the header reads like every other tool
-            # block, and the body carries the run.
-            assert _header(block).startswith("⟩ codemode")
-            assert "In [" not in _header(block)
-            assert "3 tool calls" in _header(block)
-            assert "1.2s" in _header(block)
-
-    @pytest.mark.asyncio
-    async def test_sections_are_labelled_and_indented(self):
-        async with _TestApp().run_test() as pilot:
-            block = await _start(pilot, CodemodeTool())
-            _finish(pilot, block, ui_data=_payload(), summary="Script ok (3 tool calls)")
-            await pilot.pause()
-            body = _body(block)
-            for section in ("script", "calls", "output", "value"):
-                assert f"⎿ {section}" in body
-            # Every section marker sits in the same column as every other tool
-            # detail in the scrollback.
-            markers = [line for line in body.split("\n") if "⎿" in line]
-            assert markers and all(line.startswith("  ⎿ ") for line in markers)
-            # Content is one step in from its label, never flush with it.
-            assert f"\n{SECTION_INDENT}1  {FIRST_LINE}" in body
-
-    @pytest.mark.asyncio
-    async def test_the_script_is_its_own_section(self):
-        async with _TestApp().run_test() as pilot:
-            block = await _start(pilot, CodemodeTool())
-            _finish(pilot, block, ui_data=_payload(value=None), summary="Script ok (3 tool calls)")
-            await pilot.pause()
-            body = _body(block)
-            script_at = body.index("⎿ script")
-            assert FIRST_LINE in body[script_at:]
-            # Continuation lines align under the code, not under a prompt, and
-            # the line number keeps its own column.
-            assert f"\n{SECTION_INDENT}1  {FIRST_LINE}" in body
-            assert f"\n{SECTION_INDENT}2  return [r['name'] for r in rows]" in body
-            assert "3 tools" in body
-
-    @pytest.mark.asyncio
-    async def test_printed_output_and_returned_value_are_separate(self):
-        async with _TestApp().run_test() as pilot:
-            block = await _start(pilot, CodemodeTool())
-            _finish(pilot, block, ui_data=_payload(), summary="Script ok (3 tool calls)")
-            await pilot.pause()
-            body = _body(block)
-            # A reader has to be able to tell what the script printed from what
-            # it returned; they are different claims about the run.
-            assert body.index("⎿ output") < body.index("3 tools")
-            assert body.index("⎿ value") < body.index('["edit", "grep", "read"]')
-            # A short pretty-printed value folds onto the one line it belongs
-            # on rather than becoming three.
-            value_section = body.split("⎿ value")[1]
-            assert value_section.strip() == '["edit", "grep", "read"]'
-
-    @pytest.mark.asyncio
-    async def test_long_output_previews_and_expands(self):
-        long_value = "\n".join(f"line {i}" for i in range(30))
-        async with _TestApp().run_test() as pilot:
-            block = await _start(pilot, CodemodeTool())
-            _finish(pilot, block, ui_data=_payload(printed=[long_value]))
-            await pilot.pause()
-            body = _body(block)
-            # Thirty lines of print output is the case the preview exists for:
-            # shown whole, it buries the script and the call list above it.
-            assert "line 0" in body
-            assert "line 29" not in body
-            assert "ctrl+o to expand" in body
-            assert "25 lines hidden" in body
-
-            block.set_expanded(True)
-            await pilot.pause()
-            expanded = _body(block)
-            assert "line 29" in expanded
-            assert "hidden" not in expanded
-
-    @pytest.mark.asyncio
-    async def test_a_long_script_previews_and_expands(self):
-        long_script = "\n".join(f"x{i} = {i}" for i in range(120))
-        async with _TestApp().run_test() as pilot:
-            block = await _start(pilot, CodemodeTool(), code=long_script)
-            _finish(pilot, block, ui_data=_payload(code=long_script))
-            await pilot.pause()
-            body = _body(block)
-            assert "x0 = 0" in body
-            assert "x119 = 119" not in body
-            assert "ctrl+o to expand" in body
-
-            block.set_expanded(True)
-            await pilot.pause()
-            assert "x119 = 119" in _body(block)
-
-    @pytest.mark.asyncio
-    async def test_the_script_is_numbered_so_a_traceback_is_findable(self):
-        async with _TestApp().run_test() as pilot:
-            block = await _start(pilot, CodemodeTool())
-            _finish(pilot, block, ui_data=_payload(value=None))
-            await pilot.pause()
-            body = _body(block)
-            # The error section quotes `line 12`; a script drawn without numbers
-            # makes that unanswerable without counting by hand.
-            script = body.split("⎿ script")[1].split("⎿ ")[0]
-            numbers = [
-                line.split()[0]
-                for line in script.split("\n")
-                if line.strip() and line.strip()[0].isdigit()
-            ]
-            assert numbers[:2] == ["1", "2"]
-
+class TestCalls:
     @pytest.mark.asyncio
     async def test_a_call_shows_what_it_was_called_with(self):
         async with _TestApp().run_test() as pilot:
@@ -244,30 +255,71 @@ class TestFinishedCell:
             assert '{"path":"pyproject.toml"}' in body
 
     @pytest.mark.asyncio
-    async def test_short_arguments_are_still_drawn(self):
+    async def test_a_row_is_glyph_name_args_duration(self):
         async with _TestApp().run_test() as pilot:
             block = await _start(pilot, CodemodeTool())
-            _finish(pilot, block, ui_data=_payload(calls=[_call("read", ms=5, args='{"p":"a"}')]))
+            _finish(pilot, block, ui_data=_payload())
             await pilot.pause()
-            # `{"p":"a"}` is eight characters, under the width below which a
-            # column is refused. Refusing to draw it because it is *short*
-            # throws away the only thing that distinguishes two calls.
-            assert '{"p":"a"}' in _body(block)
+            row = _call_row(_body(block), "search")
+            assert row == '✓ search {"query":"find dead code"} 412ms'
 
     @pytest.mark.asyncio
-    async def test_long_arguments_are_elided_rather_than_wrapped(self):
-        blob = '{"pattern":"' + "x" * 300 + '"}'
-        async with _TestApp().run_test(size=(90, 60)) as pilot:
+    async def test_durations_keep_their_own_precision(self):
+        async with _TestApp().run_test() as pilot:
             block = await _start(pilot, CodemodeTool())
-            _finish(pilot, block, ui_data=_payload(calls=[_call("grep", ms=5, args=blob)]))
+            _finish(pilot, block, ui_data=_payload())
             await pilot.pause()
-            rows = [
-                line
-                for line in _body(block).split("\n")
-                if GLYPHS["success"] in line and "grep" in line
-            ]
-            assert len(rows) == 1, "arguments must not wrap the row onto a second line"
-            assert "…" in rows[0]
+            body = _body(block)
+            # A 90ms read shown as `0.1s` says nothing; `412ms` says it all.
+            assert "90ms" in body
+            assert "412ms" in body
+            assert "0.0s" not in body
+
+    @pytest.mark.asyncio
+    async def test_a_failed_call_says_why(self):
+        async with _TestApp().run_test() as pilot:
+            block = await _start(pilot, CodemodeTool())
+            _finish(pilot, block, ui_data=_payload())
+            await pilot.pause()
+            body = _body(block)
+            assert f"{GLYPHS['failure']} bash" in body
+            # A bare ✗ cannot be told from a denial, a missing file and a bad
+            # argument, so the reason stays even on a collapsed row.
+            assert "exit 1 · tool_failure" in body
+
+    @pytest.mark.asyncio
+    async def test_an_in_flight_call_shows_no_duration(self):
+        async with _TestApp().run_test() as pilot:
+            block = await _start(pilot, CodemodeTool())
+            block.update_call_msg(SCRIPT)
+            block.append_live_output(
+                f"{PROGRESS_SENTINEL}"
+                + json.dumps(
+                    {
+                        "name": "read",
+                        "status": "running",
+                        "args": '{"path":"a"}',
+                        "kind": None,
+                        "message": None,
+                        "duration_ms": None,
+                    }
+                )
+                + "\n"
+            )
+            await pilot.pause()
+            row = _call_row(_body(block), "read")
+            assert row.strip() == f'{GLYPHS["running"]} read {{"path":"a"}}'
+            assert "ms" not in row
+
+    @pytest.mark.asyncio
+    async def test_a_cancelled_call_has_its_own_glyph(self):
+        async with _TestApp().run_test() as pilot:
+            block = await _start(pilot, CodemodeTool())
+            _finish(
+                pilot, block, ui_data=_payload(calls=[_call("read", ms=None, status="cancelled")])
+            )
+            await pilot.pause()
+            assert GLYPHS["cancelled"] in _body(block)
 
     @pytest.mark.asyncio
     async def test_the_call_list_keeps_its_tail(self):
@@ -290,60 +342,64 @@ class TestFinishedCell:
             assert "earlier calls" not in expanded
 
     @pytest.mark.asyncio
-    async def test_calls_are_a_checklist_with_durations(self):
+    async def test_short_arguments_are_still_drawn(self):
         async with _TestApp().run_test() as pilot:
             block = await _start(pilot, CodemodeTool())
-            _finish(pilot, block, ui_data=_payload())
+            _finish(pilot, block, ui_data=_payload(calls=[_call("read", ms=5, args='{"p":"a"}')]))
+            await pilot.pause()
+            # `{"p":"a"}` is short, not uninteresting. Refusing to draw it
+            # because it is small throws away the only thing that distinguishes
+            # two calls of the same tool.
+            assert '{"p":"a"}' in _body(block)
+
+    @pytest.mark.asyncio
+    async def test_a_long_argument_is_elided_rather_than_wrapped(self):
+        blob = '{"pattern":"' + "x" * 300 + '"}'
+        async with _TestApp().run_test(size=(90, 60)) as pilot:
+            block = await _start(pilot, CodemodeTool())
+            _finish(pilot, block, ui_data=_payload(calls=[_call("grep", ms=5, args=blob)]))
+            await pilot.pause()
+            row = _call_row(_body(block), "grep")
+            # Cut in the middle and marked, rather than wrapped onto a second
+            # line the eye then has to reassemble against the row above it.
+            assert "..." in row
+            assert "5ms" in row
+            assert len(row) < len(blob)
+
+
+class TestPreviews:
+    @pytest.mark.asyncio
+    async def test_a_long_script_previews_and_expands(self):
+        long_script = "\n".join(f"x{i} = {i}" for i in range(120))
+        async with _TestApp().run_test() as pilot:
+            block = await _start(pilot, CodemodeTool(), code=long_script)
+            _finish(pilot, block, ui_data=_payload(code=long_script))
             await pilot.pause()
             body = _body(block)
-            assert "✓  search" in body
-            assert "✓  read" in body
-            assert "✗  bash" in body
-            assert "0.4s" in body
-            assert "1.2s" in body
-            # A failed call names both why it failed and how it failed.
-            assert "exit 1 · tool_failure" in body
+            assert "x0 = 0" in body
+            assert "x119 = 119" not in body
+            assert "ctrl+o to expand" in body
 
-    @pytest.mark.asyncio
-    async def test_durations_line_up_as_a_column(self):
-        async with _TestApp().run_test() as pilot:
-            block = await _start(pilot, CodemodeTool())
-            _finish(
-                pilot,
-                block,
-                ui_data=_payload(
-                    calls=[
-                        {
-                            "name": "a",
-                            "ok": True,
-                            "kind": None,
-                            "message": None,
-                            "duration_ms": 40,
-                        },
-                        {
-                            "name": "b",
-                            "ok": True,
-                            "kind": None,
-                            "message": None,
-                            "duration_ms": 4000,
-                        },
-                    ]
-                ),
-            )
+            block.set_expanded(True)
             await pilot.pause()
-            rows = [
-                line for line in _body(block).split("\n") if line.strip().startswith(("✓", "✗"))
-            ]
-            assert len(rows) == 2
-            # Same right edge for the timing column, so the numbers read as a
-            # column rather than as trailing noise.
-            assert rows[0].index("0.0s") == rows[1].index("4.0s")
-            assert rows[0].index("0.0s") + len("0.0s") == rows[1].index("4.0s") + len("4.0s")
+            assert "x119 = 119" in _body(block)
 
-
-class TestFailedCell:
     @pytest.mark.asyncio
-    async def test_error_is_its_own_section_under_the_source(self):
+    async def test_the_script_preview_keeps_its_head(self):
+        long_script = "\n".join(f"x{i} = {i}" for i in range(40))
+        async with _TestApp().run_test() as pilot:
+            block = await _start(pilot, CodemodeTool(), code=long_script)
+            _finish(pilot, block, ui_data=_payload(code=long_script))
+            await pilot.pause()
+            body = _body(block)
+            # A script's head is what it came to do; its tail is elaboration.
+            assert "x0 = 0" in body
+            assert "x39 = 39" not in body
+
+
+class TestFailure:
+    @pytest.mark.asyncio
+    async def test_the_failure_keeps_its_cause_and_whole_traceback(self):
         error = {
             "kind": "script",
             "message": "NameError: name 'toolz' is not defined",
@@ -362,13 +418,14 @@ class TestFailedCell:
             assert "Script failed" in _header(block)
             body = _body(block)
             assert FIRST_LINE in body
-            assert "⎿ error" in body
             assert "script · NameError" in body
             assert "Traceback" in body
 
     @pytest.mark.asyncio
     async def test_the_whole_traceback_is_shown(self):
-        stack = "\n".join(f'  File "<codemode>", line {i}, in <module>' for i in range(30))
+        stack = "\n".join(
+            f'  File "<codemode>", line {i}, in __codemode_main__' for i in range(30)
+        )
         error = {"kind": "script", "message": "boom", "stack": stack}
         async with _TestApp().run_test() as pilot:
             block = await _start(pilot, CodemodeTool())
@@ -383,125 +440,43 @@ class TestFailedCell:
             body = _body(block)
             assert "line 0" in body
             assert "line 29" in body
-            assert "hidden" not in body
+            # A traceback cut off mid-frame is not a traceback, so this one is
+            # never previewed however long it gets.
+            assert "ctrl+o to expand" not in body
 
 
-class TestNarrowTerminals:
-    """A block that wraps correctly is the one that stays readable.
-
-    The cap removal is what makes this matter: previously a long line was
-    clipped rather than wrapped, so nothing in this block ever had to survive
-    a narrow terminal.
-    """
-
+class TestTimer:
     @pytest.mark.asyncio
-    async def test_no_rendered_line_exceeds_the_block(self):
-        long_word = "x" * 300
-        long_out = "scanned a great many files and found " + long_word
-        async with _TestApp().run_test(size=(70, 60)) as pilot:
-            block = await _start(pilot, CodemodeTool())
-            _finish(
-                pilot,
-                block,
-                ui_data=_payload(
-                    code="results = " + long_word,
-                    printed=[long_out],
-                    value=long_out,
-                    calls=[
-                        {
-                            "name": "an_extremely_long_tool_name_here",
-                            "ok": False,
-                            "kind": "tool_failure",
-                            "message": (
-                                "a failure message that is quite long indeed and keeps going"
-                            ),
-                            "duration_ms": 123,
-                        }
-                    ],
-                    error={
-                        "kind": "script",
-                        "message": "RuntimeError: " + "why " * 40,
-                        "stack": "",
-                    },
-                ),
-            )
-            await pilot.pause()
-            await pilot.pause()
-            width = block.query_one("#tool-output").size.width
-            assert width, "the block must be laid out before its width means anything"
-            for line in _body(block).split("\n"):
-                assert len(line) <= width, f"line overflows {width} columns: {line!r}"
-
-    @pytest.mark.asyncio
-    async def test_a_wrapped_line_keeps_its_section_indent(self):
-        async with _TestApp().run_test(size=(70, 60)) as pilot:
-            block = await _start(pilot, CodemodeTool())
-            _finish(
-                pilot, block, ui_data=_payload(printed=[" ".join(f"word{i}" for i in range(40))])
-            )
-            await pilot.pause()
-            await pilot.pause()
-            output = _body(block).split("⎿ output")[1].split("⎿ value")[0]
-            lines = [line for line in output.split("\n") if line.strip()]
-            assert len(lines) > 1, "this output should have had to wrap"
-            # The wrapped remainder hangs under its own content, not back at the
-            # block's margin where a bare Label would have put it.
-            assert all(line.startswith(SECTION_INDENT) for line in lines)
-
-    @pytest.mark.asyncio
-    async def test_a_failure_reason_hangs_under_its_own_row(self):
-        async with _TestApp().run_test(size=(70, 60)) as pilot:
-            block = await _start(pilot, CodemodeTool())
-            _finish(
-                pilot,
-                block,
-                ui_data=_payload(
-                    calls=[
-                        {
-                            "name": "read",
-                            "ok": False,
-                            "kind": "tool_failure",
-                            "message": " ".join(f"reason{i}" for i in range(30)),
-                            "duration_ms": 10,
-                        }
-                    ]
-                ),
-            )
-            await pilot.pause()
-            await pilot.pause()
-            rows = [
-                line for line in _body(block).split("\n") if "read" in line or "reason" in line
-            ]
-            assert len(rows) > 1, "this reason should have had to wrap"
-            # Every row is indented at least as far as the glyph it belongs to.
-            assert all(line.startswith(SECTION_INDENT) for line in rows)
-
-
-class TestAttachments:
-    @pytest.mark.asyncio
-    async def test_attached_images_are_counted(self):
+    async def test_the_clock_runs_while_the_script_does(self):
         async with _TestApp().run_test() as pilot:
             block = await _start(pilot, CodemodeTool())
-            _finish(pilot, block, ui_data=_payload(images=2))
+            block.update_call_msg(SCRIPT)
             await pilot.pause()
-            assert "2 images attached to the result" in _body(block)
+            assert "Elapsed" in _body(block)
 
     @pytest.mark.asyncio
-    async def test_a_single_image_reads_as_one(self):
+    async def test_the_elapsed_clock_is_replaced_by_a_taken_one(self):
         async with _TestApp().run_test() as pilot:
             block = await _start(pilot, CodemodeTool())
-            _finish(pilot, block, ui_data=_payload(images=1))
+            block.update_call_msg(SCRIPT)
             await pilot.pause()
-            assert "1 image attached to the result" in _body(block)
+            _finish(pilot, block, ui_data=_payload(), summary="Script ok (3 tool calls)")
+            await pilot.pause()
+            body = _body(block)
+            assert "Took 1.2s" in body
+            assert "Elapsed" not in body
+
+    @pytest.mark.asyncio
+    async def test_the_clock_escalates_past_a_minute(self):
+        async with _TestApp().run_test() as pilot:
+            block = await _start(pilot, CodemodeTool())
+            _finish(pilot, block, ui_data=_payload(duration_ms=90_000))
+            await pilot.pause()
+            assert "Took 1m 30s" in _body(block)
 
 
 class TestLiveCalls:
-    """A run that says nothing for ninety seconds is indistinguishable from hung.
-
-    The host reports each nested call twice -- admitted, then finished -- and
-    these are the tests that the pair lands as one row that changes shape rather
-    than two rows, and that an in-flight call is visibly in flight.
-    """
+    """A run that says nothing for ninety seconds is indistinguishable from hung."""
 
     @staticmethod
     def _frame(**fields) -> str:
@@ -526,17 +501,6 @@ class TestLiveCalls:
             body = _body(block)
             assert "read" in body
             assert '{"path":"a.py"}' in body
-            # Nothing has finished yet, so there is no duration to show.
-            assert "0.0s" not in body
-
-    @pytest.mark.asyncio
-    async def test_an_in_flight_call_is_marked_as_running(self):
-        async with _TestApp().run_test() as pilot:
-            block = await _start(pilot, CodemodeTool())
-            block.update_call_msg(SCRIPT)
-            block.append_live_output(self._frame(name="read", args='{"path":"a.py"}'))
-            await pilot.pause()
-            assert GLYPHS["running"] in _body(block)
 
     @pytest.mark.asyncio
     async def test_a_finished_call_is_not_shown_twice(self):
@@ -552,7 +516,7 @@ class TestLiveCalls:
             # The host announces and then answers; two frames, one call.
             assert body.count("read") == 1
             assert GLYPHS["success"] in body
-            assert "0.1s" in body
+            assert "120ms" in body
 
     @pytest.mark.asyncio
     async def test_two_identical_calls_in_a_row_are_two_rows(self):
@@ -602,6 +566,60 @@ class TestLiveCalls:
             assert GLYPHS["running"] not in body
 
 
+class TestNarrowTerminals:
+    """A block that wraps correctly is the one that stays readable."""
+
+    @pytest.mark.asyncio
+    async def test_no_rendered_line_exceeds_the_block(self):
+        long_word = "x" * 300
+        long_out = "scanned a great many files and found " + long_word
+        async with _TestApp().run_test(size=(70, 60)) as pilot:
+            block = await _start(pilot, CodemodeTool())
+            _finish(
+                pilot,
+                block,
+                ui_data=_payload(
+                    printed=[long_out],
+                    calls=[_call("read", ms=5, args='{"path":"' + long_word + '"}')],
+                ),
+            )
+            await pilot.pause()
+            for line in _body(block).split("\n"):
+                assert len(line) <= 70, f"line runs past the block: {line[:90]!r}"
+
+    @pytest.mark.asyncio
+    async def test_a_wrapped_line_keeps_its_indent(self):
+        out = "scanned a great many files and found rather a lot of them indeed"
+        async with _TestApp().run_test(size=(60, 60)) as pilot:
+            block = await _start(pilot, CodemodeTool())
+            _finish(pilot, block, ui_data=_payload(value=None, printed=[out]))
+            await pilot.pause()
+            wrapped = [
+                line
+                for line in _body(block).split("\n")
+                if line.strip() and not line.startswith(BODY_INDENT)
+            ]
+            assert not wrapped, f"a continuation escaped the indent: {wrapped[:2]!r}"
+
+
+class TestAttachments:
+    @pytest.mark.asyncio
+    async def test_attached_images_are_counted(self):
+        async with _TestApp().run_test() as pilot:
+            block = await _start(pilot, CodemodeTool())
+            _finish(pilot, block, ui_data=_payload(images=2))
+            await pilot.pause()
+            assert "2 images attached to the result" in _body(block)
+
+    @pytest.mark.asyncio
+    async def test_a_single_image_reads_as_one(self):
+        async with _TestApp().run_test() as pilot:
+            block = await _start(pilot, CodemodeTool())
+            _finish(pilot, block, ui_data=_payload(images=1))
+            await pilot.pause()
+            assert "1 image attached to the result" in _body(block)
+
+
 class TestFallback:
     @pytest.mark.asyncio
     async def test_a_session_without_a_payload_still_shows_the_script(self):
@@ -609,7 +627,6 @@ class TestFallback:
         # still renders the block from the call text.
         async with _TestApp().run_test() as pilot:
             block = await _start(pilot, CodemodeTool())
-            chat = pilot.app.query_one("#chat-log", ChatLog)
-            chat.set_tool_result("t1", "script: rows = ...", None, True)
+            _finish(pilot, block, success=False, ui_data=None, summary="failed")
             await pilot.pause()
-            assert "return [r['name'] for r in rows]" in _body(block)
+            assert FIRST_LINE in _body(block)

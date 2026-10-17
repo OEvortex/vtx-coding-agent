@@ -28,6 +28,7 @@ GLYPHS = {
     "success": "✓",
     "failure": "✗",
     "running": "…",
+    "cancelled": "⊘",
     "stopped": "■",
     "sub_line": "⎿",
     "tool_call": "▸",
@@ -87,6 +88,36 @@ def format_turns(turns: int, max_turns: int | None = None) -> str:
 
 def format_ms(ms: float) -> str:
     return f"{ms / 1000:.1f}s"
+
+
+def format_call_ms(ms: float | int | None) -> str:
+    """A nested tool call's own duration, in the precision that call deserves.
+
+    Milliseconds below a second, then tenths of a second, and never beyond.
+    Distinct from :func:`format_ms` on purpose: a five-millisecond ``read``
+    shown as ``0.0s`` says nothing, and the block-level ``format_ms`` exists to
+    report a whole run, where ``0.0s`` is equally true and equally useless.
+    """
+    if ms is None:
+        return ""
+    return f"{ms:.0f}ms" if ms < 1000 else f"{ms / 1000:.1f}s"
+
+
+def format_run_ms(ms: float | int) -> str:
+    """A whole run's duration, escalating once seconds stop being readable.
+
+    ``4.2s`` under a minute, then ``1m 30s``, then ``2h 3m 4s`` -- because a run
+    is long enough for the unit to be the information.
+    """
+    seconds = ms / 1000
+    if seconds < 60:
+        return f"{seconds:.1f}s"
+    total = int(seconds)
+    minutes, remainder = divmod(total, 60)
+    if minutes < 60:
+        return f"{minutes}m {remainder}s"
+    hours, minutes = divmod(minutes, 60)
+    return f"{hours}h {minutes}m {remainder}s"
 
 
 def short_model(model: str | None) -> str | None:

@@ -852,7 +852,11 @@ def _script_stack(exc: BaseException) -> str:
     # wrong line, and the TUI's line-number gutter would disagree with the
     # traceback printed directly above it.
     for frame in script_frames:
-        frame.lineno = max(1, frame.lineno - 1)
+        # Guarded because a frame without a line number is representable, and
+        # subtracting from None would raise inside the diagnostic -- turning a
+        # script failure into a crash on the way to being reported.
+        if frame.lineno is not None:
+            frame.lineno = max(1, frame.lineno - 1)
     lines = traceback.format_list(script_frames)
     return f"Traceback (most recent call last):\n{''.join(lines)}{type(exc).__name__}: {exc}"
 
