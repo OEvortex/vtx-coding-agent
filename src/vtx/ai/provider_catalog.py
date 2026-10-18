@@ -371,7 +371,7 @@ def _provider_info_to_model(p: ProviderInfo, model_id: str) -> Model:
         api = family_to_api[p.family]
     from vtx.ai.context_length import context_length_manager
 
-    limits = context_length_manager.get_limits(model_id, provider=p.slug, fuzzy=False)
+    limits = context_length_manager.get_limits(model_id, provider=p.slug)
     is_matched = (
         limits.context > 0
         or limits.output > 0

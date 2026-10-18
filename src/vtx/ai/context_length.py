@@ -46,6 +46,10 @@ class TokenLimits:
     thinking_level_map: dict[str, str | None] | None = None
 
 
+def _normalize(s: str) -> str:
+    return s.lower().replace("-", "").replace("_", "").replace(".", "").replace("/", "")
+
+
 class ContextLengthManager:
     def __init__(self) -> None:
         self._limits: dict[str, TokenLimits] = {}
@@ -58,6 +62,9 @@ class ContextLengthManager:
         self._stale = True
         self._refreshing = False
         self._last_refresh_attempt = 0.0
+        self._norm_limits: list[tuple[str, TokenLimits]] = []
+        self._norm_provider_limits: dict[str, list[tuple[str, TokenLimits]]] = {}
+        self._fuzzy_cache: dict[tuple[str, str | None], TokenLimits] = {}
 
     def _get_cache_path(self) -> Path:
         from vtx.core.paths import get_config_dir
@@ -166,6 +173,13 @@ class ContextLengthManager:
         self._limits.update(limits_map)
         for p, d in provider_limits.items():
             self._provider_limits.setdefault(p, {}).update(d)
+
+        # Pre-normalized candidate lists so fuzzy matching never re-normalizes.
+        self._norm_limits = [(_normalize(mid), lim) for mid, lim in self._limits.items()]
+        self._norm_provider_limits = {
+            p: [(_normalize(mid), lim) for mid, lim in d.items()]
+            for p, d in self._provider_limits.items()
+        }
 
     def _schedule_refresh(self) -> None:
         """Fetch models.dev without blocking the caller.
@@ -277,43 +291,73 @@ class ContextLengthManager:
         return self._fuzzy_match(model, provider=p_clean)
 
     def _fuzzy_match(self, model: str, provider: str | None = None) -> TokenLimits:
-        def normalize(s: str) -> str:
-            return s.lower().replace("-", "").replace("_", "").replace(".", "").replace("/", "")
+        cache_key = (model, provider)
+        cached = self._fuzzy_cache.get(cache_key)
+        if cached is not None:
+            return cached
 
-        target = normalize(model)
+        target = _normalize(model)
         if not target:
-            return TokenLimits(context=0, output=0)
+            empty = TokenLimits(context=0, output=0)
+            self._fuzzy_cache[cache_key] = empty
+            return empty
 
-        candidates: list[tuple[str, TokenLimits]] = []
-        if provider and provider in self._provider_limits:
-            candidates.extend(list(self._provider_limits[provider].items()))
-        candidates.extend(list(self._limits.items()))
+        result = self._fuzzy_match_uncached(target, provider)
+        self._fuzzy_cache[cache_key] = result
+        return result
+
+    def _fuzzy_match_uncached(self, target: str, provider: str | None) -> TokenLimits:
+        # Build the candidate list: provider-scoped first, then global.
+        cand_lists: list[list[tuple[str, TokenLimits]]] = []
+        if provider and provider in self._norm_provider_limits:
+            cand_lists.append(self._norm_provider_limits[provider])
+        cand_lists.append(self._norm_limits)
 
         best_score = 0.0
         best_limits: TokenLimits | None = None
 
-        for cand_id, limits in candidates:
-            cand_norm = normalize(cand_id)
-            if not cand_norm:
-                continue
+        # Fast path: scan only candidates sharing the first two normalized chars.
+        prefix2 = target[:2]
+        for cand_list in cand_lists:
+            bucket = [c for c in cand_list if c[0][:2] == prefix2]
+            for cand_norm, limits in bucket:
+                if not cand_norm:
+                    continue
 
-            score = 0.0
-            if cand_norm == target:
-                score = 100.0
-            elif cand_norm.startswith(target) or target.startswith(cand_norm):
-                overlap = min(len(cand_norm), len(target))
-                score = 80.0 + (overlap / max(len(cand_norm), len(target))) * 10.0
-            elif cand_norm in target or target in cand_norm:
-                overlap = min(len(cand_norm), len(target))
-                if overlap >= 3:
-                    score = 60.0 + (overlap / max(len(cand_norm), len(target))) * 20.0
+                score = 0.0
+                if cand_norm == target:
+                    score = 100.0
+                elif cand_norm.startswith(target) or target.startswith(cand_norm):
+                    overlap = min(len(cand_norm), len(target))
+                    score = 80.0 + (overlap / max(len(cand_norm), len(target))) * 10.0
+                elif cand_norm in target or target in cand_norm:
+                    overlap = min(len(cand_norm), len(target))
+                    if overlap >= 3:
+                        score = 60.0 + (overlap / max(len(cand_norm), len(target))) * 20.0
 
-            if score > 0.0:
-                if limits.supports_reasoning or limits.thinking_level_map:
-                    score += 5.0
-                if score > best_score:
-                    best_score = score
-                    best_limits = limits
+                if score > 0.0:
+                    if limits.supports_reasoning or limits.thinking_level_map:
+                        score += 5.0
+                    if score > best_score:
+                        best_score = score
+                        best_limits = limits
+
+        # Fallback: full scan for contains matches whose first chars differ.
+        if best_score < 60.0:
+            for cand_list in cand_lists:
+                for cand_norm, limits in cand_list:
+                    if not cand_norm or cand_norm[:2] == prefix2:
+                        continue
+                    if cand_norm in target or target in cand_norm:
+                        overlap = min(len(cand_norm), len(target))
+                        if overlap < 3:
+                            continue
+                        score = 60.0 + (overlap / max(len(cand_norm), len(target))) * 20.0
+                        if limits.supports_reasoning or limits.thinking_level_map:
+                            score += 5.0
+                        if score > best_score:
+                            best_score = score
+                            best_limits = limits
 
         if best_limits is not None and best_score >= 60.0:
             return best_limits
