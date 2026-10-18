@@ -19,11 +19,10 @@ Two keys are specific to vtx, because a connected server's tool surface is
 frequently too large to declare to the model one tool call at a time:
 
 ``exposure``
-    How this server's tools reach the model. ``direct`` declares them as
-    ordinary tool calls, ``codemode`` makes them callable from inside a
-    ``codemode`` script and lists them there instead. The default is
-    ``codemode``. ``tool_exposure`` overrides it for individual tools, by exact
-    name or by ``*`` pattern. See :mod:`vtx.mcp.exposure`.
+    How this server's tools reach the model. MCP tools are only reachable
+    through a ``codemode`` script (``codemode``); ``hidden`` opts a tool out
+    entirely. The default is ``codemode``. ``tool_exposure`` overrides it for
+    individual tools, by exact name or by ``*`` pattern. See :mod:`vtx.mcp.exposure`.
 
 Example::
 
@@ -37,7 +36,7 @@ Example::
           "url": "https://example.com/mcp",
           "headers": {"Authorization": "Bearer ${DOCS_TOKEN}"},
           "exposure": "codemode",
-          "tool_exposure": {"delete_*": "hidden", "search": "direct"}
+          "tool_exposure": {"delete_*": "hidden", "search": "codemode"}
         }
       }
     }

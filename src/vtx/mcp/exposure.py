@@ -1,4 +1,4 @@
-"""How an MCP tool is offered to the model: directly, through a script, or not at all.
+"""How an MCP tool is offered to the model: through a script, or not at all.
 
 Every MCP server now publishes a potentially large tool surface, and a session
 with six servers connected can easily have two hundred tools. Declaring all of
@@ -7,12 +7,6 @@ makes the integration worthless. So each tool gets an *exposure* -- a decision
 about who can see it -- and this module is the whole taxonomy.
 
 The values and their consequences:
-
-``direct``
-    Declared to the model as an ordinary tool call, and callable from a script.
-    This is what an MCP server's tools looked like before any of this existed,
-    so it stays available as an explicit choice for a server whose handful of
-    tools the model should reason about directly.
 
 ``codemode``
     Callable from a script, and listed in the ``codemode`` tool's description.
@@ -53,13 +47,7 @@ from collections.abc import Iterable
 from typing import Final
 
 #: Every exposure a server or a single tool may declare.
-EXPOSURES: Final[tuple[str, ...]] = (
-    "direct",
-    "codemode",
-    "codemode-deferred",
-    "deferred",
-    "hidden",
-)
+EXPOSURES: Final[tuple[str, ...]] = ("codemode", "codemode-deferred", "deferred", "hidden")
 
 #: Exposures whose tools a script may call, whether or not they are listed.
 #:
@@ -68,14 +56,14 @@ EXPOSURES: Final[tuple[str, ...]] = (
 #: should not have to pay six. It is left *out* of :data:`SCRIPT_LISTED`, because
 #: advertising it in the codemode catalog would describe something the model
 #: already has in front of it.
-SCRIPT_CALLABLE: Final = frozenset({"direct", "codemode", "codemode-deferred", "deferred"})
+SCRIPT_CALLABLE: Final = frozenset({"codemode", "codemode-deferred", "deferred"})
 
 #: Exposures declared to the model as an ordinary tool call, which it may invoke
 #: by name. Everything else is reachable only through a script or a search, and
 #: staying out of the request is the point: a two-hundred-tool server declared
 #: tool-by-tool costs two hundred definitions on every turn, which is the cost
 #: the other exposures exist to avoid.
-DECLARED_TO_MODEL: Final = frozenset({"direct"})
+DECLARED_TO_MODEL: Final = frozenset()
 
 #: Exposures the ``codemode`` description advertises. ``codemode-deferred`` and
 #: ``deferred`` are callable but unlisted, which is the whole difference.
@@ -89,7 +77,7 @@ SCRIPT_DISCOVERABLE: Final = frozenset({"codemode", "codemode-deferred", "deferr
 #: Order used to pick one exposure for a resource tool that spans several
 #: servers, and for collapsing the two deferred variants when reporting. Widest
 #: first, so a group of servers never resolves to its narrowest member.
-_BY_WIDTH: Final = ("direct", "codemode", "codemode-deferred", "deferred", "hidden")
+_BY_WIDTH: Final = ("codemode", "codemode-deferred", "deferred", "hidden")
 
 #: Exposures that make ``codemode`` worth having in the first place. A session
 #: whose servers are all ``direct`` or ``hidden`` gains nothing from it.

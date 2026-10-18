@@ -869,7 +869,7 @@ class ConversationRuntime:
             if getattr(tool, "exposure", None) is not None:
                 # `exposure` is an MCP-tool attribute the harness never imports,
                 # so it is set dynamically rather than assigned.
-                setattr(tool, "exposure", "direct")  # noqa: B010
+                setattr(tool, "exposure", None)  # noqa: B010
         if self.agent is not None:
             self.agent.tools = self.declared_tools()
         if self.agent is not None and self.context is not None:

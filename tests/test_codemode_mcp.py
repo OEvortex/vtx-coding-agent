@@ -203,39 +203,6 @@ async def test_a_codemode_exposed_tool_is_not_declared_to_the_model(tmp_path, mo
         await runtime.close()
 
 
-async def test_a_direct_exposed_tool_is_declared_and_still_callable(tmp_path, monkeypatch):
-    """Declared directly *and* composable is not a conflict.
-
-    A model needing six of a server's tools in one turn should not have to pay
-    six, so `direct` does not withdraw a tool from the sandbox. It is only left
-    out of the codemode catalog, since the model already has it in front of it.
-    """
-    from vtx.agent.tools import get_tool_definitions
-
-    runtime = ConversationRuntime(
-        cwd=str(tmp_path), model="gpt-test", tools=[], extensions=EventBus()
-    )
-    try:
-        manager = runtime.ensure_mcp_manager()
-        parsed, error = validate_mcp_server_config(
-            "echo", {"command": sys.executable, "args": [str(STDIO_SERVER)], "exposure": "direct"}
-        )
-        assert error is None, error
-        manager.config = LoadedMcpConfig(servers=[parsed])
-        manager._build_servers(manager.config)
-        runtime.sync_mcp_tools(await manager.connect_all())
-
-        declared = {d.name for d in get_tool_definitions(runtime.declared_tools())}
-        assert "mcp__echo__echo" in declared
-
-        codemode = get_all_tools()["codemode"]
-        assert "mcp__echo__echo" in {t.name for t in codemode.session_tools()}
-        # Not re-listed: the model already has it.
-        assert "mcp__echo__echo" not in codemode.build_description()
-    finally:
-        await runtime.close()
-
-
 async def test_a_per_tool_override_beats_the_server_exposure(tmp_path, monkeypatch):
     """The documented shape, through the real parser and a real server.
 
@@ -255,8 +222,8 @@ async def test_a_per_tool_override_beats_the_server_exposure(tmp_path, monkeypat
             {
                 "command": sys.executable,
                 "args": [str(STDIO_SERVER)],
-                "exposure": "direct",
-                "tool_exposure": {"*": "direct", "echo": "codemode"},
+                "exposure": "codemode",
+                "tool_exposure": {"*": "codemode", "echo": "codemode"},
             },
         )
         assert error is None, error

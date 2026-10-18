@@ -47,7 +47,6 @@ def mounted():
 #: this table has to be a deliberate edit rather than a tautology.
 EXPECTED = {
     #             declared  in_pool  script  catalog  searchable
-    "direct": (True, True, True, False, False),
     "codemode": (False, True, True, True, True),
     "codemode-deferred": (False, True, True, False, True),
     "deferred": (False, True, True, False, True),
@@ -117,17 +116,6 @@ async def test_a_hidden_tool_is_reachable_by_nobody_at_all():
     # its own declarations would find it.
     reach = await _reach("mcp__docs__nuke", "hidden")
     assert reach == Reach(False, False, False, False, False)
-
-
-async def test_a_direct_tool_is_still_composable_in_a_script():
-    # A model that needs six of a server's tools in one turn should not have to
-    # pay six. Declared directly *and* callable from a script is not a conflict;
-    # it is the cheaper way to get the same work done.
-    reach = await _reach("mcp__docs__search", "direct")
-    assert reach.declared and reach.in_script
-    # Not re-listed in the codemode catalog, though: the model already has it in
-    # front of it, so advertising it again would be description for description.
-    assert not reach.in_catalog
 
 
 async def test_a_search_cannot_promote_a_tool_the_profile_denied():
@@ -202,7 +190,7 @@ async def test_tool_search_is_declared_only_when_there_is_something_to_find():
     # with nothing to search must not pay for a tool whose whole job is finding
     # what it has not been offered. pi-mono applies the same rule.
     deferred = _runtime_with(_mcp_tool("mcp__docs__reindex", "deferred"))
-    direct = _runtime_with(_mcp_tool("mcp__docs__search", "direct"))
+    direct = _runtime_with()
     empty = _runtime_with()
     try:
         assert "tool_search" in _names(deferred)
@@ -296,7 +284,7 @@ async def test_a_hidden_tool_contributes_nothing_to_the_system_prompt():
         assert "mcp__docs__nuke" not in with_hidden
 
         # Sanity: it *would* have appeared, so this is not a vacuous pass.
-        visible = _mcp_tool("mcp__docs__ok", "direct", description="A visible tool")
+        visible = _mcp_tool("mcp__docs__ok", "codemode", description="A visible tool")
         visible.prompt_guidelines = ("Use mcp__docs__ok to check the docs.",)
         with_visible = build_system_prompt(".", tools=[visible], context=None)
         assert "mcp__docs__ok" in with_visible

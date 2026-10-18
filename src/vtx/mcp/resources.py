@@ -424,10 +424,9 @@ def create_mcp_resource_tools(manager: Any) -> list[BaseTool]:
         manager, "templates"
     ):
         return []
-    # Widest exposure among the servers they front. A `direct` server's
-    # resources are then declared as ordinary tool calls and a `codemode` one is
-    # reachable from a script; taking the narrowest would hide a capability a
-    # connected server genuinely publishes.
+    # Widest exposure among the servers they front. MCP tools are only
+    # reachable through codemode, so resources follow the same rule; taking the
+    # narrowest would hide a capability a connected server genuinely publishes.
     exposure = _widest_exposure(manager)
     return [
         McpListResourcesTool(

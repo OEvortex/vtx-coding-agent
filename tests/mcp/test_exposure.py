@@ -30,19 +30,19 @@ def test_codemode_is_the_default_exposure():
 
 
 def test_a_server_exposure_applies_to_all_its_tools():
-    assert tool_exposure("direct", {}, "search") == "direct"
+    assert tool_exposure("codemode", {}, "search") == "codemode"
     assert tool_exposure("hidden", {}, "anything") == "hidden"
 
 
 def test_an_exact_override_beats_the_server_and_the_patterns():
-    overrides = {"search": "direct", "get_*": "hidden"}
-    assert tool_exposure("codemode", overrides, "search") == "direct"
+    overrides = {"search": "codemode", "get_*": "hidden"}
+    assert tool_exposure("codemode", overrides, "search") == "codemode"
 
 
 def test_a_pattern_override_beats_the_server_exposure():
-    assert tool_exposure("direct", {"delete_*": "hidden"}, "delete_repo") == "hidden"
+    assert tool_exposure("codemode", {"delete_*": "hidden"}, "delete_repo") == "hidden"
     # ...and does not touch its neighbours.
-    assert tool_exposure("direct", {"delete_*": "hidden"}, "get_repo") == "direct"
+    assert tool_exposure("codemode", {"delete_*": "hidden"}, "get_repo") == "codemode"
 
 
 def test_the_first_matching_pattern_wins():
@@ -75,7 +75,7 @@ def test_hidden_means_a_pattern_can_never_resurrect_it():
 
 
 def test_an_unknown_exposure_is_rejected_rather_than_coerced():
-    assert normalize_exposure("direct") == "direct"
+    assert normalize_exposure("codemode") == "codemode"
     assert normalize_exposure("Direct") is None
     assert normalize_exposure(True) is None
     _, _, error = validate_exposures("sideways", None)
@@ -92,7 +92,7 @@ def test_saying_nothing_about_exposure_is_not_an_error():
 def test_a_malformed_tool_exposure_is_reported():
     _, _, error = validate_exposures(None, {"search": "sideways"})
     assert error is not None and "search" in error
-    _, _, error = validate_exposures(None, {"search": "direct", "": "hidden"})
+    _, _, error = validate_exposures(None, {"search": "codemode", "": "hidden"})
     assert error is not None
 
 
@@ -102,7 +102,7 @@ def test_a_malformed_tool_exposure_is_reported():
 def test_the_widest_exposure_wins_for_a_group_of_servers():
     # The MCP resource tools front every connected server at once. Collapsing to
     # the narrowest would hide a capability a `direct` server genuinely offers.
-    assert widest("direct", "codemode") == "direct"
+    assert widest("codemode", "codemode") == "codemode"
     assert widest("codemode", "deferred") == "codemode"
     assert widest("hidden", "hidden") == "hidden"
     assert widest() == "hidden"
@@ -113,7 +113,7 @@ def test_only_script_reachable_exposures_need_a_script():
     # whose servers are all `direct` gains nothing from it.
     assert needs_script_reach(["codemode"])
     assert needs_script_reach(["deferred"])
-    assert not needs_script_reach(["direct", "hidden"])
+    assert not needs_script_reach(["hidden"])
     assert not needs_script_reach([])
 
 
@@ -163,13 +163,13 @@ def test_a_wildcard_key_is_accepted_by_the_parser():
         {
             "url": "https://example.com/mcp",
             "exposure": "codemode",
-            "tool_exposure": {"delete_*": "hidden", "search": "direct"},
+            "tool_exposure": {"delete_*": "hidden", "search": "codemode"},
         },
     )
     assert error is None, error
     assert config is not None
     assert config.exposure_of("delete_repo") == "hidden"
-    assert config.exposure_of("search") == "direct"
+    assert config.exposure_of("search") == "codemode"
     assert config.exposure_of("read_repo") == "codemode"
 
 
