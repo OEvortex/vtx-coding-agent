@@ -364,10 +364,17 @@ def _provider_info_to_model(p: ProviderInfo, model_id: str) -> Model:
         api = family_to_api[p.family]
     from vtx.ai.context_length import context_length_manager
 
-    limits = context_length_manager.get_limits(model_id)
-    is_matched = model_id in context_length_manager._limits or any(
-        model_id.lower() in k.lower() or k.lower() in model_id.lower()
-        for k in context_length_manager._limits
+    limits = context_length_manager.get_limits(model_id, provider=p.slug)
+    is_matched = (
+        limits.context > 0
+        or limits.output > 0
+        or limits.supports_reasoning
+        or limits.thinking_level_map is not None
+        or model_id in context_length_manager._limits
+        or any(
+            model_id.lower() in k.lower() or k.lower() in model_id.lower()
+            for k in context_length_manager._limits
+        )
     )
 
     if is_matched:
@@ -386,6 +393,9 @@ def _provider_info_to_model(p: ProviderInfo, model_id: str) -> Model:
         supports_tools = p.supports_tools
         supports_audio = False
         thinking_level_map = None
+
+    if thinking_level_map and not supports_thinking:
+        supports_thinking = True
 
     return Model(
         id=model_id,

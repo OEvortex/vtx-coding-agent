@@ -49,6 +49,7 @@ class TokenLimits:
 class ContextLengthManager:
     def __init__(self) -> None:
         self._limits: dict[str, TokenLimits] = {}
+        self._provider_limits: dict[str, dict[str, TokenLimits]] = {}
         self._loaded = False
         self._lock = threading.Lock()
         # Stale-while-revalidate state. ``_stale`` means "what is loaded is
@@ -100,36 +101,71 @@ class ContextLengthManager:
     def _parse_limits(self, data: dict[str, Any]) -> None:
         from vtx.ai.thinking import parse_models_dev_reasoning_options
 
-        for _provider_name, provider_data in data.items():
+        provider_limits: dict[str, dict[str, TokenLimits]] = {}
+        limits_map: dict[str, TokenLimits] = {}
+
+        for provider_name, provider_data in data.items():
             if not isinstance(provider_data, dict):
                 continue
             models = provider_data.get("models", {})
-            if not models:
+            if not models or not isinstance(models, dict):
                 continue
+            p_key = str(provider_name).strip().lower()
+            p_dict = provider_limits.setdefault(p_key, {})
+
             for model_id, model_info in models.items():
-                limit = model_info.get("limit", {})
-                if not limit:
+                if not isinstance(model_info, dict):
                     continue
-                context = limit.get("context", 0)
-                output = limit.get("output", 0)
-                if context > 0:
-                    if context - output <= 8192:
-                        output = safe_max_output_tokens(context)
-                    modalities = model_info.get("modalities", {})
-                    input_mods = modalities.get("input", [])
-                    output_mods = modalities.get("output", [])
-                    thinking_level_map = parse_models_dev_reasoning_options(
-                        model_info.get("reasoning_options"), max_tokens=output
-                    )
-                    self._limits[model_id] = TokenLimits(
-                        context=context,
-                        output=output,
-                        supports_reasoning=bool(model_info.get("reasoning", False)),
-                        supports_vision="image" in input_mods,
-                        supports_tools=bool(model_info.get("tool_call", False)),
-                        supports_audio="audio" in input_mods or "audio" in output_mods,
-                        thinking_level_map=thinking_level_map,
-                    )
+                limit = model_info.get("limit") or {}
+                context = limit.get("context", 0) if isinstance(limit, dict) else 0
+                output = limit.get("output", 0) if isinstance(limit, dict) else 0
+                if context > 0 and context - output <= 8192:
+                    output = safe_max_output_tokens(context)
+
+                modalities = model_info.get("modalities", {}) or {}
+                input_mods = modalities.get("input", []) if isinstance(modalities, dict) else []
+                output_mods = modalities.get("output", []) if isinstance(modalities, dict) else []
+                thinking_level_map = parse_models_dev_reasoning_options(
+                    model_info.get("reasoning_options"), max_tokens=output or None
+                )
+                supports_reasoning = bool(model_info.get("reasoning", False))
+                if thinking_level_map is not None and not supports_reasoning:
+                    supports_reasoning = True
+
+                item = TokenLimits(
+                    context=context,
+                    output=output,
+                    supports_reasoning=supports_reasoning,
+                    supports_vision="image" in input_mods,
+                    supports_tools=bool(model_info.get("tool_call", False)),
+                    supports_audio="audio" in input_mods or "audio" in output_mods,
+                    thinking_level_map=thinking_level_map,
+                )
+
+                p_dict[model_id] = item
+                p_dict[model_id.lower()] = item
+                if "/" in model_id:
+                    bare_id = model_id.split("/", 1)[1]
+                    p_dict.setdefault(bare_id, item)
+                    p_dict.setdefault(bare_id.lower(), item)
+
+                existing = limits_map.get(model_id)
+                if existing and existing.supports_reasoning and not item.supports_reasoning:
+                    pass
+                else:
+                    limits_map[model_id] = item
+
+                limits_map[f"{p_key}/{model_id}"] = item
+                if "/" in model_id:
+                    bare = model_id.split("/", 1)[1]
+                    if bare not in limits_map or (
+                        item.supports_reasoning and not limits_map[bare].supports_reasoning
+                    ):
+                        limits_map.setdefault(bare, item)
+
+        self._limits.update(limits_map)
+        for p, d in provider_limits.items():
+            self._provider_limits.setdefault(p, {}).update(d)
 
     def _schedule_refresh(self) -> None:
         """Fetch models.dev without blocking the caller.
@@ -184,43 +220,125 @@ class ContextLengthManager:
             return
         self._schedule_refresh()
 
-    def get_limits(self, model: str) -> TokenLimits:
+    def get_limits(self, model: str, provider: str | None = None) -> TokenLimits:
         self.ensure_loaded()
+        if not model:
+            return TokenLimits(context=0, output=0)
 
-        # 1) exact match populated by register() or loaded from the models.dev cache
+        # 1) Exact match in provider-scoped mapping if provider given
+        p_clean = provider.strip().lower() if provider else None
+        if p_clean and p_clean in self._provider_limits:
+            p_dict = self._provider_limits[p_clean]
+            if model in p_dict:
+                return p_dict[model]
+            if model.lower() in p_dict:
+                return p_dict[model.lower()]
+            if "/" in model:
+                bare = model.split("/", 1)[1]
+                if bare in p_dict:
+                    return p_dict[bare]
+                if bare.lower() in p_dict:
+                    return p_dict[bare.lower()]
+
+        # 2) Exact match in global limits
         if model in self._limits:
             return self._limits[model]
+        if model.lower() in self._limits:
+            return self._limits[model.lower()]
 
-        # 2) fuzzy fallback: normalize hyphens and match substrings
-        # Snapshot first. The background models.dev refresh writes into this
-        # same dict from its own thread, and iterating the live mapping raised
-        # "dictionary changed size during iteration" on the startup path that
-        # resolves a context window while the refresh lands.
-        model_lower = model.lower()
-        for model_id, limits in list(self._limits.items()):
-            mid = model_id.lower().replace("-", "")
-            if model_lower.replace("-", "") in mid or mid in model_lower.replace("-", ""):
-                return limits
+        if p_clean:
+            prefixed = f"{p_clean}/{model}"
+            if prefixed in self._limits:
+                return self._limits[prefixed]
+            if prefixed.lower() in self._limits:
+                return self._limits[prefixed.lower()]
+
+        # 3) Check bare model ID (strip org / vendor prefix if present)
+        if "/" in model:
+            bare = model.split("/", 1)[1]
+            if bare in self._limits:
+                return self._limits[bare]
+            if bare.lower() in self._limits:
+                return self._limits[bare.lower()]
+
+        # 4) Check stripped free/preview/latest/instruct suffix
+        for suffix in ("-free", "_free", "-preview", "-latest", "-instruct"):
+            if model.lower().endswith(suffix):
+                stem = model[: -len(suffix)]
+                stem_limits = self.get_limits(stem, provider=provider)
+                if stem_limits.context > 0 or stem_limits.supports_reasoning:
+                    return stem_limits
+
+        # 5) Smart fuzzy matching
+        return self._fuzzy_match(model, provider=p_clean)
+
+    def _fuzzy_match(self, model: str, provider: str | None = None) -> TokenLimits:
+        def normalize(s: str) -> str:
+            return s.lower().replace("-", "").replace("_", "").replace(".", "").replace("/", "")
+
+        target = normalize(model)
+        if not target:
+            return TokenLimits(context=0, output=0)
+
+        candidates: list[tuple[str, TokenLimits]] = []
+        if provider and provider in self._provider_limits:
+            candidates.extend(list(self._provider_limits[provider].items()))
+        candidates.extend(list(self._limits.items()))
+
+        best_score = 0.0
+        best_limits: TokenLimits | None = None
+
+        for cand_id, limits in candidates:
+            cand_norm = normalize(cand_id)
+            if not cand_norm:
+                continue
+
+            score = 0.0
+            if cand_norm == target:
+                score = 100.0
+            elif cand_norm.startswith(target) or target.startswith(cand_norm):
+                overlap = min(len(cand_norm), len(target))
+                score = 80.0 + (overlap / max(len(cand_norm), len(target))) * 10.0
+            elif cand_norm in target or target in cand_norm:
+                overlap = min(len(cand_norm), len(target))
+                if overlap >= 3:
+                    score = 60.0 + (overlap / max(len(cand_norm), len(target))) * 20.0
+
+            if score > 0.0:
+                if limits.supports_reasoning or limits.thinking_level_map:
+                    score += 5.0
+                if score > best_score:
+                    best_score = score
+                    best_limits = limits
+
+        if best_limits is not None and best_score >= 60.0:
+            return best_limits
 
         return TokenLimits(context=0, output=0)
 
     def register(self, model: str, context: int, output: int | None = None, **kwargs: Any) -> None:
-        self._limits[model] = TokenLimits(context=context, output=output or 0, **kwargs)
+        limits = TokenLimits(context=context, output=output or 0, **kwargs)
+        self._limits[model] = limits
+        if "/" in model:
+            provider, bare = model.split("/", 1)
+            p_dict = self._provider_limits.setdefault(provider.lower(), {})
+            p_dict[bare] = limits
+            p_dict[model] = limits
 
-    def get_context_length(self, model: str) -> int:
-        return self.get_limits(model).context
+    def get_context_length(self, model: str, provider: str | None = None) -> int:
+        return self.get_limits(model, provider=provider).context
 
-    def get_max_output(self, model: str) -> int:
-        return self.get_limits(model).output
+    def get_max_output(self, model: str, provider: str | None = None) -> int:
+        return self.get_limits(model, provider=provider).output
 
-    def supports_reasoning(self, model: str) -> bool:
-        return self.get_limits(model).supports_reasoning
+    def supports_reasoning(self, model: str, provider: str | None = None) -> bool:
+        return self.get_limits(model, provider=provider).supports_reasoning
 
-    def supports_vision(self, model: str) -> bool:
-        return self.get_limits(model).supports_vision
+    def supports_vision(self, model: str, provider: str | None = None) -> bool:
+        return self.get_limits(model, provider=provider).supports_vision
 
-    def supports_tools(self, model: str) -> bool:
-        return self.get_limits(model).supports_tools
+    def supports_tools(self, model: str, provider: str | None = None) -> bool:
+        return self.get_limits(model, provider=provider).supports_tools
 
 
 context_length_manager = ContextLengthManager()

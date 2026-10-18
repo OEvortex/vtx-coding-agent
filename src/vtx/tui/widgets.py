@@ -171,7 +171,7 @@ class InfoBar(Vertical):
         if context_window is None:
             from vtx.ai.models import get_model
 
-            m_info = get_model(model)
+            m_info = get_model(model, model_provider)
             self._context_window = (
                 m_info.context_window if m_info else None
             ) or config.agent.default_context_window

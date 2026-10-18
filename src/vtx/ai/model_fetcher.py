@@ -144,7 +144,9 @@ def _is_free_model(raw: dict[str, Any]) -> bool:
     return bp.get("input_per_mtok_min", 1) == 0 and bp.get("output_per_mtok_min", 1) == 0
 
 
-def _parse_models(raw_models: list[dict[str, Any]], parser_config) -> list[FetchedModel]:
+def _parse_models(
+    raw_models: list[dict[str, Any]], parser_config, provider_slug: str | None = None
+) -> list[FetchedModel]:
     models: list[FetchedModel] = []
     flatten_field = getattr(parser_config, "flatten_field", None)
     for raw in raw_models:
@@ -187,6 +189,44 @@ def _parse_models(raw_models: list[dict[str, Any]], parser_config) -> list[Fetch
             modalities = raw.get("input_modalities")
             supports_images = isinstance(modalities, list) and "image" in modalities
 
+        supports_thinking = False
+        thinking_level_map = None
+
+        if raw.get("supports_reasoning") or raw.get("reasoning"):
+            supports_thinking = True
+        supported_params = raw.get("supported_parameters") or []
+        if isinstance(supported_params, list) and (
+            "reasoning" in supported_params or "reasoning_effort" in supported_params
+        ):
+            supports_thinking = True
+
+        raw_ro = raw.get("reasoning_options") or (
+            raw.get("opencode", {}).get("reasoning_options")
+            if isinstance(raw.get("opencode"), dict)
+            else None
+        )
+        if raw_ro:
+            from vtx.ai.thinking import parse_models_dev_reasoning_options
+
+            thinking_level_map = parse_models_dev_reasoning_options(
+                raw_ro, max_tokens=max_output or None
+            )
+            if thinking_level_map:
+                supports_thinking = True
+
+        from vtx.ai.context_length import context_length_manager
+
+        limits = context_length_manager.get_limits(model_id, provider=provider_slug)
+        if not supports_thinking and limits.supports_reasoning:
+            supports_thinking = True
+        if thinking_level_map is None and limits.thinking_level_map:
+            thinking_level_map = limits.thinking_level_map
+            supports_thinking = True
+        if context_length == 0 and limits.context > 0:
+            context_length = limits.context
+        if max_output == 0 and limits.output > 0:
+            max_output = limits.output
+
         models.append(
             FetchedModel(
                 id=model_id,
@@ -195,6 +235,9 @@ def _parse_models(raw_models: list[dict[str, Any]], parser_config) -> list[Fetch
                 max_output_tokens=max_output,
                 supports_images=supports_images,
                 api_model_id=api_model_id,
+                supports_thinking=supports_thinking,
+                thinking_level_map=thinking_level_map,
+                is_free=_is_free_model(raw),
             )
         )
 
@@ -240,7 +283,7 @@ def _fetch_models_sync(provider) -> list[FetchedModel]:
     if not raw_models:
         return []
 
-    models = _parse_models(raw_models, provider.model_parser)
+    models = _parse_models(raw_models, provider.model_parser, provider_slug=provider.slug)
     cooldown = provider.model_parser.cooldown_minutes
     _write_cache(provider.slug, models, cooldown)
     return models
@@ -303,10 +346,12 @@ def get_fetched_models(provider) -> list[Model]:
 
     models: list[Model] = []
     for entry in cached:
-        limits = context_length_manager.get_limits(entry.id)
-        is_matched = entry.id in context_length_manager._limits or any(
-            entry.id.lower() in k.lower() or k.lower() in entry.id.lower()
-            for k in context_length_manager._limits
+        limits = context_length_manager.get_limits(entry.id, provider=provider.slug)
+        is_matched = (
+            limits.context > 0
+            or limits.supports_reasoning
+            or limits.thinking_level_map is not None
+            or entry.id in context_length_manager._limits
         )
 
         max_tokens = entry.max_output_tokens or provider.max_tokens
@@ -330,6 +375,9 @@ def get_fetched_models(provider) -> list[Model]:
             supports_tools = provider.supports_tools
             supports_audio = False
             thinking_level_map = entry.thinking_level_map
+
+        if thinking_level_map and not supports_thinking:
+            supports_thinking = True
 
         is_free = entry.is_free
         if provider.slug == "cline" and not is_free:

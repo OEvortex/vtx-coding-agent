@@ -575,12 +575,43 @@ def _load_limits_models_dev() -> dict[str, Any]:
     return flat
 
 
-def _find_spec_in_models_dev(model_id: str, models_dev: dict[str, Any]) -> dict[str, Any] | None:
+def _find_spec_in_models_dev(
+    model_id: str, models_dev: dict[str, Any], provider: str | None = None
+) -> dict[str, Any] | None:
     model_id_lower = model_id.lower()
+    p_lower = provider.lower() if provider else None
+
+    # 1. Provider-prefixed check if provider given
+    if p_lower:
+        prefixed = f"{p_lower}/{model_id_lower}"
+        if prefixed in models_dev and isinstance(models_dev[prefixed], dict):
+            return models_dev[prefixed]
+
+    # 2. Check exact key match in models_dev
+    if model_id_lower in models_dev and isinstance(models_dev[model_id_lower], dict):
+        return models_dev[model_id_lower]
+    if model_id in models_dev and isinstance(models_dev[model_id], dict):
+        return models_dev[model_id]
+
+    # 3. Check stripped free / preview / latest suffix
+    for suffix in ("-free", "_free", "-preview", "-latest"):
+        if model_id_lower.endswith(suffix):
+            stem = model_id_lower[: -len(suffix)]
+            if stem in models_dev and isinstance(models_dev[stem], dict):
+                return models_dev[stem]
+            if p_lower and f"{p_lower}/{stem}" in models_dev:
+                return models_dev[f"{p_lower}/{stem}"]
+
+    # 4. Strip vendor / organization prefix
+    if "/" in model_id_lower:
+        bare = model_id_lower.split("/", 1)[1]
+        if bare in models_dev and isinstance(models_dev[bare], dict):
+            return models_dev[bare]
+
+    # 5. Nested provider structure check and fallback scan
     for key, spec in models_dev.items():
         if not isinstance(spec, dict):
             continue
-        # Check nested provider structure: {provider: {"models": {model_id: spec}}}
         models_sub = spec.get("models")
         if isinstance(models_sub, dict):
             for sub_id, sub_spec in models_sub.items():
@@ -602,8 +633,11 @@ def _find_spec_in_models_dev(model_id: str, models_dev: dict[str, Any]) -> dict[
 
 
 def _parse_models(
-    raw_models: list[dict[str, Any]], models_dev: dict[str, Any] | None = None
+    raw_models: list[dict[str, Any]],
+    models_dev: dict[str, Any] | None = None,
+    provider: str | None = None,
 ) -> list[DynamicModelEntry]:
+    explicit_models_dev = models_dev is not None
     if models_dev is None:
         models_dev = _read_models_dev_sync()
 
@@ -626,7 +660,7 @@ def _parse_models(
         prompt_cost, completion_cost, pricing_known = _parse_pricing(raw)
         name = _entry_name(raw, model_id)
 
-        spec = _find_spec_in_models_dev(model_id, models_dev)
+        spec = _find_spec_in_models_dev(model_id, models_dev, provider=provider)
 
         # 1. Context window
         context_window = None
@@ -661,21 +695,42 @@ def _parse_models(
             supports_thinking = bool(spec.get("reasoning"))
         if supports_thinking is None:
             model_id_lower = model_id.lower()
+            supports_params = raw.get("supported_parameters") or []
             supports_thinking = bool(
                 raw.get("supports_reasoning")
                 or raw.get("reasoning")
+                or "reasoning" in supports_params
+                or "reasoning_effort" in supports_params
                 or "thinking" in model_id_lower
                 or "reasoning" in model_id_lower
             )
 
-        # 3b. Reasoning-effort detection: models.dev publishes
-        # verified ``reasoning_options``; convert them into a
-        # thinking-level map for per-model effort support.
+        # 3b. Reasoning-effort detection
         thinking_level_map = None
         if spec:
             thinking_level_map = parse_models_dev_reasoning_options(
                 spec.get("reasoning_options"), max_tokens=max_tokens
             )
+        if thinking_level_map is None:
+            raw_ro = raw.get("reasoning_options") or (
+                raw.get("opencode", {}).get("reasoning_options")
+                if isinstance(raw.get("opencode"), dict)
+                else None
+            )
+            if raw_ro:
+                thinking_level_map = parse_models_dev_reasoning_options(
+                    raw_ro, max_tokens=max_tokens
+                )
+        if thinking_level_map is None and not explicit_models_dev and spec is None:
+            from vtx.ai.context_length import context_length_manager
+
+            lims = context_length_manager.get_limits(model_id, provider=provider)
+            if lims.thinking_level_map:
+                thinking_level_map = lims.thinking_level_map
+                if not supports_thinking:
+                    supports_thinking = True
+        if thinking_level_map and not supports_thinking:
+            supports_thinking = True
 
         # 4. Supports images
         supports_images = None
@@ -991,10 +1046,17 @@ def _to_static_model(
 
     from vtx.ai.context_length import context_length_manager
 
-    limits = context_length_manager.get_limits(entry.id)
-    is_matched = entry.id in context_length_manager._limits or any(
-        entry.id.lower() in k.lower() or k.lower() in entry.id.lower()
-        for k in context_length_manager._limits
+    limits = context_length_manager.get_limits(entry.id, provider=provider)
+    is_matched = (
+        limits.context > 0
+        or limits.output > 0
+        or limits.supports_reasoning
+        or limits.thinking_level_map is not None
+        or entry.id in context_length_manager._limits
+        or any(
+            entry.id.lower() in k.lower() or k.lower() in entry.id.lower()
+            for k in context_length_manager._limits
+        )
     )
 
     if is_matched:
@@ -1018,6 +1080,9 @@ def _to_static_model(
         supports_tools = True
         supports_audio = False
         thinking_level_map = entry.thinking_level_map
+
+    if thinking_level_map and not supports_thinking:
+        supports_thinking = True
 
     return Model(
         id=entry.id,
