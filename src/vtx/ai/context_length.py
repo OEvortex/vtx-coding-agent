@@ -220,7 +220,9 @@ class ContextLengthManager:
             return
         self._schedule_refresh()
 
-    def get_limits(self, model: str, provider: str | None = None) -> TokenLimits:
+    def get_limits(
+        self, model: str, provider: str | None = None, *, fuzzy: bool = True
+    ) -> TokenLimits:
         self.ensure_loaded()
         if not model:
             return TokenLimits(context=0, output=0)
@@ -265,11 +267,13 @@ class ContextLengthManager:
         for suffix in ("-free", "_free", "-preview", "-latest", "-instruct"):
             if model.lower().endswith(suffix):
                 stem = model[: -len(suffix)]
-                stem_limits = self.get_limits(stem, provider=provider)
+                stem_limits = self.get_limits(stem, provider=provider, fuzzy=fuzzy)
                 if stem_limits.context > 0 or stem_limits.supports_reasoning:
                     return stem_limits
 
         # 5) Smart fuzzy matching
+        if not fuzzy:
+            return TokenLimits(context=0, output=0)
         return self._fuzzy_match(model, provider=p_clean)
 
     def _fuzzy_match(self, model: str, provider: str | None = None) -> TokenLimits:

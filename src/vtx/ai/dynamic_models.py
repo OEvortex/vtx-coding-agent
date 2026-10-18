@@ -1046,17 +1046,13 @@ def _to_static_model(
 
     from vtx.ai.context_length import context_length_manager
 
-    limits = context_length_manager.get_limits(entry.id, provider=provider)
+    limits = context_length_manager.get_limits(entry.id, provider=provider, fuzzy=False)
     is_matched = (
         limits.context > 0
         or limits.output > 0
         or limits.supports_reasoning
         or limits.thinking_level_map is not None
         or entry.id in context_length_manager._limits
-        or any(
-            entry.id.lower() in k.lower() or k.lower() in entry.id.lower()
-            for k in context_length_manager._limits
-        )
     )
 
     if is_matched:

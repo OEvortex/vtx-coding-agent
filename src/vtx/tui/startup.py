@@ -97,6 +97,9 @@ class StartupMixin:
             return
 
         manager = self._runtime.ensure_mcp_manager()
+        # MCP servers may finish connecting after this worker returns, so keep
+        # the session header in sync when the tool set changes later.
+        manager.on_tools_changed(lambda _tools: self.call_later(self._refresh_loaded_resources))
         for message in manager.errors:
             self._add_launch_warning(f"MCP config: {message}", severity="error")
         for status in manager.statuses():

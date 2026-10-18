@@ -225,12 +225,19 @@ def _get_builtin_oauth_providers() -> dict[str, ProviderInfo]:
     }
 
 
+_BUILTIN_CACHE: dict[str, ProviderInfo] | None = None
+
+
 def _load_builtin() -> dict[str, ProviderInfo]:
+    global _BUILTIN_CACHE
+    if _BUILTIN_CACHE is not None:
+        return _BUILTIN_CACHE
     data = _load_raw_yaml()
     providers = {e["slug"]: _parse_entry(e) for e in data.get("providers", [])}
     for slug, info in _get_builtin_oauth_providers().items():
         if slug not in providers:
             providers[slug] = info
+    _BUILTIN_CACHE = providers
     return providers
 
 
@@ -364,17 +371,13 @@ def _provider_info_to_model(p: ProviderInfo, model_id: str) -> Model:
         api = family_to_api[p.family]
     from vtx.ai.context_length import context_length_manager
 
-    limits = context_length_manager.get_limits(model_id, provider=p.slug)
+    limits = context_length_manager.get_limits(model_id, provider=p.slug, fuzzy=False)
     is_matched = (
         limits.context > 0
         or limits.output > 0
         or limits.supports_reasoning
         or limits.thinking_level_map is not None
         or model_id in context_length_manager._limits
-        or any(
-            model_id.lower() in k.lower() or k.lower() in model_id.lower()
-            for k in context_length_manager._limits
-        )
     )
 
     if is_matched:

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 import contextlib
 import os
 import sys
@@ -222,24 +223,47 @@ async def run_headless(
         )
         await hook_bridge.load()
 
-        # Connect the configured MCP servers before the run starts, so their
-        # tools are in the first request rather than arriving mid-turn. The
-        # wait is bounded inside the manager, and a failure is reported on
-        # stderr rather than raised: a broken server must not fail a run.
-        try:
-            mcp_tools = await runtime.connect_mcp()
-        except Exception as exc:
-            print(f"warning: MCP startup failed: {exc}", file=sys.stderr)
-            mcp_tools = []
-        if mcp_tools:
-            contributing = sum(
-                1
-                for status in runtime.ensure_mcp_manager().statuses()
-                if status.state == "connected" and status.tool_count
-            )
-            print(f"mcp: {len(mcp_tools)} tool(s) from {contributing} server(s)", file=sys.stderr)
-        for message in runtime.ensure_mcp_manager().errors:
-            print(f"warning: MCP config: {message}", file=sys.stderr)
+        # Connect the configured MCP servers in the background so startup is
+        # not held up while they spin up. Their tools land in the session as
+        # they arrive (see ``_on_mcp_tools_changed``), and a failure is reported
+        # on stderr rather than raised: a broken server must not fail a run.
+        async def _connect_mcp_background() -> None:
+            try:
+                mcp_tools = await runtime.connect_mcp()
+            except Exception as exc:
+                print(f"warning: MCP startup failed: {exc}", file=sys.stderr)
+                mcp_tools = []
+            else:
+                if mcp_tools:
+                    contributing = sum(
+                        1
+                        for status in runtime.ensure_mcp_manager().statuses()
+                        if status.state == "connected" and status.tool_count
+                    )
+                    print(
+                        f"mcp: {len(mcp_tools)} tool(s) from {contributing} server(s)",
+                        file=sys.stderr,
+                    )
+            try:
+                for message in runtime.ensure_mcp_manager().errors:
+                    print(f"warning: MCP config: {message}", file=sys.stderr)
+                for status in runtime.ensure_mcp_manager().statuses():
+                    if status.state == "failed":
+                        print(
+                            f"warning: MCP server {status.name!r}: {status.error or 'failed'}",
+                            file=sys.stderr,
+                        )
+                    elif status.state == "needs-auth":
+                        print(
+                            f"warning: MCP server {status.name!r} needs sign-in", file=sys.stderr
+                        )
+            except Exception:
+                pass
+
+        mcp_task = asyncio.create_task(_connect_mcp_background())
+        # Let the connection start before the synchronous initialize() blocks
+        # the event loop.
+        await asyncio.sleep(0)
 
         try:
             init = runtime.initialize()
@@ -266,6 +290,9 @@ async def run_headless(
             )
             return _exit_code(await render_run(agent.run(prompt)))
         finally:
+            with contextlib.suppress(BaseException):
+                mcp_task.cancel()
+                await mcp_task
             with contextlib.suppress(Exception):
                 await loaded_extensions.bus.emit(
                     "session_end",

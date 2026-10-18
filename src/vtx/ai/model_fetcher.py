@@ -216,7 +216,7 @@ def _parse_models(
 
         from vtx.ai.context_length import context_length_manager
 
-        limits = context_length_manager.get_limits(model_id, provider=provider_slug)
+        limits = context_length_manager.get_limits(model_id, provider=provider_slug, fuzzy=False)
         if not supports_thinking and limits.supports_reasoning:
             supports_thinking = True
         if thinking_level_map is None and limits.thinking_level_map:
@@ -346,7 +346,7 @@ def get_fetched_models(provider) -> list[Model]:
 
     models: list[Model] = []
     for entry in cached:
-        limits = context_length_manager.get_limits(entry.id, provider=provider.slug)
+        limits = context_length_manager.get_limits(entry.id, provider=provider.slug, fuzzy=False)
         is_matched = (
             limits.context > 0
             or limits.supports_reasoning
