@@ -362,12 +362,23 @@ class RunSummaryBlock(Static):
             super().__init__()
             self.block = block
 
-    def __init__(self, stats: Any = None, **kwargs) -> None:
+    def __init__(
+        self,
+        stats: Any = None,
+        *,
+        thoughts: Iterable[ThinkingBlock] | None = None,
+        tools: Iterable[ToolBlock] | None = None,
+        **kwargs,
+    ) -> None:
         super().__init__(**kwargs)
         from vtx.tui.run_summary import RunSummaryStats, format_merged_summary_text
 
         self._stats = stats or RunSummaryStats()
         self._format_func = format_merged_summary_text
+        #: The blocks this row summarizes. Toggling the row expands or
+        #: collapses only this segment, not the whole run.
+        self._thoughts: list[ThinkingBlock] = list(thoughts or ())
+        self._tools: list[ToolBlock] = list(tools or ())
         self.add_class("run-summary-block")
 
     def compose(self) -> ComposeResult:
@@ -377,6 +388,20 @@ class RunSummaryBlock(Static):
         self._stats = stats
         with contextlib.suppress(Exception):
             self.query_one("#run-summary-label", Label).update(self._format_func(self._stats))
+
+    def is_open(self) -> bool:
+        return any(not t.has_class("-hidden") for t in self._thoughts) or any(
+            not b.has_class("-run-collapsed") for b in self._tools
+        )
+
+    def set_open(self, open_: bool) -> None:
+        for thought in self._thoughts:
+            if open_:
+                thought.remove_class("-hidden")
+            else:
+                thought.add_class("-hidden")
+        for tool in self._tools:
+            tool.set_run_collapsed(not open_)
 
     def on_click(self, event: events.Click) -> None:
         event.stop()

@@ -42,8 +42,24 @@ def test_format_merged_summary_text_omissions():
     assert "Called 2 tools" in formatted.plain
 
 
+def test_format_merged_summary_text_names_repeated_tools():
+    stats = RunSummaryStats(tools=4, tool_names=("read", "grep", "read", "bash"))
+    plain = format_merged_summary_text(stats).plain
+
+    assert "Called 4 tools" in plain
+    assert "(read×2, grep, bash)" in plain  # noqa: RUF001 - intentional multiplier glyph
+
+
+def test_format_merged_summary_text_elides_extra_tool_names():
+    stats = RunSummaryStats(tools=6, tool_names=("read", "grep", "bash", "edit", "glob", "todo"))
+    plain = format_merged_summary_text(stats).plain
+
+    assert "+2 more" in plain
+    assert "todo" not in plain
+
+
 @pytest.mark.asyncio
-async def test_merged_run_summaries_interleaving_and_cumulative_totals():
+async def test_merged_run_summaries_are_per_segment():
     async with MergedSummaryTestApp().run_test() as pilot:
         chat = pilot.app.query_one("#chat-log", ChatLog)
         config.ui.merged_turn_summary = True
@@ -68,6 +84,9 @@ async def test_merged_run_summaries_interleaving_and_cumulative_totals():
         chat.start_thinking()
         chat.start_tool("bash", "t3")
         chat.set_tool_result("t3", "exit 1", "", False)
+        # The runner reports the same result again for file changes; the
+        # failure must only be counted once.
+        chat.record_tool_result("t3", False)
 
         # Commentary segment 2
         chat.start_content()
@@ -80,21 +99,22 @@ async def test_merged_run_summaries_interleaving_and_cumulative_totals():
         summaries = list(chat.query(RunSummaryBlock))
         assert len(summaries) == 2
 
-        # Verify summary 1 has cumulative totals through segment 1
+        # Each summary describes only the activity in its own segment.
         s1 = summaries[0]
         assert s1._stats.thoughts == 1
         assert s1._stats.tools == 2
+        assert s1._stats.tool_names == ("read", "edit")
         assert s1._stats.edit_additions == 10
         assert s1._stats.edit_removals == 2
         assert s1._stats.failures == 0
         assert not s1.has_class("-hidden")
 
-        # Verify summary 2 has whole run cumulative totals
         s2 = summaries[1]
-        assert s2._stats.thoughts == 3
-        assert s2._stats.tools == 3
-        assert s2._stats.edit_additions == 10
-        assert s2._stats.edit_removals == 2
+        assert s2._stats.thoughts == 2
+        assert s2._stats.tools == 1
+        assert s2._stats.tool_names == ("bash",)
+        assert s2._stats.edit_additions == 0
+        assert s2._stats.edit_removals == 0
         assert s2._stats.failures == 1
         assert not s2.has_class("-hidden")
 
@@ -107,19 +127,52 @@ async def test_merged_run_summaries_interleaving_and_cumulative_totals():
         assert len(tools) == 3
         assert all(t.has_class("-run-collapsed") for t in tools)
 
-        # Clicking summary toggles all thoughts and tools open
-        chat.toggle_run_disclosure(s2)
-        await pilot.pause()
-
-        assert all(not t.has_class("-hidden") for t in thoughts)
-        assert all(not t.has_class("-run-collapsed") for t in tools)
-
-        # Clicking again closes them all
+        # Clicking a summary only opens its own segment.
         chat.toggle_run_disclosure(s1)
         await pilot.pause()
 
-        assert all(t.has_class("-hidden") for t in thoughts)
-        assert all(t.has_class("-run-collapsed") for t in tools)
+        assert not thoughts[0].has_class("-hidden")
+        assert not tools[0].has_class("-run-collapsed")
+        assert not tools[1].has_class("-run-collapsed")
+        assert thoughts[1].has_class("-hidden")
+        assert thoughts[2].has_class("-hidden")
+        assert tools[2].has_class("-run-collapsed")
+
+        # Toggling the second summary opens only its own segment; segment 1
+        # stays open and untouched.
+        chat.toggle_run_disclosure(s2)
+        await pilot.pause()
+
+        assert not thoughts[1].has_class("-hidden")
+        assert not thoughts[2].has_class("-hidden")
+        assert not tools[2].has_class("-run-collapsed")
+        assert not thoughts[0].has_class("-hidden")
+        assert not tools[0].has_class("-run-collapsed")
+
+        # Closing segment 1 leaves segment 2 open.
+        chat.toggle_run_disclosure(s1)
+        await pilot.pause()
+
+        assert thoughts[0].has_class("-hidden")
+        assert tools[0].has_class("-run-collapsed")
+        assert tools[1].has_class("-run-collapsed")
+        assert not thoughts[1].has_class("-hidden")
+        assert not thoughts[2].has_class("-hidden")
+        assert not tools[2].has_class("-run-collapsed")
+
+
+@pytest.mark.asyncio
+async def test_content_without_preceding_activity_makes_no_summary():
+    async with MergedSummaryTestApp().run_test() as pilot:
+        chat = pilot.app.query_one("#chat-log", ChatLog)
+        config.ui.merged_turn_summary = True
+        config.ui.collapse_after_turn = True
+
+        chat.add_user_message("Hello")
+        chat.start_content()
+        await pilot.pause()
+
+        assert not list(chat.query(RunSummaryBlock))
 
 
 @pytest.mark.asyncio

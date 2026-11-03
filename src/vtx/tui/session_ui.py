@@ -86,6 +86,9 @@ class SessionUIMixin:
             if isinstance(entry, MessageEntry):
                 message = entry.message
                 if isinstance(message, UserMessage):
+                    # A new user turn closes the previous replayed run so its
+                    # segment summaries are revealed before tracking resets.
+                    chat.finish_agent_run()
                     chat.add_user_message(self._extract_text_content(message.content))
                 elif isinstance(message, AssistantMessage):
                     for part in message.content:

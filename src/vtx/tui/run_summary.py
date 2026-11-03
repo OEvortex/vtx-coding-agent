@@ -27,7 +27,7 @@ class RunSummaryStats:
 
 
 def _format_tool_names(names: tuple[str, ...]) -> str:
-    """Compress call order into ``read ×2, grep, bash``.
+    """Compress call order into a short ``name`` list.
 
     Names keep first-call order; a repeated tool is folded into one entry with
     a multiplier so the label stays short without hiding what actually ran.
@@ -37,7 +37,7 @@ def _format_tool_names(names: tuple[str, ...]) -> str:
     shown = []
     for name in distinct[:MAX_NAMED_TOOLS]:
         count = counts[name]
-        shown.append(f"{name} ×{count}" if count > 1 else name)
+        shown.append(f"{name}×{count}" if count > 1 else name)  # noqa: RUF001
     if len(distinct) > MAX_NAMED_TOOLS:
         shown.append(f"+{len(distinct) - MAX_NAMED_TOOLS} more")
     return ", ".join(shown)

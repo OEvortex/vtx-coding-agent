@@ -32,6 +32,7 @@ from vtx.tui.blocks import (
     UserBlock,
 )
 from vtx.tui.brand import VTX_LOGO
+from vtx.tui.run_summary import RunSummaryStats
 from vtx.tui.status_lines import WITTY_STATUS_LINES, pick_witty_line, subagents_own_the_status_line
 
 __all__ = ["MAX_CHILDREN", "PRUNE_TO", "WITTY_ROTATE_EVERY_TICKS", "WITTY_STATUS_LINES", "ChatLog"]
@@ -190,15 +191,24 @@ class ChatLog(VerticalScroll):
         # calls so the list updates in place instead of stacking blocks.
         self._todo_block: ToolBlock | None = None
         # Merged run summary tracking
-        self._current_run_summary: RunSummaryBlock | None = None
         self._current_run_summaries: list[RunSummaryBlock] = []
-        self._current_run_tools: list[ToolBlock] = []
         self._current_run_thoughts: list[ThinkingBlock] = []
-        self._current_run_thoughts_count: int = 0
-        self._current_run_tools_count: int = 0
-        self._current_run_additions: int = 0
-        self._current_run_removals: int = 0
-        self._current_run_failures: int = 0
+        self._current_run_tools: list[ToolBlock] = []
+        # Activity accumulated since the last prose block. Each prose segment
+        # closes this group into its own summary row, so a summary only ever
+        # describes the thoughts/tools immediately above it.
+        self._segment_thoughts: list[ThinkingBlock] = []
+        self._segment_tools: list[ToolBlock] = []
+        self._segment_tool_names: list[str] = []
+        self._segment_additions: int = 0
+        self._segment_removals: int = 0
+        self._segment_failures: int = 0
+        # Tool ids whose result has already been folded into the segment
+        # totals. ``set_tool_result`` records the failure first, then the
+        # runner reports file changes for the same id; counting blindly
+        # double-counts failures.
+        self._counted_failures: set[str] = set()
+        self._counted_diffs: set[str] = set()
 
     def on_mount(self) -> None:
         self.anchor()
@@ -686,6 +696,7 @@ class ChatLog(VerticalScroll):
                 block.tool = tool
             self._tool_blocks[tool_id] = block
             block.add_class("pinned")
+            self.record_tool_block(block, name)
             return block
 
         block_cls = tool.ui_block if (tool is not None and tool.ui_block) else ToolBlock
@@ -704,7 +715,7 @@ class ChatLog(VerticalScroll):
             block.add_class("pinned")
 
         self.mount(block)
-        self.record_tool_block(block)
+        self.record_tool_block(block, name)
         self._scroll_if_anchored(animate=False)
         self._tool_blocks[tool_id] = block
         if is_todo:
@@ -786,56 +797,81 @@ class ChatLog(VerticalScroll):
 
     def reset_run_tracking(self) -> None:
         """Reset state tracking for merged run summary."""
-        self._current_run_summary = None
         self._current_run_summaries = []
-        self._current_run_tools = []
         self._current_run_thoughts = []
-        self._current_run_thoughts_count = 0
-        self._current_run_tools_count = 0
-        self._current_run_additions = 0
-        self._current_run_removals = 0
-        self._current_run_failures = 0
+        self._current_run_tools = []
+        self._reset_segment()
+
+    def _reset_segment(self) -> None:
+        self._segment_thoughts = []
+        self._segment_tools = []
+        self._segment_tool_names = []
+        self._segment_additions = 0
+        self._segment_removals = 0
+        self._segment_failures = 0
+        self._counted_failures = set()
+        self._counted_diffs = set()
+
+    def _segment_has_activity(self) -> bool:
+        return bool(self._segment_thoughts or self._segment_tool_names)
 
     def start_agent_run(self) -> None:
         """Called when a user prompt initiates an agent run."""
         self.reset_run_tracking()
 
-    def _get_current_run_stats(self):
-        from vtx.tui.run_summary import RunSummaryStats
-
+    def _get_segment_stats(self) -> RunSummaryStats:
         return RunSummaryStats(
-            thoughts=self._current_run_thoughts_count,
-            tools=self._current_run_tools_count,
-            edit_additions=self._current_run_additions,
-            edit_removals=self._current_run_removals,
-            failures=self._current_run_failures,
+            thoughts=len(self._segment_thoughts),
+            tools=len(self._segment_tool_names),
+            tool_names=tuple(self._segment_tool_names),
+            edit_additions=self._segment_additions,
+            edit_removals=self._segment_removals,
+            failures=self._segment_failures,
         )
 
     def record_thought_block(self, block: ThinkingBlock) -> None:
         self._current_run_thoughts.append(block)
-        self._current_run_thoughts_count += 1
+        self._segment_thoughts.append(block)
 
-    def record_tool_block(self, block: ToolBlock) -> None:
+    def record_tool_block(self, block: ToolBlock, name: str) -> None:
         self._current_run_tools.append(block)
-        self._current_run_tools_count += 1
+        self._segment_tools.append(block)
+        self._segment_tool_names.append(name)
 
     def record_tool_result(self, tool_id: str, success: bool, fc=None) -> None:
-        if not success:
-            self._current_run_failures += 1
-        if fc:
-            self._current_run_additions += getattr(fc, "added", 0)
-            self._current_run_removals += getattr(fc, "removed", 0)
+        # A tool's result can arrive through more than one path (the result
+        # block and the runner's file-change report), so fold each tool id in
+        # exactly once.
+        if not success and tool_id not in self._counted_failures:
+            self._counted_failures.add(tool_id)
+            self._segment_failures += 1
+        if fc and tool_id not in self._counted_diffs:
+            self._counted_diffs.add(tool_id)
+            self._segment_additions += getattr(fc, "added", 0)
+            self._segment_removals += getattr(fc, "removed", 0)
 
-    def ensure_run_summary_before_content(self) -> None:
-        """Before commentary/prose content starts, ensure a summary block exists."""
-        if not config.ui.merged_turn_summary:
-            return
-        summary = RunSummaryBlock(self._get_current_run_stats())
-        # Start hidden while the run is active
+    def _mount_segment_summary(self) -> None:
+        """Close the current activity group into a summary row.
+
+        The row is kept hidden until the run ends, so the live transcript
+        shows thoughts and tools while they stream and swaps them for the
+        compact summaries only once the turn is complete.
+        """
+        summary = RunSummaryBlock(
+            self._get_segment_stats(), thoughts=self._segment_thoughts, tools=self._segment_tools
+        )
         summary.add_class("-hidden")
         self.mount(summary)
-        self._current_run_summary = summary
         self._current_run_summaries.append(summary)
+        self._reset_segment()
+
+    def ensure_run_summary_before_content(self) -> None:
+        """Close the activity group that precedes a prose/commentary block."""
+        if not config.ui.merged_turn_summary:
+            return
+        if not self._segment_has_activity():
+            return
+        self._mount_segment_summary()
         self._scroll_if_anchored(animate=False)
 
     def finish_agent_run(self) -> None:
@@ -843,22 +879,16 @@ class ChatLog(VerticalScroll):
         if not config.ui.merged_turn_summary:
             return
 
-        # If there were tool or thought runs but no commentary content followed,
-        # attach a summary block at the end
-        if not self._current_run_summaries and (
-            self._current_run_thoughts or self._current_run_tools
-        ):
-            summary = RunSummaryBlock(self._get_current_run_stats())
-            summary.add_class("-hidden")
-            self.mount(summary)
-            self._current_run_summary = summary
-            self._current_run_summaries.append(summary)
+        # Trailing thoughts/tools with no commentary after them still need a
+        # summary row, otherwise they would never be revealed.
+        if self._segment_has_activity():
+            self._mount_segment_summary()
 
         # Make all run summaries visible
         for summary in self._current_run_summaries:
             summary.remove_class("-hidden")
 
-        # Collapse thoughts and tools into the summary row if collapse_after_turn is True
+        # Collapse thoughts and tools into their segment summaries
         if config.ui.collapse_after_turn:
             for thought in self._current_run_thoughts:
                 thought.add_class("-hidden")
@@ -868,31 +898,8 @@ class ChatLog(VerticalScroll):
         self._scroll_if_anchored(animate=False)
 
     def toggle_run_disclosure(self, summary_block: RunSummaryBlock) -> None:
-        """Toggle all thoughts and finalized tools for the whole run."""
-        # Find which run this summary belongs to. If it's the current run, use its tracked lists;
-        # otherwise query all thinking blocks and tool blocks in the chat log.
-        if summary_block in self._current_run_summaries:
-            thoughts = self._current_run_thoughts
-            tools = self._current_run_tools
-        else:
-            thoughts = list(self.query(ThinkingBlock))
-            tools = list(self.query(ToolBlock))
-
-        # Check if anything is open
-        is_open = any(not t.has_class("-hidden") for t in thoughts) or any(
-            not b.has_class("-run-collapsed") for b in tools
-        )
-
-        should_open = not is_open
-        for t in thoughts:
-            if should_open:
-                t.remove_class("-hidden")
-            else:
-                t.add_class("-hidden")
-
-        for b in tools:
-            b.set_run_collapsed(not should_open)
-
+        """Toggle only the thoughts/tools that this summary row describes."""
+        summary_block.set_open(not summary_block.is_open())
         self._scroll_if_anchored(animate=False)
 
     def update_tool_call_msg(self, tool_id: str, call_msg: str) -> None:
