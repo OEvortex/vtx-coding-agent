@@ -137,46 +137,24 @@ _RECOVERY = {
 }
 
 DESCRIPTION_TEMPLATE = """\
-Run a Python script that calls this agent's tools.
+Run a Python script that composes multiple tool calls in one turn.
 
-Write the script as a function body. `return` the value you want back and `await`
-any tool call, including several at once with `asyncio.gather`. Use it when a task
-needs more than one tool call, or when the work between calls is filtering,
-sorting, or aggregation — code does that for free instead of spending your context
-on it.
-
-{recovery}
+Use this instead of calling tools one at a time when a task needs several
+calls, or filtering, sorting, or aggregation between them. N operations cost
+one model turn instead of N.
 
 Inside the script:
 - `tools.<name>(**kwargs)` calls a tool. Its result comes back as plain JSON data.
-- `tools.search(query=..., limit=...)` finds tools, when the list below is partial.
-- `text(value)` appends to the output shown to you. `print` is discarded.
-- `image(value)` appends an image you can see. It takes a base64 data URI or an
-  image block taken straight from an MCP result.
-- `store(key, value)` / `load(key)` carry JSON values between codemode calls;
-  writes are kept only if the script returns successfully.
-- A first line of `# @options: {{"max_tool_calls": 20}}` lowers your own budgets.
-  You can ask for less than the limits below, never more.
+- `await asyncio.gather(...)` runs independent calls in parallel.
+- `text(value)` appends visible output. `print` is discarded.
+- `return value` at the top level sends the result back to you.
+- `tools.search(query=..., limit=...)` finds tools when the catalog below is partial.
+- `store(key, value)` / `load(key)` carry JSON values between codemode calls.
 
-A slow tool is not your problem: the compute budget below is charged only while
-your code is running, so time spent waiting on tool calls does not count against
-it. Wrapping a slow tool in a script is the wrong shape — call it directly and do
-the filtering in your own next step.
+A first line of `# @options: {{"max_tool_calls": 20}}` lowers your own budgets
+(timeout_ms, max_tool_calls, max_output_tokens). You can ask for less, never more.
 
-The script is real Python: full standard library, installed packages, the
-filesystem, subprocesses, and the network, running as the same user as any
-command in this session. `print` and stderr are discarded — `text(value)` is the
-only output the model reads. The running agent and its tools are not reachable
-from inside the script, so every tool still goes through
-`tools.<name>(...)`.
-
-MCP tools, when connected, are grouped by server below and return a
-`CallToolResult` rather than a string. Read `structuredContent` when it is
-present, and check `isError` before trusting a result.
-
-Side effects are real: if the script fails partway, earlier tool calls are not
-undone. A tool that needs your user's approval cannot be called from here — call
-it directly so they can approve it.
+{recovery}
 
 {catalog}"""
 
@@ -185,7 +163,13 @@ class CodemodeTool(BaseTool):
     """Run a confined script that composes the agent's other tools."""
 
     name = CODEMODE_TOOL_NAME
-    description = "Run a Python script that calls this agent's tools."
+    description = (
+        "Prefer this tool whenever a task needs more than one tool call. "
+        "Run a Python script that composes multiple tool calls into a single model turn "
+        "(N operations cost one turn instead of N), running independent calls in parallel "
+        "with `asyncio.gather` and aggregating/filtering results in Python. "
+        "Use `codemode` instead of calling several tools one at a time."
+    )
     params = CodemodeParams
     mutating = True
     """Scripts call other tools, which may mutate. Marked mutating so the
@@ -205,12 +189,9 @@ class CodemodeTool(BaseTool):
     #: The parts of the sandbox contract worth stating as prose, beyond what the
     #: catalog already shows. Kept short: this lands in the prompt every turn.
     prompt_guidelines = (
-        "When a task needs several tool calls, or filtering between them, write one "
-        "`codemode` script instead of chaining tool calls.",
-        "Inside a `codemode` script, aggregate and filter in Python rather than "
-        "calling a tool to do it, and use `asyncio.gather` for independent calls.",
-        "`tools.search` lists the tools available to a script; use it before "
-        "concluding a capability is missing.",
+        "Prefer `codemode` over serial tool calls: N operations cost one model turn instead of N.",
+        "Inside codemode, aggregate/filter in Python instead of chaining tool calls.",
+        "Use `asyncio.gather` for independent calls; `tools.search` to find tools.",
     )
 
     def __init__(
