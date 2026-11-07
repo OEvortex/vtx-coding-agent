@@ -310,7 +310,7 @@ def test_agent_tool_list_does_not_leak_across_switches(monkeypatch, tmp_path: Pa
     from vtx.plugins.bus import EventBus
 
     registry = AgentRegistry()
-    registry.agents = [_make_agent("plan", tools_allow=["read", "find", "grep", "skill"])]
+    registry.agents = [_make_agent("plan", tools_allow=["read", "todo", "grep", "skill"])]
 
     runtime = ConversationRuntime(
         cwd=str(tmp_path),
@@ -334,7 +334,7 @@ def test_agent_tool_list_does_not_leak_across_switches(monkeypatch, tmp_path: Pa
     # Activate plan (restrictive)
     runtime.set_active_agent("plan")
     plan_tools = {t.name for t in runtime.agent.tools}
-    assert plan_tools == {"read", "find", "grep", "skill"}
+    assert plan_tools == {"read", "todo", "grep", "skill"}
     assert "edit" not in plan_tools
     assert "write" not in plan_tools
     assert "bash" not in plan_tools

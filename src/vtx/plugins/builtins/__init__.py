@@ -45,7 +45,7 @@ BASE: list[Row] = [
     Row(id="tool-edit", name="vtx.coding_agent.tools.edit:PLUGIN"),
     Row(id="tool-write", name="vtx.coding_agent.tools.write:PLUGIN"),
     Row(id="tool-bash", name="vtx.coding_agent.tools.bash:PLUGIN"),
-    Row(id="tool-find", name="vtx.coding_agent.tools.find:PLUGIN"),
+    # ``find`` removed: bash covers file discovery better for models.
     Row(id="tool-grep", name="vtx.coding_agent.tools.grep:PLUGIN"),
     Row(id="tool-skill", name="vtx.coding_agent.tools.skill:PLUGIN"),
     Row(id="tool-todo", name="vtx.coding_agent.tools.todo:PLUGIN"),

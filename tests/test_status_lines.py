@@ -18,7 +18,6 @@ EXPECTED_TOOLS = [
     "edit",
     "write",
     "bash",
-    "find",
     "grep",
     "skill",
     "web",

@@ -414,7 +414,7 @@ def _builtin_pool() -> dict[str, BaseTool]:
 
 def test_compose_active_tools_no_agent_returns_base():
     pool = _builtin_pool()
-    base = ["read", "write", "bash", "find"]
+    base = ["read", "write", "bash", "grep"]
     out = compose_active_tools(
         base_tool_names=base, base_tool_pool=pool, extension_tools=[], active_agent=None
     )
@@ -424,7 +424,7 @@ def test_compose_active_tools_no_agent_returns_base():
 
 def test_compose_active_tools_deny_drops_tools():
     pool = _builtin_pool()
-    base = ["read", "write", "bash", "find"]
+    base = ["read", "write", "bash", "grep"]
     agent = LoadedAgent(
         definition=AgentDef(name="review", description="x", tools_deny=["bash", "write"]),
         path=Path("/x.py"),
@@ -436,12 +436,12 @@ def test_compose_active_tools_deny_drops_tools():
     assert "bash" not in names
     assert "write" not in names
     assert "read" in names
-    assert "find" in names
+    assert "grep" in names
 
 
 def test_compose_active_tools_allow_intersects():
     pool = _builtin_pool()
-    base = ["read", "write", "bash", "find"]
+    base = ["read", "write", "bash", "grep"]
     agent = LoadedAgent(
         definition=AgentDef(
             name="review", description="x", tools_allow=["read", "bash"], tools_deny=["bash"]

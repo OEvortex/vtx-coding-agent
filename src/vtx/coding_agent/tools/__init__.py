@@ -33,7 +33,6 @@ from vtx.agent.tools import (
 from .bash import BashTool
 from .codemode import CodemodeTool
 from .edit import EditTool
-from .find import FindTool
 from .grep import GrepTool
 from .read import ReadTool
 from .skill import SkillTool
@@ -50,7 +49,6 @@ __all__ = [
     "BashTool",
     "CodemodeTool",
     "EditTool",
-    "FindTool",
     "GrepTool",
     "ReadTool",
     "SkillTool",
@@ -74,7 +72,6 @@ all_tools: list[BaseTool] = [
     EditTool(),
     WriteTool(),
     BashTool(),
-    FindTool(),
     GrepTool(),
     SkillTool(),
     TodoTool(),
@@ -92,7 +89,6 @@ DEFAULT_TOOLS: list[str] = [
     "edit",
     "write",
     "bash",
-    "find",
     "skill",
     "todo",
     "web",
