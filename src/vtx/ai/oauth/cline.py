@@ -25,8 +25,6 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
-import aiohttp
-
 from vtx.core.paths import get_config_dir
 
 _WORKOS_CLIENT_ID = os.getenv("CLINE_WORKOS_CLIENT_ID", "client_01K3A541FN8TA3EPPHTD2325AR")
@@ -189,6 +187,8 @@ def _is_invalid_grant_error(status: int, body: str) -> bool:
 
 
 async def _request_device_code() -> DeviceCodeResponse:
+    import aiohttp
+
     url = f"{_WORKOS_BASE}{_DEVICE_CODE_ENDPOINT}"
     async with (
         aiohttp.ClientSession() as session,
@@ -225,6 +225,8 @@ async def _request_device_code() -> DeviceCodeResponse:
 async def _poll_workos_token(
     device_code: str, interval: int, expires_in: int, on_poll: Any | None = None
 ) -> tuple[str, str]:
+    import aiohttp
+
     url = f"{_WORKOS_BASE}{_DEVICE_TOKEN_ENDPOINT}"
     deadline = time.time() + expires_in
     poll_interval = max(1, interval)
@@ -273,6 +275,8 @@ async def _poll_workos_token(
 
 
 async def _register_cline_token(workos_access: str, workos_refresh: str) -> ClineCredentials:
+    import aiohttp
+
     url = f"{_API_BASE}{_REGISTER_ENDPOINT}"
     payload = {"accessToken": workos_access, "refreshToken": workos_refresh}
     async with (
@@ -321,6 +325,8 @@ async def _register_cline_token(workos_access: str, workos_refresh: str) -> Clin
 
 
 async def refresh_cline_token(creds: ClineCredentials) -> ClineCredentials:
+    import aiohttp
+
     url = f"{_API_BASE}{_REFRESH_ENDPOINT}"
     payload = {"refreshToken": creds.refresh, "grantType": "refresh_token"}
     async with (

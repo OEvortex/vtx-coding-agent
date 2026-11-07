@@ -19,8 +19,20 @@ def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description="Vtx")
     subparsers = parser.add_subparsers(dest="command")
     subparsers.add_parser(
+        "acp", help="Run vtx as an Agent Client Protocol (ACP) server over stdio"
+    )
+    subparsers.add_parser(
         "update", help="Self-update vtx to the latest stable PyPI release and exit"
     )
+
+    auth_parser = subparsers.add_parser("auth", help="Authentication status and login")
+    auth_sub = auth_parser.add_subparsers(dest="auth_command")
+    auth_sub.add_parser("status", help="Print provider authentication status")
+
+    models_parser = subparsers.add_parser("models", help="List available models")
+    models_sub = models_parser.add_subparsers(dest="models_command")
+    models_list = models_sub.add_parser("list", help="List models")
+    models_list.add_argument("--format", choices=["json"], default=None)
 
     plugin_parser = subparsers.add_parser(
         "plugin", help="Manage plugin profiles, bundles, and rows"
@@ -189,6 +201,12 @@ def main() -> None:
 
     args = parser.parse_args()
 
+    if args.command == "acp":
+        from vtx.acp.server import run_acp
+
+        run_acp()
+        raise SystemExit(0)
+
     if args.command == "update":
         from vtx.core.self_update import self_update
 
@@ -206,6 +224,43 @@ def main() -> None:
     from vtx.core.config import config as _config
 
     globals()["config"] = _config
+
+    if args.command == "auth" and args.auth_command == "status":
+        from vtx.ai.provider_catalog import detect_provider_from_env, get, is_provider_configured
+
+        provider = get(config.llm.default_provider) or detect_provider_from_env()
+        if provider is not None and is_provider_configured(provider):
+            print("Logged in.")
+        else:
+            print("Not logged in.")
+        raise SystemExit(0)
+
+    if args.command == "models" and args.models_command == "list":
+        import json as _json
+
+        from vtx.ai.models import get_all_models
+
+        families = []
+        for m in get_all_models():
+            uid = f"{m.provider}:{m.id}"
+            families.append(
+                {
+                    "family_label": m.id,
+                    "family_uid": uid,
+                    "slug": m.provider,
+                    "variants": [
+                        {
+                            "model_uid": uid,
+                            "label": m.id,
+                            "description": m.provider,
+                            "max_context_tokens": m.context_window,
+                            "max_output_tokens": m.max_tokens,
+                        }
+                    ],
+                }
+            )
+        print(_json.dumps({"families": families}))
+        raise SystemExit(0)
 
     if args.prompt is not None and (args.continue_recent or args.resume_session):
         parser.error("-c/--continue and -r/--resume are not supported with -p/--prompt")
