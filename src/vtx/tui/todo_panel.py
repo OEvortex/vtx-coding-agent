@@ -106,7 +106,10 @@ class TodoPanel(Static):
         tool = current_todo_tool()
         tasks = getattr(tool, "_tasks", None) or []
         live = todo_ui.active_tasks(tasks)
-        if not live:
+        # Hide once nothing is left to do: a strip showing only completed
+        # rows is a receipt, not a status, and it squats above the editor for
+        # the rest of the session otherwise.
+        if not any(getattr(t, "status", "") != "completed" for t in live):
             self.remove_class("-visible")
             self.update(Text(""))
             self._stop_timer()
