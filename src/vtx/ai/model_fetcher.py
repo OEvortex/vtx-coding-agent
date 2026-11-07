@@ -28,11 +28,10 @@ from dataclasses import asdict, dataclass
 from pathlib import Path
 from typing import Any
 
-import httpx
-
 from vtx.ai.models import ApiType, Model
 
 logger = logging.getLogger(__name__)
+
 
 CACHE_DIR = "models"
 DEFAULT_COOLDOWN = 60  # minutes
@@ -269,6 +268,8 @@ def _fetch_models_sync(provider) -> list[FetchedModel]:
         headers["Authorization"] = f"Bearer {api_key}"
 
     try:
+        import httpx
+
         with httpx.Client(timeout=10.0) as client:
             resp = client.get(url, headers=headers)
             if resp.status_code >= 400:

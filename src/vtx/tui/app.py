@@ -657,6 +657,21 @@ class Vtx(
         self.run_worker(self._check_for_updates(), exclusive=False)
         self.run_worker(self._ensure_models_dev(), exclusive=False)
 
+        # Warm the /usage scan cache in the background: the first aggregate
+        # parses every session log (~4s on a large history); doing it here
+        # means /usage reads the warm per-file cache even on first use.
+        import threading
+
+        def _warm_usage() -> None:
+            try:
+                from vtx.tui.usage_stats import aggregate_usage
+
+                aggregate_usage()
+            except Exception:
+                pass
+
+        threading.Thread(target=_warm_usage, daemon=True).start()
+
         # Fire session_start on the extension bus via an async worker so
         # async handlers (e.g. YAML hook handlers registered by HookBridge)
         # are awaited; emit_sync would skip them.
@@ -681,9 +696,20 @@ class Vtx(
         # mcp.json this reads one absent file and returns immediately.
         self.run_worker(self._connect_mcp(), exclusive=False)
 
+        self.run_worker(self._initialize_runtime(), exclusive=True)
+
+    async def _initialize_runtime(self) -> None:
+        """Initialize the runtime off the first-paint path.
+
+        ``on_mount`` schedules this as a worker so the shell paints
+        immediately; plugin composition, session load, and provider
+        setup happen while the UI is already responsive.
+        """
         try:
-            init_result = self._runtime.initialize(
-                resume_session=self._resume_session, continue_recent=self._continue_recent
+            init_result = await asyncio.to_thread(
+                self._runtime.initialize,
+                resume_session=self._resume_session,
+                continue_recent=self._continue_recent,
             )
         except Exception as e:
             self._add_launch_warning(str(e), severity="error")
@@ -766,7 +792,7 @@ class Vtx(
 
         self._startup_complete = True
         self._show_pending_update_notice_if_idle()
-        input_box.focus()
+        self.query_one("#input-box", InputBox).focus()
 
         import gc
 

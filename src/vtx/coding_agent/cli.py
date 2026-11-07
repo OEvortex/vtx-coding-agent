@@ -1,15 +1,18 @@
 import argparse
-import asyncio
 import os
 import sys
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 # ``vtx.ai.providers`` rather than ``vtx.ai``: the barrel also imports the
 # provider oauth clients (aiohttp), which this only needs the API-type catalog
 # from. Importing the barrel here cost ~165ms on every startup.
 from vtx.ai.providers import PROVIDER_API_BY_NAME
-from vtx.core.config import config
 from vtx.core.version import VERSION
+
+if TYPE_CHECKING:
+    # Bound at runtime inside ``main()`` after arg parsing (see there); kept
+    # here so type checkers resolve the ``config`` references below.
+    from vtx.core.config import config
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -197,6 +200,13 @@ def main() -> None:
             raise SystemExit(1)
         raise SystemExit(0)
 
+    # Deferred import: --help/--version/plugin/update exit above without
+    # paying the ~140ms pydantic+yaml cost of vtx.core.config. Injecting into
+    # module globals keeps every ``config`` reference below working unchanged.
+    from vtx.core.config import config as _config
+
+    globals()["config"] = _config
+
     if args.prompt is not None and (args.continue_recent or args.resume_session):
         parser.error("-c/--continue and -r/--resume are not supported with -p/--prompt")
 
@@ -279,6 +289,8 @@ def main() -> None:
         )
         for err in loaded.errors:
             print(f"extension error: {err}", file=sys.stderr)
+
+        import asyncio
 
         raise SystemExit(
             asyncio.run(

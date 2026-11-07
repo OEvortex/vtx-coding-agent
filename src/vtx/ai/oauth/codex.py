@@ -22,8 +22,6 @@ from pathlib import Path
 from typing import Any
 from urllib.parse import parse_qs, urlencode, urlparse
 
-import aiohttp
-
 from vtx.core.paths import get_config_dir
 
 _CLIENT_ID = os.getenv("CODEX_APP_SERVER_LOGIN_CLIENT_ID", "app_EMoamEEZ73f0CkXaXp7hrann")
@@ -210,6 +208,8 @@ def _build_authorize_url(code_challenge: str, state: str, originator: str) -> st
 
 
 async def _exchange_code_for_tokens(code: str, verifier: str) -> CodexCredentials:
+    import aiohttp
+
     async with (
         aiohttp.ClientSession() as session,
         session.post(
@@ -412,6 +412,8 @@ codex_login = login
 
 
 async def _request_device_code() -> dict[str, Any]:
+    import aiohttp
+
     async with (
         aiohttp.ClientSession() as session,
         session.post(
@@ -434,6 +436,8 @@ async def _request_device_code() -> dict[str, Any]:
 
 
 async def _poll_device_token(device_auth_id: str, user_code: str, interval: int) -> dict[str, Any]:
+    import aiohttp
+
     deadline = time.time() + 900
     poll_interval = max(1, interval)
     async with aiohttp.ClientSession() as session:
@@ -491,6 +495,8 @@ async def login_with_device_code(
 
 
 async def refresh_codex_token(creds: CodexCredentials) -> CodexCredentials:
+    import aiohttp
+
     refresh_url = _REFRESH_TOKEN_URL_OVERRIDE or _TOKEN_URL
     async with (
         aiohttp.ClientSession() as session,

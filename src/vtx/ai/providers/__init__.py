@@ -1,5 +1,11 @@
-from ..base import BaseProvider
+from __future__ import annotations
+
+from typing import TYPE_CHECKING
+
 from ..models import ApiType
+
+if TYPE_CHECKING:
+    from ..base import BaseProvider
 
 PROVIDER_API_BY_NAME: dict[str, ApiType] = {
     "openai": ApiType(ApiType.OPENAI_SDK),

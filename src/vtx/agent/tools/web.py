@@ -5,7 +5,6 @@ from __future__ import annotations
 import asyncio
 import json
 
-import httpx
 from pydantic import BaseModel, Field
 
 from vtx.agent.tools.base import BaseTool
@@ -34,6 +33,8 @@ def _extract_text(data: dict) -> str | None:
 
 async def _call_exa(payload: dict) -> tuple[str | None, str | None]:
     """POST a JSON-RPC call to the Exa MCP endpoint."""
+    import httpx
+
     headers = {"Accept": "application/json, text/event-stream", "Content-Type": "application/json"}
     try:
         async with httpx.AsyncClient(timeout=_TIMEOUT) as client:

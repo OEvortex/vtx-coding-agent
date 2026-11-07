@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import platform
 import shutil
-import subprocess
 from functools import cache
 from importlib import resources
 from pathlib import Path
@@ -36,6 +35,8 @@ def _linux_player() -> str | None:
 
 
 def _run(command: list[str]) -> None:
+    import subprocess
+
     subprocess.Popen(command, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
 
 

@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 import asyncio
 import logging
 import platform
@@ -10,9 +12,10 @@ import tempfile
 import zipfile
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Literal
+from typing import TYPE_CHECKING, Literal
 
-import aiohttp
+if TYPE_CHECKING:
+    import aiohttp
 
 from vtx.core.paths import get_config_dir
 
@@ -155,6 +158,8 @@ def _extract_binary(archive_path: Path, binary_name: str, dest: Path) -> Path:
 async def _download_tool(tool: ToolName) -> str:
     # TODO: Move archive extraction and other synchronous file operations
     # off the event loop so background tool installation cannot cause UI hiccups.
+    import aiohttp
+
     config = _TOOLS[tool]
     plat = _get_platform()
     arch = _get_arch()

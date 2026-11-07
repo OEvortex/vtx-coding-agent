@@ -12,8 +12,6 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
-import aiohttp
-
 from vtx.core.paths import get_config_dir
 
 # GitHub OAuth client ID (same as VS Code Copilot extension)
@@ -122,6 +120,8 @@ def get_base_url_from_token(token: str, enterprise_domain: str | None = None) ->
 
 
 async def start_device_flow(domain: str = "github.com") -> DeviceCodeResponse:
+    import aiohttp
+
     urls = _get_urls(domain)
 
     async with (
@@ -162,6 +162,8 @@ async def poll_for_github_token(
     Raises TimeoutError if the flow expires.
     """
     import time
+
+    import aiohttp
 
     urls = _get_urls(domain)
     deadline = time.time() + expires_in
@@ -214,6 +216,8 @@ async def exchange_for_copilot_token(
 
     Returns (copilot_token, expires_at_ms).
     """
+    import aiohttp
+
     urls = _get_urls(domain)
 
     async with (
@@ -282,6 +286,8 @@ async def get_valid_token() -> str | None:
 async def _enable_copilot_model(
     token: str, model_id: str, enterprise_domain: str | None = None
 ) -> bool:
+    import aiohttp
+
     base_url = get_base_url_from_token(token, enterprise_domain)
     url = f"{base_url}/models/{model_id}/policy"
 

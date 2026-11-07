@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 import asyncio
 import logging
 import os
@@ -5,10 +7,8 @@ from abc import ABC, abstractmethod
 from collections.abc import AsyncIterator
 from dataclasses import dataclass, field
 from ipaddress import ip_address
-from typing import Any, ClassVar, Literal, cast
+from typing import TYPE_CHECKING, Any, ClassVar, Literal, cast
 from urllib.parse import urlparse
-
-import httpx
 
 # Apply httpcore GeneratorExit patch as early as possible so streaming
 # SDKs pick up the fixed ``safe_async_iterate``.
@@ -40,6 +40,10 @@ from vtx.protocol.types import (
 DEFAULT_THINKING_LEVELS: list[str] = list(THINKING_LEVELS)
 
 log = logging.getLogger("ai.base")
+
+if TYPE_CHECKING:
+    import httpx
+
 
 # Provider-agnostic request/response types.
 
@@ -124,6 +128,8 @@ def is_local_base_url(base_url: str | None) -> bool:
 
 
 def make_http_client() -> httpx.AsyncClient | None:
+    import httpx
+
     from vtx.core.config import config as vtx_config
 
     # Returns None when verify is required so the SDK uses its own default client.

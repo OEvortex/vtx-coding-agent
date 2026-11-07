@@ -6,39 +6,137 @@ base bundle in :mod:`vtx.plugins.builtins` addresses these rows as
 ``vtx.coding_agent.tools.<mod>:PLUGIN``, and mounting the composition is what
 puts the tools in the registry. Importing this package registers nothing.
 
-The module keeps the historical import path working: ``all_tools``,
-``tools_by_name``, ``get_tools`` and :data:`DEFAULT_TOOLS` describe the
-documented built-in set for consumers that want the catalog without mounting a
-composition.
+Re-exports resolve lazily through :func:`__getattr__` so importing one tool
+submodule (e.g. ``vtx.coding_agent.tools.todo`` for the panel) does not pay
+for the whole catalog — ``all_tools``/``tools_by_name`` are built on first
+access.
 """
 
 from __future__ import annotations
 
-from vtx.agent.background import (
-    BackgroundTaskManager,
-    BackgroundTaskRecord,
-    get_manager,
-    set_manager,
-)
-from vtx.agent.tools import (
-    AskUserTool,
-    BaseTool,
-    TaskTool,
-    WebSearchTool,
-    WebTool,
-    get_tool_definitions,
-    get_tools_with_extensions,
-)
+from typing import TYPE_CHECKING, Any
 
-from .bash import BashTool
-from .codemode import CodemodeTool
-from .edit import EditTool
-from .grep import GrepTool
-from .read import ReadTool
-from .skill import SkillTool
-from .todo import TodoTool
-from .tool_search import ToolSearchTool
-from .write import WriteTool
+if TYPE_CHECKING:
+    from vtx.agent.tools.base import BaseTool
+
+    all_tools: list[BaseTool]
+    tools_by_name: dict[str, BaseTool]
+    DEFAULT_TOOLS: list[str]
+    PARENT_ONLY_TOOLS: frozenset[str]
+
+    def get_tools(names: list[str]) -> list[BaseTool]: ...
+    def get_tool(tool_name: str) -> BaseTool | None: ...
+
+
+_TOOL_MODULES = {
+    "BashTool": ".bash",
+    "CodemodeTool": ".codemode",
+    "EditTool": ".edit",
+    "GrepTool": ".grep",
+    "ReadTool": ".read",
+    "SkillTool": ".skill",
+    "TodoTool": ".todo",
+    "ToolSearchTool": ".tool_search",
+    "WriteTool": ".write",
+}
+_AGENT_TOOLS = {
+    "AskUserTool",
+    "BaseTool",
+    "TaskTool",
+    "WebSearchTool",
+    "WebTool",
+    "get_tool_definitions",
+    "get_tools_with_extensions",
+}
+_BACKGROUND = {"BackgroundTaskManager", "BackgroundTaskRecord", "get_manager", "set_manager"}
+_CATALOG = {
+    "DEFAULT_TOOLS",
+    "PARENT_ONLY_TOOLS",
+    "all_tools",
+    "get_tool",
+    "get_tools",
+    "tools_by_name",
+}
+
+
+def _agent_tools_module():
+    from vtx.agent import tools as module
+
+    return module
+
+
+def _build_catalog() -> None:
+    """Populate module globals with the tool catalog on first access."""
+    global all_tools, tools_by_name, DEFAULT_TOOLS, PARENT_ONLY_TOOLS, get_tools, get_tool
+    import importlib
+
+    modules = [
+        importlib.import_module(".read", __name__),
+        importlib.import_module(".edit", __name__),
+        importlib.import_module(".write", __name__),
+        importlib.import_module(".bash", __name__),
+        importlib.import_module(".grep", __name__),
+        importlib.import_module(".skill", __name__),
+        importlib.import_module(".todo", __name__),
+    ]
+    agent_tools = _agent_tools_module()
+    all_tools = [
+        modules[0].ReadTool(),
+        modules[1].EditTool(),
+        modules[2].WriteTool(),
+        modules[3].BashTool(),
+        modules[4].GrepTool(),
+        modules[5].SkillTool(),
+        modules[6].TodoTool(),
+        agent_tools.WebTool(),
+        agent_tools.WebSearchTool(),
+        agent_tools.AskUserTool(),
+        agent_tools.TaskTool(),
+        importlib.import_module(".codemode", __name__).CodemodeTool(),
+        importlib.import_module(".tool_search", __name__).ToolSearchTool(),
+    ]
+    tools_by_name = {tool.name: tool for tool in all_tools}
+    DEFAULT_TOOLS = [
+        "read",
+        "edit",
+        "write",
+        "bash",
+        "skill",
+        "todo",
+        "web",
+        "ask_user",
+        "delegate_subagent",
+    ]
+    PARENT_ONLY_TOOLS = frozenset({"delegate_subagent"})
+
+    def get_tools(names: list[str]):
+        return [tool for tool in all_tools if tool.name in names]
+
+    def get_tool(tool_name: str):
+        return tools_by_name.get(tool_name)
+
+    globals()["get_tools"] = get_tools
+    globals()["get_tool"] = get_tool
+
+
+def __getattr__(name: str) -> Any:
+    if name in _TOOL_MODULES:
+        import importlib
+
+        module = importlib.import_module(_TOOL_MODULES[name], __name__)
+        return getattr(module, name)
+    if name in _AGENT_TOOLS:
+        return getattr(_agent_tools_module(), name)
+    if name in _BACKGROUND:
+        from vtx.agent import background as module
+
+        return getattr(module, name)
+    if name in _CATALOG:
+        if "all_tools" not in globals():
+            _build_catalog()
+        return globals()[name]
+    raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
+
 
 __all__ = [
     "DEFAULT_TOOLS",
@@ -66,42 +164,3 @@ __all__ = [
     "set_manager",
     "tools_by_name",
 ]
-
-all_tools: list[BaseTool] = [
-    ReadTool(),
-    EditTool(),
-    WriteTool(),
-    BashTool(),
-    GrepTool(),
-    SkillTool(),
-    TodoTool(),
-    WebTool(),
-    WebSearchTool(),
-    AskUserTool(),
-    TaskTool(),
-    CodemodeTool(),
-    ToolSearchTool(),
-]
-
-tools_by_name: dict[str, BaseTool] = {tool.name: tool for tool in all_tools}
-DEFAULT_TOOLS: list[str] = [
-    "read",
-    "edit",
-    "write",
-    "bash",
-    "skill",
-    "todo",
-    "web",
-    "ask_user",
-    "delegate_subagent",
-]
-
-PARENT_ONLY_TOOLS: frozenset[str] = frozenset({"delegate_subagent"})
-
-
-def get_tools(names: list[str]) -> list[BaseTool]:
-    return [tool for tool in all_tools if tool.name in names]
-
-
-def get_tool(tool_name: str) -> BaseTool | None:
-    return tools_by_name.get(tool_name)
