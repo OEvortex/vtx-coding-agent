@@ -1,0 +1,13 @@
+node_modules/
+dist/
+out/
+*.vsix
+.DS_Store
+.vscode-test/
+scripts/.preview/
+scripts/.probe/
+release-notes.md
+
+# playwright-cli scratch artifacts
+.playwright-cli/
+.vscode/*

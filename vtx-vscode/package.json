@@ -1,0 +1,603 @@
+{
+  "name": "vtx-vscode",
+  "displayName": "Vtx for VS Code",
+  "description": "A native chat panel for the Vtx CLI, powered by the Agent Client Protocol. Streaming replies, per workspace sessions, and trackable diffs.",
+  "version": "0.13.0",
+  "publisher": "oevortex",
+  "author": "Shayan Khaksar",
+  "license": "AGPL-3.0-or-later",
+  "preview": true,
+  "icon": "resources/icon.png",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/OEvortex/vtx-coding-agent.git"
+  },
+  "homepage": "https://github.com/OEvortex/vtx-coding-agent#readme",
+  "bugs": {
+    "url": "https://github.com/OEvortex/vtx-coding-agent/issues"
+  },
+  "qna": "https://github.com/OEvortex/vtx-coding-agent/issues",
+  "galleryBanner": {
+    "color": "#1f1f1f",
+    "theme": "dark"
+  },
+  "engines": {
+    "vscode": "^1.93.0"
+  },
+  "categories": [
+    "AI",
+    "Chat",
+    "Machine Learning",
+    "Other"
+  ],
+  "keywords": [
+    "vtx",
+    "vtx-cli",
+    "acp",
+    "agent",
+    "chat",
+    "ai"
+  ],
+  "activationEvents": [
+    "onWebviewPanel:vtx.chatEditor",
+    "onWebviewPanel:vtx.settings"
+  ],
+  "main": "./dist/extension.js",
+  "contributes": {
+    "viewsContainers": {
+      "activitybar": [
+        {
+          "id": "vtx",
+          "title": "Vtx",
+          "icon": "resources/activity-icon.svg"
+        }
+      ]
+    },
+    "views": {
+      "vtx": [
+        {
+          "type": "webview",
+          "id": "vtx.chatView",
+          "name": "Chat"
+        }
+      ]
+    },
+    "commands": [
+      {
+        "command": "vtx.newSession",
+        "title": "New Session",
+        "category": "Vtx",
+        "icon": "$(add)"
+      },
+      {
+        "command": "vtx.newSessionEditor",
+        "title": "New Session (Editor)",
+        "category": "Vtx",
+        "icon": "$(split-horizontal)"
+      },
+      {
+        "command": "vtx.newSessionWindow",
+        "title": "New Session (Window)",
+        "category": "Vtx",
+        "icon": "$(multiple-windows)"
+      },
+      {
+        "command": "vtx.newSessionTerminal",
+        "title": "New Vtx CLI Session (Terminal)",
+        "category": "Vtx",
+        "icon": "$(terminal)"
+      },
+      {
+        "command": "vtx.renameTabSession",
+        "title": "Rename Session",
+        "category": "Vtx",
+        "icon": "$(edit)"
+      },
+      {
+        "command": "vtx.showSessions",
+        "title": "Session List",
+        "category": "Vtx",
+        "icon": "$(history)"
+      },
+      {
+        "command": "vtx.focusChat",
+        "title": "Open Chat",
+        "category": "Vtx",
+        "icon": "$(comment-discussion)"
+      },
+      {
+        "command": "vtx.cancel",
+        "title": "Cancel Current Turn",
+        "category": "Vtx",
+        "icon": "$(stop-circle)"
+      },
+      {
+        "command": "vtx.switchSession",
+        "title": "Switch to Session by Number",
+        "category": "Vtx",
+        "icon": "$(list-ordered)"
+      },
+      {
+        "command": "vtx.runSetup",
+        "title": "Run Setup",
+        "category": "Vtx",
+        "icon": "$(gear)"
+      },
+      {
+        "command": "vtx.showInfo",
+        "title": "About / Status",
+        "category": "Vtx",
+        "icon": "$(info)"
+      },
+      {
+        "command": "vtx.openSettings",
+        "title": "Open Settings",
+        "category": "Vtx",
+        "icon": "$(gear)"
+      },
+      {
+        "command": "vtx.acceptChange",
+        "title": "Accept Change",
+        "category": "Vtx",
+        "icon": "$(check)"
+      },
+      {
+        "command": "vtx.rejectChange",
+        "title": "Reject Change",
+        "category": "Vtx",
+        "icon": "$(discard)"
+      },
+      {
+        "command": "vtx.acceptAllChanges",
+        "title": "Accept All Changes",
+        "category": "Vtx",
+        "icon": "$(check-all)"
+      },
+      {
+        "command": "vtx.rejectAllChanges",
+        "title": "Reject All Changes",
+        "category": "Vtx",
+        "icon": "$(discard)"
+      },
+      {
+        "command": "vtx.openChangeDiff",
+        "title": "Open Diff",
+        "category": "Vtx",
+        "icon": "$(diff)"
+      },
+      {
+        "command": "vtx.explainSelection",
+        "title": "Vtx: Explain This",
+        "icon": "$(comment-discussion)"
+      },
+      {
+        "command": "vtx.fixProblemsHere",
+        "title": "Vtx: Fix Problems Here",
+        "icon": "$(wrench)"
+      },
+      {
+        "command": "vtx.addFileToChat",
+        "title": "Vtx: Add File to Chat",
+        "icon": "$(add)"
+      }
+    ],
+    "keybindings": [
+      {
+        "command": "vtx.showSessions",
+        "key": "ctrl+k ctrl+d",
+        "mac": "cmd+k cmd+d",
+        "when": "!editorTextFocus"
+      },
+      {
+        "command": "vtx.switchSession",
+        "key": "ctrl+1",
+        "mac": "cmd+1",
+        "args": 1,
+        "when": "vtx.chatFocused"
+      },
+      {
+        "command": "vtx.switchSession",
+        "key": "ctrl+2",
+        "mac": "cmd+2",
+        "args": 2,
+        "when": "vtx.chatFocused"
+      },
+      {
+        "command": "vtx.switchSession",
+        "key": "ctrl+3",
+        "mac": "cmd+3",
+        "args": 3,
+        "when": "vtx.chatFocused"
+      },
+      {
+        "command": "vtx.switchSession",
+        "key": "ctrl+4",
+        "mac": "cmd+4",
+        "args": 4,
+        "when": "vtx.chatFocused"
+      },
+      {
+        "command": "vtx.switchSession",
+        "key": "ctrl+5",
+        "mac": "cmd+5",
+        "args": 5,
+        "when": "vtx.chatFocused"
+      },
+      {
+        "command": "vtx.switchSession",
+        "key": "ctrl+6",
+        "mac": "cmd+6",
+        "args": 6,
+        "when": "vtx.chatFocused"
+      },
+      {
+        "command": "vtx.switchSession",
+        "key": "ctrl+7",
+        "mac": "cmd+7",
+        "args": 7,
+        "when": "vtx.chatFocused"
+      },
+      {
+        "command": "vtx.switchSession",
+        "key": "ctrl+8",
+        "mac": "cmd+8",
+        "args": 8,
+        "when": "vtx.chatFocused"
+      },
+      {
+        "command": "vtx.switchSession",
+        "key": "ctrl+9",
+        "mac": "cmd+9",
+        "args": 9,
+        "when": "vtx.chatFocused"
+      }
+    ],
+    "menus": {
+      "commandPalette": [
+        {
+          "command": "vtx.acceptChange",
+          "when": "false"
+        },
+        {
+          "command": "vtx.rejectChange",
+          "when": "false"
+        },
+        {
+          "command": "vtx.openChangeDiff",
+          "when": "false"
+        },
+        {
+          "command": "vtx.renameTabSession",
+          "when": "false"
+        },
+        {
+          "command": "vtx.switchSession",
+          "when": "false"
+        }
+      ],
+      "editor/context": [
+        {
+          "command": "vtx.explainSelection",
+          "when": "editorHasSelection && editorLangId != 'Log'",
+          "group": "vtx@1"
+        },
+        {
+          "command": "vtx.fixProblemsHere",
+          "when": "editorTextFocus && editorLangId != 'Log'",
+          "group": "vtx@2"
+        },
+        {
+          "command": "vtx.addFileToChat",
+          "when": "editorTextFocus && !editorHasSelection",
+          "group": "vtx@3"
+        }
+      ],
+      "explorer/context": [
+        {
+          "command": "vtx.addFileToChat",
+          "when": "!explorerResourceIsFolder",
+          "group": "vtx@1"
+        }
+      ],
+      "editor/title/context": [
+        {
+          "command": "vtx.renameTabSession",
+          "when": "activeWebviewPanelId == 'vtx.chatEditor'"
+        }
+      ],
+      "scm/title": [
+        {
+          "command": "vtx.acceptAllChanges",
+          "when": "scmProvider == vtx",
+          "group": "navigation@1"
+        },
+        {
+          "command": "vtx.rejectAllChanges",
+          "when": "scmProvider == vtx",
+          "group": "navigation@2"
+        }
+      ],
+      "scm/resourceState/context": [
+        {
+          "command": "vtx.acceptChange",
+          "when": "scmProvider == vtx",
+          "group": "inline@1"
+        },
+        {
+          "command": "vtx.rejectChange",
+          "when": "scmProvider == vtx",
+          "group": "inline@2"
+        },
+        {
+          "command": "vtx.openChangeDiff",
+          "when": "scmProvider == vtx",
+          "group": "navigation@1"
+        }
+      ]
+    },
+    "configuration": {
+      "title": "Vtx",
+      "properties": {
+        "vtx.cliPath": {
+          "type": "string",
+          "default": "vtx",
+          "description": "Path to the Vtx CLI executable. Use an absolute path if it is not on your PATH."
+        },
+        "vtx.defaultModel": {
+          "type": "string",
+          "default": "",
+          "markdownDescription": "Model for chats started in this extension (e.g. `auto`, `sonnet`, `opus`, `gpt`). The model picker in the chat composer writes this setting, and it takes precedence over the Vtx CLI's own default. Leave it empty to follow the CLI's `agent.model` instead, which you can set in **Vtx: Open Settings**."
+        },
+        "vtx.defaultThoughtLevel": {
+          "type": "string",
+          "enum": [
+            "",
+            "none",
+            "low",
+            "medium",
+            "high",
+            "xhigh"
+          ],
+          "enumDescriptions": [
+            "Follow the model or Vtx CLI default",
+            "No extended thinking",
+            "Low thinking effort",
+            "Medium thinking effort",
+            "High thinking effort",
+            "Extra high thinking effort"
+          ],
+          "default": "",
+          "markdownDescription": "Thinking effort for chats started in this extension. The thinking picker writes this setting when the Vtx CLI exposes a `thought_level` session option."
+        },
+        "vtx.defaultMode": {
+          "type": "string",
+          "enum": [
+            "accept-edits",
+            "smart",
+            "ask",
+            "plan",
+            "bypass"
+          ],
+          "enumDescriptions": [
+            "Code: write and edit code (auto-approves edits in the workspace)",
+            "Smart: also auto-approve actions a fast model judges safe",
+            "Ask: answer questions without code changes",
+            "Plan: plan changes before implementing (read only)",
+            "Bypass: auto-approve all tool calls"
+          ],
+          "default": "accept-edits",
+          "markdownDescription": "Mode that chats started in this extension begin in. The picker in the chat composer offers whatever modes your Vtx CLI reports, which may be more than are listed here."
+        },
+        "vtx.sandbox": {
+          "type": "boolean",
+          "default": false,
+          "markdownDescription": "Run the agent's commands in the Vtx CLI's process sandbox (research preview), so they can only write inside the workspace and the paths you have granted. Applies to chats started after you change it. Needs `vtx sandbox setup` to have been run once on this machine."
+        },
+        "vtx.editorContext.diagnostics": {
+          "type": "boolean",
+          "default": true,
+          "description": "Let Vtx request diagnostics for a named file instead of running a compiler or a linter. Disable this to keep editor diagnostics out of chat."
+        },
+        "vtx.autoResumeLast": {
+          "type": "boolean",
+          "default": false,
+          "description": "When the chat opens, resume the last session used in this workspace."
+        },
+        "vtx.idleSessionKeepAliveMinutes": {
+          "type": "number",
+          "default": 60,
+          "minimum": 0,
+          "description": "How long to keep an idle live session (waiting for you) alive before it is automatically exited. Running sessions are never auto-exited. Set to 0 to keep idle sessions alive indefinitely."
+        },
+        "vtx.maxIdleSessions": {
+          "type": "number",
+          "default": 3,
+          "minimum": 0,
+          "description": "Maximum number of idle live sessions to keep. Running sessions are never auto-exited. Set to 0 to keep an unlimited number."
+        },
+        "vtx.useIntegratedTerminal": {
+          "type": "boolean",
+          "default": false,
+          "markdownDescription": "Run the agent's commands in a real VS Code terminal when enabled, so you can watch them, open them and take them over. Needs [shell integration](https://code.visualstudio.com/docs/terminal/shell-integration), which is on by default for bash, zsh, fish, pwsh and Git Bash. Commands fall back to running in the background when it is unavailable."
+        },
+        "vtx.showMcpWarnings": {
+          "type": "boolean",
+          "default": true,
+          "description": "Warn in the chat when an MCP server fails to start, so it is clear which tools the agent does not have."
+        },
+        "vtx.showThinking": {
+          "type": "boolean",
+          "default": true,
+          "description": "Show the agent's reasoning/thinking stream in the chat."
+        },
+        "vtx.thinking.style": {
+          "type": "string",
+          "enum": [
+            "collapsed",
+            "fixedScrolling"
+          ],
+          "enumDescriptions": [
+            "Show a collapsed 'Thinking…' header, and expand to read the reasoning",
+            "Show a live, fixed height peek of the latest reasoning while it streams, then collapse it"
+          ],
+          "default": "fixedScrolling",
+          "description": "How the reasoning stream is displayed while the agent is thinking."
+        },
+        "vtx.incrementalRendering.animationStyle": {
+          "type": "string",
+          "enum": [
+            "off",
+            "fade",
+            "rise",
+            "blur",
+            "scale",
+            "slide"
+          ],
+          "default": "rise",
+          "description": "Entrance animation for each response part as it streams in."
+        },
+        "vtx.editRequests": {
+          "type": "string",
+          "enum": [
+            "inline",
+            "hover",
+            "input",
+            "none"
+          ],
+          "enumDescriptions": [
+            "Click a sent message to edit it in place",
+            "Show an edit button on hover, and editing happens in place",
+            "Edit a sent message in the main composer at the bottom",
+            "Disable editing sent messages"
+          ],
+          "default": "inline",
+          "description": "How to edit a previously sent request. Editing rewinds the conversation to that point and re-runs (requires the Vtx CLI revert capability)."
+        },
+        "vtx.checkpoints.enabled": {
+          "type": "boolean",
+          "default": true,
+          "description": "Show a Restore Checkpoint action on each turn to rewind the workspace and conversation to that point (requires the Vtx CLI revert capability)."
+        },
+        "vtx.checkpoints.showFileChanges": {
+          "type": "boolean",
+          "default": true,
+          "description": "Show a summary of files changed at the end of each turn."
+        },
+        "vtx.editing.confirmEditRequestRemoval": {
+          "type": "boolean",
+          "default": true,
+          "description": "Ask for confirmation before an edit or restore discards later turns that made file edits."
+        },
+        "vtx.verbose": {
+          "type": "boolean",
+          "default": true,
+          "description": "Show request and response timestamps on hover in the transcript."
+        },
+        "vtx.progressBorder.enabled": {
+          "type": "boolean",
+          "default": true,
+          "description": "Animate a highlight around the input while Vtx is working."
+        },
+        "vtx.contextUsage.enabled": {
+          "type": "boolean",
+          "default": true,
+          "description": "Show the context window usage indicator in the input toolbar."
+        },
+        "vtx.implicitContext.enabled": {
+          "type": "boolean",
+          "default": true,
+          "description": "Include the active editor file (or its selection) as implicit context, shown as a pill in the composer. Toggle it per message from the pill."
+        },
+        "vtx.inlineReferences.style": {
+          "type": "string",
+          "enum": [
+            "box",
+            "link"
+          ],
+          "enumDescriptions": [
+            "Render file and symbol references in replies as bordered chips",
+            "Render them as plain text links"
+          ],
+          "default": "box",
+          "description": "How file and symbol references inside replies are rendered."
+        },
+        "vtx.sessionsPanel.side": {
+          "type": "string",
+          "enum": [
+            "left",
+            "right"
+          ],
+          "enumDescriptions": [
+            "Dock the sessions panel on the left of the chat",
+            "Dock the sessions panel on the right of the chat"
+          ],
+          "default": "right",
+          "description": "Which side of the chat the docked sessions panel opens on. You can also drag the panel by its header to the other side."
+        },
+        "vtx.sendWhileWorking": {
+          "type": "string",
+          "enum": [
+            "queue",
+            "stopAndSend"
+          ],
+          "enumDescriptions": [
+            "Send the message after the current request finishes",
+            "Stop what Vtx is doing, then send the message"
+          ],
+          "default": "queue",
+          "description": "What Enter does with a message typed while Vtx is working. The other action is always on Alt+Enter, and on the chevron beside Send."
+        },
+        "vtx.extraArgs": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "default": [],
+          "description": "Extra arguments passed to `vtx acp` when starting a session."
+        },
+        "vtx.env": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "string"
+          },
+          "default": {},
+          "description": "Extra environment variables for the Vtx CLI process (e.g. proxy settings)."
+        }
+      }
+    }
+  },
+  "scripts": {
+    "vscode:prepublish": "npm run build",
+    "build": "node esbuild.js --production",
+    "watch": "node esbuild.js --watch",
+    "compile": "node esbuild.js",
+    "check-types": "tsc --noEmit && tsc --noEmit -p scripts/tsconfig.json",
+    "pretest": "npm run compile",
+    "test": "node --test \"scripts/*.test.js\"",
+    "pretest:one": "npm run compile",
+    "test:one": "node --test",
+    "harness": "node scripts/webview-harness.js",
+    "probe": "node scripts/acp-probe.js",
+    "preview": "npm run compile && node scripts/preview.js",
+    "preview:settings": "npm run compile && node scripts/preview-settings.js",
+    "package": "vsce package --no-dependencies",
+    "publish:vsce": "vsce publish --no-dependencies",
+    "publish:ovsx": "ovsx publish --no-dependencies"
+  },
+  "devDependencies": {
+    "@types/markdown-it": "^14.1.2",
+    "@types/node": "^20.14.0",
+    "@types/vscode": "^1.93.0",
+    "@vscode/codicons": "^0.0.46-23",
+    "@vscode/vsce": "^3.9.2",
+    "esbuild": "^0.23.1",
+    "jsdom": "^25.0.1",
+    "ovsx": "^1.0.2",
+    "typescript": "^5.5.4"
+  },
+  "dependencies": {
+    "highlight.js": "^11.10.0",
+    "markdown-it": "^14.1.0",
+    "mermaid": "^11.16.0"
+  }
+}

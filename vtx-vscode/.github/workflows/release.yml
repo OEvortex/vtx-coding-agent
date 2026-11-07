@@ -1,0 +1,80 @@
+name: Release
+
+# Streamlined release: push a version tag and this builds the extension, creates
+# a GitHub Release with the packaged VSIX attached, and publishes to the VS Code
+# Marketplace. Open VSX publishing runs when OVSX_PAT is configured. The tag must
+# match package.json, e.g.
+#
+#     npm version patch            # bumps package.json and creates the tag
+#     git push --follow-tags       # triggers this workflow
+#
+# One-time setup (repo Settings -> Secrets and variables -> Actions):
+#   VSCE_PAT  Azure DevOps token for the "OEvortex" Marketplace publisher.
+#   OVSX_PAT  Open VSX token. This optional step is best effort.
+
+on:
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    name: Build, release and publish
+    runs-on: ubuntu-latest
+    env:
+      VSCE_PAT: ${{ secrets.VSCE_PAT }}
+      OVSX_PAT: ${{ secrets.OVSX_PAT }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      - name: Setup Node
+        uses: actions/setup-node@v7
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Type check
+        run: npm run check-types
+
+      - name: Test
+        run: npm test
+
+      - name: Verify package.json version matches the tag
+        id: version
+        run: |
+          PKG="$(node -p "require('./package.json').version")"
+          TAG="${GITHUB_REF_NAME#v}"
+          if [ "$PKG" != "$TAG" ]; then
+            echo "::error::package.json version ($PKG) does not match tag ($GITHUB_REF_NAME). Run 'npm version' so they match."
+            exit 1
+          fi
+          echo "vsix=vtx-vscode-${PKG}.vsix" >> "$GITHUB_OUTPUT"
+
+      - name: Package VSIX
+        run: npm run package
+
+      - name: Build release notes from CHANGELOG.md
+        run: node scripts/changelog-notes.js "${GITHUB_REF_NAME#v}" > release-notes.md
+
+      - name: Create GitHub Release with the VSIX
+        uses: softprops/action-gh-release@v3
+        with:
+          body_path: release-notes.md
+          generate_release_notes: true
+          files: ${{ steps.version.outputs.vsix }}
+
+      - name: Publish to the VS Code Marketplace
+        if: env.VSCE_PAT != ''
+        run: npx vsce publish --no-dependencies --packagePath "${{ steps.version.outputs.vsix }}"
+
+      - name: Publish to Open VSX
+        if: env.OVSX_PAT != ''
+        continue-on-error: true
+        run: npx ovsx publish "${{ steps.version.outputs.vsix }}" --pat "$OVSX_PAT"

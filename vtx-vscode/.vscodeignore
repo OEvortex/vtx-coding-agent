@@ -1,0 +1,19 @@
+.vscode/**
+.github/**
+docs/**
+src/**
+webview/**
+scripts/**
+.playwright-cli/**
+.superpowers/**
+node_modules/**
+.gitignore
+.vscodeignore
+esbuild.js
+tsconfig.json
+**/*.map
+**/*.ts
+# Screenshots live in docs/ (already excluded); a stray one at the root is a
+# scratch file, and one shipped in the package for four releases before anyone
+# noticed. Only the icon is a real asset.
+/*.png

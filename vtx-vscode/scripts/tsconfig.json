@@ -1,0 +1,13 @@
+// The root config covers `src` only, so the one TypeScript file out here belonged to no
+// project: never type checked by `npm run check-types`, and left to an editor to guess a
+// configuration for, which is how it comes to report that Node's own globals are missing
+// from the files it imports. Same settings as the root, pointed at this directory.
+{
+  "extends": "../tsconfig.json",
+  "compilerOptions": {
+    "noEmit": true,
+    "rootDir": "..",
+    "types": ["node"]
+  },
+  "include": ["chat-entry.ts"]
+}
