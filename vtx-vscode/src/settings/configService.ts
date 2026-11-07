@@ -20,27 +20,35 @@ export interface ConfigFile {
   data: Record<string, unknown>;
 }
 
-// The user config directory: XDG on macOS/Linux, %APPDATA% on Windows.
+// The user config directory, mirroring vtx's get_config_dir():
+// $XDG_CONFIG_HOME/vtx when set and absolute, otherwise ~/.vtx on every
+// platform (vtx has no %APPDATA% branch).
 export function userConfigDir(): string {
-  if (process.platform === "win32") {
-    return path.join(process.env.APPDATA || path.join(os.homedir(), "AppData", "Roaming"), "vtx");
+  const xdg = process.env.XDG_CONFIG_HOME;
+  if (xdg && path.isAbsolute(xdg)) {
+    return path.join(xdg, "vtx");
   }
-  return path.join(process.env.XDG_CONFIG_HOME || path.join(os.homedir(), ".config"), "vtx");
+  return path.join(os.homedir(), ".vtx");
 }
 
 export function userConfigPath(): string {
+  // vtx keeps its settings in config.yml (YAML), which this JSONC editor
+  // cannot parse; config edits for the user scope go through `vtx config`
+  // (see vtxConfigCli) until the panel speaks YAML. This path only backs the
+  // project scope file, which vtx does not read either, so it is kept for
+  // the panel's own bookkeeping.
   return path.join(userConfigDir(), "config.json");
 }
 
-// MCP servers are stored separately from config.json: globally in
-// ~/.vtx/mcp_config.json, and per project under .vtx/.
+// MCP servers live in mcp.json: ~/.vtx/mcp.json for the user and
+// <project>/.vtx/mcp.json per project (src/vtx/mcp/config.py).
 export function userMcpConfigPath(): string {
-  return path.join(userConfigDir(), "mcp_config.json");
+  return path.join(userConfigDir(), "mcp.json");
 }
 
-// Windsurf keeps its own MCP servers here, and the Vtx CLI imports them, so
-// they are part of what this agent can do whether or not Vtx was told about
-// them. They are managed here rather than left to another editor.
+// Windsurf keeps its own MCP servers here. The Vtx CLI does not read this
+// file; the settings surface lists them read only so the user can see what
+// another editor configured, and edits go through `vtx mcp` where possible.
 export function windsurfDir(): string {
   return path.join(os.homedir(), ".codeium", "windsurf");
 }

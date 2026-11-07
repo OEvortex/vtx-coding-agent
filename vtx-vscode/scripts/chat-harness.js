@@ -64,7 +64,9 @@ case "$1" in
   # reach the ACP loop below, it would sit on a stdin nobody writes to until the CLI's
   # own timeout killed it, tracked by nothing that could stop it.
   list) echo '[]'; exit 0 ;;
-  models) echo '{"families":[]}'; exit 0 ;;
+  # setModelsFixture() drops a file here for a test that needs real providers
+  # and families; the default empty catalog keeps every other test unchanged.
+  models) f='${TMP}/models.json'; if [ -f "$f" ]; then cat "$f"; else echo '{"families":[]}'; fi; exit 0 ;;
 esac
 exec ${JSON.stringify(process.execPath)} ${JSON.stringify(js)}
 `
@@ -378,10 +380,24 @@ function createChat(opts = {}) {
 // teardown is not the test's responsibility.
 const built = new Set();
 
+// What `vtx models list --format json` answers for the rest of the run: an
+// object to serve, or null to go back to the empty catalog. The model cache
+// only stores a non-empty answer, so a fixture with families stays cached for
+// the five minute TTL once read; tests that install one should be the last to
+// need the empty catalog.
+function setModelsFixture(json) {
+  const file = path.join(TMP, "models.json");
+  if (json === null || json === undefined) {
+    fs.rmSync(file, { force: true });
+  } else {
+    fs.writeFileSync(file, typeof json === "string" ? json : JSON.stringify(json));
+  }
+}
+
 async function cleanup() {
   await Promise.all([...built].map((h) => h.dispose().catch(() => {})));
   built.clear();
   fs.rmSync(TMP, { recursive: true, force: true });
 }
 
-module.exports = { createChat, cleanup };
+module.exports = { createChat, cleanup, setModelsFixture };

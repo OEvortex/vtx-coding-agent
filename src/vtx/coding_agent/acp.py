@@ -70,7 +70,6 @@ _SLASH_CLIENT_HINT = {
     "clear": "start a new chat",
     "new": "start a new chat",
     "resume": "pick a session from the session list",
-    "provider": "use the model picker and filter by provider",
     "login": "run `vtx auth login` in a terminal",
     "logout": "run `vtx auth logout` in a terminal",
     "export": "not available over ACP yet",
@@ -96,6 +95,7 @@ class _Session:
         self.runtime: ConversationRuntime | None = None
         self._mcp_task: asyncio.Task[None] | None = None
         self._cmd_task: asyncio.Task[None] | None = None
+        self._warm_task: asyncio.Task[None] | None = None
         self.steer_queue: deque[tuple[str, list[Any] | None]] = deque()
         self.steer_event: asyncio.Event | None = None
         self.hook_bridge: Any = None
@@ -483,8 +483,12 @@ class AcpServer:
         model_options: list[dict[str, Any]] = []
         try:
             from vtx.ai.models import get_all_models
+            from vtx.core.config import get_config
 
+            provider_filter = get_config().ui.model_provider_filter
             for m in get_all_models():
+                if provider_filter and m.provider != provider_filter:
+                    continue
                 uid = f"{m.provider}:{m.id}"
                 model_options.append({"value": uid, "name": f"{m.id} ({m.provider})"})
         except Exception:
@@ -736,11 +740,17 @@ class AcpServer:
         sess.session_path = info.path
         self._sessions[session_id] = sess
         # Build the runtime (resume) in the background of the response: the
-        # client expects history replay first, then the load result.
+        # client expects history replay first, then the load result. Awaiting
+        # it here would hold session/load for the whole build, which is what a
+        # "Waking session…" client shows; the first prompt awaits the same
+        # runtime through _runtime_lock instead.
         import contextlib
 
-        with contextlib.suppress(Exception):
-            await self._ensure_agent(sess)
+        async def _warm() -> None:
+            with contextlib.suppress(Exception):
+                await self._ensure_agent(sess)
+
+        sess._warm_task = asyncio.create_task(_warm())
         await self._replay_session(session_id, sess)
         return {}
 
@@ -775,20 +785,23 @@ class AcpServer:
         # one-at-a-time by ACP clients, so chdir per prompt.
         if sess.cwd and os.path.isdir(sess.cwd):
             os.chdir(sess.cwd)
-        try:
-            agent = await self._ensure_agent(sess)
-        except Exception as exc:
-            return {"_error": str(exc)}
         prompt, images = self._prompt_parts(params)
         if not prompt and not images:
             return {"_error": "empty prompt"}
 
-        # Built-in slash commands run headless; they never reach the model.
+        # Built-in slash commands run headless; they never reach the model, and
+        # most never need the runtime either, so they are answered before
+        # _ensure_agent pays for building it.
         if prompt.startswith("/") and not images:
             text = await self._slash_command(session_id, sess, prompt)
             if text is not None:
                 await self._agent_message(session_id, text)
                 return {"stopReason": "end_turn"}
+
+        try:
+            agent = await self._ensure_agent(sess)
+        except Exception as exc:
+            return {"_error": str(exc)}
 
         pending: deque[tuple[str, list[Any] | None]] = deque([(prompt, images or None)])
         stop_reason = "end_turn"
@@ -834,8 +847,29 @@ class AcpServer:
         if name == "help":
             lines = [f"/{c['name']} — {c['description']}" for c in _BUILTIN_COMMANDS]
             return "Available commands:\n" + "\n".join(lines)
+        if name == "provider":
+            return await self._provider_command(session_id, sess, arg)
         if name in _SLASH_CLIENT_HINT:
             return f"`/{name}` is a client-side command: {_SLASH_CLIENT_HINT[name]}."
+
+        # These two read session state only, so they answer without paying for
+        # the runtime build the rest of the commands need.
+        if name == "session":
+            info = self._find_vtx_session(session_id)
+            if info is None:
+                return "session info unavailable (not persisted yet)."
+            return (
+                f"Session {info.id}\n"
+                f"cwd: {info.cwd}\n"
+                f"messages: {info.message_count}\n"
+                f"created: {info.created.isoformat()}\n"
+                f"modified: {info.modified.isoformat()}"
+            )
+        if name == "model":
+            return (
+                f"current model: {sess.model or 'default'}\n"
+                "use the model picker (config option) to switch."
+            )
 
         try:
             agent = await self._ensure_agent(sess)
@@ -861,17 +895,6 @@ class AcpServer:
                 f"Session tokens — input: {totals.input_tokens}, "
                 f"output: {totals.output_tokens}, total: {totals.total_tokens}."
             )
-        if name == "session":
-            info = self._find_vtx_session(session_id)
-            if info is None:
-                return "session info unavailable (not persisted yet)."
-            return (
-                f"Session {info.id}\n"
-                f"cwd: {info.cwd}\n"
-                f"messages: {info.message_count}\n"
-                f"created: {info.created.isoformat()}\n"
-                f"modified: {info.modified.isoformat()}"
-            )
         if name == "agent":
             runtime = sess.runtime
             registry = getattr(runtime, "agent_registry", None) if runtime else None
@@ -887,12 +910,62 @@ class AcpServer:
             tools = getattr(agent, "tools", None) or getattr(sess.runtime, "tools", None) or []
             names = sorted(getattr(t, "tool_name", getattr(t, "name", "?")) for t in tools)
             return f"Tools ({len(names)}):\n" + "\n".join(names)
-        if name == "model":
-            return (
-                f"current model: {sess.model or 'default'}\n"
-                "use the model picker (config option) to switch."
-            )
         return f"`/{name}` is not supported over ACP."
+
+    async def _provider_command(self, session_id: str, sess: _Session, arg: str) -> str:
+        """``/provider`` headless: report, set, or clear the model provider filter.
+
+        The TUI opens a picker for this; over ACP the client owns pickers, so
+        the command takes the slug directly (``/provider kilo``) and bare
+        ``/provider`` reports the current filter and the valid slugs.
+        """
+        from vtx.ai.models import get_all_models
+        from vtx.ai.provider_catalog import list_providers
+        from vtx.core.config import get_config, set_model_provider_filter
+
+        providers = list_providers()
+        slugs = ", ".join(p.slug for p in providers) or "none"
+        current = get_config().ui.model_provider_filter
+        a = arg.split()[0].lower() if arg.split() else ""
+
+        async def _notify_options() -> None:
+            await self._update(
+                session_id,
+                {
+                    "sessionUpdate": "config_option_update",
+                    "configOptions": self._config_options(sess),
+                },
+            )
+
+        if a in ("reset", "all", "clear"):
+            set_model_provider_filter("")
+            await _notify_options()
+            return "Provider filter cleared - the model picker shows all providers."
+        if not a:
+            state = (
+                f"current filter: {current}"
+                if current
+                else "no filter (the model picker shows all providers)"
+            )
+            return (
+                f"{state}\nProviders: {slugs}\n"
+                "Use `/provider <slug>` to scope the model picker to one provider, "
+                "or `/provider reset` to clear the filter."
+            )
+        if a not in {p.slug for p in providers}:
+            return f"Unknown provider: {a}. Providers: {slugs}"
+        set_model_provider_filter(a)
+        await _notify_options()
+        count = sum(1 for m in get_all_models() if m.provider == a)
+        if count:
+            return (
+                f"Provider set to {a} - the model picker now shows only {a} "
+                f"models ({count} available)."
+            )
+        return (
+            f"Provider set to {a}, but no models are cached for it yet, so the "
+            "picker will be empty until its catalog is fetched."
+        )
 
     def session_cancel(self, params: dict[str, Any]) -> None:
         sess = self._sessions.get(params.get("sessionId") or "")

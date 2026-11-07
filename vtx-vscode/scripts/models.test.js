@@ -71,6 +71,55 @@ test("model listing preserves cost, limits, promotion, and status metadata", asy
   });
 });
 
+test("model listing exposes providers, the provider filter, and family providers", async () => {
+  const { listModelFamilies: list, cachedProviderFilter, cachedProviders } = loadModels("models-provider-meta");
+  const cli = fakeCli(JSON.stringify({
+    provider_filter: "openai",
+    providers: [
+      { slug: "openai", name: "OpenAI" },
+      { slug: "anthropic", name: "Anthropic" }
+    ],
+    families: [{
+      family_label: "gpt-4o",
+      family_uid: "openai:gpt-4o",
+      slug: "openai",
+      provider: "openai",
+      variants: [{ model_uid: "openai:gpt-4o", label: "gpt-4o" }]
+    }]
+  }));
+
+  const families = await list(cli);
+
+  // family_uid wins over slug: vtx sets slug to the provider, which would give
+  // every model of one provider the same id.
+  assert.strictEqual(families[0].id, "openai:gpt-4o");
+  assert.strictEqual(families[0].provider, "openai");
+  assert.strictEqual(cachedProviderFilter(), "openai");
+  assert.deepStrictEqual(cachedProviders(), [
+    { slug: "openai", name: "OpenAI" },
+    { slug: "anthropic", name: "Anthropic" }
+  ]);
+});
+
+test("invalidating the model cache forces a refetch", { skip: process.platform === "win32" }, async () => {
+  const { listModelFamilies: list, invalidateModelFamilies } = loadModels("models-invalidate");
+  const log = path.join(TMP, "models-invalidate.log");
+  const js = path.join(TMP, "count-models.js");
+  const cli = path.join(TMP, "count-models.sh");
+  fs.writeFileSync(js, `require("fs").appendFileSync(process.env.MODELS_LOG, "x"); process.stdout.write('{"families":[{"family_label":"m","family_uid":"p:m","slug":"p","provider":"p","variants":[{"model_uid":"p:m","label":"m"}]}],"providers":[],"provider_filter":""}');`);
+  fs.writeFileSync(cli, `#!/bin/sh\nexec ${JSON.stringify(process.execPath)} ${JSON.stringify(js)}\n`);
+  fs.chmodSync(cli, 0o755);
+  const env = { ...process.env, MODELS_LOG: log };
+
+  await list(cli, env);
+  await list(cli, env);
+  assert.strictEqual(fs.readFileSync(log, "utf8"), "x", "the second read is served from cache");
+
+  invalidateModelFamilies();
+  await list(cli, env);
+  assert.strictEqual(fs.readFileSync(log, "utf8"), "xx", "the invalidated read refetches");
+});
+
 test("concurrent model listings share one CLI process", { skip: process.platform === "win32" }, async () => {
   const { listModelFamilies: list } = loadModels("models-concurrent");
   const log = path.join(TMP, "models.log");

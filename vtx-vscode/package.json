@@ -372,6 +372,7 @@
         "vtx.defaultMode": {
           "type": "string",
           "enum": [
+            "default",
             "accept-edits",
             "smart",
             "ask",
@@ -379,13 +380,14 @@
             "bypass"
           ],
           "enumDescriptions": [
+            "Default: vtx's standard mode",
             "Code: write and edit code (auto-approves edits in the workspace)",
             "Smart: also auto-approve actions a fast model judges safe",
             "Ask: answer questions without code changes",
             "Plan: plan changes before implementing (read only)",
             "Bypass: auto-approve all tool calls"
           ],
-          "default": "accept-edits",
+          "default": "default",
           "markdownDescription": "Mode that chats started in this extension begin in. The picker in the chat composer offers whatever modes your Vtx CLI reports, which may be more than are listed here."
         },
         "vtx.sandbox": {
@@ -437,7 +439,7 @@
             "fixedScrolling"
           ],
           "enumDescriptions": [
-            "Show a collapsed 'Thinking…' header, and expand to read the reasoning",
+            "Show a collapsed 'Thinking\u2026' header, and expand to read the reasoning",
             "Show a live, fixed height peek of the latest reasoning while it streams, then collapse it"
           ],
           "default": "fixedScrolling",

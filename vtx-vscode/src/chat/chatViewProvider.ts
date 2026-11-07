@@ -40,7 +40,16 @@ import { diffStat } from "../diff/diffStat";
 import { paintedReplay, recordPainted } from "./transcriptLog";
 import { StatusBar } from "../ui/statusBar";
 import { checkHealth, CliHealth, loginShellEnv } from "../cli/locate";
-import { cachedFamilies, familyOf, listModelFamilies, ModelFamily } from "../cli/models";
+import {
+  cachedFamilies,
+  cachedProviderFilter,
+  cachedProviders,
+  familyOf,
+  invalidateModelFamilies,
+  listModelFamilies,
+  ModelFamily,
+  ModelProvider
+} from "../cli/models";
 import { lockOwner, removeLock } from "../cli/sessionLocks";
 
 // One live session: its own `vtx acp` process and terminal manager, plus the
@@ -203,8 +212,10 @@ const MAX_IMAGE_BYTES = 30 * 1024 * 1024;
 // cut short, since its bytes are all the agent gets: it has no path to read more.
 const MAX_ATTACH_CHARS = 200000;
 
-// The mode a chat starts in when nothing else says otherwise.
-const DEFAULT_MODE = "accept-edits";
+// The mode a chat starts in when nothing else says otherwise. "default" is
+// the id vtx's own session/new advertises; the richer lists the pickers show
+// arrive from the agent's config options.
+const DEFAULT_MODE = "default";
 
 // How long typing settles before the agent is told a file has unsaved edits. It
 // only needs to know that the file is dirty, so one message per pause is enough.
@@ -2449,7 +2460,7 @@ export class ChatController implements AcpHost {
     this.currentModel = rt.model;
     this.currentThoughtLevel = thoughtOption(rt.configOptions)?.currentValue as string | undefined;
     this.postCapabilities();
-    this.postModelOptions(rt.model || "adaptive", rt.configOptions);
+    this.postModelOptions(rt.model || "", rt.configOptions);
     if (rt.mode) {
       this.post({ type: "mode", mode: rt.mode });
     }
@@ -3094,13 +3105,21 @@ export class ChatController implements AcpHost {
     if (!this.showOptions(rt, mode || currentModeId, model, thoughtLevel)) {
       return;
     }
-    this.postModelOptions(this.currentModel || "adaptive", activeOptions);
+    this.postModelOptions(this.currentModel || "", activeOptions);
+  }
+
+  // The families the model picker offers: everything `vtx models list` returned,
+  // narrowed to one provider while `ui.model_provider_filter` is set (the same
+  // scope the TUI's /provider gives /model).
+  private visibleModelFamilies(families: ModelFamily[]): ModelFamily[] {
+    const filter = cachedProviderFilter();
+    return filter ? families.filter((f) => f.provider === filter) : families;
   }
 
   // Posts the mode + model-family options. Model families come from
   // `vtx models list` (cached); if not fetched yet, fetch and re-post.
   private postModelOptions(currentModel: string, options = this.active()?.configOptions): void {
-    const families = cachedFamilies();
+    const families = this.visibleModelFamilies(cachedFamilies());
     const thought = thoughtOption(options);
     const payload = {
       type: "options",
@@ -3121,7 +3140,7 @@ export class ChatController implements AcpHost {
         if (f.length) {
           // Listing takes seconds, so re-read the mode: the visible session may
           // have changed by now and this post must not put the old one back.
-          this.postModelOptions(this.active()?.model || this.currentModel || "adaptive");
+          this.postModelOptions(this.active()?.model || this.currentModel || "");
         }
       });
     }
@@ -3167,7 +3186,7 @@ export class ChatController implements AcpHost {
       const cached = this.store.options() as { models?: ModelFamily[] } | undefined;
       families = cached?.models?.length
         ? cached.models
-        : [{ id: "adaptive", name: "Adaptive", default: "adaptive", variants: [{ value: "adaptive", name: "Adaptive" }] }];
+        : [];
     }
     // Listing the models spawns the CLI, so this often resolves after a session
     // has already been opened. Read the state only now, and let the visible
@@ -3183,8 +3202,8 @@ export class ChatController implements AcpHost {
       type: "options",
       modes: this.modes,
       currentMode: mode || DEFAULT_MODE,
-      models: families,
-      currentModel: model || "adaptive",
+      models: this.visibleModelFamilies(families),
+      currentModel: model || "",
       modelChoices: groupedModelChoices(options),
       thoughtLevels: configChoices(thought),
       currentThoughtLevel: typeof thought?.currentValue === "string" ? thought.currentValue : ""
@@ -3365,7 +3384,7 @@ export class ChatController implements AcpHost {
         void vscode.window.showWarningMessage(`Could not update model configuration: ${message}`);
       }
       this.showOptions(rt, confirmedMode, confirmedModel, confirmedThought);
-      this.postModelOptions(this.currentModel || "adaptive", options);
+      this.postModelOptions(this.currentModel || "", options);
       this.post({ type: "modelConfigApplied", requestId, model: confirmedModel, thoughtLevel: confirmedThought });
     });
     this.modelConfigTail = task;
@@ -4052,6 +4071,19 @@ export class ChatController implements AcpHost {
         this.post({ type: "error", text: why });
       }
     };
+    // `/provider` with no argument is the TUI's picker command: the agent can
+    // only answer it headlessly, so the picker lives here and the choice goes
+    // back through the normal send path as `/provider <slug>`.
+    if (/^\/provider\s*$/.test(text.trim())) {
+      const slug = await this.pickProviderFilter();
+      if (slug === null) {
+        giveBack();
+        return;
+      }
+      this.restoreStaged(draftFor, staged);
+      await this.handleSend(slug ? `/provider ${slug}` : "/provider reset", startNew, preserveTranscript);
+      return;
+    }
     if (!(await this.ensureReady())) {
       giveBack();
       return;
@@ -4147,6 +4179,49 @@ export class ChatController implements AcpHost {
     await this.runPrompt(sent, blocks);
   }
 
+  // The provider picker `/provider` opens: every configured provider plus the
+  // "All providers" row that clears the filter, mirroring the TUI. Returns the
+  // slug to send, "" for all providers, or null when the picker was dismissed.
+  private async pickProviderFilter(): Promise<string | null> {
+    if (!cachedFamilies().length && !cachedProviders().length) {
+      await listModelFamilies(this.resolvedCli || "vtx", this.env);
+    }
+    let providers = cachedProviders();
+    if (!providers.length) {
+      providers = [...new Set(cachedFamilies().map((f) => f.provider).filter((p): p is string => !!p))]
+        .sort()
+        .map((slug) => ({ slug }));
+    }
+    if (!providers.length) {
+      this.post({ type: "error", text: "No providers configured" });
+      return null;
+    }
+    const items: (vscode.QuickPickItem & { slug: string })[] = [
+      { label: "All providers", description: "show every provider in the model picker", slug: "" },
+      ...providers.map((p: ModelProvider) => ({
+        label: p.name && p.name !== p.slug ? `${p.name} (${p.slug})` : p.slug,
+        description: p.slug,
+        slug: p.slug
+      }))
+    ];
+    const pick = await vscode.window.showQuickPick(items, {
+      title: "Provider filter",
+      placeHolder: "Scope the model picker to one provider"
+    });
+    return pick ? pick.slug : null;
+  }
+
+  // The model list is a cached CLI call, so a /provider turn that just changed
+  // ui.model_provider_filter has to drop it before the picker is repainted.
+  private async refreshModelFamilies(): Promise<void> {
+    invalidateModelFamilies();
+    const families = await listModelFamilies(this.resolvedCli || "vtx", this.env);
+    if (!families.length) {
+      return;
+    }
+    this.postModelOptions(this.active()?.model || this.currentModel || "");
+  }
+
   // Run one prompt turn against a runtime and stream its outcome, rendering only
   // while that session is the visible one. On completion it flushes the next
   // queued message, so a session's queue drains itself turn by turn. Shared by a
@@ -4181,6 +4256,13 @@ export class ChatController implements AcpHost {
         rt.turn = undefined;
       }
       this.endTurn(rt);
+      // A /provider turn rewrites ui.model_provider_filter, which the cached
+      // `vtx models list` answer knows nothing about: refetch before the next
+      // options post, queued turn or not.
+      const last = blocks[blocks.length - 1];
+      if (last?.type === "text" && /^\/provider\b/.test(last.text.trim())) {
+        void this.refreshModelFamilies();
+      }
     }
   }
 

@@ -965,7 +965,7 @@ export class SettingsPanel {
   }
 
   // MCP servers for one scope: the global files for User, or a folder's
-  // .vtx/mcp_config.json for a project folder.
+  // .vtx/mcp.json for a project folder.
   private mcpServersForScope(scope: ConfigScope, root?: string): unknown[] {
     const out: unknown[] = [];
     const seen = new Set<string>();
@@ -1003,7 +1003,7 @@ export class SettingsPanel {
       // told about them. Showing them is the only way to know what is loaded.
       addFrom(windsurfMcpConfigPath(), "windsurf");
     } else if (root) {
-      addFrom(path.join(root, ".vtx", "mcp_config.json"));
+      addFrom(path.join(root, ".vtx", "mcp.json"));
     }
     return out;
   }

@@ -34,6 +34,19 @@ def build_parser() -> argparse.ArgumentParser:
     models_list = models_sub.add_parser("list", help="List models")
     models_list.add_argument("--format", choices=["json"], default=None)
 
+    config_parser = subparsers.add_parser("config", help="Read and write Vtx config")
+    config_sub = config_parser.add_subparsers(dest="config_command")
+    config_sub.add_parser("list", help="Dump the persisted config as JSON")
+    config_get_cmd = config_sub.add_parser("get", help="Print one dotted config key as JSON")
+    config_get_cmd.add_argument(
+        "key", metavar="KEY", help="Dotted key, e.g. ui.model_provider_filter"
+    )
+    config_set_cmd = config_sub.add_parser(
+        "set", help="Set one dotted config key (value parsed as JSON, bare string fallback)"
+    )
+    config_set_cmd.add_argument("key", metavar="KEY")
+    config_set_cmd.add_argument("value", metavar="VALUE")
+
     plugin_parser = subparsers.add_parser(
         "plugin", help="Manage plugin profiles, bundles, and rows"
     )
@@ -239,6 +252,7 @@ def main() -> None:
         import json as _json
 
         from vtx.ai.models import get_all_models
+        from vtx.ai.provider_catalog import list_providers
 
         families = []
         for m in get_all_models():
@@ -248,6 +262,7 @@ def main() -> None:
                     "family_label": m.id,
                     "family_uid": uid,
                     "slug": m.provider,
+                    "provider": m.provider,
                     "variants": [
                         {
                             "model_uid": uid,
@@ -259,7 +274,34 @@ def main() -> None:
                     ],
                 }
             )
-        print(_json.dumps({"families": families}))
+        providers = [{"slug": p.slug, "name": p.display_name} for p in list_providers()]
+        print(
+            _json.dumps(
+                {
+                    "families": families,
+                    "providers": providers,
+                    "provider_filter": config.ui.model_provider_filter,
+                }
+            )
+        )
+        raise SystemExit(0)
+
+    if args.command == "config":
+        import json as _json
+
+        from vtx.core.config import config_dump, config_get, config_set
+
+        if args.config_command == "list":
+            print(_json.dumps(config_dump(), indent=2, default=str))
+        elif args.config_command == "get":
+            print(_json.dumps(config_get(args.key), default=str))
+        elif args.config_command == "set":
+            try:
+                value = _json.loads(args.value)
+            except _json.JSONDecodeError:
+                value = args.value
+            config_set(args.key, value)
+            print(f"set {args.key}")
         raise SystemExit(0)
 
     if args.prompt is not None and (args.continue_recent or args.resume_session):

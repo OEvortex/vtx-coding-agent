@@ -1125,6 +1125,46 @@ def set_model_provider_filter(provider: str) -> Config:
     return reload_config()
 
 
+def config_dump() -> dict[str, Any]:
+    """The raw persisted config as a plain dict (for ``vtx config list``)."""
+    return _read_config_data(_ensure_config_file())
+
+
+def config_get(key: str) -> Any:
+    """One dotted config key's raw value, or None when unset."""
+    data: Any = config_dump()
+    for part in key.split("."):
+        if not isinstance(data, dict) or part not in data:
+            return None
+        data = data[part]
+    return data
+
+
+def config_set(key: str, value: Any) -> Config:
+    """Set one dotted config key to a JSON value and persist it.
+
+    ``None`` removes the key. The file is written through the same path every
+    other setter uses, so migrations and the version stamp stay intact.
+    """
+    config_file = _ensure_config_file()
+    data = _read_config_data(config_file)
+    parts = key.split(".")
+    node = data
+    for part in parts[:-1]:
+        child = node.get(part)
+        if not isinstance(child, dict):
+            child = {}
+            node[part] = child
+        node = child
+    if value is None:
+        node.pop(parts[-1], None)
+    else:
+        node[parts[-1]] = value
+    _set_config_version(data)
+    _atomic_write_text(config_file, _serialize_config_yaml(data))
+    return reload_config()
+
+
 def reset_config() -> None:
     """Reset config to uninitialized state (next get_config() will reload from file)."""
     _config_var.set(None)

@@ -15,7 +15,7 @@
 const test = require("node:test");
 const assert = require("node:assert");
 const path = require("node:path");
-const { createChat, cleanup } = require("./chat-harness");
+const { createChat, cleanup, setModelsFixture } = require("./chat-harness");
 
 // The fake agent is a `/bin/sh` wrapper, so the CLI resolver cannot run it on Windows:
 // the health check fails, no chat starts, and every test here would fail for that one
@@ -1708,6 +1708,88 @@ test("catalogue uids are translated to the values the session's model option acc
       "a Fusion pair the session does not list maps to its accepted uid, with the lead effort going to thought_level"
     );
   } finally {
+    await h.dispose();
+  }
+});
+
+test("/provider with an empty catalog reports it and keeps the draft", posixOnly, async () => {
+  const h = createChat({ config: { defaultMode: "", defaultModel: "" } });
+  try {
+    await h.ready();
+    h.send({ type: "send", text: "/provider", newSession: true });
+    assert.ok(
+      await h.until(() => h.postsOf("error").some((m) => /No providers configured/.test(m.text || ""))),
+      "the empty catalog is reported instead of opening a picker"
+    );
+    assert.strictEqual(h.last("draft")?.text, "/provider", "the command goes back to the composer");
+    assert.strictEqual(h.agentSaw("session/prompt").length, 0, "nothing was sent to the agent");
+  } finally {
+    await h.dispose();
+  }
+});
+
+// Last on purpose: once a fixture with families is read it stays cached for the
+// five minute TTL, so nothing after this may rely on the empty catalog.
+test("/provider picks a provider and the model list follows the new filter", posixOnly, async () => {
+  const catalog = (providerFilter) => ({
+    provider_filter: providerFilter,
+    providers: [
+      { slug: "openai", name: "OpenAI" },
+      { slug: "anthropic", name: "Anthropic" }
+    ],
+    families: [
+      {
+        family_label: "gpt-4o",
+        family_uid: "openai:gpt-4o",
+        slug: "openai",
+        provider: "openai",
+        variants: [{ model_uid: "openai:gpt-4o", label: "gpt-4o" }]
+      },
+      {
+        family_label: "claude",
+        family_uid: "anthropic:claude",
+        slug: "anthropic",
+        provider: "anthropic",
+        variants: [{ model_uid: "anthropic:claude", label: "claude" }]
+      }
+    ]
+  });
+  setModelsFixture(catalog(""));
+  const h = createChat({ promptDelay: 20, config: { defaultMode: "", defaultModel: "" } });
+  try {
+    await h.ready();
+    // The health check has to be done before /provider: the picker lists models
+    // through the resolved CLI, which is only known once it is.
+    assert.ok(await h.until(() => h.last("options")?.models?.length === 2), "both providers' models are listed");
+
+    h.answerWith({ slug: "openai" });
+    h.send({ type: "send", text: "/provider", newSession: true });
+    assert.ok(
+      await h.until(() =>
+        h.agentSaw("session/prompt").some((r) =>
+          (r.params?.prompt || []).some((b) => b.type === "text" && b.text === "/provider openai")
+        )
+      ),
+      "the picked provider went out as /provider openai"
+    );
+    assert.ok(
+      h.postsOf("userMessage").some((m) => m.text === "/provider openai"),
+      "the command shows in the chat"
+    );
+
+    // The agent's answer rewrote the filter; the next catalog read says so, and
+    // the picker has to narrow to it rather than keep the stale full list.
+    setModelsFixture(catalog("openai"));
+    h.send({ type: "send", text: "/provider anthropic" });
+    assert.ok(
+      await h.until(() => {
+        const options = h.last("options");
+        return options?.models?.length === 1 && options.models[0].provider === "openai";
+      }),
+      "after the filter changed the model list shows only that provider"
+    );
+  } finally {
+    setModelsFixture(null);
     await h.dispose();
   }
 });

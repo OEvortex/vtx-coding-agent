@@ -20,13 +20,22 @@ export interface ModelFamily {
   name: string; // family label, e.g. "Claude Sonnet 5"
   default: string; // default variant uid (the family's first/base option)
   variants: ModelVariant[];
+  provider?: string; // provider slug this family's models belong to
+}
+
+export interface ModelProvider {
+  slug: string;
+  name?: string;
 }
 
 interface ModelsJson {
+  provider_filter?: string;
+  providers?: { slug?: string; name?: string; display_name?: string }[];
   families?: {
     family_label?: string;
     family_uid?: string;
     slug?: string;
+    provider?: string;
     variants?: {
       model_uid?: string;
       label?: string;
@@ -46,8 +55,17 @@ interface ModelsJson {
   }[];
 }
 
-let cache: { at: number; families: ModelFamily[] } | undefined;
+interface ModelsResult {
+  families: ModelFamily[];
+  providers: ModelProvider[];
+  providerFilter: string;
+}
+
+let cache: { at: number; result: ModelsResult } | undefined;
 let pendingListing: Promise<ModelFamily[]> | undefined;
+// Bumped by invalidateModelFamilies so a fetch already in flight cannot write
+// its pre-change answer back into the cache.
+let cacheGen = 0;
 // variant uid -> family, so a session's flat currentValue can be resolved.
 const familyByValue = new Map<string, ModelFamily>();
 
@@ -56,21 +74,27 @@ const familyByValue = new Map<string, ModelFamily>();
 // what the ACP `model` config option accepts. Cached in-memory for a few minutes.
 export function listModelFamilies(cliPath: string, env?: NodeJS.ProcessEnv): Promise<ModelFamily[]> {
   if (cache && Date.now() - cache.at < 300000) {
-    return Promise.resolve(cache.families);
+    return Promise.resolve(cache.result.families);
   }
   if (pendingListing) {
     return pendingListing;
   }
   const pending = (async () => {
-    const families = await run(cliPath, env);
-    if (families.length) {
-      setCache(families);
-      return families;
+    const gen = cacheGen;
+    const result = await run(cliPath, env);
+    if (gen !== cacheGen) {
+      // Invalidated while this was in flight: serve the answer but do not let
+      // it replace whatever the newer fetch cached.
+      return result.families;
+    }
+    if (result.families.length) {
+      setCache(result);
+      return result.families;
     }
     // The CLI call failed or returned nothing: keep serving the last successful
     // families (even if now stale) so the dropdowns don't empty out on a
     // transient error.
-    return cache?.families ?? families;
+    return cache?.result.families ?? result.families;
   })();
   pendingListing = pending;
   void pending.finally(() => {
@@ -83,17 +107,38 @@ export function listModelFamilies(cliPath: string, env?: NodeJS.ProcessEnv): Pro
 
 // Families from the last successful fetch, synchronously (may be empty).
 export function cachedFamilies(): ModelFamily[] {
-  return cache?.families || [];
+  return cache?.result.families || [];
+}
+
+// The provider slug `ui.model_provider_filter` scopes pickers to, "" when the
+// model list shows every provider.
+export function cachedProviderFilter(): string {
+  return cache?.result.providerFilter || "";
+}
+
+// Every configured provider the CLI reported, for pickers that must offer
+// slugs which currently have no cached models.
+export function cachedProviders(): ModelProvider[] {
+  return cache?.result.providers || [];
+}
+
+// Drop the cached listing so the next read refetches (e.g. after /provider
+// changes ui.model_provider_filter).
+export function invalidateModelFamilies(): void {
+  cacheGen++;
+  cache = undefined;
+  pendingListing = undefined;
+  familyByValue.clear();
 }
 
 export function familyOf(value: string): ModelFamily | undefined {
   return familyByValue.get(value);
 }
 
-function setCache(families: ModelFamily[]): void {
-  cache = { at: Date.now(), families };
+function setCache(result: ModelsResult): void {
+  cache = { at: Date.now(), result };
   familyByValue.clear();
-  for (const fam of families) {
+  for (const fam of result.families) {
     for (const v of fam.variants) {
       familyByValue.set(v.value, fam);
     }
@@ -123,7 +168,7 @@ function effortRank(name: string): number {
   return 2.5; // unknown efforts sit in the middle, keeping their original order
 }
 
-function run(cliPath: string, env?: NodeJS.ProcessEnv): Promise<ModelFamily[]> {
+function run(cliPath: string, env?: NodeJS.ProcessEnv): Promise<ModelsResult> {
   return new Promise((resolve) => {
     const cmd = cliCommand(cliPath, ["models", "list", "--format", "json"]);
     execFile(
@@ -132,7 +177,7 @@ function run(cliPath: string, env?: NodeJS.ProcessEnv): Promise<ModelFamily[]> {
       { env, windowsHide: true, timeout: 15000, maxBuffer: 8 * 1024 * 1024, shell: cmd.shell },
       (err, stdout) => {
         if (err && !stdout) {
-          resolve([]);
+          resolve({ families: [], providers: [], providerFilter: "" });
           return;
         }
         try {
@@ -164,15 +209,25 @@ function run(cliPath: string, env?: NodeJS.ProcessEnv): Promise<ModelFamily[]> {
             // Sort effort variants low -> high; the lowest becomes the default.
             variants.sort((a, b) => effortRank(a.name) - effortRank(b.name));
             out.push({
-              id: fam.slug || fam.family_uid || variants[0].value,
+              // family_uid first: vtx emits one family per model with slug set
+              // to the provider, so slug alone would collide across a provider's
+              // models and every row would select the first one.
+              id: fam.family_uid || fam.slug || variants[0].value,
               name: label || variants[0].value,
               default: variants[0].value,
-              variants
+              variants,
+              provider: fam.provider
             });
           }
-          resolve(out);
+          resolve({
+            families: out,
+            providers: (parsed.providers || [])
+              .filter((p) => p.slug)
+              .map((p) => ({ slug: p.slug as string, name: p.name || p.display_name })),
+            providerFilter: typeof parsed.provider_filter === "string" ? parsed.provider_filter : ""
+          });
         } catch {
-          resolve([]);
+          resolve({ families: [], providers: [], providerFilter: "" });
         }
       }
     );

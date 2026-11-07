@@ -79,6 +79,37 @@ export async function listPlugins(ctx: CliContext): Promise<NamedItem[]> {
   return items;
 }
 
+// `vtx config list` prints the persisted ~/.vtx/config.yml as JSON, and
+// `vtx config get <key>` / `set <key> <value>` read and write one dotted key.
+// This is the only correct way for the panel to touch user settings: the file
+// is YAML, which the JSONC editor cannot parse.
+export async function configList(ctx: CliContext): Promise<Record<string, unknown> | undefined> {
+  const r = await run(ctx, ["config", "list"]);
+  if (!r.ok || !r.out.trim()) return undefined;
+  try {
+    const parsed = JSON.parse(r.out);
+    return parsed && typeof parsed === "object" ? (parsed as Record<string, unknown>) : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
+export async function configGet(ctx: CliContext, key: string): Promise<unknown> {
+  const r = await run(ctx, ["config", "get", key]);
+  if (!r.ok || !r.out.trim()) return undefined;
+  try {
+    return JSON.parse(r.out);
+  } catch {
+    return r.out.trim();
+  }
+}
+
+export async function configSet(ctx: CliContext, key: string, value: unknown): Promise<{ ok: boolean; err: string }> {
+  const raw = typeof value === "string" ? value : JSON.stringify(value);
+  const r = await run(ctx, ["config", "set", key, raw]);
+  return { ok: r.ok, err: r.err || r.out };
+}
+
 export async function pluginVerb(
   ctx: CliContext,
   verb: "install" | "update" | "remove",
