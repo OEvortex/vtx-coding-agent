@@ -32,18 +32,64 @@ export function userConfigDir(): string {
 }
 
 export function userConfigPath(): string {
-  // vtx keeps its settings in config.yml (YAML), which this JSONC editor
-  // cannot parse; config edits for the user scope go through `vtx config`
-  // (see vtxConfigCli) until the panel speaks YAML. This path only backs the
-  // project scope file, which vtx does not read either, so it is kept for
-  // the panel's own bookkeeping.
-  return path.join(userConfigDir(), "config.json");
+  // vtx keeps its settings in config.yml (YAML). This path is display only:
+  // reads and writes for the user scope go through `vtx config` (see
+  // vtxConfigCli), which is the only correct way to touch that file.
+  return path.join(userConfigDir(), "config.yml");
+}
+
+export function userHooksConfigPath(): string {
+  return path.join(userConfigDir(), "hooks.yml");
 }
 
 // MCP servers live in mcp.json: ~/.vtx/mcp.json for the user and
 // <project>/.vtx/mcp.json per project (src/vtx/mcp/config.py).
 export function userMcpConfigPath(): string {
   return path.join(userConfigDir(), "mcp.json");
+}
+
+export function projectMcpConfigPath(root: string): string {
+  return path.join(root, ".vtx", "mcp.json");
+}
+
+export function projectHooksConfigPath(root: string): string {
+  return path.join(root, ".vtx", "hooks.yml");
+}
+
+// Skill discovery (src/vtx/agent/context/skills.py): project ancestors'
+// .agents/skills, then ~/.agents/skills, then ~/.vtx/skills for bundled ones.
+export function userAgentsDir(): string {
+  return path.join(os.homedir(), ".agents");
+}
+
+export function userSkillsDir(): string {
+  return path.join(userAgentsDir(), "skills");
+}
+
+export function vtxSkillsDir(): string {
+  return path.join(userConfigDir(), "skills");
+}
+
+export function projectSkillsDir(root: string): string {
+  return path.join(root, ".agents", "skills");
+}
+
+// Agent and extension discovery (src/vtx/agent/agents/discovery.py,
+// src/vtx/plugins/extensions.py).
+export function globalAgentDir(): string {
+  return path.join(userConfigDir(), "agent");
+}
+
+export function projectAgentDir(root: string): string {
+  return path.join(root, ".vtx", "agent");
+}
+
+export function globalExtensionsDir(): string {
+  return path.join(globalAgentDir(), "extensions");
+}
+
+export function projectExtensionsDir(root: string): string {
+  return path.join(root, ".vtx", "extensions");
 }
 
 // Windsurf keeps its own MCP servers here. The Vtx CLI does not read this

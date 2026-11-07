@@ -42,39 +42,24 @@ export interface NamedItem {
   trigger?: string;
   path?: string;
   source?: string;
+  disabled?: boolean;
   raw?: unknown;
 }
 
-// `vtx skills list` prints, per skill:
-//   /name [user,model] (./path/to/skill) - description...
-// (the description may wrap across following lines). Capture name, scopes, the
-// skill directory, and the first line of the description.
-export async function listSkills(ctx: CliContext): Promise<NamedItem[]> {
-  const r = await run(ctx, ["skills", "list"]);
-  if (!r.out.trim()) return [];
-  const items: NamedItem[] = [];
-  const re = /^\s*\/(\S+)\s+\[([^\]]*)\]\s+\(([^)]+)\)\s*(?:-\s*(.*))?$/;
-  for (const line of r.out.split(/\r?\n/)) {
-    const m = line.match(re);
-    if (m) {
-      items.push({ name: m[1], source: m[2], path: m[3].trim(), description: (m[4] || "").trim() });
-    }
-  }
-  return items;
-}
+// Vtx has no `skills list` verb: skills are discovered from .agents/skills,
+// ~/.agents/skills and ~/.vtx/skills (src/vtx/agent/context/skills.py), which
+// the settings panel scans directly.
 
-// `vtx plugins list` prints installed plugins (name, version, blocked status).
+// `vtx --dump-config` prints the composed plugin row list for the selected
+// profile: `<name>\t[enabled|disabled]\t<module:PLUGIN>`. That is the surface
+// `vtx plugin enable|disable` edits, so it is what the panel lists.
 export async function listPlugins(ctx: CliContext): Promise<NamedItem[]> {
-  const r = await run(ctx, ["plugins", "list"]);
-  if (!r.ok || !r.out.trim() || /no plugins/i.test(r.out)) return [];
+  const r = await run(ctx, ["--dump-config"]);
+  if (!r.ok || !r.out.trim()) return [];
   const items: NamedItem[] = [];
-  // Only the bullet rows the CLI prints (`  • story-skills v0.3.1`). Taking any
-  // line meant an error, a hint, or a reworded header became a plugin, complete
-  // with Update and Remove buttons: `Error: not authenticated` turned into a
-  // plugin named "Error:" that could be uninstalled.
   for (const line of r.out.split(/\r?\n/)) {
-    const m = /^\s*[•*-]\s+(\S+)\s*(.*)$/.exec(line);
-    if (m) items.push({ name: m[1], description: m[2].trim() });
+    const m = /^(\S+)\s+\[(enabled|disabled)\]\s+(\S+)/.exec(line);
+    if (m) items.push({ name: m[1], description: m[3], disabled: m[2] === "disabled" });
   }
   return items;
 }
@@ -112,56 +97,10 @@ export async function configSet(ctx: CliContext, key: string, value: unknown): P
 
 export async function pluginVerb(
   ctx: CliContext,
-  verb: "install" | "update" | "remove",
+  verb: "enable" | "disable",
   arg?: string
 ): Promise<{ ok: boolean; err: string }> {
-  const args = ["plugins", verb];
-  if (arg) args.push(arg);
-  const r = await run(ctx, args);
+  if (!arg) return { ok: false, err: "missing row name" };
+  const r = await run(ctx, ["plugin", verb, arg]);
   return { ok: r.ok, err: r.err || r.out };
-}
-
-export interface McpAddOptions {
-  name: string;
-  scope: "user" | "project";
-  transport?: "stdio" | "http";
-  url?: string;
-  command?: string;
-  args?: string[];
-  env?: Record<string, string>;
-  headers?: Record<string, string>;
-}
-
-export async function mcpAdd(ctx: CliContext, o: McpAddOptions): Promise<{ ok: boolean; err: string }> {
-  // `-s` defaults to `local`, so pass the scope explicitly (user = global
-  // ~/.vtx/mcp_config.json, project = .vtx/mcp_config.json).
-  const args: string[] = ["mcp", "add", "-s", o.scope];
-  if (o.transport) args.push("-t", o.transport);
-  for (const [k, v] of Object.entries(o.env || {})) args.push("-e", `${k}=${v}`);
-  for (const [k, v] of Object.entries(o.headers || {})) args.push("-H", `${k}: ${v}`);
-  if (o.url) {
-    args.push("--url", o.url, o.name);
-  } else if (o.command) {
-    args.push(o.name, "--", o.command, ...(o.args || []));
-  } else {
-    args.push(o.name);
-  }
-  const r = await run(ctx, args);
-  return { ok: r.ok, err: r.err };
-}
-
-export async function mcpVerb(
-  ctx: CliContext,
-  verb: "remove" | "enable" | "disable" | "login" | "logout",
-  name: string,
-  scope?: "user" | "project"
-): Promise<{ ok: boolean; err: string }> {
-  const args = ["mcp", verb, name];
-  // `-s` defaults to `local`, so pass the scope explicitly for config-editing
-  // verbs (login/logout are not scoped).
-  if (scope && verb !== "login" && verb !== "logout") {
-    args.push("-s", scope);
-  }
-  const r = await run(ctx, args);
-  return { ok: r.ok, err: r.err };
 }

@@ -5,21 +5,24 @@ import * as path from "path";
 import * as crypto from "crypto";
 import {
   ConfigScope,
-  loadConfigFile,
-  mcpOauthDir,
-  refuseIfUnparseable,
-  windsurfDir,
-  writeFileAtomic,
-  windsurfMcpConfigPath,
-  writeMcpServer,
   readConfig,
-  setConfigPath,
   stripJsonComments,
   userConfigDir,
   userConfigPath,
-  userMcpConfigPath
+  userMcpConfigPath,
+  userHooksConfigPath,
+  projectHooksConfigPath,
+  userSkillsDir,
+  vtxSkillsDir,
+  projectSkillsDir,
+  globalAgentDir,
+  projectAgentDir,
+  globalExtensionsDir,
+  projectExtensionsDir,
+  projectMcpConfigPath,
+  writeMcpServer
 } from "./configService";
-import { CliContext, isPlainCliName, listPlugins, listSkills, mcpAdd, mcpVerb, McpAddOptions, NamedItem, pluginVerb } from "./vtxConfigCli";
+import { CliContext, configList, configSet, isPlainCliName, listPlugins, NamedItem, pluginVerb } from "./vtxConfigCli";
 import { withQuerySession } from "../acp/queryClient";
 import { LoadedHook, LoadedRule } from "../acp/types";
 import { checkHealth, loginShellEnv } from "../cli/locate";
@@ -29,33 +32,46 @@ import { listModelFamilies } from "../cli/models";
 // to the settings that control the extension rather than the Vtx CLI.
 const EXTENSION_ID = "OEvortex.vtx-vscode";
 
-// Every value row the settings surface renders, with the default Vtx applies
-// when the key is absent from the config. This one table drives the controls,
-// the "set here" markers, the override comparison, and Reset to defaults, so
-// those four can never disagree about what a default is.
+// The Vtx config keys the settings surface renders, with the default Vtx
+// applies when the key is absent from ~/.vtx/config.yml (src/vtx/core/
+// defaults/config.yml). This one table drives the controls, the "set here"
+// markers, and Reset to defaults, so those can never disagree about what a
+// default is. There is no project config.yml in Vtx, so these are global only.
 const ROW_DEFAULTS: Record<string, unknown> = {
-  "agent.model": "",
-  "agent.show_history_on_continue": true,
-  attribution: true,
-  auto_update: true,
-  notify: "smart",
-  respect_gitignore: false,
-  include_gitignored_files: false,
-  show_hints: true,
-  "proxy.mode": "system",
-  "proxy.url": "",
-  "proxy.no_proxy": "",
-  "sandbox.network_mode": "full",
-  "sandbox.allowed_domains": [],
-  "sandbox.denied_domains": [],
-  theme_mode: "",
-  unicode_mode: "auto",
-  pty_for_noninteractive_exec: false,
-  disable_osc: false,
-  "read_config_from.agents_standard": true,
-  "read_config_from.cursor": true,
-  "read_config_from.windsurf": true,
-  "read_config_from.claude": true
+  "llm.default_provider": "openai-codex",
+  "llm.default_model": "gpt-5.5",
+  "llm.default_base_url": "",
+  "llm.default_thinking_level": "low",
+  "llm.tool_call_idle_timeout_seconds": 180,
+  "llm.request_timeout_seconds": 600,
+  "llm.auth.openai_compat": "auto",
+  "llm.auth.anthropic_compat": "auto",
+  "llm.tls.insecure_skip_verify": false,
+  "llm.system_prompt.git_context": false,
+  "llm.system_prompt.ponytail": false,
+  "llm.system_prompt.todo_context": false,
+  "ui.theme": "gruvbox-dark",
+  "ui.collapse_thinking": true,
+  "ui.thinking_lines": "1",
+  "ui.colored_tool_badge": true,
+  "ui.show_welcome_shortcuts": true,
+  "ui.hidden_models": [],
+  "ui.merged_turn_summary": true,
+  "ui.collapse_after_turn": true,
+  "ui.model_provider_filter": "",
+  "compaction.on_overflow": "continue",
+  "compaction.threshold_percent": 80,
+  "agent.max_turns": 500,
+  "agent.default_context_window": 200000,
+  "permissions.mode": "prompt",
+  "notifications.enabled": false,
+  "notifications.volume": 0.5,
+  "recap.enabled": true,
+  "recap.idle_seconds": 60,
+  "agents.default": "",
+  "agents.switch_mode": "lock",
+  "agents.files": [],
+  "task.max_concurrent": 4
 };
 const ROW_KEYS = Object.keys(ROW_DEFAULTS);
 
@@ -439,12 +455,10 @@ export class SettingsPanel {
     return { ...this.cli, cwd: (typeof root === "string" && root) ? root : this.root() };
   }
 
-  // The value a key would have in a scope if that scope did not set it: Vtx's
-  // documented default at Global scope, and whatever Global resolves to for a
-  // workspace folder.
-  private fallbackValue(scope: ConfigScope, root: string | undefined, key: string): unknown {
-    if (scope === "user" || !root) return ROW_DEFAULTS[key];
-    return defaulted(loadConfigFile("user").data, key);
+  // The value a key would have if the user config did not set it: Vtx's
+  // documented default from src/vtx/core/defaults/config.yml.
+  private fallbackValue(_scope: ConfigScope, _root: string | undefined, key: string): unknown {
+    return ROW_DEFAULTS[key];
   }
 
   // Write a value setting. Writing the value that already applies would only add
@@ -456,7 +470,18 @@ export class SettingsPanel {
         JSON.stringify(next) === JSON.stringify(this.fallbackValue(scope, root, key))) {
       next = undefined;
     }
-    setConfigPath(scope, key, next, root);
+    if (scope === "user") {
+      // `vtx config set` treats JSON null as a delete, which is how a reset
+      // reaches the YAML file without the panel ever writing it directly.
+      const r = await configSet(this.cli, key, next === undefined ? null : next);
+      if (!r.ok) {
+        void vscode.window.showErrorMessage(`Could not set ${key}: ${r.err || "unknown error"}`);
+      }
+    } else {
+      // Vtx has no project config.yml; project scope is only for files such as
+      // .vtx/mcp.json and .vtx/hooks.yml, which are edited by their own verbs.
+      void vscode.window.showErrorMessage(`${key} is global only in Vtx.`);
+    }
     await this.sendData();
   }
 
@@ -482,18 +507,26 @@ export class SettingsPanel {
     await this.sendData();
   }
 
-  // Reset a section: remove its keys from the given scope (and folder, for
-  // project scope) so they fall back to Vtx's defaults. Confirmed first.
+  // Reset a section: remove its keys from the user config so they fall back to
+  // Vtx's defaults. Confirmed first. There is no project config.yml to reset.
   private async resetSection(scope: ConfigScope, keys: string[], label: string, root?: string): Promise<void> {
     if (!keys.length) return;
-    const where = scope === "user" ? "Global" : "Workspace";
+    if (scope !== "user") {
+      void vscode.window.showErrorMessage(`${label} is global only in Vtx.`);
+      return;
+    }
     const choice = await vscode.window.showWarningMessage(
-      `Reset ${label} to defaults in ${where}? This removes those settings from the config.`,
+      `Reset ${label} to defaults in Global? This removes those settings from the config.`,
       { modal: true },
       "Reset"
     );
     if (choice !== "Reset") return;
-    for (const k of keys) setConfigPath(scope, k, undefined, root || this.root());
+    for (const k of keys) {
+      const r = await configSet(this.cli, k, null);
+      if (!r.ok) {
+        void vscode.window.showErrorMessage(`Could not reset ${k}: ${r.err || "unknown error"}`);
+      }
+    }
     await this.sendData();
   }
 
@@ -720,6 +753,9 @@ export class SettingsPanel {
   // and left the cache agreeing with it.
   private dataGeneration = 0;
   private painted = false;
+  // The persisted ~/.vtx/config.yml as `vtx config list` reports it. Vtx has
+  // no project config.yml, so this is the only source for value rows.
+  private userConfig: Record<string, unknown> = {};
 
   private superseded(generation: number): boolean {
     return this.disposed || generation !== this.dataGeneration;
@@ -741,7 +777,8 @@ export class SettingsPanel {
     await this.ensureCli();
     if (this.superseded(generation)) return;
     this.startWatching();
-    const [skills, plugins, loaded] = await Promise.all([
+    const [userConfig, skills, plugins, loaded] = await Promise.all([
+      configList(this.cli).catch(() => undefined),
       listSkills(this.cli).catch(() => []),
       listPlugins(this.cli).catch(() => []),
       // Asking the agent means starting one, which costs about as much as the two
@@ -749,6 +786,7 @@ export class SettingsPanel {
       this.loadFromAgent()
     ]);
     if (this.superseded(generation)) return;
+    this.userConfig = userConfig || {};
     let families: unknown[] = [];
     try { families = await listModelFamilies(this.cli.cliPath, this.cli.env); } catch { /* ignore */ }
     if (this.superseded(generation)) return;
@@ -768,19 +806,16 @@ export class SettingsPanel {
     const families = fromCli?.families || [];
     const loaded = fromCli?.loaded;
     const groups = this.scopeGroups();
-    // User skills come from the CLI list (filtered to user scope); project skills
-    // per folder are scanned from that folder's .vtx/skills directory.
-    const userSkills = this.resolveSkills(skills.filter((s) => !(s.source || "").includes("project")));
+    // Vtx has no project config.yml, so value rows are global only. Project
+    // scope remains for the file-backed sections (instructions, skills, MCP,
+    // hooks), which have real per-folder files.
+    const userSkills = this.scanSkillDir(userSkillsDir()).concat(this.scanSkillDir(vtxSkillsDir()));
 
     const data = {
       folders: this.folders(),
       models: { families },
-      // One entry per scope: its config file, the effective value of every row
-      // (the User value shows through on a folder scope), and which keys that
-      // scope sets explicitly, so the UI can mark set, inherited and overridden.
-      valuesByScope: groups.map((g) => this.valueGroup(g)),
-      // Per folder: keys whose effective value genuinely overrides the User value.
-      folderOverrides: Object.fromEntries(this.folders().map((f) => [f.path, this.overriddenKeys(f.path)])),
+      valuesByScope: [this.valueGroup({ scope: "user", title: "Global" })],
+      folderOverrides: {},
       // Settings owned by this extension, disclosed here but edited in VS Code.
       extension: {
         defaultModel: vscode.workspace.getConfiguration("vtx").get<string>("defaultModel", "") || ""
@@ -802,7 +837,7 @@ export class SettingsPanel {
         loaded: loaded?.hooks
       },
       plugins: { list: plugins },
-      permissions: { byScope: groups.map((g) => ({ ...g, ...this.permissionsForScope(g.scope, g.root) })) }
+      permissions: { byScope: [{ scope: "user", title: "Global", mode: defaulted(this.userConfig, "permissions.mode") }] }
     };
     return data;
   }
@@ -843,20 +878,17 @@ export class SettingsPanel {
     return groups;
   }
 
-  // The effective config for a scope: the User file, or the User file with this
-  // folder's file layered on top (objects merged one level, the way Vtx merges
-  // them), so a folder tab shows the value that actually applies.
-  private effectiveData(scope: ConfigScope, root?: string): Record<string, unknown> {
-    const user = loadConfigFile("user").data;
-    if (scope === "user" || !root) return user;
-    return mergeConfig(user, loadConfigFile("project", root).data);
+  // The effective config is the persisted ~/.vtx/config.yml from `vtx config
+  // list`, with Vtx's defaults filled in for display. There is no project
+  // config.yml to merge.
+  private effectiveData(): Record<string, unknown> {
+    return this.userConfig;
   }
 
-  // One scope's rows: the effective value of every key, plus the keys this scope
-  // sets itself (which is what separates "unset" from "set to the default").
+  // The one value group: Global. `setKeys` is what config.yml actually sets,
+  // which is what separates "unset" from "set to the default".
   private valueGroup(g: { scope: ConfigScope; root?: string; title: string }): unknown {
-    const file = loadConfigFile(g.scope, g.root);
-    const eff = this.effectiveData(g.scope, g.root);
+    const eff = this.effectiveData();
     const values: Record<string, unknown> = {};
     for (const k of ROW_KEYS) {
       values[k] = defaulted(eff, k);
@@ -865,23 +897,11 @@ export class SettingsPanel {
       scope: g.scope,
       root: g.root,
       title: g.title,
-      path: file.path,
-      exists: file.exists,
+      path: userConfigPath(),
+      exists: fs.existsSync(userConfigPath()),
       values,
-      setKeys: ROW_KEYS.filter((k) => pick(file.data, k) !== undefined)
+      setKeys: ROW_KEYS.filter((k) => pick(this.userConfig, k) !== undefined)
     };
-  }
-
-  // Keys the Workspace genuinely overrides: it must EXPLICITLY set the key (not
-  // just inherit the default) AND its value must differ from the User value.
-  private overriddenKeys(root?: string): string[] {
-    if (!root) return [];
-    const user = loadConfigFile("user").data;
-    const project = loadConfigFile("project", root).data;
-    return ROW_KEYS.filter((k) => {
-      if (pick(project, k) === undefined) return false;
-      return JSON.stringify(defaulted(project, k)) !== JSON.stringify(defaulted(user, k));
-    });
   }
 
   // The instruction entry for a directory. Vtx reads AGENTS.md; CLAUDE.md is
@@ -895,9 +915,13 @@ export class SettingsPanel {
     return { path: agents, exists: false, kind: "AGENTS.md" };
   }
 
-  // Project skills for a folder, scanned from its .vtx/skills directory.
+  // Project skills for a folder, scanned from its .agents/skills directory
+  // (src/vtx/agent/context/skills.py discovers <cwd-or-ancestor>/.agents/skills).
   private scanProjectSkills(folder: string): unknown[] {
-    const base = path.join(folder, ".vtx", "skills");
+    return this.scanSkillDir(projectSkillsDir(folder));
+  }
+
+  private scanSkillDir(base: string): unknown[] {
     if (!fs.existsSync(base)) return [];
     const out: unknown[] = [];
     for (const name of fs.readdirSync(base)) {
