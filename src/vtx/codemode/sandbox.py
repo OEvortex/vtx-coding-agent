@@ -998,6 +998,20 @@ def _limit_memory(limit_bytes: int | None) -> None:
         return
 
 
+class _ExitScript(BaseException):
+    """Raised by the script's ``exit()`` global to end the run early.
+
+    Not an error: the run completes with whatever ``value`` the call carried,
+    the same contract pi's codemode ``exit()`` has. ``BaseException`` because
+    it is control flow, not a failure -- and ``except Exception`` in a script
+    must not be able to swallow it.
+    """
+
+    def __init__(self, value: Any = None) -> None:
+        super().__init__()
+        self.value = value
+
+
 def run(request: dict[str, Any], *, stdin: Any = None) -> dict[str, Any]:
     """Execute one program and return the terminal ``result`` frame."""
     code = str(request.get("code") or "")
@@ -1038,9 +1052,27 @@ def run(request: dict[str, Any], *, stdin: Any = None) -> dict[str, Any]:
         if isinstance(d.get("identifier"), str) and isinstance(d.get("name"), str)
     }
 
+    def exit_(value: Any = None) -> None:
+        """End the script early, like pi's codemode ``exit()``."""
+        raise _ExitScript(value)
+
+    # Pi's ALL_TOOLS: every callable tool's identifier mapped to what the
+    # model needs to pick one without spending a search call.
+    all_tools = {
+        d["identifier"]: {
+            "name": d["name"],
+            "description": d.get("description") or "",
+            "namespace": d.get("namespace"),
+        }
+        for d in declarations
+        if isinstance(d.get("identifier"), str) and isinstance(d.get("name"), str)
+    }
+
     namespace: dict[str, Any] = {
         "__name__": _SCRIPT_MODULE,
         "tools": _Tools(proxies),
+        "ALL_TOOLS": all_tools,
+        "exit": exit_,
         "store": store.set,
         "load": store.get,
         "text": text,
@@ -1062,6 +1094,8 @@ def run(request: dict[str, Any], *, stdin: Any = None) -> dict[str, Any]:
     sys.stderr = _NullStream()  # type: ignore[assignment]
     try:
         value = _exec_script(code, namespace, bridge, detect_stalls=detect_stalls)
+    except _ExitScript as exc:
+        value = exc.value
     except BaseException as exc:
         error = _script_diagnostic(exc)
     finally:

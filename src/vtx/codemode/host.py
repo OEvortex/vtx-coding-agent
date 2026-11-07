@@ -443,7 +443,13 @@ class CodemodeSandbox:
             "type": _EXECUTE,
             "code": code,
             "tools": [
-                {"name": tool.name, "identifier": tool.identifier()} for tool in self._all_tools
+                {
+                    "name": tool.name,
+                    "identifier": tool.identifier(),
+                    "description": tool.description,
+                    "namespace": tool.namespace,
+                }
+                for tool in self._all_tools
             ],
             "store": store,
             "detect_stalls": self._limits.detect_stalls,

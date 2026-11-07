@@ -160,6 +160,8 @@ Inside a script:
 - `text(value)` or `return value` sends output back. `print` is discarded.
 - `store(key, value)` / `load(key)` keep JSON values between codemode calls.
 - `image(value)` forwards an image result.
+- `exit(value)` ends the script early; `ALL_TOOLS` maps every callable tool's
+  identifier to its name, description, and namespace.
 - Real Python: the standard library, `open`, `subprocess`, and the network work.
   The agent itself is not reachable; call its tools through `tools.<name>`.
 - Errors are catchable: `UnknownTool`, `InvalidInput`, and `ToolError`.
