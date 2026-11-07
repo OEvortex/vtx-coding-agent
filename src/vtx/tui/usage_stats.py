@@ -114,34 +114,67 @@ def _add(into: DailyUsage, other: DailyUsage) -> None:
     into.turns += other.turns
 
 
+#: Per-file scan cache: ``{path: (mtime, size, {iso_date: bucket})}``.
+#: Session logs are append-only, so an unchanged (mtime, size) signature
+#: means the parsed daily buckets are still valid — /usage then only
+#: re-reads files that actually changed instead of the whole history.
+_FILE_SCAN_CACHE: dict[str, tuple[float, int, dict[str, list[int]]]] = {}
+
+
+def _scan_file(path: Path, fallback: date | None) -> dict[str, list[int]]:
+    """Parse one session log into ``{iso_date: bucket}`` (no caching)."""
+    raw: dict[str, list[int]] = {}
+    try:
+        with path.open(encoding="utf-8") as handle:
+            for line in handle:
+                if '"usage"' not in line:
+                    continue
+                try:
+                    entry = json.loads(line)
+                except json.JSONDecodeError:
+                    continue
+                if not isinstance(entry, dict):
+                    continue
+                found = _accumulate(entry, fallback)
+                if found is None:
+                    continue
+                day, record = found
+                bucket = raw.setdefault(day.isoformat(), [0, 0, 0, 0, 0])
+                bucket[0] += record.input_tokens
+                bucket[1] += record.output_tokens
+                bucket[2] += record.cache_read_tokens
+                bucket[3] += record.cache_write_tokens
+                bucket[4] += record.turns
+    except OSError:
+        pass
+    return raw
+
+
 def _scan(paths: list[Path]) -> dict[str, list[int]]:
     """Return ``{iso_date: [input, output, cache_read, cache_write, turns]}``."""
     raw: dict[str, list[int]] = {}
+    live: set[str] = set()
     for path in paths:
-        fallback = _session_date(path)
+        key = str(path)
+        live.add(key)
         try:
-            with path.open(encoding="utf-8") as handle:
-                for line in handle:
-                    if '"usage"' not in line:
-                        continue
-                    try:
-                        entry = json.loads(line)
-                    except json.JSONDecodeError:
-                        continue
-                    if not isinstance(entry, dict):
-                        continue
-                    found = _accumulate(entry, fallback)
-                    if found is None:
-                        continue
-                    day, record = found
-                    bucket = raw.setdefault(day.isoformat(), [0, 0, 0, 0, 0])
-                    bucket[0] += record.input_tokens
-                    bucket[1] += record.output_tokens
-                    bucket[2] += record.cache_read_tokens
-                    bucket[3] += record.cache_write_tokens
-                    bucket[4] += record.turns
+            stat = path.stat()
+            sig = (stat.st_mtime, stat.st_size)
         except OSError:
             continue
+        cached = _FILE_SCAN_CACHE.get(key)
+        if cached is not None and cached[:2] == sig:
+            file_raw = cached[2]
+        else:
+            file_raw = _scan_file(path, _session_date(path))
+            _FILE_SCAN_CACHE[key] = (sig[0], sig[1], file_raw)
+        for day, bucket in file_raw.items():
+            merged = raw.setdefault(day, [0, 0, 0, 0, 0])
+            for i, v in enumerate(bucket):
+                merged[i] += v
+    # Drop cache entries for deleted session files so the map can't grow.
+    for stale in set(_FILE_SCAN_CACHE) - live:
+        del _FILE_SCAN_CACHE[stale]
     return raw
 
 
