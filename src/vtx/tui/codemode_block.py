@@ -91,7 +91,7 @@ from textual.widgets import Label
 from vtx.coding_agent.tools.codemode import PROGRESS_SENTINEL
 from vtx.core.config import config
 from vtx.tui.blocks import ToolBlock
-from vtx.tui.formatting import format_python_source
+from vtx.tui.formatting import format_json_args, format_json_source, format_python_source
 from vtx.tui.task_ui import GLYPHS, format_call_ms, format_run_ms
 
 #: Column the block's content sits in, matching every other tool detail in the
@@ -127,6 +127,10 @@ MIN_ARGS_WIDTH = 16
 
 #: Narrowest a line of output may wrap to. Below this a JSON blob is fragments.
 MIN_TEXT_WIDTH = 24
+
+#: Largest output item that gets JSON highlighting. Past this the Syntax pass
+#: costs more than the preview ever shows, so big payloads stay dim.
+JSON_HIGHLIGHT_MAX_CHARS = 20_000
 
 #: How often the running clock redraws. Fast enough to read as counting, slow
 #: enough not to repaint a long script twice a second.
@@ -506,9 +510,10 @@ class CodemodeToolBlock(ToolBlock):
 
         if args and available >= MIN_ARGS_WIDTH:
             row.append(" ")
-            row.append(
-                args if self._expanded else _elide(args, min(COLLAPSED_ARGS_CHARS, available)),
-                style=Style(color=colors.dim),
+            row.append_text(
+                format_json_args(
+                    args if self._expanded else _elide(args, min(COLLAPSED_ARGS_CHARS, available))
+                )
             )
 
         if timing:
@@ -522,12 +527,13 @@ class CodemodeToolBlock(ToolBlock):
             detail = _failure_reason(call)
             if detail:
                 row.append("  ")
+                # Tool messages carry Rich markup ([red]...[/red]); render it
+                # on top of the failure colour instead of showing the tags.
+                detail_text = Text(style=Style(color=colors.failed))
+                detail_text.append_text(self._render_markup_safe(detail))
                 row.append_text(
                     _hang(
-                        _wrap(
-                            Text(detail, style=Style(color=colors.failed)),
-                            max(MIN_TEXT_WIDTH, self._body_width()),
-                        ),
+                        _wrap(detail_text, max(MIN_TEXT_WIDTH, self._body_width())),
                         len(BODY_INDENT) + 2 + len(name),
                     )
                 )
@@ -569,8 +575,11 @@ class CodemodeToolBlock(ToolBlock):
         total = len(items)
         for index, body in enumerate(items, 1):
             label = f"==> text {index}/{total} <==" if total > 1 else ""
-            content = f"{label}\n{body}" if label else body
-            blocks.append(Text(content, style=Style(color=colors.dim)))
+            block_text = Text()
+            if label:
+                block_text.append(f"{label}\n", style=Style(color=colors.dim))
+            block_text.append_text(self._item_text(body))
+            blocks.append(block_text)
         if console:
             blocks.append(
                 Text(
@@ -579,6 +588,19 @@ class CodemodeToolBlock(ToolBlock):
                 )
             )
         return blocks
+
+    def _item_text(self, body: str) -> Text:
+        """One output item: JSON highlighted, prose dim.
+
+        A script's returned value is usually a JSON blob, and flat dim text
+        makes keys, strings and numbers blur together. Highlighting only pays
+        when the item actually parses as JSON, so prose keeps the dim style.
+        """
+        if len(body) <= JSON_HIGHLIGHT_MAX_CHARS:
+            highlighted = format_json_source(body, self._body_width())
+            if highlighted is not None:
+                return highlighted
+        return Text(body, style=Style(color=config.ui.colors.dim))
 
     def _render_output(self, blocks: list[Text]) -> Text:
         """The run's output, dimmed, as one wrapped block.
@@ -611,9 +633,11 @@ class CodemodeToolBlock(ToolBlock):
         message = str(error.get("message") or "")
         head = f"{kind} · {message}" if message else kind
 
-        parts = [
-            _wrap(Text(head, style=Style(color=colors.failed, bold=True)), self._body_width())
-        ]
+        # Same markup pass as the call rows: tool diagnostics arrive with
+        # Rich tags that would otherwise show literally.
+        head_text = Text(style=Style(color=colors.failed, bold=True))
+        head_text.append_text(self._render_markup_safe(head))
+        parts = [_wrap(head_text, self._body_width())]
         stack = str(error.get("stack") or "")
         if stack.strip():
             parts.append(_wrap(Text(stack, style=Style(color=colors.dim)), self._body_width()))
@@ -763,12 +787,10 @@ def _preview_items(blocks: list[Text], limit: int, expanded: bool, keep: str = "
     dropped, which is the right order to drop it in.
 
     One guarantee on top of the count: the last text item (the answer) is
-    always kept, even when the early items alone fill the budget. An answer
-    that disappears behind ``... (N more lines, ctrl+o to expand)`` is an
-    answer that has to be expanded to be read, which defeats the point of a
-    preview. If the answer itself is bigger than the budget it is shown in
-    full and the hint is dropped, because a preview that hides the answer is
-    worse than no preview at all.
+    always kept, even when the early items alone fill the budget. When the
+    answer itself is bigger than what is left it is cut to its head like any
+    other block -- pi's preview caps output unconditionally, and a collapsed
+    view that grows with the payload is not collapsed.
 
     The count in the hint is lines, not items, because a line is what the
     reader is counting on screen.
@@ -802,7 +824,14 @@ def _preview_items(blocks: list[Text], limit: int, expanded: bool, keep: str = "
 
     answer_height = heights[answer_index]
     answer_block = blocks[answer_index]
-    if answer_block not in kept:
+    if answer_height > limit:
+        # The answer alone overflows the budget. Pi's preview caps output at
+        # the line budget unconditionally, so earlier items keep the room they
+        # already fit into and the answer shows its head for the rest --
+        # "collapsed by default" has to mean collapsed.
+        room = max(1, limit - used)
+        kept.append(_head_lines(answer_block, room))
+    elif answer_block not in kept:
         # Make room for the answer by dropping earlier items from the end of
         # the kept set, one at a time, until it fits or there is nothing left
         # to drop. An answer that disappears behind the hint is an answer that
@@ -812,25 +841,26 @@ def _preview_items(blocks: list[Text], limit: int, expanded: bool, keep: str = "
             used -= heights[blocks.index(dropped)]
         if used + answer_height <= limit or not kept:
             kept.append(answer_block)
-            used += answer_height
-        # Otherwise the answer itself is bigger than the whole budget; show it
-        # alone, because a preview that hides the answer is worse than no
-        # preview at all.
-        elif answer_height > limit:
-            kept = [answer_block]
-            used = answer_height
 
     # Restore original order.
     kept_set = {id(b) for b in kept}
     kept = [b for b in blocks if id(b) in kept_set]
 
-    hidden = total - sum(heights[blocks.index(b)] for b in kept)
+    # Count what is actually on screen: a truncated answer contributes only
+    # its kept head, so its dropped tail lands in the hidden count too.
+    hidden = total - sum(len(b.split("\n", allow_blank=True)) for b in kept)
     if hidden <= 0 or not kept:
         return Text("\n").join(kept)
     hint = _expand_hint(hidden)
     if keep == "start":
         return Text("\n").join([*kept, hint])
     return Text("\n").join([hint, *kept])
+
+
+def _head_lines(block: Text, limit: int) -> Text:
+    """The first ``limit`` lines of ``block`` -- the kept head of an answer
+    that is itself larger than the whole preview budget."""
+    return Text("\n").join(block.split("\n", allow_blank=True)[:limit])
 
 
 def _is_console_block(block: Text) -> bool:
@@ -893,7 +923,13 @@ def _wrap(text: Text, width: int) -> Text:
                 out.append("\n")
             # ``render_lines`` pads to the full width; that padding is not
             # content, and leaving it in would be re-wrapped on the next pass.
-            out.append_text(Text("".join(part.text for part in segment).rstrip()))
+            # Styles ride along on the segments: joining only ``part.text``
+            # would flatten every highlighted line to plain text.
+            styled = Text.assemble(
+                *[(part.text, part.style if part.style is not None else "") for part in segment]
+            )
+            trimmed = len(styled.plain.rstrip())
+            out.append_text(styled[:trimmed] if trimmed < len(styled.plain) else styled)
     return out
 
 

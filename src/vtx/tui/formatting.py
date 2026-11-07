@@ -819,6 +819,7 @@ def get_python_theme() -> Any:
         Token.Literal.String: syntax.string,
         Token.Literal.String.Doc: f"{syntax.string} italic",
         Token.Literal.String.Escape: f"bold {syntax.variable}",
+        Token.String.Interpol: f"bold {syntax.variable}",
         Token.Literal.Number: syntax.variable,
         Token.Generic.Heading: f"bold {colors.title}",
         Token.Generic.Subheading: f"bold {syntax.option}",
@@ -855,6 +856,89 @@ def format_python_source(code: str, width: int | None = None) -> Text:
     with console.capture() as capture:
         console.print(syntax)
     return Text.from_ansi(capture.get().rstrip("\n"))
+
+
+def format_json_source(text: str, width: int | None = None) -> Text | None:
+    """Pretty-print and highlight a JSON fragment at ``width`` columns.
+
+    Returns ``None`` when ``text`` is not a JSON object or array, so callers
+    can fall back to plain dim text for prose output.
+
+    Pretty-printing is reserved for payloads that need it -- ``\\n`` escapes
+    inside strings (script output is usually prose or a listing wrapped in
+    JSON, and a wall of ``\\n`` is unreadable) or text too wide for one line.
+    Short flat JSON stays compact: the block's preview budget is counted in
+    wrapped lines, and a five-line ``["a", "b"]` is a worse answer preview
+    than the one line it already was. The ``\\n`` unescape makes the display
+    deliberately stop being strict JSON (the lexer does not care).
+    """
+    import json as _json
+
+    stripped = text.strip()
+    if not stripped or stripped[0] not in "{[":
+        return None
+    try:
+        parsed = _json.loads(stripped)
+    except ValueError:
+        return None
+
+    if "\\n" in stripped or len(stripped) > 160:
+        display = _json.dumps(parsed, indent=2, ensure_ascii=False).replace("\\n", "\n")
+    else:
+        display = stripped
+
+    if width is None:
+        width = markdown_render_width()
+    width = max(24, width)
+
+    syntax = Syntax(display, "json", theme=get_python_theme(), word_wrap=True, padding=0)
+    console = Console(force_terminal=True, no_color=False, color_system="truecolor", width=width)
+    with console.capture() as capture:
+        console.print(syntax)
+    return Text.from_ansi(capture.get().rstrip("\n"))
+
+
+_JSON_TOKEN_RE = re.compile(
+    r'(?P<key>"(?:\\.|[^"\\])*"(?=\s*:))'
+    r'|(?P<string>"(?:\\.|[^"\\])*")'
+    r"|(?P<number>-?\d+(?:\.\d+)?(?:[eE][+-]?\d+)?)"
+    r"|(?P<literal>\b(?:true|false|null)\b)"
+    r"|(?P<punct>[{}\[\],:])"
+    r"|(?P<space>\s+)"
+    r"|(?P<other>[^\s\"{}\[\],:]+)"
+)
+
+
+def format_json_args(text: str) -> Text:
+    """Highlight a compact JSON argument blob for one-line tool rows.
+
+    Keys take the option colour, strings the string colour, numbers and
+    literals the variable colour, and punctuation stays muted, so a call row
+    reads ``{"pattern": "name", "path": "src"}`` with the shape visible at a
+    glance instead of one flat dim run. Falls back to dim text for anything
+    that is not JSON-ish (the blob is a preview, not a guarantee).
+    """
+    syntax = config.ui.colors.syntax_colors
+    dim = config.ui.colors.dim
+    muted = config.ui.colors.muted
+
+    out = Text()
+    for match in _JSON_TOKEN_RE.finditer(text):
+        kind = match.lastgroup
+        token = match.group(0)
+        if kind == "space":
+            out.append(token)
+        elif kind == "key":
+            out.append(token, style=syntax.option)
+        elif kind == "string":
+            out.append(token, style=syntax.string)
+        elif kind in {"number", "literal"}:
+            out.append(token, style=syntax.variable)
+        elif kind == "punct":
+            out.append(token, style=muted)
+        else:
+            out.append(token, style=dim)
+    return out
 
 
 def format_bash_command(text: str, width: int | None = None) -> Text:
