@@ -64,6 +64,19 @@ class ContextLengthManager:
         self._last_refresh_attempt = 0.0
         self._norm_limits: list[tuple[str, TokenLimits]] = []
         self._norm_provider_limits: dict[str, list[tuple[str, TokenLimits]]] = {}
+        # Lookup indexes so fuzzy matching does not scan every candidate:
+        # normalized-exact hits (the common case) return directly, and the
+        # prefix buckets make the fast path O(bucket) instead of O(N).
+        self._norm_exact_global: dict[str, TokenLimits] = {}
+        self._norm_exact_provider: dict[str, dict[str, TokenLimits]] = {}
+        self._norm_prefix: dict[str, list[tuple[str, TokenLimits]]] = {}
+        self._norm_suffix: dict[str, list[tuple[str, TokenLimits]]] = {}
+        self._norm_provider_prefix: dict[str, dict[str, list[tuple[str, TokenLimits]]]] = {}
+        # 2-gram -> candidate indices into ``_norm_limits``, for the
+        # contains-match fallback. A candidate can only contain the target if
+        # it contains the target's rarest gram, which turns an O(N) scan per
+        # miss into a lookup of one posting list.
+        self._gram_postings: dict[str, Any] = {}
         self._fuzzy_cache: dict[tuple[str, str | None], TokenLimits] = {}
 
     def _get_cache_path(self) -> Path:
@@ -180,6 +193,41 @@ class ContextLengthManager:
             p: [(_normalize(mid), lim) for mid, lim in d.items()]
             for p, d in self._provider_limits.items()
         }
+        self._norm_exact_global = {}
+        self._norm_exact_provider = {}
+        self._norm_prefix = {}
+        self._norm_suffix = {}
+        self._norm_provider_prefix = {}
+        for norm, lim in self._norm_limits:
+            self._norm_exact_global.setdefault(norm, lim)
+            self._norm_prefix.setdefault(norm[:2], []).append((norm, lim))
+            self._norm_suffix.setdefault(norm[-2:], []).append((norm, lim))
+        for p, lst in self._norm_provider_limits.items():
+            exact: dict[str, TokenLimits] = {}
+            prefix: dict[str, list[tuple[str, TokenLimits]]] = {}
+            for norm, lim in lst:
+                exact.setdefault(norm, lim)
+                prefix.setdefault(norm[:2], []).append((norm, lim))
+            self._norm_exact_provider[p] = exact
+            self._norm_provider_prefix[p] = prefix
+
+        # Postings for the contains-match fallback, global scope only:
+        # provider lists are small enough to keep scanning. ``array("i")``
+        # keeps ~300k postings at a few MB instead of tens.
+        from array import array
+
+        postings: dict[str, Any] = {}
+        for idx, (norm, _lim) in enumerate(self._norm_limits):
+            if len(norm) < 2:
+                continue
+            seen: set[str] = set()
+            for i in range(len(norm) - 1):
+                gram = norm[i : i + 2]
+                if gram in seen:
+                    continue
+                seen.add(gram)
+                postings.setdefault(gram, array("i")).append(idx)
+        self._gram_postings = postings
 
     def _schedule_refresh(self) -> None:
         """Fetch models.dev without blocking the caller.
@@ -306,21 +354,52 @@ class ContextLengthManager:
         self._fuzzy_cache[cache_key] = result
         return result
 
+    @staticmethod
+    def _exact_bonus(limits: TokenLimits) -> float:
+        return 5.0 if (limits.supports_reasoning or limits.thinking_level_map) else 0.0
+
     def _fuzzy_match_uncached(self, target: str, provider: str | None) -> TokenLimits:
-        # Build the candidate list: provider-scoped first, then global.
-        cand_lists: list[list[tuple[str, TokenLimits]]] = []
+        # Normalized-exact fast path: ``cand_norm == target`` scores 100 (+5
+        # reasoning bonus), the maximum any candidate can reach, so the scans
+        # below would pick exactly this. Provider scope wins ties because it is
+        # scanned first; a reasoning-capable global entry can still outscore a
+        # plain provider one, which the adjusted comparison reproduces.
+        p_exact = (
+            self._norm_exact_provider.get(provider, {}).get(target)
+            if provider is not None
+            else None
+        )
+        g_exact = self._norm_exact_global.get(target)
+        if p_exact is not None and (
+            g_exact is None
+            or 100.0 + self._exact_bonus(p_exact) >= 100.0 + self._exact_bonus(g_exact)
+        ):
+            return p_exact
+        if g_exact is not None:
+            return g_exact
+
+        # Build the candidate list: provider-scoped first, then global. Each
+        # entry pairs the prefix bucket (fast path) with the full list
+        # (contains-match fallback).
+        scopes: list[
+            tuple[dict[str, list[tuple[str, TokenLimits]]], list[tuple[str, TokenLimits]]]
+        ] = []
         if provider and provider in self._norm_provider_limits:
-            cand_lists.append(self._norm_provider_limits[provider])
-        cand_lists.append(self._norm_limits)
+            scopes.append(
+                (
+                    self._norm_provider_prefix.get(provider, {}),
+                    self._norm_provider_limits[provider],
+                )
+            )
+        scopes.append((self._norm_prefix, self._norm_limits))
 
         best_score = 0.0
         best_limits: TokenLimits | None = None
 
-        # Fast path: scan only candidates sharing the first two normalized chars.
+        # Fast path: only candidates sharing the first two normalized chars.
         prefix2 = target[:2]
-        for cand_list in cand_lists:
-            bucket = [c for c in cand_list if c[0][:2] == prefix2]
-            for cand_norm, limits in bucket:
+        for buckets, _full in scopes:
+            for cand_norm, limits in buckets.get(prefix2, ()):
                 if not cand_norm:
                     continue
 
@@ -342,22 +421,55 @@ class ContextLengthManager:
                         best_score = score
                         best_limits = limits
 
-        # Fallback: full scan for contains matches whose first chars differ.
-        if best_score < 60.0:
-            for cand_list in cand_lists:
+        # Fallback: contains matches whose first chars differ. Every fallback
+        # score needs ``overlap >= 3``, so a target shorter than 3 chars can
+        # never match here — skip the scan entirely (same result, no work).
+        if best_score < 60.0 and len(target) >= 3:
+
+            def _score_fallback(cand_norm: str, limits: TokenLimits) -> None:
+                nonlocal best_score, best_limits
+                if not cand_norm or cand_norm[:2] == prefix2:
+                    return
+                if cand_norm in target or target in cand_norm:
+                    overlap = min(len(cand_norm), len(target))
+                    if overlap < 3:
+                        return
+                    score = 60.0 + (overlap / max(len(cand_norm), len(target))) * 20.0
+                    if limits.supports_reasoning or limits.thinking_level_map:
+                        score += 5.0
+                    if score > best_score:
+                        best_score = score
+                        best_limits = limits
+
+            # Provider-scoped lists are small; scan them whole. The global
+            # list (last scope) goes through the indexes below.
+            for _buckets, cand_list in scopes[:-1]:
                 for cand_norm, limits in cand_list:
-                    if not cand_norm or cand_norm[:2] == prefix2:
-                        continue
-                    if cand_norm in target or target in cand_norm:
-                        overlap = min(len(cand_norm), len(target))
-                        if overlap < 3:
-                            continue
-                        score = 60.0 + (overlap / max(len(cand_norm), len(target))) * 20.0
-                        if limits.supports_reasoning or limits.thinking_level_map:
-                            score += 5.0
-                        if score > best_score:
-                            best_score = score
-                            best_limits = limits
+                    _score_fallback(cand_norm, limits)
+
+            grams = {target[i : i + 2] for i in range(len(target) - 1)}
+            # ``cand_norm in target``: the candidate's opening AND closing
+            # grams must both be grams of the target, so only candidates in
+            # the intersection of the two bucket unions can match.
+            start: dict[int, tuple[str, TokenLimits]] = {}
+            end: dict[int, tuple[str, TokenLimits]] = {}
+            for gram in grams:
+                for pair in self._norm_prefix.get(gram, ()):
+                    start[id(pair)] = pair
+                for pair in self._norm_suffix.get(gram, ()):
+                    end[id(pair)] = pair
+            small, large = (start, end) if len(start) <= len(end) else (end, start)
+            large_ids = {id(pair) for pair in large.values()}
+            for pair in small.values():
+                if id(pair) in large_ids:
+                    _score_fallback(*pair)
+            # ``target in cand_norm``: the candidate contains every target
+            # gram, hence the rarest one — one posting list instead of 14k.
+            if grams:
+                rarest = min(grams, key=lambda g: len(self._gram_postings.get(g, ())))
+                for idx in self._gram_postings.get(rarest, ()):
+                    cand_norm, limits = self._norm_limits[idx]
+                    _score_fallback(cand_norm, limits)
 
         if best_limits is not None and best_score >= 60.0:
             return best_limits

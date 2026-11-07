@@ -957,6 +957,9 @@ async def aget_provider_models(
 
 def refresh_provider(provider: str) -> int:
     """Force-refresh a single provider's cache. Returns number of models cached."""
+    from vtx.ai.models import invalidate_all_models_cache
+
+    invalidate_all_models_cache()
     _ensure_dynamic_providers()
     config = DYNAMIC_PROVIDERS.get(provider)
     if config is None:
@@ -968,6 +971,9 @@ def refresh_provider(provider: str) -> int:
 
 def refresh_all_providers() -> dict[str, int]:
     """Force-refresh every known dynamic provider. Returns {name: model_count}."""
+    from vtx.ai.models import invalidate_all_models_cache
+
+    invalidate_all_models_cache()
     _ensure_dynamic_providers()
     providers = list(DYNAMIC_PROVIDERS.items())
     if not providers:

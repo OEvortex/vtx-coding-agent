@@ -558,6 +558,9 @@ def register_custom_provider(
     _cache = None  # force rebuild on next access
     global _order_cache
     _order_cache = None  # force order rebuild so new slug is listed
+    from vtx.ai.models import invalidate_all_models_cache
+
+    invalidate_all_models_cache()
     _sync_dynamic_provider(info)
     return info
 

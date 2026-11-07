@@ -291,7 +291,10 @@ def _fetch_models_sync(provider) -> list[FetchedModel]:
 
 def refresh_provider_models(slug: str) -> int:
     """Force-refresh a single provider's model cache. Returns model count."""
+    from vtx.ai.models import invalidate_all_models_cache
     from vtx.ai.provider_catalog import get
+
+    invalidate_all_models_cache()
 
     provider = get(slug)
     if provider is None or not provider.fetch_models:
@@ -307,8 +310,10 @@ def refresh_all_provider_models(provider_slugs: list[str] | None = None) -> dict
     This allows callers to skip providers already covered by the dynamic
     fetcher and avoid duplicate sequential network I/O.
     """
+    from vtx.ai.models import invalidate_all_models_cache
     from vtx.ai.provider_catalog import list_providers
 
+    invalidate_all_models_cache()
     allowed = set(provider_slugs) if provider_slugs is not None else None
     results: dict[str, int] = {}
     for p in list_providers():
@@ -340,7 +345,7 @@ def get_fetched_models(provider) -> list[Model]:
         try:
             from vtx.ai.oauth.cline import get_cline_free_model_ids
 
-            cline_free_ids = get_cline_free_model_ids()
+            cline_free_ids = get_cline_free_model_ids(allow_fetch=False)
         except Exception:
             cline_free_ids = set()
 

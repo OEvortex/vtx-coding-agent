@@ -67,14 +67,33 @@ def get_model(model_id: str, provider: str | None = None) -> Model | None:
     return model
 
 
+_ALL_MODELS_CACHE: list[Model] | None = None
+
+
+def invalidate_all_models_cache() -> None:
+    """Drop the memoized catalog after providers/models change."""
+    global _ALL_MODELS_CACHE
+    _ALL_MODELS_CACHE = None
+
+
 def get_all_models() -> list[Model]:
+    global _ALL_MODELS_CACHE
+    if _ALL_MODELS_CACHE is not None:
+        return list(_ALL_MODELS_CACHE)
+
     from vtx.ai.provider_catalog import get_all_catalog_models
 
     # ``get_all_catalog_models`` already merges the cached dynamic models via
     # ``get_fetched_models`` (model_fetcher) and the dynamic registry. The
     # previous implementation also appended ``get_dynamic_models()`` which
     # duplicated every entry; we keep a single source and dedupe for safety.
-    return dedupe_models(get_all_catalog_models())
+    #
+    # The catalog is expensive to build (~1.5s cold: limits-DB parse plus
+    # fuzzy enrichment for thousands of entries) and changes only on an
+    # explicit refresh, so it is memoized. Callers get a shallow copy so a
+    # mutation cannot poison the cache.
+    _ALL_MODELS_CACHE = dedupe_models(get_all_catalog_models())
+    return list(_ALL_MODELS_CACHE)
 
 
 def dedupe_models(models: list[Model]) -> list[Model]:

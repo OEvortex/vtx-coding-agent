@@ -43,6 +43,16 @@ from vtx.protocol.types import AssistantMessage, TextContent, UserMessage
 log = logging.getLogger("agent.runtime")
 
 
+def _warm_model_catalog() -> None:
+    """Build the memoized model catalog in the background; never raises."""
+    try:
+        from vtx.ai.models import get_all_models
+
+        get_all_models()
+    except Exception:
+        log.debug("model catalog warm-up failed", exc_info=True)
+
+
 def _active_plugin_host() -> Any:
     """The composition the process booted, or ``None``.
 
@@ -254,6 +264,13 @@ class ConversationRuntime:
         from vtx.coding_agent.tools.todo import register_todo_refresh
 
         register_todo_refresh(self._on_todos_changed)
+
+        # Warm the model catalog off the UI thread: building it cold costs
+        # ~1.5s (limits-DB parse + fuzzy enrichment), and /model reads the
+        # memoized result, so pre-building here makes the picker open in ms.
+        import threading
+
+        threading.Thread(target=_warm_model_catalog, daemon=True).start()
 
     # ---- agent lifecycle ------------------------------------------------
 

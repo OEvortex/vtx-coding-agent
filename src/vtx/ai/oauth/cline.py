@@ -493,19 +493,25 @@ def fetch_cline_free_model_ids_sync() -> set[str]:
     return ids
 
 
-def get_cline_free_model_ids() -> set[str]:
-    """Return cached free ids, fetching if stale. Never raises."""
+def get_cline_free_model_ids(*, allow_fetch: bool = True) -> set[str]:
+    """Return cached free ids, fetching if stale. Never raises.
+
+    ``allow_fetch=False`` reads the cache (including the stale fallback)
+    without touching the network — for callers on a latency-sensitive path
+    like the model catalog, which documents itself as cache-only.
+    """
     cached = _read_cline_free_cache()
     if cached is not None:
         ids, _ = cached
         return ids
     # try sync fetch, fall back to empty
-    try:
-        ids = fetch_cline_free_model_ids_sync()
-        if ids:
-            return ids
-    except Exception:
-        pass
+    if allow_fetch:
+        try:
+            ids = fetch_cline_free_model_ids_sync()
+            if ids:
+                return ids
+        except Exception:
+            pass
     # last resort: read stale cache even if expired
     p = _cline_free_cache_path()
     if p.exists():
