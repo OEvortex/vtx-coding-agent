@@ -400,6 +400,7 @@ class ExtensionAPI:
                 cwd=cwd,
                 capture_output=True,
                 text=True,
+                errors="replace",
                 timeout=(options or {}).get("timeout"),
             )
             return {"code": result.returncode, "stdout": result.stdout, "stderr": result.stderr}

@@ -54,6 +54,7 @@ def _run_command(command: str, cwd: str, event: str, payload: dict[str, Any]) ->
             cwd=cwd,
             capture_output=True,
             text=True,
+            errors="replace",
             timeout=60,
             env={**os.environ, "VTX_HOOK_EVENT": event},
         )

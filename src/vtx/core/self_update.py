@@ -18,7 +18,9 @@ def _find_executable(name: str) -> bool:
 
 def _is_uv_tool(package: str) -> bool:
     try:
-        proc = subprocess.run(["uv", "tool", "list"], capture_output=True, text=True, check=False)
+        proc = subprocess.run(
+            ["uv", "tool", "list"], capture_output=True, text=True, errors="replace", check=False
+        )
         if proc.returncode == 0:
             for line in proc.stdout.splitlines():
                 parts = line.strip().split()
@@ -31,7 +33,9 @@ def _is_uv_tool(package: str) -> bool:
 
 def _is_pipx_tool(package: str) -> bool:
     try:
-        proc = subprocess.run(["pipx", "list"], capture_output=True, text=True, check=False)
+        proc = subprocess.run(
+            ["pipx", "list"], capture_output=True, text=True, errors="replace", check=False
+        )
         if proc.returncode == 0:
             return package.lower() in proc.stdout.lower()
         return False
@@ -57,7 +61,7 @@ def self_update(package: str = "vtx-coding-agent") -> tuple[bool, str]:
     installer, cmd = _installer_choice(package)
 
     try:
-        result = subprocess.run(cmd, capture_output=True, check=False, text=True)
+        result = subprocess.run(cmd, capture_output=True, check=False, text=True, errors="replace")
         if result.returncode == 0:
             stdout_lower = (result.stdout or "").lower()
             if (

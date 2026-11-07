@@ -54,6 +54,7 @@ def list_pull_requests(cwd: str = ".") -> list[PullRequest]:
             cwd=cwd,
             capture_output=True,
             text=True,
+            errors="replace",
             timeout=2.0,
         )
     except Exception:

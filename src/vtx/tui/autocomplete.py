@@ -342,7 +342,7 @@ class FilePathProvider(AutocompleteProvider):
             cmd = (*cmd, self._fd_query(query)) if query else (*cmd, ".")
 
             result = subprocess.run(
-                cmd, cwd=self._cwd, capture_output=True, text=True, timeout=0.3
+                cmd, cwd=self._cwd, capture_output=True, text=True, errors="replace", timeout=0.3
             )
 
             if result.returncode == 0:

@@ -56,6 +56,7 @@ def _resolve_branch_with_git(repo_dir: str) -> str | None:
             cwd=repo_dir,
             capture_output=True,
             text=True,
+            errors="replace",
             timeout=1,
             check=False,
         )

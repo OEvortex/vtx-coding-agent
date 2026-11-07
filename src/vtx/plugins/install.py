@@ -243,7 +243,9 @@ def is_exempt(plan: InstallPlan, *, profile: str = DEFAULT_PROFILE) -> bool:
 
 
 def _run(command: list[str], **kwargs: Any) -> subprocess.CompletedProcess[str]:
-    return subprocess.run(command, capture_output=True, text=True, timeout=600, **kwargs)
+    return subprocess.run(
+        command, capture_output=True, text=True, errors="replace", timeout=600, **kwargs
+    )
 
 
 def install(

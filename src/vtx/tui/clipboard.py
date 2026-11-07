@@ -82,6 +82,7 @@ def _try_run(command: list[str], text: str) -> bool:
             command,
             input=text,
             text=True,
+            errors="replace",
             check=True,
             timeout=5,
             stdout=subprocess.DEVNULL,
@@ -170,6 +171,7 @@ def _windows_clipboard_image() -> tuple[bytes, str] | None:
             timeout=10,
             capture_output=True,
             text=True,
+            errors="replace",
         )
     except (OSError, subprocess.SubprocessError):
         return None
