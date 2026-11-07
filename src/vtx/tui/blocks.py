@@ -116,8 +116,9 @@ class _StreamingMarkdownMixin:
     _fence_marker: str
     _stream_update_pending: bool
     _stream_finalized: bool
-    # Provided by Textual's Static widget at runtime
-    call_after_refresh: Callable[[Callable[[], None]], object]
+    # Provided by Textual's Static widget at runtime; typed loosely because the
+    # real signature takes *args/**kwargs and returns bool.
+    call_after_refresh: Callable[..., bool]
 
     def _init_streaming(self) -> None:
         self._pending = ""

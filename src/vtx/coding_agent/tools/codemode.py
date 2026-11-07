@@ -387,7 +387,7 @@ class CodemodeTool(BaseTool):
         return text if len(text) <= 4000 else text[:4000] + "\n# ... truncated"
 
     @property
-    def ui_block(self) -> type | None:  # type: ignore[override]
+    def ui_block(self) -> type | None:  # type: ignore[override]  # ty: ignore[invalid-property-type-override]
         from vtx.tui.codemode_block import CodemodeToolBlock
 
         return CodemodeToolBlock

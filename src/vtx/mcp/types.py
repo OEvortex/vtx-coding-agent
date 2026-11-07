@@ -187,7 +187,7 @@ def validate_call_tool_result(value: Any) -> CallToolResult:
         raise McpError(-32600, "Invalid MCP tools/call result")
     if value.get("structuredContent") is not None and not is_object(value["structuredContent"]):
         raise McpError(-32600, "Invalid MCP tools/call structured content")
-    return cast(CallToolResult, {**value, "content": value.get("content") or []})
+    return {**value, "content": value.get("content") or []}
 
 
 ToolListItem = _is_tool

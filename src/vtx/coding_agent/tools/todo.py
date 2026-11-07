@@ -227,7 +227,7 @@ class TodoTool(BaseTool):
         return ""
 
     @property
-    def ui_block(self) -> type | None:
+    def ui_block(self) -> type | None:  # ty: ignore[invalid-property-type-override]
         try:
             from vtx.tui.todo_block import TodoToolBlock
 
@@ -310,8 +310,8 @@ class TodoTool(BaseTool):
                         id=self._next_id,
                         subject=subj,
                         status=status,
-                        active_form=active,  # ty:ignore[unknown-argument]
-                        blocked_by=item.get("blocked_by") or item.get("blockedBy") or [],  # ty:ignore[unknown-argument]
+                        active_form=active,
+                        blocked_by=item.get("blocked_by") or item.get("blockedBy") or [],
                     )
                 elif isinstance(item, TaskRecord):
                     task = item

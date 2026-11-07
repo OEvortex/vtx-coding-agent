@@ -212,7 +212,9 @@ class Vtx(
             maxlen=QueueDisplay.MAX_QUEUE
         )
         self._queue_selection: tuple[bool, int] | None = None
-        self._queue_editing: tuple[bool, int, tuple[str, str]] | None = None
+        self._queue_editing: (
+            tuple[bool, int, tuple[str, str, list[ImageContent] | None]] | None
+        ) = None
         self._steer_event: asyncio.Event | None = None
         self._exit_hints: list[str] = []
         self._session_start_time: float | None = None

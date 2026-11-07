@@ -12,7 +12,7 @@ import functools
 import inspect
 import time
 import uuid
-from collections.abc import Callable, Iterator
+from collections.abc import Callable, Generator
 from contextlib import contextmanager, suppress
 from dataclasses import dataclass, field
 from typing import Any
@@ -138,7 +138,7 @@ def current_span() -> Span | None:
 
 
 @contextmanager
-def span(name: str, *, span_data: Any = None, **metadata: Any) -> Iterator[Span]:
+def span(name: str, *, span_data: Any = None, **metadata: Any) -> Generator[Span, None, None]:
     """Context manager that creates a span and registers it with the active trace."""
     global _current_span
 

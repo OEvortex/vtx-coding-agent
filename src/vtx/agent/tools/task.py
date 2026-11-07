@@ -544,7 +544,7 @@ class TaskTool(BaseTool[TaskParams]):
     mutating = False
 
     @property
-    def ui_block(self) -> type | None:  # type: ignore[override]
+    def ui_block(self) -> type | None:  # type: ignore[override]  # ty: ignore[invalid-property-type-override]
         from vtx.tui.blocks import TaskToolBlock
 
         return TaskToolBlock
