@@ -202,7 +202,7 @@ def main() -> None:
     args = parser.parse_args()
 
     if args.command == "acp":
-        from vtx.acp.server import run_acp
+        from vtx.coding_agent.acp import run_acp
 
         run_acp()
         raise SystemExit(0)

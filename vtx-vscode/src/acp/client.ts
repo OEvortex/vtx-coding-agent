@@ -317,7 +317,7 @@ export class AcpClient extends EventEmitter {
   }
 
   renameSession(sessionId: string, title: string): Promise<unknown> {
-    return this.rpc("_cognition.ai/session/rename", { sessionId, title }, QUERY_TIMEOUT_MS);
+    return this.rpc("session/rename", { sessionId, title }, QUERY_TIMEOUT_MS);
   }
 
   deleteSession(sessionId: string): Promise<unknown> {
@@ -347,12 +347,12 @@ export class AcpClient extends EventEmitter {
   // force, and each entry names the file it came from so it can still be opened.
 
   async listRules(sessionId: string): Promise<LoadedRule[]> {
-    const res = await this.rpc<{ rules?: LoadedRule[] }>("_cognition.ai/rules/list", { sessionId }, QUERY_TIMEOUT_MS);
+    const res = await this.rpc<{ rules?: LoadedRule[] }>("_vtx.ai/rules/list", { sessionId }, QUERY_TIMEOUT_MS);
     return res?.rules || [];
   }
 
   async listHooks(sessionId: string): Promise<LoadedHook[]> {
-    const res = await this.rpc<{ hooks?: LoadedHook[] }>("_cognition.ai/hooks/list", { sessionId }, QUERY_TIMEOUT_MS);
+    const res = await this.rpc<{ hooks?: LoadedHook[] }>("_vtx.ai/hooks/list", { sessionId }, QUERY_TIMEOUT_MS);
     return res?.hooks || [];
   }
 

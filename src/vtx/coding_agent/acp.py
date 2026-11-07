@@ -21,6 +21,7 @@ import os
 import sys
 import threading
 import uuid
+from collections import deque
 from typing import TYPE_CHECKING, Any, ClassVar
 
 if TYPE_CHECKING:
@@ -37,6 +38,47 @@ _ACP_STOP_REASONS = {
     "error": "refusal",
 }
 
+# Slash commands vtx ships (tui/autocomplete.py). ACP clients render these
+# from available_commands_update; session_prompt executes the headless-safe
+# subset and answers the rest with where the client equivalent lives.
+_BUILTIN_COMMANDS: list[dict[str, Any]] = [
+    {"name": n, "description": d, "input": {"hint": f"/{n}"}}
+    for n, d in [
+        ("help", "show available commands"),
+        ("skills", "list loaded skills by category"),
+        ("tools", "list loaded tools by source"),
+        ("clear", "clear conversation history"),
+        ("model", "change model"),
+        ("provider", "filter models by provider"),
+        ("new", "start new conversation"),
+        ("resume", "resume a session"),
+        ("session", "show session info and stats"),
+        ("usage", "token usage: this session, 30 days, lifetime"),
+        ("login", "login to a provider"),
+        ("logout", "logout from a provider"),
+        ("export", "export session"),
+        ("compact", "compact now; /compact <focus> steers the summary"),
+        ("recap", "summarize where the session left off"),
+        ("agent", "list/switch handoff agents"),
+        ("update", "check for and install latest vtx update"),
+        ("reload", "re-apply config, extensions, agents, tools, skills"),
+    ]
+]
+
+# Client-side equivalents for commands that are UI actions in the TUI.
+_SLASH_CLIENT_HINT = {
+    "clear": "start a new chat",
+    "new": "start a new chat",
+    "resume": "pick a session from the session list",
+    "provider": "use the model picker and filter by provider",
+    "login": "run `vtx auth login` in a terminal",
+    "logout": "run `vtx auth logout` in a terminal",
+    "export": "not available over ACP yet",
+    "recap": "ask the agent to summarize the session",
+    "update": "run `vtx update` in a terminal",
+    "reload": "restart the ACP server or reload the window",
+}
+
 
 class _Session:
     """Per-ACP-session agent state."""
@@ -47,9 +89,17 @@ class _Session:
         self.model: str | None = None
         self.model_provider: str | None = None
         self.thinking_level: str | None = None
+        self.agent_name: str | None = None
+        self.acp_id: str = ""
         self.vtx_session_id: str | None = None
         self.session_path: Any = None
         self.runtime: ConversationRuntime | None = None
+        self._mcp_task: asyncio.Task[None] | None = None
+        self._cmd_task: asyncio.Task[None] | None = None
+        self.steer_queue: deque[tuple[str, list[Any] | None]] = deque()
+        self.steer_event: asyncio.Event | None = None
+        self.hook_bridge: Any = None
+        self.pending_title: str | None = None
         self.agent: Any = None
         self.cancel_event = asyncio.Event()
         self._runtime_lock = asyncio.Lock()
@@ -124,13 +174,46 @@ class AcpServer:
             if sess.agent is not None:
                 return sess.agent
 
-            def _build() -> tuple[Any, str | None]:
+            def _build() -> tuple[Any, str | None, Any]:
+                from vtx.agent.agents import AgentRegistry, load_all_agents
                 from vtx.agent.runtime import ConversationRuntime
                 from vtx.coding_agent.tools import DEFAULT_TOOLS, get_tools_with_extensions
                 from vtx.core.config import config, get_last_selected
+                from vtx.plugins.extensions import load_for_runtime
 
                 last = get_last_selected()
                 provider = sess.model_provider or last.provider or config.llm.default_provider
+
+                # Same enrichment headless runs: agent registry, extensions,
+                # active agent, so ACP sessions get plugins/MCP/agents too.
+                import os as _os
+
+                agent_registry = AgentRegistry()
+                loaded_agents, agent_errors = load_all_agents(cwd=sess.cwd)
+                agent_registry.agents = loaded_agents
+                agent_registry.errors = agent_errors
+                desired = (
+                    sess.agent_name
+                    or _os.environ.get("VTX_AGENT")
+                    or (last.agent or None)
+                    or (config.agents.default or None)
+                )
+                if desired:
+                    agent_registry.set_active(desired)
+
+                loaded_extensions = load_for_runtime(cwd=sess.cwd)
+                ext_tools = list(loaded_extensions.list_extension_tools())
+                if agent_registry.active is not None:
+                    ext_tools.extend(agent_registry.active.local_tools.values())
+                    ext_tools.extend(
+                        loaded_extensions.local_tools_for(agent_registry.active.definition.name)
+                    )
+                tools = (
+                    get_tools_with_extensions(DEFAULT_TOOLS, ext_tools)
+                    if ext_tools
+                    else get_tools_with_extensions(DEFAULT_TOOLS)
+                )
+
                 runtime = ConversationRuntime(
                     cwd=sess.cwd,
                     model=sess.model or last.model_id or config.llm.default_model,
@@ -141,21 +224,87 @@ class AcpServer:
                         or last.thinking_level
                         or config.llm.default_thinking_level
                     ),
-                    tools=get_tools_with_extensions(DEFAULT_TOOLS),
+                    tools=tools,
+                    extensions=loaded_extensions.bus,
+                    agent_registry=agent_registry,
+                    active_agent=agent_registry.active,
+                    agent_extensions=list(loaded_extensions.extensions),
                 )
+                runtime.set_loaded_extensions(loaded_extensions)
                 init = runtime.initialize(resume_session=sess.vtx_session_id)
+                if sess.pending_title and runtime.session is not None:
+                    runtime.session.set_name(sess.pending_title)
+                    sess.pending_title = None
                 if init.provider_error:
-                    return runtime, init.provider_error
-                return runtime, None
+                    return runtime, init.provider_error, loaded_extensions
+                return runtime, None, loaded_extensions
 
-            runtime, provider_error = await asyncio.to_thread(_build)
+            runtime, provider_error, loaded_extensions = await asyncio.to_thread(_build)
             sess.runtime = runtime
             if provider_error:
                 raise RuntimeError(provider_error)
+
+            # Hooks + MCP, mirroring headless: failures warn, never fail the run.
+            import contextlib
+
+            with contextlib.suppress(Exception):
+                from pathlib import Path
+
+                from vtx.agent.hooks.bridge import HookBridge
+
+                hook_bridge = HookBridge(
+                    bus=loaded_extensions.bus,
+                    project_path=Path(sess.cwd) / ".vtx" / "hooks.yml",
+                    global_path=Path.home() / ".vtx" / "hooks.yml",
+                )
+                await hook_bridge.load()
+                sess.hook_bridge = hook_bridge
+
+            async def _connect_mcp() -> None:
+                with contextlib.suppress(Exception):
+                    await runtime.connect_mcp()
+
+            sess._mcp_task = asyncio.create_task(_connect_mcp())
+
+            # Publish the agent picker once the registry is loaded.
+            try:
+                registry = runtime.agent_registry
+                agents = getattr(registry, "agents", {}) if registry else {}
+                names = (
+                    list(agents)
+                    if isinstance(agents, dict)
+                    else [a.definition.name for a in agents]
+                )
+                if names:
+                    active = (
+                        registry.active.definition.name if registry and registry.active else ""
+                    )
+                    await self._update(
+                        sess.acp_id,
+                        {
+                            "sessionUpdate": "config_option_update",
+                            "configOptions": [
+                                {
+                                    "id": "agent",
+                                    "name": "Agent",
+                                    "category": "agent",
+                                    "type": "select",
+                                    "currentValue": active,
+                                    "options": [{"value": n, "name": n} for n in names],
+                                }
+                            ],
+                        },
+                    )
+            except Exception:
+                pass
             agent = await asyncio.to_thread(runtime.prepare_for_run)
             if agent is None:
                 raise RuntimeError("agent initialization failed")
             sess.agent = agent
+            # Re-emit commands now that agent-local commands are known.
+            if sess.acp_id:
+                with contextlib.suppress(Exception):
+                    await self._emit_available_commands(sess.acp_id, sess)
             return agent
 
     # -- event -> ACP mapping ----------------------------------------------
@@ -260,8 +409,29 @@ class AcpServer:
             case ErrorEvent(error=err):
                 if err:
                     await self._agent_message(session_id, f"\n[error] {err}\n")
-            case AgentEndEvent():
-                pass
+            case AgentEndEvent(total_usage=usage):
+                if usage is not None:
+                    await self._update(
+                        session_id,
+                        {
+                            "sessionUpdate": "usage_update",
+                            "used": usage.total_tokens,
+                            "size": usage.total_tokens,
+                        },
+                    )
+            case _:
+                text = getattr(event, "warning", None) or getattr(event, "error", None)
+                if text:
+                    await self._update(
+                        session_id,
+                        {
+                            "sessionUpdate": "agent_thought_chunk",
+                            "content": {
+                                "type": "text",
+                                "text": f"[{type(event).__name__}] {text}",
+                            },
+                        },
+                    )
 
     async def _request_permission(
         self, session_id: str, tool_call_id: str, tool_name: str, display: str
@@ -359,10 +529,64 @@ class AcpServer:
             pass
         return options
 
+    async def _collect_commands(self, sess: _Session) -> list[dict[str, Any]]:
+        """All slash commands vtx exposes: skills + active agent commands."""
+        commands: list[dict[str, Any]] = []
+        try:
+            from vtx.agent.context.skills import load_skills
+
+            result = await asyncio.to_thread(load_skills, sess.cwd)
+            commands.extend(
+                {
+                    "name": s.name,
+                    "description": s.description or "",
+                    "input": {"hint": f"/{s.name}"},
+                }
+                for s in result.skills
+                if s.register_cmd
+            )
+        except Exception:
+            pass
+        # TUI built-ins, mirrored from tui/autocomplete.py so ACP clients can
+        # offer the same command surface. Executable ones run headless; the
+        # rest reply with guidance toward the client-side equivalent.
+        commands.extend(_BUILTIN_COMMANDS)
+        # Agent-local commands (compose_active_commands merges these in).
+        try:
+            runtime = sess.runtime
+            registry = getattr(runtime, "agent_registry", None) if runtime else None
+            active = registry.active if registry else None
+            if active is not None:
+                for name in active.local_commands:
+                    commands.append(
+                        {
+                            "name": name,
+                            "description": f"(agent: {active.definition.name})",
+                            "input": {"hint": f"/{name}"},
+                        }
+                    )
+        except Exception:
+            pass
+        return commands
+
+    async def _emit_available_commands(self, session_id: str, sess: _Session) -> None:
+        commands = await self._collect_commands(sess)
+        if commands:
+            await self._update(
+                session_id,
+                {"sessionUpdate": "available_commands_update", "availableCommands": commands},
+            )
+
     def session_new(self, params: dict[str, Any]) -> dict[str, Any]:
         session_id = uuid.uuid4().hex[:12]
         sess = _Session(cwd=params.get("cwd") or os.getcwd())
+        sess.acp_id = session_id
         self._sessions[session_id] = sess
+        import contextlib
+
+        with contextlib.suppress(RuntimeError):
+            loop = asyncio.get_running_loop()
+            sess._cmd_task = loop.create_task(self._emit_available_commands(session_id, sess))
         return {
             "sessionId": session_id,
             "modes": {
@@ -427,6 +651,8 @@ class AcpServer:
                 self.session_set_mode({"sessionId": session_id, "modeId": value})
             elif config_id == "thinking":
                 sess.thinking_level = value
+            elif config_id == "agent":
+                sess.agent_name = value
         if sess is not None:
             return {"configOptions": self._config_options(sess)}
         return {}
@@ -505,6 +731,7 @@ class AcpServer:
         if info is None:
             return {"_error": f"session not found: {session_id}"}
         sess = _Session(cwd=info.cwd)
+        sess.acp_id = session_id
         sess.vtx_session_id = info.id
         sess.session_path = info.path
         self._sessions[session_id] = sess
@@ -543,6 +770,7 @@ class AcpServer:
         if sess is None:
             return {"_error": "unknown session"}
         sess.cancel_event.clear()
+        sess.steer_event = asyncio.Event()
         # Tools resolve paths against the process cwd; sessions are used
         # one-at-a-time by ACP clients, so chdir per prompt.
         if sess.cwd and os.path.isdir(sess.cwd):
@@ -555,16 +783,38 @@ class AcpServer:
         if not prompt and not images:
             return {"_error": "empty prompt"}
 
+        # Built-in slash commands run headless; they never reach the model.
+        if prompt.startswith("/") and not images:
+            text = await self._slash_command(session_id, sess, prompt)
+            if text is not None:
+                await self._agent_message(session_id, text)
+                return {"stopReason": "end_turn"}
+
+        pending: deque[tuple[str, list[Any] | None]] = deque([(prompt, images or None)])
         stop_reason = "end_turn"
         try:
-            async for event in agent.run(
-                prompt, images=images or None, cancel_event=sess.cancel_event
-            ):
-                from vtx.core.events import AgentEndEvent
+            while pending:
+                current_prompt, current_images = pending.popleft()
+                stop_reason = "end_turn"
+                async for event in agent.run(
+                    current_prompt,
+                    images=current_images,
+                    cancel_event=sess.cancel_event,
+                    steer_event=sess.steer_event,
+                ):
+                    from vtx.core.events import AgentEndEvent
 
-                if isinstance(event, AgentEndEvent):
-                    stop_reason = _ACP_STOP_REASONS.get(event.stop_reason.value, "end_turn")
-                await self._map_event(session_id, sess, event)
+                    if isinstance(event, AgentEndEvent):
+                        stop_reason = _ACP_STOP_REASONS.get(event.stop_reason.value, "end_turn")
+                    await self._map_event(session_id, sess, event)
+                if sess.cancel_event.is_set():
+                    break
+                # A steer interrupted the turn: queued follow-ups become the
+                # next prompts, same as the TUI's steer queue.
+                while sess.steer_queue:
+                    sp, si = sess.steer_queue.popleft()
+                    pending.append((sp, si))
+                sess.steer_event.clear()
         except asyncio.CancelledError:
             stop_reason = "cancelled"
         except Exception as exc:
@@ -572,10 +822,168 @@ class AcpServer:
             stop_reason = "refusal"
         return {"stopReason": stop_reason}
 
+    async def _slash_command(self, session_id: str, sess: _Session, prompt: str) -> str | None:
+        """Execute a built-in ``/cmd`` headlessly; None means not ours."""
+        parts = prompt.lstrip("/").split(None, 1)
+        name = parts[0].lower() if parts else ""
+        arg = parts[1].strip() if len(parts) > 1 else ""
+        known = {c["name"] for c in _BUILTIN_COMMANDS}
+        if name not in known:
+            return None  # skill or agent command: let the model/agent handle it
+
+        if name == "help":
+            lines = [f"/{c['name']} — {c['description']}" for c in _BUILTIN_COMMANDS]
+            return "Available commands:\n" + "\n".join(lines)
+        if name in _SLASH_CLIENT_HINT:
+            return f"`/{name}` is a client-side command: {_SLASH_CLIENT_HINT[name]}."
+
+        try:
+            agent = await self._ensure_agent(sess)
+        except Exception as exc:
+            return f"error: {exc}"
+
+        if name == "compact":
+            runtime = sess.runtime
+            if runtime is not None and hasattr(runtime, "compact_now"):
+                try:
+                    await runtime.compact_now(arg or None)
+                    return "Context compacted."
+                except Exception as exc:
+                    return f"compact failed: {exc}"
+            return "compaction is not available for this session."
+        if name == "usage":
+            totals = None
+            if sess.runtime is not None and sess.runtime.session is not None:
+                totals = sess.runtime.session.token_totals()
+            if totals is None:
+                return "no usage recorded yet."
+            return (
+                f"Session tokens — input: {totals.input_tokens}, "
+                f"output: {totals.output_tokens}, total: {totals.total_tokens}."
+            )
+        if name == "session":
+            info = self._find_vtx_session(session_id)
+            if info is None:
+                return "session info unavailable (not persisted yet)."
+            return (
+                f"Session {info.id}\n"
+                f"cwd: {info.cwd}\n"
+                f"messages: {info.message_count}\n"
+                f"created: {info.created.isoformat()}\n"
+                f"modified: {info.modified.isoformat()}"
+            )
+        if name == "agent":
+            runtime = sess.runtime
+            registry = getattr(runtime, "agent_registry", None) if runtime else None
+            if registry is None or not registry.agents:
+                return "no agents configured."
+            active = registry.active.definition.name if registry.active else "none"
+            names = ", ".join(registry.agents)
+            return f"active agent: {active}\navailable: {names}"
+        if name == "skills":
+            commands = [c for c in await self._collect_commands(sess)]
+            return "Skills/commands:\n" + "\n".join(f"/{c['name']}" for c in commands)
+        if name == "tools":
+            tools = getattr(agent, "tools", None) or getattr(sess.runtime, "tools", None) or []
+            names = sorted(getattr(t, "tool_name", getattr(t, "name", "?")) for t in tools)
+            return f"Tools ({len(names)}):\n" + "\n".join(names)
+        if name == "model":
+            return (
+                f"current model: {sess.model or 'default'}\n"
+                "use the model picker (config option) to switch."
+            )
+        return f"`/{name}` is not supported over ACP."
+
     def session_cancel(self, params: dict[str, Any]) -> None:
         sess = self._sessions.get(params.get("sessionId") or "")
         if sess is not None:
             sess.cancel_event.set()
+
+    def session_steer(self, params: dict[str, Any]) -> None:
+        """Queue a mid-turn steer message (TUI parity)."""
+        sess = self._sessions.get(params.get("sessionId") or "")
+        if sess is None:
+            return
+        text = params.get("text") or params.get("prompt") or ""
+        if isinstance(text, str) and text:
+            sess.steer_queue.append((text, None))
+        if sess.steer_event is not None:
+            sess.steer_event.set()
+
+    async def session_rename(self, params: dict[str, Any]) -> dict[str, Any]:
+        session_id = params.get("sessionId")
+        title = params.get("title")
+        if not (isinstance(session_id, str) and isinstance(title, str) and title):
+            return {}
+        sess = self._sessions.get(session_id)
+        info = self._find_vtx_session(session_id)
+        if info is not None:
+            from vtx.agent.session import Session
+
+            stored = Session.load(info.path)
+            stored.set_name(title)
+        elif sess is not None:
+            # No vtx session file yet: apply the title once the runtime
+            # creates one on first prompt.
+            sess.pending_title = title
+        if sess is not None:
+            await self._update(
+                session_id, {"sessionUpdate": "session_info_update", "title": title}
+            )
+        return {}
+
+    async def _vtx_rules_list(self, params: dict[str, Any]) -> dict[str, Any]:
+        """AGENTS.md/CLAUDE.md context files as ACP-style rules."""
+        sess = self._sessions.get(params.get("sessionId") or "")
+        cwd = sess.cwd if sess is not None else os.getcwd()
+        try:
+            from vtx.agent.context.agent_mds import load_agent_mds
+            from vtx.core.paths import get_config_dir
+
+            global_dir = str(get_config_dir())
+            rules = [
+                {
+                    "path": cf.path,
+                    "name": os.path.basename(cf.path),
+                    "provider": "vtx",
+                    "trigger": "always",
+                    "scope": "global" if cf.path.startswith(global_dir) else "project",
+                }
+                for cf in await asyncio.to_thread(load_agent_mds, cwd)
+            ]
+            return {"rules": rules}
+        except Exception:
+            return {"rules": []}
+
+    async def _vtx_hooks_list(self, params: dict[str, Any]) -> dict[str, Any]:
+        """Loaded YAML hooks as ACP-style hook entries."""
+        sess = self._sessions.get(params.get("sessionId") or "")
+        bridge = sess.hook_bridge if sess is not None else None
+        if bridge is None or bridge.registry is None:
+            return {"hooks": []}
+        try:
+            from vtx.agent.hooks.types import HOOK_EVENTS
+
+            hooks: list[dict[str, Any]] = []
+            seen: set[int] = set()
+            for event in HOOK_EVENTS:
+                for h in await bridge.registry.get_hooks(event):
+                    if id(h) in seen:
+                        continue
+                    seen.add(id(h))
+                    cfg = h.config
+                    hooks.append(
+                        {
+                            "name": cfg.command or cfg.prompt_text or cfg.type,
+                            "sourcePath": "",
+                            "events": [cfg.event],
+                            "scope": cfg.source,
+                            "format": cfg.type,
+                        }
+                    )
+            return {"hooks": hooks}
+        except Exception:
+            return {"hooks": []}
 
     def session_set_mode(self, params: dict[str, Any]) -> dict[str, Any]:
         sess = self._sessions.get(params.get("sessionId") or "")
@@ -601,13 +1009,19 @@ class AcpServer:
         "session/load": "session_load",
         "session/prompt": "session_prompt",
         "session/cancel": "session_cancel",
+        "session/steer": "session_steer",
+        "session/rename": "session_rename",
         "session/set_mode": "session_set_mode",
         "session/set_model": "session_set_model",
         "session/list": "session_list",
         "session/delete": "session_delete",
         "session/set_config_option": "session_set_config_option",
+        "_vtx.ai/rules/list": "_vtx_rules_list",
+        "_vtx.ai/hooks/list": "_vtx_hooks_list",
     }
-    _ASYNC_METHODS = frozenset({"session_prompt", "session_load"})
+    _ASYNC_METHODS = frozenset(
+        {"session_prompt", "session_load", "session_rename", "_vtx_rules_list", "_vtx_hooks_list"}
+    )
 
     async def dispatch(self, req: dict[str, Any]) -> None:
         method = req.get("method")
