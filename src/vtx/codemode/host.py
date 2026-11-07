@@ -268,11 +268,11 @@ class CodemodeSandbox:
         return text
 
     def instructions(self) -> str:
-        """Render the full model-facing guide: workflow, rules, catalog.
+        """Render the model-facing catalog.
 
-        Ordered so the workflow is at the top and the catalog at the bottom.
-        A model reads the first thing it sees and skips the rest, so the
-        catalog being last is what keeps it from being read as instructions.
+        The calling contract lives in the tool description; this is the list it
+        points at. Keeping the catalog last means the model reads the pitch and
+        the example first, and the signatures when it is actually writing code.
 
         The search tool is mentioned only when the catalog is genuinely
         partial. It is always *callable* -- a speculative call finds the tool
@@ -285,17 +285,21 @@ class CodemodeSandbox:
         body, complete = render_declarations(advertised, budget_tokens=self._catalog_budget)
         total = len(advertised)
         shown = body.count("def tools.") if body else 0
-        workflow = _WORKFLOW
         if complete:
             heading = f"## Available tools (COMPLETE list, {total} tools)"
         else:
             heading = f"## Available tools (PARTIAL - {shown} of {total} shown)"
-            body = (
-                f"{body}\n\n"
-                f"{shown} of {total} tools are listed above. The rest are not; "
-                f"find them with `tools.{SEARCH_TOOL_NAME}` before calling them."
-            ).strip()
-            workflow = _WORKFLOW_PARTIAL
+            if shown:
+                note = (
+                    f"{shown} of {total} tools are listed above. The rest are not; "
+                    f"find them with `tools.{SEARCH_TOOL_NAME}` before calling them."
+                )
+            else:
+                note = (
+                    f"None of the {total} tools fit above. Find them with "
+                    f"`tools.{SEARCH_TOOL_NAME}` before calling them."
+                )
+            body = f"{body}\n\n{note}".strip()
 
         # A callable-but-unlisted tool is a different case from a listed one cut
         # by the budget, and needs a different sentence: the model was never
@@ -310,22 +314,8 @@ class CodemodeSandbox:
             ).strip()
             if complete:
                 heading = f"## Available tools ({total} listed, {unlisted} findable)"
-                workflow = _WORKFLOW_PARTIAL
 
-        # The search mention belongs only to the partial case. In the complete
-        # case it would advertise a discovery step the model does not need, and a
-        # `COMPLETE` list is a claim the model should be able to act on without a
-        # second lookup.
-        rules = _RULES if complete and unlisted == 0 else _RULES_PARTIAL
-        return f"""{workflow}
-
-{rules}
-
-{_LANGUAGE}
-
-{heading}
-
-{body}"""
+        return f"{heading}\n\n{body}".strip()
 
     async def execute(
         self,
@@ -1090,79 +1080,3 @@ async def _reap(process: subprocess.Popen[bytes]) -> None:
         await asyncio.get_running_loop().run_in_executor(None, process.wait, 5.0)
     except (subprocess.TimeoutExpired, OSError):
         await _terminate(process)
-
-
-_WORKFLOW = """## Workflow
-
-1. Find the tool you need in the list below, which is marked COMPLETE.
-2. Call it by its exact name, as `tools.<identifier>(...)`. Arguments are
-   keyword arguments; do not pass a positional dict.
-3. `return` only the fields you need. The return value is what the model sees,
-   so returning a whole API payload wastes the call you just saved.
-"""
-
-#: Same workflow, for a catalog the budget could not fit whole. The difference
-#: is step 1: the list is a subset, so the model has to search before it can
-#: assume a capability is absent.
-_WORKFLOW_PARTIAL = f"""## Workflow
-
-1. Find the tool you need. The list below is marked PARTIAL and does not show
-   everything, so call `tools.{SEARCH_TOOL_NAME}(query=..., limit=...)` first and
-   read the signature it returns. Never conclude a capability is missing just
-   because it is not listed.
-2. Call it by its exact name, as `tools.<identifier>(...)`. Arguments are
-   keyword arguments; do not pass a positional dict.
-3. `return` only the fields you need. The return value is what the model sees,
-   so returning a whole API payload wastes the call you just saved.
-"""
-
-_RULES_BODY = """
-- Filter, sort, and aggregate collections in code. Do not make a tool call to
-  compute something you can compute here.
-- A tool's result may be `Any`. Narrow it at runtime before you use it, or the
-  next line raises.
-- Tools that are independent should be called together with
-  `asyncio.gather(...)`, not one after another.
-- Use `try`/`except` around a call that can legitimately fail, and branch on
-  the exception type when the recovery differs. `UnknownTool` means the name
-  is wrong; `InvalidInput` means the arguments are; `ToolError` means the tool
-  ran and declined.
-- `text(value)` appends to the output the model reads. `print` goes to a
-  discarded stream and is not shown to the model -- use `text`.
-- `image(value)` appends an image the model can see. It takes a base64 data
-  URI, `{"image_url": ...}`, or an image block straight out of an MCP result --
-  so a tool that returns a picture can be forwarded without re-encoding it.
-  A remote `http` URL is refused.
-- `store(key, value)` and `load(key)` carry JSON values between executions.
-  Writes are committed only if the script returns successfully.
-- The first line may be `# @options: {"timeout_ms": 5000, "max_tool_calls": 20,
-  "max_output_tokens": 4000}` to lower your own budgets. Every field is
-  optional. You may only ask for *less* than the host allows; asking for more
-  is clamped, and an unknown field is an error.
-"""
-
-_RULES = "## Rules" + _RULES_BODY
-
-#: Same rules, plus the one the partial case needs: how to find a tool that is
-#: not listed. Without it, a model reading a subset would conclude the missing
-#: capability does not exist -- which is the exact wrong conclusion.
-_RULES_PARTIAL = f"""## Rules
-
-- The only tools are the ones listed below or returned by
-  `tools.{SEARCH_TOOL_NAME}`. There is no other way to reach a capability from
-  inside the sandbox, so search before concluding something is unavailable.
-{_RULES_BODY}"""
-
-_LANGUAGE = """## Language
-
-This is real Python. The whole standard library is available, third-party
-packages are installed and importable, and `open`, `os`, `subprocess` and the
-network all work — the script runs as the same user, in the same directory,
-with the same permissions as any command you would run yourself. Use them.
-
-Two things are different. First, the running agent is not reachable from inside
-the script: reaching a tool means calling `tools.<name>(...)`, because the tool
-set and session state live in the parent process. Second, `print` and anything
-else written to stdout or stderr is discarded, so `text(value)` is the only
-output the model reads.
-"""

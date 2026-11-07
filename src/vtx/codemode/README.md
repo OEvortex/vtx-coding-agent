@@ -88,7 +88,7 @@ asyncio.run(main())
 
 - `CodemodeSandbox.execute(code, *, store=None, timeout_ms=None, max_tool_calls=None, max_output_tokens=None, signal=None)` runs one program. The three budget overrides are the *script's* requests and resolve min-wins against the sandbox limits, so a script can ask for less and never for more.
 
-- `CodemodeSandbox.declarations()` returns the model-facing catalog within `catalog_budget_tokens`; `instructions()` returns workflow + rules + catalog, and advertises `tools.search` only when the catalog is genuinely partial or some tools are unlisted. `sandbox.tools` is the injected tuple, excluding the built-in search. `close()` releases the sandbox.
+- `CodemodeSandbox.declarations()` returns the model-facing catalog within `catalog_budget_tokens`; `instructions()` returns the catalog with its COMPLETE/PARTIAL heading, and advertises `tools.search` only when the catalog is genuinely partial or some tools are unlisted. `sandbox.tools` is the injected tuple, excluding the built-in search. `close()` releases the sandbox.
 
 - `SANDBOX_PATH` is the `Path` to `sandbox.py`, which is what the host launches - by file path (`python <path>/sandbox.py`, no `-m`), so `vtx/__init__` and the agent SDK are not imported on every execution. `sandbox.py` imports nothing from `vtx` at all.
 

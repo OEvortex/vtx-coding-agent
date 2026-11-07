@@ -106,14 +106,16 @@ SEARCH_HELPER = "search"
 class CodemodeParams(BaseModel):
     code: str = Field(
         description=(
-            "A Python script, written as a function body: `return` at the top "
-            "level works, and so does top-level `await`."
+            "A Python script, written as a function body. Call tools with "
+            "`await tools.<name>(...)`; top-level `return` and `await` work."
         )
     )
 
 
 #: Recoveries worth spelling out, because each kind means a different next move.
-#: A single "the script failed" would leave the model guessing.
+#: A single "the script failed" would leave the model guessing. Delivered with
+#: the failure result, not the tool description: a model that has not failed yet
+#: should not spend attention on how to recover.
 _RECOVERY = {
     SCRIPT: "The traceback names a line in your own source; fix that line.",
     STALLED: (
@@ -137,24 +139,31 @@ _RECOVERY = {
 }
 
 DESCRIPTION_TEMPLATE = """\
-Run a Python script that composes multiple tool calls in one turn.
+Run one Python script that calls other tools, so one turn does the work of many.
 
-Use this instead of calling tools one at a time when a task needs several
-calls, or filtering, sorting, or aggregation between them. N operations cost
-one model turn instead of N.
+Use codemode whenever a task needs more than one tool call: exploring several
+files, searching then reading, fanning out sub-agents, batch edits, or
+filtering/sorting/aggregating results. When in doubt during exploration, use
+codemode: one script can search, read, and filter before you decide the next
+step. Skip it only for a single isolated read, edit, or command.
 
-Inside the script:
-- `tools.<name>(**kwargs)` calls a tool. Its result comes back as plain JSON data.
-- `await asyncio.gather(...)` runs independent calls in parallel.
-- `text(value)` appends visible output. `print` is discarded.
-- `return value` at the top level sends the result back to you.
-- `tools.search(query=..., limit=...)` finds tools when the catalog below is partial.
-- `store(key, value)` / `load(key)` carry JSON values between codemode calls.
+Example: count lines in the 20 most recently changed Python files:
 
-A first line of `# @options: {{"max_tool_calls": 20}}` lowers your own budgets
-(timeout_ms, max_tool_calls, max_output_tokens). You can ask for less, never more.
+    paths = (await tools.find(pattern="src/**/*.py")).splitlines()[:20]
+    texts = await asyncio.gather(*(tools.read(path=p) for p in paths))
+    return [{{"path": p, "lines": len(t.splitlines())}} for p, t in zip(paths, texts)]
 
-{recovery}
+Inside a script:
+- `await tools.<name>(**kwargs)` calls a tool and returns JSON-like data.
+  `tools.search(query=..., limit=...)` finds a tool when the catalog is partial.
+- `asyncio.gather(...)` runs independent calls in parallel.
+- `text(value)` or `return value` sends output back. `print` is discarded.
+- `store(key, value)` / `load(key)` keep JSON values between codemode calls.
+- `image(value)` forwards an image result.
+- Real Python: the standard library, `open`, `subprocess`, and the network work.
+  The agent itself is not reachable; call its tools through `tools.<name>`.
+- Errors are catchable: `UnknownTool`, `InvalidInput`, and `ToolError`.
+- Optional first line `# @options: {{"timeout_ms": 5000}}` lowers budgets only.
 
 {catalog}"""
 
@@ -164,11 +173,10 @@ class CodemodeTool(BaseTool):
 
     name = CODEMODE_TOOL_NAME
     description = (
-        "Prefer this tool whenever a task needs more than one tool call. "
-        "Run a Python script that composes multiple tool calls into a single model turn "
-        "(N operations cost one turn instead of N), running independent calls in parallel "
-        "with `asyncio.gather` and aggregating/filtering results in Python. "
-        "Use `codemode` instead of calling several tools one at a time."
+        "Batch multiple tool calls into one Python script. Use it as the default "
+        "whenever a task needs two or more calls: read/search several files, fan "
+        "out sub-agents, batch edits, or filter/aggregate results in code. One "
+        "script costs one turn; a chain of direct calls costs one turn each."
     )
     params = CodemodeParams
     mutating = True
@@ -189,9 +197,11 @@ class CodemodeTool(BaseTool):
     #: The parts of the sandbox contract worth stating as prose, beyond what the
     #: catalog already shows. Kept short: this lands in the prompt every turn.
     prompt_guidelines = (
-        "Prefer `codemode` over serial tool calls: N operations cost one model turn instead of N.",
-        "Inside codemode, aggregate/filter in Python instead of chaining tool calls.",
-        "Use `asyncio.gather` for independent calls; `tools.search` to find tools.",
+        "Use `codemode` whenever a task needs 2+ tool calls; if a second call may "
+        "follow, start the script instead of deliberating.",
+        "Inside codemode, aggregate/filter/return only what you need instead of "
+        "chaining tool calls.",
+        "Use `asyncio.gather` for independent calls; `tools.search` when the catalog is partial.",
     )
 
     def __init__(
@@ -343,10 +353,7 @@ class CodemodeTool(BaseTool):
         is worse than no catalog at all.
         """
         sandbox = self._get_sandbox()
-        return DESCRIPTION_TEMPLATE.format(
-            recovery="\n".join(f"- {msg}" for msg in _RECOVERY.values()),
-            catalog=f"Tools available to a script:\n\n{sandbox.instructions()}",
-        )
+        return DESCRIPTION_TEMPLATE.format(catalog=sandbox.instructions())
 
     def format_call(self, params: CodemodeParams) -> str:
         """The whole script.

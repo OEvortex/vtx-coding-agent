@@ -393,6 +393,12 @@ def render_declarations(
     sections: list[str] = []
     for namespace, entries in groups:
         visible = [entry for entry in entries if entry.tool.name in shown]
+        if not namespace:
+            # Unnamespaced tools are the common case; a heading would only
+            # repeat the count already in the "Available tools" line.
+            if visible:
+                sections.append("\n\n".join(entry.text for entry in visible))
+            continue
         label = f"{namespace} ({len(entries)} tool{'' if len(entries) == 1 else 's'}"
         if len(visible) == len(entries):
             label += ")"

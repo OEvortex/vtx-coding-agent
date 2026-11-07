@@ -634,8 +634,10 @@ def test_instructions_are_complete_when_the_budget_allows():
     tool = CodemodeTool(name="a", description="does a thing", execute=_echo)
     text = CodemodeSandbox(tools=[tool]).instructions()
     assert "COMPLETE" in text
-    # Workflow first, catalog last: a model reads the top of a long prompt.
-    assert text.index("## Workflow") < text.index("## Available tools")
+    assert "def tools.a" in text
+    # The calling contract lives in the tool description, so the catalog is the
+    # whole of what this adds.
+    assert "## Workflow" not in text
 
 
 # --------------------------------------------------------------------------

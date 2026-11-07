@@ -183,7 +183,10 @@ class CodemodeToolBlock(ToolBlock):
         result = Text()
         result.append(f"{self._icon} ", style=Style(color=icon_style, bold=True))
         result.append(self._name or "codemode", style=name_style)
-        result.append_text(self._header_status())
+        status = self._header_status()
+        if status.plain:
+            result.append(" · ", style=Style(color=colors.dim))
+        result.append_text(status)
         return result
 
     def _header_status(self) -> Text:
@@ -206,11 +209,11 @@ class CodemodeToolBlock(ToolBlock):
             inflight = len(self._calls()) - len(done)
             if inflight > 0:
                 bits.append(f"{inflight} in flight")
-            return Text("  " + " · ".join(bits), style=Style(color=colors.running))
+            return Text(" · ".join(bits), style=Style(color=colors.running))
 
         if self._success is False:
             summary = self._ui_summary or (self.ui_data or {}).get("error", {}).get("kind")
-            return Text(f"  {summary or 'failed'}", style=Style(color=colors.failed, bold=True))
+            return Text(summary or "failed", style=Style(color=colors.failed, bold=True))
 
         calls = self._calls()
         bits = []
@@ -219,7 +222,7 @@ class CodemodeToolBlock(ToolBlock):
             failed = sum(1 for call in calls if not self._is_ok(call))
             if failed:
                 bits.append(f"{failed} failed")
-        return Text("  " + " · ".join(bits), style=Style(color=colors.dim))
+        return Text(" · ".join(bits), style=Style(color=colors.dim))
 
     # -- live progress -----------------------------------------------------
 

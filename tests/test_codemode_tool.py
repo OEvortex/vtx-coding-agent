@@ -14,7 +14,13 @@ import pytest
 from pydantic import BaseModel, Field
 
 from vtx.agent.tools import get_all_tools, get_default_tools, get_tool_definitions
-from vtx.coding_agent.tools.codemode import CODEMODE_TOOL_NAME, CodemodeParams, CodemodeTool
+from vtx.codemode.errors import TIMEOUT, WALL_CLOCK
+from vtx.coding_agent.tools.codemode import (
+    _RECOVERY,
+    CODEMODE_TOOL_NAME,
+    CodemodeParams,
+    CodemodeTool,
+)
 from vtx.protocol.types import ToolResult
 
 
@@ -94,26 +100,29 @@ def test_description_lists_the_live_tool_set():
     # tools that no longer exist is worse than no catalog at all.
     assert "read" in description
     assert "asyncio.gather" in description
-    assert "## Workflow" in description
+    assert "## Available tools" in description
+    # The pitch and a working example are what make a model choose the tool in
+    # the first place; a bare capability statement does not.
+    assert "needs more than one tool call" in description
+    assert "Example" in description
 
 
-def test_description_explains_each_recovery():
-    description = get_all_tools()[CODEMODE_TOOL_NAME].build_description()
-    # Each diagnostic kind means a different next move, so each needs its own
-    # sentence rather than a generic "the script failed".
-    assert "tools.search" in description
-    assert "traceback" in description.lower()
-    assert "too long" in description
+@pytest.mark.asyncio
+async def test_a_script_failure_carries_its_recovery(tool: CodemodeTool):
+    # Recoveries belong on the failure result, where the model is looking after
+    # something broke. Keeping them out of the description saves every turn the
+    # cost of advice that is not yet relevant.
+    result = await tool.execute(CodemodeParams(code="raise ValueError('boom')"))
+    assert not result.success
+    assert "traceback names a line" in result.result
 
 
-def test_description_tells_the_two_timeouts_apart():
-    description = get_all_tools()[CODEMODE_TOOL_NAME].build_description()
+def test_recoveries_tell_the_two_timeouts_apart():
     # An exhausted compute budget and an expired wall clock want opposite
     # remedies -- do less work, versus stop waiting on a tool that never came
-    # back -- and the description is the only place the model is told which is
-    # which before it hits one.
-    assert "waiting on tool calls is not what was counted" in description
-    assert "never came back" in description
+    # back -- and the failure message is where the model is told which is which.
+    assert "waiting on tool calls is not what was counted" in _RECOVERY[TIMEOUT]
+    assert "never came back" in _RECOVERY[WALL_CLOCK]
 
 
 def test_constrained_sampling_is_declared_for_openai():

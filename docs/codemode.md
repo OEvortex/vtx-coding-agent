@@ -30,9 +30,9 @@ Your script is executed as the body of an async function. The source is indented
 
 | Global | Value |
 |---|---|
-| `tools` | One proxy attribute per tool, plus `tools.search(query)` and `tools.describe(tool)` (`src/vtx/codemode/host.py:151`) |
-| `store` | `(key, value)` tuple you assign to write the store, and read to get it |
-| `load` | `get(key, default=None)` |
+| `tools` | One proxy attribute per tool, plus `tools.search(query, limit, offset)` (`src/vtx/codemode/host.py:151`) |
+| `store` | `store(key, value)` writes a JSON value to the session store |
+| `load` | `load(key, default=None)` reads it back |
 | `text` | Append plain text to the output captured for you |
 | `image` | Return an image instead of text |
 | `asyncio` | The real module, so scripts can gather concurrent calls |
@@ -41,32 +41,33 @@ The returned value must be JSON-safe: `coerce_json` rejects `NaN`/`Infinity` and
 
 ## How a run is displayed
 
-The `codemode` tool block in the TUI shows the run rather than a receipt for it (`src/vtx/tui/codemode_block.py`). The header is the same one every other tool gets — icon, name, then the facts that decide how the body is read — and the body is the run in labelled sections:
+The `codemode` tool block in the TUI shows the run rather than a receipt for it (`src/vtx/tui/codemode_block.py`). The header is the icon, the tool name, and the facts that decide how the body is read; the body is the run top to bottom, with blank lines as the only separators:
 
 ```
-⟩ codemode  3 tool calls · 1.2s
-  ⎿ script
-      rows = await tools.search(query="find dead code")
-      return sorted(r["name"] for r in rows)
-  ⎿ calls
-      ✓  search    0.4s
-      ✓  read      0.1s
-      ✗  bash      1.2s   exit 1 · tool_failure
-  ⎿ output
-      scanned 42 files
-  ⎿ value
-      { "tools": ["edit", "grep", "read"], "hits": 12 }
+⟩ codemode · 4 tool calls · 1 failed
+  paths = (await tools.find(pattern="src/**/*.py")).splitlines()[:20]
+  texts = await asyncio.gather(*(tools.read(path=p) for p in paths))
+  return [{"path": p, "lines": len(t.splitlines())} for p, t in zip(paths, texts)]
+
+  ✓ find {"pattern":"src/**/*.py"} 42ms
+  ✓ read {"path":"src/vtx/agent/runtime.py"} 90ms
+  ✗ bash {"command":"ruff check src"} 1.2s  exit 1 · tool_failure
+
+  scanned 20 files
+  ==> text 2/2 <==
+  {"scanned": 20, "largest": "src/vtx/agent/runtime.py", "lines": 2140}
+
+  Took 1.4s
 ```
 
-- `script` appears as soon as the tool call ends, before execution, so the script is on screen while it runs.
-- Sections are named because a script's output has four different kinds of content in it. A reader who cannot tell a printed line from a returned value is reading noise, so `text()` output and the returned value are separate sections rather than one blob.
-- `calls` is a table: names padded, durations right-aligned, `✓`/`✗` per call and a failure's own message and kind after it.
-- `error` carries the diagnostic and the script's own traceback — the part the model already reads, and the part the user decides the next script's trustworthiness from.
-- A short pretty-printed value folds onto one line; anything that needs its lines keeps them.
+- The script appears as soon as the tool call ends, before execution, so the script is on screen while it runs.
+- `calls` rows are `glyph name arguments duration`: `✓`/`✗`/`…`/`⊘` per call, and a failure's own message and kind stay on the row even when the block is collapsed.
+- `text()` output and the returned value are separate items. A run with more than one item labels each `==> text N/M <==`; the value is the last item.
+- The collapsed view keeps the first 10 script lines, the last 8 calls, and the first 5 output lines. `ctrl+o` expands each of those lists, and the returned value is kept in view even when the preview is tight.
+- A failed run shows the diagnostic and the whole traceback, because a traceback cut off mid-frame is not a traceback.
+- `Elapsed` counts while the script runs; `Took` replaces it with the recorded duration once the result lands.
 
-**Nothing is clipped.** A script that printed four hundred lines printed them because the model asked for them, and hiding the tail hides exactly the line that decided the outcome with no second chance to ask for it, so `ctrl+o` has nothing left to expand. What bounds a codemode cell is the sandbox's own `max_output_tokens`, not a cap drawn in the renderer. The same cell is what `/export` renders, so a session transcript exports as a code cell rather than as an escaped JSON argument (`src/vtx/tui/export.py`).
-
-The tool hands the block the run itself through `ToolResult.ui_data` (`src/vtx/protocol/types.py:219`), a JSON-safe dict of `code`, `value`, `printed`, `calls`, `error`, `images`, and `duration_ms`. That payload is persisted with the session, so a resumed session replays the same cell. There is deliberately no truncation flag in it: the block renders the whole run, so a flag could only ever be a notice about the sandbox's own cap — and that notice belongs in the model-facing result text, where the model is the one who has to know its own context was shortened.
+The tool hands the block the run itself through `ToolResult.ui_data` (`src/vtx/protocol/types.py:219`), a JSON-safe dict of `code`, `value`, `printed`, `calls`, `error`, `images`, and `duration_ms`. That payload is persisted with the session, so a resumed session replays the same cell. There is deliberately no truncation flag in it: the block can render the whole run on demand, so a flag could only ever be a notice about the sandbox's own cap — and that notice belongs in the model-facing result text, where the model is the one who has to know its own context was shortened.
 
 ## Limits and per-script options
 

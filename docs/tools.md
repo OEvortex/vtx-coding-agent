@@ -29,7 +29,7 @@ vtx --dump-config | grep -E "id:|disabled:"
 | `web_search` | no | no | Same search, different name |
 | `ask_user` | yes | no | Ask the user a question mid-turn |
 | `delegate_subagent` | yes | no | Run a sub-agent, foreground or background |
-| `codemode` | yes | no | Run a Python script in a confined sandbox |
+| `codemode` | yes | **yes** | Run a Python script in a confined sandbox |
 | `tool_search` | on demand | no | Find a tool by what it does |
 
 The default set is resolved by the plugin composition
@@ -305,30 +305,30 @@ the result arrives on a later turn.
 
 ## `codemode`
 
-Run a Python script in a confined subprocess sandbox. Default-on.
+Run a Python script in a confined subprocess sandbox. Default-on. Use it
+whenever a task needs two or more tool calls: one script costs one turn, while a
+chain of direct calls costs one turn each.
 
 | Parameter | Type | Default | Description |
 |---|---|---|---|
-| `code` | `str` | required | Python written as a function body: top-level `return` works, and so does top-level `await` |
+| `code` | `str` | required | Python written as a function body. Call tools with `await tools.<name>(...)`; top-level `return` and `await` work |
 
 Tools are reached as `tools.<identifier>(**kwargs)` inside the script, so a gated tool
 needs an admission the first time. `tools.search(query=..., limit=...)` lists what is
-available (`src/vtx/agent/tools/codemode.py:104`).
+available (`src/vtx/coding_agent/tools/codemode.py`).
 
 ```json
-{"code": "results = []\nresults.append(tools.read(path='/repo/README.md'))\nreturn len(results)"}
-```
-
-```json
-{"code": "async def main():\n    found = await tools.search(query=\"find dead code\", limit=5)\n    return found\nreturn await main()"}
+{"code": "paths = (await tools.find(pattern='src/**/*.py')).splitlines()[:20]\ntexts = await asyncio.gather(*(tools.read(path=p) for p in paths))\nreturn [{'path': p, 'lines': len(t.splitlines())} for p, t in zip(paths, texts)]"}
 ```
 
 The sandbox is a subprocess, not a persistent interpreter. There is no state between
-two `codemode` calls. See [codemode.md](codemode.md).
+two `codemode` calls, except the explicit `store`/`load` pair. See
+[codemode.md](codemode.md).
 
-In the TUI the call renders as a notebook cell — `In [n]:` with the script and
-`Out[n]:` with what it returned, plus the tool-call trace — because the script is the
-call. `ctrl+o` expands it. Details in
+In the TUI the call renders as the run itself: the script appears before execution,
+the nested calls show `✓`/`✗` with arguments and durations, and the output and
+returned value follow. The collapsed view previews the script head, the last calls,
+and the output head; `ctrl+o` expands each list. Details in
 [codemode.md](codemode.md#how-a-run-is-displayed).
 
 ## `tool_search`
