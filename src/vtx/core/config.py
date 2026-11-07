@@ -121,6 +121,7 @@ class UIConfig(BaseModel):
 class SystemPromptConfig(BaseModel):
     git_context: bool = False
     ponytail: bool = False
+    todo_context: bool = False
 
 
 class AuthConfig(BaseModel):

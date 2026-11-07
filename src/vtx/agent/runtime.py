@@ -249,6 +249,12 @@ class ConversationRuntime:
         self.session: Session | None = None
         self.context: Context | None = None
 
+        # The system prompt can carry the live todo list; the todo tool fires
+        # this callback after every mutation so the next turn sees it fresh.
+        from vtx.coding_agent.tools.todo import register_todo_refresh
+
+        register_todo_refresh(self._on_todos_changed)
+
     # ---- agent lifecycle ------------------------------------------------
 
     @property
@@ -430,6 +436,16 @@ class ConversationRuntime:
         if self.agent is not None and self.context is not None:
             self._rebuild_system_prompt()
 
+    def _on_todos_changed(self) -> None:
+        """Rebuild the system prompt when the todo list mutates.
+
+        Only worth the rebuild when the todo section is enabled; otherwise the
+        prompt cannot contain it and rebuilding would bust the cached prefix
+        for nothing.
+        """
+        if vtx_config.llm.system_prompt.todo_context:
+            self._rebuild_system_prompt()
+
     def _rebuild_system_prompt(self) -> None:
         """Re-render the system prompt against the active agent.
 
@@ -562,6 +578,10 @@ class ConversationRuntime:
         # Hand the codemode singleton back before the tool list goes stale, so a
         # later session does not inherit this one's tools and permission config.
         self._unwire_codemode()
+
+        from vtx.coding_agent.tools.todo import unregister_todo_refresh
+
+        unregister_todo_refresh(self._on_todos_changed)
 
     def active_commands(self) -> dict:
         """The current slash-command dict (session + agent-local).
