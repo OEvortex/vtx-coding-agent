@@ -120,5 +120,5 @@ async def test_tool_result_with_images_renders_textual_attachment_notice():
         await pilot.pause()
 
         output = block.query_one("#tool-output", Label)
-        assert str(output.render()) == "Attached 1 image"
+        assert "Attached 1 image" in str(output.render())
         assert not output.has_class("-hidden")

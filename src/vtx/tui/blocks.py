@@ -24,7 +24,7 @@ from vtx.core import ApprovalResponse
 from vtx.core.compaction import SUMMARY_SECTIONS
 from vtx.core.config import config
 from vtx.protocol.types import ImageContent
-from vtx.tui import task_ui
+from vtx.tui import boxed, task_ui
 from vtx.tui.ask_user import (
     INCOMPLETE_WARNING_PREFIX,
     NEXT_LABEL,
@@ -527,6 +527,7 @@ class ToolBlock(Static):
         self._live_render_pending: bool = False
         self._partial_args: dict | None = None
         self._args_render_pending: bool = False
+        self._started_at = time.monotonic()
         self.add_class("tool-block")
         self._set_state(None)
 
@@ -537,50 +538,67 @@ class ToolBlock(Static):
     def compose(self) -> ComposeResult:
         yield Label(self._format_header(), id="tool-header")
         yield Label("", id="tool-output", classes="tool-output -hidden")
+        yield Label("", id="tool-footer", classes="tool-footer")
         yield AskUserInput(placeholder=OTHER_DISPLAY, id="ask-user-input", classes="-hidden")
 
+    def _box_w(self) -> int:
+        """Shared box width for header/body/footer so corners always align."""
+        return boxed.box_width(self.size.width or 80)
+
+    def _refresh_box(self) -> None:
+        """Re-render every box surface at the current width (post-layout/resize)."""
+        self._safe_update(
+            lambda: self.query_one("#tool-header", Label).update(self._format_header())
+        )
+        self._render_result_output()
+        self._render_footer()
+
+    def on_mount(self) -> None:
+        self.call_after_refresh(self._refresh_box)
+
     def _format_header(self, truncate: bool = True) -> Text:
-        colors = config.ui.colors
-        result = Text()
-        formatted_name = self._name or ""
-
-        success_style = Style(color=colors.muted, bold=True)
-        icon_style: str | Style = success_style
-        name_style: str | Style = success_style
-        if self._success is None:
-            icon_style = colors.running
-            name_style = colors.running
-        elif self._success is False:
-            icon_style = colors.failed
-            name_style = colors.failed
-        elif self._success is True and config.ui.colored_tool_badge:
-            badge_style = Style(color=colors.badge.label, bold=True)
-            icon_style = badge_style
-            name_style = badge_style
-
+        """pi-style boxed top border: ``╭─ {icon} {Name} {detail} ───╮``."""
+        del truncate
+        width = self._box_w()
+        name = self._name or ""
+        display = name[:1].upper() + name[1:] if name else ""
+        call_plain = boxed.strip_markup(self._call_msg or "")
+        detail = call_plain.split("\n", 1)[0] if call_plain else ""
+        running = self._success is None and not self._awaiting_approval
+        header = boxed.top_border(
+            self._icon, display, detail, width, running=running, failed=self._success is False
+        )
         if self._awaiting_approval:
-            result.append(
+            notice = Text(
                 " △ Permission required ",
-                style=Style(bgcolor=colors.notice, color=colors.bg, bold=True),
+                style=Style(bgcolor=config.ui.colors.notice, color=config.ui.colors.bg, bold=True),
             )
-            result.append("\n\n")
+            return Text.assemble(notice, "\n", header)
+        return header
 
-        result.append(f"{self._icon} ", style=icon_style)
-        result.append(formatted_name, style=name_style)
-
-        if self._call_msg:
-            result.append(" ")
-            result.append_text(self._format_call_msg(truncate=truncate))
-
-        if self._ui_summary:
-            result.append(" ")
-            summary = self._render_markup_safe(self._ui_summary)
-            result.append_text(summary)
-
-        if self._success is None and not self._awaiting_approval and not self._call_msg:
-            result.append(" ...", style=colors.dim)
-
-        return result
+    def _render_footer(self) -> None:
+        """pi-style boxed bottom border: ``╰─ metrics ──── hint ─╯``."""
+        try:
+            footer = self.query_one("#tool-footer", Label)
+        except Exception:
+            return
+        width = self._box_w()
+        hint = HINT_EXPAND if self._ui_details_full else ""
+        # CodemodeToolBlock reuses _started_at as Optional[float] for its own
+        # timing — fall back to now rather than crash the footer render.
+        started = self._started_at
+        if not isinstance(started, (int, float)):
+            started = time.monotonic()
+        if self._success is None:
+            elapsed = time.monotonic() - started
+            text = boxed.bottom_border(boxed.running_footer(elapsed), width, hint=hint)
+        else:
+            summary = self._ui_summary or ""
+            elapsed_txt = boxed.elapsed_footer(started, summary)
+            text = boxed.bottom_border(
+                elapsed_txt, width, hint=hint, failed=self._success is False
+            )
+        footer.update(text)
 
     def _format_call_msg(self, truncate: bool = True) -> Text:
         if not self._call_msg:
@@ -600,6 +618,8 @@ class ToolBlock(Static):
             return format_bash_command(content)
 
         rendered = self._render_markup_safe(content)
+        if rendered.spans:
+            return rendered
         return Text(rendered.plain, style=config.ui.colors.dim)
 
     def _render_markup_safe(self, content: str) -> Text:
@@ -1102,8 +1122,8 @@ class ToolBlock(Static):
         args = self._partial_args
         if not args:
             return
-        call_msg = ""
-        if self.tool is not None:
+        call_msg = self._streaming_file_preview(args)
+        if not call_msg and self.tool is not None:
             try:
                 call_msg = self.tool.format_call(self.tool.params(**args))
             except Exception:
@@ -1115,6 +1135,76 @@ class ToolBlock(Static):
         self._safe_update(
             lambda: self.query_one("#tool-header", Label).update(self._format_header())
         )
+        if self._name in {"write", "edit"}:
+            self._render_result_output()
+        self._render_footer()
+
+    def _streaming_file_preview(self, args: dict) -> str:
+        """Live diff-style preview of a write/edit payload while args stream.
+
+        Deliberately not a real diff: computing one per frame is O(file) and
+        the partial args change every delta. Instead show the incoming
+        content's tail as ``+``/``-`` lines with diff colors — reads like the
+        file filling in, costs a few µs per frame. The real diff still
+        renders from the tool result when the call finishes.
+        """
+        if self.tool is None or self.tool.name not in {"write", "edit"}:
+            return ""
+        is_write = self.tool.name == "write"
+        added_src = args.get("content") if is_write else args.get("new_string")
+        removed_src = "" if is_write else (args.get("old_string") or "")
+        if not isinstance(added_src, str) or not added_src:
+            return ""
+        if not isinstance(removed_src, str):
+            removed_src = ""
+
+        from vtx.core.config import config
+        from vtx.tui.diff_display import DIFF_BG_PAD_MARKER, blend_hex
+
+        colors = config.ui.colors
+        bg_added = blend_hex(colors.diff_added, colors.bg)
+        bg_removed = blend_hex(colors.diff_removed, colors.bg)
+
+        max_side = 15
+
+        def _tail(src: str) -> list[str]:
+            return src[-6000:].splitlines()[-max_side:]
+
+        def _count(src: str) -> int:
+            return src.count("\n") + (0 if src.endswith("\n") else 1)
+
+        removed_tail = _tail(removed_src) if removed_src else []
+        added_tail = _tail(added_src)
+
+        total_added = _count(added_src)
+        total_removed = _count(removed_src) if removed_src else 0
+        hidden_added = total_added - len(added_tail)
+        hidden_removed = total_removed - len(removed_tail)
+
+        meta_parts = []
+        path = str(args.get("path") or args.get("file_path") or "")
+        if path:
+            meta_parts.append(path)
+        meta_parts.append(f"[{colors.diff_added}]+{total_added}[/{colors.diff_added}]")
+        meta_parts.append(f"[{colors.diff_removed}]-{total_removed}[/{colors.diff_removed}]")
+        meta = "  ".join(meta_parts)
+        if hidden_added > 0 or hidden_removed > 0:
+            meta += f"  [dim]…{hidden_added + hidden_removed} earlier[/dim]"
+
+        # The header truncates call messages to MAX_HEADER_LINES, so emit a
+        # compact two-line preview: meta + the freshest content line. Older
+        # lines are covered by the "…N earlier" count.
+        lines = [f"[dim]{meta}[/dim]"]
+        last = ""
+        sign = color = bg = ""
+        if added_tail:
+            last, sign, color, bg = added_tail[-1], "+", colors.diff_added, bg_added
+        elif removed_tail:
+            last, sign, color, bg = (removed_tail[-1], "-", colors.diff_removed, bg_removed)
+        if last:
+            esc = last.replace("[", "\\[")
+            lines.append(f"[{color} on {bg}]{sign} {esc}{DIFF_BG_PAD_MARKER}[/]")
+        return "\n".join(lines)
 
     def append_live_output(self, delta: str) -> None:
         """Stream incremental stdout/stderr chunk into the tool block in real-time."""
@@ -1164,8 +1254,11 @@ class ToolBlock(Static):
             visible_lines = lines
             prefix = ""
 
-        formatted_body = "\n".join(f"  │ {line}" for line in visible_lines)
-        rendered = Text(prefix + formatted_body, style=config.ui.colors.dim)
+        body = Text("\n".join(visible_lines), style=config.ui.colors.dim)
+        if prefix:
+            body = Text.assemble(Text(prefix, style=config.ui.colors.dim), body)
+
+        rendered = boxed.wrap_boxed(body, self._box_w())
 
         self.remove_class("-compact")
         self.add_class("-with-details")
@@ -1173,6 +1266,35 @@ class ToolBlock(Static):
         output.remove_class("-details")
         output.remove_class("-diff-output")
         output.update(rendered)
+        self._render_footer()
+
+    def _streaming_body_text(self) -> Text | None:
+        """pi-style write/edit body while args stream: numbered preview or diff."""
+        if self.tool is None or self.tool.name not in {"write", "edit"}:
+            return None
+        args = self._partial_args or {}
+        if self.tool.name == "write":
+            content = args.get("content")
+            if not isinstance(content, str) or not content:
+                return None
+            path = str(args.get("path") or args.get("file_path") or "")
+            return boxed.highlighted_numbered_lines(content, path, max_lines=15)
+        old = args.get("old_string")
+        new = args.get("new_string")
+        if not isinstance(old, str) or not isinstance(new, str):
+            return None
+        if len(old) + len(new) > 40000:
+            return None
+        try:
+            from vtx.coding_agent.tools.edit import format_diff_display, generate_diff
+
+            diff, _, _ = generate_diff(old, new)
+            text = Text.from_markup(format_diff_display(diff))
+            # The streaming path bypasses _render_result_output's padding
+            # step, so consume DIFF_BG_PAD_MARKER here or it leaks literally.
+            return self._pad_diff_backgrounds(text, max(20, self._box_w() - 4))
+        except Exception:
+            return None
 
     def set_result(
         self,
@@ -1223,8 +1345,7 @@ class ToolBlock(Static):
 
     def on_resize(self, event: events.Resize) -> None:
         del event
-        if self._ui_details or self._ui_details_full:
-            self._render_result_output()
+        self._refresh_box()
 
     def _render_result_output(self) -> None:
         try:
@@ -1235,39 +1356,42 @@ class ToolBlock(Static):
             self._ui_details_full if self._expanded and self._ui_details_full else self._ui_details
         )
 
-        if ui_details:
+        streaming = self._streaming_body_text()
+        if streaming is not None:
+            rendered = streaming
+            is_diff_output = False
+        elif ui_details:
             rendered = (
                 self._render_markup_safe(ui_details) if self._result_markup else Text(ui_details)
             )
             is_diff_output = DIFF_BG_PAD_MARKER in rendered.plain
             rendered = self._pad_diff_backgrounds(rendered, output.size.width or self.size.width)
-            # Detail blocks need a 1-line gap; drop compact spacing that was
-            # applied before we knew this tool would have output.
-            self.remove_class("-compact")
-            self.add_class("-with-details")
-            output.remove_class("-hidden")
-            output.remove_class("-details")
-            if is_diff_output:
-                output.add_class("-diff-output")
-            else:
-                output.remove_class("-diff-output")
-            output.update(rendered)
         elif self._images:
             image_count = len(self._images)
             image_label = "image" if image_count == 1 else "images"
             rendered = Text(f"Attached {image_count} {image_label}", style=config.ui.colors.dim)
-            self.remove_class("-compact")
-            self.add_class("-with-details")
-            output.remove_class("-hidden")
-            output.remove_class("-details")
-            output.remove_class("-diff-output")
-            output.update(rendered)
+            is_diff_output = False
         else:
             output.update(Text(""))
             self.remove_class("-with-details")
             output.remove_class("-details")
             output.remove_class("-diff-output")
             output.add_class("-hidden")
+            self._render_footer()
+            return
+
+        # Detail blocks need a 1-line gap; drop compact spacing that was
+        # applied before we knew this tool would have output.
+        self.remove_class("-compact")
+        self.add_class("-with-details")
+        output.remove_class("-hidden")
+        output.remove_class("-details")
+        if is_diff_output:
+            output.add_class("-diff-output")
+        else:
+            output.remove_class("-diff-output")
+        output.update(boxed.wrap_boxed(rendered, self._box_w()))
+        self._render_footer()
 
 
 class UserBlock(Static):
