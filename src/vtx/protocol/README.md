@@ -109,12 +109,13 @@ Two details that bite. `ToolCallDelta.arguments_delta` is a *string* fragment, s
 
 ## Stream parts
 
-`BaseProvider.stream()` is an async iterator over `StreamPart`, the union of the six part types. They are deltas to merge, never finished messages.
+`BaseProvider.stream()` is an async iterator over `StreamPart`, the union of the seven part types. They are deltas to merge, never finished messages.
 
 - `TextPart` carries `text`; `merge()` concatenates.
 - `ThinkPart` carries `think` plus an optional `signature`. `merge()` concatenates and keeps the first non-empty signature (`self.signature or other.signature`), so an early signature survives later fragments that omit it.
 - `ToolCallStart` opens a call with `id`, `name`, `index`, and optional already-parsed `arguments`.
-- `ToolCallDelta` appends `arguments_delta` to the call at `index`. Set `replace=True` to overwrite the accumulated text instead of appending, which some providers need when they resend an argument block.
+- `ToolCallDelta` appends `arguments_delta` to the call at `index`. Set `replace=True` to overwrite the accumulated text instead of appending, which some providers need when they resend an argument block. `partial_arguments` carries the provider's tolerant-parsed snapshot of the arguments so far (live partial args, pi-style); `id`/`name` may arrive late on providers that stream identity after the first fragment.
+- `ToolCallEnd` closes a call at `index` with the provider's final parse: `arguments` (repaired full parse of the complete text) and `arguments_error` when the text was not a valid JSON object. Consumers should prefer it over re-parsing the raw delta accumulator.
 - `StreamDone` is terminal and carries a `StopReason`.
 - `StreamError` is terminal and carries an already-formatted error string.
 

@@ -27,6 +27,7 @@ from vtx.protocol.types import (
     TextPart,
     ThinkPart,
     ToolCallDelta,
+    ToolCallEnd,
     ToolCallStart,
     ToolDefinition,
     Usage,
@@ -390,6 +391,7 @@ class BaseProvider(ABC):
         content_parts: list[str] = []
         thinking_parts: list[str] = []
         tool_calls_raw: dict[int, dict[str, Any]] = {}
+        tool_calls_final: dict[int, Any] = {}
         stop_reason = "stop"
         usage_dict: dict[str, int] = {}
 
@@ -406,6 +408,8 @@ class BaseProvider(ABC):
                     tool_calls_raw[part.index]["arguments"] = existing + (
                         part.arguments_delta or ""
                     )
+            elif isinstance(part, ToolCallEnd):
+                tool_calls_final[part.index] = part
             elif isinstance(part, StreamDone):
                 usage_dict = {
                     "prompt_tokens": getattr(part, "input_tokens", 0),
@@ -426,10 +430,16 @@ class BaseProvider(ABC):
         tool_call_requests = []
         for idx in sorted(tool_calls_raw):
             tc = tool_calls_raw[idx]
-            try:
-                args = _json.loads(tc["arguments"]) if tc["arguments"] else {}
-            except _json.JSONDecodeError:
+            final = tool_calls_final.get(idx)
+            if final is not None and not final.arguments_error:
+                args = final.arguments
+            elif final is not None and final.arguments_error:
                 args = {"raw": tc["arguments"]}
+            else:
+                try:
+                    args = _json.loads(tc["arguments"]) if tc["arguments"] else {}
+                except _json.JSONDecodeError:
+                    args = {"raw": tc["arguments"]}
             tool_call_requests.append(
                 ToolCallRequest(id=tc["id"], name=tc["name"], arguments=args)
             )

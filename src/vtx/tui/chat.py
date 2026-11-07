@@ -727,6 +727,14 @@ class ChatLog(VerticalScroll):
             await self._current_block.append(text)
             self._request_scroll()
 
+    def update_tool_call_args(self, tool_id: str, partial_args: dict | None) -> None:
+        """Stream partial tool-call arguments into the tool block header."""
+        block = self._tool_blocks.get(tool_id)
+        if block is None or not hasattr(block, "update_call_args"):
+            return
+        block.update_call_args(partial_args)
+        self._request_scroll()
+
     def append_tool_output(self, tool_id: str, delta: str) -> None:
         """Stream incremental output to a running tool block in real-time."""
         block = self._tool_blocks.get(tool_id)

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import contextlib
+import json
 import re
 import textwrap
 import time
@@ -523,6 +524,8 @@ class ToolBlock(Static):
         self._ask_user_input_visible: bool = False
         self._live_output: str = ""
         self._live_render_pending: bool = False
+        self._partial_args: dict | None = None
+        self._args_render_pending: bool = False
         self.add_class("tool-block")
         self._set_state(None)
 
@@ -1075,6 +1078,42 @@ class ToolBlock(Static):
     def update_call_msg(self, call_msg: str) -> None:
         self._call_msg = call_msg
         self.query_one("#tool-header", Label).update(self._format_header())
+
+    def update_call_args(self, partial_args: dict | None) -> None:
+        """Show live partial tool-call arguments on the header (pi-style).
+
+        The provider's tolerant parse arrives on every argument delta. The
+        partial dict is rendered through the tool's own ``format_call`` when
+        it already validates, else as a compact JSON preview. Coalesced into
+        one render per frame like the live output path, since argument deltas
+        arrive far faster than the screen refreshes.
+        """
+        if partial_args is None:
+            return
+        self._partial_args = partial_args
+        if self._args_render_pending:
+            return
+        self._args_render_pending = True
+        self.call_after_refresh(self._flush_call_args_render)
+
+    def _flush_call_args_render(self) -> None:
+        self._args_render_pending = False
+        args = self._partial_args
+        if not args:
+            return
+        call_msg = ""
+        if self.tool is not None:
+            try:
+                call_msg = self.tool.format_call(self.tool.params(**args))
+            except Exception:
+                call_msg = ""
+        if not call_msg:
+            preview = json.dumps(args, ensure_ascii=False, default=str)
+            call_msg = preview[:157] + "..." if len(preview) > 160 else preview
+        self._call_msg = call_msg
+        self._safe_update(
+            lambda: self.query_one("#tool-header", Label).update(self._format_header())
+        )
 
     def append_live_output(self, delta: str) -> None:
         """Stream incremental stdout/stderr chunk into the tool block in real-time."""

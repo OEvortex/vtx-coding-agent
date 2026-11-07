@@ -122,6 +122,8 @@ async def _openai_stream_chunks(
         ThinkStart,
     )
 
+    # Per tool call: accumulated ToolCallArgumentsStream plus the identity the
+    # provider has emitted so far. Stream state stays off any content block.
     tool_calls_acc: dict[int, dict[str, Any]] = {}
     phase_parser = ThinkingPhaseParser()
     think_emitted_len = 0
@@ -176,15 +178,51 @@ async def _openai_stream_chunks(
             if delta.tool_calls:
                 for tc_delta in delta.tool_calls:
                     idx = tc_delta.index
-                    if idx not in tool_calls_acc:
-                        tool_calls_acc[idx] = {"id": "", "name": "", "arguments": ""}
+                    acc: dict[str, Any] | None = tool_calls_acc.get(idx)
+                    if acc is None:
+                        from vtx.ai.streaming_json import ToolCallArgumentsStream
+
+                        acc = {
+                            "id": "",
+                            "name": "",
+                            "args": ToolCallArgumentsStream(),
+                            "started": False,
+                        }
+                        tool_calls_acc[idx] = acc
                     if tc_delta.id:
-                        tool_calls_acc[idx]["id"] = tc_delta.id
-                    if tc_delta.function:
-                        if tc_delta.function.name:
-                            tool_calls_acc[idx]["name"] = tc_delta.function.name
-                        if tc_delta.function.arguments:
-                            tool_calls_acc[idx]["arguments"] += tc_delta.function.arguments
+                        acc["id"] = tc_delta.id
+                    fn = tc_delta.function
+                    if fn is not None:
+                        if fn.name:
+                            acc["name"] = fn.name
+                        if fn.arguments:
+                            partial = acc["args"].append(fn.arguments)
+                            if not acc["started"]:
+                                acc["started"] = True
+                                yield {
+                                    "type": "tool_call_start",
+                                    "index": idx,
+                                    "id": acc["id"],
+                                    "name": acc["name"],
+                                }
+                            yield {
+                                "type": "tool_call_delta",
+                                "index": idx,
+                                "arguments_delta": fn.arguments,
+                                "partial_arguments": partial,
+                                "id": acc["id"],
+                                "name": acc["name"],
+                            }
+                    elif not acc["started"] and (acc["id"] or acc["name"]):
+                        # Identity arrived without arguments yet: open the call
+                        # so the UI sees it before the first arg fragment.
+                        acc["started"] = True
+                        yield {
+                            "type": "tool_call_start",
+                            "index": idx,
+                            "id": acc["id"],
+                            "name": acc["name"],
+                        }
         for phase_event in phase_parser.flush():
             if isinstance(phase_event, ThinkDelta):
                 think_emitted_len += len(phase_event.text)
@@ -204,13 +242,21 @@ async def _openai_stream_chunks(
                 think_emitted_len = 0
             elif isinstance(phase_event, ResponseDelta):
                 yield {"type": "text", "content": phase_event.text}
-        if tool_calls_acc:
+        for idx in sorted(tool_calls_acc):
+            acc = tool_calls_acc[idx]
+            if not acc["started"]:
+                yield {
+                    "type": "tool_call_start",
+                    "index": idx,
+                    "id": acc["id"],
+                    "name": acc["name"],
+                }
+            parsed = acc["args"].finish()
             yield {
-                "type": "tool_calls",
-                "tool_calls": [
-                    ToolCall(id=v["id"], name=v["name"], arguments=v["arguments"])
-                    for v in sorted(tool_calls_acc.values(), key=lambda x: x["id"])
-                ],
+                "type": "tool_call_end",
+                "index": idx,
+                "arguments": parsed.arguments,
+                "arguments_error": parsed.arguments_error,
             }
         if finish_reason:
             yield {"type": "finish_reason", "finish_reason": finish_reason}

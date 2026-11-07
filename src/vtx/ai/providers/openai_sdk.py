@@ -27,6 +27,7 @@ from vtx.protocol.types import (
     ThinkPart,
     ToolCall,
     ToolCallDelta,
+    ToolCallEnd,
     ToolCallStart,
     ToolDefinition,
     ToolResultMessage,
@@ -271,6 +272,27 @@ class OpenAISDKProvider(BaseProvider):
                     for i, tc in enumerate(tool_calls):
                         yield ToolCallStart(id=tc.id, name=tc.name, index=i)
                         yield ToolCallDelta(index=i, arguments_delta=tc.arguments)
+                elif chunk_type == "tool_call_start":
+                    yield ToolCallStart(
+                        id=chunk.get("id", ""),
+                        name=chunk.get("name", ""),
+                        index=chunk.get("index", 0),
+                        arguments=chunk.get("arguments"),
+                    )
+                elif chunk_type == "tool_call_delta":
+                    yield ToolCallDelta(
+                        index=chunk.get("index", 0),
+                        arguments_delta=chunk.get("arguments_delta", ""),
+                        partial_arguments=chunk.get("partial_arguments"),
+                        id=chunk.get("id"),
+                        name=chunk.get("name"),
+                    )
+                elif chunk_type == "tool_call_end":
+                    yield ToolCallEnd(
+                        index=chunk.get("index", 0),
+                        arguments=chunk.get("arguments") or {},
+                        arguments_error=chunk.get("arguments_error"),
+                    )
                 elif chunk_type == "finish_reason":
                     stop_reason = self._map_finish_reason(chunk.get("finish_reason", ""))
 

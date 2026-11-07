@@ -115,6 +115,9 @@ class ToolArgsDeltaEvent:
     type: Literal["tool_args_delta"] = "tool_args_delta"
     tool_call_id: str = ""
     delta: str = ""
+    # Tolerant-parsed snapshot of the arguments received so far, when the
+    # provider computes one (pi-style partial arguments for live display).
+    partial_arguments: dict[str, Any] | None = None
 
 
 @dataclass

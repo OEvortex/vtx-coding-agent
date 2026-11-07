@@ -97,6 +97,7 @@ from vtx.protocol.types import (
     ThinkPart,
     ToolCall,
     ToolCallDelta,
+    ToolCallEnd,
     ToolCallStart,
     ToolResultMessage,
     UserMessage,
@@ -195,7 +196,16 @@ def _finalize_tool_call_data(tool_call_data: dict, tools: list[BaseTool]) -> Pen
     preflight_error: str | None = None
 
     stripped_args = arguments_raw.strip()
-    if stripped_args:
+    if tool_call_data.get("ended"):
+        # The provider already ran its full parse (with repair) over the
+        # complete arguments text; its result — or its parse error — wins
+        # over re-parsing the raw delta accumulator here.
+        if tool_call_data.get("arguments_error"):
+            arguments = {}
+            preflight_error = tool_call_data["arguments_error"]
+        else:
+            arguments = tool_call_data.get("final_arguments") or {}
+    elif stripped_args:
         try:
             arguments = json.loads(arguments_raw)
         except json.JSONDecodeError:
@@ -827,8 +837,17 @@ class _TurnRunner:
                 return self._on_text_part(t)
             case ToolCallStart(id=id, name=name, index=index, arguments=initial_arguments):
                 return self._on_tool_call_start(id, name, index, initial_arguments)
-            case ToolCallDelta(index=index, arguments_delta=delta, replace=replace):
-                return self._on_tool_call_delta(index, delta, replace)
+            case ToolCallDelta(
+                index=index,
+                arguments_delta=delta,
+                replace=replace,
+                partial_arguments=partial,
+                id=late_id,
+                name=late_name,
+            ):
+                return self._on_tool_call_delta(index, delta, replace, partial, late_id, late_name)
+            case ToolCallEnd(index=index, arguments=final_args, arguments_error=arg_error):
+                return self._on_tool_call_end(index, final_args, arg_error)
             case StreamDone(stop_reason=reason):
                 self._stop_reason = reason
                 return self._finalize_current_state()
@@ -903,6 +922,7 @@ class _TurnRunner:
 
         self._current_state = StreamState.TOOL_CALL
         self._active_tool_calls[index] = {
+            "index": index,
             "id": tool_call_id,
             "name": name,
             "arguments": initial_arguments_json,
@@ -912,10 +932,41 @@ class _TurnRunner:
         events.append(ToolStartEvent(tool_call_id=tool_call_id, tool_name=name))
         return events
 
-    def _on_tool_call_delta(self, index: int, delta: str, replace: bool) -> list[StreamEvent]:
-        tool_call = self._active_tool_calls.get(index)
+    def _find_tool_call_data(self, index: int) -> dict | None:
+        """Locate a tool call's stream data by provider index.
+
+        Calls live in ``_active_tool_calls`` while streaming and move to
+        ``_pending_tool_calls`` at finalize; the dicts are shared, so either
+        lookup sees provider-final fields written before the move.
+        """
+        data = self._active_tool_calls.get(index)
+        if data is not None:
+            return data
+        for pending in self._pending_tool_calls:
+            if pending.get("index") == index:
+                return pending
+        return None
+
+    def _on_tool_call_delta(
+        self,
+        index: int,
+        delta: str,
+        replace: bool,
+        partial_arguments: dict | None = None,
+        late_id: str | None = None,
+        late_name: str | None = None,
+    ) -> list[StreamEvent]:
+        tool_call = self._find_tool_call_data(index)
         if not tool_call:
             return []
+
+        # Identity can arrive after the start part on some providers.
+        if late_id:
+            tool_call["id"] = late_id
+        if late_name:
+            tool_call["name"] = late_name
+        if partial_arguments is not None:
+            tool_call["partial_arguments"] = partial_arguments
 
         if replace:
             tool_call["arguments"] = delta
@@ -924,7 +975,11 @@ class _TurnRunner:
             tool_call["arguments"] += delta
             chunk_count, token_count = self._tool_arg_counters.get(index, (0, 0))
 
-        events: list[StreamEvent] = [ToolArgsDeltaEvent(tool_call_id=tool_call["id"], delta=delta)]
+        events: list[StreamEvent] = [
+            ToolArgsDeltaEvent(
+                tool_call_id=tool_call["id"], delta=delta, partial_arguments=partial_arguments
+            )
+        ]
 
         # Count tokens and fire update event every Nth chunk after threshold tokens
         chunk_count += 1
@@ -943,6 +998,22 @@ class _TurnRunner:
                 )
             )
         return events
+
+    def _on_tool_call_end(
+        self, index: int, arguments: dict, arguments_error: str | None
+    ) -> list[StreamEvent]:
+        """Record a provider's final parse of one tool call's arguments.
+
+        The raw-delta accumulator stays the fallback; when the provider sends a
+        ``ToolCallEnd`` its repaired parse (or parse error) wins at finalize.
+        """
+        tool_call = self._find_tool_call_data(index)
+        if tool_call is None:
+            return []
+        tool_call["ended"] = True
+        tool_call["final_arguments"] = arguments
+        tool_call["arguments_error"] = arguments_error
+        return []
 
     def _finalize_current_state(self, include_empty: bool = True) -> list[StreamEvent]:
         events: list[StreamEvent] = []

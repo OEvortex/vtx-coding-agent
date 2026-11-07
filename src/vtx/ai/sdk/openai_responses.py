@@ -208,11 +208,58 @@ class OpenAIResponsesSDK(BaseLLMSDK):
     @staticmethod
     def _new_stream_state() -> dict[str, Any]:
         return {
-            "calls": {},  # item_id -> {"call_id", "name", "arguments"}
+            # item_id -> {"call_id", "name", "index", "args", "started"}
+            "calls": {},
+            "tool_count": 0,
             "has_function_call": False,
             "usage": None,
             "finish_reason": None,
         }
+
+    def _open_tool_call(
+        self, state: dict[str, Any], item_id: str, item: dict[str, Any]
+    ) -> tuple[dict[str, Any], list[dict[str, Any]]]:
+        """Register a function_call item and return (call, chunks to emit).
+
+        Emits a ``tool_call_start`` chunk; any arguments already present on the
+        item are fed through the arguments stream and emitted as a delta so the
+        raw-text accumulator downstream stays consistent.
+        """
+        from vtx.ai.streaming_json import ToolCallArgumentsStream
+
+        call = {
+            "call_id": item.get("call_id", ""),
+            "name": item.get("name", ""),
+            "index": state["tool_count"],
+            "args": ToolCallArgumentsStream(),
+            "started": False,
+        }
+        state["tool_count"] += 1
+        state["calls"][item_id] = call
+        state["has_function_call"] = True
+        chunks = [
+            {
+                "type": "tool_call_start",
+                "index": call["index"],
+                "id": call["call_id"],
+                "name": call["name"],
+            }
+        ]
+        call["started"] = True
+        initial = item.get("arguments") or ""
+        if initial:
+            partial = call["args"].append(initial)
+            chunks.append(
+                {
+                    "type": "tool_call_delta",
+                    "index": call["index"],
+                    "arguments_delta": initial,
+                    "partial_arguments": partial,
+                    "id": call["call_id"],
+                    "name": call["name"],
+                }
+            )
+        return call, chunks
 
     def _stream_step(self, state: dict[str, Any], event: dict[str, Any]) -> list[dict[str, Any]]:
         """Handle one SSE event; returns chunks to yield (may be empty)."""
@@ -236,24 +283,43 @@ class OpenAIResponsesSDK(BaseLLMSDK):
             item = event.get("item") or {}
             if item.get("type") == "function_call":
                 item_id = item.get("id") or f"idx-{event.get('output_index', 0)}"
-                state["calls"][item_id] = {
-                    "call_id": item.get("call_id", ""),
-                    "name": item.get("name", ""),
-                    "arguments": "",
-                }
-                state["has_function_call"] = True
+                _call, open_chunks = self._open_tool_call(state, item_id, item)
+                chunks.extend(open_chunks)
 
         elif etype == "response.function_call_arguments.delta":
             item_id = event.get("item_id")
             call = state["calls"].get(item_id)
             if call is not None and event.get("delta"):
-                call["arguments"] += event["delta"]
+                partial = call["args"].append(event["delta"])
+                chunks.append(
+                    {
+                        "type": "tool_call_delta",
+                        "index": call["index"],
+                        "arguments_delta": event["delta"],
+                        "partial_arguments": partial,
+                        "id": call["call_id"],
+                        "name": call["name"],
+                    }
+                )
 
         elif etype == "response.function_call_arguments.done":
             item_id = event.get("item_id")
             call = state["calls"].get(item_id)
             if call is not None and event.get("arguments") is not None:
-                call["arguments"] = event["arguments"]
+                # The done event carries the complete text; replace() returns
+                # only the missing suffix as a delta when it continues ours.
+                replaced_delta, partial = call["args"].replace(event["arguments"])
+                if replaced_delta:
+                    chunks.append(
+                        {
+                            "type": "tool_call_delta",
+                            "index": call["index"],
+                            "arguments_delta": replaced_delta,
+                            "partial_arguments": partial,
+                            "id": call["call_id"],
+                            "name": call["name"],
+                        }
+                    )
 
         elif etype == "response.reasoning_summary_part.done":
             # Separator between summary parts
@@ -263,26 +329,24 @@ class OpenAIResponsesSDK(BaseLLMSDK):
             item = event.get("item") or {}
             if item.get("type") == "function_call":
                 item_id = item.get("id") or f"idx-{event.get('output_index', 0)}"
-                call = state["calls"].setdefault(
-                    item_id,
-                    {
-                        "call_id": item.get("call_id", ""),
-                        "name": item.get("name", ""),
-                        "arguments": item.get("arguments", "{}"),
-                    },
-                )
-                if item.get("arguments") is not None:
-                    call["arguments"] = item["arguments"]
+                call = state["calls"].get(item_id)
+                if call is None:
+                    # output_item.done without a prior added: open the call so
+                    # the start/delta/end sequence stays complete.
+                    call, open_chunks = self._open_tool_call(state, item_id, item)
+                    chunks.extend(open_chunks)
+                else:
+                    call["call_id"] = call["call_id"] or item.get("call_id", "")
+                    call["name"] = call["name"] or item.get("name", "")
+                if item.get("arguments"):
+                    call["args"].replace(item["arguments"])
+                parsed = call["args"].finish()
                 chunks.append(
                     {
-                        "type": "tool_calls",
-                        "tool_calls": [
-                            ToolCall(
-                                id=call["call_id"],
-                                name=call["name"],
-                                arguments=call["arguments"] or "{}",
-                            )
-                        ],
+                        "type": "tool_call_end",
+                        "index": call["index"],
+                        "arguments": parsed.arguments,
+                        "arguments_error": parsed.arguments_error,
                     }
                 )
             elif item.get("type") == "reasoning":

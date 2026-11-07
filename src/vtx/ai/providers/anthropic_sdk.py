@@ -26,6 +26,7 @@ from vtx.protocol.types import (
     ThinkPart,
     ToolCall,
     ToolCallDelta,
+    ToolCallEnd,
     ToolCallStart,
     ToolDefinition,
     ToolResultMessage,
@@ -193,7 +194,7 @@ class AnthropicSDKProvider(BaseProvider):
         self, response: Any, llm_stream: LLMStream
     ) -> AsyncIterator[StreamPart]:
         stop_reason: StopReason = StopReason.STOP
-        current_tool_index: int = -1
+        # anthropic block index -> {"id", "name", "logical", "args"}
         tool_use_blocks: dict[int, dict[str, Any]] = {}
 
         try:
@@ -218,15 +219,17 @@ class AnthropicSDKProvider(BaseProvider):
                 elif event_type == "content_block_start":
                     block = event.get("content_block", {})
                     if block.get("type") == "tool_use":
-                        current_tool_index += 1
+                        from vtx.ai.streaming_json import ToolCallArgumentsStream
+
+                        logical_index = len(tool_use_blocks)
                         tool_use_blocks[event.get("index", 0)] = {
                             "id": block.get("id", ""),
                             "name": block.get("name", ""),
+                            "logical": logical_index,
+                            "args": ToolCallArgumentsStream(),
                         }
                         yield ToolCallStart(
-                            id=block.get("id", ""),
-                            name=block.get("name", ""),
-                            index=current_tool_index,
+                            id=block.get("id", ""), name=block.get("name", ""), index=logical_index
                         )
                 elif event_type == "content_block_delta":
                     delta = event.get("delta", {})
@@ -240,13 +243,23 @@ class AnthropicSDKProvider(BaseProvider):
                         yield ThinkPart(think="", signature=delta.get("signature", ""))
                     elif delta_type == "input_json_delta":
                         tool_info = tool_use_blocks.get(event.get("index", 0))
-                        if tool_info:
-                            logical_index = list(tool_use_blocks.keys()).index(
-                                event.get("index", 0)
-                            )
+                        if tool_info is not None:
+                            partial_json = delta.get("partial_json", "")
+                            partial = tool_info["args"].append(partial_json)
                             yield ToolCallDelta(
-                                index=logical_index, arguments_delta=delta.get("partial_json", "")
+                                index=tool_info["logical"],
+                                arguments_delta=partial_json,
+                                partial_arguments=partial,
                             )
+                elif event_type == "content_block_stop":
+                    tool_info = tool_use_blocks.pop(event.get("index", 0), None)
+                    if tool_info is not None:
+                        parsed = tool_info["args"].finish()
+                        yield ToolCallEnd(
+                            index=tool_info["logical"],
+                            arguments=parsed.arguments,
+                            arguments_error=parsed.arguments_error,
+                        )
                 elif event_type == "message_delta":
                     delta = event.get("delta", {})
                     if delta.get("stop_reason"):

@@ -34,6 +34,7 @@ from vtx.core import (
     ThinkingEndEvent,
     ThinkingStartEvent,
     ToolApprovalEvent,
+    ToolArgsDeltaEvent,
     ToolArgsTokenUpdateEvent,
     ToolEndEvent,
     ToolOutputDeltaEvent,
@@ -461,6 +462,10 @@ class AgentRunnerMixin:
                 chat.set_spinner_tool(name)
                 status.increment_tool_calls()
                 status.set_streaming_tokens(0)  # Reset token count for new tool
+
+            case ToolArgsDeltaEvent(tool_call_id=id, partial_arguments=partial):
+                if partial is not None:
+                    chat.update_tool_call_args(id, partial)
 
             case ToolArgsTokenUpdateEvent(token_count=tc):
                 status.set_streaming_tokens(tc)

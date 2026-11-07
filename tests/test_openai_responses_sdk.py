@@ -2,8 +2,6 @@
 
 from __future__ import annotations
 
-import json
-
 from vtx.ai.sdk.base import GenerationConfig, Message
 from vtx.ai.sdk.openai_responses import OpenAIResponsesSDK
 
@@ -191,13 +189,17 @@ def test_stream_function_call_lifecycle_emits_tool_call():
             },
         ],
     )
-    tool_chunks = [c for c in chunks if c["type"] == "tool_calls"]
-    assert len(tool_chunks) == 1
-    tc = tool_chunks[0]["tool_calls"][0]
-    # ToolCall is a dataclass (vtx.ai.sdk.base), not a dict.
-    assert tc.id == "call_1"
-    assert tc.name == "get_weather"
-    assert json.loads(tc.arguments) == {"city": "sf"}
+    starts = [c for c in chunks if c["type"] == "tool_call_start"]
+    deltas = [c for c in chunks if c["type"] == "tool_call_delta"]
+    ends = [c for c in chunks if c["type"] == "tool_call_end"]
+    assert len(starts) == 1 and starts[0]["id"] == "call_1"
+    assert starts[0]["name"] == "get_weather"
+    # Deltas carry the raw fragment plus a tolerant-parsed partial snapshot.
+    assert deltas[0]["arguments_delta"] == '{"ci'
+    assert deltas[-1]["partial_arguments"] == {"city": "sf"}
+    assert len(ends) == 1
+    assert ends[0]["arguments"] == {"city": "sf"}
+    assert ends[0]["arguments_error"] is None
     assert state["has_function_call"] is True
 
 

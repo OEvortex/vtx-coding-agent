@@ -68,6 +68,23 @@ class ToolCallDelta(BaseModel):
     index: int  # Correlates with ToolCallStart.index
     arguments_delta: str
     replace: bool = False
+    # Tolerant-parsed snapshot of the arguments received so far (pi-style
+    # partial arguments). None when the provider does not compute one.
+    partial_arguments: dict[str, Any] | None = None
+    # Late-arriving identity: some providers stream id/name after the first
+    # delta. When set, consumers should update the call's stored values.
+    id: str | None = None
+    name: str | None = None
+
+
+class ToolCallEnd(BaseModel):
+    type: Literal["tool_call_end"] = "tool_call_end"
+    index: int  # Correlates with ToolCallStart.index
+    # Final arguments from one full parse of the complete text (with repair).
+    arguments: dict[str, Any] = Field(default_factory=dict)
+    # Set when the complete text was not a valid JSON object; carries the
+    # parse error plus the received text so it can be reported to the model.
+    arguments_error: str | None = None
 
 
 class StreamDone(BaseModel):
@@ -80,7 +97,9 @@ class StreamError(BaseModel):
     error: str
 
 
-StreamPart = TextPart | ThinkPart | ToolCallStart | ToolCallDelta | StreamDone | StreamError
+StreamPart = (
+    TextPart | ThinkPart | ToolCallStart | ToolCallDelta | ToolCallEnd | StreamDone | StreamError
+)
 
 
 # =================================================================================================
