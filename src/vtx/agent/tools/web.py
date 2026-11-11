@@ -1,9 +1,11 @@
-"""Web search tool for vtx via the Exa MCP endpoint (no API key needed)."""
+"""Web search + URL fetch tool for vtx (Exa MCP search, httpx fetch)."""
 
 from __future__ import annotations
 
 import asyncio
 import json
+import re
+from typing import Literal
 
 from pydantic import BaseModel, Field
 
@@ -70,18 +72,49 @@ async def _call_exa(payload: dict) -> tuple[str | None, str | None]:
     return None, "No results returned from Exa API"
 
 
+_MAX_FETCH_CHARS = 30_000
+
+_JINA_HEADER_RE = re.compile(
+    r"^(Title|URL Source|Published Time|Warning|Markdown Content):.*\n?", re.MULTILINE
+)
+
+
+def _strip_jina_header(text: str) -> str:
+    """Drop Jina Reader's metadata envelope, keep the markdown body."""
+    marker = text.find("Markdown Content:")
+    if marker != -1:
+        return text[marker + len("Markdown Content:") :].strip()
+    return _JINA_HEADER_RE.sub("", text).strip()
+
+
+async def _fetch_url(url: str) -> tuple[str | None, str | None]:
+    """Fetch a URL as markdown via Jina Reader (r.jina.ai)."""
+    import httpx
+
+    try:
+        async with httpx.AsyncClient(timeout=_TIMEOUT) as client:
+            resp = await client.get(f"https://r.jina.ai/{url}")
+    except httpx.TimeoutException:
+        return None, f"Fetch timed out after {_TIMEOUT}s"
+    except Exception as e:
+        return None, f"Fetch failed: {e}"
+
+    if resp.status_code != 200:
+        return None, f"Fetch failed: Jina Reader HTTP {resp.status_code}"
+
+    text = _strip_jina_header(resp.text)
+    if not text or "<html" in text[:200].lower():
+        return None, "Fetch returned no readable content"
+    if len(text) > _MAX_FETCH_CHARS:
+        text = text[:_MAX_FETCH_CHARS] + f"\n[truncated at {_MAX_FETCH_CHARS} chars]"
+    return text, None
+
+
 class SearchParams(BaseModel):
-    query: str = Field(description="Search query string or question")
-    num_results: int = Field(
-        default=8, ge=1, le=20, description="Number of results (1-20, default: 8)"
-    )
-    search_type: str = Field(
-        default="auto",
-        description="'auto' (hybrid), 'neural' (concept matching), or 'keyword' (exact text)",
-    )
-    livecrawl: str = Field(
-        default="fallback",
-        description="'fallback' (cached/live), 'always' (fresh crawl), or 'never' (cached only)",
+    query: str = Field(description="Search query, or a URL when mode='fetch'")
+    mode: Literal["search", "fetch"] = Field(
+        default="search",
+        description="'search' (default) queries Exa; 'fetch' downloads a URL's text",
     )
 
 
@@ -92,15 +125,37 @@ class WebTool(BaseTool):
     tool_icon = "🔍"
     params = SearchParams
     mutating = False
-    description = "Neural web search (Exa). Returns titles, URLs, snippets. Needs internet."
+    description = (
+        "Web search (Exa) or URL fetch. mode='search' (default): query the web, "
+        "returns titles/URLs/snippets. mode='fetch': download a URL's readable text. "
+        "Needs internet."
+    )
     prompt_guidelines = ()
 
     def format_call(self, params: SearchParams) -> str:
-        return f'"{params.query}"'
+        return f"{params.mode}: {params.query}"
 
     async def execute(
         self, params: SearchParams, cancel_event: asyncio.Event | None = None
     ) -> ToolResult:
+        if params.mode == "fetch":
+            url = params.query.strip()
+            if not url.startswith(("http://", "https://")):
+                msg = "mode='fetch' requires an http(s) URL"
+                return ToolResult(success=False, result=msg, ui_summary=f"[red]{msg}[/red]")
+            text, err = await _fetch_url(url)
+            if err:
+                return ToolResult(success=False, result=err, ui_summary=f"[red]{err}[/red]")
+            assert text is not None
+            ui_details, ui_details_full = _split_for_expand(text)
+            return ToolResult(
+                success=True,
+                result=text,
+                ui_summary=f"[dim]fetch: {url}[/dim]",
+                ui_details=ui_details,
+                ui_details_full=ui_details_full,
+            )
+
         payload = {
             "jsonrpc": "2.0",
             "id": 1,
@@ -109,9 +164,9 @@ class WebTool(BaseTool):
                 "name": "web_search_exa",
                 "arguments": {
                     "query": params.query,
-                    "type": params.search_type,
-                    "numResults": params.num_results,
-                    "livecrawl": params.livecrawl,
+                    "type": "auto",
+                    "numResults": 8,
+                    "livecrawl": "fallback",
                 },
             },
         }
@@ -135,7 +190,10 @@ class WebSearchTool(WebTool):
     name = "web_search"
     tool_icon = "🔍"
     params = SearchParams
-    description = "Neural web search (Exa). Returns titles, URLs, snippets. Needs internet."
+    description = (
+        "Web search (Exa) or URL fetch. mode='search' (default); mode='fetch' "
+        "downloads a URL's text. Needs internet."
+    )
 
 
 __all__ = ["SearchParams", "WebSearchTool", "WebTool"]
