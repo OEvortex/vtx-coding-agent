@@ -1400,10 +1400,15 @@ class ToolBlock(Static):
             rendered = self._pad_diff_backgrounds(rendered, max(20, self._box_w() - 4))
         elif self._name == "read" and (self.ui_data or {}).get("preview"):
             data = self.ui_data or {}
+            preview = str(data.get("preview") or "")
+            # A paged read (offset/limit) shows the full range the model read;
+            # a whole-file read stays capped so a huge file doesn't flood the
+            # scrollback (the model sees the full content either way).
+            max_lines = len(preview.splitlines()) if data.get("paged") else 12
             rendered = boxed.highlighted_numbered_lines(
-                str(data.get("preview") or ""),
+                preview,
                 str(data.get("path") or self._source_path() or ""),
-                max_lines=12,
+                max_lines=max_lines,
                 start_line=int(data.get("start_line") or 1),
             )
             is_diff_output = False

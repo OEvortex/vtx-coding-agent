@@ -236,14 +236,24 @@ class ReadTool(BaseTool):
             return ToolResult(success=False, result=msg, ui_summary=f"[red]{msg}[/red]")
 
         lines_read = len(content.splitlines()) if content else 0
+        paged = bool(params.offset or params.limit)
+        # The TUI shows the whole range the model asked for on a paged read;
+        # a whole-file read stays a short preview so a huge listing doesn't
+        # flood the scrollback (the model gets the full content either way).
+        preview_limit = lines_read if paged else PREVIEW_LINES
         preview = "\n".join(
-            _strip_line_number(line) for line in content.splitlines()[:PREVIEW_LINES]
+            _strip_line_number(line) for line in content.splitlines()[:preview_limit]
         )
         return ToolResult(
             success=True,
             result=content,
             ui_summary=f"[dim]({lines_read} lines)[/dim]",
-            ui_data={"path": str(file_path), "preview": preview, "start_line": params.offset or 1},
+            ui_data={
+                "path": str(file_path),
+                "preview": preview,
+                "start_line": params.offset or 1,
+                "paged": paged,
+            },
         )
 
 

@@ -190,3 +190,23 @@ async def test_read_sets_a_ui_preview_without_line_gutters(read_tool, text_file)
     assert result.ui_data["path"] == str(text_file)
     assert result.ui_data["preview"].split("\n")[0] == "line1"
     assert result.ui_data["start_line"] == 1
+
+
+@pytest.mark.asyncio
+async def test_read_paged_preview_carries_the_whole_range(read_tool, tmp_path):
+    f = tmp_path / "big.py"
+    f.write_text("".join(f"line{i}\n" for i in range(1, 21)))
+
+    whole = await read_tool.execute(ReadParams(path=str(f)))
+    assert whole.ui_data["paged"] is False
+    assert len(whole.ui_data["preview"].splitlines()) == 12  # short preview
+
+    # A paged read hands the TUI the whole range the model asked for, so the
+    # UI can show every line instead of a 12-line slice.
+    paged = await read_tool.execute(ReadParams(path=str(f), offset=5, limit=15))
+    assert paged.ui_data["paged"] is True
+    lines = paged.ui_data["preview"].splitlines()
+    assert len(lines) == 15
+    assert lines[0] == "line5"
+    assert lines[-1] == "line19"
+    assert paged.ui_data["start_line"] == 5

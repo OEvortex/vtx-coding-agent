@@ -86,6 +86,19 @@ def test_numbered_lines_use_an_editor_gutter():
     assert "return" in lines[1]
 
 
+def test_numbered_lines_show_the_full_range_when_max_lines_fits():
+    # The read tool hands the TUI the whole range it read for a paged read;
+    # when max_lines covers everything, every line renders numbered (no
+    # "earlier lines" marker) with the correct start offset.
+    content = "\n".join(f"row{i}" for i in range(1, 16))  # 15 lines
+    preview = boxed.highlighted_numbered_lines(content, "x.py", max_lines=15, start_line=5)
+    rows = preview.plain.split("\n")
+    assert len(rows) == 15
+    assert rows[0].strip().startswith("5 │ row1")
+    assert rows[-1].strip().startswith("19 │ row15")
+    assert "earlier lines" not in preview.plain
+
+
 def test_diff_rows_are_syntax_highlighted_and_keep_the_marker():
     diff, _, _ = generate_diff("def f():\n    return 1\n", "def f(x: int) -> int:\n    return x\n")
     text = Text.from_markup(format_diff_display(diff))
