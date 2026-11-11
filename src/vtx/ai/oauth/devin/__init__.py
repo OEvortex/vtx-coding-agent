@@ -241,7 +241,7 @@ async def _stream_chat(request: Any, token: str, base_url: str) -> AsyncIterator
 
 
 async def list_devin_models() -> list[dict[str, Any]]:
-    """Return ``[{id, name, supports_images, max_tokens}]`` for the account."""
+    """Return model dicts for the account, incl. context/output token limits."""
     creds = load_devin_credentials()
     if creds is None:
         return []
@@ -261,12 +261,19 @@ async def list_devin_models() -> list[dict[str, Any]]:
         if not uid or uid in seen:
             continue
         seen.add(uid)
+        # ``ClientModelConfig.model_info`` carries the real limits:
+        # ``max_tokens`` is the context window, ``max_output_tokens`` the
+        # completion cap. ``cfg.max_tokens`` is only set for a few models.
+        info = cfg.model_info
+        max_output = int(info.max_output_tokens) if info and info.max_output_tokens else 0
+        context = int(info.max_tokens) if info and info.max_tokens else 0
         models.append(
             {
                 "id": uid,
                 "name": cfg.label or uid,
                 "supports_images": bool(cfg.supports_images),
-                "max_tokens": int(cfg.max_tokens) if cfg.max_tokens else 0,
+                "max_tokens": max_output or (int(cfg.max_tokens) if cfg.max_tokens else 0),
+                "context_length": context,
                 # Devin streams reasoning as ThinkParts unconditionally; the
                 # cascade config response carries no thinking flags.
                 "supports_thinking": True,
@@ -590,11 +597,14 @@ class DevinSDKProvider(BaseProvider):
                     llm_stream._id = resp.message_id
                 u = resp.usage
                 if u is not None:
-                    usage = Usage(
-                        input_tokens=int(u.input_tokens or 0),
-                        output_tokens=int(u.output_tokens or 0),
-                        cache_read_tokens=int(u.cache_read_tokens or 0),
-                        cache_write_tokens=int(u.cache_write_tokens or 0),
+                    # Usage stats arrive on several frames; later frames can
+                    # carry only provider/model metadata with zeroed counts,
+                    # so merge non-zero fields instead of replacing wholesale.
+                    usage.input_tokens = int(u.input_tokens or usage.input_tokens)
+                    usage.output_tokens = int(u.output_tokens or usage.output_tokens)
+                    usage.cache_read_tokens = int(u.cache_read_tokens or usage.cache_read_tokens)
+                    usage.cache_write_tokens = int(
+                        u.cache_write_tokens or usage.cache_write_tokens
                     )
                 # Signature deltas are accumulated and emitted once as a
                 # signature-only ThinkPart — matches how other providers

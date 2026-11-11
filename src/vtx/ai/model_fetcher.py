@@ -275,6 +275,7 @@ def _fetch_devin_models(provider) -> list[FetchedModel]:
             id=m["id"],
             name=m.get("name") or m["id"],
             max_output_tokens=int(m.get("max_tokens") or 0),
+            context_length=int(m.get("context_length") or 0),
             supports_images=bool(m.get("supports_images")),
             supports_thinking=bool(m.get("supports_thinking")),
             thinking_level_map=m.get("thinking_level_map"),

@@ -578,7 +578,13 @@ class ToolBlock(Static):
         name = self._name or ""
         display = name[:1].upper() + name[1:] if name else ""
         call_plain = boxed.strip_markup(self._call_msg or "")
-        detail = call_plain.split("\n", 1)[0] if call_plain else ""
+        detail: str | Text = ""
+        if call_plain:
+            first_line = call_plain.split("\n", 1)[0]
+            if self._name == "bash":
+                detail = format_bash_command(first_line)
+            else:
+                detail = first_line
         running = self._success is None and not self._awaiting_approval
         status = ""
         if self._success is True:

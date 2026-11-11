@@ -26,16 +26,20 @@ CORNER_TR = "╮"
 CORNER_BL = "╰"
 CORNER_BR = "╯"
 
-#: pi-style caps tool boxes at ~100 columns regardless of terminal width.
-MAX_BOX_WIDTH = 100
 MIN_BOX_WIDTH = 30
 #: Skip the Pygments pass on diffs too large to colour cheaply (expanded view).
 MAX_HIGHLIGHT_CHARS = 200_000
 
 
 def box_width(width: int | None) -> int:
+    """Box width for a widget ``width``: the widget's full width, floored.
+
+    The box spans the chat column edge to edge (the widget's 1-cell margins
+    keep it off the terminal bezel), so a wide terminal gets a wide box and
+    long lines soft-wrap instead of being clipped at an arbitrary cap.
+    """
     w = width or 80
-    return max(MIN_BOX_WIDTH, min(w, MAX_BOX_WIDTH))
+    return max(MIN_BOX_WIDTH, w)
 
 
 def _colors():
@@ -51,6 +55,22 @@ def _fit(text: str, budget: int) -> str:
         return text
     clipped.truncate(max(1, budget), overflow="ellipsis", pad=False)
     return clipped.plain
+
+
+def _fit_text(text: Text, budget: int) -> Text:
+    """Clip a styled ``Text`` to ``budget`` display cells, keeping its spans.
+
+    Unlike :func:`_fit`, this works on an already-highlighted ``Text`` (e.g. a
+    syntax-coloured bash command) so a truncated header keeps its colours
+    instead of collapsing to a single dim run.
+    """
+    if budget <= 0:
+        return Text("")
+    clipped = text.copy()
+    if clipped.cell_len <= budget:
+        return clipped
+    clipped.truncate(max(1, budget), overflow="ellipsis", pad=False)
+    return clipped
 
 
 def visible_len(text: str) -> int:
@@ -84,7 +104,7 @@ def strip_markup(text: str) -> str:
 def top_border(
     icon: str,
     name: str,
-    detail: str,
+    detail: str | Text,
     width: int,
     *,
     running: bool = False,
@@ -123,10 +143,13 @@ def top_border(
 
     badge_extra = (1 + Text(f" {badge} ").cell_len) if badge else 0
     detail_budget = w - head.cell_len - right.cell_len - badge_extra - (2 if badge else 3)
-    detail_txt = _fit(detail, detail_budget) if detail else ""
-    if detail_txt:
-        head.append(" ")
-        head.append(detail_txt, style=dim)
+    if detail:
+        if isinstance(detail, Text):
+            head.append(" ")
+            head.append_text(_fit_text(detail, detail_budget))
+        elif detail_txt := _fit(detail, detail_budget):
+            head.append(" ")
+            head.append(detail_txt, style=dim)
     if badge:
         head.append(" ")
         head.append(
@@ -238,18 +261,56 @@ def _soft_wrap_segments(line: Text, width: int) -> list[Text]:
         return [line]
 
 
+#: Editor gutter prefixes emitted by ``highlighted_numbered_lines``
+#: (``282 │ ``) and ``highlight_diff`` (``+ 1 │ ``, ``  2 │ ``).
+_GUTTER_RE = re.compile(r"^[+\- ]*\d+\s*│\s")
+
+
+def _wrap_body_line(line: Text, inner: int) -> list[Text]:
+    """Soft-wrap one body line at ``inner`` cells.
+
+    A line opening with an editor gutter keeps that gutter on the first
+    segment and indents every continuation by the same width, so wrapped code
+    stays aligned under the code column the way a VS Code soft wrap does —
+    instead of jumping back to the box's left padding.
+    """
+    if not line.plain or line.cell_len <= inner:
+        return [line]
+    match = _GUTTER_RE.match(line.plain)
+    if match is None:
+        return _soft_wrap_segments(line, inner)
+    gutter = match.group(0)
+    gutter_len = len(gutter)  # digits, spaces, +, - and │ are all one cell
+    if gutter_len >= inner - 8:
+        return _soft_wrap_segments(line, inner)
+    parts = line.divide([gutter_len])
+    gutter_text = parts[0]
+    content = parts[1] if len(parts) > 1 else Text()
+    rows: list[Text] = []
+    for index, segment in enumerate(_soft_wrap_segments(content, inner - gutter_len)):
+        row = Text()
+        if index == 0:
+            row.append_text(gutter_text)
+        else:
+            row.append_text(Text(" " * gutter_len, style=content.style))
+        row.append_text(segment)
+        rows.append(row)
+    return rows
+
+
 def wrap_boxed(text: Text, width: int, *, failed: bool = False) -> Text:
     """Box every line of ``text``: ``│ line │`` rows joined by newlines.
 
     Lines wider than the box's inner width are soft-wrapped across several
-    rows (an editor-style diff/code wrap) rather than truncated.
+    rows (an editor-style diff/code wrap) rather than truncated; guttered
+    lines keep their code column aligned on the continuation rows.
     """
     w = box_width(width)
     inner = w - 4
     out = Text()
     rows: list[Text] = []
     for line in text.split("\n"):
-        rows.extend(_soft_wrap_segments(line, inner))
+        rows.extend(_wrap_body_line(line, inner))
     for i, row in enumerate(rows):
         out.append_text(box_line(row, width, failed=failed))
         if i < len(rows) - 1:

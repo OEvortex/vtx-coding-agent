@@ -143,6 +143,39 @@ def test_wrap_boxed_soft_wraps_long_lines_within_the_box():
     assert " 2 │" not in rows[3]
 
 
+def test_box_width_uses_the_full_widget_width():
+    # The box spans the chat column edge to edge: wide terminals get wide
+    # boxes (long lines soft-wrap) instead of a hard 100-column cap.
+    assert boxed.box_width(200) == 200
+    assert boxed.box_width(140) == 140
+    assert boxed.box_width(80) == 80
+    assert boxed.box_width(10) == boxed.MIN_BOX_WIDTH
+    assert boxed.box_width(None) == 80
+
+
+def test_wrap_boxed_aligns_guttered_continuation_under_the_code_column():
+    # A read/diff line that soft-wraps must keep its code aligned under the
+    # code column (after the ``282 │ `` / ``+ 2 │ `` gutter), not jump back to
+    # the box's left padding like a plain paragraph wrap.
+    long_code = (
+        "    resp = await self.client.call_endpoint(first, second, third, fourth, fifth, sixth)"
+    )
+    line = Text()
+    line.append("282 ", style="dim")
+    line.append("│ ", style="dim")
+    line.append(long_code)
+
+    rows = boxed.wrap_boxed(line, 50).plain.split("\n")
+    assert len(rows) >= 3
+    # First row carries the gutter; continuations carry gutter-width blanks.
+    assert rows[0].startswith("│ 282 │ ")
+    for row in rows[1:]:
+        assert row.startswith("│       "), row  # '│ ' + 6 gutter cells of indent
+    # The wrapped code fragment lines up in the same column on every row.
+    code_col = rows[0].index("    resp")
+    assert rows[1].index("self.client") == code_col
+
+
 def test_wrap_boxed_preserves_styles_and_backgrounds_across_the_break():
     from rich.style import Style
 
