@@ -275,6 +275,28 @@ def test_v15_refine_block_is_dropped(tmp_path, monkeypatch):
     reset_config()
 
 
+def test_v16_session_retention_defaults_are_added(tmp_path, monkeypatch):
+    """v17 adds the retention block; a pre-v17 config gets the defaults."""
+    home = tmp_path / "home"
+    config_dir = home / ".vtx"
+    config_dir.mkdir(parents=True)
+    config_file = config_dir / "config.yml"
+    config_file.write_text(
+        "meta:\n  config_version: 16\n\nui:\n  theme: gruvbox-dark\n", encoding="utf-8"
+    )
+
+    monkeypatch.setattr(Path, "home", lambda: home)
+    reset_config()
+
+    get_config()
+
+    written = yaml.safe_load(config_file.read_text(encoding="utf-8"))
+    assert written["meta"]["config_version"] == CURRENT_CONFIG_VERSION
+    assert written["session_retention"] == {"enabled": True, "max_age_days": 90, "keep_recent": 20}
+
+    reset_config()
+
+
 def test_v12_config_migrates_all_the_way(tmp_path, monkeypatch):
     """A pre-refine config loses both retired keys in one load."""
     home = tmp_path / "home"

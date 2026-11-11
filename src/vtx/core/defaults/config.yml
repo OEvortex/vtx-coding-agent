@@ -1,5 +1,5 @@
 meta:
-  config_version: 16
+  config_version: 17
 
 llm:
   default_provider: "openai-codex"
@@ -48,6 +48,17 @@ notifications:
 recap:
   enabled: true
   idle_seconds: 60
+
+# Automatic cleanup of old session logs. A file is only removed when it has
+# been untouched for longer than ``max_age_days`` *and* it is not among the
+# ``keep_recent`` newest sessions in its project directory. Token usage is
+# accumulated into ``~/.vtx/token_usage.json`` before anything is deleted, so
+# ``/usage`` keeps reporting lifetime totals after the transcripts are gone.
+# Set ``enabled: false`` to keep every session file forever.
+session_retention:
+  enabled: true
+  max_age_days: 90
+  keep_recent: 20
 
 # Extensions: Python files or packages that hook into vtx at startup.
 # Each entry is a path to a ``.py`` file or a package directory containing

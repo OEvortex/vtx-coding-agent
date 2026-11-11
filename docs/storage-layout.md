@@ -39,7 +39,8 @@ Everything under `~/.vtx`, unless one of the env vars listed below moved it.
 | `profiles/<name>/bundle.txt` | The profile's ordered bundle list | `src/vtx/plugins/profile.py:33-34`, `:79-83` |
 | `profiles/<name>/cordis.yml` | The profile's patch layer | `src/vtx/plugins/profile.py:34`, `:64-66` |
 | `profiles/<name>/compatibility.json` | `allow-version` grants | `src/vtx/plugins/install.py:31`, `:47-48` |
-| `sessions/<safe_cwd>/<ts>_<id>.jsonl` | One file per session; the directory is `chmod 0700` | `src/vtx/agent/session.py:237-241`, `:894-895` |
+| `sessions/<safe_cwd>/<ts>_<id>.jsonl` | One file per session; the directory is `chmod 0700`. Old, untouched files are pruned (`session_retention`) | `src/vtx/agent/session.py:237-241`, `:894-895`, `src/vtx/core/session_retention.py:73` |
+| `token_usage.json` | Durable per-session token ledger; keeps lifetime `/usage` totals after a session file is deleted | `src/vtx/core/token_usage.py:26`, `:54` |
 | `tasks/<safe_cwd>/` | Background-task store and sub-agent results | `src/vtx/agent/background.py:100`, `src/vtx/agent/tools/task.py:213` |
 | `snapshots/<digest>/` | Pre-edit file snapshots for revert | `src/vtx/agent/snapshot.py:184` |
 | `skills/` | Skills installed into the vtx home; marked `bundled` on load | `src/vtx/agent/context/skills.py:351`, `:414-419` |
@@ -60,7 +61,7 @@ Everything under `~/.vtx`, unless one of the env vars listed below moved it.
 | `cline_auth.json` | Cline OAuth token | `src/vtx/ai/oauth/cline.py:69` |
 | `dynamic_auth.json` | Dynamic-provider API keys | `src/vtx/ai/oauth/dynamic.py:32`, `:52-72` |
 
-Two of these are read rather than written as whole directories: the usage heatmap scans everything under `sessions/` (`src/vtx/tui/usage_stats.py:58-59`), and HTML export reads the same per-project session directory (`src/vtx/tui/export.py:182-183`).
+Two of these are read rather than written as whole directories: the usage aggregate walks everything under `sessions/` but only re-parses files whose `(mtime, size)` changed, recording the rest in `token_usage.json` (`src/vtx/core/token_usage.py:189`), and HTML export reads the same per-project session directory (`src/vtx/tui/export.py:182-183`).
 
 Global `AGENTS.md` or `CLAUDE.md` context files are read straight out of `~/.vtx` (`src/vtx/agent/context/agent_mds.py:87-89`), so `~/.vtx/AGENTS.md` is global project instructions.
 

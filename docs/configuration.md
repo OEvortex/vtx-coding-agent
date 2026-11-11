@@ -30,12 +30,13 @@ Other paths under the config directory that the code reads and writes:
 | `~/.vtx/copilot_auth.json` | GitHub Copilot OAuth credentials (`src/vtx/ai/oauth/copilot.py:48`) |
 | `~/.vtx/cline_auth.json` | Cline OAuth credentials (`src/vtx/ai/oauth/cline.py:68`) |
 | `~/.vtx/config.yml.bak.<YYYYMMDDHHMMSS>` | Backup written before an in-place migration (`src/vtx/core/config.py:837`) |
+| `~/.vtx/token_usage.json` | Durable per-session token ledger; survives session deletion (`src/vtx/core/token_usage.py:26`) |
 
 Keys pasted through `/login` for a keyed provider are stored in the dynamic auth file. `get_dynamic_auth_path()` prefers `~/vtx/dynamic_auth.yml`, then `$XDG_CONFIG_HOME/vtx/dynamic_auth.json`, then `~/.vtx/dynamic_auth.json` (`src/vtx/ai/oauth/dynamic.py:52`).
 
 ## Config version and migration
 
-Every config file carries `meta.config_version`. The current version is read out of the shipped defaults file at import time: `CURRENT_CONFIG_VERSION = int(_DEFAULT_CONFIG_DATA.get("meta", {}).get("config_version", 13))` (`src/vtx/core/config.py:65`). `src/vtx/core/defaults/config.yml` sets it to `16`.
+Every config file carries `meta.config_version`. The current version is read out of the shipped defaults file at import time: `CURRENT_CONFIG_VERSION = int(_DEFAULT_CONFIG_DATA.get("meta", {}).get("config_version", 13))` (`src/vtx/core/config.py:65`). `src/vtx/core/defaults/config.yml` sets it to `17`.
 
 On load, `_migrate_config_data()` walks the file forward one step at a time until it reaches the current version (`src/vtx/core/config.py:739`). If anything changed and the file had content, Vtx copies the original to `config.yml.bak.<timestamp>` and rewrites the file atomically, then records a warning you can read with `consume_config_warnings()` and see in the TUI launch warnings (`src/vtx/core/config.py:881`).
 
@@ -58,6 +59,7 @@ The migration chain and what each step does:
 | 13 | 14 | Drop the top-level `mode` key. The RLM runtime mode is gone (`src/vtx/core/config.py:675`) |
 | 14 | 15 | Drop `task.subagent_presets`, add `task.max_concurrent: 4` (`src/vtx/core/config.py:695`) |
 | 15 | 16 | Drop the `refine` block (`src/vtx/core/config.py:720`) |
+| 16 | 17 | Add the `session_retention` block (`src/vtx/core/config.py:765`) |
 
 A migration never silently rewrites a value you should have to agree to: `mode` and `refine` were deleted rather than normalised so a stale key cannot sit in the file suggesting a choice that no longer exists (`src/vtx/core/config.py:684`).
 
@@ -163,6 +165,19 @@ See [permissions.md](permissions.md) for the approval flow.
 | `enabled` | bool | `true` | Draft an idle "where you left off" summary using the current model (`src/vtx/core/config.py:164`) |
 | `idle_seconds` | float | `60` | Idle time before the recap is drafted, constrained `ge=5` (`src/vtx/core/config.py:165`) |
 
+### `session_retention`
+
+Old session logs are pruned automatically. A file is removed only when it is
+both untouched for `max_age_days` and outside the `keep_recent` newest files in
+its project directory. Token usage is folded into `~/.vtx/token_usage.json`
+before deletion, so `/usage` keeps reporting lifetime totals.
+
+| Field | Type | Default | Description |
+|---|---|---|---|
+| `enabled` | bool | `true` | Run retention at startup (`src/vtx/core/config.py:174`) |
+| `max_age_days` | int | `90` | Untouched for longer than this before a file is eligible; `0` disables the age gate, constrained `ge=0` (`src/vtx/core/config.py:179`) |
+| `keep_recent` | int | `20` | The newest N sessions per project directory always survive, constrained `ge=0` (`src/vtx/core/config.py:181`) |
+
 ### `last_selected`
 
 | Field | Type | Default | Description |
@@ -260,6 +275,11 @@ notifications:
 recap:
   enabled: true
   idle_seconds: 60
+
+session_retention:
+  enabled: true
+  max_age_days: 90
+  keep_recent: 20
 
 extensions: []
 

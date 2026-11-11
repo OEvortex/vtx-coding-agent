@@ -43,6 +43,34 @@ ids, generated separately (`uuid4().hex[:8]`, `src/vtx/agent/session.py:232-234`
 Two kinds of state are deliberately *not* in the project: working-tree snapshots live in a
 separate shadow git repo under `~/.vtx/snapshots/`. See `snapshots`.
 
+### Retention and the token ledger
+
+Session files are pruned automatically, and the cost of a deleted conversation is not
+lost with it. At startup -- after the session in use is known, so it can be protected by
+name -- vtx removes files that are **both** untouched for `session_retention.max_age_days`
+(default 90) **and** outside the `session_retention.keep_recent` newest files of their
+project directory (default 20). A project directory that ends up empty is removed too
+(`src/vtx/core/session_retention.py:73`). The TUI reports what went; headless and ACP
+prune silently in the background.
+
+Before anything is unlinked, usage is folded into a durable ledger,
+`~/.vtx/token_usage.json` (`src/vtx/core/token_usage.py`):
+
+```json
+{"version":1,"files":{"-home-user-proj/2026-01-11T10-47-12_5f3a.jsonl":{"mtime":1768130832.5,"size":482911,"days":{"2026-01-11":[812034,28441,1320000,0,17]}}}}
+```
+
+Each file keeps its per-day buckets -- `[input, output, cache_read, cache_write, turns]`
+-- after the file itself is gone, so `/usage`'s lifetime total never shrinks when
+retention runs. A file whose `(mtime, size)` still matches its ledger entry is not
+re-parsed, which also makes `/usage` cheap after the first scan. Delete
+`~/.vtx/token_usage.json` and lifetime usage falls back to whatever session files still
+exist; set `session_retention.enabled: false` to keep every transcript.
+
+The ledger reads only assistant-message usage. A sub-agent's tokens are counted from the
+sub-agent's own session file, not from the `subagent_usage` entry charged to its parent
+transcript, so nothing is counted twice.
+
 ## The file format
 
 One JSON object per line, UTF-8, no array wrapper. The first line is always the header:
@@ -443,7 +471,7 @@ agent is running. If there is nothing to summarise you get
 | `/redo` | Step forward again | `:303-329` |
 | `/export` | Write an HTML transcript to disk | `:446-469` |
 | `/copy` | Copy the last assistant message to the clipboard | `:470-484` |
-| `/usage` | Token and cost breakdown | `src/vtx/tui/commands/__init__.py:109-110` |
+| `/usage` | Token and cost breakdown, from the durable ledger (deleted sessions included) | `src/vtx/tui/commands/__init__.py:109-110`, `src/vtx/tui/usage_stats.py:96` |
 
 `/resume` refuses to delete the session you are currently in: `Cannot delete current
 session` (`src/vtx/tui/commands/sessions.py:394`).
@@ -465,9 +493,10 @@ session` (`src/vtx/tui/commands/sessions.py:394`).
   snapshot on the current branch, so it falls back to conversation-only rewind.
 - **`refinement_notice` has no writer.** The read path remains only so old sessions keep
   rendering (`src/vtx/agent/session.py:102-107`).
-- **Nothing prunes old session files.** `Session.list` reads every `.jsonl` in the
-  directory, so a long-lived project directory just grows; deleting files by hand is safe
-  but only outside a running session.
+- **Pruning is all-or-nothing per file.** A session that is eligible is deleted whole;
+  its ledger totals survive, but its transcript is unrecoverable. `Session.list` still
+  reads every `.jsonl` that remains in the directory, so `keep_recent` is what bounds the
+  picker's size.
 - **`--resume` matches against this directory only.** A session recorded under a different
   `cwd` is invisible, even though the id is a UUID.
 

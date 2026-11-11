@@ -20,7 +20,7 @@ Releases are automated. To cut one:
 2. Bump the version and create the tag: `npm version patch` (or `minor` / `major`).
 3. Push it: `git push --follow-tags`.
 
-The [release workflow](.github/workflows/release.yml) then type checks, tests, builds the extension, creates a GitHub Release with the `.vsix` attached, and publishes to the VS Code Marketplace. When `OVSX_PAT` is configured, it also publishes to Open VSX as a best effort step. The release body is the matching `CHANGELOG.md` section (via `scripts/changelog-notes.js`) with GitHub's "Full Changelog" link appended, so if the entry is missing the notes fall back to a link to the changelog. The [CI workflow](.github/workflows/ci.yml) runs the same checks on every push and pull request, and the type check and tests again on Windows and macOS, since the extension runs wherever VS Code does.
+The [release workflow](.github/workflows/release.yml) then type checks, tests, builds the extension, creates a GitHub Release with the `.vsix` attached, and publishes to the VS Code Marketplace when `VSCE_PAT` is configured. When `OVSX_PAT` is configured, it also publishes to Open VSX as a best effort step. The release body is the matching `CHANGELOG.md` section (via `scripts/changelog-notes.js`) with GitHub's "Full Changelog" link appended, so if the entry is missing the notes fall back to a link to the changelog. The [CI workflow](.github/workflows/ci.yml) runs the same checks on pushes and pull requests to `main`, and the tests again on Windows and macOS, since the extension runs wherever VS Code does.
 
 One time setup for Marketplace publishing:
 

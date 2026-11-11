@@ -164,6 +164,33 @@ class StartupMixin:
         if self._launch_warnings:
             chat.add_launch_warnings(self._launch_warnings)
 
+    async def _prune_session_history(self) -> None:
+        """Delete old unused session logs, keeping their token usage.
+
+        Runs off the event loop and after the runtime has loaded a session, so
+        the file this process is using can be protected by name rather than by
+        a mtime heuristic.
+        """
+        from vtx.core.session_retention import policy_from_config, prune_old_sessions
+
+        session = self._runtime.session
+        protect = []
+        if session is not None and session.session_file is not None:
+            protect.append(session.session_file)
+
+        try:
+            result = await asyncio.to_thread(prune_old_sessions, protect=protect)
+        except Exception as exc:
+            self._add_launch_warning(f"Session cleanup: {exc}")
+            return
+
+        for message in result.errors:
+            self._add_launch_warning(f"Session cleanup: {message}")
+        if result.deleted:
+            self.query_one("#chat-log", ChatLog).add_info_message(
+                result.summary(policy_from_config())
+            )
+
     async def _ensure_models_dev(self) -> None:
         import contextlib
 

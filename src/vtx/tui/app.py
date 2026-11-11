@@ -790,6 +790,10 @@ class Vtx(
         # the session, or its result sits unread until the user types something.
         self.watch_background_tasks()
 
+        # Housekeeping: old unused session logs are pruned once the session
+        # that is actually in use is known, so it can be protected by name.
+        self.run_worker(self._prune_session_history(), exclusive=False)
+
         self._startup_complete = True
         self._show_pending_update_notice_if_idle()
         self.query_one("#input-box", InputBox).focus()

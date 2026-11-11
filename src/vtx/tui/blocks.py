@@ -2294,7 +2294,7 @@ class UsageBlock(Static):
     def _columns(self, available_width: int) -> tuple[list, object]:
         from datetime import date, timedelta
 
-        end = date.today()
+        end = self._report.as_of or date.today()
         start = end - timedelta(days=self._days - 1)
         start -= timedelta(days=(start.weekday() + 1) % 7)
         window_start = end - timedelta(days=self._days - 1)
@@ -2321,7 +2321,7 @@ class UsageBlock(Static):
 
         colors = config.ui.colors
         report = self._report
-        end = date.today()
+        end = report.as_of or date.today()
 
         columns, window_start = self._columns(available_width)
 
@@ -2407,7 +2407,8 @@ class UsageBlock(Static):
         elif len(columns) >= 50:
             subtitle = "Token activity · last 12 months"
         else:
-            months = max(1, round((date.today() - columns[0]).days / 30.4))
+            end = report.as_of or date.today()
+            months = max(1, round((end - columns[0]).days / 30.4))
             subtitle = f"Token activity · last {months} months"
 
         text = Text()
@@ -2416,5 +2417,12 @@ class UsageBlock(Static):
         text.append("\n\n")
         text.append(f"{subtitle}\n", style=f"{colors.fg} bold")
         text.append_text(self._heatmap(available_width))
-        text.append(f"\n{report.sessions_scanned:,} sessions scanned\n", style=colors.dim)
+        # The count is of files still on disk, while the totals include every
+        # session the ledger has ever seen -- saying so avoids reading the two
+        # as contradictory.
+        text.append(
+            f"\n{report.sessions_scanned:,} session files on disk"
+            " · lifetime includes deleted sessions\n",
+            style=colors.dim,
+        )
         return text

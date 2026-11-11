@@ -171,6 +171,21 @@ class RecapConfig(BaseModel):
     idle_seconds: float = Field(default=60, ge=5)
 
 
+class SessionRetentionConfig(BaseModel):
+    """Automatic cleanup of old session logs.
+
+    Token usage is folded into ``token_usage.json`` before a file is removed,
+    so pruning never costs you the lifetime figures ``/usage`` reports.
+    """
+
+    enabled: bool = True
+    #: Untouched for longer than this before a file is eligible. ``0`` disables
+    #: the age gate, leaving only the ``keep_recent`` floor.
+    max_age_days: int = Field(default=90, ge=0)
+    #: The newest N sessions per project directory always survive.
+    keep_recent: int = Field(default=20, ge=0)
+
+
 class LastSelectedConfig(BaseModel):
     model_id: str | None = None
     provider: str | None = None
@@ -251,6 +266,7 @@ class ConfigSchema(BaseModel):
     permissions: PermissionsConfig
     notifications: NotificationsConfig = NotificationsConfig()
     recap: RecapConfig = RecapConfig()
+    session_retention: SessionRetentionConfig = SessionRetentionConfig()
     last_selected: LastSelectedConfig = LastSelectedConfig()
     recent_models: RecentModelsConfig = RecentModelsConfig()
     # User-configured extension paths (file or package). Auto-discovered
@@ -357,6 +373,10 @@ class Config:
     @property
     def recap(self) -> RecapConfig:
         return self._parsed.recap
+
+    @property
+    def session_retention(self) -> SessionRetentionConfig:
+        return self._parsed.session_retention
 
     @property
     def binaries(self) -> _BinariesConfig:
@@ -742,6 +762,33 @@ def _migrate_v15_to_v16(data: dict[str, Any]) -> dict[str, Any]:
     return migrated
 
 
+def _migrate_v16_to_v17(data: dict[str, Any]) -> dict[str, Any]:
+    """Add the ``session_retention`` block.
+
+    Old session logs now get pruned, and their token usage survives in
+    ``token_usage.json``; a pre-v17 config has no opinion on that yet, so it
+    gets the documented defaults.
+    """
+    migrated = dict(data)
+
+    retention = migrated.get("session_retention")
+    if not isinstance(retention, dict):
+        retention = {}
+        migrated["session_retention"] = retention
+    retention.setdefault("enabled", True)
+    if not isinstance(retention.get("max_age_days"), int) or retention["max_age_days"] < 0:
+        retention["max_age_days"] = 90
+    if not isinstance(retention.get("keep_recent"), int) or retention["keep_recent"] < 0:
+        retention["keep_recent"] = 20
+
+    meta = migrated.get("meta")
+    if not isinstance(meta, dict):
+        migrated["meta"] = {"config_version": 17}
+    else:
+        meta["config_version"] = 17
+    return migrated
+
+
 def _migrate_config_data(data: dict[str, Any]) -> tuple[dict[str, Any], int, int, bool]:
     original = deepcopy(data)
     current_version = _get_config_version(original)
@@ -811,6 +858,10 @@ def _migrate_config_data(data: dict[str, Any]) -> tuple[dict[str, Any], int, int
         if current_version == 15:
             migrated = _migrate_v15_to_v16(migrated)
             current_version = 16
+            continue
+        if current_version == 16:
+            migrated = _migrate_v16_to_v17(migrated)
+            current_version = 17
             continue
         break
 

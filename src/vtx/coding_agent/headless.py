@@ -121,6 +121,11 @@ async def run_headless(
         return 2
 
     cfg = get_config()
+    # Prune old session logs in the background: this run creates a fresh
+    # session, so nothing it writes is a candidate.
+    from vtx.core.session_retention import prune_in_background
+
+    prune_in_background()
     previous_permission_mode = cfg.permissions.mode
     # Headless can't show approval prompts; force auto for this run only,
     # without mutating the saved config or clobbering the config file.

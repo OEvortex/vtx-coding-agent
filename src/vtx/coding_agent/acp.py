@@ -1219,4 +1219,7 @@ class AcpServer:
 
 def run_acp() -> None:
     """Entry point for ``vtx acp``."""
+    from vtx.core.session_retention import prune_in_background
+
+    prune_in_background()
     asyncio.run(AcpServer()._serve())

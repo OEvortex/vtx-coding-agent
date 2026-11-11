@@ -46,7 +46,7 @@ It is a personal, open source project published on the VS Code Marketplace under
   against a real ACP agent (see "Testing the host" below).
 - **`media/`** is what the webviews are built from: the panel markup, the stylesheet,
   and the icons. **`resources/`** is the extension's own icons. **`docs/`** holds the
-  README screenshots and the guide for regenerating them.
+  screenshot set, the guide for regenerating it, and the known issues list.
 - Build output goes to **`dist/`** (bundled by esbuild, do not edit by hand).
 
 ## Commands
@@ -169,7 +169,7 @@ npm version patch   # or minor / major
 git push --follow-tags
 ```
 
-The tag push triggers the release workflow, which type checks, tests, builds, creates a GitHub Release with the `.vsix` attached, and publishes to the Marketplace. It also publishes to Open VSX when `OVSX_PAT` is configured.
+The tag push triggers the release workflow, which type checks, tests, builds, creates a GitHub Release with the `.vsix` attached, and publishes to the Marketplace when `VSCE_PAT` is configured. It also publishes to Open VSX when `OVSX_PAT` is configured.
 
 The release body is taken from the matching `CHANGELOG.md` section by
 `scripts/changelog-notes.js`, with GitHub's own "Full Changelog" link appended.
@@ -193,7 +193,8 @@ place.
   helpers, tokens, and patterns before adding new ones. Study a neighbouring file
   before writing a new one.
 - **Never assume a library exists.** Check `package.json` first. The runtime
-  dependencies are `markdown-it`, `highlight.js`, and `mermaid`, nothing else.
+  dependencies are `markdown-it`, `highlight.js`, `mermaid`, and `js-yaml`,
+  nothing else.
 - **Readable names over comments.** Add a comment only when the code breaks a
   pattern or the data path is not obvious. Do not add or remove comments
   otherwise.
