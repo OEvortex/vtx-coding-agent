@@ -104,7 +104,9 @@ import { renderMarkdown, renderShell, renderCode } from "./markdown.js";
   let currentTitle = "Chat";
   let lastUserText = "";
 
-  const modeDropdown = createDropdown(el.modeDD, (v) => vscode.postMessage({ type: "setMode", mode: v }));
+  // The mode picker wears the person glyph upstream gives its agent/participant
+  // chooser, the control that decides who answers.
+  const modeDropdown = createDropdown(el.modeDD, (v) => vscode.postMessage({ type: "setMode", mode: v }), { staticIcon: "codicon-person" });
   // Model picker lists families; a separate thinking picker holds the effort
   // variants of the selected family (Copilot-style).
   let modelFamilies = [];

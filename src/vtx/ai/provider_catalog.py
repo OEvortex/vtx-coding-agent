@@ -255,6 +255,22 @@ def _get_builtin_oauth_providers() -> dict[str, ProviderInfo]:
             models_endpoint="/exa.api_server_pb.ApiServerService/GetCascadeModelConfigs",
             headers={},
         ),
+        "freepi": ProviderInfo(
+            slug="freepi",
+            display_name="FreePi",
+            description="FreePi (freepi.ai) OAuth provider.",
+            family="openai_compat",
+            base_url="https://api.freepi.ai/v1",
+            api_key_env="FREEPI_API_KEY",
+            known_models=(),
+            supports_tools=True,
+            supports_vision=True,
+            supports_thinking=True,
+            fetch_models=True,
+            # httpx normalizes "/v1/../client-version" -> "/client-version".
+            models_endpoint="/../client-version",
+            headers={"x-client-version": "0.6.18", "x-session-id": "vtx"},
+        ),
     }
 
 

@@ -898,13 +898,14 @@ body {
 }
 
 .dd-btn .codicon {
-  font-size: 13px;
-  opacity: 0.7;
+  /* Upstream picker chips use the compact codicon size throughout. */
+  font-size: var(--vscode-codiconFontSize-compact, 12px);
+  opacity: 0.8;
 }
 
-/* Trailing chevron, matching VS Code's picker chevron (10px, dimmed). */
+/* Trailing chevron, matching VS Code's picker chevron (compact size, dimmed). */
 .dd-btn .codicon-chevron-down {
-  font-size: 10px;
+  font-size: var(--vscode-codiconFontSize-compact, 12px);
   margin-left: 4px;
   opacity: 0.75;
 }
@@ -916,7 +917,7 @@ body {
 }
 
 .dd-icon .codicon {
-  font-size: 14px;
+  font-size: var(--vscode-codiconFontSize-compact, 12px);
 }
 
 .dd-brand {
@@ -941,7 +942,7 @@ body {
 }
 
 .dd-item-icon {
-  font-size: 14px;
+  font-size: var(--vscode-codiconFontSize-compact, 12px);
   opacity: 0.85;
 }
 
@@ -4609,15 +4610,18 @@ button.model-hover-configurable-button:hover {
   background: transparent;
 }
 
+/* Padding tracks upstream's .chat-confirmation-widget2: the title strip is
+   4px 8px, the message area 6px 9px with the bottom held by the next border,
+   and the button row 4px 8px. */
 .cw-title {
-  padding: var(--dv-space-2) var(--dv-space-4);
-  font-size: var(--dv-fs-l);
-  font-weight: 600;
+  padding: 4px 8px;
+  font-size: var(--vscode-fontSize-heading3, var(--dv-fs-l));
+  font-weight: var(--vscode-fontWeight-semiBold, 600);
   border-bottom: 1px solid var(--dv-border);
 }
 
 .cw-body {
-  padding: var(--dv-space-3) var(--dv-space-4);
+  padding: 6px 9px 0;
   display: flex;
   flex-direction: column;
   gap: var(--dv-space-3);
@@ -4633,8 +4637,8 @@ button.model-hover-configurable-button:hover {
 .cw-buttons {
   display: flex;
   justify-content: flex-end;
-  gap: var(--dv-space-2);
-  padding: var(--dv-space-2) var(--dv-space-4);
+  gap: 4px;
+  padding: 4px 8px;
 }
 
 /* A permission's answer is a split button: the narrow "Allow", and a chevron for

@@ -257,6 +257,18 @@ def get_dynamic_api_key(provider: str) -> str | None:
                 return creds.token
         except Exception:
             pass
+    if provider == "freepi":
+        try:
+            from vtx.ai.oauth.freepi import get_valid_freepi_token_sync, load_freepi_credentials
+
+            token = get_valid_freepi_token_sync()
+            if token:
+                return token
+            creds = load_freepi_credentials()
+            if creds is not None and creds.token:
+                return creds.token
+        except Exception:
+            pass
 
     return None
 
@@ -288,6 +300,13 @@ def _check_oauth_stored(provider: str) -> bool:
             from vtx.ai.oauth.devin import is_devin_logged_in
 
             return is_devin_logged_in()
+        except Exception:
+            return False
+    if provider == "freepi":
+        try:
+            from vtx.ai.oauth.freepi import is_freepi_logged_in
+
+            return is_freepi_logged_in()
         except Exception:
             return False
     return False

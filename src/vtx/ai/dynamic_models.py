@@ -396,6 +396,10 @@ def _flatten_entry(raw: dict[str, Any]) -> dict[str, Any]:
         ]
         if efforts:
             flat["reasoning_options"] = [{"type": "effort", "values": efforts}]
+    # FreePi marks gated models with "unavailable": true; keep them resolvable
+    # but out of pickers, same as Codex's visibility:"hide".
+    if flat.get("unavailable") is True:
+        flat["visibility"] = "hide"
     return flat
 
 
