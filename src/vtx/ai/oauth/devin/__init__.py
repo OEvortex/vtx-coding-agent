@@ -267,6 +267,9 @@ async def list_devin_models() -> list[dict[str, Any]]:
                 "name": cfg.label or uid,
                 "supports_images": bool(cfg.supports_images),
                 "max_tokens": int(cfg.max_tokens) if cfg.max_tokens else 0,
+                # Devin streams reasoning as ThinkParts unconditionally; the
+                # cascade config response carries no thinking flags.
+                "supports_thinking": True,
             }
         )
     return models
