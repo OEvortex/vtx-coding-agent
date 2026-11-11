@@ -216,6 +216,14 @@ class OpenAISDKProvider(BaseProvider):
         max_tokens: int | None = None,
         thinking_level: str | None = None,
     ) -> LLMStream:
+        if (self.config.provider or "").lower() == "freepi":
+            from vtx.ai.oauth.freepi import ensure_freepi_ad_impression
+
+            sid = (
+                self.config.default_headers.get("x-session-id") or self.config.session_id or "vtx"
+            )
+            await ensure_freepi_ad_impression(sid)
+
         sdk_messages = self._convert_messages(messages, system_prompt)
         sdk_tools = self._convert_tools(tools) if tools else None
         temp = temperature if temperature is not None else self.config.temperature

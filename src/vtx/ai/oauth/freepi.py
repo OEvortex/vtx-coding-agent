@@ -8,14 +8,19 @@ in the FreePi CLI. ``FREEPI_API_KEY`` env var overrides the file.
 from __future__ import annotations
 
 import base64
+import contextlib
 import json
 import os
 import time
 from dataclasses import dataclass
 from pathlib import Path
 
+import httpx
+
 _FREEPI_CLI_DIR = Path.home() / ".free-pi" / "agent"
 _CREDENTIALS_PATH = _FREEPI_CLI_DIR / "credentials.json"
+_ADS_TTL_S = 600.0
+_ads_last: dict[str, float] = {}
 
 
 @dataclass(frozen=True)
@@ -64,3 +69,43 @@ def get_valid_freepi_token_sync() -> str | None:
     if exp is not None and time.time() >= exp - 60:
         return None
     return creds.token
+
+
+async def ensure_freepi_ad_impression(session_id: str = "vtx") -> None:
+    """Register one banner ad impression for ``session_id``.
+
+    FreePi gates free completions on ad engagement: the server returns
+    ``403 ads_required`` until the session has fetched ``/ads/next``, fired the
+    Gravity ``imp_url``, and posted ``/ads/impression``. Cached for 10 minutes
+    per session, matching the CLI's banner refresh cadence. Never raises.
+    """
+    now = time.monotonic()
+    if now - _ads_last.get(session_id, 0.0) < _ADS_TTL_S:
+        return
+    token = get_valid_freepi_token_sync()
+    if not token:
+        return
+    base = os.environ.get("FREEPI_BASE_URL", "https://api.freepi.ai").rstrip("/")
+    headers = {"Authorization": f"Bearer {token}", "x-session-id": session_id}
+    try:
+        async with httpx.AsyncClient(timeout=10.0) as client:
+            res = await client.get(f"{base}/ads/next?slot=banner", headers=headers)
+            if res.status_code != 200:
+                return
+            ad = res.json()
+            imp_url = ad.get("imp_url")
+            if imp_url:
+                with contextlib.suppress(httpx.HTTPError):
+                    await client.get(imp_url, timeout=5.0)
+            await client.post(
+                f"{base}/ads/impression",
+                headers={**headers, "Content-Type": "application/json"},
+                json={
+                    "ad_id": ad.get("ad_id"),
+                    "click_token": ad.get("click_token"),
+                    "imp_fired": True,
+                },
+            )
+            _ads_last[session_id] = now
+    except Exception:
+        pass

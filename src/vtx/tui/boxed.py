@@ -212,13 +212,42 @@ def box_blank(width: int, *, failed: bool = False) -> Text:
     return Text(f"{BOX_V}{' ' * (w - 2)}{BOX_V}", style=side)
 
 
+def _soft_wrap_segments(line: Text, width: int) -> list[Text]:
+    """Split one styled line into box-width ``width`` segments.
+
+    Returns ``[line]`` when it already fits. Longer lines are soft-wrapped at
+    word boundaries so a wide diff/code line reads like an editor's wrapped
+    view (VS Code) instead of being clipped at the box edge; a single word
+    wider than the box is hard-broken so nothing runs past the gutter. Styles
+    -- including per-row diff backgrounds -- carry across the break.
+    """
+    if not line.plain or line.cell_len <= width:
+        return [line]
+    try:
+        from rich.console import Console
+
+        console = Console(width=width, force_terminal=True)
+        wrapped = list(line.wrap(console, width=width))
+        return wrapped or [line]
+    except Exception:
+        return [line]
+
+
 def wrap_boxed(text: Text, width: int, *, failed: bool = False) -> Text:
-    """Box every line of ``text``: ``│ line │`` rows joined by newlines."""
+    """Box every line of ``text``: ``│ line │`` rows joined by newlines.
+
+    Lines wider than the box's inner width are soft-wrapped across several
+    rows (an editor-style diff/code wrap) rather than truncated.
+    """
+    w = box_width(width)
+    inner = w - 4
     out = Text()
-    lines = text.split("\n")
-    for i, line in enumerate(lines):
-        out.append_text(box_line(line, width, failed=failed))
-        if i < len(lines) - 1:
+    rows: list[Text] = []
+    for line in text.split("\n"):
+        rows.extend(_soft_wrap_segments(line, inner))
+    for i, row in enumerate(rows):
+        out.append_text(box_line(row, width, failed=failed))
+        if i < len(rows) - 1:
             out.append("\n")
     return out
 

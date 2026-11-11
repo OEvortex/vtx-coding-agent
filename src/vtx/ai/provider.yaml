@@ -757,3 +757,14 @@ providers:
     model_parser:
       cooldown_minutes: 60
 
+
+  - slug: respan
+    display_name: Respan
+    description: Respan AI gateway.
+    family: openai_compat
+    base_url: https://gateway.respan.ai/v1
+    api_key_env: RESPAN_API_KEY
+    fetch_models: true
+    models_endpoint: /models
+    model_parser:
+      cooldown_minutes: 60

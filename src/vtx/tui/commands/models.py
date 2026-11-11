@@ -12,6 +12,11 @@ from vtx.ai import (
     refresh_all_providers,
     refresh_provider,
 )
+from vtx.ai.context_length import safe_max_output_tokens
+from vtx.ai.dynamic_models import find_dynamic_model
+from vtx.ai.models import ApiType, get_model
+from vtx.ai.provider_catalog import get as get_provider_info
+from vtx.ai.provider_catalog import provider_api_type
 from vtx.core.config import get_config, get_recent_models
 from vtx.tui.chat import ChatLog
 from vtx.tui.commands.base import CommandSupport
@@ -54,12 +59,7 @@ class ModelCommands(CommandSupport):
                 provider = stripped[len("refresh ") :].strip()
                 self.run_worker(self._refresh_dynamic_models(provider or None), exclusive=False)
                 return
-            chat = self.query_one("#chat-log", ChatLog)
-            chat.add_info_message(
-                "Unknown /model sub-command. Use: /model, /model refresh, "
-                "/model refresh <provider>",
-                error=True,
-            )
+            self._select_model_by_name(stripped)
             return
 
         # Cache-only read - never block on network here. Any exception is
@@ -193,6 +193,91 @@ class ModelCommands(CommandSupport):
         items = recent_items + other_items
 
         self._show_selection_picker(items, SelectionMode.MODEL)
+
+    def _select_model_by_name(self, spec: str) -> None:
+        """Select a model directly by name/spec, creating an ad-hoc model if needed.
+
+        Supports ``provider/model_id`` (provider prefix matched against known
+        providers) and plain ``model_id`` (resolved against current/all providers).
+        If the model is not in the catalog, a synthetic Model is built so explicit
+        selections like ``/model respan/gemini-4-carbon:free`` still work.
+        """
+        chat = self.query_one("#chat-log", ChatLog)
+
+        provider: str | None = None
+        model_id = spec
+        if "/" in spec:
+            candidate_provider, rest = spec.split("/", 1)
+            if rest and (
+                get_provider_info(candidate_provider) is not None
+                or get_dynamic_provider(candidate_provider) is not None
+            ):
+                provider = candidate_provider
+                model_id = rest
+
+        model = get_model(model_id, provider)
+        if model is None and provider is not None:
+            model = find_dynamic_model(model_id, provider)
+        if model is None and provider is None:
+            # Try resolving an unprefixed id against the current provider first.
+            model = get_model(spec, self._runtime.model_provider) or find_dynamic_model(
+                spec, self._runtime.model_provider
+            )
+            if model is None:
+                model = get_model(spec, None) or find_dynamic_model(spec, None)
+
+        if model is None:
+            if provider is None:
+                chat.add_info_message(
+                    f"Unknown model: {spec}. Use provider/model for an uncataloged model "
+                    "(e.g. /model respan/gemini-4-carbon:free).",
+                    error=True,
+                )
+                return
+            model = self._build_adhoc_model(provider, model_id)
+            if model is None:
+                chat.add_info_message(
+                    f"Unknown provider: {provider}. Cannot select uncataloged model.", error=True
+                )
+                return
+
+        self._select_model(model)
+
+    @staticmethod
+    def _build_adhoc_model(provider_slug: str, model_id: str) -> Model | None:
+        info = get_provider_info(provider_slug)
+        if info is not None:
+            base_url = info.base_url or ""
+            api = provider_api_type(info)
+            context_window = 128000
+            max_tokens = info.max_tokens or safe_max_output_tokens(context_window)
+            return Model(
+                id=model_id,
+                provider=provider_slug,
+                api=api,
+                base_url=base_url,
+                max_tokens=max_tokens,
+                supports_images=bool(info.supports_vision),
+                supports_thinking=bool(info.supports_thinking),
+                context_window=context_window,
+                supports_tools=bool(info.supports_tools),
+            )
+
+        dyn = get_dynamic_provider(provider_slug)
+        if dyn is not None:
+            context_window = 128000
+            return Model(
+                id=model_id,
+                provider=provider_slug,
+                api=dyn.api,
+                base_url=dyn.base_url,
+                max_tokens=safe_max_output_tokens(context_window),
+                supports_images=False,
+                supports_thinking=False,
+                context_window=context_window,
+                supports_tools=True,
+            )
+        return None
 
     def _select_model(self, model) -> None:
         chat = self.query_one("#chat-log", ChatLog)

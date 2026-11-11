@@ -73,3 +73,55 @@ def test_diff_without_a_known_lexer_is_left_alone():
     diff, _, _ = generate_diff("a\n", "b\n")
     text = Text.from_markup(format_diff_display(diff))
     assert boxed.highlight_diff(text, "notes.unknownext") is text
+
+
+def test_wrap_boxed_soft_wraps_long_lines_within_the_box():
+    long_line = (
+        "    resp = await self.client.call_endpoint(first, second, third, fourth, "
+        "fifth, sixth, seventh, eighth)  # trailing comment that never ends"
+    )
+    diff, _, _ = generate_diff(
+        "def f():\n    return 1\n", f"def f():\n{long_line}\n    return 2\n"
+    )
+    text = boxed.highlight_diff(Text.from_markup(format_diff_display(diff)), "src/x.py")
+
+    width = 50
+    wrapped = boxed.wrap_boxed(text, width)
+    rows = wrapped.plain.split("\n")
+
+    # The over-long added line is wrapped across at least two boxed rows, and
+    # every row (box chrome included) stays within the chosen width.
+    assert len(rows) > 4
+    assert all(len(row) <= width for row in rows)
+    # A continuation row carries the underlying code but no gutter/line-number
+    # header -- an editor-style soft wrap, mirroring a VS Code diff view.
+    assert any("call_endpoint(" in row for row in rows)
+    assert " 2 │" not in rows[3]
+
+
+def test_wrap_boxed_preserves_styles_and_backgrounds_across_the_break():
+    from rich.style import Style
+
+    long_line = "x" * 120
+    diff, _, _ = generate_diff("a\n", long_line + "\n")
+    text = boxed.highlight_diff(Text.from_markup(format_diff_display(diff)), "src/x.py")
+    # Give the added row a background so we can confirm it survives wrapping.
+    text = Text(text.plain, style=Style(bgcolor="red"))
+
+    def has_bg(row: Text) -> bool:
+        for span in row.spans:
+            style = span.style
+            if isinstance(style, str):
+                try:
+                    style = Style.parse(style)
+                except Exception:
+                    continue
+            if isinstance(style, Style) and style.bgcolor is not None:
+                return True
+        return False
+
+    wrapped = boxed.wrap_boxed(text, 50)
+    rows = wrapped.split("\n")
+    assert len(rows) > 2
+    # The wrapped continuation rows keep the row's background colour.
+    assert all(has_bg(row) for row in rows[1:3])
