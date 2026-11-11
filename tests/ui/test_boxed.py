@@ -24,6 +24,45 @@ def test_top_border_never_overflows_its_width():
                 assert text.cell_len == boxed.box_width(width), (width, badge, status)
 
 
+def test_top_border_accepts_pre_styled_text_detail():
+    # A bash command arrives as an already-highlighted ``Text``; the header must
+    # keep its syntax-coloured spans instead of flattening it back to dim text.
+    from vtx.tui.formatting import format_bash_command
+
+    highlighted = format_bash_command("git log --oneline && echo done")
+    assert len(highlighted.spans) > 1
+
+    for width in range(20, 140):
+        text = boxed.top_border("→", "Bash", highlighted, width)
+        assert text.cell_len == boxed.box_width(width), (width,)
+    # The command tokens keep their styles after the truncating header pass.
+    text = boxed.top_border("→", "Bash", highlighted, 60)
+    assert len(text.spans) > 1
+
+
+def test_bash_tool_header_is_syntax_highlighted():
+    from vtx.tui.blocks import ToolBlock
+
+    block = ToolBlock(name="bash", call_msg="$ git log --oneline && echo done")
+    header = block._format_header()
+
+    # The command word and the operator ride distinct colours (not one flat dim
+    # run) — the highlighter must actually be wired into the header render.
+    plain = header.plain
+    git_col = plain.index("git")
+    op_col = plain.index("&&")
+
+    def style_at(col: int) -> object:
+        covering = [s for s in header.spans if s.start <= col < s.end and s.style]
+        return covering[-1].style if covering else None
+
+    git_style = style_at(git_col)
+    op_style = style_at(op_col)
+    assert git_style is not None
+    assert op_style is not None
+    assert git_style != op_style
+
+
 def test_bottom_border_never_overflows_its_width():
     for width in range(20, 140):
         for footer in ("", "0.4s · ~12 lines", "Diff · +3 -2"):

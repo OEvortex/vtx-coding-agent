@@ -68,8 +68,8 @@ class ToolCallDelta(BaseModel):
     index: int  # Correlates with ToolCallStart.index
     arguments_delta: str
     replace: bool = False
-    # Tolerant-parsed snapshot of the arguments received so far (pi-style
-    # partial arguments). None when the provider does not compute one.
+    # Tolerant-parsed snapshot of the arguments received so far. None when the
+    # provider does not compute one.
     partial_arguments: dict[str, Any] | None = None
     # Late-arriving identity: some providers stream id/name after the first
     # delta. When set, consumers should update the call's stored values.

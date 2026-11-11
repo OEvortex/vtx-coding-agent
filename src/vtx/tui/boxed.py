@@ -1,6 +1,6 @@
-"""pi-style boxed tool rendering with an editor-grade body — Python/Textual port.
+"""Boxed tool rendering with an editor-grade body — Python/Textual port.
 
-Port of pi-style's ``shared/box.ts`` chrome: rounded borders with embedded
+Port of the ``shared/box.ts`` chrome: rounded borders with embedded
 labels, dim frame, boxed body lines, and metrics footers. On top of that the
 body renders like an editor tab: a language chip and state glyph in the
 header, a line-number gutter, and syntax-highlighted code/diff rows. Pure

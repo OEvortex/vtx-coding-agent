@@ -572,7 +572,7 @@ class ToolBlock(Static):
         self.call_after_refresh(self._refresh_box)
 
     def _format_header(self, truncate: bool = True) -> Text:
-        """pi-style boxed top border: ``╭─ {icon} {Name} {detail} ───╮``."""
+        """Boxed top border: ``╭─ {icon} {Name} {detail} ───╮``."""
         del truncate
         width = self._box_w()
         name = self._name or ""
@@ -581,10 +581,7 @@ class ToolBlock(Static):
         detail: str | Text = ""
         if call_plain:
             first_line = call_plain.split("\n", 1)[0]
-            if self._name == "bash":
-                detail = format_bash_command(first_line)
-            else:
-                detail = first_line
+            detail = format_bash_command(first_line) if self._name == "bash" else first_line
         running = self._success is None and not self._awaiting_approval
         status = ""
         if self._success is True:
@@ -612,7 +609,7 @@ class ToolBlock(Static):
         return header
 
     def _render_footer(self) -> None:
-        """pi-style boxed bottom border: ``╰─ metrics ──── hint ─╯``."""
+        """Boxed bottom border: ``╰─ metrics ──── hint ─╯``."""
         try:
             footer = self.query_one("#tool-footer", Label)
         except Exception:
@@ -1136,7 +1133,7 @@ class ToolBlock(Static):
         self.query_one("#tool-header", Label).update(self._format_header())
 
     def update_call_args(self, partial_args: dict | None) -> None:
-        """Show live partial tool-call arguments on the header (pi-style).
+        """Show live partial tool-call arguments on the header.
 
         The provider's tolerant parse arrives on every argument delta. The
         partial dict is rendered through the tool's own ``format_call`` when
@@ -1304,7 +1301,7 @@ class ToolBlock(Static):
         self._render_footer()
 
     def _streaming_body_text(self) -> Text | None:
-        """pi-style write/edit body while args stream: numbered preview or diff."""
+        """Write/edit body while args stream: numbered preview or diff."""
         if self.tool is None or self.tool.name not in {"write", "edit"}:
             return None
         args = self._partial_args or {}
