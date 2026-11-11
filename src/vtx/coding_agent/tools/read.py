@@ -32,8 +32,13 @@ def _strip_line_number(line: str) -> str:
 
 class ReadParams(BaseModel):
     path: str = Field(description="Absolute path of file or directory")
-    offset: int | None = Field(description="Start line (for large files)", default=None)
-    limit: int | None = Field(description="Line count (for large files)", default=None)
+    offset: int | None = Field(
+        description="1-based start line — read a range instead of the whole file", default=None
+    )
+    limit: int | None = Field(
+        description="Max lines to return from offset — pair with offset for large files",
+        default=None,
+    )
 
 
 class ReadTool(BaseTool):
@@ -41,11 +46,18 @@ class ReadTool(BaseTool):
     tool_icon = "→"
     params = ReadParams
     mutating = False
-    prompt_guidelines = ("read (not cat/head/tail)",)
+    prompt_guidelines = (
+        "read (not cat/head/tail)",
+        "prefer offset/limit ranges over whole-file reads",
+    )
     description = (
-        "Read a file or directory. Truncates to "
-        f"{MAX_LINES_PER_FILE} lines/{MAX_CHARS_PER_LINE} chars per line; "
-        "use offset/limit to paginate. Supports jpg/png/gif/webp images."
+        "Read a file or list a directory. Files return numbered lines, truncated at "
+        f"{MAX_LINES_PER_FILE} lines/{MAX_CHARS_PER_LINE} chars per line. "
+        "Do NOT read entire large files: first locate what you need (grep/find), "
+        "then read a window with offset/limit around it. Whole-file reads are only "
+        "for files you expect to be small or need in full. "
+        "Directories return a recursive entry listing (depth <= 3). "
+        "Supports jpg/png/gif/webp images."
     )
 
     def format_call(self, params: ReadParams) -> str:
