@@ -60,8 +60,7 @@ def test_vtxs_own_tools_come_from_rows(mounted):
     names = mounted.base.tools.names()
     for expected in (
         "read",
-        "edit",
-        "write",
+        "apply_patch",
         "bash",
         "skill",
         "web",
@@ -74,8 +73,7 @@ def test_vtxs_own_tools_come_from_rows(mounted):
 def test_the_default_tool_set_matches_the_documented_one(mounted):
     assert set(mounted.base.tools.defaults()) >= {
         "read",
-        "edit",
-        "write",
+        "apply_patch",
         "bash",
         "skill",
         "web",

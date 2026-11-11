@@ -1,6 +1,6 @@
 from rich.text import Text
 
-from vtx.coding_agent.tools.edit import format_diff_display
+from vtx.coding_agent.tools.apply_patch import format_diff_display
 from vtx.core.config import config
 
 

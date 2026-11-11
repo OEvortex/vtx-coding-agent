@@ -29,15 +29,14 @@ if TYPE_CHECKING:
 
 
 _TOOL_MODULES = {
+    "ApplyPatchTool": ".apply_patch",
     "BashTool": ".bash",
     "CodemodeTool": ".codemode",
-    "EditTool": ".edit",
     "GrepTool": ".grep",
     "ReadTool": ".read",
     "SkillTool": ".skill",
     "TodoTool": ".todo",
     "ToolSearchTool": ".tool_search",
-    "WriteTool": ".write",
 }
 _AGENT_TOOLS = {
     "AskUserTool",
@@ -72,8 +71,7 @@ def _build_catalog() -> None:
 
     modules = [
         importlib.import_module(".read", __name__),
-        importlib.import_module(".edit", __name__),
-        importlib.import_module(".write", __name__),
+        importlib.import_module(".apply_patch", __name__),
         importlib.import_module(".bash", __name__),
         importlib.import_module(".grep", __name__),
         importlib.import_module(".skill", __name__),
@@ -82,12 +80,11 @@ def _build_catalog() -> None:
     agent_tools = _agent_tools_module()
     all_tools = [
         modules[0].ReadTool(),
-        modules[1].EditTool(),
-        modules[2].WriteTool(),
-        modules[3].BashTool(),
-        modules[4].GrepTool(),
-        modules[5].SkillTool(),
-        modules[6].TodoTool(),
+        modules[1].ApplyPatchTool(),
+        modules[2].BashTool(),
+        modules[3].GrepTool(),
+        modules[4].SkillTool(),
+        modules[5].TodoTool(),
         agent_tools.WebTool(),
         agent_tools.WebSearchTool(),
         agent_tools.AskUserTool(),
@@ -98,8 +95,7 @@ def _build_catalog() -> None:
     tools_by_name = {tool.name: tool for tool in all_tools}
     DEFAULT_TOOLS = [
         "read",
-        "edit",
-        "write",
+        "apply_patch",
         "bash",
         "skill",
         "todo",
@@ -141,12 +137,12 @@ def __getattr__(name: str) -> Any:
 __all__ = [
     "DEFAULT_TOOLS",
     "PARENT_ONLY_TOOLS",
+    "ApplyPatchTool",
     "AskUserTool",
     "BackgroundTaskManager",
     "BackgroundTaskRecord",
     "BashTool",
     "CodemodeTool",
-    "EditTool",
     "GrepTool",
     "ReadTool",
     "SkillTool",
@@ -155,7 +151,6 @@ __all__ = [
     "ToolSearchTool",
     "WebSearchTool",
     "WebTool",
-    "WriteTool",
     "get_manager",
     "get_tool",
     "get_tool_definitions",

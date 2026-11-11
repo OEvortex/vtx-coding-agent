@@ -149,7 +149,7 @@ class MockProvider(BaseProvider):
             case "tool_hang_invalid_json":
 
                 async def tool_hang_invalid_json_iter():
-                    yield ToolCallStart(id="call-1", name="write", index=0, arguments={})
+                    yield ToolCallStart(id="call-1", name="apply_patch", index=0, arguments={})
                     yield ToolCallDelta(
                         index=0, arguments_delta='{"path": "/tmp/test.txt", "content": "incomplete'
                     )
@@ -162,7 +162,7 @@ class MockProvider(BaseProvider):
                 async def tool_hang_with_initial_args_iter():
                     yield ToolCallStart(
                         id="call-1",
-                        name="write",
+                        name="apply_patch",
                         index=0,
                         arguments={"path": "/tmp/stale.txt", "content": "stale snapshot"},
                     )

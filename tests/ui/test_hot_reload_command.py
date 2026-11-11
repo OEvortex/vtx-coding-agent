@@ -245,7 +245,7 @@ class TestModeSwitch:
             _reload(app)
             await pilot.pause()
             names = {t.name for t in runtime.tools}
-            assert {"read", "bash", "edit", "write"} <= names
+            assert {"read", "bash", "apply_patch"} <= names
 
     @pytest.mark.asyncio
     async def test_the_conversation_survives_a_reload(self, config_file, reload_app):

@@ -516,7 +516,8 @@ class AgentRunnerMixin:
                     )
                 status.set_active_tool(None)
                 if fc:
-                    info_bar.update_file_changes(fc.path, fc.added, fc.removed)
+                    for f in fc:
+                        info_bar.update_file_changes(f.path, f.added, f.removed)
                     chat.record_tool_result(id, success=r.is_error is False if r else True, fc=fc)
 
             case TurnEndEvent():

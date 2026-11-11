@@ -1,6 +1,6 @@
 import pytest
 
-from vtx.coding_agent.tools import BashTool, EditTool, ReadTool, WriteTool
+from vtx.coding_agent.tools import ApplyPatchTool, BashTool, ReadTool
 from vtx.core import PermissionDecision, _is_safe_bash_command, check_permission
 from vtx.core.config import Config, set_config
 
@@ -84,7 +84,8 @@ class TestCheckPermission:
 
     def test_mutating_tool_prompts(self):
         assert (
-            check_permission(WriteTool(), {"file_path": "x", "content": "y"})
+            check_permission(
+                ApplyPatchTool(), {"ops": [{"op": "update", "path": "x", "edits": []}]}
+            )
             == PermissionDecision.PROMPT
         )
-        assert check_permission(EditTool(), {"file_path": "x"}) == PermissionDecision.PROMPT

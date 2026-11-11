@@ -51,7 +51,7 @@ def _turn(
     if report:
         session.append_message(
             ToolResultMessage(
-                tool_name="edit",
+                tool_name="apply_patch",
                 tool_call_id=f"call-{content}",
                 content=[TextContent(text="ok")],
                 file_changes=FileChanges(path=str(proj / path), added=1, removed=1),
@@ -239,7 +239,7 @@ async def test_resumed_session_undo_works_after_a_new_turn(project: Path) -> Non
             (project / "a.txt").write_text(f"a{index}\n")
             session.append_message(
                 ToolResultMessage(
-                    tool_name="edit",
+                    tool_name="apply_patch",
                     tool_call_id=f"pre-{index}",
                     content=[TextContent(text="ok")],
                     file_changes=FileChanges(path=str(project / "a.txt"), added=1, removed=1),

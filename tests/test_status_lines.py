@@ -15,8 +15,7 @@ from vtx.tui.status_lines import (
 
 EXPECTED_TOOLS = [
     "read",
-    "edit",
-    "write",
+    "apply_patch",
     "bash",
     "grep",
     "skill",

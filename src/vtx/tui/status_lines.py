@@ -102,7 +102,7 @@ TOOL_STATUS_LINES: dict[str, tuple[str, ...]] = {
         "Wondering who wrote this and why...",
         "Checking if your comments match the code (they don't)...",
     ),
-    "edit": (
+    "apply_patch": (
         "Refactoring your 'perfect' code with surgical precision...",
         "Transmuting your spaghetti into something edible...",
         "Diffing your masterpiece against reality...",
@@ -115,20 +115,8 @@ TOOL_STATUS_LINES: dict[str, tuple[str, ...]] = {
         "Infusing logic into your glorified todo list...",
         "Fixing the thing you broke last time...",
         "Cleaning up after your 'quick fix'...",
-    ),
-    "write": (
-        "Inscribing fresh logic onto disk for you to forget about...",
-        "Forging the abstraction you don't understand...",
-        "Typing the test you said you'd write later...",
-        "Crafting a file you'll delete next month...",
-        "Etching bytes for the feature you'll never document...",
-        "Generating the boilerplate you hate maintaining...",
-        "Laying down the foundation you'll rush later...",
-        "Authoring the module you'll blame on 'the intern'...",
-        "Writing clean code you'll refactor next sprint...",
-        "Materializing the thing you only half-planned...",
-        "Building what you described in a 3-sentence prompt...",
-        "Creating the config file you'll never touch again...",
+        "Patching files you promised to refactor...",
+        "Batching edits like a responsible adult...",
     ),
     "bash": (
         "Unleashing the shell command you copy-pasted from Reddit...",
@@ -290,8 +278,8 @@ TOOL_ERROR_LINES: dict[str, tuple[str, ...]] = {
         "File doesn't exist because you renamed it last week...",
         "Can't read what you never bothered to save...",
     ),
-    "edit": (
-        "Edit lost because you changed the file while I was fixing it...",
+    "apply_patch": (
+        "Patch lost because you changed the file while I was fixing it...",
         "Merge conflict between your code and your other code...",
         "Code resisted surgery because it's already broken...",
         "Target chunk vanished because you modified the file...",
@@ -301,18 +289,8 @@ TOOL_ERROR_LINES: dict[str, tuple[str, ...]] = {
         "Edit complications because your line numbers lied...",
         "Bounds drifted because you added 50 lines elsewhere...",
         "Refactor snagged on your 'temporary' global variable...",
-    ),
-    "write": (
-        "Disk declined because your folder structure is cursed...",
-        "Write blocked because you ran out of inodes...",
-        "Failed to etch because your disk is full of node_modules...",
-        "Directory resisted creation because you forgot mkdir...",
-        "Out of room because your Docker image is 10GB...",
-        "Permission denied because you chmod 777 everything...",
-        "Write interrupted because your laptop died mid-save...",
-        "Unexpected lock because your antivirus hates Python...",
-        "Cannot overwrite because you never committed the original...",
-        "Filesystem dropped it because you're on NFS and unlucky...",
+        "Op rejected because old_string matched nothing...",
+        "Atomic patch aborted because one op failed...",
     ),
     "bash": (
         "Command exited because your one-liner was wrong...",

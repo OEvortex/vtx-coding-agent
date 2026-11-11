@@ -133,7 +133,7 @@ a single command:
   `is_default=True`, so disabling the row unmounts it while the tool stays in the global
   registry and in the default set - `--dump-config` shows `[disabled]` and the model
   still has the tool. Service rows and the coding-agent tool rows (`tool-read`,
-  `tool-edit`, `tool-write`, `tool-bash`, `tool-find`, `tool-grep`, `tool-skill`,
+  `tool-apply-patch`, `tool-bash`, `tool-find`, `tool-grep`, `tool-skill`,
   `tool-codemode`, `tool-search`) disable correctly. Verify with
   `ctx.tools.assemble()`, not with the row list alone; report a row that does not take
   effect rather than editing `src/vtx/**` to work around it.

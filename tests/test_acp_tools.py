@@ -20,7 +20,7 @@ from vtx.ai.providers.mock import MockProvider
 from vtx.coding_agent.acp import AcpServer, _session_tools
 from vtx.plugins import boot, reset
 
-CODING_AGENT_TOOLS = {"read", "edit", "write", "bash", "skill", "todo"}
+CODING_AGENT_TOOLS = {"read", "apply_patch", "bash", "skill", "todo"}
 
 
 class RecordingProvider(MockProvider):

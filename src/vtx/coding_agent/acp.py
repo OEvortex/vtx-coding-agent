@@ -83,7 +83,7 @@ def _session_tools(extensions: list[Any] | None = None) -> list[Any]:
 
     The composition is authoritative when one is mounted: ``ctx.tools`` knows the
     defaults a profile declared and holds every row-registered tool -- including
-    the coding agent's ``read``/``edit``/``write``/``bash``/``skill``/``todo``,
+    the coding agent's ``read``/``apply_patch``/``bash``/``skill``/``todo``,
     which are plugin rows rather than harness defaults. Assembling from the
     fixed ``DEFAULT_TOOLS`` list instead would silently re-add a tool a profile
     removed and never see one a profile added.

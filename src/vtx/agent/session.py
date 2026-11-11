@@ -6,7 +6,7 @@ with a type field. The first line is always the session header.
 
 Structure:
     {"type": "header", "id": "...", "version": 1, "timestamp": "...",
-     "cwd": "...", "system_prompt": "...", "tools": ["read", "edit", ...]}
+     "cwd": "...", "system_prompt": "...", "tools": ["read", "apply_patch", ...]}
     {"type": "message", "id": "...", "parent_id": "...", "timestamp": "...", "message": {...}}
     {"type": "message", "id": "...", "parent_id": "...", "timestamp": "...", "message": {...}}
     ...
@@ -860,8 +860,7 @@ class Session:
         file_changes: dict[str, tuple[int, int]] = {}
         for entry in self.active_entries:
             if isinstance(entry, MessageEntry) and isinstance(entry.message, ToolResultMessage):
-                fc = entry.message.file_changes
-                if fc:
+                for fc in entry.message.file_changes or []:
                     prev_added, prev_removed = file_changes.get(fc.path, (0, 0))
                     file_changes[fc.path] = (prev_added + fc.added, prev_removed + fc.removed)
         return file_changes

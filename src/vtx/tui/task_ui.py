@@ -44,8 +44,7 @@ SPINNER = ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"]
 TOOL_DISPLAY = {
     "read": "reading",
     "bash": "running command",
-    "edit": "editing",
-    "write": "writing",
+    "apply_patch": "patching files",
     "grep": "searching",
     "find": "finding files",
     "glob": "finding files",
@@ -58,8 +57,7 @@ TOOL_DISPLAY = {
 TOOL_NOUNS = {
     "read": ("read", "reads"),
     "bash": ("bash", "bash"),
-    "edit": ("edit", "edits"),
-    "write": ("write", "writes"),
+    "apply_patch": ("patch", "patches"),
     "grep": ("search", "searches"),
     "find": ("file search", "file searches"),
     "glob": ("file search", "file searches"),

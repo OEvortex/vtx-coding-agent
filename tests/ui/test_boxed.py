@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from rich.text import Text
 
-from vtx.coding_agent.tools.edit import format_diff_display, generate_diff
+from vtx.coding_agent.tools.apply_patch import format_diff_display, generate_diff
 from vtx.tui import boxed
 from vtx.tui.diff_display import DIFF_BG_PAD_MARKER
 

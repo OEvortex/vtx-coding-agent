@@ -80,7 +80,7 @@ def _turn(
         if report:
             session.append_message(
                 ToolResultMessage(
-                    tool_name="edit",
+                    tool_name="apply_patch",
                     tool_call_id=f"call-{len(session.all_entries)}-{index}",
                     content=[TextContent(text="ok")],
                     file_changes=FileChanges(path=str(target), added=1, removed=1),
@@ -96,7 +96,7 @@ def _legacy_turn(session: Session, project: Path, prompt: str, path: str) -> str
     (project / path).write_text("legacy change\n")
     session.append_message(
         ToolResultMessage(
-            tool_name="edit",
+            tool_name="apply_patch",
             tool_call_id=f"legacy-{len(session.all_entries)}",
             content=[TextContent(text="ok")],
             file_changes=FileChanges(path=str(project / path), added=1, removed=1),

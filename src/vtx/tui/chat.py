@@ -855,8 +855,9 @@ class ChatLog(VerticalScroll):
             self._segment_failures += 1
         if fc and tool_id not in self._counted_diffs:
             self._counted_diffs.add(tool_id)
-            self._segment_additions += getattr(fc, "added", 0)
-            self._segment_removals += getattr(fc, "removed", 0)
+            changes = fc if isinstance(fc, list) else [fc]
+            self._segment_additions += sum(getattr(f, "added", 0) for f in changes)
+            self._segment_removals += sum(getattr(f, "removed", 0) for f in changes)
 
     def _mount_segment_summary(self) -> None:
         """Close the current activity group into a summary row.

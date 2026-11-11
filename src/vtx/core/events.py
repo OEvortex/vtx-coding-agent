@@ -153,7 +153,7 @@ class ToolResultEvent:
     tool_call_id: str = ""
     tool_name: str = ""
     result: ToolResultMessage | None = None
-    file_changes: FileChanges | None = None
+    file_changes: list[FileChanges] | None = None
 
 
 @dataclass

@@ -3,7 +3,7 @@ from __future__ import annotations
 from enum import StrEnum
 from typing import Any, Literal
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 
 
 class StopReason(StrEnum):
@@ -154,7 +154,16 @@ class ToolResultMessage(BaseModel):
     ui_details_full: str | None = None  # Expanded multiline UI text rendered below the header
     ui_data: dict[str, Any] | None = None  # Structured payload for a tool's custom ui_block
     is_error: bool = False
-    file_changes: FileChanges | None = None
+    file_changes: list[FileChanges] | None = None
+
+    @field_validator("file_changes", mode="before")
+    @classmethod
+    def _coerce_file_changes(cls, v: Any) -> Any:
+        # Back-compat: sessions written before multi-file tools store a single
+        # FileChanges object; wrap it so old history still loads.
+        if v is None or isinstance(v, list):
+            return v
+        return [v]
 
 
 Message = UserMessage | AssistantMessage | ToolResultMessage
@@ -220,7 +229,15 @@ class ToolResult(BaseModel):
     ui_summary: str | None = None  # One-line result text appended to the tool header
     ui_details: str | None = None  # Collapsed multiline result body rendered below the header
     ui_details_full: str | None = None  # Expanded multiline result body rendered below the header
-    file_changes: FileChanges | None = None  # Track +/- lines for edit/write tools
+    file_changes: list[FileChanges] | None = None  # Track +/- lines for file-editing tools
+
+    @field_validator("file_changes", mode="before")
+    @classmethod
+    def _coerce_file_changes(cls, v: Any) -> Any:
+        if v is None or isinstance(v, list):
+            return v
+        return [v]
+
     structured: Any | None = None
     """The value a `codemode` script receives, when it differs from `result`.
 

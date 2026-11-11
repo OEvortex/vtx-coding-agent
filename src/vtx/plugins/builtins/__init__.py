@@ -42,8 +42,7 @@ BASE: list[Row] = [
     # Coding-agent tools: the row addresses the owning product package, so the
     # plugin system never imports a product to mount one.
     Row(id="tool-read", name="vtx.coding_agent.tools.read:PLUGIN"),
-    Row(id="tool-edit", name="vtx.coding_agent.tools.edit:PLUGIN"),
-    Row(id="tool-write", name="vtx.coding_agent.tools.write:PLUGIN"),
+    Row(id="tool-apply-patch", name="vtx.coding_agent.tools.apply_patch:PLUGIN"),
     Row(id="tool-bash", name="vtx.coding_agent.tools.bash:PLUGIN"),
     # ``find`` removed: bash covers file discovery better for models.
     Row(id="tool-grep", name="vtx.coding_agent.tools.grep:PLUGIN"),

@@ -15,7 +15,7 @@ receipt for it::
 
     scanned 42 files
     ==> text 2/2 <==
-    { "tools": ["edit", "grep"], "hits": 12 }
+    { "tools": ["apply_patch", "grep"], "hits": 12 }
 
     Took 1.2s
 

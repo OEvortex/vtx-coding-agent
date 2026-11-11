@@ -76,7 +76,7 @@ async def test_start_tool_uses_expanded_state_before_mount():
 async def test_diff_tool_output_wraps_naturally():
     async with ToolExpansionTestApp().run_test() as pilot:
         chat = pilot.app.query_one("#chat-log", ChatLog)
-        block = chat.start_tool("edit", "tool-1", "~/file.py")
+        block = chat.start_tool("apply_patch", "tool-1", "~/file.py")
         await pilot.pause()
 
         chat.set_tool_result(

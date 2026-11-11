@@ -153,8 +153,8 @@ Three tool rows are **inert as disables**: `tool-web`, `tool-ask-user`, and
 `AskUserTool` and `TaskTool` into the global registry at *import time* with
 `is_default=True`, so `vtx plugin disable tool-web` unmounts the row while the tool stays
 registered and in the default set - `--dump-config` shows `[disabled]` and the model still
-has the tool. Service rows, and the coding-agent tool rows (`tool-read`, `tool-edit`,
-`tool-write`, `tool-bash`, `tool-find`, `tool-grep`, `tool-skill`, `tool-codemode`,
+has the tool. Service rows, and the coding-agent tool rows (`tool-read`, `tool-apply-patch`,
+`tool-bash`, `tool-find`, `tool-grep`, `tool-skill`, `tool-codemode`,
 `tool-search`), disable correctly.
 
 So verify a disable with the live tool set, not the row list: `vtx --dump-config` must show

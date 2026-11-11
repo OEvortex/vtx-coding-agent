@@ -1,4 +1,4 @@
-from vtx.coding_agent.tools.edit import generate_diff
+from vtx.coding_agent.tools.apply_patch import generate_diff
 
 
 class TestGenerateDiff:
