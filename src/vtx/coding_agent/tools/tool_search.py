@@ -63,11 +63,8 @@ class ToolSearchTool(BaseTool):
 
     name = TOOL_SEARCH_TOOL_NAME
     description = (
-        "Searches tool metadata with BM25 to find tools that are not loaded yet, "
-        "and loads the matches so they are offered on your next call. Use it when "
-        "a capability you need is missing from your tool list: a connected MCP "
-        "server's tools are often reachable without being declared, and for MCP "
-        "tool discovery always use this tool."
+        "BM25-search tools not yet loaded and load the matches for your next call. "
+        "Use when a needed capability is missing from your tool list (e.g. MCP tools)."
     )
     params = ToolSearchParams
     mutating = False

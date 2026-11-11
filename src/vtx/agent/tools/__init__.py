@@ -158,7 +158,9 @@ def set_default_tool_lookup(lookup: Any) -> None:
     _default_tool_lookup = lookup
 
 
-_SCHEMA_DROP_KEYS = frozenset({"title", "minLength", "maxLength", "minItems", "maxItems"})
+_SCHEMA_DROP_KEYS = frozenset(
+    {"title", "minLength", "maxLength", "minItems", "maxItems", "default"}
+)
 
 
 def _slim_schema(node: Any) -> Any:

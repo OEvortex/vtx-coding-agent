@@ -86,12 +86,9 @@ class SkillTool(BaseTool):
     mutating = True  # Can modify skills, though load/list/view are read-only
     prompt_guidelines = ()
     description = (
-        "Load a skill's instructions into the conversation. Call action='load' with the skill "
-        "name from <available_skills> when a task matches its description; the output is the "
-        "full skill body plus the skill's directory and the files beside it, so relative paths "
-        "inside the skill resolve without a separate read. Also manages skills: 'list' to "
-        "discover, 'view' for a raw file read, 'create'/'edit' to author SKILL.md files, "
-        "'patch' for targeted replacements, and 'delete' to remove a skill."
+        "Load a skill's instructions into context: action='load' with a name from "
+        "<available_skills>. Also manages skills: 'list', 'view', 'create', 'edit', "
+        "'patch', 'delete'."
     )
 
     def format_call(self, params: SkillParams) -> str:

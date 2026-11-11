@@ -35,8 +35,8 @@ class FindTool(BaseTool):
     mutating = False
     prompt_guidelines = ("find for files by glob (not bash find/ls)",)
     description = (
-        "Find files and directories matching a glob pattern (fd). "
-        f"Respects .gitignore, returns paths sorted by mtime, truncated to {MAX_RESULTS}."
+        "Find files/dirs by glob (fd). Respects .gitignore, sorted by mtime, "
+        f"max {MAX_RESULTS} results."
     )
 
     def format_call(self, params: FindParams) -> str:

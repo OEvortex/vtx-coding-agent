@@ -193,14 +193,9 @@ class TodoTool(BaseTool):
         "skip the todo tool for work that is a single trivial step or purely conversational",
     )
     description = (
-        "Track tasks with the rpiv-todo schema. Actions: "
-        "'set' (batch plan — pass the whole todos array, replaces the list), "
-        "'create' (needs subject), "
-        "'update' (needs id + field to update), 'list' (returns tasks, filters by status), "
-        "'get' (needs id, returns task with dependencies), 'delete' (tombstones by id), "
-        "'clear' (resets all tasks). "
-        "Status is one of pending | in_progress | completed | deleted; a task can only move "
-        "forward, and exactly one task may be in_progress."
+        "Task tracker. Actions: 'set' (replace whole list via todos[]), 'create' (subject), "
+        "'update' (id + field), 'list'/'get' (id), 'delete', 'clear'. "
+        "Status: pending|in_progress|completed|deleted — forward-only, one in_progress."
     )
 
     def __init__(self) -> None:

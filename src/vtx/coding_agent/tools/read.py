@@ -51,13 +51,9 @@ class ReadTool(BaseTool):
         "prefer offset/limit ranges over whole-file reads",
     )
     description = (
-        "Read a file or list a directory. Files return numbered lines, truncated at "
-        f"{MAX_LINES_PER_FILE} lines/{MAX_CHARS_PER_LINE} chars per line. "
-        "Do NOT read entire large files: first locate what you need (grep/find), "
-        "then read a window with offset/limit around it. Whole-file reads are only "
-        "for files you expect to be small or need in full. "
-        "Directories return a recursive entry listing (depth <= 3). "
-        "Supports jpg/png/gif/webp images."
+        "Read a file (numbered lines; 2000-line/2000-char caps — use offset/limit "
+        "ranges: grep first, then read a window, don't dump whole large files) or "
+        "list a directory (recursive, depth<=3). Supports jpg/png/gif/webp."
     )
 
     def format_call(self, params: ReadParams) -> str:

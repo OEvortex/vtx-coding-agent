@@ -200,10 +200,9 @@ class BashTool(BaseTool):
     params = BashParams
     prompt_guidelines = ("bash for git/builds/tests/scripts (not file read/search/edit)",)
     description = (
-        "Execute a shell command in the current working directory. Use for build scripts, "
-        "tests, package managers, and git commands. Output is truncated to the last "
-        f"{MAX_OUTPUT_LINES} lines/{MAX_OUTPUT_BYTES // 1024}KB (full saved to temp log). "
-        "Do NOT use for file search (find), reading (read), or editing (edit)."
+        "Run a shell command in the cwd (builds, tests, git, package managers). "
+        f"Output truncated to last {MAX_OUTPUT_LINES} lines/{MAX_OUTPUT_BYTES // 1024}KB "
+        "(full saved to temp log). Not for file read/search/edit — use read/grep/apply_patch."
     )
 
     # TODO: Add streaming support via an optional `on_chunk` callback parameter

@@ -92,10 +92,7 @@ class WebTool(BaseTool):
     tool_icon = "🔍"
     params = SearchParams
     mutating = False
-    description = (
-        "Search the web using neural semantic search (Exa). "
-        "Returns ranked page titles, URLs, and relevant text snippets. Requires internet access."
-    )
+    description = "Neural web search (Exa). Returns titles, URLs, snippets. Needs internet."
     prompt_guidelines = ()
 
     def format_call(self, params: SearchParams) -> str:
@@ -138,7 +135,7 @@ class WebSearchTool(WebTool):
     name = "web_search"
     tool_icon = "🔍"
     params = SearchParams
-    description = "Web search (Exa neural). Returns titles, URLs, snippets. Needs internet."
+    description = "Neural web search (Exa). Returns titles, URLs, snippets. Needs internet."
 
 
 __all__ = ["SearchParams", "WebSearchTool", "WebTool"]

@@ -191,11 +191,9 @@ class AskUserTool(BaseTool):
     mutating = False
     prompt_guidelines = ()
     description = (
-        "Ask the user clarifying questions via an interactive questionnaire dialog. "
-        f"Pass a `questions` array of 1-{MAX_QUESTIONS} questions, each with 2-{MAX_OPTIONS} "
-        "`options` (label and explanation), an optional `multi_select`, and an optional markdown "
-        "`preview`. Omit options to prompt for free-form text. "
-        "Use whenever critical requirements or architecture decisions are ambiguous."
+        "Ask the user clarifying questions via interactive dialog. questions: 1-N "
+        "items, each with 2-N options (label + explanation), optional multi_select/"
+        "preview; omit options for free text. Use when requirements are ambiguous."
     )
 
     def format_call(self, params: AskUserParams) -> str:

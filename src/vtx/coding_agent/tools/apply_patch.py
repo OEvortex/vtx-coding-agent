@@ -238,13 +238,10 @@ class ApplyPatchTool(BaseTool):
     params = ApplyPatchParams
     prompt_guidelines = ("apply_patch for ALL file edits: update/create/delete/move",)
     description = (
-        "Apply file edits atomically. ops is an ordered list of operations: "
-        "'update' (path + old/new, or path + edits[] for several edits), "
-        "'create' (path + content), 'delete' (path), 'move' (path + new_path). "
-        "old must match file content exactly including whitespace. "
-        "If any op fails, no changes are written. "
-        'Example: {"ops":[{"op":"update","path":"a.py","old":"foo","new":"bar"},'
-        '{"op":"create","path":"b.py","content":"x=1\\n"}]}'
+        "Apply file edits atomically. ops: 'update' (path + old/new, or edits[] for "
+        "several), 'create' (path + content), 'delete' (path), 'move' (path + new_path). "
+        "old must match exactly incl. whitespace; any failure aborts all ops. "
+        'E.g. {"ops":[{"op":"update","path":"a.py","old":"x","new":"y"}]}'
     )
 
     def format_call(self, params: ApplyPatchParams) -> str:

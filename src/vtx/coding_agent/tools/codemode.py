@@ -175,10 +175,8 @@ class CodemodeTool(BaseTool):
 
     name = CODEMODE_TOOL_NAME
     description = (
-        "Batch multiple tool calls into one Python script. Use it as the default "
-        "whenever a task needs two or more calls: read/search several files, fan "
-        "out sub-agents, batch edits, or filter/aggregate results in code. One "
-        "script costs one turn; a chain of direct calls costs one turn each."
+        "Run a Python script that batches multiple tool calls in one turn — "
+        "use for 2+ calls, fan-out, or filtering results in code."
     )
     params = CodemodeParams
     mutating = True

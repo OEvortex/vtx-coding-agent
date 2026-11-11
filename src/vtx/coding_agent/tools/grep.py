@@ -36,8 +36,8 @@ class GrepTool(BaseTool[GrepParams]):
     mutating = False
     prompt_guidelines = ("grep for text in files (not bash grep/rg)",)
     description = (
-        "Search file contents using regular expressions (ripgrep). "
-        f"Respects .gitignore, returns matching lines with path:line, truncated to {MAX_RESULTS}."
+        "Regex-search file contents (ripgrep). Returns path:line matches, "
+        f"respects .gitignore, max {MAX_RESULTS} results."
     )
 
     def format_call(self, params: GrepParams) -> str:

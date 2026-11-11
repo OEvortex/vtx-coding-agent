@@ -550,9 +550,8 @@ class TaskTool(BaseTool[TaskParams]):
         return TaskToolBlock
 
     description = (
-        "Dispatch an isolated sub-agent (own tools and session, cannot see this chat) for a "
-        "self-contained task; returns only its final text. Set background: true to return "
-        "a task_id immediately and receive the result next turn without blocking."
+        "Dispatch an isolated sub-agent (own tools/session) for a self-contained task; "
+        "returns its final text. background: true returns a task_id immediately."
     )
 
     prompt_guidelines = ()
