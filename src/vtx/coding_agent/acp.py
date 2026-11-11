@@ -78,6 +78,29 @@ _SLASH_CLIENT_HINT = {
 }
 
 
+def _session_tools(extensions: list[Any] | None = None) -> list[Any]:
+    """The tool list an ACP session runs with.
+
+    The composition is authoritative when one is mounted: ``ctx.tools`` knows the
+    defaults a profile declared and holds every row-registered tool -- including
+    the coding agent's ``read``/``edit``/``write``/``bash``/``skill``/``todo``,
+    which are plugin rows rather than harness defaults. Assembling from the
+    fixed ``DEFAULT_TOOLS`` list instead would silently re-add a tool a profile
+    removed and never see one a profile added.
+
+    The list is only the fallback for a bare process (tests, embedders) with no
+    composition mounted; ``run_acp`` mounts one before serving, which is what
+    makes those tools exist at all in ``vtx acp``.
+    """
+    from vtx.coding_agent.tools import DEFAULT_TOOLS, get_tools_with_extensions
+    from vtx.plugins.bootstrap import active_host
+
+    host = active_host()
+    if host is not None and "tools" in host.base:
+        return host.base.tools.assemble(extras=extensions or None)
+    return get_tools_with_extensions(DEFAULT_TOOLS, extensions)
+
+
 class _Session:
     """Per-ACP-session agent state."""
 
@@ -245,7 +268,6 @@ class AcpServer:
             def _build() -> tuple[Any, str | None, Any]:
                 from vtx.agent.agents import AgentRegistry, load_all_agents
                 from vtx.agent.runtime import ConversationRuntime
-                from vtx.coding_agent.tools import DEFAULT_TOOLS, get_tools_with_extensions
                 from vtx.core.config import config, get_last_selected
                 from vtx.plugins.extensions import load_for_runtime
 
@@ -276,11 +298,7 @@ class AcpServer:
                     ext_tools.extend(
                         loaded_extensions.local_tools_for(agent_registry.active.definition.name)
                     )
-                tools = (
-                    get_tools_with_extensions(DEFAULT_TOOLS, ext_tools)
-                    if ext_tools
-                    else get_tools_with_extensions(DEFAULT_TOOLS)
-                )
+                tools = _session_tools(ext_tools)
 
                 runtime = ConversationRuntime(
                     cwd=sess.cwd,
@@ -1312,7 +1330,31 @@ class AcpServer:
 
 def run_acp() -> None:
     """Entry point for ``vtx acp``."""
+    from vtx.core.config import config
     from vtx.core.session_retention import prune_in_background
+    from vtx.plugins import boot
 
     prune_in_background()
-    asyncio.run(AcpServer()._serve())
+
+    # Mount the plugin composition before serving. Every coding-agent tool --
+    # read, edit, write, bash, skill, todo -- is a plugin row, not a harness
+    # default, so a process that never mounts one offers the model only the
+    # three harness-native tools and no way to touch the workspace. Mounting
+    # also supplies the agent loop and prompt seams, and registers the tools an
+    # extension ships. The editor spawns this process with the workspace as its
+    # cwd, so project extensions resolve exactly as they do for the TUI.
+    try:
+        host = boot(
+            os.environ.get("VTX_PROFILE") or "headless",
+            cwd=os.getcwd(),
+            extension_paths=[*config.extensions],
+        )
+    except Exception as exc:
+        # A composition that cannot mount leaves the server with no tools, so
+        # fail loudly here rather than serving a crippled agent to an editor.
+        print(f"vtx: plugin composition failed: {exc}", file=sys.stderr)
+        raise SystemExit(1) from exc
+    try:
+        asyncio.run(AcpServer()._serve())
+    finally:
+        host.dispose()

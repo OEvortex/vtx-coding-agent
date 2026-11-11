@@ -300,6 +300,8 @@ vtx acp
 
 Runs vtx as an Agent Client Protocol (ACP) server over stdio: JSON-RPC 2.0, one object per line, for editors like Zed that speak the protocol (`src/vtx/coding_agent/acp.py:1`-`src/vtx/coding_agent/acp.py:13`, dispatched at `src/vtx/coding_agent/cli.py:217`-`src/vtx/coding_agent/cli.py:221`).
 
+The server mounts the plugin composition before serving -- the `headless` profile, or `VTX_PROFILE` when set, with the `extensions:` list from `~/.vtx/config.yml` passed through. That mount is what registers the tools, because the coding agent's tools are plugin rows rather than harness defaults; without it an ACP session would offer the model only the three harness-native tools (`web`, `ask_user`, `delegate_subagent`) and no way to touch the workspace. Assembling from `ctx.tools` also means an edited row list stays authoritative, and the runtime picks up the composition's agent loop and prompt builder (`src/vtx/coding_agent/acp.py:81`, `:1331`).
+
 The `usage_update` notification carries **context occupancy**, not spend: `used` is the token footprint of the conversation (what compaction compares against the window) and `size` is the active model's context window. It is sent after each turn, after a compaction shrinks the context, and once when a session is loaded so a client's meter is correct on resume. Identical consecutive readings are suppressed, and a reading with no context yet is not sent at all -- clients hide the meter on a zero rather than render `0%` (`AcpServer._emit_usage`).
 
 ## Subcommand: `vtx auth`

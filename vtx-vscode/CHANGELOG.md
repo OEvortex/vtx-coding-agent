@@ -8,6 +8,19 @@ the commit messages carry the detail.
 > locally. The builds between 0.6.65 and 0.6.91 reached the Marketplace together
 > in 0.6.92.
 
+## [0.13.2] - 2026-11-11
+
+### Highlights
+- Give the agent the workspace tools it was missing: sessions opened over ACP
+  now register `read`, `edit`, `write`, `bash`, `skill`, and `todo`, so the
+  assistant can actually inspect and change your files instead of only talking.
+- Honour your plugin profile in editor sessions, including extension-provided
+  tools and any tool a profile adds or removes.
+
+### Under the hood
+- The ACP server mounts the plugin composition before serving and assembles the
+  session tool list from `ctx.tools`; the fix ships in the Vtx CLI (`vtx acp`).
+
 ## [0.13.1] - 2026-11-11
 
 ### Highlights
