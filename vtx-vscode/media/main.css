@@ -1729,12 +1729,38 @@ button.model-hover-configurable-button:hover {
 #input-box.cmp-sm .dd-btn .codicon-chevron-down { display: none; }
 #input-box.cmp-sm .dd-btn.has-icon .dd-label { display: none; }
 #input-box.cmp-sm .dd-btn.has-icon { min-width: 22px; justify-content: center; padding: 0; }
-#input-box.cmp-sm .usage-pct { display: none; }
 
 /* Fusion is the only control for lead model/effort, so it keeps its icon at
    every width; the redundant controls go first. */
 #input-box.cmp-xxs #mode-dd,
 #input-box.cmp-xxs #thinking-dd { display: none !important; }
+
+/* VS Code's .chat-secondary-toolbar: the row under the input box that carries
+   the context-usage widget, right aligned (chat.css .chat-secondary-toolbar,
+   padding 0 4px, gap 2px). position:relative anchors the usage popover, which
+   opens upward into the space above this row. */
+#secondary-toolbar {
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 2px;
+  padding: 0 4px;
+}
+
+/* With no visible control the row collapses entirely rather than leaving a
+   stray gap under the input box. */
+#secondary-toolbar:not(:has(.usage-ring:not(.hidden))) {
+  display: none;
+}
+
+#composer.list-mode #secondary-toolbar {
+  display: none !important;
+}
+
+#secondary-toolbar.cmp-sm .usage-pct {
+  display: none;
+}
 
 /* Context-window usage ring (click for a details popover) */
 .usage-ring {
@@ -2501,6 +2527,14 @@ button.model-hover-configurable-button:hover {
 .welcome-sub {
   max-width: 280px;
   font-size: 12px;
+}
+
+/* VS Code's .chat-welcome-view-disclaimer: 12px descriptionForeground,
+   max-width 256px, centered under the welcome message. */
+.welcome-disclaimer {
+  max-width: 256px;
+  font-size: 12px;
+  color: var(--vscode-descriptionForeground);
 }
 
 /* Suggested prompts as a wrapping bar of small chips, mirroring VS Code's
@@ -4819,10 +4853,31 @@ body.dv-resizing #sessions-resizer {
 .session-tool-spacer {
   flex: 1;
 }
+/* VS Code's .agent-sessions-title-container: a small uppercase label, not a
+   heading, so it reads as a section marker above the list. */
 .session-panel-title {
-  font-weight: 600;
-  font-size: 0.95em;
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
   white-space: nowrap;
+}
+
+/* VS Code's .agent-sessions-new-button-container: the labelled "New Session"
+   button on its own padded row between the title and the list. */
+.session-new-row {
+  padding: 8px;
+}
+
+.session-new-row .new-session-split {
+  display: flex;
+  width: 100%;
+  height: 26px;
+}
+
+.session-new-row .new-session-btn {
+  flex: 1;
+  justify-content: center;
 }
 .session-tool-btn {
   display: inline-flex;

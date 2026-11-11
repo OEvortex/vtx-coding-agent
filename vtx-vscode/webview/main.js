@@ -49,6 +49,7 @@ import { renderMarkdown, renderShell, renderCode } from "./markdown.js";
     fusionDD: $("fusion-dd"),
     thinkingDD: $("thinking-dd"),
     inputBox: $("input-box"),
+    secondaryToolbar: $("secondary-toolbar"),
     composer: $("composer"),
     permissionTray: $("permission-tray"),
     elicitationTray: $("elicitation-tray"),
@@ -1706,6 +1707,11 @@ import { renderMarkdown, renderShell, renderCode } from "./markdown.js";
       el.inputBox.classList.toggle("cmp-sm", w < 380); // labels -> icons only
       el.inputBox.classList.toggle("cmp-xs", w < 280); // hide mode/model/context
       el.inputBox.classList.toggle("cmp-xxs", w < 190); // only Send remains
+      // The secondary toolbar is a sibling of the input box, so it needs the
+      // same compact classes for its own controls (the usage ring's % label).
+      el.secondaryToolbar.classList.toggle("cmp-sm", w < 380);
+      el.secondaryToolbar.classList.toggle("cmp-xs", w < 280);
+      el.secondaryToolbar.classList.toggle("cmp-xxs", w < 190);
       updateWorkingDuration(w);
     });
     ro.observe(el.inputBox);
@@ -3106,11 +3112,13 @@ import { renderMarkdown, renderShell, renderCode } from "./markdown.js";
         langEl.textContent = lang;
         bar.appendChild(langEl);
       }
+      // VS Code's code block toolbar order: Apply in Editor, Insert at Cursor,
+      // Copy, then the shell-only Run in Terminal.
+      bar.appendChild(codeBtn("codicon-go-to-file", "Apply in Editor", () => vscode.postMessage({ type: "applyToFile", text: getText() })));
+      bar.appendChild(codeBtn("codicon-insert", "Insert at Cursor", () => vscode.postMessage({ type: "insertAtCursor", text: getText() })));
       bar.appendChild(copyButton("Copy", "code-btn", getText));
-      bar.appendChild(codeBtn("codicon-insert", "Insert at cursor", () => vscode.postMessage({ type: "insertAtCursor", text: getText() })));
-      bar.appendChild(codeBtn("codicon-go-to-file", "Apply to file", () => vscode.postMessage({ type: "applyToFile", text: getText() })));
       if (SHELL_LANGS.has(lang)) {
-        bar.appendChild(codeBtn("codicon-terminal", "Run in terminal", () => vscode.postMessage({ type: "runInTerminal", text: getText() })));
+        bar.appendChild(codeBtn("codicon-terminal", "Run in Terminal", () => vscode.postMessage({ type: "runInTerminal", text: getText() })));
       }
       // The chrome floats above the block, so it needs a wrapper: the pre itself
       // scrolls horizontally, and an absolutely positioned child of a scroll
@@ -6470,7 +6478,7 @@ import { renderMarkdown, renderShell, renderCode } from "./markdown.js";
   function mountSessionList(container, opts) {
     opts = opts || {};
     container.innerHTML = "";
-    const state = { q: "", status: new Set(), grouping: "workspace", sort: "activity" };
+    const state = { q: "", status: new Set(), grouping: "date", sort: "activity" };
     let searchFloater = null;
     let filterFloater = null;
 
@@ -6503,11 +6511,23 @@ import { renderMarkdown, renderShell, renderCode } from "./markdown.js";
       titleLabel.textContent = "Sessions";
       const spacer = document.createElement("span");
       spacer.className = "session-tool-spacer";
-      const newBtn = buildNewSessionButton({ compact: true });
       const searchBtn = mkTool("search", "Search sessions", (b) => api.toggleSearch(b));
       const filterBtn = mkTool("list-filter", "Filter sessions", (b) => api.toggleFilter(b));
-      toolbar.append(titleLabel, spacer, newBtn, searchBtn, filterBtn);
-      container.appendChild(toolbar);
+      if (opts.movable) {
+        // VS Code's side-by-side sessions control: an uppercase title row with
+        // the filter on the right, then a labelled "New Session" button on its
+        // own row above the list (.agent-sessions-new-button-container).
+        toolbar.append(titleLabel, spacer, searchBtn, filterBtn);
+        container.appendChild(toolbar);
+        const newRow = document.createElement("div");
+        newRow.className = "session-new-row";
+        newRow.appendChild(buildNewSessionButton());
+        container.appendChild(newRow);
+      } else {
+        const newBtn = buildNewSessionButton({ compact: true });
+        toolbar.append(titleLabel, spacer, newBtn, searchBtn, filterBtn);
+        container.appendChild(toolbar);
+      }
     }
 
     const bodyEl = document.createElement("div");
@@ -7196,13 +7216,20 @@ import { renderMarkdown, renderShell, renderCode } from "./markdown.js";
     }
     const title = document.createElement("div");
     title.className = "welcome-title";
-    title.textContent = "Ask Vtx anything";
+    // Mode-aware like VS Code's "Build with Agent": Vtx only has its agent
+    // mode, so the welcome names the product the way Copilot names the agent.
+    title.textContent = "Build with Vtx";
     const sub = document.createElement("div");
     sub.className = "welcome-sub muted";
     sub.textContent = "Vtx can read your workspace, run tools, and edit files. Try one of these:";
+    // VS Code's chat disclaimer (.chat-welcome-view-disclaimer).
+    const disc = document.createElement("div");
+    disc.className = "welcome-disclaimer";
+    disc.textContent = "AI responses may be inaccurate.";
     box.appendChild(icon);
     box.appendChild(title);
     box.appendChild(sub);
+    box.appendChild(disc);
     const chips = document.createElement("div");
     chips.className = "welcome-prompts";
     STARTER_PROMPTS.forEach((p) => {

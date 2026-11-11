@@ -63,6 +63,15 @@ class DeviceCodeResponse:
     expires_in: int
 
 
+def _normalize_access_token(token: str) -> str:
+    """Cline's API expects the ``workos:``-prefixed JWT; the refresh endpoint
+    returns the bare JWT, so restore the prefix when it is missing."""
+    token = (token or "").strip()
+    if token.startswith("eyJ") and not token.startswith("workos:"):
+        return "workos:" + token
+    return token
+
+
 def get_cline_auth_path() -> Path:
     return get_config_dir() / "cline_auth.json"
 
@@ -131,7 +140,7 @@ def load_cline_credentials() -> ClineCredentials | None:
         try:
             data = json.loads(path.read_text(encoding="utf-8"))
             return ClineCredentials(
-                access=data["access"],
+                access=_normalize_access_token(data["access"]),
                 refresh=data["refresh"],
                 expires=int(data["expires"]),
                 account_id=data.get("account_id"),
@@ -141,14 +150,17 @@ def load_cline_credentials() -> ClineCredentials | None:
         except (OSError, json.JSONDecodeError, KeyError, TypeError):
             pass
     # fallback to native cline CLI file
-    return _load_native_credentials()
+    creds = _load_native_credentials()
+    if creds is not None:
+        creds.access = _normalize_access_token(creds.access)
+    return creds
 
 
 def save_cline_credentials(creds: ClineCredentials) -> None:
     path = get_cline_auth_path()
     path.parent.mkdir(parents=True, exist_ok=True)
     data: dict[str, Any] = {
-        "access": creds.access,
+        "access": _normalize_access_token(creds.access),
         "refresh": creds.refresh,
         "expires": creds.expires,
         "account_id": creds.account_id,
