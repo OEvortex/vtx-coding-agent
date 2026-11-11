@@ -634,11 +634,9 @@ body {
   padding-top: 20px;
 }
 
-/* Non-turn rows in the transcript (restore markers, the queue, loaders) keep
-   the separation the removed thread gap used to give them. */
-#thread > .restored-row,
-#thread > .queued-inline,
-#thread > .thread-loading {
+/* Non-turn rows in the transcript keep the separation the removed thread gap
+   used to give them. */
+#thread > .restored-row {
   margin: 12px 0;
 }
 
@@ -966,14 +964,26 @@ body {
 }
 
 #model-dd .dd-menu {
-  width: min(200px, calc(100vw - 16px));
+  /* .action-widget.chat-model-picker-widget: 8px padding, ~300px wide. */
+  width: min(300px, calc(100vw - 16px));
   min-width: 0;
   max-width: calc(100vw - 16px);
   box-sizing: border-box;
+  padding: 8px;
 }
 
 #model-dd .dd-filter {
   box-sizing: border-box;
+  /* The picker's search field is borderless; focus draws a ring instead. */
+  border-color: transparent;
+  background: transparent;
+  height: 24px;
+  padding: 0 6px;
+}
+
+#model-dd .dd-filter:focus {
+  outline: 1px solid var(--vscode-focusBorder);
+  outline-offset: 1px;
 }
 
 #fusion-dd .dd-btn {
@@ -1089,6 +1099,102 @@ body {
   right: 0;
 }
 
+/* Provider tab strip, upstream's .chat-model-picker-tabbar: icon-only 28px
+   tabs that expand to icon + name on the active one, modernTab colors. */
+.mp-tabbar {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  padding-bottom: 6px;
+}
+
+.mp-tabstrip {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  min-width: 0;
+}
+
+.mp-tab {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  box-sizing: border-box;
+  height: 28px;
+  min-width: 28px;
+  padding: 0 6px;
+  border: none;
+  border-radius: 4px;
+  background: transparent;
+  color: var(--vscode-descriptionForeground);
+  font-family: inherit;
+  font-size: 13px;
+  cursor: pointer;
+}
+
+.mp-tab .mp-tab-label {
+  display: none;
+  max-width: 120px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.mp-tab.active {
+  color: var(--vscode-modernTab-activeForeground, var(--vscode-foreground));
+  background: var(--vscode-modernTab-activeBackground, var(--vscode-list-activeSelectionBackground));
+  font-weight: 600;
+}
+
+.mp-tab.active .mp-tab-label {
+  display: inline;
+}
+
+.mp-tab:not(.active):hover {
+  color: var(--vscode-modernTab-hoverForeground, var(--vscode-foreground));
+  background: var(--vscode-modernTab-hoverBackground, var(--vscode-toolbar-hoverBackground));
+}
+
+.mp-tab:focus-visible {
+  outline: 1px solid var(--vscode-focusBorder);
+  outline-offset: -1px;
+}
+
+.mp-tab-ic {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 16px;
+  height: 16px;
+  flex: 0 0 auto;
+}
+
+.mp-tab-ic .codicon {
+  font-size: var(--vscode-codiconFontSize, 16px);
+}
+
+/* The magnifier sits at the strip's end; in search mode it swaps places with
+   the back button and the borderless field takes the row. */
+.mp-search-btn {
+  margin-left: auto;
+}
+
+.mp-search {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  flex: 1;
+  min-width: 0;
+}
+
+.mp-search .dd-filter {
+  flex: 1;
+  min-width: 0;
+  margin-bottom: 0;
+  height: 24px;
+}
+
 /* The filter is fixed; only the rows scroll (so nothing renders behind it). */
 .dd-rows {
   overflow-y: auto;
@@ -1113,13 +1219,13 @@ body {
   border-color: var(--vscode-focusBorder);
 }
 
+/* Section headers read like upstream's .group-header: label2 semibold, no
+   uppercase tracking, foreground rather than a whisper. */
 .dd-group {
   padding: 6px 8px 2px;
-  font-size: 0.72em;
-  text-transform: uppercase;
-  letter-spacing: 0.05em;
-  opacity: 0.55;
+  font-size: 11px;
   font-weight: 600;
+  color: var(--vscode-foreground);
 }
 
 .dd-empty {
@@ -1138,7 +1244,7 @@ body {
   display: flex;
   align-items: center;
   gap: 6px;
-  padding: 5px 8px;
+  padding: 4px 8px;
   border-radius: 4px;
   cursor: pointer;
   white-space: nowrap;
@@ -1148,15 +1254,36 @@ body {
   background: var(--vscode-list-hoverBackground);
 }
 
+/* The selected row takes upstream's checked treatment: a button-tinted fill,
+   foreground text and a semibold title. */
+.dd-item.selected {
+  color: var(--vscode-foreground);
+  background: color-mix(in srgb, var(--vscode-button-background) 18%, var(--vscode-menu-background, var(--vscode-dropdown-background)));
+}
+
+.dd-item.selected .dd-item-name {
+  font-weight: 600;
+}
+
 .dd-item .codicon {
   font-size: 14px;
   opacity: 0.9;
 }
 
+/* Upstream's check column is 20px wide and its glyph is the compact 12px
+   codicon, tinted button-background on the checked row. */
 .dd-check {
   display: inline-flex;
-  width: 16px;
-  flex: 0 0 16px;
+  width: 20px;
+  flex: 0 0 20px;
+}
+
+.dd-check .codicon {
+  font-size: 12px;
+}
+
+.dd-item.selected .dd-check .codicon {
+  color: var(--vscode-button-background);
 }
 
 .dd-item-content {
@@ -1180,14 +1307,57 @@ body {
   font-weight: 400;
 }
 
+/* Upstream's .action-item-badge is a quiet pill: transparent fill at 10%
+   foreground, label2 11px, circle radius, descriptionForeground. */
 .dd-item-badge {
   flex: 0 0 auto;
-  padding: 1px 4px;
-  border-radius: 3px;
-  color: var(--vscode-badge-foreground);
-  background: var(--vscode-badge-background);
-  font-size: 0.75em;
-  font-weight: 600;
+  max-width: 96px;
+  padding: 0 6px;
+  border-radius: 999px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--vscode-descriptionForeground);
+  background: color-mix(in srgb, var(--vscode-foreground) 10%, transparent);
+  font-size: 11px;
+  font-weight: 400;
+  line-height: 16px;
+}
+
+/* Upstream's row "Details" action: label2 text with a trailing chevron,
+   descriptionForeground, revealed on row hover like the pin action. */
+.dd-item-details {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  height: 20px;
+  padding: 0 4px 0 8px;
+  border: none;
+  border-radius: 4px;
+  background: transparent;
+  color: var(--vscode-descriptionForeground);
+  font-family: inherit;
+  font-size: 11px;
+  line-height: 20px;
+  white-space: nowrap;
+  cursor: pointer;
+  opacity: 0;
+  transition: opacity 100ms ease-in-out;
+}
+
+.dd-item:hover .dd-item-details,
+.dd-item:focus-within .dd-item-details,
+.dd-item-details:focus-visible {
+  opacity: 1;
+}
+
+.dd-item-details:hover {
+  color: var(--vscode-foreground);
+  background: var(--vscode-toolbar-hoverBackground, var(--vscode-list-hoverBackground));
+}
+
+.dd-item-details .codicon {
+  font-size: 12px;
 }
 
 .dd-item-action {
@@ -1699,7 +1869,8 @@ button.model-hover-configurable-button:hover {
 .toolbar-right {
   display: flex;
   align-items: center;
-  gap: 2px;
+  /* .chat-input-toolbars action items sit spacing-size40 (4px) apart. */
+  gap: 4px;
   min-width: 0;
 }
 
@@ -2083,6 +2254,64 @@ button.model-hover-configurable-button:hover {
 
 /* Right-aligned, content-hugging request bubble (matches the VS Code /
    Copilot chat panel: user on the right, assistant full-width). */
+/* Message header, upstream's .interactive-item-container .header: a flex row
+   with the avatar + username on the left, 8px below it before the content. The
+   request column right-aligns its children, so the header stretches instead. */
+.turn-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  align-self: stretch;
+  width: 100%;
+  margin-bottom: 8px;
+  box-sizing: border-box;
+}
+
+.turn-header .user {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+/* The 24px circle, upstream's .header .avatar: requestBorder outline,
+   avatarBackground fill, avatarForeground glyph. */
+.turn-header .avatar {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex: 0 0 auto;
+  width: 24px;
+  height: 24px;
+  border-radius: var(--vscode-cornerRadius-circle, 50%);
+  outline: var(--vscode-strokeThickness, 1px) solid var(--vscode-chat-requestBorder, var(--vscode-panel-border));
+  outline-offset: -1px;
+  background: var(--vscode-chat-avatarBackground, var(--vscode-editorWidget-background));
+}
+
+.turn-header .avatar .codicon {
+  color: var(--vscode-chat-avatarForeground, var(--vscode-foreground));
+  font-size: var(--vscode-codiconFontSize, 16px);
+}
+
+.turn-header .avatar-icon {
+  width: 24px;
+  height: 24px;
+  border-radius: var(--vscode-cornerRadius-circle, 50%);
+  object-fit: cover;
+  background-color: var(--vscode-chat-list-background, transparent);
+}
+
+.turn-header .username {
+  font-size: var(--vscode-fontSize-heading3, 14px);
+  font-weight: var(--vscode-fontWeight-semiBold, 600);
+}
+
+/* The response column gaps its parts at 16px; the header's own 8px margin
+   already supplies the upstream spacing, so cancel the extra gap. */
+.turn-response > .turn-header {
+  margin-bottom: -8px;
+}
+
 .turn-request {
   position: relative;
   display: flex;
@@ -2101,8 +2330,9 @@ button.model-hover-configurable-button:hover {
   max-width: 100%;
   width: fit-content;
   justify-content: flex-end;
+  /* spacing-size60 below the pills, upstream's request attachment inset. */
   margin-left: auto;
-  padding-bottom: 5px;
+  padding-bottom: 6px;
 }
 
 .chat-attached-context-attachment {
@@ -2560,8 +2790,7 @@ button.model-hover-configurable-button:hover {
 .welcome-icon {
   font-size: 40px;
   color: var(--vscode-descriptionForeground);
-  opacity: 0.8;
-  margin-bottom: 16px;
+  margin-bottom: 24px;
 }
 
 .welcome-logo {
@@ -2588,19 +2817,28 @@ button.model-hover-configurable-button:hover {
   color: var(--vscode-descriptionForeground);
 }
 
-/* Suggested prompts as a wrapping bar of small chips, mirroring VS Code's
-   chat-welcome-view-suggested-prompts. */
+/* Suggested prompts as a strip pinned to the bottom of the welcome column,
+   mirroring VS Code's chat-welcome-view-suggested-prompts: left aligned, gap
+   8px, padding 32px 16px 8px with the section title inside the top inset. */
 .welcome-prompts {
+  position: relative;
   display: flex;
   flex-wrap: wrap;
-  justify-content: center;
+  justify-content: flex-start;
   gap: 8px;
   width: 100%;
-  max-width: 340px;
   /* Pushed to the bottom of the welcome column, as VS Code pins its suggested
      prompts strip above the input rather than floating it mid-column. */
   margin-top: auto;
-  padding-top: 24px;
+  padding: 32px 0 8px;
+}
+
+.welcome-prompts-title {
+  position: absolute;
+  top: 8px;
+  left: 16px;
+  font-size: 12px;
+  color: var(--vscode-descriptionForeground);
 }
 
 /* 20px-high suggestion chips, as VS Code renders the welcome strip. */
@@ -2619,7 +2857,6 @@ button.model-hover-configurable-button:hover {
 
 .welcome-chip:hover {
   background: var(--vscode-list-hoverBackground);
-  border-color: var(--vscode-focusBorder);
 }
 
 /* The empty state's own actions (a chat that is open on the other surface), as
@@ -2773,7 +3010,7 @@ button.model-hover-configurable-button:hover {
 
 /* The code block's chrome is a floating pill above the block, VS Code's
    .interactive-result-code-block-toolbar: editor background, requestBorder
-   hairline, hidden until hover/focus. */
+   hairline, hidden until hover/focus, 26px tall at top:-15px right:10px. */
 .code-block-wrap {
   position: relative;
   margin: 0 0 16px;
@@ -2785,13 +3022,13 @@ button.model-hover-configurable-button:hover {
 
 .code-toolbar {
   position: absolute;
-  top: -13px;
-  right: 8px;
+  top: -15px;
+  right: 10px;
   display: flex;
   align-items: center;
   gap: 2px;
   height: 26px;
-  padding: 0 2px 0 8px;
+  padding: 0 2px;
   border: 1px solid var(--vscode-chat-requestBorder, var(--vscode-panel-border));
   border-radius: var(--vscode-cornerRadius-medium, var(--dv-radius-md));
   background: var(--vscode-editorWidget-background, var(--vscode-editor-background));
@@ -2806,21 +3043,13 @@ button.model-hover-configurable-button:hover {
   pointer-events: auto;
 }
 
-/* Language name in the left half of the pill, dimmed like a status label. */
-.code-lang {
-  padding-right: 6px;
-  font-size: 11px;
-  line-height: 1;
-  color: var(--vscode-descriptionForeground);
-  text-transform: lowercase;
-}
-
 .code-btn {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  width: 22px;
-  height: 22px;
+  /* Upstream's .action-item boxes are 24x24 with 1px 2px margins. */
+  width: 24px;
+  height: 24px;
   padding: 0;
   border: none;
   border-radius: var(--vscode-cornerRadius-small, var(--dv-radius-sm));
@@ -2834,7 +3063,7 @@ button.model-hover-configurable-button:hover {
 }
 
 .code-btn .codicon {
-  font-size: 13px;
+  font-size: var(--vscode-codiconFontSize, 16px);
 }
 
 .bubble code {
@@ -2968,7 +3197,9 @@ button.model-hover-configurable-button:hover {
 }
 
 .thinking > .dv-collapsible-header {
-  font-size: var(--dv-fs-s);
+  /* Upstream's .chat-used-context-label is body-m (13px), not the smaller
+     detail size the chain body uses. */
+  font-size: var(--dv-fs-m);
 }
 
 .thinking-glyph {
@@ -3637,7 +3868,8 @@ button.model-hover-configurable-button:hover {
    what the run did ("Read 3 files and ran npm test"), like VS Code's chat. The
    header carries no icon of its own: the summary is the whole row. */
 .tool-group {
-  font-size: 0.92em;
+  /* Tool rows read at body-m upstream, the same size as the response text. */
+  font-size: 1em;
 }
 
 .tool-group > .dv-collapsible-header {
@@ -5044,7 +5276,8 @@ body.dv-resizing #sessions-resizer {
   display: flex;
   align-items: center;
   gap: 6px;
-  padding: 6px 8px;
+  /* .agent-session-item: 8px block, 6px inline padding. */
+  padding: 8px 6px;
   border-radius: 5px;
   cursor: pointer;
 }

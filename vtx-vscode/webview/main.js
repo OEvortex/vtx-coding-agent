@@ -108,6 +108,7 @@ import { renderMarkdown, renderShell, renderCode } from "./markdown.js";
   // Model picker lists families; a separate thinking picker holds the effort
   // variants of the selected family (Copilot-style).
   let modelFamilies = [];
+  let modelProviders = [];
   let modelChoices = {};
   // thought_level is reported for the active model only, so each family's
   // effort list is filed under that family rather than applied to whichever
@@ -135,6 +136,8 @@ import { renderMarkdown, renderShell, renderCode } from "./markdown.js";
   let modelHoverFloater = null;
   const modelDropdown = createDropdown(el.modelDD, onModelSelect, {
     buttonIcon: modelButtonIcon,
+    providerTabs: true,
+    itemDetails: showModelDetails,
     itemAction: toggleModelPin,
     itemHover: showModelHover,
     itemLeave: scheduleModelHoverClose,
@@ -375,6 +378,16 @@ import { renderMarkdown, renderShell, renderCode } from "./markdown.js";
       card.addEventListener("mouseleave", scheduleModelHoverClose);
       modelHoverFloater = makeFloater(anchor, card, "outside-right", () => { modelHoverFloater = null; });
     }, 500);
+  }
+  // The row's "Details" action opens the same card immediately and keeps it
+  // open, standing in for upstream's details page inside the picker.
+  function showModelDetails(anchor, item) {
+    cancelModelHoverShow();
+    cancelModelHoverClose();
+    closeModelHover();
+    const card = modelHoverContent(item.hover);
+    if (!card) return;
+    modelHoverFloater = makeFloater(anchor, card, "outside-right", () => { modelHoverFloater = null; });
   }
   function savePinnedModels() {
     vscode.setState({ ...(vscode.getState() || {}), pinnedModels: [...pinnedModelIds] });
@@ -620,6 +633,7 @@ import { renderMarkdown, renderShell, renderCode } from "./markdown.js";
       return {
         value: family.id,
         name: family.name,
+        provider: family.provider || "",
         badges: variantBadges(variant),
         pinned: pinnedModelIds.has(family.id),
         hover: { ...variant, name: family.name, thinkingLevels: (family.variants || []).length > 1, fusion: isFusion(family) },
@@ -1945,6 +1959,12 @@ import { renderMarkdown, renderShell, renderCode } from "./markdown.js";
     let items = [];
     let current = "";
     let filterText = "";
+    // The provider tab the model picker is showing, upstream's
+    // .chat-model-picker-tabbar selection. Sticky across re-opens.
+    let activeProvider = null;
+    // Upstream's .search-mode: the tab strip swaps for a borderless search
+    // field that queries every provider at once.
+    let searchMode = false;
 
     function close() {
       menu.classList.add("hidden");
@@ -1987,6 +2007,22 @@ import { renderMarkdown, renderShell, renderCode } from "./markdown.js";
         content.appendChild(badgeEl);
       }
       row.appendChild(content);
+      if (opts.itemDetails && it.value) {
+        // Upstream's row toolbar: a "Details" label ending in a chevron, revealed
+        // on row hover like the other action.
+        const det = document.createElement("button");
+        det.type = "button";
+        det.className = "dd-item-details";
+        det.title = "Details";
+        det.setAttribute("aria-label", "Details for " + it.name);
+        det.appendChild(Object.assign(document.createElement("span"), { textContent: "Details" }));
+        det.appendChild(mkIcon("chevron-right"));
+        det.addEventListener("click", (ev) => {
+          ev.stopPropagation();
+          opts.itemDetails(det, it);
+        });
+        row.appendChild(det);
+      }
       if (opts.itemAction && it.value) {
         const action = document.createElement("button");
         const label = it.pinned ? `Unpin ${it.name}` : `Pin ${it.name}`;
@@ -2013,21 +2049,138 @@ import { renderMarkdown, renderShell, renderCode } from "./markdown.js";
       });
       return row;
     }
+    // Provider tabs, upstream's TabbedModelPicker: one tab per provider slug,
+    // an icon-only 28px button that expands to icon + name when active.
+    function providerOf(it) { return it.provider || "vtx"; }
+    function providerName(slug) {
+      const p = modelProviders.find((x) => x.slug === slug);
+      if (p && p.name) return p.name;
+      if (slug === "vtx") return "Vtx";
+      return slug.charAt(0).toUpperCase() + slug.slice(1);
+    }
+    function providerTabs() {
+      const first = new Map();
+      items.forEach((it) => {
+        if (it.sep) return;
+        const slug = providerOf(it);
+        if (!first.has(slug)) first.set(slug, it);
+      });
+      return [...first.entries()].map(([slug, it]) => ({
+        slug,
+        name: providerName(slug),
+        icon: opts.buttonIcon ? opts.buttonIcon(it.value) : (it.icon || "")
+      }));
+    }
+    function tabIcon(ic) {
+      const span = document.createElement("span");
+      span.className = "mp-tab-ic";
+      if (ic && ic.indexOf("img:") === 0) {
+        const rest = ic.slice(4);
+        const sp = rest.indexOf(" ");
+        const key = rest.slice(0, sp);
+        const url = rest.slice(sp + 1).replace(/"/g, "%22");
+        span.innerHTML = `<span class="dd-brand dd-brand--${key}" style="-webkit-mask-image:url('${url}');mask-image:url('${url}')"></span>`;
+      } else if (ic) {
+        span.innerHTML = `<i class="codicon ${ic}"></i>`;
+      }
+      return span;
+    }
     function renderMenu() {
       menu.innerHTML = "";
-      const showFilter = items.length > 10;
+      const tabs = opts.providerTabs ? providerTabs() : [];
+      if (tabs.length && !tabs.some((t) => t.slug === activeProvider)) {
+        activeProvider = tabs.length > 1 ? tabs[0].slug : null;
+      }
+      if (opts.providerTabs) {
+        const bar = document.createElement("div");
+        bar.className = "mp-tabbar";
+        const strip = document.createElement("div");
+        strip.className = "mp-tabstrip" + (searchMode ? " hidden" : "");
+        tabs.forEach((t) => {
+          const b = document.createElement("button");
+          b.type = "button";
+          b.className = "mp-tab" + (t.slug === activeProvider ? " active" : "");
+          b.title = t.name;
+          b.appendChild(tabIcon(t.icon));
+          const lb = document.createElement("span");
+          lb.className = "mp-tab-label";
+          lb.textContent = t.name;
+          b.appendChild(lb);
+          b.addEventListener("click", (ev) => {
+            ev.stopPropagation();
+            activeProvider = t.slug;
+            renderMenu();
+          });
+          strip.appendChild(b);
+        });
+        // The magnifier at the strip's end, upstream's search tab action.
+        const sbtn = document.createElement("button");
+        sbtn.type = "button";
+        sbtn.className = "mp-tab mp-search-btn" + (searchMode ? " hidden" : "");
+        sbtn.title = "Search";
+        sbtn.setAttribute("aria-label", "Search models");
+        sbtn.appendChild(mkIcon("search"));
+        sbtn.addEventListener("click", (ev) => {
+          ev.stopPropagation();
+          searchMode = true;
+          renderMenu();
+        });
+        strip.appendChild(sbtn);
+        bar.appendChild(strip);
+        if (searchMode) {
+          const srow = document.createElement("div");
+          srow.className = "mp-search";
+          const back = document.createElement("button");
+          back.type = "button";
+          back.className = "mp-tab mp-back-btn";
+          back.title = "Back";
+          back.setAttribute("aria-label", "Back to providers");
+          back.appendChild(mkIcon("chevron-left"));
+          back.addEventListener("click", (ev) => {
+            ev.stopPropagation();
+            searchMode = false;
+            filterText = "";
+            renderMenu();
+          });
+          const f = document.createElement("input");
+          f.className = "dd-filter mp-search-input";
+          f.type = "text";
+          f.placeholder = "Search";
+          f.value = filterText;
+          f.addEventListener("click", (e) => e.stopPropagation());
+          f.addEventListener("keydown", (e) => {
+            e.stopPropagation();
+            if (e.key === "Escape") {
+              searchMode = false;
+              filterText = "";
+              renderMenu();
+            }
+          });
+          f.addEventListener("input", () => { filterText = f.value; renderRows(); });
+          srow.appendChild(back);
+          srow.appendChild(f);
+          bar.appendChild(srow);
+          setTimeout(() => f.focus(), 0);
+        }
+        menu.appendChild(bar);
+      }
+      const showFilter = items.length > 10 && !opts.providerTabs;
       const rows = document.createElement("div");
       rows.className = "dd-rows";
       const renderRows = () => {
         rows.innerHTML = "";
         const q = filterText.trim().toLowerCase();
+        // The query narrows the selected provider's tab rather than searching
+        // every provider, so search stays scoped to what the tab strip shows.
+        const tab = activeProvider;
         let lastGroup = null;
         let shown = 0;
         items.forEach((it) => {
           if (it.sep) {
-            if (!q) rows.appendChild(Object.assign(document.createElement("div"), { className: "dd-sep" }));
+            if (!q && !tab) rows.appendChild(Object.assign(document.createElement("div"), { className: "dd-sep" }));
             return;
           }
+          if (tab && providerOf(it) !== tab) return;
           if (q && !it.name.toLowerCase().includes(q) && !(it.group || "").toLowerCase().includes(q)) return;
           if (it.group && it.group !== lastGroup) {
             const h = document.createElement("div");
@@ -2068,6 +2221,7 @@ import { renderMarkdown, renderShell, renderCode } from "./markdown.js";
         if (b !== btn) { b.classList.remove("open"); b.setAttribute("aria-expanded", "false"); }
       });
       filterText = "";
+      searchMode = false;
       renderMenu();
       menu.classList.toggle("hidden");
       const open = !menu.classList.contains("hidden");
@@ -2331,6 +2485,34 @@ import { renderMarkdown, renderShell, renderCode } from "./markdown.js";
     return ctrl;
   }
 
+  // One message header row, upstream's .header > .user: avatar circle plus the
+  // semibold username. `icon` is a codicon class or "img:<src>" for the agent
+  // logo, which upstream renders as the avatar .icon image.
+  function turnHeader(icon, name) {
+    const header = document.createElement("div");
+    header.className = "turn-header";
+    const avatar = document.createElement("span");
+    avatar.className = "avatar";
+    if (icon.indexOf("img:") === 0) {
+      const img = document.createElement("img");
+      img.className = "avatar-icon";
+      img.src = icon.slice(4);
+      img.alt = "";
+      avatar.appendChild(img);
+    } else {
+      avatar.innerHTML = `<i class="codicon ${icon}"></i>`;
+    }
+    const user = document.createElement("span");
+    user.className = "user";
+    user.appendChild(avatar);
+    const nameEl = document.createElement("span");
+    nameEl.className = "username";
+    nameEl.textContent = name;
+    user.appendChild(nameEl);
+    header.appendChild(user);
+    return header;
+  }
+
   // Create a new turn shell (request container + checkpoint row + response
   // container) and make it current. `text` is the user's message.
   function newTurn(mid, text) {
@@ -2340,6 +2522,9 @@ import { renderMarkdown, renderShell, renderCode } from "./markdown.js";
     container.className = "turn";
     const req = document.createElement("div");
     req.className = "turn-request";
+    // Upstream's .interactive-item-container .header: a 24px circular avatar
+    // and a semibold username row above every request and response.
+    req.appendChild(turnHeader("codicon-person", "You"));
     const reqBody = document.createElement("div");
     reqBody.className = "req-body";
     const reqText = document.createElement("div");
@@ -2348,6 +2533,8 @@ import { renderMarkdown, renderShell, renderCode } from "./markdown.js";
     req.appendChild(reqBody);
     const resp = document.createElement("div");
     resp.className = "turn-response";
+    const logoSrc = document.body.dataset.logo;
+    resp.appendChild(turnHeader(logoSrc ? "img:" + logoSrc : "codicon-hubot", "Vtx"));
     const checkpoint = document.createElement("div");
     checkpoint.className = "checkpoint-row hidden";
     container.appendChild(req);
@@ -2427,8 +2614,10 @@ import { renderMarkdown, renderShell, renderCode } from "./markdown.js";
     // A turn is complete once it is no longer the one actively streaming.
     turn.container.classList.toggle("complete", turn !== currentTurn || !busy);
 
-    // Request toolbar (top-right, on hover): Copy + Edit.
-    let reqActions = turn.req.querySelector(".msg-actions");
+    // Request toolbar (floating pill above the row on hover, Copy + Edit),
+    // appended to the turn so it can anchor to the row's top edge like
+    // upstream's .request-hover.
+    let reqActions = turn.container.querySelector(":scope > .req-actions");
     if (reqActions) reqActions.remove();
     reqActions = document.createElement("div");
     reqActions.className = "msg-actions req-actions";
@@ -2438,7 +2627,7 @@ import { renderMarkdown, renderShell, renderCode } from "./markdown.js";
     if (canEditTurn(turn) && caps.editRequests !== "inline") {
       reqActions.appendChild(actionBtn("codicon-edit", "Edit Request", () => startEditing(turn)));
     }
-    turn.req.appendChild(reqActions);
+    turn.container.appendChild(reqActions);
 
     // Request timestamp under the bubble, revealed with the turn hover chrome
     // (live turns only; replayed history has no known original time).
@@ -2491,7 +2680,7 @@ import { renderMarkdown, renderShell, renderCode } from "./markdown.js";
   // working row is the panel talking, not the answer, so it does not count.
   function turnHasResponse(turn) {
     if (!turn.resp) return false;
-    const real = [...turn.resp.children].filter((c) => !c.classList.contains("working"));
+    const real = [...turn.resp.children].filter((c) => !c.classList.contains("working") && !c.classList.contains("turn-header"));
     return real.length > 0 || real.map((c) => c.textContent).join("").trim().length > 0;
   }
 
@@ -3104,17 +3293,9 @@ import { renderMarkdown, renderShell, renderCode } from "./markdown.js";
       const lang = (pre.getAttribute("data-lang") || "").toLowerCase();
       const bar = document.createElement("div");
       bar.className = "code-toolbar";
-      // Language pill on the left of the floating chrome, as VS Code shows it;
-      // actions sit to its right.
-      if (lang) {
-        const langEl = document.createElement("span");
-        langEl.className = "code-lang";
-        langEl.textContent = lang;
-        bar.appendChild(langEl);
-      }
       // VS Code's code block toolbar order: Apply in Editor, Insert at Cursor,
       // Copy, then the shell-only Run in Terminal.
-      bar.appendChild(codeBtn("codicon-go-to-file", "Apply in Editor", () => vscode.postMessage({ type: "applyToFile", text: getText() })));
+      bar.appendChild(codeBtn("codicon-git-pull-request-go-to-changes", "Apply in Editor", () => vscode.postMessage({ type: "applyToFile", text: getText() })));
       bar.appendChild(codeBtn("codicon-insert", "Insert at Cursor", () => vscode.postMessage({ type: "insertAtCursor", text: getText() })));
       bar.appendChild(copyButton("Copy", "code-btn", getText));
       if (SHELL_LANGS.has(lang)) {
@@ -3893,8 +4074,9 @@ import { renderMarkdown, renderShell, renderCode } from "./markdown.js";
   function foldCompletedWork(turn) {
     if (!turn || !turn.resp || turn.folded) return;
     // The answer has to exist and has to come last: without one there is nothing
-    // left in the open, and folding the whole turn would hide all of it.
-    const kids = [...turn.resp.children];
+    // left in the open, and folding the whole turn would hide all of it. The
+    // header is chrome, not work, so it stays out of the count and the fold.
+    const kids = [...turn.resp.children].filter((n) => !n.classList.contains("turn-header"));
     const lastAnswer = kids.filter((n) => n.classList.contains("resp-text")).pop();
     if (!lastAnswer) return;
     // Everything before it goes in, prose the agent said along the way included,
@@ -4701,7 +4883,8 @@ import { renderMarkdown, renderShell, renderCode } from "./markdown.js";
       const body = document.createElement("div");
       body.className = "used-refs-body";
       c.body.appendChild(body);
-      turn.resp.insertBefore(box, turn.resp.firstChild);
+      // The header leads the response, so the refs box goes under it, not over it.
+      turn.resp.insertBefore(box, [...turn.resp.children].find((n) => !n.classList.contains("turn-header")) || null);
       turn.usedRefsEl = box;
       turn.usedRefsBody = body;
       turn.usedRefsLabel = label;
@@ -7232,6 +7415,11 @@ import { renderMarkdown, renderShell, renderCode } from "./markdown.js";
     box.appendChild(disc);
     const chips = document.createElement("div");
     chips.className = "welcome-prompts";
+    // .chat-welcome-view-suggested-prompts-title: the strip's own caption.
+    chips.appendChild(Object.assign(document.createElement("div"), {
+      className: "welcome-prompts-title",
+      textContent: "Suggested prompts"
+    }));
     STARTER_PROMPTS.forEach((p) => {
       const chip = document.createElement("button");
       chip.className = "welcome-chip";
@@ -7614,6 +7802,7 @@ import { renderMarkdown, renderShell, renderCode } from "./markdown.js";
         for (const key of Object.keys(incoming)) modelChoices[key] = incoming[key];
         // Families come from this response, because modelFamilies is still
         // empty on the first one.
+        if (Array.isArray(m.providers)) modelProviders = m.providers;
         const famOf = (uid) => (m.models || []).find((f) => (f.variants || []).some((v) => v.value === uid))
           || (String(uid || "").startsWith("fusion-") ? (m.models || []).find(isFusion) : undefined);
         const responseFamily = famOf(m.currentModel);

@@ -98,11 +98,16 @@ const MODES = [
   { value: "bypass", name: "Bypass" }
 ];
 const MODELS = [
-  { id: "adaptive", name: "Adaptive", default: "adaptive", variants: [{ value: "adaptive", name: "Adaptive" }] },
-  { id: "claude", name: "Claude Sonnet 4.5", default: "claude-sonnet-4-5", variants: [{ value: "claude-sonnet-4-5", name: "Sonnet" }, { value: "claude-opus-4-5", name: "Opus" }] },
-  { id: "gpt", name: "GPT-5", default: "gpt-5", variants: [{ value: "gpt-5", name: "GPT-5" }] }
+  { id: "adaptive", name: "Adaptive", provider: "vtx", default: "adaptive", variants: [{ value: "adaptive", name: "Adaptive" }] },
+  { id: "claude", name: "Claude Sonnet 4.5", provider: "anthropic", default: "claude-sonnet-4-5", variants: [{ value: "claude-sonnet-4-5", name: "Sonnet" }, { value: "claude-opus-4-5", name: "Opus" }] },
+  { id: "gpt", name: "GPT-5", provider: "openai", default: "gpt-5", variants: [{ value: "gpt-5", name: "GPT-5" }] }
 ];
-const options = (currentModel, currentMode) => ({ type: "options", modes: MODES, currentMode: currentMode || "accept-edits", models: MODELS, currentModel: currentModel || "adaptive" });
+const PROVIDERS = [
+  { slug: "vtx", name: "Vtx" },
+  { slug: "anthropic", name: "Anthropic" },
+  { slug: "openai", name: "OpenAI" }
+];
+const options = (currentModel, currentMode) => ({ type: "options", modes: MODES, currentMode: currentMode || "accept-edits", models: MODELS, providers: PROVIDERS, currentModel: currentModel || "adaptive" });
 
 // A rich conversation exercising text, thinking, plan, tool cards, file rows,
 // a follow-up message, plus a permission prompt and an interactive question.

@@ -3134,6 +3134,7 @@ export class ChatController implements AcpHost {
       modes: this.modes,
       currentMode: this.currentMode || DEFAULT_MODE,
       models: families,
+      providers: cachedProviders(),
       currentModel,
       modelChoices: groupedModelChoices(options),
       thoughtLevels: configChoices(thought),

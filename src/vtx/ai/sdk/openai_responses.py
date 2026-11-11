@@ -175,6 +175,10 @@ class OpenAIResponsesSDK(BaseLLMSDK):
         effort = self._resolve_effort(config)
         if effort is not None:
             payload["reasoning"] = {"effort": effort}
+            if self._provider_slug == "codex":
+                # The codex backend only emits reasoning_summary_* events when
+                # a summary mode is requested; effort alone yields none.
+                payload["reasoning"]["summary"] = "detailed"
             # Include encrypted reasoning so stateless turns can replay it
             # (store:false already default; encrypted_content populated by default
             # on ZDR/store:false per docs, but include keeps compat with older APIs)

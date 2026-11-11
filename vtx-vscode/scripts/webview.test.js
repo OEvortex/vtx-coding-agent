@@ -5191,7 +5191,7 @@ test("model picker follows the adaptive pinned and models layout", async () => {
   assert.match(css, /\.dv-floater\.model-hover-floater\s*\{[\s\S]*width: min\(300px, calc\(100vw - 8px\)\);/, "the hover card uses the compact target width");
   assert.match(css, /\.dv-floater\.model-hover-floater\s*\{[\s\S]*max-width: min\(300px, calc\(100vw - 8px\)\);/, "the hover card fits the viewport width");
   assert.match(css, /\.dv-floater\.model-hover-floater\s*\{[\s\S]*max-height: calc\(100vh - 8px\);/, "the hover card fits the viewport height");
-  assert.match(css, /#model-dd \.dd-menu\s*\{[\s\S]*width: min\(200px, calc\(100vw - 16px\)\);/, "the model picker has a compact width");
+  assert.match(css, /#model-dd \.dd-menu\s*\{[\s\S]*width: min\(300px, calc\(100vw - 16px\)\);/, "the model picker uses the Copilot widget width");
   assert.match(css, /\.model-hover-configurable-controls\s*\{/, "configurable items use a right aligned control group");
   assert.match(css, /\.model-hover-configurable-button\s*\{[\s\S]*border: 1px solid var\(--vscode-widget-border/, "configurable items use the Copilot badge border");
   assert.match(css, /\.model-hover\.compact\s*\{/, "metadata only hovers use compact spacing");
