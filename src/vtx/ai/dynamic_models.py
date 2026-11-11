@@ -372,9 +372,8 @@ def _flatten_entry(raw: dict[str, Any]) -> dict[str, Any]:
     provider that already reports flat fields is untouched.
     """
     nested = raw.get("model")
-    if not isinstance(nested, dict):
-        return raw
-    flat = dict(nested)
+    flat = dict(nested) if isinstance(nested, dict) else {}
+    flat.update({k: v for k, v in raw.items() if k != "model"})
     # Codex names its display label display_name; _entry_name reads "name".
     if "name" not in flat and isinstance(flat.get("display_name"), str):
         flat["name"] = flat["display_name"]
@@ -383,7 +382,18 @@ def _flatten_entry(raw: dict[str, Any]) -> dict[str, Any]:
         flat["context_length"] = flat["context_window"]
     if "max_completion_tokens" not in flat and isinstance(flat.get("max_output_tokens"), int):
         flat["max_completion_tokens"] = flat["max_output_tokens"]
-    flat.update({k: v for k, v in raw.items() if k != "model"})
+    # Codex publishes effort tiers as supported_reasoning_levels; convert to
+    # the models.dev reasoning_options shape so thinking_level_map is built.
+    if "reasoning_options" not in flat and isinstance(
+        flat.get("supported_reasoning_levels"), list
+    ):
+        efforts = [
+            str(level["effort"])
+            for level in flat["supported_reasoning_levels"]
+            if isinstance(level, dict) and level.get("effort")
+        ]
+        if efforts:
+            flat["reasoning_options"] = [{"type": "effort", "values": efforts}]
     return flat
 
 
@@ -640,6 +650,9 @@ def _parse_models(
         raw = _flatten_entry(raw_entry)
         model_id = _entry_id(raw)
         if not model_id:
+            continue
+        # Codex flags catalog entries that cannot be used via the API.
+        if raw.get("supported_in_api") is False:
             continue
         # Skip embedding / image-only models
         output_modalities = raw.get("output_modalities")

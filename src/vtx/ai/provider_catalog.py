@@ -231,7 +231,7 @@ def _get_builtin_oauth_providers() -> dict[str, ProviderInfo]:
             supports_vision=True,
             supports_thinking=True,
             fetch_models=True,
-            models_endpoint="/models",
+            models_endpoint="/models?client_version=0.167.1",
             headers={},
         ),
         "devin": ProviderInfo(

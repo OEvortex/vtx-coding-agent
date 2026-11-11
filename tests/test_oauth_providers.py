@@ -59,7 +59,7 @@ def test_oauth_providers_in_catalog():
     assert cline is not None
     assert cline.slug == "cline"
     assert cline.display_name == "Cline"
-    assert cline.base_url == "https://api.cline.bot/v1"
+    assert cline.base_url == "https://api.cline.bot/api/v1"
 
     codex = get_provider_info("codex")
     assert codex is not None
@@ -78,7 +78,7 @@ def test_oauth_providers_in_dynamic_providers():
     assert "User-Agent" in copilot_cfg.headers
 
     cline_cfg = DYNAMIC_PROVIDERS["cline"]
-    assert cline_cfg.base_url == "https://api.cline.bot/v1"
+    assert cline_cfg.base_url == "https://api.cline.bot/api/v1"
 
     codex_cfg = DYNAMIC_PROVIDERS["codex"]
     assert codex_cfg.base_url == "https://chatgpt.com/backend-api/codex"

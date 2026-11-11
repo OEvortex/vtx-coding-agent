@@ -567,12 +567,14 @@ async def get_valid_codex_token() -> str | None:
 def get_valid_codex_token_sync() -> str | None:
     """Sync fallback for model catalog / provider init (no async refresh).
 
-    Returns a token from env or saved OpenAI Codex OAuth credentials.
+    Prefers saved OpenAI Codex OAuth credentials: the codex backend rejects
+    plain API keys, so an ``OPENAI_API_KEY`` env var must not shadow the
+    OAuth token. Env is only a last resort.
     """
-    env = os.getenv("OPENAI_API_KEY", "").strip()
-    if env:
-        return env
     creds = load_codex_credentials()
     if creds and creds.access:
         return creds.access
+    env = os.getenv("OPENAI_API_KEY", "").strip()
+    if env:
+        return env
     return None

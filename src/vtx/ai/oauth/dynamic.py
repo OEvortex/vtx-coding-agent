@@ -194,6 +194,21 @@ def get_dynamic_api_key(provider: str) -> str | None:
     2. Stored ``dynamic_auth.json`` entry
     3. Provider-specific OAuth token file (e.g. ``~/.better-auth/token.json``)
     """
+    # Codex's backend rejects plain API keys, so its OAuth token must win over
+    # a generic OPENAI_API_KEY env var (mirrors get_valid_codex_token_sync).
+    if provider == "codex":
+        try:
+            from vtx.ai.oauth.codex import get_valid_codex_token_sync, load_codex_credentials
+
+            token = get_valid_codex_token_sync()
+            if token:
+                return token
+            creds = load_codex_credentials()
+            if creds is not None and creds.access:
+                return creds.access
+        except Exception:
+            pass
+
     env_var = _env_var_for(provider)
     if env_var:
         env_value = os.environ.get(env_var)
@@ -225,19 +240,6 @@ def get_dynamic_api_key(provider: str) -> str | None:
             if token:
                 return token
             creds = load_cline_credentials()
-            if creds is not None and creds.access:
-                return creds.access
-        except Exception:
-            pass
-
-    if provider == "codex":
-        try:
-            from vtx.ai.oauth.codex import get_valid_codex_token_sync, load_codex_credentials
-
-            token = get_valid_codex_token_sync()
-            if token:
-                return token
-            creds = load_codex_credentials()
             if creds is not None and creds.access:
                 return creds.access
         except Exception:
