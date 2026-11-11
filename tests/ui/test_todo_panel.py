@@ -38,7 +38,7 @@ async def tool_add(subject: str) -> None:
     from vtx.coding_agent.tools.todo import TodoParams
 
     tool = TodoTool()
-    await tool.execute(TodoParams(action="create", subject=subject))
+    await tool.execute(TodoParams(todos=[{"content": subject}]))
 
 
 @pytest.mark.asyncio
@@ -76,7 +76,7 @@ async def test_panel_hides_again_when_the_plan_is_cleared() -> None:
 
         tool = current_todo_tool()
         assert tool is not None
-        await tool.execute(TodoParams(action="clear"))
+        await tool.execute(TodoParams(todos=[]))
         panel.refresh_panel()
         await pilot.pause()
         assert not panel.has_class("-visible")
@@ -90,7 +90,7 @@ async def test_timer_runs_fast_only_while_a_task_is_running() -> None:
     from vtx.coding_agent.tools.todo import TodoParams
 
     tool = TodoTool()
-    await tool.execute(TodoParams(action="create", subject="Idle task"))
+    await tool.execute(TodoParams(todos=[{"content": "Idle task"}]))
 
     app = _PanelApp(tool)
     async with app.run_test() as pilot:
@@ -100,7 +100,7 @@ async def test_timer_runs_fast_only_while_a_task_is_running() -> None:
         # nothing to animate.
         assert panel._timer_interval == IDLE_TICK_SECONDS
 
-        await tool.execute(TodoParams(action="update", id=1, status="in_progress"))
+        await tool.execute(TodoParams(todos=[{"content": "Idle task", "status": "in_progress"}]))
         panel.refresh_panel()
         await pilot.pause()
         assert panel._timer_interval == TICK_SECONDS
@@ -111,9 +111,10 @@ async def test_counts_mirrors_the_plan() -> None:
     from vtx.coding_agent.tools.todo import TodoParams
 
     tool = TodoTool()
-    await tool.execute(TodoParams(action="create", subject="A"))
-    await tool.execute(TodoParams(action="create", subject="B"))
-    await tool.execute(TodoParams(action="update", id=1, status="completed"))
+    await tool.execute(TodoParams(todos=[{"content": "A"}, {"content": "B"}]))
+    await tool.execute(
+        TodoParams(todos=[{"content": "A", "status": "completed"}, {"content": "B"}])
+    )
 
     app = _PanelApp(tool)
     async with app.run_test() as pilot:
@@ -138,7 +139,7 @@ async def test_refresh_after_a_tool_call_paints_the_new_row() -> None:
         register_todo_refresh(panel.refresh_panel)
         try:
             await pilot.pause()
-            await tool.execute(TodoParams(action="create", subject="Painted row"))
+            await tool.execute(TodoParams(todos=[{"content": "Painted row"}]))
             await pilot.pause()
             assert "Painted row" in panel.render().plain
         finally:
