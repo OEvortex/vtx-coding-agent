@@ -46,16 +46,13 @@ import re
 from collections.abc import Iterable
 from typing import Final
 
-#: Every exposure a server or a single tool may declare.
+#: Every exposure a server or a single tool may declare. There is deliberately
+#: no ``direct`` exposure: no MCP tool is ever declared to the model as an
+#: ordinary tool call, so everything model-visible goes through a script or a
+#: search.
 EXPOSURES: Final[tuple[str, ...]] = ("codemode", "codemode-deferred", "deferred", "hidden")
 
 #: Exposures whose tools a script may call, whether or not they are listed.
-#:
-#: ``direct`` is in here because a tool the model can already call directly can
-#: also be composed into a script -- a model that needs six of them in one turn
-#: should not have to pay six. It is left *out* of :data:`SCRIPT_LISTED`, because
-#: advertising it in the codemode catalog would describe something the model
-#: already has in front of it.
 SCRIPT_CALLABLE: Final = frozenset({"codemode", "codemode-deferred", "deferred"})
 
 #: Exposures declared to the model as an ordinary tool call, which it may invoke
@@ -80,7 +77,7 @@ SCRIPT_DISCOVERABLE: Final = frozenset({"codemode", "codemode-deferred", "deferr
 _BY_WIDTH: Final = ("codemode", "codemode-deferred", "deferred", "hidden")
 
 #: Exposures that make ``codemode`` worth having in the first place. A session
-#: whose servers are all ``direct`` or ``hidden`` gains nothing from it.
+#: whose servers are all ``hidden`` gains nothing from it.
 _SCRIPT_REACHING: Final = frozenset({"codemode", "codemode-deferred", "deferred"})
 
 _NAME_RE = re.compile(r"\A[A-Za-z0-9_-]{1,64}\Z")
@@ -169,7 +166,7 @@ def declared_to_model(exposure: object) -> bool:
 
 
 def widest(*exposures: str) -> str:
-    """The exposure that reaches the most: ``direct`` beats ``codemode`` beats rest.
+    """The exposure that reaches the most: ``codemode`` beats the deferred variants.
 
     Used for a tool that fronts several servers at once, like the MCP resource
     tools. Collapsing to the narrowest would hide a capability that one of the

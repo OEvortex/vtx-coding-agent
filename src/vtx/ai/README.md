@@ -152,6 +152,6 @@ Only Copilot has a single async token getter (`get_valid_copilot_token`); Codex 
 
 - `provider_hooks.prepare_request(*, provider, payload) -> (headers, payload)` is the single interception point every transport calls. Register with `register_headers_listener` / `register_request_listener`, drop with the `unregister_` twins, and reset everything with `reset_listeners`.
 
-## Known defect
+## Export notes
 
-`get_valid_token` is listed in `vtx.ai.__all__` but never imported, so `from vtx.ai import *` raises `AttributeError: module 'vtx.ai' has no attribute 'get_valid_token'`. The function does exist as `vtx.ai.oauth.get_valid_token`; the alias that *is* imported is `vtx.ai.get_copilot_token`. Every other name in `__all__` resolves.
+`get_valid_token` sits in `vtx.ai.__all__` and resolves through the lazy loader: `__getattr__` walks `_SOURCES` and finds it on `vtx.ai.oauth`, which re-exports it from `vtx.ai.oauth.copilot` (`src/vtx/ai/__init__.py:74-104`, `src/vtx/ai/oauth/__init__.py:34`). The aliased name `vtx.ai.get_copilot_token` points at the same function.

@@ -223,6 +223,28 @@ def test_disabled_retention_deletes_nothing(history: Path) -> None:
     assert old.exists()
 
 
+def test_pruning_stops_when_the_ledger_cannot_be_written(history: Path, monkeypatch) -> None:
+    """Losing the ledger must lose nothing else: no write, no delete."""
+    from vtx.core import token_usage
+
+    old = _write(
+        history,
+        "2026-01-01T09-00-00_old.jsonl",
+        [_assistant_usage(date(2026, 1, 1), inp=4000, out=0)],
+        age_days=200,
+    )
+    monkeypatch.setattr(token_usage, "_save", lambda *args, **kwargs: False)
+
+    result = prune_old_sessions(
+        policy=RetentionPolicy(enabled=True, max_age_days=90, keep_recent=0), root=history.parent
+    )
+
+    assert result.deleted == []
+    assert result.errors
+    assert old.exists()
+    assert usage_stats.aggregate_usage(today=TODAY).lifetime.input_tokens == 4000
+
+
 def test_empty_project_directory_is_removed_with_its_last_session(history: Path) -> None:
     _write(history, "2026-01-01T09-00-00_old.jsonl", ["{}"], age_days=500)
 

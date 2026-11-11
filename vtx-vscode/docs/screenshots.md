@@ -1,6 +1,6 @@
 # Screenshots guide
 
-The README images are generated from mock conversations defined in
+The images in `docs/screenshots/` are generated from mock conversations defined in
 [`scripts/preview.js`](../scripts/preview.js). The mock data is deliberately
 generic (no real project or personal data) so the screenshots are safe to
 publish. Keep these scenarios so the images can be regenerated on any later
@@ -26,9 +26,9 @@ rather than a fifth screenshot.
 
 ## Size
 
-Every image is **620 by 860** pixels, with no exceptions. The README lays them
-out two to a row, so images of different heights leave ragged gaps and each one
-renders at a different scale.
+Every image is **620 by 860** pixels, with no exceptions. They are laid out two
+to a row, so images of different heights leave ragged gaps and each one renders
+at a different scale.
 
 620 wide is a comfortably sized panel rather than the narrowest one it can run
 in: at 460 the request bubble, the reply text and the question form all wrapped

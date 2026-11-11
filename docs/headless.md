@@ -6,7 +6,7 @@ It is the automation surface: `vtx -p "..."` gives you a single turn with no TUI
 
 ## Passing the prompt
 
-The flag takes a value in any of three ways (`src/vtx/coding_agent/cli.py:54-62`):
+The flag takes a value in any of three ways (`src/vtx/coding_agent/cli.py:83-91`):
 
 ```python
 parser.add_argument(
@@ -43,10 +43,10 @@ Omit `-p` entirely and Vtx starts the TUI instead.
 |---|---|
 | `-p`, `--prompt` | The prompt, or omit the value to read stdin |
 | `-m`, `--model` | Model id |
-| `--provider` | Provider name; one of the keys of `PROVIDER_API_BY_NAME` (`src/vtx/coding_agent/cli.py:52`) |
+| `--provider` | Provider name; one of the keys of `PROVIDER_API_BY_NAME` (`src/vtx/coding_agent/cli.py:82`) |
 | `-k`, `--api-key` | API key |
 | `-u`, `--base-url` | Base URL for the API |
-| `--openai-compat-auth` | `auto` / `required` / `none` for OpenAI-compatible endpoints (`src/vtx/coding_agent/cli.py:63-67`) |
+| `--openai-compat-auth` | `auto` / `required` / `none` for OpenAI-compatible endpoints (`src/vtx/coding_agent/cli.py:94-98`) |
 | `--anthropic-compat-auth` | Same three modes for Anthropic-compatible endpoints |
 | `--insecure-skip-verify` | Skip TLS verification, e.g. self-signed certs on local providers |
 | `-c`, `--continue` | Resume the most recent session. **Not usable with `-p`** |
@@ -60,10 +60,10 @@ Omit `-p` entirely and Vtx starts the TUI instead.
 | `--list-extensions` | Print discovered extensions and exit |
 | `--profile` | Plugin profile to boot |
 | `--patch` | Extra composition patch file |
-| `--dump-config` | Print the composed plugin row list and exit (`src/vtx/coding_agent/cli.py:150-156`) |
+| `--dump-config` | Print the composed plugin row list and exit (`src/vtx/coding_agent/cli.py:178-182`) |
 | `--version` | Print `vtx <version>` |
 
-`--continue` and `--resume` with `-p` is a hard parser error, not a runtime one (`src/vtx/coding_agent/cli.py:199-200`):
+`--continue` and `--resume` with `-p` is a hard parser error, not a runtime one (`src/vtx/coding_agent/cli.py:307-308`):
 
 ```python
 if args.prompt is not None and (args.continue_recent or args.resume_session):
@@ -72,7 +72,7 @@ if args.prompt is not None and (args.continue_recent or args.resume_session):
 
 ## Output
 
-Stream events run through `render_run`, which writes the **final assistant text only**, to stdout, and only when the run stopped cleanly (`src/vtx/coding_agent/headless.py:47-92`):
+Stream events run through `render_run`, which writes the **final assistant text only**, to stdout, and only when the run stopped cleanly (`src/vtx/coding_agent/headless.py:47-91`):
 
 ```python
 if stop == StopReason.STOP and final_text:
@@ -86,7 +86,7 @@ So parsing stdout gets you exactly one model message without any interim reasoni
 | `ErrorEvent` | stderr | `error: {error}` (`headless.py:72-73`) |
 | `ToolApprovalEvent` | stderr | `error: '<tool>' requires approval, denied (non-interactive mode)`, and the future is set to `DENY` (`headless.py:74-79`) |
 | `AskUserEvent` | stderr | `error: agent asked a question in non-interactive mode: <questions>`, answered with an empty response (`headless.py:80-86`) |
-| MCP startup | stderr | `mcp: N tool(s) from M server(s)` (`headless.py:268`) |
+| MCP startup | stderr | `mcp: N tool(s) from M server(s)` (`headless.py:249`) |
 
 Approvals are auto-**denied** rather than auto-approved, so a tool that needs permission halts that call instead of silently running. Questions the agent asks are answered with an empty response, and the turn runner records a skipped tool result with a hint to the LLM (`src/vtx/coding_agent/headless.py:81-84`).
 
@@ -99,7 +99,7 @@ Approvals are auto-**denied** rather than auto-approved, so a tool that needs pe
 | `3` | `StopReason.LENGTH`  --  hit the output limit |
 | `2` | Not a stop reason: an empty prompt, an MCP-independent provider or agent-init failure |
 
-(`src/vtx/coding_agent/headless.py:34-38`, `src/vtx/coding_agent/headless.py:145-147`, `283-285`)
+(`src/vtx/coding_agent/headless.py:34-38`, `src/vtx/coding_agent/headless.py:119-121`, `275-286`)
 
 ```python
 _EXIT_CODES = {StopReason.STOP: 0, StopReason.ERROR: 1, StopReason.LENGTH: 3}
@@ -112,11 +112,11 @@ Distinguish the ones you own from the ones Vtx owns: `0`/`1`/`3` are model outco
 
 ## Permissions during a run
 
-Headless cannot show approval prompts, so it forces `permissions.mode = auto` for the duration of the run only. It rewrites the config, runs, then restores the previous mode in a `finally`  --  the saved file is never left in the auto state and the mode is not persisted (`src/vtx/coding_agent/headless.py:150-157`, `305-312`).
+Headless cannot show approval prompts, so it forces `permissions.mode = auto` for the duration of the run only. It rewrites the config, runs, then restores the previous mode in a `finally`  --  the saved file is never left in the auto state and the mode is not persisted (`src/vtx/coding_agent/headless.py:129-136`, `309-313`).
 
 ## MCP
 
-MCP connects before the run. A broken server prints `warning: MCP startup failed: ...` on stderr and the run continues (`src/vtx/coding_agent/headless.py:257-262`). Config problems from any server are printed as `warning: MCP config: ...` (`headless.py:269-270`).
+MCP connects before the run. A broken server prints `warning: MCP startup failed: ...` on stderr and the run continues (`src/vtx/coding_agent/headless.py:235-251`). Config problems from any server are printed as `warning: MCP config: ...` (`headless.py:252-266`).
 
 Both `~/.vtx/mcp.json` and `<cwd>/.vtx/mcp.json` are read, the same as in a TUI session, and their servers are connected with nothing to grant. There is one OAuth caveat: `signin` is interactive, so a remote server needing a browser must be signed in from the TUI once, after which `~/.vtx/mcp-auth.json` carries the tokens and a scripted run reuses them. See [mcp.md](mcp.md).
 
@@ -162,11 +162,11 @@ Note the redirection order: `2>review.err` keeps stdout clean for capture, which
 
 ### Session lifecycle
 
-Headless runs emit `session_start` and `session_end` so YAML hooks and extensions see them like any other run (`src/vtx/coding_agent/headless.py:286-302`). Extensions are loaded before the run and unloaded after, so an extension that registers tools via `-e` is available to the prompt but not baked into the CLI process.
+Headless runs emit `session_start` and `session_end` so YAML hooks and extensions see them like any other run (`src/vtx/coding_agent/headless.py:288-306`). Extensions are loaded before the run and unloaded after, so an extension that registers tools via `-e` is available to the prompt but not baked into the CLI process.
 
 ## Known gaps
 
 - Approvals are denied, not queued. There is no way to pre-approve a tool for a headless run except by setting `permissions.mode: auto` in your config beforehand, which then also affects interactive sessions.
 - `--continue` and `--resume` are unusable with `-p`, so a headless run cannot resume a TUI session. It always starts a fresh session.
-- The `session_start`/`session_end` emission is wrapped in `contextlib.suppress(Exception)` in teardown (`src/vtx/coding_agent/headless.py:296-302`), so a failing hook is invisible to your script  --  it will not change the exit code.
+- The `session_start`/`session_end` emission is wrapped in `contextlib.suppress(Exception)` in teardown (`src/vtx/coding_agent/headless.py:301-306`), so a failing hook is invisible to your script  --  it will not change the exit code.
 - A denial of an approval is reported on stderr but does not by itself set a nonzero exit: the run continues and ends `STOP`, which is exit `0`. Check stderr, not just the status.

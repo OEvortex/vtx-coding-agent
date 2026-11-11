@@ -2,7 +2,7 @@
 
 MCP connects Vtx to external tool servers over the Model Context Protocol. This page covers the config format, the three transports, authentication including OAuth, how a project's servers are started, how tools are exposed to the model, resource access, and the `/mcp` commands that manage it all.
 
-The harness itself never imports `vtx.mcp`. The product layer wires a manager and registers each server's tools into the tool registry as ordinary `BaseTool` instances (`src/vtx/mcp/manager.py:500`), so a remote call flows through the same permission gate, argument validation, and TUI rendering as a local one (`src/vtx/mcp/tool.py:1-11`).
+The agent loop never imports `vtx.mcp`; the product layer wires a manager and registers each server's tools into the tool registry as ordinary `BaseTool` instances (`src/vtx/mcp/manager.py:500`), so a remote call flows through the same permission gate, argument validation, and TUI rendering as a local one (`src/vtx/mcp/tool.py:1-11`).
 
 Read [codemode.md](codemode.md) for what `exposure: codemode` means in practice, [configuration.md](configuration.md) for the file settings this page shares, and [headless.md](headless.md) for how servers connect in a scripted run.
 
@@ -31,7 +31,7 @@ Both hold a single top-level `mcpServers` key. A project entry **replaces** a gl
       "oauth": {"scope": "read write"},
       "exposure": "codemode",
       "tool_exposure": {
-        "create_issue": "direct",
+        "create_issue": "codemode",
         "delete_*": "hidden"
       }
     },
@@ -65,7 +65,7 @@ Setting both `command` and `url`, or neither, fails with `set exactly one of "co
 
 Env and header expansion resolve later, not at parse time: call `config.resolved_env()` and `config.resolved_headers()` (`src/vtx/mcp/config.py:117-126`).
 
-`expose` fields, not config: a value that is not one of the five exposures is reported as an error rather than silently coerced (`src/vtx/mcp/exposure.py:107-114`).
+`expose` fields, not config: a value that is not one of the four exposures is reported as an error rather than silently coerced (`src/vtx/mcp/exposure.py:105-143`).
 
 ## The three transports
 
@@ -178,26 +178,27 @@ The controls that remain are the ones that were always about *what* runs rather
 than *whether* to look:
 
 - `"enabled": false` on a server keeps it from starting (`/mcp disable <name>` writes exactly that).
-- `exposure` and `tool_exposure` decide what its tools can reach -- `direct`, `codemode`, `codemode-deferred`, `deferred`, or `hidden` (see [Tool exposure](#tool-exposure)).
+- `exposure` and `tool_exposure` decide what its tools can reach -- `codemode`, `codemode-deferred`, `deferred`, or `hidden` (see [Tool exposure](#tool-exposure)).
 - `/mcp` lists every configured server with its state, and a project entry is marked `[project]` so you can see which file it came from.
 
 ## Tool exposure
 
-Every tool a server offers is reachable from a codemode script. Exposure controls whether it is also **declared to the model** as an ordinary tool, because declaring a two-hundred-tool server tool-by-tool costs two hundred definitions on every turn (`src/vtx/mcp/exposure.py:73-77`).
+Every tool a server offers is script-reachable unless its exposure is `hidden`. Exposure controls whether it is also **listed in the codemode catalog**, because listing a two-hundred-tool server in the catalog costs two hundred signatures on every turn (`src/vtx/mcp/exposure.py:50-86`).
 
-| Exposure | Declared to model | Listed in codemode catalog | Findable by in-sandbox search | Findable by `tool_search` |
-|---|---|---|---|---|
-| `direct` | yes | no | yes | no |
-| `codemode` (default) | no | yes | yes | yes |
-| `codemode-deferred` | no | no | yes | yes |
-| `deferred` | no | no | yes | yes |
-| `hidden` | no | no | no | no |
+There is no `direct` exposure: `DECLARED_TO_MODEL` is empty, so no MCP tool is ever declared to the model as an ordinary tool call - every non-hidden MCP tool is reached by writing a script, and `tool_search` is the route that promotes one to a declared call on demand.
 
-(`src/vtx/mcp/exposure.py:56-87`)
+| Exposure | In codemode catalog | Findable by in-sandbox `tools.search` | Findable by `tool_search` |
+|---|---|---|---|
+| `codemode` (default) | yes | yes | yes |
+| `codemode-deferred` | no | yes | yes |
+| `deferred` | no | yes | yes |
+| `hidden` | no | no | no |
 
-`direct` is script-callable but deliberately unlisted in the catalog: advertising it there would describe something the model already has in front of it (`src/vtx/mcp/exposure.py:63-70`). A deferred tool is unlisted but still findable, or "deferred" would mean "unfindable" and the only route left would be guessing the name (`src/vtx/mcp/exposure.py:82-86`).
+(`src/vtx/mcp/exposure.py:50-86`)
 
-The two discovery routes differ in what they can *do*. `tools.search` runs inside a script, so a tool it finds is callable in that script and nowhere else. `tool_search` runs as an ordinary tool call and **loads** its matches, so they are declared to the model on the next call -- which is the only way a `deferred` tool ever becomes a direct call. It is declared only when there is something to find: a session whose servers are all `direct` or `hidden` never sees it (`src/vtx/agent/runtime.py:770`).
+Only `codemode` is listed in the catalog: advertising a deferred tool there would describe something the model cannot see anyway. A deferred tool is unlisted but still findable, or "deferred" would mean "unfindable" and the only route left would be guessing the name (`src/vtx/mcp/exposure.py:68-86`).
+
+The two discovery routes differ in what they can *do*. `tools.search` runs inside a script, so a tool it finds is callable in that script and nowhere else. `tool_search` runs as an ordinary tool call and **loads** its matches, so they are offered to the model on the next call -- which is the only way a `deferred` tool ever becomes a direct call (`src/vtx/coding_agent/tools/tool_search.py:180-200`). It is declared only when there is something to find: a session whose servers are all `hidden` never sees it (`src/vtx/agent/runtime.py:813`).
 
 An individual tool's exposure resolves exact-name-beats-pattern, then first-pattern-in-declaration-order among the patterns, then the server's own `exposure`, then `codemode` (`src/vtx/mcp/exposure.py:158-172`). The ordering rule is stated rather than left to dict order: `{"delete_*": "hidden", "*": "codemode"}` reads as "everything codemode except deletes", which is the opposite of what flipped iteration order would mean (`src/vtx/mcp/exposure.py:161-165`).
 
@@ -276,7 +277,7 @@ First `<repo>/.vtx/mcp.json`:
     "linear": {
       "url": "https://mcp.linear.app/mcp",
       "exposure": "codemode-deferred",
-      "tool_exposure": {"list_issues": "direct"}
+      "tool_exposure": {"list_issues": "codemode-deferred"}
     }
   }
 }
@@ -314,6 +315,6 @@ In a TUI session the same configuration is confirmed with `/mcp`: both servers a
 
 ## Known gaps
 
-- MCP is TUI-only. There is no `vtx mcp` subcommand, and no headless flag to sign in to a remote server; `/mcp signin` must be run from the interactive session first, after which `~/.vtx/mcp-auth.json` carries the tokens.
+- MCP management is TUI-only. There is no `vtx mcp` subcommand and no headless flag to sign in to a remote server; `/mcp signin` must be run from the interactive session first, after which `~/.vtx/mcp-auth.json` carries the tokens. Servers still connect in headless and ACP runs - they just have no sign-in path of their own.
 - `validate_exposures` reports the first bad field rather than all of them, so fixing one misconfigured `tool_exposure` may surface another on the next reload (`src/vtx/mcp/exposure.py:117-155`).
 - `adapt_tool`-style OAuth wiring needs you to supply `open_url` or your own browser plumbing; nothing in `vtx.mcp` opens a browser on its own except the TUI command path (`src/vtx/tui/commands/mcp.py:277-285`).

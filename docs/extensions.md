@@ -15,13 +15,14 @@ An extension file must define a `register` function. Vtx calls it once with the 
 
 ```python
 # ~/.vtx/agent/extensions/my_provider.py
-from vtx.plugins.api import register
 
 
-@register
-def apply(api):
+def register(api):
     ...
 ```
+
+There is no decorator to import: the loader looks for a top-level `register`
+callable and calls it once with the API (`src/vtx/plugins/extensions.py:229-236`).
 
 `ExtensionAPI` is implemented over the running composition's `Context`, so a
 registration lands on the same tool registry, the same command registry, and the same
@@ -36,7 +37,7 @@ registration lands on the same tool registry, the same command registry, and the
 | Method | Purpose |
 |---|---|
 | `register_tool(name, description, parameters, *, execute, mutating=True, label=None, ui_block=None, tool_icon=None)` | Add an LLM-callable tool. Overriding a built-in's name replaces it. |
-| `register_local_tool(...)` | Add a tool without exposing it to the model |
+| `register_local_tool(agent, name, description, parameters, *, execute, ...)` | Add a tool recorded under one handoff agent's name (`local_tools_for`), so agent-scoped tool sets can pick it up. It is still a normal model-visible tool. |
 | `register_command(name, ...)` | Add a slash command |
 | `register_provider(name, config)` | Register an LLM provider adapter |
 | `unregister_provider(name)` | Remove a provider adapter |
@@ -66,8 +67,8 @@ async def on_tool_result(event, payload):
 
 | Method | Purpose |
 |---|---|
-| `notify(message, level="info")` | Surface a message in the TUI |
-| `ui()` | The `ExtensionUIContext` for dialogs and footer state |
+| `notify(message, level="info")` | Surface a message in the TUI (routes through `ctx.ui`, falls back to the log) |
+| `ui` | Property returning the composition's `ctx.ui` service, or `None` when no UI is installed - the `ExtensionUIContext` dialog surface lives behind it |
 | `send_message(message, options=None)` | Append a custom message to the session |
 | `send_user_message(...)` | Deliver a message as if the user sent it |
 | `append_entry(custom_type, data=None)` | Append a custom session entry |
@@ -91,14 +92,16 @@ Vtx discovers extensions automatically and silently, with no prompt:
 
 | Path | Scope |
 |---|---|
-| `.vtx/extensions/*.py` | This project |
+| `.vtx/extensions/*.py` (and package dirs with `__init__.py`) | This project |
 | `~/.vtx/agent/extensions/*.py` | User-wide |
 
 A file becomes one `extension:<stem>` row appended to the profile's row list, which is
 why `/reload` and `vtx --dump-config` both affect extensions. A package extension with a
-`pyproject.toml` can also declare entry points.
+`pyproject.toml` can also declare entry points under the `vtx.extensions` or
+`vtx.agent.extensions` groups (`ENTRYPOINT_KEYS`, `src/vtx/plugins/extensions.py:42`).
 
-The same files can be named explicitly:
+The same files can be named explicitly (the `extensions:` list in `config.yml` feeds the
+same path):
 
 ```sh
 vtx --extension /path/to/ext.py      # repeatable
@@ -107,7 +110,7 @@ vtx --list-extensions                # print what mounted, with tools and comman
 ```
 
 Auto-discovery order is project first, then user, then explicitly configured paths,
-deduplicated by resolved path.
+deduplicated by resolved path (`discover_extension_paths`, `src/vtx/plugins/extensions.py:280`).
 
 ## Hot reload
 
@@ -119,9 +122,11 @@ without a restart. The sequence is (`src/vtx/tui/commands/reload.py:70`):
 3. config is reloaded first, because extension and agent discovery both read it
 4. `reload_extensions` mounts the new set
 
-The module-cache step is the subtle one: a *package* extension's submodules stay cached
-in `sys.modules`, so editing a submodule of the same package needs a full restart rather
-than `/reload`.
+Package submodules are handled too: `_invalidate_extension_modules` drops every
+`vtx_ext_*` module (submodules included) from `sys.modules`, and
+`invalidate_extension_bytecode` removes a package's `__pycache__` as it loads, so an
+edit that keeps the same byte length in the same mtime tick is still really re-read
+(`src/vtx/tui/commands/reload.py:366-373`, `src/vtx/plugins/extensions.py:362-381`).
 
 `/reload` is refused while a turn is running, because swapping the tool set mid-flight
 leaves the advertised tools and the running tools out of sync. Wait for the turn or
@@ -129,10 +134,11 @@ interrupt it first.
 
 ## Providers
 
-`register_provider(name, config)` adds a provider adapter. The config accepts a base URL,
-an API key (an environment variable name or a literal), the API family, custom headers,
-an auth header, a model list, and an OAuth block
-(`ProviderConfig`, `src/vtx/plugins/api.py:429`).
+`register_provider(provider_or_name, config=None)` records a provider registration -
+a name plus a config dict, or a provider object (`src/vtx/plugins/api.py:430-441`). The
+config dict is what becomes a `ProviderConfig` (`vtx.ai.base.ProviderConfig`) when the
+provider is built: a base URL, an API key (an environment variable name or a literal),
+the API family, custom headers, an auth header, a model list, and an OAuth block.
 
 See [providers.md](providers.md) for the 16 providers that already ship and how each
 authenticates.
@@ -168,9 +174,8 @@ review with `vtx --dump-config`.
 - The `ExtensionAPI.on_*` convenience methods have no internal callers, so they are
   unexercised public surface rather than a supported path.
 - `register_flag`, `register_shortcut`, and `unregister_provider` are likewise
-  unreferenced internally.
-- A package extension's submodule edits need a restart, not `/reload`, because
-  `sys.modules` is not cleared for subpackages.
+  unreferenced internally (`get_flag` is bound to a stub that always returns `None`,
+  `src/vtx/tui/app.py:433`).
 - The old `register(api)`-style extension manager in `vtx.agent` was removed. The live
   path is `vtx.plugins.extensions`; `load_extension` and `load_all_extensions` in that
   module are superseded by `load_for_runtime` and are reachable only from tests.

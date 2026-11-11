@@ -1,18 +1,22 @@
 # Command Line
 
-This page documents every flag, subcommand, and exit code of the `vtx` executable, read from the argument parser in `src/vtx/coding_agent/cli.py:14`. Run `vtx --help`, or append `--help` to a subcommand, for the same interface in your installed version.
+This page documents every flag, subcommand, and exit code of the `vtx` executable, read from the argument parser in `src/vtx/coding_agent/cli.py:18`. Run `vtx --help`, or append `--help` to a subcommand, for the same interface in your installed version.
 
 ```sh
 vtx [options]
+vtx acp
+vtx auth status
+vtx models list [--format json]
+vtx config <list|get|set> ...
 vtx update
 vtx plugin <subcommand> [--profile NAME]
 ```
 
-The `vtx` script is the `vtx.coding_agent.cli:main` entry point (`pyproject.toml:112`). With no `--prompt`, `vtx` starts the terminal UI (`src/vtx/coding_agent/cli.py:302`).
+The `vtx` script is the `vtx.coding_agent.cli:main` entry point (`pyproject.toml:112`). With no `--prompt`, `vtx` starts the terminal UI (`src/vtx/coding_agent/cli.py:410`).
 
 ## Global flags
 
-`build_parser()` registers exactly the following options (`src/vtx/coding_agent/cli.py:52`-`src/vtx/coding_agent/cli.py:154`). "Default" is the argparse default; where a flag falls back to a config value, the resolving line is cited.
+`build_parser()` registers exactly the following options (`src/vtx/coding_agent/cli.py:81`-`src/vtx/coding_agent/cli.py:183`). "Default" is the argparse default; where a flag falls back to a config value, the resolving line is cited.
 
 | Flag | Short | Type | Default | Description |
 |---|---|---|---|---|
@@ -38,7 +42,7 @@ The `vtx` script is the `vtx.coding_agent.cli:main` entry point (`pyproject.toml
 | `--dump-config` | | flag | `False` | Print the composed plugin row list for the selected profile and exit |
 | `--version` | | version action | | Real help: `show program's version number and exit`. Prints `vtx <VERSION>`, where `VERSION` is the string `editable` on an editable install |
 
-`--prompt` is declared with `nargs="?"`, `const="-"`, so `-p` with no value reads the prompt from stdin (`src/vtx/coding_agent/cli.py:54`). Values are stripped before use (`src/vtx/coding_agent/headless.py:41`).
+`--prompt` is declared with `nargs="?"`, `const="-"`, so `-p` with no value reads the prompt from stdin (`src/vtx/coding_agent/cli.py:83`-`src/vtx/coding_agent/cli.py:91`). Values are stripped before use (`src/vtx/coding_agent/headless.py:41`).
 
 ## Models, providers, and authentication
 
@@ -48,7 +52,7 @@ vtx --model qwen3-coder --base-url http://localhost:11434/v1 --provider ollama
 vtx --api-key sk-... --model deepseek-chat --provider deepseek
 ```
 
-`--provider` takes only the slugs in `PROVIDER_API_BY_NAME` (`src/vtx/ai/providers/__init__.py:4`), sorted:
+`--provider` takes only the slugs in `PROVIDER_API_BY_NAME` (`src/vtx/ai/providers/__init__.py:10`), sorted:
 
 ```text
 aerolink, airouter, anthropic, codex, deepseek, kilo, ollama, openai,
@@ -63,11 +67,11 @@ An unknown slug is an argparse error (exit 2).
 | `--openai-compat-auth` | `auto`, `required`, `none` | `config.llm.auth.openai_compat` (default `auto`) |
 | `--anthropic-compat-auth` | `auto`, `required`, `none` | `config.llm.auth.anthropic_compat` (default `auto`) |
 
-Resolution order for the model is `--model`, then `last_selected.model_id`, then `config.llm.default_model` (`src/vtx/tui/app.py:145`); the same order applies headless (`src/vtx/coding_agent/headless.py:161`). `--provider` falls back to `last_selected.provider`, then `config.llm.default_provider` when `--model` is absent (`src/vtx/tui/app.py:146`).
+Resolution order for the model is `--model`, then `last_selected.model_id`, then `config.llm.default_model` (`src/vtx/tui/app.py:144`); the same order applies headless (`src/vtx/coding_agent/headless.py:140`). `--provider` falls back to `last_selected.provider`, then `config.llm.default_provider` when `--model` is absent (`src/vtx/tui/app.py:145`-`src/vtx/tui/app.py:153`).
 
 `--api-key` is a non-persistent override for the run; it does not write the credential store. Use `/login` in the TUI to store a key (see [slash commands](slash-commands.md)).
 
-`--insecure-skip-verify` writes `config.llm.tls.insecure_skip_verify = True` before the app starts (`src/vtx/coding_agent/cli.py:202`).
+`--insecure-skip-verify` writes `config.llm.tls.insecure_skip_verify = True` before the app starts (`src/vtx/coding_agent/cli.py:310`).
 
 ```sh
 vtx --provider openrouter --insecure-skip-verify
@@ -80,7 +84,7 @@ vtx --continue
 vtx --resume 3f9a1c
 ```
 
-`-c/--continue` resumes the most recent session; `-r/--resume` takes a full session ID or a unique prefix (`src/vtx/coding_agent/cli.py:80`-`src/vtx/coding_agent/cli.py:92`). Both are forwarded to `Vtx` by `run_tui` (`src/vtx/tui/launch.py:90`, `src/vtx/tui/launch.py:91`).
+`-c/--continue` resumes the most recent session; `-r/--resume` takes a full session ID or a unique prefix (`src/vtx/coding_agent/cli.py:109`-`src/vtx/coding_agent/cli.py:121`). Both are forwarded to `Vtx` by `run_tui` (`src/vtx/tui/launch.py:84`, `src/vtx/tui/launch.py:85`).
 
 Neither may be combined with `--prompt`:
 
@@ -90,7 +94,7 @@ usage: vtx [--model MODEL] [--provider {16 slugs}] [--prompt [PROMPT]] ...
 vtx: error: -c/--continue and -r/--resume are not supported with -p/--prompt
 ```
 
-Exit code 2 (`src/vtx/coding_agent/cli.py:199`).
+Exit code 2 (`src/vtx/coding_agent/cli.py:307`-`src/vtx/coding_agent/cli.py:308`).
 
 ## Extensions and agents
 
@@ -102,11 +106,11 @@ vtx --list-agents
 vtx --list-extensions
 ```
 
-`--extension` and `--agent-file` are forwarded to `run_tui` as `extra_extension_paths` and `extra_agent_paths` (`src/vtx/tui/launch.py:94`, `src/vtx/tui/launch.py:97`). Agent paths are combined with `config.agents.files` (`src/vtx/tui/app.py:241`); on the one-shot path extension paths are combined with `config.extensions` (`src/vtx/coding_agent/cli.py:257`). `--no-extensions` and `--no-agents` turn off discovery of `.vtx/extensions/`, `~/.vtx/agent/extensions/`, `.vtx/agent/`, and `~/.vtx/agent/` (`src/vtx/coding_agent/cli.py:261`, `src/vtx/coding_agent/cli.py:295`, `src/vtx/tui/app.py:239`).
+`--extension` and `--agent-file` are forwarded to `run_tui` as `extra_extension_paths` and `extra_agent_paths` (`src/vtx/tui/launch.py:88`, `src/vtx/tui/launch.py:91`). Agent paths are combined with `config.agents.files` (`src/vtx/tui/app.py:246`-`src/vtx/tui/app.py:251`); on the one-shot path extension paths are combined with `config.extensions` (`src/vtx/coding_agent/cli.py:382`-`src/vtx/coding_agent/cli.py:386`). `--no-extensions` and `--no-agents` turn off discovery of `.vtx/extensions/`, `~/.vtx/agent/extensions/`, `.vtx/agent/`, and `~/.vtx/agent/` (`src/vtx/coding_agent/cli.py:369`, `src/vtx/coding_agent/cli.py:385`, `src/vtx/coding_agent/cli.py:405`, `src/vtx/tui/app.py:246`).
 
-`--list-agents` prints one tab-separated row per agent (`name`, `description`, `path`) then exits 0 (`src/vtx/coding_agent/cli.py:205`). With nothing discovered it prints `No agents found.` Load errors go to stderr as `agent error: <msg>`.
+`--list-agents` prints one tab-separated row per agent (`name`, `description`, `path`) then exits 0 (`src/vtx/coding_agent/cli.py:313`-`src/vtx/coding_agent/cli.py:324`). With nothing discovered it prints `No agents found.` Load errors go to stderr as `agent error: <msg>`.
 
-`--list-extensions` prints one row per loaded extension, plus indented `tools:`, `commands:`, and `handlers:` lines (`src/vtx/coding_agent/cli.py:158`):
+`--list-extensions` prints one row per loaded extension, plus indented `tools:`, `commands:`, and `handlers:` lines (`src/vtx/coding_agent/cli.py:187`-`src/vtx/coding_agent/cli.py:203`, dispatched at `src/vtx/coding_agent/cli.py:375`):
 
 ```console
 $ vtx --list-extensions
@@ -130,7 +134,7 @@ vtx --dump-config --profile minimal
 
 `--profile` names the profile; when omitted, `boot()` reads `VTX_PROFILE`, then falls back to `default` (`src/vtx/plugins/bootstrap.py:38`). `--patch` layers are applied after the profile's own `cordis.yml`, in the order given (`src/vtx/plugins/profile.py:132`).
 
-`--dump-config` prints `<id>\t[enabled|disabled]\t<name>` per row and exits 0 (`src/vtx/coding_agent/cli.py:244`). Rows discovered from extensions at boot are appended to the listing (`src/vtx/coding_agent/cli.py:235`).
+`--dump-config` prints `<id>\t[enabled|disabled]\t<name>` per row and exits 0 (`src/vtx/coding_agent/cli.py:352`-`src/vtx/coding_agent/cli.py:355`). Rows discovered from extensions at boot are appended to the listing (`src/vtx/coding_agent/cli.py:337`-`src/vtx/coding_agent/cli.py:351`).
 
 ```console
 $ vtx --dump-config
@@ -139,7 +143,7 @@ llm	[enabled]	vtx.plugins.builtins.services.llm:PLUGIN
 ...
 ```
 
-A composition that fails to build exits 1 with `vtx: plugin composition failed: <msg>` on stderr (`src/vtx/coding_agent/cli.py:263`).
+A composition that fails to build exits 1 with `vtx: plugin composition failed: <msg>` on stderr (`src/vtx/coding_agent/cli.py:371`-`src/vtx/coding_agent/cli.py:373`).
 
 ## Non-interactive mode
 
@@ -148,9 +152,9 @@ vtx -p "Summarize the diff"
 echo "Review this patch" | vtx -p
 ```
 
-`-p` runs one turn through `run_headless` and exits (`src/vtx/coding_agent/cli.py:270`). Only the final assistant text goes to stdout (`src/vtx/coding_agent/headless.py:89`); errors, extension errors, agent errors, and MCP warnings go to stderr.
+`-p` runs one turn through `run_headless` and exits (`src/vtx/coding_agent/cli.py:378`-`src/vtx/coding_agent/cli.py:408`). Only the final assistant text goes to stdout (`src/vtx/coding_agent/headless.py:89`-`src/vtx/coding_agent/headless.py:90`); errors, extension errors, agent errors, and MCP warnings go to stderr.
 
-Permission mode is forced to `auto` for the duration of the run: the config file is rewritten to `auto`, reloaded, and written back to its previous mode in a `finally` (`src/vtx/coding_agent/headless.py:149`, `src/vtx/coding_agent/headless.py:305`). Tool approval requests are auto-denied and reported (`src/vtx/coding_agent/headless.py:74`); `ask_user` questions are reported as unanswered (`src/vtx/coding_agent/headless.py:80`).
+Permission mode is forced to `auto` for the duration of the run: the config file is rewritten to `auto`, reloaded, and written back to its previous mode in a `finally` (`src/vtx/coding_agent/headless.py:129`-`src/vtx/coding_agent/headless.py:136`, `src/vtx/coding_agent/headless.py:309`-`src/vtx/coding_agent/headless.py:313`). Tool approval requests are auto-denied and reported (`src/vtx/coding_agent/headless.py:74`-`src/vtx/coding_agent/headless.py:79`); `ask_user` questions are reported as unanswered (`src/vtx/coding_agent/headless.py:80`-`src/vtx/coding_agent/headless.py:86`).
 
 ## Subcommand: `vtx update`
 
@@ -158,9 +162,9 @@ Permission mode is forced to `auto` for the duration of the run: the config file
 vtx update
 ```
 
-Self-updates the `vtx-coding-agent` distribution to the latest PyPI release and exits (`src/vtx/coding_agent/cli.py:188`). The installer is chosen from the environment: `VTX_UPDATE_USE_PIP` forces pip, otherwise a detected `uv tool` install is upgraded with `uv tool upgrade`, a `pipx` install with `pipx upgrade`, then plain `uv pip install --upgrade`, then `pip` (`src/vtx/core/self_update.py:42`).
+Self-updates the `vtx-coding-agent` distribution to the latest PyPI release and exits (`src/vtx/coding_agent/cli.py:223`-`src/vtx/coding_agent/cli.py:232`). The installer is chosen from the environment: `VTX_UPDATE_USE_PIP` forces pip, otherwise a detected `uv tool` install is upgraded with `uv tool upgrade`, a `pipx` install with `pipx upgrade`, then plain `uv pip install --upgrade`, then `pip` (`src/vtx/core/self_update.py:46`-`src/vtx/core/self_update.py:57`).
 
-On success it prints `vtx update: <message>` and exits 0; on failure `vtx update failed: <message>` to stderr and exit 1 (`src/vtx/coding_agent/cli.py:192`, `src/vtx/coding_agent/cli.py:194`).
+On success it prints `vtx update: <message>` and exits 0; on failure `vtx update failed: <message>` to stderr and exit 1 (`src/vtx/coding_agent/cli.py:228`, `src/vtx/coding_agent/cli.py:230`).
 
 ## Subcommand: `vtx plugin`
 
@@ -168,23 +172,23 @@ On success it prints `vtx update: <message>` and exits 0; on failure `vtx update
 vtx plugin <profiles|init|path|enable|disable|install|allow-version|revoke-version|version-exemptions>
 ```
 
-`vtx plugin` is dispatched before argparse sees the rest of the command line, so `--profile` may appear anywhere in the subcommand's arguments (`src/vtx/coding_agent/cli.py:181`, `src/vtx/coding_agent/plugin_cmd.py:205`).
+`vtx plugin` is dispatched before argparse sees the rest of the command line, so `--profile` may appear anywhere in the subcommand's arguments (`src/vtx/coding_agent/cli.py:210`-`src/vtx/coding_agent/cli.py:213`, `src/vtx/coding_agent/plugin_cmd.py:205`-`src/vtx/coding_agent/plugin_cmd.py:212`).
 
-Running `vtx plugin` with no arguments, or with `-h`/`--help`, prints the module docstring and the one-line command list, and exits 0 (`src/vtx/coding_agent/plugin_cmd.py:201`).
+Running `vtx plugin` with no arguments, or with `-h`/`--help`, prints the module docstring and the one-line command list, and exits 0 (`src/vtx/coding_agent/plugin_cmd.py:201`-`src/vtx/coding_agent/plugin_cmd.py:204`).
 
 | Subcommand | Arguments | Behavior |
 |---|---|---|
-| `profiles` | | List profile templates with their bundle lists, every bundle with its row count, and the default profile (`plugin_cmd.py:39`) |
-| `init` | `NAME` | Create `~/.vtx/profiles/NAME/` with `bundle.txt` and an empty `cordis.yml` patch layer (`plugin_cmd.py:217`, `profile.py:74`) |
-| `path` | `NAME` | Print the profile's directory (`plugin_cmd.py:50`) |
-| `enable` | `ROW_ID` | Clear the row's `disabled` flag in the profile's patch (`plugin_cmd.py:78`) |
-| `disable` | `ROW_ID` | Set `disabled: true` on the row in the profile's patch (`plugin_cmd.py:78`) |
-| `install` | `PACKAGE_OR_URL` | Install a plugin package or clone a git URL (`plugin_cmd.py:127`) |
-| `allow-version` | `PACKAGE@VERSION` | Grant one exact package/version pair for one exact vtx version (`plugin_cmd.py:149`) |
-| `revoke-version` | `PACKAGE@VERSION` | Revoke a previously granted exemption (`plugin_cmd.py:149`) |
-| `version-exemptions` | | Print the profile's exemptions as JSON (`plugin_cmd.py:187`) |
+| `profiles` | | List profile templates with their bundle lists, every bundle with its row count, and the default profile (`plugin_cmd.py:39`-`plugin_cmd.py:47`) |
+| `init` | `NAME` | Create `~/.vtx/profiles/NAME/` with `bundle.txt` and a commented `cordis.yml` patch-layer template (`plugin_cmd.py:217`-`plugin_cmd.py:222`, `profile.py:74`-`profile.py:86`) |
+| `path` | `NAME` | Print the profile's directory (`plugin_cmd.py:50`-`plugin_cmd.py:52`, `plugin_cmd.py:223`-`plugin_cmd.py:226`) |
+| `enable` | `ROW_ID` | Clear the row's `disabled` flag in the profile's patch (`plugin_cmd.py:78`-`plugin_cmd.py:100`) |
+| `disable` | `ROW_ID` | Set `disabled: true` on the row in the profile's patch (`plugin_cmd.py:78`-`plugin_cmd.py:100`) |
+| `install` | `PACKAGE_OR_URL` | Install a plugin package or clone a git URL (`plugin_cmd.py:127`-`plugin_cmd.py:146`) |
+| `allow-version` | `PACKAGE@VERSION` | Grant one exact package/version pair for one exact vtx version (`plugin_cmd.py:149`-`plugin_cmd.py:184`) |
+| `revoke-version` | `PACKAGE@VERSION` | Revoke a previously granted exemption (`plugin_cmd.py:149`-`plugin_cmd.py:184`) |
+| `version-exemptions` | | Print the profile's exemptions as JSON (`plugin_cmd.py:187`-`plugin_cmd.py:196`) |
 
-Every failure prints `vtx plugin: <message>` on stderr and returns 1 (`src/vtx/coding_agent/plugin_cmd.py:34`).
+Every failure prints `vtx plugin: <message>` on stderr and returns 1 (`src/vtx/coding_agent/plugin_cmd.py:34`-`src/vtx/coding_agent/plugin_cmd.py:36`).
 
 ### `vtx plugin profiles`
 
@@ -195,7 +199,7 @@ profiles:
   headless	base
   minimal	minimal
 bundles:
-  base	29 rows
+  base	27 rows
   tui	2 rows
   headless	0 rows
   minimal	4 rows
@@ -203,7 +207,7 @@ bundles:
 default profile: default
 ```
 
-The profile templates and bundles come from `src/vtx/plugins/builtins/__init__.py:84`.
+The profile templates and bundles come from `src/vtx/plugins/builtins/__init__.py:88`-`src/vtx/plugins/builtins/__init__.py:100`.
 
 ### `vtx plugin init` and `vtx plugin path`
 
@@ -214,9 +218,9 @@ $ vtx plugin path demo
 /home/you/.vtx/profiles/demo
 ```
 
-`init` writes `bundle.txt` from the profile template, or `DEFAULT_PROFILE_BUNDLES` (`base`, `tui`) when the name has no template (`src/vtx/plugins/profile.py:81`). An existing `cordis.yml` is left untouched (`src/vtx/plugins/profile.py:84`).
+`init` writes `bundle.txt` from the profile template, or `DEFAULT_PROFILE_BUNDLES` (`base`, `tui`) when the name has no template (`src/vtx/plugins/profile.py:81`), and writes `cordis.yml` only when it does not already exist (`src/vtx/plugins/profile.py:83`-`src/vtx/plugins/profile.py:85`). The patch file starts as a commented template ending in `[]`, not an empty document.
 
-A profile name containing `/`, `\`, `.` or `..`, or starting with `-`, is rejected with `invalid profile name` (`src/vtx/plugins/profile.py:68`).
+A profile name containing `/`, `\`, `.` or `..`, or starting with `-`, is rejected with `invalid profile name` (`src/vtx/plugins/profile.py:68`-`src/vtx/plugins/profile.py:71`).
 
 ### `vtx plugin enable` / `disable`
 
@@ -227,7 +231,7 @@ $ vtx plugin enable tool-grep
 vtx plugin: tool-grep enabled in profile 'default'
 ```
 
-Both rewrite only the matching row's `disabled` flag in `cordis.yml`, appending an `override` entry when the row has none yet (`src/vtx/coding_agent/plugin_cmd.py:89`). Unknown rows are refused:
+Both rewrite only the matching row's `disabled` flag in `cordis.yml`, appending an `override` entry when the row has none yet (`src/vtx/coding_agent/plugin_cmd.py:89`). Unknown rows are refused (`src/vtx/coding_agent/plugin_cmd.py:88`):
 
 ```console
 $ vtx plugin enable bogus-row
@@ -238,7 +242,7 @@ Missing arguments produce `enable needs a row id` / `disable needs a row id`.
 
 Not every tool row disables its tool. `tool-web`, `tool-ask-user`, and
 `tool-subagent` are inert: their tools are registered at import time with
-`is_default=True` (`src/vtx/agent/tools/__init__.py:220-223`), so the row unmounts and
+`is_default=True` (`src/vtx/agent/tools/__init__.py:216`-`src/vtx/agent/tools/__init__.py:218`), so the row unmounts and
 the tool stays live. Verify with the live tool set (`ctx.tools.assemble()`), not with
 `[disabled]` in the row listing alone - see [plugins.md](plugins.md).
 
@@ -250,9 +254,9 @@ vtx plugin install --upgrade vtx-plugin-foo
 vtx plugin install https://github.com/org/repo
 ```
 
-A spec starting with `http://`, `https://`, `git@`, `ssh://`, or `git://` is cloned with `git clone --depth 1` into a temp directory and installed from there (`src/vtx/coding_agent/plugin_cmd.py:135`, `src/vtx/plugins/install.py:285`). Anything else goes through `uv pip install`, with `--upgrade` appended when the flag is present (`src/vtx/plugins/install.py:262`).
+A spec starting with `http://`, `https://`, `git@`, `ssh://`, or `git://` is cloned with `git clone --depth 1` into a temp directory and installed from there (`src/vtx/coding_agent/plugin_cmd.py:135`, `src/vtx/plugins/install.py:287`-`src/vtx/plugins/install.py:294`). Anything else goes through `uv pip install` (run as `python -m uv pip install`), with `--upgrade` appended when the flag is present (`src/vtx/plugins/install.py:264`-`src/vtx/plugins/install.py:267`).
 
-The version gate reads the plugin's declared `vtx` requirement from `pyproject.toml` and refuses an incompatible package before downloading, printing the exact exemption command to grant it (`src/vtx/plugins/install.py:249`). A git or tarball spec cannot be judged until fetched, so it is verified after install and rolled back with `uv pip uninstall` when it fails (`src/vtx/plugins/install.py:271`).
+The version gate reads the plugin's declared `vtx` requirement from `pyproject.toml`, but only a local path or directory spec can be judged before anything is downloaded; a PyPI name, git URL, or tarball is marked "unjudged until installed" (`src/vtx/plugins/install.py:177`-`src/vtx/plugins/install.py:207`). An incompatible package is refused with the exact exemption command to grant it (`src/vtx/plugins/install.py:255`-`src/vtx/plugins/install.py:262`); a spec judged only after install is verified once on disk and rolled back with `uv pip uninstall` when it fails (`src/vtx/plugins/install.py:272`-`src/vtx/plugins/install.py:283`).
 
 On success the command prints the install message and the reminder to add a row to the profile:
 
@@ -268,16 +272,16 @@ vtx plugin allow-version vtx-plugin-foo@1.4.2 --vtx-version 1.2.2 --accept-risk
 vtx plugin revoke-version vtx-plugin-foo@1.4.2 --vtx-version 1.2.2
 ```
 
-`--vtx-version` is required. Both spellings `--vtx-version X` and `--vtx-version=X` are accepted (`src/vtx/coding_agent/plugin_cmd.py:158`).
+`--vtx-version` is required. Both spellings `--vtx-version X` and `--vtx-version=X` are accepted (`src/vtx/coding_agent/plugin_cmd.py:155`-`src/vtx/coding_agent/plugin_cmd.py:163`).
 
-`allow-version` prints a risk warning to stderr before writing anything, and refuses without `--accept-risk` (`src/vtx/plugins/install.py:77`). Grants are stored in `~/.vtx/profiles/<profile>/compatibility.json` and apply to exactly that package/version pair on exactly that vtx version.
+`allow-version` prints a risk warning to stderr before writing anything, and refuses without `--accept-risk` (`src/vtx/coding_agent/plugin_cmd.py:166`-`src/vtx/coding_agent/plugin_cmd.py:170`, `src/vtx/plugins/install.py:77`-`src/vtx/plugins/install.py:81`). Grants are stored in `~/.vtx/profiles/<profile>/compatibility.json` and apply to exactly that package/version pair on exactly that vtx version (`src/vtx/plugins/install.py:50`-`src/vtx/plugins/install.py:51`).
 
 ```console
 $ vtx plugin allow-version vtx-plugin-foo@1.4.2 --vtx-version 1.2.2
 vtx plugin: usage: vtx plugin allow-version <package@version> --vtx-version <exact>
 ```
 
-When the granted vtx version differs from the running one, a note follows the grant (`src/vtx/coding_agent/plugin_cmd.py:179`).
+When the granted vtx version differs from the running one, a note follows the grant (`src/vtx/coding_agent/plugin_cmd.py:179`-`src/vtx/coding_agent/plugin_cmd.py:183`).
 
 ### `vtx plugin version-exemptions`
 
@@ -286,15 +290,56 @@ $ vtx plugin version-exemptions
 {}
 ```
 
-Prints the exemptions mapping as indented JSON, exit 0. Unreadable entries are reported as warnings on stderr first (`src/vtx/plugins/install.py:54`).
+Prints the exemptions mapping as indented JSON, exit 0. Unreadable entries are reported as warnings on stderr first (`src/vtx/plugins/install.py:54`-`src/vtx/plugins/install.py:70`, printed at `src/vtx/coding_agent/plugin_cmd.py:192`-`src/vtx/coding_agent/plugin_cmd.py:194`).
+
+## Subcommand: `vtx acp`
+
+```sh
+vtx acp
+```
+
+Runs vtx as an Agent Client Protocol (ACP) server over stdio: JSON-RPC 2.0, one object per line, for editors like Zed that speak the protocol (`src/vtx/coding_agent/acp.py:1`-`src/vtx/coding_agent/acp.py:13`, dispatched at `src/vtx/coding_agent/cli.py:217`-`src/vtx/coding_agent/cli.py:221`).
+
+## Subcommand: `vtx auth`
+
+```sh
+vtx auth status
+```
+
+The only `auth` subcommand is `status`: it prints `Logged in.` when the configured or env-detected provider has credentials, `Not logged in.` otherwise, and exits 0 (`src/vtx/coding_agent/cli.py:241`-`src/vtx/coding_agent/cli.py:249`). Login and logout flows are TUI slash commands (`/login`, `/logout`), not CLI subcommands.
+
+## Subcommand: `vtx models`
+
+```sh
+vtx models list [--format json]
+```
+
+`models list` prints a JSON document with `families`, `providers`, and the active `provider_filter`, then exits 0 (`src/vtx/coding_agent/cli.py:251`-`src/vtx/coding_agent/cli.py:287`). `--format json` is accepted but the output is JSON either way.
+
+## Subcommand: `vtx config`
+
+```sh
+vtx config list
+vtx config get ui.model_provider_filter
+vtx config set ui.theme '"dracula"'
+vtx config set llm.default_model null
+```
+
+Reads and writes the persisted `~/.vtx/config.yml` without opening the TUI (`src/vtx/coding_agent/cli.py:289`-`src/vtx/coding_agent/cli.py:305`, setters in `src/vtx/core/config.py:1179`-`src/vtx/core/config.py:1216`):
+
+| Subcommand | Behavior |
+|---|---|
+| `list` | Dump the persisted config file as indented JSON |
+| `get KEY` | Print one dotted key's raw value as JSON (`null` when unset) |
+| `set KEY VALUE` | Set one dotted key; `VALUE` is parsed as JSON with a bare-string fallback, and JSON `null` removes the key |
 
 ## Exit codes
 
 | Code | Meaning | Source |
 |---|---|---|
-| `0` | Clean exit, or a one-shot path (`--list-agents`, `--list-extensions`, `--dump-config`, `vtx update`, `vtx plugin ...`) | `src/vtx/coding_agent/cli.py:216` |
-| `1` | `vtx update` failure, plugin composition failure, or any `vtx plugin` error | `src/vtx/coding_agent/cli.py:196`, `src/vtx/coding_agent/cli.py:265`, `src/vtx/coding_agent/plugin_cmd.py:35` |
-| `2` | argparse error (including `-c`/`-r` with `-p`), empty headless prompt, or provider/agent initialization failure | `src/vtx/coding_agent/cli.py:200`, `src/vtx/coding_agent/headless.py:147`, `src/vtx/coding_agent/headless.py:274` |
+| `0` | Clean exit, or a one-shot path (`--list-agents`, `--list-extensions`, `--dump-config`, `vtx acp`, `vtx auth status`, `vtx models list`, `vtx config ...`, `vtx update`, `vtx plugin ...`) | `src/vtx/coding_agent/cli.py:221`, `src/vtx/coding_agent/cli.py:249`, `src/vtx/coding_agent/cli.py:287`, `src/vtx/coding_agent/cli.py:305`, `src/vtx/coding_agent/cli.py:324`, `src/vtx/coding_agent/cli.py:355` |
+| `1` | `vtx update` failure, plugin composition failure, or any `vtx plugin` error | `src/vtx/coding_agent/cli.py:231`, `src/vtx/coding_agent/cli.py:373`, `src/vtx/coding_agent/plugin_cmd.py:36` |
+| `2` | argparse error (including `-c`/`-r` with `-p`), empty headless prompt, or provider/agent initialization failure | `src/vtx/coding_agent/cli.py:308`, `src/vtx/coding_agent/headless.py:121`, `src/vtx/coding_agent/headless.py:277`, `src/vtx/coding_agent/headless.py:282`, `src/vtx/coding_agent/headless.py:286` |
 | `3` | Headless run ended with stop reason `length` (context or output limit) | `src/vtx/coding_agent/headless.py:34` |
 
 The headless exit code is derived from the run's `StopReason`; an unmapped reason falls back to 1 (`src/vtx/coding_agent/headless.py:37`).
@@ -307,11 +352,13 @@ The headless exit code is derived from the run's `StopReason`; an unmapped reaso
 - `--api-key` is not persisted and is ignored by any provider that resolves its key from the environment or the stored credential file.
 - `--dump-config` prints rows as tab-separated text. A JSON form exists in the library (`dump_config_json`) but no flag exposes it.
 - `vtx plugin` has no `list` or `remove` subcommand; installed plugins are removed with the package manager directly.
-- The `commands:` line that `vtx plugin` prints advertises only `profiles | init | path | enable | disable` (`src/vtx/coding_agent/plugin_cmd.py:202`). `install`, `allow-version`, `revoke-version`, and `version-exemptions` are dispatched but are not listed; `vtx plugin -h` and `vtx plugin <unknown>` are the only ways to discover them.
+- The `commands:` line that `vtx plugin` prints advertises only `profiles | init NAME | path NAME | enable ROW | disable ROW` (`src/vtx/coding_agent/plugin_cmd.py:203`). `install`, `allow-version`, `revoke-version`, and `version-exemptions` are dispatched but are not listed; `vtx plugin -h` and `vtx plugin <unknown>` are the only ways to discover them.
+- `vtx plugin` is only intercepted when `plugin` is the first argument. `vtx --profile x plugin profiles` parses through argparse, which knows the subcommand but never dispatches it, so the run falls through to the TUI.
+- `--no-extensions` skips the two scan roots but installed-package entry points (`vtx.extensions`) are still discovered (`src/vtx/plugins/extensions.py:145`, `src/vtx/plugins/extensions.py:172`-`src/vtx/plugins/extensions.py:174`).
 - `--list-extensions` reports tools, commands, and handlers, but not shortcuts or flags registered by an extension.
 - Extension and agent discovery silently skips unreadable directories; only the resulting per-entry errors are printed.
 - The help text for `--provider` does not name the accepted slugs; only the `usage:` line lists them.
-- `-p/--prompt` rewrites the saved config file to `permissions.mode: auto` and writes it back afterwards (`src/vtx/coding_agent/headless.py:154`, `src/vtx/coding_agent/headless.py:307`). It is restored, but two concurrent headless runs can restore whichever value they captured first. The comment at `src/vtx/coding_agent/headless.py:152` claims it does not mutate the config; it does, for the duration of the run.
+- `-p/--prompt` rewrites the saved config file to `permissions.mode: auto` and writes it back afterwards (`src/vtx/coding_agent/headless.py:133`-`src/vtx/coding_agent/headless.py:135`, `src/vtx/coding_agent/headless.py:310`-`src/vtx/coding_agent/headless.py:313`). It is restored, but two concurrent headless runs can restore whichever value they captured first. The comment at `src/vtx/coding_agent/headless.py:130`-`src/vtx/coding_agent/headless.py:131` claims it does not mutate the config; it does, for the duration of the run.
 
 ## See also
 

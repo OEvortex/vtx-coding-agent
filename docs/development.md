@@ -21,7 +21,7 @@ The package is a src layout with one package per subsystem (`pyproject.toml:5-6`
 | `src/vtx/telemetry/` | `Trace` / `Span` primitives and the processor chain (`src/vtx/telemetry/__init__.py:1`) |
 | `src/vtx/tui/` | The Textual interface (`src/vtx/tui/__init__.py:1`) |
 | `src/vtx/git/` | Git metadata, the `gh` CLI wrapper, GitHub App auth (`src/vtx/git/__init__.py:1`) |
-| `tests/` | Mirrors the packages: `tests/plugins/`, `tests/mcp/`, `tests/sdk/`, `tests/extensions/`, `tests/context/`, `tests/llm/`, `tests/core/`, plus top-level `test_*.py` |
+| `tests/` | Mirrors the packages: `tests/plugins/`, `tests/mcp/`, `tests/sdk/`, `tests/extensions/`, `tests/context/`, `tests/llm/`, `tests/core/`, `tests/ui/`, plus top-level `test_*.py` |
 
 Each package carries a `README.md` describing its own internals; those are the place to look before changing a subsystem.
 
@@ -62,7 +62,7 @@ The settings that matter:
 
 ## How a composition boots
 
-`boot()` is the single entry point for mounting a composition (`src/vtx/plugins/bootstrap.py:23-52`):
+`boot()` is the single entry point for mounting a composition (`src/vtx/plugins/bootstrap.py:23-53`):
 
 ```python
 from vtx.plugins import boot, active_context, shutdown
@@ -86,10 +86,10 @@ A profile is an ordered list of bundles; a bundle is a list of rows.
 
 | Bundle | Contents |
 |---|---|
-| `base` | Services (`tools`, `llm`, `sessions`, `permissions`, `prompts`, `compaction`, `skills`, `telemetry`, `sandbox`, `mcp`, `agents`, `agent-loop`, `session-projections`, `extensions`, `hooks`) plus the tool rows (`src/vtx/plugins/builtins/__init__.py:20-58`) |
-| `tui` | `ui` and `commands` rows (`src/vtx/plugins/builtins/__init__.py:62-65`) |
-| `headless` | Adds nothing; a serverless run boots `base` alone (`src/vtx/plugins/builtins/__init__.py:69-70`) |
-| `minimal` | `tools`, `llm`, `tool-read`, `tool-bash`  --  the smallest composition with a registry, a provider seam and a shell (`src/vtx/plugins/builtins/__init__.py:73-82`) |
+| `base` | Fifteen service rows (`tools`, `llm`, `sessions`, `permissions`, `prompts`, `compaction`, `skills`, `telemetry`, `sandbox`, `mcp`, `agents`, `agent-loop`, `session-projections`, `extensions`, `hooks`) plus the tool rows (`src/vtx/plugins/builtins/__init__.py:20-61`) |
+| `tui` | `ui` and `commands` rows (`src/vtx/plugins/builtins/__init__.py:65-68`) |
+| `headless` | Adds nothing; a serverless run boots `base` alone (`src/vtx/plugins/builtins/__init__.py:72`) |
+| `minimal` | `tools`, `llm`, `tool-read`, `tool-bash`  --  the smallest composition with a registry, a provider seam and a shell (`src/vtx/plugins/builtins/__init__.py:76-85`) |
 
 | Profile | Bundles |
 |---|---|
@@ -97,7 +97,7 @@ A profile is an ordered list of bundles; a bundle is a list of rows.
 | `headless` | `base` |
 | `minimal` | `minimal` |
 
-A profile with no shipped template starts from `("base", "tui")` (`src/vtx/plugins/builtins/__init__.py:100`). Templates live on disk per profile; `vtx plugin init NAME` creates one (`src/vtx/coding_agent/plugin_cmd.py:217-221`).
+A profile with no shipped template starts from `("base", "tui")` (`src/vtx/plugins/builtins/__init__.py:103`). Templates live on disk per profile; `vtx plugin init NAME` creates one (`src/vtx/coding_agent/plugin_cmd.py:217-221`).
 
 ### Rows and patch layers
 
@@ -119,7 +119,7 @@ vtx plugin profiles
 vtx plugin path default
 ```
 
-`--dump-config` prints the profile layers and then the extension rows discovered at boot, which are not stored in the profile (`src/vtx/coding_agent/cli.py:221-239`).
+`--dump-config` prints the profile layers and then the extension rows discovered at boot, which are not stored in the profile (`src/vtx/coding_agent/cli.py:329-355`).
 
 ## Add a tool
 
@@ -127,7 +127,7 @@ A tool is a `BaseTool` subclass plus one row that mounts it. Two files.
 
 ### 1. The tool
 
-`BaseTool` declares `name`, `params`, `description`, `mutating`, `tool_icon`, `prompt_guidelines`, `needs_approval`, `ui_block` (`src/vtx/agent/tools/base.py:9-31`) and one abstract `execute` (`src/vtx/agent/tools/base.py:33-36`).
+`BaseTool` declares `name`, `params`, `description`, `mutating`, `tool_icon`, `prompt_guidelines`, `needs_approval`, `ui_block` (`src/vtx/agent/tools/base.py:35-57`) and one abstract `execute` (`src/vtx/agent/tools/base.py:59-62`).
 
 ```python
 # mypkg/tools.py
@@ -202,7 +202,7 @@ vtx plugin enable tool-wordcount
 `enable` and `disable` rewrite only the `disabled` flag of the matching row (`src/vtx/coding_agent/plugin_cmd.py:78-100`).
 
 Not every tool row disables its tool: `tool-web`, `tool-ask-user`, and
-`tool-subagent` register their tools at import time (`src/vtx/agent/tools/__init__.py:220-223`),
+`tool-subagent` register their tools at import time (`src/vtx/agent/tools/__init__.py:216-218`),
 so the row unmounts while the tool stays live. For a tool row, assert on the live tool set
 (`ctx.tools.assemble()`), not on the row listing - see [plugins.md](plugins.md).
 
@@ -229,7 +229,7 @@ uv run python -m pytest tests/test_wordcount.py
 
 ## Add a service row
 
-A service row provides one `ctx.<key>`. The fifteen standard keys are the ones with a typed property on `Context`; any other key works too (`src/vtx/plugins/context.py:21-42`, `:74-87`). The rows in `src/vtx/plugins/builtins/services/` are the reference implementations  --  each claims exactly one key.
+A service row provides one `ctx.<key>`. The fourteen standard keys are `STANDARD_KEYS` in `src/vtx/plugins/context.py:24-41`; most have a typed property on `Context` (`:203-254`), and any other key works too. The rows in `src/vtx/plugins/builtins/services/` are the reference implementations  --  each claims exactly one key.
 
 ```python
 # mypkg/services.py

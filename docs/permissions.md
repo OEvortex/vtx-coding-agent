@@ -16,7 +16,7 @@ PERMISSION_MODES: tuple[PermissionMode, ...] = get_args(PermissionMode)
 
 | Mode | Question it answers | Default | Where it lives |
 |---|---|---|---|
-| `prompt` | Ask me before a mutating tool call | yes | `permissions.mode` (`src/vtx/core/config.py:152-153`) |
+| `prompt` | Ask me before a mutating tool call | yes | `permissions.mode` (`src/vtx/core/config.py:158-159`) |
 | `auto` | Run every tool call without asking | no | `permissions.mode` |
 
 The picker spells them out the same way (`src/vtx/tui/commands/settings.py:76-78`):
@@ -88,31 +88,32 @@ in `prompt` mode a non-mutating tool never prompts no matter what its arguments 
 
 ## Which tools are mutating
 
-`BaseTool.mutating` defaults to `True` (`src/vtx/agent/tools/base.py:18`), so a tool
+`BaseTool.mutating` defaults to `True` (`src/vtx/agent/tools/base.py:44`), so a tool
 that writes something and forgets the flag is gated. The default set:
 
 | Tool | `mutating` | Prompts in `prompt` mode | Source |
 |---|---|---|---|
-| `read` | `False` | never | `src/vtx/coding_agent/tools/read.py:34` |
-| `find` | `False` | never | `src/vtx/coding_agent/tools/find.py:34` |
-| `grep` | `False` | never | `src/vtx/coding_agent/tools/grep.py:35` |
+| `read` | `False` | never | `src/vtx/coding_agent/tools/read.py:43` |
+| `find` | `False` | never | `src/vtx/coding_agent/tools/find.py:35` |
+| `grep` | `False` | never | `src/vtx/coding_agent/tools/grep.py:36` |
+| `todo` | `False` | never | `src/vtx/coding_agent/tools/todo.py:182` |
 | `bash` | `True` | unless the command is safe | `src/vtx/coding_agent/tools/bash.py` |
 | `edit` | `True` | always | `src/vtx/coding_agent/tools/edit.py` |
 | `write` | `True` | always | `src/vtx/coding_agent/tools/write.py` |
-| `skill` | `True` | always | `src/vtx/coding_agent/tools/skill.py` |
-| `web`, `web_search` | `False` | never | `src/vtx/agent/tools/web.py:93` |
+| `skill` | `True` | always | `src/vtx/coding_agent/tools/skill.py:86` |
+| `web`, `web_search` | `False` | never | `src/vtx/agent/tools/web.py:94` |
 | `ask_user` | `False` | never | `src/vtx/agent/tools/ask_user.py:191` |
-| `delegate_subagent` | `False` | never | `src/vtx/agent/tools/task.py:504` |
-| `tool_search` | `False` | never | `src/vtx/coding_agent/tools/tool_search.py:74` |
-| `codemode` | `True` | always | `src/vtx/agent/tools/codemode.py:188` |
+| `delegate_subagent` | `False` | never | `src/vtx/agent/tools/task.py:544` |
+| `tool_search` | `False` | never | `src/vtx/coding_agent/tools/tool_search.py:73` |
+| `codemode` | `True` | always | `src/vtx/coding_agent/tools/codemode.py:184-185` |
 
 Two of those need a note.
 
 `delegate_subagent` is non-mutating from the parent's side because the sub-agent runs in
 its own session and returns text; the sub-agent's own mutating calls are gated in that
-session, not in yours (`src/vtx/agent/tools/task.py:504`).
+session, not in yours (`src/vtx/agent/tools/task.py:544`).
 
-`codemode` is marked mutating on purpose (`src/vtx/agent/tools/codemode.py:188-189`):
+`codemode` is marked mutating on purpose (`src/vtx/coding_agent/tools/codemode.py:184-185`):
 
 ```python
 mutating = True
@@ -120,9 +121,9 @@ mutating = True
 ```
 
 A script is not a way around the gate. The sandbox wraps each call it makes
-(`governed_invoker`, `src/vtx/codemode/governance.py:193`) and the wrapper turns a
+(`governed_invoker`, `src/vtx/codemode/governance.py:177-195`) and the wrapper turns a
 `PROMPT` into a refusal, because a script has nobody to ask
-(`src/vtx/codemode/governance.py:144-173`):
+(`src/vtx/codemode/governance.py:144-174`):
 
 ```text
 <tool> was not run: it needs approval, and a script has nobody to ask. Call that tool
@@ -130,8 +131,8 @@ directly so the user can approve it, or use a read-only tool that needs no appro
 ```
 
 A gate that throws is also a refusal: "a gate that throws must not silently become
-allow" (`src/vtx/codemode/governance.py:161-167`). The gate the sandbox uses is
-`ConversationRuntime._codemode_permission` (`src/vtx/agent/runtime.py:889`), which
+allow" (`src/vtx/codemode/governance.py:163-167`). The gate the sandbox uses is
+`ConversationRuntime._codemode_permission` (`src/vtx/agent/runtime.py:944-954`), which
 forwards to `check_permission` with the running config.
 
 ## How `bash` is classified
@@ -184,7 +185,7 @@ Step by step:
 
 ### `SAFE_COMMANDS`
 
-Seventeen read-only commands (`src/vtx/core/permissions.py:133-155`):
+Nineteen read-only commands (`src/vtx/core/permissions.py:133-155`):
 
 | | | | |
 |---|---|---|---|
@@ -204,7 +205,7 @@ Ten read-only subcommands (`src/vtx/core/permissions.py:157-170`):
 | `rev-parse` | `describe` | `ls-files` | `ls-tree` |
 | `blame` | `shortlog` | | |
 
-The git check (`src/vtx/core/permissions.py:224-237`):
+The git check (`src/vtx/core/permissions.py:224-238`):
 
 ```python
 def _is_safe_git_command(tokens: list[str]) -> bool:
@@ -261,7 +262,7 @@ safe, `cat a.txt && cat b.txt` is not.
 
 ## What the prompt looks like
 
-The gate runs in the turn loop, not in the tool (`src/vtx/agent/turn.py:1287-1292`):
+The gate runs in the turn loop, not in the tool (`src/vtx/agent/turn.py:1360-1365`):
 
 ```python
 @staticmethod
@@ -273,7 +274,7 @@ def _needs_approval(pending: PendingToolCall) -> bool:
     return decision == PermissionDecision.PROMPT
 ```
 
-When it prompts (`src/vtx/agent/turn.py:1029-1072`):
+When it prompts (`src/vtx/agent/turn.py:1100-1148`):
 
 1. `permission_request` is emitted on the extension bus, with `permission`,
    `tool_name`, `arguments`, and `tool_call_id`.
@@ -296,12 +297,12 @@ non-mutating, so it never passes through this gate
 | `/permissions` | Picker over `prompt` and `auto` | `src/vtx/tui/commands/settings.py:75-96` |
 | `/permissions auto` | Set the mode without the picker | same |
 | `alt+ctrl+p` | Toggle between the two modes | `src/vtx/tui/app.py:99`, `:865-868` |
-| Config file | Edit `permissions.mode`, then `/reload` | `src/vtx/core/config.py:989` |
-| `--dump-config` | Print the composed plugin rows for the profile | `src/vtx/coding_agent/cli.py:227` |
+| Config file | Edit `permissions.mode`, then `/reload` | `src/vtx/core/config.py:977` |
+| `--dump-config` | Print the composed plugin rows for the profile | `src/vtx/coding_agent/cli.py:179` |
 
 Headless cannot show a prompt, so `-p/--prompt` forces `auto` for the run and writes it
 into the config file, restoring the previous value afterwards
-(`src/vtx/coding_agent/headless.py:149-157`):
+(`src/vtx/coding_agent/headless.py:129-136`):
 
 ```python
 previous_config_data = _read_config_data(_ensure_config_file())
@@ -322,12 +323,12 @@ a headless run is never confirmed by a human.
 
 ```python
 class PermissionService:
-    """Plugin-registered permission rules.
+    """``ctx.permissions`` — the mutating-tool gate.
 
-    The base decision comes from `vtx.core.permissions.check_permission`. Plugins
-    contribute rules that can only ever *tighten* the decision: a rule returning
-    `"prompt"` or `"deny"` escalates, and nothing downgrades to `allow` below the
-    base decision.
+    The base decision comes from :func:`vtx.core.permissions.check_permission`.
+    Plugins contribute rules that can only ever *tighten* the decision: a rule
+    returning ``"prompt"`` or ``"deny"`` escalates, and nothing downgrades to
+    ``allow`` below the base decision.
     """
 
     def add_rule(
@@ -365,6 +366,11 @@ The rule layer ships as a builtin (`src/vtx/plugins/builtins/services/permission
 the whole file):
 
 ```python
+"""``ctx.permissions`` — the mutating-tool gate."""
+
+from __future__ import annotations
+
+from vtx.plugins.plugin import plugin
 from vtx.plugins.services import PermissionService
 
 
@@ -428,17 +434,18 @@ An agent can carry its own permission posture (`src/vtx/agent/agents/schema.py:7
 
 ```python
 def active_permission_mode(registry, default):
-    agent = registry.active()
-    if agent is not None and agent.definition.permission_mode is not None:
-        return agent.definition.permission_mode
+    if registry.active is not None and registry.active.definition.permission_mode is not None:
+        return registry.active.definition.permission_mode
     return default
 
 
 def active_permission_gates(registry):
-    agent = registry.active()
-    if agent is None:
+    if registry.active is None:
         return []
-    return list(agent.definition.permission_gates) + list(agent.local_gates)
+    out = list(registry.active.definition.permission_gates)
+    for gates in registry.active.local_gates.values():
+        out.extend(gates)
+    return out
 ```
 
 `local_gates` are the ones registered from inside the agent file through
@@ -453,7 +460,7 @@ same list. See `agents.md` for the full `when` grammar.
   (`src/vtx/core/permissions.py:175-194`), and the agent schema
   (`src/vtx/agent/agents/schema.py:75`). There is nothing to document beyond that.
 - **The turn loop does not consult `PermissionService.decide`.** `_needs_approval` calls
-  `check_permission` directly (`src/vtx/agent/turn.py:1291`), so plugin rules and agent
+  `check_permission` directly (`src/vtx/agent/turn.py:1364`), so plugin rules and agent
   `permission_gates` are enforced only where a caller explicitly invokes `decide`:
   the SDK's policy classes (`src/vtx/agent/sdk/permissions.py`) and the codemode
   governance layer. A `"deny"` rule from a plugin does not block a tool call in an
@@ -467,7 +474,7 @@ same list. See `agents.md` for the full `when` grammar.
   commands chained together prompt. Workarounds are usually one command per call.
 - **`auto` applies to the sub-agents a session spawns too.** There is no per-sub-agent
   mode; a background sub-agent runs unattended
-  (`src/vtx/agent/tools/task.py:616-621`).
+  (`src/vtx/agent/tools/task.py`).
 - **Agents' `permission_mode: "auto"` is read for the active agent only.** Switching
   agents mid-session changes which gates exist, but nothing re-asks about a tool the
   new agent has forbidden.

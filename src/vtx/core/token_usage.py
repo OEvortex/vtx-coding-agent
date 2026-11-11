@@ -196,13 +196,21 @@ def scan_session_file(path: Path, fallback: date | None = None) -> dict[str, lis
 
 
 def sync_usage_ledger(
-    session_paths: list[Path], *, root: Path, ledger_path: Path | None = None
+    session_paths: list[Path],
+    *,
+    root: Path,
+    ledger_path: Path | None = None,
+    require_persist: bool = False,
 ) -> dict[str, list[int]]:
     """Fold ``session_paths`` into the ledger and return all recorded days.
 
     Files that are gone from disk stay in the returned totals -- that is the
     whole point of the ledger -- so the result is lifetime usage, not usage of
     the sessions that happen to still exist.
+
+    ``require_persist`` turns a failed write into an ``OSError``. Retention
+    passes it: deleting a file whose usage never reached disk would lose those
+    tokens for good, so the caller must be able to stop instead.
 
     Blocking; call from a worker thread.
     """
@@ -225,8 +233,8 @@ def sync_usage_ledger(
                 days=scan_session_file(path, session_date(path)),
             )
             changed = True
-        if changed:
-            _save(ledger, files)
+        if changed and not _save(ledger, files) and require_persist:
+            raise OSError(f"could not write usage ledger: {ledger}")
 
         merged: dict[str, list[int]] = {}
         for entry in files.values():

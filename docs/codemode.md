@@ -16,11 +16,11 @@ The worker is `src/vtx/codemode/sandbox.py`. The host spawns one subprocess per 
 subprocess.Popen([self._python, str(SANDBOX_PATH)], ...)
 ```
 
-(`src/vtx/codemode/host.py:399-400`). `python -m vtx.codemode.sandbox` imports the parent package chain first  --  including the agent SDK  --  which costs roughly 1.5 seconds against about 30 ms for the by-path launch (`src/vtx/codemode/host.py:67`). The worker therefore imports nothing from `vtx`. It re-implements the error taxonomy locally so the same class identity can be reconstructed across the wire (`src/vtx/codemode/sandbox.py:241`).
+(`src/vtx/codemode/host.py:72-74`). `python -m vtx.codemode.sandbox` imports the parent package chain first  --  including the agent SDK  --  which costs roughly 1.5 seconds against about 30 ms for the by-path launch (`src/vtx/codemode/host.py:386-399`). The worker therefore imports nothing from `vtx`. It re-implements the error taxonomy locally so the same class identity can be reconstructed across the wire (`src/vtx/codemode/sandbox.py:179-256`).
 
-The worker's `__name__` is `__codemode__` (`src/vtx/codemode/sandbox.py:264`), and it speaks newline-delimited JSON on fds 0 and 1. Before the script runs, `_reserve_fds` dups stdin to a protocol reader and stdout's fd to `_PROTOCOL_FD`, then points fds 0 and 1 at `/dev/null` so that stray `print` output or a child process writing to stdout cannot corrupt the frames (`src/vtx/codemode/sandbox.py:267-291`). Each frame is emitted with a single `os.write` (`src/vtx/codemode/sandbox.py:309`).
+The worker's `__name__` is `__codemode__` (`src/vtx/codemode/sandbox.py:267`), and it speaks newline-delimited JSON on fds 0 and 1. Before the script runs, `_reserve_fds` dups stdin to a protocol reader and stdout's fd to `_PROTOCOL_FD`, then points fds 0 and 1 at `/dev/null` so that stray `print` output or a child process writing to stdout cannot corrupt the frames (`src/vtx/codemode/sandbox.py:270-291`). Each frame is emitted with a single `os.write` (`src/vtx/codemode/sandbox.py:433`).
 
-Your script is executed as the body of an async function. The source is indented and wrapped into `async def __codemode_main__()` (`src/vtx/codemode/sandbox.py:784-800`), which is what makes a top-level `return` legal. Three consequences:
+Your script is executed as the body of an async function. The source is indented and wrapped into `async def __codemode_main__()` (`src/vtx/codemode/sandbox.py:924-927`), which is what makes a top-level `return` legal. Three consequences:
 
 - `return value` at the top level of the script sets `result.value`.
 - Assigning to a variable named `result` does nothing; `result.value` is then `None`.
@@ -75,17 +75,17 @@ The tool hands the block the run itself through `ToolResult.ui_data` (`src/vtx/p
 
 | Field | Default | Meaning |
 |---|---|---|
-| `timeout_ms` | `30_000` | Inactivity deadline; no progress on any channel resets it |
-| `wall_clock_ms` | `1_800_000` | Hard ceiling on total wall time |
+| `timeout_ms` | `30_000` | Bounds the script's own compute time; time blocked on a tool call is not charged to it, and the deadline is enforced by killing the worker |
+| `wall_clock_ms` | `1_800_000` | Absolute ceiling on the whole execution, tool time included |
 | `max_tool_calls` | `None` | Cap on tool calls in one script |
 | `max_output_tokens` | `None` | Cap on text output |
 | `memory_limit_bytes` | `None` | Passed to the worker's resource limit |
 | `detect_stalls` | `True` | Report a script that stops making progress as `stalled` |
 
-The script can ask for less, never more, through an options line at the top of the source. It must be valid Python, and it is blanked rather than removed so traceback line numbers stay aligned with the source the model wrote (`src/vtx/codemode/source.py:106-107`). Three fields are recognized (`src/vtx/codemode/source.py:29`):
+The script can ask for less, never more, through an options line at the top of the source. It is a Python comment (`# @options:`), and it is blanked rather than removed so traceback line numbers stay aligned with the source the model wrote (`src/vtx/codemode/source.py:25`, `:106-110`). Three fields are recognized (`src/vtx/codemode/source.py:29`):
 
 ```python
-# options: {"max_output_tokens": 4000, "max_tool_calls": 12, "timeout_ms": 60_000}
+# @options: {"max_output_tokens": 4000, "max_tool_calls": 12, "timeout_ms": 60_000}
 ```
 
 | Option | Bounds |
@@ -117,7 +117,7 @@ class ToolRunner(Protocol):
 | `namespace` | Groups related tools under one attribute |
 | `listed` | When `False`, reachable but not advertised by default |
 
-Default catalog budget is 2000 tokens (`src/vtx/codemode/declarations.py:143`). If the harness already has `BaseTool` instances, `adapt_tools` converts them for you (`src/vtx/codemode/integration.py:165-194`); that is what the `codemode` tool does, so it does not re-declare anything (`src/vtx/agent/tools/codemode.py:188-189`).
+Default catalog budget is 2000 tokens (`src/vtx/codemode/declarations.py:365-366`, `src/vtx/codemode/host.py:102`). If the harness already has `BaseTool` instances, `adapt_tools` converts them for you (`src/vtx/codemode/integration.py:165-194`); that is what the `codemode` tool does, so it does not re-declare anything (`src/vtx/coding_agent/tools/codemode.py:184`, `:278-284`).
 
 ## The governance gate
 
@@ -240,10 +240,10 @@ return {"counts": counts, "largest": biggest}
 asyncio.run(main())
 ```
 
-Read `result.calls` for what the script actually ran: each `ToolCall` has `name`, `status`, `kind`, `message`, `duration_ms`, and a `.ok` property (`src/vtx/codemode/types.py:80-93`). Store writes are capped per value at 256 KiB and in total at 1 MiB (`src/vtx/codemode/types.py:19-22`); `result.apply_to_store(store)` merges them into a dict (`src/vtx/codemode/types.py:133-135`).
+Read `result.calls` for what the script actually ran: each `ToolCall` has `name`, `status`, `kind`, `message`, `duration_ms`, `args`, and a `.ok` property (`src/vtx/codemode/types.py:85-115`). Store writes are capped per value at 256 KiB and in total at 1 MiB (`src/vtx/codemode/types.py:19-22`); `result.apply_to_store(store)` merges them into a dict (`src/vtx/codemode/types.py:155-159`).
 
 ## Known gaps
 
-- The module docstring in `src/vtx/codemode/sandbox.py:4` still says the host launches the worker as `python -I /path/to/sandbox.py`. The current host launches it with no `-I` (`src/vtx/codemode/host.py:399-400`). Trust the code.
+- The module docstring in `src/vtx/codemode/sandbox.py:4` still says the host launches the worker as `python -I /path/to/sandbox.py`. The current host launches it by file path with no `-I` (`src/vtx/codemode/host.py:386-422`). Trust the code.
 - The sandbox imports nothing from `vtx`, so it cannot inspect the live session, agent, or tool registry. A script that needs those must ask for them through a tool you inject.
-- Codemode cannot run against the interactive TUI; the harness path is a `BaseTool` with `mutating = True` (`src/vtx/agent/tools/codemode.py:188-189`), so its own call is subject to the permission gate like any other tool.
+- Codemode cannot run against the interactive TUI; the harness path is a `BaseTool` with `mutating = True` (`src/vtx/coding_agent/tools/codemode.py:184`), so its own call is subject to the permission gate like any other tool.

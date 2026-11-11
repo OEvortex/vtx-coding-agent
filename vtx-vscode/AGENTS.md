@@ -73,7 +73,7 @@ launch an Extension Development Host with the extension loaded.
 
 The two preview commands render the UI in a plain browser from mock data, with no
 Vtx CLI needed, which is the fastest way to iterate on the webview. The
-screenshots in the README come from `npm run preview`. See
+screenshots in `docs/screenshots/` come from `npm run preview`. See
 [docs/screenshots.md](docs/screenshots.md) for the scenarios and how to
 regenerate them, and [CONTRIBUTING.md](CONTRIBUTING.md) for the full build and
 release notes.
@@ -217,7 +217,7 @@ place.
 
 ## Writing style for docs and text
 
-These rules apply to the README, the changelog, commit messages, PR
+These rules apply to the docs, the changelog, commit messages, PR
 descriptions, code comments, and any other prose in the repo.
 
 - Never use an em dash or en dash. Use a comma, a colon, brackets, or a full

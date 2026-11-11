@@ -10,7 +10,7 @@ There are two home roots and one project root.
 
 | Root | Function | Default |
 |---|---|---|
-| Global config | `get_config_dir()` (`src/vtx/core/config.py:377-380`) | `~/.vtx` |
+| Global config | `get_config_dir()` (`src/vtx/core/config.py:403-406`, implementation `src/vtx/core/paths.py:7-44`) | `~/.vtx` |
 | Legacy agents | `get_agents_dir()` (`src/vtx/core/paths.py:47-67`) | `~/.agents` |
 | Project | literal, per subsystem | `<cwd>/.vtx` |
 
@@ -34,22 +34,22 @@ Everything under `~/.vtx`, unless one of the env vars listed below moved it.
 
 | Path | What | Resolved by |
 |---|---|---|
-| `config.yml` | The whole config schema, versioned and migrated on load | `src/vtx/core/config.py:389-400` |
+| `config.yml` | The whole config schema, versioned and migrated on load | `src/vtx/core/config.py:415-417` |
 | `config.yml.bak.<ts>` | Pre-migration backup, `YYYYMMDDHHMMSS` in the name | `src/vtx/core/config.py:835-840` |
 | `profiles/<name>/bundle.txt` | The profile's ordered bundle list | `src/vtx/plugins/profile.py:33-34`, `:79-83` |
 | `profiles/<name>/cordis.yml` | The profile's patch layer | `src/vtx/plugins/profile.py:34`, `:64-66` |
 | `profiles/<name>/compatibility.json` | `allow-version` grants | `src/vtx/plugins/install.py:31`, `:47-48` |
-| `sessions/<safe_cwd>/<ts>_<id>.jsonl` | One file per session; the directory is `chmod 0700`. Old, untouched files are pruned (`session_retention`) | `src/vtx/agent/session.py:237-241`, `:894-895`, `src/vtx/core/session_retention.py:73` |
-| `token_usage.json` | Durable per-session token ledger; keeps lifetime `/usage` totals after a session file is deleted | `src/vtx/core/token_usage.py:26`, `:54` |
+| `sessions/<safe_cwd>/<ts>_<id>.jsonl` | One file per session; the directory is `chmod 0700`. Old, untouched files are pruned (`session_retention`) | `src/vtx/agent/session.py:243-248`, `:966-968`, `src/vtx/core/session_retention.py:69` |
+| `token_usage.json` | Durable per-session token ledger; keeps lifetime `/usage` totals after a session file is deleted | `src/vtx/core/token_usage.py:35`, `:58` |
 | `tasks/<safe_cwd>/` | Background-task store and sub-agent results | `src/vtx/agent/background.py:100`, `src/vtx/agent/tools/task.py:213` |
 | `snapshots/<digest>/` | Pre-edit file snapshots for revert | `src/vtx/agent/snapshot.py:184` |
 | `skills/` | Skills installed into the vtx home; marked `bundled` on load | `src/vtx/agent/context/skills.py:351`, `:414-419` |
 | `agent/*.py` | Global agent files and packages | `src/vtx/agent/agents/discovery.py:17`, `:54` |
-| `agent/extensions/*.py` | Global extensions | `src/vtx/plugins/extensions.py:9`, `:288` |
-| `mcp.json` | Global MCP server config | `src/vtx/mcp/config.py:53`, `:306` |
+| `agent/extensions/*.py` | Global extensions | `src/vtx/plugins/extensions.py:9`, `:314` |
+| `mcp.json` | Global MCP server config | `src/vtx/mcp/config.py:57`, `:310` |
 | `mcp-auth.json` | MCP OAuth credentials | `src/vtx/mcp/oauth/provider.py:45`, `:98` |
 | `hooks.yml` | Global YAML hooks | `src/vtx/plugins/builtins/hooks.py:29`, `:42` |
-| `providers/*.yaml` | User-wide custom provider catalog | `src/vtx/ai/provider_catalog.py:436-441` |
+| `providers/*.yaml` | User-wide custom provider catalog | `src/vtx/ai/provider_catalog.py:455-459` |
 | `prompt-history.jsonl` | Prompt history | `src/vtx/tui/prompt_history.py:12` |
 | `telemetry.jsonl` | JSONL trace export, only when the telemetry row enables it | `src/vtx/plugins/builtins/services/telemetry.py:24` |
 | `bin/` | Where managed binaries are looked for alongside `PATH` | `src/vtx/agent/tools_manager.py:21`, `src/vtx/core/config.py:417-420` |
@@ -61,7 +61,7 @@ Everything under `~/.vtx`, unless one of the env vars listed below moved it.
 | `cline_auth.json` | Cline OAuth token | `src/vtx/ai/oauth/cline.py:69` |
 | `dynamic_auth.json` | Dynamic-provider API keys | `src/vtx/ai/oauth/dynamic.py:32`, `:52-72` |
 
-Two of these are read rather than written as whole directories: the usage aggregate walks everything under `sessions/` but only re-parses files whose `(mtime, size)` changed, recording the rest in `token_usage.json` (`src/vtx/core/token_usage.py:189`), and HTML export reads the same per-project session directory (`src/vtx/tui/export.py:182-183`).
+Two of these are read rather than written as whole directories: the usage aggregate walks everything under `sessions/` but only re-parses files whose `(mtime, size)` changed, recording the rest in `token_usage.json` (`src/vtx/core/token_usage.py:198`), and HTML export reads the same per-project session directory (`src/vtx/tui/export.py:182-183`).
 
 Global `AGENTS.md` or `CLAUDE.md` context files are read straight out of `~/.vtx` (`src/vtx/agent/context/agent_mds.py:87-89`), so `~/.vtx/AGENTS.md` is global project instructions.
 
@@ -73,25 +73,25 @@ Everything here is relative to the working directory and is *not* moved by the c
 
 | Path | What | Resolved by |
 |---|---|---|
-| `.vtx/extensions/*.py` | Project extensions | `src/vtx/plugins/extensions.py:8`, `:304` |
+| `.vtx/extensions/*.py` | Project extensions | `src/vtx/plugins/extensions.py:8`, `:313` |
 | `.vtx/agent/*.py` | Project agents, walked up to the git root | `src/vtx/agent/agents/discovery.py:15`, `:46-51` |
 | `.vtx/mcp.json` | Project MCP config, read on every start | `src/vtx/mcp/config.py:54`, `:294-311` |
 | `.vtx/hooks.yml` | Project YAML hooks, loaded before the global one | `src/vtx/plugins/builtins/hooks.py:42-43` |
-| `.vtx/providers/*.yaml` | Project-local custom provider catalog | `src/vtx/ai/provider_catalog.py:443-445` |
+| `.vtx/providers/*.yaml` | Project-local custom provider catalog | `src/vtx/ai/provider_catalog.py:462-464` |
 | `.agents/skills/<name>/SKILL.md` | Project skills, one directory per skill | `src/vtx/agent/context/skills.py:309-318`, `:407-411` |
 
 The project roots are always scanned; the `extensions:` and `agents.files` lists in `config.yml` add to them rather than replace them (`src/vtx/core/config.py:250-256`).
 
 ### Session directory encoding
 
-A session directory name is the working directory with `/` and `\` replaced by `-` and leading or trailing dashes stripped (`src/vtx/agent/session.py:238`):
+A session directory name is the working directory with `/` and `\` replaced by `-` and leading or trailing dashes stripped (`src/vtx/agent/session.py:244`):
 
 ```python
 safe_cwd = cwd.replace("/", "-").replace("\\", "-").strip("-")
 sessions_dir = get_config_dir() / "sessions" / safe_cwd
 ```
 
-So `/home/me/proj` becomes `home-me-proj`, and the session files inside are named `<file_timestamp>_<session_id>.jsonl`, where the timestamp is the session's UTC start time formatted `%Y-%m-%dT%H-%M-%S` (`src/vtx/agent/session.py:43-44`, `:892-895`).
+So `/home/me/proj` becomes `home-me-proj`, and the session files inside are named `<file_timestamp>_<session_id>.jsonl`, where the timestamp is the session's UTC start time formatted `%Y-%m-%dT%H-%M-%S` (`src/vtx/agent/session.py:966-968`).
 
 ## Discovery order
 
@@ -120,8 +120,11 @@ Print the resolved layout of the machine you are on, with file sizes for everyth
 uv run python - <<'PY'
 from pathlib import Path
 
+from vtx.agent.session import Session
 from vtx.core.paths import get_agents_dir, get_config_dir
+from vtx.mcp.config import load_mcp_config
 
+root = get_config_dir()
 sessions = Session.get_sessions_dir(str(Path.cwd()))
 print("sessions dir:", sessions)
 print("session files:", sorted(p.name for p in sessions.glob("*.jsonl")))
@@ -142,7 +145,7 @@ for path in sorted(root.iterdir()):
 PY
 ```
 
-The interesting lines are the first four: they name the exact directories this installation resolves to, and they are the paths every row of the tables above is relative to. `Session.get_sessions_dir` creates the directory with mode `0700` if it does not exist (`src/vtx/agent/session.py:237-241`), so running this script has a side effect you can undo with `rmdir`.
+The interesting lines are the first four: they name the exact directories this installation resolves to, and they are the paths every row of the tables above is relative to. `Session.get_sessions_dir` creates the directory with mode `0700` if it does not exist (`src/vtx/agent/session.py:243-248`), so running this script has a side effect you can undo with `rmdir`.
 
 ## Known gaps
 

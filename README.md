@@ -136,12 +136,12 @@ Dependencies flow `protocol` and `telemetry` into `core`, `git`, and `ai`; those
 `agent`; `agent` into `coding_agent`, with `mcp`, `tui`, and `plugins` above. Each package
 carries its own README with the public surface and internal notes.
 
-**Twelve tools are on by default** - `read`, `edit`, `write`, `bash`, `find`, `skill`,
-`web`, `ask_user`, `tool_search`, `codemode`, `goal`, `delegate_subagent` - resolved by the
-composition, not by a constant. `grep` and `web_search` are registered but off. The
-sub-agent tool is defined internally as `task` and exposed as `delegate_subagent`. Agent
-profiles load only from `.vtx/agent/<name>.py`; none ship built in. Configuration lives in
-`~/.vtx/config.yml`.
+**Ten tools are on by default** - `read`, `edit`, `write`, `bash`, `skill`, `todo`,
+`web`, `ask_user`, `codemode`, `delegate_subagent` - resolved by the composition, not
+by a constant. `grep`, `web_search`, and `tool_search` are registered but off; `find`
+ships as a tool row you can add to a profile. The sub-agent tool is defined internally
+as `task` (`TaskTool`) and exposed as `delegate_subagent`. Agent profiles load only from
+`.vtx/agent/<name>.py`; none ship built in. Configuration lives in `~/.vtx/config.yml`.
 
 ## Contributing
 

@@ -2,7 +2,8 @@
 
 Vtx is a coding agent that runs in your terminal and works with the files on your
 machine. Give it a goal and a working folder, and it reads files, runs commands, edits
-code, and works through multi-step tasks without stopping to confirm each step.
+code, and works through multi-step tasks - asking before it runs a mutating tool unless
+you have relaxed the permission mode.
 
 Vtx is a harness: the tool registry, the provider seam, the permission gate, and the
 agent loop are all composable rows, so the same core runs interactive in a TUI,

@@ -19,10 +19,11 @@ vtx --dump-config | grep -E "id:|disabled:"
 | Tool | Default on | Mutating | Purpose |
 |---|---|---|---|
 | `read` | yes | no | Read a file or list a directory |
-| `edit` | yes | **yes** | Replace an exact unique string in a file |
+| `edit` | yes | **yes** | Replace text in a file |
 | `write` | yes | **yes** | Write a whole file |
 | `bash` | yes | **yes** | Run a shell command |
-| `find` | yes | no | Find files by glob |
+| `todo` | yes | no | Track a task list for multi-step work |
+| `find` | no | no | Find files by glob |
 | `grep` | no | no | Search file contents |
 | `skill` | yes | **yes** | Load, create, and patch skills |
 | `web` | yes | no | Web search via Exa (no API key) |
@@ -33,16 +34,17 @@ vtx --dump-config | grep -E "id:|disabled:"
 | `tool_search` | on demand | no | Find a tool by what it does |
 
 The default set is resolved by the plugin composition
-(`ctx.tools.defaults()`, `src/vtx/plugins/services.py:118`). `grep` and `web_search`
-are registered but off by default; turn one on by naming it in your profile's tool
-list, or let `tool_search` surface it.
+(`ctx.tools.defaults()`, `src/vtx/plugins/services.py:108`). `find`, `grep`, and
+`web_search` are registered but off by default - `find`'s row is not even in the
+`base` bundle (`src/vtx/plugins/builtins/__init__.py:48`) - so turn one on by
+naming its row in your profile, or let `tool_search` surface it.
 
 `tool_search` is the one row that is neither simply on nor simply off. It is
 *registered*, so it can be overridden and wired, but it is declared to the model
 only when the session has tools it has not been offered: `tool-search` is off by
 default and `ConversationRuntime.declared_tools` adds it back when an MCP server's
 tools are `codemode`, `codemode-deferred`, or `deferred`
-(`src/vtx/agent/runtime.py:770`). A declaration is sent on every turn, so a session
+(`src/vtx/agent/runtime.py:795-818`). A declaration is sent on every turn, so a session
 with nothing to search should not pay for the tool that finds it -- the same rule
 pi-mono uses, activating `tool_search` for a `deferred` server. Name it in a
 profile's tool list to force it on; `tools_deny: ["tool_search"]` keeps it off
@@ -56,11 +58,11 @@ gate before it runs. See [permissions.md](permissions.md).
 Every tool above belongs to a plugin row, so `vtx plugin disable <row-id>` is the way to
 remove one - except that three rows do not take effect. `web`, `ask_user`, and
 `delegate_subagent` are also registered at *import time* with `is_default=True`
-(`src/vtx/agent/tools/__init__.py:220-223`), so `vtx plugin disable tool-web`,
+(`src/vtx/agent/tools/__init__.py:216-218`), so `vtx plugin disable tool-web`,
 `tool-ask-user`, and `tool-subagent` unmount their rows while the tools stay
 in the registry and the model keeps calling them. `tool-read`, `tool-edit`, `tool-write`,
-`tool-bash`, `tool-find`, `tool-grep`, `tool-skill`, `tool-codemode`, `tool-search`, and
-every service row disable correctly. Confirm a disable with `ctx.tools.assemble()`; see
+`tool-bash`, `tool-grep`, `tool-skill`, `tool-todo`, `tool-codemode`, `tool-search`,
+`tool-find`, and every service row disable correctly. Confirm a disable with `ctx.tools.assemble()`; see
 [plugins.md](plugins.md).
 
 ## How a tool is described to the model
@@ -84,7 +86,7 @@ Read a file or list a directory. Non-mutating, so it never prompts.
 | `limit` | `int \| None` | `None` | Line count (for large files) |
 
 Reads are capped at 2000 lines and 2000 characters per line
-(`src/vtx/coding_agent/tools/read.py:18`), and a directory listing at 1000 entries. Use
+(`src/vtx/coding_agent/tools/read.py:19-20`), and a directory listing at 1000 entries. Use
 `offset` and `limit` to page through anything larger.
 
 ```json
@@ -99,7 +101,7 @@ Listing a directory returns its entries rather than file contents.
 
 ## `edit`
 
-Replace an exact, unique string in an existing file. Mutating.
+Replace text in an existing file. Mutating.
 
 | Parameter | Type | Default | Description |
 |---|---|---|---|
@@ -108,9 +110,11 @@ Replace an exact, unique string in an existing file. Mutating.
 | `new_string` | `str` | required | Replacement text (must differ) |
 | `replace_all` | `bool` | `False` | Replace all occurrences |
 
-`old_string` must match exactly once unless `replace_all` is set, which is the
-guard against a silently-wrong edit (`src/vtx/coding_agent/tools/edit.py:19`). Read
-the file first; the model has no file cache.
+`old_string` must appear in the file; without `replace_all` only the **first**
+occurrence is replaced (`content.replace(old, new, 1)`,
+`src/vtx/coding_agent/tools/edit.py:227-230`), so include enough surrounding
+context to make the target unambiguous. Read the file first; the model has no
+file cache.
 
 ```json
 {
@@ -158,9 +162,9 @@ about.
 | `command` | `str` | required | Command line string to execute |
 | `timeout` | `int` | `180` | Timeout in seconds |
 
-The default timeout is 180 seconds (`src/vtx/coding_agent/tools/bash.py:20`). Output
+The default timeout is 180 seconds (`src/vtx/coding_agent/tools/bash.py:21`). Output
 is tail-truncated to the last 2000 lines and 50 KB, with the full log written to a temp
-file (`src/vtx/coding_agent/tools/bash.py:21`, `:91`).
+file (`src/vtx/coding_agent/tools/bash.py:22-23`, `:92`, `:376-378`).
 
 ```json
 {"command": "git status --short"}
@@ -175,7 +179,9 @@ chain with `&&` inside a single command.
 
 ## `find`
 
-Find files and directories by glob. Non-mutating.
+Find files and directories by glob. Registered but off by default: its
+`tool-find` row is not in the `base` bundle, so a profile has to add it
+explicitly (`src/vtx/plugins/builtins/__init__.py:48`).
 
 | Parameter | Type | Default | Description |
 |---|---|---|---|
@@ -183,7 +189,7 @@ Find files and directories by glob. Non-mutating.
 | `path` | `str \| None` | `None` | Directory to search within (defaults to cwd) |
 
 Respects `.gitignore`. Results are sorted by modification time and truncated to 100
-entries (`src/vtx/coding_agent/tools/find.py:21`).
+entries (`src/vtx/coding_agent/tools/find.py:17`).
 
 ```json
 {"pattern": "*.py", "path": "src/vtx/agent"}
@@ -231,8 +237,39 @@ Search the web through Exa's MCP endpoint. No API key required.
 ```
 
 `web_search` is the same tool under a second name, registered but off by default
-(`src/vtx/agent/tools/web.py:134`). It exists so a provider that reserves `web` can
-still reach the capability.
+(`src/vtx/agent/tools/web.py:135`, mounted with `is_default=False` at
+`src/vtx/plugins/builtins/tools/web.py:13`). It exists so a provider that reserves
+`web` can still reach the capability.
+
+## `todo`
+
+Track a task list for multi-step work. Default-on, and `mutating=False` in the
+code (`src/vtx/coding_agent/tools/todo.py:182`) because it only mutates its own
+task state, never the filesystem - so it never prompts.
+
+| Parameter | Type | Default | Description |
+|---|---|---|---|
+| `action` | enum | `"create"` | `set`, `create`, `update`, `list`, `get`, `delete`, `clear` |
+| `subject` | `str \| None` | `None` | Task title (required for `create`) |
+| `id` | `int \| None` | `None` | Target task ID (`update`/`get`/`delete`) |
+| `status` | enum \| None | `None` | `pending`, `in_progress`, `completed`, `deleted` |
+| `description` | `str \| None` | `None` | Long-form detail |
+| `active_form` | `str \| None` | `None` | Present-continuous label shown while running |
+| `owner` | `str \| None` | `None` | Agent/owner assigned |
+| `blocked_by` | `list[int] \| None` | `None` | Dependency task IDs |
+| `add_blocked_by` / `remove_blocked_by` | `list[int] \| None` | `None` | Merge into / remove from `blockedBy` |
+| `metadata` | `dict \| None` | `None` | Key-value metadata; `null` deletes a key |
+| `todos` | `list \| None` | `None` | Batch plan for `set`; replaces the list |
+| `include_deleted` | `bool` | `False` | Include deleted tasks in `list` |
+
+`action` may be omitted: it is inferred from which fields are present
+(`src/vtx/coding_agent/tools/todo.py:116-147`). Plan the whole list in one
+`set` call rather than creating tasks one at a time - the tool's own guidelines
+say so.
+
+```json
+{"action": "set", "todos": [{"subject": "Find the bug", "activeForm": "Finding the bug"}, {"subject": "Fix it", "activeForm": "Fixing it"}]}
+```
 
 ## `ask_user`
 
@@ -411,8 +448,8 @@ See [skills.md](skills.md) for the full authoring contract.
 - `bash` shares no state between calls, so multi-step shell work must be one command.
 - `codemode` is a subprocess per call; there is no persistent interpreter to hold
   variables across calls.
-- `grep` and `web_search` are off by default, so an agent that needs them must have
-  them enabled by profile or find them with `tool_search`.
+- `find`, `grep`, and `web_search` are off by default, so an agent that needs them
+  must have them enabled by profile or find them with `tool_search`.
 - A tool that a plugin registers by overriding a built-in's name replaces it
-  (`ToolService.assemble`, `src/vtx/plugins/services.py:118`), which is also also
+  (`ToolService.assemble`, `src/vtx/plugins/services.py:118`), which also
   means a buggy plugin can silently take `bash` away.

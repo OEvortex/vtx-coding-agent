@@ -69,7 +69,7 @@ Four rules to internalise:
 ### Plugin shapes
 
 ```python
-@plugin(name="p", inject=("tools",), config=MyConfig, meta={"owner": "me"})
+@plugin(name="p", inject=("tools",), config=MyConfig, owner="me")
 def apply(ctx, config): ...
 
 class p(Service):
@@ -99,6 +99,7 @@ schema reports every offending field, with the row id, at load time.
 | `agents` | `builtins/services/agents.py` | Agent profiles and the active selection |
 | `agentLoop` | `builtins/services/agent_loop.py` | The driver `ConversationRuntime._new_agent` calls |
 | `sessionProjections` | `builtins/services/projections.py` | Incremental folds over the log |
+| `extensions` | `builtins/services/extensions.py` | Extension discovery and the record of what it loaded |
 | `ui` | `builtins/ui.py` | The interactive channel (`notify`, `ask`) |
 | `commands` | `builtins/commands.py` | Slash commands that cost no model turn |
 
@@ -163,12 +164,12 @@ A profile lives in `~/.vtx/profiles/<name>/` (`profiles_dir()`,
   cordis.yml     # the user's patch layer
 ```
 
-Vtx ships four bundles (`src/vtx/plugins/builtins/__init__.py:85`) and three profile
-templates (`:93`):
+Vtx ships four bundles (`src/vtx/plugins/builtins/__init__.py:88`) and three profile
+templates (`:96`):
 
 | Bundle | Rows | Role |
 |---|---|---|
-| `base` | 31 | Services plus the built-in tools. Every profile starts here. |
+| `base` | 27 | Services plus the built-in tools. Every profile starts here. |
 | `tui` | 2 | The interactive surface: `ctx.ui` and `ctx.commands`. |
 | `headless` | 0 | Adds nothing - a serverless run boots `base` alone. |
 | `minimal` | 4 | A tool registry, a provider seam, `read`, `bash`. For embedding. |
@@ -185,9 +186,11 @@ Layers apply in order onto an empty list, **last write per row id wins**:
 profile's ordered bundles  ->  profile cordis.yml  ->  --patch overlays
 ```
 
-A row's `config` is a whole value, not a merge. That is deliberate: a row whose value
-differs by mode lives in that mode's bundle, so every row is owned by exactly one bundle
-plus the user's patch, and a later layer never has to know what it is overwriting.
+For `insert`, `set`, and `replace` a row's `config` is a whole value, not a merge.
+That is deliberate: a row whose value differs by mode lives in that mode's bundle,
+so every row is owned by exactly one bundle plus the user's patch. `override` is
+the exception - it requires the row to exist and merges only the fields it names,
+with `config` merged key-by-key (`src/vtx/plugins/loader.py:228-238`).
 
 ### The patch language
 
@@ -243,14 +246,14 @@ vtx --profile minimal                 # boot the minimal composition
 (`src/vtx/coding_agent/plugin_cmd.py:78`). Every row keeps exactly one home in the file,
 so repeated toggles do not accumulate.
 
-**Disabling a tool row is not always disabling the tool.** Four tool rows are inert as
-disables: `tool-web`, `tool-ask-user`, and `tool-subagent`.
-`src/vtx/agent/tools/__init__.py:220-223` registers `WebTool`, `AskUserTool`,
+**Disabling a tool row is not always disabling the tool.** Three tool rows are inert
+as disables: `tool-web`, `tool-ask-user`, and `tool-subagent`.
+`src/vtx/agent/tools/__init__.py:216-218` registers `WebTool`, `AskUserTool`,
 and `TaskTool` at *import time* with `is_default=True`, so disabling the row unmounts it
 while the tool stays in the global registry and in the default set - `--dump-config`
 shows `[disabled]` and the model still has the tool. Service rows, and the coding-agent
-tool rows (`tool-read`, `tool-edit`, `tool-write`, `tool-bash`, `tool-find`,
-`tool-grep`, `tool-skill`, `tool-codemode`, `tool-search`), disable correctly.
+tool rows (`tool-read`, `tool-edit`, `tool-write`, `tool-bash`, `tool-grep`,
+`tool-skill`, `tool-todo`, `tool-codemode`, `tool-search`), disable correctly.
 
 So verify a disable against the live tool set, not the row list: `--dump-config` must show
 `[disabled]` *and* the tool's name must be absent from `ctx.tools.assemble()`
@@ -270,9 +273,10 @@ A plugin declares which Vtx versions it was built against:
 vtx = [">=1.2,<2.0"]          # or: vtx = ["vtx-coding-agent>=1.2,<2.0"]
 ```
 
-`vtx plugin install` resolves the spec and checks it **before anything is downloaded and
-before any build script runs**. An incompatible plugin refuses, and the refusal prints
-the command that grants an exemption:
+`vtx plugin install` judges what it can **before anything runs**: a local path or
+registry spec is checked against its declared `vtx` requirement up front, and an
+incompatible one refuses before anything is downloaded or any build script runs.
+The refusal prints the command that grants an exemption:
 
 ```text
 vtx plugin: demo-plugin is incompatible: requires vtx >=99.0, running 1.2.2
@@ -285,9 +289,11 @@ The grant lives in `~/.vtx/profiles/<name>/compatibility.json` as an exact
 prints a warning first. Neither a plugin upgrade nor a Vtx upgrade inherits a grant, and
 a grant authorises nothing except that pair.
 
-A registry or path spec is judged before install. A git URL or tarball can only be judged
-after fetching, so an incompatible one is uninstalled and rolled back, and a rollback
-that itself fails is reported rather than swallowed.
+A local path is judged before install. A registry name, a git URL, or a tarball cannot
+be judged without fetching, so those install first and are verified afterwards: an
+incompatible one is uninstalled and rolled back, and a rollback that itself fails is
+reported (`"(and the rollback also failed)"`) rather than swallowed
+(`src/vtx/plugins/install.py:273-283`).
 
 An editable checkout reports its version as `"editable"`, which cannot be ordered against
 a requirement. That is treated as satisfied rather than crashing the gate -

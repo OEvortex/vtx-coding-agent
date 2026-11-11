@@ -4,13 +4,13 @@ Vtx ships a fixed catalog of LLM providers, each with an API type, a base URL, a
 
 ## The catalog
 
-The catalog is loaded from `src/vtx/ai/provider.yaml` and merged with three OAuth providers registered in Python, so the shipped count is 59 + 3 = **62 providers** (`src/vtx/ai/provider_catalog.py:222`, `src/vtx/ai/provider_catalog.py:146`). `list_providers()` returns them in `provider.yaml` order with the OAuth entries appended (`src/vtx/ai/provider_catalog.py:256`), and anything you add as a custom provider joins the same list (see [Custom providers](#custom-providers)).
+The catalog is loaded from `src/vtx/ai/provider.yaml` and merged with three OAuth providers registered in Python, so the shipped count is 59 + 3 = **62 providers** (`src/vtx/ai/provider_catalog.py:152`, `src/vtx/ai/provider_catalog.py:251-253`). `list_providers()` returns them in `provider.yaml` order with the OAuth entries appended (`src/vtx/ai/provider_catalog.py:269-272`), and anything you add as a custom provider joins the same list (see [Custom providers](#custom-providers)).
 
 Fifty-six of the 59 `provider.yaml` entries declare `family: openai_compat` and three declare `family: anthropic`; the three OAuth entries all declare `openai_compat`, which makes 59 `openai_compat` and 3 `anthropic` in total.
 
-Do not confuse that count with the CLI's `--provider` argument, which takes one of only **16** values. Those come from `PROVIDER_API_BY_NAME`, a hardcoded slug-to-API-type map (`src/vtx/ai/providers/__init__.py:4`) passed straight to `argparse` as `choices=sorted(PROVIDER_API_BY_NAME)` (`src/vtx/coding_agent/cli.py:53`). They are: `aerolink`, `airouter`, `anthropic`, `codex`, `deepseek`, `kilo`, `ollama`, `openai`, `openai-codex`, `openai-responses`, `opencode`, `opengateway`, `openrouter`, `tokenrouter`, `zhipu`, `zyloo`. Two of them, `openai-codex` and `openai-responses`, are not catalog slugs.
+Do not confuse that count with the CLI's `--provider` argument, which takes one of only **16** values. Those come from `PROVIDER_API_BY_NAME`, a hardcoded slug-to-API-type map (`src/vtx/ai/providers/__init__.py:4`) passed straight to `argparse` as `choices=sorted(PROVIDER_API_BY_NAME)` (`src/vtx/coding_agent/cli.py:82`). They are: `aerolink`, `airouter`, `anthropic`, `codex`, `deepseek`, `kilo`, `ollama`, `openai`, `openai-codex`, `openai-responses`, `opencode`, `opengateway`, `openrouter`, `tokenrouter`, `zhipu`, `zyloo`. Two of them, `openai-codex` and `openai-responses`, are not catalog slugs.
 
-A provider's API type comes from its `family` field: `openai_compat` maps to `openai-sdk`, `anthropic` maps to `anthropic`, and the slugs `codex` and `openai-responses` are special-cased to `openai-responses` even though they declare `openai_compat` (`src/vtx/ai/provider_catalog.py:349`). Exactly three providers speak the Anthropic API: `anthropic`, `aerolink`, and `fastrouter`. One, `codex`, speaks the Responses API. One, `ollama`, is local (`is_local`) and needs no key.
+A provider's API type comes from its `family` field: `openai_compat` maps to `openai-sdk`, `anthropic` maps to `anthropic`, and the slugs `codex` and `openai-responses` are special-cased to `openai-responses` even though they declare `openai_compat` (`src/vtx/ai/provider_catalog.py:362-371`). Exactly three providers speak the Anthropic API: `anthropic`, `aerolink`, and `fastrouter`. One, `codex`, speaks the Responses API. One, `ollama`, is local (`is_local`) and needs no key.
 
 | Slug | Name | API type | Auth | Env var |
 |---|---|---|---|---|
@@ -79,7 +79,7 @@ A provider's API type comes from its `family` field: `openai_compat` maps to `op
 
 ### `--provider` accepts fewer slugs than the catalog contains
 
-`--provider` is not validated against the catalog. It is validated against `PROVIDER_API_BY_NAME`, so it rejects 48 of the 62 catalog providers with an argparse error before the runtime is ever reached (`src/vtx/ai/providers/__init__.py:4`, `src/vtx/coding_agent/cli.py:53`):
+`--provider` is not validated against the catalog. It is validated against `PROVIDER_API_BY_NAME`, so it rejects 48 of the 62 catalog providers with an argparse error before the runtime is ever reached (`src/vtx/ai/providers/__init__.py:4`, `src/vtx/coding_agent/cli.py:82`):
 
 ```bash
 vtx --provider groq --model llama-3.3-70b
@@ -107,7 +107,7 @@ cli.py: error: argument --provider: invalid choice: 'groq' (choose from 'aerolin
 
 Two accepted slugs are themselves not catalog entries: `openai-codex` and `openai-responses` appear in `PROVIDER_API_BY_NAME` but have no entry in `provider.yaml` or the OAuth block, so passing either one is accepted and then falls through to model discovery rather than to a provider entry.
 
-Use `llm.default_provider` for the other 48, or pick a model that belongs to the provider you want, because the config value and the model id are what actually select the provider (`src/vtx/tui/app.py:146`). `/model` lists models across every provider regardless of `--provider`'s allowlist.
+Use `llm.default_provider` for the other 48, or pick a model that belongs to the provider you want, because the config value and the model id are what actually select the provider (`src/vtx/tui/app.py:144-149`). `/model` lists models across every provider regardless of `--provider`'s allowlist.
 
 ## Picking a provider
 
@@ -121,13 +121,13 @@ vtx --model gpt-5.5 --provider codex
 
 | Flag | Effect |
 |---|---|
-| `--provider` | Sets the initial provider, restricted to the 16 slugs above (`src/vtx/coding_agent/cli.py:53`) |
-| `--model` | Sets the initial model (`src/vtx/coding_agent/cli.py:52`) |
-| `--api-key`, `-k` | Explicit key, wins over every other source (`src/vtx/tui/app.py:155`) |
-| `--base-url`, `-u` | Overrides the provider's base URL (`src/vtx/tui/app.py:156`) |
-| `--openai-compat-auth` | `auto`, `required`, or `none` (`src/vtx/coding_agent/cli.py:66`) |
-| `--anthropic-compat-auth` | `auto`, `required`, or `none` (`src/vtx/coding_agent/cli.py:71`) |
-| `--insecure-skip-verify` | Turns off TLS certificate verification (`src/vtx/coding_agent/cli.py:76`) |
+| `--provider` | Sets the initial provider, restricted to the 16 slugs above (`src/vtx/coding_agent/cli.py:82`) |
+| `--model` | Sets the initial model (`src/vtx/coding_agent/cli.py:81`) |
+| `--api-key`, `-k` | Explicit key, wins over every other source (`src/vtx/tui/app.py:154`) |
+| `--base-url`, `-u` | Overrides the provider's base URL (`src/vtx/tui/app.py:161`) |
+| `--openai-compat-auth` | `auto`, `required`, or `none` (`src/vtx/coding_agent/cli.py:94-98`) |
+| `--anthropic-compat-auth` | `auto`, `required`, or `none` (`src/vtx/coding_agent/cli.py:99-103`) |
+| `--insecure-skip-verify` | Turns off TLS certificate verification (`src/vtx/coding_agent/cli.py:104-108`) |
 
 ### In the config file
 
@@ -138,21 +138,21 @@ llm:
   default_base_url: ""
 ```
 
-`llm.default_provider` and `llm.default_model` are free-form strings, so they are not limited to the `--provider` allowlist (`src/vtx/core/config.py:131`, `src/vtx/core/config.py:132`).
+`llm.default_provider` and `llm.default_model` are free-form strings, so they are not limited to the `--provider` allowlist (`src/vtx/core/config.py:137`, `src/vtx/core/config.py:138`).
 
 ### In the TUI
 
-`/provider` opens a picker over the configured providers and writes `ui.model_provider_filter` (`src/vtx/tui/commands/providers.py:18`), which narrows the `/model` list to one provider. `/model` picks a model from the catalog and switches providers as a side effect (`src/vtx/tui/commands/models.py:47`). When you change either one, the choice is recorded in `last_selected` so the next session starts on it (`src/vtx/core/config.py:1128`).
+`/provider` opens a picker over the configured providers and writes `ui.model_provider_filter` (`src/vtx/tui/commands/providers.py`), which narrows the `/model` list to one provider. `/model` picks a model from the catalog and switches providers as a side effect (`src/vtx/tui/commands/models.py`). When you change either one, the choice is recorded in `last_selected` so the next session starts on it (`src/vtx/core/config.py:1225`).
 
 ### Automatically from the environment
 
-With no flag and no config, `detect_provider_from_env()` picks the provider (`src/vtx/ai/provider_catalog.py:262`):
+With no flag and no config, `detect_provider_from_env()` picks the provider (`src/vtx/ai/provider_catalog.py:275`):
 
 1. `VTX_PROVIDER`, if it names a provider in the catalog.
 2. The first non-local provider, in catalog order, whose `api_key_env` is set.
 3. The first provider whose OAuth credential file is present (`cline`, then `github-copilot`, then `codex`).
 4. The first local, key-optional provider (`ollama`).
-5. `openai` as the fallback (`DEFAULT_PROVIDER_SLUG`, `src/vtx/ai/provider_catalog.py:248`).
+5. `openai` as the fallback (`DEFAULT_PROVIDER_SLUG`, `src/vtx/ai/provider_catalog.py:261`).
 
 That last step means a machine with no keys configured resolves to `openai`, regardless of the `openai-codex` default in the shipped config file.
 
@@ -169,34 +169,34 @@ initial_model_provider = (
 )
 ```
 
-(`src/vtx/tui/app.py:145`, `src/vtx/tui/app.py:146`)
+(`src/vtx/tui/app.py:144-149`)
 
 Two consequences follow from that code:
 
 - Passing `--model` alone leaves `model_provider` as `None`, so the provider is inferred from the model when the model is looked up.
 - Passing `--provider` alone keeps the configured default model, which may not belong to that provider.
 
-The model lookup is the last word. `_model_api_and_base_url()` checks the catalog first, then the dynamic (cache-only) catalog, and only then falls back to `resolve_provider_api_type(provider)` plus the provider's default base URL (`src/vtx/agent/runtime.py:926`). When the provider filter does not match, `find_model()` retries without it and scans every provider for the model id (`src/vtx/ai/provider_catalog.py:637`). That scan is why `--model gpt-5.5 --provider aerolink` still resolves to the Codex endpoint for `gpt-5.5`, and the runtime logs a warning when it happens (`src/vtx/agent/runtime.py:986`).
+The model lookup is the last word. `_model_api_and_base_url()` checks the catalog first, then the dynamic (cache-only) catalog, and only then falls back to `resolve_provider_api_type(provider)` plus the provider's default base URL (`src/vtx/agent/runtime.py:981-994`). When the provider filter does not match, `find_model()` retries without it and scans every provider for the model id (`src/vtx/ai/provider_catalog.py:676`). That scan is why `--model gpt-5.5 --provider aerolink` still resolves to the Codex endpoint for `gpt-5.5`, and the runtime logs a warning when it happens (`src/vtx/agent/runtime.py:1040-1045`).
 
-Base URL resolution runs in the same order, with `--base-url` sitting above all of it (`src/vtx/tui/app.py:156`, `src/vtx/agent/runtime.py:926`):
+Base URL resolution runs in the same order, with `--base-url` sitting above all of it (`src/vtx/tui/app.py:161`, `src/vtx/agent/runtime.py:981-994`):
 
 ```text
 --base-url  >  the model's own base_url  >  default_base_url_for_provider(slug)  >  default_base_url_for_api(api_type)
 ```
 
-The last two default to `https://api.openai.com/v1` when nothing matches (`src/vtx/agent/runtime.py:59`, `src/vtx/agent/runtime.py:61`).
+The last two default to `https://api.openai.com/v1` when nothing matches (`src/vtx/agent/runtime.py:70-73`, `src/vtx/agent/runtime.py:76-84`).
 
-A resumed session records its own provider, model, and base URL, and those beat the flags unless you override them explicitly (`src/vtx/agent/runtime.py:1024`).
+A resumed session records its own provider, model, and base URL, and those beat the flags unless you override them explicitly (`src/vtx/agent/runtime.py:209-237`).
 
 ## Auth modes for compatible endpoints
 
-The OpenAI and Anthropic SDKs do not agree on when a key is optional. Vtx normalizes this with one of three modes, applied separately to the two transports (`src/vtx/ai/base.py:99`).
+The OpenAI and Anthropic SDKs do not agree on when a key is optional. Vtx normalizes this with one of three modes, applied separately to the two transports (`src/vtx/ai/base.py:104`).
 
 | Mode | Behavior |
 |---|---|
-| `auto` | Use the key if one is present. If the base URL is local, send the placeholder key instead of failing (`src/vtx/ai/base.py:151`) |
-| `required` | Demand a key. No env var, no placeholder, and the provider constructor raises (`src/vtx/ai/base.py:136`) |
-| `none` | Never look for a key. Send `vtx-local` as the `Authorization` header (`src/vtx/ai/base.py:98`, `src/vtx/ai/base.py:151`) |
+| `auto` | Use the key if one is present. If the base URL is local, send the placeholder key instead of failing (`src/vtx/ai/base.py:160-161`) |
+| `required` | Demand a key. No env var, no placeholder, and the provider constructor raises (`src/vtx/ai/base.py:163`) |
+| `none` | Never look for a key. Send `vtx-local` as the `Authorization` header (`src/vtx/ai/base.py:103`, `src/vtx/ai/base.py:158-159`) |
 
 The resolution order inside `resolve_api_key()` is:
 
@@ -214,9 +214,9 @@ if auth_mode == "auto" and is_local_base_url(base_url):
 return None
 ```
 
-(`src/vtx/ai/base.py:136`)
+(`src/vtx/ai/base.py:143-163`)
 
-`is_local_base_url()` treats `localhost`, `127.0.0.1`, `0.0.0.0`, `::1`, any `.local` hostname, and any loopback, private, or link-local IP address as local (`src/vtx/ai/base.py:102`).
+`is_local_base_url()` treats `localhost`, `127.0.0.1`, `0.0.0.0`, `::1`, any `.local` hostname, and any loopback, private, or link-local IP address as local (`src/vtx/ai/base.py:107-127`).
 
 Set the mode per endpoint:
 
@@ -232,13 +232,13 @@ llm:
     anthropic_compat: "auto"
 ```
 
-The defaults come from `src/vtx/core/config.py:122` and `src/vtx/core/config.py:123`. Precedence is `--openai-compat-auth` over `llm.auth.openai_compat` (`src/vtx/tui/app.py:162`), and `--anthropic-compat-auth` over `llm.auth.anthropic_compat` (`src/vtx/tui/app.py:165`).
+The defaults come from `src/vtx/core/config.py:128` and `src/vtx/core/config.py:129`. Precedence is `--openai-compat-auth` over `llm.auth.openai_compat` (`src/vtx/tui/app.py:167-169`), and `--anthropic-compat-auth` over `llm.auth.anthropic_compat` (`src/vtx/tui/app.py:170-172`).
 
-The two constructors apply these differently. `AnthropicSDKProvider` only ever looks at `ANTHROPIC_API_KEY`, ignoring the provider's own env var (`src/vtx/ai/providers/anthropic_sdk.py:41`). `OpenAISDKProvider` uses the provider's `api_key_env`, falling back to `OPENAI_API_KEY`, then to a key stored by `/login`, and only then refuses to start (`src/vtx/ai/providers/openai_sdk.py:49`).
+The two constructors apply these differently. `AnthropicSDKProvider` only ever looks at `ANTHROPIC_API_KEY`, ignoring the provider's own env var (`src/vtx/ai/providers/anthropic_sdk.py:45-50`). `OpenAISDKProvider` uses the provider's `api_key_env`, falling back to `OPENAI_API_KEY`, then to a key stored by `/login`, and only then refuses to start (`src/vtx/ai/providers/openai_sdk.py:46-63`).
 
 ## `--insecure-skip-verify`
 
-`--insecure-skip-verify` sets `llm.tls.insecure_skip_verify` on the live config object before the provider is built (`src/vtx/coding_agent/cli.py:203`). With it on, `make_http_client()` returns a real `httpx.AsyncClient` with `verify=False`; with it off, the function returns `None` so each SDK builds its own verifying client (`src/vtx/ai/base.py:125`). The timeout on that client comes from `llm.request_timeout_seconds`, so an insecure run also uses that value rather than the SDK default (`src/vtx/ai/base.py:131`).
+`--insecure-skip-verify` sets `llm.tls.insecure_skip_verify` on the live config object before the provider is built (`src/vtx/coding_agent/cli.py:310-311`). With it on, `make_http_client()` returns a real `httpx.AsyncClient` with `verify=False`; with it off, the function returns `None` so each SDK builds its own verifying client (`src/vtx/ai/base.py:130-140`). The timeout on that client comes from `llm.request_timeout_seconds`, so an insecure run also uses that value rather than the SDK default (`src/vtx/ai/base.py:139`).
 
 ```bash
 # self-signed certificate on a LAN-hosted gateway
@@ -251,7 +251,7 @@ llm:
     insecure_skip_verify: true
 ```
 
-The config key is only consulted when the flag is absent. The flag is a field assignment, not a config write, so it does not persist and a later `/reload` reverts to the file value (`src/vtx/coding_agent/cli.py:203`).
+The config key is only consulted when the flag is absent. The flag is a field assignment, not a config write, so it does not persist and a later `/reload` reverts to the file value (`src/vtx/coding_agent/cli.py:310-311`).
 
 ## OAuth login
 
@@ -259,17 +259,17 @@ Three providers authenticate through a browser flow: `github-copilot`, `cline`, 
 
 | Provider | Flow | Storage |
 |---|---|---|
-| `github-copilot` | GitHub device code | `~/.vtx/copilot_auth.json` (`src/vtx/ai/oauth/copilot.py:48`) |
-| `codex` | OAuth with a local callback server | `~/.vtx/codex_auth.json`, falling back to the legacy `~/.vtx/openai_auth.json` (`src/vtx/ai/oauth/codex.py:67`) |
-| `cline` | WorkOS device code, then a Cline token exchange | `~/.vtx/cline_auth.json` (`src/vtx/ai/oauth/cline.py:68`) |
+| `github-copilot` | GitHub device code | `~/.vtx/copilot_auth.json` (`src/vtx/ai/oauth/copilot.py:46-47`) |
+| `codex` | OAuth with a local callback server | `~/.vtx/codex_auth.json`, falling back to the legacy `~/.vtx/openai_auth.json` (`src/vtx/ai/oauth/codex.py:65-69`) |
+| `cline` | WorkOS device code, then a Cline token exchange | `~/.vtx/cline_auth.json` (`src/vtx/ai/oauth/cline.py:66-67`) |
 
-The Codex flow opens a callback server on `http://localhost:1455/auth/callback` (`src/vtx/ai/oauth/codex.py:35`) and fails with a specific message if that port is taken or the callback never arrives (`src/vtx/ai/oauth/codex.py:361`, `src/vtx/ai/oauth/codex.py:393`). It also reads the native Codex CLI credentials from `~/.codex/auth.json` before starting its own flow (`src/vtx/ai/oauth/codex.py:63`). Cline does the same from `~/.cline/data/settings/providers.json` (`src/vtx/ai/oauth/cline.py:72`).
+The Codex flow opens a callback server on `http://localhost:1455/auth/callback` (`src/vtx/ai/oauth/codex.py:33`) and fails with a specific message if that port is taken or the callback never arrives (`src/vtx/ai/oauth/codex.py:361`, `src/vtx/ai/oauth/codex.py:393`). It also reads the native Codex CLI credentials from `~/.codex/auth.json` before starting its own flow (`src/vtx/ai/oauth/codex.py:62`). Cline does the same from `~/.cline/data/settings/providers.json` (`src/vtx/ai/oauth/cline.py:71`).
 
-`/logout` lists only the providers that have something saved and deletes it (`src/vtx/tui/commands/auth.py:426`). OAuth credentials are what `detect_provider_from_env()` probes in step 3, so logging in is enough to change the auto-detected provider on the next run (`src/vtx/ai/provider_catalog.py:277`).
+`/logout` lists only the providers that have something saved and deletes it (`src/vtx/tui/commands/auth.py:426`). OAuth credentials are what `detect_provider_from_env()` probes in step 3, so logging in is enough to change the auto-detected provider on the next run (`src/vtx/ai/provider_catalog.py:291-318`).
 
 ## API keys pasted through `/login`
 
-Pick the `API key` row and paste the key. Vtx stores it in the dynamic auth file and looks it up per provider slug, so it works for any provider including custom ones (`src/vtx/ai/oauth/dynamic.py:169`). The file is written with mode 0600 and lives at the first of these that resolves (`src/vtx/ai/oauth/dynamic.py:52`):
+Pick the `API key` row and paste the key. Vtx stores it in the dynamic auth file and looks it up per provider slug, so it works for any provider including custom ones (`src/vtx/ai/oauth/dynamic.py:189`). The file is written with mode 0600 and lives at the first of these that resolves (`src/vtx/ai/oauth/dynamic.py:52`):
 
 ```text
 ~/vtx/dynamic_auth.yml
@@ -277,11 +277,11 @@ $XDG_CONFIG_HOME/vtx/dynamic_auth.json
 ~/.vtx/dynamic_auth.json
 ```
 
-A key from `/login` sits below the provider's env var in the resolution order and above "no key" (`src/vtx/ai/providers/openai_sdk.py:49`). `is_provider_configured()` consults this file, which is how `/model` and `/login` tell a keyed provider apart from an unconfigured one (`src/vtx/ai/provider_catalog.py:343`).
+A key from `/login` sits below the provider's env var in the resolution order and above "no key" (`src/vtx/ai/providers/openai_sdk.py:49`). `is_provider_configured()` consults this file, which is how `/model` and `/login` tell a keyed provider apart from an unconfigured one (`src/vtx/ai/provider_catalog.py:328-356`).
 
 ## Local models
 
-`ollama` is the only provider in the catalog flagged both `api_key_optional: true` and `is_local: true` (`src/vtx/ai/provider_catalog.py:315`, `src/vtx/ai/provider_catalog.py:307`). That has two visible effects: `is_provider_configured()` returns `True` for it with no key at all, and it is the target of step 4 in `detect_provider_from_env()`.
+`ollama` is the only provider in the catalog flagged both `api_key_optional: true` and `is_local: true` (`src/vtx/ai/provider.yaml:232-233`, `src/vtx/ai/provider_catalog.py:329`). That has two visible effects: `is_provider_configured()` returns `True` for it with no key at all, and it is the target of step 4 in `detect_provider_from_env()`.
 
 ```bash
 vtx --provider ollama --model qwen3-coder
@@ -296,19 +296,19 @@ llm:
     openai_compat: "none"
 ```
 
-Any other local server works. Point `--base-url` at it and set `--openai-compat-auth none` (or leave it `auto` and let `is_local_base_url()` recognize the address), which keeps the request from failing on a missing key (`src/vtx/ai/base.py:151`, `src/vtx/ai/base.py:102`).
+Any other local server works. Point `--base-url` at it and set `--openai-compat-auth none` (or leave it `auto` and let `is_local_base_url()` recognize the address), which keeps the request from failing on a missing key (`src/vtx/ai/base.py:160-161`, `src/vtx/ai/base.py:107-127`).
 
 The `/login` picker labels these providers "local / no key needed" and offers no key prompt for them (`src/vtx/tui/commands/auth.py:124`).
 
 ## Custom providers
 
-You can add a provider without editing `provider.yaml`. Three routes, all funnelling through the same validation (`src/vtx/ai/provider_catalog.py:431`):
+You can add a provider without editing `provider.yaml`. Three routes, all funnelling through the same validation (`src/vtx/ai/provider_catalog.py:496-526`):
 
 1. Drop a YAML file in `~/.vtx/providers/*.yaml`.
 2. Drop a YAML file in `<cwd>/.vtx/providers/*.yaml`.
 3. Call `register_custom_provider()` from Python before the first catalog lookup.
 
-Files load in sorted filename order, global first then project-local, so project-local wins and an earlier file's slug can be overwritten (`src/vtx/ai/provider_catalog.py:448`). `family` must be `openai_compat` or `anthropic`; anything else raises `ValueError` (`src/vtx/ai/provider_catalog.py:505`).
+Files load in sorted filename order, global first then project-local, so project-local wins and an earlier file's slug can be overwritten (`src/vtx/ai/provider_catalog.py:467-495`). `family` must be `openai_compat` or `anthropic`; anything else raises `ValueError` (`src/vtx/ai/provider_catalog.py:524-526`).
 
 ```yaml
 slug: my-gateway
@@ -327,9 +327,9 @@ fetch_models: true
 models_endpoint: /models
 ```
 
-Optionally nest a `model_parser` block to tell the fetcher how to read a non-standard `/models` response; the defaults are `data` for the array, `id` for the id, `context_length` for the context window, and `max_completion_tokens` for the output cap (`src/vtx/ai/provider_catalog.py:72`).
+Optionally nest a `model_parser` block to tell the fetcher how to read a non-standard `/models` response; the defaults are `data` for the array, `id` for the id, `context_length` for the context window, and `max_completion_tokens` for the output cap (`src/vtx/ai/provider_catalog.py:75-108`).
 
-Every custom provider with a `base_url` is mirrored into the dynamic fetcher automatically, so it shows up in `/model` and responds to `/model refresh` (`src/vtx/ai/provider_catalog.py:546`, `src/vtx/ai/provider_catalog.py:583`).
+Every custom provider with a `base_url` is mirrored into the dynamic fetcher automatically, so it shows up in `/model` and responds to `/model refresh` (`src/vtx/ai/provider_catalog.py:568-590`).
 
 ## Dynamic model discovery
 
@@ -342,23 +342,23 @@ The static catalog knows `known_models` for each provider. To see what a provide
 /model refresh anthropic
 ```
 
-`/model refresh` fetches every provider's `/models` endpoint; `refresh <slug>` fetches one (`src/vtx/tui/commands/models.py:47`). 58 of the 59 `provider.yaml` entries have `fetch_models: true`, and all 59 have a `base_url`, so every one of them is a dynamic provider (`src/vtx/ai/provider_catalog.py:110`).
+`/model refresh` fetches every provider's `/models` endpoint; `refresh <slug>` fetches one (`src/vtx/tui/commands/models.py:47`). 58 of the 59 `provider.yaml` entries have `fetch_models: true`, and all 59 have a `base_url`, so every one of them is a dynamic provider (`src/vtx/ai/provider.yaml`).
 
-Fetched results are cached per provider under `~/.vtx/models/<slug>.json`, or under `$VTX_MODELS_CACHE_DIR` if set (`src/vtx/ai/dynamic_models.py:302`, `src/vtx/ai/model_fetcher.py:54`). The cache is valid for six hours and each fetch has a seven-second timeout, so a slow provider cannot stall startup (`src/vtx/ai/dynamic_models.py:54`, `src/vtx/ai/dynamic_models.py:55`). Refreshes are de-duplicated per provider with a 60-minute cooldown to avoid hammering an endpoint (`src/vtx/ai/model_fetcher.py:39`).
+Fetched results are cached per provider under `~/.vtx/models/<slug>.json`, or under `$VTX_MODELS_CACHE_DIR` if set (`src/vtx/ai/dynamic_models.py:306-309`, `src/vtx/ai/model_fetcher.py:56-57`). The cache is valid for six hours and each fetch has a seven-second timeout, so a slow provider cannot stall startup (`src/vtx/ai/dynamic_models.py:54-55`). Refreshes are de-duplicated per provider with a 60-minute cooldown to avoid hammering an endpoint (`src/vtx/ai/model_fetcher.py:37`).
 
-Context windows and output caps do not come from the provider. They come from models.dev, cached for 24 hours in `~/.vtx/models_dev_limits.json` (`src/vtx/ai/context_length.py:21`, `src/vtx/ai/context_length.py:22`). When a model is not in that table, `safe_max_output_tokens()` falls back to 8192 tokens under 128k context, 16384 under 256k, and 32768 above that (`src/vtx/ai/context_length.py:25`). The full harness default for an unknown model is `agent.default_context_window`, 200000 by default (`src/vtx/core/config.py:149`).
+Context windows and output caps do not come from the provider. They come from models.dev, cached for 24 hours in `~/.vtx/models_dev_limits.json` (`src/vtx/ai/context_length.py:23-24`). When a model is not in that table, `safe_max_output_tokens()` falls back to 8192 tokens under 128k context, 16384 under 256k, and 32768 above that (`src/vtx/ai/context_length.py:32-35`). The full harness default for an unknown model is `agent.default_context_window`, 200000 by default (`src/vtx/core/config.py:155`).
 
 An empty cache is not an error: `/model` says "No models configured" and tells you to run a refresh (`src/vtx/tui/commands/models.py:93`).
 
 ## Known gaps
 
 - `--provider` and the catalog disagree. The flag accepts 16 slugs (`src/vtx/ai/providers/__init__.py:4`), the catalog has 62, and two accepted slugs (`openai-codex`, `openai-responses`) match nothing. Use `llm.default_provider` for the other 48.
-- The shipped `llm.default_provider` is `openai-codex` (`src/vtx/core/defaults/config.yml:5`), which is not a catalog slug. It resolves anyway, but only because `find_model()` falls back to a catalog-wide scan for the model id (`src/vtx/ai/provider_catalog.py:637`). Pick `codex` or `openai` instead.
-- `AnthropicSDKProvider` ignores the provider's `api_key_env` and only reads `ANTHROPIC_API_KEY` (`src/vtx/ai/providers/anthropic_sdk.py:41`), so `aerolink` and `fastrouter` share that one variable with `anthropic`.
+- The shipped `llm.default_provider` is `openai-codex` (`src/vtx/core/defaults/config.yml:5`), which is not a catalog slug. It resolves anyway, but only because `find_model()` falls back to a catalog-wide scan for the model id (`src/vtx/ai/provider_catalog.py:676`). Pick `codex` or `openai` instead.
+- `AnthropicSDKProvider` ignores the provider's `api_key_env` and only reads `ANTHROPIC_API_KEY` (`src/vtx/ai/providers/anthropic_sdk.py:45-50`), so `aerolink` and `fastrouter` share that one variable with `anthropic`.
 - The three OAuth providers declare an env var (`GITHUB_TOKEN`, `CLINE_API_KEY`, `OPENAI_API_KEY`) but none of them reads it as a credential. They read the OAuth files only, and each has its own non-standard grant flow (`src/vtx/tui/commands/auth.py:5`).
 - There is no CLI flag to list providers or to refresh models. `/model refresh` is the only entry point, and it requires the TUI.
-- No custom provider can declare a new API type. `family` is restricted to `openai_compat` and `anthropic`, so a Responses-only or a genuinely custom transport is not expressible (`src/vtx/ai/provider_catalog.py:505`).
-- `detect_provider_from_env()` scans in `provider.yaml` order, so with several keys exported the winner depends on file ordering rather than on anything you chose (`src/vtx/ai/provider_catalog.py:270`).
-- `llm.default_thinking_level` is not validated, and the model's `thinking_level_map` can null out a level the catalog advertises, so a typo surfaces only when the provider clamps it (`src/vtx/core/config.py:134`, `src/vtx/ai/base.py:272`).
+- No custom provider can declare a new API type. `family` is restricted to `openai_compat` and `anthropic`, so a Responses-only or a genuinely custom transport is not expressible (`src/vtx/ai/provider_catalog.py:524-526`).
+- `detect_provider_from_env()` scans in `provider.yaml` order, so with several keys exported the winner depends on file ordering rather than on anything you chose (`src/vtx/ai/provider_catalog.py:283-288`).
+- `llm.default_thinking_level` is not validated, and the model's `thinking_level_map` can null out a level the catalog advertises, so a typo surfaces only when the provider clamps it (`src/vtx/core/config.py:140`, `src/vtx/ai/base.py:269-289`).
 
 Related pages: [configuration.md](configuration.md), [theming.md](theming.md), [cli.md](cli.md), [permissions.md](permissions.md), [skills.md](skills.md), [plugins.md](plugins.md).

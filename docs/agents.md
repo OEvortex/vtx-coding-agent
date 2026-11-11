@@ -31,7 +31,7 @@ order:
 |---|---|---|
 | 1 | `<cwd>/.vtx/agent/*.py` and packages | Walked **up** to the git root, inclusive. A deeper directory wins over its ancestors. |
 | 2 | `~/.vtx/agent/*.py` and packages | Global scope, shared by every project on the machine. |
-| 3 | Explicit paths | `--agent-file <path>` (repeatable) and the `agents.files` config list (`src/vtx/core/config.py:219`) |
+| 3 | Explicit paths | `--agent-file <path>` (repeatable) and the `agents.files` config list (`src/vtx/core/config.py:240`) |
 
 Paths are collected by `_candidate_paths` (`src/vtx/agent/agents/discovery.py:27-37`): a
 `.py` file that is not `__init__.py`, or a directory containing `__init__.py`.
@@ -109,10 +109,10 @@ Declared in `src/vtx/agent/agents/schema.py`. `PermissionAction` is
 
 | Field | Type | Default | Notes |
 |---|---|---|---|
-| `model` | `str \| None` | `None` | Overrides the session model while active (`src/vtx/agent/runtime.py:417`) |
-| `provider` | `str \| None` | `None` | Overrides the provider (`src/vtx/agent/runtime.py:419`) |
+| `model` | `str \| None` | `None` | Overrides the session model while active (`src/vtx/agent/runtime.py:438-439`) |
+| `provider` | `str \| None` | `None` | Overrides the provider (`src/vtx/agent/runtime.py:440-441`) |
 | `base_url` | `str \| None` | `None` | **Declared, never read.** See Known gaps (`:62`) |
-| `thinking_level` | `ThinkingLevel \| None` | `None` | Overrides the thinking level (`src/vtx/agent/runtime.py:421`) |
+| `thinking_level` | `ThinkingLevel \| None` | `None` | Overrides the thinking level (`src/vtx/agent/runtime.py:442-443`) |
 | `max_turns` | `int \| None` | `None` | Must be greater than 0 (`:64`) |
 
 ### Instructions
@@ -123,7 +123,7 @@ Declared in `src/vtx/agent/agents/schema.py`. `PermissionAction` is
 | `instructions_mode` | `"append" \| "replace"` | `"append"` | `append` adds to the base prompt; `replace` discards it (`:68`) |
 
 The prompt is rebuilt on every activation (`_rebuild_system_prompt`,
-`src/vtx/agent/runtime.py:435-471`), so switching takes effect on the next turn rather
+`src/vtx/agent/runtime.py:466-502`), so switching takes effect on the next turn rather
 than mid-response. `replace` throws away the assembled base prompt, including the tool
 list, so an agent that uses it must restate anything the model needs.
 
@@ -165,7 +165,7 @@ contain at least one tool (`src/vtx/agent/agents/schema.py:122-141`).
 | `action` | `"allow" \| "deny" \| "prompt"` | Verdict |
 | `reason` | `str \| None` | Shown to the model when the gate fires |
 
-`when` grammar, compiled by `_when_predicate` (`src/vtx/coding_agent/agents/api.py:77-123`):
+`when` grammar, compiled by `_when_predicate` (`src/vtx/agent/agents/api.py:76-122`):
 
 | Form | Meaning |
 |---|---|
@@ -189,13 +189,13 @@ than silently never firing.
 | `metadata` | `dict[str, Any]` | `{}` | Free-form, carried on the record (`:87`) |
 
 `skills` filters the skill catalog down to the listed names or paths
-(`src/vtx/agent/runtime.py:446-448`).
+(`src/vtx/agent/runtime.py:477-479`, `:668-673`).
 
 ## How allow, deny, and groups compose
 
 The filtering itself is `_filter` (`src/vtx/agent/agents/activate.py:25-76`), which is
 exported as `_agent_tool_filter` and called directly by the runtime
-(`src/vtx/agent/runtime.py:401-408`). `compose_active_tools`
+(`src/vtx/agent/runtime.py:422-429`). `compose_active_tools`
 (`activate.py:79-105`) is the same thing with the allow list taken from
 `definition.tools_allow` and no group handling. The order of operations inside is the
 whole contract:
@@ -224,7 +224,7 @@ Three consequences worth internalising:
 - **Deny runs before allow.** A name that appears in both lists is removed: deny wins for
   anything that is not one of the agent's own local tools.
 - **`active_tool_group` beats `tools_allow` entirely.** If the group is set and non-empty,
-  `tools_allow` is not consulted at all (`src/vtx/agent/runtime.py:385-393`).
+  `tools_allow` is not consulted at all (`src/vtx/agent/runtime.py:406-414`).
 
 ```python
 # excerpt from _compose_tool_allow, dedented
@@ -243,37 +243,37 @@ Note that this mapping lives in the runtime, not in `compose_active_tools`. A ca
 goes through `compose_active_tools` directly - the SDK, or anything building a sub-agent's
 tool list - gets no group restriction, because that function only reads `tools_allow`.
 
-Cycle the groups with `alt+ctrl+g` (`src/vtx/tui/app.py:101`). The cycle is
+Cycle the groups with `alt+ctrl+g` (`src/vtx/tui/app.py:100`). The cycle is
 `[None, *group_keys]` (`src/vtx/agent/agents/registry.py:53-61`), and `cycle_tool_group`
 writes the selected key - `None` included - straight into `definition.active_tool_group`
-(`:131-143`). Reaching `None` turns group mode off, which makes the runtime fall back to
-`tools_allow` (`src/vtx/agent/runtime.py:392-393`), so a profile with both can move between
+(`:131-147`). Reaching `None` turns group mode off, which makes the runtime fall back to
+`tools_allow` (`src/vtx/agent/runtime.py:413-414`), so a profile with both can move between
 them without editing anything.
 
 ## Switching agents
 
 Every one of these writes `last_selected.agent` so the next session starts with the same
-agent (`src/vtx/agent/runtime.py:260-309`).
+agent (`src/vtx/agent/runtime.py:281-330`).
 
 | Surface | Effect | Source |
 |---|---|---|
-| `vtx --agent reviewer` / `-a` | Activate at startup | `src/vtx/coding_agent/cli.py:107-113` |
-| `VTX_AGENT=reviewer` | Activate without a flag | `src/vtx/tui/app.py:260` |
-| `agents.default` in config | Activate when neither of the above is set | `src/vtx/core/config.py:214` |
-| `vtx --list-agents` | Print `name`, `description`, path, then exit | `src/vtx/coding_agent/cli.py:204-216` |
-| `shift+tab` | Cycle the registry, wrapping through "no agent" | `src/vtx/tui/app.py:100` |
-| `/agent` | Open the picker, which starts with "(no agent)" | `src/vtx/tui/commands/agents.py:87-107` |
+| `vtx --agent reviewer` / `-a` | Activate at startup | `src/vtx/coding_agent/cli.py:136-142` |
+| `VTX_AGENT=reviewer` | Activate without a flag | `src/vtx/tui/app.py:267` |
+| `agents.default` in config | Activate when neither of the above is set | `src/vtx/core/config.py:235` |
+| `vtx --list-agents` | Print `name`, `description`, path, then exit | `src/vtx/coding_agent/cli.py:313-324` |
+| `shift+tab` | Cycle the registry, wrapping through "no agent" | `src/vtx/tui/app.py:99` |
+| `/agent` | Open the picker, which starts with "(no agent)" | `src/vtx/tui/commands/agents.py:77-107` |
 | `/agent list` / `ls` | Table from `registry.describe()` | `src/vtx/tui/commands/agents.py:142-158` |
-| `/agent current` / `status` | Name, icon, and description of the active agent | same |
+| `/agent current` / `status` | Name and description of the active agent | same |
 | `/agent <name>` | Activate one | same |
-| `/agent off` / `none` / `default` | Deactivate; `default` returns to `agents.default` | `src/vtx/tui/commands/agents.py:65-75` |
+| `/agent off` / `none` / `default` | Deactivate; all three mean "no agent" | `src/vtx/tui/commands/agents.py:65-75` |
 | `/agent reload` | Re-run discovery, keeping the active selection | `src/vtx/tui/commands/agents.py:44-63` |
 | `/switch <name>` | Alias for `/agent <name>` | `src/vtx/tui/commands/switch.py:15-17` |
-| `vtx --agent-file <path>` | Load an extra agent file or package (repeatable) | `src/vtx/coding_agent/cli.py:114-122` |
-| `vtx --no-agents` | Skip discovery in `.vtx/agent/` and `~/.vtx/agent/` | `src/vtx/coding_agent/cli.py:123-127` |
+| `vtx --agent-file <path>` | Load an extra agent file or package (repeatable) | `src/vtx/coding_agent/cli.py:143-150` |
+| `vtx --no-agents` | Skip discovery in `.vtx/agent/` and `~/.vtx/agent/` | `src/vtx/coding_agent/cli.py:151-155` |
 
 Precedence for the startup agent is `--agent` over `VTX_AGENT` over `last_selected.agent`
-over `agents.default` (`src/vtx/tui/app.py:261`).
+over `agents.default` (`src/vtx/tui/app.py:268-270`).
 
 `--list-agents` output is tab-separated, one agent per line, with `No agents found.` when
 the registry is empty:
@@ -287,33 +287,33 @@ Load errors are printed to stderr as `agent error: <message>` and do not stop th
 
 Switching emits events, so a plugin can react: `agent_activated` on the first activation
 and `agent_changed` with `previous` and `current` on every change
-(`src/vtx/agent/runtime.py:311-333`). Both are fired on the next loop iteration, not
+(`src/vtx/agent/runtime.py:299-329`). Both are fired on the next loop iteration, not
 synchronously from the caller.
 
 ## Agent-scoped tools and commands
 
-`register(api)` gives the agent an `AgentAPI` (`src/vtx/coding_agent/agents/api.py:126`).
+`register(api)` gives the agent an `AgentAPI` (`src/vtx/agent/agents/api.py:125`).
 Everything registered on it exists only while the agent is active.
 
 | Method | Purpose | Source |
 |---|---|---|
-| `api.local_tool(name, description, parameters, *, execute, mutating=True, label=None, ui_block=None)` | A tool only this agent has | `api.py:167-260` |
-| `api.local_command(name, description, handler)` | A slash command only this agent has | `api.py:264-337` |
-| `api.permission_gate(tool, *, when, action, reason=None)` | A permission rule scoped to this agent | `api.py:341-365` |
-| `api.on(event, handler)` | Subscribe to a lifecycle event | `api.py:369-392` |
-| `api.on_agent_change(handler)` | Shortcut for `api.on('agent_changed', ...)` | `api.py:394-398` |
-| `api.notify(message, level="info")` | Log a user-facing line at `info`, `warning`, or `error` | `api.py:402-415` |
+| `api.local_tool(name, description, parameters, *, execute, mutating=True, label=None, ui_block=None)` | A tool only this agent has | `api.py:166-225` |
+| `api.local_command(name, description, handler)` | A slash command only this agent has | `api.py:229-281` |
+| `api.permission_gate(tool, *, when, action, reason=None)` | A permission rule scoped to this agent | `api.py:285-301` |
+| `api.on(event, handler)` | Subscribe to a lifecycle event | `api.py:305-324` |
+| `api.on_agent_change(handler)` | Shortcut for `api.on('agent_changed', ...)` | `api.py:326-330` |
+| `api.notify(message, level="info")` | Log a user-facing line at `info`, `warning`, or `error` | `api.py:334-344` |
 
 `local_tool` and `local_command` accept either an explicit `execute=`/`handler=` or the
 decorator form. The execute callback is called as `execute(args, ctx)` where `args` is the
 validated parameters dict and `ctx` is `{"cancel_event": ..., "cwd": ...}`
-(`src/vtx/plugins/api.py:654-659`). Returning a string, a dict, or a `ToolResult` all work;
+(`src/vtx/plugins/api.py:655-660`). Returning a string, a dict, or a `ToolResult` all work;
 returning `None` becomes `(no output)`.
 
 `local_command` handlers receive the argument string and may return a `CommandOutcome`, a
 string, or `None`. An exception prints a traceback to stderr and yields
 `(command raised an error)` rather than taking the session down
-(`src/vtx/coding_agent/agents/api.py:301-313`).
+(`src/vtx/agent/agents/api.py:246-251`).
 
 Commands are merged over the base set and the owner is recorded
 (`src/vtx/agent/agents/activate.py:108-130`), so `/help` shows
@@ -324,13 +324,13 @@ Commands are merged over the base set and the owner is recorded
 `AgentDef.extensions` holds paths to extension files loaded only for this agent. They are
 matched against the session's already-loaded extensions by resolved path, and anything that
 does not match is silently skipped (`_collect_extensions_for`,
-`src/vtx/agent/agents/registry.py:154-172`). Global directories are always loaded too:
+`src/vtx/agent/agents/registry.py:171-187`). Global directories are always loaded too:
 `.vtx/extensions/` and `~/.vtx/agent/extensions/`, unless `--no-extensions`
-(`src/vtx/core/config.py:254`).
+(`src/vtx/core/config.py:276`).
 
 ## Sub-agents
 
-`delegate_subagent` (`src/vtx/agent/tools/task.py:497`) runs a second agent in its own
+`delegate_subagent` (`src/vtx/agent/tools/task.py:538`) runs a second agent in its own
 session and returns text. Specifying `subagent_type` by name picks one of **your** agent
 files; there are no built-in presets (`src/vtx/agent/tools/task.py:110-136`):
 
@@ -355,19 +355,19 @@ only its final text reaches the parent (`SUBAGENT_FINAL_ANSWER_DIRECTIVE`,
 `task.py:160-173`).
 
 The sub-agent's `ToolApprovalEvent` is auto-approved and its `AskUserEvent` auto-answered
-(`task.py:433-438`). If the parent runs in `prompt` mode, the sub-agent still approves its
+(`task.py:471-476`). If the parent runs in `prompt` mode, the sub-agent still approves its
 own gated calls; there is no per-sub-agent mode. Sub-agent concurrency is FIFO with no
 priorities, capped by `task.max_concurrent` (default 4, `0` means unlimited)
 (`src/vtx/agent/subagents.py`).
 
-Background tasks have a specific cancellation contract (`task.py:616-621`): the parent's
+Background tasks have a specific cancellation contract (`task.py:658-661`): the parent's
 cancel event does **not** stop them. Only an explicit stop or `ConversationRuntime.close()`
 does.
 
 ## Handoff
 
 `/handoff <query>` writes a fresh thread for a new session, with the generated prompt in the
-input box, ready to go (`src/vtx/tui/commands/sessions.py:90-150`):
+input box, ready to go (`src/vtx/tui/commands/sessions.py:90-160`):
 
 ```text
 /handoff implement phase two
@@ -385,10 +385,10 @@ Next steps:
 ```
 
 Plain text, no markdown fences, so it pastes cleanly into a new session. The runtime then
-appends two hidden link entries (`src/vtx/agent/runtime.py:1658-1693`): a
+appends two hidden link entries (`src/vtx/agent/runtime.py:1772-1800`): a
 `handoff_backlink` on the new session pointing at the old one, and a `handoff_forward_link`
 on the old one pointing at the new. The backlink is what makes `/resume` render the handoff
-tree (`src/vtx/agent/session.py:1092-1097`), and both are clickable in the transcript
+tree (`src/vtx/agent/session.py:1165-1170`), and both are clickable in the transcript
 (`src/vtx/tui/session_ui.py:135-160`). See `sessions.md` for the tree itself.
 
 Note that `AgentDef.handoffs` and `handoff_back` are not what drives this. Nothing in the
@@ -512,7 +512,7 @@ vtx --agent reviewer
 ```
 
 ```text
-Active agent: reviewer  --  Read-only reviewer: audits a diff and reports findings without editing anything
+Active agent: reviewer — Read-only reviewer: audits a diff and reports findings without editing anything
 ```
 
 ```text
@@ -540,11 +540,11 @@ What the example exercises, and why it is valid:
 - The `permission_gates` use the `matches` form on the `bash` `command` argument, which is
   substring containment.
 - `skills` narrows the loaded catalog to the one skill named, so the model does not see the
-  rest (`src/vtx/agent/runtime.py:446-448`).
+  rest (`src/vtx/agent/runtime.py:477-479`, `:668-673`).
 - `extensions=["review_report.py"]` is resolved against the session's loaded extensions by
   absolute path, so a relative name only works when the path matches one that was loaded.
 - `severity_check` is `mutating=False`, so it never prompts, and returns a string, which
-  `ExtensionTool` converts into a `ToolResult` (`src/vtx/plugins/api.py:654-687`).
+  `ExtensionTool` converts into a `ToolResult` (`src/vtx/plugins/api.py:655-690`).
 - `register` is sync, `permission_gate` uses a callable-free `when` string, and
   `@api.on("agent_changed")` subscribes to a real event name (`AGENT_CHANGED`,
   `src/vtx/plugins/event_contract.py`).
@@ -555,20 +555,22 @@ What the example exercises, and why it is valid:
   TUI, headless entry point, and the `delegate_subagent` tool all import the former
   (`src/vtx/agent/runtime.py:12-14`, `src/vtx/tui/app.py:27`,
   `src/vtx/coding_agent/headless.py:177`). The `coding_agent` copy exists only to serve
-  `--list-agents` (`src/vtx/coding_agent/cli.py:206`) and re-exports pieces of the live one.
-  Its `schema.py` also declares `tools`, `skills`, `tool_groups`, and `active_tool_group`
+  `--list-agents` (`src/vtx/coding_agent/cli.py:313-316`) and holds full duplicate copies of
+  `schema.py`, `api.py`, `loader.py`, and `registry.py` that have drifted from the live
+  package - only `activate` and `discovery` are re-exported. Its `schema.py` also declares
+  `tools`, `skills`, `tool_groups`, and `active_tool_group`
   twice each (`src/vtx/coding_agent/agents/schema.py:93-121`), a merge artifact.
 - **Four fields are declared but never read by the runtime:** `base_url` (:62), `handoffs`
   (:79), `handoff_back` (:80), and `output_type` (:86).
   `_apply_active_agent_to_runtime` reads only `model`, `provider`, and `thinking_level`
-  (`src/vtx/agent/runtime.py:415-422`), and `create_handoff` never looks at `handoffs`.
+  (`src/vtx/agent/runtime.py:436-443`), and `create_handoff` never looks at `handoffs`.
   Setting them changes nothing.
 - **Discovery precedence contradicts its own comments.** `_add` keeps the first stem it
   sees (`src/vtx/agent/agents/discovery.py:67-70`), and configured paths are added last, so
   on a name collision `--agent-file` loses to `.vtx/agent/`. The comment on `:68-70` claims
   "configured beats auto-discovered", which is the opposite of what the code does.
 - **`agents.switch_mode` is not enforced anywhere.** It is declared and defaulted to `"lock"`
-  (`src/vtx/core/config.py:215`) and documented as either "lock" (start a new session JSONL)
+  (`src/vtx/core/config.py:236`) and documented as either "lock" (start a new session JSONL)
   or "hot" (re-render in place), but no code reads the value. Switching always behaves the
   same way, whichever value is set.
 - **A single bad agent only costs you that agent.** The error string goes to stderr and

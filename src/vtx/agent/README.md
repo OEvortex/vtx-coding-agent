@@ -44,7 +44,7 @@ agent = Agent(name="Ops", model="gpt-4o", provider={"name": "openai"}, tools=[de
 
 - **`Agent`** is a dataclass: `name`, `instructions` (a string or a callable), `model`, `provider` (a `BaseProvider`, a dict, or `None` for env/config fallback), `tools`, `handoffs`, `output_type`, `input_guardrails`, `output_guardrails`, `tool_use_behavior`, `metadata`, `needs_approval_tools`. `agent.clone(**overrides)` copies it with overrides.
 - **`RunResult`** carries `final_output`, `new_items`, `interruptions`, `state`, `stop_reason`, `usage`, `agent_name`. `to_input_list()` turns the run back into input items you can feed to a later `Runner.run`.
-- **`@tool`** turns a typed Python function into a `BaseTool`. The docstring becomes the model-facing description. Keyword arguments: `name`, `description`, `needs_approval=True`, `mutating=False` (read-only, so no permission prompt), `input_guardrails`, `output_guardrails`, `tool_icon`.
+- **`@tool`** turns a typed Python function into a `BaseTool`. The docstring becomes the model-facing description. Keyword arguments: `name`, `description`, `needs_approval` (default `False`; `True` is meant to pause for approval), `mutating` (default `True`; `False` marks the tool read-only), `input_guardrails`, `output_guardrails`, `tool_icon`. See "Approvals and permissions" below for which of these the runner actually honours today.
 - **`Runner.run_streamed`** returns an async iterable of events; `.result` is only valid after the iterator is exhausted, and raises `RuntimeError` if read earlier.
 
 ```python
@@ -54,7 +54,7 @@ async for event in stream:
 print(stream.result.final_output)
 ```
 
-- **`handoff(agent, *, tool_name_override, tool_description_override, on_handoff, input_filter, input_type)`** turns another `Agent` into a transfer tool on the caller. Give the caller `handoffs=[handoff(triage, tool_name_override="escalate")]` and the model can hand the conversation over; `on_handoff` runs at the moment of transfer, `input_filter` rewrites what the new agent sees.
+- **`handoff(agent, *, tool_name_override, tool_description_override, on_handoff, input_filter, input_type)`** turns another `Agent` into a transfer tool on the caller. Give the caller `handoffs=[handoff(triage, tool_name_override="escalate")]` and the model can hand the conversation over; `on_handoff` runs when the handoff tool executes. `input_type` becomes the handoff tool's parameter schema; `input_filter` is accepted but the runner does not invoke it yet.
 - **`JSONLSession(path=None, *, session_id=None)`** persists a run to the same append-only format the TUI and headless runner use, so a session started from the SDK can be resumed in the TUI and the other way round. Without a `path` it is in-memory only.
 - **`InMemorySession(session_id=None)`** keeps items for the life of the process.
 - **`SessionSettings(limit=...)`** caps how much history a session replays into a run.
@@ -64,11 +64,19 @@ print(stream.result.final_output)
 
 ## Approvals and permissions
 
-Two mechanisms, deliberately different. A `PermissionPolicy` decides synchronously per call; an approval interruption stops the run and hands the decision to your code.
+Read this section as the intended design, not the shipped behaviour. The types and the pause branch exist, but nothing feeds them yet:
+
+- `PermissionPolicy` / `AutoApprove` / `AllowlistApprove` / `PromptApprove` / `PermissionCallback` are defined in `sdk/permissions.py`, and `RunConfig.permission_policy` accepts one per run -- but `Runner` never reads it.
+- `needs_approval=True` on `@tool` and `Agent.needs_approval_tools` are stored but never consulted.
+- `RunResult.interruptions` / `.state` and the `stop_reason="tool_use"` pause branch in `_run_impl` exist, but `pending_tool_calls` is never populated, so a run never actually pauses for approval.
+- `RunState.approve` / `.reject` / `.decision_for` work as data structures; `decision_for` is never called from the runner, and there is no way to pass a `RunState` back into `Runner.run`.
+
+What *does* gate tool calls is the turn engine's `vtx.core.permissions.check_permission` against `~/.vtx/config.yml` (`permissions.mode`, default `"prompt"`). Under `prompt`, a `mutating=True` tool makes the engine emit a `ToolApprovalEvent` whose future the SDK runner never resolves, so the run hangs until `cancellation` fires. In practice: mark SDK tools `mutating=False`, or run with `permissions.mode: auto`.
 
 ```python
 from vtx.agent.sdk import Agent, Runner, RunConfig, AllowlistApprove
 
+# permission_policy is accepted but currently ignored by Runner.
 result = await Runner.run(
     agent,
     "Ship v2",
@@ -76,24 +84,7 @@ result = await Runner.run(
 )
 ```
 
-- **`PromptApprove`** is the default and mirrors `vtx.permissions.check_permission`: read-only tools and safe bash are auto-approved, mutating tools prompt.
-- **`AutoApprove`** allows everything, mirroring `permissions.mode=auto`.
-- **`AllowlistApprove(allowlist)`** allows by tool name and prompts for the rest.
-- **`PermissionPolicy`** is the base class: implement `decide(tool, arguments)` returning `PermissionDecision.ALLOW` or `.PROMPT`.
-
-For a UI, mark the tools that must pause with `needs_approval_tools={"deploy"}` on the agent. The run ends with `stop_reason="tool_use"`, `result.interruptions` holding `ToolApprovalItem`s, and a `result.state` you can resume from:
-
-```python
-result = await Runner.run(agent, "Ship v2")
-if result.interruptions:
-    state = result.state
-    for item in result.interruptions:
-        print(item.tool_name, item.arguments)
-        state.approve(item)      # or state.reject(item)
-    result = await Runner.run(agent, state.original_input)
-```
-
-A rejected call returns a "denied by user" tool result so the model can pick another path. `RunState.decision_for(call_id)` tells you what was decided. `ToolApprovalItem.to_input_item()` raises by design - filter approvals out before sending an input list back to the model.
+`ToolApprovalItem.to_input_item()` raises by design - filter approvals out before sending an input list back to the model.
 
 ## Composition root
 

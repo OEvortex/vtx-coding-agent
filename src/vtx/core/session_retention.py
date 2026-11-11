@@ -125,7 +125,9 @@ def prune_old_sessions(
     # not allowed to do.
     all_paths = sorted(root.glob("*/*.jsonl"))
     try:
-        sync_usage_ledger(all_paths, root=root, ledger_path=default_ledger_path(root))
+        sync_usage_ledger(
+            all_paths, root=root, ledger_path=default_ledger_path(root), require_persist=True
+        )
     except Exception as exc:
         result.errors.append(f"usage ledger: {exc}")
         return result

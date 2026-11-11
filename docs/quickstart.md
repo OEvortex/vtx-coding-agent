@@ -25,7 +25,7 @@ If you installed from a source checkout instead, use the editable install descri
 
 Vtx needs a provider before it can answer anything. The shipped catalog has 62 providers;
 `--provider` accepts 16 of their API-family slugs, and dropping a YAML file into
-`~/.vtx/providers/` adds your own. See [providers.md](providers.md) for the full list and
+`~/.vtx/providers/` (or `.vtx/providers/` in the project) adds your own. See [providers.md](providers.md) for the full list and
 each one's auth method.
 
 ```bash
@@ -86,7 +86,7 @@ Vtx ships a skill that teaches the model which extension surface to reach for wh
 lacks a capability. Ask for it by name:
 
 ```text
-/vtx-self-extend: give yourself a command that runs the test suite
+/vtx-self-extend give yourself a command that runs the test suite
 ```
 
 That skill picks the smallest sufficient surface - a skill for instructions, a plugin

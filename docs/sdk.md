@@ -38,7 +38,7 @@ print(result.final_output)
 | Group | Names |
 |---|---|
 | Core | `Agent`, `Runner`, `RunResult`, `RunStreamed`, `RunConfig`, `RunItem`, `Usage` |
-| Tools | `tool`, `FunctionTool`, `Handoff`, `handoff` |
+| Tools | `tool`, `FunctionTool`, `Handoff`, `HandoffInputData`, `handoff` |
 | Permissions | `PermissionPolicy`, `PermissionDecision`, `AutoApprove`, `AllowlistApprove`, `PromptApprove` |
 | Approvals | `ToolApprovalItem`, `RunState` |
 | Guardrails | `InputGuardrail`, `OutputGuardrail`, `input_guardrail`, `output_guardrail`, `tool_input_guardrail`, `tool_output_guardrail`, `GuardrailFunctionOutput`, `ToolGuardrailFunctionOutput`, `InputGuardrailTripwireTriggered`, `OutputGuardrailTripwireTriggered`, `ToolInputGuardrailTripwireTriggered`, `ToolOutputGuardrailTripwireTriggered` |
@@ -79,9 +79,9 @@ async def run(
 | `cancellation` | An `asyncio.Event`; setting it aborts the run |
 | `context` | Opaque object passed through to guardrails and tools |
 
-A run wraps a `Trace` and a `span("agent_run", agent_name=...)`, so tracing works without extra setup (`runner.py:377-433`).
+A run wraps a `Trace` and a `span("agent_run", agent_name=...)`, so tracing works without extra setup (`runner.py:284-292`, `346-349`).
 
-`RunResult` (`src/vtx/agent/sdk/results.py:13-56`):
+`RunResult` (`src/vtx/agent/sdk/results.py:12-57`):
 
 | Field | Meaning |
 |---|---|
@@ -125,7 +125,7 @@ Reading `.result` before the iterator is exhausted raises a `RuntimeError` telli
 
 ## Agent
 
-`Agent` is a mutable dataclass, so `clone(**overrides)` gives you a variant without touching the original (`src/vtx/agent/sdk/agent.py:95-179`):
+`Agent` is a mutable dataclass, so `clone(**overrides)` gives you a variant without touching the original (`src/vtx/agent/sdk/agent.py:94-180`):
 
 ```python
 @dataclass
@@ -144,11 +144,11 @@ class Agent:
     needs_approval_tools: set[str] = field(default_factory=set)
 ```
 
-(`src/vtx/agent/sdk/agent.py:168-179`)
+(`src/vtx/agent/sdk/agent.py:168-180`)
 
 | Field | Meaning |
 |---|---|
-| `name` | Required. Must be truthy; `__post_init__` raises otherwise (`agent.py:182-189`) |
+| `name` | Required. Must be a non-empty string; `__post_init__` raises otherwise, and it also validates `tool_use_behavior` (`agent.py:182-189`) |
 | `instructions` | A string, or a callable receiving the run context |
 | `model` | Model id, falling back to config when `None` |
 | `provider` | A provider object or a dict. See below |
@@ -197,13 +197,13 @@ def delete_file(path: str) -> str:
 | `tool_icon` | `"→"` | Badge shown in the TUI |
 | `input_guardrails` / `output_guardrails` | `None` | Per-tool guardrails |
 
-Docstring formats understood: Sphinx `:param name:`, Google `Args:`, and NumPy `Parameters:` (`src/vtx/agent/sdk/tools.py:79-112`). A `None` return is normalized to `"(no output)"`, and an exception becomes `ToolResult(success=False, result=f"Error: {exc}")` rather than aborting the turn.
+Docstring formats understood: Sphinx `:param name:`, Google `Args:`, and NumPy `Parameters:` (`src/vtx/agent/sdk/tools.py:79-109`). A `None` return is normalized to `"(no output)"`, and an exception becomes `ToolResult(success=False, result=f"Error: {exc}")` rather than aborting the turn.
 
-An agent can be used as a tool too, with `agent.as_tool(...)` (`src/vtx/agent/sdk/agent.py:266-291`). That returns a `_AgentAsTool` with `mutating = False` (`src/vtx/agent/sdk/tools.py:320-340`), so a nested run is not a write. To send the transcript onward, prefer a [handoff](#handoffs).
+An agent can be used as a tool too, with `agent.as_tool(...)` (`src/vtx/agent/sdk/agent.py:266-287`). That returns a `_AgentAsTool` with `mutating = False` and icon `↪` (`src/vtx/agent/sdk/tools.py:320-373`), so a nested run is not a write. To send the transcript onward, prefer a [handoff](#handoffs).
 
 ## Guardrails
 
-Four decorators, two data contracts. Decorate a function and pass the result into an agent (`src/vtx/agent/sdk/guardrails/__init__.py:29-152`):
+Four decorators, two data contracts. Decorate a function and pass the result into an agent (`src/vtx/agent/sdk/guardrails/__init__.py:28-158`):
 
 | Decorator | Put it on | Data it receives | Tripwire raised |
 |---|---|---|---|
@@ -212,12 +212,7 @@ Four decorators, two data contracts. Decorate a function and pass the result int
 | `@tool_input_guardrail` | A tool (via `@tool(input_guardrails=[...])`) | `context`, `tool_name`, `tool_arguments` | `ToolInputGuardrailTripwireTriggered` |
 | `@tool_output_guardrail` | A tool (via `@tool(output_guardrails=[...])`) | `context`, `tool_name`, `tool_result` | `ToolOutputGuardrailTripwireTriggered` |
 
-Guardrails for the same target run concurrently via `asyncio.gather`. When timing matters, remember where each runs:
-
-- Input guardrails fire **before** the first model call, so a trip there never costs a token.
-- Output guardrails fire after the final output is produced.
-- A tool-input guardrail skips the tool; the model is told it was blocked and keeps going.
-- A tool-output guardrail replaces the result the model sees.
+Only the two agent-level decorators are wired into `Runner` today: input guardrails run before the first model call and output guardrails after the final output is produced, each set concurrently via `asyncio.gather`. The tool-level decorators are accepted by `@tool` and stored on the `FunctionTool`, but nothing in the runner invokes them yet -- treat them as reserved surface, not enforcement. A tripwire on an agent-level guardrail raises and aborts the run.
 
 An agent-level guardrail and a tool-level one differ in return type. Agent guardrails return a `GuardrailFunctionOutput`; tool guardrails return a `ToolGuardrailFunctionOutput`.
 
@@ -244,7 +239,7 @@ agent = Agent(
 )
 ```
 
-The two output types (`src/vtx/agent/sdk/guardrails/types.py:12-51`):
+The two output types (`src/vtx/agent/sdk/guardrails/types.py:12-50`):
 
 ```python
 @dataclass
@@ -266,9 +261,9 @@ class ToolGuardrailFunctionOutput:
     def raise_exception(cls, output_info: Any = None) -> ToolGuardrailFunctionOutput: ...
 ```
 
-`reject_content` is the usual choice: it gives the model something actionable instead of ending the run, and the runner reads the `message` back into the tool result as `{"rejected_message": ...}` (`src/vtx/agent/sdk/guardrails/types.py:37-47`). Use `raise_exception` when a result must not reach the model at all.
+`reject_content` builds an `output_info` of `{"rejected_message": message, ...}` -- the soft rejection, meant to give the model something actionable (`src/vtx/agent/sdk/guardrails/types.py:36-46`). `raise_exception` sets `tripwire_triggered=True`, the hard stop. Neither runs today, for the same reason the tool-level decorators do not: the runner never invokes tool guardrails.
 
-The data payloads are the dataclasses `_InputGuardrailData`, `_OutputGuardrailData`, `_ToolInputGuardrailData`, and `_ToolOutputGuardrailData` (`src/vtx/agent/sdk/guardrails/types.py:54-84`). Your decorated function takes the same fields in the same order, so name the parameters as they appear. Note that `_ToolInputGuardrailData.tool_arguments` is a **JSON string** (`str | None`), not a dict  --  parse it before inspecting it.
+The data payloads are the dataclasses `_InputGuardrailData`, `_OutputGuardrailData`, `_ToolInputGuardrailData`, and `_ToolOutputGuardrailData` (`src/vtx/agent/sdk/guardrails/types.py:53-82`). Your decorated function takes the same fields in the same order, so name the parameters as they appear. Note that `_ToolInputGuardrailData.tool_arguments` is a **JSON string** (`str | None`), not a dict  --  parse it before inspecting it.
 
 ## Handoffs
 
@@ -285,16 +280,16 @@ support = Agent(
 )
 ```
 
-`Handoff` is a `BaseTool` with `mutating = False` and icon `↪`, and its params model accepts an optional free-form `reason` (`src/vtx/agent/sdk/handoffs.py:82-131`).
+`Handoff` is a `BaseTool` with `mutating = False` and icon `↪`, and its params model accepts an optional free-form `reason` (`src/vtx/agent/sdk/handoffs.py:82-159`).
 
 | Option | Meaning |
 |---|---|
 | `agent` | The `Agent` to transfer to |
 | `tool_name_override` | Default is `transfer_to_<agent.name.lower().replace(' ','_')>` (`handoffs.py:109`) |
 | `tool_description_override` | |
-| `on_handoff` | Callback with the handoff context |
-| `input_filter` | Drop items from the transcript before the transfer |
-| `input_type` | A Pydantic model the target receives instead of the raw transcript |
+| `on_handoff` | Callback fired with `None` when the handoff tool executes (`handoffs.py:151-154`) |
+| `input_filter` | Accepted and stored, but the runner never invokes it today |
+| `input_type` | A Pydantic model used as the handoff tool's `params` schema instead of the default `reason` field (`handoffs.py:120-121`); the transcript itself is unchanged |
 
 The runner detects a handoff by tool name: anything starting with `transfer_to_` (`src/vtx/agent/sdk/runner.py:691`). On transfer, the active agent swaps and a synthetic user note tells the target agent to take over (`runner.py:719-726`):
 
@@ -302,23 +297,18 @@ The runner detects a handoff by tool name: anything starting with `transfer_to_`
 [handoff from Support → Billing. Take over the conversation from here.]
 ```
 
-That is why every handoff tool name must keep the `transfer_to_` prefix  --  the prefix is the protocol. With `RunConfig(nest_handoff_history=True)`, the prior transcript collapses into a single summary block instead of being carried forward (`src/vtx/agent/sdk/run_config.py:40-41`).
+That is why every handoff tool name must keep the `transfer_to_` prefix  --  the prefix is the protocol. `RunConfig(nest_handoff_history=True)` is accepted (`src/vtx/agent/sdk/run_config.py:43-44`), but the runner does not read it: the prior transcript is always carried forward.
 
 ## Approvals
 
-A tool marked `needs_approval=True`, or named in `Agent.needs_approval_tools`, pauses the run instead of calling (`src/vtx/agent/sdk/approvals.py:15-104`). The `Runner` returns with `interruptions` populated, `stop_reason=StopReason.TOOL_USE`, and a `state` snapshot (`src/vtx/agent/sdk/runner.py:479-498`):
+The approval *types* exist and `RunResult` has the fields for a paused run, but the pause path is not reachable today. `ToolApprovalItem`, `ApprovalDecision`, and `RunState` are real (`src/vtx/agent/sdk/approvals.py:15-104`), and `_run_impl` contains a branch that would return `interruptions` populated, `stop_reason=StopReason.TOOL_USE`, and a `state` snapshot (`src/vtx/agent/sdk/runner.py:479-498`) -- but nothing ever appends to `pending_tool_calls`, so `interruptions` is always empty and `state` is always `None`.
 
-```python
-result = Runner.run_sync(agent, "delete the README")
+Two related facts:
 
-if result.interruptions:
-    state = result.state
-    call = result.interruptions[0]
-    print(f"{call.name}({call.call_id}) wants to run")
-    state.approve(call) if confirmed_by_human(call) else state.reject(call)
-```
+- `needs_approval=True` on `@tool` and `Agent.needs_approval_tools` are stored on the objects but never consulted by the runner.
+- The underlying turn engine still enforces `vtx.core.permissions.check_permission` against your `~/.vtx/config.yml`. With the default `permissions.mode: prompt`, a `mutating=True` tool makes the engine emit a `ToolApprovalEvent` whose future nobody resolves -- the SDK runner does not handle that event, so the run hangs until `cancellation` fires. Mark tools `mutating=False` or set `permissions.mode: auto` to avoid it.
 
-`RunState` carries the original input, the pending tool calls, the decisions you queue, the new items, and free-form metadata (`src/vtx/agent/sdk/approvals.py:63-104`):
+`RunState` carries the original input, the pending tool calls, the decisions you queue, the new items, and free-form metadata (`src/vtx/agent/sdk/approvals.py:62-104`):
 
 | Member | Meaning |
 |---|---|
@@ -330,11 +320,11 @@ if result.interruptions:
 | `approve(*items)` / `reject(*items)` | Queue decisions |
 | `decision_for(call_id)` | Consume and return one decision |
 
-A `ToolApprovalItem`'s `to_input_item` raises  --  an approval prompt is never replayed into a model request (`approvals.py:45`). A rejected call returns a "denied by user" tool result so the model can pick another path (`src/vtx/agent/README.md:96`).
+A `ToolApprovalItem`'s `to_input_item` raises  --  an approval prompt is never replayed into a model request (`approvals.py:45-51`). Because `decision_for` is never called from the runner, queued decisions currently have no effect.
 
 ## Permissions
 
-Permissions decide *before* approval: `ALLOW` runs, `PROMPT` means a human must look (`src/vtx/agent/sdk/permissions.py:14-16`).
+`PermissionPolicy`, `AutoApprove`, `AllowlistApprove`, `PromptApprove`, and `PermissionCallback` are defined (`src/vtx/agent/sdk/permissions.py`), and `RunConfig.permission_policy` accepts one per run (`run_config.py:40-41`) -- but the runner never reads it. The classes describe the intended semantics:
 
 | Policy | Behavior |
 |---|---|
@@ -342,13 +332,13 @@ Permissions decide *before* approval: `ALLOW` runs, `PROMPT` means a human must 
 | `AllowlistApprove(allowlist)` | A name in the list is `ALLOW`, everything else `PROMPT` (`permissions.py:46-55`) |
 | `PromptApprove` (default) | `mutating=False` → `ALLOW`; an allowlisted `bash` head → `ALLOW`; else `PROMPT` (`permissions.py:58-100`) |
 
-`PromptApprove.SAFE_BASH` is the read-only command list: `cat`, `head`, `tail`, `ls`, `pwd`, `wc`, `diff`, `which`, `file`, `stat`, `du`, `df`, `whoami`, `id`, `uname`, `date`, `realpath`, `dirname`, `basename` (`permissions.py:66-89`). Anything else under `bash` prompts.
+`PromptApprove.SAFE_BASH` is the read-only command list: `cat`, `head`, `tail`, `ls`, `pwd`, `wc`, `diff`, `which`, `file`, `stat`, `du`, `df`, `whoami`, `id`, `uname`, `date`, `realpath`, `dirname`, `basename` (`permissions.py:67-89`). Note it is a simpler check than the product's `vtx.core.permissions.check_permission`: no safe-`git` subcommand list and no shell-metacharacter rejection.
 
-A plain callable works too: `PermissionCallback` coerces a returned string to the enum and defaults to `PROMPT` (`src/vtx/agent/sdk/permissions.py:104-122`). Override the policy for one run with `RunConfig.permission_policy`. For what the TUI saves to `config.yml` and what the modes mean, read [permissions.md](permissions.md).
+What actually gates a tool call today is the turn engine's `check_permission` against `~/.vtx/config.yml` (`permissions.mode`, default `prompt`), which is also what produces the hang described under [Approvals](#approvals). For what the TUI saves to `config.yml` and what the modes mean, read [permissions.md](permissions.md).
 
 ## Sessions
 
-Four methods make a `Session` (`src/vtx/agent/sdk/sessions.py:31-60`):
+Four methods make a `Session` (`src/vtx/agent/sdk/sessions.py:30-55`):
 
 ```python
 session.get_items(limit=None)   # list[Any]
@@ -359,17 +349,17 @@ session.clear_session()         # None
 
 | Implementation | Use |
 |---|---|
-| `InMemorySession(session_id=None)` | A run and its history die together (`sessions.py:63-72`) |
+| `InMemorySession(session_id=None)` | A run and its history die together (`sessions.py:63-90`) |
 | `JSONLSession(path=None, *, session_id=None)` | Appends to disk, and the same file the TUI and headless runs produce |
 | `SessionSettings` | Per-session settings such as an item `limit` (`sessions.py:23`) |
 
 Cross-process sharing is the useful property: a `JSONLSession` pointed at a session written by a `vtx -p` run gives you that conversation to continue programmatically. See [storage-layout.md](storage-layout.md) for where those files land.
 
-`JSONLSession` also exposes `session_id` and `path` properties if you need to log them (`sessions.py:220-227`). Skill discovery helpers live alongside: `load_vtx_skills(cwd)`, `load_builtin_vtx_skills()`, and `format_skills_for_prompt(skills)` (`src/vtx/agent/sdk/skills.py:15-42`); the frontmatter rules are in [skills.md](skills.md).
+`JSONLSession` also exposes `session_id` and `path` properties if you need to log them (`sessions.py:219-225`). Skill discovery helpers live alongside: `load_vtx_skills(cwd)`, `load_builtin_vtx_skills()`, and `format_skills_for_prompt(skills)` (`src/vtx/agent/sdk/skills.py:15-52`); the frontmatter rules are in [skills.md](skills.md).
 
 ## Tracing
 
-Every run opens a `Trace` and a nested `Span`, so a processor registered once sees every run in the process (`src/vtx/agent/sdk/runner.py:377-433`). The default processor list is empty until you add one (`src/vtx/telemetry/processor.py:28-30`).
+Every run opens a `Trace` and a nested `Span`, so a processor registered once sees every run in the process (`src/vtx/agent/sdk/runner.py:284-292`, `346-349`). The default processor list is empty until you add one (`src/vtx/telemetry/processor.py:28-30`).
 
 ```python
 from vtx import add_trace_processor, ConsoleTraceProcessor, enable_tracing
@@ -403,40 +393,41 @@ Set `VTX_SDK_DISABLE_TRACING` to `1`, `true`, `yes`, or `on` in the environment 
 | Field | Meaning |
 |---|---|
 | `max_turns` | Model turns before stopping |
-| `session_input_callback` | `(history, new_input) -> final list`; control exactly what the model sees (`run_config.py:21-27`) |
+| `session_input_callback` | `(history, new_input) -> final list`; control exactly what the model sees (`run_config.py:23-29`) |
 | `session_settings` | Per-run `SessionSettings` override |
 | `tracing_disabled` | Skip this run's trace |
 | `trace_include_sensitive_data` | Include model inputs and outputs in the trace |
 | `permission_policy` | Per-run policy override |
-| `nest_handoff_history` | Collapse prior transcript on handoff |
+| `nest_handoff_history` | Declared; the runner does not read it yet |
 | `custom` | Free-form data attached to the run |
 
-(`src/vtx/agent/sdk/run_config.py:13-46`)
+(`src/vtx/agent/sdk/run_config.py:12-47`)
 
 ## Worked example
 
-A two-agent setup with a guarded tool, a handoff, an approval, and JSONL tracing. This runs as written once a provider is configured:
+A two-agent setup with an agent-level input guardrail, a handoff, and JSONL tracing. This runs as written once a provider is configured. Note `get_weather` is `mutating=False`: with the default `permissions.mode: prompt`, a mutating tool would stall on an unanswered approval prompt (see [Approvals](#approvals)).
 
 ```python
 import json
 
 from vtx import (
-    Agent, AllowlistApprove, JSONLTraceProcessor, RunConfig, Runner,
-    ToolGuardrailFunctionOutput, add_trace_processor, handoff, tool, tool_input_guardrail,
+    Agent, GuardrailFunctionOutput, JSONLTraceProcessor, Runner,
+    add_trace_processor, handoff, input_guardrail, tool,
 )
 
 
-@tool_input_guardrail
-def block_private_locations(context, tool_name, tool_arguments):
-    args = json.loads(tool_arguments or "{}")
-    if str(args.get("city", "")).startswith("Private-"):
-        return ToolGuardrailFunctionOutput.reject_content(
-            "I cannot look up locations marked private."
+@input_guardrail
+def block_private_locations(data):
+    text = data.input if isinstance(data.input, str) else json.dumps(data.input)
+    if "Private-" in text:
+        return GuardrailFunctionOutput(
+            output_info={"reason": "private location"},
+            tripwire_triggered=True,
         )
-    return ToolGuardrailFunctionOutput.allow()
+    return GuardrailFunctionOutput()
 
 
-@tool(mutating=False, input_guardrails=[block_private_locations])
+@tool(mutating=False)
 def get_weather(city: str) -> str:
     """Look up the current weather for a city.
 
@@ -458,24 +449,25 @@ support = Agent(
     model="gpt-4o-mini",
     tools=[get_weather],
     handoffs=[handoff(billing)],
+    input_guardrails=[block_private_locations],
 )
 
 add_trace_processor(JSONLTraceProcessor("/tmp/vtx-trace.jsonl"))
 
-run_config = RunConfig(permission_policy=AllowlistApprove(["get_weather"]))
-
-result = Runner.run_sync(support, "Weather in Tokyo?", run_config=run_config)
+result = Runner.run_sync(support, "Weather in Tokyo?")
 print(result.final_output)
 print(result.agent_name, result.usage)
 ```
 
-`get_weather` is `mutating=False` and allowlisted, so no prompt fires; change it to `mutating=True` and drop it from the allowlist, or pass `needs_approval=True`, and the same program pauses with a `RunState` to resume from as shown under [Approvals](#approvals). The trace lands in `/tmp/vtx-trace.jsonl` with one object per trace and span event.
+The trace lands in `/tmp/vtx-trace.jsonl` with one object per trace and span event. If the model calls the `transfer_to_Billing` handoff, `result.agent_name` is `"Billing"`.
 
 ## Known gaps
 
 - The streamed event classes are underscore-prefixed (`_TextDelta`, `_ToolCallStart`, ...), so matching on the type name is the only stable dispatch. They are not exported from `vtx` (`src/vtx/agent/sdk/runner.py:186-221`).
-- `Agent` is generic over a context type (`Agent[TContext]`), but `context` is passed as `Any` at runtime and there is no runtime check that the type parameters agree (`src/vtx/agent/sdk/agent.py:95`).
+- `Agent` is generic over a context type (`Agent[TContext]`), but `context` is passed as `Any` at runtime and there is no runtime check that the type parameters agree (`src/vtx/agent/sdk/agent.py:94-95`).
 - A handoff is recognized *only* by the `transfer_to_` tool-name prefix (`runner.py:691`); an override that breaks that prefix silently becomes an ordinary tool call.
+- Several declared surfaces are not wired into the runner: `needs_approval` / `needs_approval_tools` / `permission_policy` / `PermissionCallback`, tool-level guardrails, `RunConfig.nest_handoff_history`, and `handoff(input_filter=...)` are all stored but never read (`src/vtx/agent/sdk/runner.py`). The approval pause branch in `_run_impl` is therefore unreachable, and `decision_for` is never called.
+- Worse, the turn engine still enforces `check_permission` from `vtx.core.permissions` against `~/.vtx/config.yml`. Under the default `permissions.mode: prompt`, any `mutating=True` tool emits a `ToolApprovalEvent` the SDK runner never answers, so the run hangs until `cancellation` is set (`src/vtx/agent/turn.py:1100-1121`, `336-342`). Use `mutating=False` tools or `permissions.mode: auto`.
 - `RunState`'s docstring says to "pass this object back to `Runner.run`", but `Runner.run`, `run_sync`, and `run_streamed` accept no `state` argument (`src/vtx/agent/sdk/runner.py:269-276`, `295-301`, `329-336`), and `decision_for` is never called from the runner. The run pauses and hands you the decisions; continuing after them is not wired up.
 - The default processor list is empty until you add one, so a run with no `add_trace_processor` produces no trace output at all (`src/vtx/telemetry/processor.py:28-30`).
 - `Agent.as_tool` spawns a nested run with no recursion guard. An agent that lists itself as its own tool will recurse until `max_turns` runs out.

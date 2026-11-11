@@ -2,7 +2,7 @@
 
 The product layer: the `vtx` console script, the headless runner, the concrete built-in tools and their default registry, the built-in skills package, and the handoff-agent loader. Use it to run the agent, or to embed its tools in something else. The Textual interface is `vtx.tui`.
 
-Everything here is wiring and choice. The engine it drives - the loop, the session store, the provider adapters - is `vtx.agent` and `vtx.ai`. Importing `vtx.coding_agent.tools` has the side effect of registering the built-in tools into the harness registry, so the tools exist the moment you import them.
+Everything here is wiring and choice. The engine it drives - the loop, the session store, the provider adapters - is `vtx.agent` and `vtx.ai`. Importing `vtx.coding_agent.tools` registers nothing by itself; each tool module exports a `PLUGIN` row that the plugin composition mounts.
 
 ```
 vtx.coding_agent          CLI, headless runner, built-in tools, skills
@@ -53,7 +53,7 @@ vtx --continue                         # resume the most recent session
 vtx --resume 4f2a -m anthropic/claude-opus-5
 ```
 
-Subcommands are `vtx update` (self-update to the latest stable PyPI release and exit) and `vtx plugin ...` — `profiles`, `init NAME`, `path NAME`, `enable ROW`, `disable ROW`, `install SPEC`, `allow-version`, `revoke-version`, `version-exemptions` (see `plugin_cmd.py` and [docs/plugins.md](../../docs/plugins.md)).
+Subcommands are `vtx acp` (Agent Client Protocol server over stdio), `vtx update` (self-update to the latest stable PyPI release and exit), `vtx auth status`, `vtx models list`, `vtx config list|get|set`, and `vtx plugin ...` — `profiles`, `init NAME`, `path NAME`, `enable ROW`, `disable ROW`, `install SPEC`, `allow-version`, `revoke-version`, `version-exemptions` (see `plugin_cmd.py` and [docs/plugins.md](../../docs/plugins.md)).
 
 Flags are `--model/-m`, `--provider`, `--api-key/-k`, `--base-url/-u`, `--prompt/-p`, `--openai-compat-auth` and `--anthropic-compat-auth` (`auto`/`required`/`none`), `--insecure-skip-verify`, `--continue/-c`, `--resume/-r`, `--extension/-e` (repeatable), `--no-extensions`, `--agent/-a`, `--agent-file` (repeatable), `--no-agents`, `--list-agents`, `--list-extensions`, `--profile`, `--patch`, `--dump-config`, and `--version`.
 
@@ -63,17 +63,17 @@ With `-p` the run goes to `headless.run_headless`; otherwise to `tui.launch.run_
 
 ## Headless
 
-`headless.py` exports `resolve_prompt(prompt_arg, *, stdin)`, `render_run(events, *, out, err)`, and `run_headless(...)`. `run_headless` returns an exit code derived from the `StopReason`: `0` for a normal stop, `1` for an error or an unmapped reason, `3` for a length stop, and `2` for an empty prompt. `render_run` is the piece to reuse if you want the event stream without the CLI.
+`headless.py` exports `resolve_prompt(prompt_arg, *, stdin)`, `render_run(events, *, out, err)`, and `run_headless(...)`. `run_headless` returns an exit code derived from the `StopReason`: `0` for a normal stop, `1` for an error or an unmapped reason, `3` for a length stop, and `2` for an empty prompt or a provider/agent-init failure. `render_run` is the piece to reuse if you want the event stream without the CLI.
 
 Headless cannot show approval prompts, so it forces auto-approval for the run by writing the config file, running, and restoring it; the saved config is not mutated. A project's `.vtx/mcp.json` is read like any other, so its servers start with the run.
 
 ## Built-in tools
 
-`tools/__init__.py` instantiates the registry at import time. `all_tools` is `read`, `edit`, `write`, `bash`, `find`, `grep`, `skill`, `web`, `web_search`, `ask_user`, `delegate_subagent`. `DEFAULT_TOOLS` is that list minus `grep`, which is registered but not enabled by default. `PARENT_ONLY_TOOLS` is `frozenset({"delegate_subagent"})` - not offered to a sub-agent.
+Registration goes through the plugin rows in `src/vtx/plugins/builtins/__init__.py`, not through this package's `__init__`: importing it builds nothing. `all_tools` (built lazily on first access) holds `ReadTool`, `EditTool`, `WriteTool`, `BashTool`, `GrepTool`, `SkillTool`, `TodoTool`, plus `WebTool`, `WebSearchTool`, `AskUserTool`, `TaskTool`, `CodemodeTool`, and `ToolSearchTool` from `vtx.agent.tools` and the local `codemode`/`tool_search` modules. `DEFAULT_TOOLS` is `["read", "edit", "write", "bash", "skill", "todo", "web", "ask_user", "delegate_subagent"]`; `grep`, `web_search`, and `tool_search` are registered but not default-on, and `find` (`FindTool` in `tools/find.py`) ships a `PLUGIN` row that no shipped bundle mounts. `PARENT_ONLY_TOOLS` is `frozenset({"delegate_subagent"})` - not offered to a sub-agent.
 
-Every tool is passed to `vtx.agent.tools.register_tool` with `is_default` from `DEFAULT_TOOLS` and `parent_only` from `PARENT_ONLY_TOOLS`.
+Every mounted tool row calls `mount_tool(ctx, ..., is_default=..., parent_only=...)` from `vtx.plugins.builtins.tools._register`.
 
-The seven filesystem tools are local to this package: `ReadTool`, `EditTool`, `WriteTool`, `BashTool`, `FindTool`, `GrepTool`, `SkillTool`. `WebTool`, `WebSearchTool`, `AskUserTool`, and `TaskTool` come from `vtx.agent.tools`.
+The filesystem tools are local to this package: `ReadTool`, `EditTool`, `WriteTool`, `BashTool`, `GrepTool`, `SkillTool`, `TodoTool`, `FindTool`, `CodemodeTool`, `ToolSearchTool`. `WebTool`, `WebSearchTool`, `AskUserTool`, and `TaskTool` come from `vtx.agent.tools`.
 
 The registry API is `get_tools(default_names)`, `get_tool(name)`, `get_tools_with_extensions(default_names, extension_tools=None)`, `tools_by_name`, and `get_tool_definitions`. `get_tools_with_extensions` replaces by name match, so an extension can override a built-in. The background-task re-exports (`BackgroundTaskManager`, `BackgroundTaskRecord`, `get_manager`, `set_manager`) are here too.
 

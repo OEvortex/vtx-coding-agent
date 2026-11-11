@@ -1,8 +1,8 @@
 # Slash Commands
 
-This page documents every slash command the TUI recognizes, what each does, its arguments, and whether it costs a model turn. The router is `CommandsMixin._handle_command` in `src/vtx/tui/commands/__init__.py:46`.
+This page documents every slash command the TUI recognizes, what each does, its arguments, and whether it costs a model turn. The router is `CommandsMixin._handle_command` in `src/vtx/tui/commands/__init__.py:47`.
 
-Type `/` at the start of the input to see the command menu; it is built from `DEFAULT_COMMANDS` (`src/vtx/tui/autocomplete.py:380`), the registered skills, and the extension commands, in that order (`src/vtx/tui/app.py:486`).
+Type `/` at the start of the input to see the command menu; it is built from `DEFAULT_COMMANDS` (`src/vtx/tui/autocomplete.py:380`), the registered skills, and the extension commands, in that order (`src/vtx/tui/app.py:527-553`).
 
 ## Three kinds of command
 
@@ -12,9 +12,9 @@ Type `/` at the start of the input to see the command menu; it is built from `DE
 | Plugin / extension command | `api.register_command(...)` in a loaded extension (`src/vtx/plugins/api.py:292`) | No |
 | Skill command | `register_cmd: true` in a `SKILL.md` frontmatter | Yes |
 
-The router is consulted first, then extension commands, then the skill registry. Built-ins therefore always win a name collision: `_handle_command` tests every built-in name before it looks an extension up, so an extension can only answer names no built-in claims (`src/vtx/tui/commands/__init__.py:149`).
+The router is consulted first, then extension commands, then the skill registry. Built-ins therefore always win a name collision: `_handle_command` tests every built-in name before it looks an extension up, so an extension can only answer names no built-in claims (`src/vtx/tui/commands/__init__.py:52-159`).
 
-A command that is not recognized by the router falls through to the caller unchanged, which sends it to the model as a normal prompt (`src/vtx/tui/app.py:1076`).
+A command that is not recognized by the router falls through to the caller unchanged, which sends it to the model as a normal prompt (`src/vtx/tui/app.py:1151`).
 
 ## Built-in commands
 
@@ -22,7 +22,7 @@ A command that is not recognized by the router falls through to the caller uncha
 
 | Command | Arguments | What it does | Model turn |
 |---|---|---|---|
-| `/help` | | Show the in-app help panel with its own command and keybinding list (`src/vtx/tui/chat.py:440`) | No |
+| `/help` | | Show the in-app help panel with its own command and keybinding list (`src/vtx/tui/chat.py:541`) | No |
 | `/quit`, `/exit`, `/q` | | Exit the application (`src/vtx/tui/commands/__init__.py:51`) | No |
 | `/clear` | | Start a fresh session beneath the current one, reset the token counters and file-change summary, and drop the codemode store (`src/vtx/tui/commands/sessions.py:27`) | No |
 | `/new` | | Start a new conversation: clear the chat log, reset the status line, reload context (`src/vtx/tui/commands/sessions.py:51`) | No |
@@ -53,7 +53,7 @@ A command that is not recognized by the router falls through to the caller uncha
 | `/themes` | `[theme]` | Switch theme; with no argument open the theme picker (`src/vtx/tui/commands/settings.py:51`) | No |
 | `/permissions` | `[prompt\|auto]` | Set permission mode; with no argument open the picker (`src/vtx/tui/commands/settings.py:76`) | No |
 | `/thinking` | `[level]` | Set the thinking effort; with no argument open the picker (`src/vtx/tui/commands/settings.py:121`) | No |
-| `/effort` | `[level]` | Alias for `/thinking` (`src/vtx/tui/commands/__init__.py:81`) | No |
+| `/effort` | `[level]` | Alias for `/thinking` (`src/vtx/tui/commands/__init__.py:88-91`) | No |
 | `/notifications` | `[on\|off]` | Toggle notification sounds (`src/vtx/tui/commands/settings.py:209`) | No |
 | `/ponytail` | `[on\|off]` | Toggle the ponytail system-prompt mode. With no argument it inverts the current value (`src/vtx/tui/commands/settings.py:279`) | No |
 
@@ -68,7 +68,7 @@ Turning ponytail or git context on only takes effect on the next new conversatio
 | `/login` | | Open the login method picker: OAuth (GitHub Copilot, OpenAI Codex, Cline), an API key for any keyed provider, or a keyless/local provider (`src/vtx/tui/commands/auth.py:74`) | No |
 | `/logout` | | Open the provider picker listing everything with stored credentials (`src/vtx/tui/commands/auth.py:426`) | No |
 
-`/login` walks three sub-pickers. For an API key, the input box switches to paste mode; submitting a value starting with `/` cancels the entry. `/logout` prints `No providers logged in` when nothing is stored.
+`/login` walks three sub-pickers. For an API key, the input box switches to API-key entry mode; submitting a value starting with `/` cancels the entry. `/logout` prints `No providers logged in` when nothing is stored.
 
 ### Agents
 
@@ -104,7 +104,7 @@ A project's `.vtx/mcp.json` is read on every start and its servers are connected
 
 ## Skill-registered commands
 
-A skill becomes a slash command when its `SKILL.md` frontmatter sets `register_cmd: true` (`src/vtx/agent/context/skills.py:211`). The name of the command is the skill's `name`, not its directory path. Unlike the built-ins, these **do cost a model turn**: the skill body is rendered into a prompt with `render_skill_prompt` and sent to the agent (`src/vtx/tui/app.py:1135`).
+A skill becomes a slash command when its `SKILL.md` frontmatter sets `register_cmd: true` (`src/vtx/agent/context/skills.py:211`). The name of the command is the skill's `name`, not its directory path. Unlike the built-ins, these **do cost a model turn**: the skill body is rendered into a prompt with `render_skill_prompt` and sent to the agent (`src/vtx/tui/app.py:1210`).
 
 ```yaml
 ---
@@ -121,9 +121,9 @@ cmd_info: review code changes
 | `register_cmd: true` | Registers `/<name>` and keeps the skill in the system prompt |
 | `register_cmd: only` | Registers `/<name>` but leaves the skill out of the system prompt, for heavy skills loaded on demand |
 
-The label shown in the command menu is `cmd_info` when set, otherwise the `description` truncated to 32 characters (`MAX_CMD_INFO_LENGTH`, `src/vtx/agent/context/skills.py:27`) with `...` appended when it is longer (`src/vtx/tui/app.py:496`). A skill whose name collides with a built-in command is unreachable and is not listed (`src/vtx/tui/app.py:491`).
+The label shown in the command menu is `cmd_info` when set, otherwise the `description` truncated to 32 characters (`MAX_CMD_INFO_LENGTH`, `src/vtx/agent/context/skills.py:27`) with `...` appended when it is longer (`src/vtx/tui/app.py:537-541`). A skill whose name collides with a built-in command is unreachable and is not listed (`src/vtx/tui/app.py:530-535`).
 
-Skills are loaded per invocation from `<cwd-or-ancestor>/.agents/skills/` (walking up to the git root), `~/.agents/skills`, then `~/.vtx/skills`, which holds synchronised built-ins at the lowest priority (`src/vtx/agent/context/skills.py:409`, `src/vtx/agent/context/skills.py:309`). The built-in skills registered from Python packages are merged by name, and a project or user skill of the same name wins over the built-in (`src/vtx/agent/context/skills.py:499`, `src/vtx/tui/app.py:484`).
+Skills are loaded per invocation from `<cwd-or-ancestor>/.agents/skills/` (walking up to the git root), `~/.agents/skills`, then `~/.vtx/skills`, which holds synchronised built-ins at the lowest priority (`src/vtx/agent/context/skills.py:409`, `src/vtx/agent/context/skills.py:309`). The built-in skills registered from Python packages are merged by name, and a project or user skill of the same name wins over the built-in (`src/vtx/agent/context/skills.py:499`, `src/vtx/tui/app.py:521-525`).
 
 The built-in skills that register commands are:
 
@@ -138,7 +138,7 @@ The built-in skills that register commands are:
 | `/init` | guided AGENTS.md setup | Create or update AGENTS.md for this repository |
 
 
-A skill can also be invoked explicitly with the `/skill:<name> <query>` form. This only works for skills that set `register_cmd`; a skill without it is agent context alone and cannot be invoked this way (`src/vtx/tui/app.py:1098`):
+A skill can also be invoked explicitly with the `/skill:<name> <query>` form. This only works for skills that set `register_cmd`; a skill without it is agent context alone and cannot be invoked this way (`src/vtx/tui/app.py:1167-1179`):
 
 ```text
 /skill:review
@@ -149,13 +149,13 @@ Arguments typed after the command name are passed through as the query: `$ARGUME
 
 ## Extension-registered commands
 
-An extension registers a command with `api.register_command(name, description, handler)` (`src/vtx/plugins/api.py:292`). These dispatch without a model turn and are appended after the skills in the menu, prefixed with `[ext]` (`src/vtx/tui/app.py:509`).
+An extension registers a command with `api.register_command(name, description, handler)` (`src/vtx/plugins/api.py:292`). These dispatch without a model turn and are appended after the skills in the menu, prefixed with `[ext]` (`src/vtx/tui/app.py:551`).
 
-The handler returns a `CommandOutcome`; its `output` string is posted to the chat as `/<name> (from <owner>): <output>`, and a handler that raises is reported as `Extension command /<name> failed: <msg>` rather than crashing the app (`src/vtx/tui/commands/__init__.py:166`).
+The handler returns a `CommandOutcome`; its `output` string is posted to the chat as `/<name> (from <owner>): <output>`, and a handler that raises is reported as `Extension command /<name> failed: <msg>` rather than crashing the app (`src/vtx/tui/commands/__init__.py:173-184`).
 
 ## Shell commands
 
-Not slash commands, but routed from the same input box (`src/vtx/tui/agent_runner.py:670`):
+Not slash commands, but routed from the same input box (`src/vtx/tui/agent_runner.py:625`):
 
 | Prefix | Behavior | Model turn |
 |---|---|---|
@@ -166,8 +166,8 @@ Both are refused while a turn is running.
 
 ## Known gaps
 
-- `/themes`, `/permissions`, `/thinking`, `/effort`, `/notifications`, and `/switch` are routed but are **not** in `DEFAULT_COMMANDS`, so they never appear in the autocomplete menu. `/themes`, `/permissions`, `/thinking` and `/notifications` are in `/help` instead, which uses a separate, partially overlapping list (`src/vtx/tui/chat.py:447`); `/effort` and `/switch` are in neither.
-- `/help` and the autocomplete menu do not agree: `/help` omits `settings`, `ponytail`, `tree`, `undo`, `redo`, `recap`, `agent`, `reload`, and `mcp`.
+- `/themes`, `/permissions`, `/thinking`, `/effort`, `/notifications`, and `/switch` are routed but are **not** in `DEFAULT_COMMANDS`, so they never appear in the autocomplete menu. `/themes`, `/permissions`, `/thinking` and `/notifications` are in `/help` instead, which uses a separate, partially overlapping list (`src/vtx/tui/chat.py:548-569`); `/effort` and `/switch` are in neither.
+- `/help` and the autocomplete menu do not agree: `/help` omits `skills`, `tools`, `settings`, `ponytail`, `tree`, `undo`, `redo`, `recap`, `agent`, `switch`, `reload`, `mcp`, and `effort`.
 - `/mcp` does not accept a server name with `/mcp list <name>`; the report is always all servers.
 - `/reload` accepts an argument but ignores it.
 - `/export` writes into the working directory and has no `--path` argument; the destination name is chosen by `export_session_html`.
@@ -175,7 +175,7 @@ Both are refused while a turn is running.
 - There is no `/hotkeys` or equivalent command that dumps the keybinding table; `/help` shows a hand-maintained subset. See [keybindings](keybindings.md).
 - Skill command arguments are positional text only. There is no per-command argument schema or completion.
 - Extension commands cannot declare keybindings through the command API; `api.register_shortcut` records a handler, but the TUI does not bind it to a key.
-- Two comments claim extensions can shadow built-in commands. They cannot: every built-in name is tested first, so an extension only runs for names no built-in claims. See `src/vtx/tui/commands/__init__.py:146` and `src/vtx/tui/app.py:504`.
+- Two comments claim extensions can shadow built-in commands. They cannot: every built-in name is tested first, so an extension only runs for names no built-in claims. See `src/vtx/tui/commands/__init__.py:153-155` and `src/vtx/tui/app.py:546-549`.
 
 ## See also
 

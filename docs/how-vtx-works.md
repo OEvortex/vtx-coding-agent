@@ -10,14 +10,15 @@ This page is the map. [plugins.md](plugins.md) is the authoring contract.
 ## 1. The composition
 
 A **row** is one addressable plugin with an `id`, a `name` (a `module:attr` import
-path), an optional `config`, and a `disabled` flag. A **profile** is an ordered list of
+path), an optional `config`, a `disabled` flag, and a `meta` bag
+(`src/vtx/plugins/loader.py:108-114`). A **profile** is an ordered list of
 bundles plus one YAML patch layer the user owns.
 
-Vtx ships four bundles (`src/vtx/plugins/builtins/__init__.py:85`):
+Vtx ships four bundles (`src/vtx/plugins/builtins/__init__.py:20-93`):
 
 | Bundle | Role |
 |---|---|
-| `base` | 31 rows: services plus the built-in tools. Every profile starts here. |
+| `base` | 27 rows: 15 services plus 12 built-in tool rows. Every profile starts here. |
 | `tui` | The interactive surface: `ctx.ui` and `ctx.commands`. |
 | `headless` | Adds nothing - a serverless run boots `base` alone. |
 | `minimal` | A tool registry, a provider seam, `read`, `bash`. For embedding. |
@@ -73,10 +74,11 @@ The CLI's first job is composition: resolve `--profile` and `--patch`, call
 From there, one turn is:
 
 1. `ConversationRuntime.resolve_system_prompt()` assembles the prompt from
-   `ctx.prompts` - identity, environment, tool guidelines, project context, and the
-   skill catalog (`src/vtx/agent/runtime.py:600`).
+   `ctx.prompts` - identity, tool guidelines, project context, the skill catalog,
+   git context, and the environment line, in that order
+   (`src/vtx/agent/runtime.py:635`, `src/vtx/agent/prompts/builder.py:87-113`).
 2. `ConversationRuntime._new_agent()` builds the engine from `ctx.agentLoop`
-   (`src/vtx/agent/runtime.py:941`).
+   (`src/vtx/agent/runtime.py:996`).
 3. `ctx.tools.assemble()` produces the active tool list, which is what the provider
    serializes into tool schemas (`src/vtx/plugins/services.py:118`).
 4. The model emits tool calls. Each mutating call goes through the permission gate
@@ -131,14 +133,15 @@ have no internal callers, so a bug there is caught by nothing.
 
 ## 6. The system prompt
 
-Assembled from ordered sections, not one blob (`src/vtx/agent/prompts/builder.py`):
+Assembled from ordered sections, not one blob (`src/vtx/agent/prompts/builder.py:87-113`):
 
-1. `identity` - the base Vtx prompt
-2. `env` - date, cwd, binary availability
-3. `tooling` - aggregated per-tool guidelines
-4. `skills` - the catalog, one `<skill>` entry per skill with name and description
-5. project context - `AGENTS.md` and agent MDS files
-6. git context, if enabled
+1. `identity` - the base Vtx prompt, plus any active agent's `instructions`
+   (appended, or replacing the base when `instructions_mode` is `"replace"`)
+2. `tooling` - aggregated per-tool guidelines
+3. project context - `AGENTS.md` and agent MDS files
+4. `skills` - the catalog, one entry per skill with name and description
+5. git context, if enabled
+6. `env` - date, cwd, binary availability
 
 Skills reach the model only through section 4, as a flat list of names and
 descriptions. The body loads when the model opens the file, which is why a skill's
