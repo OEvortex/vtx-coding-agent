@@ -1,7 +1,7 @@
 from vtx.agent.runtime import default_base_url_for_provider
 from vtx.ai.base import is_local_base_url, resolve_api_key
 from vtx.ai.models import ApiType
-from vtx.ai.providers import PROVIDER_API_BY_NAME, get_provider_class, resolve_provider_api_type
+from vtx.ai.providers import get_provider_class, resolve_provider_api_type
 
 
 def test_resolve_provider_api_type_openai():
@@ -34,10 +34,12 @@ def test_get_provider_class_anthropic():
     assert cls.name == "anthropic"
 
 
-def test_provider_api_by_name_has_expected_providers():
-    assert "openai" in PROVIDER_API_BY_NAME
-    assert "anthropic" in PROVIDER_API_BY_NAME
-    assert "deepseek" in PROVIDER_API_BY_NAME
+def test_resolve_provider_api_type_catalog_providers():
+    assert resolve_provider_api_type("openai") == ApiType(ApiType.OPENAI_SDK)
+    assert resolve_provider_api_type("anthropic") == ApiType(ApiType.ANTHROPIC)
+    assert resolve_provider_api_type("deepseek") == ApiType(ApiType.OPENAI_SDK)
+    assert resolve_provider_api_type("codex") == ApiType(ApiType.OPENAI_RESPONSES)
+    assert resolve_provider_api_type("devin") == ApiType(ApiType.DEVIN)
 
 
 def test_is_local_base_url():

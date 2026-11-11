@@ -47,7 +47,7 @@
     </div>
 
     <div id="body">
-      <div id="sessions-list" class="hidden"></div>
+      <div id="sessions-list" class="hidden" role="tree" aria-label="Vtx sessions"></div>
       <!-- role=log so a screen reader treats arriving replies as an append-only
            feed and reads new content without the user hunting for it. The stream
            itself is announced through #announcer rather than by making the whole
@@ -82,7 +82,7 @@
                  the blue Send or, while Vtx works, the split queue button. -->
             <button id="stop" class="send-btn stop hidden" title="Stop"><i class="codicon codicon-stop-circle"></i></button>
             <div id="send-group" class="send-group">
-              <button id="send" class="send-btn" title="Send (Enter)" disabled><i class="codicon codicon-newline"></i></button>
+              <button id="send" class="send-btn" title="Send (Enter)" disabled><i class="codicon codicon-arrow-up"></i></button>
               <button id="send-more" class="send-btn send-more hidden" title="More send options" aria-haspopup="true"><i class="codicon codicon-chevron-down"></i></button>
             </div>
           </div>

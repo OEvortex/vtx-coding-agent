@@ -8,6 +8,34 @@ the commit messages carry the detail.
 > locally. The builds between 0.6.65 and 0.6.91 reached the Marketplace together
 > in 0.6.92.
 
+## [0.13.3] - 2026-11-11
+
+### Highlights
+- Restyle the panel against the GitHub Copilot Chat UI: denser chrome, quieter
+  tool rows, a request bubble that is a fill rather than an outline, and code
+  blocks that read as embedded editors.
+- Composer controls share one 22px tier, with a filled circular Send and pickers
+  that compact to icon-only squares instead of disappearing.
+- The context meter is now Copilot's 14px ring, amber past 75% and red past 90%,
+  with the percentage revealed on hover.
+- Sessions list gains tree semantics, roving arrow-key focus, and hover actions
+  that keyboard users can reach.
+- The empty state pins its suggested prompts above the composer and focuses the
+  input when clicked.
+- Code blocks carry a language pill in their floating chrome, and a session
+  waiting on your answer gets a tinted row with an attention bar.
+- A filtered session list that comes up empty offers a focusable "Reset filter"
+  instead of a dead end.
+
+### Under the hood
+- Row, tool, composer and token metrics taken from microsoft/vscode's
+  `contrib/chat` CSS at 8b38655; per-turn rows carry their own horizontal
+  padding, the transcript uses `chat-list-background`, and the header sits in
+  the same 950px column as the messages.
+- Tool rows shimmer while running (spinner hidden), turn red on failure, use
+  tabular numerals, and admit "taking longer than usual" after 90 seconds.
+- Elapsed labels round to whole seconds, matching Copilot's formatting.
+
 ## [0.13.2] - 2026-11-11
 
 ### Highlights

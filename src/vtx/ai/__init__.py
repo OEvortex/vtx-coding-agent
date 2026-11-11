@@ -3,7 +3,7 @@
 Re-exported lazily through :func:`__getattr__`. This package used to import every
 provider client eagerly, so ``import vtx.ai`` pulled in the whole ``aiohttp`` /
 ``httpx`` stack (~170ms) even for a caller that only wanted
-``PROVIDER_API_BY_NAME`` — which lives in :mod:`vtx.ai.providers` and needs only
+``resolve_provider_api_type`` — which lives in :mod:`vtx.ai.providers` and needs only
 the base provider layer.
 
 ``_SOURCES`` is ordered so each name still resolves to the object the eager
@@ -59,6 +59,7 @@ if TYPE_CHECKING:
         is_cline_logged_in,
         is_codex_logged_in,
         is_copilot_logged_in,
+        is_devin_logged_in,
         load_api_key,
         load_cline_credentials,
         load_codex_credentials,
@@ -69,7 +70,7 @@ if TYPE_CHECKING:
         save_codex_credentials,
     )
     from .provider_catalog import ProviderInfo, detect_provider_from_env, list_providers
-    from .providers import PROVIDER_API_BY_NAME, get_provider_class, resolve_provider_api_type
+    from .providers import get_provider_class, resolve_provider_api_type
 
 _SOURCES = (
     "vtx.ai.base",
@@ -111,7 +112,6 @@ def __dir__() -> list[str]:
 __all__ = [
     "DEFAULT_THINKING_LEVELS",
     "DYNAMIC_PROVIDERS",
-    "PROVIDER_API_BY_NAME",
     "ApiType",
     "BaseProvider",
     "CodexCredentials",
@@ -157,6 +157,7 @@ __all__ = [
     "is_cline_logged_in",
     "is_codex_logged_in",
     "is_copilot_logged_in",
+    "is_devin_logged_in",
     "list_providers",
     "load_api_key",
     "load_cline_credentials",

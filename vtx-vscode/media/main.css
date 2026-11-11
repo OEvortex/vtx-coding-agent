@@ -69,8 +69,10 @@
 }
 
 /* Swept "working" highlight, clipped to the text. Shared by the thinking
-   label, the pending indicator, and progress rows. */
-.dv-shimmer {
+   label, the pending indicator, and progress rows. A running tool row sweeps its
+   verb and hides its spinner glyph, which is how VS Code signals activity. */
+.dv-shimmer,
+.tool.in_progress .tool-verb {
   background: linear-gradient(90deg,
       var(--dv-dim) 0%,
       var(--dv-dim) 30%,
@@ -87,6 +89,7 @@
 
 @media (prefers-reduced-motion: reduce) {
   .dv-shimmer,
+  .tool.in_progress .tool-verb,
   .thinking.thinking-active .thinking-label {
     /* Stopping the sweep is not enough: the text is painted by the gradient, so
        without giving it its colour back it stays washed out or invisible. */
@@ -388,14 +391,18 @@ body {
 /* Header */
 /* Shared bar metrics so the header (list + session) and the sessions panel
    toolbar all have the same height, spacing, and border. */
+/* Content-height row rather than a fixed bar, with the asymmetric inset VS
+   Code's chat view title uses, and its content centred in the same 950px column
+   as the transcript so the title and actions do not drift to the far edges of a
+   wide editor. */
 #chat-header {
   position: relative;
   display: flex;
   align-items: center;
-  gap: 4px;
-  height: 40px;
+  gap: 2px;
+  min-height: 32px;
   box-sizing: border-box;
-  padding: 0 8px;
+  padding: 4px max(8px, calc((100% - 950px) / 2 + 12px)) 4px max(12px, calc((100% - 950px) / 2 + 16px));
   border-bottom: 1px solid var(--vscode-panel-border);
   flex: 0 0 auto;
 }
@@ -441,9 +448,14 @@ body {
   display: inline-block;
 }
 
+/* The session title reads as a label, not a heading: VS Code renders
+   .chat-view-title-label as an uppercase label2. */
 #chat-title {
+  font-size: var(--vscode-fontSize-label2, 11px);
   font-weight: 600;
-  line-height: 1.25;
+  line-height: 16px;
+  letter-spacing: 0.02em;
+  text-transform: uppercase;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -488,6 +500,48 @@ body {
   text-align: center;
   opacity: 0.6;
   font-size: 0.9em;
+}
+
+/* VS Code's filtered-empty line ends in a focusable "Reset Filter" link rather
+   than leaving the user to hunt for the control that hid their sessions. */
+.sessions-empty-sm .reset-filter-link {
+  background: none;
+  border: none;
+  padding: 0;
+  margin-left: 2px;
+  font: inherit;
+  color: var(--vscode-textLink-foreground);
+  cursor: pointer;
+}
+
+.sessions-empty-sm .reset-filter-link:hover {
+  text-decoration: underline;
+  color: var(--vscode-textLink-activeForeground, var(--vscode-textLink-foreground));
+}
+
+.sessions-empty-sm .reset-filter-link:focus-visible {
+  outline: 1px solid var(--vscode-focusBorder);
+  outline-offset: 1px;
+}
+
+/* A row waiting on the user: tinted surface plus a left attention bar, the
+   treatment VS Code gives needs-input session rows, so it reads apart from the
+   merely running ones. */
+.session-item.needs-attention {
+  position: relative;
+  background: color-mix(in srgb, var(--vscode-editorWarning-foreground, #d29922) 8%, transparent);
+}
+
+.session-item.needs-attention::before {
+  content: "";
+  position: absolute;
+  left: 2px;
+  top: 8px;
+  bottom: 8px;
+  width: 3px;
+  border-radius: 2px;
+  background: var(--vscode-editorWarning-foreground, #d29922);
+  pointer-events: none;
 }
 
 .spacer {
@@ -546,11 +600,14 @@ body {
 }
 
 #thread {
-  padding: 12px;
+  padding: 12px 0;
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: 16px;
+  gap: 12px;
+  /* The list surface VS Code paints the Copilot transcript on, rather than the
+     sidebar's own background. */
+  background: var(--vscode-chat-list-background, transparent);
 }
 
 /* Keep each item at its natural height (the thread scrolls instead of
@@ -560,6 +617,14 @@ body {
   flex: 0 0 auto;
   width: 100%;
   max-width: 950px;
+}
+
+/* Horizontal padding lives on the row, not the scroller, the way VS Code pads
+   .interactive-item-container (12px 16px): a turn's hover chrome can then reach
+   the column edge, and the scrollbar sits flush. */
+#thread > .turn {
+  padding: 0 16px;
+  box-sizing: border-box;
 }
 
 /* While a session/load replay streams in, hide the still-rendering transcript
@@ -635,8 +700,10 @@ body {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  width: 28px;
-  height: 28px;
+  /* 24px: close to VS Code's 22px action boxes while keeping a comfortable hit
+     target; at 300-450px this returns real width to the session title. */
+  width: 24px;
+  height: 24px;
   flex: 0 0 auto;
   padding: 0;
   border: none;
@@ -666,16 +733,16 @@ body {
   height: 14px;
 }
 
-/* Send button: 24x24 filled, radius small, mirroring VS Code's
-   .chat-submit-button > .action-label (button colours + 120ms bg transition). */
+/* Send button: 22x22 filled circle, mirroring VS Code's .chat-submit-button
+   (cornerRadius-circle, button colours, 120ms bg transition). */
 .send-btn {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  width: 24px;
-  height: 24px;
+  width: 22px;
+  height: 22px;
   border: none;
-  border-radius: var(--dv-radius-sm);
+  border-radius: 999px;
   background: var(--vscode-button-background);
   color: var(--vscode-button-foreground);
   cursor: pointer;
@@ -710,7 +777,7 @@ body {
 }
 
 .send-more {
-  width: 16px;
+  width: 14px;
   border-radius: 0 var(--dv-radius-sm) var(--dv-radius-sm) 0;
 }
 
@@ -742,7 +809,7 @@ body {
 }
 
 .send-btn .codicon {
-  font-size: 18px;
+  font-size: 14px;
 }
 
 .btn {
@@ -781,15 +848,17 @@ body {
   display: inline-block;
 }
 
+/* 22px is VS Code's --chat-input-control-height: every composer control sits on
+   that tier, so the toolbar is one optical row. */
 .dd-btn {
   display: inline-flex;
   align-items: center;
-  gap: 3px;
+  gap: 6px;
   height: 22px;
   max-width: 150px;
-  padding: 3px 6px;
+  padding: 0 6px;
   border: none;
-  border-radius: 4px;
+  border-radius: var(--vscode-cornerRadius-small, var(--dv-radius-sm));
   background: transparent;
   color: var(--vscode-icon-foreground, var(--vscode-foreground));
   font-family: inherit;
@@ -830,7 +899,6 @@ body {
 .dd-icon {
   display: inline-flex;
   align-items: center;
-  margin-right: 2px;
   opacity: 0.9;
 }
 
@@ -1419,16 +1487,30 @@ button.model-hover-configurable-button:hover {
 /* Composer */
 #composer {
   flex: 0 0 auto;
-  padding: 8px;
+  padding: 4px 12px 8px;
   border-top: 1px solid var(--vscode-panel-border);
 }
 
+/* Cap the composer stack in the same 950px column as the transcript, as
+   .interactive-session does upstream; without this the input is wider than the
+   messages above it on an editor-width surface. */
+#composer > * {
+  width: 100%;
+  max-width: 950px;
+  margin-left: auto;
+  margin-right: auto;
+  box-sizing: border-box;
+}
+
+/* Composer box metrics mirror VS Code's .chat-input-container: the top inset
+   lives inside the text area (8px), the box itself only pads the sides and
+   bottom, and the radius is the large corner token. */
 #input-box {
   position: relative;
   border: 1px solid var(--vscode-input-border, var(--vscode-panel-border));
-  border-radius: 8px;
+  border-radius: var(--vscode-cornerRadius-large, var(--dv-radius-lg));
   background: var(--vscode-input-background);
-  padding: 8px 8px 6px;
+  padding: 4px 6px 6px;
 }
 
 #input-box:focus-within {
@@ -1459,7 +1541,7 @@ button.model-hover-configurable-button:hover {
   content: "";
   position: absolute;
   inset: -1px;
-  border-radius: 8px;
+  border-radius: var(--vscode-cornerRadius-large, var(--dv-radius-lg));
   pointer-events: none;
   opacity: 0;
   transition: opacity 350ms ease;
@@ -1568,6 +1650,10 @@ button.model-hover-configurable-button:hover {
   font-size: 13px;
 }
 
+#input::placeholder {
+  color: var(--vscode-input-placeholderForeground, var(--dv-dim));
+}
+
 #input {
   width: 100%;
   border: none;
@@ -1577,9 +1663,9 @@ button.model-hover-configurable-button:hover {
   color: var(--vscode-input-foreground);
   font-family: inherit;
   font-size: inherit;
-  min-height: 48px;
-  max-height: 240px;
-  padding: 2px 4px;
+  min-height: 44px;
+  max-height: 250px;
+  padding: 8px 2px 2px;
   line-height: 1.4;
 }
 
@@ -1587,15 +1673,15 @@ button.model-hover-configurable-button:hover {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  margin-top: 6px;
-  gap: 4px;
+  margin-top: 4px;
+  gap: 2px;
 }
 
 .toolbar-left,
 .toolbar-right {
   display: flex;
   align-items: center;
-  gap: 4px;
+  gap: 2px;
   min-width: 0;
 }
 
@@ -1632,27 +1718,33 @@ button.model-hover-configurable-button:hover {
   font-size: 14px;
 }
 
-/* Responsive composer tiers (classes toggled by a ResizeObserver) */
-#input-box.cmp-sm .dd-label { display: none; }
-#input-box.cmp-sm .dd-btn { max-width: none; }
+/* Responsive composer tiers (classes toggled by a ResizeObserver). VS Code
+   compacts pickers to icon-only 22px squares before it overflows anything, and
+   the send cluster never yields; so labels go first, then the secondary pickers,
+   and attach/usage/send stay reachable at every width. */
+/* Compact pickers: an icon-only 22px square, chevron dropped. A picker with no
+   icon (mode) keeps its short text label instead of collapsing to a chevron with
+   nothing beside it. */
+#input-box.cmp-sm .dd-btn { max-width: none; padding: 0 4px; }
+#input-box.cmp-sm .dd-btn .codicon-chevron-down { display: none; }
+#input-box.cmp-sm .dd-btn.has-icon .dd-label { display: none; }
+#input-box.cmp-sm .dd-btn.has-icon { min-width: 22px; justify-content: center; padding: 0; }
 #input-box.cmp-sm .usage-pct { display: none; }
 
-#input-box.cmp-xs #model-dd,
-#input-box.cmp-xs #usage { display: none !important; }
-
+/* Fusion is the only control for lead model/effort, so it keeps its icon at
+   every width; the redundant controls go first. */
 #input-box.cmp-xxs #mode-dd,
-#input-box.cmp-xxs #attach,
 #input-box.cmp-xxs #thinking-dd { display: none !important; }
 
 /* Context-window usage ring (click for a details popover) */
 .usage-ring {
   display: inline-flex;
   align-items: center;
-  gap: 3px;
+  gap: 4px;
   height: 22px;
-  padding: 0 4px;
+  padding: 3px;
   border: none;
-  border-radius: 4px;
+  border-radius: 5px;
   background: transparent;
   color: var(--vscode-descriptionForeground, var(--vscode-foreground));
   cursor: pointer;
@@ -1662,7 +1754,14 @@ button.model-hover-configurable-button:hover {
 
 .usage-ring:hover {
   background: var(--vscode-toolbar-hoverBackground, var(--vscode-list-hoverBackground));
+  outline: 1px dashed var(--vscode-toolbar-hoverOutline, var(--vscode-focusBorder));
+  outline-offset: -1px;
 }
+
+/* The percentage adopts the warning/error colour of the ring once the window is
+   getting full (VS Code's context-usage widget at 75% / 90%). */
+.usage-ring.warning .usage-pct { color: var(--vscode-editorWarning-foreground, #cca700); }
+.usage-ring.error .usage-pct { color: var(--vscode-editorError-foreground, #f14c4c); }
 
 .usage-ring:focus-visible {
   outline: 1px solid var(--vscode-focusBorder);
@@ -1672,7 +1771,7 @@ button.model-hover-configurable-button:hover {
 /* The % label is hidden at rest and expands on hover/focus, matching VS Code's
    context-usage widget (max-width/opacity transition). */
 .usage-pct {
-  font-size: 0.78em;
+  font-size: 11px;
   max-width: 0;
   opacity: 0;
   overflow: hidden;
@@ -1851,8 +1950,10 @@ button.model-hover-configurable-button:hover {
   align-items: center;
   gap: 4px;
   height: 18px;
-  max-width: 100%;
-  padding: 0 4px 0 6px;
+  /* A long path shrinks to the chip cap instead of setting the row's width. */
+  min-width: 0;
+  max-width: min(240px, 100%);
+  padding: 0 2px 0 6px;
   border: 1px solid var(--dv-border);
   border-radius: var(--dv-radius-sm);
   font-size: 11px;
@@ -1870,6 +1971,7 @@ button.model-hover-configurable-button:hover {
 }
 
 .chip-label {
+  min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -1901,7 +2003,7 @@ button.model-hover-configurable-button:hover {
 
 .chip-x {
   display: inline-flex;
-  padding: 1px;
+  padding: 1px 1px 1px 3px; /* VS Code gives the remove control its own 4px zone */
   border: none;
   background: transparent;
   color: var(--vscode-descriptionForeground, inherit);
@@ -1958,8 +2060,9 @@ button.model-hover-configurable-button:hover {
   gap: 4px;
   overflow: hidden;
   height: 18px;
-  padding: 0 6px 0 4px;
-  max-width: 100%;
+  min-width: 0;
+  padding: 0 4px;
+  max-width: min(240px, 100%);
   width: fit-content;
   flex: 0 1 auto;
   border: 1px solid var(--vscode-chat-requestBorder, var(--vscode-input-background, var(--dv-border)));
@@ -1995,14 +2098,27 @@ button.model-hover-configurable-button:hover {
   white-space: nowrap;
 }
 
+/* VS Code's request bubble: requestBubbleBackground, cornerRadius-medium (6px),
+   8px 12px padding, right-aligned at a 90% cap -- and no border outside
+   high-contrast themes, so the fill is the shape. */
 .turn-request .req-body {
   background: var(--vscode-chat-requestBubbleBackground, var(--vscode-chat-requestBackground, rgba(127, 127, 127, 0.12)));
-  border: 1px solid var(--vscode-chat-requestBorder, transparent);
-  border-radius: var(--dv-radius-xl);
+  border: none;
+  border-radius: var(--vscode-cornerRadius-medium, var(--dv-radius-md));
   padding: 8px 12px;
   width: fit-content;
   max-width: 90%;
   margin-left: auto;
+}
+
+/* First/last margins are zeroed inside the bubble, as upstream does, so a
+   multi-paragraph prompt does not gain phantom padding at its edges. */
+.turn-request .req-body > :first-child {
+  margin-top: 0;
+}
+
+.turn-request .req-body > :last-child {
+  margin-bottom: 0;
 }
 
 .turn-request.editable-inline .req-body {
@@ -2295,6 +2411,7 @@ button.model-hover-configurable-button:hover {
 .chat-footer-details {
   margin-left: auto;
   font-size: var(--dv-fs-xs);
+  line-height: 16px;
   color: var(--dv-dim);
   opacity: 0.7;
 }
@@ -2349,19 +2466,25 @@ button.model-hover-configurable-button:hover {
 }
 
 /* Welcome / empty state */
+/* Empty state, modelled on .chat-welcome-view: a centred column with the
+   suggested prompts pinned near the composer below it. */
 .welcome {
   display: flex;
   flex-direction: column;
   align-items: center;
   text-align: center;
   gap: 8px;
-  padding: 32px 16px;
+  padding: 12px;
   margin: auto 0;
+  min-height: 100%;
+  box-sizing: border-box;
 }
 
 .welcome-icon {
-  font-size: 30px;
-  opacity: 0.5;
+  font-size: 40px;
+  color: var(--vscode-descriptionForeground);
+  opacity: 0.8;
+  margin-bottom: 16px;
 }
 
 .welcome-logo {
@@ -2386,14 +2509,20 @@ button.model-hover-configurable-button:hover {
   display: flex;
   flex-wrap: wrap;
   justify-content: center;
-  gap: 6px;
+  gap: 8px;
+  width: 100%;
   max-width: 340px;
-  margin-top: 8px;
+  /* Pushed to the bottom of the welcome column, as VS Code pins its suggested
+     prompts strip above the input rather than floating it mid-column. */
+  margin-top: auto;
+  padding-top: 24px;
 }
 
+/* 20px-high suggestion chips, as VS Code renders the welcome strip. */
 .welcome-chip {
   text-align: left;
-  padding: 3px 8px;
+  height: 20px;
+  padding: 0 6px;
   border: 1px solid var(--dv-border);
   border-radius: var(--dv-radius-sm);
   background: var(--vscode-editorWidget-background, transparent);
@@ -2536,37 +2665,81 @@ button.model-hover-configurable-button:hover {
   margin-bottom: 0;
 }
 
+/* A paragraph that wraps list content carries no bottom margin of its own. */
+.bubble li > p {
+  margin: 0;
+}
+
+/* Response code block, VS Code's recipe: input-border hairline,
+   cornerRadius-medium, and the result-editor background rather than the plain
+   code-block fill, so fenced code reads as an embedded editor. */
 .bubble pre {
   position: relative;
-  background: var(--vscode-textCodeBlock-background);
-  padding: 8px 10px;
-  border-radius: var(--dv-radius-md);
+  margin: 0 0 16px;
+  padding: 10px 12px;
+  border: 1px solid var(--vscode-input-border, transparent);
+  border-radius: var(--vscode-cornerRadius-medium, var(--dv-radius-md));
+  background: var(
+    --vscode-interactive-result-editor-background-color,
+    var(--vscode-editorWidget-background, var(--vscode-textCodeBlock-background))
+  );
   overflow-x: auto;
+}
+
+/* The code block's chrome is a floating pill above the block, VS Code's
+   .interactive-result-code-block-toolbar: editor background, requestBorder
+   hairline, hidden until hover/focus. */
+.code-block-wrap {
+  position: relative;
+  margin: 0 0 16px;
+}
+
+.code-block-wrap > pre {
+  margin: 0;
 }
 
 .code-toolbar {
   position: absolute;
-  top: 4px;
-  right: 4px;
+  top: -13px;
+  right: 8px;
   display: flex;
+  align-items: center;
   gap: 2px;
+  height: 26px;
+  padding: 0 2px 0 8px;
+  border: 1px solid var(--vscode-chat-requestBorder, var(--vscode-panel-border));
+  border-radius: var(--vscode-cornerRadius-medium, var(--dv-radius-md));
+  background: var(--vscode-editorWidget-background, var(--vscode-editor-background));
   opacity: 0;
+  pointer-events: none;
   transition: opacity 0.1s ease-in-out;
 }
 
-.bubble pre:hover .code-toolbar,
+.code-block-wrap:hover .code-toolbar,
 .code-toolbar:focus-within {
   opacity: 1;
+  pointer-events: auto;
+}
+
+/* Language name in the left half of the pill, dimmed like a status label. */
+.code-lang {
+  padding-right: 6px;
+  font-size: 11px;
+  line-height: 1;
+  color: var(--vscode-descriptionForeground);
+  text-transform: lowercase;
 }
 
 .code-btn {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  padding: 3px;
-  border: 1px solid var(--vscode-panel-border);
-  border-radius: 4px;
-  background: var(--vscode-editorWidget-background, var(--vscode-editor-background));
+  width: 22px;
+  height: 22px;
+  padding: 0;
+  border: none;
+  border-radius: var(--vscode-cornerRadius-small, var(--dv-radius-sm));
+  background: transparent;
   color: var(--vscode-icon-foreground, var(--vscode-foreground));
   cursor: pointer;
 }
@@ -2589,8 +2762,8 @@ button.model-hover-configurable-button:hover {
   color: var(--vscode-textPreformat-foreground, var(--vscode-foreground));
   background: var(--vscode-textPreformat-background, var(--vscode-textCodeBlock-background));
   border: 1px solid var(--vscode-textPreformat-border, transparent);
-  padding: 1px 3px;
-  border-radius: var(--dv-radius-sm);
+  padding: 2px 4px;
+  border-radius: var(--vscode-cornerRadius-small, var(--dv-radius-sm));
   white-space: pre-wrap;
 }
 
@@ -3180,7 +3353,31 @@ button.model-hover-configurable-button:hover {
 .tool > .dv-collapsible-header {
   gap: 6px;
   padding: 1px 0;
+  /* VS Code's progress rows are descriptionForeground and brighten on hover or
+     when expanded, so a column of finished tools stays quiet. */
+  color: var(--vscode-descriptionForeground, #9d9d9d);
+}
+
+.tool > .dv-collapsible-header:hover,
+.tool:not(.dv-collapsed) > .dv-collapsible-header {
   color: var(--vscode-foreground);
+}
+
+/* A running row shows its state with the shimmer, not a second spinner. */
+.tool.in_progress .tool-status {
+  display: none;
+}
+
+/* Failures keep a visible red status and label; a dimmed row would read as done. */
+.tool.failed .tool-status {
+  display: inline-flex;
+  color: var(--vscode-errorForeground, #f14c4c);
+  opacity: 1;
+}
+
+.tool.failed .label,
+.tool.failed .tool-verb {
+  color: var(--vscode-errorForeground, #f14c4c);
 }
 
 /* Verb normal, the rest dimmed, like VS Code's tool lines. */
@@ -3203,6 +3400,14 @@ button.model-hover-configurable-button:hover {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+  /* Streaming counts ("Read 12 files") must not jitter as digits change. */
+  font-variant-numeric: tabular-nums;
+  font-feature-settings: "tnum";
+}
+
+.tool-group-label {
+  font-variant-numeric: tabular-nums;
+  font-feature-settings: "tnum";
 }
 
 /* Chevron stays hidden until hover/open, keeping the row clean like VS Code.
@@ -3215,9 +3420,14 @@ button.model-hover-configurable-button:hover {
   opacity: 0;
 }
 
-.tool:hover > .dv-collapsible-header .tool-chevron,
-.tool:not(.dv-collapsed) > .dv-collapsible-header .tool-chevron {
+.tool:hover > .dv-collapsible-header .tool-chevron {
   opacity: 0.6;
+}
+
+/* Expanded state is not a hover: the disclosure stays visible (VS Code's
+   .expanded chevron is opacity 1). */
+.tool:not(.dv-collapsed) > .dv-collapsible-header .tool-chevron {
+  opacity: 1;
 }
 
 .tool:not(.dv-collapsed) > .dv-collapsible-header .tool-chevron {
@@ -4680,10 +4890,11 @@ body.dv-resizing #sessions-resizer {
   align-items: center;
   gap: 4px;
   padding: 8px 8px 4px;
-  font-size: 0.75em;
+  font-size: var(--vscode-fontSize-label1, 12px);
   text-transform: uppercase;
   letter-spacing: 0.05em;
-  opacity: 0.6;
+  opacity: 0.75;
+  color: var(--vscode-descriptionForeground);
   font-weight: 600;
   cursor: pointer;
   position: sticky;
@@ -4749,10 +4960,16 @@ body.dv-resizing #sessions-resizer {
   gap: 2px;
 }
 
+/* Row typography from VS Code's session viewer: a 13px title row over a 12px
+   description row. */
 .session-title {
+  font-size: 13px;
+  line-height: 17px;
+  padding-bottom: 2px;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
+  min-width: 0;
 }
 
 /* Liveness dot in front of a session title: green running, amber waiting,
@@ -4805,8 +5022,11 @@ body.dv-resizing #sessions-resizer {
 .session-meta {
   display: flex;
   align-items: center;
-  gap: 6px;
-  font-size: 0.82em;
+  gap: 4px;
+  font-size: 12px;
+  line-height: 15px;
+  color: var(--vscode-descriptionForeground);
+  min-width: 0;
 }
 
 .session-time {
@@ -4826,14 +5046,18 @@ body.dv-resizing #sessions-resizer {
   max-width: 140px;
 }
 
+/* Hidden with visibility, not display: the row's Rename/Delete stay in the tab
+   order and appear on focus, so the actions are reachable without a mouse. */
 .session-actions {
-  display: none;
+  display: flex;
   gap: 2px;
   flex: 0 0 auto;
+  visibility: hidden;
 }
 
-.session-item:hover .session-actions {
-  display: flex;
+.session-item:hover .session-actions,
+.session-item:focus-within .session-actions {
+  visibility: visible;
 }
 
 /* The Ctrl/Cmd+N that opens this chat, drawn as a keybinding label and given up

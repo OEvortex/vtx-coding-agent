@@ -2417,12 +2417,4 @@ class UsageBlock(Static):
         text.append("\n\n")
         text.append(f"{subtitle}\n", style=f"{colors.fg} bold")
         text.append_text(self._heatmap(available_width))
-        # The count is of files still on disk, while the totals include every
-        # session the ledger has ever seen -- saying so avoids reading the two
-        # as contradictory.
-        text.append(
-            f"\n{report.sessions_scanned:,} session files on disk"
-            " · lifetime includes deleted sessions\n",
-            style=colors.dim,
-        )
         return text

@@ -42,6 +42,7 @@ class ProviderInfo:
     display_name: str
     description: str
     family: str
+    api: str | None = None
     base_url: str | None = None
     api_key_env: str | None = None
     known_models: tuple[str, ...] = ()
@@ -90,6 +91,7 @@ def _parse_entry(entry: dict) -> ProviderInfo:
         display_name=entry.get("display_name", slug),
         description=entry.get("description", ""),
         family=entry["family"],
+        api=entry.get("api"),
         base_url=entry.get("base_url"),
         api_key_env=entry.get("api_key_env"),
         known_models=tuple(entry.get("known_models", [])),
@@ -200,6 +202,7 @@ def _get_builtin_oauth_providers() -> dict[str, ProviderInfo]:
             display_name="OpenAI Codex",
             description="OpenAI Codex OAuth provider.",
             family="openai_compat",
+            api="openai-responses",
             base_url="https://chatgpt.com/backend-api/codex",
             api_key_env="OPENAI_API_KEY",
             known_models=(
@@ -220,6 +223,22 @@ def _get_builtin_oauth_providers() -> dict[str, ProviderInfo]:
             supports_thinking=True,
             fetch_models=True,
             models_endpoint="/models",
+            headers={},
+        ),
+        "devin": ProviderInfo(
+            slug="devin",
+            display_name="Devin",
+            description="Devin CLI (Cognition) session provider.",
+            family="devin",
+            api="devin",
+            base_url="https://server.codeium.com",
+            api_key_env="WINDSURF_API_KEY",
+            known_models=(),
+            supports_tools=True,
+            supports_vision=True,
+            supports_thinking=True,
+            fetch_models=True,
+            models_endpoint="/exa.api_server_pb.ApiServerService/GetCascadeModelConfigs",
             headers={},
         ),
     }
@@ -316,6 +335,14 @@ def detect_provider_from_env() -> ProviderInfo:
                     return p
             except Exception:
                 pass
+        elif slug == "devin":
+            try:
+                from vtx.ai.oauth.devin import is_devin_logged_in
+
+                if is_devin_logged_in():
+                    return p
+            except Exception:
+                pass
 
     for slug in order:
         p = providers[slug]
@@ -351,6 +378,13 @@ def is_provider_configured(p: ProviderInfo) -> bool:
             return is_codex_logged_in()
         except Exception:
             return False
+    if p.slug == "devin":
+        try:
+            from vtx.ai.oauth.devin import is_devin_logged_in
+
+            return is_devin_logged_in()
+        except Exception:
+            return False
     from vtx.ai.oauth.dynamic import has_api_key
 
     if has_api_key(p.slug):
@@ -358,17 +392,30 @@ def is_provider_configured(p: ProviderInfo) -> bool:
     return p.api_key_env is None
 
 
+_FAMILY_TO_API: dict[str, ApiType] = {
+    "openai_compat": ApiType(ApiType.OPENAI_SDK),
+    "anthropic": ApiType(ApiType.ANTHROPIC),
+    "devin": ApiType(ApiType.DEVIN),
+}
+
+
+def provider_api_type(p: ProviderInfo) -> ApiType:
+    """Resolve a provider's transport ApiType.
+
+    ``ProviderInfo.api`` (set per-entry in ``provider.yaml`` or by
+    :func:`register_custom_provider`) wins; otherwise the ``family`` field
+    decides. This is the single source of truth for slug -> ApiType.
+    """
+    if p.api:
+        try:
+            return ApiType(p.api)
+        except ValueError:
+            pass
+    return _FAMILY_TO_API.get(p.family, ApiType(ApiType.OPENAI_SDK))
+
+
 def _provider_info_to_model(p: ProviderInfo, model_id: str) -> Model:
-    family_to_api = {
-        "openai_compat": ApiType(ApiType.OPENAI_SDK),
-        "anthropic": ApiType(ApiType.ANTHROPIC),
-    }
-    # Some openai_compat providers actually use the Responses API transport.
-    responses_api_providers = {"codex", "openai-responses"}
-    if p.slug in responses_api_providers:
-        api = ApiType(ApiType.OPENAI_RESPONSES)
-    else:
-        api = family_to_api[p.family]
+    api = provider_api_type(p)
     from vtx.ai.context_length import context_length_manager
 
     limits = context_length_manager.get_limits(model_id, provider=p.slug)
@@ -513,6 +560,7 @@ def register_custom_provider(
     headers: dict[str, str] | None = None,
     openmodelendpoint: bool = False,
     model_parser: dict | None = None,
+    api: str | None = None,
 ) -> ProviderInfo:
     """Register (or replace) a custom provider at runtime.
 
@@ -531,6 +579,7 @@ def register_custom_provider(
         display_name=display_name,
         description=description,
         family=family,
+        api=api,
         base_url=base_url,
         api_key_env=api_key_env,
         known_models=tuple(known_models or []),
@@ -663,7 +712,10 @@ def _ensure_custom_files_loaded() -> None:
 # Patch _load so file-based custom providers are merged in automatically.
 def _load() -> dict[str, ProviderInfo]:
     _ensure_custom_files_loaded()
-    providers = _load_builtin()
+    # Copy: _load_builtin returns the shared _BUILTIN_CACHE dict, and
+    # mutating it here would leak custom providers into the builtin cache
+    # (a deleted provider file would resurrect on the next lookup).
+    providers = dict(_load_builtin())
     providers.update(_custom_cache)
     return providers
 

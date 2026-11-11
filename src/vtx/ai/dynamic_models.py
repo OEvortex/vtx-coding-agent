@@ -101,12 +101,6 @@ class DynamicProviderConfig:
     response_format: str = "openai"  # "openai" | "bare_array"
 
 
-_FAMILY_TO_API: dict[str, ApiType] = {
-    "openai_compat": ApiType(ApiType.OPENAI_SDK),
-    "anthropic": ApiType(ApiType.ANTHROPIC),
-}
-
-
 def _build_dynamic_providers() -> dict[str, DynamicProviderConfig]:
     """Build the dynamic-provider registry from ``provider.yaml``.
 
@@ -117,7 +111,7 @@ def _build_dynamic_providers() -> dict[str, DynamicProviderConfig]:
     :func:`vtx.llm.provider_catalog.register_custom_provider` are included
     automatically because they live in the same catalog.
     """
-    from vtx.ai.provider_catalog import list_providers
+    from vtx.ai.provider_catalog import list_providers, provider_api_type
 
     out: dict[str, DynamicProviderConfig] = {}
     for p in list_providers():
@@ -127,7 +121,7 @@ def _build_dynamic_providers() -> dict[str, DynamicProviderConfig]:
             name=p.slug,
             base_url=p.base_url,
             env_var=p.api_key_env or "",
-            api=_FAMILY_TO_API.get(p.family, ApiType(ApiType.OPENAI_SDK)),
+            api=provider_api_type(p),
             headers=dict(p.headers),
             api_key_optional=p.api_key_optional,
             openmodelendpoint=p.openmodelendpoint,

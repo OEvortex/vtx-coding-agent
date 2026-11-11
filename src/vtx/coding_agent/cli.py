@@ -6,7 +6,7 @@ from typing import TYPE_CHECKING, Any
 # ``vtx.ai.providers`` rather than ``vtx.ai``: the barrel also imports the
 # provider oauth clients (aiohttp), which this only needs the API-type catalog
 # from. Importing the barrel here cost ~165ms on every startup.
-from vtx.ai.providers import PROVIDER_API_BY_NAME
+from vtx.ai.provider_catalog import list_providers
 from vtx.core.version import VERSION
 
 if TYPE_CHECKING:
@@ -79,7 +79,9 @@ def build_parser() -> argparse.ArgumentParser:
     plugin_sub.add_parser("version-exemptions", help="List this profile's version exemptions")
 
     parser.add_argument("--model", "-m", help="Model to use")
-    parser.add_argument("--provider", choices=sorted(PROVIDER_API_BY_NAME), help="Provider to use")
+    parser.add_argument(
+        "--provider", choices=sorted(p.slug for p in list_providers()), help="Provider to use"
+    )
     parser.add_argument(
         "--prompt",
         "-p",

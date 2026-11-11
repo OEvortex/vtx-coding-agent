@@ -61,6 +61,9 @@ import { renderMarkdown, renderShell, renderCode } from "./markdown.js";
 
   let body = "list"; // "list" | "thread"
   let busy = false; // whether a turn is in flight; gates edit/restore chrome
+  // When the in-flight run started, so the working label can admit a long wait
+  // after VS Code's DELAYED_PROGRESS_MESSAGE_TIMEOUT_MS (90s).
+  let busySince = 0;
   // The thread is a flat sequence of blocks rendered in stream order. `block`
   // is the currently open block; a new block starts on a role change, a
   // messageId change, or after a tool/plan/error interrupts the flow.
@@ -1482,7 +1485,7 @@ import { renderMarkdown, renderShell, renderCode } from "./markdown.js";
     const action = split ? SEND_ACTIONS[primarySendAction()] : null;
     el.send.title = action ? action.label + " (" + (altHeld ? "Alt+Enter" : "Enter") + ")" : "Send (Enter)";
     const icon = el.send.querySelector("i");
-    if (icon) icon.className = "codicon " + (action ? action.icon : "codicon-newline");
+    if (icon) icon.className = "codicon " + (action ? action.icon : "codicon-arrow-up");
     if (!split && sendFloater) sendFloater.close();
   }
 
@@ -1912,6 +1915,9 @@ import { renderMarkdown, renderShell, renderCode } from "./markdown.js";
     function updateBtnIcon() {
       const ic = iconFor(current);
       btnIcon.classList.toggle("hidden", !ic);
+      // Compact mode collapses to the icon only when there is one; a picker
+      // without an icon keeps its label rather than becoming a bare chevron.
+      btn.classList.toggle("has-icon", !!ic);
       if (!ic) { btnIcon.innerHTML = ""; return; }
       if (ic.indexOf("img:") === 0) {
         // Render brand SVGs as a currentColor mask so they are monochrome and
@@ -3092,13 +3098,28 @@ import { renderMarkdown, renderShell, renderCode } from "./markdown.js";
       const lang = (pre.getAttribute("data-lang") || "").toLowerCase();
       const bar = document.createElement("div");
       bar.className = "code-toolbar";
+      // Language pill on the left of the floating chrome, as VS Code shows it;
+      // actions sit to its right.
+      if (lang) {
+        const langEl = document.createElement("span");
+        langEl.className = "code-lang";
+        langEl.textContent = lang;
+        bar.appendChild(langEl);
+      }
       bar.appendChild(copyButton("Copy", "code-btn", getText));
       bar.appendChild(codeBtn("codicon-insert", "Insert at cursor", () => vscode.postMessage({ type: "insertAtCursor", text: getText() })));
       bar.appendChild(codeBtn("codicon-go-to-file", "Apply to file", () => vscode.postMessage({ type: "applyToFile", text: getText() })));
       if (SHELL_LANGS.has(lang)) {
         bar.appendChild(codeBtn("codicon-terminal", "Run in terminal", () => vscode.postMessage({ type: "runInTerminal", text: getText() })));
       }
-      pre.appendChild(bar);
+      // The chrome floats above the block, so it needs a wrapper: the pre itself
+      // scrolls horizontally, and an absolutely positioned child of a scroll
+      // container is clipped by it.
+      const wrap = document.createElement("div");
+      wrap.className = "code-block-wrap";
+      pre.parentNode.insertBefore(wrap, pre);
+      wrap.appendChild(pre);
+      wrap.appendChild(bar);
     });
   }
 
@@ -3340,7 +3361,7 @@ import { renderMarkdown, renderShell, renderCode } from "./markdown.js";
       if (block.label) {
         block.label.textContent = block.replayed
           ? "Thought"
-          : `Thought for ${Math.max(1, Math.round((Date.now() - block.start) / 1000))}s`;
+          : `Thought for ${Math.max(1, Math.ceil((Date.now() - block.start) / 1000))}s`;
       }
     }
     block = null;
@@ -3386,6 +3407,11 @@ import { renderMarkdown, renderShell, renderCode } from "./markdown.js";
     if (block && block.kind === "thinking") return null;
     // Mid sentence: the text itself is the sign of life until it stops.
     if (proseSettlesIn() > 0) return null;
+    // Same admission VS Code makes once a step runs unusually long, instead of
+    // cycling verbs forever and implying it is making progress it cannot see.
+    if (busySince && now() - busySince > 90_000) {
+      return "This is taking a little longer than usual";
+    }
     return pickWorkingWord();
   }
 
@@ -6361,14 +6387,23 @@ import { renderMarkdown, renderShell, renderCode } from "./markdown.js";
         header.appendChild(chev);
         header.appendChild(txt);
         header.appendChild(count);
+        header.setAttribute("role", "treeitem");
+        header.setAttribute("aria-expanded", String(!collapsed));
+        header.tabIndex = 0;
         const box = document.createElement("div");
         box.className = "group-items" + (collapsed ? " hidden" : "");
+        box.setAttribute("role", "group");
         rows.forEach((s) => box.appendChild(sessionRow(s, activeId)));
-        header.addEventListener("click", () => {
+        const toggle = () => {
           const nowCollapsed = !collapsedGroups.has(key);
           if (nowCollapsed) collapsedGroups.add(key); else collapsedGroups.delete(key);
           box.classList.toggle("hidden", nowCollapsed);
           header.classList.toggle("collapsed", nowCollapsed);
+          header.setAttribute("aria-expanded", String(!nowCollapsed));
+        };
+        header.addEventListener("click", toggle);
+        header.addEventListener("keydown", (e) => {
+          if (e.key === "Enter" || e.key === " ") { e.preventDefault(); toggle(); }
         });
         container.appendChild(header);
         container.appendChild(box);
@@ -6409,14 +6444,23 @@ import { renderMarkdown, renderShell, renderCode } from "./markdown.js";
       count.className = "group-count";
       count.textContent = String(rows.length);
       header.append(chev, txt, count);
+      header.setAttribute("role", "treeitem");
+      header.setAttribute("aria-expanded", String(!collapsed));
+      header.tabIndex = 0;
       const box = document.createElement("div");
       box.className = "group-items" + (collapsed ? " hidden" : "");
+      box.setAttribute("role", "group");
       rows.forEach((s) => box.appendChild(sessionRow(s, activeId)));
-      header.addEventListener("click", () => {
+      const toggle = () => {
         const nowCollapsed = !collapsedGroups.has(key);
         if (nowCollapsed) collapsedGroups.add(key); else collapsedGroups.delete(key);
         box.classList.toggle("hidden", nowCollapsed);
         header.classList.toggle("collapsed", nowCollapsed);
+        header.setAttribute("aria-expanded", String(!nowCollapsed));
+      };
+      header.addEventListener("click", toggle);
+      header.addEventListener("keydown", (e) => {
+        if (e.key === "Enter" || e.key === " ") { e.preventDefault(); toggle(); }
       });
       container.appendChild(header);
       container.appendChild(box);
@@ -6468,6 +6512,8 @@ import { renderMarkdown, renderShell, renderCode } from "./markdown.js";
 
     const bodyEl = document.createElement("div");
     bodyEl.className = "session-list-body";
+    bodyEl.setAttribute("role", "tree");
+    bodyEl.setAttribute("aria-label", "Vtx sessions");
     container.appendChild(bodyEl);
 
     function renderBody() {
@@ -6477,7 +6523,23 @@ import { renderMarkdown, renderShell, renderCode } from "./markdown.js";
         return;
       }
       const filtered = sortSessions(filterSessions(lastSessions, state.q, state.status), state.sort);
-      if (!filtered.length) { bodyEl.innerHTML = '<div class="sessions-empty-sm">No matching sessions</div>'; return; }
+      if (!filtered.length) {
+        const empty = document.createElement("div");
+        empty.className = "sessions-empty-sm";
+        empty.append("No matching sessions - ");
+        const reset = document.createElement("button");
+        reset.type = "button";
+        reset.className = "reset-filter-link";
+        reset.textContent = "Reset filter";
+        reset.addEventListener("click", () => {
+          state.q = "";
+          state.status.clear();
+          renderBody();
+        });
+        empty.appendChild(reset);
+        bodyEl.appendChild(empty);
+        return;
+      }
       if (state.grouping === "none") {
         filtered.forEach((s) => bodyEl.appendChild(sessionRow(s, lastActiveId)));
       } else if (state.grouping === "date") {
@@ -6877,6 +6939,10 @@ import { renderMarkdown, renderShell, renderCode } from "./markdown.js";
   function sessionRow(s, activeId) {
     const item = document.createElement("div");
     item.className = "session-item" + (s.id === activeId ? " active" : "");
+    // Tree semantics + a roving tabindex, so the list is one tab stop and the
+    // arrow keys move between chats (VS Code's session tree behaves this way).
+    item.setAttribute("role", "treeitem");
+    item.tabIndex = s.id === activeId ? 0 : -1;
     const main = document.createElement("div");
     main.className = "session-main";
     const title = document.createElement("div");
@@ -6925,9 +6991,37 @@ import { renderMarkdown, renderShell, renderCode } from "./markdown.js";
     meta.appendChild(code);
     main.appendChild(title);
     main.appendChild(meta);
-    main.addEventListener("click", () => {
+    item.setAttribute(
+      "aria-label",
+      [s.title || s.short_id || s.id, dot.title, time.textContent].filter(Boolean).join(", ")
+    );
+    const activate = () => {
       closeTitleMenu();
       switchToSession(s.id, s.title);
+    };
+    main.addEventListener("click", activate);
+    item.addEventListener("keydown", (e) => {
+      if (e.key === "Enter" || e.key === " ") {
+        e.preventDefault();
+        activate();
+      } else if (e.key === "ArrowDown" || e.key === "ArrowUp") {
+        // Roving focus across the visible rows, including across groups.
+        e.preventDefault();
+        const tree = item.closest("[role=tree]") || el.sessionsList;
+        const rows = [...tree.querySelectorAll(".session-item")];
+        const at = rows.indexOf(item);
+        const next = rows[at + (e.key === "ArrowDown" ? 1 : -1)];
+        if (next) {
+          item.tabIndex = -1;
+          next.tabIndex = 0;
+          next.focus();
+        }
+      }
+    });
+    item.addEventListener("focus", () => {
+      const tree = item.closest("[role=tree]") || el.sessionsList;
+      tree.querySelectorAll(".session-item").forEach((r) => { r.tabIndex = -1; });
+      item.tabIndex = 0;
     });
     const actions = document.createElement("div");
     actions.className = "session-actions";
@@ -7037,6 +7131,7 @@ import { renderMarkdown, renderShell, renderCode } from "./markdown.js";
   function setBusy(value) {
     const wasBusy = busy;
     busy = value;
+    if (value && !wasBusy) busySince = now();
     updateComposerButtons();
     // Copilot-style animated indicator on the input (gated by progressBorder).
     el.inputBox.classList.toggle("busy", value && caps.progressBorder);
@@ -7128,6 +7223,12 @@ import { renderMarkdown, renderShell, renderCode } from "./markdown.js";
       '<i class="codicon codicon-attach"></i> Drag files and folders in to attach them, ' +
       "holding <kbd>Shift</kbd> when the drag starts inside VS Code.";
     box.appendChild(hint);
+    // VS Code focuses the input when its welcome view is clicked; here the
+    // chips are real buttons that send, so only the surrounding text does it.
+    box.addEventListener("click", (e) => {
+      if (e.target.closest("button")) return;
+      el.input.focus();
+    });
     el.thread.appendChild(box);
   }
 
@@ -7246,10 +7347,10 @@ import { renderMarkdown, renderShell, renderCode } from "./markdown.js";
   // Short local time (HH:MM) for turn timestamps.
   // How long a turn took, as the CLI measured it.
   function fmtDuration(ms) {
-    const s = ms / 1000;
-    if (s < 60) return (s < 10 ? s.toFixed(1) : Math.round(s)) + "s";
+    const s = Math.max(1, Math.round(ms / 1000));
+    if (s < 60) return s + "s";
     const m = Math.floor(s / 60);
-    return m + "m " + Math.round(s - m * 60) + "s";
+    return m + "m " + (s - m * 60) + "s";
   }
 
   function fmtTime(ts) {
@@ -7297,21 +7398,23 @@ import { renderMarkdown, renderShell, renderCode } from "./markdown.js";
     return (cost.amount < 1 ? "$" + cost.amount.toFixed(3) : "$" + cost.amount.toFixed(2));
   }
 
+  // Ring geometry copied from VS Code's chatContextUsageWidget: a 14px icon box
+  // around a viewBox 36 ring (r=14, 4px stroke), rotated so it fills clockwise
+  // from twelve o'clock. Track is the disabled foreground at half opacity; the
+  // arc is icon-foreground, amber at 75%, red at 90%.
   function ringSvg(pct) {
-    const r = 7, c = 2 * Math.PI * r;
+    const c = 2 * Math.PI * 14;
     const off = c * (1 - Math.min(100, Math.max(0, pct)) / 100);
-    // Arc colour matches VS Code's context-usage widget: normal icon colour,
-    // amber past 75%, red past 90%; track is the dimmed disabled foreground.
     const arc = pct >= 90
       ? "var(--vscode-editorError-foreground, #f14c4c)"
       : pct >= 75
         ? "var(--vscode-editorWarning-foreground, #cca700)"
         : "var(--vscode-icon-foreground, var(--vscode-foreground))";
     return (
-      `<svg width="16" height="16" viewBox="0 0 18 18" aria-hidden="true">` +
-      `<circle cx="9" cy="9" r="7" fill="none" stroke="var(--vscode-disabledForeground, var(--vscode-panel-border))" stroke-width="2.5" opacity="0.5"/>` +
-      `<circle cx="9" cy="9" r="7" fill="none" stroke="${arc}" stroke-width="2.5" stroke-linecap="round"` +
-      ` stroke-dasharray="${c.toFixed(2)}" stroke-dashoffset="${off.toFixed(2)}" transform="rotate(-90 9 9)"/></svg>`
+      `<svg width="14" height="14" viewBox="0 0 36 36" aria-hidden="true">` +
+      `<circle cx="18" cy="18" r="14" fill="none" stroke="var(--vscode-disabledForeground, var(--vscode-panel-border))" stroke-width="4" opacity="0.5"/>` +
+      `<circle cx="18" cy="18" r="14" fill="none" stroke="${arc}" stroke-width="4" stroke-linecap="round"` +
+      ` stroke-dasharray="${c.toFixed(2)}" stroke-dashoffset="${off.toFixed(2)}" transform="rotate(-90 18 18)"/></svg>`
     );
   }
 
@@ -7323,6 +7426,9 @@ import { renderMarkdown, renderShell, renderCode } from "./markdown.js";
     el.usage.innerHTML = ringSvg(pct) + `<span class="usage-pct">${pct}%</span>`;
     el.usage.title = "Context used, click for details";
     el.usage.classList.remove("hidden");
+    el.usage.classList.toggle("warning", pct >= 75 && pct < 90);
+    el.usage.classList.toggle("error", pct >= 90);
+    el.usage.setAttribute("aria-label", `Context used: ${pct}%`);
     refreshUsagePopup();
   }
 

@@ -73,7 +73,7 @@ def _patch_safe_async_iterate(utils_mod: Any) -> None:
                 except BaseException:
                     pass
 
-    patched_safe_async_iterate._vtx_patched = True  # ty: ignore[unresolved-attribute]
+    patched_safe_async_iterate._vtx_patched = True  # ty: ignore
     utils_mod.safe_async_iterate = patched_safe_async_iterate
 
 

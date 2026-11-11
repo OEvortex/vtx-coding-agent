@@ -613,7 +613,9 @@ class AcpServer:
             else sorted(a.definition.name for a in agents)
         )
         if agent_names:
-            active = registry.active.definition.name if registry.active else ""
+            active = (
+                registry.active.definition.name if registry is not None and registry.active else ""
+            )
             options.append(
                 {
                     "id": "agent",

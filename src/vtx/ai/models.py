@@ -12,8 +12,9 @@ class ApiType:
     OPENAI_SDK = "openai-sdk"
     OPENAI_RESPONSES = "openai-responses"
     ANTHROPIC = "anthropic"
+    DEVIN = "devin"
 
-    _VALUES: frozenset[str] = frozenset({OPENAI_SDK, OPENAI_RESPONSES, ANTHROPIC})
+    _VALUES: frozenset[str] = frozenset({OPENAI_SDK, OPENAI_RESPONSES, ANTHROPIC, DEVIN})
 
     def __init__(self, value: str):
         if value not in self._VALUES:

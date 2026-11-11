@@ -20,6 +20,8 @@ the matching sub-picker.
 
 from __future__ import annotations
 
+import asyncio
+
 from vtx.ai import (
     clear_api_key,
     clear_cline_credentials,
@@ -40,6 +42,7 @@ from vtx.ai import (
 from vtx.ai import is_cline_logged_in as has_saved_cline_credentials
 from vtx.ai import is_codex_logged_in as has_saved_codex_credentials
 from vtx.ai import is_copilot_logged_in as has_saved_copilot_credentials
+from vtx.ai import is_devin_logged_in as has_saved_devin_credentials
 from vtx.tui.chat import ChatLog
 from vtx.tui.commands.base import CommandSupport
 from vtx.tui.floating_list import ListItem
@@ -67,6 +70,7 @@ def _oauth_login_providers() -> list[tuple[str, str, bool]]:
         ("github-copilot", "GitHub Copilot", has_saved_copilot_credentials()),
         ("codex", "OpenAI Codex", has_saved_codex_credentials()),
         ("cline", "Cline (WorkOS)", has_saved_cline_credentials()),
+        ("devin", "Devin", has_saved_devin_credentials()),
     ]
 
 
@@ -140,6 +144,10 @@ class AuthCommands(CommandSupport):
 
         if provider_id == "cline":
             self.run_worker(self._cline_login_flow(), exclusive=False)
+            return
+
+        if provider_id == "devin":
+            self.run_worker(self._devin_login_flow(), exclusive=False)
             return
 
     def _select_apikey_provider(self, provider_id: str) -> None:
@@ -423,6 +431,25 @@ class AuthCommands(CommandSupport):
         except Exception as e:
             chat.add_info_message(f"Login failed: {e}", error=True)
 
+    async def _devin_login_flow(self) -> None:
+        chat = self.query_one("#chat-log", ChatLog)
+        try:
+            from vtx.ai.oauth.devin import login as devin_login
+
+            if has_saved_devin_credentials():
+                chat.add_info_message("Already logged in to Devin")
+                return
+            chat.add_info_message("Starting Devin login (runs `devin auth login`)...")
+            if await asyncio.to_thread(devin_login):
+                chat.add_info_message(
+                    "Successfully logged in to Devin!\n"
+                    "You can now use /model to select devin models."
+                )
+            else:
+                chat.add_info_message("Devin login did not complete", warning=True)
+        except Exception as e:
+            chat.add_info_message(f"Login failed: {e}", error=True)
+
     def _handle_logout_command(self, args: str) -> None:
         items: list[ListItem] = []
 
@@ -432,6 +459,8 @@ class AuthCommands(CommandSupport):
             items.append(ListItem(value="codex", label="OpenAI Codex", description=""))
         if has_saved_cline_credentials():
             items.append(ListItem(value="cline", label="Cline (WorkOS)", description=""))
+        if has_saved_devin_credentials():
+            items.append(ListItem(value="devin", label="Devin", description=""))
 
         for p in list_providers():
             status = get_provider_status(p.slug)

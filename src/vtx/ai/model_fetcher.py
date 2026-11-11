@@ -28,7 +28,7 @@ from dataclasses import asdict, dataclass
 from pathlib import Path
 from typing import Any
 
-from vtx.ai.models import ApiType, Model
+from vtx.ai.models import Model
 
 logger = logging.getLogger(__name__)
 
@@ -254,8 +254,38 @@ def _raw_model_list(payload: Any) -> list[dict[str, Any]]:
     return []
 
 
+def _fetch_devin_models(provider) -> list[FetchedModel]:
+    """Fetch Devin models via the Connect-RPC ``GetCascadeModelConfigs`` call."""
+    try:
+        from vtx.ai.oauth.devin import list_devin_models
+
+        async def _run():
+            return await list_devin_models()
+
+        import asyncio
+
+        raw = asyncio.run(_run())
+    except Exception as exc:
+        logger.debug("Error fetching devin models: %s", exc)
+        return []
+    models = [
+        FetchedModel(
+            id=m["id"],
+            name=m.get("name") or m["id"],
+            max_output_tokens=int(m.get("max_tokens") or 0),
+            supports_images=bool(m.get("supports_images")),
+        )
+        for m in raw
+        if m.get("id")
+    ]
+    _write_cache(provider.slug, models, provider.model_parser.cooldown_minutes)
+    return models
+
+
 def _fetch_models_sync(provider) -> list[FetchedModel]:
     """Fetch models from a provider's /models endpoint (sync, with network)."""
+    if provider.slug == "devin":
+        return _fetch_devin_models(provider)
     if not provider.fetch_models or not provider.base_url:
         return []
 
@@ -333,12 +363,8 @@ def get_fetched_models(provider) -> list[Model]:
     if not cached:
         return []
 
-    family_to_api = {
-        "openai_compat": ApiType(ApiType.OPENAI_SDK),
-        "anthropic": ApiType(ApiType.ANTHROPIC),
-    }
-
     from vtx.ai.context_length import context_length_manager
+    from vtx.ai.provider_catalog import provider_api_type
 
     # cline free list for is_free marking
     cline_free_ids: set[str] = set()
@@ -392,7 +418,7 @@ def get_fetched_models(provider) -> list[Model]:
             Model(
                 id=entry.id,
                 provider=provider.slug,
-                api=family_to_api.get(provider.family, ApiType(ApiType.OPENAI_SDK)),
+                api=provider_api_type(provider),
                 base_url=provider.base_url or "",
                 max_tokens=max_tokens,
                 supports_images=supports_images,

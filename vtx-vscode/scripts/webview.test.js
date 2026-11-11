@@ -874,6 +874,7 @@ test("mermaid fences render as a source block (upgraded lazily)", async () => {
   assert.ok(pre, "mermaid fence renders as a mermaid-src block");
   assert.ok(/graph TD/.test(pre.textContent), "the mermaid source is preserved");
   assert.ok(!pre.querySelector(".code-toolbar"), "mermaid source is not given a code toolbar");
+  assert.ok(!pre.parentElement.classList.contains("code-block-wrap"), "and is not wrapped for one");
   // No data-mermaid-src is set in the harness, so the lazy load no-ops; the
   // source block must simply survive without throwing.
   assert.strictEqual(h.errors().length, 0, "mermaid rendering threw: " + JSON.stringify(h.errors()));
@@ -3202,7 +3203,7 @@ test("a finished turn shows what it cost, in the CLI's own figures", async () =>
 
   const det = h.thread().querySelector(".chat-footer-details");
   assert.ok(det, "the footer carries the detail");
-  assert.match(det.textContent, /6\.6s/, "how long it took, as the CLI measured it");
+  assert.match(det.textContent, /7s/, "how long it took, rounded like VS Code's chat elapsed label");
   assert.match(det.textContent, /Claude Opus 5 High/);
   assert.match(det.title, /ACUs spent: 0\.11 ACUs/, "and what it cost, on hover");
   assert.match(det.title, /Agent messages: 3 messages/);
@@ -6184,7 +6185,7 @@ test("thinking picker keeps a thought icon in compact mode", async () => {
   assert.match(css, /#thinking-dd \.dd-icon\s*\{\s*display: none;/, "the normal control hides the thought icon");
   assert.match(css, /#input-box\.cmp-sm #thinking-dd \.dd-icon\s*\{\s*display: inline-flex;/, "compact mode shows the thought icon");
   assert.doesNotMatch(css, /#input-box\.cmp-sm #thinking-dd \{/, "the small tier keeps the thinking control");
-  assert.match(css, /#input-box\.cmp-xxs #mode-dd,\s*\n#input-box\.cmp-xxs #attach,\s*\n#input-box\.cmp-xxs #thinking-dd/, "the smallest tier hides it with the other controls");
+  assert.match(css, /#input-box\.cmp-xxs #mode-dd,\s*\n#input-box\.cmp-xxs #thinking-dd/, "the smallest tier drops the redundant controls, keeping attach and send");
   assert.strictEqual(h.errors().length, 0);
 });
 
