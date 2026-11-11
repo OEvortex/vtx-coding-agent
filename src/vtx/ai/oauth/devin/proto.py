@@ -34,12 +34,17 @@ def _load() -> None:
             return
         from google.protobuf import descriptor_pb2, descriptor_pool
 
+        # google.protobuf's generated modules are dynamically built; their
+        # members aren't statically discoverable, so treat them as Any.
+        pb2: Any = descriptor_pb2
+        pool_mod: Any = descriptor_pool
+
         data = resources.files("vtx.ai.oauth.devin").joinpath("descriptors.pb").read_bytes()
-        fds = descriptor_pb2.FileDescriptorSet()
+        fds = pb2.FileDescriptorSet()
         fds.ParseFromString(data)
 
-        pool = descriptor_pool.DescriptorPool()
-        default = descriptor_pool.Default()
+        pool = pool_mod.DescriptorPool()
+        default = pool_mod.Default()
         added: set[str] = set()
         files_by_name = {f.name: f for f in fds.file}
 
@@ -56,7 +61,7 @@ def _load() -> None:
                         fdesc = default.FindFileByName(dep)
                     except KeyError:
                         continue
-                    wkt = descriptor_pb2.FileDescriptorProto()
+                    wkt = pb2.FileDescriptorProto()
                     fdesc.CopyToProto(wkt)
                     with contextlib.suppress(Exception):
                         pool.Add(wkt)
@@ -121,7 +126,7 @@ def _find_descriptor_pool() -> Any:
     return _pool
 
 
-def message_class(name: str) -> type:
+def message_class(name: str) -> type[Any]:
     """Return the protobuf message class for a message name.
 
     ``name`` may be fully qualified (``exa.chat_pb.ChatMessagePrompt``), a

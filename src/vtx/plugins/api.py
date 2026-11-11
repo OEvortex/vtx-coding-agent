@@ -649,7 +649,7 @@ class ExtensionTool(BaseTool):
         self.owner = owner
         self.mutating = mutating
         self.label = label or name
-        self.ui_block = ui_block
+        self._ui_block = ui_block
         self.tool_icon = "↪"
 
     async def execute(self, params: Any, cancel_event: Any | None = None) -> ToolResult:

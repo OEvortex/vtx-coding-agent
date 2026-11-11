@@ -411,7 +411,9 @@ class DevinSDKProvider(BaseProvider):
                     thinking_parts.append(item.thinking)
                 if item.signature:
                     signature = item.signature
-                thinking_redacted = thinking_redacted or bool(item.redacted)
+                thinking_redacted = thinking_redacted or (
+                    not item.thinking and bool(item.signature)
+                )
             elif isinstance(item, ToolCall):
                 tool_calls.append(self._tool_call_proto(item))
         return self._make_prompt(

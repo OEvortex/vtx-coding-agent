@@ -227,7 +227,7 @@ class TodoTool(BaseTool):
         return ""
 
     @property
-    def ui_block(self) -> type | None:  # ty: ignore[incompatible-property-override]
+    def ui_block(self) -> type | None:
         try:
             from vtx.tui.todo_block import TodoToolBlock
 
