@@ -145,14 +145,14 @@ Screen {{
 
 /* Tool block */
 .tool-block {{
-    padding: 0 1;
-    margin-top: 1;
+    padding: 0;
+    margin: 1 1 0 1;
     background: transparent;
     width: 100%;
 }}
 
 .tool-block.-compact {{
-    margin-top: 0;
+    margin: 0 1 0 1;
 }}
 
 .tool-block.-pending,
@@ -215,7 +215,7 @@ Screen {{
 #tool-output,
 .tool-output {{
     color: {colors.dim};
-    padding: 0 0 0 2;
+    padding: 0;
 }}
 
 .todo-block #tool-output {{
@@ -223,22 +223,13 @@ Screen {{
 }}
 
 #tool-output.-diff-output {{
-    padding: 0 0 0 2;
+    padding: 0;
 }}
 
-.tool-block.-with-details {{
-    padding: 0 1;
-}}
-
-#tool-output.-hidden {{
-    display: none;
-    height: 0;
-}}
-
-/* Modern tool block overrides */
 .tool-block.-with-details {{
     padding: 0;
     border: none;
+    margin: 1 1 0 1;
 }}
 
 #tool-output.-hidden {{

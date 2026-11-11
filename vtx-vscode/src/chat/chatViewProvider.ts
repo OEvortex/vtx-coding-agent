@@ -310,7 +310,15 @@ function groupedModelChoices(options?: ConfigOption[]): Record<string, { value: 
 }
 
 function thoughtOption(options?: ConfigOption[]): ConfigOption | undefined {
-  return options?.find((option) => option.id === "thought_level" || option.category === "thought_level");
+  // Vtx reports the effort picker as `thinking`; `thought_level` is the id the
+  // fake agent and older CLIs used. Match both and send back the option's own id.
+  return options?.find((option) =>
+    ["thought_level", "thinking"].includes(option.id) || ["thought_level", "thinking"].includes(option.category || "")
+  );
+}
+
+function thoughtWireId(options?: ConfigOption[]): string {
+  return thoughtOption(options)?.id || "thought_level";
 }
 
 // `vtx models list` exposes per-effort uids the session's `model` option does
@@ -3243,8 +3251,9 @@ export class ChatController implements AcpHost {
         if (gen !== this.modelGen) return;
       }
       const rememberedLevel = thoughtLevel || resolved.effort;
-      if (rememberedLevel && thoughtOption(rt.configOptions)) {
-        const result = await rt.client.setConfigOption(rt.id, "thought_level", rememberedLevel);
+      const thoughtOpt = thoughtOption(rt.configOptions);
+      if (rememberedLevel && thoughtOpt) {
+        const result = await rt.client.setConfigOption(rt.id, thoughtOpt.id, rememberedLevel);
         this.publishOptions(rt, result.configOptions);
         if (gen !== this.modelGen) return;
       }
@@ -3310,15 +3319,17 @@ export class ChatController implements AcpHost {
     if (option.type === "select" && (typeof value !== "string" || !configChoices(option).some((choice) => choice.value === value))) {
       return;
     }
+    const thoughtId = thoughtOption(rt.configOptions)?.id;
+    const isThought = configId === "thought_level" || configId === thoughtId;
     // Record the thought level immediately so a concurrent setFusionModel sees
     // the user's latest choice before its own ACP call returns.
-    if (configId === "thought_level" && typeof value === "string") {
+    if (isThought && typeof value === "string") {
       this.currentThoughtLevel = value;
     }
     try {
       const result = await rt.client.setConfigOption(rt.id, configId, value);
       this.publishOptions(rt, result.configOptions);
-      if (configId === "thought_level" && typeof value === "string") {
+      if (isThought && typeof value === "string") {
         await this.cfg().update("defaultThoughtLevel", value, vscode.ConfigurationTarget.Workspace);
       }
     } catch (err) {
@@ -3409,8 +3420,9 @@ export class ChatController implements AcpHost {
         // If the user changed the effort level while the model call was in
         // flight, use their latest choice rather than the stale captured value.
         const latestThought = this.pendingModelConfig?.thoughtLevel ?? thoughtLevel;
+        const thoughtId = thoughtWireId(result.configOptions);
         if (latestThought && configChoices(thoughtOption(result.configOptions)).some((choice) => choice.value === latestThought)) {
-          result = await rt.client.setConfigOption(rt.id, "thought_level", latestThought);
+          result = await rt.client.setConfigOption(rt.id, thoughtId, latestThought);
         }
         // Publish once with the final state after both values are applied.
         this.publishOptions(rt, result.configOptions);

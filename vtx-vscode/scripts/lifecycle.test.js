@@ -2,7 +2,7 @@
 // TerminalManager compiled out of src/. These guard the safeguard that matters
 // most: when the extension host goes away, nothing it spawned is left running.
 //
-// A `devin acp` agent cannot be handed to the next extension host (it runs its
+// A `vtx acp` agent cannot be handed to the next extension host (it runs its
 // commands, file writes and permission prompts through us, over our stdio), so
 // `shutdown()` has to actually finish the job, including against an agent that
 // ignores a polite request to stop.
@@ -18,7 +18,7 @@ const path = require("path");
 const esbuild = require("esbuild");
 
 const ROOT = path.resolve(__dirname, "..");
-const TMP = fs.mkdtempSync(path.join(os.tmpdir(), "devin-lifecycle-"));
+const TMP = fs.mkdtempSync(path.join(os.tmpdir(), "vtx-lifecycle-"));
 
 // Bundle the vscode-free host modules so they can be required from a plain test.
 function load(rel, name) {
@@ -151,7 +151,7 @@ test("an exiting host leaves no running command behind", { skip: process.platfor
   const terms = new TerminalManager(process.env, TMP);
   // A shell that traps SIGTERM, standing in for a build or test run that will
   // not stop when asked. These are children of the extension host, and the agent
-  // reaper only looks for `devin acp`, so nothing else would ever collect them.
+  // reaper only looks for `vtx acp`, so nothing else would ever collect them.
   // It reports the pid of a child it spawned, so the test can prove the whole
   // tree went down rather than just the shell.
   // The inner shell announces itself only once its trap is installed, so the
@@ -385,7 +385,7 @@ test("a command runs in the user's own terminal, and its output is readable", as
   assert.strictEqual(terminal.options.hideFromUser, true, "out of the way until it is wanted");
   assert.strictEqual(terminal.options.env.GIT_PAGER, "cat", "or git diff would wait for a keypress for ever");
 
-  // What the user set in `devin.env` reaches a command run here too. It used to
+  // What the user set in `vtx.env` reaches a command run here too. It used to
   // reach only the fallback (a child process), so the same command worked or
   // failed depending on which path took it, with nothing said either way.
   vscode.window.terminals.length = 0;
@@ -519,35 +519,35 @@ test("output is cleaned the way a terminal would have drawn it", async () => {
 test("a Windows .cmd shim is run through the interpreter, quoting and all", async () => {
   // npm installs the CLI as a .cmd on Windows, which Node refuses to spawn
   // directly, so it goes through a shell and the quoting becomes ours.
-  const plain = cliCommand("/usr/local/bin/devin", ["acp", "--flag"]);
-  assert.deepStrictEqual(plain, { file: "/usr/local/bin/devin", args: ["acp", "--flag"], shell: false });
+  const plain = cliCommand("/usr/local/bin/vtx", ["acp", "--flag"]);
+  assert.deepStrictEqual(plain, { file: "/usr/local/bin/vtx", args: ["acp", "--flag"], shell: false });
 
   const win = { value: process.platform };
   Object.defineProperty(process, "platform", { value: "win32" });
   try {
     assert.deepStrictEqual(
-      cliCommand("C:\\Program Files\\devin\\devin.cmd", ["acp", "--dir", "C:\\my code"]),
+      cliCommand("C:\\Program Files\\vtx\\vtx.cmd", ["acp", "--dir", "C:\\my code"]),
       {
-        file: '"C:\\Program Files\\devin\\devin.cmd"',
+        file: '"C:\\Program Files\\vtx\\vtx.cmd"',
         args: ["acp", "--dir", '"C:\\my code"'],
         shell: true
       },
       "a path with a space cannot reach the shell bare"
     );
     assert.strictEqual(
-      cliCommand("C:\\tools\\devin.exe", ["acp"]).shell,
+      cliCommand("C:\\tools\\vtx.exe", ["acp"]).shell,
       false,
       "a real executable still spawns directly"
     );
     // cmd.exe expands these even inside double quotes and there is no escape for
     // them on a command line, so passing one through would run something else.
     assert.throws(
-      () => cliCommand("C:\\tools\\devin.cmd", ["mcp", "add", "%USERPROFILE%"]),
+      () => cliCommand("C:\\tools\\vtx.cmd", ["mcp", "add", "%USERPROFILE%"]),
       /no escape/,
       "a value carrying % is refused rather than quoted and mangled"
     );
     assert.throws(
-      () => cliCommand("C:\\tools\\devin.cmd", ["mcp", "add", "a!b!"]),
+      () => cliCommand("C:\\tools\\vtx.cmd", ["mcp", "add", "a!b!"]),
       /no escape/,
       "and so is one carrying !"
     );

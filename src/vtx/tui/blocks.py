@@ -68,6 +68,9 @@ HINT_SAVE_DRAFT = "enter to save"
 HINT_CLEAR = "ctrl+u to clear"
 HINT_COLLAPSE = "ctrl+] to collapse"
 HINT_EXPAND = "ctrl+] to expand"
+# The tool-output toggle is its own binding (ctrl+o), separate from the
+# questionnaire's collapse key above.
+HINT_TOOL_EXPAND = "ctrl+o to expand"
 
 # Snug box width bounds for the bordered questionnaire.
 MIN_DIALOG_WIDTH = 48
@@ -545,6 +548,18 @@ class ToolBlock(Static):
         """Shared box width for header/body/footer so corners always align."""
         return boxed.box_width(self.size.width or 80)
 
+    def _source_path(self) -> str | None:
+        """File the call touches, used for the language chip and highlighting."""
+        if self._name not in {"read", "write", "edit"}:
+            return None
+        first = boxed.strip_markup(self._call_msg or "").split("\n", 1)[0].strip()
+        if not first or first.startswith("$"):
+            return None
+        # ``read`` renders ``path:12-30``; strip only a trailing line range so
+        # a Windows drive letter is left intact.
+        path = re.sub(r":\d+(?:-\d+)?$", "", first).strip()
+        return path or None
+
     def _refresh_box(self) -> None:
         """Re-render every box surface at the current width (post-layout/resize)."""
         self._safe_update(
@@ -565,8 +580,22 @@ class ToolBlock(Static):
         call_plain = boxed.strip_markup(self._call_msg or "")
         detail = call_plain.split("\n", 1)[0] if call_plain else ""
         running = self._success is None and not self._awaiting_approval
+        status = ""
+        if self._success is True:
+            status = "✓"
+        elif self._success is False:
+            status = "✗"
+        elif running:
+            status = "◌"
         header = boxed.top_border(
-            self._icon, display, detail, width, running=running, failed=self._success is False
+            self._icon,
+            display,
+            detail,
+            width,
+            running=running,
+            failed=self._success is False,
+            status=status,
+            badge=boxed.language_badge(self._source_path()),
         )
         if self._awaiting_approval:
             notice = Text(
@@ -583,7 +612,7 @@ class ToolBlock(Static):
         except Exception:
             return
         width = self._box_w()
-        hint = HINT_EXPAND if self._ui_details_full else ""
+        hint = HINT_TOOL_EXPAND if self._ui_details_full else ""
         # CodemodeToolBlock reuses _started_at as Optional[float] for its own
         # timing — fall back to now rather than crash the footer render.
         started = self._started_at
@@ -1292,6 +1321,7 @@ class ToolBlock(Static):
             text = Text.from_markup(format_diff_display(diff))
             # The streaming path bypasses _render_result_output's padding
             # step, so consume DIFF_BG_PAD_MARKER here or it leaks literally.
+            text = boxed.highlight_diff(text, self._source_path())
             return self._pad_diff_backgrounds(text, max(20, self._box_w() - 4))
         except Exception:
             return None
@@ -1365,7 +1395,18 @@ class ToolBlock(Static):
                 self._render_markup_safe(ui_details) if self._result_markup else Text(ui_details)
             )
             is_diff_output = DIFF_BG_PAD_MARKER in rendered.plain
-            rendered = self._pad_diff_backgrounds(rendered, output.size.width or self.size.width)
+            if is_diff_output:
+                rendered = boxed.highlight_diff(rendered, self._source_path())
+            rendered = self._pad_diff_backgrounds(rendered, max(20, self._box_w() - 4))
+        elif self._name == "read" and (self.ui_data or {}).get("preview"):
+            data = self.ui_data or {}
+            rendered = boxed.highlighted_numbered_lines(
+                str(data.get("preview") or ""),
+                str(data.get("path") or self._source_path() or ""),
+                max_lines=12,
+                start_line=int(data.get("start_line") or 1),
+            )
+            is_diff_output = False
         elif self._images:
             image_count = len(self._images)
             image_label = "image" if image_count == 1 else "images"

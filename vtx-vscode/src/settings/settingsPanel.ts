@@ -3,10 +3,10 @@ import * as fs from "fs";
 import * as os from "os";
 import * as path from "path";
 import * as crypto from "crypto";
+import yaml from "js-yaml";
 import {
   ConfigScope,
   readConfig,
-  stripJsonComments,
   userConfigDir,
   userConfigPath,
   userMcpConfigPath,
@@ -15,18 +15,15 @@ import {
   userSkillsDir,
   vtxSkillsDir,
   projectSkillsDir,
-  globalAgentDir,
-  projectAgentDir,
-  globalExtensionsDir,
-  projectExtensionsDir,
   projectMcpConfigPath,
-  writeMcpServer
+  writeMcpServer,
+  writeFileAtomic
 } from "./configService";
-import { CliContext, configList, configSet, isPlainCliName, listPlugins, NamedItem, pluginVerb } from "./vtxConfigCli";
+import { CliContext, configList, configSet, listPlugins, NamedItem, pluginVerb } from "./vtxConfigCli";
 import { withQuerySession } from "../acp/queryClient";
 import { LoadedHook, LoadedRule } from "../acp/types";
 import { checkHealth, loginShellEnv } from "../cli/locate";
-import { listModelFamilies } from "../cli/models";
+import { cachedProviders, listModelFamilies } from "../cli/models";
 
 // This extension's id, used to filter VS Code's Settings editor when linking out
 // to the settings that control the extension rather than the Vtx CLI.
@@ -71,14 +68,25 @@ const ROW_DEFAULTS: Record<string, unknown> = {
   "agents.default": "",
   "agents.switch_mode": "lock",
   "agents.files": [],
-  "task.max_concurrent": 4
+  "task.max_concurrent": 4,
+  extensions: []
 };
 const ROW_KEYS = Object.keys(ROW_DEFAULTS);
+
+interface McpAddOptions {
+  name: string;
+  scope?: ConfigScope;
+  transport?: string;
+  url?: string;
+  command?: string;
+  args?: string[];
+  env?: Record<string, string>;
+}
 
 // Messages that write to disk. Each one refreshes the panel itself, so the file
 // watcher can ignore the change it just caused.
 const MUTATING = new Set([
-  "settings:setPath", "settings:resetSection", "settings:addHook", "settings:permission",
+  "settings:setPath", "settings:resetSection", "settings:addHook",
   "settings:createFile", "settings:deletePath", "settings:removeHook", "settings:createSkill",
   "settings:mcpAdd", "settings:mcpVerb", "settings:pluginVerb", "settings:clearExtensionModel"
 ]);
@@ -280,7 +288,12 @@ export class SettingsPanel {
     // The OAuth token directory is watched too: a login happens in a terminal and
     // reports back through nothing, so without this a server the user had just
     // signed in to kept offering to log in until they changed section.
-    const dirs = [userConfigDir(), windsurfDir(), mcpOauthDir(), ...this.folders().map((f) => path.join(f.path, ".vtx"))]
+    const dirs = [
+      userConfigDir(),
+      path.dirname(userSkillsDir()),
+      path.dirname(vtxSkillsDir()),
+      ...this.folders().flatMap((f) => [path.join(f.path, ".vtx"), path.dirname(projectSkillsDir(f.path))])
+    ]
       .filter((d) => {
         try { return fs.existsSync(d); } catch { return false; }
       });
@@ -336,10 +349,8 @@ export class SettingsPanel {
     try {
       if (mutating) this.selfWriteAt = Date.now();
       // Only a write that can change which rules and hooks are in force drops the
-      // cached answer. Which config files are read is one of those, so a change to
-      // a `read_config_from` row counts even though the rest of that section does
-      // not. Moving between sections never does.
-      if (RELOADS_AGENT.has(type) || (type === "settings:setPath" && String(msg.path || "").startsWith("read_config_from"))) {
+      // cached answer. Moving between sections never does.
+      if (RELOADS_AGENT.has(type)) {
         this.loaded = undefined;
       }
       switch (msg?.type) {
@@ -396,42 +407,20 @@ export class SettingsPanel {
           await this.sendData();
           return;
         }
-        case "settings:permission":
-          this.editPermission(scopeOf(msg.scope), String(msg.bucket), String(msg.value || ""), !!msg.remove, msg.root ? String(msg.root) : undefined);
-          await this.sendData();
-          return;
         case "settings:mcpAdd": {
-          // A server that belongs to another tool is written straight into that
-          // tool's file: `vtx mcp` only ever edits Vtx's own.
-          if (msg.source === "windsurf") {
-            this.writeWindsurf(msg.options as McpAddOptions);
-            await this.sendData();
-            return;
-          }
-          const r = await mcpAdd(this.ctxFor(msg.root), msg.options as McpAddOptions);
-          if (!r.ok) {
-            void vscode.window.showErrorMessage("Add MCP server failed: " + (r.err || "unknown error"));
-          }
+          this.addMcpServer(msg.options as McpAddOptions, msg.root ? String(msg.root) : this.root());
           await this.sendData();
           return;
         }
         case "settings:mcpVerb": {
-          if (msg.source === "windsurf" && msg.verb !== "login" && msg.verb !== "logout") {
-            this.windsurfVerb(String(msg.verb), String(msg.name));
-            await this.sendData();
-            return;
-          }
-          const r = await mcpVerb(this.ctxFor(msg.root), msg.verb, String(msg.name), msg.scope ? scopeOf(msg.scope) : undefined);
-          if (!r.ok) {
-            void vscode.window.showErrorMessage(`MCP ${msg.verb} failed: ` + (r.err || "unknown error"));
-          }
+          this.mcpServerVerb(String(msg.verb), String(msg.name), msg.scope ? scopeOf(msg.scope) : undefined, msg.root ? String(msg.root) : this.root());
           await this.sendData();
           return;
         }
         case "settings:mcpLogin":
           // OAuth login is interactive (it prints a code and waits for the
           // browser), so run it in a terminal the user can see and complete.
-          this.mcpLoginTerminal(String(msg.name || ""), msg.root ? String(msg.root) : undefined);
+          this.mcpLoginTerminal(String(msg.name || ""), msg.root ? String(msg.root) : undefined, !!msg.signout);
           return;
         default:
           return;
@@ -530,14 +519,36 @@ export class SettingsPanel {
     await this.sendData();
   }
 
-  // Remove, or turn off without losing, a server in Windsurf's config. Windsurf
-  // and the CLI both read `disabled`, so turning one off here turns it off in
-  // both, which is the point: it is one list of servers, not two.
-  private windsurfVerb(verb: string, name: string): void {
-    const file = windsurfMcpConfigPath();
+  private mcpFileFor(scope: ConfigScope | undefined, root?: string): string {
+    return scope === "project" ? projectMcpConfigPath(root || this.root() || process.cwd()) : userMcpConfigPath();
+  }
+
+  private addMcpServer(o: McpAddOptions, root?: string): void {
+    const name = String(o?.name || "").trim();
+    if (!/^[A-Za-z0-9_-]+$/.test(name)) {
+      void vscode.window.showErrorMessage("MCP server names may only contain letters, numbers, _ and -.");
+      return;
+    }
+    const def: Record<string, unknown> = o.url
+      ? { url: o.url }
+      : { command: o.command || "", args: o.args || [] };
+    if (!o.url && o.env && Object.keys(o.env).length) {
+      def.env = o.env;
+    }
+    try {
+      writeMcpServer(this.mcpFileFor(o.scope === "project" ? "project" : "user", root), name, def);
+    } catch (err) {
+      void vscode.window.showErrorMessage("Could not add MCP server: " + (err instanceof Error ? err.message : String(err)));
+    }
+  }
+
+  private mcpServerVerb(verb: string, name: string, scope: ConfigScope | undefined, root?: string): void {
+    if (!["enable", "disable", "remove"].includes(verb)) return;
+    const file = this.mcpFileFor(scope, root);
     const servers = readConfig(file).mcpServers as Record<string, unknown> | undefined;
     const def = servers && typeof servers === "object" ? servers[name] : undefined;
     if (!def || typeof def !== "object") {
+      void vscode.window.showErrorMessage(`No MCP server named ${name} in ${file}.`);
       return;
     }
     if (verb === "remove") {
@@ -546,38 +557,19 @@ export class SettingsPanel {
     }
     const next = { ...(def as Record<string, unknown>) };
     if (verb === "disable") {
-      next.disabled = true;
+      next.enabled = false;
     } else {
-      delete next.disabled;
       delete next.enabled;
     }
     writeMcpServer(file, name, next);
   }
 
-  // Add a server to Windsurf's config, in the shape Windsurf itself writes.
-  private writeWindsurf(o: McpAddOptions): void {
-    const def: Record<string, unknown> = o.url
-      ? { serverUrl: o.url }
-      : { command: o.command || "", args: o.args || [] };
-    if (o.env && Object.keys(o.env).length) {
-      def.env = o.env;
-    }
-    writeMcpServer(windsurfMcpConfigPath(), o.name, def);
-  }
-
-  private mcpLoginTerminal(name: string, root?: string): void {
-    if (!name) return;
-    // The name comes from a config file, which may be a cloned repository's own, and
-    // this line is typed into whichever shell the user has.
-    if (!isPlainCliName(name)) {
-      void vscode.window.showErrorMessage(
-        `"${name}" is not a name this can log in for. Run vtx mcp login yourself for that server.`
-      );
-      return;
-    }
-    const term = vscode.window.createTerminal({ name: "Vtx MCP login", env: this.cli.env, cwd: root || this.root() });
+  private mcpLoginTerminal(name: string, root?: string, signout = false): void {
+    if (!name || !/^[A-Za-z0-9_-]+$/.test(name)) return;
+    const term = vscode.window.createTerminal({ name: signout ? "Vtx MCP sign out" : "Vtx MCP sign in", env: this.cli.env, cwd: root || this.root() });
     term.show(true);
-    term.sendText(`${quoteArg(this.cli.cliPath)} mcp login ${quoteArg(name)}`);
+    term.sendText(`${quoteArg(this.cli.cliPath)}\n`);
+    term.sendText(`/mcp ${signout ? "signout" : "signin"} ${name}\n`);
   }
 
   private async openFile(p: string): Promise<void> {
@@ -611,11 +603,11 @@ export class SettingsPanel {
     await this.sendData();
   }
 
-  // Remove a single hook entry from its source JSON file (matched by event,
-  // matcher, and command/prompt), pruning now-empty groups.
+  // Remove one entry from a hooks.yml file. The webview sends the group key and
+  // index it was shown with, so two identical hooks cannot remove each other.
   private async removeHook(msg: any): Promise<void> {
     const src = String(msg.source || "");
-    if (!src || !fs.existsSync(src)) return;
+    if (!src || !src.endsWith("hooks.yml") || !fs.existsSync(src)) return;
     const choice = await vscode.window.showWarningMessage(
       "Remove this hook?",
       { modal: true, detail: `${msg.event || ""} ${msg.command || msg.prompt || ""}`.trim() },
@@ -623,53 +615,31 @@ export class SettingsPanel {
     );
     if (choice !== "Remove") return;
     try {
-      // Same hazard as every other write: an unparseable file reads as {}, and
-      // writing that back would replace it with just this hook's leftovers.
-      refuseIfUnparseable(src);
-      const root = readConfig(src);
-      const hooksObj = (src.endsWith("hooks.v1.json") ? root : (root.hooks as Record<string, unknown>)) || {};
-      const groups = (hooksObj as Record<string, unknown>)[String(msg.event)] as any[];
-      if (Array.isArray(groups)) {
-        // The first match only. Two hooks in one group can carry the same command
-        // (nothing stops that, and the Add form does not check), and filtering by
-        // command removed both from a button that offered to remove this hook.
-        let removed = false;
-        for (const g of groups) {
-          if (removed || !g || !Array.isArray(g.hooks)) continue;
-          if (msg.matcher !== undefined && (g.matcher || "") !== msg.matcher) continue;
-          const at = g.hooks.findIndex((h: any) => (h?.command ?? h?.prompt) === (msg.command ?? msg.prompt));
-          if (at !== -1) {
-            g.hooks.splice(at, 1);
-            removed = true;
-          }
-        }
-        // Drop the groups this emptied, and the event with them when it has none
-        // left. The old test asked whether the array existed, which it always does,
-        // and whether the pre-filter list was empty, which it never is by then, so
-        // removing the last hook for an event left `"PreToolUse": []` behind.
-        const kept = groups.filter((g) => Array.isArray(g.hooks) && g.hooks.length);
-        if (kept.length) {
-          (hooksObj as Record<string, unknown>)[String(msg.event)] = kept;
+      const data = this.readHooksYaml(src);
+      const list = Array.isArray(data[String(msg.group || "")]) ? data[String(msg.group || "")] as unknown[] : [];
+      const at = Number(msg.index);
+      if (Number.isInteger(at) && at >= 0 && at < list.length) {
+        list.splice(at, 1);
+        if (list.length) {
+          data[String(msg.group)] = list;
         } else {
-          delete (hooksObj as Record<string, unknown>)[String(msg.event)];
+          delete data[String(msg.group)];
         }
+        this.writeHooksYaml(src, data);
       }
-      writeFileAtomic(src, JSON.stringify(root, null, 2) + "\n");
     } catch (err) {
       void vscode.window.showErrorMessage("Could not remove hook: " + (err instanceof Error ? err.message : String(err)));
     }
     await this.sendData();
   }
 
-  // Scaffold a new skill (a directory with a SKILL.md front-matter template) at
-  // user or project scope, then open it for editing.
+  // Scaffold a new skill (a directory with a SKILL.md front-matter template) in
+  // Vtx's skill discovery directories, then open it for editing.
   private async createSkill(name: string, scope: ConfigScope, root?: string): Promise<void> {
     const safe = name.trim().replace(/[^a-zA-Z0-9._-]+/g, "-").replace(/^-+|-+$/g, "").toLowerCase();
     if (!safe) return;
     const folder = root || this.root();
-    const base = scope !== "user" && folder
-      ? path.join(folder, ".vtx", "skills")
-      : path.join(userConfigDir(), "skills");
+    const base = scope !== "user" && folder ? projectSkillsDir(folder) : userSkillsDir();
     const file = path.join(base, safe, "SKILL.md");
     if (!fs.existsSync(file)) {
       const template = `---\nname: ${safe}\ndescription: One line on what this skill does and when Vtx should use it.\n---\n\n# ${safe}\n\nDescribe the skill here. Explain when to use it and how it behaves.\n`;
@@ -680,28 +650,59 @@ export class SettingsPanel {
     await this.sendData();
   }
 
-  // Append a hook to a scope's config.json under hooks.<event>, grouped by
-  // matcher (Vtx reads hooks from config.json).
+  private hooksFileFor(scope: ConfigScope, root?: string): string {
+    return scope === "project" ? projectHooksConfigPath(root || this.root() || process.cwd()) : userHooksConfigPath();
+  }
+
+  private readHooksYaml(file: string): Record<string, unknown> {
+    try {
+      const parsed = yaml.load(fs.readFileSync(file, "utf8"));
+      return parsed && typeof parsed === "object" && !Array.isArray(parsed) ? parsed as Record<string, unknown> : {};
+    } catch {
+      return {};
+    }
+  }
+
+  private writeHooksYaml(file: string, data: Record<string, unknown>): void {
+    writeFileAtomic(file, yaml.dump(data, { lineWidth: -1, noRefs: true }));
+  }
+
+  private hookYamlKey(event: string): string {
+    return event.replace(/([a-z0-9])([A-Z])/g, "$1_$2").toLowerCase();
+  }
+
+  // Append a hook entry to hooks.yml. Vtx reads every top-level list in the
+  // file and takes the event from each entry's `event` field.
   private addHook(msg: any): void {
     const scope = scopeOf(msg.scope);
     const event = String(msg.event || "").trim();
     const value = String(msg.value || "").trim();
     if (!event || !value) return;
-    const type = msg.hookType === "prompt" ? "prompt" : "command";
-    const hook: Record<string, unknown> = { type };
-    hook[type] = value;
+    const type = ["command", "prompt", "http", "agent"].includes(String(msg.hookType)) ? String(msg.hookType) : "command";
+    const hook: Record<string, unknown> = { event, type };
+    if (type === "prompt") {
+      hook.prompt_text = value;
+    } else if (type === "http") {
+      hook.url = value;
+    } else if (type === "agent") {
+      hook.agent_instructions = value;
+    } else {
+      hook.command = value;
+    }
     if (msg.timeout && Number(msg.timeout) > 0) hook.timeout = Number(msg.timeout);
-    const matcher = String(msg.matcher || "");
-    const root = msg.root ? String(msg.root) : this.root();
-    const file = loadConfigFile(scope, root);
-    const hooks = (file.data.hooks && typeof file.data.hooks === "object" ? file.data.hooks : {}) as Record<string, unknown[]>;
-    const groups = Array.isArray(hooks[event]) ? (hooks[event] as any[]) : [];
-    let group = groups.find((g) => (g.matcher || "") === matcher);
-    if (!group) { group = { matcher, hooks: [] }; groups.push(group); }
-    group.hooks = Array.isArray(group.hooks) ? group.hooks : [];
-    group.hooks.push(hook);
-    hooks[event] = groups;
-    setConfigPath(scope, "hooks", hooks, root);
+    const matcher = String(msg.matcher || "").trim();
+    if (matcher) hook.matcher = matcher;
+    const file = this.hooksFileFor(scope, msg.root ? String(msg.root) : this.root());
+    const data = this.readHooksYaml(file);
+    const key = this.hookYamlKey(event);
+    const list = Array.isArray(data[key]) ? data[key] as unknown[] : [];
+    list.push(hook);
+    data[key] = list;
+    try {
+      this.writeHooksYaml(file, data);
+    } catch (err) {
+      void vscode.window.showErrorMessage("Could not add hook: " + (err instanceof Error ? err.message : String(err)));
+    }
   }
 
   private async createFile(p: string, template: string): Promise<void> {
@@ -716,33 +717,6 @@ export class SettingsPanel {
     } catch (err) {
       void vscode.window.showErrorMessage("Could not create " + p + ": " + (err instanceof Error ? err.message : String(err)));
     }
-  }
-
-  // Add or remove a value from a permissions bucket (allow/deny/ask) in a scope
-  // (and folder, for project scope).
-  private editPermission(scope: ConfigScope, bucket: string, value: string, remove: boolean, root?: string): void {
-    if (!["allow", "deny", "ask"].includes(bucket) || (!value && !remove)) return;
-    const target = root || this.root();
-    const file = loadConfigFile(scope, target);
-    const perms = (file.data.permissions && typeof file.data.permissions === "object"
-      ? (file.data.permissions as Record<string, unknown>)
-      : {}) as Record<string, string[]>;
-    const list = Array.isArray(perms[bucket]) ? (perms[bucket] as string[]).slice() : [];
-    const idx = list.indexOf(value);
-    if (remove) {
-      if (idx >= 0) list.splice(idx, 1);
-    } else if (idx < 0) {
-      list.push(value);
-    }
-    // An empty bucket is not a permission rule, and `setConfigPath` only prunes
-    // empty objects, so removing the last one left `"deny": []` in the file for
-    // ever. Same reasoning as the hook groups above.
-    if (list.length) {
-      perms[bucket] = list;
-    } else {
-      delete perms[bucket];
-    }
-    setConfigPath(scope, "permissions", Object.keys(perms).length ? perms : undefined, target);
   }
 
   // --- Gather section data --------------------------------------------------
@@ -779,7 +753,7 @@ export class SettingsPanel {
     this.startWatching();
     const [userConfig, skills, plugins, loaded] = await Promise.all([
       configList(this.cli).catch(() => undefined),
-      listSkills(this.cli).catch(() => []),
+      Promise.resolve([] as NamedItem[]),
       listPlugins(this.cli).catch(() => []),
       // Asking the agent means starting one, which costs about as much as the two
       // listings above, so it runs alongside them rather than after them.
@@ -813,7 +787,7 @@ export class SettingsPanel {
 
     const data = {
       folders: this.folders(),
-      models: { families },
+      models: { families, providers: cachedProviders() },
       valuesByScope: [this.valueGroup({ scope: "user", title: "Global" })],
       folderOverrides: {},
       // Settings owned by this extension, disclosed here but edited in VS Code.
@@ -823,9 +797,9 @@ export class SettingsPanel {
       instructions: {
         byScope: groups.map((g) => ({ ...g, file: this.ruleFileForDir(g.scope === "user" ? userConfigDir() : g.root!) })),
         // What the agent has really loaded, which is more than the one file per
-        // scope this panel lets you edit: rules also come from Cursor and Windsurf
-        // files, from another tool's config, and from plugins. Undefined when the
-        // CLI could not be asked, and the section then says only what it can.
+        // scope this panel lets you edit: Vtx discovers AGENTS.md and CLAUDE.md
+        // in the config dir and project ancestors. Undefined when the CLI could
+        // not be asked, and the section then says only what it can.
         loaded: loaded?.rules
       },
       skills: {
@@ -944,129 +918,85 @@ export class SettingsPanel {
     }
   }
 
-  // Resolve each skill's SKILL.md path and directory (for open/remove). The CLI
-  // list gives a directory relative to home (user skills) or the project root
-  // (.vtx/skills); resolve both.
-  private resolveSkills(skills: { name: string; description?: string; path?: string; source?: string }[], root?: string): unknown[] {
-    const home = os.homedir();
-    return skills.map((s) => {
-      let dir = s.path || "";
-      if (dir === "~") {
-        dir = home;
-      } else if (dir.startsWith("~/") || dir.startsWith("~\\")) {
-        dir = path.join(home, dir.slice(2));
-      } else if (dir && !path.isAbsolute(dir)) {
-        // Windows separators first, so the test below reads one kind of path.
-        const rel = dir.replace(/\\/g, "/").replace(/^\.\//, "");
-        // .vtx/skills is project-relative; .vtx/skills and
-        // .agents/skills are home-relative.
-        dir = rel.startsWith(".vtx/") && root ? path.join(root, rel) : path.join(home, rel);
-      }
-      const scope = (s.source || "").includes("project") ? "project" : "user";
-      return { name: s.name, description: s.description, trigger: s.source, dir, path: dir ? path.join(dir, "SKILL.md") : "", scope };
-    });
-  }
-
-  // The set of MCP servers with a stored OAuth token (logged in), keyed by both
-  // server name and url so we can match either.
+  // Vtx keeps MCP OAuth state in ~/.vtx/mcp-auth.json as { servers: { url: state } }.
   private mcpLoggedIn(): { names: Set<string>; urls: Set<string> } {
     const names = new Set<string>();
     const urls = new Set<string>();
     try {
-      const dir = mcpOauthDir();
-      for (const f of fs.readdirSync(dir)) {
-        if (!f.endsWith(".json")) continue;
-        try {
-          const t = JSON.parse(fs.readFileSync(path.join(dir, f), "utf8"));
-          if (t && t.access_token) {
-            if (t.server_name) names.add(String(t.server_name));
-            if (t.url) urls.add(String(t.url));
+      const file = path.join(userConfigDir(), "mcp-auth.json");
+      const data = JSON.parse(fs.readFileSync(file, "utf8")) as Record<string, unknown>;
+      const servers = data.servers;
+      if (servers && typeof servers === "object") {
+        for (const [url, state] of Object.entries(servers as Record<string, unknown>)) {
+          const s = (state || {}) as Record<string, unknown>;
+          const tokens = (s.tokens || {}) as Record<string, unknown>;
+          if (tokens.access_token) {
+            urls.add(url);
+            if (typeof s.server_url === "string") urls.add(s.server_url);
           }
-        } catch { /* ignore a bad token file */ }
+        }
       }
-    } catch { /* no oauth dir yet */ }
+    } catch { /* no credentials file yet */ }
     return { names, urls };
   }
 
-  // MCP servers for one scope: the global files for User, or a folder's
+  // MCP servers for one scope: ~/.vtx/mcp.json for Global, or a folder's
   // .vtx/mcp.json for a project folder.
   private mcpServersForScope(scope: ConfigScope, root?: string): unknown[] {
     const out: unknown[] = [];
     const seen = new Set<string>();
     const auth = this.mcpLoggedIn();
-    const addFrom = (file: string, source = "vtx") => {
-      if (!fs.existsSync(file)) return;
+    const file = scope === "project" ? projectMcpConfigPath(root || this.root() || process.cwd()) : userMcpConfigPath();
+    if (fs.existsSync(file)) {
       const servers = readConfig(file).mcpServers;
-      if (!servers || typeof servers !== "object") return;
-      for (const [name, def] of Object.entries(servers as Record<string, unknown>)) {
-        if (seen.has(name)) continue;
-        seen.add(name);
-        const d = (def || {}) as Record<string, unknown>;
-        // Windsurf writes an http server's address as `serverUrl`, so a server
-        // imported from it is not stdio just because it has no `url`.
-        const url = typeof d.url === "string" ? d.url : (typeof d.serverUrl === "string" ? d.serverUrl : "");
-        const transport = typeof d.type === "string" ? String(d.type) : (url ? "http" : "stdio");
-        const loggedIn = (url && auth.urls.has(url)) || auth.names.has(name);
-        out.push({
-          name, scope, transport, file, source,
-          // A safe, secret-free summary. Never expose command args or headers:
-          // stdio args and tokens can contain secrets (see mcp get).
-          detail: safeMcpDetail(url, d.command),
-          disabled: d.disabled === true || d.enabled === false,
-          loggedIn: !!loggedIn,
-          oauthCapable: transport !== "stdio",
-          envKeys: d.env && typeof d.env === "object" ? Object.keys(d.env as object) : [],
-          headerKeys: d.headers && typeof d.headers === "object" ? Object.keys(d.headers as object) : []
-        });
-      }
-    };
-    if (scope === "user") {
-      addFrom(userMcpConfigPath());
-      addFrom(userConfigPath());
-      // The CLI imports these, so this agent has them whether or not Vtx was
-      // told about them. Showing them is the only way to know what is loaded.
-      addFrom(windsurfMcpConfigPath(), "windsurf");
-    } else if (root) {
-      addFrom(path.join(root, ".vtx", "mcp.json"));
-    }
-    return out;
-  }
-
-  // Hooks for one scope: the User config, or a folder's .vtx config + hooks.v1.
-  private hooksForScope(scope: ConfigScope, root?: string): unknown[] {
-    const out: unknown[] = [];
-    const addFrom = (hooksObj: unknown, source: string) => {
-      if (!hooksObj || typeof hooksObj !== "object") return;
-      for (const [event, groups] of Object.entries(hooksObj as Record<string, unknown>)) {
-        if (!Array.isArray(groups)) continue;
-        for (const g of groups) {
-          const matcher = (g && typeof g === "object" ? (g as Record<string, unknown>).matcher : "") || "";
-          const hooks = (g && typeof g === "object" ? (g as Record<string, unknown>).hooks : []) as unknown[];
-          for (const h of Array.isArray(hooks) ? hooks : []) {
-            const ho = (h || {}) as Record<string, unknown>;
-            out.push({ event, matcher, type: ho.type, command: ho.command, prompt: ho.prompt, timeout: ho.timeout, source });
-          }
+      if (servers && typeof servers === "object") {
+        for (const [name, def] of Object.entries(servers as Record<string, unknown>)) {
+          if (seen.has(name)) continue;
+          seen.add(name);
+          const d = (def || {}) as Record<string, unknown>;
+          const url = typeof d.url === "string" ? d.url : "";
+          const transport = url ? "http" : "stdio";
+          out.push({
+            name, scope, transport, file, source: "vtx",
+            detail: safeMcpDetail(url, d.command),
+            disabled: d.enabled === false,
+            loggedIn: !!(url && auth.urls.has(url)),
+            oauthCapable: transport !== "stdio",
+            envKeys: d.env && typeof d.env === "object" ? Object.keys(d.env as object) : [],
+            headerKeys: d.headers && typeof d.headers === "object" ? Object.keys(d.headers as object) : []
+          });
         }
       }
-    };
-    const file = loadConfigFile(scope, root);
-    addFrom(file.data.hooks, file.path);
-    if (scope !== "user" && root) {
-      const p = path.join(root, ".vtx", "hooks.v1.json");
-      if (fs.existsSync(p)) {
-        try { addFrom(JSON.parse(stripJsonComments(fs.readFileSync(p, "utf8"))), p); } catch { /* ignore */ }
-      }
     }
     return out;
   }
 
-  private permissionsForScope(scope: ConfigScope, root?: string): { allow: unknown[]; deny: unknown[]; ask: unknown[] } {
-    const p = (loadConfigFile(scope, root).data.permissions || {}) as Record<string, unknown>;
-    return {
-      allow: Array.isArray(p.allow) ? p.allow : [],
-      deny: Array.isArray(p.deny) ? p.deny : [],
-      ask: Array.isArray(p.ask) ? p.ask : []
-    };
+  // Hooks for one scope: ~/.vtx/hooks.yml for Global, or a folder's
+  // .vtx/hooks.yml for a project folder.
+  private hooksForScope(scope: ConfigScope, root?: string): unknown[] {
+    const file = this.hooksFileFor(scope, root);
+    const data = this.readHooksYaml(file);
+    const out: unknown[] = [];
+    for (const [group, entries] of Object.entries(data)) {
+      if (!Array.isArray(entries)) continue;
+      entries.forEach((entry, index) => {
+        const h = (entry || {}) as Record<string, unknown>;
+        const event = typeof h.event === "string" ? h.event : "";
+        if (!event) return;
+        out.push({
+          event,
+          group,
+          index,
+          matcher: typeof h.matcher === "string" ? h.matcher : "",
+          type: h.type || "command",
+          command: h.command || "",
+          prompt: h.prompt_text || h.prompt || h.agent_instructions || h.url || "",
+          timeout: h.timeout,
+          source: file
+        });
+      });
+    }
+    return out;
   }
 
   private getHtml(webview: vscode.Webview): string {
@@ -1120,22 +1050,6 @@ function safeMcpDetail(url: string, command: unknown): string {
 function quoteArg(p: string): string {
   if (process.platform === "win32") return /\s/.test(p) ? `"${p}"` : p;
   return /[^A-Za-z0-9_./-]/.test(p) ? `'${p.replace(/'/g, `'\\''`)}'` : p;
-}
-
-function isPlainObject(v: unknown): v is Record<string, unknown> {
-  return !!v && typeof v === "object" && !Array.isArray(v);
-}
-
-// Layer one config file over another the way Vtx merges them: later keys win,
-// and object values (agent, proxy, sandbox, read_config_from) merge one level so
-// a folder can override a single sub-key.
-function mergeConfig(base: Record<string, unknown>, over: Record<string, unknown>): Record<string, unknown> {
-  const out: Record<string, unknown> = { ...base };
-  for (const [k, v] of Object.entries(over)) {
-    const b = out[k];
-    out[k] = isPlainObject(b) && isPlainObject(v) ? { ...b, ...v } : v;
-  }
-  return out;
 }
 
 // A row's value in a config object, falling back to Vtx's documented default.

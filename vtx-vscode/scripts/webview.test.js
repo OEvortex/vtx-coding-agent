@@ -137,7 +137,7 @@ test("live user message renders without a handler error", async () => {
 
 test("assistant file references render as clickable links", async () => {
   const h = createHarness();
-  const href = "file:///Users/shayan.khaksar/VSCode/devin-vscode/src/acp/client.ts#L20";
+  const href = "file:///Users/shayan.khaksar/VSCode/vtx-vscode/src/acp/client.ts#L20";
   h.replay([{ role: "assistant", text: `See [client.ts:243-251](${href})` }]);
   await h.settle();
 
@@ -1861,7 +1861,7 @@ test("while busy, Send becomes a split button: queue it, or stop and send", asyn
   assert.deepStrictEqual(rows.map((r) => r.querySelector(".dv-menu-text span").textContent),
     ["Send to Queue", "Stop and Send"]);
   assert.deepStrictEqual(rows.map((r) => r.querySelector(".dv-menu-keys").textContent), ["Enter", "Alt+Enter"]);
-  assert.match(rows[1].querySelector(".dv-menu-detail").textContent, /Stop what Devin is doing/);
+  assert.match(rows[1].querySelector(".dv-menu-detail").textContent, /Stop what Vtx is doing/);
 
   rows[1].click();
   await h.settle(10);
@@ -2172,7 +2172,7 @@ test("a long chain of commands is cut to a scannable length", async () => {
   h.post({ type: "ready" });
   h.post({ type: "body", body: "thread" });
   h.post({ type: "clear" });
-  const long = 'pkill -f "http.server 8899"; cd /Users/shayan/VSCode/devin-vscode && ' +
+  const long = 'pkill -f "http.server 8899"; cd /Users/shayan/VSCode/vtx-vscode && ' +
     "playwright-cli close >/dev/null 2>&1; rm -rf .playwright-cli /tmp/tg.png";
   h.post({ type: "toolCall", id: "c9", kind: "execute", status: "completed", rawInput: { command: long } });
   await h.settle(20);
@@ -2436,7 +2436,7 @@ test("the gap between one action and the next still says the agent is working", 
   assert.match(row.textContent, /^(Thinking|Reasoning|Considering|Analyzing|Evaluating|Working)$/);
 
   // A question is not work: say what is actually being waited on, as VS Code does.
-  h.post({ type: "permission", requestId: "p1", title: "Devin wants to run a command", options: [{ optionId: "allow", name: "Allow", kind: "allow" }] });
+  h.post({ type: "permission", requestId: "p1", title: "Vtx wants to run a command", options: [{ optionId: "allow", name: "Allow", kind: "allow" }] });
   await h.settle(20);
   assert.strictEqual(h.thread().querySelector(".working").textContent, "1 confirmation pending");
 
@@ -2761,7 +2761,7 @@ test("a command's row drops the cd that got it there", async () => {
     id: "cd1",
     kind: "execute",
     status: "completed",
-    rawInput: { command: "cd /Users/shayan/VSCode/devin-vscode && npm test" }
+    rawInput: { command: "cd /Users/shayan/VSCode/vtx-vscode && npm test" }
   });
   await h.settle(20);
 
@@ -2770,7 +2770,7 @@ test("a command's row drops the cd that got it there", async () => {
   assert.strictEqual(h.thread().querySelector(".tool .tool-label-code").textContent, "npm test");
   assert.strictEqual(
     h.thread().querySelector(".tool-command code").textContent,
-    "cd /Users/shayan/VSCode/devin-vscode && npm test",
+    "cd /Users/shayan/VSCode/vtx-vscode && npm test",
     "expanding it still shows what actually ran"
   );
   assert.strictEqual(h.errors().length, 0);
@@ -2923,13 +2923,13 @@ test("a search says what it looked for and where, in one line", async () => {
     title: "Grep for showInfo",
     kind: "search",
     status: "completed",
-    rawInput: { pattern: "devin.showInfo", path: "/w/src/ui" },
+    rawInput: { pattern: "vtx.showInfo", path: "/w/src/ui" },
     content: [{ type: "text", text: "3 matches" }]
   });
   await h.settle(20);
   const tool = h.thread().querySelector(".tool");
   assert.strictEqual(tool.querySelector(".tool-verb").textContent, "Grep");
-  assert.strictEqual(tool.querySelector(".tool-detail").textContent, " devin.showInfo in src/ui");
+  assert.strictEqual(tool.querySelector(".tool-detail").textContent, " vtx.showInfo in src/ui");
   assert.ok(tool.classList.contains("dv-nocollapse"), "there is nothing left to expand");
   assert.strictEqual(tool.querySelector(".tool-body").childElementCount, 0);
   assert.strictEqual(h.errors().length, 0);
@@ -3029,7 +3029,7 @@ test("a command shows the output it is producing, not just its exit code", async
   assert.ok(pre, "the row shows the terminal it is running in");
   assert.match(pre.textContent, /running 12 tests/, "and the output as it arrives");
 
-  // Devin reports only the exit code when it finishes, which the output already
+  // Vtx reports only the exit code when it finishes, which the output already
   // ends with, so it must not be repeated as a second Output block.
   h.post({ type: "terminalOutput", terminalId: "term-1", output: "running 12 tests\nall passed\n", exitStatus: { exitCode: 0 } });
   h.post({
@@ -3389,7 +3389,7 @@ test("a re-posted permission replaces the open one instead of stacking", async (
   const perm = {
     type: "permission",
     requestId: "p1",
-    title: "Devin wants to run: `git push`",
+    title: "Vtx wants to run: `git push`",
     options: [{ optionId: "allow", name: "Allow", kind: "allow" }, { optionId: "reject", name: "Reject", kind: "reject" }]
   };
   h.post(perm);
@@ -3457,7 +3457,7 @@ test("the sessions switcher offers the same New Session split button", async () 
 });
 
 test("a replayed thought is labelled without a made up duration", async () => {
-  // Nothing records how long Devin thought for, so a reloaded transcript used to
+  // Nothing records how long Vtx thought for, so a reloaded transcript used to
   // time the replay itself and claim "Thought for 1s" for every block.
   const h = createHarness();
   h.post({ type: "ready" });
@@ -4332,7 +4332,7 @@ test("sharing is offered only for a chat the agent can share", async () => {
 });
 
 test("a permission prompt says what it would run", async () => {
-  // Devin asks about a command without a title, carrying the command in _meta,
+  // Vtx asks about a command without a title, carrying the command in _meta,
   // so a prompt that only repeats "a tool" cannot be answered.
   const h = createHarness();
   h.post({ type: "ready" });
@@ -4340,7 +4340,7 @@ test("a permission prompt says what it would run", async () => {
   h.post({
     type: "permission",
     requestId: "p1",
-    title: "Devin wants to run a command",
+    title: "Vtx wants to run a command",
     command: "pwd && whoami && date",
     toolCallId: "t1",
     options: [
@@ -4444,7 +4444,7 @@ test("a permission prompt with only a tool call names that tool", async () => {
   h.post({
     type: "permission",
     requestId: "p2",
-    title: "Devin wants to run a tool",
+    title: "Vtx wants to run a tool",
     toolCallId: "t9",
     options: [{ optionId: "allow_once", name: "Allow", kind: "allow_once" }]
   });
@@ -4457,7 +4457,7 @@ test("a permission prompt with only a tool call names that tool", async () => {
   h.post({
     type: "permission",
     requestId: "p3",
-    title: "Devin wants to run a tool",
+    title: "Vtx wants to run a tool",
     locations: [{ path: "/w/src/auth/token.ts" }],
     options: [{ optionId: "allow_once", name: "Allow", kind: "allow_once" }]
   });
@@ -4621,7 +4621,7 @@ test("Enter answers the option it is on before moving to the next question", asy
 // --- Announcements ---------------------------------------------------------
 // Everything here happens without the user looking at the panel, and the
 // transcript fills in silently, so without an announcement a screen reader user
-// gets no signal that Devin started, finished, or is blocked waiting on them.
+// gets no signal that Vtx started, finished, or is blocked waiting on them.
 
 test("the panel says out loud when a turn starts, ends, and is stopped", async () => {
   const h = createHarness();
@@ -4683,7 +4683,7 @@ test("the transcript is a log and the composer is labelled", async () => {
   assert.ok(h.document.querySelector("#thread").getAttribute("aria-label"));
   // A placeholder is not a label: it disappears the moment anything is typed.
   const input = h.document.querySelector("#input");
-  assert.match(input.getAttribute("aria-label"), /ask devin/i);
+  assert.match(input.getAttribute("aria-label"), /ask vtx/i);
   // The same box starts a new chat in the list, and the label has to follow it:
   // it overrides the placeholder, so a stale one is what gets read out.
   h.post({ type: "body", body: "list" });
@@ -4705,12 +4705,12 @@ test("a permission prompt keeps the broad grants behind a chevron, and records t
   h.post({
     type: "permission",
     requestId: "p1",
-    title: "Devin wants to run a command",
+    title: "Vtx wants to run a command",
     command: "exit 42",
     options: [
       { optionId: "allow_once", name: "Allow", kind: "allow_once" },
       { optionId: "allow_session", name: "Yes, allow `exit` commands (this session)", kind: "allow_always" },
-      { optionId: "allow_always", name: "Yes, always allow `exit` commands in `devin-vscode`", kind: "allow_always" },
+      { optionId: "allow_always", name: "Yes, always allow `exit` commands in `vtx-vscode`", kind: "allow_always" },
       { optionId: "allow_always_global", name: "Yes, always allow `exit` commands in all projects", kind: "allow_always" },
       { optionId: "switch_bypass", name: "Yes, switch to bypass mode", kind: "allow_always" },
       { optionId: "reject_once", name: "Reject", kind: "reject_once" }
@@ -4739,7 +4739,7 @@ test("a permission prompt keeps the broad grants behind a chevron, and records t
   // later what was allowed.
   const recap = h.document.querySelector(".perm-recap");
   assert.ok(recap, "the decision is recorded in the transcript");
-  assert.match(recap.textContent, /always allow .*exit.* in .*devin-vscode.*: exit 42/);
+  assert.match(recap.textContent, /always allow .*exit.* in .*vtx-vscode.*: exit 42/);
   assert.strictEqual(h.errors().length, 0);
 });
 
@@ -5049,7 +5049,7 @@ test("the mode picker offers whatever modes the agent reports", async () => {
   const h = createHarness();
   h.post({ type: "ready" });
   h.post({ type: "body", body: "thread" });
-  // The five a real `devin acp` reports. The extension used to compile in four of
+  // The five a real `vtx acp` reports. The extension used to compile in four of
   // them, so `smart` was unreachable from the panel however new the CLI was.
   h.post({
     type: "options",
@@ -5074,7 +5074,7 @@ test("the mode picker offers whatever modes the agent reports", async () => {
   const rows = [...dd.querySelectorAll(".dd-item")].map((r) => r.textContent.trim());
   assert.deepStrictEqual(rows, ["Code", "Smart", "Ask", "Plan", "Bypass"]);
   assert.strictEqual(dd.querySelector(".dd-item.selected").textContent.trim(), "Smart");
-  // Devin names its icons after its own set, so they arrive already mapped.
+  // Vtx names its icons after its own set, so they arrive already mapped.
   assert.ok(dd.querySelector(".dd-item-icon.codicon-sparkle"), "the mapped icon is used");
   assert.strictEqual(h.errors().length, 0);
 });
@@ -6195,12 +6195,12 @@ test("tool output carries a copy action, and JSON is pretty printed", async () =
   // A plain tool, not an MCP one: JSON is JSON whoever returned it.
   h.post({ type: "toolCall", id: "j1", title: "Read config", kind: "read", status: "pending" });
   h.post({ type: "toolCallUpdate", id: "j1", status: "completed",
-    content: [{ type: "text", text: '{"name":"devin","nested":{"on":true}}' }] });
+    content: [{ type: "text", text: '{"name":"vtx","nested":{"on":true}}' }] });
   await h.settle(20);
   const card = [...h.document.querySelectorAll("#thread .tool")].find((t) => /Read config/.test(t.textContent));
   const pre = card.querySelector(".tool-block .tool-pre");
   assert.ok(pre.classList.contains("hljs"), "highlighted");
-  assert.match(pre.textContent, /^\{\n  "name": "devin",/, "and pretty printed");
+  assert.match(pre.textContent, /^\{\n  "name": "vtx",/, "and pretty printed");
   const copy = card.querySelector(".tool-block .tool-toolbar .dv-copy");
   assert.ok(copy, "with a copy action");
   copy.click();

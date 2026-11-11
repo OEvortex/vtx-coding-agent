@@ -15,7 +15,7 @@ const path = require("path");
 const esbuild = require("esbuild");
 
 const ROOT = path.resolve(__dirname, "..");
-const TMP = fs.mkdtempSync(path.join(os.tmpdir(), "devin-sessions-"));
+const TMP = fs.mkdtempSync(path.join(os.tmpdir(), "vtx-sessions-"));
 
 function build(rel) {
   const outfile = path.join(TMP, path.basename(rel).replace(/\.ts$/, ".js"));

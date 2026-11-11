@@ -18,8 +18,16 @@ from vtx.protocol.types import ImageContent
 
 MAX_CHARS_PER_LINE = 2000
 MAX_LINES_PER_FILE = 2000
+#: Lines shown in the TUI preview after a read (the model still gets the file).
+PREVIEW_LINES = 12
 DIRECTORY_DEPTH_ROW_LIMIT = 200
 MAX_DIRECTORY_ROWS = 1000
+
+
+def _strip_line_number(line: str) -> str:
+    """Drop the ``%6d\\t`` gutter ``read_file`` adds for the model."""
+    _, separator, text = line.partition("\t")
+    return text if separator else line
 
 
 class ReadParams(BaseModel):
@@ -228,8 +236,14 @@ class ReadTool(BaseTool):
             return ToolResult(success=False, result=msg, ui_summary=f"[red]{msg}[/red]")
 
         lines_read = len(content.splitlines()) if content else 0
+        preview = "\n".join(
+            _strip_line_number(line) for line in content.splitlines()[:PREVIEW_LINES]
+        )
         return ToolResult(
-            success=True, result=content, ui_summary=f"[dim]({lines_read} lines)[/dim]"
+            success=True,
+            result=content,
+            ui_summary=f"[dim]({lines_read} lines)[/dim]",
+            ui_data={"path": str(file_path), "preview": preview, "start_line": params.offset or 1},
         )
 
 

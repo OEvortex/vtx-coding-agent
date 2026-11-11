@@ -181,3 +181,12 @@ async def test_read_directory_formats_modified_time(read_tool, tmp_path):
         read_tool._format_directory_entry(file_path, Path("alpha.py")) == " 2 Apr 15:19  alpha.py"
     )
     assert read_tool._format_directory_entry(dir_path, Path("nested")) == " 3 Apr 09:05  nested/"
+
+
+@pytest.mark.asyncio
+async def test_read_sets_a_ui_preview_without_line_gutters(read_tool, text_file):
+    result = await read_tool.execute(ReadParams(path=str(text_file)))
+    assert result.ui_data is not None
+    assert result.ui_data["path"] == str(text_file)
+    assert result.ui_data["preview"].split("\n")[0] == "line1"
+    assert result.ui_data["start_line"] == 1

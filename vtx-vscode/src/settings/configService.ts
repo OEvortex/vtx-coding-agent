@@ -2,23 +2,12 @@ import * as fs from "fs";
 import * as os from "os";
 import * as path from "path";
 
-// Reads and writes the Vtx CLI config files that back the settings surface.
-// Config files are JSON with comments (JSONC). We parse comment-tolerantly for
-// display and, for direct edits, write back a normalised JSON file (comments in
-// that file are lost, so the UI warns and offers an "open file" escape hatch).
-// MCP writes go through the CLI verbs instead (see vtxConfigCli).
+// Reads and writes the Vtx-owned JSON files that back the settings surface.
+// User settings in ~/.vtx/config.yml are YAML and are only touched through
+// `vtx config` (see vtxConfigCli). Direct file writes here are limited to
+// Vtx's JSON surfaces: mcp.json and mcp-auth reads.
 
-// Two scopes only: user (global) and project (this workspace, .vtx/config.json).
-// We deliberately do not expose a separate gitignored "local" scope; the user
-// gitignores whatever they want.
 export type ConfigScope = "user" | "project";
-
-export interface ConfigFile {
-  scope: ConfigScope;
-  path: string;
-  exists: boolean;
-  data: Record<string, unknown>;
-}
 
 // The user config directory, mirroring vtx's get_config_dir():
 // $XDG_CONFIG_HOME/vtx when set and absolute, otherwise ~/.vtx on every
@@ -74,38 +63,9 @@ export function projectSkillsDir(root: string): string {
   return path.join(root, ".agents", "skills");
 }
 
-// Agent and extension discovery (src/vtx/agent/agents/discovery.py,
-// src/vtx/plugins/extensions.py).
-export function globalAgentDir(): string {
-  return path.join(userConfigDir(), "agent");
-}
-
-export function projectAgentDir(root: string): string {
-  return path.join(root, ".vtx", "agent");
-}
-
-export function globalExtensionsDir(): string {
-  return path.join(globalAgentDir(), "extensions");
-}
-
-export function projectExtensionsDir(root: string): string {
-  return path.join(root, ".vtx", "extensions");
-}
-
-// Windsurf keeps its own MCP servers here. The Vtx CLI does not read this
-// file; the settings surface lists them read only so the user can see what
-// another editor configured, and edits go through `vtx mcp` where possible.
-export function windsurfDir(): string {
-  return path.join(os.homedir(), ".codeium", "windsurf");
-}
-
-export function windsurfMcpConfigPath(): string {
-  return path.join(windsurfDir(), "mcp_config.json");
-}
-
 // Add, replace or (with a null definition) remove one server in an mcpServers
-// file. The Vtx CLI owns its own files, so this is only for the ones it merely
-// imports: `vtx mcp` will not write to another tool's config.
+// file. Used for Vtx's own mcp.json files, which the panel edits directly
+// because the CLI has no mcp management verb.
 export function writeMcpServer(file: string, name: string, def: Record<string, unknown> | null): void {
   refuseIfUnparseable(file);
   const current = readConfig(file);
@@ -128,16 +88,6 @@ export function vtxDataDir(): string {
     ? (process.env.LOCALAPPDATA || path.join(os.homedir(), "AppData", "Local"))
     : (process.env.XDG_DATA_HOME || path.join(os.homedir(), ".local", "share"));
   return path.join(dataHome, "vtx");
-}
-
-// MCP OAuth tokens are stored per server under the data dir; their presence
-// tells us a server is logged in.
-export function mcpOauthDir(): string {
-  return path.join(vtxDataDir(), "mcp", "oauth");
-}
-
-export function projectConfigPath(root: string): string {
-  return path.join(root, ".vtx", "config.json");
 }
 
 // Strip // line comments and /* block */ comments and trailing commas so a
@@ -249,38 +199,4 @@ export function readConfig(file: string): Record<string, unknown> {
   } catch {
     return {};
   }
-}
-
-export function loadConfigFile(scope: ConfigScope, root?: string): ConfigFile {
-  const p = scope === "user" ? userConfigPath() : projectConfigPath(root || process.cwd());
-  return { scope, path: p, exists: fs.existsSync(p), data: readConfig(p) };
-}
-
-// Set a dotted path (e.g. "agent.model", "proxy.mode") in a config file. An
-// undefined value removes the key, along with any parent object it leaves empty,
-// so a removed setting does not linger as `"proxy": {}`.
-export function setConfigPath(scope: ConfigScope, dotted: string, value: unknown, root?: string): string {
-  const p = scope === "user" ? userConfigPath() : projectConfigPath(root || process.cwd());
-  refuseIfUnparseable(p);
-  const current = readConfig(p);
-  const keys = dotted.split(".");
-  const chain: Record<string, unknown>[] = [current];
-  let node: Record<string, unknown> = current;
-  for (let i = 0; i < keys.length - 1; i++) {
-    const k = keys[i];
-    if (!node[k] || typeof node[k] !== "object") node[k] = {};
-    node = node[k] as Record<string, unknown>;
-    chain.push(node);
-  }
-  if (value === undefined) {
-    delete node[keys[keys.length - 1]];
-    for (let i = chain.length - 1; i > 0; i--) {
-      if (Object.keys(chain[i]).length) break;
-      delete chain[i - 1][keys[i - 1]];
-    }
-  } else {
-    node[keys[keys.length - 1]] = value;
-  }
-  writeFileAtomic(p, JSON.stringify(current, null, 2) + "\n");
-  return p;
 }

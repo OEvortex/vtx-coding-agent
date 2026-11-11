@@ -1,112 +1,55 @@
-// ACP probe: drive a real `devin acp` session end to end and log every message
+// ACP probe: drive a real `vtx acp` session end to end and log every message
 // so we can see the true payload shapes the extension has to render.
 //
 // It speaks the same newline-delimited JSON-RPC the extension does (see
 // src/acp/connection.ts), performs the initialize -> session/new -> session/prompt
-// handshake, switches to Bypass mode and auto-approves anything so tools actually
-// run, and records every session/update notification and agent->client request to
-// a JSONL file. Use it whenever you add rendering for a new tool and need to know
-// the exact `kind`, `_meta` (cognition.ai/inferenceToolName, toolName, eventType),
-// `rawInput` and `content` a given tool emits.
+// handshake, auto-approves anything so tools actually run, and records every
+// session/update notification and agent->client request to a JSONL file. Use it
+// whenever you add rendering for a new tool and need to know the exact `kind`,
+// `_meta`, `rawInput` and `content` a given tool emits.
 //
-// It also answers the three questions that come up whenever Devin's ACP surface
-// moves: which client capabilities does this build look for, which custom methods
-// does it actually implement, and does it consume a given notification. Those are
-// only discoverable by asking a real agent, so `--caps`, `--methods` and `--notify`
-// exist to keep the answers reproducible after a CLI upgrade rather than
-// rediscovered by hand. See AGENTS.md for the matrix this produced.
+// It also answers the questions that come up whenever Vtx's ACP surface moves:
+// which methods does it actually implement, and does it consume a given
+// notification. Vtx stores clientCapabilities but never reads them, so there is
+// no capability matrix to probe; `--methods` and `--notify` keep the answers
+// reproducible after a CLI upgrade rather than rediscovered by hand.
 //
 // Usage:
 //   node scripts/acp-probe.js --prompt "search the web for the node lts version"
 //   node scripts/acp-probe.js -p "call the time MCP tool for UTC" --out /tmp/mcp.jsonl
 //   node scripts/acp-probe.js -p "fetch https://example.com" --summary
-//   node scripts/acp-probe.js --caps all --caps-report --no-prompt
-//   node scripts/acp-probe.js --methods _cognition.ai/rules/list,session/list --no-prompt
-//   node scripts/acp-probe.js --caps all --notify _cognition.ai/document/didOpen \
-//     --notify-params '{"path":"/tmp/a.ts"}' -p "which files do I have open?"
+//   node scripts/acp-probe.js --methods _vtx.ai/rules/list,session/list --no-prompt
+//   node scripts/acp-probe.js --notify session/update --no-prompt
 //
 // Flags (all optional):
 //   -p, --prompt <text>   prompt to send            (default: "Say hi in one word.")
 //   -o, --out <file>      JSONL transcript path      (default: scripts/.probe/last.jsonl)
 //   -c, --cwd <dir>       session working directory  (default: process.cwd())
-//       --cli <path>      devin binary               (default: $DEVIN_CLI or `devin`)
+//       --cli <path>      vtx binary                 (default: $VTX_CLI or `vtx`)
 //       --mcp <json>      mcpServers array for session/new (default: [])
 //       --watchdog <ms>   hard kill timeout          (default: 180000)
 //       --summary         also print a tool-call summary to stdout at the end
 //       --quiet           do not tail updates to stdout while running
-//       --caps <list>     client capabilities to declare: short or full names,
-//                         `all` for every key this build is known to look for,
-//                         `none` for bare ACP  (default: what the extension sends)
-//       --caps-report     print declared vs echoed agent capabilities and exit code 1
-//                         if a declared key is not echoed back
 //       --methods <list>  call each method and report whether it exists (-32601 = no).
 //                         Runs before the prompt, and without a session when possible
 //       --notify <m>      send one notification after the session opens
 //       --notify-params <json>  params for it (sessionId is merged in)
-//       --no-prompt       skip the prompt: capability and method probing only
+//       --no-prompt       skip the prompt: method probing only
 //       --keep-session    do not delete the probe session on the way out
-//       --mode <id|keep>  session mode to use. `keep` leaves it as opened, which is
-//                         how to provoke a permission prompt (default: bypass, so
-//                         tools run unattended and nothing asks for approval)
+//       --mode <id|keep>  session mode to use. `keep` leaves it as opened
+//                         (default: leave as opened; Vtx ships a single `default` mode)
 //
-// Env fallbacks mirror the flags: DEVIN_CLI, PROBE_PROMPT, PROBE_OUT, PROBE_CWD,
+// Env fallbacks mirror the flags: VTX_CLI, PROBE_PROMPT, PROBE_OUT, PROBE_CWD,
 // PROBE_MCP, PROBE_WATCHDOG.
 
 const { spawn } = require("child_process");
 const fs = require("fs");
 const path = require("path");
 
-// Every client capability key this build of `devin acp` is known to look for,
-// read out of the binary's own capability list. Declaring one is a promise to
-// serve it, so this is a probe aid, not a list to copy into the extension.
-const KNOWN_CAPS = [
-  "revert",
-  "subagentSupport",
-  "subagentControl",
-  "partialContent",
-  "groupedSessionConfigOptions",
-  "stopOnReject",
-  "mcp",
-  "plugins",
-  "workspaceDirCommands",
-  "clipboardWrite",
-  "windsurfConfigBridge",
-  "requestDiagnostics",
-  "editorContext",
-  "terminalContext",
-  "fastContext",
-  "browserPreview",
-  "browserPreviewOpen",
-  "messageGrouping",
-  "documentLifecycle",
-  "userEdits",
-  "terminalLifecycle",
-  "editableCommands",
-  "commandRevision",
-  "sessionShare",
-  "ruleMentions",
-  "multiRootWorkspace"
-];
-
-// What the extension itself declares today (src/acp/client.ts), so a probe with
-// no --caps reproduces the extension's own view of the agent. Keep this in step
-// with `initialize` there, or the probe stops telling you about the real thing.
-const EXTENSION_CAPS = [
-  "revert",
-  "subagentSupport",
-  "subagentControl",
-  "groupedSessionConfigOptions",
-  "multiRootWorkspace",
-  "requestDiagnostics",
-  "documentLifecycle",
-  "stopOnReject",
-  "partialContent"
-];
-
 function parseArgs(argv) {
   const out = {};
   const alias = { p: "prompt", o: "out", c: "cwd" };
-  const flags = new Set(["summary", "quiet", "caps-report", "no-prompt", "keep-session"]);
+  const flags = new Set(["summary", "quiet", "no-prompt", "keep-session"]);
   for (let i = 0; i < argv.length; i++) {
     let a = argv[i];
     if (!a.startsWith("-")) continue;
@@ -118,23 +61,8 @@ function parseArgs(argv) {
   return out;
 }
 
-// "all" | "none" | a comma list of short ("editorContext") or full
-// ("cognition.ai/editorContext") names, to the _meta object initialize wants.
-function capsMeta(spec) {
-  const names = spec === undefined
-    ? EXTENSION_CAPS
-    : spec === "all" ? KNOWN_CAPS
-    : spec === "none" ? []
-    : String(spec).split(",").map((s) => s.trim()).filter(Boolean);
-  const meta = {};
-  for (const n of names) {
-    meta[n.startsWith("cognition.ai/") ? n : `cognition.ai/${n}`] = true;
-  }
-  return meta;
-}
-
 const args = parseArgs(process.argv.slice(2));
-const CLI = args.cli || process.env.DEVIN_CLI || "devin";
+const CLI = args.cli || process.env.VTX_CLI || "vtx";
 const CWD = args.cwd || process.env.PROBE_CWD || process.cwd();
 const PROMPT = args.prompt || process.env.PROBE_PROMPT || "Say hi in one word.";
 const OUT = path.resolve(args.out || process.env.PROBE_OUT || path.join(__dirname, ".probe", "last.jsonl"));
@@ -142,20 +70,14 @@ const MCP = args.mcp ? JSON.parse(args.mcp) : (process.env.PROBE_MCP ? JSON.pars
 const WATCHDOG = Number(args.watchdog || process.env.PROBE_WATCHDOG || 180000);
 const QUIET = !!args.quiet;
 const SUMMARY = !!args.summary;
-const CAPS = capsMeta(args.caps);
-const CAPS_REPORT = !!args["caps-report"];
 const METHODS = args.methods ? String(args.methods).split(",").map((s) => s.trim()).filter(Boolean) : [];
 const NOTIFY = args.notify;
 const NOTIFY_PARAMS = args["notify-params"] ? JSON.parse(args["notify-params"]) : {};
 const NO_PROMPT = !!args["no-prompt"];
 const KEEP_SESSION = !!args["keep-session"];
 // Session mode: an id to set, or `keep` to leave the session in the mode it opened
-// in. Default hunts for a bypass-style mode so tools run without approval.
+// in. Vtx ships a single `default` mode, so this only matters against other agents.
 const MODE = args.mode;
-// The file the synthetic diagnostic is reported against. Defaults to the uri the
-// --notify params name, so `didOpen` and the diagnostic agree on the document.
-const DIAG_FIXTURE = String(NOTIFY_PARAMS.uri || "").replace(/^file:\/\//, "")
-  || path.join(CWD, "src", "probe-fixture.ts");
 
 fs.mkdirSync(path.dirname(OUT), { recursive: true });
 const log = fs.createWriteStream(OUT, { flags: "w" });
@@ -219,8 +141,9 @@ function dispatch(line) {
   }
 }
 
-// Serve the agent's client-side requests: approve everything, satisfy file reads,
-// and no-op terminals so tools run to completion without a real UI.
+// Serve the agent's client-side requests: approve everything and satisfy the
+// standard ACP file and terminal methods so tools run to completion.
+// Vtx itself only ever calls session/request_permission.
 async function handleReq(msg) {
   rec("client_request", { method: msg.method, params: msg.params });
   let result = null;
@@ -238,26 +161,6 @@ async function handleReq(msg) {
     result = { output: "", truncated: false, exitStatus: { exitCode: 0, signal: null } };
   } else if (msg.method === "terminal/wait_for_exit") {
     result = { exitCode: 0, signal: null };
-  } else if (msg.method === "_cognition.ai/request_diagnostics") {
-    // The agent pulls these once `requestDiagnostics` is declared, and rejects a
-    // null ("expected struct RequestDiagnosticsResult"). One synthetic item, so a
-    // prompt can prove whether the agent really read it.
-    // Points at a real file so a prompt can be asked about it: the agent only
-    // surfaces diagnostics for documents it has been told are open, so pair this
-    // with --notify _cognition.ai/document/didOpen for the same uri.
-    const fixture = DIAG_FIXTURE;
-    result = {
-      items: [
-        {
-          uri: "file://" + fixture,
-          id: "ts2304",
-          message: "Probe fixture diagnostic: cannot find name 'zzyzx'",
-          severity: "error",
-          source: "ts",
-          range: { start: { line: 41, character: 6 }, end: { line: 41, character: 11 } }
-        }
-      ]
-    };
   }
   send({ jsonrpc: "2.0", id: msg.id, result: result ?? null });
 }
@@ -287,25 +190,6 @@ function printSummary() {
   }
 }
 
-// Which capabilities the agent echoed back, against what we declared. The agent
-// echoes some keys unconditionally and gates others (`mcp` and `plugins` only
-// appear once asked for), so the interesting column is what a declaration unlocks.
-function printCapsReport(init) {
-  const echoed = (init && init.agentCapabilities && init.agentCapabilities._meta) || {};
-  const declared = Object.keys(CAPS).sort();
-  const back = Object.keys(echoed).filter((k) => echoed[k] === true).sort();
-  const missing = declared.filter((k) => !back.includes(k));
-  process.stdout.write("\n=== capabilities ===\n");
-  process.stdout.write(`declared (${declared.length}): ${declared.join(", ") || "(none)"}\n`);
-  process.stdout.write(`echoed   (${back.length}): ${back.join(", ") || "(none)"}\n`);
-  process.stdout.write(`echoed but not declared: ${back.filter((k) => !declared.includes(k)).join(", ") || "(none)"}\n`);
-  process.stdout.write(`declared but NOT echoed: ${missing.join(", ") || "(none)"}\n`);
-  const p = (init && init.agentCapabilities && init.agentCapabilities.promptCapabilities) || {};
-  const s = (init && init.agentCapabilities && init.agentCapabilities.sessionCapabilities) || {};
-  process.stdout.write(`prompt: ${JSON.stringify(p)}  session: ${JSON.stringify(s)}\n`);
-  return missing;
-}
-
 // Does a method exist? -32601 is the only reliable "no": every other error means
 // the method is routed and only the params were wrong. Notifications cannot be
 // probed this way (they are not routed as requests), which is what --notify is for.
@@ -333,13 +217,11 @@ async function probeMethods(sessionId) {
     clientCapabilities: {
       fs: { readTextFile: true, writeTextFile: true },
       terminal: true,
-      elicitation: { form: {}, url: {} },
-      _meta: CAPS
+      elicitation: { form: {}, url: {} }
     }
   });
   rec("initialize_result", { result: init });
-  let notEchoed = [];
-  if (CAPS_REPORT) notEchoed = printCapsReport(init);
+  tail("[initialize] " + JSON.stringify(init.agentInfo || {}));
 
   // Probe first without a session: anything that works here (session/list does)
   // needs no session, which is worth knowing before building on it.
@@ -357,15 +239,10 @@ async function probeMethods(sessionId) {
     await probeMethods(sessionId);
   }
 
-  // Switch to a bypass-style mode so tools auto-run (we still auto-approve as a
-  // fallback for agents that do not expose one). `--mode` overrides that, which is
-  // how a permission prompt is provoked: in bypass there is nothing to approve, so
-  // `session/request_permission` never arrives to be inspected.
+  // Set a mode if asked. Vtx ships only `default`, so this normally does nothing.
   try {
     const modes = (sess.modes && sess.modes.availableModes) || [];
-    const wanted = MODE && MODE !== "keep"
-      ? modes.find((m) => m.id === MODE)
-      : modes.find((m) => /bypass|yolo|auto/i.test(m.id + " " + (m.name || "")));
+    const wanted = MODE && MODE !== "keep" ? modes.find((m) => m.id === MODE) : undefined;
     if (MODE === "keep") {
       rec("set_mode", { modeId: sess.modes && sess.modes.currentModeId, kept: true });
     } else if (wanted) {
@@ -402,6 +279,5 @@ async function probeMethods(sessionId) {
     try { await request("session/delete", { sessionId }); rec("session_deleted", { sessionId }); } catch (e) { rec("session_delete_err", { err: String(e) }); }
   }
   process.stderr.write("\nTranscript: " + OUT + "\n");
-  const code = notEchoed.length ? 1 : 0;
-  setTimeout(() => { try { child.kill("SIGTERM"); } catch {} log.end(); process.exit(code); }, 800);
+  setTimeout(() => { try { child.kill("SIGTERM"); } catch {} log.end(); process.exit(0); }, 800);
 })().catch((e) => { rec("fatal", { err: String(e) }); log.end(); process.exit(1); });

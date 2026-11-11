@@ -1,17 +1,23 @@
-"""pi-style boxed tool rendering — Python/Textual port.
+"""pi-style boxed tool rendering with an editor-grade body — Python/Textual port.
 
 Port of pi-style's ``shared/box.ts`` chrome: rounded borders with embedded
-labels, dim frame, boxed body lines, and metrics footers. Pure functions over
-Rich ``Text`` so callers can compose them into any widget.
+labels, dim frame, boxed body lines, and metrics footers. On top of that the
+body renders like an editor tab: a language chip and state glyph in the
+header, a line-number gutter, and syntax-highlighted code/diff rows. Pure
+functions over Rich ``Text`` so callers can compose them into any widget.
 """
 
 from __future__ import annotations
 
+import re
 import time
+from typing import Any
 
+from rich.style import Style
 from rich.text import Text
 
 from vtx.core.config import config
+from vtx.tui.diff_display import DIFF_BG_PAD_MARKER
 
 BOX_H = "─"
 BOX_V = "│"
@@ -23,6 +29,8 @@ CORNER_BR = "╯"
 #: pi-style caps tool boxes at ~100 columns regardless of terminal width.
 MAX_BOX_WIDTH = 100
 MIN_BOX_WIDTH = 30
+#: Skip the Pygments pass on diffs too large to colour cheaply (expanded view).
+MAX_HIGHLIGHT_CHARS = 200_000
 
 
 def box_width(width: int | None) -> int:
@@ -34,8 +42,15 @@ def _colors():
     return config.ui.colors
 
 
-def _dim(text: str) -> str:
-    return f"[dim]{text}[/dim]"
+def _fit(text: str, budget: int) -> str:
+    """Clip ``text`` to ``budget`` display cells with an ellipsis."""
+    if budget <= 0:
+        return ""
+    clipped = Text(text)
+    if clipped.cell_len <= budget:
+        return text
+    clipped.truncate(max(1, budget), overflow="ellipsis", pad=False)
+    return clipped.plain
 
 
 def visible_len(text: str) -> int:
@@ -66,54 +81,64 @@ def strip_markup(text: str) -> str:
         return text
 
 
-def _truncate(text: str, max_len: int) -> str:
-    plain = strip_markup(text)
-    if len(plain) <= max_len:
-        return text
-    return plain[: max(0, max_len - 1)] + "…"
-
-
-def _fill(width: int, style: str = "dim") -> str:
-    return f"[{style}]{BOX_H * width}[/{style}]"
-
-
 def top_border(
-    icon: str, name: str, detail: str, width: int, *, running: bool = False, failed: bool = False
+    icon: str,
+    name: str,
+    detail: str,
+    width: int,
+    *,
+    running: bool = False,
+    failed: bool = False,
+    status: str = "",
+    badge: str = "",
 ) -> Text:
-    """``╭─ {icon} {Name} {detail} ────────────╮`` with styled segments."""
+    """``╭─ {icon} {Name} {detail} PY ───── {status} ─╮``.
+
+    ``badge`` is a short language chip (``PY``, ``TS``) and ``status`` is the
+    state glyph pinned top-right, so a finished call reads its outcome from
+    the header the way an editor tab does.
+    """
     colors = _colors()
     w = box_width(width)
-    inner = w - 2  # inside the two corners
+    dim = str(colors.dim)
 
     name_style = colors.failed if failed else (colors.running if running else colors.muted)
     icon_style = str(colors.accent) if not (running or failed) else str(name_style)
     name_style = f"bold {name_style}"
 
     prefix = f"{CORNER_TL}{BOX_H} "
-    suffix = f" {CORNER_TR}"
-    # Reserve: prefix + suffix + icon+space+name+space + at least one fill dash.
-    fixed = len(prefix) + len(suffix) + len(icon) + 1 + len(name) + 1 + 1
-    detail_budget = max(0, inner - (fixed - len(prefix) - len(suffix)))
-    detail_txt = _truncate(detail, detail_budget) if detail else ""
 
-    body = Text()
-    body.append(prefix, style="dim")
-    body.append(f"{icon} ", style=str(icon_style))
-    body.append(name, style=str(name_style))
+    right = Text()
+    if status:
+        status_color = colors.failed if failed else (colors.running if running else colors.success)
+        right.append(f" {status} ", style=Style(color=str(status_color), bold=True))
+        right.append(CORNER_TR, style=dim)
+    else:
+        right.append(f" {CORNER_TR}", style=dim)
+
+    head = Text()
+    head.append(prefix, style=dim)
+    head.append(f"{icon} ", style=str(icon_style))
+    head.append(name, style=str(name_style))
+
+    badge_extra = (1 + Text(f" {badge} ").cell_len) if badge else 0
+    detail_budget = w - head.cell_len - right.cell_len - badge_extra - (2 if badge else 3)
+    detail_txt = _fit(detail, detail_budget) if detail else ""
     if detail_txt:
-        body.append(" ")
-        body.append(detail_txt, style="dim")
-    used = (
-        len(prefix)
-        + len(icon)
-        + 1
-        + len(name)
-        + (1 + visible_len(detail_txt) if detail_txt else 0)
-    )
-    fill = max(0, w - used - len(suffix))
-    body.append(BOX_H * fill, style="dim")
-    body.append(suffix, style="dim")
-    return body
+        head.append(" ")
+        head.append(detail_txt, style=dim)
+    if badge:
+        head.append(" ")
+        head.append(
+            f" {badge} ", style=Style(color=str(colors.muted), bgcolor=str(colors.panel_alt))
+        )
+
+    if not badge:
+        head.append(" ", style=dim)
+    fill = max(1, w - head.cell_len - right.cell_len)
+    head.append(BOX_H * fill, style=dim)
+    head.append_text(right)
+    return head
 
 
 def bottom_border(footer: str, width: int, *, hint: str = "", failed: bool = False) -> Text:
@@ -121,36 +146,40 @@ def bottom_border(footer: str, width: int, *, hint: str = "", failed: bool = Fal
     w = box_width(width)
     prefix = f"{CORNER_BL}{BOX_H} "
     suffix = f" {CORNER_BR}"
-    hint_txt = hint or ""
+    dim = str(_colors().dim)
 
-    # Footer and hint are markup strings; measure their visible length.
-    footer_vis = visible_len(footer)
-    hint_vis = visible_len(hint_txt)
+    try:
+        footer_text = Text.from_markup(footer)
+    except Exception:
+        footer_text = Text(strip_markup(footer), style="dim")
+    try:
+        hint_text = Text.from_markup(hint) if hint else Text()
+    except Exception:
+        hint_text = Text(hint, style="dim")
 
-    min_fill = 1
-    avail = w - len(prefix) - len(suffix) - footer_vis - hint_vis - (1 if hint_txt else 0)
-    if avail < min_fill:
-        # Too narrow: drop the hint, then truncate the footer.
-        hint_txt, hint_vis = "", 0
-        avail = w - len(prefix) - len(suffix) - footer_vis - 0
-        if avail < min_fill:
-            excess = min_fill - avail
-            footer = _truncate(footer, max(4, footer_vis - excess))
-            footer_vis = visible_len(footer)
-            avail = w - len(prefix) - len(suffix) - footer_vis
+    def fill_for(footer_t: Text, hint_t: Text) -> int:
+        used = len(prefix) + footer_t.cell_len + 1 + len(suffix)
+        if hint_t.cell_len:
+            used += 1 + hint_t.cell_len
+        return w - used
+
+    fill = fill_for(footer_text, hint_text)
+    if fill < 1 and hint_text.cell_len:
+        hint_text = Text()
+        fill = fill_for(footer_text, hint_text)
+    if fill < 1:
+        footer_text.truncate(max(4, footer_text.cell_len + fill), overflow="ellipsis", pad=False)
+        fill = fill_for(footer_text, Text())
 
     body = Text()
-    body.append(prefix, style="dim")
-    try:
-        body.append_text(Text.from_markup(footer))
-    except Exception:
-        body.append(strip_markup(footer), style="dim")
-    fill = max(0, w - len(prefix) - len(suffix) - footer_vis - hint_vis - (1 if hint_txt else 0))
-    body.append(BOX_H * fill, style="dim")
-    if hint_txt:
-        body.append(" ")
-        body.append(hint_txt, style="dim")
-    body.append(suffix, style="dim")
+    body.append(prefix, style=dim)
+    body.append_text(footer_text)
+    body.append(" ", style=dim)
+    body.append(BOX_H * max(1, fill), style=dim)
+    if hint_text.cell_len:
+        body.append(" ", style=dim)
+        body.append_text(hint_text)
+    body.append(suffix, style=dim)
     return body
 
 
@@ -158,7 +187,7 @@ def box_line(content: Text | str, width: int, *, failed: bool = False) -> Text:
     """``│ {content padded} │`` — one boxed body line."""
     w = box_width(width)
     inner = w - 4  # two corners-as-sides + two padding spaces each side
-    side = "dim" if not failed else "failed"
+    side = str(_colors().failed) if failed else "dim"
     out = Text()
     out.append(f"{BOX_V} ", style=side)
     if isinstance(content, str):
@@ -166,11 +195,10 @@ def box_line(content: Text | str, width: int, *, failed: bool = False) -> Text:
             content = Text.from_markup(content)
         except Exception:
             content = Text(content)
-    plain = content.plain
-    if len(plain) > inner:
-        content = Text(plain[: inner - 1] + "…")
-        # Re-apply nothing — truncated lines lose styling, acceptable.
-    pad = inner - len(content.plain)
+    if content.cell_len > inner:
+        content = content.copy()
+        content.truncate(max(1, inner), overflow="ellipsis", pad=False)
+    pad = inner - content.cell_len
     out.append_text(content)
     if pad > 0:
         out.append(" " * pad)
@@ -180,7 +208,7 @@ def box_line(content: Text | str, width: int, *, failed: bool = False) -> Text:
 
 def box_blank(width: int, *, failed: bool = False) -> Text:
     w = box_width(width)
-    side = "dim" if not failed else "failed"
+    side = str(_colors().failed) if failed else "dim"
     return Text(f"{BOX_V}{' ' * (w - 2)}{BOX_V}", style=side)
 
 
@@ -195,31 +223,121 @@ def wrap_boxed(text: Text, width: int, *, failed: bool = False) -> Text:
     return out
 
 
-_LEXERS = {
+LEXERS = {
     "py": "python",
     "pyi": "python",
+    "pyw": "python",
     "json": "json",
     "sh": "bash",
     "bash": "bash",
     "zsh": "bash",
+    "fish": "fish",
     "ts": "typescript",
-    "tsx": "typescript",
+    "tsx": "tsx",
     "js": "javascript",
-    "jsx": "javascript",
+    "jsx": "jsx",
+    "mjs": "javascript",
+    "cjs": "javascript",
     "md": "markdown",
+    "rst": "rst",
+    "rs": "rust",
+    "go": "go",
+    "toml": "toml",
+    "yaml": "yaml",
+    "yml": "yaml",
+    "ini": "ini",
+    "cfg": "ini",
+    "css": "css",
+    "scss": "scss",
+    "html": "html",
+    "htm": "html",
+    "xml": "xml",
+    "svg": "xml",
+    "sql": "sql",
+    "c": "c",
+    "h": "c",
+    "cpp": "cpp",
+    "cc": "cpp",
+    "hpp": "cpp",
+    "java": "java",
+    "kt": "kotlin",
+    "rb": "ruby",
+    "lua": "lua",
+    "php": "php",
+    "swift": "swift",
+    "vue": "html",
+    "dockerfile": "docker",
+    "makefile": "make",
+}
+
+_LANGUAGE_BADGES = {
+    "py": "PY",
+    "pyi": "PY",
+    "pyw": "PY",
+    "json": "JSON",
+    "sh": "SH",
+    "bash": "SH",
+    "zsh": "SH",
+    "fish": "SH",
+    "ts": "TS",
+    "tsx": "TSX",
+    "js": "JS",
+    "jsx": "JSX",
+    "mjs": "JS",
+    "cjs": "JS",
+    "md": "MD",
+    "rs": "RS",
+    "go": "GO",
+    "toml": "TOML",
+    "yaml": "YAML",
+    "yml": "YAML",
+    "css": "CSS",
+    "scss": "CSS",
+    "html": "HTML",
+    "xml": "XML",
+    "sql": "SQL",
+    "c": "C",
+    "h": "C",
+    "cpp": "C++",
+    "hpp": "C++",
+    "java": "JAVA",
+    "kt": "KT",
+    "rb": "RB",
+    "lua": "LUA",
+    "php": "PHP",
+    "swift": "SWIFT",
+    "vue": "VUE",
 }
 
 
-def _highlight_fragment(fragment: str, path: str) -> Text:
+def _extension(path: str) -> str:
+    name = path.replace("\\", "/").rsplit("/", 1)[-1]
+    return name.rsplit(".", 1)[-1].lower() if "." in name else ""
+
+
+def lexer_for_path(path: str | None) -> str | None:
+    """Pygments lexer name for a path, or ``None`` when unsupported."""
+    if not path:
+        return None
+    return LEXERS.get(_extension(path))
+
+
+def language_badge(path: str | None) -> str:
+    """Short uppercase chip for the header (``PY``, ``TS``, ``JSON``)."""
+    if not path:
+        return ""
+    return _LANGUAGE_BADGES.get(_extension(path), "")
+
+
+def _highlight_fragment(fragment: str, path: str = "", *, lexer: str | None = None) -> Text:
     """Syntax-highlight ``fragment`` without line wrapping.
 
     ``format_python_source`` wraps at the render width, which splits long
     lines into gutter-less continuation rows inside the numbered preview —
     so this goes through Pygments directly with ``word_wrap=False``.
     """
-    name = path.rsplit("/", 1)[-1]
-    ext = name.rsplit(".", 1)[-1].lower() if "." in name else ""
-    lexer = _LEXERS.get(ext)
+    if lexer is None:
+        lexer = lexer_for_path(path)
     if lexer is None or not fragment.strip():
         return Text(fragment)
     try:
@@ -239,12 +357,16 @@ def _highlight_fragment(fragment: str, path: str) -> Text:
         return Text(fragment)
 
 
-def highlighted_numbered_lines(content: str, path: str, *, max_lines: int = 15) -> Text:
-    """``cat -n`` preview of ``content``'s tail, syntax-highlighted by ``path``.
+def highlighted_numbered_lines(
+    content: str, path: str, *, max_lines: int = 15, start_line: int = 1
+) -> Text:
+    """Editor-style ``12 │ code`` preview of ``content``'s tail.
 
     The fragment is highlighted as one block (Pygments tolerates incomplete
     syntax), then split so each line keeps its styles under a dim gutter.
-    Bounded: only the last ~6KB / ``max_lines`` lines are processed.
+    Bounded: only the last ``max_lines`` lines are processed. ``start_line``
+    offsets the gutter when ``content`` is a slice of a larger file (read
+    with ``offset``).
     """
     normalized = content.replace("\t", "    ").replace("\r", "")
     if not normalized:
@@ -253,19 +375,122 @@ def highlighted_numbered_lines(content: str, path: str, *, max_lines: int = 15) 
     total = len(all_lines)
     start = max(0, total - max_lines)
     tail = all_lines[start:]
-    gutter = max(1, len(str(total)))
+    gutter = max(1, len(str(start_line + total - 1)))
+    colors = _colors()
 
     body = _highlight_fragment("\n".join(tail), path)
     body_lines = body.split("\n")
-    out = Text()
+
+    rows: list[Text] = []
+    if start > 0:
+        rows.append(Text(f"{' ' * gutter} ⋮ {start_line + start} earlier lines", style="dim"))
     for i, line in enumerate(body_lines):
-        num = str(start + i + 1).rjust(gutter)
-        out.append(f"{num} ", style="dim")
-        out.append_text(line)
-        out.append("\n")
-    hidden = start
-    if hidden > 0:
-        out.append(f"… {hidden} earlier lines\n", style="dim")
+        num = str(start_line + start + i).rjust(gutter)
+        row = Text()
+        row.append(f"{num} ", style="dim")
+        row.append(f"{BOX_V} ", style=str(colors.border))
+        row.append_text(line)
+        rows.append(row)
+
+    out = Text()
+    for i, row in enumerate(rows):
+        out.append_text(row)
+        if i < len(rows) - 1:
+            out.append("\n")
+    return out
+
+
+_DIFF_LINE_RE = re.compile(r"^(?P<num>\s*\d+)  (?P<code>.*)$")
+
+
+def _color_hex(color: Any) -> str | None:
+    """Hex string of a Rich ``Color`` (``None`` for unset/unresolvable values)."""
+    if color is None:
+        return None
+    try:
+        return str(color.get_truecolor().hex)
+    except Exception:
+        return None
+
+
+def _line_paint(line: Text) -> tuple[str | None, str | None]:
+    """Background and foreground hex used by a formatted diff row."""
+    bg: str | None = None
+    fg: str | None = None
+    for span in line.spans:
+        style = span.style
+        if isinstance(style, str):
+            try:
+                style = Style.parse(style)
+            except Exception:
+                continue
+        if not isinstance(style, Style):
+            continue
+        if bg is None and style.bgcolor is not None:
+            bg = _color_hex(style.bgcolor)
+        if fg is None and style.color is not None:
+            fg = _color_hex(style.color)
+    return bg, fg
+
+
+def highlight_diff(text: Text, path: str | None) -> Text:
+    """Re-colour the code inside a formatted diff, keeping its line backgrounds.
+
+    ``format_diff_display`` paints a whole added/removed line one hue, which
+    throws away the syntax the reader is looking at. This restores token
+    colours per line while the ``+``/``-`` gutter keeps the add/remove cue,
+    so a diff reads like an editor's instead of a coloured transcript.
+    """
+    lexer = lexer_for_path(path)
+    if lexer is None or len(text.plain) > MAX_HIGHLIGHT_CHARS:
+        return text
+
+    colors = _colors()
+    added = str(colors.diff_added).lower()
+    removed = str(colors.diff_removed).lower()
+    border = str(colors.border)
+
+    lines = text.split("\n")
+    parsed: list[tuple[str, str, str, str | None] | None] = []
+    for line in lines:
+        bg, fg = _line_paint(line)
+        plain = line.plain.replace(DIFF_BG_PAD_MARKER, "")
+        match = _DIFF_LINE_RE.match(plain)
+        if bg is None or match is None or not match.group("code").strip():
+            parsed.append(None)
+            continue
+        code = match.group("code")
+        if code.startswith(" "):
+            code = code[1:]
+        parsed.append((match.group("num"), code, bg, fg))
+
+    code_block = "\n".join(entry[1] if entry else "" for entry in parsed)
+    highlighted_lines = _highlight_fragment(code_block, path or "", lexer=lexer).split("\n")
+    while len(highlighted_lines) < len(parsed):
+        highlighted_lines.append(Text())
+
+    out = Text()
+    for index, (line, entry) in enumerate(zip(lines, parsed, strict=False)):
+        if index:
+            out.append("\n")
+        if entry is None:
+            out.append_text(line)
+            continue
+        num, _code, bg, fg = entry
+        fg_hex = (fg or "").lower()
+        if fg_hex == added:
+            sign = "+"
+        elif fg_hex == removed:
+            sign = "-"
+        else:
+            sign = " "
+        gutter_style = Style(color=fg or str(colors.dim), bold=True)
+        row = Text(style=Style(bgcolor=bg))
+        row.append(f"{sign}{num} ", style=gutter_style)
+        row.append(f"{BOX_V} ", style=Style(color=border))
+        row.append_text(highlighted_lines[index])
+        out.append_text(row)
+        out.append(DIFF_BG_PAD_MARKER, style=Style(bgcolor=bg))
     return out
 
 

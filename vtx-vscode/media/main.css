@@ -99,7 +99,7 @@
 
 /* Entrance for each response part as it streams in, echoing VS Code's
    incremental-rendering variants. The style is chosen by
-   devin.incrementalRendering.animationStyle (default "rise" = dv-appear). Kept
+   vtx.incrementalRendering.animationStyle (default "rise" = dv-appear). Kept
    short (VS Code staggers streamed blocks over ~600ms; we run it once per part,
    so a subtle 180ms avoids a slow fade on bulk history replay). */
 @keyframes dv-appear {
@@ -699,7 +699,7 @@ body {
 }
 
 
-/* While Devin is working, Send becomes a split button, VS Code's
+/* While Vtx is working, Send becomes a split button, VS Code's
    monaco-dropdown-with-default: the primary half runs the default action and the
    chevron beside it offers the other. Idle, it is just Send, so the group only
    joins the two halves once the chevron is there. */
@@ -1440,7 +1440,7 @@ button.model-hover-configurable-button:hover {
    masked to the border ring, spinning 135deg->495deg. Colour is the dedicated
    chat working-border token; duration scales with width (set in JS, 1.4s-2.5s).
    Mirrors chatInputPart / chat.css .chat-input-container.working. */
-@property --devin-angle {
+@property --vtx-angle {
   syntax: "<angle>";
   initial-value: 135deg;
   inherits: false;
@@ -1476,7 +1476,7 @@ button.model-hover-configurable-button:hover {
   z-index: 2;
   padding: 1px;
   background: conic-gradient(
-    from var(--devin-angle),
+    from var(--vtx-angle),
     transparent 0deg,
     color-mix(in srgb, var(--dv-input-working-color) 70%, transparent) 16deg,
     var(--dv-input-working-color) 32deg,
@@ -1497,7 +1497,7 @@ button.model-hover-configurable-button:hover {
   padding: 2px;
   filter: blur(2px);
   background: conic-gradient(
-    from var(--devin-angle),
+    from var(--vtx-angle),
     transparent 0deg,
     color-mix(in srgb, var(--dv-input-working-color) 45%, transparent) 24deg,
     color-mix(in srgb, var(--dv-input-working-color) 24%, transparent) 60deg,
@@ -1519,7 +1519,7 @@ button.model-hover-configurable-button:hover {
 #input-box.busy::before,
 #input-box.busy::after {
   opacity: 1;
-  animation: devin-border var(--dv-input-working-duration) linear infinite;
+  animation: vtx-border var(--dv-input-working-duration) linear infinite;
 }
 
 /* One-frame guard so a duration change restarts the spin cleanly. */
@@ -1528,9 +1528,9 @@ button.model-hover-configurable-button:hover {
   animation: none;
 }
 
-@keyframes devin-border {
-  from { --devin-angle: 135deg; }
-  to { --devin-angle: 495deg; }
+@keyframes vtx-border {
+  from { --vtx-angle: 135deg; }
+  to { --vtx-angle: 495deg; }
 }
 
 @media (prefers-reduced-motion: reduce) {
@@ -4524,7 +4524,7 @@ button.model-hover-configurable-button:hover {
   background: var(--vscode-sideBar-background, var(--vscode-editor-background));
 }
 
-/* The panel side (devin.sessionsPanel.side, default right) is driven entirely
+/* The panel side (vtx.sessionsPanel.side, default right) is driven entirely
    from this attribute, so the DOM order never changes: flex order moves the
    panel and its resizer past the chat, and the dividing border swaps edges. */
 #chat[data-panel-side="right"] #chat-main {
@@ -4905,7 +4905,7 @@ body.dv-resizing #sessions-resizer {
 }
 
 /* ==========================================================================
-   Devin Settings surface
+   Vtx Settings surface
 
    One row rhythm, no nested boxes: a section is a stack of groups, a group is a
    small heading plus rows separated by hairlines. Scope (User / Workspace) is a

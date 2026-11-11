@@ -222,43 +222,14 @@ export class AcpClient extends EventEmitter {
   async initialize(): Promise<InitializeResult> {
     const result = await this.rpc<InitializeResult>("initialize", {
       protocolVersion: 1,
+      // Vtx stores client capabilities but only uses the standard ACP surface:
+      // session methods, session/update, and session/request_permission. It has
+      // no _cognition.ai or _vtx.ai client extensions beyond the two list calls
+      // below, so nothing Devin-specific is declared here.
       clientCapabilities: {
         fs: { readTextFile: true, writeTextFile: true },
         terminal: true,
-        elicitation: { form: {}, url: {} },
-        // Vtx's own extensions, none of them documented. Declaring one is a
-        // promise to serve it, so each key here has a handler in this client or
-        // in the chat controller. Note the agent does NOT echo these back: what
-        // comes back in agentCapabilities._meta is what the AGENT offers, so a
-        // capability we serve must never be gated on seeing it there.
-        _meta: {
-          // Unlocks the _cognition.ai/revert/* methods (conversation rewind +
-          // file undo). Verified against vtx acp.
-          "cognition.ai/revert": true,
-          // Streams a subagent's own tool calls, messages and thoughts tagged
-          // with `subagent_context`, plus the `subagent_started` /
-          // `subagent_completed` lifecycle. Without it only the subagent's
-          // opening tool_call arrives, so its rows never leave pending.
-          "cognition.ai/subagentSupport": true,
-          // Unlocks _cognition.ai/subagent/{background,foreground}.
-          "cognition.ai/subagentControl": true,
-          "cognition.ai/groupedSessionConfigOptions": true,
-          "cognition.ai/multiRootWorkspace": true,
-          // The agent pulls the editor's diagnostics instead of spawning tsc or
-          // eslint to find out what the editor already knows. Pairs with
-          // documentLifecycle: the agent only reports diagnostics for documents it
-          // has been told are open.
-          ...(this.options.diagnostics ? { "cognition.ai/requestDiagnostics": true } : {}),
-          // Puts the files the user has open, focused and unsaved into the agent's
-          // context, so it stops guessing at what "this file" means and knows when
-          // a file it read has unsaved changes.
-          "cognition.ai/documentLifecycle": true,
-          // Rejecting a permission stops the turn rather than letting the agent
-          // carry on down a path the user just refused.
-          "cognition.ai/stopOnReject": true,
-          // A cancelled tool keeps the output it had already produced.
-          "cognition.ai/partialContent": true
-        }
+        elicitation: { form: {}, url: {} }
       }
     }, HANDSHAKE_TIMEOUT_MS);
     this.initializeResult = result;
@@ -342,9 +313,10 @@ export class AcpClient extends EventEmitter {
 
   // --- What the agent has actually loaded ----------------------------------
   // Rules and hooks come from more places than any one client can be expected to
-  // know: AGENTS.md and CLAUDE.md, Cursor and Windsurf files, plugins, and whatever
-  // a later CLI adds. Asking the agent is the only way to report what is really in
-  // force, and each entry names the file it came from so it can still be opened.
+  // know: AGENTS.md and CLAUDE.md in ~/.vtx and project ancestors, hooks.yml,
+  // plugins, and whatever a later CLI adds. Asking the agent is the only way to
+  // report what is really in force, and each entry names the file it came from
+  // so it can still be opened.
 
   async listRules(sessionId: string): Promise<LoadedRule[]> {
     const res = await this.rpc<{ rules?: LoadedRule[] }>("_vtx.ai/rules/list", { sessionId }, QUERY_TIMEOUT_MS);

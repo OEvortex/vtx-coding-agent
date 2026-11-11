@@ -17,7 +17,7 @@ const path = require("path");
 const esbuild = require("esbuild");
 
 const ROOT = path.resolve(__dirname, "..");
-const TMP = fs.mkdtempSync(path.join(os.tmpdir(), "devin-acp-"));
+const TMP = fs.mkdtempSync(path.join(os.tmpdir(), "vtx-acp-"));
 
 function load(rel, name) {
   const outfile = path.join(TMP, name + ".js");
@@ -164,7 +164,7 @@ test("concurrent login shell lookups share one process", { skip: process.platfor
 test("concurrent health checks share version and authentication probes", { skip: process.platform === "win32" }, async () => {
   const cli = path.join(TMP, "health-cli.sh");
   const log = path.join(TMP, "health.log");
-  fs.writeFileSync(cli, `#!/bin/sh\nprintf x >> "$HEALTH_LOG"\nsleep 0.1\ncase "$1" in\n  --version) echo "devin 1.0.0" ;;\n  auth) echo "Logged in." ;;\nesac\n`);
+  fs.writeFileSync(cli, `#!/bin/sh\nprintf x >> "$HEALTH_LOG"\nsleep 0.1\ncase "$1" in\n  --version) echo "vtx 1.0.0" ;;\n  auth) echo "Logged in." ;;\nesac\n`);
   fs.chmodSync(cli, 0o755);
   const previousLog = process.env.HEALTH_LOG;
   process.env.HEALTH_LOG = log;
@@ -292,38 +292,17 @@ test("every call but a turn is bounded, so no feature can wait for ever", () => 
   assert.deepStrictEqual(unbounded, ["session/prompt"], "only a turn may be unbounded");
 });
 
-test("initialize promises only the capabilities we actually serve", async () => {
+test("initialize declares only capabilities Vtx uses", async () => {
   const { cli, log } = fakeAgent("caps", {});
   const client = start(cli, { diagnostics: true });
   await client.initialize();
   const init = seen(log).find((m) => m.method === "initialize");
-  const declared = Object.keys(init.params.clientCapabilities._meta);
 
-  // Declaring one of these is a promise to serve it, and the agent never echoes
-  // our declarations back, so dropping one here turns a feature off in silence.
-  for (const key of [
-    "cognition.ai/revert",
-    "cognition.ai/subagentSupport",
-    "cognition.ai/subagentControl",
-    "cognition.ai/requestDiagnostics",
-    "cognition.ai/documentLifecycle"
-  ]) {
-    assert.ok(declared.includes(key), `expected to declare ${key}, declared: ${declared.join(", ")}`);
-  }
   assert.strictEqual(init.params.clientCapabilities.fs.readTextFile, true);
+  assert.strictEqual(init.params.clientCapabilities.fs.writeTextFile, true);
   assert.strictEqual(init.params.clientCapabilities.terminal, true);
-  await client.shutdown();
-});
-
-test("initialize omits automatic diagnostics when disabled", async () => {
-  const { cli, log } = fakeAgent("caps-off", {});
-  const client = start(cli, { diagnostics: false });
-  await client.initialize();
-  const init = seen(log).find((m) => m.method === "initialize");
-  assert.ok(
-    !Object.hasOwn(init.params.clientCapabilities._meta, "cognition.ai/requestDiagnostics"),
-    "disabled diagnostics must not be advertised to the agent"
-  );
+  assert.strictEqual(init.params.clientCapabilities.elicitation.form instanceof Object, true);
+  assert.strictEqual(init.params.clientCapabilities._meta, undefined);
   await client.shutdown();
 });
 
@@ -359,7 +338,7 @@ test("a diagnostics pull is answered in the shape the agent demands", async () =
 });
 
 test("session listing accepts a caller supplied timeout", async () => {
-  const client = new AcpClient({ cliPath: "devin", cwd: TMP });
+  const client = new AcpClient({ cliPath: "vtx", cwd: TMP });
   let timeout;
   client.rpc = async (_method, _params, value) => {
     timeout = value;

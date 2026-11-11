@@ -1,12 +1,10 @@
-// Tests for the CLI list parsers (src/settings/vtxConfigCli.ts), which turn the
-// `devin` command's printed output into the rows the settings panel renders, with
-// Update and Remove buttons beside them.
+// Tests for the Vtx CLI wrappers (src/settings/vtxConfigCli.ts): `vtx config
+// list|set` for ~/.vtx/config.yml, `vtx --dump-config` for plugin rows, and
+// `vtx plugin enable|disable` for the profile patch layer.
 //
-// The output is text meant for a human, so the risk is the parser being too
-// generous: anything it accepts becomes a row the user can act on, and a row that
-// is really an error message offers to uninstall something that does not exist.
-// A fake `devin` on disk stands in for the real one, printing exactly what it
-// prints (captured from `devin plugins list`).
+// The risk is the same as any parser fed by another program's output: anything
+// accepted becomes a row the user can act on, and a row that is really an error
+// message offers to toggle something that does not exist.
 
 const test = require("node:test");
 const assert = require("node:assert");
@@ -16,7 +14,7 @@ const path = require("path");
 const esbuild = require("esbuild");
 
 const ROOT = path.resolve(__dirname, "..");
-const TMP = fs.mkdtempSync(path.join(os.tmpdir(), "devin-clilist-"));
+const TMP = fs.mkdtempSync(path.join(os.tmpdir(), "vtx-clilist-"));
 
 const outfile = path.join(TMP, "vtxConfigCli.js");
 esbuild.buildSync({
@@ -26,14 +24,14 @@ esbuild.buildSync({
   platform: "node",
   format: "cjs",
   logLevel: "error",
-  alias: { vscode: path.join(__dirname, "vscode-stub.js") }
+  alias: { vscode: path.join(__dirname, "vtx-stub.js") }
 });
-const { listPlugins, listSkills, isPlainCliName } = require(outfile);
+const { listPlugins, configList, configSet, pluginVerb } = require(outfile);
 
-// A stand-in `devin` that prints what it is told and exits how it is told.
-function fakeCli(name, stdout, exitCode = 0) {
+// A stand-in `vtx` that prints what it is told and exits how it is told.
+function fakeCli(name, stdout, exitCode = 0, stderr = "") {
   const js = path.join(TMP, name + ".js");
-  fs.writeFileSync(js, `process.stdout.write(${JSON.stringify(stdout)});process.exit(${exitCode});`);
+  fs.writeFileSync(js, `process.stdout.write(${JSON.stringify(stdout)});process.stderr.write(${JSON.stringify(stderr)});process.exit(${exitCode});`);
   const shim = path.join(TMP, name + (process.platform === "win32" ? ".cmd" : ".sh"));
   if (process.platform === "win32") {
     fs.writeFileSync(shim, `@echo off\r\n"${process.execPath}" "${js}"\r\n`);
@@ -44,58 +42,46 @@ function fakeCli(name, stdout, exitCode = 0) {
   return { cliPath: shim };
 }
 
-test("the plugin list is what the CLI listed, not whatever it printed", async () => {
-  // Real output, captured from `devin plugins list`.
+test("the plugin list is what --dump-config listed, not whatever it printed", async () => {
+  // `vtx --dump-config` prints `<id>\t[enabled|disabled]\t<name>` per row.
   const good = await listPlugins(fakeCli("plugins-ok",
-    "Installed plugins\n\n  \u2022 story-skills v0.3.1\n  \u2022 superpowers v6.3.0\n"));
-  assert.deepStrictEqual(good.map((p) => p.name), ["story-skills", "superpowers"]);
-  assert.strictEqual(good[0].description, "v0.3.1", "the version rides along as the detail");
+    "hooks\t[enabled]\tvtx.plugins.builtins.hooks:PLUGIN\n"
+    + "tool-grep\t[disabled]\tvtx.plugins.builtins.tool_grep:PLUGIN\n"));
+  assert.deepStrictEqual(good.map((p) => p.name), ["hooks", "tool-grep"]);
+  assert.strictEqual(good[0].disabled, false);
+  assert.strictEqual(good[1].disabled, true);
+  assert.strictEqual(good[0].description, "vtx.plugins.builtins.hooks:PLUGIN");
 
-  // A CLI that failed. Every line here would have become a plugin with an Update
-  // and a Remove button, and removing "Error:" is not something to offer.
+  // A CLI that failed. Every line here would have become a row with an enable
+  // and a disable button, and toggling "Error:" is not something to offer.
   const failed = await listPlugins(fakeCli("plugins-err",
-    "Error: not authenticated. Run devin auth login.\n", 1));
+    "vtx plugin: unknown row 'x'; run `vtx --dump-config` to list them\n", 1));
   assert.deepStrictEqual(failed, [], "a failure lists nothing");
 
-  // Exit code 0 but nothing that is a plugin row: a hint, a reworded header, a
-  // wrapped line. None of them are plugins either.
   const noise = await listPlugins(fakeCli("plugins-noise",
-    "Plugins (2 installed)\nRun `devin plugins add <source>` to install one.\nSee https://docs.devin.ai for more.\n"));
+    "No extensions loaded.\nRun `vtx --help` for more.\n"));
   assert.deepStrictEqual(noise, [], "and nor is prose");
-
-  const none = await listPlugins(fakeCli("plugins-none", "No plugins installed\n"));
-  assert.deepStrictEqual(none, [], "and an empty list is empty");
 });
 
-test("the skill list keeps its strict shape", async () => {
-  // Same risk, and this parser was already strict. Kept honest here so it stays so.
-  const skills = await listSkills(fakeCli("skills-ok",
-    "Available Skills\n\n  /docx [user,model] (~/.config/devin/skills/docx) - Word documents\n"
-    + "Error: something went wrong\n"));
-  assert.deepStrictEqual(skills.map((s) => s.name), ["docx"], "only the row that is a skill");
-  assert.strictEqual(skills[0].description, "Word documents");
+test("config list parses the JSON `vtx config list` prints", async () => {
+  const listed = await configList(fakeCli("config-ok",
+    JSON.stringify({ llm: { default_model: "auto" }, permissions: { mode: "prompt" } }, null, 2)));
+  assert.deepStrictEqual(listed, { llm: { default_model: "auto" }, permissions: { mode: "prompt" } });
+
+  assert.strictEqual(await configList(fakeCli("config-bad", "not json\n")), undefined);
+  assert.strictEqual(await configList(fakeCli("config-fail", "boom\n", 1)), undefined);
 });
 
-test("a server name that is really a command is not typed into a shell", () => {
-  // The name comes from a config file, which may belong to a cloned repository, and
-  // the OAuth login types it into whichever shell the user has. Quoting for all of
-  // them is not possible, so anything that is not a name is refused.
-  for (const ok of ["godot-ai", "fetch", "my_server.v2", "@acme/tools", "a-b_c.1"]) {
-    assert.strictEqual(isPlainCliName(ok), true, ok + " is an ordinary name");
-  }
-  for (const bad of [
-    'a" & whoami & "b',
-    "a; rm -rf ~",
-    "a`whoami`",
-    "a$(whoami)",
-    "a|b",
-    "a b",
-    "-leading-dash",
-    "",
-    "a\nb"
-  ]) {
-    assert.strictEqual(isPlainCliName(bad), false, JSON.stringify(bad) + " must be refused");
-  }
+test("config set and plugin verbs report the CLI result", async () => {
+  const ok = fakeCli("verbs-ok", "set llm.default_model\n");
+  assert.deepStrictEqual(await configSet(ok, "llm.default_model", "auto"), { ok: true, err: "set llm.default_model\n" });
+  assert.deepStrictEqual(await pluginVerb(ok, "disable", "tool-grep"), { ok: true, err: "set llm.default_model\n" });
+  assert.deepStrictEqual(await pluginVerb(ok, "enable"), { ok: false, err: "missing row name" });
+
+  const bad = fakeCli("verbs-err", "", 1, "vtx plugin: unknown row\n");
+  const failed = await pluginVerb(bad, "disable", "nope");
+  assert.strictEqual(failed.ok, false);
+  assert.match(failed.err, /unknown row/);
 });
 
 test.after(() => {

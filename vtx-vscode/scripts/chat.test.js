@@ -59,8 +59,9 @@ test("ACP configuration exposes grouped models and applies thinking effort", pos
     await h.startChat("configure Fusion");
 
     const initialize = h.agentSaw("initialize")[0];
-    assert.strictEqual(initialize.params.clientCapabilities._meta["cognition.ai/groupedSessionConfigOptions"], true);
-    assert.strictEqual(initialize.params.clientCapabilities._meta["cognition.ai/multiRootWorkspace"], true);
+    assert.strictEqual(initialize.params.clientCapabilities.fs.readTextFile, true);
+    assert.strictEqual(initialize.params.clientCapabilities.terminal, true);
+    assert.strictEqual(initialize.params.clientCapabilities._meta, undefined);
 
     const options = h.last("options");
     assert.deepStrictEqual(options.modelChoices.fusion.map((choice) => choice.value), [
@@ -714,7 +715,7 @@ test("a stored session list paints before a cold revalidation", posixOnly, async
     title: "Stored chat",
     tracked: true
   };
-  const h = createChat({ state: { "devin.sessionList.v1": { at: 1, sessions: [cached] } } });
+  const h = createChat({ state: { "vtx.sessionList.v1": { at: 1, sessions: [cached] } } });
   h.controller.listOverProtocol = () => new Promise(() => {});
   await h.ready();
   h.send({ type: "listVisible", value: true });
@@ -1115,7 +1116,7 @@ test("a session load records one timing summary", posixOnly, async () => {
 });
 
 test("an optimistic ready hint refreshes a list after health succeeds", posixOnly, async () => {
-  const h = createChat({ state: { "devin.readyHint.v1": true } });
+  const h = createChat({ state: { "vtx.readyHint.v1": true } });
   const healthCheck = h.controller.runHealthCheck.bind(h.controller);
   let release;
   h.controller.runHealthCheck = async () => new Promise((resolve) => { release = resolve; }).then(healthCheck);
@@ -1132,10 +1133,10 @@ test("an optimistic ready hint refreshes a list after health succeeds", posixOnl
 });
 
 test("a successful recheck resumes the last viewed session", posixOnly, async () => {
-  const h = createChat({ state: { "devin.viewingSession.v1": "stored" } });
+  const h = createChat({ state: { "vtx.viewingSession.v1": "stored" } });
   const healthCheck = h.controller.runHealthCheck.bind(h.controller);
   h.controller.runHealthCheck = async () => {
-    h.controller.health = { found: false, loggedIn: false, path: "devin" };
+    h.controller.health = { found: false, loggedIn: false, path: "vtx" };
   };
 
   h.send({ type: "ready" });

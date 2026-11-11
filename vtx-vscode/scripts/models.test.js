@@ -6,7 +6,7 @@ const path = require("node:path");
 const esbuild = require("esbuild");
 
 const ROOT = path.resolve(__dirname, "..");
-const TMP = fs.mkdtempSync(path.join(os.tmpdir(), "devin-models-"));
+const TMP = fs.mkdtempSync(path.join(os.tmpdir(), "vtx-models-"));
 function loadModels(name) {
   const outfile = path.join(TMP, name + ".js");
   esbuild.buildSync({
@@ -23,8 +23,8 @@ function loadModels(name) {
 const { listModelFamilies } = loadModels("models");
 
 function fakeCli(stdout) {
-  const js = path.join(TMP, "devin.js");
-  const shim = path.join(TMP, process.platform === "win32" ? "devin.cmd" : "devin.sh");
+  const js = path.join(TMP, "vtx.js");
+  const shim = path.join(TMP, process.platform === "win32" ? "vtx.cmd" : "vtx.sh");
   fs.writeFileSync(js, `process.stdout.write(${JSON.stringify(stdout)});`);
   if (process.platform === "win32") {
     fs.writeFileSync(shim, `@echo off\r\n"${process.execPath}" "${js}"\r\n`);

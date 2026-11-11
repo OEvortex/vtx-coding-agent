@@ -250,37 +250,35 @@ export function headOf(steps: RevertStep[]): number | null {
   return last.forkTargetNodeId ?? last.revertTargetNodeId ?? null;
 }
 
-// `_cognition.ai/rules/list`: every always-on context file the agent actually
-// loaded, from wherever it came (AGENTS.md, CLAUDE.md, Cursor, Windsurf, a plugin).
-// Scanning for these by filename cannot see the plugin ones, and cannot tell which
-// of the files it found the CLI is honouring.
+// `_vtx.ai/rules/list`: every always-on context file the agent actually loaded.
+// Vtx discovers AGENTS.md and CLAUDE.md in ~/.vtx and project ancestors, so
+// asking the agent is the only way to report what is really in force.
 export interface LoadedRule {
   name: string;
   // Absolute path, so a row can open the file it is describing.
   path?: string;
-  // "agents_standard" | "windsurf" | "cursor" | "claude" | ...
+  // Vtx reports "vtx" today; kept open for other context providers.
   provider?: string;
-  // Display form of the provider, e.g. "AGENTS.md", ".windsurf".
   providerLabel?: string;
-  // "always_on" for a rule; skills that the user can invoke report otherwise.
+  // "always" for a rule; skills that the user can invoke report otherwise.
   trigger?: string;
   userInvocable?: boolean;
-  // "global" | "workspace"
+  // "global" | "project"
   scope?: string;
 }
 
-// `_cognition.ai/hooks/list`: the hooks in force, including ones from a plugin or
-// from another tool's config, which the panel's own file reading cannot see.
+// `_vtx.ai/hooks/list`: the hooks in force, including ones from a plugin or
+// another discovery surface the panel's own file reading cannot see.
 export interface LoadedHook {
   id?: string;
   name?: string;
-  // "permission_request" | "post_tool" | ...
+  // "SessionStart" | "PreToolUse" | ...
   events?: string[];
   sourcePath?: string;
   provider?: string;
   providerLabel?: string;
   scope?: string;
-  // "claude" for a hook written in the Claude format the CLI also accepts.
+  // The hook type: "command" | "prompt" | "http" | "agent".
   format?: string;
 }
 

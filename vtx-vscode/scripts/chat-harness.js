@@ -5,7 +5,7 @@
 // waking a chat that had exited. The bugs that keep being found in it are all the
 // same shape, a chat finishing that work into a panel that has moved on, and none of
 // them could be tested, so each was found by someone noticing a symptom and each fix
-// was made by reading. This runs the real controller, against a real `devin acp`
+// was made by reading. This runs the real controller, against a real `vtx acp`
 // conversation, with the timing under the test's control.
 //
 // It is the real thing on both sides of the seam:
@@ -24,7 +24,7 @@ const path = require("path");
 const esbuild = require("esbuild");
 
 const ROOT = path.resolve(__dirname, "..");
-const TMP = fs.mkdtempSync(path.join(os.tmpdir(), "devin-chat-"));
+const TMP = fs.mkdtempSync(path.join(os.tmpdir(), "vtx-chat-"));
 
 // One bundle for the whole run: esbuild is the slow part, and every harness shares
 // the same module instances, which is also what makes `globalThis.__dvVscode` the
@@ -58,8 +58,8 @@ function writeAgent() {
     sh,
     `#!/bin/sh
 case "$1" in
-  --version) echo "devin 3000.0.0-fake"; exit 0 ;;
-  auth) echo "Logged in (via Devin)."; echo "  Name: Test User"; exit 0 ;;
+  --version) echo "vtx 3000.0.0-fake"; exit 0 ;;
+  auth) echo "Logged in (via Vtx)."; echo "  Name: Test User"; exit 0 ;;
   # Returning to the sessions list falls back to the CLI when no agent is live. Left to
   # reach the ACP loop below, it would sit on a stdin nobody writes to until the CLI's
   # own timeout killed it, tracked by nothing that could stop it.
@@ -235,7 +235,7 @@ function createChat(opts = {}) {
   // other's, which is silent and would make `agentSaw` quietly wrong.
   const agentLog = path.join(storage, `agent-requests.${++harnessSeq}.jsonl`);
   globalThis.__dvFolders = [{ name: path.basename(dir), uri: vscode.Uri.file(dir), index: 0 }];
-  // How the agent is told what to do. It goes through the `devin.env` setting rather
+  // How the agent is told what to do. It goes through the `vtx.env` setting rather
   // than this process's environment because the controller reads that on every spawn,
   // while the environment it inherits is read from a login shell once and cached for
   // the run: a delay set through that would only ever reach the first agent.

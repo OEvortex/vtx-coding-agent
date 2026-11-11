@@ -160,7 +160,7 @@ const SCENARIOS = {
     // The six options a real agent sends for one shell command: allow once, three
     // widening grants, a mode switch, and reject. Only the first and the last are
     // buttons; the rest sit behind the chevron.
-    { type: "permission", requestId: "p1", title: "Devin wants to run a command", command: "git push origin main", options: [
+    { type: "permission", requestId: "p1", title: "Vtx wants to run a command", command: "git push origin main", options: [
       { optionId: "allow_once", name: "Allow", kind: "allow_once" },
       { optionId: "allow_session", name: "Yes, allow `git` commands (this session)", kind: "allow_always" },
       { optionId: "allow_always", name: "Yes, always allow `git` commands in `web-app`", kind: "allow_always" },
@@ -253,12 +253,12 @@ const SCENARIOS = {
     { type: "toolCall", id: "sa1-t1", parentId: "sa1", title: "Read src/session/sessionStore.ts", kind: "read", status: "completed", locations: [{ path: "src/session/sessionStore.ts" }] },
     { type: "toolCall", id: "sa1-t2", parentId: "sa1", title: "Grep for sessionStore", kind: "search", status: "completed", rawInput: { query: "sessionStore" } },
     { type: "subagentChunk", parentId: "sa1", stream: "message", text: "Sessions are kept in workspace state under a single key, written on every turn and read back when the panel boots." },
-    { type: "subagentEnd", id: "sa1", success: true, summary: "Sessions persist in VS Code workspace state, not on disk.\n\n`SessionStore` (`src/session/sessionStore.ts`) owns one `devin.sessions` key holding an id to metadata map. `ChatManager` writes through it whenever a turn completes, and reads the whole map back on activation to rebuild the session list." },
+    { type: "subagentEnd", id: "sa1", success: true, summary: "Sessions persist in VS Code workspace state, not on disk.\n\n`SessionStore` (`src/session/sessionStore.ts`) owns `vtx.*` workspace state keys holding an id to metadata map. `ChatManager` writes through it whenever a turn completes, and reads the whole map back on activation to rebuild the session list." },
     { type: "subagentStart", id: "sa2", profile: "Explore", background: false, title: "Trace the status bar wiring",
       task: "Explain how the status bar item is created, updated, and disposed.\n\nRead `src/ui/statusBar.ts` and find every caller. Cover the click command, the hover tooltip, and which state changes trigger a re-render. Read only." },
     { type: "toolCall", id: "sa2-t1", parentId: "sa2", title: "Read src/ui/statusBar.ts", kind: "read", status: "completed", locations: [{ path: "src/ui/statusBar.ts", line: 33 }] },
     { type: "subagentChunk", parentId: "sa2", stream: "message", text: "One `StatusBarItem` is created on activation and re-rendered from a small state object." },
-    { type: "toolCall", id: "sa2-t2", parentId: "sa2", title: "Grep for showInfo", kind: "search", status: "in_progress", rawInput: { query: "devin.showInfo" } },
+    { type: "toolCall", id: "sa2-t2", parentId: "sa2", title: "Grep for showInfo", kind: "search", status: "in_progress", rawInput: { query: "vtx.showInfo" } },
     { type: "usage", used: 52400, size: 200000, cost: 0.12 }
   ],
   // The session browser: two workspace folders, grouped, with every liveness
@@ -273,12 +273,12 @@ const SCENARIOS = {
       ],
       statuses: { s1: "running", s2: "idle", s4: "idle", s6: "starting" },
       sessions: [
-        { id: "s1", short_id: "devin-8f2a", title: "Centralise token refresh in the auth module", working_directory: "/Users/dev/Projects/web-app", last_activity_ago: "2m ago" },
-        { id: "s2", short_id: "devin-3c7d", title: "Fix a flaky integration test", working_directory: "/Users/dev/Projects/web-app", last_activity_ago: "1h ago" },
-        { id: "s3", short_id: "devin-a10b", title: "Add pagination to the users endpoint", working_directory: "/Users/dev/Projects/web-app", last_activity_ago: "yesterday" },
-        { id: "s4", short_id: "devin-6e4f", title: "Button component theme tokens", working_directory: "/Users/dev/Projects/api-service", last_activity_ago: "3d ago" },
-        { id: "s5", short_id: "devin-b22c", title: "Move settings into env config", working_directory: "/Users/dev/Projects/api-service", last_activity_ago: "5d ago" },
-        { id: "s6", short_id: "devin-9d81", title: "Investigate 502s on the API gateway", working_directory: "/Users/dev/Projects/api-service", last_activity_ago: "1w ago" }
+        { id: "s1", short_id: "vtx-8f2a", title: "Centralise token refresh in the auth module", working_directory: "/Users/dev/Projects/web-app", last_activity_ago: "2m ago" },
+        { id: "s2", short_id: "vtx-3c7d", title: "Fix a flaky integration test", working_directory: "/Users/dev/Projects/web-app", last_activity_ago: "1h ago" },
+        { id: "s3", short_id: "vtx-a10b", title: "Add pagination to the users endpoint", working_directory: "/Users/dev/Projects/web-app", last_activity_ago: "yesterday" },
+        { id: "s4", short_id: "vtx-6e4f", title: "Button component theme tokens", working_directory: "/Users/dev/Projects/api-service", last_activity_ago: "3d ago" },
+        { id: "s5", short_id: "vtx-b22c", title: "Move settings into env config", working_directory: "/Users/dev/Projects/api-service", last_activity_ago: "5d ago" },
+        { id: "s6", short_id: "vtx-9d81", title: "Investigate 502s on the API gateway", working_directory: "/Users/dev/Projects/api-service", last_activity_ago: "1w ago" }
       ]
     }
   ],

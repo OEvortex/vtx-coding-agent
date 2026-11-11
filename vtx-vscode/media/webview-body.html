@@ -5,7 +5,7 @@
   <div id="boot">
     <div class="boot-inner">
       <div class="boot-spinner"></div>
-      <div class="boot-label">Loading Devin&hellip;</div>
+      <div class="boot-label">Loading Vtx&hellip;</div>
     </div>
   </div>
 
@@ -13,7 +13,7 @@
 
   <!-- Where the panel says out loud what it is doing: a turn starting and ending,
        a tool running, a permission or a question waiting. Without it a screen
-       reader user gets silence while Devin works, since the transcript fills in
+       reader user gets silence while Vtx works, since the transcript fills in
        visually and nothing asks to be read. Kept off screen but not hidden, which
        would stop it being announced at all. -->
   <div id="announcer" class="sr-only" role="status" aria-live="polite" aria-atomic="true"></div>
@@ -36,7 +36,7 @@
       <div id="new-session-dd" class="hidden"></div>
       <button id="list-search-btn" class="icon-btn hidden" title="Search sessions"><i class="codicon codicon-search"></i></button>
       <button id="list-filter-btn" class="icon-btn hidden" title="Filter sessions"><i class="codicon codicon-list-filter"></i></button>
-      <button id="settings-btn" class="icon-btn hidden" title="Devin settings"><i class="codicon codicon-gear"></i></button>
+      <button id="settings-btn" class="icon-btn hidden" title="Vtx settings"><i class="codicon codicon-gear"></i></button>
       <!-- Thread-mode right cluster. Moving the chat comes before stopping it:
            terminate stays next to the panel toggle at the far end. -->
       <!-- Moves this chat between the side panel and an editor tab, carrying the
@@ -52,7 +52,7 @@
            feed and reads new content without the user hunting for it. The stream
            itself is announced through #announcer rather than by making the whole
            transcript live, which would re-read a reply on every chunk. -->
-      <div id="thread" role="log" aria-label="Devin chat transcript"></div>
+      <div id="thread" role="log" aria-label="Vtx chat transcript"></div>
       <!-- Jump-to-bottom button (VS Code's .chat-scroll-down): a round secondary
            button bottom-right of the thread, shown only when scrolled up. -->
       <button id="scroll-down" class="chat-scroll-down" title="Scroll to bottom"><i class="codicon codicon-chevron-down"></i></button>
@@ -66,7 +66,7 @@
       <div id="autocomplete" class="hidden"></div>
       <div id="input-box">
         <div id="attachments" class="hidden"></div>
-        <textarea id="input" rows="1" placeholder="Ask Devin" aria-label="Ask Devin"></textarea>
+        <textarea id="input" rows="1" placeholder="Ask Vtx" aria-label="Ask Vtx"></textarea>
         <div id="toolbar">
           <div class="toolbar-left">
             <button id="attach" class="tool-ctl" title="Add context: files, selection, images (or type @).&#10;Dragging works too, hold Shift when the drag starts inside VS Code."><i class="codicon codicon-add"></i></button>
@@ -79,7 +79,7 @@
             <button id="usage" class="usage-ring hidden" title=""></button>
             <!-- Stop comes first, then Send, which is the order VS Code's chat
                  puts them in: the send control stays at the far end whether it is
-                 the blue Send or, while Devin works, the split queue button. -->
+                 the blue Send or, while Vtx works, the split queue button. -->
             <button id="stop" class="send-btn stop hidden" title="Stop"><i class="codicon codicon-stop-circle"></i></button>
             <div id="send-group" class="send-group">
               <button id="send" class="send-btn" title="Send (Enter)" disabled><i class="codicon codicon-newline"></i></button>

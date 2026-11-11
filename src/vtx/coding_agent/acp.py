@@ -2,9 +2,8 @@
 
 ndJSON framing: one JSON object per line on stdin/stdout, matching the ACP
 spec used by ``devin acp`` and Zed/JetBrains clients. The agent side
-implements ``initialize``, ``authenticate``, ``session/new``,
-``session/load``, ``session/prompt``, ``session/cancel``, ``session/set_mode``,
-``session/set_model``; agent->client traffic is ``session/update``
+implements session lifecycle, prompt, cancellation, steering, configuration,
+listing, and deletion methods; agent->client traffic is ``session/update``
 notifications plus ``session/request_permission`` requests.
 
 ``session/prompt`` drives a real :class:`ConversationRuntime` turn: events
@@ -276,23 +275,11 @@ class AcpServer:
                     else [a.definition.name for a in agents]
                 )
                 if names:
-                    active = (
-                        registry.active.definition.name if registry and registry.active else ""
-                    )
                     await self._update(
                         sess.acp_id,
                         {
                             "sessionUpdate": "config_option_update",
-                            "configOptions": [
-                                {
-                                    "id": "agent",
-                                    "name": "Agent",
-                                    "category": "agent",
-                                    "type": "select",
-                                    "currentValue": active,
-                                    "options": [{"value": n, "name": n} for n in names],
-                                }
-                            ],
+                            "configOptions": self._config_options(sess),
                         },
                     )
             except Exception:
@@ -479,7 +466,7 @@ class AcpServer:
         }
 
     def _config_options(self, sess: _Session) -> list[dict[str, Any]]:
-        """Mode + model pickers the client renders from ``session/new``."""
+        """Session controls rendered by ACP clients."""
         model_options: list[dict[str, Any]] = []
         try:
             from vtx.ai.models import get_all_models
@@ -493,10 +480,11 @@ class AcpServer:
                 model_options.append({"value": uid, "name": f"{m.id} ({m.provider})"})
         except Exception:
             pass
+        runtime = sess.runtime
+        model_id = runtime.model if runtime is not None else sess.model
+        model_provider = runtime.model_provider if runtime is not None else sess.model_provider
         current_model = (
-            f"{sess.model_provider}:{sess.model}"
-            if sess.model_provider and sess.model
-            else sess.model or ""
+            f"{model_provider}:{model_id}" if model_provider and model_id else model_id or ""
         )
         options = [
             {
@@ -516,17 +504,42 @@ class AcpServer:
                 "options": model_options,
             },
         ]
+        registry = getattr(runtime, "agent_registry", None) if runtime else None
+        agents = getattr(registry, "agents", []) if registry else []
+        agent_names = (
+            sorted(agents)
+            if isinstance(agents, dict)
+            else sorted(a.definition.name for a in agents)
+        )
+        if agent_names:
+            active = registry.active.definition.name if registry.active else ""
+            options.append(
+                {
+                    "id": "agent",
+                    "name": "Agent",
+                    "category": "agent",
+                    "type": "select",
+                    "currentValue": active,
+                    "options": [{"value": "", "name": "Default"}]
+                    + [{"value": name, "name": name} for name in agent_names],
+                }
+            )
         try:
             from vtx.ai.thinking import THINKING_LEVELS
 
+            effective_levels = runtime.effective_thinking_levels if runtime is not None else []
+            levels = effective_levels or THINKING_LEVELS
             options.append(
                 {
                     "id": "thinking",
                     "name": "Thinking",
                     "category": "thinking",
                     "type": "select",
-                    "currentValue": sess.thinking_level or "",
-                    "options": [{"value": lv, "name": lv} for lv in THINKING_LEVELS],
+                    "currentValue": (
+                        runtime.thinking_level if runtime is not None else sess.thinking_level
+                    )
+                    or "",
+                    "options": [{"value": lv, "name": lv} for lv in levels],
                 }
             )
         except Exception:
@@ -643,23 +656,58 @@ class AcpServer:
                         break
         return {}
 
-    def session_set_config_option(self, params: dict[str, Any]) -> dict[str, Any]:
+    async def session_set_config_option(self, params: dict[str, Any]) -> dict[str, Any]:
         session_id = params.get("sessionId")
         config_id = params.get("configId")
         value = params.get("value")
         sess = self._sessions.get(session_id or "")
-        if sess is not None and isinstance(value, str):
-            if config_id == "model":
-                self.session_set_model({"sessionId": session_id, "modelId": value})
-            elif config_id == "mode":
-                self.session_set_mode({"sessionId": session_id, "modeId": value})
-            elif config_id == "thinking":
-                sess.thinking_level = value
-            elif config_id == "agent":
-                sess.agent_name = value
-        if sess is not None:
-            return {"configOptions": self._config_options(sess)}
-        return {}
+        if sess is None:
+            return {"_error": "unknown session"}
+        if not isinstance(value, str):
+            return {"_error": "config option value must be a string"}
+
+        runtime = sess.runtime
+        if config_id == "mode":
+            if value != "default":
+                return {"_error": f"unsupported mode: {value}"}
+            sess.mode = value
+        elif config_id == "model":
+            model_id = value
+            provider = None
+            if ":" in value:
+                provider, _, model_id = value.partition(":")
+            from vtx.ai.models import get_model
+
+            model = get_model(model_id, provider)
+            if model is None:
+                return {"_error": f"unknown model: {value}"}
+            if runtime is not None:
+                runtime.switch_model(model)
+            sess.model, sess.model_provider = model.id, model.provider
+        elif config_id == "thinking":
+            from vtx.ai.thinking import THINKING_LEVELS
+
+            levels = runtime.effective_thinking_levels if runtime is not None else []
+            if value not in (levels or THINKING_LEVELS):
+                return {"_error": f"unsupported thinking level: {value}"}
+            sess.thinking_level = value
+            if runtime is not None:
+                runtime.set_thinking_level(value)
+        elif config_id == "agent":
+            agent_name = value or None
+            if (
+                runtime is not None
+                and agent_name
+                and runtime.agent_registry.by_name(agent_name) is None
+            ):
+                return {"_error": f"unknown agent: {agent_name}"}
+            sess.agent_name = agent_name
+            if runtime is not None:
+                runtime.set_active_agent(agent_name)
+                await self._emit_available_commands(sess.acp_id, sess)
+        else:
+            return {"_error": f"unsupported config option: {config_id}"}
+        return {"configOptions": self._config_options(sess)}
 
     def _find_vtx_session(self, session_id: str) -> Any:
         """Locate a stored vtx session by id across all cwd buckets."""
@@ -1058,22 +1106,23 @@ class AcpServer:
         except Exception:
             return {"hooks": []}
 
-    def session_set_mode(self, params: dict[str, Any]) -> dict[str, Any]:
-        sess = self._sessions.get(params.get("sessionId") or "")
-        if sess is not None:
-            sess.mode = params.get("modeId") or sess.mode
-        return {}
+    async def session_set_mode(self, params: dict[str, Any]) -> dict[str, Any]:
+        return await self.session_set_config_option(
+            {
+                "sessionId": params.get("sessionId"),
+                "configId": "mode",
+                "value": params.get("modeId"),
+            }
+        )
 
-    def session_set_model(self, params: dict[str, Any]) -> dict[str, Any]:
-        sess = self._sessions.get(params.get("sessionId") or "")
-        if sess is not None:
-            model_id = params.get("modelId")
-            if isinstance(model_id, str) and ":" in model_id:
-                provider, _, model = model_id.partition(":")
-                sess.model_provider, sess.model = provider, model
-            else:
-                sess.model = model_id
-        return {}
+    async def session_set_model(self, params: dict[str, Any]) -> dict[str, Any]:
+        return await self.session_set_config_option(
+            {
+                "sessionId": params.get("sessionId"),
+                "configId": "model",
+                "value": params.get("modelId"),
+            }
+        )
 
     _METHODS: ClassVar[dict[str, str]] = {
         "initialize": "initialize",
@@ -1093,7 +1142,16 @@ class AcpServer:
         "_vtx.ai/hooks/list": "_vtx_hooks_list",
     }
     _ASYNC_METHODS = frozenset(
-        {"session_prompt", "session_load", "session_rename", "_vtx_rules_list", "_vtx_hooks_list"}
+        {
+            "session_prompt",
+            "session_load",
+            "session_rename",
+            "session_set_config_option",
+            "session_set_mode",
+            "session_set_model",
+            "_vtx_rules_list",
+            "_vtx_hooks_list",
+        }
     )
 
     async def dispatch(self, req: dict[str, Any]) -> None:

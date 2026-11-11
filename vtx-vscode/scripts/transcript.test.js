@@ -24,7 +24,7 @@ const createHarness = (...args) => {
 after(() => harnesses.forEach(({ window }) => window.close()));
 
 const ROOT = path.resolve(__dirname, "..");
-const TMP = fs.mkdtempSync(path.join(os.tmpdir(), "devin-transcript-"));
+const TMP = fs.mkdtempSync(path.join(os.tmpdir(), "vtx-transcript-"));
 const outfile = path.join(TMP, "transcriptLog.js");
 esbuild.buildSync({
   entryPoints: [path.join(ROOT, "src/chat/transcriptLog.ts")],

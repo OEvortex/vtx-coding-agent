@@ -676,10 +676,10 @@ import { renderMarkdown, renderShell, renderCode } from "./markdown.js";
     // The composer lives outside the body panels, so mark the list view so its
     // session-scoped widgets (working set, context ring) hide while browsing.
     el.composer.classList.toggle("list-mode", list);
-    el.input.placeholder = list ? "Start a new chat\u2026" : "Ask Devin, or type @ to add a file";
+    el.input.placeholder = list ? "Start a new chat\u2026" : "Ask Vtx, or type @ to add a file";
     // An explicit label wins over the placeholder, so it has to say the same thing:
     // in the list the box starts a chat, in a chat it continues one.
-    el.input.setAttribute("aria-label", list ? "Start a new chat" : "Ask Devin");
+    el.input.setAttribute("aria-label", list ? "Start a new chat" : "Ask Vtx");
     // Only on the way in. Handing the composer back to the "new chat" box empties
     // it, and the panel is told it is a list more than once: on open, and again
     // once the CLI health check finishes. Doing it every time wiped the draft that
@@ -694,7 +694,7 @@ import { renderMarkdown, renderShell, renderCode } from "./markdown.js";
 
   // Whether a session list is on screen anywhere here: the full list, the docked
   // panel, or the title switcher. The host keeps the list live only while someone
-  // is looking at one, since every re-listing runs `devin list`.
+  // is looking at one, since every re-listing runs `vtx list`.
   let listShown = null;
   function reportListVisible() {
     const shown = body === "list" || sessionsPanelOpen || !!menuCtrl;
@@ -765,7 +765,7 @@ import { renderMarkdown, renderShell, renderCode } from "./markdown.js";
     return el.chat.clientWidth >= SIDE_BY_SIDE_MIN;
   }
 
-  // Which side the docked panel sits on (devin.sessionsPanel.side, default
+  // Which side the docked panel sits on (vtx.sessionsPanel.side, default
   // right). The whole layout is driven off the attribute, in CSS, so the DOM
   // order never changes: the panel and its resizer are reordered, and the toggle
   // moves to the far end of the header, past the terminate button.
@@ -898,7 +898,7 @@ import { renderMarkdown, renderShell, renderCode } from "./markdown.js";
     const items = [
       { icon: "split-horizontal", label: "New Session (Editor)", target: "editor" },
       { icon: "multiple-windows", label: "New Session (Window)", target: "window" },
-      { icon: "terminal", label: "New Devin CLI Session (Terminal)", target: "terminal" }
+      { icon: "terminal", label: "New Vtx CLI Session (Terminal)", target: "terminal" }
     ];
     for (const it of items) {
       const row = document.createElement("button");
@@ -1194,7 +1194,7 @@ import { renderMarkdown, renderShell, renderCode } from "./markdown.js";
     updateSendState();
   }
 
-  // While Devin is working, a message can either wait its turn or take over. The
+  // While Vtx is working, a message can either wait its turn or take over. The
   // protocol cannot hand a message to a running prompt (Copilot calls that
   // steering, and its agents support it), so the second option ends the turn and
   // sends straight after it. Same split button as Copilot's: the primary half is
@@ -1212,7 +1212,7 @@ import { renderMarkdown, renderShell, renderCode } from "./markdown.js";
     stopAndSend: {
       icon: "codicon-debug-restart",
       label: "Stop and Send",
-      detail: "Stop what Devin is doing, then send this",
+      detail: "Stop what Vtx is doing, then send this",
       post: (text) => ({ type: "stopAndSend", text })
     }
   };
@@ -2749,7 +2749,7 @@ import { renderMarkdown, renderShell, renderCode } from "./markdown.js";
     detail.textContent = list.map((s) => s.message).join("\n");
     box.appendChild(detail);
     // Dismiss sends this one away. These two say how much longer than that: the
-    // rest of this window, or for good (the devin.showMcpWarnings setting).
+    // rest of this window, or for good (the vtx.showMcpWarnings setting).
     const mute = document.createElement("div");
     mute.className = "mcp-mute";
     mute.append(
@@ -3752,7 +3752,7 @@ import { renderMarkdown, renderShell, renderCode } from "./markdown.js";
   };
 
   // Icons keyed by the resolved tool type (see toolInfo), which is derived from
-  // Devin's `_meta` and is more specific than the coarse ACP `kind`. MCP tools use
+  // Vtx's `_meta` and is more specific than the coarse ACP `kind`. MCP tools use
   // VS Code's MCP glyph (codicon-mcp), the same icon VS Code brands MCP with.
   const TOOL_TYPE_ICONS = {
     // Waiting on a subagent is agent work, not tool work. It becomes a tick once
@@ -3764,7 +3764,7 @@ import { renderMarkdown, renderShell, renderCode } from "./markdown.js";
     mcp_list: "codicon-mcp"
   };
 
-  // Resolve a tool's real identity from the `_meta` Devin attaches. Returns a
+  // Resolve a tool's real identity from the `_meta` Vtx attaches. Returns a
   // descriptor { type, server?, tool? } for web search / fetch / MCP tools, or
   // null when the coarse `kind` is all we have.
   function toolInfo(d) {
@@ -3819,7 +3819,7 @@ import { renderMarkdown, renderShell, renderCode } from "./markdown.js";
   }
 
   // VS Code shows a tool line as a normal-weight verb followed by a dimmed
-  // detail (e.g. "Read" + " src/auth/token.ts"). Devin gives one title string,
+  // detail (e.g. "Read" + " src/auth/token.ts"). Vtx gives one title string,
   // so split on the first space.
   function setToolLabel(labelEl, title) {
     const t = String(title || "Tool");
@@ -4397,7 +4397,7 @@ import { renderMarkdown, renderShell, renderCode } from "./markdown.js";
     return p ? { path: p } : null;
   }
 
-  // The verb Devin already used for this call ("Read src/a.ts" -> "Read"), so the
+  // The verb Vtx already used for this call ("Read src/a.ts" -> "Read"), so the
   // row reads the way the agent described it, with just the file name after it.
   function toolVerb(d, fallback) {
     const first = String(d.title || "").trim().split(/\s+/)[0];
@@ -4908,7 +4908,7 @@ import { renderMarkdown, renderShell, renderCode } from "./markdown.js";
       }
     }
 
-    // Devin's tool call never mentions the terminal it asked the client to open,
+    // Vtx's tool call never mentions the terminal it asked the client to open,
     // and once the command exits it reports only "Exited with code 0". The host
     // matches the terminal to the call, so the output the command actually
     // produced can be shown here, live, instead of nothing at all.
@@ -5348,7 +5348,7 @@ import { renderMarkdown, renderShell, renderCode } from "./markdown.js";
     // A dialog with no name is announced as just "dialog", so it takes the name of
     // whatever it is asking about, and says what it is when it has no title.
     const title = widget.querySelector(".cw-title, .qc-title");
-    widget.setAttribute("aria-label", (title && title.textContent.trim()) || "Devin needs an answer");
+    widget.setAttribute("aria-label", (title && title.textContent.trim()) || "Vtx needs an answer");
     tray.appendChild(widget);
   }
   function cssEscape(v) {
@@ -5357,8 +5357,8 @@ import { renderMarkdown, renderShell, renderCode } from "./markdown.js";
 
   function showPermission(data) {
     const box = cwShell();
-    cwTitle(box, data.title || "Devin wants to run a tool");
-    // Say what is being asked about. Devin sends the command in `command` and no
+    cwTitle(box, data.title || "Vtx wants to run a tool");
+    // Say what is being asked about. Vtx sends the command in `command` and no
     // title, so without this the prompt is unanswerable.
     const detail = permissionDetail(data);
     if (detail) cwBody(box).appendChild(detail);
@@ -5369,7 +5369,7 @@ import { renderMarkdown, renderShell, renderCode } from "./markdown.js";
       box.remove();
       renderPermissionRecap(data, opt);
     };
-    // Devin offers up to six options for one command: allow once, allow for the
+    // Vtx offers up to six options for one command: allow once, allow for the
     // session, always in this project, always everywhere, switch to bypass, and
     // reject. As a flat row of identical buttons, "always allow in all projects"
     // and "switch to bypass mode" look exactly as ordinary as "Allow", which is
@@ -5400,8 +5400,8 @@ import { renderMarkdown, renderShell, renderCode } from "./markdown.js";
     }
     rejects.forEach((opt) => row.appendChild(btn(opt.name || opt.optionId, "secondary", () => answer(opt))));
     trayMount(el.permissionTray, box, data.requestId);
-    // Devin is blocked until this is answered, so it must not be a silent change.
-    announce(data.command ? `Devin needs permission to run: ${data.command}` : "Devin needs permission to use a tool.");
+    // Vtx is blocked until this is answered, so it must not be a silent change.
+    announce(data.command ? `Vtx needs permission to run: ${data.command}` : "Vtx needs permission to use a tool.");
   }
 
   // The grants that outlive this one request (this session, this project, every
@@ -5442,7 +5442,7 @@ import { renderMarkdown, renderShell, renderCode } from "./markdown.js";
     box.appendChild(mkIcon(rejected ? "circle-slash" : "check"));
     const text = document.createElement("span");
     // The option names are already written from the user's side ("Yes, always allow
-    // `exit` commands in `devin-vscode`"), so they are quoted rather than reworded.
+    // `exit` commands in `vtx-vscode`"), so they are quoted rather than reworded.
     const scope = opt.kind === "allow_once" ? "Allowed" : rejected ? "Rejected" : opt.name || "Allowed";
     text.textContent = data.command ? `${scope}: ${data.command}` : scope;
     box.appendChild(text);
@@ -5498,7 +5498,7 @@ import { renderMarkdown, renderShell, renderCode } from "./markdown.js";
     if (data.mode === "url" && data.url) {
       const box = cwShell();
       widget = box;
-      cwTitle(box, data.message || "Devin has a question");
+      cwTitle(box, data.message || "Vtx has a question");
       const body = cwBody(box);
       // A real link, so it can be read, hovered and opened before agreeing to it:
       // being asked to approve a URL that is only inert text is not much of a
@@ -5517,7 +5517,7 @@ import { renderMarkdown, renderShell, renderCode } from "./markdown.js";
       }));
       row.appendChild(btn("Decline", "secondary", () => finish("decline")));
       trayMount(el.elicitationTray, box, data.requestId);
-      announce("Devin is asking to open a link: " + data.url);
+      announce("Vtx is asking to open a link: " + data.url);
       return;
     }
 
@@ -5544,7 +5544,7 @@ import { renderMarkdown, renderShell, renderCode } from "./markdown.js";
     header.className = "qc-header";
     const title = document.createElement("div");
     title.className = "qc-title";
-    title.textContent = data.message || "Devin has a question";
+    title.textContent = data.message || "Vtx has a question";
     const close = actionBtn("codicon-close", "Cancel", () =>
       finish("cancel", undefined, controls.map((c) => ({ title: c.prompt || c.title, answer: "" })))
     );
@@ -5680,7 +5680,7 @@ import { renderMarkdown, renderShell, renderCode } from "./markdown.js";
       // Track the current question's text in the header so it changes with the
       // options, not just the choices below it.
       const cur = controls[idx];
-      title.textContent = (cur && cur.prompt) || data.message || "Devin has a question";
+      title.textContent = (cur && cur.prompt) || data.message || "Vtx has a question";
       const label = controls.length + " question" + (controls.length === 1 ? "" : "s");
       step.textContent = controls.length > 1 ? (idx + 1) + " / " + controls.length : label;
       prev.disabled = idx === 0;
@@ -5703,12 +5703,12 @@ import { renderMarkdown, renderShell, renderCode } from "./markdown.js";
     show(saved && typeof saved.at === "number" ? saved.at : 0);
     updateSubmitState();
     trayMount(el.elicitationTray, qc, data.requestId);
-    // Focus stays in the composer by design, so this is the only signal that Devin
+    // Focus stays in the composer by design, so this is the only signal that Vtx
     // is now waiting on an answer.
     announce(
       names.length > 1
-        ? `Devin is asking ${names.length} questions. ${data.message || ""}`.trim()
-        : `Devin is asking a question. ${data.message || ""}`.trim()
+        ? `Vtx is asking ${names.length} questions. ${data.message || ""}`.trim()
+        : `Vtx is asking a question. ${data.message || ""}`.trim()
     );
   }
 
@@ -6671,7 +6671,7 @@ import { renderMarkdown, renderShell, renderCode } from "./markdown.js";
       toolEls: new Map(toolEls), subagentEls: new Map(subagentEls), terminalCache: new Map(terminalCache),
       commands: commands.slice(), title: currentTitle, lastUserText, draft: el.input.value,
       // The composer widgets live outside the thread, so they are kept here by
-      // value and put back by restoreView: the plan Devin is working through, the
+      // value and put back by restoreView: the plan Vtx is working through, the
       // files it has changed and their line counts, and the context ring.
       plan: dockedPlan.slice(), planCollapsePref,
       wsFiles: wsFiles.slice(), wsCounts: new Map(wsCounts), wsCollapsePref,
@@ -6856,14 +6856,14 @@ import { renderMarkdown, renderShell, renderCode } from "./markdown.js";
     updateTerminateBtn();
   }
 
-  // A session is held by another live Devin process (item 5): offer take-over.
+  // A session is held by another live Vtx process (item 5): offer take-over.
   function showLockConflict(m) {
     const box = cwShell();
     cwTitle(box, "Session is open elsewhere");
     const body = cwBody(box);
     const msg = document.createElement("div");
     msg.className = "cw-message";
-    msg.textContent = "This session is currently running in another Devin process" +
+    msg.textContent = "This session is currently running in another Vtx process" +
       (m.pid ? " (PID " + m.pid + ")" : "") +
       ". You can take it over here, which may disrupt the other process, or cancel and close it there first.";
     body.appendChild(msg);
@@ -6969,12 +6969,12 @@ import { renderMarkdown, renderShell, renderCode } from "./markdown.js";
     setView("setup");
     el.setup.innerHTML = "";
     const h = document.createElement("h2");
-    h.textContent = "Set up Devin";
+    h.textContent = "Set up Vtx";
     el.setup.appendChild(h);
     const cliOk = !!health.found;
     el.setup.appendChild(stepBlock(
-      cliOk ? "Devin CLI found" : "Devin CLI not found",
-      cliOk ? `${health.path || ""}${health.version ? " (" + health.version + ")" : ""}` : "Set the path to the devin executable, or install the Devin CLI first.",
+      cliOk ? "Vtx CLI found" : "Vtx CLI not found",
+      cliOk ? `${health.path || ""}${health.version ? " (" + health.version + ")" : ""}` : "Set the path to the vtx executable, or install the Vtx CLI first.",
       cliOk,
       [btn("Browse...", "secondary", () => vscode.postMessage({ type: "browseCli" })), btn("Re-check", "secondary", () => vscode.postMessage({ type: "recheck" }))]
     ));
@@ -6982,7 +6982,7 @@ import { renderMarkdown, renderShell, renderCode } from "./markdown.js";
       const authed = health.loggedIn !== false;
       el.setup.appendChild(stepBlock(
         authed ? "Authenticated" : "Not logged in",
-        authed ? "You are logged in to Devin." : "Log in to Devin, then re-check.",
+        authed ? "You are logged in to Vtx." : "Log in to Vtx, then re-check.",
         authed,
         authed ? [] : [btn("Log in", "primary", () => vscode.postMessage({ type: "authenticate" })), btn("Re-check", "secondary", () => vscode.postMessage({ type: "recheck" }))]
       ));
@@ -7094,17 +7094,17 @@ import { renderMarkdown, renderShell, renderCode } from "./markdown.js";
       icon = document.createElement("img");
       icon.className = "welcome-logo";
       icon.src = logoSrc;
-      icon.alt = "Devin";
+      icon.alt = "Vtx";
     } else {
       icon = document.createElement("i");
       icon.className = "codicon codicon-comment-discussion welcome-icon";
     }
     const title = document.createElement("div");
     title.className = "welcome-title";
-    title.textContent = "Ask Devin anything";
+    title.textContent = "Ask Vtx anything";
     const sub = document.createElement("div");
     sub.className = "welcome-sub muted";
-    sub.textContent = "Devin can read your workspace, run tools, and edit files. Try one of these:";
+    sub.textContent = "Vtx can read your workspace, run tools, and edit files. Try one of these:";
     box.appendChild(icon);
     box.appendChild(title);
     box.appendChild(sub);
@@ -7178,7 +7178,7 @@ import { renderMarkdown, renderShell, renderCode } from "./markdown.js";
     hideWorking();
     finalizeBlock();
     hideWelcome();
-    announce("Devin reported an error: " + text);
+    announce("Vtx reported an error: " + text);
     const box = document.createElement("div");
     box.className = "tray-card error-card";
     const head = document.createElement("div");
@@ -7190,9 +7190,9 @@ import { renderMarkdown, renderShell, renderCode } from "./markdown.js";
     const loggedOut = /not logged in|log ?in|authenticat|unauthori[sz]ed|401/.test(low);
     const rateLimited = /rate limit|429|too many requests|quota/.test(low);
     msg.textContent = loggedOut
-      ? "You're not logged in to Devin."
+      ? "You're not logged in to Vtx."
       : rateLimited
-        ? "Devin is rate limited right now."
+        ? "Vtx is rate limited right now."
         : (text || "Something went wrong.");
     head.appendChild(icon);
     head.appendChild(msg);
@@ -7436,7 +7436,7 @@ import { renderMarkdown, renderShell, renderCode } from "./markdown.js";
     } catch (err) {
       // A bug in one handler must never wedge the whole UI (e.g. leaving the
       // sessions list stuck on its loading spinner). Surface it and recover.
-      try { console.error("[devin] message handler error", m && m.type, err); } catch {}
+      try { console.error("[vtx] message handler error", m && m.type, err); } catch {}
       try { vscode.postMessage({ type: "webviewError", where: m && m.type, message: String(err && err.stack || err) }); } catch {}
       // If the sessions list was mid-load, clear the spinner so it is usable.
       if (m && (m.type === "sessions" || m.type === "sessionsLoading") && el.sessionsList) {
@@ -7638,7 +7638,7 @@ import { renderMarkdown, renderShell, renderCode } from "./markdown.js";
         addUserMessage(m.text, m.attachments);
         break;
       case "userChunk": appendUserChunk(m.text, m.messageId, m.attachments); break;
-      case "assistantStart": finalizeBlock(); announce("Devin is working."); break;
+      case "assistantStart": finalizeBlock(); announce("Vtx is working."); break;
       case "assistantChunk": appendAssistant(m.text, m.messageId); break;
       case "assistantImage": appendAssistantImage(m.mime, m.data); break;
       case "thoughtChunk": appendThought(m.text, m.messageId, m.replayed, m.at); break;
@@ -7646,7 +7646,7 @@ import { renderMarkdown, renderShell, renderCode } from "./markdown.js";
         hideWorking();
         finalizeBlock();
         // "cancelled" is the one a user needs to hear: it means their stop landed.
-        announce(m.stopReason === "cancelled" ? "Devin stopped." : "Devin finished replying.");
+        announce(m.stopReason === "cancelled" ? "Vtx stopped." : "Vtx finished replying.");
         break;
       case "plan": renderPlan(m.entries); break;
       case "toolCall":

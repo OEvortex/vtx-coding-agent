@@ -1,12 +1,12 @@
-// Devin settings surface. Renders the Devin CLI config surface (general,
-// instructions, skills, MCP, hooks, permissions, advanced) from data supplied by
+// Vtx settings surface. Renders the Vtx CLI config surface (general,
+// instructions, skills, plugins, MCP, hooks, permissions, advanced) from data supplied by
 // the extension host, and posts edits back.
 //
 // Two rules shape this file:
 //   1. Scope (Global / a workspace folder) is picked once in the toolbar, not
 //      repeated down the page. One page shows one scope. Rows carry "set here"
 //      and "overridden" markers so choosing one scope hides no information.
-//   2. This surface only ever edits Devin CLI config. Settings that control the
+//   2. This surface only ever edits Vtx CLI config. Settings that control the
 //      extension itself live in VS Code settings, and are linked to from here.
 //
 // All untrusted values are written via textContent, never innerHTML.
@@ -19,17 +19,17 @@
   const toolbar = $("settings-toolbar");
   const main = $("settings-main");
 
-  // `global: true` marks a section the Devin CLI manages once for the machine, so
-  // the scope picker is hidden there rather than offering a choice with no effect.
+  // `global: true` marks a section Vtx manages once for the machine, so the
+  // scope picker is hidden there rather than offering a choice with no effect.
   const SECTIONS = [
-    { id: "general", label: "General", icon: "settings-gear" },
+    { id: "general", label: "General", icon: "settings-gear", global: true },
     { id: "instructions", label: "Instructions", icon: "book" },
     { id: "skills", label: "Skills", icon: "lightbulb" },
     { id: "plugins", label: "Plugins", icon: "extensions", global: true },
     { id: "mcp", label: "MCP Servers", icon: "server-environment" },
     { id: "hooks", label: "Hooks", icon: "plug" },
-    { id: "permissions", label: "Permissions", icon: "shield" },
-    { id: "advanced", label: "Advanced", icon: "tools" }
+    { id: "permissions", label: "Permissions", icon: "shield", global: true },
+    { id: "advanced", label: "Advanced", icon: "tools", global: true }
   ];
   const sectionOf = (id) => SECTIONS.find((s) => s.id === id) || SECTIONS[0];
 
@@ -62,7 +62,7 @@
   // with fresh data or with `settings:idle` when nothing changed (a confirmation
   // was declined). Everything else is a read or a navigation.
   const MUTATING = new Set([
-    "settings:setPath", "settings:resetSection", "settings:permission", "settings:addHook",
+    "settings:setPath", "settings:resetSection", "settings:addHook",
     "settings:removeHook", "settings:createSkill", "settings:createFile", "settings:deletePath",
     "settings:mcpAdd", "settings:mcpVerb", "settings:mcpLogin", "settings:pluginVerb",
     "settings:clearExtensionModel"
@@ -669,29 +669,32 @@
   const renderers = {
     general() {
       const wrap = h("div");
-      const familyOpts = [{ value: "", label: "CLI default (Adaptive)" }].concat(
-        ((data.models && data.models.families) || []).map((f) => ({ value: f.default || f.id, label: f.name || f.id }))
-      );
-      const modelRow = keySelect("agent.model", "Default model", familyOpts,
-        "The model the Devin CLI uses when nothing overrides it.", true);
+      const providerOpts = ((data.models && data.models.providers) || []).map((p) => ({ value: p.slug, label: p.name || p.slug }));
+      const familyOpts = ((data.models && data.models.families) || []).map((f) => ({ value: f.default || f.id, label: f.name || f.id }));
+      const modelRow = keySelect("llm.default_model", "Default model", familyOpts,
+        "The model Vtx uses when nothing overrides it.", true);
       const clash = extensionModelNotice();
       if (clash) modelRow.querySelector(".settings-field-main").appendChild(clash);
       wrap.append(
-        group("Model", [modelRow], { reset: true }),
-        group("Session", [
-          keyToggle("agent.show_history_on_continue", "Show history on resume", "Show previous messages when resuming a session.")
+        group("Model", [
+          keySelect("llm.default_provider", "Provider", providerOpts, "The provider Vtx routes model calls through."),
+          modelRow,
+          keyText("llm.default_thinking_level", "Thinking level", "low", "Default thinking effort for new sessions."),
+          keyText("llm.default_base_url", "Base URL", "", "Custom endpoint for the default provider. Leave empty for the provider default.")
         ], { reset: true }),
-        group("Behaviour", [
-          keyToggle("attribution", "Attribution on commits and PRs", "Add the Generated with Devin line and the Co-Authored-By trailer."),
-          keyToggle("auto_update", "Auto update the Devin CLI"),
-          keySelect("notify", "Notifications", [
-            { value: "never", label: "Never" },
-            { value: "smart", label: "Smart (when unfocused)" },
-            { value: "always", label: "Always" }
-          ]),
-          keyToggle("respect_gitignore", "Respect .gitignore for tool access"),
-          keyToggle("include_gitignored_files", "Include gitignored files in @ completions"),
-          keyToggle("show_hints", "Show hints between turns")
+        group("Session", [
+          keyToggle("ui.show_welcome_shortcuts", "Show welcome shortcuts", "Show keyboard shortcuts in the welcome section on launch."),
+          keyToggle("notifications.enabled", "Enable notifications"),
+          keyText("notifications.volume", "Notification volume", "0.5", "Volume from 0 to 1.")
+        ], { reset: true }),
+        group("Agents", [
+          keyText("agents.default", "Default agent", "", "Agent activated at session start when no --agent flag or VTX_AGENT is set."),
+          keySelect("agents.switch_mode", "Agent switch mode", [
+            { value: "lock", label: "Lock" },
+            { value: "hot", label: "Hot" }
+          ], "Lock starts a new session when switching agents. Hot re-renders the system prompt and tools in place."),
+          keyList("agents.files", "Agent files", "./agents/reviewer.py", "Extra agent files or packages to load."),
+          keyText("task.max_concurrent", "Max concurrent sub-agents", "4", "Cap on Task sub-agents running at once. 0 disables the cap.")
         ], { reset: true }),
         extensionLinks()
       );
@@ -717,12 +720,6 @@
               )
             : empty("Open a folder to add workspace instructions.")
         ]),
-        group("Import rules from other tools", [
-          keyToggle("read_config_from.agents_standard", "Standard (AGENTS.md, .windsurfrules)"),
-          keyToggle("read_config_from.cursor", "Cursor (.cursor/rules)"),
-          keyToggle("read_config_from.windsurf", "Windsurf (.windsurf/rules)"),
-          keyToggle("read_config_from.claude", "Claude Code (.claude)")
-        ], { reset: true }),
         loadedRules()
       );
       return wrap;
@@ -747,15 +744,15 @@
         p.name,
         p.description,
         [
-          iconBtn("sync", "Update plugin", () => post("settings:pluginVerb", { verb: "update", arg: p.name })),
-          iconBtn("trash", "Remove plugin", () => post("settings:pluginVerb", { verb: "remove", arg: p.name }), "danger")
+          p.disabled
+            ? iconBtn("check", "Enable row", () => post("settings:pluginVerb", { verb: "enable", arg: p.name }))
+            : iconBtn("circle-slash", "Disable row", () => post("settings:pluginVerb", { verb: "disable", arg: p.name }))
         ]
       ));
       const wrap = h("div");
       wrap.append(
-        group("Installed plugins", rows.length ? rows : [empty("No plugins installed.")],
-          { action: btn("Install", "cloud-download", () => openModal("Install a plugin", pluginModalBody), "primary") }),
-        h("div", { class: "settings-note", text: "A plugin bundles skills, hooks, and rules. The Devin CLI installs them once for your machine, so they apply to every workspace." })
+        group("Plugin rows", rows.length ? rows : [empty("No plugin rows composed.")]),
+        h("div", { class: "settings-note", text: "Rows come from vtx --dump-config for the selected profile. Enable and disable rewrite the disabled flag in that profile's cordis.yml." })
       );
       return wrap;
     },
@@ -768,38 +765,22 @@
         if (sv.disabled) meta.push(tag("disabled", "muted"));
         if (sv.loggedIn) meta.push(tag("signed in", "scope"));
         if ((sv.envKeys || []).length) meta.push(tag(sv.envKeys.length + " env", "muted"));
-        // Which file the server is written in decides who edits it: the CLI owns
-        // its own, and another tool's is written directly.
-        const src = sv.source === "windsurf" ? { source: "windsurf" } : {};
         const actions = [];
         if (sv.loggedIn) {
-          actions.push(iconBtn("sign-out", "Log out", () => post("settings:mcpVerb", { verb: "logout", name: sv.name, root: g.root })));
+          actions.push(iconBtn("sign-out", "Sign out", () => post("settings:mcpLogin", { name: sv.name, root: g.root, signout: true })));
         } else if (sv.oauthCapable) {
-          actions.push(iconBtn("key", "Log in (OAuth)", () => post("settings:mcpLogin", { name: sv.name, root: g.root })));
+          actions.push(iconBtn("key", "Sign in (OAuth)", () => post("settings:mcpLogin", { name: sv.name, root: g.root })));
         }
         actions.push(sv.disabled
-          ? iconBtn("check", "Enable", () => post("settings:mcpVerb", Object.assign({ verb: "enable", name: sv.name, scope: sv.scope, root: g.root }, src)))
-          : iconBtn("circle-slash", "Disable", () => post("settings:mcpVerb", Object.assign({ verb: "disable", name: sv.name, scope: sv.scope, root: g.root }, src))));
+          ? iconBtn("check", "Enable", () => post("settings:mcpVerb", { verb: "enable", name: sv.name, scope: sv.scope, root: g.root }))
+          : iconBtn("circle-slash", "Disable", () => post("settings:mcpVerb", { verb: "disable", name: sv.name, scope: sv.scope, root: g.root })));
         if (sv.file) actions.push(iconBtn("edit", "Edit config", () => post("settings:openFile", { path: sv.file })));
-        actions.push(iconBtn("trash", "Remove", () => post("settings:mcpVerb", Object.assign({ verb: "remove", name: sv.name, scope: sv.scope, root: g.root }, src)), "danger"));
-        // The name is its own element so a disabled server can be struck through
-        // without striking through its tags.
+        actions.push(iconBtn("trash", "Remove", () => post("settings:mcpVerb", { verb: "remove", name: sv.name, scope: sv.scope, root: g.root }), "danger"));
         const name = h("span", { class: "settings-list-name", text: sv.name });
         return listRow([name].concat(meta), sv.detail, actions, sv.disabled ? "disabled" : "");
       };
-      const own = all.filter((sv) => sv.source !== "windsurf");
-      const wind = all.filter((sv) => sv.source === "windsurf");
-      const groups = [group("MCP servers", own.length ? own.map(row) : [empty("No MCP servers here.")],
-        { action: addBtn("Add MCP server", mcpModalBody) })];
-      // Windsurf's servers are loaded by the Devin CLI too, so they are part of
-      // what this agent can do. They are listed apart because they live in
-      // Windsurf's config and editing one changes it for Windsurf as well.
-      if (wind.length || scope === "user") {
-        groups.push(group("MCP servers from Windsurf",
-          wind.length ? wind.map(row) : [empty("Windsurf has no MCP servers configured.")],
-          { action: addBtn("Add MCP server to Windsurf", (close, gg) => mcpModalBody(close, gg, "windsurf")) }));
-      }
-      return h("div", {}, groups);
+      return group("MCP servers", all.length ? all.map(row) : [empty("No MCP servers here.")],
+        { action: addBtn("Add MCP server", mcpModalBody) });
     },
 
     hooks() {
@@ -818,7 +799,7 @@
               ? [
                   iconBtn("edit", "Edit source", () => post("settings:openFile", { path: e.source })),
                   iconBtn("trash", "Remove hook", () => post("settings:removeHook", {
-                    source: e.source, event: e.event, matcher: e.matcher, command: e.command, prompt: e.prompt
+                    source: e.source, group: e.group, index: e.index, event: e.event, command: e.command, prompt: e.prompt
                   }), "danger")
                 ]
               : []
@@ -834,80 +815,63 @@
     },
 
     permissions() {
-      const g = scoped(data.permissions && data.permissions.byScope) || { scope: "user" };
-      const rows = ["allow", "deny", "ask"].map((bucket) => {
-        const chips = (g[bucket] || []).map((v) => {
-          const x = h("button", {
-            class: "settings-perm-x", "data-tip": "Remove " + v, "aria-label": "Remove " + v
-          }, [icon("close")]);
-          x.addEventListener("click", whileBusy(x, () =>
-            post("settings:permission", { scope: g.scope, root: g.root, bucket, value: v, remove: true })));
-          return h("span", { class: "settings-perm-chip" }, [h("span", { text: v }), x]);
-        });
-        return h("div", { class: "settings-perm-bucket" }, [
-          h("div", { class: "settings-perm-bucket-label", text: bucket }),
-          h("div", { class: "settings-perm-chips" }, chips.length ? chips : [h("span", { class: "settings-empty-inline", text: "none" })])
-        ]);
-      });
-      // One adder for all three buckets, instead of an input per bucket.
-      let addTo = "allow";
-      const bucketSel = select(
-        [{ value: "allow", label: "Allow" }, { value: "deny", label: "Deny" }, { value: "ask", label: "Ask" }],
-        addTo, (v) => { addTo = v; }
-      );
-      const ruleInput = textInput("", "Exec(git status), Read(**), MCP(github)");
-      const submit = () => {
-        const v = (ruleInput.value || "").trim();
-        if (!v) return;
-        post("settings:permission", { scope: g.scope, root: g.root, bucket: addTo, value: v });
-        ruleInput.value = "";
-      };
-      ruleInput.addEventListener("keydown", (e) => { if (e.key === "Enter") { e.preventDefault(); submit(); } });
-      rows.push(fieldRow("Add a rule", [bucketSel, ruleInput, btn("Add", "add", submit, "primary")],
-        "Allow runs a matching tool silently, deny blocks it, ask always prompts."));
-      return group("Permissions", rows);
+      return group("Permissions", [
+        keySelect("permissions.mode", "Mode", [
+          { value: "prompt", label: "Prompt" },
+          { value: "auto", label: "Auto" }
+        ], "Prompt asks before running a tool. Auto approves tools without asking.")
+      ]);
     },
 
     advanced() {
       const wrap = h("div");
       wrap.append(
-        group("Proxy", [
-          keySelect("proxy.mode", "Mode", [
-            { value: "system", label: "System" },
-            { value: "manual", label: "Manual" },
-            { value: "off", label: "Off" }
-          ], "How the Devin CLI routes its own outbound traffic."),
-          keyText("proxy.url", "URL", "http://proxy.example.com:8080"),
-          keyText("proxy.no_proxy", "No proxy", "localhost,127.0.0.1,.corp")
-        ], { reset: true }),
-        group("Sandbox", [
-          keySelect("sandbox.network_mode", "Network mode", [
-            { value: "full", label: "Full" },
-            { value: "limited", label: "Limited" }
-          ], "Domain filtering when running with --sandbox, which the CLI marks unstable. Limited allows only GET, HEAD and OPTIONS."),
-          keyList("sandbox.allowed_domains", "Allowed domains", "github.com, **.npmjs.org"),
-          keyList("sandbox.denied_domains", "Denied domains", "evil.example.com")
-        ], { reset: true }),
-        group("Terminal display", [
-          keySelect("theme_mode", "Theme", [
-            { value: "", label: "Auto" },
-            { value: "light", label: "Light" },
-            { value: "dark", label: "Dark" },
-            { value: "terminal-dark", label: "Terminal dark" },
-            { value: "terminal-light", label: "Terminal light" },
-            { value: "nocolor", label: "No color" }
-          ], "These affect the devin terminal interface, not this extension's chat panel.", true),
-          keySelect("unicode_mode", "Unicode", [
+        group("Model runtime", [
+          keyText("llm.tool_call_idle_timeout_seconds", "Tool call idle timeout", "180", "Seconds a tool call may stay idle before it fails."),
+          keyText("llm.request_timeout_seconds", "Request timeout", "600", "Seconds to wait for a model request."),
+          keySelect("llm.auth.openai_compat", "OpenAI compat auth", [
             { value: "auto", label: "Auto" },
-            { value: "unicode", label: "Unicode" },
-            { value: "ascii", label: "ASCII" }
+            { value: "required", label: "Required" },
+            { value: "none", label: "None" }
           ]),
-          keyToggle("disable_osc", "Disable OSC escape sequences",
-            "Turn off terminal title and hyperlink escape codes if your terminal mishandles them.")
+          keySelect("llm.auth.anthropic_compat", "Anthropic compat auth", [
+            { value: "auto", label: "Auto" },
+            { value: "required", label: "Required" },
+            { value: "none", label: "None" }
+          ]),
+          keyToggle("llm.tls.insecure_skip_verify", "Skip TLS verification", "Do not verify TLS certificates for model requests. Use only for local proxies."),
+          keyToggle("llm.system_prompt.git_context", "Git context in system prompt"),
+          keyToggle("llm.system_prompt.ponytail", "Ponytail system prompt"),
+          keyToggle("llm.system_prompt.todo_context", "Todo context in system prompt")
         ], { reset: true }),
-        group("Execution", [
-          keyToggle("pty_for_noninteractive_exec", "Use a PTY for non-interactive exec",
-            "Run non-interactive commands under a pseudo-terminal, which helps tools that need a TTY.")
+        group("Interface", [
+          keyText("ui.theme", "Theme", "gruvbox-dark", "Vtx theme id."),
+          keySelect("ui.thinking_lines", "Collapsed thinking lines", [
+            { value: "1", label: "1" },
+            { value: "2", label: "2" },
+            { value: "3", label: "3" },
+            { value: "4", label: "4" },
+            { value: "5", label: "5" },
+            { value: "none", label: "None" }
+          ], "Lines shown when thinking is collapsed."),
+          keyToggle("ui.colored_tool_badge", "Colored tool badges"),
+          keyToggle("ui.collapse_thinking", "Collapse thinking"),
+          keyToggle("ui.merged_turn_summary", "Merged turn summaries"),
+          keyToggle("ui.collapse_after_turn", "Collapse after each turn"),
+          keyList("ui.hidden_models", "Hidden models", "provider:model", "Models hidden from the /model picker. Hidden models still work via config or resume."),
+          keyText("ui.model_provider_filter", "Model provider filter", "", "Provider slug whose models appear in the /model picker. Empty shows every provider.")
+        ], { reset: true }),
+        group("Compaction and agent", [
+          keySelect("compaction.on_overflow", "On overflow", [
+            { value: "continue", label: "Continue" },
+            { value: "pause", label: "Pause" }
+          ]),
+          keyText("compaction.threshold_percent", "Compaction threshold", "80", "Percent of context used before compaction."),
+          keyText("agent.max_turns", "Max turns", "500", "Maximum agent turns per session."),
+          keyText("agent.default_context_window", "Default context window", "200000", "Fallback context window for models that do not report one."),
+          keyToggle("recap.enabled", "Idle session recap"),
+          keyText("recap.idle_seconds", "Recap idle seconds", "60", "Idle time before a recap is drafted."),
+          keyList("extensions", "Extensions", "~/.vtx/extensions/audit.py", "Extra Python extensions or packages to load at startup.")
         ], { reset: true })
       );
       return wrap;
@@ -915,9 +879,9 @@
   };
 
   // --- The extension's own settings ----------------------------------------
-  // Anything that controls this extension rather than the Devin CLI belongs in
+  // Anything that controls this extension rather than the Vtx CLI belongs in
   // VS Code settings, so this surface only links to it. The one exception is a
-  // conflict: when the VS Code setting `devin.defaultModel` is set, it silently
+  // conflict: when the VS Code setting `vtx.defaultModel` is set, it silently
   // overrides the CLI model above for chats started here, which is invisible
   // otherwise. That is reported as a warning on the affected row, not as a
   // setting of its own, and only while the conflict exists.
@@ -926,7 +890,7 @@
     if (!override) return null;
     return h("div", { class: "settings-notice" }, [
       icon("info"),
-      h("span", { text: "Chats here use " + (modelLabel(override) || override) + ", from the VS Code setting devin.defaultModel." }),
+      h("span", { text: "Chats here use " + (modelLabel(override) || override) + ", from the VS Code setting vtx.defaultModel." }),
       linkBtn("Open it", () => post("settings:openExtensionSettings", { query: "defaultModel" })),
       linkBtn("Clear it", () => post("settings:clearExtensionModel"))
     ]);
@@ -940,7 +904,7 @@
       label, [iconBtn("gear", "Open in VS Code settings", () => post("settings:openExtensionSettings", { query: q }))], hint
     );
     return group("VS Code extension settings", [
-      link("All extension settings", "Everything that controls this extension rather than the Devin CLI.", ""),
+      link("All extension settings", "Everything that controls this extension rather than the Vtx CLI.", ""),
       link("Session defaults", "The mode and model new chats start with.", "default"),
       link("Thinking display", "Whether and how the reasoning stream is shown.", "thinking"),
       link("Checkpoints and editing", "Restore points, edit requests, and file change summaries.", "checkpoints")
@@ -970,16 +934,25 @@
     let event = "PreToolUse";
     let hookType = "command";
     const eventSel = select([
+      { value: "SessionStart", label: "SessionStart" },
+      { value: "SessionEnd", label: "SessionEnd" },
+      { value: "TurnStart", label: "TurnStart" },
+      { value: "TurnEnd", label: "TurnEnd" },
       { value: "PreToolUse", label: "PreToolUse" },
       { value: "PostToolUse", label: "PostToolUse" },
+      { value: "PostToolUseFailure", label: "PostToolUseFailure" },
       { value: "PermissionRequest", label: "PermissionRequest" },
-      { value: "UserPromptSubmit", label: "UserPromptSubmit" },
-      { value: "Stop", label: "Stop" },
-      { value: "SessionStart", label: "SessionStart" },
-      { value: "SessionEnd", label: "SessionEnd" }
+      { value: "PermissionDenied", label: "PermissionDenied" },
+      { value: "PreCompact", label: "PreCompact" },
+      { value: "PostCompact", label: "PostCompact" }
     ], event, (v) => { event = v; });
     const typeSel = select(
-      [{ value: "command", label: "Command" }, { value: "prompt", label: "Prompt" }],
+      [
+        { value: "command", label: "Command" },
+        { value: "prompt", label: "Prompt" },
+        { value: "http", label: "HTTP" },
+        { value: "agent", label: "Agent" }
+      ],
       hookType, (v) => { hookType = v; renderValue(); }
     );
     const matcher = textInput("", "exec");
@@ -988,14 +961,22 @@
     // forth keeps whatever was typed in each.
     const command = textInput("", "npm run lint -- --fix");
     const prompt = textArea("", "Remember to run the tests before committing.");
+    const url = textInput("", "https://example.com/hook");
+    const agent = textArea("", "Review the change and report only blockers.");
     // The field is named for the type that is actually selected, rather than
     // offering one box labelled with both.
     const valueRow = h("div");
     const renderValue = () => {
       valueRow.innerHTML = "";
-      valueRow.appendChild(hookType === "prompt"
-        ? fieldRow("Prompt", prompt, "Injected into the conversation when the event fires.")
-        : fieldRow("Command", command, "Run by your shell when the event fires."));
+      if (hookType === "prompt") {
+        valueRow.appendChild(fieldRow("Prompt", prompt, "Injected into the conversation when the event fires."));
+      } else if (hookType === "http") {
+        valueRow.appendChild(fieldRow("URL", url, "POSTed the hook payload as JSON."));
+      } else if (hookType === "agent") {
+        valueRow.appendChild(fieldRow("Instructions", agent, "Instructions for the hook agent."));
+      } else {
+        valueRow.appendChild(fieldRow("Command", command, "Run by your shell when the event fires."));
+      }
     };
     renderValue();
     return h("div", null, [
@@ -1008,7 +989,11 @@
       modalActions([
         btn("Cancel", null, close),
         btn("Add hook", "add", () => {
-          const v = (hookType === "prompt" ? prompt.value : command.value).trim();
+          const raw = hookType === "prompt" ? prompt.value
+            : hookType === "http" ? url.value
+            : hookType === "agent" ? agent.value
+            : command.value;
+          const v = (raw || "").trim();
           if (!v) return;
           post("settings:addHook", {
             scope: g.scope, root: g.root, event, hookType,
@@ -1020,14 +1005,12 @@
     ]);
   }
 
-  function mcpModalBody(close, g, source) {
+  function mcpModalBody(close, g) {
     const name = textInput("", "github");
     const cmd = textInput("", "https://mcp.example.com/mcp");
     const envIn = textInput("", "TOKEN=abc123, REGION=eu");
     return h("div", null, [
-      h("div", { class: "settings-modal-desc", text: source === "windsurf"
-        ? "Adds a server to Windsurf's config, which the Devin CLI reads too. Enter a URL for HTTP transport, or a command line for stdio."
-        : "Adds a server to " + scopeLabelOf(scope) + ". Enter a URL for HTTP transport, or a command line for stdio." }),
+      h("div", { class: "settings-modal-desc", text: "Adds a server to " + scopeLabelOf(scope) + ". Enter a URL for HTTP transport, or a command line for stdio." }),
       fieldRow("Name", name),
       fieldRow("URL or command", cmd, "A URL uses HTTP transport. A command line (npx -y @scope/server) uses stdio."),
       fieldRow("Env", envIn, "Comma separated KEY=value pairs. Optional."),
@@ -1053,29 +1036,13 @@
             if (eq > 0) env[pair.slice(0, eq).trim()] = pair.slice(eq + 1).trim();
           }
           if (Object.keys(env).length) options.env = env;
-          post("settings:mcpAdd", { options, root: g.root, source });
+          post("settings:mcpAdd", { options, root: g.root });
           deferClose(close);
         }, "primary")
       ])
     ]);
   }
 
-  function pluginModalBody(close) {
-    const src = textInput("", "github.com/org/repo");
-    return h("div", null, [
-      h("div", { class: "settings-modal-desc", text: "Installs from a Git source or a local path. Required plugins are installed too." }),
-      fieldRow("Source", src, "A Git source or a local path."),
-      modalActions([
-        btn("Cancel", null, close),
-        btn("Install", "cloud-download", () => {
-          const v = (src.value || "").trim();
-          if (!v) return;
-          post("settings:pluginVerb", { verb: "install", arg: v });
-          deferClose(close);
-        }, "primary")
-      ])
-    ]);
-  }
 
   // --- Messages ------------------------------------------------------------
   window.addEventListener("message", (event) => {

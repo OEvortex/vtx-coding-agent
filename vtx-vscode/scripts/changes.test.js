@@ -15,7 +15,7 @@ const path = require("path");
 const esbuild = require("esbuild");
 
 const ROOT = path.resolve(__dirname, "..");
-const TMP = fs.mkdtempSync(path.join(os.tmpdir(), "devin-changes-"));
+const TMP = fs.mkdtempSync(path.join(os.tmpdir(), "vtx-changes-"));
 
 const outfile = path.join(TMP, "changeTracker.js");
 esbuild.buildSync({
@@ -70,7 +70,7 @@ test("keeping a change leaves the diff rendering against the real original", asy
     "a kept file has nothing left to review, so no gutter markers"
   );
   // The regression: this used to fall back to "", so an open diff drew every
-  // line as added, as though Devin had created the file.
+  // line as added, as though Vtx had created the file.
   assert.strictEqual(original(tracker, file), "line one\n", "the original text is still what the diff resolves");
   assert.strictEqual(fs.readFileSync(file, "utf8"), "line one\nline two\nline three\n", "Keep does not touch the file");
 });
@@ -120,7 +120,7 @@ test("undoing a change restores the file and still resolves its original", async
   assert.strictEqual(original(tracker, file), "before\n", "so an open diff shows no difference, not a new file");
 });
 
-test("a file Devin created is deleted by Undo", async () => {
+test("a file Vtx created is deleted by Undo", async () => {
   const tracker = new ChangeTracker();
   tracker.register();
   const file = path.join(TMP, "created.ts");
@@ -376,7 +376,7 @@ test("a one line change in a large file is counted, and counted quickly", async 
 
   // The plain cases still hold.
   // Two lines, not three: the newline ending the last line is not a line of its
-  // own, and counting it made every file Devin created disagree with git by one.
+  // own, and counting it made every file Vtx created disagree with git by one.
   assert.deepStrictEqual(diffStat(null, "a\nb\n"), { added: 2, removed: 0 }, "a new file is all additions");
   assert.deepStrictEqual(diffStat("a\nb\n", ""), { added: 0, removed: 2 }, "an emptied one is all removals");
   assert.deepStrictEqual(diffStat(null, "a\nb"), { added: 2, removed: 0 }, "with or without the final newline");
@@ -497,8 +497,8 @@ test("a failed undo is not reported to the caller as restored", async () => {
   // holding the agent's content, so forgetting it would take away the only way back.
   const tracker = new ChangeTracker();
   tracker.register();
-  const file = write("locked-too.ts", "devin wrote this\n");
-  tracker.recordDiff(file, "the original\n", "devin wrote this\n", "A");
+  const file = write("locked-too.ts", "vtx wrote this\n");
+  tracker.recordDiff(file, "the original\n", "vtx wrote this\n", "A");
 
   fs.chmodSync(file, 0o444);
   let ok;
@@ -518,12 +518,12 @@ test("one file is one entry, however it was spelled", async () => {
   // undoing them in order writes the older text over the newer.
   const tracker = new ChangeTracker();
   tracker.register();
-  const file = write("Casing.ts", "devin wrote this\n");
+  const file = write("Casing.ts", "vtx wrote this\n");
   const other = path.join(path.dirname(file), "casing.ts");
   const sameFile = fs.existsSync(other);
 
-  tracker.recordDiff(file, "the original\n", "devin wrote this\n", "A");
-  tracker.recordDiff(other, "devin wrote this\n", "devin wrote more\n", "A");
+  tracker.recordDiff(file, "the original\n", "vtx wrote this\n", "A");
+  tracker.recordDiff(other, "vtx wrote this\n", "vtx wrote more\n", "A");
 
   if (sameFile) {
     assert.strictEqual(tracker.pathsFor("A").length, 1, "one file, one entry");
@@ -548,8 +548,8 @@ test("an undo that cannot write says so, and keeps the original", async () => {
   vscode.window.shown.error.length = 0;
   const tracker = new ChangeTracker();
   tracker.register();
-  const file = write("locked.ts", "devin wrote this\n");
-  tracker.recordDiff(file, "the original\n", "devin wrote this\n", "A");
+  const file = write("locked.ts", "vtx wrote this\n");
+  tracker.recordDiff(file, "the original\n", "vtx wrote this\n", "A");
 
   fs.chmodSync(file, 0o444);
   try {
@@ -558,7 +558,7 @@ test("an undo that cannot write says so, and keeps the original", async () => {
     fs.chmodSync(file, 0o644);
   }
 
-  assert.strictEqual(fs.readFileSync(file, "utf8"), "devin wrote this\n", "the write really did fail");
+  assert.strictEqual(fs.readFileSync(file, "utf8"), "vtx wrote this\n", "the write really did fail");
   assert.strictEqual(vscode.window.shown.error.length, 1, "the user is told, rather than it passing quietly");
   assert.match(vscode.window.shown.error[0], /locked\.ts/);
   assert.strictEqual(tracker.hasUnresolvedChange(file), true, "and it stays in the working set");
@@ -574,20 +574,20 @@ test("undoing everything in one chat leaves the other chat's edits alone", async
   // header, so it must not reach into a chat the user cannot even see.
   const tracker = new ChangeTracker();
   tracker.register();
-  const mine = write("mine.ts", "devin wrote mine\n");
-  const theirs = write("theirs.ts", "devin wrote theirs\n");
+  const mine = write("mine.ts", "vtx wrote mine\n");
+  const theirs = write("theirs.ts", "vtx wrote theirs\n");
 
-  tracker.recordDiff(mine, "mine\n", "devin wrote mine\n", "A");
-  tracker.recordDiff(theirs, "theirs\n", "devin wrote theirs\n", "B");
+  tracker.recordDiff(mine, "mine\n", "vtx wrote mine\n", "A");
+  tracker.recordDiff(theirs, "theirs\n", "vtx wrote theirs\n", "B");
 
   await tracker.rejectAll("A");
   assert.strictEqual(fs.readFileSync(mine, "utf8"), "mine\n", "A's file is put back");
-  assert.strictEqual(fs.readFileSync(theirs, "utf8"), "devin wrote theirs\n", "B's file is untouched");
+  assert.strictEqual(fs.readFileSync(theirs, "utf8"), "vtx wrote theirs\n", "B's file is untouched");
   assert.deepStrictEqual(tracker.pathsFor("B"), [theirs], "and B still has it to review");
 
   // Keeping everything in one chat is the same promise in the other direction.
-  const alsoMine = write("also-mine.ts", "devin wrote this\n");
-  tracker.recordDiff(alsoMine, "before\n", "devin wrote this\n", "A");
+  const alsoMine = write("also-mine.ts", "vtx wrote this\n");
+  tracker.recordDiff(alsoMine, "before\n", "vtx wrote this\n", "A");
   tracker.acceptAll("A");
   assert.deepStrictEqual(tracker.pathsFor("B"), [theirs], "B is not resolved by A's Keep all");
 
@@ -628,7 +628,7 @@ test("a kept file is no longer offered for review, but can still be put back", a
   tracker.recordDiff(file, "before\n", "after\n", "A");
   tracker.accept(file);
   // A revert asks this before winding a file back itself. A kept file must answer
-  // no: its snapshot is the text from before Devin first touched it, which is older
+  // no: its snapshot is the text from before Vtx first touched it, which is older
   // than any checkpoint taken since, so the agent's own plan is the accurate one.
   assert.strictEqual(tracker.hasUnresolvedChange(file), false, "Keep settles the review");
 
@@ -650,7 +650,7 @@ test("undoing a file that was worked on since asks before discarding that work",
 
   vscode.window.shown.warning.length = 0;
   vscode.window.answer = undefined;
-  assert.strictEqual(await tracker.reject(file), true, "a file still as Devin left it undoes straight away");
+  assert.strictEqual(await tracker.reject(file), true, "a file still as Vtx left it undoes straight away");
   assert.strictEqual(fs.readFileSync(file, "utf8"), "before\n");
   assert.deepStrictEqual(vscode.window.shown.warning, [], "with nothing to ask about");
 
