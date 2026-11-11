@@ -306,4 +306,9 @@ class TestCustomBlockRendering:
 
 class TestBaseToolUiBlockDefault:
     def test_default_is_none(self):
-        assert BaseTool.ui_block is None
+        # ui_block is a read-only property: the default reads None, and it has
+        # no setter so it cannot be clobbered from outside the class.
+        prop = BaseTool.__dict__["ui_block"]
+        assert isinstance(prop, property)
+        assert prop.fset is None
+        assert BaseTool._ui_block is None

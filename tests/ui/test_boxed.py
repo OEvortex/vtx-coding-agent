@@ -47,6 +47,37 @@ def test_language_badge_is_derived_from_the_extension():
     assert boxed.language_badge(None) == ""
 
 
+def test_lexer_is_resolved_from_pygments_not_the_hand_map():
+    # Extension-less file names and extensions outside the old hand-kept table
+    # must still yield a Pygments lexer; they previously returned None and the
+    # diff was left completely unhighlighted ("doesn't work at all").
+    assert boxed.lexer_for_path("Dockerfile") == "docker"
+    assert boxed.lexer_for_path("Makefile") == "make"
+    assert boxed.lexer_for_path("Gemfile") == "ruby"
+    assert boxed.lexer_for_path("web/app.tsx") == "tsx"
+    assert boxed.lexer_for_path("cmd/main.go") == "go"
+    assert boxed.lexer_for_path("data.json") == "json"
+    assert boxed.lexer_for_path("services/api.service.ts") in {"typescript", "tsx"}
+
+
+def test_lexer_for_unknown_extension_is_none():
+    assert boxed.lexer_for_path("notes.unknownext") is None
+    assert boxed.lexer_for_path(None) is None
+
+
+def test_extensionless_dockerfile_diff_is_syntax_highlighted():
+    old = 'FROM python:3.12\nCMD ["app"]\n'
+    new = 'FROM python:3.12-slim\nLABEL maintainer=dev\nCMD ["app"]\n'
+    diff, _, _ = generate_diff(old, new)
+    text = Text.from_markup(format_diff_display(diff))
+    highlighted = boxed.highlight_diff(text, "Dockerfile")
+    # Previously the hardcoded LEXERS map returned None for "Dockerfile"
+    # (the dict key exists but _extension() yields "" for dot-less names), so
+    # this diff came back with no token colours at all.
+    assert highlighted is not text
+    assert len(highlighted.spans) > len(text.spans)
+
+
 def test_numbered_lines_use_an_editor_gutter():
     preview = boxed.highlighted_numbered_lines("def f() -> int:\n    return 1\n", "x.py")
     lines = preview.plain.split("\n")

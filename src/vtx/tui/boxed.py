@@ -191,10 +191,15 @@ def box_line(content: Text | str, width: int, *, failed: bool = False) -> Text:
     out = Text()
     out.append(f"{BOX_V} ", style=side)
     if isinstance(content, str):
+        # Hold the str in its own variable: assigning the parsed Text into
+        # ``content`` inside ``try`` invalidates the ``isinstance`` narrowing,
+        # so a bare ``Text(content)`` in the except branch would be flagged as
+        # passing ``str | Text`` to ``Text.__init__``.
+        raw: str = content
         try:
-            content = Text.from_markup(content)
+            content = Text.from_markup(raw)
         except Exception:
-            content = Text(content)
+            content = Text(raw)
     if content.cell_len > inner:
         content = content.copy()
         content.truncate(max(1, inner), overflow="ellipsis", pad=False)
@@ -252,53 +257,6 @@ def wrap_boxed(text: Text, width: int, *, failed: bool = False) -> Text:
     return out
 
 
-LEXERS = {
-    "py": "python",
-    "pyi": "python",
-    "pyw": "python",
-    "json": "json",
-    "sh": "bash",
-    "bash": "bash",
-    "zsh": "bash",
-    "fish": "fish",
-    "ts": "typescript",
-    "tsx": "tsx",
-    "js": "javascript",
-    "jsx": "jsx",
-    "mjs": "javascript",
-    "cjs": "javascript",
-    "md": "markdown",
-    "rst": "rst",
-    "rs": "rust",
-    "go": "go",
-    "toml": "toml",
-    "yaml": "yaml",
-    "yml": "yaml",
-    "ini": "ini",
-    "cfg": "ini",
-    "css": "css",
-    "scss": "scss",
-    "html": "html",
-    "htm": "html",
-    "xml": "xml",
-    "svg": "xml",
-    "sql": "sql",
-    "c": "c",
-    "h": "c",
-    "cpp": "cpp",
-    "cc": "cpp",
-    "hpp": "cpp",
-    "java": "java",
-    "kt": "kotlin",
-    "rb": "ruby",
-    "lua": "lua",
-    "php": "php",
-    "swift": "swift",
-    "vue": "html",
-    "dockerfile": "docker",
-    "makefile": "make",
-}
-
 _LANGUAGE_BADGES = {
     "py": "PY",
     "pyi": "PY",
@@ -345,10 +303,24 @@ def _extension(path: str) -> str:
 
 
 def lexer_for_path(path: str | None) -> str | None:
-    """Pygments lexer name for a path, or ``None`` when unsupported."""
+    """Pygments lexer name for a ``path``, or ``None`` when Pygments cannot
+    resolve one. Delegates to Pygments' own filename/extension database instead
+    of a hand-kept table, so extension-less names (``Dockerfile``, ``Makefile``,
+    ``Gemfile``) and every supported extension highlight instead of silently
+    coming back plain.
+    """
     if not path:
         return None
-    return LEXERS.get(_extension(path))
+    from pygments.lexers import get_lexer_for_filename
+
+    try:
+        lexer = get_lexer_for_filename(path)
+    except Exception:
+        return None
+    aliases = getattr(lexer, "aliases", None) or []
+    if aliases:
+        return aliases[0]
+    return getattr(lexer, "name", None) or None
 
 
 def language_badge(path: str | None) -> str:
