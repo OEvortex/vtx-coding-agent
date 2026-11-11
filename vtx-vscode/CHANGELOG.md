@@ -8,6 +8,19 @@ the commit messages carry the detail.
 > locally. The builds between 0.6.65 and 0.6.91 reached the Marketplace together
 > in 0.6.92.
 
+## [0.13.1] - 2026-11-11
+
+### Highlights
+- Show the real context-window meter instead of a pinned 100%: the agent now
+  reports what the conversation occupies against the model's window, so the
+  reading and its popup agree with compaction.
+- Keep that reading correct after a compaction, after resuming a session, and
+  after switching models.
+
+### Under the hood
+- The ACP client already accepted the context payload; the fix ships in the
+  Vtx CLI (`vtx acp`), and this build is the matching extension release.
+
 ## [0.13.0] - 2026-10-01
 
 ### Highlights

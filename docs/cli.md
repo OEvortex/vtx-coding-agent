@@ -300,6 +300,8 @@ vtx acp
 
 Runs vtx as an Agent Client Protocol (ACP) server over stdio: JSON-RPC 2.0, one object per line, for editors like Zed that speak the protocol (`src/vtx/coding_agent/acp.py:1`-`src/vtx/coding_agent/acp.py:13`, dispatched at `src/vtx/coding_agent/cli.py:217`-`src/vtx/coding_agent/cli.py:221`).
 
+The `usage_update` notification carries **context occupancy**, not spend: `used` is the token footprint of the conversation (what compaction compares against the window) and `size` is the active model's context window. It is sent after each turn, after a compaction shrinks the context, and once when a session is loaded so a client's meter is correct on resume. Identical consecutive readings are suppressed, and a reading with no context yet is not sent at all -- clients hide the meter on a zero rather than render `0%` (`AcpServer._emit_usage`).
+
 ## Subcommand: `vtx auth`
 
 ```sh

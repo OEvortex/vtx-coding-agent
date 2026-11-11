@@ -102,6 +102,9 @@ class _Session:
         self.agent: Any = None
         self.cancel_event = asyncio.Event()
         self._runtime_lock = asyncio.Lock()
+        #: Last ``(used, size)`` published, so a run does not repeat the same
+        #: reading at turn end and again at run end.
+        self.last_usage: tuple[int, int] | None = None
 
 
 class AcpServer:
@@ -163,6 +166,72 @@ class AcpServer:
         await self._update(
             session_id,
             {"sessionUpdate": "agent_message_chunk", "content": {"type": "text", "text": text}},
+        )
+
+    # -- usage ------------------------------------------------------------
+
+    def _context_window(self, sess: _Session) -> int:
+        """The effective context window for this session's model.
+
+        Mirrors the TUI info bar and the compaction check: the model catalog is
+        the source of truth and ``agent.default_context_window`` only covers a
+        model it does not know. Reading it from the runtime's current model
+        rather than the agent's config keeps it right after a model switch,
+        which does not rebuild the agent until the next prompt.
+        """
+        from vtx.ai.models import get_model
+        from vtx.core.config import get_config
+
+        runtime = sess.runtime
+        model = getattr(runtime, "model", None) or sess.model
+        provider = getattr(runtime, "model_provider", None) or sess.model_provider
+        info = get_model(model, provider) if model else None
+        if info is None and model and provider:
+            # Resumed sessions can carry a stale provider label; retry bare
+            # rather than falling back to the default window silently.
+            info = get_model(model, None)
+        window = (getattr(info, "context_window", None) if info else None) or getattr(
+            getattr(sess.agent, "config", None), "context_window", None
+        )
+        return int(window or get_config().agent.default_context_window)
+
+    @staticmethod
+    def _context_used(sess: _Session) -> int:
+        """Tokens currently occupying the context window.
+
+        The session log is authoritative -- it is what the next request sends --
+        and knows about compaction, so a shrink is reflected instead of the
+        pre-compaction peak.
+        """
+        session = getattr(sess.runtime, "session", None)
+        if session is None:
+            return 0
+        try:
+            return int(session.token_totals().context_tokens or 0)
+        except Exception:
+            return 0
+
+    async def _emit_usage(self, session_id: str, sess: _Session, used: int | None = None) -> None:
+        """Publish how full the context window is (ACP ``usage_update``).
+
+        ``used``/``size`` are context occupancy, not a run's cumulative token
+        spend. This used to report ``total_usage`` in both fields, which is why
+        every client's meter sat pinned at 100% (9.2k / 9.2k) for a session
+        showing 9.2k total tokens. Clients hide the meter when either value is
+        zero, so nothing is sent before the first usage exists.
+        """
+        size = self._context_window(sess)
+        occupied = self._context_used(sess) if used is None else max(0, int(used))
+        if not size or not occupied:
+            return
+        # The turn-end and run-end readings are usually identical; the client
+        # re-renders on every update, so send each distinct reading once.
+        reading = (occupied, size)
+        if sess.last_usage == reading:
+            return
+        sess.last_usage = reading
+        await self._update(
+            session_id, {"sessionUpdate": "usage_update", "used": occupied, "size": size}
         )
 
     # -- agent runtime ----------------------------------------------------
@@ -300,6 +369,7 @@ class AcpServer:
         from vtx.core.events import (
             AgentEndEvent,
             AskUserEvent,
+            CompactionEndEvent,
             ErrorEvent,
             TextDeltaEvent,
             ThinkingDeltaEvent,
@@ -309,6 +379,7 @@ class AcpServer:
             ToolOutputDeltaEvent,
             ToolResultEvent,
             ToolStartEvent,
+            TurnEndEvent,
         )
         from vtx.core.permissions import AskUserResponse
 
@@ -396,16 +467,28 @@ class AcpServer:
             case ErrorEvent(error=err):
                 if err:
                     await self._agent_message(session_id, f"\n[error] {err}\n")
-            case AgentEndEvent(total_usage=usage):
+            case TurnEndEvent(assistant_message=message):
+                # The session appends this message *after* the event reaches
+                # consumers, so the footprint is read off the message itself --
+                # from the session it would lag one turn behind.
+                usage = message.usage if message is not None else None
                 if usage is not None:
-                    await self._update(
+                    await self._emit_usage(
                         session_id,
-                        {
-                            "sessionUpdate": "usage_update",
-                            "used": usage.total_tokens,
-                            "size": usage.total_tokens,
-                        },
+                        sess,
+                        usage.input_tokens
+                        + usage.output_tokens
+                        + usage.cache_read_tokens
+                        + usage.cache_write_tokens,
                     )
+            case CompactionEndEvent(tokens_after=after):
+                # The one event that shrinks the context: without this the meter
+                # sits at the pre-compaction reading until the next turn ends.
+                if after:
+                    await self._emit_usage(session_id, sess, after)
+            case AgentEndEvent():
+                # Final reading from the session, which now holds every turn.
+                await self._emit_usage(session_id, sess)
             case _:
                 text = getattr(event, "warning", None) or getattr(event, "error", None)
                 if text:
@@ -684,6 +767,12 @@ class AcpServer:
             if runtime is not None:
                 runtime.switch_model(model)
             sess.model, sess.model_provider = model.id, model.provider
+            # The window belongs to the model, so the meter's denominator
+            # changed even though the context did not.
+            import contextlib
+
+            with contextlib.suppress(Exception):
+                await self._emit_usage(sess.acp_id, sess)
         elif config_id == "thinking":
             from vtx.ai.thinking import THINKING_LEVELS
 
@@ -797,6 +886,10 @@ class AcpServer:
         async def _warm() -> None:
             with contextlib.suppress(Exception):
                 await self._ensure_agent(sess)
+            with contextlib.suppress(Exception):
+                # A resumed session already has a context; without this the
+                # client's meter stays hidden until the next turn ends.
+                await self._emit_usage(session_id, sess)
 
         sess._warm_task = asyncio.create_task(_warm())
         await self._replay_session(session_id, sess)
