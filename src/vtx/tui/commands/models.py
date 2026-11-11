@@ -76,13 +76,14 @@ class ModelCommands(CommandSupport):
             chat = self.query_one("#chat-log", ChatLog)
             chat.add_info_message(f"Failed to load model catalog: {exc}", error=True)
             return
-        # Filter out hidden models, but always keep the currently active model
+        # Filter out hidden models (user-configured and provider-marked
+        # ``visibility: "hide"``), but always keep the currently active model
         # so its selection state is visible in the picker.
-        if hidden_providers or hidden_combos:
+        if hidden_providers or hidden_combos or any(m.hidden for m in all_models):
             all_models = [
                 m
                 for m in all_models
-                if not _is_model_hidden(m, hidden_providers, hidden_combos)
+                if (not m.hidden and not _is_model_hidden(m, hidden_providers, hidden_combos))
                 or (m.id == self._runtime.model and m.provider == self._runtime.model_provider)
             ]
         if not all_models:

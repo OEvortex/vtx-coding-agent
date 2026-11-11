@@ -48,6 +48,7 @@ class FetchedModel:
     supports_thinking: bool = False
     thinking_level_map: dict[str, str | None] | None = None
     is_free: bool = False
+    hidden: bool = False
 
 
 def _get_cache_dir() -> Path:
@@ -96,6 +97,7 @@ def _read_cache(provider_slug: str, *, check_cooldown: bool = False) -> list[Fet
                 supports_thinking=bool(entry.get("supports_thinking", False)),
                 thinking_level_map=entry.get("thinking_level_map"),
                 is_free=bool(entry.get("is_free", False)),
+                hidden=bool(entry.get("hidden", False)),
             )
         )
     return models
@@ -429,6 +431,7 @@ def get_fetched_models(provider) -> list[Model]:
                 supports_audio=supports_audio,
                 api_model_id=entry.api_model_id,
                 is_free=is_free,
+                hidden=entry.hidden,
             )
         )
     return models

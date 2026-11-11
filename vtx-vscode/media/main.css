@@ -557,30 +557,31 @@ body {
   position: relative;
 }
 
-/* Jump-to-bottom button, mirroring VS Code's .chat-scroll-down: a small round
-   secondary button pinned bottom-right of the thread, shown only when scrolled
-   up (via .visible), 27px circle with a centered chevron. */
+/* Jump-to-bottom button, mirroring VS Code's .chat-scroll-down: a 24px button
+   (spacing-size240) with cornerRadius-large, shadow-md, pinned 12px from the
+   right and 8px above the input's persistent-content slot, shown only when
+   scrolled up (via .visible). */
 .chat-scroll-down {
   display: none;
   position: absolute;
-  bottom: 10px;
-  right: 14px;
+  bottom: 8px;
+  right: 12px;
   z-index: 10;
-  width: 27px;
-  height: 27px;
+  width: 24px;
+  height: 24px;
   padding: 0;
-  border-radius: 100%;
-  border: 1px solid var(--vscode-chat-requestBorder, var(--vscode-widget-border, transparent));
-  background: var(--vscode-button-secondaryBackground, var(--vscode-editorWidget-background));
-  color: var(--vscode-button-secondaryForeground, var(--vscode-foreground));
+  border: 1px solid var(--vscode-editorWidget-border, transparent);
+  border-radius: var(--vscode-cornerRadius-large, var(--dv-radius-lg));
+  background: var(--vscode-editorWidget-background, var(--vscode-editor-background));
+  color: var(--vscode-icon-foreground, var(--vscode-foreground));
   cursor: pointer;
   align-items: center;
   justify-content: center;
-  box-shadow: var(--vscode-widget-shadow, rgba(0, 0, 0, 0.36)) 0 2px 8px;
+  box-shadow: var(--vscode-shadow-md, rgba(0, 0, 0, 0.36)) 0 2px 8px;
 }
 
 .chat-scroll-down:hover {
-  background: var(--vscode-button-secondaryHoverBackground, var(--vscode-toolbar-hoverBackground));
+  background: var(--vscode-toolbar-hoverBackground, var(--vscode-list-hoverBackground));
 }
 
 .chat-scroll-down.visible {
@@ -589,7 +590,7 @@ body {
 
 .chat-scroll-down .codicon {
   margin: 0;
-  font-size: 16px;
+  font-size: var(--vscode-codiconFontSize, 16px);
 }
 
 #thread,
@@ -600,11 +601,10 @@ body {
 }
 
 #thread {
-  padding: 12px 0;
+  padding: 0;
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: 12px;
   /* The list surface VS Code paints the Copilot transcript on, rather than the
      sidebar's own background. */
   background: var(--vscode-chat-list-background, transparent);
@@ -620,11 +620,26 @@ body {
 }
 
 /* Horizontal padding lives on the row, not the scroller, the way VS Code pads
-   .interactive-item-container (12px 16px): a turn's hover chrome can then reach
-   the column edge, and the scrollbar sits flush. */
+   .interactive-item-container (6px 16px in the sidebar): a turn's hover chrome
+   can then reach the column edge, and the scrollbar sits flush. Vertical
+   rhythm comes from the same row padding, so turns carry no flex gap. */
 #thread > .turn {
-  padding: 0 16px;
+  padding: 6px 16px;
   box-sizing: border-box;
+}
+
+/* VS Code gives the first request row a taller top inset
+   (.interactive-item-container.interactive-request padding-top 20px). */
+#thread > .turn:first-child {
+  padding-top: 20px;
+}
+
+/* Non-turn rows in the transcript (restore markers, the queue, loaders) keep
+   the separation the removed thread gap used to give them. */
+#thread > .restored-row,
+#thread > .queued-inline,
+#thread > .thread-loading {
+  margin: 12px 0;
 }
 
 /* While a session/load replay streams in, hide the still-rendering transcript
@@ -1487,16 +1502,16 @@ button.model-hover-configurable-button:hover {
 /* Composer */
 #composer {
   flex: 0 0 auto;
-  padding: 4px 12px 8px;
-  border-top: 1px solid var(--vscode-panel-border);
+  /* .interactive-input-part: margin 0 12px, padding 4px 0, no divider above. */
+  padding: 4px 12px 4px;
 }
 
-/* Cap the composer stack in the same 950px column as the transcript, as
-   .interactive-session does upstream; without this the input is wider than the
-   messages above it on an editor-width surface. */
+/* Cap the composer stack the way .interactive-input-part sits inside the 950px
+   .interactive-session: its own 12px side margins leave a 926px column, so the
+   input box is narrower than the transcript's 950px row box upstream too. */
 #composer > * {
   width: 100%;
-  max-width: 950px;
+  max-width: 926px;
   margin-left: auto;
   margin-right: auto;
   box-sizing: border-box;
@@ -1510,7 +1525,8 @@ button.model-hover-configurable-button:hover {
   border: 1px solid var(--vscode-input-border, var(--vscode-panel-border));
   border-radius: var(--vscode-cornerRadius-large, var(--dv-radius-lg));
   background: var(--vscode-input-background);
-  padding: 4px 6px 6px;
+  /* .chat-input-container: padding 0 6px 6px, the top inset lives in the editor. */
+  padding: 0 6px 6px;
 }
 
 #input-box:focus-within {
@@ -1663,10 +1679,12 @@ button.model-hover-configurable-button:hover {
   color: var(--vscode-input-foreground);
   font-family: inherit;
   font-size: inherit;
+  /* Upstream's input editor padding is 12px top and bottom around a 20px line,
+     for a 44px single-line minimum; the editor container adds 4px left. */
   min-height: 44px;
   max-height: 250px;
-  padding: 8px 2px 2px;
-  line-height: 1.4;
+  padding: 12px 0 12px 4px;
+  line-height: max(20px, 1.5em);
 }
 
 #toolbar {
@@ -1962,11 +1980,13 @@ button.model-hover-configurable-button:hover {
 .queued-item:focus-within .queued-actions { opacity: 0.85; }
 
 /* Attachment chips */
+/* .chat-attachments-container: a flex row with gap 4px and margin-top 6px,
+   sitting inside the input container above the editor. */
 #attachments {
   display: flex;
   flex-wrap: wrap;
   gap: 4px;
-  padding: 0 2px 6px;
+  margin-top: 6px;
 }
 
 /* Attachment pill, matching VS Code's chat-attached-context-attachment:
@@ -2053,7 +2073,12 @@ button.model-hover-configurable-button:hover {
 .turn {
   display: flex;
   flex-direction: column;
-  gap: 6px;
+  /* request -> response spacing mirrors two stacked upstream rows: the bubble's
+     6px bottom margin plus each row's 6px block padding. */
+  gap: 12px;
+  /* Anchor for the hover action pill (.request-hover), which floats above the
+     row like upstream's absolute toolbar. */
+  position: relative;
 }
 
 /* Right-aligned, content-hugging request bubble (matches the VS Code /
@@ -2147,6 +2172,12 @@ button.model-hover-configurable-button:hover {
   margin-bottom: 0;
 }
 
+/* Upstream's request bubble carries a 6px bottom margin inside its row
+   (spacing-size60), which is part of the request -> response gap. */
+.turn-request .req-body {
+  margin-bottom: 6px;
+}
+
 .turn-request.editable-inline .req-body {
   cursor: text;
 }
@@ -2171,12 +2202,13 @@ button.model-hover-configurable-button:hover {
 
 .turn-response {
   line-height: 1.5;
-  /* Vertical rhythm between response parts (text, tool cards, thinking, plan)
-     so tool containers are not flush against the text above/below or each
-     other. Smaller than the between-turn gap to keep a turn reading as a unit. */
+  /* Vertical rhythm between response parts (text, tool cards, thinking, plan).
+     Upstream spaces content parts at spacing-size160 (16px): markdown keeps a
+     16px paragraph margin mid-list and the boxed parts carry their own
+     8-16px margins, so 16px is the dominant gap. */
   display: flex;
   flex-direction: column;
-  gap: 8px;
+  gap: 16px;
 }
 
 /* Runs of edited-file rows read as one list, so keep them tight. */
@@ -2366,18 +2398,42 @@ button.model-hover-configurable-button:hover {
   transition: opacity 0.1s ease-in-out;
 }
 
-/* The request actions sit in a hover-revealed row below the bubble (aligned to
-   the right under the right-aligned request), rather than overlaying the text. */
+/* Request actions float above the row as a pill, VS Code's .request-hover:
+   absolute at top:-13px right:20px, editor background, requestBorder hairline,
+   cornerRadius-large, 26px tall, revealed on hover/focus. */
 .req-actions {
-  align-self: flex-end;
-  margin-top: 3px;
+  position: absolute;
+  top: -13px;
+  right: 20px;
+  z-index: 5;
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  height: 26px;
+  margin: 0;
+  padding: 0 2px;
+  border: 1px solid var(--dv-border);
+  border-radius: var(--vscode-cornerRadius-large, var(--dv-radius-lg));
+  background: var(--vscode-editorWidget-background, var(--vscode-editor-background));
+  opacity: 0;
+  transition: opacity 0.1s ease-in-out;
 }
 
-/* Reveal the request toolbar on hover/focus of the whole turn (VS Code's
-   group-hovered scope), not just the request bubble. */
+/* The first row's hover pill starts at the row top rather than floating into
+   the space above the transcript, as upstream's data-index=0 override. */
+#thread > .turn:first-child .req-actions {
+  top: 0;
+}
+
 .turn:hover .req-actions,
 .turn:focus-within .req-actions {
-  opacity: 0.9;
+  opacity: 1;
+}
+
+.req-actions .msg-action {
+  width: 22px;
+  height: 22px;
+  padding: 0;
 }
 
 .msg-action {
@@ -2400,25 +2456,20 @@ button.model-hover-configurable-button:hover {
   font-size: 13px;
 }
 
-/* Response footer toolbar (Copy, Retry, completion time). Persistent under the
-   most recent completed response; hover/focus on older ones, mirroring VS
-   Code's ChatMessageFooter. Hidden entirely until the turn completes. */
+/* Response footer toolbar (Copy, Retry, completion time). Upstream keeps it
+   out of layout entirely until it can show: the last completed response holds
+   the space, older ones reveal it on hover. */
 .chat-footer {
-  display: flex;
+  display: none;
   align-items: center;
   gap: 2px;
   margin-top: 2px;
-  opacity: 0;
-  transition: opacity 0.1s ease-in-out;
-}
-
-.turn:not(.complete) .chat-footer {
-  display: none;
 }
 
 .turn.complete:last-child .chat-footer,
 .turn.complete:hover .chat-footer,
 .turn.complete:focus-within .chat-footer {
+  display: flex;
   opacity: 0.9;
 }
 

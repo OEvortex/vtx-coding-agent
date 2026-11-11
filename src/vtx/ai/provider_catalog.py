@@ -151,6 +151,11 @@ def _load_raw_yaml() -> dict:
     return {}
 
 
+def is_oauth_provider(slug: str) -> bool:
+    """Whether ``slug`` is a builtin OAuth-backed provider (cline, codex, ...)."""
+    return slug in _get_builtin_oauth_providers()
+
+
 def _get_builtin_oauth_providers() -> dict[str, ProviderInfo]:
     copilot_headers = {
         "User-Agent": "GitHubCopilotChat/0.35.0",

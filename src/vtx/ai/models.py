@@ -49,6 +49,9 @@ class Model:
     supports_audio: bool = False
     api_model_id: str = ""
     is_free: bool = False
+    # Provider-marked hidden (e.g. Codex `visibility: "hide"`): usable by
+    # explicit id but excluded from model pickers.
+    hidden: bool = False
     # Thinking-level map derived from models.dev reasoning_options:
     # level -> provider effort string, or None when explicitly unsupported.
     thinking_level_map: dict[str, str | None] | None = None

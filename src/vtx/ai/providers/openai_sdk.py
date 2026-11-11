@@ -7,6 +7,7 @@ from openai import APIConnectionError, APIError, APIStatusError
 
 from vtx.ai.base import BaseProvider, LLMStream, ProviderConfig, resolve_api_key
 from vtx.ai.provider_catalog import get as get_provider_info
+from vtx.ai.provider_catalog import is_oauth_provider
 from vtx.ai.providers.sanitize import sanitize_surrogates
 from vtx.ai.sdk.base import GenerationConfig
 from vtx.ai.sdk.base import Message as SDKMessage
@@ -47,12 +48,18 @@ class OpenAISDKProvider(BaseProvider):
         p = get_provider_info(provider)
         provider_env_var = (p.api_key_env if p and p.api_key_env else None) or "OPENAI_API_KEY"
 
-        api_key = resolve_api_key(
-            config.api_key,
-            env_vars=(provider_env_var,),
-            base_url=config.base_url,
-            auth_mode=config.openai_compat_auth_mode,
-        )
+        api_key = config.api_key
+        if not api_key and is_oauth_provider(provider):
+            # OAuth login wins over env vars for these providers: e.g. the
+            # codex backend rejects plain OPENAI_API_KEY values outright.
+            api_key = self._resolve_dynamic_key_for(config)
+        if not api_key:
+            api_key = resolve_api_key(
+                config.api_key,
+                env_vars=(provider_env_var,),
+                base_url=config.base_url,
+                auth_mode=config.openai_compat_auth_mode,
+            )
         if not api_key and config.base_url:
             api_key = self._resolve_dynamic_key_for(config)
         if not api_key:

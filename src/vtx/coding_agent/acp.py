@@ -575,6 +575,8 @@ class AcpServer:
 
             provider_filter = get_config().ui.model_provider_filter
             for m in get_all_models():
+                if m.hidden:
+                    continue
                 if provider_filter and m.provider != provider_filter:
                     continue
                 uid = f"{m.provider}:{m.id}"

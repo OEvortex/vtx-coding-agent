@@ -258,6 +258,8 @@ def main() -> None:
 
         families = []
         for m in get_all_models():
+            if m.hidden:
+                continue
             uid = f"{m.provider}:{m.id}"
             families.append(
                 {

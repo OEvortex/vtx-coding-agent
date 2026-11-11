@@ -232,6 +232,7 @@ class DynamicModelEntry:
     thinking_level_map: dict[str, str | None] | None = None
     is_free: bool = False
     pricing_known: bool = False  # False = name-based free detection only
+    hidden: bool = False  # provider visibility: "hide" — picker-excluded
     raw: dict[str, Any] = field(default_factory=dict)
 
     @classmethod
@@ -254,6 +255,7 @@ class DynamicModelEntry:
             thinking_level_map=m.get("thinking_level_map"),
             is_free=bool(m.get("is_free", False)),
             pricing_known=bool(m.get("pricing_known", False)),
+            hidden=bool(m.get("hidden", False)),
             raw=raw_value if isinstance(raw_value, dict) else {},
         )
 
@@ -669,66 +671,66 @@ def _parse_models(
 
         spec = _find_spec_in_models_dev(model_id, models_dev, provider=provider)
 
+        # Provider-reported fields win; the models.dev spec is only a fallback
+        # for providers that don't publish a given limit themselves.
+
         # 1. Context window
-        context_window = None
-        if spec:
-            context_window = spec.get("limit", {}).get("context")
-        if context_window is None:
-            raw_ctx = raw.get("context_length")
-            context_window = int(raw_ctx) if raw_ctx else None
-        else:
-            context_window = int(context_window)
+        raw_ctx = raw.get("context_length")
+        context_window = int(raw_ctx) if raw_ctx else None
+        if context_window is None and spec:
+            spec_ctx = spec.get("limit", {}).get("context")
+            context_window = int(spec_ctx) if spec_ctx else None
 
         # 2. Max output tokens
-        max_tokens = None
-        if spec:
-            max_tokens = spec.get("limit", {}).get("output")
-        if max_tokens is None:
-            raw_max = (
-                raw.get("max_completion_tokens")
-                or (raw.get("top_provider") or {}).get("max_completion_tokens")
-                or raw.get("max_tokens")
-            )
-            max_tokens = int(raw_max) if raw_max else None
-        else:
-            max_tokens = int(max_tokens)
+        raw_max = (
+            raw.get("max_completion_tokens")
+            or (raw.get("top_provider") or {}).get("max_completion_tokens")
+            or raw.get("max_tokens")
+        )
+        max_tokens = int(raw_max) if raw_max else None
+        if max_tokens is None and spec:
+            spec_out = spec.get("limit", {}).get("output")
+            max_tokens = int(spec_out) if spec_out else None
 
         if context_window and max_tokens and context_window - max_tokens <= 8192:
             max_tokens = safe_max_output_tokens(context_window)
 
-        # 3. Supports thinking/reasoning
+        # 3. Supports thinking/reasoning — explicit provider signals win,
+        # then the models.dev spec, then name heuristics.
+        supports_params = raw.get("supported_parameters") or []
         supports_thinking = None
-        if spec and "reasoning" in spec:
+        for key in ("supports_reasoning", "reasoning"):
+            if key in raw:
+                supports_thinking = bool(raw[key])
+                break
+        if supports_thinking is None and (
+            "reasoning" in supports_params or "reasoning_effort" in supports_params
+        ):
+            supports_thinking = True
+        raw_ro_early = raw.get("reasoning_options") or (
+            raw.get("opencode", {}).get("reasoning_options")
+            if isinstance(raw.get("opencode"), dict)
+            else None
+        )
+        if supports_thinking is None and raw_ro_early:
+            supports_thinking = True
+        if supports_thinking is None and spec and "reasoning" in spec:
             supports_thinking = bool(spec.get("reasoning"))
         if supports_thinking is None:
             model_id_lower = model_id.lower()
-            supports_params = raw.get("supported_parameters") or []
-            supports_thinking = bool(
-                raw.get("supports_reasoning")
-                or raw.get("reasoning")
-                or "reasoning" in supports_params
-                or "reasoning_effort" in supports_params
-                or "thinking" in model_id_lower
-                or "reasoning" in model_id_lower
-            )
+            supports_thinking = bool("thinking" in model_id_lower or "reasoning" in model_id_lower)
 
-        # 3b. Reasoning-effort detection
+        # 3b. Reasoning-effort detection — provider's own options win.
         thinking_level_map = None
-        if spec:
+        if raw_ro_early:
+            thinking_level_map = parse_models_dev_reasoning_options(
+                raw_ro_early, max_tokens=max_tokens
+            )
+        if thinking_level_map is None and spec:
             thinking_level_map = parse_models_dev_reasoning_options(
                 spec.get("reasoning_options"), max_tokens=max_tokens
             )
-        if thinking_level_map is None:
-            raw_ro = raw.get("reasoning_options") or (
-                raw.get("opencode", {}).get("reasoning_options")
-                if isinstance(raw.get("opencode"), dict)
-                else None
-            )
-            if raw_ro:
-                thinking_level_map = parse_models_dev_reasoning_options(
-                    raw_ro, max_tokens=max_tokens
-                )
-        if thinking_level_map is None and not explicit_models_dev and spec is None:
+        if thinking_level_map is None and not explicit_models_dev:
             from vtx.ai.context_length import context_length_manager
 
             lims = context_length_manager.get_limits(model_id, provider=provider)
@@ -739,9 +741,17 @@ def _parse_models(
         if thinking_level_map and not supports_thinking:
             supports_thinking = True
 
-        # 4. Supports images
+        # 4. Supports images — provider's own modality list wins.
         supports_images = None
-        if spec:
+        arch_modalities = None
+        if isinstance(arch, dict):
+            arch_modalities = arch.get("input_modalities")
+        raw_modalities = (
+            arch_modalities if arch_modalities is not None else raw.get("input_modalities")
+        )
+        if isinstance(raw_modalities, list):
+            supports_images = "image" in raw_modalities
+        if supports_images is None and spec:
             input_modalities = spec.get("modalities", {}).get("input", [])
             if input_modalities:
                 supports_images = "image" in input_modalities
@@ -758,6 +768,7 @@ def _parse_models(
             thinking_level_map=thinking_level_map,
             is_free=_is_free_model(name, prompt_cost, completion_cost, pricing_known),
             pricing_known=pricing_known,
+            hidden=raw.get("visibility") == "hide",
             raw=raw,
         )
         entries.append(entry)
@@ -1106,6 +1117,7 @@ def _to_static_model(
         supports_tools=supports_tools,
         supports_audio=supports_audio,
         is_free=is_free,
+        hidden=entry.hidden,
     )
 
 
