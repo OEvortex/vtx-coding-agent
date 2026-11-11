@@ -31,8 +31,17 @@ class PatchOp(BaseModel):
         "delete removes a file, move renames a file"
     )
     path: str = Field(description="Path of the file to operate on")
+    old: str | None = Field(
+        default=None,
+        description="Exact text to replace — for a single 'update' edit. "
+        "Must match file content including whitespace",
+    )
+    new: str | None = Field(default=None, description="Replacement text for 'old'")
+    replace_all: bool = Field(
+        default=False, description="Replace all occurrences of 'old' (default: first only)"
+    )
     edits: list[PatchEdit] | None = Field(
-        default=None, description="Edit list — required for 'update' ops"
+        default=None, description="Multiple edits for one 'update' op — alternative to old/new"
     )
     content: str | None = Field(
         default=None, description="Full file content — required for 'create' ops"
@@ -230,10 +239,12 @@ class ApplyPatchTool(BaseTool):
     prompt_guidelines = ("apply_patch for ALL file edits: update/create/delete/move",)
     description = (
         "Apply file edits atomically. ops is an ordered list of operations: "
-        "'update' (path + edits[{old,new,replace_all}]), 'create' (path + content), "
-        "'delete' (path), 'move' (path + new_path). "
+        "'update' (path + old/new, or path + edits[] for several edits), "
+        "'create' (path + content), 'delete' (path), 'move' (path + new_path). "
         "old must match file content exactly including whitespace. "
-        "If any op fails, no changes are written."
+        "If any op fails, no changes are written. "
+        'Example: {"ops":[{"op":"update","path":"a.py","old":"foo","new":"bar"},'
+        '{"op":"create","path":"b.py","content":"x=1\\n"}]}'
     )
 
     def format_call(self, params: ApplyPatchParams) -> str:
@@ -247,8 +258,11 @@ class ApplyPatchTool(BaseTool):
         parts = []
         for op in params.ops:
             if op.op == "update":
-                n = len(op.edits or [])
-                parts.append(f"update {op.path} ({n} edit{'s' if n != 1 else ''})")
+                if op.edits:
+                    n = len(op.edits)
+                    parts.append(f"update {op.path} ({n} edit{'s' if n != 1 else ''})")
+                elif op.old is not None:
+                    parts.append(f"update {op.path}")
             elif op.op == "create":
                 parts.append(f"create {op.path}")
             elif op.op == "delete":
@@ -292,13 +306,20 @@ class ApplyPatchTool(BaseTool):
                 label = f"op {idx + 1} ({op.op} {op.path})"
 
                 if op.op == "update":
-                    if not op.edits:
-                        raise ValueError(f"{label}: 'edits' is required and must be non-empty")
+                    edits = list(op.edits or [])
+                    if op.old is not None or op.new is not None:
+                        if op.old is None or op.new is None:
+                            raise ValueError(f"{label}: 'old' and 'new' must be provided together")
+                        edits.append(PatchEdit(old=op.old, new=op.new, replace_all=op.replace_all))
+                    if not edits:
+                        raise ValueError(
+                            f"{label}: provide 'old'+'new' or a non-empty 'edits' list"
+                        )
                     content = current(path)
                     if content is None:
                         raise ValueError(f"{label}: file not found")
                     new_content = content
-                    for edit in op.edits:
+                    for edit in edits:
                         if edit.old == edit.new:
                             raise ValueError(f"{label}: old == new in an edit")
                         if edit.old not in new_content:

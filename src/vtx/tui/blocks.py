@@ -1195,6 +1195,10 @@ class ToolBlock(Static):
                 first_path = op["path"]
             if isinstance(op.get("content"), str):
                 added_src_parts.append(op["content"])
+            if isinstance(op.get("old"), str):
+                removed_src_parts.append(op["old"])
+            if isinstance(op.get("new"), str):
+                added_src_parts.append(op["new"])
             for edit in op.get("edits") or []:
                 if not isinstance(edit, dict):
                     continue
@@ -1334,6 +1338,8 @@ class ToolBlock(Static):
             path = str(first.get("path") or "")
             return boxed.highlighted_numbered_lines(content, path, max_lines=15)
         edits = first.get("edits")
+        if not (isinstance(edits, list) and edits) and isinstance(first.get("old"), str):
+            edits = [{"old": first.get("old"), "new": first.get("new")}]
         if isinstance(edits, list) and edits:
             olds = [e.get("old", "") for e in edits if isinstance(e, dict)]
             news = [e.get("new", "") for e in edits if isinstance(e, dict)]

@@ -197,17 +197,19 @@ class ModelCommands(CommandSupport):
     def _select_model_by_name(self, spec: str) -> None:
         """Select a model directly by name/spec, creating an ad-hoc model if needed.
 
-        Supports ``provider/model_id`` (provider prefix matched against known
+        Supports ``provider::model_id`` (provider prefix matched against known
         providers) and plain ``model_id`` (resolved against current/all providers).
+        The ``::`` delimiter is used so model ids that themselves contain ``/``
+        (e.g. ``org/model-name``) still select correctly.
         If the model is not in the catalog, a synthetic Model is built so explicit
-        selections like ``/model respan/gemini-4-carbon:free`` still work.
+        selections like ``/model respan::gemini-4-carbon:free`` still work.
         """
         chat = self.query_one("#chat-log", ChatLog)
 
         provider: str | None = None
         model_id = spec
-        if "/" in spec:
-            candidate_provider, rest = spec.split("/", 1)
+        if "::" in spec:
+            candidate_provider, rest = spec.split("::", 1)
             if rest and (
                 get_provider_info(candidate_provider) is not None
                 or get_dynamic_provider(candidate_provider) is not None
@@ -229,8 +231,8 @@ class ModelCommands(CommandSupport):
         if model is None:
             if provider is None:
                 chat.add_info_message(
-                    f"Unknown model: {spec}. Use provider/model for an uncataloged model "
-                    "(e.g. /model respan/gemini-4-carbon:free).",
+                    f"Unknown model: {spec}. Use provider::model for an uncataloged model "
+                    "(e.g. /model respan::gemini-4-carbon:free).",
                     error=True,
                 )
                 return

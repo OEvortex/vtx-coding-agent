@@ -35,6 +35,50 @@ async def test_update_single_edit(patch_tool, text_file):
 
 
 @pytest.mark.asyncio
+async def test_update_flat_old_new(patch_tool, text_file):
+    result = await patch_tool.execute(
+        _params(PatchOp(op="update", path=str(text_file), old="line2", new="flat"))
+    )
+    assert result.success
+    assert text_file.read_text() == "line1\nflat\nline3\nline2\nline5"
+
+
+@pytest.mark.asyncio
+async def test_update_flat_replace_all(patch_tool, text_file):
+    result = await patch_tool.execute(
+        _params(PatchOp(op="update", path=str(text_file), old="line2", new="x", replace_all=True))
+    )
+    assert result.success
+    assert text_file.read_text() == "line1\nx\nline3\nx\nline5"
+
+
+@pytest.mark.asyncio
+async def test_update_flat_and_edits_combined(patch_tool, text_file):
+    result = await patch_tool.execute(
+        _params(
+            PatchOp(
+                op="update",
+                path=str(text_file),
+                old="line5",
+                new="line6",
+                edits=[PatchEdit(old="line1", new="LINE1")],
+            )
+        )
+    )
+    assert result.success
+    assert text_file.read_text() == "LINE1\nline2\nline3\nline2\nline6"
+
+
+@pytest.mark.asyncio
+async def test_update_missing_old_new_pair(patch_tool, text_file):
+    result = await patch_tool.execute(
+        _params(PatchOp(op="update", path=str(text_file), old="line2"))
+    )
+    assert not result.success
+    assert "together" in result.result
+
+
+@pytest.mark.asyncio
 async def test_update_replace_all(patch_tool, text_file):
     result = await patch_tool.execute(
         _params(
