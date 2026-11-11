@@ -1394,9 +1394,19 @@ class ToolBlock(Static):
             rendered = streaming
             is_diff_output = False
         elif ui_details:
-            rendered = (
-                self._render_markup_safe(ui_details) if self._result_markup else Text(ui_details)
-            )
+            if self._result_markup and "\x1b[" in ui_details:
+                # Command output carrying ANSI SGR codes (bash): paint it like a
+                # real terminal instead of treating the codes as markup.
+                try:
+                    rendered = Text.from_ansi(ui_details)
+                except Exception:
+                    rendered = self._render_markup_safe(ui_details)
+            else:
+                rendered = (
+                    self._render_markup_safe(ui_details)
+                    if self._result_markup
+                    else Text(ui_details)
+                )
             is_diff_output = DIFF_BG_PAD_MARKER in rendered.plain
             if is_diff_output:
                 rendered = boxed.highlight_diff(rendered, self._source_path())

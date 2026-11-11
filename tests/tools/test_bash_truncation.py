@@ -87,3 +87,30 @@ async def test_short_output_is_not_truncated(monkeypatch):
     assert result.result is not None
     assert "truncated" not in result.result
     assert result.result.strip() == "hi"
+
+
+@pytest.mark.asyncio
+async def test_ansi_color_kept_for_display_but_stripped_from_result(monkeypatch):
+    color = b"\x1b[32mPASS\x1b[0m\n\x1b[2K\x1b[31mFAIL\x1b[0m\n"
+    _patch_subprocess(monkeypatch, _FakeProcess(color))
+
+    result = await BashTool().execute(BashParams(command="ignored"))
+
+    assert result.success is True
+    # Model-visible result stays plain ANSI-free text (cursor/clear codes gone).
+    assert result.result == "PASS\nFAIL"
+    assert "\x1b[" not in result.result
+    # On-screen display keeps the SGR codes so the TUI can paint them.
+    assert result.ui_details is not None
+    assert "\x1b[32mPASS\x1b[0m" in result.ui_details
+    assert "\x1b[31mFAIL\x1b[0m" in result.ui_details
+
+
+def test_sanitize_color_output_keeps_sgr_and_drops_cursor_codes():
+    from vtx.coding_agent.tools.bash import _sanitize_color_output, _sanitize_output
+
+    raw = "\x1b[32mPASS\x1b[0m\n\x1b[2K\x1b[Aline\n"
+    # SGR (colour) kept; cursor move / clear sequences dropped.
+    assert _sanitize_color_output(raw) == "\x1b[32mPASS\x1b[0m\nline\n"
+    assert "\x1b[" not in _sanitize_output(raw)
+    assert _sanitize_output(raw) == "PASS\nline\n"

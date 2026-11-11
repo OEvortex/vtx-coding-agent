@@ -31,8 +31,16 @@ def _get_env() -> dict[str, str]:
     env = {
         **os.environ,
         "CI": "true",
-        "NO_COLOR": "1",
-        "TERM": "dumb",
+        # Keep a colour-capable TERM and force colour so TTY-aware tools
+        # (git, pip, npm, Python, Rust, ...) emit ANSI SGR codes even though
+        # stdout is a pipe here -- that is what lets the TUI paint command
+        # output like a real terminal. The codes are stripped again before the
+        # text is handed to the model, so forcing colour can never pollute the
+        # LLM-visible result.
+        "TERM": "xterm-256color",
+        "FORCE_COLOR": "1",
+        "CLICOLOR_FORCE": "1",
+        "PY_COLORS": "1",
         "GIT_PAGER": "cat",
         "PAGER": "cat",
     }
@@ -78,6 +86,41 @@ def _sanitize_output(text: str) -> str:
     text = _ANSI_ESCAPE_RE.sub("", text)
     text = text.replace("\r\n", "\n").replace("\r", "")
     text = "".join(c for c in text if c >= " " or c in "\t\n")
+    return text
+
+
+#: Matches every ANSI escape sequence we care to recognise. SGR (``\x1b[...m``)
+#: carries the colour/style state and is kept for display; the rest (cursor
+#: moves, clears, OSC titles, charset selects) would corrupt a boxed body render
+#: and is dropped.
+_ANSI_SEQ_RE = re.compile(
+    r"\x1b\[[0-9;?]*[a-zA-Z]"
+    r"|\x1b\][^\x07]*\x07"
+    r"|\x1b[()][AB012]"
+    r"|\x1b[^\x1b]"
+)
+
+
+def _keep_sgr(match) -> str:
+    """Callback that keeps only select-graphic-rendition (colour) codes."""
+    seq = match.group(0)
+    if seq.startswith("\x1b[") and seq.endswith("m"):
+        return seq
+    return ""
+
+
+def _sanitize_color_output(text: str) -> str:
+    """Like :func:`_sanitize_output` but keeps SGR colour codes intact.
+
+    Command output may legitimately contain characters Rich would treat as
+    markup (``[stderr]``, square brackets), so this is only used for the
+    on-screen display -- the model-facing result always goes through
+    :func:`_sanitize_output` and stays plain ANSI-free text.
+    """
+    text = text.replace("\r\n", "\n").replace("\r", "")
+    text = _ANSI_SEQ_RE.sub(_keep_sgr, text)
+    # Keep printable chars plus tabs, newlines and the leading ESC of SGR codes.
+    text = "".join(c for c in text if c >= " " or c in "\t\n" or c == "\x1b")
     return text
 
 
@@ -210,6 +253,25 @@ class BashTool(BaseTool):
         )
         expanded_display = full_display if line_truncated or char_truncated else None
         return collapsed_display, expanded_display
+
+    def _format_color_display(self, color_text: str, max_lines: int = 5) -> tuple[str, str | None]:
+        """Collapse/expand view of ANSI-coloured output for the TUI body.
+
+        Unlike :meth:`_format_display` (which dims and escapes the text as Rich
+        markup), this returns raw text with its SGR escape codes intact so the
+        block can render it with ``Text.from_ansi`` and paint it like a real
+        terminal. The collapsed preview keeps the first ``max_lines`` lines and
+        a plain expand hint.
+        """
+        lines = [line for line in color_text.split("\n") if line != ""]
+        if not lines:
+            return "", None
+        full = "\n".join(lines)
+        if len(lines) <= max_lines:
+            return full, None
+        collapsed = "\n".join(lines[:max_lines])
+        collapsed += f"\n... ({len(lines) - max_lines} lines hidden • ctrl+o to expand)"
+        return collapsed, full
 
     async def execute(
         self,
@@ -354,17 +416,30 @@ class BashTool(BaseTool):
                     ui_summary=f"[red]Command timed out after {params.timeout}s[/red]",
                 )
 
-            stdout = _sanitize_output(stdout_bytes.decode("utf-8", errors="replace"))
-            stderr = _sanitize_output(stderr_bytes.decode("utf-8", errors="replace"))
+            stdout_raw = stdout_bytes.decode("utf-8", errors="replace")
+            stderr_raw = stderr_bytes.decode("utf-8", errors="replace")
+            stdout = _sanitize_output(stdout_raw)
+            stderr = _sanitize_output(stderr_raw)
+            stdout_color = _sanitize_color_output(stdout_raw)
+            stderr_color = _sanitize_color_output(stderr_raw)
 
-            full_output = ""
-            if stdout:
-                full_output += stdout
-            if stderr:
-                full_output += f"\n[stderr]\n{stderr}" if full_output else f"[stderr]\n{stderr}"
-            full_output = full_output.rstrip()
+            def _merge(so: str, se: str, color: str | None = None) -> str:
+                if not so and not se:
+                    return ""
+                result = so or ""
+                if se:
+                    if result:
+                        result += f"\n[stderr]\n{se}"
+                    else:
+                        result = f"[stderr]\n{se}"
+                return result.rstrip()
+
+            full_output = _merge(stdout, stderr)
+            full_output_color = _merge(stdout_color, stderr_color)
 
             trunc = _truncate_tail(full_output)
+            color_lines = full_output_color.split("\n")
+            color_tail = "\n".join(color_lines[-trunc.lines_kept :]) if full_output_color else ""
             if trunc.truncated:
                 marker = (
                     f"\n\n[output truncated to last {trunc.lines_kept} lines "
@@ -376,6 +451,8 @@ class BashTool(BaseTool):
                     temp_file_path = _write_full_output_to_temp(full_output)
                     marker += f"; full output: {temp_file_path}]"
                 trunc.content += marker
+                if color_tail:
+                    color_tail += marker
 
             result_text = trunc.content or "(no output)"
 
@@ -383,6 +460,16 @@ class BashTool(BaseTool):
             display_text, display_text_full = self._format_display(
                 trunc.content, max_lines=display_max
             )
+            # Coloured output for the on-screen body when the command actually
+            # emitted SGR codes; otherwise keep the existing dim/markup preview.
+            has_ansi = "\x1b[" in full_output_color
+            if has_ansi:
+                color_collapsed, color_full = self._format_color_display(
+                    color_tail, max_lines=display_max
+                )
+                ui_details, ui_details_full = color_collapsed, color_full
+            else:
+                ui_details, ui_details_full = display_text, display_text_full
 
             non_empty_lines = [line for line in (trunc.content or "").split("\n") if line.strip()]
             is_single_line = len(non_empty_lines) <= 1
@@ -394,16 +481,16 @@ class BashTool(BaseTool):
                 return ToolResult(
                     success=True,
                     result=result_text,
-                    ui_details=display_text,
-                    ui_details_full=display_text_full,
+                    ui_details=ui_details,
+                    ui_details_full=ui_details_full,
                 )
             else:
                 return ToolResult(
                     success=False,
                     result=result_text,
                     ui_summary=f"[red]Exit code {proc.returncode}[/red]",
-                    ui_details=display_text,
-                    ui_details_full=display_text_full,
+                    ui_details=ui_details,
+                    ui_details_full=ui_details_full,
                 )
 
         except Exception as e:

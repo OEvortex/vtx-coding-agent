@@ -104,6 +104,24 @@ async def test_non_diff_tool_output_keeps_wrapping():
 
 
 @pytest.mark.asyncio
+async def test_bash_ansi_output_renders_terminal_colours():
+    async with ToolExpansionTestApp().run_test() as pilot:
+        chat = pilot.app.query_one("#chat-log", ChatLog)
+        block = chat.start_tool("bash", "tool-1", "$ echo hi")
+        await pilot.pause()
+
+        ansi = "\x1b[32mPASS\x1b[0m\n"
+        chat.set_tool_result("tool-1", None, ansi, True)
+        await pilot.pause()
+
+        rendered = block.query_one("#tool-output", Label).render()
+        assert "PASS" in rendered.plain
+        # The SGR code must be painted as a colour, not rendered as literal text.
+        colored = [s for s in rendered.spans if s.style and "ansi_" in str(s.style)]
+        assert colored, rendered.spans
+
+
+@pytest.mark.asyncio
 async def test_tool_result_with_images_renders_textual_attachment_notice():
     async with ToolExpansionTestApp().run_test() as pilot:
         chat = pilot.app.query_one("#chat-log", ChatLog)
