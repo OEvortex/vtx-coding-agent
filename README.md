@@ -20,8 +20,8 @@ runs commands, edits code, and works through multi-step tasks without stopping t
 each one. The same core runs three ways: a keyboard-driven TUI, a headless CLI for
 scripts and CI, and a Python SDK for embedding.
 
-It ships 11 packages under the single `vtx-coding-agent` distribution, with 62 providers,
-14 tools, and an agent runtime whose every subsystem is replaceable without editing the
+It ships 11 packages under the single `vtx-coding-agent` distribution, with 65 providers,
+and an agent runtime whose every subsystem is replaceable without editing the
 harness.
 
 ## Quick start
@@ -39,7 +39,7 @@ Connect a model with `--provider` and `--model`, or export a key and start:
 
 ```bash
 export ANTHROPIC_API_KEY=sk-ant-...
-vtx --provider anthropic --model claude-sonnet-4-5
+vtx --provider anthropic --model claude-sonnet-4-20250514
 ```
 
 Resume a session with `vtx -c`, or a specific one with `vtx -r <id>`.
@@ -50,12 +50,6 @@ Resume a session with `vtx -c`, or a specific one with `vtx -r <id>`.
 then its own patch layer, then `--patch` overlays, last write per row id. The tool
 registry, the provider seam, the session log, the permission gate, and the agent loop are
 all rows, so each is replaceable from configuration rather than by forking the harness.
-
-```sh
-vtx --dump-config                          # the composed row list
-vtx plugin --profile default disable tool-grep
-vtx --profile minimal                      # a four-row composition, for embedding
-```
 
 A plugin declares what it needs with `inject` and registers through a context that records
 teardown, so unmounting a row unwinds exactly what it registered.
@@ -71,9 +65,10 @@ network. There is no interpreter-level confinement and none is attempted. What a
 cannot reach is the host's own state, because that lives in another process - so a
 deadline is a `kill`, not a cooperative request.
 
-**62 providers, 16 API families.** The catalog ships 62 providers across 16 API families;
-`--provider` takes a family name, and dropping a YAML file into `~/.vtx/providers/` adds
-your own.
+**65 providers, 3 API families.** The catalog ships 65 providers (60 from `provider.yaml`
+plus 5 OAuth built-ins) across 3 API families (`anthropic`, `devin`, `openai_compat`);
+`--provider` takes a provider slug, and dropping a YAML file into `~/.vtx/providers/`
+(or project-local `.vtx/providers/`) adds your own.
 
 **Sessions are durable and branchable.** Resume the last one, fork a new one mid-task to
 explore a different approach, and revert a turn with snapshots.
@@ -136,12 +131,14 @@ Dependencies flow `protocol` and `telemetry` into `core`, `git`, and `ai`; those
 `agent`; `agent` into `coding_agent`, with `mcp`, `tui`, and `plugins` above. Each package
 carries its own README with the public surface and internal notes.
 
-**Ten tools are on by default** - `read`, `edit`, `write`, `bash`, `skill`, `todo`,
-`web`, `ask_user`, `codemode`, `delegate_subagent` - resolved by the composition, not
-by a constant. `grep`, `web_search`, and `tool_search` are registered but off; `find`
-ships as a tool row you can add to a profile. The sub-agent tool is defined internally
-as `task` (`TaskTool`) and exposed as `delegate_subagent`. Agent profiles load only from
-`.vtx/agent/<name>.py`; none ship built in. Configuration lives in `~/.vtx/config.yml`.
+**Tools in the base composition** include `read`, `apply-patch` (writes go through
+`apply-patch`; there is no separate `write` or `edit` tool), `bash`, `grep`, `skill`,
+`todo`, `web`, `ask_user`, `codemode`, and `subagent` (the delegate/sub-agent tool,
+defined internally as `task`/`TaskTool`). `web_search` is registered but not on by
+default, and `find` is not a registered row (use `bash` for file discovery). All are
+resolved by the composition, not by a constant. Agent profiles load from
+`.vtx/agent/<name>.py` and `~/.vtx/agent/`; none ship built in. Configuration lives in
+`~/.vtx/config.yml`.
 
 ## Contributing
 

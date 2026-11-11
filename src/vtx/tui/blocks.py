@@ -1262,6 +1262,72 @@ class ToolBlock(Static):
             lines.append(f"[{color} on {bg}]{sign} {esc}{DIFF_BG_PAD_MARKER}[/]")
         return "\n".join(lines)
 
+    def _render_dir_listing(self, data: dict) -> Text:
+        """Directory read result: a panel-style tree.
+
+        Entries arrive as ``{line, path, is_dir}`` dicts. Flat paths are
+        regrouped into a tree drawn with ``├─``/``└─``/``│`` glyphs —
+        directories in accent with a trailing ``/``, files dim. Capped so a
+        huge listing doesn't flood the scrollback.
+        """
+        from vtx.core.config import config
+
+        colors = config.ui.colors
+        entries = [e for e in (data.get("entries") or []) if e.get("path")]
+
+        # Regroup flat paths into a nested tree: {name: {"is_dir": bool, "kids": {}}}
+        root: dict = {}
+        for e in entries:
+            children = root
+            parts = str(e["path"]).split("/")
+            for i, part in enumerate(parts):
+                last = i == len(parts) - 1
+                node = children.setdefault(part, {"is_dir": True, "kids": {}})
+                if last:
+                    node["is_dir"] = bool(e["is_dir"])
+                children = node["kids"]
+
+        lines: list[Text] = []
+        cap = 20
+
+        def _emit(children: dict, prefix: str) -> None:
+            items = sorted(children.items(), key=lambda kv: (not kv[1]["is_dir"], kv[0]))
+            for idx, (name, node) in enumerate(items):
+                if len(lines) >= cap:
+                    return
+                last = idx == len(items) - 1
+                arm = "└─ " if last else "├─ "
+                if node["is_dir"]:
+                    lines.append(Text(prefix + arm + name + "/", style=colors.accent))
+                else:
+                    lines.append(Text(prefix + arm + name, style=colors.dim))
+                if node["kids"]:
+                    _emit(node["kids"], prefix + ("    " if last else "│   "))
+
+        if root:
+            _emit(root, "")
+        else:
+            lines.append(Text("(empty directory)", style=colors.dim))
+
+        total = sum(1 for _ in self._iter_tree(root)) if root else 0
+        if total > len(lines):
+            lines.append(Text(f"  ⋯ +{total - len(lines)} more", style=colors.dim))
+        elif data.get("truncated"):
+            lines.append(Text("  ⋯", style=colors.dim))
+
+        out = Text()
+        for i, line in enumerate(lines):
+            if i:
+                out.append("\n")
+            out.append_text(line)
+        return out
+
+    @staticmethod
+    def _iter_tree(node: dict):
+        for child in node.values():
+            yield child
+            yield from ToolBlock._iter_tree(child["kids"])
+
     def append_live_output(self, delta: str) -> None:
         """Stream incremental stdout/stderr chunk into the tool block in real-time."""
         if not delta:
@@ -1442,6 +1508,9 @@ class ToolBlock(Static):
             if is_diff_output:
                 rendered = boxed.highlight_diff(rendered, self._source_path())
             rendered = self._pad_diff_backgrounds(rendered, max(20, self._box_w() - 4))
+        elif self._name == "read" and (self.ui_data or {}).get("is_dir"):
+            rendered = self._render_dir_listing(self.ui_data or {})
+            is_diff_output = False
         elif self._name == "read" and (self.ui_data or {}).get("preview"):
             data = self.ui_data or {}
             preview = str(data.get("preview") or "")

@@ -129,7 +129,7 @@ class ReadTool(BaseTool):
         if not output:
             return []
 
-        entries: list[str] = []
+        entries: list[dict] = []
         for line in output.split("\n"):
             if not line.strip():
                 continue
@@ -144,7 +144,13 @@ class ReadTool(BaseTool):
                 relative = entry_path
                 entry_path = dir_path / entry_path
 
-            entries.append(self._format_directory_entry(entry_path, relative))
+            entries.append(
+                {
+                    "line": self._format_directory_entry(entry_path, relative),
+                    "path": relative.as_posix(),
+                    "is_dir": entry_path.is_dir(),
+                }
+            )
 
         return entries
 
@@ -156,29 +162,37 @@ class ReadTool(BaseTool):
             msg = "fd is not available and could not be downloaded"
             return ToolResult(success=False, result=msg, ui_summary=f"[red]{msg}[/red]")
 
+        async def _entries(**kw) -> list[dict]:
+            raw = await self._list_directory_entries(fd_path, dir_path, **kw)
+            return [
+                e if isinstance(e, dict) else {"line": e, "path": "", "is_dir": e.endswith("/")}
+                for e in raw
+            ]
+
         try:
             for max_depth in (3, 2):
-                entries = await self._list_directory_entries(
-                    fd_path,
-                    dir_path,
+                entries = await _entries(
                     max_depth=max_depth,
                     max_results=DIRECTORY_DEPTH_ROW_LIMIT + 1,
                     cancel_event=cancel_event,
                 )
                 if len(entries) <= DIRECTORY_DEPTH_ROW_LIMIT:
-                    result = "\n".join(entries) if entries else "(empty directory)"
+                    lines = [e["line"] for e in entries]
+                    result = "\n".join(lines) if lines else "(empty directory)"
                     return ToolResult(
                         success=True,
                         result=result,
                         ui_summary=f"[dim]({len(entries)} entries)[/dim]",
+                        ui_data={
+                            "path": str(dir_path),
+                            "is_dir": True,
+                            "entries": entries,
+                            "truncated": False,
+                        },
                     )
 
-            entries = await self._list_directory_entries(
-                fd_path,
-                dir_path,
-                max_depth=1,
-                max_results=MAX_DIRECTORY_ROWS + 1,
-                cancel_event=cancel_event,
+            entries = await _entries(
+                max_depth=1, max_results=MAX_DIRECTORY_ROWS + 1, cancel_event=cancel_event
             )
         except ToolCancelledError:
             return ToolResult(
@@ -190,13 +204,25 @@ class ReadTool(BaseTool):
 
         truncated = len(entries) > MAX_DIRECTORY_ROWS
         visible_entries = entries[:MAX_DIRECTORY_ROWS]
-        result = "\n".join(visible_entries) if visible_entries else "(empty directory)"
+        result = (
+            "\n".join(e["line"] for e in visible_entries)
+            if visible_entries
+            else "(empty directory)"
+        )
         if truncated:
             result += f"\n[output truncated after {MAX_DIRECTORY_ROWS} lines]"
 
         shown = min(len(entries), MAX_DIRECTORY_ROWS)
         return ToolResult(
-            success=True, result=result, ui_summary=f"[dim]({shown} entries shown)[/dim]"
+            success=True,
+            result=result,
+            ui_summary=f"[dim]({shown} entries shown)[/dim]",
+            ui_data={
+                "path": str(dir_path),
+                "is_dir": True,
+                "entries": visible_entries,
+                "truncated": truncated,
+            },
         )
 
     async def execute(
