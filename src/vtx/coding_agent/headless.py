@@ -121,6 +121,15 @@ async def run_headless(
         return 2
 
     cfg = get_config()
+
+    # Ensure fd/rg binaries are available before any tool needs them.
+    # The TUI pre-downloads these at startup (tui/startup.py:_ensure_binaries);
+    # headless must do the same so the first read_directory/grep/find does not
+    # block for multiple seconds on a GitHub download (tools_manager.py).
+    from vtx.agent.tools_manager import ensure_tools
+
+    await ensure_tools(silent=True)
+
     # Prune old session logs in the background: this run creates a fresh
     # session, so nothing it writes is a candidate.
     from vtx.core.session_retention import prune_in_background

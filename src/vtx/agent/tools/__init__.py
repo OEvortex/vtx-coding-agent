@@ -159,12 +159,44 @@ def set_default_tool_lookup(lookup: Any) -> None:
 
 
 _SCHEMA_DROP_KEYS = frozenset(
-    {"title", "minLength", "maxLength", "minItems", "maxItems", "default"}
+    {"title", "minLength", "maxLength", "minItems", "maxItems", "default", "$schema"}
 )
+
+
+def _inline_refs(node: Any, defs: dict[str, Any], seen: frozenset[str] = frozenset()) -> Any:
+    """Replace ``$ref`` pointers with the definition they point at.
+
+    Providers differ wildly in whether they resolve JSON-Schema references. A
+    nested pydantic model (e.g. ``apply_patch``'s ``ops -> PatchOp -> PatchEdit``)
+    is emitted as ``$defs`` + ``$ref``, which many models silently ignore — so
+    the tool looks like it takes no useful arguments and never gets called. Send
+    a self-contained schema instead.
+    """
+    if isinstance(node, dict):
+        ref = node.get("$ref")
+        if isinstance(ref, str) and ref.startswith("#/") and ref.rsplit("/", 1)[-1] in defs:
+            name = ref.rsplit("/", 1)[-1]
+            if name not in seen:
+                target = _inline_refs(defs[name], defs, seen | {name})
+                siblings = {
+                    k: _inline_refs(v, defs, seen)
+                    for k, v in node.items()
+                    if k not in ("$ref", "$defs")
+                }
+                if isinstance(target, dict):
+                    return {**target, **siblings}
+                return target
+        return {k: _inline_refs(v, defs, seen) for k, v in node.items() if k != "$defs"}
+    if isinstance(node, list):
+        return [_inline_refs(item, defs, seen) for item in node]
+    return node
 
 
 def _slim_schema(node: Any) -> Any:
     """Shrink pydantic JSON schema for the LLM."""
+    defs = node.get("$defs") if isinstance(node, dict) else None
+    if isinstance(defs, dict):
+        node = _inline_refs(node, defs)
     if isinstance(node, dict):
         any_of = node.get("anyOf")
         if isinstance(any_of, list):

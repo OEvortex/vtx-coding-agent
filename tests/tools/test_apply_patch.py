@@ -210,3 +210,36 @@ async def test_multi_file_ops(patch_tool, tmp_path):
     assert f2.read_text() == "TWO\n"
     assert f3.read_text() == "three\n"
     assert result.file_changes is not None and len(result.file_changes) == 3
+
+
+def test_tool_schema_is_self_contained():
+    """The schema sent to models must not use ``$ref``/``$defs``.
+
+    Providers differ in whether they resolve JSON-Schema references; many
+    silently drop a schema that has them, which makes ``apply_patch`` look like
+    it takes no arguments and models never call it.
+    """
+    import json
+
+    from vtx.agent.tools import _slim_schema
+
+    schema = _slim_schema(ApplyPatchParams.model_json_schema())
+    dumped = json.dumps(schema)
+    assert "$ref" not in dumped
+    assert "$defs" not in dumped
+    op = schema["properties"]["ops"]["items"]
+    assert op["required"] == ["op", "path"]
+    assert op["properties"]["edits"]["items"]["required"] == ["old", "new"]
+
+
+def test_codemode_schema_inlines_refs():
+    """``base_tool_schema`` drops ``$defs``; it must inline refs first."""
+    import json
+
+    from vtx.codemode.integration import base_tool_schema
+
+    schema = base_tool_schema(ApplyPatchTool())
+    dumped = json.dumps(schema)
+    assert "$ref" not in dumped
+    assert "$defs" not in dumped
+    assert schema["properties"]["ops"]["items"]["properties"]["op"]["enum"]

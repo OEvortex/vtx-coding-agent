@@ -58,14 +58,47 @@ def _decode_result(result: Any) -> Any:
         return result
 
 
+def _inline_schema_refs(
+    node: Any, defs: dict[str, Any], seen: frozenset[str] = frozenset()
+) -> Any:
+    """Resolve ``$ref`` pointers against ``defs`` so no dangling refs survive.
+
+    ``base_tool_schema`` drops ``$defs``; without inlining first, a nested model
+    such as ``apply_patch``'s ``ops`` would keep ``items: {$ref: ...}`` pointing
+    at nothing, and the codemode signature would describe it as an empty type.
+    """
+    if isinstance(node, dict):
+        ref = node.get("$ref")
+        if isinstance(ref, str) and ref.startswith("#/"):
+            name = ref.rsplit("/", 1)[-1]
+            if name in defs and name not in seen:
+                target = _inline_schema_refs(defs[name], defs, seen | {name})
+                siblings = {
+                    k: _inline_schema_refs(v, defs, seen)
+                    for k, v in node.items()
+                    if k not in ("$ref", "$defs")
+                }
+                if isinstance(target, dict):
+                    return {**target, **siblings}
+                return target
+        return {k: _inline_schema_refs(v, defs, seen) for k, v in node.items() if k != "$defs"}
+    if isinstance(node, list):
+        return [_inline_schema_refs(item, defs, seen) for item in node]
+    return node
+
+
 def base_tool_schema(tool: BaseTool) -> dict[str, Any]:
     """JSON Schema for a built-in tool's parameters.
 
     ``extra="forbid"`` and the pydantic title are stripped: the title would
     render into the model-facing signature as noise, and anyOf branches produced
     by optional fields are not something the sandbox validates against anyway.
+    References are inlined so removing ``$defs`` leaves a self-contained schema.
     """
     schema = tool.params.model_json_schema()
+    defs = schema.get("$defs")
+    if isinstance(defs, dict):
+        schema = _inline_schema_refs(schema, defs)
     schema.pop("title", None)
     schema.pop("$defs", None)
     properties = schema.get("properties")

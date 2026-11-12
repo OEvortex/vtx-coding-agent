@@ -531,6 +531,7 @@ class ToolBlock(Static):
         self._partial_args: dict | None = None
         self._args_render_pending: bool = False
         self._started_at = time.monotonic()
+        self._elapsed: float = 0.0
         self.add_class("tool-block")
         self._set_state(None)
 
@@ -626,7 +627,7 @@ class ToolBlock(Static):
             text = boxed.bottom_border(boxed.running_footer(elapsed), width, hint=hint)
         else:
             summary = self._ui_summary or ""
-            elapsed_txt = boxed.elapsed_footer(started, summary)
+            elapsed_txt = boxed.elapsed_footer(self._elapsed or started, summary)
             text = boxed.bottom_border(
                 elapsed_txt, width, hint=hint, failed=self._success is False
             )
@@ -1443,6 +1444,9 @@ class ToolBlock(Static):
         self._result_markup = markup
         self._success = success
         self._awaiting_approval = False
+        # Freeze the elapsed time at completion so later re-renders (scroll,
+        # resize, refocus) don't keep growing it from the mount time.
+        self._elapsed = time.monotonic() - self._started_at
         self._set_state(success)
         self._render_result_output()
         self._safe_update(
