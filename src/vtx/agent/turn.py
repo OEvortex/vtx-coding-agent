@@ -40,6 +40,7 @@ from vtx.agent.hooks.agent_hook import AgentHook, AgentHookContext, AgentRunHook
 from vtx.agent.tools import BaseTool, get_tool_definitions, lookup_default_tool
 from vtx.ai import BaseProvider
 from vtx.ai.base import LLMStream
+from vtx.core.config import config
 from vtx.core.events import (
     AskUserEvent,
     ErrorEvent,
@@ -270,7 +271,7 @@ async def _execute_tool(
     tool: BaseTool | None,
     cancel_event: asyncio.Event | None = None,
     on_output: Callable[[str], None] | None = None,
-) -> tuple[ToolResultMessage, FileChanges | None]:
+) -> tuple[ToolResultMessage, list[FileChanges] | None]:
     if not tool:
         return ToolResultMessage(
             tool_call_id=tool_call.id,
@@ -1068,7 +1069,9 @@ class _TurnRunner:
 
     async def _run_pending_tools(self) -> AsyncIterator[StreamEvent]:
         # 1. First, yield all ToolEndEvents (UI shows all tools in pending state)
-        # 2. Then execute each tool and yield ToolResultEvent
+        # 2. Then execute each tool and yield ToolResultEvent. Independent reads
+        #    are executed concurrently as a batch; mutating and interactive
+        #    tools run one at a time in the order the model emitted them.
         finalized_tools: list[PendingToolCall] = []
         for tool_data in self._pending_tool_calls:
             pending = _finalize_tool_call_data(tool_data, self._tools)
@@ -1082,9 +1085,84 @@ class _TurnRunner:
                 display=pending.display,
             )
 
-        for pending in finalized_tools:
-            async for event in self._run_one_tool(pending):
+        i = 0
+        while i < len(finalized_tools):
+            if not self._can_parallelize(finalized_tools[i]):
+                async for event in self._run_one_tool(finalized_tools[i]):
+                    yield event
+                i += 1
+                continue
+
+            # A run of consecutive parallel-safe calls forms one batch.
+            j = i
+            while j < len(finalized_tools) and self._can_parallelize(finalized_tools[j]):
+                j += 1
+            batch = finalized_tools[i:j]
+            if len(batch) == 1:
+                async for event in self._run_one_tool(batch[0]):
+                    yield event
+            else:
+                async for event in self._run_parallel_batch(batch):
+                    yield event
+            i = j
+
+    def _can_parallelize(self, pending: PendingToolCall) -> bool:
+        """Whether ``pending`` may share the wire with its sibling calls.
+
+        Anything that is interactive, needs an approval prompt, already failed
+        preflight, or is not declared side-effect-free runs on its own so its
+        ordering and UI stay deterministic.
+        """
+        if not config.tools.parallel or pending.tool is None:
+            return False
+        if pending.preflight_error is not None:
+            return False
+        if pending.tool.name == "ask_user":
+            return False
+        if not getattr(pending.tool, "parallel_safe", False):
+            return False
+        return not self._needs_approval(pending)
+
+    async def _run_parallel_batch(
+        self, batch: list[PendingToolCall]
+    ) -> AsyncIterator[StreamEvent]:
+        """Run a batch of independent tool calls concurrently.
+
+        Each call streams its own events through a shared queue, so deltas and
+        results reach the UI as they happen while the model still waits for the
+        whole batch before the next turn. Results are re-ordered back into the
+        model's original call order once the batch settles, so the transcript
+        does not depend on which read finished first.
+        """
+        order = {pending.tool_call.id: idx for idx, pending in enumerate(batch)}
+        width = max(1, int(config.tools.max_parallel))
+        semaphore = asyncio.Semaphore(width)
+        queue: asyncio.Queue[tuple[int, StreamEvent | None]] = asyncio.Queue()
+        results_start = len(self._tool_results)
+
+        async def _consume(idx: int, pending: PendingToolCall) -> None:
+            try:
+                async with semaphore:
+                    async for event in self._run_one_tool(pending):
+                        await queue.put((idx, event))
+            finally:
+                await queue.put((idx, None))
+
+        tasks = [asyncio.create_task(_consume(idx, pending)) for idx, pending in enumerate(batch)]
+        finished = 0
+        try:
+            while finished < len(tasks):
+                _idx, event = await queue.get()
+                if event is None:
+                    finished += 1
+                    continue
                 yield event
+        finally:
+            await asyncio.gather(*tasks, return_exceptions=True)
+            appended = self._tool_results[results_start:]
+            if len(appended) > 1:
+                appended.sort(key=lambda r: order.get(r.tool_call_id, 0))
+                self._tool_results[results_start:] = appended
 
     async def _run_one_tool(self, pending: PendingToolCall) -> AsyncIterator[StreamEvent]:
         file_changes = None

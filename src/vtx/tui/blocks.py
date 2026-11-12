@@ -627,7 +627,7 @@ class ToolBlock(Static):
             text = boxed.bottom_border(boxed.running_footer(elapsed), width, hint=hint)
         else:
             summary = self._ui_summary or ""
-            elapsed_txt = boxed.elapsed_footer(self._elapsed or started, summary)
+            elapsed_txt = boxed.elapsed_footer(self._elapsed, summary)
             text = boxed.bottom_border(
                 elapsed_txt, width, hint=hint, failed=self._success is False
             )
@@ -1446,7 +1446,10 @@ class ToolBlock(Static):
         self._awaiting_approval = False
         # Freeze the elapsed time at completion so later re-renders (scroll,
         # resize, refocus) don't keep growing it from the mount time.
-        self._elapsed = time.monotonic() - self._started_at
+        # ``CodemodeToolBlock`` keeps ``_started_at`` as ``None`` until the
+        # script actually starts, so guard the subtraction.
+        started = self._started_at
+        self._elapsed = time.monotonic() - started if isinstance(started, (int, float)) else 0.0
         self._set_state(success)
         self._render_result_output()
         self._safe_update(

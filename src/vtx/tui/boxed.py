@@ -10,7 +10,6 @@ functions over Rich ``Text`` so callers can compose them into any widget.
 from __future__ import annotations
 
 import re
-import time
 from typing import Any
 
 from rich.style import Style
@@ -572,10 +571,14 @@ def numbered_lines(content: str, *, max_lines: int = 15) -> list[str]:
     return out
 
 
-def elapsed_footer(started: float, summary: str = "") -> str:
-    """``0.4s · summary`` footer text for a settled tool call."""
-    elapsed = time.monotonic() - started
-    parts = [f"{elapsed:.1f}s"]
+def elapsed_footer(elapsed_s: float, summary: str = "") -> str:
+    """``0.4s · summary`` footer text for a settled tool call.
+
+    Takes the tool's own duration, not the clock time it started: the caller has
+    already frozen that duration at completion, and recomputing ``now - start``
+    here would print the process uptime instead of how long the call took.
+    """
+    parts = [f"{elapsed_s:.1f}s"]
     if summary:
         parts.append(summary)
     return " · ".join(parts)

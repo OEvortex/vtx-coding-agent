@@ -42,6 +42,11 @@ class BaseTool[T: BaseModel](ABC):
     params: type[T]
     description: str
     mutating: bool = True
+    #: Whether this tool is safe to run concurrently with sibling tool calls
+    #: from the same assistant turn. Opt in only for genuinely side-effect-free
+    #: reads (``read``, ``grep``, ``find``, ``web``): mutating, interactive, and
+    #: shared-state tools stay serial so their ordering and UI stay predictable.
+    parallel_safe: bool = False
     tool_icon: str = "→"
     prompt_guidelines: tuple[str, ...] = ()
     needs_approval: bool = False

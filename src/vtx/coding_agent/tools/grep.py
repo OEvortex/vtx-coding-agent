@@ -34,6 +34,7 @@ class GrepTool(BaseTool[GrepParams]):
     tool_icon = "🔎"
     params = GrepParams
     mutating = False
+    parallel_safe = True
     prompt_guidelines = ("grep for text in files (not bash grep/rg)",)
     description = (
         "Regex-search file contents (ripgrep). Returns path:line matches, "

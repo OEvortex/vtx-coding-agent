@@ -257,6 +257,20 @@ class TaskConfig(BaseModel):
     max_concurrent: int = Field(default=4, ge=0)
 
 
+class ToolExecConfig(BaseModel):
+    """How the turn runner executes a batch of tool calls.
+
+    ``parallel`` lets independent, side-effect-free reads (``read``, ``grep``,
+    ``find``, ``web``) run concurrently instead of one after another. Mutating,
+    interactive, and shared-state tools stay serial and ordered. ``max_parallel``
+    caps the batch width so a wide fan-out does not open dozens of file handles at
+    once. The model still waits for the entire batch before its next turn.
+    """
+
+    parallel: bool = True
+    max_parallel: int = Field(default=8, ge=1)
+
+
 class ConfigSchema(BaseModel):
     meta: MetaConfig
     llm: LLMConfig
@@ -278,6 +292,8 @@ class ConfigSchema(BaseModel):
     agents: AgentsConfig = AgentsConfig()
     # Sub-agent concurrency for the ``Task`` tool.
     task: TaskConfig = TaskConfig()
+    # Parallel execution of independent read-only tool calls in one turn.
+    tools: ToolExecConfig = ToolExecConfig()
 
 
 # =================================================================================================
@@ -393,6 +409,10 @@ class Config:
     @property
     def task(self) -> TaskConfig:
         return self._parsed.task
+
+    @property
+    def tools(self) -> ToolExecConfig:
+        return self._parsed.tools
 
 
 # =================================================================================================

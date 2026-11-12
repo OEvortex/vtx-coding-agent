@@ -103,6 +103,17 @@ agents:
 task:
   max_concurrent: 4
 
+# Tool execution.
+#
+# ``parallel`` runs independent read-only tool calls from a single assistant
+# turn concurrently (read/grep/find/web), while mutating and interactive tools
+# still run one at a time in the order the model emitted them. The model always
+# waits for the whole batch before its next turn. ``max_parallel`` caps how many
+# of those reads share the wire at once.
+tools:
+  parallel: true
+  max_parallel: 8
+
 # Example: DeepSeek provider
 # export DEEPSEEK_API_KEY="sk-your-api-key"
 #

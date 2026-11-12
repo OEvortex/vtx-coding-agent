@@ -1,13 +1,16 @@
 # type: ignore
 import asyncio
+import time
 from collections.abc import AsyncIterator
 from typing import Any
 
 import pytest
+from pydantic import BaseModel
 
 from vtx.agent.context_governance import _MAX_TOOL_RESULT_CHARS
 from vtx.agent.loop import Agent
 from vtx.agent.session import Session
+from vtx.agent.tools.base import BaseTool
 from vtx.agent.turn import prepare_for_model, run_single_turn
 from vtx.ai.base import BaseProvider, LLMStream, ProviderConfig
 from vtx.ai.providers.mock import MockProvider
@@ -45,6 +48,7 @@ from vtx.protocol.types import (
     ToolCallDelta,
     ToolCallStart,
     ToolDefinition,
+    ToolResult,
     ToolResultMessage,
     UserMessage,
 )
@@ -1080,3 +1084,80 @@ def test_hook_bridge_end_to_end_post_tool_use_rewrite(tmp_path):
         for e in events
     )
     asyncio.run(bridge.unload())
+
+
+class _TagParams(BaseModel):
+    tag: str = ""
+
+
+class _TimedTool(BaseTool):
+    """A tool that records the window it ran in, to prove concurrency."""
+
+    description = "Timed fake tool"
+    params = _TagParams
+    mutating = False
+
+    def __init__(self, name: str, log: list, *, parallel_safe: bool, delay: float = 0.05):
+        self.name = name
+        self._log = log
+        self._delay = delay
+        self.parallel_safe = parallel_safe
+
+    async def execute(self, params, cancel_event=None):
+        start = time.monotonic()
+        await asyncio.sleep(self._delay)
+        end = time.monotonic()
+        self._log.append({"tag": params.tag, "start": start, "end": end})
+        return ToolResult(success=True, result=params.tag)
+
+
+def _two_call_provider(name_a: str, name_b: str) -> StreamPartsProvider:
+    return StreamPartsProvider(
+        [
+            ToolCallStart(id="c1", name=name_a, index=0),
+            ToolCallDelta(index=0, arguments_delta='{"tag": "a"}'),
+            ToolCallStart(id="c2", name=name_b, index=1),
+            ToolCallDelta(index=1, arguments_delta='{"tag": "b"}'),
+            StreamDone(stop_reason=StopReason.TOOL_USE),
+        ]
+    )
+
+
+def _run_turn(provider, tools):
+    async def _collect():
+        return [
+            e async for e in run_single_turn(provider, [UserMessage(content="go")], tools, turn=1)
+        ]
+
+    return asyncio.run(_collect())
+
+
+def test_parallel_safe_tools_in_one_turn_overlap():
+    log: list[dict] = []
+    tools = [
+        _TimedTool("read_a", log, parallel_safe=True),
+        _TimedTool("read_b", log, parallel_safe=True),
+    ]
+    events = _run_turn(_two_call_provider("read_a", "read_b"), tools)
+
+    by_tag = {entry["tag"]: entry for entry in log}
+    # They truly overlapped: b started before a finished (and vice versa).
+    assert by_tag["b"]["start"] < by_tag["a"]["end"]
+    assert by_tag["a"]["start"] < by_tag["b"]["end"]
+
+    # Results still arrive, one per call, in the model's original order.
+    results = [e for e in events if isinstance(e, ToolResultEvent)]
+    assert [r.tool_call_id for r in results] == ["c1", "c2"]
+
+
+def test_non_parallel_safe_tools_stay_serial():
+    log: list[dict] = []
+    tools = [
+        _TimedTool("write_a", log, parallel_safe=False),
+        _TimedTool("write_b", log, parallel_safe=False),
+    ]
+    _run_turn(_two_call_provider("write_a", "write_b"), tools)
+
+    by_tag = {entry["tag"]: entry for entry in log}
+    # Serial: the first call fully completes before the second starts.
+    assert by_tag["a"]["end"] <= by_tag["b"]["start"]

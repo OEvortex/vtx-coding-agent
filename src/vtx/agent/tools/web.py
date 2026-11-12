@@ -125,6 +125,7 @@ class WebTool(BaseTool):
     tool_icon = "🔍"
     params = SearchParams
     mutating = False
+    parallel_safe = True
     description = (
         "Web search (Exa) or URL fetch. mode='search' (default): query the web, "
         "returns titles/URLs/snippets. mode='fetch': download a URL's readable text. "

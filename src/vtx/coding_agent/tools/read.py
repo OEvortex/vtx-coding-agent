@@ -46,6 +46,7 @@ class ReadTool(BaseTool):
     tool_icon = "→"
     params = ReadParams
     mutating = False
+    parallel_safe = True
     prompt_guidelines = (
         "read (not cat/head/tail)",
         "prefer offset/limit ranges over whole-file reads",
@@ -104,7 +105,7 @@ class ReadTool(BaseTool):
         max_depth: int,
         max_results: int,
         cancel_event: asyncio.Event | None,
-    ) -> list[str]:
+    ) -> list[dict]:
         proc = await asyncio.create_subprocess_exec(
             fd_path,
             "--hidden",

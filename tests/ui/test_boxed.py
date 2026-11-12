@@ -241,3 +241,14 @@ def test_wrap_boxed_preserves_styles_and_backgrounds_across_the_break():
     assert len(rows) > 2
     # The wrapped continuation rows keep the row's background colour.
     assert all(has_bg(row) for row in rows[1:3])
+
+
+def test_elapsed_footer_uses_the_tool_duration_not_the_clock():
+    """A settled footer must show the call's own time, not process uptime.
+
+    ``elapsed_footer`` used to recompute ``monotonic() - started`` from a value
+    the caller had already frozen as a duration, so every finished tool printed
+    the machine uptime instead of how long it ran.
+    """
+    assert boxed.elapsed_footer(0.4, "read file") == "0.4s · read file"
+    assert boxed.elapsed_footer(2.9) == "2.9s"

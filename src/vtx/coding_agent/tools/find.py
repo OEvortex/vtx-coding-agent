@@ -33,6 +33,7 @@ class FindTool(BaseTool):
     tool_icon = "*"
     params = FindParams
     mutating = False
+    parallel_safe = True
     prompt_guidelines = ("find for files by glob (not bash find/ls)",)
     description = (
         "Find files/dirs by glob (fd). Respects .gitignore, sorted by mtime, "
