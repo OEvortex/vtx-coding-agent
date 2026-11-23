@@ -18,11 +18,11 @@ from ctx.ai.models import get_model
 from ctx.ai.provider_catalog import get as get_provider_info
 from ctx.ai.provider_catalog import provider_api_type
 from ctx.core.config import get_config, get_recent_models
-from ctx.tui.chat import ChatLog
+from ctx.tui.chat import ChatLog  # ty: ignore[import-not-found]
 from ctx.tui.commands.base import CommandSupport
-from ctx.tui.floating_list import ListItem
-from ctx.tui.selection_mode import SelectionMode
-from ctx.tui.widgets import InfoBar
+from ctx.tui.floating_list import ListItem  # ty: ignore[import-not-found]
+from ctx.tui.selection_mode import SelectionMode  # ty: ignore[import-not-found]
+from ctx.tui.widgets import InfoBar  # ty: ignore[import-not-found]
 
 
 def _parse_hidden_entries(entries: list[str]) -> tuple[set[str], set[tuple[str, str]]]:

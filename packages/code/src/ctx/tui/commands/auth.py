@@ -43,11 +43,11 @@ from ctx.ai import is_cline_logged_in as has_saved_cline_credentials
 from ctx.ai import is_codex_logged_in as has_saved_codex_credentials
 from ctx.ai import is_copilot_logged_in as has_saved_copilot_credentials
 from ctx.ai import is_devin_logged_in as has_saved_devin_credentials
-from ctx.tui.chat import ChatLog
+from ctx.tui.chat import ChatLog  # ty: ignore[import-not-found]
 from ctx.tui.commands.base import CommandSupport
-from ctx.tui.floating_list import ListItem
-from ctx.tui.input import InputBox
-from ctx.tui.selection_mode import SelectionMode
+from ctx.tui.floating_list import ListItem  # ty: ignore[import-not-found]
+from ctx.tui.input import InputBox  # ty: ignore[import-not-found]
+from ctx.tui.selection_mode import SelectionMode  # ty: ignore[import-not-found]
 
 
 def _status_label(provider: str) -> str:

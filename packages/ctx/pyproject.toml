@@ -41,8 +41,15 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
+term = [
+    "term",
+]
+
 gh-app = [
     "cryptography>=41.0",
     "PyJWT",
     "requests>=2.32.0",
 ]
+
+[tool.uv.sources]
+term = { workspace = true }

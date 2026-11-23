@@ -11,13 +11,17 @@ import logging
 from typing import TYPE_CHECKING, Any
 
 from ctx.agent.runtime import ConversationRuntime
-from ctx.tui.autocomplete import FilePathProvider, PullRequestProvider, SlashCommandProvider
-from ctx.tui.chat import ChatLog
-from ctx.tui.floating_list import FloatingList, ListItem
-from ctx.tui.input import InputBox
-from ctx.tui.selection_mode import SelectionMode
-from ctx.tui.tree import TreeSelector
-from ctx.tui.widgets import InfoBar, StatusLine, format_path
+from ctx.tui.autocomplete import (  # ty: ignore[import-not-found]
+    FilePathProvider,
+    PullRequestProvider,
+    SlashCommandProvider,
+)
+from ctx.tui.chat import ChatLog  # ty: ignore[import-not-found]
+from ctx.tui.floating_list import FloatingList, ListItem  # ty: ignore[import-not-found]
+from ctx.tui.input import InputBox  # ty: ignore[import-not-found]
+from ctx.tui.selection_mode import SelectionMode  # ty: ignore[import-not-found]
+from ctx.tui.tree import TreeSelector  # ty: ignore[import-not-found]
+from ctx.tui.widgets import InfoBar, StatusLine, format_path  # ty: ignore[import-not-found]
 from textual import on
 
 log = logging.getLogger("tui.completion")

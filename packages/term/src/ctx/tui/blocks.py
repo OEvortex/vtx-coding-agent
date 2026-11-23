@@ -1440,7 +1440,13 @@ class ToolBlock(Static):
             if len(old) + len(new) > 40000:
                 return None
             try:
-                from ctx.coding_agent.tools.apply_patch import format_diff_display, generate_diff
+                try:
+                    from ctx.coding_agent.tools.apply_patch import (  # ty: ignore[import-not-found]
+                        format_diff_display,
+                        generate_diff,
+                    )
+                except ImportError:
+                    return None
 
                 diff, _, _ = generate_diff(old, new)
                 text = Text.from_markup(format_diff_display(diff))

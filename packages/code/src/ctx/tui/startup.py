@@ -12,10 +12,10 @@ from ctx.agent.tools_manager import ensure_tools
 from ctx.coding_agent.update_check import get_newer_pypi_version
 from ctx.core.config import update_available_binaries
 from ctx.core.version import PACKAGE_NAME, VERSION
-from ctx.tui.blocks import LaunchWarning
-from ctx.tui.chat import ChatLog
-from ctx.tui.input import InputBox
-from ctx.tui.widgets import InfoBar, format_path
+from ctx.tui.blocks import LaunchWarning  # ty: ignore[import-not-found]
+from ctx.tui.chat import ChatLog  # ty: ignore[import-not-found]
+from ctx.tui.input import InputBox  # ty: ignore[import-not-found]
+from ctx.tui.widgets import InfoBar, format_path  # ty: ignore[import-not-found]
 
 _CHANGELOG_URL = "https://github.com/OEvortex/ctx-code/blob/main/CHANGELOG.md"
 

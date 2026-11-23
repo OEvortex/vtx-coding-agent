@@ -6,8 +6,8 @@ from collections import deque
 from typing import TYPE_CHECKING, Any
 
 from ctx.protocol.types import ImageContent
-from ctx.tui.input import InputBox
-from ctx.tui.widgets import QueueDisplay
+from ctx.tui.input import InputBox  # ty: ignore[import-not-found]
+from ctx.tui.widgets import QueueDisplay  # ty: ignore[import-not-found]
 
 
 class QueueUIMixin:

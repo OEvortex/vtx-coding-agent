@@ -46,7 +46,7 @@ from typing import Any
 
 from ctx.core.config import config
 from ctx.tui.agents_panel import TREE_EDGE, TREE_GUTTER, TREE_LAST, strip_header, tree_prefix
-from ctx.tui.task_ui import SPINNER
+from ctx.tui.task_ui import SPINNER  # ty: ignore[import-not-found]
 from rich.cells import cell_len
 from rich.style import Style
 from rich.text import Text

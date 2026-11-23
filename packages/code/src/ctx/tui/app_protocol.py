@@ -2,7 +2,7 @@ from typing import Any, Protocol
 
 from ctx.agent.session import Session
 from ctx.ai import BaseProvider
-from ctx.tui.selection_mode import SelectionMode
+from ctx.tui.selection_mode import SelectionMode  # ty: ignore[import-not-found]
 
 
 class Ctx(Protocol):

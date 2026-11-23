@@ -23,11 +23,11 @@ from ctx.core.config import (
     set_thinking_lines,
 )
 from ctx.core.themes import get_theme_options
-from ctx.tui.chat import ChatLog
+from ctx.tui.chat import ChatLog  # ty: ignore[import-not-found]
 from ctx.tui.commands.base import CommandSupport
-from ctx.tui.floating_list import FloatingList, ListItem
-from ctx.tui.selection_mode import SelectionMode
-from ctx.tui.widgets import InfoBar
+from ctx.tui.floating_list import FloatingList, ListItem  # ty: ignore[import-not-found]
+from ctx.tui.selection_mode import SelectionMode  # ty: ignore[import-not-found]
+from ctx.tui.widgets import InfoBar  # ty: ignore[import-not-found]
 
 SettingsSelectionResult = Literal["reopened-picker", "closed"]
 

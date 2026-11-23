@@ -219,7 +219,7 @@ class BashTool(BaseTool):
     def _format_display(
         self, output: str, max_lines: int = 5, max_line_chars: int = 500
     ) -> tuple[str, str | None]:
-        from ctx.tui.tool_output import truncate_tool_output_text
+        from ctx.tui.tool_output import truncate_tool_output_text  # ty: ignore[import-not-found]
 
         truncation_color = config.ui.colors.dim
 

@@ -8,4 +8,5 @@ exclude = [
 extra-paths = [
     "packages/ctx/src",
     "packages/code/src",
+    "packages/term/src",
 ]

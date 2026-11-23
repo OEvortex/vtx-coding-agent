@@ -9,7 +9,7 @@ from ctx.coding_agent.tools._tool_utils import shorten_path
 from ctx.core.config import config
 from ctx.plugins import mount_tool, plugin
 from ctx.protocol.types import FileChanges
-from ctx.tui.diff_display import DIFF_BG_PAD_MARKER, blend_hex
+from ctx.tui.diff_display import DIFF_BG_PAD_MARKER, blend_hex  # ty: ignore[import-not-found]
 from pydantic import BaseModel, Field
 from rich.markup import escape
 

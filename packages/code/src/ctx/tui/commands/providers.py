@@ -4,10 +4,10 @@ from __future__ import annotations
 
 from ctx.ai import list_providers
 from ctx.core.config import get_config, set_model_provider_filter
-from ctx.tui.chat import ChatLog
+from ctx.tui.chat import ChatLog  # ty: ignore[import-not-found]
 from ctx.tui.commands.base import CommandSupport
-from ctx.tui.floating_list import ListItem
-from ctx.tui.selection_mode import SelectionMode
+from ctx.tui.floating_list import ListItem  # ty: ignore[import-not-found]
+from ctx.tui.selection_mode import SelectionMode  # ty: ignore[import-not-found]
 
 _ALL_SLUG = "__all__"
 
