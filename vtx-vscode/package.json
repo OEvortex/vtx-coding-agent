@@ -633,9 +633,7 @@
     "probe": "node scripts/acp-probe.js",
     "preview": "npm run compile && node scripts/preview.js",
     "preview:settings": "npm run compile && node scripts/preview-settings.js",
-    "package": "vsce package --no-dependencies",
-    "publish:vsce": "vsce publish --no-dependencies",
-    "publish:ovsx": "ovsx publish --no-dependencies"
+    "package": "vsce package --no-dependencies"
   },
   "devDependencies": {
     "@types/js-yaml": "^4.0.9",

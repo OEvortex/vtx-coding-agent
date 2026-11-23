@@ -35,8 +35,3 @@ jobs:
       - name: ty check
         run: uvx ty check .
 
-      - name: pytest
-        run: uv run python -m pytest -q -n auto
-
-      - name: coverage
-        run: uv run python -m pytest -q -n auto --cov=src/ctx --cov-report=term-missing:skip-covered

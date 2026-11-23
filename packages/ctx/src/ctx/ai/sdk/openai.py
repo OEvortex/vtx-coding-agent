@@ -500,15 +500,3 @@ class OpenAISDK(BaseLLMSDK):
 
     def get_available_models(self) -> list[str]:
         return ["gpt-4o", "gpt-4o-mini", "gpt-4-turbo", "gpt-4", "gpt-3.5-turbo"]
-
-    def convert_messages_to_dict(self, messages: list[Message]) -> list[dict]:
-        result = []
-        for msg in messages:
-            if msg.image_parts:
-                content: list[dict[str, Any]] = [{"type": "text", "text": msg.content}]
-                for image_url in msg.image_parts:
-                    content.append({"type": "image_url", "image_url": {"url": image_url}})
-                result.append({"role": msg.role, "content": content, **(msg.metadata or {})})
-            else:
-                result.append({"role": msg.role, "content": msg.content, **(msg.metadata or {})})
-        return result

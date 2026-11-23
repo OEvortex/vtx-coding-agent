@@ -30,7 +30,6 @@ Site/
 # One-off screenshots
 image.png
 model-merge/
-vscode-ctx/node_modules/
 benchmark_results.json
 
 # Local configuration files

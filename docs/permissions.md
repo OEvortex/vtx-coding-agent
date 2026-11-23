@@ -448,7 +448,7 @@ def active_permission_gates(registry):
 ```
 
 `local_gates` are the ones registered from inside the agent file through
-`api.permission_gate(...)` (`src/ctx/code/agents/api.py:341-365`), so
+`api.permission_gate(...)` (`src/ctx/agent/agents/api.py:285-301`), so
 `permission_gates` in the file and `api.permission_gate()` in `register()` land in the
 same list. See `agents.md` for the full `when` grammar.
 

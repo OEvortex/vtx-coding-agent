@@ -315,7 +315,7 @@ def main() -> None:
         config.llm.tls.insecure_skip_verify = True
 
     if args.list_agents:
-        from ctx.code.agents import load_all_agents
+        from ctx.agent.agents import load_all_agents
 
         loaded, errors = load_all_agents(cwd=os.getcwd(), configured=args.agent_files)
         if not loaded and not errors:

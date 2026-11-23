@@ -545,15 +545,6 @@ What the example exercises, and why it is valid:
 
 ## Known gaps
 
-- **The live package is `ctx.agent.agents`, not `ctx.code.agents`.** The runtime,
-  TUI, headless entry point, and the `delegate_subagent` tool all import the former
-  (`src/ctx/agent/runtime.py:12-14`, `src/ctx/term/app.py:27`,
-  `src/ctx/code/headless.py:177`). The `code` copy exists only to serve
-  `--list-agents` (`src/ctx/code/cli.py:313-316`) and holds full duplicate copies of
-  `schema.py`, `api.py`, `loader.py`, and `registry.py` that have drifted from the live
-  package - only `activate` and `discovery` are re-exported. Its `schema.py` also declares
-  `tools`, `skills`, `tool_groups`, and `active_tool_group`
-  twice each (`src/ctx/code/agents/schema.py:93-121`), a merge artifact.
 - **Four fields are declared but never read by the runtime:** `base_url` (:62), `handoffs`
   (:79), `handoff_back` (:80), and `output_type` (:86).
   `_apply_active_agent_to_runtime` reads only `model`, `provider`, and `thinking_level`

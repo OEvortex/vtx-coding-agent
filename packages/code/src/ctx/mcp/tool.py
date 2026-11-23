@@ -457,26 +457,6 @@ def mcp_result_schema(structured: object) -> dict[str, Any]:
     return {"type": "object", "properties": properties, "required": ["content"]}
 
 
-def is_mcp_result_schema(schema: object) -> bool:
-    """Whether ``schema`` is a ``CallToolResult`` envelope.
-
-    Recognized structurally: an array-of-object ``content``, a boolean
-    ``isError``, and an object ``_meta``. Structural rather than nominal so the
-    codemode package can do this without importing ctx.mcp, which would close a
-    dependency loop the layering exists to keep open.
-    """
-    if not isinstance(schema, dict):
-        return False
-    properties = schema.get("properties")
-    if not isinstance(properties, dict):
-        return False
-    content = properties.get("content")
-    if not isinstance(content, dict) or content.get("type") != "array":
-        return False
-    items = content.get("items")
-    return isinstance(items, dict) and items.get("type") == "object"
-
-
 def script_value(result: CallToolResult) -> dict[str, Any] | None:
     """The ``CallToolResult`` a script receives, with protocol plumbing removed.
 
@@ -507,7 +487,6 @@ __all__ = [
     "convert_mcp_result",
     "create_mcp_tool_name",
     "enrich_result",
-    "is_mcp_result_schema",
     "mcp_result_schema",
     "save_output_file",
     "script_value",

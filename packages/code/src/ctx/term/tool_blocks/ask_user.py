@@ -132,11 +132,6 @@ class AskUserToolBlock(CodingToolBlock):
         output.add_class("-hidden")
         output.update(Text(""))
 
-    def _safe_update(self, fn) -> None:
-        """Run ``fn`` and swallow DOM errors (e.g. widget not yet mounted)."""
-        with contextlib.suppress(Exception):
-            fn()
-
     def _render_ask_user_output(self) -> None:
         try:
             output = self.query_one("#tool-output", Label)
