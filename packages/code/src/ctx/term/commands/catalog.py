@@ -12,8 +12,8 @@ from pathlib import Path
 
 from ctx.agent.context.skills import Skill
 from ctx.core.paths import get_agents_dir
-from ctx.tui.chat import ChatLog
-from ctx.tui.commands.base import CommandSupport
+from ctx.term.chat import ChatLog
+from ctx.term.commands.base import CommandSupport
 
 #: Category title when a skill declares none.
 UNCATEGORIZED = "general"

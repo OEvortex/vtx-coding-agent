@@ -1,6 +1,6 @@
 # ctx.ai
 
-The LLM layer, and nothing else. It knows what a provider is, what a model is, what a thinking level means on each wire format, and how to turn one into a stream of `StreamPart`s. The agent harness used to live here too; it is now the sibling package `ctx.agent`, which is what turned this package from a 116-module grab bag into just the provider surface. Consumers are `ctx.agent`, `ctx.coding_agent`, and `ctx.core.config`.
+The LLM layer, and nothing else. It knows what a provider is, what a model is, what a thinking level means on each wire format, and how to turn one into a stream of `StreamPart`s. The agent harness used to live here too; it is now the sibling package `ctx.agent`, which is what turned this package from a 116-module grab bag into just the provider surface. Consumers are `ctx.agent`, `ctx.code`, and `ctx.core.config`.
 
 ## Usage
 

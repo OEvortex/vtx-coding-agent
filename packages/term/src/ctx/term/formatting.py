@@ -5,7 +5,7 @@ import unicodedata
 from typing import Any, ClassVar
 
 from ctx.core.config import config
-from ctx.tui.latex import preprocess_latex
+from ctx.term.latex import preprocess_latex
 from markdown_it.token import Token
 from rich import box
 from rich._loop import loop_first

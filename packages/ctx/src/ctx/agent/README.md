@@ -1,6 +1,6 @@
 # `ctx.agent`
 
-The product-neutral agent harness behind ctx. It owns the turn loop, the composition root, the `BaseTool` contract, prompt and context assembly, sessions, sub-agent dispatch, hooks, and a programmatic SDK. It never imports `ctx.coding_agent` or `ctx.tui` at module level, so both the TUI and the headless runner drive the same `ConversationRuntime` without the harness depending on either. This package used to be nested at `ctx.ai.agent`, which made `ctx.ai` a 116-module grab bag holding the whole runtime; it is now a top-level sibling of `ctx.ai`, which now contains only provider code.
+The product-neutral agent harness behind ctx. It owns the turn loop, the composition root, the `BaseTool` contract, prompt and context assembly, sessions, sub-agent dispatch, hooks, and a programmatic SDK. It never imports `ctx.code` or `ctx.term` at module level, so both the TUI and the headless runner drive the same `ConversationRuntime` without the harness depending on either. This package used to be nested at `ctx.ai.agent`, which made `ctx.ai` a 116-module grab bag holding the whole runtime; it is now a top-level sibling of `ctx.ai`, which now contains only provider code.
 
 ## Usage
 
@@ -108,13 +108,13 @@ Three modules, in order:
 
 `tools/base.py` (`BaseTool`) is the contract; `tools/__init__.py` is the global registry (`register_tool`, `register_tools`, `unregister_tool`, `get_tool`, `get_all_tools`, `get_default_tools`, `get_parent_only_tools`, `get_tool_definitions`) plus the JSON-schema slimming that keeps LLM tool definitions small. `tools/schema.py` converts JSON schema to Pydantic for argument validation.
 
-**The harness ships no tools.** Every concrete tool — `ask_user`, `delegate_subagent`, `web`, `bash`, `read`, `skill`, `codemode`, `tool_search`, and friends — is implemented by a product package (`ctx/coding_agent/tools/` for the coding agent) and mounted through plugin rows, which is why a bare `import ctx.agent.tools` sees an empty registry while a booted composition sees the product's full tool set.
+**The harness ships no tools.** Every concrete tool — `ask_user`, `delegate_subagent`, `web`, `bash`, `read`, `skill`, `codemode`, `tool_search`, and friends — is implemented by a product package (`ctx/code/tools/` for the coding agent) and mounted through plugin rows, which is why a bare `import ctx.agent.tools` sees an empty registry while a booted composition sees the product's full tool set.
 
 Tools marked parent-only at mount time (`ask_user`, `delegate_subagent` in the coding product) are excluded from sub-agent tool surfaces, so a sub-agent cannot recursively spawn one or block on a user prompt.
 
 ## Sub-agents
 
-`delegate_subagent` is the only dispatch path. The harness keeps the dispatch *builder* in `subagent.py` (spec resolution, tool-list composition, system prompt, session creation, the run loop, progress events, scheduler admission); the tool itself — `TaskTool`/`TaskParams` — is implemented by the product (`ctx/coding_agent/tools/subagent.py`) on top of that API. It was renamed from `task` to avoid ambiguity with the todo list - a model told to "check the task" could mean the todo list or the dispatcher.
+`delegate_subagent` is the only dispatch path. The harness keeps the dispatch *builder* in `subagent.py` (spec resolution, tool-list composition, system prompt, session creation, the run loop, progress events, scheduler admission); the tool itself — `TaskTool`/`TaskParams` — is implemented by the product (`ctx/code/tools/subagent.py`) on top of that API. It was renamed from `task` to avoid ambiguity with the todo list - a model told to "check the task" could mean the todo list or the dispatcher.
 
 There are **no built-in sub-agent presets**. `subagent_type` resolves against user-defined agents in `.ctx/agent/` and `~/.ctx/agent/`; an empty or unknown name runs a default sub-agent with the parent's tool surface minus the parent-only tools, capped at `DEFAULT_MAX_TURNS = 200`. Results are truncated to `MAX_RESULT_CHARS = 32_000`, and transcripts are shown up to `MAX_TRANSCRIPT_LINES = 200` with a "... (n more)" tail.
 

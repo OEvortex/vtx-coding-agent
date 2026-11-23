@@ -191,7 +191,7 @@ class AskUserTool(BaseTool):
     @property
     def ui_block(self) -> type | None:
         try:
-            from ctx.tui.tool_blocks import AskUserToolBlock
+            from ctx.term.tool_blocks import AskUserToolBlock
 
             return AskUserToolBlock
         except ImportError:

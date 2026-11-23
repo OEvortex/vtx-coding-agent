@@ -4,7 +4,7 @@ The composer joins the base identity with registered prompt sections in
 order. ``ctx.agent.prompts`` owns only the mechanism: the persona and any
 product-specific sections are contributed through
 :mod:`ctx.agent.prompts.registry` — the coding agent registers its identity,
-ponytail mode, and friends from ``ctx.coding_agent.prompts``.
+ponytail mode, and friends from ``ctx.code.prompts``.
 
 Built-in sections (tooling, project files, skills, git, env) are registered
 below at import time; products may ``replace=True`` any of them or add their

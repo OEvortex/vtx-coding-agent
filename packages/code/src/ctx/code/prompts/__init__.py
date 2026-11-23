@@ -2,7 +2,7 @@
 
 ``ctx.agent.prompts`` owns prompt *assembly*; this package owns the coding
 product's *content*: the base persona and ponytail mode. Registration runs
-eagerly at ``ctx.coding_agent`` import — the same slot
+eagerly at ``ctx.code`` import — the same slot
 ``register_builtin_tool_rows`` already uses.
 """
 

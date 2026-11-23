@@ -16,7 +16,7 @@ The config directory is resolved by `get_config_dir()` in `src/ctx/core/paths.py
 
 Ctx creates the file the first time the config is loaded. `_ensure_config_file()` writes the shipped `src/ctx/core/defaults/config.yml` (after the legacy-key shim) to the config path if the file does not exist (`src/ctx/core/config.py:415`-`src/ctx/core/config.py:426`). Nothing else writes this file except the setters described below, so you can edit it by hand.
 
-There is no project-level config file. Project-scoped settings live in other files: `.ctx/mcp.json`, `.ctx/hooks.yml`, `.ctx/extensions/`, `.ctx/agent/`, `.ctx/providers/`, and `.agents/skills/` for project skills (`src/ctx/mcp/config.py:5`-`src/ctx/mcp/config.py:6`, `src/ctx/tui/app.py:323`, `src/ctx/plugins/extensions.py:8`, `src/ctx/ai/provider_catalog.py:440`, `src/ctx/agent/context/skills.py:380`).
+There is no project-level config file. Project-scoped settings live in other files: `.ctx/mcp.json`, `.ctx/hooks.yml`, `.ctx/extensions/`, `.ctx/agent/`, `.ctx/providers/`, and `.agents/skills/` for project skills (`src/ctx/mcp/config.py:5`-`src/ctx/mcp/config.py:6`, `src/ctx/term/app.py:323`, `src/ctx/plugins/extensions.py:8`, `src/ctx/ai/provider_catalog.py:440`, `src/ctx/agent/context/skills.py:380`).
 
 Other paths under the config directory that the code reads and writes:
 
@@ -38,7 +38,7 @@ Keys pasted through `/login` for a keyed provider are stored in the dynamic auth
 
 Every config file carries `meta.config_version`. The current version is read out of the shipped defaults file at import time: `CURRENT_CONFIG_VERSION = int(_DEFAULT_CONFIG_DATA.get("meta", {}).get("config_version", 13))` (`src/ctx/core/config.py:65`). `src/ctx/core/defaults/config.yml` sets it to `17`.
 
-On load, `_migrate_config_data()` walks the file forward one step at a time until it reaches the current version (`src/ctx/core/config.py:792`-`src/ctx/core/config.py:870`). If anything changed and the file had content, Ctx copies the original to `config.yml.bak.<timestamp>` and rewrites the file atomically, then records a warning you can read with `consume_config_warnings()` and see in the TUI launch warnings (`src/ctx/core/config.py:434`-`src/ctx/core/config.py:437`, `src/ctx/tui/app.py:744`).
+On load, `_migrate_config_data()` walks the file forward one step at a time until it reaches the current version (`src/ctx/core/config.py:792`-`src/ctx/core/config.py:870`). If anything changed and the file had content, Ctx copies the original to `config.yml.bak.<timestamp>` and rewrites the file atomically, then records a warning you can read with `consume_config_warnings()` and see in the TUI launch warnings (`src/ctx/core/config.py:434`-`src/ctx/core/config.py:437`, `src/ctx/term/app.py:744`).
 
 The migration chain and what each step does:
 
@@ -326,18 +326,18 @@ There is no layered config: one YAML file, plus CLI flags that win over it, plus
 
 | Setting | Order of resolution |
 |---|---|
-| model | `--model` > `last_selected.model_id` > `llm.default_model` (`src/ctx/tui/app.py:144`, `src/ctx/coding_agent/headless.py:140`) |
-| provider | `--provider` > `last_selected.provider` > `llm.default_provider` (only when `--model` was not passed) (`src/ctx/tui/app.py:145`-`src/ctx/tui/app.py:153`) |
-| thinking level | `last_selected.thinking_level` > `llm.default_thinking_level`. There is no CLI flag for this (`src/ctx/tui/app.py:164`-`src/ctx/tui/app.py:166`) |
-| base URL | `--base-url` > `llm.default_base_url` > the provider's own `base_url` from the catalog (`src/ctx/tui/app.py:161`, `src/ctx/agent/runtime.py:981`-`src/ctx/agent/runtime.py:994`) |
-| API key | `--api-key` only. There is no config-file fallback and no `last_selected` fallback; after that the provider's env var, then a key stored by `/login` (`src/ctx/tui/app.py:154`-`src/ctx/tui/app.py:158`, `src/ctx/ai/providers/openai_sdk.py:50`-`src/ctx/ai/providers/openai_sdk.py:57`) |
-| OpenAI-compat auth mode | `--openai-compat-auth` > `llm.auth.openai_compat` (`src/ctx/tui/app.py:167`-`src/ctx/tui/app.py:169`) |
-| Anthropic-compat auth mode | `--anthropic-compat-auth` > `llm.auth.anthropic_compat` (`src/ctx/tui/app.py:170`-`src/ctx/tui/app.py:172`) |
-| agent | `--agent` > `CTX_AGENT` > `last_selected.agent` > `agents.default` (`src/ctx/tui/app.py:267`-`src/ctx/tui/app.py:270`) |
+| model | `--model` > `last_selected.model_id` > `llm.default_model` (`src/ctx/term/app.py:144`, `src/ctx/code/headless.py:140`) |
+| provider | `--provider` > `last_selected.provider` > `llm.default_provider` (only when `--model` was not passed) (`src/ctx/term/app.py:145`-`src/ctx/term/app.py:153`) |
+| thinking level | `last_selected.thinking_level` > `llm.default_thinking_level`. There is no CLI flag for this (`src/ctx/term/app.py:164`-`src/ctx/term/app.py:166`) |
+| base URL | `--base-url` > `llm.default_base_url` > the provider's own `base_url` from the catalog (`src/ctx/term/app.py:161`, `src/ctx/agent/runtime.py:981`-`src/ctx/agent/runtime.py:994`) |
+| API key | `--api-key` only. There is no config-file fallback and no `last_selected` fallback; after that the provider's env var, then a key stored by `/login` (`src/ctx/term/app.py:154`-`src/ctx/term/app.py:158`, `src/ctx/ai/providers/openai_sdk.py:50`-`src/ctx/ai/providers/openai_sdk.py:57`) |
+| OpenAI-compat auth mode | `--openai-compat-auth` > `llm.auth.openai_compat` (`src/ctx/term/app.py:167`-`src/ctx/term/app.py:169`) |
+| Anthropic-compat auth mode | `--anthropic-compat-auth` > `llm.auth.anthropic_compat` (`src/ctx/term/app.py:170`-`src/ctx/term/app.py:172`) |
+| agent | `--agent` > `CTX_AGENT` > `last_selected.agent` > `agents.default` (`src/ctx/term/app.py:267`-`src/ctx/term/app.py:270`) |
 
 Resumption overrides the model side of this: a resumed session records its own provider, model, and base URL, and those win unless you pass an explicit override (`src/ctx/agent/runtime.py:1079`-`src/ctx/agent/runtime.py:1102`).
 
-Headless mode (`-p/--prompt`) forces `permissions.mode = "auto"` for the run and writes that back to the config file, restoring the previous value afterwards. Approval prompts cannot be shown without a TUI (`src/ctx/coding_agent/headless.py:129`-`src/ctx/coding_agent/headless.py:136`).
+Headless mode (`-p/--prompt`) forces `permissions.mode = "auto"` for the run and writes that back to the config file, restoring the previous value afterwards. Approval prompts cannot be shown without a TUI (`src/ctx/code/headless.py:129`-`src/ctx/code/headless.py:136`).
 
 ### Environment variables
 
@@ -346,7 +346,7 @@ Headless mode (`-p/--prompt`) forces `permissions.mode = "auto"` for the run and
 | `CTX_PROVIDER` | Selects the provider before any API key is inspected by `detect_provider_from_env()` (`src/ctx/ai/provider_catalog.py:275`-`src/ctx/ai/provider_catalog.py:281`) |
 | `CTX_MODEL` | Fallback model id inside the SDK layers (`src/ctx/ai/sdk/openai.py:344`, `src/ctx/ai/sdk/openai_responses.py:166`, `src/ctx/ai/sdk/anthropic.py:249`) |
 | `CTX_BASE_URL` | Overrides the default OpenAI SDK base URL (`src/ctx/agent/runtime.py:72`) |
-| `CTX_AGENT` | Selects the active handoff agent (`src/ctx/tui/app.py:267`) |
+| `CTX_AGENT` | Selects the active handoff agent (`src/ctx/term/app.py:267`) |
 | `CTX_PROFILE` | Plugin profile to boot (`src/ctx/plugins/bootstrap.py:38`) |
 | `CTX_MODELS_CACHE_DIR` | Directory for cached provider catalogs (`src/ctx/ai/model_fetcher.py:56`-`src/ctx/ai/model_fetcher.py:57`) |
 | `CTX_UPDATE_USE_PIP` | Forces the pip installer for `ctx update` (`src/ctx/core/self_update.py:49`-`src/ctx/core/self_update.py:50`) |
@@ -356,25 +356,25 @@ Provider API keys are environment variables too, one per provider; the full list
 
 ## Changing settings from inside the TUI
 
-`/settings` opens a picker over nine rows: `colored-tool-badge`, `git-context`, `notifications`, `ponytail`, `show-shortcuts`, `permissions`, `themes`, `thinking`, and `thinking-lines` (`src/ctx/tui/commands/settings.py:239`-`src/ctx/tui/commands/settings.py:271`). Each row writes through a dedicated setter in `src/ctx/core/config.py` that reads the file, edits one key, stamps the config version, and rewrites the file atomically before reloading.
+`/settings` opens a picker over nine rows: `colored-tool-badge`, `git-context`, `notifications`, `ponytail`, `show-shortcuts`, `permissions`, `themes`, `thinking`, and `thinking-lines` (`src/ctx/term/commands/settings.py:239`-`src/ctx/term/commands/settings.py:271`). Each row writes through a dedicated setter in `src/ctx/core/config.py` that reads the file, edits one key, stamps the config version, and rewrites the file atomically before reloading.
 
 | Setting | Setter | Slash command |
 |---|---|---|
-| `ui.theme` | `set_theme()` (`src/ctx/core/config.py:1011`) | `/themes [id]` (`src/ctx/tui/commands/settings.py:51`) |
-| `ui.thinking_lines` | `set_thinking_lines()` (`src/ctx/core/config.py:1062`) | `/settings` > `thinking-lines` (`src/ctx/tui/commands/settings.py:192`-`src/ctx/tui/commands/settings.py:212`) |
+| `ui.theme` | `set_theme()` (`src/ctx/core/config.py:1011`) | `/themes [id]` (`src/ctx/term/commands/settings.py:51`) |
+| `ui.thinking_lines` | `set_thinking_lines()` (`src/ctx/core/config.py:1062`) | `/settings` > `thinking-lines` (`src/ctx/term/commands/settings.py:192`-`src/ctx/term/commands/settings.py:212`) |
 | `ui.show_welcome_shortcuts` | `set_show_welcome_shortcuts()` (`src/ctx/core/config.py:1030`) | `/settings` > `show-shortcuts` |
 | `ui.colored_tool_badge` | `set_colored_tool_badge()` (`src/ctx/core/config.py:1120`) | `/settings` > `colored-tool-badge` |
-| `ui.model_provider_filter` | `set_model_provider_filter()` (`src/ctx/core/config.py:1152`) | `/provider` (`src/ctx/tui/commands/providers.py:16`) |
-| `permissions.mode` | `set_permissions_mode()` (`src/ctx/core/config.py:1046`) | `/permissions [prompt\|auto]` (`src/ctx/tui/commands/settings.py:76`) |
-| `notifications.enabled` | `set_notifications_enabled()` (`src/ctx/core/config.py:1136`) | `/notifications [on\|off]` (`src/ctx/tui/commands/settings.py:214`) |
+| `ui.model_provider_filter` | `set_model_provider_filter()` (`src/ctx/core/config.py:1152`) | `/provider` (`src/ctx/term/commands/providers.py:16`) |
+| `permissions.mode` | `set_permissions_mode()` (`src/ctx/core/config.py:1046`) | `/permissions [prompt\|auto]` (`src/ctx/term/commands/settings.py:76`) |
+| `notifications.enabled` | `set_notifications_enabled()` (`src/ctx/core/config.py:1136`) | `/notifications [on\|off]` (`src/ctx/term/commands/settings.py:214`) |
 | `llm.system_prompt.git_context` | `set_git_context()` (`src/ctx/core/config.py:1078`) | `/settings` > `git-context` |
-| `llm.system_prompt.ponytail` | `set_ponytail()` (`src/ctx/core/config.py:1099`) | `/ponytail [on\|off]` (`src/ctx/tui/commands/settings.py:284`) |
+| `llm.system_prompt.ponytail` | `set_ponytail()` (`src/ctx/core/config.py:1099`) | `/ponytail [on\|off]` (`src/ctx/term/commands/settings.py:284`) |
 
-`set_model_provider_filter()` drops an unknown slug instead of persisting it (`src/ctx/core/config.py:1160`-`src/ctx/core/config.py:1162`). After editing the file by hand, run `/reload`, which re-reads the config, extensions, agents, tools, and skills, and re-applies a theme change to the live CSS (`src/ctx/tui/commands/reload.py:72`-`src/ctx/tui/commands/reload.py:116`, `src/ctx/tui/commands/reload.py:341`-`src/ctx/tui/commands/reload.py:346`). For scripted edits, `ctx config set KEY VALUE` writes the same file (`src/ctx/core/config.py:1194`-`src/ctx/core/config.py:1216`).
+`set_model_provider_filter()` drops an unknown slug instead of persisting it (`src/ctx/core/config.py:1160`-`src/ctx/core/config.py:1162`). After editing the file by hand, run `/reload`, which re-reads the config, extensions, agents, tools, and skills, and re-applies a theme change to the live CSS (`src/ctx/term/commands/reload.py:72`-`src/ctx/term/commands/reload.py:116`, `src/ctx/term/commands/reload.py:341`-`src/ctx/term/commands/reload.py:346`). For scripted edits, `ctx config set KEY VALUE` writes the same file (`src/ctx/core/config.py:1194`-`src/ctx/core/config.py:1216`).
 
 ## `ctx --dump-config`
 
-`--dump-config` does not print the config file. It prints the composed plugin row list for the selected profile, one row per line as `<id>\t[enabled|disabled]\t<name>` (`src/ctx/coding_agent/cli.py:352`-`src/ctx/coding_agent/cli.py:355`).
+`--dump-config` does not print the config file. It prints the composed plugin row list for the selected profile, one row per line as `<id>\t[enabled|disabled]\t<name>` (`src/ctx/code/cli.py:352`-`src/ctx/code/cli.py:355`).
 
 ```bash
 ctx --dump-config
@@ -385,10 +385,10 @@ ctx --dump-config --profile headless
 tools	[enabled]	ctx.plugins.builtins.services.tools:PLUGIN
 llm	[enabled]	ctx.plugins.builtins.services.llm:PLUGIN
 permissions	[enabled]	ctx.plugins.builtins.services.permissions:PLUGIN
-tool-read	[enabled]	ctx.coding_agent.tools.read:PLUGIN
+tool-read	[enabled]	ctx.code.tools.read:PLUGIN
 ```
 
-The listing includes extension rows discovered at boot, which are not stored in the profile (`src/ctx/coding_agent/cli.py:337`-`src/ctx/coding_agent/cli.py:351`). Every row printed here is replaceable through a plugin patch; see [plugins.md](plugins.md).
+The listing includes extension rows discovered at boot, which are not stored in the profile (`src/ctx/code/cli.py:337`-`src/ctx/code/cli.py:351`). Every row printed here is replaceable through a plugin patch; see [plugins.md](plugins.md).
 
 To read the actual configuration, print the file:
 
@@ -408,7 +408,7 @@ cat "${XDG_CONFIG_HOME:-$HOME/.config}/ctx/config.yml"
 - `ConfigSchema` carries no `Field(description=...)` text, so nothing generates a schema reference. The defaults in `src/ctx/core/defaults/config.yml` are the only machine-readable summary and they omit several fields that have defaults in code, such as `ui.thinking_lines`, `ui.colored_tool_badge`, `ui.merged_turn_summary`, `ui.collapse_after_turn`, `llm.system_prompt.todo_context`, and the whole `last_selected` and `recent_models` blocks (`src/ctx/core/defaults/config.yml:31`-`src/ctx/core/defaults/config.yml:36`).
 - The unknown-key story is inconsistent: unknown keys survive the deep merge into `ConfigSchema.model_validate` and are ignored, while unknown *values* for a known key (an unknown theme name, a bad float) fail validation for the whole file and drop you back to defaults (`src/ctx/core/config.py:314`-`src/ctx/core/config.py:322`, `src/ctx/core/config.py:311`).
 - `llm.default_thinking_level` is a free-form string with no validation, so a typo is only caught later, when the provider clamps it (`src/ctx/ai/base.py:280`-`src/ctx/ai/base.py:288`).
-- `--api-key` has no config-file counterpart. A key can only come from the flag, the environment, or `/login` (`src/ctx/tui/app.py:154`-`src/ctx/tui/app.py:158`).
+- `--api-key` has no config-file counterpart. A key can only come from the flag, the environment, or `/login` (`src/ctx/term/app.py:154`-`src/ctx/term/app.py:158`).
 - Migration warnings are collected in a module-level list and consumed by the first caller. Anything that loads the config before the TUI starts can swallow them (`src/ctx/core/config.py:69`, `src/ctx/core/config.py:434`-`src/ctx/core/config.py:437`).
 - There is no project-level config file, so per-repository model or permission defaults require an agent file in `.ctx/agent/` or a plugin patch rather than a config value.
 

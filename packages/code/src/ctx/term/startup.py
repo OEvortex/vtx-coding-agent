@@ -9,13 +9,13 @@ import os
 from typing import TYPE_CHECKING, Any, Literal
 
 from ctx.agent.tools_manager import ensure_tools
-from ctx.coding_agent.update_check import get_newer_pypi_version
+from ctx.code.update_check import get_newer_pypi_version
 from ctx.core.config import update_available_binaries
 from ctx.core.version import PACKAGE_NAME, VERSION
-from ctx.tui.blocks import LaunchWarning
-from ctx.tui.chat import ChatLog
-from ctx.tui.input import InputBox
-from ctx.tui.widgets import InfoBar, format_path
+from ctx.term.blocks import LaunchWarning
+from ctx.term.chat import ChatLog
+from ctx.term.input import InputBox
+from ctx.term.widgets import InfoBar, format_path
 
 _CHANGELOG_URL = "https://github.com/OEvortex/ctx-code/blob/main/CHANGELOG.md"
 

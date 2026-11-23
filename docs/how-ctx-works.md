@@ -69,7 +69,7 @@ does outside those leaks past unload.
 ## 3. The agent loop
 
 The CLI's first job is composition: resolve `--profile` and `--patch`, call
-`ctx.plugins.boot`, then build a runtime (`src/ctx/coding_agent/cli.py`).
+`ctx.plugins.boot`, then build a runtime (`src/ctx/code/cli.py`).
 
 From there, one turn is:
 
@@ -150,7 +150,7 @@ description is its routing signal and a vague description means the skill never 
 ## 7. Hot reload
 
 `/reload` re-applies config, extensions, agents, tools, and context in place
-(`src/ctx/tui/commands/reload.py`). It:
+(`src/ctx/term/commands/reload.py`). It:
 
 - tells outgoing extensions to let go, before clearing the module cache
 - drops the imported extension modules so a re-mounted file re-executes

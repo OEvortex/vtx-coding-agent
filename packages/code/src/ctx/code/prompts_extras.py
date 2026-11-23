@@ -16,7 +16,7 @@ def _render_todo_context(cwd: str, tools) -> str | None:
 
     if not getattr(ctx_config.llm.system_prompt, "todo_context", False):
         return None
-    from ctx.coding_agent.prompts.todo import build_todo_section
+    from ctx.code.prompts.todo import build_todo_section
 
     return build_todo_section() or None
 

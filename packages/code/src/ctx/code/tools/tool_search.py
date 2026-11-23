@@ -73,7 +73,7 @@ class ToolSearchTool(BaseTool):
     @property
     def ui_block(self) -> type | None:
         try:
-            from ctx.tui.tool_blocks import ToolSearchToolBlock
+            from ctx.term.tool_blocks import ToolSearchToolBlock
 
             return ToolSearchToolBlock
         except ImportError:

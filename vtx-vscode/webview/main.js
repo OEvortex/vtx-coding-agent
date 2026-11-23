@@ -2048,17 +2048,21 @@ import { renderMarkdown, renderShell, renderCode } from "./markdown.js";
     let filterText = "";
     // "Other Models" starts folded the way Copilot folds its less common models.
     const collapsedGroups = new Set(["Other Models"]);
-    // The provider tab the model picker is showing, upstream's
-    // .chat-model-picker-tabbar selection. Sticky across re-opens.
+    // The provider the model picker is filtered to. Sticky across re-opens,
+    // the way a tab selection is in VS Code's picker.
     let activeProvider = null;
-    // Upstream's .search-mode: the tab strip swaps for a borderless search
-    // field that queries every provider at once.
-    let searchMode = false;
+    // A scrolling tab strip cannot represent 100+ providers, so the provider
+    // choice is a searchable list behind one button. Both queries are sticky
+    // only for the lifetime of an open menu.
+    let providerPickerOpen = false;
+    let providerQuery = "";
 
     function close() {
       menu.classList.add("hidden");
       btn.classList.remove("open");
       btn.setAttribute("aria-expanded", "false");
+      providerPickerOpen = false;
+      providerQuery = "";
       opts.onClose?.();
     }
     function labelFor(v) {
@@ -2169,7 +2173,7 @@ import { renderMarkdown, renderShell, renderCode } from "./markdown.js";
     }
     function tabIcon(ic) {
       const span = document.createElement("span");
-      span.className = "mp-tab-ic";
+      span.className = "mp-provider-ic";
       if (ic && ic.indexOf("img:") === 0) {
         const rest = ic.slice(4);
         const sp = rest.indexOf(" ");
@@ -2189,82 +2193,145 @@ import { renderMarkdown, renderShell, renderCode } from "./markdown.js";
         activeProvider = null;
       }
       if (opts.providerTabs) {
-        const bar = document.createElement("div");
-        bar.className = "mp-tabbar";
-        const strip = document.createElement("div");
-        strip.className = "mp-tabstrip" + (searchMode ? " hidden" : "");
-        tabs.forEach((t) => {
-          const b = document.createElement("button");
-          b.type = "button";
-          b.className = "mp-tab" + (t.slug === wantedProvider ? " active" : "");
-          b.title = t.name;
-          b.appendChild(tabIcon(t.icon));
-          const lb = document.createElement("span");
-          lb.className = "mp-tab-label";
-          lb.textContent = t.label || t.name;
-          b.appendChild(lb);
-          b.addEventListener("click", (ev) => {
-            ev.stopPropagation();
-            const next = t.slug || null;
-            if (activeProvider === next) return;
-            activeProvider = next;
-            renderMenu();
-            vscode.postMessage({ type: "setProviderFilter", slug: t.slug });
-          });
-          strip.appendChild(b);
+        const header = document.createElement("div");
+        header.className = "mp-header";
+
+        // Search is always on. Hiding it behind a tab made people scroll the
+        // provider strip instead of just typing the model they wanted.
+        const searchRow = document.createElement("div");
+        searchRow.className = "mp-search-row";
+        const searchIcon = mkIcon("search");
+        searchIcon.classList.add("mp-search-icon");
+        searchRow.appendChild(searchIcon);
+        const field = document.createElement("input");
+        field.className = "mp-search-input";
+        field.type = "text";
+        field.placeholder = "Search models or providers";
+        field.setAttribute("aria-label", "Search models");
+        field.value = filterText;
+        field.addEventListener("click", (e) => e.stopPropagation());
+        field.addEventListener("input", () => { filterText = field.value; renderRows(); });
+        field.addEventListener("keydown", (e) => {
+          e.stopPropagation();
+          if (e.key === "Escape" && filterText) {
+            filterText = "";
+            field.value = "";
+            renderRows();
+          }
         });
-        // The magnifier at the strip's end, upstream's search tab action.
-        const sbtn = document.createElement("button");
-        sbtn.type = "button";
-        sbtn.className = "mp-tab mp-search-btn" + (searchMode ? " hidden" : "");
-        sbtn.title = "Search";
-        sbtn.setAttribute("aria-label", "Search models");
-        sbtn.appendChild(mkIcon("search"));
-        sbtn.addEventListener("click", (ev) => {
+        searchRow.appendChild(field);
+        header.appendChild(searchRow);
+
+        // One provider control replaces the overflowing tab strip. Its picker
+        // is a searchable vertical list, so a hundred providers stay usable.
+        const providerRow = document.createElement("div");
+        providerRow.className = "mp-provider-row";
+        const pbtn = document.createElement("button");
+        pbtn.type = "button";
+        pbtn.className = "mp-provider-btn";
+        pbtn.setAttribute("aria-haspopup", "true");
+        pbtn.setAttribute("aria-expanded", String(providerPickerOpen));
+        const current = tabs.find((t) => t.slug === wantedProvider) || tabs[0];
+        pbtn.appendChild(tabIcon(current && current.icon));
+        const currentName = document.createElement("span");
+        currentName.className = "mp-provider-name";
+        currentName.textContent = current ? current.name : "All providers";
+        pbtn.appendChild(currentName);
+        const currentCount = document.createElement("span");
+        currentCount.className = "mp-provider-count";
+        currentCount.textContent = String(current && current.slug
+          ? items.filter((it) => !it.sep && providerOf(it) === current.slug).length
+          : items.filter((it) => !it.sep).length);
+        pbtn.appendChild(currentCount);
+        pbtn.appendChild(mkIcon("chevron-down"));
+        pbtn.addEventListener("click", (ev) => {
           ev.stopPropagation();
-          searchMode = true;
+          providerPickerOpen = !providerPickerOpen;
+          providerQuery = "";
           renderMenu();
         });
-        // Pinned beside the strip, not inside it: a long provider list scrolls
-        // the tabs, and a search button that scrolls away with them is lost.
-        bar.appendChild(strip);
-        bar.appendChild(sbtn);
-        if (searchMode) {
-          const srow = document.createElement("div");
-          srow.className = "mp-search";
+        providerRow.appendChild(pbtn);
+        header.appendChild(providerRow);
+        menu.appendChild(header);
+
+        if (providerPickerOpen) {
+          const picker = document.createElement("div");
+          picker.className = "mp-provider-picker";
+          const prow = document.createElement("div");
+          prow.className = "mp-provider-search";
           const back = document.createElement("button");
           back.type = "button";
-          back.className = "mp-tab mp-back-btn";
-          back.title = "Back";
-          back.setAttribute("aria-label", "Back to providers");
+          back.className = "mp-provider-back";
+          back.title = "Back to models";
+          back.setAttribute("aria-label", "Back to models");
           back.appendChild(mkIcon("chevron-left"));
           back.addEventListener("click", (ev) => {
             ev.stopPropagation();
-            searchMode = false;
-            filterText = "";
+            providerPickerOpen = false;
             renderMenu();
           });
-          const f = document.createElement("input");
-          f.className = "dd-filter mp-search-input";
-          f.type = "text";
-          f.placeholder = "Search";
-          f.value = filterText;
-          f.addEventListener("click", (e) => e.stopPropagation());
-          f.addEventListener("keydown", (e) => {
+          prow.appendChild(back);
+          const pfield = document.createElement("input");
+          pfield.className = "mp-provider-search-input";
+          pfield.type = "text";
+          pfield.placeholder = "Find a provider";
+          pfield.setAttribute("aria-label", "Find a provider");
+          pfield.value = providerQuery;
+          pfield.addEventListener("click", (e) => e.stopPropagation());
+          prow.appendChild(pfield);
+          picker.appendChild(prow);
+          const list = document.createElement("div");
+          list.className = "mp-provider-list";
+          picker.appendChild(list);
+          const renderProviderList = () => {
+            list.innerHTML = "";
+            const q = providerQuery.trim().toLowerCase();
+            let shown = 0;
+            tabs.filter((t) => !q || t.name.toLowerCase().includes(q) || (t.slug || "").toLowerCase().includes(q)).forEach((t) => {
+              const row = document.createElement("button");
+              row.type = "button";
+              row.className = "mp-provider-item" + (t.slug === wantedProvider ? " selected" : "");
+              row.appendChild(tabIcon(t.icon));
+              const name = document.createElement("span");
+              name.className = "mp-provider-item-name";
+              name.textContent = t.name;
+              row.appendChild(name);
+              const count = document.createElement("span");
+              count.className = "mp-provider-item-count";
+              count.textContent = String(t.slug
+                ? items.filter((it) => !it.sep && providerOf(it) === t.slug).length
+                : items.filter((it) => !it.sep).length);
+              row.appendChild(count);
+              if (t.slug === wantedProvider) row.appendChild(mkIcon("check"));
+              row.addEventListener("click", (ev) => {
+                ev.stopPropagation();
+                activeProvider = t.slug || null;
+                providerPickerOpen = false;
+                renderMenu();
+                vscode.postMessage({ type: "setProviderFilter", slug: t.slug });
+              });
+              list.appendChild(row);
+              shown++;
+            });
+            if (!shown) {
+              const empty = document.createElement("div");
+              empty.className = "dd-empty";
+              empty.textContent = "No providers match";
+              list.appendChild(empty);
+            }
+          };
+          pfield.addEventListener("input", () => { providerQuery = pfield.value; renderProviderList(); });
+          pfield.addEventListener("keydown", (e) => {
             e.stopPropagation();
             if (e.key === "Escape") {
-              searchMode = false;
-              filterText = "";
+              providerPickerOpen = false;
               renderMenu();
             }
           });
-          f.addEventListener("input", () => { filterText = f.value; renderRows(); });
-          srow.appendChild(back);
-          srow.appendChild(f);
-          bar.appendChild(srow);
-          setTimeout(() => f.focus(), 0);
+          renderProviderList();
+          menu.appendChild(picker);
+          setTimeout(() => pfield.focus(), 0);
         }
-        menu.appendChild(bar);
       }
       const showFilter = items.length > 10 && !opts.providerTabs;
       const rows = document.createElement("div");
@@ -2331,6 +2398,7 @@ import { renderMarkdown, renderShell, renderCode } from "./markdown.js";
         setTimeout(() => f.focus(), 0);
       }
       menu.appendChild(rows);
+      if (providerPickerOpen) rows.classList.add("hidden");
       renderRows();
     }
     btn.addEventListener("click", (ev) => {
@@ -2340,7 +2408,8 @@ import { renderMarkdown, renderShell, renderCode } from "./markdown.js";
         if (b !== btn) { b.classList.remove("open"); b.setAttribute("aria-expanded", "false"); }
       });
       filterText = "";
-      searchMode = false;
+      providerPickerOpen = false;
+      providerQuery = "";
       renderMenu();
       menu.classList.toggle("hidden");
       const open = !menu.classList.contains("hidden");

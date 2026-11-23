@@ -50,7 +50,7 @@ Everything under `~/.ctx`, unless one of the env vars listed below moved it.
 | `mcp-auth.json` | MCP OAuth credentials | `src/ctx/mcp/oauth/provider.py:45`, `:98` |
 | `hooks.yml` | Global YAML hooks | `src/ctx/plugins/builtins/hooks.py:29`, `:42` |
 | `providers/*.yaml` | User-wide custom provider catalog | `src/ctx/ai/provider_catalog.py:455-459` |
-| `prompt-history.jsonl` | Prompt history | `src/ctx/tui/prompt_history.py:12` |
+| `prompt-history.jsonl` | Prompt history | `src/ctx/term/prompt_history.py:12` |
 | `telemetry.jsonl` | JSONL trace export, only when the telemetry row enables it | `src/ctx/plugins/builtins/services/telemetry.py:24` |
 | `bin/` | Where managed binaries are looked for alongside `PATH` | `src/ctx/agent/tools_manager.py:21`, `src/ctx/core/config.py:417-420` |
 | `gh_app/config.json`, `gh_app/bot_user_id.json` | GitHub App config and bot-id cache | `src/ctx/git/gh_app.py:57-59` |
@@ -61,11 +61,11 @@ Everything under `~/.ctx`, unless one of the env vars listed below moved it.
 | `cline_auth.json` | Cline OAuth token | `src/ctx/ai/oauth/cline.py:69` |
 | `dynamic_auth.json` | Dynamic-provider API keys | `src/ctx/ai/oauth/dynamic.py:32`, `:52-72` |
 
-Two of these are read rather than written as whole directories: the usage aggregate walks everything under `sessions/` but only re-parses files whose `(mtime, size)` changed, recording the rest in `token_usage.json` (`src/ctx/core/token_usage.py:198`), and HTML export reads the same per-project session directory (`src/ctx/tui/export.py:182-183`).
+Two of these are read rather than written as whole directories: the usage aggregate walks everything under `sessions/` but only re-parses files whose `(mtime, size)` changed, recording the rest in `token_usage.json` (`src/ctx/core/token_usage.py:198`), and HTML export reads the same per-project session directory (`src/ctx/term/export.py:182-183`).
 
 Global `AGENTS.md` or `CLAUDE.md` context files are read straight out of `~/.ctx` (`src/ctx/agent/context/agent_mds.py:87-89`), so `~/.ctx/AGENTS.md` is global project instructions.
 
-Any directory in this table can be named without guessing: `ctx plugin path default` prints the profile directory (`src/ctx/coding_agent/plugin_cmd.py:50-52`). See [plugins.md](plugins.md) for what the two files in it mean, [cli.md](cli.md) for the flags that override them, and [development.md](development.md) for the commands that read this tree.
+Any directory in this table can be named without guessing: `ctx plugin path default` prints the profile directory (`src/ctx/code/plugin_cmd.py:50-52`). See [plugins.md](plugins.md) for what the two files in it mean, [cli.md](cli.md) for the flags that override them, and [development.md](development.md) for the commands that read this tree.
 
 ## Project tree
 

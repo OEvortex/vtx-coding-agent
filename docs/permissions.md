@@ -19,7 +19,7 @@ PERMISSION_MODES: tuple[PermissionMode, ...] = get_args(PermissionMode)
 | `prompt` | Ask me before a mutating tool call | yes | `permissions.mode` (`src/ctx/core/config.py:158-159`) |
 | `auto` | Run every tool call without asking | no | `permissions.mode` |
 
-The picker spells them out the same way (`src/ctx/tui/commands/settings.py:76-78`):
+The picker spells them out the same way (`src/ctx/term/commands/settings.py:76-78`):
 
 | Mode | Description in the picker |
 |---|---|
@@ -94,19 +94,19 @@ that writes something and forgets the flag is gated. The default set:
 
 | Tool | `mutating` | Prompts in `prompt` mode | Source |
 |---|---|---|---|
-| `read` | `False` | never | `src/ctx/coding_agent/tools/read.py:43` |
-| `find` | `False` | never | `src/ctx/coding_agent/tools/find.py:35` |
-| `grep` | `False` | never | `src/ctx/coding_agent/tools/grep.py:36` |
-| `todo` | `False` | never | `src/ctx/coding_agent/tools/todo.py:182` |
-| `bash` | `True` | unless the command is safe | `src/ctx/coding_agent/tools/bash.py` |
-| `edit` | `True` | always | `src/ctx/coding_agent/tools/edit.py` |
-| `write` | `True` | always | `src/ctx/coding_agent/tools/write.py` |
-| `skill` | `True` | always | `src/ctx/coding_agent/tools/skill.py:86` |
+| `read` | `False` | never | `src/ctx/code/tools/read.py:43` |
+| `find` | `False` | never | `src/ctx/code/tools/find.py:35` |
+| `grep` | `False` | never | `src/ctx/code/tools/grep.py:36` |
+| `todo` | `False` | never | `src/ctx/code/tools/todo.py:182` |
+| `bash` | `True` | unless the command is safe | `src/ctx/code/tools/bash.py` |
+| `edit` | `True` | always | `src/ctx/code/tools/edit.py` |
+| `write` | `True` | always | `src/ctx/code/tools/write.py` |
+| `skill` | `True` | always | `src/ctx/code/tools/skill.py:86` |
 | `web`, `web_search` | `False` | never | `src/ctx/agent/tools/web.py:94` |
 | `ask_user` | `False` | never | `src/ctx/agent/tools/ask_user.py:191` |
 | `delegate_subagent` | `False` | never | `src/ctx/agent/tools/task.py:544` |
-| `tool_search` | `False` | never | `src/ctx/coding_agent/tools/tool_search.py:73` |
-| `codemode` | `True` | always | `src/ctx/coding_agent/tools/codemode.py:184-185` |
+| `tool_search` | `False` | never | `src/ctx/code/tools/tool_search.py:73` |
+| `codemode` | `True` | always | `src/ctx/code/tools/codemode.py:184-185` |
 
 Two of those need a note.
 
@@ -114,7 +114,7 @@ Two of those need a note.
 its own session and returns text; the sub-agent's own mutating calls are gated in that
 session, not in yours (`src/ctx/agent/tools/task.py:544`).
 
-`codemode` is marked mutating on purpose (`src/ctx/coding_agent/tools/codemode.py:184-185`):
+`codemode` is marked mutating on purpose (`src/ctx/code/tools/codemode.py:184-185`):
 
 ```python
 mutating = True
@@ -295,15 +295,15 @@ non-mutating, so it never passes through this gate
 
 | How | Effect | Source |
 |---|---|---|
-| `/permissions` | Picker over `prompt` and `auto` | `src/ctx/tui/commands/settings.py:75-96` |
+| `/permissions` | Picker over `prompt` and `auto` | `src/ctx/term/commands/settings.py:75-96` |
 | `/permissions auto` | Set the mode without the picker | same |
-| `alt+ctrl+p` | Toggle between the two modes | `src/ctx/tui/app.py:99`, `:865-868` |
+| `alt+ctrl+p` | Toggle between the two modes | `src/ctx/term/app.py:99`, `:865-868` |
 | Config file | Edit `permissions.mode`, then `/reload` | `src/ctx/core/config.py:977` |
-| `--dump-config` | Print the composed plugin rows for the profile | `src/ctx/coding_agent/cli.py:179` |
+| `--dump-config` | Print the composed plugin rows for the profile | `src/ctx/code/cli.py:179` |
 
 Headless cannot show a prompt, so `-p/--prompt` forces `auto` for the run and writes it
 into the config file, restoring the previous value afterwards
-(`src/ctx/coding_agent/headless.py:129-136`):
+(`src/ctx/code/headless.py:129-136`):
 
 ```python
 previous_config_data = _read_config_data(_ensure_config_file())
@@ -448,7 +448,7 @@ def active_permission_gates(registry):
 ```
 
 `local_gates` are the ones registered from inside the agent file through
-`api.permission_gate(...)` (`src/ctx/coding_agent/agents/api.py:341-365`), so
+`api.permission_gate(...)` (`src/ctx/code/agents/api.py:341-365`), so
 `permission_gates` in the file and `api.permission_gate()` in `register()` land in the
 same list. See `agents.md` for the full `when` grammar.
 

@@ -123,12 +123,12 @@ Full reference, generated from the source:
 | **[@ctx.ai](src/ctx/ai)** | The LLM layer: provider catalog, OAuth, SDK adapters, model catalog, tool parsing |
 | **[@ctx.codemode](src/ctx/codemode)** | The script sandbox and its tool-discovery layer |
 | **[@ctx.mcp](src/ctx/mcp)** | MCP client: server config, transports, tool exposure, trust prompt |
-| **[@ctx.tui](src/ctx/tui)** | Base terminal-UI toolkit: editing, fuzzy matching, overlays, block renderers |
+| **[@ctx.term](src/ctx/term)** | Base terminal-UI toolkit: editing, fuzzy matching, overlays, block renderers |
 | **[@ctx.agent](src/ctx/agent)** | Product-neutral harness: loop, turn engine, sessions, tool registry, prompts, hooks, goals, SDK |
-| **[@ctx.coding_agent](src/ctx/coding_agent)** | Product layer: CLI entry point, headless runner, filesystem tools, the TUI app |
+| **[@ctx.code](src/ctx/code)** | Product layer: CLI entry point, headless runner, filesystem tools, the TUI app |
 
 Dependencies flow `protocol` and `telemetry` into `core`, `git`, and `ai`; those into
-`agent`; `agent` into `coding_agent`, with `mcp`, `tui`, and `plugins` above. Each package
+`agent`; `agent` into `code`, with `mcp`, `tui`, and `plugins` above. Each package
 carries its own README with the public surface and internal notes.
 
 **Tools in the base composition** include `read`, `apply-patch` (writes go through

@@ -12,7 +12,7 @@ from typing import TYPE_CHECKING, Any, ClassVar, Protocol, cast
 from ctx.core.config import config
 from ctx.core.image import resize_image
 from ctx.protocol.types import ImageContent
-from ctx.tui.autocomplete import (
+from ctx.term.autocomplete import (
     DEFAULT_COMMANDS,
     AutocompleteProvider,
     CompletionResult,
@@ -21,10 +21,10 @@ from ctx.tui.autocomplete import (
     SlashCommand,
     SlashCommandProvider,
 )
-from ctx.tui.clipboard import read_clipboard_image
-from ctx.tui.floating_list import ListItem
-from ctx.tui.path_complete import PathComplete
-from ctx.tui.prompt_history import PromptHistory
+from ctx.term.clipboard import read_clipboard_image
+from ctx.term.floating_list import ListItem
+from ctx.term.path_complete import PathComplete
+from ctx.term.prompt_history import PromptHistory
 from rich.style import Style
 from textual import events
 from textual._ansi_sequences import ANSI_SEQUENCES_KEYS

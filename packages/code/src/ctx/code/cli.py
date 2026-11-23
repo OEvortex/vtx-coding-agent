@@ -210,20 +210,20 @@ def main() -> None:
 
     # Handle subcommands before full parsing.
     if len(sys.argv) > 1 and sys.argv[1] == "plugin":
-        from ctx.coding_agent.plugin_cmd import run_plugin_command
+        from ctx.code.plugin_cmd import run_plugin_command
 
         raise SystemExit(run_plugin_command(sys.argv[2:]))
 
     args = parser.parse_args()
 
     if args.command == "acp":
-        from ctx.coding_agent.acp import run_acp
+        from ctx.code.acp import run_acp
 
         run_acp()
         raise SystemExit(0)
 
     if args.command == "update":
-        from ctx.coding_agent.self_update import self_update
+        from ctx.code.self_update import self_update
 
         ok, message = self_update()
         if ok:
@@ -315,7 +315,7 @@ def main() -> None:
         config.llm.tls.insecure_skip_verify = True
 
     if args.list_agents:
-        from ctx.coding_agent.agents import load_all_agents
+        from ctx.code.agents import load_all_agents
 
         loaded, errors = load_all_agents(cwd=os.getcwd(), configured=args.agent_files)
         if not loaded and not errors:
@@ -380,7 +380,7 @@ def main() -> None:
         raise SystemExit(_print_loaded_extensions(host))
 
     if args.prompt is not None:
-        from ctx.coding_agent.headless import run_headless
+        from ctx.code.headless import run_headless
         from ctx.plugins.extensions import load_for_runtime
 
         loaded = load_for_runtime(
@@ -411,7 +411,7 @@ def main() -> None:
             )
         )
 
-    from ctx.tui.launch import run_tui
+    from ctx.term.launch import run_tui
 
     run_tui(args)
 

@@ -92,7 +92,7 @@ def _session_tools(extensions: list[Any] | None = None) -> list[Any]:
     composition mounted; ``run_acp`` mounts one before serving, which is what
     makes those tools exist at all in ``ctx acp``.
     """
-    from ctx.coding_agent.tools import DEFAULT_TOOLS, get_tools_with_extensions
+    from ctx.code.tools import DEFAULT_TOOLS, get_tools_with_extensions
     from ctx.plugins.bootstrap import active_host
 
     host = active_host()

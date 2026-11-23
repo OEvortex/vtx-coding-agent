@@ -13,7 +13,7 @@ class CodemodeWiredTool(Protocol):
 
     Declared in the harness so :mod:`ctx.agent.runtime` can recognise the
     session-wired tools by shape. The tools themselves ship in the product
-    package (:mod:`ctx.coding_agent.tools`), and the harness never imports a
+    package (:mod:`ctx.code.tools`), and the harness never imports a
     product, so an ``isinstance`` against the concrete class is not available.
     """
 
@@ -54,7 +54,7 @@ class BaseTool[T: BaseModel](ABC):
     The SDK runner pauses the run for human approval when this is True."""
     _ui_block: type | None = None
     """Optional Textual widget class the TUI instantiates instead of the
-    default :class:`ctx.ui.blocks.ToolBlock` for this tool. Subclasses
+    default :class:`ctx.term.blocks.ToolBlock` for this tool. Subclasses
     must accept the same ``__init__`` kwargs as ``ToolBlock`` plus the
     optional ``tool`` kwarg (the bound :class:`BaseTool` instance, for
     introspection). The chat log sets ``block.tool`` after construction

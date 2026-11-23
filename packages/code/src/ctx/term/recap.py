@@ -20,18 +20,18 @@ from ctx.core.recap import (
     has_meaningful_activity,
 )
 from ctx.protocol.types import TextContent, UserMessage
-from ctx.tui.chat import ChatLog
-from ctx.tui.status_lines import pick_recap_status_line
+from ctx.term.chat import ChatLog
+from ctx.term.status_lines import pick_recap_status_line
 from textual.timer import Timer
 
 if TYPE_CHECKING:
     from textual.worker import Worker
 
-log = logging.getLogger("ctx.tui.recap")
+log = logging.getLogger("ctx.term.recap")
 
 
 class RecapMixin:
-    """Mixed into :class:`ctx.tui.app.Ctx`; owns all recap scheduling state."""
+    """Mixed into :class:`ctx.term.app.Ctx`; owns all recap scheduling state."""
 
     _is_running: bool
     _runtime: Any  # ConversationRuntime; typed loosely to avoid an import cycle
@@ -62,7 +62,7 @@ class RecapMixin:
         was visible to the user and invisible to the model. That reads as
         "the notification never arrived" when the notification worked fine.
         """
-        from ctx.tui.subagents import REGISTRY
+        from ctx.term.subagents import REGISTRY
 
         return REGISTRY.has_live()
 

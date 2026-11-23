@@ -360,7 +360,7 @@ class CodemodeTool(BaseTool):
         Every other tool can summarise a call in one line because the line *is*
         the call; here the script is the call, so a first-line preview showed
         the user a fragment of the thing they were approving and running. The
-        codemode block (:mod:`ctx.tui.codemode_block`) owns how much of it to
+        codemode block (:mod:`ctx.term.codemode_block`) owns how much of it to
         draw, and other consumers (the tool tree, the header) clip on their own.
 
         Parsed rather than string-trimmed so the ``# @options:`` line the model
@@ -385,7 +385,7 @@ class CodemodeTool(BaseTool):
 
     @property
     def ui_block(self) -> type | None:
-        from ctx.tui.codemode_block import CodemodeToolBlock
+        from ctx.term.codemode_block import CodemodeToolBlock
 
         return CodemodeToolBlock
 

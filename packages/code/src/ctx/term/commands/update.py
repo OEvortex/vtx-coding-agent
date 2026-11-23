@@ -4,9 +4,9 @@ from __future__ import annotations
 
 import asyncio
 
-from ctx.coding_agent.self_update import self_update
-from ctx.tui.chat import ChatLog
-from ctx.tui.commands.base import CommandSupport
+from ctx.code.self_update import self_update
+from ctx.term.chat import ChatLog
+from ctx.term.commands.base import CommandSupport
 
 
 class UpdateCommands(CommandSupport):

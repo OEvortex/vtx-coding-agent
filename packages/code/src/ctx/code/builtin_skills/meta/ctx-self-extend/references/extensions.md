@@ -52,5 +52,5 @@ Do not import from them, and do not follow older documentation that references
 ## Verification
 
 After touching an extension, `/reload` reloads extensions and clears the extension module
-cache (`src/ctx/tui/commands/reload.py:71-105`). It is refused while a turn is running -
+cache (`src/ctx/term/commands/reload.py:71-105`). It is refused while a turn is running -
 wait for the turn to finish or interrupt it first.

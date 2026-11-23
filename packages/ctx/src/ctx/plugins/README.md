@@ -45,7 +45,7 @@ host.dispose()
 - Re-declaring an event's dispatch mode with a different mode fails.
 - `override` has no meaning in a bundle layer, which starts from an empty list.
 
-Nothing here imports `ctx.coding_agent`. `context.py`, `events.py`, `plugin.py`,
+Nothing here imports `ctx.code`. `context.py`, `events.py`, `plugin.py`,
 `loader.py`, `host.py`, and `errors.py` import nothing from `ctx` at all;
 `services.py`, `profile.py`, and `builtins/` reach upward deliberately.
 

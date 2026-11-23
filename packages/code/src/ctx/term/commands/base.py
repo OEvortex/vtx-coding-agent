@@ -8,11 +8,11 @@ from typing import TYPE_CHECKING, Any, TypeVar, cast
 from ctx.agent.runtime import ConversationRuntime
 from ctx.agent.session import Session
 from ctx.ai.base import AuthMode
-from ctx.tui.chat import ChatLog
-from ctx.tui.floating_list import ListItem
-from ctx.tui.input import InputBox
-from ctx.tui.selection_mode import SelectionMode
-from ctx.tui.widgets import InfoBar
+from ctx.term.chat import ChatLog
+from ctx.term.floating_list import ListItem
+from ctx.term.input import InputBox
+from ctx.term.selection_mode import SelectionMode
+from ctx.term.widgets import InfoBar
 
 Choice = TypeVar("Choice", bound=str)
 

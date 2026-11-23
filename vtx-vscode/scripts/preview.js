@@ -287,6 +287,31 @@ const SCENARIOS = {
       ]
     }
   ],
+  // A catalogue that overflows any tab strip, for checking the provider picker
+  // at realistic scale: 120 providers and three models each.
+  providers: (() => {
+    const names = ["Aerolink", "AIHubMix", "Airforce", "Anthropic", "AnyRouter", "Baseten", "Cline", "Codex", "DeepInfra", "DeepSeek", "Devin", "Fireworks", "Freepi", "Groq", "Kilo", "MiniMax", "Mistral", "Ollama", "OpenAI", "OpenRouter", "Pollinations", "VercelAI", "Zenmux"];
+    const names2 = names.map((n) => n + " Gateway");
+    const providers = [];
+    for (let i = 0; i < 120; i++) {
+      const name = i < names.length ? names[i] : i < names.length * 2 ? names2[i - names.length] : "Provider " + (i + 1);
+      providers.push({ slug: "p" + i, name });
+    }
+    const models = [];
+    providers.forEach((p, i) => {
+      for (let v = 1; v <= 3; v++) {
+        const id = p.slug + "-m" + v;
+        models.push({ id, name: "Model " + v + " " + (i + 1), provider: p.slug, default: id, variants: [{ value: id, name: "Model " + v }] });
+      }
+    });
+    return [
+      { type: "ready" },
+      { type: "body", body: "thread" },
+      { type: "capabilities", contextUsage: true },
+      { type: "options", currentMode: "default", currentModel: models[0].default, modes: MODES, models, providers, providerFilter: "" },
+      { type: "usage", used: 12000, size: 266000, cost: 0 }
+    ];
+  })(),
   // The empty sessions view: no chats yet, the companion in the corner and a
   // ready-to-use composer. Mirrors the Copilot chat welcome surface.
   empty: [

@@ -80,7 +80,7 @@ release notes.
 
 ## The protocol Vtx speaks
 
-Vtx's ACP server is implemented in `src/vtx/coding_agent/acp.py` in this
+Vtx's ACP server is implemented in `src/vtx/code/acp.py` in this
 repository, so read that file rather than trusting a summary. The surface is
 standard ACP plus two custom methods, all verified against the implementation:
 

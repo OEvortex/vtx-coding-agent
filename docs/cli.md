@@ -1,6 +1,6 @@
 # Command Line
 
-This page documents every flag, subcommand, and exit code of the `ctx` executable, read from the argument parser in `src/ctx/coding_agent/cli.py:18`. Run `ctx --help`, or append `--help` to a subcommand, for the same interface in your installed version.
+This page documents every flag, subcommand, and exit code of the `ctx` executable, read from the argument parser in `src/ctx/code/cli.py:18`. Run `ctx --help`, or append `--help` to a subcommand, for the same interface in your installed version.
 
 ```sh
 ctx [options]
@@ -12,11 +12,11 @@ ctx update
 ctx plugin <subcommand> [--profile NAME]
 ```
 
-The `ctx` script is the `ctx.coding_agent.cli:main` entry point (`pyproject.toml:112`). With no `--prompt`, `ctx` starts the terminal UI (`src/ctx/coding_agent/cli.py:410`).
+The `ctx` script is the `ctx.code.cli:main` entry point (`pyproject.toml:112`). With no `--prompt`, `ctx` starts the terminal UI (`src/ctx/code/cli.py:410`).
 
 ## Global flags
 
-`build_parser()` registers exactly the following options (`src/ctx/coding_agent/cli.py:81`-`src/ctx/coding_agent/cli.py:183`). "Default" is the argparse default; where a flag falls back to a config value, the resolving line is cited.
+`build_parser()` registers exactly the following options (`src/ctx/code/cli.py:81`-`src/ctx/code/cli.py:183`). "Default" is the argparse default; where a flag falls back to a config value, the resolving line is cited.
 
 | Flag | Short | Type | Default | Description |
 |---|---|---|---|---|
@@ -42,7 +42,7 @@ The `ctx` script is the `ctx.coding_agent.cli:main` entry point (`pyproject.toml
 | `--dump-config` | | flag | `False` | Print the composed plugin row list for the selected profile and exit |
 | `--version` | | version action | | Real help: `show program's version number and exit`. Prints `ctx <VERSION>`, where `VERSION` is the string `editable` on an editable install |
 
-`--prompt` is declared with `nargs="?"`, `const="-"`, so `-p` with no value reads the prompt from stdin (`src/ctx/coding_agent/cli.py:83`-`src/ctx/coding_agent/cli.py:91`). Values are stripped before use (`src/ctx/coding_agent/headless.py:41`).
+`--prompt` is declared with `nargs="?"`, `const="-"`, so `-p` with no value reads the prompt from stdin (`src/ctx/code/cli.py:83`-`src/ctx/code/cli.py:91`). Values are stripped before use (`src/ctx/code/headless.py:41`).
 
 ## Models, providers, and authentication
 
@@ -67,11 +67,11 @@ An unknown slug is an argparse error (exit 2).
 | `--openai-compat-auth` | `auto`, `required`, `none` | `config.llm.auth.openai_compat` (default `auto`) |
 | `--anthropic-compat-auth` | `auto`, `required`, `none` | `config.llm.auth.anthropic_compat` (default `auto`) |
 
-Resolution order for the model is `--model`, then `last_selected.model_id`, then `config.llm.default_model` (`src/ctx/tui/app.py:144`); the same order applies headless (`src/ctx/coding_agent/headless.py:140`). `--provider` falls back to `last_selected.provider`, then `config.llm.default_provider` when `--model` is absent (`src/ctx/tui/app.py:145`-`src/ctx/tui/app.py:153`).
+Resolution order for the model is `--model`, then `last_selected.model_id`, then `config.llm.default_model` (`src/ctx/term/app.py:144`); the same order applies headless (`src/ctx/code/headless.py:140`). `--provider` falls back to `last_selected.provider`, then `config.llm.default_provider` when `--model` is absent (`src/ctx/term/app.py:145`-`src/ctx/term/app.py:153`).
 
 `--api-key` is a non-persistent override for the run; it does not write the credential store. Use `/login` in the TUI to store a key (see [slash commands](slash-commands.md)).
 
-`--insecure-skip-verify` writes `config.llm.tls.insecure_skip_verify = True` before the app starts (`src/ctx/coding_agent/cli.py:310`).
+`--insecure-skip-verify` writes `config.llm.tls.insecure_skip_verify = True` before the app starts (`src/ctx/code/cli.py:310`).
 
 ```sh
 ctx --provider openrouter --insecure-skip-verify
@@ -84,7 +84,7 @@ ctx --continue
 ctx --resume 3f9a1c
 ```
 
-`-c/--continue` resumes the most recent session; `-r/--resume` takes a full session ID or a unique prefix (`src/ctx/coding_agent/cli.py:109`-`src/ctx/coding_agent/cli.py:121`). Both are forwarded to `Ctx` by `run_tui` (`src/ctx/tui/launch.py:84`, `src/ctx/tui/launch.py:85`).
+`-c/--continue` resumes the most recent session; `-r/--resume` takes a full session ID or a unique prefix (`src/ctx/code/cli.py:109`-`src/ctx/code/cli.py:121`). Both are forwarded to `Ctx` by `run_tui` (`src/ctx/term/launch.py:84`, `src/ctx/term/launch.py:85`).
 
 Neither may be combined with `--prompt`:
 
@@ -94,7 +94,7 @@ usage: ctx [--model MODEL] [--provider {16 slugs}] [--prompt [PROMPT]] ...
 ctx: error: -c/--continue and -r/--resume are not supported with -p/--prompt
 ```
 
-Exit code 2 (`src/ctx/coding_agent/cli.py:307`-`src/ctx/coding_agent/cli.py:308`).
+Exit code 2 (`src/ctx/code/cli.py:307`-`src/ctx/code/cli.py:308`).
 
 ## Extensions and agents
 
@@ -106,11 +106,11 @@ ctx --list-agents
 ctx --list-extensions
 ```
 
-`--extension` and `--agent-file` are forwarded to `run_tui` as `extra_extension_paths` and `extra_agent_paths` (`src/ctx/tui/launch.py:88`, `src/ctx/tui/launch.py:91`). Agent paths are combined with `config.agents.files` (`src/ctx/tui/app.py:246`-`src/ctx/tui/app.py:251`); on the one-shot path extension paths are combined with `config.extensions` (`src/ctx/coding_agent/cli.py:382`-`src/ctx/coding_agent/cli.py:386`). `--no-extensions` and `--no-agents` turn off discovery of `.ctx/extensions/`, `~/.ctx/agent/extensions/`, `.ctx/agent/`, and `~/.ctx/agent/` (`src/ctx/coding_agent/cli.py:369`, `src/ctx/coding_agent/cli.py:385`, `src/ctx/coding_agent/cli.py:405`, `src/ctx/tui/app.py:246`).
+`--extension` and `--agent-file` are forwarded to `run_tui` as `extra_extension_paths` and `extra_agent_paths` (`src/ctx/term/launch.py:88`, `src/ctx/term/launch.py:91`). Agent paths are combined with `config.agents.files` (`src/ctx/term/app.py:246`-`src/ctx/term/app.py:251`); on the one-shot path extension paths are combined with `config.extensions` (`src/ctx/code/cli.py:382`-`src/ctx/code/cli.py:386`). `--no-extensions` and `--no-agents` turn off discovery of `.ctx/extensions/`, `~/.ctx/agent/extensions/`, `.ctx/agent/`, and `~/.ctx/agent/` (`src/ctx/code/cli.py:369`, `src/ctx/code/cli.py:385`, `src/ctx/code/cli.py:405`, `src/ctx/term/app.py:246`).
 
-`--list-agents` prints one tab-separated row per agent (`name`, `description`, `path`) then exits 0 (`src/ctx/coding_agent/cli.py:313`-`src/ctx/coding_agent/cli.py:324`). With nothing discovered it prints `No agents found.` Load errors go to stderr as `agent error: <msg>`.
+`--list-agents` prints one tab-separated row per agent (`name`, `description`, `path`) then exits 0 (`src/ctx/code/cli.py:313`-`src/ctx/code/cli.py:324`). With nothing discovered it prints `No agents found.` Load errors go to stderr as `agent error: <msg>`.
 
-`--list-extensions` prints one row per loaded extension, plus indented `tools:`, `commands:`, and `handlers:` lines (`src/ctx/coding_agent/cli.py:187`-`src/ctx/coding_agent/cli.py:203`, dispatched at `src/ctx/coding_agent/cli.py:375`):
+`--list-extensions` prints one row per loaded extension, plus indented `tools:`, `commands:`, and `handlers:` lines (`src/ctx/code/cli.py:187`-`src/ctx/code/cli.py:203`, dispatched at `src/ctx/code/cli.py:375`):
 
 ```console
 $ ctx --list-extensions
@@ -134,7 +134,7 @@ ctx --dump-config --profile minimal
 
 `--profile` names the profile; when omitted, `boot()` reads `CTX_PROFILE`, then falls back to `default` (`src/ctx/plugins/bootstrap.py:38`). `--patch` layers are applied after the profile's own `cordis.yml`, in the order given (`src/ctx/plugins/profile.py:132`).
 
-`--dump-config` prints `<id>\t[enabled|disabled]\t<name>` per row and exits 0 (`src/ctx/coding_agent/cli.py:352`-`src/ctx/coding_agent/cli.py:355`). Rows discovered from extensions at boot are appended to the listing (`src/ctx/coding_agent/cli.py:337`-`src/ctx/coding_agent/cli.py:351`).
+`--dump-config` prints `<id>\t[enabled|disabled]\t<name>` per row and exits 0 (`src/ctx/code/cli.py:352`-`src/ctx/code/cli.py:355`). Rows discovered from extensions at boot are appended to the listing (`src/ctx/code/cli.py:337`-`src/ctx/code/cli.py:351`).
 
 ```console
 $ ctx --dump-config
@@ -143,7 +143,7 @@ llm	[enabled]	ctx.plugins.builtins.services.llm:PLUGIN
 ...
 ```
 
-A composition that fails to build exits 1 with `ctx: plugin composition failed: <msg>` on stderr (`src/ctx/coding_agent/cli.py:371`-`src/ctx/coding_agent/cli.py:373`).
+A composition that fails to build exits 1 with `ctx: plugin composition failed: <msg>` on stderr (`src/ctx/code/cli.py:371`-`src/ctx/code/cli.py:373`).
 
 ## Non-interactive mode
 
@@ -152,9 +152,9 @@ ctx -p "Summarize the diff"
 echo "Review this patch" | ctx -p
 ```
 
-`-p` runs one turn through `run_headless` and exits (`src/ctx/coding_agent/cli.py:378`-`src/ctx/coding_agent/cli.py:408`). Only the final assistant text goes to stdout (`src/ctx/coding_agent/headless.py:89`-`src/ctx/coding_agent/headless.py:90`); errors, extension errors, agent errors, and MCP warnings go to stderr.
+`-p` runs one turn through `run_headless` and exits (`src/ctx/code/cli.py:378`-`src/ctx/code/cli.py:408`). Only the final assistant text goes to stdout (`src/ctx/code/headless.py:89`-`src/ctx/code/headless.py:90`); errors, extension errors, agent errors, and MCP warnings go to stderr.
 
-Permission mode is forced to `auto` for the duration of the run: the config file is rewritten to `auto`, reloaded, and written back to its previous mode in a `finally` (`src/ctx/coding_agent/headless.py:129`-`src/ctx/coding_agent/headless.py:136`, `src/ctx/coding_agent/headless.py:309`-`src/ctx/coding_agent/headless.py:313`). Tool approval requests are auto-denied and reported (`src/ctx/coding_agent/headless.py:74`-`src/ctx/coding_agent/headless.py:79`); `ask_user` questions are reported as unanswered (`src/ctx/coding_agent/headless.py:80`-`src/ctx/coding_agent/headless.py:86`).
+Permission mode is forced to `auto` for the duration of the run: the config file is rewritten to `auto`, reloaded, and written back to its previous mode in a `finally` (`src/ctx/code/headless.py:129`-`src/ctx/code/headless.py:136`, `src/ctx/code/headless.py:309`-`src/ctx/code/headless.py:313`). Tool approval requests are auto-denied and reported (`src/ctx/code/headless.py:74`-`src/ctx/code/headless.py:79`); `ask_user` questions are reported as unanswered (`src/ctx/code/headless.py:80`-`src/ctx/code/headless.py:86`).
 
 ## Subcommand: `ctx update`
 
@@ -162,9 +162,9 @@ Permission mode is forced to `auto` for the duration of the run: the config file
 ctx update
 ```
 
-Self-updates the `ctx-code` distribution to the latest PyPI release and exits (`src/ctx/coding_agent/cli.py:223`-`src/ctx/coding_agent/cli.py:232`). The installer is chosen from the environment: `CTX_UPDATE_USE_PIP` forces pip, otherwise a detected `uv tool` install is upgraded with `uv tool upgrade`, a `pipx` install with `pipx upgrade`, then plain `uv pip install --upgrade`, then `pip` (`src/ctx/core/self_update.py:46`-`src/ctx/core/self_update.py:57`).
+Self-updates the `ctx-code` distribution to the latest PyPI release and exits (`src/ctx/code/cli.py:223`-`src/ctx/code/cli.py:232`). The installer is chosen from the environment: `CTX_UPDATE_USE_PIP` forces pip, otherwise a detected `uv tool` install is upgraded with `uv tool upgrade`, a `pipx` install with `pipx upgrade`, then plain `uv pip install --upgrade`, then `pip` (`src/ctx/core/self_update.py:46`-`src/ctx/core/self_update.py:57`).
 
-On success it prints `ctx update: <message>` and exits 0; on failure `ctx update failed: <message>` to stderr and exit 1 (`src/ctx/coding_agent/cli.py:228`, `src/ctx/coding_agent/cli.py:230`).
+On success it prints `ctx update: <message>` and exits 0; on failure `ctx update failed: <message>` to stderr and exit 1 (`src/ctx/code/cli.py:228`, `src/ctx/code/cli.py:230`).
 
 ## Subcommand: `ctx plugin`
 
@@ -172,9 +172,9 @@ On success it prints `ctx update: <message>` and exits 0; on failure `ctx update
 ctx plugin <profiles|init|path|enable|disable|install|allow-version|revoke-version|version-exemptions>
 ```
 
-`ctx plugin` is dispatched before argparse sees the rest of the command line, so `--profile` may appear anywhere in the subcommand's arguments (`src/ctx/coding_agent/cli.py:210`-`src/ctx/coding_agent/cli.py:213`, `src/ctx/coding_agent/plugin_cmd.py:205`-`src/ctx/coding_agent/plugin_cmd.py:212`).
+`ctx plugin` is dispatched before argparse sees the rest of the command line, so `--profile` may appear anywhere in the subcommand's arguments (`src/ctx/code/cli.py:210`-`src/ctx/code/cli.py:213`, `src/ctx/code/plugin_cmd.py:205`-`src/ctx/code/plugin_cmd.py:212`).
 
-Running `ctx plugin` with no arguments, or with `-h`/`--help`, prints the module docstring and the one-line command list, and exits 0 (`src/ctx/coding_agent/plugin_cmd.py:201`-`src/ctx/coding_agent/plugin_cmd.py:204`).
+Running `ctx plugin` with no arguments, or with `-h`/`--help`, prints the module docstring and the one-line command list, and exits 0 (`src/ctx/code/plugin_cmd.py:201`-`src/ctx/code/plugin_cmd.py:204`).
 
 | Subcommand | Arguments | Behavior |
 |---|---|---|
@@ -188,7 +188,7 @@ Running `ctx plugin` with no arguments, or with `-h`/`--help`, prints the module
 | `revoke-version` | `PACKAGE@VERSION` | Revoke a previously granted exemption (`plugin_cmd.py:149`-`plugin_cmd.py:184`) |
 | `version-exemptions` | | Print the profile's exemptions as JSON (`plugin_cmd.py:187`-`plugin_cmd.py:196`) |
 
-Every failure prints `ctx plugin: <message>` on stderr and returns 1 (`src/ctx/coding_agent/plugin_cmd.py:34`-`src/ctx/coding_agent/plugin_cmd.py:36`).
+Every failure prints `ctx plugin: <message>` on stderr and returns 1 (`src/ctx/code/plugin_cmd.py:34`-`src/ctx/code/plugin_cmd.py:36`).
 
 ### `ctx plugin profiles`
 
@@ -231,7 +231,7 @@ $ ctx plugin enable tool-grep
 ctx plugin: tool-grep enabled in profile 'default'
 ```
 
-Both rewrite only the matching row's `disabled` flag in `cordis.yml`, appending an `override` entry when the row has none yet (`src/ctx/coding_agent/plugin_cmd.py:89`). Unknown rows are refused (`src/ctx/coding_agent/plugin_cmd.py:88`):
+Both rewrite only the matching row's `disabled` flag in `cordis.yml`, appending an `override` entry when the row has none yet (`src/ctx/code/plugin_cmd.py:89`). Unknown rows are refused (`src/ctx/code/plugin_cmd.py:88`):
 
 ```console
 $ ctx plugin enable bogus-row
@@ -254,7 +254,7 @@ ctx plugin install --upgrade ctx-plugin-foo
 ctx plugin install https://github.com/org/repo
 ```
 
-A spec starting with `http://`, `https://`, `git@`, `ssh://`, or `git://` is cloned with `git clone --depth 1` into a temp directory and installed from there (`src/ctx/coding_agent/plugin_cmd.py:135`, `src/ctx/plugins/install.py:287`-`src/ctx/plugins/install.py:294`). Anything else goes through `uv pip install` (run as `python -m uv pip install`), with `--upgrade` appended when the flag is present (`src/ctx/plugins/install.py:264`-`src/ctx/plugins/install.py:267`).
+A spec starting with `http://`, `https://`, `git@`, `ssh://`, or `git://` is cloned with `git clone --depth 1` into a temp directory and installed from there (`src/ctx/code/plugin_cmd.py:135`, `src/ctx/plugins/install.py:287`-`src/ctx/plugins/install.py:294`). Anything else goes through `uv pip install` (run as `python -m uv pip install`), with `--upgrade` appended when the flag is present (`src/ctx/plugins/install.py:264`-`src/ctx/plugins/install.py:267`).
 
 The version gate reads the plugin's declared `ctx` requirement from `pyproject.toml`, but only a local path or directory spec can be judged before anything is downloaded; a PyPI name, git URL, or tarball is marked "unjudged until installed" (`src/ctx/plugins/install.py:177`-`src/ctx/plugins/install.py:207`). An incompatible package is refused with the exact exemption command to grant it (`src/ctx/plugins/install.py:255`-`src/ctx/plugins/install.py:262`); a spec judged only after install is verified once on disk and rolled back with `uv pip uninstall` when it fails (`src/ctx/plugins/install.py:272`-`src/ctx/plugins/install.py:283`).
 
@@ -272,16 +272,16 @@ ctx plugin allow-version ctx-plugin-foo@1.4.2 --ctx-version 1.2.2 --accept-risk
 ctx plugin revoke-version ctx-plugin-foo@1.4.2 --ctx-version 1.2.2
 ```
 
-`--ctx-version` is required. Both spellings `--ctx-version X` and `--ctx-version=X` are accepted (`src/ctx/coding_agent/plugin_cmd.py:155`-`src/ctx/coding_agent/plugin_cmd.py:163`).
+`--ctx-version` is required. Both spellings `--ctx-version X` and `--ctx-version=X` are accepted (`src/ctx/code/plugin_cmd.py:155`-`src/ctx/code/plugin_cmd.py:163`).
 
-`allow-version` prints a risk warning to stderr before writing anything, and refuses without `--accept-risk` (`src/ctx/coding_agent/plugin_cmd.py:166`-`src/ctx/coding_agent/plugin_cmd.py:170`, `src/ctx/plugins/install.py:77`-`src/ctx/plugins/install.py:81`). Grants are stored in `~/.ctx/profiles/<profile>/compatibility.json` and apply to exactly that package/version pair on exactly that ctx version (`src/ctx/plugins/install.py:50`-`src/ctx/plugins/install.py:51`).
+`allow-version` prints a risk warning to stderr before writing anything, and refuses without `--accept-risk` (`src/ctx/code/plugin_cmd.py:166`-`src/ctx/code/plugin_cmd.py:170`, `src/ctx/plugins/install.py:77`-`src/ctx/plugins/install.py:81`). Grants are stored in `~/.ctx/profiles/<profile>/compatibility.json` and apply to exactly that package/version pair on exactly that ctx version (`src/ctx/plugins/install.py:50`-`src/ctx/plugins/install.py:51`).
 
 ```console
 $ ctx plugin allow-version ctx-plugin-foo@1.4.2 --ctx-version 1.2.2
 ctx plugin: usage: ctx plugin allow-version <package@version> --ctx-version <exact>
 ```
 
-When the granted ctx version differs from the running one, a note follows the grant (`src/ctx/coding_agent/plugin_cmd.py:179`-`src/ctx/coding_agent/plugin_cmd.py:183`).
+When the granted ctx version differs from the running one, a note follows the grant (`src/ctx/code/plugin_cmd.py:179`-`src/ctx/code/plugin_cmd.py:183`).
 
 ### `ctx plugin version-exemptions`
 
@@ -290,7 +290,7 @@ $ ctx plugin version-exemptions
 {}
 ```
 
-Prints the exemptions mapping as indented JSON, exit 0. Unreadable entries are reported as warnings on stderr first (`src/ctx/plugins/install.py:54`-`src/ctx/plugins/install.py:70`, printed at `src/ctx/coding_agent/plugin_cmd.py:192`-`src/ctx/coding_agent/plugin_cmd.py:194`).
+Prints the exemptions mapping as indented JSON, exit 0. Unreadable entries are reported as warnings on stderr first (`src/ctx/plugins/install.py:54`-`src/ctx/plugins/install.py:70`, printed at `src/ctx/code/plugin_cmd.py:192`-`src/ctx/code/plugin_cmd.py:194`).
 
 ## Subcommand: `ctx acp`
 
@@ -298,9 +298,9 @@ Prints the exemptions mapping as indented JSON, exit 0. Unreadable entries are r
 ctx acp
 ```
 
-Runs ctx as an Agent Client Protocol (ACP) server over stdio: JSON-RPC 2.0, one object per line, for editors like Zed that speak the protocol (`src/ctx/coding_agent/acp.py:1`-`src/ctx/coding_agent/acp.py:13`, dispatched at `src/ctx/coding_agent/cli.py:217`-`src/ctx/coding_agent/cli.py:221`).
+Runs ctx as an Agent Client Protocol (ACP) server over stdio: JSON-RPC 2.0, one object per line, for editors like Zed that speak the protocol (`src/ctx/code/acp.py:1`-`src/ctx/code/acp.py:13`, dispatched at `src/ctx/code/cli.py:217`-`src/ctx/code/cli.py:221`).
 
-The server mounts the plugin composition before serving -- the `headless` profile, or `CTX_PROFILE` when set, with the `extensions:` list from `~/.ctx/config.yml` passed through. That mount is what registers the tools, because the coding agent's tools are plugin rows rather than harness defaults; without it an ACP session would offer the model only the three harness-native tools (`web`, `ask_user`, `delegate_subagent`) and no way to touch the workspace. Assembling from `ctx.tools` also means an edited row list stays authoritative, and the runtime picks up the composition's agent loop and prompt builder (`src/ctx/coding_agent/acp.py:81`, `:1331`).
+The server mounts the plugin composition before serving -- the `headless` profile, or `CTX_PROFILE` when set, with the `extensions:` list from `~/.ctx/config.yml` passed through. That mount is what registers the tools, because the coding agent's tools are plugin rows rather than harness defaults; without it an ACP session would offer the model only the three harness-native tools (`web`, `ask_user`, `delegate_subagent`) and no way to touch the workspace. Assembling from `ctx.tools` also means an edited row list stays authoritative, and the runtime picks up the composition's agent loop and prompt builder (`src/ctx/code/acp.py:81`, `:1331`).
 
 The `usage_update` notification carries **context occupancy**, not spend: `used` is the token footprint of the conversation (what compaction compares against the window) and `size` is the active model's context window. It is sent after each turn, after a compaction shrinks the context, and once when a session is loaded so a client's meter is correct on resume. Identical consecutive readings are suppressed, and a reading with no context yet is not sent at all -- clients hide the meter on a zero rather than render `0%` (`AcpServer._emit_usage`).
 
@@ -310,7 +310,7 @@ The `usage_update` notification carries **context occupancy**, not spend: `used`
 ctx auth status
 ```
 
-The only `auth` subcommand is `status`: it prints `Logged in.` when the configured or env-detected provider has credentials, `Not logged in.` otherwise, and exits 0 (`src/ctx/coding_agent/cli.py:241`-`src/ctx/coding_agent/cli.py:249`). Login and logout flows are TUI slash commands (`/login`, `/logout`), not CLI subcommands.
+The only `auth` subcommand is `status`: it prints `Logged in.` when the configured or env-detected provider has credentials, `Not logged in.` otherwise, and exits 0 (`src/ctx/code/cli.py:241`-`src/ctx/code/cli.py:249`). Login and logout flows are TUI slash commands (`/login`, `/logout`), not CLI subcommands.
 
 ## Subcommand: `ctx models`
 
@@ -318,7 +318,7 @@ The only `auth` subcommand is `status`: it prints `Logged in.` when the configur
 ctx models list [--format json]
 ```
 
-`models list` prints a JSON document with `families`, `providers`, and the active `provider_filter`, then exits 0 (`src/ctx/coding_agent/cli.py:251`-`src/ctx/coding_agent/cli.py:287`). `--format json` is accepted but the output is JSON either way.
+`models list` prints a JSON document with `families`, `providers`, and the active `provider_filter`, then exits 0 (`src/ctx/code/cli.py:251`-`src/ctx/code/cli.py:287`). `--format json` is accepted but the output is JSON either way.
 
 ## Subcommand: `ctx config`
 
@@ -329,7 +329,7 @@ ctx config set ui.theme '"dracula"'
 ctx config set llm.default_model null
 ```
 
-Reads and writes the persisted `~/.ctx/config.yml` without opening the TUI (`src/ctx/coding_agent/cli.py:289`-`src/ctx/coding_agent/cli.py:305`, setters in `src/ctx/core/config.py:1179`-`src/ctx/core/config.py:1216`):
+Reads and writes the persisted `~/.ctx/config.yml` without opening the TUI (`src/ctx/code/cli.py:289`-`src/ctx/code/cli.py:305`, setters in `src/ctx/core/config.py:1179`-`src/ctx/core/config.py:1216`):
 
 | Subcommand | Behavior |
 |---|---|
@@ -341,12 +341,12 @@ Reads and writes the persisted `~/.ctx/config.yml` without opening the TUI (`src
 
 | Code | Meaning | Source |
 |---|---|---|
-| `0` | Clean exit, or a one-shot path (`--list-agents`, `--list-extensions`, `--dump-config`, `ctx acp`, `ctx auth status`, `ctx models list`, `ctx config ...`, `ctx update`, `ctx plugin ...`) | `src/ctx/coding_agent/cli.py:221`, `src/ctx/coding_agent/cli.py:249`, `src/ctx/coding_agent/cli.py:287`, `src/ctx/coding_agent/cli.py:305`, `src/ctx/coding_agent/cli.py:324`, `src/ctx/coding_agent/cli.py:355` |
-| `1` | `ctx update` failure, plugin composition failure, or any `ctx plugin` error | `src/ctx/coding_agent/cli.py:231`, `src/ctx/coding_agent/cli.py:373`, `src/ctx/coding_agent/plugin_cmd.py:36` |
-| `2` | argparse error (including `-c`/`-r` with `-p`), empty headless prompt, or provider/agent initialization failure | `src/ctx/coding_agent/cli.py:308`, `src/ctx/coding_agent/headless.py:121`, `src/ctx/coding_agent/headless.py:277`, `src/ctx/coding_agent/headless.py:282`, `src/ctx/coding_agent/headless.py:286` |
-| `3` | Headless run ended with stop reason `length` (context or output limit) | `src/ctx/coding_agent/headless.py:34` |
+| `0` | Clean exit, or a one-shot path (`--list-agents`, `--list-extensions`, `--dump-config`, `ctx acp`, `ctx auth status`, `ctx models list`, `ctx config ...`, `ctx update`, `ctx plugin ...`) | `src/ctx/code/cli.py:221`, `src/ctx/code/cli.py:249`, `src/ctx/code/cli.py:287`, `src/ctx/code/cli.py:305`, `src/ctx/code/cli.py:324`, `src/ctx/code/cli.py:355` |
+| `1` | `ctx update` failure, plugin composition failure, or any `ctx plugin` error | `src/ctx/code/cli.py:231`, `src/ctx/code/cli.py:373`, `src/ctx/code/plugin_cmd.py:36` |
+| `2` | argparse error (including `-c`/`-r` with `-p`), empty headless prompt, or provider/agent initialization failure | `src/ctx/code/cli.py:308`, `src/ctx/code/headless.py:121`, `src/ctx/code/headless.py:277`, `src/ctx/code/headless.py:282`, `src/ctx/code/headless.py:286` |
+| `3` | Headless run ended with stop reason `length` (context or output limit) | `src/ctx/code/headless.py:34` |
 
-The headless exit code is derived from the run's `StopReason`; an unmapped reason falls back to 1 (`src/ctx/coding_agent/headless.py:37`).
+The headless exit code is derived from the run's `StopReason`; an unmapped reason falls back to 1 (`src/ctx/code/headless.py:37`).
 
 ## Known gaps
 
@@ -356,13 +356,13 @@ The headless exit code is derived from the run's `StopReason`; an unmapped reaso
 - `--api-key` is not persisted and is ignored by any provider that resolves its key from the environment or the stored credential file.
 - `--dump-config` prints rows as tab-separated text. A JSON form exists in the library (`dump_config_json`) but no flag exposes it.
 - `ctx plugin` has no `list` or `remove` subcommand; installed plugins are removed with the package manager directly.
-- The `commands:` line that `ctx plugin` prints advertises only `profiles | init NAME | path NAME | enable ROW | disable ROW` (`src/ctx/coding_agent/plugin_cmd.py:203`). `install`, `allow-version`, `revoke-version`, and `version-exemptions` are dispatched but are not listed; `ctx plugin -h` and `ctx plugin <unknown>` are the only ways to discover them.
+- The `commands:` line that `ctx plugin` prints advertises only `profiles | init NAME | path NAME | enable ROW | disable ROW` (`src/ctx/code/plugin_cmd.py:203`). `install`, `allow-version`, `revoke-version`, and `version-exemptions` are dispatched but are not listed; `ctx plugin -h` and `ctx plugin <unknown>` are the only ways to discover them.
 - `ctx plugin` is only intercepted when `plugin` is the first argument. `ctx --profile x plugin profiles` parses through argparse, which knows the subcommand but never dispatches it, so the run falls through to the TUI.
 - `--no-extensions` skips the two scan roots but installed-package entry points (`ctx.extensions`) are still discovered (`src/ctx/plugins/extensions.py:145`, `src/ctx/plugins/extensions.py:172`-`src/ctx/plugins/extensions.py:174`).
 - `--list-extensions` reports tools, commands, and handlers, but not shortcuts or flags registered by an extension.
 - Extension and agent discovery silently skips unreadable directories; only the resulting per-entry errors are printed.
 - The help text for `--provider` does not name the accepted slugs; only the `usage:` line lists them.
-- `-p/--prompt` rewrites the saved config file to `permissions.mode: auto` and writes it back afterwards (`src/ctx/coding_agent/headless.py:133`-`src/ctx/coding_agent/headless.py:135`, `src/ctx/coding_agent/headless.py:310`-`src/ctx/coding_agent/headless.py:313`). It is restored, but two concurrent headless runs can restore whichever value they captured first. The comment at `src/ctx/coding_agent/headless.py:130`-`src/ctx/coding_agent/headless.py:131` claims it does not mutate the config; it does, for the duration of the run.
+- `-p/--prompt` rewrites the saved config file to `permissions.mode: auto` and writes it back afterwards (`src/ctx/code/headless.py:133`-`src/ctx/code/headless.py:135`, `src/ctx/code/headless.py:310`-`src/ctx/code/headless.py:313`). It is restored, but two concurrent headless runs can restore whichever value they captured first. The comment at `src/ctx/code/headless.py:130`-`src/ctx/code/headless.py:131` claims it does not mutate the config; it does, for the duration of the run.
 
 ## See also
 

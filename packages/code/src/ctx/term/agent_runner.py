@@ -47,11 +47,11 @@ from ctx.core import (
 from ctx.core.config import config
 from ctx.core.notify import NotificationEvent, notify
 from ctx.protocol.types import ImageContent, StopReason, ToolResultMessage
-from ctx.tui.ask_user import AskUserDialog
-from ctx.tui.chat import ChatLog
-from ctx.tui.subagents import prune_finished_subagents
-from ctx.tui.tool_blocks import AskUserToolBlock
-from ctx.tui.widgets import InfoBar, StatusLine
+from ctx.term.ask_user import AskUserDialog
+from ctx.term.chat import ChatLog
+from ctx.term.subagents import prune_finished_subagents
+from ctx.term.tool_blocks import AskUserToolBlock
+from ctx.term.widgets import InfoBar, StatusLine
 
 _NOTIFY_EVENTS = (AgentEndEvent, ToolApprovalEvent, BackgroundTaskCompletedEvent)
 

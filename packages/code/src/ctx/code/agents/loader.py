@@ -15,8 +15,8 @@ from pathlib import Path
 from typing import Any
 
 from ctx.agent.tools.base import BaseTool
-from ctx.coding_agent.agents.api import AgentAPI, LoadedAgent
-from ctx.coding_agent.agents.schema import AgentDef
+from ctx.code.agents.api import AgentAPI, LoadedAgent
+from ctx.code.agents.schema import AgentDef
 from ctx.plugins.event_contract import AGENT_CHANGED
 
 log = logging.getLogger("agent.agents")

@@ -28,7 +28,7 @@ if TYPE_CHECKING:
 
 # NOTE: agent.* / ai.* / most protocol.* imports are deliberately deferred
 # into functions. Module-level imports here would re-enter agent.extensions
-# while it is still initializing when coding_agent is first imported from
+# while it is still initializing when code is first imported from
 # deep inside the agent package (circular import).
 
 _EXIT_CODES = {StopReason.STOP: 0, StopReason.ERROR: 1, StopReason.LENGTH: 3}
@@ -113,7 +113,7 @@ async def run_headless(
     auto_discover_agents: bool = True,
 ) -> int:
     from ctx.agent.runtime import ConversationRuntime
-    from ctx.coding_agent.tools import DEFAULT_TOOLS, get_tools_with_extensions
+    from ctx.code.tools import DEFAULT_TOOLS, get_tools_with_extensions
 
     prompt = resolve_prompt(prompt_arg, stdin=sys.stdin)
     if not prompt:

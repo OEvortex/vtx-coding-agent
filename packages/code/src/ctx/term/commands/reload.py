@@ -44,9 +44,9 @@ from dataclasses import dataclass
 
 from ctx.agent.tools import get_tools_with_extensions
 from ctx.core.config import config, reload_config
-from ctx.tui.chat import ChatLog
-from ctx.tui.commands.base import CommandSupport
-from ctx.tui.widgets import InfoBar
+from ctx.term.chat import ChatLog
+from ctx.term.commands.base import CommandSupport
+from ctx.term.widgets import InfoBar
 
 #: Prefix the extension loader stamps on every module it imports.
 _EXTENSION_MODULE_PREFIX = "ctx_ext_"

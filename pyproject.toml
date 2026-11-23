@@ -41,8 +41,8 @@ select = [
 ]
 
 [tool.ruff.lint.per-file-ignores]
-"packages/term/src/ctx/tui/latex.py" = ["RUF001"]
-"packages/code/src/ctx/coding_agent/prompts/identity.py" = ["E501"]
+"packages/term/src/ctx/term/latex.py" = ["RUF001"]
+"packages/code/src/ctx/code/prompts/identity.py" = ["E501"]
 "packages/ctx/src/ctx/agent/prompts/env.py" = ["E501"]
 "packages/ctx/src/ctx/agent/sdk/**/*.py" = ["N818"]
 "packages/ctx/src/ctx/ai/_httpcore_patch.py" = ["N806", "N812", "SIM117", "RUF002", "RUF003", "B009", "E501"]

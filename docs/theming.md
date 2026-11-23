@@ -33,14 +33,14 @@ The default is `gruvbox-dark` (`src/ctx/core/config.py:83`).
 /themes
 ```
 
-With no argument, `/themes` builds a picker over every `(id, label)` pair from `get_theme_options()` and marks the current one with a check (`src/ctx/tui/commands/settings.py:62`). Pick one and it is written to the config and applied to the live CSS immediately (`src/ctx/tui/commands/settings.py:70`).
+With no argument, `/themes` builds a picker over every `(id, label)` pair from `get_theme_options()` and marks the current one with a check (`src/ctx/term/commands/settings.py:62`). Pick one and it is written to the config and applied to the live CSS immediately (`src/ctx/term/commands/settings.py:70`).
 
 ```bash
 /themes catppuccin-mocha
 /themes gruvbox-dark
 ```
 
-Passing an id skips the picker. An unknown id prints the `ValueError` message from `get_theme()` in the chat log as an error rather than failing the command (`src/ctx/tui/commands/settings.py:58`, `src/ctx/core/themes.py:1147`).
+Passing an id skips the picker. An unknown id prints the `ValueError` message from `get_theme()` in the chat log as an error rather than failing the command (`src/ctx/term/commands/settings.py:58`, `src/ctx/core/themes.py:1147`).
 
 ### With `/settings`
 
@@ -48,7 +48,7 @@ Passing an id skips the picker. An unknown id prints the `ValueError` message fr
 /settings
 ```
 
-The settings picker has nine rows: `colored-tool-badge`, `git-context`, `notifications`, `ponytail`, `show-shortcuts`, `permissions`, `themes`, `thinking`, `thinking-lines` (`src/ctx/tui/commands/settings.py:246`). The `themes` row shows the current theme id and opens the same picker as `/themes` (`src/ctx/tui/commands/settings.py:261`, `src/ctx/tui/commands/settings.py:337`).
+The settings picker has nine rows: `colored-tool-badge`, `git-context`, `notifications`, `ponytail`, `show-shortcuts`, `permissions`, `themes`, `thinking`, `thinking-lines` (`src/ctx/term/commands/settings.py:246`). The `themes` row shows the current theme id and opens the same picker as `/themes` (`src/ctx/term/commands/settings.py:261`, `src/ctx/term/commands/settings.py:337`).
 
 ### In the config file
 
@@ -125,21 +125,21 @@ Each theme declares its own values in `_SYNTAX_COLORS` (`src/ctx/core/themes.py:
 
 ### Widgets
 
-`get_styles()` turns the active `ColorsConfig` into the Textual CSS for the whole app (`src/ctx/tui/styles.py:17`). Three colors are not read from the theme but blended from it with `_blend_hex()` (`src/ctx/tui/styles.py:6`):
+`get_styles()` turns the active `ColorsConfig` into the Textual CSS for the whole app (`src/ctx/term/styles.py:17`). Three colors are not read from the theme but blended from it with `_blend_hex()` (`src/ctx/term/styles.py:6`):
 
 | Blended color | Formula | Applied to |
 |---|---|---|
-| `approval_bg` | `bg` + `accent` at 0.05 | `.tool-block.-approval` and `.tool-block.-ask-user` (`src/ctx/tui/styles.py:19`, `src/ctx/tui/styles.py:175-196`) |
-| `shell_bg` | `editor` + `success` at 0.15 | `#input-box.-shell-command` (`src/ctx/tui/styles.py:20`, `src/ctx/tui/styles.py:434-442`) |
-| `thinking_medium_bg` | `editor` + `accent` at 0.08 | `#input-box.-thinking-medium` (`src/ctx/tui/styles.py:21`, `src/ctx/tui/styles.py:416-420`) |
-| `thinking_high_bg` | `editor` + `accent` at 0.18 | `#input-box.-thinking-high` (`src/ctx/tui/styles.py:22`, `src/ctx/tui/styles.py:422-426`) |
-| `thinking_xhigh_bg` | `editor` + `badge.label` at 0.18 | `#input-box.-thinking-xhigh` (`src/ctx/tui/styles.py:23`, `src/ctx/tui/styles.py:428-432`) |
+| `approval_bg` | `bg` + `accent` at 0.05 | `.tool-block.-approval` and `.tool-block.-ask-user` (`src/ctx/term/styles.py:19`, `src/ctx/term/styles.py:175-196`) |
+| `shell_bg` | `editor` + `success` at 0.15 | `#input-box.-shell-command` (`src/ctx/term/styles.py:20`, `src/ctx/term/styles.py:434-442`) |
+| `thinking_medium_bg` | `editor` + `accent` at 0.08 | `#input-box.-thinking-medium` (`src/ctx/term/styles.py:21`, `src/ctx/term/styles.py:416-420`) |
+| `thinking_high_bg` | `editor` + `accent` at 0.18 | `#input-box.-thinking-high` (`src/ctx/term/styles.py:22`, `src/ctx/term/styles.py:422-426`) |
+| `thinking_xhigh_bg` | `editor` + `badge.label` at 0.18 | `#input-box.-thinking-xhigh` (`src/ctx/term/styles.py:23`, `src/ctx/term/styles.py:428-432`) |
 
-The selectors that carry a theme color include `Screen`, `#chat-log`, `.thinking-block` and `#thinking-content`, `.run-summary-block`, `.content-block`, `.user-block`, `.update-available-block`, `.launch-warnings-block`, `.tool-block` and its approval/ask-user variants, `#tool-output`, `.compaction-block`, `.agent-details`, `.handoff-link-block`, `.recap-message`, `#queue-display` and `#queue-content`, `#status-text` and `#exit-hint`, `#agents-panel`, `#input-box`, `#input-prefix`, and `.info-bar` (`src/ctx/tui/styles.py:17`).
+The selectors that carry a theme color include `Screen`, `#chat-log`, `.thinking-block` and `#thinking-content`, `.run-summary-block`, `.content-block`, `.user-block`, `.update-available-block`, `.launch-warnings-block`, `.tool-block` and its approval/ask-user variants, `#tool-output`, `.compaction-block`, `.agent-details`, `.handoff-link-block`, `.recap-message`, `#queue-display` and `#queue-content`, `#status-text` and `#exit-hint`, `#agents-panel`, `#input-box`, `#input-prefix`, and `.info-bar` (`src/ctx/term/styles.py:17`).
 
 ### Applying a theme
 
-`_apply_theme()` regenerates `type(self).CSS`, calls `refresh_css(animate=False)`, refreshes the input box, and re-applies the thinking-level class so a theme change does not reset the tint (`src/ctx/tui/app.py:467-471`). `ui.colors` being a property is what makes this safe: the next read after a theme change returns the new colors.
+`_apply_theme()` regenerates `type(self).CSS`, calls `refresh_css(animate=False)`, refreshes the input box, and re-applies the thinking-level class so a theme change does not reset the tint (`src/ctx/term/app.py:467-471`). `ui.colors` being a property is what makes this safe: the next read after a theme change returns the new colors.
 
 ## Thinking display settings
 
@@ -163,17 +163,17 @@ ui:
   show_welcome_shortcuts: true
 ```
 
-In the TUI, `/settings` > `thinking-lines` opens a picker whose rows read "show 1 line" ... "no truncation" and confirms with a chat message (`src/ctx/tui/commands/settings.py:187`).
+In the TUI, `/settings` > `thinking-lines` opens a picker whose rows read "show 1 line" ... "no truncation" and confirms with a chat message (`src/ctx/term/commands/settings.py:187`).
 
 ### Related key bindings
 
 | Key | Action |
 |---|---|
-| `ctrl+t` | Cycle the thinking level (`src/ctx/tui/app.py:92`) |
-| `ctrl+shift+t` | Toggle thinking display (`src/ctx/tui/app.py:94`) |
-| `ctrl+o` | Toggle tool output (`src/ctx/tui/app.py:93`) |
+| `ctrl+t` | Cycle the thinking level (`src/ctx/term/app.py:92`) |
+| `ctrl+shift+t` | Toggle thinking display (`src/ctx/term/app.py:94`) |
+| `ctrl+o` | Toggle tool output (`src/ctx/term/app.py:93`) |
 
-The thinking level also tints the input box. `_apply_thinking_level_style()` removes all level classes then adds `-thinking-<level>`, and the level list is `none`, `default`, `minimal`, `low`, `medium`, `high`, `xhigh`, `max` (`src/ctx/tui/app.py:461-465`). `max` has no CSS rule, so it renders like `none` and `default` do; only `medium`, `high`, and `xhigh` produce a distinct blended tint (`src/ctx/tui/styles.py:416-432`).
+The thinking level also tints the input box. `_apply_thinking_level_style()` removes all level classes then adds `-thinking-<level>`, and the level list is `none`, `default`, `minimal`, `low`, `medium`, `high`, `xhigh`, `max` (`src/ctx/term/app.py:461-465`). `max` has no CSS rule, so it renders like `none` and `default` do; only `medium`, `high`, and `xhigh` produce a distinct blended tint (`src/ctx/term/styles.py:416-432`).
 
 ## Known gaps
 
@@ -181,8 +181,8 @@ The thinking level also tints the input box. `_apply_thinking_level_style()` rem
 - There is no light/dark switching. `ui.theme` is a single string with no `auto` option and no code that reads the terminal background, so you switch by hand and the light and dark variants are separate themes (`titanium` / `titanium-light`, `github-dark` / `github-light`, and so on).
 - A theme id is validated at config load, so a typo is not a warning: it fails the whole `Config` parse and falls back to the built-in defaults, losing every other setting in the file (`src/ctx/core/config.py:108-114`, `src/ctx/core/config.py:949-953`). `set_theme()` fails the same way but leaves the file untouched (`src/ctx/core/config.py:1011-1012`).
 - `ui.colors` is gone from the schema. Migration 2 drops the legacy `ui.colors` block and a `field_validator` rejects an unknown theme name instead, so there is no partial override of a shipped theme (`src/ctx/core/config.py:490`, `src/ctx/core/config.py:108-114`).
-- `thinking_level: "max"` has no CSS rule and no blend, so a `max` input box looks identical to `none` (`src/ctx/tui/styles.py:408-432`).
-- `set_theme()` and the others write the config file but do not reload extensions or agents. After editing the file by hand, run `/reload` to pick up the change (`src/ctx/tui/commands/reload.py:243`).
+- `thinking_level: "max"` has no CSS rule and no blend, so a `max` input box looks identical to `none` (`src/ctx/term/styles.py:408-432`).
+- `set_theme()` and the others write the config file but do not reload extensions or agents. After editing the file by hand, run `/reload` to pick up the change (`src/ctx/term/commands/reload.py:243`).
 - Themes carry no syntax palette for languages the TUI does not render itself. The six syntax roles are for command and patch display only (`src/ctx/core/themes.py:11`).
 
 Related pages: [configuration.md](configuration.md), [providers.md](providers.md), [cli.md](cli.md), [permissions.md](permissions.md), [skills.md](skills.md), [plugins.md](plugins.md).

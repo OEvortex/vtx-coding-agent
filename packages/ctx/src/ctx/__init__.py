@@ -12,7 +12,7 @@ import importlib
 from pkgutil import extend_path
 from typing import TYPE_CHECKING, Any
 
-# ``ctx-code`` ships ``ctx.coding_agent`` / ``ctx.tui`` from its own sources.
+# ``ctx-code`` ships ``ctx.code`` / ``ctx.term`` from its own sources.
 # Editable installs keep the two trees on separate ``sys.path`` entries, so the
 # submodules only resolve if this package's path is extended to cover them.
 __path__ = extend_path(__path__, __name__)

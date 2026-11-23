@@ -6,10 +6,10 @@ from typing import TYPE_CHECKING, ClassVar
 
 from ctx.core.config import PermissionMode, config
 from ctx.git.git_branch import resolve_git_branch
-from ctx.tui.chat import WITTY_ROTATE_EVERY_TICKS
-from ctx.tui.formatting import format_tokens
-from ctx.tui.status_lines import WITTY_STATUS_LINES, subagents_own_the_status_line
-from ctx.tui.status_lines import pick_witty_line as _pick_witty_line
+from ctx.term.chat import WITTY_ROTATE_EVERY_TICKS
+from ctx.term.formatting import format_tokens
+from ctx.term.status_lines import WITTY_STATUS_LINES, subagents_own_the_status_line
+from ctx.term.status_lines import pick_witty_line as _pick_witty_line
 from rich.spinner import Spinner
 from rich.text import Text
 from textual import events

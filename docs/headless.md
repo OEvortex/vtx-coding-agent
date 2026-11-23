@@ -6,7 +6,7 @@ It is the automation surface: `ctx -p "..."` gives you a single turn with no TUI
 
 ## Passing the prompt
 
-The flag takes a value in any of three ways (`src/ctx/coding_agent/cli.py:83-91`):
+The flag takes a value in any of three ways (`src/ctx/code/cli.py:83-91`):
 
 ```python
 parser.add_argument(
@@ -23,10 +23,10 @@ parser.add_argument(
 | Form | Behavior |
 |---|---|
 | `-p "summarize this diff"` | The literal value is the prompt |
-| `-p` with no value | `const="-"` marks stdin; Ctx reads stdin to EOF and strips it (`src/ctx/coding_agent/headless.py:41-44`) |
+| `-p` with no value | `const="-"` marks stdin; Ctx reads stdin to EOF and strips it (`src/ctx/code/headless.py:41-44`) |
 | `echo "..." \\| ctx -p` | Same as above: the flag is present with no value, so stdin is read |
 
-Resolution is exactly three lines, and both stdin paths strip the result (`src/ctx/coding_agent/headless.py:41-44`):
+Resolution is exactly three lines, and both stdin paths strip the result (`src/ctx/code/headless.py:41-44`):
 
 ```python
 def resolve_prompt(prompt_arg: str, *, stdin: TextIO) -> str:
@@ -43,10 +43,10 @@ Omit `-p` entirely and Ctx starts the TUI instead.
 |---|---|
 | `-p`, `--prompt` | The prompt, or omit the value to read stdin |
 | `-m`, `--model` | Model id |
-| `--provider` | Provider name; one of the keys of `PROVIDER_API_BY_NAME` (`src/ctx/coding_agent/cli.py:82`) |
+| `--provider` | Provider name; one of the keys of `PROVIDER_API_BY_NAME` (`src/ctx/code/cli.py:82`) |
 | `-k`, `--api-key` | API key |
 | `-u`, `--base-url` | Base URL for the API |
-| `--openai-compat-auth` | `auto` / `required` / `none` for OpenAI-compatible endpoints (`src/ctx/coding_agent/cli.py:94-98`) |
+| `--openai-compat-auth` | `auto` / `required` / `none` for OpenAI-compatible endpoints (`src/ctx/code/cli.py:94-98`) |
 | `--anthropic-compat-auth` | Same three modes for Anthropic-compatible endpoints |
 | `--insecure-skip-verify` | Skip TLS verification, e.g. self-signed certs on local providers |
 | `-c`, `--continue` | Resume the most recent session. **Not usable with `-p`** |
@@ -60,10 +60,10 @@ Omit `-p` entirely and Ctx starts the TUI instead.
 | `--list-extensions` | Print discovered extensions and exit |
 | `--profile` | Plugin profile to boot |
 | `--patch` | Extra composition patch file |
-| `--dump-config` | Print the composed plugin row list and exit (`src/ctx/coding_agent/cli.py:178-182`) |
+| `--dump-config` | Print the composed plugin row list and exit (`src/ctx/code/cli.py:178-182`) |
 | `--version` | Print `ctx <version>` |
 
-`--continue` and `--resume` with `-p` is a hard parser error, not a runtime one (`src/ctx/coding_agent/cli.py:307-308`):
+`--continue` and `--resume` with `-p` is a hard parser error, not a runtime one (`src/ctx/code/cli.py:307-308`):
 
 ```python
 if args.prompt is not None and (args.continue_recent or args.resume_session):
@@ -72,7 +72,7 @@ if args.prompt is not None and (args.continue_recent or args.resume_session):
 
 ## Output
 
-Stream events run through `render_run`, which writes the **final assistant text only**, to stdout, and only when the run stopped cleanly (`src/ctx/coding_agent/headless.py:47-91`):
+Stream events run through `render_run`, which writes the **final assistant text only**, to stdout, and only when the run stopped cleanly (`src/ctx/code/headless.py:47-91`):
 
 ```python
 if stop == StopReason.STOP and final_text:
@@ -88,7 +88,7 @@ So parsing stdout gets you exactly one model message without any interim reasoni
 | `AskUserEvent` | stderr | `error: agent asked a question in non-interactive mode: <questions>`, answered with an empty response (`headless.py:80-86`) |
 | MCP startup | stderr | `mcp: N tool(s) from M server(s)` (`headless.py:249`) |
 
-Approvals are auto-**denied** rather than auto-approved, so a tool that needs permission halts that call instead of silently running. Questions the agent asks are answered with an empty response, and the turn runner records a skipped tool result with a hint to the LLM (`src/ctx/coding_agent/headless.py:81-84`).
+Approvals are auto-**denied** rather than auto-approved, so a tool that needs permission halts that call instead of silently running. Questions the agent asks are answered with an empty response, and the turn runner records a skipped tool result with a hint to the LLM (`src/ctx/code/headless.py:81-84`).
 
 ## Exit codes
 
@@ -99,7 +99,7 @@ Approvals are auto-**denied** rather than auto-approved, so a tool that needs pe
 | `3` | `StopReason.LENGTH`  --  hit the output limit |
 | `2` | Not a stop reason: an empty prompt, an MCP-independent provider or agent-init failure |
 
-(`src/ctx/coding_agent/headless.py:34-38`, `src/ctx/coding_agent/headless.py:119-121`, `275-286`)
+(`src/ctx/code/headless.py:34-38`, `src/ctx/code/headless.py:119-121`, `275-286`)
 
 ```python
 _EXIT_CODES = {StopReason.STOP: 0, StopReason.ERROR: 1, StopReason.LENGTH: 3}
@@ -113,11 +113,11 @@ Distinguish the ones you own from the ones Ctx owns: `0`/`1`/`3` are model outco
 
 ## Permissions during a run
 
-Headless cannot show approval prompts, so it forces `permissions.mode = auto` for the duration of the run only. It rewrites the config, runs, then restores the previous mode in a `finally`  --  the saved file is never left in the auto state and the mode is not persisted (`src/ctx/coding_agent/headless.py:129-136`, `309-313`).
+Headless cannot show approval prompts, so it forces `permissions.mode = auto` for the duration of the run only. It rewrites the config, runs, then restores the previous mode in a `finally`  --  the saved file is never left in the auto state and the mode is not persisted (`src/ctx/code/headless.py:129-136`, `309-313`).
 
 ## MCP
 
-MCP connects before the run. A broken server prints `warning: MCP startup failed: ...` on stderr and the run continues (`src/ctx/coding_agent/headless.py:235-251`). Config problems from any server are printed as `warning: MCP config: ...` (`headless.py:252-266`).
+MCP connects before the run. A broken server prints `warning: MCP startup failed: ...` on stderr and the run continues (`src/ctx/code/headless.py:235-251`). Config problems from any server are printed as `warning: MCP config: ...` (`headless.py:252-266`).
 
 Both `~/.ctx/mcp.json` and `<cwd>/.ctx/mcp.json` are read, the same as in a TUI session, and their servers are connected with nothing to grant. There is one OAuth caveat: `signin` is interactive, so a remote server needing a browser must be signed in from the TUI once, after which `~/.ctx/mcp-auth.json` carries the tokens and a scripted run reuses them. See [mcp.md](mcp.md).
 
@@ -159,15 +159,15 @@ The same prompt from a value instead of stdin:
 ctx -p "list every TODO comment in src/" --no-extensions
 ```
 
-Note the redirection order: `2>review.err` keeps stdout clean for capture, which is the property `render_run` guarantees (`src/ctx/coding_agent/headless.py:89-90`).
+Note the redirection order: `2>review.err` keeps stdout clean for capture, which is the property `render_run` guarantees (`src/ctx/code/headless.py:89-90`).
 
 ### Session lifecycle
 
-Headless runs emit `session_start` and `session_end` so YAML hooks and extensions see them like any other run (`src/ctx/coding_agent/headless.py:288-306`). Extensions are loaded before the run and unloaded after, so an extension that registers tools via `-e` is available to the prompt but not baked into the CLI process.
+Headless runs emit `session_start` and `session_end` so YAML hooks and extensions see them like any other run (`src/ctx/code/headless.py:288-306`). Extensions are loaded before the run and unloaded after, so an extension that registers tools via `-e` is available to the prompt but not baked into the CLI process.
 
 ## Known gaps
 
 - Approvals are denied, not queued. There is no way to pre-approve a tool for a headless run except by setting `permissions.mode: auto` in your config beforehand, which then also affects interactive sessions.
 - `--continue` and `--resume` are unusable with `-p`, so a headless run cannot resume a TUI session. It always starts a fresh session.
-- The `session_start`/`session_end` emission is wrapped in `contextlib.suppress(Exception)` in teardown (`src/ctx/coding_agent/headless.py:301-306`), so a failing hook is invisible to your script  --  it will not change the exit code.
+- The `session_start`/`session_end` emission is wrapped in `contextlib.suppress(Exception)` in teardown (`src/ctx/code/headless.py:301-306`), so a failing hook is invisible to your script  --  it will not change the exit code.
 - A denial of an approval is reported on stderr but does not by itself set a nonzero exit: the run continues and ends `STOP`, which is exit `0`. Check stderr, not just the status.

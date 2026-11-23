@@ -16,7 +16,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Any, Literal
 
 from ctx.agent.tools.base import BaseTool
-from ctx.coding_agent.agents.schema import AgentDef, PermissionAction, PermissionGate
+from ctx.code.agents.schema import AgentDef, PermissionAction, PermissionGate
 
 # ``CommandOutcome``, ``ExtensionTool``, and ``_json_schema_to_pydantic``
 # come from :mod:`ctx.extensions`, but importing them at module load

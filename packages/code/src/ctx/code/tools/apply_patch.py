@@ -5,11 +5,11 @@ from typing import Literal
 
 import aiofiles
 from ctx.agent.tools.base import BaseTool, ToolResult
-from ctx.coding_agent.tools._tool_utils import shorten_path
+from ctx.code.tools._tool_utils import shorten_path
 from ctx.core.config import config
 from ctx.plugins import mount_tool, plugin
 from ctx.protocol.types import FileChanges
-from ctx.tui.diff_display import DIFF_BG_PAD_MARKER, blend_hex
+from ctx.term.diff_display import DIFF_BG_PAD_MARKER, blend_hex
 from pydantic import BaseModel, Field
 from rich.markup import escape
 
@@ -238,7 +238,7 @@ class ApplyPatchTool(BaseTool):
     @property
     def ui_block(self) -> type | None:
         try:
-            from ctx.tui.tool_blocks import ApplyPatchToolBlock
+            from ctx.term.tool_blocks import ApplyPatchToolBlock
 
             return ApplyPatchToolBlock
         except ImportError:

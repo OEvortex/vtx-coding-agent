@@ -103,10 +103,10 @@ def format_todo_tree(tasks: list[TaskRecord]) -> str:
     Plain text with no Rich markup on purpose: this string is what a session
     export writes into its tool-result block, where ``[dim]…[/dim]`` would land
     in the markdown as literal brackets. The TUI does not read it — the todo
-    block renders from :mod:`ctx.tui.todo_ui`, which can colour, animate and
+    block renders from :mod:`ctx.term.todo_ui`, which can colour, animate and
     measure the rows instead of flattening them to a string first.
     """
-    from ctx.tui.todo_ui import render_list
+    from ctx.term.todo_ui import render_list
 
     if not [t for t in tasks if t.status != "deleted"]:
         return "No tasks"
@@ -120,7 +120,7 @@ def _format_todo_delta(delta: dict[str, Any], tasks: list[TaskRecord]) -> str:
     body at all. A twenty-task plan updated every few seconds would otherwise
     print its own state two hundred times into the scrollback.
     """
-    from ctx.tui.todo_ui import render_delta
+    from ctx.term.todo_ui import render_delta
 
     return render_delta(delta, tasks, width=1000).plain
 
@@ -170,7 +170,7 @@ class TodoTool(BaseTool):
     @property
     def ui_block(self) -> type | None:
         try:
-            from ctx.tui.todo_block import TodoToolBlock
+            from ctx.term.todo_block import TodoToolBlock
 
             return TodoToolBlock
         except ImportError:

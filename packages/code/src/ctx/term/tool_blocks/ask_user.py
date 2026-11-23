@@ -1,6 +1,6 @@
 """The in-chat ``ask_user`` tool block.
 
-The questionnaire state machine (:mod:`ctx.tui.ask_user`) owns the answers;
+The questionnaire state machine (:mod:`ctx.term.ask_user`) owns the answers;
 this block owns the pixels. It renders the bordered dialog into the tool
 body, syncs the inline free-text input with the dialog's draft, and moves
 focus between them. The generic ``ToolBlock`` has none of that knowledge.
@@ -12,7 +12,7 @@ import contextlib
 import textwrap
 
 from ctx.core.config import config
-from ctx.tui.ask_user import (
+from ctx.term.ask_user import (
     INCOMPLETE_WARNING_PREFIX,
     NEXT_LABEL,
     NO_INPUT_PLACEHOLDER,
@@ -22,7 +22,7 @@ from ctx.tui.ask_user import (
     SUBMIT_PICK_LABEL,
     AskUserDialog,
 )
-from ctx.tui.input import AskUserInput  # ty: ignore[import-not-found]
+from ctx.term.input import AskUserInput  # ty: ignore[import-not-found]
 from rich.style import Style
 from rich.text import Text
 from textual.widgets import Label

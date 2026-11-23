@@ -9,15 +9,15 @@ from pathlib import Path
 
 from ctx.agent.session import Session, SessionInfo
 from ctx.core.config import config
-from ctx.tui.chat import ChatLog
-from ctx.tui.clipboard import copy_to_clipboard
-from ctx.tui.commands.base import CommandSupport
-from ctx.tui.floating_list import FloatingList, ListItem
-from ctx.tui.input import InputBox
-from ctx.tui.selection_mode import SelectionMode
-from ctx.tui.tree import TreeSelector
-from ctx.tui.usage_stats import DailyUsage
-from ctx.tui.widgets import InfoBar, StatusLine, format_path
+from ctx.term.chat import ChatLog
+from ctx.term.clipboard import copy_to_clipboard
+from ctx.term.commands.base import CommandSupport
+from ctx.term.floating_list import FloatingList, ListItem
+from ctx.term.input import InputBox
+from ctx.term.selection_mode import SelectionMode
+from ctx.term.tree import TreeSelector
+from ctx.term.usage_stats import DailyUsage
+from ctx.term.widgets import InfoBar, StatusLine, format_path
 
 
 class SessionCommands(CommandSupport):
@@ -186,8 +186,8 @@ class SessionCommands(CommandSupport):
         """
         import asyncio
 
-        from ctx.tui.blocks import UsageBlock
-        from ctx.tui.usage_stats import HEATMAP_DAYS, aggregate_usage
+        from ctx.term.blocks import UsageBlock
+        from ctx.term.usage_stats import HEATMAP_DAYS, aggregate_usage
 
         chat = self.query_one("#chat-log", ChatLog)
         pending = chat.add_info_message("Reading session history...")
@@ -443,7 +443,7 @@ class SessionCommands(CommandSupport):
         self._restore_chat_scroll_after_refresh(was_at_bottom)
 
     def _handle_export_command(self) -> None:
-        from ctx.tui.export import export_session_html
+        from ctx.term.export import export_session_html
 
         chat = self.query_one("#chat-log", ChatLog)
 

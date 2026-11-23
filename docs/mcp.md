@@ -197,7 +197,7 @@ There is no `direct` exposure: `DECLARED_TO_MODEL` is empty, so no MCP tool is e
 
 Only `codemode` is listed in the catalog: advertising a deferred tool there would describe something the model cannot see anyway. A deferred tool is unlisted but still findable, or "deferred" would mean "unfindable" and the only route left would be guessing the name (`src/ctx/mcp/exposure.py:68-86`).
 
-The two discovery routes differ in what they can *do*. `tools.search` runs inside a script, so a tool it finds is callable in that script and nowhere else. `tool_search` runs as an ordinary tool call and **loads** its matches, so they are offered to the model on the next call -- which is the only way a `deferred` tool ever becomes a direct call (`src/ctx/coding_agent/tools/tool_search.py:180-200`). It is declared only when there is something to find: a session whose servers are all `hidden` never sees it (`src/ctx/agent/runtime.py:813`).
+The two discovery routes differ in what they can *do*. `tools.search` runs inside a script, so a tool it finds is callable in that script and nowhere else. `tool_search` runs as an ordinary tool call and **loads** its matches, so they are offered to the model on the next call -- which is the only way a `deferred` tool ever becomes a direct call (`src/ctx/code/tools/tool_search.py:180-200`). It is declared only when there is something to find: a session whose servers are all `hidden` never sees it (`src/ctx/agent/runtime.py:813`).
 
 An individual tool's exposure resolves exact-name-beats-pattern, then first-pattern-in-declaration-order among the patterns, then the server's own `exposure`, then `codemode` (`src/ctx/mcp/exposure.py:158-172`). The ordering rule is stated rather than left to dict order: `{"delete_*": "hidden", "*": "codemode"}` reads as "everything codemode except deletes", which is the opposite of what flipped iteration order would mean (`src/ctx/mcp/exposure.py:161-165`).
 
@@ -235,9 +235,9 @@ There is no `ctx mcp` CLI subcommand. MCP is managed from the TUI.
 | `/mcp enable <name>` | | Enable and save to its `mcp.json` |
 | `/mcp disable <name>` | | Disable and save |
 
-(`src/ctx/tui/commands/mcp.py:7-16`, `src/ctx/tui/commands/mcp.py:42-78`)
+(`src/ctx/term/commands/mcp.py:7-16`, `src/ctx/term/commands/mcp.py:42-78`)
 
-`/mcp signin` on a stdio server is refused with `runs as a local process, so there is nothing to sign in to` (`src/ctx/tui/commands/mcp.py:268-274`). The authorize URL is echoed either way: a browser is a convenience, the terminal is the channel that is certain to be readable (`src/ctx/tui/commands/mcp.py:277-285`). A sign-in that reached a redirect but never finished leaves `authorization_url` on the status so `/mcp` can show the link again (`src/ctx/tui/commands/mcp.py:104-113`).
+`/mcp signin` on a stdio server is refused with `runs as a local process, so there is nothing to sign in to` (`src/ctx/term/commands/mcp.py:268-274`). The authorize URL is echoed either way: a browser is a convenience, the terminal is the channel that is certain to be readable (`src/ctx/term/commands/mcp.py:277-285`). A sign-in that reached a redirect but never finished leaves `authorization_url` on the status so `/mcp` can show the link again (`src/ctx/term/commands/mcp.py:104-113`).
 
 Every server is reported, including a project one and the file it came from, so a checked-in `mcp.json` never looks like it had no effect.
 
@@ -316,4 +316,4 @@ In a TUI session the same configuration is confirmed with `/mcp`: both servers a
 
 - MCP management is TUI-only. There is no `ctx mcp` subcommand and no headless flag to sign in to a remote server; `/mcp signin` must be run from the interactive session first, after which `~/.ctx/mcp-auth.json` carries the tokens. Servers still connect in headless and ACP runs - they just have no sign-in path of their own.
 - `validate_exposures` reports the first bad field rather than all of them, so fixing one misconfigured `tool_exposure` may surface another on the next reload (`src/ctx/mcp/exposure.py:117-155`).
-- `adapt_tool`-style OAuth wiring needs you to supply `open_url` or your own browser plumbing; nothing in `ctx.mcp` opens a browser on its own except the TUI command path (`src/ctx/tui/commands/mcp.py:277-285`).
+- `adapt_tool`-style OAuth wiring needs you to supply `open_url` or your own browser plumbing; nothing in `ctx.mcp` opens a browser on its own except the TUI command path (`src/ctx/term/commands/mcp.py:277-285`).

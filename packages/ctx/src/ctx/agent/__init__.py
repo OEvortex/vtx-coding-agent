@@ -1,6 +1,6 @@
 """The product-neutral harness: loop, turns, sessions, tools, extensions, SDK.
 
-``ctx.agent`` owns the engine. The product layer (``ctx.coding_agent``) injects
+``ctx.agent`` owns the engine. The product layer (``ctx.code``) injects
 everything engine-side: the system-prompt builder, the context loader, the tool
 registry, and the user's configuration.
 

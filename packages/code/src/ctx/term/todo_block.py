@@ -1,7 +1,7 @@
 """The in-chat ``todo`` tool block.
 
 Two jobs, and they are not the same job. The pinned strip
-(:mod:`ctx.tui.todo_panel`) answers "where is the plan right now"; this block
+(:mod:`ctx.term.todo_panel`) answers "where is the plan right now"; this block
 answers "what did that last call do". Printing the whole list on every call
 answers neither well — a seven-step plan updated twenty times puts a hundred
 and forty identical rows in the scrollback, and the three rows that were
@@ -18,15 +18,15 @@ Layout::
     │ ├─ ✓ Create IDemoTodoRepository interface
     │ └─ ⠹ Create DemoTodoRepository   Creating DemoTodoRepository impl…
 
-Rows come from :mod:`ctx.tui.todo_ui`, the same renderer the pinned strip
+Rows come from :mod:`ctx.term.todo_ui`, the same renderer the pinned strip
 uses, so the block and the strip never disagree about a glyph.
 """
 
 from __future__ import annotations
 
 from ctx.core.config import config
-from ctx.tui import todo_ui
-from ctx.tui.blocks import ToolBlock
+from ctx.term import todo_ui
+from ctx.term.blocks import ToolBlock
 from rich.style import Style
 from rich.text import Text
 from textual.widgets import Label

@@ -2,7 +2,7 @@
 
 A skill is a directory of markdown instructions that the model reads on demand, and this page covers how Ctx discovers them, what frontmatter it parses, and how a skill reaches the model. Use a skill when a workflow needs more context than a prompt template but no executable integration point.
 
-Ctx skills are markdown only. The old python-skill mechanism (a `pyproject.toml` plus a `src/` package imported into a persistent IPython kernel) went with the RLM mode, and the loader no longer reads those files at all: a `pyproject.toml` dropped in a skill directory is ignored, and the `SKILL.md` body is treated as instructions (`src/ctx/coding_agent/builtin_skills/meta/ctx-self-extend/SKILL.md:93`). The `skill` tool's `run` action went with it: `"run"` is no longer in the `action` literal, so `action: "run"` fails parameter validation (`src/ctx/coding_agent/tools/skill.py:30`; the removal is recorded in `CHANGELOG.md`). There is no `is_kernel_skill` and no `skills_for_mode` any more.
+Ctx skills are markdown only. The old python-skill mechanism (a `pyproject.toml` plus a `src/` package imported into a persistent IPython kernel) went with the RLM mode, and the loader no longer reads those files at all: a `pyproject.toml` dropped in a skill directory is ignored, and the `SKILL.md` body is treated as instructions (`src/ctx/code/builtin_skills/meta/ctx-self-extend/SKILL.md:93`). The `skill` tool's `run` action went with it: `"run"` is no longer in the `action` literal, so `action: "run"` fails parameter validation (`src/ctx/code/tools/skill.py:30`; the removal is recorded in `CHANGELOG.md`). There is no `is_kernel_skill` and no `skills_for_mode` any more.
 
 ## Layout
 
@@ -17,7 +17,7 @@ release-notes/
     └── draft.py        # optional helper the instructions tell the model to run
 ```
 
-The loader accepts only directories: `_load_skill_from_dir` returns `None` for any directory without a `SKILL.md` file, and entries whose name starts with `.` are skipped (`src/ctx/agent/context/skills.py:181`, `:249`). Paths inside the body resolve against the directory that holds `SKILL.md`, which the `skill` tool restates in its output (`src/ctx/coding_agent/tools/skill.py:195`).
+The loader accepts only directories: `_load_skill_from_dir` returns `None` for any directory without a `SKILL.md` file, and entries whose name starts with `.` are skipped (`src/ctx/agent/context/skills.py:181`, `:249`). Paths inside the body resolve against the directory that holds `SKILL.md`, which the `skill` tool restates in its output (`src/ctx/code/tools/skill.py:195`).
 
 ## Frontmatter
 
@@ -93,15 +93,15 @@ The `skill` tool is registered by the `tool-skill` plugin row (`src/ctx/plugins/
 | `patch` | `name`, `old_string`, `new_string`, `file_path?` | Find-replace. Fails when `old_string` is absent or not unique. |
 | `delete` | `name` | `shutil.rmtree` on the skill directory. |
 
-The literals are the `action` field of `SkillParams` (`src/ctx/coding_agent/tools/skill.py:30`). The mutating actions refuse to touch a bundled skill (`:218`). `name` is required for every action except `list` (`:129`).
+The literals are the `action` field of `SkillParams` (`src/ctx/code/tools/skill.py:30`). The mutating actions refuse to touch a bundled skill (`:218`). `name` is required for every action except `list` (`:129`).
 
 The tool resolves a name through the same three on-disk scopes and then the packaged `builtin_skills` tree (`find_skill_dir`, `:134`). `create` validates the name with `islower()` and `replace("-", "").isalnum()`, which is looser than the loader's rules: it accepts a leading, trailing, or doubled hyphen that the loader will then warn about.
 
 ## Registered slash commands
 
-A skill with `register_cmd: true` becomes `/<name>`. `_sync_slash_commands` appends it to the command list with `cmd_info` as its description, falling back to the first 32 characters of the description (`src/ctx/tui/app.py:527`). A skill whose name collides with a built-in command is not listed twice, and the built-in wins at submit time (`:1147`), which is why a skill cannot shadow `/compact`.
+A skill with `register_cmd: true` becomes `/<name>`. `_sync_slash_commands` appends it to the command list with `cmd_info` as its description, falling back to the first 32 characters of the description (`src/ctx/term/app.py:527`). A skill whose name collides with a built-in command is not listed twice, and the built-in wins at submit time (`:1147`), which is why a skill cannot shadow `/compact`.
 
-Typing `/<name> <query>` renders the body through `render_skill_prompt`, which substitutes `$ARGUMENTS` when the template contains it and otherwise appends the query after the body (`src/ctx/agent/context/skills.py:470`). `/skill:<name> <query>` is the explicit spelling for the same thing (`src/ctx/tui/app.py:1167`).
+Typing `/<name> <query>` renders the body through `render_skill_prompt`, which substitutes `$ARGUMENTS` when the template contains it and otherwise appends the query after the body (`src/ctx/agent/context/skills.py:470`). `/skill:<name> <query>` is the explicit spelling for the same thing (`src/ctx/term/app.py:1167`).
 
 ## Worked example
 
@@ -134,13 +134,13 @@ mkdir -p .agents/skills/release-notes
 /release-notes 1.2.0..HEAD   # $ARGUMENTS becomes "1.2.0..HEAD"
 ```
 
-`/reload` rebuilds the context, so `Context.reload` re-runs discovery and the slash list is re-synced (`src/ctx/agent/context/loader.py:42`; `src/ctx/tui/commands/reload.py:204`). Loading problems surface as launch warnings rather than a crash (`src/ctx/tui/app.py:738`).
+`/reload` rebuilds the context, so `Context.reload` re-runs discovery and the slash list is re-synced (`src/ctx/agent/context/loader.py:42`; `src/ctx/term/commands/reload.py:204`). Loading problems surface as launch warnings rather than a crash (`src/ctx/term/app.py:738`).
 
 You do not need `/reload` for a catalog change to reach a running turn. Each run boundary at depth 0 re-reads the catalog and, when the fingerprint changed, swaps one context message in place announcing what was added, removed, or reworded (`src/ctx/agent/loop.py:156`, `:206`). An unreadable catalog preserves the last known one rather than announcing that no skills exist.
 
 ## The bundled skills
 
-`register_skills_package("ctx.coding_agent")` runs at package import (`src/ctx/coding_agent/__init__.py:48`), and `sync_builtin_skills` copies the result into `~/.ctx/skills/` on every context load (`src/ctx/agent/context/loader.py:31`).
+`register_skills_package("ctx.code")` runs at package import (`src/ctx/code/__init__.py:48`), and `sync_builtin_skills` copies the result into `~/.ctx/skills/` on every context load (`src/ctx/agent/context/loader.py:31`).
 
 | Skill | Category | Registered as a command |
 |---|---|---|

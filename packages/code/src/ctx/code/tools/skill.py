@@ -85,7 +85,7 @@ class SkillTool(BaseTool):
     @property
     def ui_block(self) -> type | None:
         try:
-            from ctx.tui.tool_blocks import SkillToolBlock
+            from ctx.term.tool_blocks import SkillToolBlock
 
             return SkillToolBlock
         except ImportError:
@@ -160,7 +160,7 @@ class SkillTool(BaseTool):
             if (skill_dir / "SKILL.md").is_file():
                 return skill_dir, True
 
-            # 4. Builtin skills from registered packages (ctx.coding_agent
+            # 4. Builtin skills from registered packages (ctx.code
             #    registers its bundled skills on import), searched recursively
             #    through their category folders.
             for builtin in load_builtin_cmd_skills().skills:

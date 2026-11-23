@@ -1,12 +1,25 @@
-# ctx.tui
+# ctx.term — terminal UI building blocks
 
-One flat package with the whole Textual interface: the reusable primitives (text entry, inline completion, scrollback blocks, rich-text formatting) and the app that composes them. The harness `ctx.agent` depends on this package for `blocks.TaskToolBlock` and for `tool_output` truncation.
+`term` ships the product-neutral half of the `ctx.term` namespace: Textual
+widgets, scrollback blocks, formatting, and input primitives. The coding
+agent app, its slash commands, its panels, and every tool-specific block
+live in `ctx-code` and join the same namespace through
+`pkgutil.extend_path`.
 
-Two ways in. Reuse the primitives to build your own app — everything above "The app" is app-agnostic. Or run the shipped one: `from ctx.tui import Ctx, run_tui`.
+The split is a one-way dependency: `ctx-code` imports these building blocks;
+this package never imports `ctx-code`. In particular, `ToolBlock` knows
+nothing about individual tools — it renders the generic `ui_summary`,
+`ui_details`, and `ui_data` fields and exposes hooks a product block can
+override (`_source_path`, `_render_custom_output`, `_streaming_body_text`,
+`_format_call_detail`, `apply_task_progress`, and the `show_ask_user`
+family).
 
 ## Usage
 
-The pieces are meant to be composed. An `InputBox` decides *what* should be suggested and posts messages; the app owns the `FloatingList` overlay and the provider dispatch, because only the app knows how a picked item should behave.
+Reuse the primitives to build your own app. An `InputBox` decides *what*
+should be suggested and posts messages; the app owns the `FloatingList`
+overlay and the provider dispatch, because only the app knows how a picked
+item should behave.
 
 ```python
 import asyncio
@@ -14,8 +27,8 @@ import asyncio
 from textual.app import App, ComposeResult
 from textual.containers import VerticalScroll
 
-from ctx.tui import FloatingList, InputBox
-from ctx.tui.autocomplete import FilePathProvider, PullRequestProvider, SlashCommandProvider
+from ctx.term import FloatingList, InputBox
+from ctx.term.autocomplete import FilePathProvider, PullRequestProvider, SlashCommandProvider
 
 
 class Demo(App):
@@ -60,7 +73,10 @@ class Demo(App):
 asyncio.run(Demo().run())
 ```
 
-Typing `/mod` puts `/model` in the overlay and `enter` submits it. `InputBox` is a `Vertical` wrapping a `TextArea` subclass (`Ctx`), and owns paste compaction, image attachment via `ctrl+v`, shell-command styling, tab path completion, and history navigation. It does not own the overlay widget.
+Typing `/mod` puts `/model` in the overlay and `enter` submits it. `InputBox`
+is a `Vertical` wrapping a `TextArea` subclass (`Ctx`), and owns paste
+compaction, image attachment via `ctrl+v`, shell-command styling, tab path
+completion, and history navigation. It does not own the overlay widget.
 
 ## Text entry and completion
 
@@ -78,42 +94,23 @@ Typing `/mod` puts `/model` in the overlay and `enter` submits it. `InputBox` is
 
 ## Rendering
 
-- `blocks` holds the scrollback widgets: `UserBlock`, `ContentBlock`, `ToolBlock`, `TaskToolBlock`, `CodemodeToolBlock`, `ThinkingBlock`, `HandoffLinkBlock`, `UpdateAvailableBlock`, `LaunchWarningsBlock`, `CompactionBlock`, plus `LaunchWarning` and `stylize_badge_markers`. `TaskToolBlock`, `CompactionBlock`, and `CodemodeToolBlock` are not in `ctx.tui.__all__`; import them from `ctx.tui.blocks`. The private `_StreamingMarkdownMixin` splits completed text at stable block boundaries and caches the closed prefix, so a streaming delta re-renders only the open tail.
-- `codemode_block` holds `CodemodeToolBlock`, the `codemode` cell. Modelled on pi's `codemode` renderer: **no section labels** -- the run reads top to bottom as one thing, separated by blank lines only. The header is the shared tool header (icon, name, state) plus a digest (`N tool calls · M failed`, or `running · N call done · M in flight`). Body order is script, calls, output, error, clock. The script is syntax-highlighted; calls are ragged `<glyph> <name> <args> <duration>` rows with `…`/`✓`/`✗`/`⊘` per status, ms-precision durations (`format_call_ms`), and a failure's message and kind kept on the row even when collapsed; output is the `text()` items followed by the returned value, labelled `==> text N/M <==` when there is more than one, with the preview cutting *between* items so a label is never orphaned; the clock is last, `Elapsed 4.2s` while running and `Took 1m 30s` after (`format_run_ms`). Script, calls, and output are previews (`SCRIPT_PREVIEW_LINES`, `CALL_PREVIEW_COUNT`, `OUTPUT_PREVIEW_LINES`) counting *wrapped* lines and revealed by `ctrl+o`; code keeps the head, calls and output keep the tail. Output is withheld while the script runs. Nested calls stream in live via `ToolCall.args` and the `on_progress` callback on `CodemodeSandbox.execute`, framed on the tool's output channel by `PROGRESS_SENTINEL`. It reads the finished run from `ToolBlock.ui_data` and the in-flight run from its own ledger.
+- `blocks` holds the generic scrollback widgets: `ToolBlock`, `ThinkingBlock`, `ContentBlock`, `UserBlock`, `RunSummaryBlock`, `HandoffLinkBlock`, `UpdateAvailableBlock`, `LaunchWarningsBlock`, `CompactionBlock`, and `UsageBlock`, plus `LaunchWarning` and `stylize_badge_markers`. Tool-specific blocks (`read`, `apply_patch`, `bash`, `ask_user`, `delegate_subagent`, `todo`, `codemode`, …) live in `ctx.term.tool_blocks` in `ctx-code`. The private `_StreamingMarkdownMixin` splits completed text at stable block boundaries and caches the closed prefix, so a streaming delta re-renders only the open tail.
+- `chat.ChatLog` is the generic scrollback pane. It mounts whatever block class `tool.ui_block` selects and forwards progress/events through block hooks; it does not recognise tool names.
 - `formatting` renders markdown for the chat: `format_markdown(text, width=None)` and `format_markdown_block(text, width)` return `rich.text.Text`, `find_stable_block_boundary` is what the streaming mixin uses to pick a safe split point, and `strip_markdown_for_collapsed_text` and `markdown_render_width` produce the collapsed form. `format_bash_command` styles a shell command, `format_python_source` highlights a script as indented `Text` for a notebook cell, and `format_tokens` formats a token count. `MARKDOWN_THEME` and `CustomMarkdown` are the theme.
-- `task_ui` is pure rich-text formatting despite the name - there is no widget. `GLYPHS`, `SPINNER`, `TOOL_DISPLAY`, and `TOOL_NOUNS` are the tables; `render_finished`, `render_receipt`, and `render_background` return `Text` for a sub-agent's output; `format_turns`, `format_tool_breakdown`, `format_ms`, `format_tokens`, and `stats_parts` build status lines; `extract_summary_line`, `describe_activity`, `detect_files_referenced`, and `short_model` derive one-line descriptions from plain data.
+- `tool_output` (collapsed-output truncation: `escape_tool_output_text`, `truncate_tool_output_text`, `format_expand_hint`) and `task_ui` (the `delegate_subagent` glyphs and renderers) moved to `ctx-code`: they belong with the tools that produce them.
 - `latex.preprocess_latex(text)` converts inline and display math to Unicode. Adapted from innomd by Innomatica GmbH (MIT).
-- `tool_output` holds the collapsed-output view: `escape_tool_output_text`, `truncate_tool_output_text`, and `format_expand_hint` (the `ctrl+o` hint). `ctx.coding_agent.tools.web` uses this too.
 - `diff_display` provides `blend_hex` and `DIFF_BG_PAD_MARKER`, for tinting diff backgrounds into the configured palette.
 
 ## Styling, clipboard, and dialogs
 
 - `get_styles()` returns the app CSS built from the configured palette; `styles.STYLES` is the module-level cache of it. Call `get_styles()` again after a theme change.
 - `copy_to_clipboard(text)` and `read_clipboard_image()` handle X11, Wayland, macOS, and Windows.
-- `AskUserDialog` is the questionnaire state machine behind the `ask_user` dialog. It is pure Python with no Textual imports: the UI layer feeds it keypresses and renders `rows()`. One dialog owns 1-4 questions plus an optional Submit review tab; `handle_key(key, custom_value=...)` returns whether it consumed the key, and `build_answers()` / `build_response()` produce the result. The full keyboard contract is in the module docstring.
-
-## The app
-
-Everything above is primitives. The rest composes them into the coding agent's interactive interface.
-
-- `app.Ctx` is the `App`: bindings, CSS, key routing, and the mixin stack. `run_tui(args)` is the console entry point.
-- The app is split into mixins so each concern owns its own state: `agent_runner.AgentRunnerMixin` (streaming a turn, tool dispatch, approval, background wakeups), `session_ui.SessionUIMixin` (new/clear/resume/compact), `startup.StartupMixin` (tool install, update check, launch warnings), `recap.RecapMixin` (idle session recap), `completion_ui.CompletionUIMixin` (wiring `InputBox` providers to the overlay).
-- `chat.ChatLog` is the scrollback pane that appends blocks and tracks streaming state.
-- `widgets` holds `InfoBar` (model, tokens/context meter, branch, permission mode, file changes), `StatusLine` (spinner, witty line, exit hints), `QueueDisplay`, and `FileChangesModal`.
-- `tree.TreeSelector` is the `/tree` session browser; `agents_panel.AgentsPanel` is the pinned per-sub-agent panel.
-- `commands/` is the slash-command registry: `base.CommandSupport` is the duck-typed mixin base, and `CommandsMixin` combines `settings`, `models`, `sessions`, `auth`, `providers`, `agents`, `switch`, `update`, `reload`, and `mcp`. Each module is one `CommandSupport` subclass.
-- `app_protocol.Ctx` is the Protocol the mixins are typed against; depend on it, not the concrete App, to write your own.
-- `export.export_session_html(path)` renders a session JSONL to a standalone HTML transcript.
-- `extension_ui.TextualExtensionUI` is the modal screens extensions get to declare their own UI.
+- `status_lines` owns the witty status lines and the generic live-activity probe (`set_live_activity_probe`). The delegate_subagent registry in `ctx-code` registers itself here, so this module stays product-neutral.
 
 ## Notes on use
 
 - `fuzzy_match(query, text)` returns `(score, positions)` where **higher is better** and `NO_MATCH` (0.0) means no match - inverted from the pi-mono convention, so the descending sorts already in the callers keep working. `fuzzy_filter(items, query, get_text)` applies it. Tokens split on whitespace and `/`; ties keep input order.
 
-## Tests
+## Where the app lives
 
-```bash
-uv run --no-sync python -m pytest -p no:cacheprovider tests/ui -q
-```
-
-`tests/ui` covers `autocomplete`, `floating_list`, `latex`, `prompt_history`, `styles`, and `task_ui` directly, and reaches the widgets (`input.py`, `blocks.py`) through the app, which is the only way they are runnable. `tests/test_tui_fuzzy.py` covers `fuzzy`.
+The interactive app, its mixins (`agent_runner`, `session_ui`, `startup`, `recap`, `completion_ui`, `queue_ui`), the slash-command registry, the panels (`agents_panel`, `todo_panel`), the session browser, and every tool block are in `ctx-code` under `ctx/term/`. See that package's README.

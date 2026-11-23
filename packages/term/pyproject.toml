@@ -1,7 +1,7 @@
 [project]
 name = "term"
 version = "0.1.0"
-description = "Terminal UI building blocks for ctx: Textual widgets, block renderers, formatting, and input primitives. Ships the ctx.tui package; the coding-agent app lives in ctx-code."
+description = "Terminal UI building blocks for ctx: Textual widgets, block renderers, formatting, and input primitives. Ships the ctx.term package; the coding-agent app lives in ctx-code."
 requires-python = ">=3.12"
 keywords = ["tui", "terminal", "textual", "ctx"]
 dependencies = [

@@ -13,7 +13,7 @@ import re
 from typing import Any
 
 from ctx.core.config import config
-from ctx.tui.diff_display import DIFF_BG_PAD_MARKER
+from ctx.term.diff_display import DIFF_BG_PAD_MARKER
 from rich.style import Style
 from rich.text import Text
 
@@ -401,7 +401,7 @@ def _highlight_fragment(fragment: str, path: str = "", *, lexer: str | None = No
     if lexer is None or not fragment.strip():
         return Text(fragment)
     try:
-        from ctx.tui.formatting import get_python_theme
+        from ctx.term.formatting import get_python_theme
         from rich.console import Console
         from rich.syntax import Syntax
 

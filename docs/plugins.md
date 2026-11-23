@@ -245,7 +245,7 @@ ctx --profile minimal                 # boot the minimal composition
 
 `enable` and `disable` rewrite only the `disabled` flag in `cordis.yml`, appending an
 `override` when there is none yet and leaving the rest of the file alone
-(`src/ctx/coding_agent/plugin_cmd.py:78`). Every row keeps exactly one home in the file,
+(`src/ctx/code/plugin_cmd.py:78`). Every row keeps exactly one home in the file,
 so repeated toggles do not accumulate.
 
 **Disabling a tool row is not always disabling the tool.** Three tool rows are inert

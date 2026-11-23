@@ -563,7 +563,7 @@ def _accepts_third(handler: Any) -> bool:
 class ExtensionUIContext:
     """The interactive surface an extension sees as ``ctx.ui``.
 
-    The TUI installs :class:`ctx.tui.extension_ui.TextualExtensionUI`; this base
+    The TUI installs :class:`ctx.term.extension_ui.TextualExtensionUI`; this base
     class provides safe no-op fallbacks so the same handler code runs in every
     mode. The dialog primitives are coroutines, so ``await ctx.ui.confirm(...)``
     works in headless/print mode too — it just resolves to the safe default

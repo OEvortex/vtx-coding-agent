@@ -6,7 +6,7 @@ Read [mcp.md](mcp.md) for how MCP servers reach a script, [plugins.md](plugins.m
 
 Runs as the user who launched ctx, with the full standard library, installed third-party packages, the filesystem, `subprocess`, the network, and `eval`. There is no `sys.addaudithook`, no stripped `__builtins__`, and no import allowlist. Treat it as a **capability grant, not a containment mechanism** (`src/ctx/codemode/README.md:1`). What a script genuinely cannot reach is the host's live state  --  the running agent, the session, the TUI, and the tool registry all live in the other process.
 
-Since the python-skill mechanism was removed, codemode is the only execution path left: a `pyproject.toml` in a skill directory is ignored and skills are markdown instructions only (`docs/skills.md:5`, `src/ctx/coding_agent/tools/skill.py:226`). If you want executable behavior, write a plugin row  --  see [plugins.md](plugins.md).
+Since the python-skill mechanism was removed, codemode is the only execution path left: a `pyproject.toml` in a skill directory is ignored and skills are markdown instructions only (`docs/skills.md:5`, `src/ctx/code/tools/skill.py:226`). If you want executable behavior, write a plugin row  --  see [plugins.md](plugins.md).
 
 ## How a script is admitted
 
@@ -41,7 +41,7 @@ The returned value must be JSON-safe: `coerce_json` rejects `NaN`/`Infinity` and
 
 ## How a run is displayed
 
-The `codemode` tool block in the TUI shows the run rather than a receipt for it (`src/ctx/tui/codemode_block.py`). The header is the icon, the tool name, and the facts that decide how the body is read; the body is the run top to bottom, with blank lines as the only separators:
+The `codemode` tool block in the TUI shows the run rather than a receipt for it (`src/ctx/term/codemode_block.py`). The header is the icon, the tool name, and the facts that decide how the body is read; the body is the run top to bottom, with blank lines as the only separators:
 
 ```
 ⟩ codemode · 4 tool calls · 1 failed
@@ -117,7 +117,7 @@ class ToolRunner(Protocol):
 | `namespace` | Groups related tools under one attribute |
 | `listed` | When `False`, reachable but not advertised by default |
 
-Default catalog budget is 2000 tokens (`src/ctx/codemode/declarations.py:365-366`, `src/ctx/codemode/host.py:102`). If the harness already has `BaseTool` instances, `adapt_tools` converts them for you (`src/ctx/codemode/integration.py:165-194`); that is what the `codemode` tool does, so it does not re-declare anything (`src/ctx/coding_agent/tools/codemode.py:184`, `:278-284`).
+Default catalog budget is 2000 tokens (`src/ctx/codemode/declarations.py:365-366`, `src/ctx/codemode/host.py:102`). If the harness already has `BaseTool` instances, `adapt_tools` converts them for you (`src/ctx/codemode/integration.py:165-194`); that is what the `codemode` tool does, so it does not re-declare anything (`src/ctx/code/tools/codemode.py:184`, `:278-284`).
 
 ## The governance gate
 
@@ -248,4 +248,4 @@ Read `result.calls` for what the script actually ran: each `ToolCall` has `name`
 
 - The module docstring in `src/ctx/codemode/sandbox.py:4` still says the host launches the worker as `python -I /path/to/sandbox.py`. The current host launches it by file path with no `-I` (`src/ctx/codemode/host.py:386-422`). Trust the code.
 - The sandbox imports nothing from `ctx`, so it cannot inspect the live session, agent, or tool registry. A script that needs those must ask for them through a tool you inject.
-- Codemode cannot run against the interactive TUI; the harness path is a `BaseTool` with `mutating = True` (`src/ctx/coding_agent/tools/codemode.py:184`), so its own call is subject to the permission gate like any other tool.
+- Codemode cannot run against the interactive TUI; the harness path is a `BaseTool` with `mutating = True` (`src/ctx/code/tools/codemode.py:184`), so its own call is subject to the permission gate like any other tool.

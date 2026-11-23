@@ -1,7 +1,7 @@
 """Coding-agent package surface.
 
 Re-exports resolve lazily through :func:`__getattr__` so ``import
-ctx.coding_agent.cli`` does not pay for ``headless``/provider graphs it may
+ctx.code.cli`` does not pay for ``headless``/provider graphs it may
 never touch. ``register_skills_package`` stays eager — it is a side effect
 other modules rely on at import time.
 """
@@ -11,8 +11,8 @@ from __future__ import annotations
 from typing import Any
 
 from ctx.agent.context.skills import register_skills_package
-from ctx.coding_agent import prompts as _prompts  # noqa: F401
-from ctx.coding_agent.builtin_rows import register_builtin_tool_rows
+from ctx.code import prompts as _prompts  # noqa: F401
+from ctx.code.builtin_rows import register_builtin_tool_rows
 
 # name -> owning module; the attribute name equals the export name.
 _CONFIG_EXPORTS = {
@@ -48,7 +48,7 @@ _HEADLESS_EXPORTS = {"_exit_code", "render_run", "resolve_prompt", "run_headless
 
 # Register coding agent skills package into harness, and contribute the
 # coding toolset rows to the harness's BASE/MINIMAL bundles.
-register_skills_package("ctx.coding_agent")
+register_skills_package("ctx.code")
 register_builtin_tool_rows()
 
 
@@ -62,7 +62,7 @@ def __getattr__(name: str) -> Any:
 
         return getattr(module, name)
     if name in _HEADLESS_EXPORTS:
-        from ctx.coding_agent import headless as module
+        from ctx.code import headless as module
 
         return getattr(module, name)
     raise AttributeError(f"module {__name__!r} has no attribute {name!r}")

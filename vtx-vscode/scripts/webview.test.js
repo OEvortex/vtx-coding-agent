@@ -5087,7 +5087,7 @@ test("the mode picker offers whatever modes the agent reports", async () => {
   assert.strictEqual(h.errors().length, 0);
 });
 
-test("model picker provider tabs switch the provider and always offer a way back", async () => {
+test("model picker offers a searchable provider list with a way back", async () => {
   const models = [
     { id: "gpt", name: "GPT-4o", default: "openai:gpt-4o", provider: "openai", variants: [{ value: "openai:gpt-4o", name: "GPT-4o" }] },
     { id: "claude", name: "Claude", default: "anthropic:claude", provider: "anthropic", variants: [{ value: "anthropic:claude", name: "Claude" }] }
@@ -5107,19 +5107,26 @@ test("model picker provider tabs switch the provider and always offer a way back
   await h.settle(20);
 
   const dd = h.document.querySelector("#model-dd");
-  dd.querySelector(".dd-btn").click();
-  const tabNames = () => [...dd.querySelectorAll(".mp-tabstrip .mp-tab")].filter((b) => !b.classList.contains("mp-search-btn")).map((b) => b.textContent.trim());
-  const activeTab = () => [...dd.querySelectorAll(".mp-tab.active")].map((b) => b.title);
-  assert.deepStrictEqual(tabNames(), ["All", "Anthropic", "OpenAI"], "every provider is named, plus a way back");
-  assert.deepStrictEqual(activeTab(), ["All providers"], "the unfiltered view is marked as the current tab");
+  const open = () => dd.querySelector(".dd-btn").click();
+  const openProviders = () => dd.querySelector(".mp-provider-btn").click();
+  const providerNames = () => [...dd.querySelectorAll(".mp-provider-item .mp-provider-item-name")].map((e) => e.textContent.trim());
+  const selected = () => dd.querySelector(".mp-provider-item.selected .mp-provider-item-name").textContent.trim();
+  open();
+  assert.ok(dd.querySelector(".mp-search-input"), "search is visible without opening a tab");
+  assert.strictEqual(dd.querySelector(".mp-provider-name").textContent, "All providers", "the picker starts unfiltered");
+  assert.deepStrictEqual([...dd.querySelectorAll(".dd-item .dd-item-name")].map((r) => r.textContent.trim()), ["Claude", "GPT-4o"]);
 
-  const anthropic = [...dd.querySelectorAll(".mp-tab")].find((b) => b.textContent.includes("Anthropic"));
+  openProviders();
+  assert.deepStrictEqual(providerNames(), ["All providers", "Anthropic", "OpenAI"], "every provider is listed, plus a way back");
+  assert.strictEqual(selected(), "All providers");
+  const anthropic = [...dd.querySelectorAll(".mp-provider-item")].find((b) => b.textContent.includes("Anthropic"));
   anthropic.click();
-  assert.ok(h.posted.some((m) => m.type === "setProviderFilter" && m.slug === "anthropic"), "the tab switches the provider in one click");
+  assert.ok(h.posted.some((m) => m.type === "setProviderFilter" && m.slug === "anthropic"), "the row switches the provider in one click");
   assert.deepStrictEqual([...dd.querySelectorAll(".dd-item .dd-item-name")].map((r) => r.textContent.trim()), ["Claude"], "rows narrow immediately");
+  assert.strictEqual(dd.querySelector(".mp-provider-name").textContent, "Anthropic");
 
-  // The host applies the filter and posts a catalog reduced to one provider. The
-  // other tabs must survive, or the user is stuck until they type /provider reset.
+  // The host applies the filter and posts a catalog reduced to one provider.
+  // The other providers must survive, or the user is stuck with the filter.
   h.post({
     type: "options",
     currentMode: "default",
@@ -5130,11 +5137,23 @@ test("model picker provider tabs switch the provider and always offer a way back
     providerFilter: "anthropic"
   });
   await h.settle(20);
-  dd.querySelector(".dd-btn").click();
-  assert.deepStrictEqual(tabNames(), ["All", "Anthropic", "OpenAI"], "the full provider list survives a filter");
-  assert.deepStrictEqual(activeTab(), ["Anthropic"], "the tab follows the host filter");
+  openProviders();
+  assert.deepStrictEqual(providerNames(), ["All providers", "Anthropic", "OpenAI"], "the full provider list survives a filter");
+  assert.strictEqual(selected(), "Anthropic", "the picker follows the host filter");
 
-  const all = [...dd.querySelectorAll(".mp-tab")].find((b) => b.title === "All providers");
+  // Provider search narrows the long list without losing the way back.
+  const search = dd.querySelector(".mp-provider-search-input");
+  search.value = "open";
+  search.dispatchEvent(new h.window.Event("input", { bubbles: true }));
+  await h.settle(10);
+  assert.deepStrictEqual(providerNames(), ["OpenAI"], "a hundred providers are searchable");
+
+  assert.ok(dd.querySelector(".mp-provider-back"), "the way back to models stays visible while filtering providers");
+  search.value = "";
+  search.dispatchEvent(new h.window.Event("input", { bubbles: true }));
+  await h.settle(10);
+  const all = [...dd.querySelectorAll(".mp-provider-item")].find((b) => b.textContent.includes("All providers"));
+  assert.ok(all, "All providers is there once the provider search is cleared");
   all.click();
   assert.ok(h.posted.some((m) => m.type === "setProviderFilter" && m.slug === ""), "All providers clears the filter");
   assert.strictEqual(h.errors().length, 0);

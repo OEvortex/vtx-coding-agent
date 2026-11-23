@@ -6,7 +6,7 @@ build-backend = "hatchling.build"
 only-include = ["src/ctx"]
 sources = ["src"]
 exclude = [
-    "src/ctx/coding_agent/builtin_skills/meta/ctx-self-extend/references/docs",
+    "src/ctx/code/builtin_skills/meta/ctx-self-extend/references/docs",
 ]
 
 [tool.hatch.build]
@@ -25,7 +25,7 @@ dependencies = [
 ]
 
 [project.scripts]
-ctx = "ctx.coding_agent.cli:main"
+ctx = "ctx.code.cli:main"
 
 [tool.uv.sources]
 ctx = { workspace = true }

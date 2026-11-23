@@ -8,10 +8,10 @@ cycle through the registry.
 from __future__ import annotations
 
 from ctx.core.config import config
-from ctx.tui.chat import ChatLog
-from ctx.tui.commands.base import CommandSupport
-from ctx.tui.floating_list import FloatingList, ListItem
-from ctx.tui.widgets import InfoBar
+from ctx.term.chat import ChatLog
+from ctx.term.commands.base import CommandSupport
+from ctx.term.floating_list import FloatingList, ListItem
+from ctx.term.widgets import InfoBar
 
 
 class AgentCommands(CommandSupport):

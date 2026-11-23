@@ -170,4 +170,4 @@ truncate_bytes("héllo", 3)  # 'h\ufffd' - a byte budget can cut a codepoint
 
 ## Not here
 
-The agent loop, turns, and the session store are `ctx.agent`. Message and stream types are `ctx.protocol`. Providers and model catalogs are `ctx.ai`. Actual tool implementations are `ctx.agent.tools` and `ctx.coding_agent.tools` - `permissions.py` only checks a `BaseTool` structurally. Nothing here draws: `ToolApprovalEvent`, `AskUserEvent`, and the `ui_summary` helpers return data and `ctx.tui` renders it. Git and GitHub are `ctx.git`, which depends on core, not the reverse.
+The agent loop, turns, and the session store are `ctx.agent`. Message and stream types are `ctx.protocol`. Providers and model catalogs are `ctx.ai`. Actual tool implementations are `ctx.agent.tools` and `ctx.code.tools` - `permissions.py` only checks a `BaseTool` structurally. Nothing here draws: `ToolApprovalEvent`, `AskUserEvent`, and the `ui_summary` helpers return data and `ctx.term` renders it. Git and GitHub are `ctx.git`, which depends on core, not the reverse.

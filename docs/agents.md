@@ -243,7 +243,7 @@ Note that this mapping lives in the runtime, not in `compose_active_tools`. A ca
 goes through `compose_active_tools` directly - the SDK, or anything building a sub-agent's
 tool list - gets no group restriction, because that function only reads `tools_allow`.
 
-Cycle the groups with `alt+ctrl+g` (`src/ctx/tui/app.py:100`). The cycle is
+Cycle the groups with `alt+ctrl+g` (`src/ctx/term/app.py:100`). The cycle is
 `[None, *group_keys]` (`src/ctx/agent/agents/registry.py:53-61`), and `cycle_tool_group`
 writes the selected key - `None` included - straight into `definition.active_tool_group`
 (`:131-147`). Reaching `None` turns group mode off, which makes the runtime fall back to
@@ -257,23 +257,23 @@ agent (`src/ctx/agent/runtime.py:281-330`).
 
 | Surface | Effect | Source |
 |---|---|---|
-| `ctx --agent reviewer` / `-a` | Activate at startup | `src/ctx/coding_agent/cli.py:136-142` |
-| `CTX_AGENT=reviewer` | Activate without a flag | `src/ctx/tui/app.py:267` |
+| `ctx --agent reviewer` / `-a` | Activate at startup | `src/ctx/code/cli.py:136-142` |
+| `CTX_AGENT=reviewer` | Activate without a flag | `src/ctx/term/app.py:267` |
 | `agents.default` in config | Activate when neither of the above is set | `src/ctx/core/config.py:235` |
-| `ctx --list-agents` | Print `name`, `description`, path, then exit | `src/ctx/coding_agent/cli.py:313-324` |
-| `shift+tab` | Cycle the registry, wrapping through "no agent" | `src/ctx/tui/app.py:99` |
-| `/agent` | Open the picker, which starts with "(no agent)" | `src/ctx/tui/commands/agents.py:77-107` |
-| `/agent list` / `ls` | Table from `registry.describe()` | `src/ctx/tui/commands/agents.py:142-158` |
+| `ctx --list-agents` | Print `name`, `description`, path, then exit | `src/ctx/code/cli.py:313-324` |
+| `shift+tab` | Cycle the registry, wrapping through "no agent" | `src/ctx/term/app.py:99` |
+| `/agent` | Open the picker, which starts with "(no agent)" | `src/ctx/term/commands/agents.py:77-107` |
+| `/agent list` / `ls` | Table from `registry.describe()` | `src/ctx/term/commands/agents.py:142-158` |
 | `/agent current` / `status` | Name and description of the active agent | same |
 | `/agent <name>` | Activate one | same |
-| `/agent off` / `none` / `default` | Deactivate; all three mean "no agent" | `src/ctx/tui/commands/agents.py:65-75` |
-| `/agent reload` | Re-run discovery, keeping the active selection | `src/ctx/tui/commands/agents.py:44-63` |
-| `/switch <name>` | Alias for `/agent <name>` | `src/ctx/tui/commands/switch.py:15-17` |
-| `ctx --agent-file <path>` | Load an extra agent file or package (repeatable) | `src/ctx/coding_agent/cli.py:143-150` |
-| `ctx --no-agents` | Skip discovery in `.ctx/agent/` and `~/.ctx/agent/` | `src/ctx/coding_agent/cli.py:151-155` |
+| `/agent off` / `none` / `default` | Deactivate; all three mean "no agent" | `src/ctx/term/commands/agents.py:65-75` |
+| `/agent reload` | Re-run discovery, keeping the active selection | `src/ctx/term/commands/agents.py:44-63` |
+| `/switch <name>` | Alias for `/agent <name>` | `src/ctx/term/commands/switch.py:15-17` |
+| `ctx --agent-file <path>` | Load an extra agent file or package (repeatable) | `src/ctx/code/cli.py:143-150` |
+| `ctx --no-agents` | Skip discovery in `.ctx/agent/` and `~/.ctx/agent/` | `src/ctx/code/cli.py:151-155` |
 
 Precedence for the startup agent is `--agent` over `CTX_AGENT` over `last_selected.agent`
-over `agents.default` (`src/ctx/tui/app.py:268-270`).
+over `agents.default` (`src/ctx/term/app.py:268-270`).
 
 `--list-agents` output is tab-separated, one agent per line, with `No agents found.` when
 the registry is empty:
@@ -349,7 +349,7 @@ sub-agent, which is the parent minus the parent-only tools.
 | `background` | `bool` | `False` | Return a `task_id` immediately (`task.py:34`) |
 
 The sub-agent loses the parent-only tool, `delegate_subagent`
-(`src/ctx/coding_agent/tools/__init__.py:84`), inherits the parent's thinking level or
+(`src/ctx/code/tools/__init__.py:84`), inherits the parent's thinking level or
 `"high"` (`task.py:207-225`), and gets a directive appended that forbids preamble, because
 only its final text reaches the parent (`SUBAGENT_FINAL_ANSWER_DIRECTIVE`,
 `task.py:160-173`).
@@ -367,7 +367,7 @@ does.
 ## Handoff
 
 `/handoff <query>` writes a fresh thread for a new session, with the generated prompt in the
-input box, ready to go (`src/ctx/tui/commands/sessions.py:90-160`):
+input box, ready to go (`src/ctx/term/commands/sessions.py:90-160`):
 
 ```text
 /handoff implement phase two
@@ -389,7 +389,7 @@ appends two hidden link entries (`src/ctx/agent/runtime.py:1772-1800`): a
 `handoff_backlink` on the new session pointing at the old one, and a `handoff_forward_link`
 on the old one pointing at the new. The backlink is what makes `/resume` render the handoff
 tree (`src/ctx/agent/session.py:1165-1170`), and both are clickable in the transcript
-(`src/ctx/tui/session_ui.py:135-160`). See `sessions.md` for the tree itself.
+(`src/ctx/term/session_ui.py:135-160`). See `sessions.md` for the tree itself.
 
 Note that `AgentDef.handoffs` and `handoff_back` are not what drives this. Nothing in the
 runtime reads either field.
@@ -545,15 +545,15 @@ What the example exercises, and why it is valid:
 
 ## Known gaps
 
-- **The live package is `ctx.agent.agents`, not `ctx.coding_agent.agents`.** The runtime,
+- **The live package is `ctx.agent.agents`, not `ctx.code.agents`.** The runtime,
   TUI, headless entry point, and the `delegate_subagent` tool all import the former
-  (`src/ctx/agent/runtime.py:12-14`, `src/ctx/tui/app.py:27`,
-  `src/ctx/coding_agent/headless.py:177`). The `coding_agent` copy exists only to serve
-  `--list-agents` (`src/ctx/coding_agent/cli.py:313-316`) and holds full duplicate copies of
+  (`src/ctx/agent/runtime.py:12-14`, `src/ctx/term/app.py:27`,
+  `src/ctx/code/headless.py:177`). The `code` copy exists only to serve
+  `--list-agents` (`src/ctx/code/cli.py:313-316`) and holds full duplicate copies of
   `schema.py`, `api.py`, `loader.py`, and `registry.py` that have drifted from the live
   package - only `activate` and `discovery` are re-exported. Its `schema.py` also declares
   `tools`, `skills`, `tool_groups`, and `active_tool_group`
-  twice each (`src/ctx/coding_agent/agents/schema.py:93-121`), a merge artifact.
+  twice each (`src/ctx/code/agents/schema.py:93-121`), a merge artifact.
 - **Four fields are declared but never read by the runtime:** `base_url` (:62), `handoffs`
   (:79), `handoff_back` (:80), and `output_type` (:86).
   `_apply_active_agent_to_runtime` reads only `model`, `provider`, and `thinking_level`

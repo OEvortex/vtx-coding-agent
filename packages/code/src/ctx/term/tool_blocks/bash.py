@@ -8,7 +8,7 @@ detects SGR codes without knowing which tool produced them.
 
 from __future__ import annotations
 
-from ctx.tui.formatting import format_bash_command  # ty: ignore[import-not-found]
+from ctx.term.formatting import format_bash_command  # ty: ignore[import-not-found]
 from rich.text import Text
 
 from .base import CodingToolBlock

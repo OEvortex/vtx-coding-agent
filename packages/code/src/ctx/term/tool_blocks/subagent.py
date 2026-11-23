@@ -12,7 +12,7 @@ import contextlib
 import time
 
 from ctx.core.config import config
-from ctx.tui import task_ui
+from ctx.term import task_ui
 from rich.style import Style
 from rich.text import Text
 from textual.widgets import Label
@@ -30,7 +30,7 @@ class TaskToolBlock(CodingToolBlock):
           ⎿  Running in background (ID: 623586f8-8334-468)
 
     Live counters, the spinner and per-agent activity live in the pinned
-    Agents panel (:mod:`ctx.tui.agents_panel`), which shows every sub-agent at
+    Agents panel (:mod:`ctx.term.agents_panel`), which shows every sub-agent at
     once instead of one block per dispatch. This block repaints only when a
     progress event arrives, so it costs nothing while the panel animates.
     """

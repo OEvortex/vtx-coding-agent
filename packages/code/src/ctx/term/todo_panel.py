@@ -14,19 +14,19 @@ Layout (the sub-agent strip's grammar, not a second one)::
     │ └─ ○ Update documentation
 
 The rows, the gutter and the header all come from
-:mod:`ctx.tui.agents_panel` and :mod:`ctx.tui.todo_ui`. Two strips stacked
+:mod:`ctx.term.agents_panel` and :mod:`ctx.term.todo_ui`. Two strips stacked
 above the editor with two different shapes read as two unrelated widgets;
 these are one panel with two rows of state in it.
 
-The list is capped at :data:`~ctx.tui.todo_ui.MAX_ROWS` and the rest collapse
+The list is capped at :data:`~ctx.term.todo_ui.MAX_ROWS` and the rest collapse
 to ``+N more``. This strip sits above the input box, not in the scrollback, so
 it gives up rows rather than pushing the prompt off screen.
 """
 
 from __future__ import annotations
 
-from ctx.coding_agent.tools.todo import current_todo_tool
-from ctx.tui import todo_ui
+from ctx.code.tools.todo import current_todo_tool
+from ctx.term import todo_ui
 from rich.text import Text
 from textual.timer import Timer
 from textual.widgets import Static

@@ -2,12 +2,12 @@
 
 Each tool module here owns both its implementation and its plugin row (the
 ``PLUGIN`` export), so all registration goes through the plugins system:
-:mod:`ctx.coding_agent.builtin_rows` contributes these rows into the harness's
+:mod:`ctx.code.builtin_rows` contributes these rows into the harness's
 ``BASE``/``MINIMAL`` bundles, and mounting the composition is what puts the
 tools in the registry. Importing this package registers nothing.
 
 Re-exports resolve lazily through :func:`__getattr__` so importing one tool
-submodule (e.g. ``ctx.coding_agent.tools.todo`` for the panel) does not pay
+submodule (e.g. ``ctx.code.tools.todo`` for the panel) does not pay
 for the whole catalog — ``all_tools``/``tools_by_name`` are built on first
 access.
 """

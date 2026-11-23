@@ -10,7 +10,7 @@ from ctx.core import ApprovalResponse
 from ctx.core.config import config
 from ctx.core.paths import get_agents_dir
 from ctx.protocol.types import ImageContent
-from ctx.tui.blocks import (
+from ctx.term.blocks import (
     CompactionBlock,
     ContentBlock,
     HandoffLinkBlock,
@@ -22,9 +22,13 @@ from ctx.tui.blocks import (
     UpdateAvailableBlock,
     UserBlock,
 )
-from ctx.tui.brand import CTX_LOGO
-from ctx.tui.run_summary import RunSummaryStats
-from ctx.tui.status_lines import WITTY_STATUS_LINES, pick_witty_line, subagents_own_the_status_line
+from ctx.term.brand import CTX_LOGO
+from ctx.term.run_summary import RunSummaryStats
+from ctx.term.status_lines import (
+    WITTY_STATUS_LINES,
+    pick_witty_line,
+    subagents_own_the_status_line,
+)
 from rich.align import Align
 from rich.cells import cell_len
 from rich.console import Group
@@ -267,7 +271,7 @@ class ChatLog(VerticalScroll):
 
     def on_click(self, event) -> None:
         event.stop()
-        from ctx.tui.input import InputBox
+        from ctx.term.input import InputBox
 
         app = self.app
         input_box = app.query_one("#input-box", InputBox)

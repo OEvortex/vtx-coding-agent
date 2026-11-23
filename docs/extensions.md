@@ -113,7 +113,7 @@ deduplicated by resolved path (`discover_extension_paths`, `src/ctx/plugins/exte
 ## Hot reload
 
 `/reload` re-runs extension discovery and re-executes the files, so an edit takes effect
-without a restart. The sequence is (`src/ctx/tui/commands/reload.py:70`):
+without a restart. The sequence is (`src/ctx/term/commands/reload.py:70`):
 
 1. outgoing extensions are told to let go, **before** the module cache is cleared
 2. the imported extension modules are dropped, so a re-mounted file re-executes
@@ -124,7 +124,7 @@ Package submodules are handled too: `_invalidate_extension_modules` drops every
 `ctx_ext_*` module (submodules included) from `sys.modules`, and
 `invalidate_extension_bytecode` removes a package's `__pycache__` as it loads, so an
 edit that keeps the same byte length in the same mtime tick is still really re-read
-(`src/ctx/tui/commands/reload.py:366-373`, `src/ctx/plugins/extensions.py:362-381`).
+(`src/ctx/term/commands/reload.py:366-373`, `src/ctx/plugins/extensions.py:362-381`).
 
 `/reload` is refused while a turn is running, because swapping the tool set mid-flight
 leaves the advertised tools and the running tools out of sync. Wait for the turn or
@@ -173,7 +173,7 @@ review with `ctx --dump-config`.
   unexercised public surface rather than a supported path.
 - `register_flag`, `register_shortcut`, and `unregister_provider` are likewise
   unreferenced internally (`get_flag` is bound to a stub that always returns `None`,
-  `src/ctx/tui/app.py:433`).
+  `src/ctx/term/app.py:433`).
 - The old `register(api)`-style extension manager in `ctx.agent` was removed. The live
   path is `ctx.plugins.extensions`; `load_extension` and `load_all_extensions` in that
   module are superseded by `load_for_runtime` and are reachable only from tests.

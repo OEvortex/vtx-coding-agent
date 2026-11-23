@@ -1,7 +1,7 @@
 """Live sub-agent registry.
 
 The ``delegate_subagent`` tool streams a small event dict per sub-agent through the
-runtime's progress callback (see :meth:`ctx.coding_agent.tools.subagent.TaskTool`).
+runtime's progress callback (see :meth:`ctx.code.tools.subagent.TaskTool`).
 Two consumers fold those events in: the chat log (which draws the tool block
 for the dispatch) and this registry, which keeps just enough per sub-agent to
 answer the question a user actually asks mid-run: *what is working on this
@@ -16,6 +16,8 @@ from __future__ import annotations
 
 import time
 from dataclasses import dataclass, field
+
+from ctx.term.status_lines import set_live_activity_probe  # ty: ignore[import-not-found]
 
 #: Terminal statuses a sub-agent can end in. Anything else is in flight.
 END_STATES = frozenset({"ok", "error", "stopped", "cancelled", "interrupted"})
@@ -278,8 +280,6 @@ def prune_finished_subagents(max_age: float = FINISHED_TTL_SECONDS) -> None:
 
 
 # Feed the harness status line: while a sub-agent fan-out is live the witty
-# quip is suppressed (the Agents panel already says it better). Registered
-# here because the registry lives in the product package.
-from ctx.tui.status_lines import set_live_activity_probe  # noqa: E402  # ty: ignore[import-not-found]
-
+# quip is suppressed (the Agents panel already says it better). The generic
+# status-line module asks through this probe instead of importing the registry.
 set_live_activity_probe(REGISTRY.has_live)

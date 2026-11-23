@@ -4,11 +4,11 @@ Transport-neutral core plus stdio and Streamable HTTP transports. A transport
 owns framing and I/O; :class:`McpClient` owns request correlation,
 initialization, timeouts, cancellation, and the protocol helpers.
 
-This is a top-level package, sibling to ``ctx.coding_agent`` and ``ctx.tui``,
+This is a top-level package, sibling to ``ctx.code`` and ``ctx.term``,
 because the tool adapter (:mod:`ctx.mcp.tool`) builds on the harness tool
 contract in ``ctx.agent.tools``. The harness itself never imports this
 package; the product layer wires it up. So the direction is
-``core <- ai <- mcp``, with ``coding_agent`` and ``tui`` on top.
+``core <- ai <- mcp``, with ``code`` and ``tui`` on top.
 
 Typical use goes through :mod:`ctx.mcp.manager`, which reads server config
 and registers each server's tools into the harness tool registry. Use the

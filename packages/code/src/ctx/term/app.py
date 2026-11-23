@@ -32,33 +32,33 @@ from ctx.agent.tools import get_tool, get_tools_with_extensions
 from ctx.agent.tools_manager import get_tool_path
 from ctx.ai import BaseProvider
 from ctx.ai.base import AuthMode
-from ctx.coding_agent.prompts import is_deactivation_command
+from ctx.code.prompts import is_deactivation_command
 from ctx.core import ApprovalResponse, AskUserResponse
 from ctx.core.config import config, consume_config_warnings, get_last_selected, set_ponytail
 from ctx.core.version import VERSION, format_version
 from ctx.plugins.extensions import load_for_runtime
 from ctx.protocol.types import ImageContent
-from ctx.tui.agent_runner import AgentRunnerMixin
-from ctx.tui.agents_panel import AgentsPanel
-from ctx.tui.ask_user import AskUserDialog
-from ctx.tui.autocomplete import DEFAULT_COMMANDS, SlashCommand
-from ctx.tui.blocks import HandoffLinkBlock, LaunchWarning, RunSummaryBlock
-from ctx.tui.chat import ChatLog
-from ctx.tui.commands import CommandsMixin
-from ctx.tui.completion_ui import CompletionUIMixin
-from ctx.tui.extension_ui import TextualExtensionUI
-from ctx.tui.floating_list import FloatingList
-from ctx.tui.input import InputBox
-from ctx.tui.queue_ui import QueueUIMixin
-from ctx.tui.recap import RecapMixin
-from ctx.tui.selection_mode import SelectionMode
-from ctx.tui.session_ui import SessionUIMixin
-from ctx.tui.startup import StartupMixin
-from ctx.tui.styles import get_styles
-from ctx.tui.subagents import record_subagent_event
-from ctx.tui.todo_panel import TodoPanel
-from ctx.tui.tree import TreeSelector
-from ctx.tui.widgets import InfoBar, QueueDisplay, StatusLine, format_path
+from ctx.term.agent_runner import AgentRunnerMixin
+from ctx.term.agents_panel import AgentsPanel
+from ctx.term.ask_user import AskUserDialog
+from ctx.term.autocomplete import DEFAULT_COMMANDS, SlashCommand
+from ctx.term.blocks import HandoffLinkBlock, LaunchWarning, RunSummaryBlock
+from ctx.term.chat import ChatLog
+from ctx.term.commands import CommandsMixin
+from ctx.term.completion_ui import CompletionUIMixin
+from ctx.term.extension_ui import TextualExtensionUI
+from ctx.term.floating_list import FloatingList
+from ctx.term.input import InputBox
+from ctx.term.queue_ui import QueueUIMixin
+from ctx.term.recap import RecapMixin
+from ctx.term.selection_mode import SelectionMode
+from ctx.term.session_ui import SessionUIMixin
+from ctx.term.startup import StartupMixin
+from ctx.term.styles import get_styles
+from ctx.term.subagents import record_subagent_event
+from ctx.term.todo_panel import TodoPanel
+from ctx.term.tree import TreeSelector
+from ctx.term.widgets import InfoBar, QueueDisplay, StatusLine, format_path
 from textual import events, on
 from textual.app import App, ComposeResult
 from textual.binding import Binding
@@ -362,7 +362,7 @@ class Ctx(
         # Publish this app into the plugin composition so a plugin can notify
         # and list the built-in commands without importing the TUI.
         from ctx.plugins import active_host
-        from ctx.tui.plugin_ui import install as install_ui
+        from ctx.term.plugin_ui import install as install_ui
 
         install_ui(self, active_host())
         bus = self._loaded_extensions.bus
@@ -663,7 +663,7 @@ class Ctx(
 
         def _warm_usage() -> None:
             try:
-                from ctx.tui.usage_stats import aggregate_usage
+                from ctx.term.usage_stats import aggregate_usage
 
                 aggregate_usage()
             except Exception:
@@ -778,7 +778,7 @@ class Ctx(
         self.set_interval(0.5, self._sync_agent_counts)
 
         try:
-            from ctx.coding_agent.tools.todo import register_todo_refresh
+            from ctx.code.tools.todo import register_todo_refresh
 
             register_todo_refresh(self._refresh_todo_panel)
             self._refresh_todo_panel()

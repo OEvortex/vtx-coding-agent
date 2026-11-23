@@ -17,11 +17,11 @@ from ctx.protocol.types import (
     ToolResultMessage,
     UserMessage,
 )
-from ctx.tui.chat import ChatLog
-from ctx.tui.commands import CommandsMixin
-from ctx.tui.input import InputBox
-from ctx.tui.tool_output import escape_tool_output_text, truncate_tool_output_text
-from ctx.tui.widgets import InfoBar, StatusLine, format_path
+from ctx.term.chat import ChatLog
+from ctx.term.commands import CommandsMixin
+from ctx.term.input import InputBox
+from ctx.term.tool_output import escape_tool_output_text, truncate_tool_output_text
+from ctx.term.widgets import InfoBar, StatusLine, format_path
 
 
 class SessionUIMixin:

@@ -596,7 +596,7 @@ class HtmlBuilder:
     ) -> None:
         """One ``codemode`` call: the script, its nested calls, its output.
 
-        Mirrors :class:`ctx.tui.codemode_block` so an exported session reads the
+        Mirrors :class:`ctx.term.codemode_block` so an exported session reads the
         same way the terminal did, instead of the script arriving as a JSON
         argument blob with its newlines escaped onto one line.
         """

@@ -7,8 +7,8 @@ import time
 
 from ctx.core.config import config
 from ctx.plugins.event_contract import SESSION_SHUTDOWN
-from ctx.tui.app import Ctx
-from ctx.tui.brand import CTX_LOGO
+from ctx.term.app import Ctx
+from ctx.term.brand import CTX_LOGO
 from rich.console import Console
 
 _LOGO = CTX_LOGO

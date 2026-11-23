@@ -14,12 +14,12 @@ The package is a src layout with one package per subsystem (`pyproject.toml:5-6`
 | `src/ctx/agent/` | The product-neutral harness: turn loop, sessions, tools, extensions, SDK (`src/ctx/agent/__init__.py:1`) |
 | `src/ctx/ai/` | Provider layer: base provider, catalog, dynamic model limits, OAuth |
 | `src/ctx/codemode/` | Script execution in a child process; see [codemode.md](codemode.md) for its actual threat model (`src/ctx/codemode/__init__.py:1`) |
-| `src/ctx/coding_agent/` | The ctx product: CLI, headless runner, agents, tool wiring, `ctx plugin` |
+| `src/ctx/code/` | The ctx product: CLI, headless runner, agents, tool wiring, `ctx plugin` |
 | `src/ctx/mcp/` | Model Context Protocol client, transports, config loading, exposure (`src/ctx/mcp/__init__.py:1`) |
 | `src/ctx/plugins/` | The plugin kernel: rows, profiles, host, extension loader (`src/ctx/plugins/__init__.py:1`) |
 | `src/ctx/protocol/` | Wire vocabulary: message and event types shared by every layer |
 | `src/ctx/telemetry/` | `Trace` / `Span` primitives and the processor chain (`src/ctx/telemetry/__init__.py:1`) |
-| `src/ctx/tui/` | The Textual interface (`src/ctx/tui/__init__.py:1`) |
+| `src/ctx/term/` | The Textual interface (`src/ctx/term/__init__.py:1`) |
 | `src/ctx/git/` | Git metadata, the `gh` CLI wrapper, GitHub App auth (`src/ctx/git/__init__.py:1`) |
 | `tests/` | Mirrors the packages: `tests/plugins/`, `tests/mcp/`, `tests/sdk/`, `tests/extensions/`, `tests/context/`, `tests/llm/`, `tests/core/`, `tests/ui/`, plus top-level `test_*.py` |
 
@@ -34,7 +34,7 @@ uv sync
 uv run ctx --version
 ```
 
-`uv sync` installs the project plus the `dev` dependency group (`pyproject.toml:100-109`), which is where `ruff`, `pytest` and friends come from. The console script maps to `ctx.coding_agent.cli:main` (`pyproject.toml:111-112`).
+`uv sync` installs the project plus the `dev` dependency group (`pyproject.toml:100-109`), which is where `ruff`, `pytest` and friends come from. The console script maps to `ctx.code.cli:main` (`pyproject.toml:111-112`).
 
 `scripts/install.sh` is the end-user installer, not a dev entry point: it installs `ctx-code` from PyPI or a git URL into whatever Python it finds (`scripts/install.sh:216-219`).
 
@@ -97,7 +97,7 @@ A profile is an ordered list of bundles; a bundle is a list of rows.
 | `headless` | `base` |
 | `minimal` | `minimal` |
 
-A profile with no shipped template starts from `("base", "tui")` (`src/ctx/plugins/builtins/__init__.py:103`). Templates live on disk per profile; `ctx plugin init NAME` creates one (`src/ctx/coding_agent/plugin_cmd.py:217-221`).
+A profile with no shipped template starts from `("base", "tui")` (`src/ctx/plugins/builtins/__init__.py:103`). Templates live on disk per profile; `ctx plugin init NAME` creates one (`src/ctx/code/plugin_cmd.py:217-221`).
 
 ### Rows and patch layers
 
@@ -119,7 +119,7 @@ ctx plugin profiles
 ctx plugin path default
 ```
 
-`--dump-config` prints the profile layers and then the extension rows discovered at boot, which are not stored in the profile (`src/ctx/coding_agent/cli.py:329-355`).
+`--dump-config` prints the profile layers and then the extension rows discovered at boot, which are not stored in the profile (`src/ctx/code/cli.py:329-355`).
 
 ## Add a tool
 
@@ -191,7 +191,7 @@ Append an `insert` to `~/.ctx/profiles/default/cordis.yml`:
       name: mypkg.plugins:PLUGIN
 ```
 
-That is the same instruction `ctx plugin install` prints after a successful install (`src/ctx/coding_agent/plugin_cmd.py:141-146`). Then toggle and verify:
+That is the same instruction `ctx plugin install` prints after a successful install (`src/ctx/code/plugin_cmd.py:141-146`). Then toggle and verify:
 
 ```bash
 ctx --dump-config | grep wordcount
@@ -199,7 +199,7 @@ ctx plugin disable tool-wordcount     # writes disabled: true into cordis.yml
 ctx plugin enable tool-wordcount
 ```
 
-`enable` and `disable` rewrite only the `disabled` flag of the matching row (`src/ctx/coding_agent/plugin_cmd.py:78-100`).
+`enable` and `disable` rewrite only the `disabled` flag of the matching row (`src/ctx/code/plugin_cmd.py:78-100`).
 
 Not every tool row disables its tool: `tool-web`, `tool-ask-user`, and
 `tool-subagent` register their tools at import time (`src/ctx/agent/tools/__init__.py:216-218`),
@@ -275,26 +275,26 @@ Mounting the two rows above and printing `host.base["slug"].slug("nightly")` giv
 
 ## Hot reload
 
-`/reload` re-applies config, extensions, agents, tools, skills and MCP in place (`src/ctx/tui/commands/reload.py:54-195`). The order is the safety property (`src/ctx/tui/commands/reload.py:10-14`):
+`/reload` re-applies config, extensions, agents, tools, skills and MCP in place (`src/ctx/term/commands/reload.py:54-195`). The order is the safety property (`src/ctx/term/commands/reload.py:10-14`):
 
-1. Refuse while a turn is running, rather than swapping the tool set under a live loop (`src/ctx/tui/commands/reload.py:62-68`).
-2. Emit `session_shutdown` so extensions can release what they cached (`src/ctx/tui/commands/reload.py:79-85`).
-3. Drop imported extension modules  --  everything prefixed `ctx_ext_`, which is what makes a new submodule visible (`src/ctx/tui/commands/reload.py:93`, `:288-295`).
-4. Reload config first, because extension and agent discovery read it (`src/ctx/tui/commands/reload.py:97-98`).
-5. Reload extensions with `fresh=True`, which also drops each package's `__pycache__` (`src/ctx/tui/commands/reload.py:105-107`).
-6. Reload agents and re-register them on the new bus (`src/ctx/tui/commands/reload.py:116-122`).
-7. Rebuild the tool set and rebind the runtime, so a tool edit in `config.yml` switches the live surface over (`src/ctx/tui/commands/reload.py:143-159`).
-8. Call `refresh()` on any tool that has it; `codemode` snapshots the tool set to build its sandbox and needs to be told (`src/ctx/tui/commands/reload.py:164-167`).
-9. Reconnect MCP in a worker, because a connection can take seconds and `mcp.json` is not part of `config.yml` (`src/ctx/tui/commands/reload.py:173-179`).
-10. Push the settings that live outside the config object  --  theme, permission mode, thinking lines, tool badge, notifications, ponytail, git context (`src/ctx/tui/commands/reload.py:182`, `:253-286`).
-11. Emit `session_start` so extensions re-initialize against the new module objects (`src/ctx/tui/commands/reload.py:187-193`).
+1. Refuse while a turn is running, rather than swapping the tool set under a live loop (`src/ctx/term/commands/reload.py:62-68`).
+2. Emit `session_shutdown` so extensions can release what they cached (`src/ctx/term/commands/reload.py:79-85`).
+3. Drop imported extension modules  --  everything prefixed `ctx_ext_`, which is what makes a new submodule visible (`src/ctx/term/commands/reload.py:93`, `:288-295`).
+4. Reload config first, because extension and agent discovery read it (`src/ctx/term/commands/reload.py:97-98`).
+5. Reload extensions with `fresh=True`, which also drops each package's `__pycache__` (`src/ctx/term/commands/reload.py:105-107`).
+6. Reload agents and re-register them on the new bus (`src/ctx/term/commands/reload.py:116-122`).
+7. Rebuild the tool set and rebind the runtime, so a tool edit in `config.yml` switches the live surface over (`src/ctx/term/commands/reload.py:143-159`).
+8. Call `refresh()` on any tool that has it; `codemode` snapshots the tool set to build its sandbox and needs to be told (`src/ctx/term/commands/reload.py:164-167`).
+9. Reconnect MCP in a worker, because a connection can take seconds and `mcp.json` is not part of `config.yml` (`src/ctx/term/commands/reload.py:173-179`).
+10. Push the settings that live outside the config object  --  theme, permission mode, thinking lines, tool badge, notifications, ponytail, git context (`src/ctx/term/commands/reload.py:182`, `:253-286`).
+11. Emit `session_start` so extensions re-initialize against the new module objects (`src/ctx/term/commands/reload.py:187-193`).
 
-The command then prints a before/after diff: added and removed tools, skill and agent counts, and which settings were applied (`src/ctx/tui/commands/reload.py:297-324`).
+The command then prints a before/after diff: added and removed tools, skill and agent counts, and which settings were applied (`src/ctx/term/commands/reload.py:297-324`).
 
 ## Known gaps
 
-- A plugin row's code is resolved with `importlib.import_module` and never invalidated (`src/ctx/plugins/loader.py:82-88`), so editing an installed plugin package needs a restart. Only extensions get the `sys.modules` treatment, and only for the `ctx_ext_` prefix (`src/ctx/tui/commands/reload.py:288-295`).
-- `/reload` is refused outright while a turn is running; there is no queueing, so a long turn delays your reload (`src/ctx/tui/commands/reload.py:62-68`).
-- The reload report only names tools, skills, agents, slash commands and seven settings. Everything else that config.yml controls is re-read silently, with no confirmation that it took effect (`src/ctx/tui/commands/reload.py:297-324`).
+- A plugin row's code is resolved with `importlib.import_module` and never invalidated (`src/ctx/plugins/loader.py:82-88`), so editing an installed plugin package needs a restart. Only extensions get the `sys.modules` treatment, and only for the `ctx_ext_` prefix (`src/ctx/term/commands/reload.py:288-295`).
+- `/reload` is refused outright while a turn is running; there is no queueing, so a long turn delays your reload (`src/ctx/term/commands/reload.py:62-68`).
+- The reload report only names tools, skills, agents, slash commands and seven settings. Everything else that config.yml controls is re-read silently, with no confirmation that it took effect (`src/ctx/term/commands/reload.py:297-324`).
 - There is no task runner, Makefile or CI entry point in the repo. The four commands above are the whole interface, and `scripts/` holds an end-user installer plus ad-hoc scripts that pytest does not collect (`pyproject.toml:151-155`).
 - `ty.toml` excludes `tests/`, so type errors in test code are never reported by the documented check (`ty.toml:1-5`).

@@ -1,8 +1,8 @@
 """Tool-specific chat blocks for the coding agent.
 
-The generic building blocks live in ``term`` (``ctx.tui.blocks``); this
+The generic building blocks live in ``term`` (``ctx.term.blocks``); this
 package owns every block that knows what a specific tool's call or result
-looks like. Each tool in ``ctx.coding_agent.tools`` points its ``ui_block``
+looks like. Each tool in ``ctx.code.tools`` points its ``ui_block``
 at one of the classes here.
 """
 

@@ -1,12 +1,12 @@
-# ctx.coding_agent
+# ctx.code
 
-The product layer: the `ctx` console script, the headless runner, the concrete built-in tools and their default registry, the built-in skills package, and the handoff-agent loader. Use it to run the agent, or to embed its tools in something else. The Textual interface is `ctx.tui`.
+The product layer: the `ctx` console script, the headless runner, the concrete built-in tools and their default registry, the built-in skills package, and the handoff-agent loader. Use it to run the agent, or to embed its tools in something else. The Textual interface is `ctx.term`.
 
-Everything here is wiring and choice. The engine it drives - the loop, the session store, the provider adapters - is `ctx.agent` and `ctx.ai`. Importing `ctx.coding_agent.tools` registers nothing by itself; each tool module exports a `PLUGIN` row that the plugin composition mounts.
+Everything here is wiring and choice. The engine it drives - the loop, the session store, the provider adapters - is `ctx.agent` and `ctx.ai`. Importing `ctx.code.tools` registers nothing by itself; each tool module exports a `PLUGIN` row that the plugin composition mounts.
 
 ```
-ctx.coding_agent          CLI, headless runner, built-in tools, skills
-   |- ctx.tui             the Textual interface (app shell + primitives)
+ctx.code          CLI, headless runner, built-in tools, skills
+   |- ctx.term             the Textual interface (app shell + primitives)
    |- ctx.agent           harness (loop, sessions, tools, hooks)
    |- ctx.plugins         plugin kernel; extensions are rows in it
    |- ctx.ai              providers and the model catalog
@@ -15,7 +15,7 @@ ctx.coding_agent          CLI, headless runner, built-in tools, skills
    |- ctx.mcp             MCP client
 ```
 
-This package holds the wiring and the choices; the UI is `ctx.tui`, documented in its own README. `cli.py:run_tui_command` is the only thing here that reaches for it.
+This package holds the wiring and the choices; the UI is `ctx.term`, documented in its own README. `cli.py:run_tui_command` is the only thing here that reaches for it.
 
 ## Usage
 
@@ -24,7 +24,7 @@ The tools are ordinary `BaseTool` instances, so anything that can drive a tool c
 ```python
 import asyncio
 
-from ctx.coding_agent.tools import get_tool
+from ctx.code.tools import get_tool
 
 bash = get_tool("bash")
 
@@ -43,7 +43,7 @@ The same registry feeds the agent loop, so a tool added here is immediately avai
 
 ## The console script
 
-`pyproject.toml` declares `ctx = "ctx.coding_agent.cli:main"`, so `cli:main` is the entry point for both run surfaces:
+`pyproject.toml` declares `ctx = "ctx.code.cli:main"`, so `cli:main` is the entry point for both run surfaces:
 
 ```bash
 ctx                                    # interactive
@@ -75,25 +75,32 @@ Every mounted tool row calls `mount_tool(ctx, ..., is_default=..., parent_only=.
 
 The filesystem tools are local to this package: `ReadTool`, `ApplyPatchTool`, `BashTool`, `GrepTool`, `SkillTool`, `TodoTool`, `FindTool`, `CodemodeTool`, `ToolSearchTool`. `WebTool`, `WebSearchTool`, `AskUserTool`, and `TaskTool` come from `ctx.agent.tools`.
 
+Every tool points its `ui_block` at a Textual block in `ctx.term.tool_blocks`
+(a sibling package under `ctx/term/`, alongside `todo_block.py` and
+`codemode_block.py`). Those blocks own all tool-specific rendering: diff
+previews, numbered reads, the questionnaire, sub-agent receipts, and shell
+headers. The generic `ToolBlock` and the rest of the TUI framework live in
+`term`; `ctx-code` only adds product behaviour on top.
+
 The registry API is `get_tools(default_names)`, `get_tool(name)`, `get_tools_with_extensions(default_names, extension_tools=None)`, `tools_by_name`, and `get_tool_definitions`. `get_tools_with_extensions` replaces by name match, so an extension can override a built-in. The background-task re-exports (`BackgroundTaskManager`, `BackgroundTaskRecord`, `get_manager`, `set_manager`) are here too.
 
 ## Handoff agents and skills
 
 `agents/` loads switchable agents from `.ctx/agent/<name>.py`: a bundle of system-prompt instructions, model/provider/thinking/max-turns overrides, a tool allow/deny list, agent-scoped tools and slash commands, and agent-scoped extensions. There are no built-in profiles. `load_all_agents(cwd=..., configured=...)` returns `(loaded, errors)` and collects errors rather than raising, so one bad agent file does not block the rest; `ctx --list-agents` prints that pair. An agent's `extensions` are mounted as rows of the running composition, scoped to that agent.
 
-`builtin_skills/` is registered into the harness by `register_skills_package("ctx.coding_agent")` at package import. It ships `cloud/google-colab`, `cloud/modal`, `code-review/review`, `general/github`, `meta/skill-builder`, `meta/ctx-self-extend`, and `setup/init`.
+`builtin_skills/` is registered into the harness by `register_skills_package("ctx.code")` at package import. It ships `cloud/google-colab`, `cloud/modal`, `code-review/review`, `general/github`, `meta/skill-builder`, `meta/ctx-self-extend`, and `setup/init`.
 
 `meta/ctx-self-extend` is the harness's own self-extension skill: it tells the model which surface to reach for when it needs a capability it does not have (a skill, a plugin row, or an extension), how a registered tool actually reaches the provider, and which paths are forbidden. It is bundled so that any agent composed on the ctx harness - the coding agent, the SDK runner, a sub-agent - inherits it without the project having to ship a copy.
 
-## The interface: `ctx.tui`
+## The interface: `ctx.term`
 
-See `ctx/tui/README.md`. `ctx.tui.__all__` exports `Ctx`, `run_tui`, `ChatLog`, `InfoBar`, `StatusLine`, `QueueDisplay`, `format_path`, `TreeSelector`, `CommandsMixin`, and `export_session_html`, all lazily.
+See `ctx/term/README.md`. `ctx.term.__all__` exports `Ctx`, `run_tui`, `ChatLog`, `InfoBar`, `StatusLine`, `QueueDisplay`, `format_path`, `TreeSelector`, `CommandsMixin`, and `export_session_html`, all lazily.
 
 <details><summary>Module map</summary>
 
 - `app.py` holds `Ctx`, the `App` subclass that composes the widget tree, wires the runtime, and routes input. It is also where `BINDINGS` lives.
 - `launch.py` has `run_tui(args)` and the exit summary printed after the app closes; `startup.py` has the background chores - binary download, update check, file-path scan, git-branch refresh, launch warnings.
-- `chat.py` is `ChatLog`, the scrollback that mounts the `ctx.tui.blocks` widgets; `session_ui.py` renders persisted sessions into it.
+- `chat.py` is `ChatLog`, the scrollback that mounts the `ctx.term.blocks` widgets; `session_ui.py` renders persisted sessions into it.
 - `widgets.py` has `InfoBar`, `StatusLine`, `QueueDisplay`, `FileChangesModal`, `format_path`, and `get_git_branch`; `status_lines.py` has the context-aware status-line text for model and agent lifecycle states, per-tool activity, and per-tool error lines.
 - `tree.py` is `TreeSelector`, the session-tree navigator. `queue_ui.py` holds the pending and steer message queue state and its rendering. `agent_runner.py` drives agent runs, forwards agent events to the chat UI, and handles the `!` / `!!` shell commands.
 - `completion_ui.py` handles the completion-list and selection-mode picker messages. Its `@on` handlers are re-bound in the `Ctx` class body, because Textual's metaclass only scans the namespace of classes it creates.
@@ -113,7 +120,7 @@ From the `BINDINGS` table on `Ctx`:
 - `shift+tab` cycle handoff agent
 - `alt+ctrl+p` cycle permission mode, `alt+ctrl+g` cycle tool group
 
-The editor's own bindings live on `InputBox` in `ctx.tui.input`.
+The editor's own bindings live on `InputBox` in `ctx.term.input`.
 
 ### Slash commands
 
@@ -123,7 +130,7 @@ Routing is two-stage. `Ctx` first tries `CommandsMixin._handle_command`, so a bu
 
 Routable commands are `help`, `quit`/`exit`/`q`, `clear`, `model`, `provider`, `new`, `settings`, `themes`, `permissions`, `thinking`, `effort`, `notifications`, `ponytail`, `handoff`, `resume`, `tree`, `undo`, `redo`, `session`, `login`, `logout`, `export`, `copy`, `compact`, `recap`, `agent`, `switch`, `update`, `reload`, and `mcp`.
 
-`DEFAULT_COMMANDS` in `ctx.tui.autocomplete` is the autocomplete list, and it is deliberately **not** the same set. `/effort` is a routable alias of `/thinking` - "effort" is what the wire calls it - and it is not advertised in autocomplete, because `/settings` is the discoverable entry point for the thinking and permissions sub-commands. `/switch` is handled but likewise not advertised.
+`DEFAULT_COMMANDS` in `ctx.term.autocomplete` is the autocomplete list, and it is deliberately **not** the same set. `/effort` is a routable alias of `/thinking` - "effort" is what the wire calls it - and it is not advertised in autocomplete, because `/settings` is the discoverable entry point for the thinking and permissions sub-commands. `/switch` is handled but likewise not advertised.
 
 ### Thinking levels
 

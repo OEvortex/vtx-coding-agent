@@ -1,8 +1,8 @@
 """Presentation flair for the coding agent's tools.
 
 Status-line quips, error lines, activity verbs, and breakdown nouns are
-product content: the harness owns the pickers in ``ctx.tui.status_lines`` and
-``ctx.tui.task_ui``, this module feeds them per-tool data through
+product content: the harness owns the pickers in ``ctx.term.status_lines`` and
+``ctx.term.task_ui``, this module feeds them per-tool data through
 ``ctx.agent.tools.register_tool_flair``.
 """
 

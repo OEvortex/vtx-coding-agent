@@ -1,6 +1,6 @@
 """Shared base for the coding agent's tool blocks.
 
-Everything here subclasses the generic :class:`ctx.tui.blocks.ToolBlock`
+Everything here subclasses the generic :class:`ctx.term.blocks.ToolBlock`
 shipped by ``term``. Tool-specific rendering lives in the sibling modules;
 the base only gives the simple tools a stable class to point their
 ``ui_block`` at.
@@ -8,7 +8,7 @@ the base only gives the simple tools a stable class to point their
 
 from __future__ import annotations
 
-from ctx.tui.blocks import ToolBlock  # ty: ignore[import-not-found]
+from ctx.term.blocks import ToolBlock  # ty: ignore[import-not-found]
 
 
 class CodingToolBlock(ToolBlock):

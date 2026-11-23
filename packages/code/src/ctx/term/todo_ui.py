@@ -1,8 +1,8 @@
 """The todo list, drawn — the one place both todo surfaces render from.
 
 The ``todo`` tool paints twice: as the pinned strip above the editor
-(:mod:`ctx.tui.todo_panel`) and as the in-chat tool block
-(:mod:`ctx.tui.todo_block`). Before this module each drew its own list, so the
+(:mod:`ctx.term.todo_panel`) and as the in-chat tool block
+(:mod:`ctx.term.todo_block`). Before this module each drew its own list, so the
 same tasks appeared in two different shapes a few lines apart on screen. Both
 now build from the functions here, which is the rule the sub-agent strip set
 for itself: *"every strip above the editor starts its rows with this, so a
@@ -13,7 +13,7 @@ animation counter the panel advances on a timer — the in-progress row is a
 spinner rather than a static half-filled circle, because a row that is
 actually moving is the difference between "the agent is working" and "the
 agent is thinking about working". Glyphs are chosen to agree with the sub-agent
-strip (:mod:`ctx.tui.agents_panel`), so ``⠹`` and ``✓`` mean the same thing in
+strip (:mod:`ctx.term.agents_panel`), so ``⠹`` and ``✓`` mean the same thing in
 both panels.
 
 Three decisions are worth stating, because the obvious alternative is wrong:
@@ -45,8 +45,8 @@ from collections.abc import Sequence
 from typing import Any
 
 from ctx.core.config import config
-from ctx.tui.agents_panel import TREE_EDGE, TREE_GUTTER, TREE_LAST, strip_header, tree_prefix
-from ctx.tui.task_ui import SPINNER
+from ctx.term.agents_panel import TREE_EDGE, TREE_GUTTER, TREE_LAST, strip_header, tree_prefix
+from ctx.term.task_ui import SPINNER
 from rich.cells import cell_len
 from rich.style import Style
 from rich.text import Text

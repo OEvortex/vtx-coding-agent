@@ -359,7 +359,7 @@ class TextualExtensionUI(ExtensionUIContext):
 
     def _sync_footer_statuses(self) -> None:
         try:
-            from ctx.tui.widgets import InfoBar
+            from ctx.term.widgets import InfoBar
 
             footer = self._app.query_one(InfoBar)
         except Exception:

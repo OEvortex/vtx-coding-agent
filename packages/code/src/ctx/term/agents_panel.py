@@ -41,8 +41,8 @@ from collections.abc import Sequence
 
 from ctx.agent.subagent import DEFAULT_SUBAGENT
 from ctx.core.config import config
-from ctx.tui.subagents import DONE_LINGER_SECONDS, REGISTRY, SubagentRun
-from ctx.tui.task_ui import SPINNER, describe_activity, format_tokens
+from ctx.term.subagents import DONE_LINGER_SECONDS, REGISTRY, SubagentRun
+from ctx.term.task_ui import SPINNER, describe_activity, format_tokens
 from rich.cells import cell_len
 from rich.style import Style
 from rich.text import Text

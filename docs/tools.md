@@ -86,7 +86,7 @@ Read a file or list a directory. Non-mutating, so it never prompts.
 | `limit` | `int \| None` | `None` | Line count (for large files) |
 
 Reads are capped at 2000 lines and 2000 characters per line
-(`src/ctx/coding_agent/tools/read.py:19-20`), and a directory listing at 1000 entries. Use
+(`src/ctx/code/tools/read.py:19-20`), and a directory listing at 1000 entries. Use
 `offset` and `limit` to page through anything larger.
 
 ```json
@@ -112,7 +112,7 @@ Replace text in an existing file. Mutating.
 
 `old_string` must appear in the file; without `replace_all` only the **first**
 occurrence is replaced (`content.replace(old, new, 1)`,
-`src/ctx/coding_agent/tools/edit.py:227-230`), so include enough surrounding
+`src/ctx/code/tools/edit.py:227-230`), so include enough surrounding
 context to make the target unambiguous. Read the file first; the model has no
 file cache.
 
@@ -162,9 +162,9 @@ about.
 | `command` | `str` | required | Command line string to execute |
 | `timeout` | `int` | `180` | Timeout in seconds |
 
-The default timeout is 180 seconds (`src/ctx/coding_agent/tools/bash.py:21`). Output
+The default timeout is 180 seconds (`src/ctx/code/tools/bash.py:21`). Output
 is tail-truncated to the last 2000 lines and 50 KB, with the full log written to a temp
-file (`src/ctx/coding_agent/tools/bash.py:22-23`, `:92`, `:376-378`).
+file (`src/ctx/code/tools/bash.py:22-23`, `:92`, `:376-378`).
 
 ```json
 {"command": "git status --short"}
@@ -189,7 +189,7 @@ explicitly (`src/ctx/plugins/builtins/__init__.py:48`).
 | `path` | `str \| None` | `None` | Directory to search within (defaults to cwd) |
 
 Respects `.gitignore`. Results are sorted by modification time and truncated to 100
-entries (`src/ctx/coding_agent/tools/find.py:17`).
+entries (`src/ctx/code/tools/find.py:17`).
 
 ```json
 {"pattern": "*.py", "path": "src/ctx/agent"}
@@ -244,7 +244,7 @@ Search the web through Exa's MCP endpoint. No API key required.
 ## `todo`
 
 Track a task list for multi-step work. Default-on, and `mutating=False` in the
-code (`src/ctx/coding_agent/tools/todo.py:182`) because it only mutates its own
+code (`src/ctx/code/tools/todo.py:182`) because it only mutates its own
 task state, never the filesystem - so it never prompts.
 
 | Parameter | Type | Default | Description |
@@ -263,7 +263,7 @@ task state, never the filesystem - so it never prompts.
 | `include_deleted` | `bool` | `False` | Include deleted tasks in `list` |
 
 `action` may be omitted: it is inferred from which fields are present
-(`src/ctx/coding_agent/tools/todo.py:116-147`). Plan the whole list in one
+(`src/ctx/code/tools/todo.py:116-147`). Plan the whole list in one
 `set` call rather than creating tasks one at a time - the tool's own guidelines
 say so.
 
@@ -352,7 +352,7 @@ chain of direct calls costs one turn each.
 
 Tools are reached as `tools.<identifier>(**kwargs)` inside the script, so a gated tool
 needs an admission the first time. `tools.search(query=..., limit=...)` lists what is
-available (`src/ctx/coding_agent/tools/codemode.py`).
+available (`src/ctx/code/tools/codemode.py`).
 
 ```json
 {"code": "paths = (await tools.find(pattern='src/**/*.py')).splitlines()[:20]\ntexts = await asyncio.gather(*(tools.read(path=p) for p in paths))\nreturn [{'path': p, 'lines': len(t.splitlines())} for p, t in zip(paths, texts)]"}

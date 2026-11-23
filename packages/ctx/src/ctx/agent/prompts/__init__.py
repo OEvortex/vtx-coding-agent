@@ -3,7 +3,7 @@
 Public surface: :func:`build_system_prompt` composes the base identity plus
 whatever sections are registered in :mod:`ctx.agent.prompts.registry`. The
 persona and product-specific content live in the product package
-(``ctx.coding_agent.prompts``), not here.
+(``ctx.code.prompts``), not here.
 """
 
 from .builder import build_system_prompt

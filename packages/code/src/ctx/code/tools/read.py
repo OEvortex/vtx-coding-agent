@@ -5,11 +5,7 @@ from pathlib import Path
 import aiofiles
 from ctx.agent.tools.base import BaseTool, ToolResult
 from ctx.agent.tools_manager import ensure_tool
-from ctx.coding_agent.tools._tool_utils import (
-    ToolCancelledError,
-    communicate_or_cancel,
-    shorten_path,
-)
+from ctx.code.tools._tool_utils import ToolCancelledError, communicate_or_cancel, shorten_path
 from ctx.core.image import is_image_file, read_and_process_image
 from ctx.plugins import mount_tool, plugin
 from ctx.protocol.types import ImageContent
@@ -47,7 +43,7 @@ class ReadTool(BaseTool):
     @property
     def ui_block(self) -> type | None:
         try:
-            from ctx.tui.tool_blocks import ReadToolBlock
+            from ctx.term.tool_blocks import ReadToolBlock
 
             return ReadToolBlock
         except ImportError:

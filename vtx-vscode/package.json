@@ -2,7 +2,7 @@
   "name": "vtx-vscode",
   "displayName": "Vtx for VS Code",
   "description": "A native chat panel for the Ctx CLI, powered by the Agent Client Protocol. Streaming replies, per workspace sessions, and trackable diffs.",
-  "version": "0.13.5",
+  "version": "0.13.7",
   "publisher": "oevortex",
   "author": "Vortex",
   "license": "AGPL-3.0-or-later",

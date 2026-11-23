@@ -180,7 +180,7 @@ if TYPE_CHECKING:
 
 # ---------------------------------------------------------------------------
 # Lazy re-exports: provider/model catalog and headless entry points. These pull
-# in ``ctx.ai`` / ``ctx.coding_agent``, so they resolve on first access rather
+# in ``ctx.ai`` / ``ctx.code``, so they resolve on first access rather
 # than at ``import ctx.sdk`` time — same trick ``ctx`` and ``ctx.ai`` use.
 # ---------------------------------------------------------------------------
 
@@ -192,7 +192,7 @@ def __getattr__(name: str) -> Any:
         try:
             module = importlib.import_module(module_name)
         except ModuleNotFoundError as exc:
-            # ``ctx.coding_agent`` ships in ctx-code; skip it when absent.
+            # ``ctx.code`` ships in ctx-code; skip it when absent.
             if exc.name != module_name:
                 raise
             continue
@@ -511,7 +511,7 @@ __all__ = [  # noqa: RUF022 - grouped by layer for readability
     "register_provider",
     "register_tool",
     "unregister_provider",
-    # lazy (ctx.ai / ctx.coding_agent)
+    # lazy (ctx.ai / ctx.code)
     "ApiType",
     "BaseProvider",
     "LLMStream",

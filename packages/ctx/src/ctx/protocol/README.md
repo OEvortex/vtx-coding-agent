@@ -167,4 +167,4 @@ format_error(ValueError("ValueError: x"))  # 'ValueError: x' - a repeated name i
 
 ## Not here
 
-Agent lifecycle events live in `ctx.core.events`; this package only defines what a provider returns and what a tool is. Sessions and history are `ctx.agent`. Provider implementations are in `ctx.ai.providers`, tool implementations in `ctx.agent.tools` and `ctx.coding_agent.tools`. Nothing in `ctx.protocol` imports any of them.
+Agent lifecycle events live in `ctx.core.events`; this package only defines what a provider returns and what a tool is. Sessions and history are `ctx.agent`. Provider implementations are in `ctx.ai.providers`, tool implementations in `ctx.agent.tools` and `ctx.code.tools`. Nothing in `ctx.protocol` imports any of them.

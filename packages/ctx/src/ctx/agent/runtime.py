@@ -269,7 +269,7 @@ class ConversationRuntime:
         # The todo tool ships in the coding-agent product (ctx-code); a bare
         # ``ctx`` install simply has no todo list to refresh.
         try:
-            from ctx.coding_agent.tools.todo import register_todo_refresh
+            from ctx.code.tools.todo import register_todo_refresh
         except ImportError:
             pass
         else:
@@ -607,7 +607,7 @@ class ConversationRuntime:
         self._unwire_codemode()
 
         try:
-            from ctx.coding_agent.tools.todo import unregister_todo_refresh
+            from ctx.code.tools.todo import unregister_todo_refresh
         except ImportError:
             pass
         else:

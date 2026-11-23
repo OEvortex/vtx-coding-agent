@@ -176,7 +176,7 @@ first assistant message may get one big rewrite.
 |---|---|---|
 | `ctx --continue` / `-c` | Reopen the most recently modified `.jsonl` for this directory; create a new session if there is none (by mtime) | `src/ctx/agent/session.py:1042-1064` |
 | `ctx --resume <id>` / `-r` | Reopen by full session id, or a unique prefix; an ambiguous prefix is a hard error | `:1066-1083` |
-| `/resume` | Picker over every session for this directory, with handoff nesting and delete | `src/ctx/tui/commands/sessions.py:384-392` |
+| `/resume` | Picker over every session for this directory, with handoff nesting and delete | `src/ctx/term/commands/sessions.py:384-392` |
 | `/new` | Start a new session in the same process | `:51-89` |
 | `/clear` | Drop the conversation and reset the codemode store, same session file | `:27-49` |
 
@@ -187,7 +187,7 @@ first assistant message may get one big rewrite.
 raises `ValueError: Session ID prefix is ambiguous: <id>` (`:1077-1083`).
 
 `-p/--prompt` with either flag is rejected at parse time
-(`src/ctx/coding_agent/cli.py:307-308`):
+(`src/ctx/code/cli.py:307-308`):
 
 ```text
 -c/--continue and -r/--resume are not supported with -p/--prompt
@@ -214,7 +214,7 @@ if resume_session:
 Precedence for the model side is `--model`/`--provider`/`--base-url` over whatever the
 session recorded. The TUI prints `Resumed session` and then re-renders the transcript into
 the chat log, including the token and file-change counters
-(`src/ctx/tui/app.py:665-681`).
+(`src/ctx/term/app.py:665-681`).
 
 ### What `/resume` shows you
 
@@ -266,7 +266,7 @@ else entry.id` (`:340`), which is the whole mechanism: a leaf repoints the conve
 
 `/tree` refuses while the agent is running and when there are no entries, then opens
 `TreeSelector` over `session.get_tree()` with the current `leaf_id` marked
-(`src/ctx/tui/commands/sessions.py:365-382`). Its keys (`src/ctx/tui/tree.py:42-49`):
+(`src/ctx/term/commands/sessions.py:365-382`). Its keys (`src/ctx/term/tree.py:42-49`):
 
 | Key | Action |
 |---|---|
@@ -277,7 +277,7 @@ else entry.id` (`:340`), which is the whole mechanism: a leaf repoints the conve
 | `escape` | Cancel |
 
 Only `message` entries are listed: a user message and a tool result always, an assistant
-message only when it has non-empty text (`src/ctx/tui/tree.py:239-249`).
+message only when it has non-empty text (`src/ctx/term/tree.py:239-249`).
 
 Selecting an entry goes through `navigate_tree` (`src/ctx/agent/runtime.py:1485-1511`).
 For a user message it appends a leaf to `entry.parent_id` and returns the message text for
@@ -296,7 +296,7 @@ the types Ctx itself writes:
 
 | `custom_type` | Written by | `display` | Meaning |
 |---|---|---|---|
-| `shell_command` | `!cmd` / `!!cmd` in the editor | yes | A manual shell run, with `command`, `output`, `success` in `details` (`src/ctx/tui/agent_runner.py:726-736`) |
+| `shell_command` | `!cmd` / `!!cmd` in the editor | yes | A manual shell run, with `command`, `output`, `success` in `details` (`src/ctx/term/agent_runner.py:726-736`) |
 | `handoff_backlink` | `/handoff` | no | This session was created by a handoff; `details.target_session_id` points at the parent (`src/ctx/agent/runtime.py:1787`) |
 | `handoff_forward_link` | `/handoff` | no | This session handed off; `details` points at the child |
 
@@ -391,7 +391,7 @@ Reverted to "fix the typo" (3 files, 1 added, 1 removed)
 ```
 
 In the TUI, `/undo` and `/redo` refuse while the agent is running
-(`src/ctx/tui/commands/sessions.py:276-329`), and a staged revert whose turn predates
+(`src/ctx/term/commands/sessions.py:276-329`), and a staged revert whose turn predates
 snapshotting leaves an explicit marker: "files were left as-is: this turn predates
 snapshotting (resumed session). `/redo` still works." (`:343-348`).
 
@@ -433,7 +433,7 @@ least 150 characters of assistant text. A session that has only just started pro
 nothing.
 
 The timer is armed when a run ends, with the interval read from config
-(`src/ctx/tui/recap.py:79`):
+(`src/ctx/term/recap.py:79`):
 
 ```python
 seconds = max(5.0, float(config.recap.idle_seconds))
@@ -441,12 +441,12 @@ seconds = max(5.0, float(config.recap.idle_seconds))
 
 `recap.idle_seconds` defaults to **60** and is constrained to 5 or more
 (`src/ctx/core/config.py:167-171`). The module docstring in
-`src/ctx/tui/recap.py:1-6` says 30s; that line is stale.
+`src/ctx/term/recap.py:1-6` says 30s; that line is stale.
 
 Two behaviours worth knowing:
 
 - **A sub-agent in flight suppresses the recap.** `_subagents_in_flight()` checks
-  `ctx.tui.subagents.REGISTRY.has_live()` (`src/ctx/tui/recap.py:54-68`), because the
+  `ctx.term.subagents.REGISTRY.has_live()` (`src/ctx/term/recap.py:54-68`), because the
   recap would otherwise land in the chat *instead of* the sub-agent's result reaching the
   agent.
 - **The next prompt dismisses it.** `_dismiss_recap()` cancels the timer and the worker,
@@ -462,7 +462,7 @@ agent is running. If there is nothing to summarise you get
 
 | Command | Effect | Source |
 |---|---|---|
-| `/session` | File path, directory, user/assistant/tool counts, token totals | `src/ctx/tui/commands/sessions.py:152-216` |
+| `/session` | File path, directory, user/assistant/tool counts, token totals | `src/ctx/term/commands/sessions.py:152-216` |
 | `/new` | New session in this process | `:51-89` |
 | `/clear` | Clear the conversation and the codemode store | `:27-49` |
 | `/resume` | Picker over this directory's sessions, with delete | `:384-412` |
@@ -473,10 +473,10 @@ agent is running. If there is nothing to summarise you get
 | `/redo` | Step forward again | `:303-329` |
 | `/export` | Write an HTML transcript to disk | `:446-469` |
 | `/copy` | Copy the last assistant message to the clipboard | `:470-484` |
-| `/usage` | Token and cost breakdown, from the durable ledger (deleted sessions included) | `src/ctx/tui/commands/__init__.py:109-110`, `src/ctx/tui/usage_stats.py:94` |
+| `/usage` | Token and cost breakdown, from the durable ledger (deleted sessions included) | `src/ctx/term/commands/__init__.py:109-110`, `src/ctx/term/usage_stats.py:94` |
 
 `/resume` refuses to delete the session you are currently in: `Cannot delete current
-session` (`src/ctx/tui/commands/sessions.py:412`).
+session` (`src/ctx/term/commands/sessions.py:412`).
 
 ## Known gaps
 

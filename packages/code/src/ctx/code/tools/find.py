@@ -3,7 +3,7 @@ import os
 
 from ctx.agent.tools.base import BaseTool
 from ctx.agent.tools_manager import ensure_tool
-from ctx.coding_agent.tools._tool_utils import (
+from ctx.code.tools._tool_utils import (
     ToolCancelledError,
     communicate_or_cancel,
     shorten_path,
@@ -34,7 +34,7 @@ class FindTool(BaseTool):
     @property
     def ui_block(self) -> type | None:
         try:
-            from ctx.tui.tool_blocks import FindToolBlock
+            from ctx.term.tool_blocks import FindToolBlock
 
             return FindToolBlock
         except ImportError:

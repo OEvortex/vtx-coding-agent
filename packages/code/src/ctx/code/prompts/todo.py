@@ -14,12 +14,12 @@ _STATUS_GLYPHS = {"pending": "○", "in_progress": "◐", "completed": "✓", "d
 
 def build_todo_section() -> str:
     """Render the live todo list, or ``""`` when there is nothing to show."""
-    # Lazy import: coding_agent.tools.todo pulls in the plugin machinery, and
+    # Lazy import: code.tools.todo pulls in the plugin machinery, and
     # prompts is a lower layer that must not depend on it at import time. The
     # tool ships in the coding-agent product (ctx-code); without it there is
     # no todo list to render.
     try:
-        from ctx.coding_agent.tools.todo import current_todo_tool
+        from ctx.code.tools.todo import current_todo_tool
     except ImportError:
         return ""
 

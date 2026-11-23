@@ -13,8 +13,8 @@ from collections.abc import Sequence
 from dataclasses import dataclass
 
 from ctx.git.gh_cli import PullRequest, is_available, list_pull_requests
-from ctx.tui.floating_list import ListItem
-from ctx.tui.fuzzy import fuzzy_filter, fuzzy_match
+from ctx.term.floating_list import ListItem
+from ctx.term.fuzzy import fuzzy_filter, fuzzy_match
 
 
 @dataclass

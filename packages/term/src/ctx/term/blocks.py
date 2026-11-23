@@ -13,9 +13,9 @@ from ctx.core import ApprovalResponse
 from ctx.core.compaction import SUMMARY_SECTIONS
 from ctx.core.config import config
 from ctx.protocol.types import ImageContent
-from ctx.tui import boxed
-from ctx.tui.diff_display import DIFF_BG_PAD_MARKER
-from ctx.tui.formatting import (
+from ctx.term import boxed
+from ctx.term.diff_display import DIFF_BG_PAD_MARKER
+from ctx.term.formatting import (
     find_stable_block_boundary,
     format_markdown,
     format_markdown_block,
@@ -24,7 +24,7 @@ from ctx.tui.formatting import (
     split_open_fence,
     strip_markdown_for_collapsed_text,
 )
-from ctx.tui.input import AskUserInput
+from ctx.term.input import AskUserInput
 from rich.spinner import Spinner
 from rich.style import Style
 from rich.text import Text
@@ -342,7 +342,7 @@ class RunSummaryBlock(Static):
         **kwargs,
     ) -> None:
         super().__init__(**kwargs)
-        from ctx.tui.run_summary import RunSummaryStats, format_merged_summary_text
+        from ctx.term.run_summary import RunSummaryStats, format_merged_summary_text
 
         self._stats = stats or RunSummaryStats()
         self._format_func = format_merged_summary_text
@@ -1492,7 +1492,7 @@ def _heat_color(level: int) -> str:
     colors = config.ui.colors
     if level <= 0:
         return colors.border
-    from ctx.tui.styles import _blend_hex
+    from ctx.term.styles import _blend_hex
 
     return _blend_hex(colors.bg, colors.accent, overlay_weight=_HEATMAP_WEIGHTS[level])
 
@@ -1538,7 +1538,7 @@ def _total_line(usage) -> str:
     the total and the breakdown looks like it does not add up. The exact
     number is what makes the arithmetic checkable; the short one is what fits.
     """
-    from ctx.tui.formatting import format_tokens
+    from ctx.term.formatting import format_tokens
 
     return f" {format_tokens(usage.total_tokens)} · {usage.total_tokens:,}"
 
@@ -1586,7 +1586,7 @@ class UsageBlock(Static):
     # -- pieces ----------------------------------------------------------------
 
     def _summary_cards(self, available_width: int = 120) -> Text:
-        from ctx.tui.formatting import format_tokens
+        from ctx.term.formatting import format_tokens
 
         colors = config.ui.colors
         summaries = (

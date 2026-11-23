@@ -1,6 +1,6 @@
 # ctx.mcp
 
-A small, standalone Model Context Protocol client. It does not depend on the official MCP SDK or on any other ctx package beyond `ctx.agent.tools.base`, which it needs only to wrap server tools as ctx tools. Use it to speak MCP from a script; `ctx.coding_agent` wires it up for the product.
+A small, standalone Model Context Protocol client. It does not depend on the official MCP SDK or on any other ctx package beyond `ctx.agent.tools.base`, which it needs only to wrap server tools as ctx tools. Use it to speak MCP from a script; `ctx.code` wires it up for the product.
 
 The package provides a transport-neutral client core, stdio and Streamable HTTP transports, an in-memory testing transport, OAuth 2.1 sign-in, `mcp.json` loading, and the adapter that turns a server's tools into `BaseTool`s. The dependency runs one way: `ctx.agent.runtime` imports `ctx.mcp.manager` and `ctx.agent.tools.codemode` and `ctx.agent.tools.tool_search` import `ctx.mcp.exposure`, all function-locally, so a session with no `mcp.json` pays nothing for the integration.
 

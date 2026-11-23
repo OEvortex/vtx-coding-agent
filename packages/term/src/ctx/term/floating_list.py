@@ -13,7 +13,7 @@ from dataclasses import dataclass
 from typing import TypeVar
 
 from ctx.core.config import config
-from ctx.tui.fuzzy import fuzzy_filter
+from ctx.term.fuzzy import fuzzy_filter
 from rich.text import Text
 from textual import events
 from textual.reactive import reactive

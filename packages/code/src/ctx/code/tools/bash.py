@@ -200,7 +200,7 @@ class BashTool(BaseTool):
     @property
     def ui_block(self) -> type | None:
         try:
-            from ctx.tui.tool_blocks import BashToolBlock
+            from ctx.term.tool_blocks import BashToolBlock
 
             return BashToolBlock
         except ImportError:
@@ -229,7 +229,7 @@ class BashTool(BaseTool):
     def _format_display(
         self, output: str, max_lines: int = 5, max_line_chars: int = 500
     ) -> tuple[str, str | None]:
-        from ctx.tui.tool_output import truncate_tool_output_text
+        from ctx.term.tool_output import truncate_tool_output_text
 
         truncation_color = config.ui.colors.dim
 
