@@ -10,7 +10,7 @@ know what an ``ops`` payload looks like.
 from __future__ import annotations
 
 from ctx.core.config import config
-from ctx.tui import boxed  # ty: ignore[import-not-found]
+from ctx.tui import boxed  # ty: ignore[missing-module-member]
 from ctx.tui.diff_display import DIFF_BG_PAD_MARKER, blend_hex  # ty: ignore[import-not-found]
 from rich.text import Text
 
@@ -136,10 +136,7 @@ class ApplyPatchToolBlock(CodingToolBlock):
             if len(old) + len(new) > 40000:
                 return None
             try:
-                from ctx.coding_agent.tools.apply_patch import (
-                    format_diff_display,
-                    generate_diff,
-                )
+                from ctx.coding_agent.tools.apply_patch import format_diff_display, generate_diff
 
                 diff, _, _ = generate_diff(old, new)
                 text = Text.from_markup(format_diff_display(diff))

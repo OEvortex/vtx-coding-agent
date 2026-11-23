@@ -234,6 +234,7 @@ _DELETED = object()  # state sentinel: path removed by an earlier op
 class ApplyPatchTool(BaseTool):
     name = "apply_patch"
     tool_icon = "←"
+
     @property
     def ui_block(self) -> type | None:
         try:

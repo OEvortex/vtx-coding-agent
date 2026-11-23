@@ -81,6 +81,7 @@ def _sibling_files(skill_dir: Path, *, exclude: str) -> list[str]:
 class SkillTool(BaseTool):
     name = "skill"
     tool_icon = "⚙"
+
     @property
     def ui_block(self) -> type | None:
         try:

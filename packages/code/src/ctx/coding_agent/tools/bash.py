@@ -196,6 +196,7 @@ class BashParams(BaseModel):
 class BashTool(BaseTool):
     name = "bash"
     tool_icon = "$"
+
     @property
     def ui_block(self) -> type | None:
         try:

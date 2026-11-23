@@ -280,6 +280,6 @@ def prune_finished_subagents(max_age: float = FINISHED_TTL_SECONDS) -> None:
 # Feed the harness status line: while a sub-agent fan-out is live the witty
 # quip is suppressed (the Agents panel already says it better). Registered
 # here because the registry lives in the product package.
-from ctx.tui.status_lines import set_live_activity_probe  # noqa: E402
+from ctx.tui.status_lines import set_live_activity_probe  # noqa: E402  # ty: ignore[import-not-found]
 
 set_live_activity_probe(REGISTRY.has_live)

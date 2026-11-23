@@ -11,11 +11,7 @@ import logging
 from typing import TYPE_CHECKING, Any
 
 from ctx.agent.runtime import ConversationRuntime
-from ctx.tui.autocomplete import (
-    FilePathProvider,
-    PullRequestProvider,
-    SlashCommandProvider,
-)
+from ctx.tui.autocomplete import FilePathProvider, PullRequestProvider, SlashCommandProvider
 from ctx.tui.chat import ChatLog
 from ctx.tui.floating_list import FloatingList, ListItem
 from ctx.tui.input import InputBox

@@ -187,6 +187,7 @@ class AskUserParams(BaseModel):
 class AskUserTool(BaseTool):
     name = "ask_user"
     tool_icon = "?"
+
     @property
     def ui_block(self) -> type | None:
         try:

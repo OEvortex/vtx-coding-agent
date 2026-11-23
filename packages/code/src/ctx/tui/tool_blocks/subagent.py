@@ -12,12 +12,13 @@ import contextlib
 import time
 
 from ctx.core.config import config
-from ctx.tui import task_ui  # ty: ignore[import-not-found]
+from ctx.tui import task_ui
 from rich.style import Style
 from rich.text import Text
 from textual.widgets import Label
 
 from .base import CodingToolBlock
+
 
 class TaskToolBlock(CodingToolBlock):
     """Dispatch receipt for one sub-agent.
@@ -211,25 +212,27 @@ class TaskToolBlock(CodingToolBlock):
         kind = event.get("kind")
         state = self._task_live
         if not state:
-            state.update({
-                "subagent": event.get("subagent", "subagent"),
-                "model": None,
-                "max_turns": None,
-                "turns": 0,
-                "tool_uses": 0,
-                "tool_counts": {},
-                "tokens": 0,
-                "active_tool": None,
-                "last_text": "",
-                "final_text": "",
-                "transcript": [],
-                "started": time.monotonic(),
-                "ended": False,
-                "stop_label": None,
-                "error": None,
-                "queued": False,
-                "queue_position": 0,
-            })
+            state.update(
+                {
+                    "subagent": event.get("subagent", "subagent"),
+                    "model": None,
+                    "max_turns": None,
+                    "turns": 0,
+                    "tool_uses": 0,
+                    "tool_counts": {},
+                    "tokens": 0,
+                    "active_tool": None,
+                    "last_text": "",
+                    "final_text": "",
+                    "transcript": [],
+                    "started": time.monotonic(),
+                    "ended": False,
+                    "stop_label": None,
+                    "error": None,
+                    "queued": False,
+                    "queue_position": 0,
+                }
+            )
         if event.get("tool_counts"):
             state["tool_counts"] = dict(event["tool_counts"])
         if event.get("final_text"):
@@ -274,4 +277,3 @@ class TaskToolBlock(CodingToolBlock):
         state["elapsed_ms"] = (time.monotonic() - state["started"]) * 1000
         state["queued"] = False
         state["queue_position"] = 0
-

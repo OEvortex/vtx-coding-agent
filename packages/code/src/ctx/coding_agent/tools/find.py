@@ -30,6 +30,7 @@ class FindParams(BaseModel):
 class FindTool(BaseTool):
     name = "find"
     tool_icon = "*"
+
     @property
     def ui_block(self) -> type | None:
         try:

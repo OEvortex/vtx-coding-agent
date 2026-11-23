@@ -69,6 +69,7 @@ class ToolSearchTool(BaseTool):
     mutating = False
     needs_approval = False
     tool_icon = "⌕"
+
     @property
     def ui_block(self) -> type | None:
         try:

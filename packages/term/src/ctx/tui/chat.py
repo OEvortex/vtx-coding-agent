@@ -948,9 +948,13 @@ class ChatLog(VerticalScroll):
                 return candidate
         return None
 
-    def show_ask_user(self, tool_id: str, dialog, block_cls: type[ToolBlock] | None = None) -> None:
+    def show_ask_user(
+        self, tool_id: str, dialog, block_cls: type[ToolBlock] | None = None
+    ) -> None:
         block = self._ask_user_block(tool_id)
-        if block is None and block_cls is not None:
+        if block is None:
+            if block_cls is None:
+                return
             # The tool block was pruned or never mounted under this id —
             # mount a fresh one so the questionnaire always has a home.
             block = self.start_tool("tool", tool_id, block_cls=block_cls)

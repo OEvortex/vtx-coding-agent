@@ -545,6 +545,11 @@ class ToolBlock(Static):
             self._safe_update(self._render_approval_output)
         self._render_footer()
 
+    def _safe_update(self, fn) -> None:
+        """Run ``fn`` and swallow DOM errors (e.g. widget not yet mounted)."""
+        with contextlib.suppress(Exception):
+            fn()
+
     def _render_interactive_output(self) -> None:
         """Extension hook for tool UIs with an interactive body (e.g. dialogs).
 
@@ -911,7 +916,6 @@ class ToolBlock(Static):
         """Live body while arguments stream. Product tool blocks override."""
         return None
 
-
     def set_result(
         self,
         ui_summary: str | None,
@@ -1193,8 +1197,6 @@ class LaunchWarningsBlock(Static):
             text.append(warning.message, style=style)
 
         yield Label(text)
-
-
 
 
 # ---------------------------------------------------------------------------

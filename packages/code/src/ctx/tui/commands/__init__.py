@@ -15,7 +15,7 @@
 
 from __future__ import annotations
 
-from ctx.tui.chat import ChatLog 
+from ctx.tui.chat import ChatLog
 
 from .agents import AgentCommands
 from .auth import AuthCommands

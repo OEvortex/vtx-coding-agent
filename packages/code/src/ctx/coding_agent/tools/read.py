@@ -43,6 +43,7 @@ class ReadParams(BaseModel):
 class ReadTool(BaseTool):
     name = "read"
     tool_icon = "→"
+
     @property
     def ui_block(self) -> type | None:
         try:

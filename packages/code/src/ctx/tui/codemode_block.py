@@ -84,11 +84,7 @@ import time
 from ctx.coding_agent.tools.codemode import PROGRESS_SENTINEL
 from ctx.core.config import config
 from ctx.tui.blocks import ToolBlock
-from ctx.tui.formatting import (
-    format_json_args,
-    format_json_source,
-    format_python_source,
-)
+from ctx.tui.formatting import format_json_args, format_json_source, format_python_source
 from ctx.tui.task_ui import GLYPHS, format_call_ms, format_run_ms
 from rich.console import Console
 from rich.style import Style

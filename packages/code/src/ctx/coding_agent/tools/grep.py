@@ -31,6 +31,7 @@ class GrepParams(BaseModel):
 class GrepTool(BaseTool[GrepParams]):
     name = "grep"
     tool_icon = "🔎"
+
     @property
     def ui_block(self) -> type | None:
         try:

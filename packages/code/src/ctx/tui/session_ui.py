@@ -20,10 +20,7 @@ from ctx.protocol.types import (
 from ctx.tui.chat import ChatLog
 from ctx.tui.commands import CommandsMixin
 from ctx.tui.input import InputBox
-from ctx.tui.tool_output import (
-    escape_tool_output_text,
-    truncate_tool_output_text,
-)
+from ctx.tui.tool_output import escape_tool_output_text, truncate_tool_output_text
 from ctx.tui.widgets import InfoBar, StatusLine, format_path
 
 

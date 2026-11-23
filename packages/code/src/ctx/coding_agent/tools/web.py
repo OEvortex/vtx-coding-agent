@@ -18,10 +18,7 @@ _TIMEOUT = 25.0
 
 def _split_for_expand(text: str) -> tuple[str, str | None]:
     try:
-        from ctx.tui.tool_output import (
-            escape_tool_output_text,
-            truncate_tool_output_text,
-        )
+        from ctx.tui.tool_output import escape_tool_output_text, truncate_tool_output_text
 
         collapsed, truncated = truncate_tool_output_text(text)
         return collapsed, escape_tool_output_text(text) if truncated else None
@@ -126,6 +123,7 @@ class WebTool(BaseTool):
 
     name = "web"
     tool_icon = "🔍"
+
     @property
     def ui_block(self) -> type | None:
         try:

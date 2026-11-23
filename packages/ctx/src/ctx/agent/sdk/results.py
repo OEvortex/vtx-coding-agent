@@ -38,9 +38,7 @@ class RunResult:
     agent_name: str = ""
     """The name of the agent that produced the final output."""
 
-    _streamed_events: list[Any] = field(
-        default_factory=list, repr=False, compare=False
-    )
+    _streamed_events: list[Any] = field(default_factory=list, repr=False, compare=False)
     """Internal: events yielded during a streamed run, used by
     :meth:`Runner.run_streamed`. Not part of the public API."""
 

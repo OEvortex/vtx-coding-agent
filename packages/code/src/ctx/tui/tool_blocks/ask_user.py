@@ -12,7 +12,7 @@ import contextlib
 import textwrap
 
 from ctx.core.config import config
-from ctx.tui.ask_user import (  # ty: ignore[import-not-found]
+from ctx.tui.ask_user import (
     INCOMPLETE_WARNING_PREFIX,
     NEXT_LABEL,
     NO_INPUT_PLACEHOLDER,

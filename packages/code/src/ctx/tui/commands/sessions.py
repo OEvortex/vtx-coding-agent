@@ -187,10 +187,7 @@ class SessionCommands(CommandSupport):
         import asyncio
 
         from ctx.tui.blocks import UsageBlock
-        from ctx.tui.usage_stats import (
-            HEATMAP_DAYS,
-            aggregate_usage,
-        )
+        from ctx.tui.usage_stats import HEATMAP_DAYS, aggregate_usage
 
         chat = self.query_one("#chat-log", ChatLog)
         pending = chat.add_info_message("Reading session history...")

@@ -42,11 +42,7 @@ from ctx.tui.agent_runner import AgentRunnerMixin
 from ctx.tui.agents_panel import AgentsPanel
 from ctx.tui.ask_user import AskUserDialog
 from ctx.tui.autocomplete import DEFAULT_COMMANDS, SlashCommand
-from ctx.tui.blocks import (
-    HandoffLinkBlock,
-    LaunchWarning,
-    RunSummaryBlock,
-)
+from ctx.tui.blocks import HandoffLinkBlock, LaunchWarning, RunSummaryBlock
 from ctx.tui.chat import ChatLog
 from ctx.tui.commands import CommandsMixin
 from ctx.tui.completion_ui import CompletionUIMixin
@@ -62,12 +58,7 @@ from ctx.tui.styles import get_styles
 from ctx.tui.subagents import record_subagent_event
 from ctx.tui.todo_panel import TodoPanel
 from ctx.tui.tree import TreeSelector
-from ctx.tui.widgets import (
-    InfoBar,
-    QueueDisplay,
-    StatusLine,
-    format_path,
-)
+from ctx.tui.widgets import InfoBar, QueueDisplay, StatusLine, format_path
 from textual import events, on
 from textual.app import App, ComposeResult
 from textual.binding import Binding

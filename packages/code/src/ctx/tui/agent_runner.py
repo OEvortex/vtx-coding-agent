@@ -670,9 +670,7 @@ class AgentRunnerMixin:
             params_cls = getattr(bash_tool, "params", None)
             params = params_cls(command=command) if params_cls else {"command": command}
             result = await bash_tool.execute(
-                params,
-                cancel_event=cancel_event,
-                inline_output=False,
+                params, cancel_event=cancel_event, inline_output=False
             )
 
             # Persist the command and its output so session resume and /export
