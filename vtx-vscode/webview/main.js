@@ -2400,7 +2400,20 @@ import { renderMarkdown, renderShell, renderCode } from "./markdown.js";
       menu.appendChild(rows);
       if (providerPickerOpen) rows.classList.add("hidden");
       renderRows();
+      positionMenu();
     }
+
+    // The picker is anchored to a control near the composer's left edge. In a
+    // narrow panel a fixed left offset would push it past the right edge, scroll
+    // the whole webview sideways and clip the header. Clamp it to the viewport.
+    function positionMenu() {
+      if (menu.classList.contains("hidden")) return;
+      const anchor = btn.getBoundingClientRect();
+      const width = menu.offsetWidth || Math.min(320, window.innerWidth - 16);
+      const left = Math.max(4, Math.min(anchor.left, window.innerWidth - width - 4));
+      menu.style.left = (left - anchor.left) + "px";
+    }
+
     btn.addEventListener("click", (ev) => {
       ev.stopPropagation();
       document.querySelectorAll(".dd-menu").forEach((m) => { if (m !== menu) m.classList.add("hidden"); });
@@ -2413,6 +2426,7 @@ import { renderMarkdown, renderShell, renderCode } from "./markdown.js";
       renderMenu();
       menu.classList.toggle("hidden");
       const open = !menu.classList.contains("hidden");
+      if (open) positionMenu();
       btn.classList.toggle("open", open);
       btn.setAttribute("aria-expanded", open ? "true" : "false");
     });

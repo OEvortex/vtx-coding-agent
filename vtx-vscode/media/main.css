@@ -254,6 +254,8 @@ body {
   height: 100%;
   margin: 0;
   padding: 0;
+  /* A popover must never be able to scroll the whole panel sideways. */
+  overflow-x: hidden;
   font-family: var(--vscode-font-family);
   font-size: var(--vscode-font-size);
   color: var(--vscode-foreground);
@@ -1403,11 +1405,11 @@ body {
   background: var(--vscode-list-hoverBackground);
 }
 
-/* The selected row takes upstream's checked treatment: a button-tinted fill,
-   foreground text and a semibold title. */
+/* The selected row reads as a selected list item, not a button-tinted card:
+   themes with a coloured button accent would otherwise paint it a loud fill. */
 .dd-item.selected {
-  color: var(--vscode-foreground);
-  background: color-mix(in srgb, var(--vscode-button-background) 18%, var(--vscode-menu-background, var(--vscode-dropdown-background)));
+  color: var(--vscode-list-activeSelectionForeground, var(--vscode-foreground));
+  background: var(--vscode-list-activeSelectionBackground, var(--vscode-list-hoverBackground));
 }
 
 .dd-item.selected .dd-item-name {
