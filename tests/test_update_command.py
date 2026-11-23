@@ -5,7 +5,7 @@ from __future__ import annotations
 from unittest.mock import MagicMock
 
 import pytest
-from ctx.core.self_update import _installer_choice
+from ctx.coding_agent.self_update import _installer_choice
 from ctx.tui.autocomplete import DEFAULT_COMMANDS
 from ctx.tui.commands import CommandsMixin
 from ctx.tui.commands.update import UpdateCommands
@@ -128,8 +128,8 @@ def test_installer_choice_prefers_pip_with_env(monkeypatch):
 def test_installer_choice_detects_uv_tool(monkeypatch):
     """uv tool is chosen when uv and package are in uv tool list."""
     monkeypatch.delenv("CTX_UPDATE_USE_PIP", raising=False)
-    monkeypatch.setattr("ctx.core.self_update._find_executable", lambda name: name == "uv")
-    monkeypatch.setattr("ctx.core.self_update._is_uv_tool", lambda pkg: True)
+    monkeypatch.setattr("ctx.coding_agent.self_update._find_executable", lambda name: name == "uv")
+    monkeypatch.setattr("ctx.coding_agent.self_update._is_uv_tool", lambda pkg: True)
 
     installer, cmd = _installer_choice()
     assert installer == "uv tool"
@@ -139,9 +139,11 @@ def test_installer_choice_detects_uv_tool(monkeypatch):
 def test_installer_choice_detects_pipx(monkeypatch):
     """pipx is chosen when pipx and package are in pipx list."""
     monkeypatch.delenv("CTX_UPDATE_USE_PIP", raising=False)
-    monkeypatch.setattr("ctx.core.self_update._find_executable", lambda name: name == "pipx")
-    monkeypatch.setattr("ctx.core.self_update._is_uv_tool", lambda pkg: False)
-    monkeypatch.setattr("ctx.core.self_update._is_pipx_tool", lambda pkg: True)
+    monkeypatch.setattr(
+        "ctx.coding_agent.self_update._find_executable", lambda name: name == "pipx"
+    )
+    monkeypatch.setattr("ctx.coding_agent.self_update._is_uv_tool", lambda pkg: False)
+    monkeypatch.setattr("ctx.coding_agent.self_update._is_pipx_tool", lambda pkg: True)
 
     installer, cmd = _installer_choice()
     assert installer == "pipx"

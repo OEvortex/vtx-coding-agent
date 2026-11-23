@@ -119,7 +119,7 @@ def reload_app(tmp_path: Path):
     from ctx.agent.session import Session
     from ctx.plugins import boot, reset
     from ctx.plugins.extensions import load_for_runtime
-    from ctx.plugins.tui import install as install_ui
+    from ctx.tui.plugin_ui import install as install_ui
 
     workdir = tmp_path / "work"
     workdir.mkdir(parents=True, exist_ok=True)

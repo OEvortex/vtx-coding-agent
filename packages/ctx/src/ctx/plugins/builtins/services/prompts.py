@@ -15,21 +15,13 @@ class Config(BaseModel):
     include_ponytail: bool | None = None
 
 
-def _render_todo_context(cwd: str, tools) -> str | None:
-    """The live todo list, when ``llm.system_prompt.todo_context`` is on."""
-    from ctx.core.config import config as ctx_config
-
-    if not getattr(ctx_config.llm.system_prompt, "todo_context", False):
-        return None
-    from ctx.agent.prompts.todo import build_todo_section
-
-    return build_todo_section() or None
-
-
 @plugin(name="prompts", config=Config)
 def apply(ctx, config: Config):
+    # The harness contributes no prompt sections of its own: the product
+    # package registers its persona (base prompt), mode sections (e.g.
+    # ponytail), and service-level extras (e.g. the todo list) through
+    # ``ctx.agent.prompts.registry`` and ``ctx.prompts.add_section``.
     service = PromptService()
-    service.add_section("todo", _render_todo_context)
     ctx.provide("prompts", service)
 
 

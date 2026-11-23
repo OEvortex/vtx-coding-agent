@@ -9,26 +9,28 @@ from __future__ import annotations
 
 from ctx.agent.context import Context
 from ctx.agent.prompts import (
+    ENV_HEADER,
+    TOOL_USAGE_HEADER,
+    build_env_section,
+    build_system_prompt,
+    build_tool_guidelines_section,
+)
+from ctx.coding_agent.prompts import (
     BACKGROUND_TASKS,
     CONTEXT_AWARENESS,
     CTX_GENERAL_RULES,
     CTX_IDENTITY,
     DEFAULT_CTX_BASE,
     EDITING_CONSTRAINTS,
-    ENV_HEADER,
     ERROR_RECOVERY,
     EXECUTION_DISCIPLINE,
     OUTPUT_FORMATTING,
     PROGRESS_UPDATES,
     SAFETY,
     TASK_COMPLETION,
-    TOOL_USAGE_HEADER,
     TOOL_USE_ENFORCEMENT,
-    build_env_section,
-    build_system_prompt,
-    build_tool_guidelines_section,
 )
-from ctx.agent.prompts.identity import _compose_default_base
+from ctx.coding_agent.prompts.identity import _compose_default_base
 from ctx.coding_agent.tools import all_tools
 from ctx.core.config import Config, reset_config, set_config
 

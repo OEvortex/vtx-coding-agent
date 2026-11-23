@@ -184,7 +184,7 @@ if TYPE_CHECKING:
 # than at ``import ctx.sdk`` time — same trick ``ctx`` and ``ctx.ai`` use.
 # ---------------------------------------------------------------------------
 
-_LAZY_SOURCES = ("ctx.ai", "ctx.coding_agent")
+_LAZY_SOURCES = ("ctx.ai",)
 
 
 def __getattr__(name: str) -> Any:

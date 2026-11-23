@@ -9,8 +9,8 @@ import os
 from typing import TYPE_CHECKING, Any, Literal
 
 from ctx.agent.tools_manager import ensure_tools
+from ctx.coding_agent.update_check import get_newer_pypi_version
 from ctx.core.config import update_available_binaries
-from ctx.core.update_check import get_newer_pypi_version
 from ctx.core.version import PACKAGE_NAME, VERSION
 from ctx.tui.blocks import LaunchWarning
 from ctx.tui.chat import ChatLog

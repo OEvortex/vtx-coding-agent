@@ -15,7 +15,7 @@ from __future__ import annotations
 import logging
 from typing import Any
 
-log = logging.getLogger("ctx.plugins.tui")
+log = logging.getLogger("ctx.tui.plugin_ui")
 
 #: The built-in commands and their one-line descriptions, in menu order. Kept
 #: as data so a plugin can enumerate them without importing the app.

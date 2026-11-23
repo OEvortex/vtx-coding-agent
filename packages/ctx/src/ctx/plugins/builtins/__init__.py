@@ -39,23 +39,11 @@ BASE: list[Row] = [
     Row(id="extensions", name="ctx.plugins.builtins.services.extensions:PLUGIN"),
     Row(id="hooks", name="ctx.plugins.builtins.hooks:PLUGIN"),
     # ---- tools ----------------------------------------------------------
-    # Coding-agent tools: the row addresses the owning product package, so the
-    # plugin system never imports a product to mount one.
-    Row(id="tool-read", name="ctx.coding_agent.tools.read:PLUGIN"),
-    Row(id="tool-apply-patch", name="ctx.coding_agent.tools.apply_patch:PLUGIN"),
-    Row(id="tool-bash", name="ctx.coding_agent.tools.bash:PLUGIN"),
-    # ``find`` removed: bash covers file discovery better for models.
-    Row(id="tool-grep", name="ctx.coding_agent.tools.grep:PLUGIN"),
-    Row(id="tool-skill", name="ctx.coding_agent.tools.skill:PLUGIN"),
-    Row(id="tool-todo", name="ctx.coding_agent.tools.todo:PLUGIN"),
+    # Engine-level tools only. Product toolsets (e.g. the coding agent's
+    # read/bash/grep rows) are contributed by the product package — it extends
+    # ``BASE``/``MINIMAL`` at import time, keeping this bundle product-neutral.
     Row(id="tool-web", name="ctx.plugins.builtins.tools.web:PLUGIN"),
     Row(id="tool-ask-user", name="ctx.plugins.builtins.tools.ask_user:PLUGIN"),
-    # Registered but not default-on: the harness declares ``tool_search`` only
-    # when the session has tools it has not been offered (see
-    # ``ConversationRuntime.declared_tools``), and ``codemode`` is what makes the
-    # script-reachable ones reachable.
-    Row(id="tool-search", name="ctx.coding_agent.tools.tool_search:PLUGIN"),
-    Row(id="tool-codemode", name="ctx.coding_agent.tools.codemode:PLUGIN"),
     Row(id="tool-subagent", name="ctx.plugins.builtins.tools.subagent:PLUGIN"),
 ]
 
@@ -79,8 +67,6 @@ MINIMAL: list[Row] = [
         name="ctx.plugins.builtins.services.llm:PLUGIN",
         config={"default_provider": None},
     ),
-    Row(id="tool-read", name="ctx.coding_agent.tools.read:PLUGIN"),
-    Row(id="tool-bash", name="ctx.coding_agent.tools.bash:PLUGIN"),
 ]
 
 #: The shipped bundles, addressable by name from a profile.

@@ -223,7 +223,7 @@ def main() -> None:
         raise SystemExit(0)
 
     if args.command == "update":
-        from ctx.core.self_update import self_update
+        from ctx.coding_agent.self_update import self_update
 
         ok, message = self_update()
         if ok:

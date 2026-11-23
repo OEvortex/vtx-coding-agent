@@ -6,7 +6,7 @@ import pytest
 from ctx.plugins import boot
 from ctx.plugins.builtins.commands import CommandService
 from ctx.plugins.services import MCPService
-from ctx.plugins.tui import BUILTIN_COMMANDS, TUIChannel, install, uninstall
+from ctx.tui.plugin_ui import BUILTIN_COMMANDS, TUIChannel, install, uninstall
 
 # --------------------------------------------------------------------------
 # ctx.mcp

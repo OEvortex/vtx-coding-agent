@@ -26,13 +26,13 @@ from ctx.agent.context.skills import (
     merge_registered_skills,
     render_skill_prompt,
 )
-from ctx.agent.prompts import is_deactivation_command
 from ctx.agent.runtime import ConversationRuntime
 from ctx.agent.session import Session
 from ctx.agent.tools import get_tool, get_tools_with_extensions
 from ctx.agent.tools_manager import get_tool_path
 from ctx.ai import BaseProvider
 from ctx.ai.base import AuthMode
+from ctx.coding_agent.prompts import is_deactivation_command
 from ctx.core import ApprovalResponse, AskUserResponse
 from ctx.core.config import config, consume_config_warnings, get_last_selected, set_ponytail
 from ctx.core.version import VERSION, format_version
@@ -362,7 +362,7 @@ class Ctx(
         # Publish this app into the plugin composition so a plugin can notify
         # and list the built-in commands without importing the TUI.
         from ctx.plugins import active_host
-        from ctx.plugins.tui import install as install_ui
+        from ctx.tui.plugin_ui import install as install_ui
 
         install_ui(self, active_host())
         bus = self._loaded_extensions.bus

@@ -1,9 +1,9 @@
 import pytest
 from ctx.agent.context import Context
-from ctx.agent.prompts import (
+from ctx.agent.prompts import build_system_prompt
+from ctx.coding_agent.prompts import (
     PONYTAIL_PROMPT,
     build_ponytail_section,
-    build_system_prompt,
     is_deactivation_command,
 )
 from ctx.core.config import Config, config, reset_config, set_config, set_ponytail
@@ -85,7 +85,7 @@ def test_set_ponytail_persists(tmp_path, monkeypatch):
 
 @pytest.mark.asyncio
 async def test_register_hook_before_agent_start():
-    from ctx.agent.prompts.ponytail import register
+    from ctx.coding_agent.prompts.ponytail import register
     from ctx.plugins.event_contract import BEFORE_AGENT_START, BeforeAgentStartEvent
 
     handlers = {}
@@ -130,7 +130,7 @@ async def test_register_hook_before_agent_start():
 @pytest.mark.asyncio
 async def test_register_hook_input_deactivation(tmp_path, monkeypatch):
     monkeypatch.setenv("HOME", str(tmp_path))
-    from ctx.agent.prompts.ponytail import register
+    from ctx.coding_agent.prompts.ponytail import register
     from ctx.plugins.event_contract import INPUT, InputEvent
 
     handlers = {}
