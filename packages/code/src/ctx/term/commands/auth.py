@@ -27,6 +27,7 @@ from ctx.ai import (
     clear_cline_credentials,
     clear_codex_credentials,
     clear_copilot_credentials,
+    clear_junie_credentials,
     cline_login,
     codex_login,
     copilot_login,
@@ -36,6 +37,7 @@ from ctx.ai import (
     get_provider_status,
     get_valid_cline_credentials,
     get_valid_codex_credentials,
+    junie_login,
     list_providers,
     save_api_key,
 )
@@ -43,6 +45,7 @@ from ctx.ai import is_cline_logged_in as has_saved_cline_credentials
 from ctx.ai import is_codex_logged_in as has_saved_codex_credentials
 from ctx.ai import is_copilot_logged_in as has_saved_copilot_credentials
 from ctx.ai import is_devin_logged_in as has_saved_devin_credentials
+from ctx.ai import is_junie_logged_in as has_saved_junie_credentials
 from ctx.term.chat import ChatLog
 from ctx.term.commands.base import CommandSupport
 from ctx.term.floating_list import ListItem
@@ -71,6 +74,7 @@ def _oauth_login_providers() -> list[tuple[str, str, bool]]:
         ("codex", "OpenAI Codex", has_saved_codex_credentials()),
         ("cline", "Cline (WorkOS)", has_saved_cline_credentials()),
         ("devin", "Devin", has_saved_devin_credentials()),
+        ("junie", "Junie (JetBrains)", has_saved_junie_credentials()),
     ]
 
 
@@ -148,6 +152,10 @@ class AuthCommands(CommandSupport):
 
         if provider_id == "devin":
             self.run_worker(self._devin_login_flow(), exclusive=False)
+            return
+
+        if provider_id == "junie":
+            self.run_worker(self._junie_login_flow(), exclusive=False)
             return
 
     def _select_apikey_provider(self, provider_id: str) -> None:
@@ -431,6 +439,47 @@ class AuthCommands(CommandSupport):
         except Exception as e:
             chat.add_info_message(f"Login failed: {e}", error=True)
 
+    async def _junie_login_flow(self) -> None:
+        import webbrowser
+
+        chat = self.query_one("#chat-log", ChatLog)
+        had_saved = has_saved_junie_credentials()
+
+        def on_auth_url(url: str) -> None:
+            webbrowser.open(url)
+            self.call_later(
+                chat.add_info_message,
+                "Opening browser for JetBrains Account login...\n"
+                f"If browser does not open, visit:\n{url}\n\n"
+                "Waiting for authorization callback on localhost...",
+            )
+
+        try:
+            # Reuse an existing Junie CLI session if present.
+            from ctx.ai.oauth.junie import load_junie_credentials
+
+            native = load_junie_credentials()
+            if native and native.refresh and not had_saved:
+                chat.add_info_message(
+                    "Found existing Junie CLI login, importing it. Use /logout to clear."
+                )
+                from ctx.ai.oauth.junie import get_valid_junie_credentials
+
+                await get_valid_junie_credentials()
+                return
+
+            if had_saved:
+                chat.add_info_message("Your saved Junie session is no longer valid.", warning=True)
+            else:
+                chat.add_info_message("Starting Junie login (JetBrains Account OAuth)...")
+
+            await junie_login(on_auth_url=on_auth_url)
+            chat.add_info_message(
+                "Successfully logged in to Junie!\nYou can now use /model to select junie models."
+            )
+        except Exception as e:
+            chat.add_info_message(f"Login failed: {e}", error=True)
+
     async def _devin_login_flow(self) -> None:
         chat = self.query_one("#chat-log", ChatLog)
         try:
@@ -461,6 +510,8 @@ class AuthCommands(CommandSupport):
             items.append(ListItem(value="cline", label="Cline (WorkOS)", description=""))
         if has_saved_devin_credentials():
             items.append(ListItem(value="devin", label="Devin", description=""))
+        if has_saved_junie_credentials():
+            items.append(ListItem(value="junie", label="Junie (JetBrains)", description=""))
 
         for p in list_providers():
             status = get_provider_status(p.slug)
@@ -492,6 +543,11 @@ class AuthCommands(CommandSupport):
         if provider_id == "cline":
             clear_cline_credentials()
             chat.add_info_message("Logged out of Cline")
+            return
+
+        if provider_id == "junie":
+            clear_junie_credentials()
+            chat.add_info_message("Logged out of Junie")
             return
 
         if get_provider_info(provider_id) is not None:

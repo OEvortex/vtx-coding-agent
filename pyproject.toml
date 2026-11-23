@@ -53,6 +53,7 @@ select = [
 "packages/ctx/src/ctx/agent/prompts/env.py" = ["E501"]
 "packages/ctx/src/ctx/agent/sdk/**/*.py" = ["N818"]
 "packages/ctx/src/ctx/ai/_httpcore_patch.py" = ["N806", "N812", "SIM117", "RUF002", "RUF003", "B009", "E501"]
+"packages/vx/**" = ["RUF001", "RUF003"]
 
 [tool.ruff.lint.isort]
 split-on-trailing-comma = false

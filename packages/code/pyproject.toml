@@ -20,7 +20,7 @@ requires-python = ">=3.12"
 keywords = ["coding-agent", "tui", "cli", "llm"]
 dependencies = [
     "ctx",
-    "term",
+    "ctx-term",
     "textual>=8.0.0",
 ]
 
@@ -29,4 +29,4 @@ ctx = "ctx.code.cli:main"
 
 [tool.uv.sources]
 ctx = { workspace = true }
-term = { workspace = true }
+ctx-term = { workspace = true }

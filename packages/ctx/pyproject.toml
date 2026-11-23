@@ -53,7 +53,7 @@ dependencies = [
 
 [project.optional-dependencies]
 term = [
-    "term",
+    "ctx-term",
 ]
 
 gh-app = [
@@ -61,4 +61,4 @@ gh-app = [
 ]
 
 [tool.uv.sources]
-term = { workspace = true }
+ctx-term = { workspace = true }

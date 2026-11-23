@@ -270,6 +270,19 @@ def get_dynamic_api_key(provider: str) -> str | None:
         except Exception:
             pass
 
+    if provider == "junie":
+        try:
+            from ctx.ai.oauth.junie import get_valid_junie_token_sync, load_junie_credentials
+
+            token = get_valid_junie_token_sync()
+            if token:
+                return token
+            creds = load_junie_credentials()
+            if creds is not None and creds.grazie_token:
+                return creds.grazie_token
+        except Exception:
+            pass
+
     return None
 
 
@@ -307,6 +320,13 @@ def _check_oauth_stored(provider: str) -> bool:
             from ctx.ai.oauth.freepi import is_freepi_logged_in
 
             return is_freepi_logged_in()
+        except Exception:
+            return False
+    if provider == "junie":
+        try:
+            from ctx.ai.oauth.junie import is_junie_logged_in
+
+            return is_junie_logged_in()
         except Exception:
             return False
     return False

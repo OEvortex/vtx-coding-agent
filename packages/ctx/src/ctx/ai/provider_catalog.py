@@ -271,6 +271,22 @@ def _get_builtin_oauth_providers() -> dict[str, ProviderInfo]:
             models_endpoint="/../client-version",
             headers={"x-client-version": "0.6.18", "x-session-id": "ctx"},
         ),
+        "junie": ProviderInfo(
+            slug="junie",
+            display_name="Junie (JetBrains)",
+            description="Junie CLI / JetBrains Junie Lite free tier (Qwen3.6-27B, GPT-6 Luna).",
+            family="openai_compat",
+            api="openai-responses",
+            base_url="https://ingrazzio-cloud-prod.labs.jb.gg/llm/v1",
+            api_key_env="JUNIE_API_KEY",
+            known_models=("Qwen/Qwen3.6-27B-FP8", "gpt-6-luna"),
+            supports_tools=True,
+            supports_vision=False,
+            supports_thinking=True,
+            fetch_models=True,
+            models_endpoint="/models",
+            headers={},
+        ),
     }
 
 
@@ -373,6 +389,14 @@ def detect_provider_from_env() -> ProviderInfo:
                     return p
             except Exception:
                 pass
+        elif slug == "junie":
+            try:
+                from ctx.ai.oauth.junie import is_junie_logged_in
+
+                if is_junie_logged_in():
+                    return p
+            except Exception:
+                pass
 
     for slug in order:
         p = providers[slug]
@@ -413,6 +437,13 @@ def is_provider_configured(p: ProviderInfo) -> bool:
             from ctx.ai.oauth.devin import is_devin_logged_in
 
             return is_devin_logged_in()
+        except Exception:
+            return False
+    if p.slug == "junie":
+        try:
+            from ctx.ai.oauth.junie import is_junie_logged_in
+
+            return is_junie_logged_in()
         except Exception:
             return False
     from ctx.ai.oauth.dynamic import has_api_key

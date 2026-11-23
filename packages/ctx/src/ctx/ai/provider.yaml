@@ -768,3 +768,16 @@ providers:
     models_endpoint: /models
     model_parser:
       cooldown_minutes: 60
+
+  - slug: deepai
+    display_name: DeepAI Code
+    description: "DeepAI Code desktop app upstream API (OpenAI-compatible with lane protocol)."
+    family: openai_compat
+    base_url: https://api.deepai.org/deepai_code
+    api_key_env: DEEPAI_API_KEY
+    known_models:
+      - glm-5.3-flash
+    fetch_models: true
+    models_endpoint: /models
+    model_parser:
+      cooldown_minutes: 60

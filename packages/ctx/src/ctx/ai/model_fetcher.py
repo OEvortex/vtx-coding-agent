@@ -28,7 +28,7 @@ from dataclasses import asdict, dataclass
 from pathlib import Path
 from typing import Any
 
-from ctx.ai.models import Model
+from ctx.ai.models import ApiType, Model
 
 logger = logging.getLogger(__name__)
 
@@ -49,6 +49,12 @@ class FetchedModel:
     thinking_level_map: dict[str, str | None] | None = None
     is_free: bool = False
     hidden: bool = False
+    # Per-model endpoint override (e.g. Junie's multi-route gateway). Empty =
+    # use the provider-level base_url.
+    base_url: str = ""
+    # Per-model transport override (e.g. "openai-responses"). Empty = use the
+    # provider's api type.
+    api: str = ""
 
 
 def _get_cache_dir() -> Path:
@@ -98,6 +104,8 @@ def _read_cache(provider_slug: str, *, check_cooldown: bool = False) -> list[Fet
                 thinking_level_map=entry.get("thinking_level_map"),
                 is_free=bool(entry.get("is_free", False)),
                 hidden=bool(entry.get("hidden", False)),
+                base_url=str(entry.get("base_url", "")),
+                api=str(entry.get("api", "")),
             )
         )
     return models
@@ -287,10 +295,46 @@ def _fetch_devin_models(provider) -> list[FetchedModel]:
     return models
 
 
+def _fetch_junie_models(provider) -> list[FetchedModel]:
+    """Fetch Junie Lite models from the ingrazzio catalog.
+
+    The catalog is protocol-nested (``{protocols: [{protocol, basePath,
+    models: [...]}]}``) and each protocol has its own route prefix, so we keep
+    the per-model ``base_url`` on the FetchedModel instead of relying on the
+    provider-level one.
+    """
+    try:
+        from ctx.ai.oauth.junie import list_junie_models_sync
+
+        raw = list_junie_models_sync()
+    except Exception as exc:
+        logger.debug("Error fetching junie models: %s", exc)
+        return []
+    models = [
+        FetchedModel(
+            id=m["id"],
+            name=m.get("name") or m["id"],
+            supports_thinking=True,
+            is_free=bool(m.get("is_free", True)),
+            # route_url ends with the wire path; the SDK appends it itself.
+            base_url=str(m.get("route_url") or "")
+            .removesuffix("/chat/completions")
+            .removesuffix("/responses"),
+            api=m.get("api") or "",
+        )
+        for m in raw
+        if m.get("id")
+    ]
+    _write_cache(provider.slug, models, provider.model_parser.cooldown_minutes)
+    return models
+
+
 def _fetch_models_sync(provider) -> list[FetchedModel]:
     """Fetch models from a provider's /models endpoint (sync, with network)."""
     if provider.slug == "devin":
         return _fetch_devin_models(provider)
+    if provider.slug == "junie":
+        return _fetch_junie_models(provider)
     if not provider.fetch_models or not provider.base_url:
         return []
 
@@ -437,12 +481,16 @@ def get_fetched_models(provider) -> list[Model]:
         is_free = entry.is_free
         if provider.slug == "cline" and not is_free:
             is_free = entry.id in cline_free_ids
+        api = provider_api_type(provider)
+        if entry.api:
+            with suppress(ValueError):
+                api = ApiType(entry.api)
         models.append(
             Model(
                 id=entry.id,
                 provider=provider.slug,
-                api=provider_api_type(provider),
-                base_url=provider.base_url or "",
+                api=api,
+                base_url=entry.base_url or provider.base_url or "",
                 max_tokens=max_tokens,
                 supports_images=supports_images,
                 supports_thinking=supports_thinking,

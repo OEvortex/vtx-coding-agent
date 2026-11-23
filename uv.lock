@@ -14,7 +14,8 @@ resolution-markers = [
 members = [
     "ctx",
     "ctx-code",
-    "term",
+    "ctx-term",
+    "vx",
 ]
 overrides = [{ name = "aiofiles", specifier = ">=25.1.0" }]
 
@@ -546,7 +547,7 @@ gh-app = [
     { name = "cryptography" },
 ]
 term = [
-    { name = "term" },
+    { name = "ctx-term" },
 ]
 
 [package.metadata]
@@ -555,6 +556,7 @@ requires-dist = [
     { name = "aiohttp", specifier = ">=3.13.3" },
     { name = "chardet", specifier = ">=3.0.2,<6.0.0" },
     { name = "cryptography", marker = "extra == 'gh-app'", specifier = ">=41.0" },
+    { name = "ctx-term", marker = "extra == 'term'", editable = "packages/term" },
     { name = "curl-cffi", specifier = ">=0.15.0" },
     { name = "filelock", specifier = ">=3.25.2" },
     { name = "hammett", specifier = ">=0.10.0" },
@@ -571,7 +573,6 @@ requires-dist = [
     { name = "pyyaml", specifier = ">=6.0.3" },
     { name = "readability-lxml", specifier = ">=0.8.4" },
     { name = "rich", specifier = ">=14.3.2" },
-    { name = "term", marker = "extra == 'term'", editable = "packages/term" },
     { name = "typer", specifier = ">=0.20.0,<1.0.0" },
 ]
 provides-extras = ["term", "gh-app"]
@@ -582,14 +583,31 @@ version = "0.1.0"
 source = { editable = "packages/code" }
 dependencies = [
     { name = "ctx" },
-    { name = "term" },
+    { name = "ctx-term" },
     { name = "textual" },
 ]
 
 [package.metadata]
 requires-dist = [
     { name = "ctx", editable = "packages/ctx" },
-    { name = "term", editable = "packages/term" },
+    { name = "ctx-term", editable = "packages/term" },
+    { name = "textual", specifier = ">=8.0.0" },
+]
+
+[[package]]
+name = "ctx-term"
+version = "0.1.0"
+source = { editable = "packages/term" }
+dependencies = [
+    { name = "ctx" },
+    { name = "rich" },
+    { name = "textual" },
+]
+
+[package.metadata]
+requires-dist = [
+    { name = "ctx", editable = "packages/ctx" },
+    { name = "rich", specifier = ">=13.0.0" },
     { name = "textual", specifier = ">=8.0.0" },
 ]
 
@@ -1800,23 +1818,6 @@ wheels = [
 ]
 
 [[package]]
-name = "term"
-version = "0.1.0"
-source = { editable = "packages/term" }
-dependencies = [
-    { name = "ctx" },
-    { name = "rich" },
-    { name = "textual" },
-]
-
-[package.metadata]
-requires-dist = [
-    { name = "ctx", editable = "packages/ctx" },
-    { name = "rich", specifier = ">=13.0.0" },
-    { name = "textual", specifier = ">=8.0.0" },
-]
-
-[[package]]
 name = "textual"
 version = "8.0.0"
 source = { registry = "https://pypi.org/simple" }
@@ -1905,6 +1906,21 @@ source = { registry = "https://pypi.org/simple" }
 sdist = { url = "https://files.pythonhosted.org/packages/c7/24/5f1b3bdffd70275f6661c76461e25f024d5a38a46f04aaca912426a2b1d3/urllib3-2.6.3.tar.gz", hash = "sha256:1b62b6884944a57dbe321509ab94fd4d3b307075e0c2eae991ac71ee15ad38ed", size = 435556, upload-time = "2026-01-07T16:24:43.925Z" }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/39/08/aaaad47bc4e9dc8c725e68f9d04865dbcb2052843ff09c97b08904852d84/urllib3-2.6.3-py3-none-any.whl", hash = "sha256:bf272323e553dfb2e87d9bfd225ca7b0f467b919d7bbd355436d3fd37cb0acd4", size = 131584, upload-time = "2026-01-07T16:24:42.685Z" },
+]
+
+[[package]]
+name = "vx"
+version = "0.1.0"
+source = { editable = "packages/vx" }
+dependencies = [
+    { name = "ctx" },
+    { name = "ctx-code" },
+]
+
+[package.metadata]
+requires-dist = [
+    { name = "ctx", editable = "packages/ctx" },
+    { name = "ctx-code", editable = "packages/code" },
 ]
 
 [[package]]

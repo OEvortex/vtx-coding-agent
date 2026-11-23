@@ -35,8 +35,4 @@ benchmark_results.json
 
 # Local configuration files
 .ctx/
-
-# jev lite snd
-jev lite snd/
-lol.py
 .vortexa/
