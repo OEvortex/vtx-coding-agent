@@ -485,6 +485,9 @@ class VxApp(CommandsMixin):
         self._cursor = len(self._input)
 
     def _refresh_slash_menu(self) -> None:
+        # A text prompt owns the composer; typing / there is not a command.
+        if self._prompt is not None:
+            return
         text = self._input
         if not text.startswith("/") or " " in text:
             if self._menu is not None and self._menu["kind"] == "slash":
@@ -1168,11 +1171,9 @@ class VxApp(CommandsMixin):
             return [footer.rule(cols), "", *panel, footer.rule(cols), view.hint(cols)], None
 
         prompt = self._prompt
-        shown_input = "" if prompt is not None else self._input
-        shown_cursor = 0 if prompt is not None else self._cursor
-        input_rows = max(1, min(MAX_INPUT_LINES, len(footer.wrap_input(shown_input, cols))))
+        input_rows = max(1, min(MAX_INPUT_LINES, len(footer.wrap_input(self._input, cols))))
         composer, caret_row, caret_col = footer.composer_rows(
-            shown_input, shown_cursor, cols, input_rows, secret=prompt is not None
+            self._input, self._cursor, cols, input_rows, secret=prompt is not None
         )
         rows: list[str] = []
         if prompt is not None:

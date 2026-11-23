@@ -32,7 +32,7 @@ _DEEPAI_NATIVE_PATH = _DEEPAI_NATIVE_DIR / "deepai-account.bin"
 # ── Protocol constants (mirror the Go deepai package) ────────────────────────
 
 LANE_VERSION = "7"
-APP_VERSION = "0.3.42"
+APP_VERSION = "0.3.43"
 ORIGIN = "https://api.deepai.org"
 MODEL_BASE = "/deepai_code"
 
@@ -253,7 +253,11 @@ def build_headers(
 ) -> dict[str, str]:
     """Build the full set of headers for a DeepAI Code upstream request.
 
-    This is the equivalent of the Go package's ``_commonHeaders`` + beacon.
+    Mirrors the desktop app's header set:
+    - Content-Type, Api-Key, X-DeepAI-Code-Theos, X-DeepAI-Code-Instance,
+      X-DeepAI-Code-Machine are sent on every request.
+    - X-DeepAI-Code-Check-In and X-DeepAI-Code-Beacon are sent only on
+      /theos requests (handled by the provider_headers listener).
     """
     if instance_id is None:
         instance_id = os.urandom(16).hex()
@@ -268,17 +272,19 @@ def build_headers(
         "X-DeepAI-Code-Theos": lane_version,
         "X-DeepAI-Code-Machine": machine_fp,
         "X-DeepAI-Code-Instance": instance_id,
-        "User-Agent": "node",
-        "Accept": "*/*",
-        "Accept-Language": "*",
-        "Sec-Fetch-Mode": "cors",
     }
+    return headers
 
-    # Check-in nonce (sent on subsequent /theos calls)
+
+def build_theos_headers(
+    creds: DeepAICredentials, lane_version: str = LANE_VERSION, instance_id: str | None = None
+) -> dict[str, str]:
+    """Build headers for a /theos request (includes check-in nonce and beacon)."""
+    headers = build_headers(creds, lane_version, instance_id)
+
     if creds.check_in_nonce:
         headers["X-DeepAI-Code-Check-In"] = creds.check_in_nonce
 
-    # Beacon heartbeat
     uptime = int(time.time() - creds.process_start)
     headers["X-DeepAI-Code-Beacon"] = f"v={APP_VERSION};up={uptime};pi=0"
 
@@ -388,3 +394,34 @@ def register_deepai_model_limits() -> None:
         # Also register globally
         context_length_manager._limits[model_id] = limits
         context_length_manager._limits[model_id.lower()] = limits
+
+
+# ── SDK provider headers listener ────────────────────────────────────────────
+# Injects DeepAI lane headers into every OpenAI SDK request, replacing the
+# default "Authorization: Bearer" with "Api-Key" and adding the required
+# X-DeepAI-Code-* headers. Mirrors the desktop app's request shape.
+
+
+def register_deepai_headers_listener() -> None:
+    """Register the before_provider_headers listener for DeepAI.
+
+    Call once at import time so every SDK request for the ``deepai`` provider
+    carries the correct lane protocol headers.
+    """
+    from ctx.ai.provider_hooks import register_headers_listener
+
+    @register_headers_listener
+    def _deepai_headers(headers: dict[str, str | None], context: dict[str, Any]) -> None:
+        if context.get("provider", "").lower() != "deepai":
+            return
+        creds = load_deepai_credentials()
+        if creds is None:
+            return
+        h = build_headers(creds)
+        # Remove the default "Authorization: Bearer" header — DeepAI uses Api-Key
+        headers["Authorization"] = None  # type: ignore[index]
+        headers.update(h)  # type: ignore[arg-type]
+
+
+# Auto-register on import so the SDK layer picks it up
+register_deepai_headers_listener()

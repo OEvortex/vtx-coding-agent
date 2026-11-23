@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import asyncio
+import builtins
 import contextlib
 from datetime import UTC, datetime
 from pathlib import Path
@@ -13,6 +14,11 @@ from ctx.agent.session import Session, SessionInfo
 
 from vx.commands.base import CommandSupport
 from vx.tui import blocks, footer
+
+
+def _clip_row(text: str, limit: int = 88) -> str:
+    return text[: limit - 1] + "…" if len(text) > limit else text
+
 
 #: How many tree nodes the picker offers; a long session is a deep list.
 TREE_ROWS = 200
@@ -150,29 +156,59 @@ class SessionCommands(CommandSupport):
         rt = self.runtime
         if rt is None or rt.session is None:
             return []
+        session = rt.session
         items: list[footer.MenuItem] = []
-        for node in rt.session.get_tree():
-            entry = node.entry
-            text = ""
-            message = getattr(entry, "message", None)
-            content = getattr(message, "content", None)
-            if isinstance(content, str):
-                text = content
-            elif message is not None:
-                text = "".join(
-                    getattr(part, "text", "") for part in (content or []) if hasattr(part, "text")
+
+        def visit(node: Any, path: builtins.list[bool], last: bool) -> None:
+            lead = "".join("   " if done else "│  " for done in path)
+            if lead:
+                lead += "└─ " if last else "├─ "
+            label, kind = self._tree_row(node.entry)
+            if label is not None:
+                mark = " ✓" if node.entry.id == session.leaf_id else ""
+                items.append(
+                    footer.MenuItem(label=lead + label + mark, metadata=kind, value=node.entry.id)
                 )
-            if not text:
-                text = getattr(entry, "content", "") or getattr(entry, "summary", "") or ""
-            label = " ".join(str(text).split())[:80] or f"({type(entry).__name__})"
-            items.append(
-                footer.MenuItem(
-                    label=label,
-                    metadata=type(entry).__name__.replace("Entry", "").lower(),
-                    value=entry.id,
-                )
-            )
+            children = node.children
+            for index, child in enumerate(children):
+                visit(child, [*path, last] if path else [], index == len(children) - 1)
+
+        roots = session.get_tree()
+        for index, root in enumerate(roots):
+            visit(root, [], index == len(roots) - 1)
         return items[:TREE_ROWS]
+
+    def _tree_row(self, entry: Any) -> tuple[str | None, str]:
+        """One tree row: (label or None when hidden, kind for the metadata column)."""
+        message = getattr(entry, "message", None)
+        role = getattr(message, "role", None)
+        if role is None:
+            kind = type(entry).__name__.replace("Entry", "").lower()
+            return None, kind
+        content = getattr(message, "content", None)
+        if isinstance(content, str):
+            text = content
+        else:
+            text = "".join(
+                str(getattr(part, "text", "") or "")
+                for part in (content or [])
+                if getattr(part, "text", None)
+            )
+        flat = " ".join(text.split())
+        if role == "user":
+            return _clip_row(f"user: {flat}"), "user"
+        if role == "assistant":
+            if not flat:
+                calls = [
+                    str(getattr(part, "name", "") or "")
+                    for part in (content or [])
+                    if getattr(part, "name", None)
+                ]
+                flat = "→ " + ", ".join(c for c in calls if c) if calls else "(no content)"
+            return _clip_row(f"assistant: {flat}"), "assistant"
+        if role == "tool":
+            return _clip_row(f"[{getattr(message, 'tool_name', 'tool')}]"), "tool"
+        return (None if not flat else _clip_row(flat)), str(role)
 
     def _handle_tree_command(self) -> None:
         if not self._require_idle("open the tree"):
@@ -384,10 +420,10 @@ class SessionCommands(CommandSupport):
         except rv.RevertError as exc:
             self._fail(str(exc))
             return
-        self._render_revert_state(state)
         self.viewport.clear()
         self._welcome()
         self._render_session_history()
+        self._render_revert_state(state)
         self._refresh_stats(force=True)
 
     def _handle_redo_command(self) -> None:
@@ -413,10 +449,10 @@ class SessionCommands(CommandSupport):
         except rv.RevertError as exc:
             self._fail(str(exc))
             return
-        self._render_revert_state(state)
         self.viewport.clear()
         self._welcome()
         self._render_session_history()
+        self._render_revert_state(state)
         self._refresh_stats(force=True)
 
     def _render_revert_state(self, state: Any) -> None:

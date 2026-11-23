@@ -179,7 +179,10 @@ class CommandsMixin(
                 return True
             self._warn(f"unknown command: /{cmd}")
             return True
-        handler()
+        try:
+            handler()
+        except Exception as exc:  # a broken command must not kill the app
+            self._fail(f"/{cmd} failed: {exc}")
         return True
 
     def _runtime_ready(self, cmd: str) -> bool:
