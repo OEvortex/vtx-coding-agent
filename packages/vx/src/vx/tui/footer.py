@@ -452,6 +452,35 @@ class QuestionView:
         return f"{t.dim_style}{variants[-1]}{ansi.RESET}"
 
 
+@dataclass
+class PermissionsView:
+    mode_name: str
+    description: str
+    grants: list[str] = field(default_factory=list)
+    rules: list[str] = field(default_factory=list)
+
+    def panel(self, cols: int, max_rows: int) -> list[str]:
+        t = _theme.current()
+        rows = [
+            f"  {ansi.BOLD}Permissions{ansi.DIM_OFF}",
+            f"  Mode  {t.tag_style}{self.mode_name}{ansi.RESET}  "
+            f"{t.dim_style}{self.description}{ansi.RESET}",
+        ]
+        for title, items in (("Configured rules", self.rules), ("Session grants", self.grants)):
+            rows.append(f"  {t.dim_style}{title} ({len(items)}){ansi.RESET}")
+            rows.extend(
+                f"    {t.dim_style}•{ansi.RESET} {ansi.clip_ellipsis(item, max(1, cols - 7))}"
+                for item in (items or ["(none)"])
+            )
+        rows.append(
+            f"  {t.dim_style}/mode to change mode  ·  /permissions <mode> to set it{ansi.RESET}"
+        )
+        return [ansi.clip(row, cols) for row in rows[: max(1, max_rows)]]
+
+    def hint(self, cols: int) -> str:
+        return menu_hint(cols=cols, variants=("↑↓ scroll  esc close", "esc close"))
+
+
 # -- mode picker panel -------------------------------------------------------
 
 

@@ -8,7 +8,6 @@ from typing import cast
 
 from ctx.core.config import (
     NOTIFICATION_MODES,
-    PERMISSION_MODES,
     THINKING_LINES_OPTIONS,
     ThinkingLinesOption,
     config,
@@ -59,25 +58,55 @@ class SettingsCommands(CommandSupport):
     # -- /permissions ----------------------------------------------------
 
     def _handle_permissions_command(self, args: str) -> None:
-        requested = args.strip()
+        requested = args.strip().lower()
         if requested:
-            if requested not in PERMISSION_MODES:
-                modes = ", ".join(PERMISSION_MODES)
+            mode = {"full-access": "yolo", "prompt": "ask"}.get(requested, requested)
+            if mode not in {spec.id for spec in BUILTIN_MODES}:
+                modes = ", ".join(spec.id for spec in BUILTIN_MODES)
                 self._fail(f"invalid permission mode: {requested}. use one of: {modes}")
                 return
-            self._select_permission_mode(requested)
+            self._select_permission_mode(mode)
             return
-        self._pick_choice(
-            "Permissions",
-            PERMISSION_MODES,
-            config.permissions.mode,
-            self._select_permission_mode,
-            PERMISSION_MODE_DESCRIPTIONS,
+
+        perm_runtime = self._get_permission_runtime()
+        if perm_runtime is None:
+            self._fail("permission runtime not available", topic="permissions")
+            return
+        open_panel = getattr(self, "open_permissions_panel", None)
+        if callable(open_panel):
+            open_panel()
+            return
+        self._open_mode_picker(
+            footer.ModePickerView(
+                modes=[
+                    footer.MenuItem(label=spec.name, detail=spec.description, value=spec.id)
+                    for spec in BUILTIN_MODES
+                ],
+                selected=next(
+                    (i for i, spec in enumerate(BUILTIN_MODES) if spec.id == perm_runtime.mode), 0
+                ),
+                current_mode=perm_runtime.mode,
+            ),
+            perm_runtime,
         )
 
     def _select_permission_mode(self, mode: str) -> None:
-        set_permissions_mode(cast("CtxPermissionMode", mode))
-        self._ok(f"permission mode changed to {mode}", topic="permissions")
+        perm_runtime = self._get_permission_runtime()
+        if perm_runtime is None:
+            self._fail("permission runtime not available", topic="permissions")
+            return
+        old_mode = perm_runtime.mode
+        perm_runtime.set_mode(mode)
+        spec = mode_spec(mode)
+        self.viewport.add(
+            blocks.ModeChanged(
+                from_mode=old_mode,
+                to_mode=mode,
+                to_name=spec.name if spec else mode,
+                description=spec.description if spec else "",
+            )
+        )
+        _sync_mode_to_config(mode)
 
     # -- /mode -----------------------------------------------------------
 
