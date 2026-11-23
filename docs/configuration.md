@@ -115,7 +115,7 @@ See [providers.md](providers.md#auth-modes-for-compatible-endpoints) for what ea
 |---|---|---|---|
 | `insecure_skip_verify` | bool | `false` | Skip TLS certificate verification (`src/ctx/core/config.py:133`) |
 
-When true, `make_http_client()` returns an `httpx.AsyncClient` with `verify=False` (and the configured request timeout) instead of returning `None`, which would let each SDK build its own verifying client (`src/ctx/ai/base.py:130`-`src/ctx/ai/base.py:140`).
+The flag is stored on the live config object, but the built-in providers construct their own HTTP clients and do not read it; TLS verification therefore follows each SDK's default. `llm.request_timeout_seconds` remains the shared request timeout.
 
 ### `ui`
 

@@ -46,9 +46,6 @@ Do not import from them, and do not follow older documentation that references
 `ctx.extensions` or an extension manager in the agent package. The live path is
 `ctx.plugins.extensions` (`ExtensionService`, `load_for_runtime`, `reload_extensions`).
 
-`ctx/plugins/extensions.py: load_extension` and `load_all_extensions` are superseded by
-`load_for_runtime` and are reachable only from tests - do not build new code on them.
-
 ## Verification
 
 After touching an extension, `/reload` reloads extensions and clears the extension module

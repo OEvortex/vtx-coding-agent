@@ -114,7 +114,7 @@ That last pair is the subtle one. Omitting the parameter does not stop reasoning
 
 - `ProviderConfig` is what a provider is built from: `api_key`, `base_url`, `model`, `max_tokens`, `temperature`, `thinking_level` (defaults to `"high"`), `provider`, `session_id`, the `openai_compat_auth_mode` / `anthropic_compat_auth_mode` trios (`auto` / `required` / `none`), `default_headers`, and `thinking_level_map`. `GenerationSettings` is the per-run knob bag and is *not* re-exported - import it from `ctx.ai.base`.
 
-- `LLMStream` is the async iterator over `StreamPart` with `.usage`, `.id`, and `.aclose()`. `set_iterator` lets a provider attach an already-running stream. `ApiType` and `Model` are re-exported; `ToolCallRequest` (with `.to_openai_tool_call()`), `LLMResponse`, `resolve_api_key`, `is_local_base_url`, `make_http_client`, and `LOCAL_API_KEY_PLACEHOLDER` are in `ctx.ai.base` only.
+- `LLMStream` is the async iterator over `StreamPart` with `.usage`, `.id`, and `.aclose()`. `set_iterator` lets a provider attach an already-running stream. `ApiType` and `Model` are re-exported; `ToolCallRequest` (with `.to_openai_tool_call()`), `LLMResponse`, `resolve_api_key`, `is_local_base_url`, and `LOCAL_API_KEY_PLACEHOLDER` are in `ctx.ai.base` only.
 
 - `ctx.ai.sdk` is a second, thinner generation layer (`BaseLLMSDK`, `OpenAISDK`, `AnthropicSDK`) that sits below the providers and also calls `resolve_reasoning_params`.
 

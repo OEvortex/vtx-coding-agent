@@ -7,7 +7,7 @@ from abc import ABC, abstractmethod
 from collections.abc import AsyncIterator
 from dataclasses import dataclass, field
 from ipaddress import ip_address
-from typing import TYPE_CHECKING, Any, ClassVar, Literal, cast
+from typing import Any, ClassVar, Literal, cast
 from urllib.parse import urlparse
 
 # Apply httpcore GeneratorExit patch as early as possible so streaming
@@ -40,10 +40,6 @@ from ctx.protocol.types import (
 DEFAULT_THINKING_LEVELS: list[str] = list(THINKING_LEVELS)
 
 log = logging.getLogger("ai.base")
-
-if TYPE_CHECKING:
-    import httpx
-
 
 # Provider-agnostic request/response types.
 
@@ -125,19 +121,6 @@ def is_local_base_url(base_url: str | None) -> bool:
         return False
 
     return addr.is_loopback or addr.is_private or addr.is_link_local
-
-
-def make_http_client() -> httpx.AsyncClient | None:
-    import httpx
-
-    from ctx.core.config import config as ctx_config
-
-    # Returns None when verify is required so the SDK uses its own default client.
-    if not ctx_config.llm.tls.insecure_skip_verify:
-        return None
-    return httpx.AsyncClient(
-        verify=False, timeout=httpx.Timeout(ctx_config.llm.request_timeout_seconds)
-    )
 
 
 def resolve_api_key(

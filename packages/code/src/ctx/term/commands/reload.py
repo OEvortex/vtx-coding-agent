@@ -102,7 +102,7 @@ class ReloadCommands(CommandSupport):
                 reason="reload",
             )
 
-        # 2. Drop the imported extension modules. load_extension() re-executes
+        # 2. Drop the imported extension modules. The loader re-executes
         #    the entry module unconditionally, so an edited entry file would
         #    reload on its own — but a *package* extension imports its
         #    submodules by name, and those hit sys.modules and stay stale

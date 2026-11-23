@@ -242,7 +242,7 @@ The two constructors apply these differently. `AnthropicSDKProvider` only ever l
 
 ## `--insecure-skip-verify`
 
-`--insecure-skip-verify` sets `llm.tls.insecure_skip_verify` on the live config object before the provider is built (`src/ctx/code/cli.py:310-311`). With it on, `make_http_client()` returns a real `httpx.AsyncClient` with `verify=False`; with it off, the function returns `None` so each SDK builds its own verifying client (`src/ctx/ai/base.py:130-140`). The timeout on that client comes from `llm.request_timeout_seconds`, so an insecure run also uses that value rather than the SDK default (`src/ctx/ai/base.py:139`).
+`--insecure-skip-verify` sets `llm.tls.insecure_skip_verify` on the live config object before the provider is built (`src/ctx/code/cli.py:310-311`). The built-in providers do not currently read this flag when constructing their HTTP clients, so TLS verification follows each SDK's default. Request timeouts still come from `llm.request_timeout_seconds`.
 
 ```bash
 # self-signed certificate on a LAN-hosted gateway

@@ -175,5 +175,5 @@ review with `ctx --dump-config`.
   unreferenced internally (`get_flag` is bound to a stub that always returns `None`,
   `src/ctx/term/app.py:433`).
 - The old `register(api)`-style extension manager in `ctx.agent` was removed. The live
-  path is `ctx.plugins.extensions`; `load_extension` and `load_all_extensions` in that
-  module are superseded by `load_for_runtime` and are reachable only from tests.
+  path is `ctx.plugins.extensions`: `ExtensionService.load`, `load_for_runtime`, and
+  `reload_extensions`.

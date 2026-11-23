@@ -1,6 +1,6 @@
 """Agent loader: import a ``.ctx/agent/<name>.py`` file and run its ``register``.
 
-Mirrors :func:`ctx.extensions.load_extension`. The module must export a
+The module must export a
 top-level ``AGENT = AgentDef(...)`` constant; ``register(api)`` is optional.
 """
 
@@ -167,7 +167,7 @@ def load_all_agents(
     """Discover and load every agent. Returns ``(loaded, errors)``.
 
     Errors are collected, not raised: one bad agent should not block the
-    rest. Mirrors :func:`ctx.extensions.load_all_extensions`.
+    rest.
     """
     from ctx.agent.agents.discovery import find_agent_paths
     from ctx.core.paths import get_config_dir

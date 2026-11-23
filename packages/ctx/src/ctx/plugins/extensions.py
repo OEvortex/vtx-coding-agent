@@ -350,15 +350,6 @@ def _entrypoint_keys() -> list[str]:
     return list(ENTRYPOINT_KEYS)
 
 
-def register_extension_entrypoint_key(key: str) -> None:
-    """Add an entry-point group an embedder's packages use."""
-    current = getattr(sys, _ENTRYPOINT_KEYS_ATTR, None)
-    keys = list(current) if isinstance(current, Iterable) else []
-    if key not in keys:
-        keys.append(key)
-    setattr(sys, _ENTRYPOINT_KEYS_ATTR, keys)
-
-
 def invalidate_extension_bytecode(path: Path) -> None:
     """Drop cached bytecode for an extension package so an edit is really seen.
 
@@ -413,12 +404,6 @@ def _sorted_py_files(root: Path) -> list[Path]:
     return out
 
 
-#: The record's historical name. ``Extension`` is what the old module exported;
-#: ``ExtensionRecord`` is what it is called now, and the alias keeps a caller
-#: that reads ``extension.handlers`` working.
-Extension = ExtensionRecord
-
-
 def load_module(path: Path, name: str | None = None) -> Any:
     """Import one extension file or package by path.
 
@@ -461,37 +446,6 @@ def load_module(path: Path, name: str | None = None) -> Any:
     return module
 
 
-def load_extension(
-    path: Path | str, *, cwd: str = "", session_file: str | None = None
-) -> ExtensionRecord:
-    """Import one extension module by path, run its ``register``, return the record.
-
-    Kept for a caller that loads one module directly rather than mounting it as
-    a row; :func:`ExtensionService.load` is the composition route, and this is
-    the same work without a host.
-    """
-    target = Path(path)
-    module_name = target.stem if target.name != "__init__.py" else target.parent.name
-    record = ExtensionRecord(module_name, target)
-    try:
-        module = load_module(target, module_name)
-    except Exception as exc:
-        raise ExtensionLoadError(target, exc) from exc
-
-    register = getattr(module, "register", None)
-    if not callable(register):
-        raise ExtensionLoadError(target, "does not export a top-level `register(api)` function")
-
-    from ctx.plugins.api import ExtensionActions, ExtensionAPI
-
-    api = ExtensionAPI(module_name, _standalone_ctx(record), record, ExtensionActions(), cwd=cwd)
-    try:
-        register(api)
-    except Exception as exc:
-        raise ExtensionLoadError(target, f"register(api) raised: {exc}") from exc
-    return record
-
-
 def load_for_runtime(
     cwd: str, *, extra_paths: Sequence[str] | None = None, **_: Any
 ) -> LoadedExtensions:
@@ -528,51 +482,6 @@ def reload_extensions(
     service = host.base.extensions
     service.reload(host, cwd=cwd, auto_discover=auto_discover, extra_paths=list(extra_paths or ()))
     return service.loaded
-
-
-def _standalone_ctx(record: ExtensionRecord) -> Any:
-    """A context whose tool service reads straight from ``record``.
-
-    Used by :func:`load_extension` and :func:`load_all_extensions`, which load a
-    module without a composition and so have nowhere to publish a tool registry.
-    """
-    from ctx.plugins.context import Context
-    from ctx.plugins.services import ToolService
-
-    tools = ToolService()
-    tools._owned = record.tools
-    ctx = Context()
-    ctx._services["tools"] = tools
-    return ctx
-
-
-def load_all_extensions(
-    *, cwd: str, extra_paths: Sequence[str] | None = None, auto_discover: bool = True
-) -> tuple[list[ExtensionRecord], list[str], LoadedExtensions]:
-    """Discover and load extensions without mounting a composition.
-
-    Returns ``(records, errors, loaded)``. Loading is eager because a caller
-    asking for records wants them now; the same plugin objects are what
-    :func:`ExtensionService.load` returns for a composition to mount, so a caller
-    that goes on to mount them should use that instead and let the host run
-    ``register`` exactly once.
-    """
-    from ctx.plugins.host import PluginHost
-    from ctx.plugins.profile import DEFAULT_PROFILE, load_profile
-
-    service = ExtensionService()
-    plugins = service.load(
-        cwd=cwd, auto_discover=auto_discover, extra_paths=list(extra_paths or ())
-    )
-    # A host over the real base rows, so the extensions' ``inject`` finds every
-    # service. Discovery is not run by this host — ``plugins`` already is the
-    # discovered set — so nothing is loaded twice.
-    host = PluginHost(load_profile(DEFAULT_PROFILE), label="extension-probe")
-    for spec in plugins:
-        host.add(spec)
-    host.mount()
-    host.dispose()
-    return service.loaded.extensions, list(service.loaded.errors), service.loaded
 
 
 @plugin(name="extensions", inject=("tools",), config=Config)
