@@ -24,7 +24,7 @@ from ctx.core.config import PermissionMode as CtxPermissionMode
 
 from vx.commands.base import CommandSupport
 from vx.permissions import BUILTIN_MODES, mode_spec
-from vx.tui import blocks, footer
+from vx.tui import footer
 from vx.tui import theme as theme_module
 
 #: What each effort level buys, so the picker is a menu and not a wall of names.
@@ -95,17 +95,7 @@ class SettingsCommands(CommandSupport):
         if perm_runtime is None:
             self._fail("permission runtime not available", topic="permissions")
             return
-        old_mode = perm_runtime.mode
         perm_runtime.set_mode(mode)
-        spec = mode_spec(mode)
-        self.viewport.add(
-            blocks.ModeChanged(
-                from_mode=old_mode,
-                to_mode=mode,
-                to_name=spec.name if spec else mode,
-                description=spec.description if spec else "",
-            )
-        )
         _sync_mode_to_config(mode)
 
     # -- /mode -----------------------------------------------------------
@@ -123,16 +113,7 @@ class SettingsCommands(CommandSupport):
                 valid = ", ".join(m.id for m in BUILTIN_MODES)
                 self._fail(f"invalid mode: {requested}. use one of: {valid}")
                 return
-            old_mode = perm_runtime.mode
             perm_runtime.set_mode(requested)
-            spec = mode_spec(requested)
-            name = spec.name if spec else requested
-            desc = spec.description if spec else ""
-            self.viewport.add(
-                blocks.ModeChanged(
-                    from_mode=old_mode, to_mode=requested, to_name=name, description=desc
-                )
-            )
             # Also sync the ctx config so the hint row picks it up
             _sync_mode_to_config(requested)
             return
@@ -218,7 +199,6 @@ class SettingsCommands(CommandSupport):
         if rt is None or rt.provider is None:
             return
         rt.set_thinking_level(level)
-        self._ok(f"thinking level changed to {level}", topic="thinking")
 
     def _thinking_note(self) -> str:
         """Say what the levels apply to, as ctx-code's picker footer does."""

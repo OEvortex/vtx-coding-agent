@@ -62,7 +62,7 @@ import vx.tools
 from vx.atpath import expand_paths, list_candidates, parse_at
 from vx.brand import VERSION
 from vx.commands import SLASH_COMMANDS, CommandsMixin
-from vx.permissions import BUILTIN_MODES, PermissionRuntime, VxPermissionHook, mode_spec
+from vx.permissions import BUILTIN_MODES, PermissionRuntime, VxPermissionHook
 from vx.tui import ansi, blocks, footer, theme
 from vx.tui.canvas import Painter
 from vx.tui.keys import KeyDecoder
@@ -804,9 +804,6 @@ class VxApp(CommandsMixin):
         new_idx = (idx + step) % len(levels)
         new_level = levels[new_idx]
         rt.set_thinking_level(new_level)
-        self.viewport.add(
-            blocks.ThinkingLevelChanged(from_level=current or "none", to_level=new_level)
-        )
 
     def _toggle_permission_mode(self, step: int) -> None:
         order = [spec.id for spec in BUILTIN_MODES]
@@ -814,15 +811,6 @@ class VxApp(CommandsMixin):
         index = order.index(old_mode) if old_mode in order else 0
         new_mode = order[(index + step) % len(order)]
         self._permission_runtime.set_mode(new_mode)
-        spec = mode_spec(new_mode)
-        self.viewport.add(
-            blocks.ModeChanged(
-                from_mode=old_mode,
-                to_mode=new_mode,
-                to_name=spec.name if spec else new_mode,
-                description=spec.description if spec else "",
-            )
-        )
         from vx.commands.settings import _sync_mode_to_config
 
         _sync_mode_to_config(new_mode)
@@ -864,15 +852,8 @@ class VxApp(CommandsMixin):
         # Normalize label to mode id
         label_map = {"Ask": "ask", "Auto": "auto"}
         mode_id = label_map.get(mode_id, mode_id.lower())
-        old_mode = perm_runtime.mode
         perm_runtime.set_mode(mode_id)
-        spec = mode_spec(mode_id)
-        name = spec.name if spec else mode_id
-        desc = spec.description if spec else ""
         self._menu = None
-        self.viewport.add(
-            blocks.ModeChanged(from_mode=old_mode, to_mode=mode_id, to_name=name, description=desc)
-        )
         from vx.commands.settings import _sync_mode_to_config
 
         _sync_mode_to_config(mode_id)
