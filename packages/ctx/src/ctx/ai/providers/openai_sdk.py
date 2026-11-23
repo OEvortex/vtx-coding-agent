@@ -1,9 +1,10 @@
 """OpenAI SDK provider - wraps the SDK layer into ctx's BaseProvider interface."""
 
+import asyncio
 from collections.abc import AsyncIterator
 from typing import Any
 
-from openai import APIConnectionError, APIError, APIStatusError
+import aiohttp
 
 from ctx.ai.base import BaseProvider, LLMStream, ProviderConfig, resolve_api_key
 from ctx.ai.provider_catalog import get as get_provider_info
@@ -335,11 +336,11 @@ class OpenAISDKProvider(BaseProvider):
 
         if is_rate_limit_error(error):
             return False
-        if isinstance(error, APIConnectionError):
+        if isinstance(error, (aiohttp.ClientConnectionError, OSError)):
             return True
-        if isinstance(error, APIStatusError):
-            return error.status_code >= 500
-        if isinstance(error, APIError):
-            msg = str(error).lower()
-            return any(s in msg for s in ("provider returned error", "overloaded", "capacity"))
-        return False
+        if isinstance(error, aiohttp.ClientResponseError):
+            return error.status >= 500
+        if isinstance(error, (aiohttp.ServerTimeoutError, asyncio.TimeoutError)):
+            return True
+        msg = str(error).lower()
+        return any(s in msg for s in ("provider returned error", "overloaded", "capacity"))

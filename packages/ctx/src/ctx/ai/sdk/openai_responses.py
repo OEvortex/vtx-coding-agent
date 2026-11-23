@@ -1,8 +1,7 @@
 """OpenAI Responses API adapter.
 
-Transported through the **official ``openai`` package**
-(``AsyncOpenAI().responses.create(...)``), adapted to ctx's chunk
-vocabulary:
+Transported through **raw aiohttp** against ``POST {base_url}/responses``,
+adapted to ctx's chunk vocabulary:
 
 - conversation history lowers to ``input`` items: ``{role: system}``,
   user/assistant ``message`` items, ``function_call`` items for assistant
@@ -15,9 +14,9 @@ vocabulary:
   up ``thinking_level_map[level] ?? level``, and emit ``reasoning:
   {effort: ...}`` only when the model reasons and the level isn't "off"
 - ``store: false`` by default (stateless sessions)
-- streaming rides the SDK's ``AsyncStream[ResponseStreamEvent]``; typed
-  events are dumped back to dicts and dispatched through the stream state
-  machine: ``output_text.delta``, ``reasoning_*_delta``,
+- streaming reads the SSE body incrementally via ``_sse.iter_sse_json``;
+  plain event dicts are dispatched through the stream state machine:
+  ``output_text.delta``, ``reasoning_*_delta``,
   ``function_call_arguments.delta/.done``, ``output_item.done``
   (function_call -> tool_calls chunk), ``response.completed/incomplete``
   (usage + finish reason), ``response.failed``/``error``
@@ -33,10 +32,12 @@ import os
 from collections.abc import AsyncGenerator
 from typing import Any
 
-from openai import AsyncOpenAI
+import aiohttp
 
 from ctx.ai.provider_hooks import prepare_request
+from ctx.ai.sdk._sse import iter_sse_json
 from ctx.ai.sdk.base import BaseLLMSDK, GenerationConfig, GenerationResponse, Message, ToolCall
+from ctx.ai.sdk.openai import _retry_on_transient
 from ctx.ai.thinking import clamp_thinking_level, get_supported_thinking_levels, is_budget_level
 
 logger = logging.getLogger(__name__)
@@ -50,16 +51,50 @@ class OpenAIResponsesSDK(BaseLLMSDK):
     ):
         resolved = base_url or "https://api.openai.com/v1"
         super().__init__(api_key=api_key, base_url=resolved)
-        self._client: AsyncOpenAI | None = None
+        self._client: aiohttp.ClientSession | None = None
         self._provider_slug = (provider_slug or "").lower() or None
 
     @property
-    def client(self) -> AsyncOpenAI:  # pyright: ignore[reportIncompatibleMethodOverride]
+    def client(self) -> aiohttp.ClientSession:
         if self._client is None:
-            self._client = AsyncOpenAI(
-                api_key=self.api_key, base_url=self.base_url, timeout=None, max_retries=3
+            assert self.base_url is not None
+            self._client = aiohttp.ClientSession(
+                base_url=f"{self.base_url.rstrip('/')}/",
+                timeout=aiohttp.ClientTimeout(total=None),
+                headers={
+                    "Authorization": f"Bearer {self.api_key}",
+                    "Content-Type": "application/json",
+                },
             )
         return self._client
+
+    def _endpoint(self, path: str) -> str:
+        """Build an absolute endpoint URL.
+
+        aiohttp's yarl join drops a ``/v1``-style prefix when the path starts
+        with ``/``, so always POST to the full URL instead of a relative one.
+        """
+        assert self.base_url is not None
+        return f"{self.base_url.rstrip('/')}/{path.lstrip('/')}"
+
+    @staticmethod
+    def _http_request_args(
+        payload: dict[str, Any], extra_headers: dict[str, str] | None = None
+    ) -> tuple[dict[str, Any], dict[str, str] | None]:
+        """Move SDK-only keys out of the JSON body into HTTP headers.
+
+        ``prepare_request`` listeners (and older call sites) may leave an
+        ``extra_headers`` mapping on the payload; the Responses wire format
+        has no such field, so merge it into the request headers instead.
+        """
+        body = dict(payload)
+        headers = dict(extra_headers or {})
+        sdk_headers = body.pop("extra_headers", None)
+        if isinstance(sdk_headers, dict):
+            for key, value in sdk_headers.items():
+                if value is not None:
+                    headers[str(key)] = str(value)
+        return body, headers or None
 
     async def aclose(self) -> None:
         if self._client is not None:
@@ -441,10 +476,21 @@ class OpenAIResponsesSDK(BaseLLMSDK):
         extra_headers, payload = await prepare_request(
             provider=self._provider_slug or "openai", payload=payload
         )
-        if extra_headers:
-            payload["extra_headers"] = extra_headers
-        response = await self.client.responses.create(**payload)
-        data = response.model_dump()
+        body, headers = self._http_request_args(payload, extra_headers)
+        request_kwargs: dict[str, Any] = {"json": body}
+        if headers:
+            request_kwargs["headers"] = headers
+
+        async def _post() -> dict[str, Any]:
+            async with self.client.post(self._endpoint("responses"), **request_kwargs) as resp:
+                if resp.status >= 400:
+                    error_body = await resp.text()
+                    raise RuntimeError(
+                        f"OpenAI Responses API error {resp.status}: {error_body[:300]}"
+                    )
+                return await resp.json(content_type=None)
+
+        data = await _retry_on_transient(_post)
 
         content = ""
         reasoning = ""
@@ -501,17 +547,36 @@ class OpenAIResponsesSDK(BaseLLMSDK):
         state = self._new_stream_state()
         finish_emitted = False
         usage_emitted = False
+        body, headers = self._http_request_args(payload)
+        body["stream"] = True
+        request_kwargs: dict[str, Any] = {"json": body}
+        if headers:
+            request_kwargs["headers"] = headers
         try:
-            # Official SDK flow: create() with stream=True returns an
-            # AsyncStream of typed ResponseStreamEvent models.
-            stream = await self.client.responses.create(**payload)
-            async for event in stream:
-                for chunk in self._stream_step(state, event.model_dump()):
-                    if chunk["type"] == "finish_reason":
-                        finish_emitted = True
-                    elif chunk["type"] == "usage":
-                        usage_emitted = True
-                    yield chunk
+            # Hold the response open for the whole generator: the `async with`
+            # closes it only once the SSE body is fully consumed (or the
+            # generator is closed/cancelled).
+            async def _open_stream() -> aiohttp.ClientResponse:
+                response = await self.client.post(self._endpoint("responses"), **request_kwargs)
+                if response.status >= 400:
+                    error_body = await response.text()
+                    response.release()
+                    raise RuntimeError(
+                        f"OpenAI Responses API error {response.status}: {error_body[:300]}"
+                    )
+                return response
+
+            response = await _retry_on_transient(_open_stream)
+            try:
+                async for event in iter_sse_json(response):
+                    for chunk in self._stream_step(state, event):
+                        if chunk["type"] == "finish_reason":
+                            finish_emitted = True
+                        elif chunk["type"] == "usage":
+                            usage_emitted = True
+                        yield chunk
+            finally:
+                response.release()
 
             # Terminal flush — only for streams that
             # never sent a terminal event.

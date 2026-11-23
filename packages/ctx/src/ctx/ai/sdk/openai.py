@@ -1,15 +1,18 @@
-"""OpenAI GPT SDK using the official openai package."""
+"""OpenAI Chat Completions SDK using raw HTTP via aiohttp."""
+
+from __future__ import annotations
 
 import asyncio
 import logging
 import os
 from collections.abc import AsyncGenerator, AsyncIterator
+from contextlib import AsyncExitStack, asynccontextmanager
 from typing import Any
 
-from openai import AsyncOpenAI
-from openai.types.chat import ChatCompletionChunk, ChatCompletionToolParam
+import aiohttp
 
 from ctx.ai.provider_hooks import prepare_request
+from ctx.ai.sdk._sse import iter_sse_json
 from ctx.ai.sdk.base import BaseLLMSDK, GenerationConfig, GenerationResponse, Message, ToolCall
 from ctx.ai.thinking import OPENAI_COMPLETIONS, resolve_reasoning_params
 
@@ -18,6 +21,7 @@ logger = logging.getLogger(__name__)
 _DEFAULT_MODEL = "gpt-4o"
 _MAX_RETRIES = 3
 _RETRY_BASE_DELAY = 1.0
+_ERROR_BODY_LIMIT = 300
 
 
 def _is_transient_error(e: Exception) -> bool:
@@ -109,7 +113,7 @@ def _normalize_usage(usage: Any) -> dict[str, Any]:
 
 
 async def _openai_stream_chunks(
-    stream: AsyncIterator[ChatCompletionChunk],
+    stream: AsyncIterator[dict[str, Any]],
 ) -> AsyncGenerator[dict[str, Any], None]:
     from ctx.ai.phase_parser import (
         INLINE_THINK_SIGNATURE,
@@ -130,18 +134,20 @@ async def _openai_stream_chunks(
     finish_reason: str | None = None
     try:
         async for chunk in stream:
-            if chunk.usage:
-                yield {"type": "usage", "usage": _normalize_usage(chunk.usage)}
-            if not chunk.choices:
+            usage = chunk.get("usage")
+            if usage:
+                yield {"type": "usage", "usage": _normalize_usage(usage)}
+            choices = chunk.get("choices")
+            if not choices:
                 continue
-            choice = chunk.choices[0]
-            if choice.finish_reason:
-                finish_reason = choice.finish_reason
-            delta = choice.delta
+            choice = choices[0]
+            if choice.get("finish_reason"):
+                finish_reason = choice["finish_reason"]
+            delta = choice.get("delta") or {}
             reasoning_delta = (
-                getattr(delta, "reasoning_content", None)
-                or getattr(delta, "reasoning", None)
-                or getattr(delta, "reasoning_text", None)
+                delta.get("reasoning_content")
+                or delta.get("reasoning")
+                or delta.get("reasoning_text")
             )
             if reasoning_delta:
                 yield {
@@ -149,8 +155,8 @@ async def _openai_stream_chunks(
                     "content": reasoning_delta,
                     "signature": "reasoning_content",
                 }
-            elif delta.content:
-                for phase_event in phase_parser.feed(delta.content):
+            elif delta.get("content"):
+                for phase_event in phase_parser.feed(delta["content"]):
                     if isinstance(phase_event, ThinkStart):
                         pass
                     elif isinstance(phase_event, ThinkDelta):
@@ -175,9 +181,10 @@ async def _openai_stream_chunks(
                         yield {"type": "text", "content": phase_event.text}
                     elif isinstance(phase_event, ResponseEnd):
                         pass
-            if delta.tool_calls:
-                for tc_delta in delta.tool_calls:
-                    idx = tc_delta.index
+            tc_deltas = delta.get("tool_calls")
+            if tc_deltas:
+                for tc_delta in tc_deltas:
+                    idx = tc_delta.get("index") or 0
                     acc: dict[str, Any] | None = tool_calls_acc.get(idx)
                     if acc is None:
                         from ctx.ai.streaming_json import ToolCallArgumentsStream
@@ -189,14 +196,15 @@ async def _openai_stream_chunks(
                             "started": False,
                         }
                         tool_calls_acc[idx] = acc
-                    if tc_delta.id:
-                        acc["id"] = tc_delta.id
-                    fn = tc_delta.function
+                    if tc_delta.get("id"):
+                        acc["id"] = tc_delta["id"]
+                    fn = tc_delta.get("function")
                     if fn is not None:
-                        if fn.name:
-                            acc["name"] = fn.name
-                        if fn.arguments:
-                            partial = acc["args"].append(fn.arguments)
+                        if fn.get("name"):
+                            acc["name"] = fn["name"]
+                        if fn.get("arguments"):
+                            arguments_delta = fn["arguments"]
+                            partial = acc["args"].append(arguments_delta)
                             if not acc["started"]:
                                 acc["started"] = True
                                 yield {
@@ -208,7 +216,7 @@ async def _openai_stream_chunks(
                             yield {
                                 "type": "tool_call_delta",
                                 "index": idx,
-                                "arguments_delta": fn.arguments,
+                                "arguments_delta": arguments_delta,
                                 "partial_arguments": partial,
                                 "id": acc["id"],
                                 "name": acc["name"],
@@ -272,34 +280,23 @@ async def _openai_stream_chunks(
                 pass
 
 
-def _tool_param(tool: dict[str, Any]) -> Any:
+def _tool_param(tool: dict[str, Any]) -> dict[str, Any]:
     """One wire tool entry, preserving a grammar when the provider sent one.
 
-    ``ChatCompletionToolParam`` has no grammar field, and OpenAI's
-    grammar-constrained sampling extends the function object, so a grammar is
-    emitted as a plain dict. A tool without one still goes through the typed
-    constructor, keeping the existing shape and validation for the common case.
+    The transport is raw HTTP, so both the common case and the
+    grammar-constrained case are plain dicts with the same shape; a grammar is
+    simply an extra field on the function object.
     """
     function = tool.get("function", {})
-    grammar = function.get("grammar")
-    if grammar is None:
-        return ChatCompletionToolParam(
-            type="function",
-            function={
-                "name": function["name"],
-                "description": function.get("description", ""),
-                "parameters": function["parameters"],
-            },
-        )
-    return {
-        "type": "function",
-        "function": {
-            "name": function["name"],
-            "description": function.get("description", ""),
-            "parameters": function["parameters"],
-            "grammar": grammar,
-        },
+    wire_function: dict[str, Any] = {
+        "name": function["name"],
+        "description": function.get("description", ""),
+        "parameters": function["parameters"],
     }
+    grammar = function.get("grammar")
+    if grammar is not None:
+        wire_function["grammar"] = grammar
+    return {"type": "function", "function": wire_function}
 
 
 class OpenAISDK(BaseLLMSDK):
@@ -315,24 +312,39 @@ class OpenAISDK(BaseLLMSDK):
         if resolved_url.startswith("http://"):
             resolved_url = "https://" + resolved_url[7:]
         super().__init__(api_key, resolved_url)
-        self._async_client: AsyncOpenAI | None = None
+        self._async_client: aiohttp.ClientSession | None = None
         self._rate_limit_hook = rate_limit_hook
         self._provider_slug = (provider_slug or "").lower() or None
         self._default_headers = default_headers
 
     @property
-    def client(self) -> AsyncOpenAI:  # pyright: ignore[reportIncompatibleMethodOverride]
+    def client(self) -> aiohttp.ClientSession:
         if self._async_client is None:
-            kwargs: dict[str, Any] = {
-                "api_key": self.api_key,
-                "base_url": self.base_url,
-                "timeout": None,
-                "max_retries": 3,
+            assert self.base_url is not None
+            headers = {
+                "Authorization": f"Bearer {self.api_key}",
+                "Content-Type": "application/json",
             }
             if self._default_headers:
-                kwargs["default_headers"] = self._default_headers
-            self._async_client = AsyncOpenAI(**kwargs)
+                headers.update(self._default_headers)
+            # aiohttp requires a trailing slash on a base_url that has a path.
+            # The stripped form is kept for building the full request URL in
+            # _chat_completions_url(); requests pass absolute URLs anyway.
+            self._async_client = aiohttp.ClientSession(
+                base_url=f"{self.base_url.rstrip('/')}/",
+                timeout=aiohttp.ClientTimeout(total=None),
+                headers=headers,
+            )
         return self._async_client
+
+    async def aclose(self) -> None:
+        if self._async_client is not None:
+            await self._async_client.close()
+            self._async_client = None
+
+    def _chat_completions_url(self) -> str:
+        assert self.base_url is not None
+        return f"{self.base_url.rstrip('/')}/chat/completions"
 
     def _build_kwargs(
         self, messages: list[Message], config: GenerationConfig, tools: list[dict] | None = None
@@ -385,50 +397,88 @@ class OpenAISDK(BaseLLMSDK):
             )
         )
 
+    @asynccontextmanager
+    async def _post_stream(
+        self, url: str, body: dict[str, Any], headers: dict[str, str]
+    ) -> AsyncGenerator[aiohttp.ClientResponse, None]:
+        # The response must stay open until the SSE iterator is exhausted, so
+        # the `async with` lives in this context manager instead of a helper
+        # that would close it before the caller starts consuming the stream.
+        async with self.client.post(url, json=body, headers=headers) as resp:
+            if not 200 <= resp.status < 300:
+                text = await resp.text()
+                raise RuntimeError(f"OpenAI API error {resp.status}: {text[:_ERROR_BODY_LIMIT]}")
+            yield resp
+
+    async def _stream_chunks(
+        self, url: str, body: dict[str, Any], headers: dict[str, str]
+    ) -> AsyncGenerator[dict[str, Any], None]:
+        stack = AsyncExitStack()
+        try:
+
+            async def _open() -> aiohttp.ClientResponse:
+                return await stack.enter_async_context(self._post_stream(url, body, headers))
+
+            resp = await _retry_on_transient(_open)
+            async for chunk in _openai_stream_chunks(iter_sse_json(resp)):
+                yield chunk
+        except (GeneratorExit, asyncio.CancelledError):
+            return
+        finally:
+            await stack.aclose()
+
+    async def _request_completion(
+        self, url: str, body: dict[str, Any], headers: dict[str, str]
+    ) -> dict[str, Any]:
+        async def _do_generate() -> dict[str, Any]:
+            async with self.client.post(url, json=body, headers=headers) as resp:
+                if not 200 <= resp.status < 300:
+                    text = await resp.text()
+                    raise RuntimeError(
+                        f"OpenAI API error {resp.status}: {text[:_ERROR_BODY_LIMIT]}"
+                    )
+                data = await resp.json(content_type=None)
+            if not isinstance(data, dict):
+                raise RuntimeError("OpenAI API returned a non-object JSON response")
+            return data
+
+        return await _retry_on_transient(_do_generate)
+
     async def generate(
         self, messages: list[Message], config: GenerationConfig, stream: bool = False
     ) -> GenerationResponse | AsyncGenerator:
         try:
-            kwargs = self._build_kwargs(messages, config)
-            kwargs["stream"] = stream
+            body = self._build_kwargs(messages, config)
+            body["stream"] = stream
             if stream:
-                kwargs["stream_options"] = {"include_usage": True}
-            extra_headers, kwargs = await prepare_request(
-                provider=self._provider_slug or "openai", payload=kwargs
+                body["stream_options"] = {"include_usage": True}
+            extra_headers, body = await prepare_request(
+                provider=self._provider_slug or "openai", payload=body
             )
-            if extra_headers:
-                kwargs["extra_headers"] = extra_headers
+            headers = dict(extra_headers) if extra_headers else {}
+            url = self._chat_completions_url()
             if stream:
-                raw_stream = await _retry_on_transient(
-                    lambda: self.client.chat.completions.create(**kwargs)
-                )
-                assert raw_stream is not None
-                return _openai_stream_chunks(raw_stream)
-            else:
+                return self._stream_chunks(url, body, headers)
 
-                async def _do_generate():
-                    return await self.client.chat.completions.create(**kwargs)
-
-                completion = await _retry_on_transient(_do_generate)
-                assert completion is not None
-                choice = completion.choices[0]
-                msg = choice.message
-                content = msg.content or ""
-                reasoning = (
-                    getattr(msg, "reasoning_content", None)
-                    or getattr(msg, "reasoning", None)
-                    or getattr(msg, "reasoning_text", None)
-                    or ""
-                )
-                usage = completion.usage
-                usage_dict: dict[str, Any] | None = _normalize_usage(usage) if usage else None
-                return GenerationResponse(
-                    content=content,
-                    model=completion.model,
-                    finish_reason=choice.finish_reason,
-                    usage=usage_dict,
-                    reasoning_content=reasoning,
-                )
+            completion = await self._request_completion(url, body, headers)
+            choice = completion["choices"][0]
+            msg = choice["message"]
+            content = msg.get("content") or ""
+            reasoning = (
+                msg.get("reasoning_content")
+                or msg.get("reasoning")
+                or msg.get("reasoning_text")
+                or ""
+            )
+            usage = completion.get("usage")
+            usage_dict: dict[str, Any] | None = _normalize_usage(usage) if usage else None
+            return GenerationResponse(
+                content=content,
+                model=completion.get("model") or "",
+                finish_reason=choice.get("finish_reason"),
+                usage=usage_dict,
+                reasoning_content=reasoning,
+            )
         except Exception as e:
             error_msg = str(e).lower()
             if "rate limit" in error_msg or "too many requests" in error_msg or "429" in error_msg:
@@ -443,55 +493,48 @@ class OpenAISDK(BaseLLMSDK):
         stream: bool = False,
     ) -> GenerationResponse | AsyncGenerator:
         try:
-            kwargs = self._build_kwargs(messages, config, tools)
-            kwargs["stream"] = stream
+            body = self._build_kwargs(messages, config, tools)
+            body["stream"] = stream
             if stream:
-                kwargs["stream_options"] = {"include_usage": True}
-            extra_headers, kwargs = await prepare_request(
-                provider=self._provider_slug or "openai", payload=kwargs
+                body["stream_options"] = {"include_usage": True}
+            extra_headers, body = await prepare_request(
+                provider=self._provider_slug or "openai", payload=body
             )
-            if extra_headers:
-                kwargs["extra_headers"] = extra_headers
+            headers = dict(extra_headers) if extra_headers else {}
+            url = self._chat_completions_url()
             if stream:
-                raw_stream = await _retry_on_transient(
-                    lambda: self.client.chat.completions.create(**kwargs)
-                )
-                assert raw_stream is not None
-                return _openai_stream_chunks(raw_stream)
-            else:
+                return self._stream_chunks(url, body, headers)
 
-                async def _do_generate():
-                    return await self.client.chat.completions.create(**kwargs)
-
-                completion = await _retry_on_transient(_do_generate)
-                assert completion is not None
-                choice = completion.choices[0]
-                msg = choice.message
-                content = msg.content or ""
-                reasoning = (
-                    getattr(msg, "reasoning_content", None)
-                    or getattr(msg, "reasoning", None)
-                    or getattr(msg, "reasoning_text", None)
-                    or ""
+            completion = await self._request_completion(url, body, headers)
+            choice = completion["choices"][0]
+            msg = choice["message"]
+            content = msg.get("content") or ""
+            reasoning = (
+                msg.get("reasoning_content")
+                or msg.get("reasoning")
+                or msg.get("reasoning_text")
+                or ""
+            )
+            tool_calls = []
+            for tc in msg.get("tool_calls") or []:
+                fn = tc.get("function") or {}
+                tool_calls.append(
+                    ToolCall(
+                        id=tc.get("id") or "",
+                        name=fn.get("name") or "",
+                        arguments=fn.get("arguments") or "",
+                    )
                 )
-                tool_calls = []
-                if msg.tool_calls:
-                    for tc in msg.tool_calls:
-                        tool_calls.append(
-                            ToolCall(
-                                id=tc.id, name=tc.function.name, arguments=tc.function.arguments
-                            )
-                        )
-                usage = completion.usage
-                usage_dict2: dict[str, Any] | None = _normalize_usage(usage) if usage else None
-                return GenerationResponse(
-                    content=content,
-                    model=completion.model,
-                    finish_reason=choice.finish_reason,
-                    tool_calls=tool_calls or None,
-                    usage=usage_dict2,
-                    reasoning_content=reasoning,
-                )
+            usage = completion.get("usage")
+            usage_dict2: dict[str, Any] | None = _normalize_usage(usage) if usage else None
+            return GenerationResponse(
+                content=content,
+                model=completion.get("model") or "",
+                finish_reason=choice.get("finish_reason"),
+                tool_calls=tool_calls or None,
+                usage=usage_dict2,
+                reasoning_content=reasoning,
+            )
         except Exception as e:
             error_msg = str(e).lower()
             if "rate limit" in error_msg or "too many requests" in error_msg or "429" in error_msg:
