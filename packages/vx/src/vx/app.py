@@ -134,6 +134,9 @@ class VxApp(CommandsMixin):
         self._tool_blocks: dict[str, blocks.ToolStatusBlock] = {}
         self._tool_groups: dict[str, blocks.ToolGroup] = {}
         self._tool_outputs: dict[str, blocks.ToolOutput] = {}
+        #: The group the running turn is still adding calls to. fx groups a
+        #: run of calls, so anything else in the transcript ends it.
+        self._live_group: blocks.ToolGroup | None = None
         self._last_ctrl_c = 0.0
         self._usage = {"in": 0, "out": 0}
         self._context_total: int | None = None
@@ -888,6 +891,7 @@ class VxApp(CommandsMixin):
         if text.startswith("!"):
             self._handle_shell(text)
             return
+        self._break_group()
         self.viewport.add(blocks.UserTurn(text=text))
         self._enqueue_or_run(expand_paths(text, self.cwd))
 
@@ -915,6 +919,7 @@ class VxApp(CommandsMixin):
         if not command:
             return
         block = blocks.ShellRun(command=command, send_to_llm=send_to_llm)
+        self._break_group()
         self.viewport.add(block)
         self._is_running = True
         self._run_label = "running command"
@@ -1023,7 +1028,12 @@ class VxApp(CommandsMixin):
     def _notice(
         self, body: str, *, topic: str = "", tone: str = "information", detail: str = ""
     ) -> None:
+        self._break_group()
         self.viewport.add(blocks.Notice(topic=topic, body=body, tone=tone, detail=detail))
+
+    def _break_group(self) -> None:
+        """Ends the live tool group, so the next call starts a new one."""
+        self._live_group = None
 
     def _drain_events(self) -> None:
         changed = False
@@ -1055,6 +1065,7 @@ class VxApp(CommandsMixin):
         if isinstance(ev, TurnStartEvent):
             return
         if isinstance(ev, ThinkingStartEvent):
+            self._break_group()
             if self._live_thinking is None:
                 self._live_thinking = blocks.Thinking(text="")
                 self.viewport.add(self._live_thinking)
@@ -1069,9 +1080,11 @@ class VxApp(CommandsMixin):
             self._live_thinking = None
             return
         if isinstance(ev, TextStartEvent):
+            self._break_group()
             self._assistant_block()
             return
         if isinstance(ev, TextDeltaEvent):
+            self._break_group()
             block = self._assistant_block()
             block.text += ev.delta
             self._run_label = "responding"
@@ -1087,25 +1100,34 @@ class VxApp(CommandsMixin):
         if isinstance(ev, ToolStartEvent):
             block = _make_tool_status_block(ev.tool_name)
             self._tool_blocks[ev.tool_call_id] = block
-            group = self._tool_groups.get(ev.tool_call_id)
+            group = self._live_group
             if group is None:
                 group = blocks.ToolGroup()
-                self._tool_groups[ev.tool_call_id] = group
+                self._live_group = group
                 self.viewport.add(group)
             group.calls.append(block)
+            self._tool_groups[ev.tool_call_id] = group
             self.viewport.touch()
             self._run_label = f"running {ev.tool_name}"
             return
         if isinstance(ev, ToolArgsDeltaEvent):
             block = self._tool_blocks.get(ev.tool_call_id)
             if block is not None:
-                snapshot = getattr(ev, "snapshot", None) or getattr(ev, "arguments", None)
+                snapshot = (
+                    getattr(ev, "partial_arguments", None)
+                    or getattr(ev, "snapshot", None)
+                    or getattr(ev, "arguments", None)
+                )
                 if snapshot:
-                    _populate_tool_block_args(block, ev.tool_name, snapshot)
+                    _populate_tool_block_args(
+                        block, getattr(ev, "tool_name", "") or block.name, snapshot
+                    )
             return
         if isinstance(ev, ToolEndEvent):
             block = self._tool_blocks.get(ev.tool_call_id)
             if block is not None:
+                if ev.arguments:
+                    _populate_tool_block_args(block, ev.tool_name or block.name, ev.arguments)
                 display = getattr(ev, "display", "")
                 if display:
                     _populate_tool_block_display(block, _short(_strip_markup(display), 70))
@@ -1117,7 +1139,12 @@ class VxApp(CommandsMixin):
                 if output is None:
                     output = blocks.ToolOutput(lines=[])
                     self._tool_outputs[ev.tool_call_id] = output
-                    self.viewport.add(output)
+                    group = self._tool_groups.get(ev.tool_call_id)
+                    if group is not None:
+                        # fx prints a call's output under the group it ran in.
+                        group.details.append(output)
+                    else:
+                        self.viewport.add(output)
                 buffer = getattr(output, "buffer", "") + ev.delta
                 output.buffer = buffer[-8000:]
                 lines = buffer.replace("\r", "").split("\n")
@@ -1134,9 +1161,6 @@ class VxApp(CommandsMixin):
                 ok = not result.is_error
             if block is not None:
                 block.status = "ok" if ok else "error"
-                group = self._tool_groups.get(ev.tool_call_id)
-                if group is not None and all(call.status != "running" for call in group.calls):
-                    group.status = "done"
                 # For apply_patch, populate diff stats from file_changes
                 if ev.file_changes and isinstance(block, blocks.ApplyPatchToolStatus):
                     block.added = sum(f.added for f in ev.file_changes)
@@ -1157,16 +1181,26 @@ class VxApp(CommandsMixin):
                         if isinstance(row, (list, tuple)) and len(row) == 3
                     ]
                     if diff_lines:
-                        self.viewport.add(blocks.DiffOutput(lines=diff_lines))
+                        diff = blocks.DiffOutput(lines=diff_lines)
+                        group = self._tool_groups.get(ev.tool_call_id)
+                        if group is not None:
+                            group.details.append(diff)
+                        else:
+                            self.viewport.add(diff)
             output = self._tool_outputs.get(ev.tool_call_id)
             if output is not None and not output.lines:
                 with suppress(Exception):
-                    self.viewport.blocks.remove(output)
+                    group = self._tool_groups.get(ev.tool_call_id)
+                    if group is not None:
+                        group.details.remove(output)
+                    else:
+                        self.viewport.blocks.remove(output)
             return
         if isinstance(ev, ToolApprovalEvent):
             self._request_approval(ev)
             return
         if isinstance(ev, AskUserEvent):
+            self._break_group()
             self._request_ask_user(ev)
             return
         if isinstance(ev, CompactionStartEvent):
@@ -1211,14 +1245,14 @@ class VxApp(CommandsMixin):
             return
 
     def _finish_live(self) -> None:
-        for block in self.viewport.blocks:
-            if isinstance(block, blocks.ToolStatus) and block.status == "running":
-                block.status = "ok"
+        # A call still running when the turn ends was interrupted: fx marks it
+        # cancelled rather than letting it read as done.
+        for block in self._tool_blocks.values():
+            if block.status == "running":
+                block.status = "cancelled"
         self._live_assistant = None
         self._live_thinking = None
-        for group in self._tool_groups.values():
-            if group.status == "running":
-                group.status = "done"
+        self._live_group = None
         self._tool_blocks.clear()
         self._tool_groups.clear()
         self._tool_outputs.clear()

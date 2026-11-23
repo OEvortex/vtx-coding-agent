@@ -47,6 +47,53 @@ _TOOL_VERBS = {
     "tool_search": "Found tools",
 }
 
+#: fx's activity kinds per tool, which decide how a group's header names the
+#: work it did (src/ui/transcript/tool_group_projection.zig, categoryIndex).
+_TOOL_CATEGORIES = {
+    "read": "read",
+    "grep": "read",
+    "write": "write",
+    "skill": "write",
+    "edit": "edit",
+    "apply_patch": "edit",
+    "find": "list",
+    "glob": "list",
+    "ls": "list",
+    "bash": "command",
+    "shell": "command",
+    "subagent": "subagent",
+    "task": "subagent",
+    "web_search": "web_search",
+    "web_fetch": "web_page",
+}
+
+#: Kinds of work a group header names, in the order a tie breaks. Edits lead,
+#: since they are the change the group made (fx's WorkKind order).
+_GROUP_KINDS = (
+    "edits",
+    "subagents",
+    "commands",
+    "web_pages",
+    "web_searches",
+    "reads",
+    "lists",
+    "others",
+)
+
+_KIND_OF_CATEGORY = {
+    "read": "reads",
+    "list": "lists",
+    "write": "edits",
+    "edit": "edits",
+    "command": "commands",
+    "subagent": "subagents",
+    "web_page": "web_pages",
+    "web_search": "web_searches",
+}
+
+#: The most kinds of work a header names before ", and more".
+HEADER_MAX_PARTS = 3
+
 #: Row budget for a tool's folded output, mirroring fx's compact transcript.
 OUTPUT_PREVIEW_ROWS = 5
 OUTPUT_EXPANDED_ROWS = 60
@@ -185,70 +232,210 @@ class Notice(Block):
         return out
 
 
+class ToolRow(Block):
+    """One tool call's row, drawn as fx draws a group's calls.
+
+    A call alone reads ``● Read src/app.py ✓``; inside a group it reads
+    ``├ Read src/app.py``, and the last call of a group uses ``└``.
+    """
+
+    name: str = ""
+    status: str = "running"  # running | ok | error | cancelled
+    kind: str = "tool"
+
+    def body(self) -> str:
+        raise NotImplementedError
+
+    def glyph(self) -> str:
+        return "●"
+
+    @property
+    def category(self) -> str:
+        return _TOOL_CATEGORIES.get(self.name, "other")
+
+    def mark(self) -> str:
+        t = _theme.current()
+        if self.status == "ok":
+            return f" {t.task_completed_open}✓{ansi.RESET}"
+        if self.status == "error":
+            return f" {t.red_style}✗{ansi.RESET}"
+        if self.status == "cancelled":
+            return f" {t.dim_style}⊘{ansi.RESET}"
+        return ""
+
+    def rows(self, width: int) -> list[str]:
+        t = _theme.current()
+        return [_tool_row(self, width, f"{t.dim_style}{self.glyph()}{ansi.RESET} ")]
+
+    def child_row(self, width: int, last: bool = False) -> str:
+        t = _theme.current()
+        lead = "└" if last else "├"
+        return _tool_row(self, width, f"{t.dim_style}{lead}{ansi.RESET} ")
+
+
 @dataclass
-class ToolStatus(Block):
+class ToolStatus(ToolRow):
     """``● Ran zig build ✓``: one row per call, fx's transcript activity."""
 
     name: str = ""
     target: str = ""
-    status: str = "running"  # running | ok | error
+    status: str = "running"  # running | ok | error | cancelled
     calls: int = 1
     kind: str = "tool"
 
     def _verb(self) -> str:
         return _TOOL_VERBS.get(self.name, self.name)
 
-    def rows(self, width: int) -> list[str]:
+    def body(self) -> str:
         t = _theme.current()
-        verb = self._verb()
-        target = self.target
         if self.status == "running":
-            line = f"{t.dim_style}●{ansi.RESET} {t.dim_style}Running{ansi.RESET}"
-            if target:
-                line += f" {target}"
+            label = "Running"
+        elif self.status == "cancelled":
+            label = "Cancelled"
         else:
-            line = f"{t.dim_style}●{ansi.RESET} {verb}"
-            if target:
-                line += f" {t.tag_style}{target}{ansi.RESET}"
-        if self.calls > 1 and self.status != "running":
-            line += f"{t.dim_style} · {self.calls} calls{ansi.RESET}"
-        if self.status == "ok":
-            line += f" {t.task_completed_open}✓{ansi.RESET}"
-        elif self.status == "error":
-            line += f"{t.dim_style} ✗{ansi.RESET}"
-        return [ansi.clip_ellipsis(line, width)]
+            label = self._verb()
+        out = f"{t.dim_style}{label}{ansi.RESET}"
+        if self.target:
+            out += f" {t.tag_style}{self.target}{ansi.RESET}"
+        if self.calls > 1:
+            out += f"{t.dim_style} ×{self.calls}{ansi.RESET}"
+        return out
+
+
+def _tool_row(block: ToolRow, width: int, lead: str) -> str:
+    return ansi.clip_ellipsis(f"{lead}{block.body()}{block.mark()}", width)
+
+
+def _status_of(call: ToolRow) -> str:
+    return getattr(call, "status", "ok")
+
+
+def _kind_groups(calls: list[ToolRow]) -> dict[str, list[ToolRow]]:
+    grouped: dict[str, list[ToolRow]] = {name: [] for name in _GROUP_KINDS}
+    for call in calls:
+        grouped[_KIND_OF_CATEGORY.get(call.category, "others")].append(call)
+    return grouped
+
+
+def _kind_phrase(kind: str, calls: list[ToolRow]) -> str:
+    """What the group did of ``kind``, such as "ran commands" (fx's
+    workPhrase): no counts, since the rows show how much."""
+    one = len(calls) == 1
+    running = any(_status_of(call) == "running" for call in calls)
+    if kind == "edits":
+        writes_only = all(call.category == "write" for call in calls)
+        if running:
+            verb = "writing" if writes_only else "editing"
+        else:
+            verb = "wrote" if writes_only else "edited"
+        return f"{verb} {'a file' if one else 'files'}"
+    if kind == "subagents":
+        return f"{'starting' if running else 'started'} {'a subagent' if one else 'subagents'}"
+    if kind == "commands":
+        return f"{'running' if running else 'ran'} {'a command' if one else 'commands'}"
+    if kind == "web_pages":
+        return "read a web page" if one else "read web pages"
+    if kind == "web_searches":
+        return "searched the web"
+    if kind == "reads":
+        return "read a file" if one else "read files"
+    if kind == "lists":
+        return "listed a file" if one else "listed files"
+    return "used a tool" if one else "used tools"
+
+
+def _group_parts(calls: list[ToolRow]) -> list[str]:
+    """ "Read files, ran commands, and more": the header's parts, edits first
+    and then the kind of work with the most calls."""
+    grouped = _kind_groups(calls)
+    ranked = [name for name in _GROUP_KINDS if grouped[name]]
+    ranked.sort(key=lambda name: (name != "edits", -len(grouped[name])))
+    parts = [_kind_phrase(name, grouped[name]) for name in ranked[:HEADER_MAX_PARTS]]
+    if len(ranked) > HEADER_MAX_PARTS:
+        parts.append("and more")
+    if parts:
+        parts[0] = parts[0][:1].upper() + parts[0][1:]
+    return parts
+
+
+def _group_mark(calls: list[ToolRow]) -> str:
+    """Where the group's commands ended: ✗ when one failed, ✓ when all
+    passed. A group with no commands has no mark for them to report."""
+    commands = [call for call in calls if call.category == "command"]
+    if not commands:
+        return ""
+    t = _theme.current()
+    if any(_status_of(call) == "error" for call in commands):
+        return f" {t.red_style}✗{ansi.RESET}"
+    if any(_status_of(call) in ("running", "cancelled") for call in commands):
+        return ""
+    return f" {t.task_completed_open}✓{ansi.RESET}"
+
+
+def _group_states(calls: list[ToolRow]) -> str:
+    """ " · 2 failed · 1 cancelled": how the calls other than the mark's own
+    commands ended."""
+    t = _theme.current()
+    out = ""
+    failed = sum(_status_of(call) == "error" and call.category != "command" for call in calls)
+    if failed:
+        out += f"{t.dim_style} · {failed} failed{ansi.RESET}"
+    cancelled = sum(_status_of(call) == "cancelled" for call in calls)
+    if cancelled:
+        out += f"{t.dim_style} · {cancelled} cancelled{ansi.RESET}"
+    return out
+
+
+def _group_header(calls: list[ToolRow], width: int) -> str:
+    """The group's one-line header, clipped like fx: parts that do not fit
+    drop from the end, and " …" says the header goes on."""
+    t = _theme.current()
+    parts = _group_parts(calls) or [f"{len(calls)} tool calls"]
+    mark = _group_mark(calls)
+    states = _group_states(calls)
+    kept = len(parts)
+    while kept > 0:
+        text = parts[0] if kept == 1 else f"{parts[0]}, " + ", ".join(parts[1:kept])
+        if kept < len(parts):
+            text += " …"
+        line = (
+            f"{t.user_card_marker_style}●{ansi.RESET}"
+            f"{t.dim_style} {text}{ansi.RESET}{mark}{states}"
+        )
+        if ansi.width(line) <= width:
+            return line
+        kept -= 1
+    return ansi.clip_ellipsis(
+        f"{t.user_card_marker_style}●{ansi.RESET}{t.dim_style} {parts[0]}{ansi.RESET}"
+        f"{mark}{states}",
+        width,
+    )
 
 
 @dataclass
 class ToolGroup(Block):
-    """A compact group of tool calls, with one indented row per call."""
+    """A run of tool calls, drawn as fx draws a group.
+
+    A group of one call is that call's own row, so nothing is said twice. A
+    group of several gets a header naming what it did, then its calls as a
+    tree: ``├ `` for each and ``└ `` for the last.
+    """
 
     calls: list[ToolStatusBlock] = field(default_factory=list)
-    status: str = "running"
+    details: list[Block] = field(default_factory=list)
     kind: str = "tool"
 
     def rows(self, width: int) -> list[str]:
-        t = _theme.current()
-        n = len(self.calls)
-        failed = sum(call.status == "error" for call in self.calls)
-        names = {call.name for call in self.calls}
-        verb = self.calls[0]._verb() if len(names) == 1 and self.calls else "Tools"
-        noun = "tool" if n == 1 else "tools"
-        if self.status == "running":
-            heading = f"{t.dim_style}● Running {n} {noun}{ansi.RESET}"
-        else:
-            heading = f"{t.dim_style}● {verb} {n} {noun}{ansi.RESET}"
-            if failed:
-                heading += f" {t.dim_style}({failed} failed){ansi.RESET}"
-            else:
-                heading += f" {t.task_completed_open}✓{ansi.RESET}"
-        out = [ansi.clip_ellipsis(heading, width)]
-        for call in self.calls:
-            marker = f"{t.dim_style}│{ansi.RESET}"
-            rows = call.rows(max(1, width - 4)) or [getattr(call, "target", "") or call._verb()]
-            for i, row in enumerate(rows):
-                prefix = f"  {marker} " if i == 0 else "    "
-                out.append(ansi.clip_ellipsis(prefix + row, width))
+        out: list[str] = []
+        if len(self.calls) == 1:
+            out.extend(self.calls[0].rows(width))
+        elif self.calls:
+            out.append(_group_header(list(self.calls), width))
+            last = len(self.calls) - 1
+            for index, call in enumerate(self.calls):
+                out.append(call.child_row(width, last=index == last))
+        for detail in self.details:
+            out.extend(detail.rows(width))
         return out
 
 
@@ -364,7 +551,7 @@ class Sections(Block):
 
 
 @dataclass
-class ReadToolStatus(Block):
+class ReadToolStatus(ToolRow):
     """Read tool: `F path:12-30` with line count."""
 
     name: str = "read"
@@ -376,34 +563,31 @@ class ReadToolStatus(Block):
     status: str = "running"
     kind: str = "tool"
 
-    def _verb(self) -> str:
-        return _TOOL_VERBS.get(self.name, self.name)
+    def glyph(self) -> str:
+        return "●"
 
-    def rows(self, width: int) -> list[str]:
+    def body(self) -> str:
         t = _theme.current()
         if self.status == "running":
-            line = f"{t.dim_style}●{ansi.RESET} {t.dim_style}Reading{ansi.RESET}"
-            if self.path:
-                line += f" {t.tag_style}{self.path}{ansi.RESET}"
+            out = f"{t.dim_style}Reading{ansi.RESET}"
+        elif self.status == "cancelled":
+            out = f"{t.dim_style}Cancelled{ansi.RESET}"
         else:
-            glyph = "F" if not self.is_dir else "D"
-            line = f"{t.dim_style}{glyph}{ansi.RESET} {t.tag_style}{self.path}{ansi.RESET}"
-            if self.start_line and self.end_line:
-                if self.start_line == self.end_line:
-                    line += f" {t.dim_style}:L{self.start_line}{ansi.RESET}"
-                else:
-                    line += f" {t.dim_style}:L{self.start_line}-{self.end_line}{ansi.RESET}"
-            if self.total_lines and not self.is_dir:
-                line += f"{t.dim_style} · {self.total_lines}L{ansi.RESET}"
-            if self.status == "ok":
-                line += f" {t.task_completed_open}✓{ansi.RESET}"
-            elif self.status == "error":
-                line += f"{t.dim_style} ✗{ansi.RESET}"
-        return [ansi.clip_ellipsis(line, width)]
+            out = f"{t.dim_style}Read{ansi.RESET}"
+        if self.path:
+            out += f" {t.tag_style}{self.path}{ansi.RESET}"
+        if self.start_line and self.end_line:
+            if self.start_line == self.end_line:
+                out += f" {t.dim_style}:L{self.start_line}{ansi.RESET}"
+            else:
+                out += f" {t.dim_style}:L{self.start_line}-{self.end_line}{ansi.RESET}"
+        if self.total_lines and not self.is_dir:
+            out += f"{t.dim_style} · {self.total_lines}L{ansi.RESET}"
+        return out
 
 
 @dataclass
-class BashToolStatus(Block):
+class BashToolStatus(ToolRow):
     """Bash tool: ``● Ran command`` — fx's compact one-row status."""
 
     name: str = "bash"
@@ -412,40 +596,37 @@ class BashToolStatus(Block):
     status: str = "running"
     kind: str = "tool"
 
-    def _verb(self) -> str:
-        return _TOOL_VERBS.get(self.name, self.name)
-
-    def rows(self, width: int) -> list[str]:
+    def body(self) -> str:
         t = _theme.current()
         if self.status == "running":
-            line = f"{t.dim_style}●{ansi.RESET} {t.dim_style}Running{ansi.RESET}"
-            if self.command:
-                line += f" {t.tool_stdout_style}{self.command}{ansi.RESET}"
+            label = "Running"
+        elif self.status == "cancelled":
+            label = "Cancelled"
         else:
-            verb = self._verb()
-            line = f"{t.dim_style}●{ansi.RESET} {verb}"
-            if self.command:
-                line += f" {t.tool_stdout_style}{self.command}{ansi.RESET}"
-            if self.exit_code is not None and self.exit_code != 0:
-                line += f"{t.dim_style} (exit {self.exit_code}){ansi.RESET}"
-            if self.status == "ok":
-                line += f" {t.task_completed_open}✓{ansi.RESET}"
-            elif self.status == "error":
-                line += f"{t.dim_style} ✗{ansi.RESET}"
-        return [ansi.clip_ellipsis(line, width)]
+            label = _TOOL_VERBS.get(self.name, self.name)
+        out = f"{t.dim_style}{label}{ansi.RESET}"
+        if self.command:
+            out += f" {t.tool_stdout_style}{self.command}{ansi.RESET}"
+        if self.status != "running" and self.exit_code is not None and self.exit_code != 0:
+            out += f"{t.dim_style} (exit {self.exit_code}){ansi.RESET}"
+        return out
 
 
 @dataclass
 class DiffOutput(Block):
-    """fx-style diff preview: ``  │ N + text`` with colored markers."""
+    """fx-style diff preview: ``  │ N + text`` with colored markers.
+
+    fx keeps diff blocks out of the compact transcript and shows them in the
+    full one, so this renders only while ctrl+o has unfolded the transcript.
+    """
 
     lines: list[tuple[str, str, str]] = field(default_factory=list)
     """List of (op, line_number, text) where op is '+', '-', or ' '."""
-    kind: str = "tool_output"
+    kind: str = "tool"
 
     def rows(self, width: int) -> list[str]:
-        if not self.lines:
-            return [""]
+        if not self.lines or not _expanded:
+            return []
         t = _theme.current()
         # Calculate gutter width from max line number
         max_ln = 0
@@ -486,7 +667,7 @@ def _escape_text(text: str) -> str:
 
 
 @dataclass
-class ApplyPatchToolStatus(Block):
+class ApplyPatchToolStatus(ToolRow):
     """apply_patch tool: ``● Edited path +3 -1`` — fx's compact one-row status."""
 
     name: str = "apply_patch"
@@ -499,36 +680,32 @@ class ApplyPatchToolStatus(Block):
     diff_lines: list[tuple[str, str, str]] = field(default_factory=list)
     """Diff preview lines for DiffOutput: (op, line_number, text)."""
 
-    def _verb(self) -> str:
-        return _TOOL_VERBS.get(self.name, self.name)
-
-    def rows(self, width: int) -> list[str]:
+    def body(self) -> str:
         t = _theme.current()
         if self.status == "running":
-            line = f"{t.dim_style}●{ansi.RESET} {t.dim_style}Editing{ansi.RESET}"
-            if self.path:
-                line += f" {t.tool_stdout_style}{self.path}{ansi.RESET}"
+            label = "Editing"
+        elif self.status == "cancelled":
+            label = "Cancelled"
         else:
-            verb = self._verb()
-            line = f"{t.dim_style}●{ansi.RESET} {verb}"
-            if self.path:
-                line += f" {t.tool_stdout_style}{self.path}{ansi.RESET}"
+            label = _TOOL_VERBS.get(self.name, self.name)
+        out = f"{t.dim_style}{label}{ansi.RESET}"
+        if self.path:
+            out += f" {t.tool_stdout_style}{self.path}{ansi.RESET}"
+        if self.status not in ("running", "cancelled"):
             # fx-style diff stats: +N / -M in dim
             if self.added > 0 and self.removed > 0:
-                line += f" {t.dim_style}+{self.added}{ansi.RESET}"
-                line += f" {t.dim_style}/{ansi.RESET}"
-                line += f" {t.dim_style}-{self.removed}{ansi.RESET}"
+                out += f" {t.dim_style}+{self.added}{ansi.RESET}"
+                out += f" {t.dim_style}/{ansi.RESET}"
+                out += f" {t.dim_style}-{self.removed}{ansi.RESET}"
             elif self.added > 0:
-                line += f" {t.dim_style}+{self.added}{ansi.RESET}"
+                out += f" {t.dim_style}+{self.added}{ansi.RESET}"
             elif self.removed > 0:
-                line += f" {t.dim_style}-{self.removed}{ansi.RESET}"
-            if self.status == "error":
-                line += f"{t.dim_style} ✗{ansi.RESET}"
-        return [ansi.clip_ellipsis(line, width)]
+                out += f" {t.dim_style}-{self.removed}{ansi.RESET}"
+        return out
 
 
 @dataclass
-class GrepToolStatus(Block):
+class GrepToolStatus(ToolRow):
     """grep tool: `? pattern in path` with match count."""
 
     name: str = "grep"
@@ -538,31 +715,29 @@ class GrepToolStatus(Block):
     status: str = "running"
     kind: str = "tool"
 
-    def _verb(self) -> str:
-        return _TOOL_VERBS.get(self.name, self.name)
+    def glyph(self) -> str:
+        return "●"
 
-    def rows(self, width: int) -> list[str]:
+    def body(self) -> str:
         t = _theme.current()
         if self.status == "running":
-            line = f"{t.dim_style}●{ansi.RESET} {t.dim_style}Searching{ansi.RESET}"
-            if self.pattern:
-                line += f" {t.tag_style}{self.pattern}{ansi.RESET}"
+            out = f"{t.dim_style}Searching{ansi.RESET}"
+        elif self.status == "cancelled":
+            out = f"{t.dim_style}Cancelled{ansi.RESET}"
         else:
-            line = f"{t.dim_style}?{ansi.RESET} {t.tag_style}{self.pattern}{ansi.RESET}"
-            if self.path:
-                line += f" {t.dim_style}in{ansi.RESET} {t.tag_style}{self.path}{ansi.RESET}"
-            if self.match_count:
-                noun = "match" if self.match_count == 1 else "matches"
-                line += f" {t.dim_style}· {self.match_count} {noun}{ansi.RESET}"
-            if self.status == "ok":
-                line += f" {t.task_completed_open}✓{ansi.RESET}"
-            elif self.status == "error":
-                line += f"{t.dim_style} ✗{ansi.RESET}"
-        return [ansi.clip_ellipsis(line, width)]
+            out = f"{t.dim_style}Searched{ansi.RESET}"
+        if self.pattern:
+            out += f" {t.tag_style}{self.pattern}{ansi.RESET}"
+        if self.status != "running" and self.path:
+            out += f" {t.dim_style}in{ansi.RESET} {t.tag_style}{self.path}{ansi.RESET}"
+        if self.status != "running" and self.match_count:
+            noun = "match" if self.match_count == 1 else "matches"
+            out += f" {t.dim_style}· {self.match_count} {noun}{ansi.RESET}"
+        return out
 
 
 @dataclass
-class WebToolStatus(Block):
+class WebToolStatus(ToolRow):
     """web/web_search tool: `W query` or `L url`."""
 
     name: str = "web"
@@ -572,31 +747,25 @@ class WebToolStatus(Block):
     status: str = "running"
     kind: str = "tool"
 
-    def _verb(self) -> str:
-        return _TOOL_VERBS.get(self.name, self.name)
+    def glyph(self) -> str:
+        return "●"
 
-    def rows(self, width: int) -> list[str]:
+    def body(self) -> str:
         t = _theme.current()
         is_search = self.name == "web_search"
         if self.status == "running":
-            verb = "Searching" if is_search else "Fetching"
-            line = f"{t.dim_style}●{ansi.RESET} {t.dim_style}{verb}{ansi.RESET}"
-            target = self.query or self.url
-            if target:
-                line += f" {t.tag_style}{_short(target, 50)}{ansi.RESET}"
+            out = f"{t.dim_style}{'Searching web' if is_search else 'Fetching'}{ansi.RESET}"
+        elif self.status == "cancelled":
+            out = f"{t.dim_style}Cancelled{ansi.RESET}"
         else:
-            line = f"{t.dim_style}W{ansi.RESET}"
-            target = self.query or self.url
-            if target:
-                line += f" {t.tag_style}{_short(target, 50)}{ansi.RESET}"
-            if self.result_count:
-                noun = "result" if self.result_count == 1 else "results"
-                line += f" {t.dim_style}· {self.result_count} {noun}{ansi.RESET}"
-            if self.status == "ok":
-                line += f" {t.task_completed_open}✓{ansi.RESET}"
-            elif self.status == "error":
-                line += f"{t.dim_style} ✗{ansi.RESET}"
-        return [ansi.clip_ellipsis(line, width)]
+            out = f"{t.dim_style}{'Searched web' if is_search else 'Fetched'}{ansi.RESET}"
+        target = self.query or self.url
+        if target:
+            out += f" {t.tag_style}{_short(target, 50)}{ansi.RESET}"
+        if self.status != "running" and self.result_count:
+            noun = "result" if self.result_count == 1 else "results"
+            out += f" {t.dim_style}· {self.result_count} {noun}{ansi.RESET}"
+        return out
 
 
 def _short(text: str, limit: int = 70) -> str:
