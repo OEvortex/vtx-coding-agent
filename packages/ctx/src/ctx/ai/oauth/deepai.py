@@ -20,6 +20,7 @@ import time
 import uuid
 from dataclasses import dataclass, field
 from pathlib import Path
+from typing import Any
 
 from ctx.core.paths import get_config_dir
 
@@ -66,9 +67,8 @@ def _detect_machine_raw() -> str:
     for path in ("/etc/machine-id", "/var/lib/dbus/machine-id"):
         try:
             raw = Path(path).read_text().strip().lower()
-            if len(raw) == 32 and all(c in "0123456789abcdef" for c in raw):
-                if raw != "0" * 32:
-                    return raw
+            if len(raw) == 32 and all(c in "0123456789abcdef" for c in raw) and raw != "0" * 32:
+                return raw
         except (OSError, ValueError):
             continue
     return ""
@@ -258,7 +258,9 @@ def build_headers(
     if instance_id is None:
         instance_id = os.urandom(16).hex()
 
-    machine_fp = creds.machine_uuid and machine_fingerprint(creds.machine_uuid) or creds.machine_id
+    machine_fp = (
+        creds.machine_uuid and machine_fingerprint(creds.machine_uuid)
+    ) or creds.machine_id
 
     headers: dict[str, str] = {
         "Content-Type": "application/json",
@@ -281,3 +283,108 @@ def build_headers(
     headers["X-DeepAI-Code-Beacon"] = f"v={APP_VERSION};up={uptime};pi=0"
 
     return headers
+
+
+# ── Model listing (called by the legacy model fetcher) ───────────────────────
+
+
+def list_deepai_models_sync() -> list[dict[str, Any]]:
+    """Fetch the model list from DeepAI Code using the proper lane headers.
+
+    Returns a list of dicts with ``id``, ``name``, ``context_length``,
+    ``max_tokens``, ``supports_images``, ``supports_thinking``, and ``is_free``.
+    The API returns ``contextWindow``, ``maxTokens``, ``reasoning``, ``input``
+    (list), ``premier`` (bool), and ``theosPerRequest`` (string cost).
+    A model is free when ``premier`` is ``False`` (and ``theosPerRequest == "0"``).
+    """
+    creds = load_deepai_credentials()
+    if creds is None:
+        return []
+
+    headers = build_headers(creds)
+    headers["Accept-Encoding"] = "identity"
+    url = f"{ORIGIN}{MODEL_BASE}/models"
+
+    try:
+        from urllib.request import Request, urlopen
+
+        request = Request(url, headers=headers)
+        with urlopen(request, timeout=10.0) as resp:
+            if resp.status >= 400:
+                return []
+            payload = json.loads(resp.read().decode("utf-8"))
+    except Exception:
+        return []
+
+    # DeepAI returns {"models": [...], "default": "..."}
+    raw_models: list[dict[str, Any]] = []
+    if isinstance(payload, dict):
+        val = payload.get("models")
+        if isinstance(val, list):
+            raw_models = [m for m in val if isinstance(m, dict)]
+    elif isinstance(payload, list):
+        raw_models = [m for m in payload if isinstance(m, dict)]
+
+    models: list[dict[str, Any]] = []
+    for m in raw_models:
+        model_id = str(m.get("id") or "")
+        if not model_id:
+            continue
+
+        input_mods = m.get("input") or []
+        if not isinstance(input_mods, list):
+            input_mods = []
+
+        premier = bool(m.get("premier", False))
+        theos = str(m.get("theosPerRequest", "1"))
+        is_free = not premier and theos == "0"
+
+        models.append(
+            {
+                "id": model_id,
+                "name": str(m.get("name") or model_id),
+                "max_tokens": int(m.get("maxTokens") or 0),
+                "context_length": int(m.get("contextWindow") or 0),
+                "supports_images": "image" in input_mods,
+                "supports_thinking": bool(m.get("reasoning", False)),
+                "is_free": is_free,
+            }
+        )
+    return models
+
+
+def register_deepai_model_limits() -> None:
+    """Register DeepAI model context limits with the ContextLengthManager.
+
+    Fetches models from the DeepAI API and registers each model's context
+    window and output limits so they override the generic models.dev catalog.
+    """
+    raw = list_deepai_models_sync()
+    if not raw:
+        return
+
+    from ctx.ai.context_length import TokenLimits, context_length_manager
+
+    for m in raw:
+        model_id = m.get("id")
+        if not model_id:
+            continue
+        context = int(m.get("context_length") or 0)
+        output = int(m.get("max_tokens") or 0)
+        supports_images = bool(m.get("supports_images", False))
+        supports_thinking = bool(m.get("supports_thinking", False))
+
+        limits = TokenLimits(
+            context=context,
+            output=output,
+            supports_reasoning=supports_thinking,
+            supports_vision=supports_images,
+            supports_tools=False,
+            supports_audio=False,
+        )
+        # Register under provider scope so get_limits("model_id", provider="deepai") finds it
+        context_length_manager._provider_limits.setdefault("deepai", {})[model_id] = limits
+        context_length_manager._provider_limits["deepai"][model_id.lower()] = limits
+        # Also register globally
+        context_length_manager._limits[model_id] = limits
+        context_length_manager._limits[model_id.lower()] = limits

@@ -426,6 +426,39 @@ def _entry_name(raw: dict[str, Any], model_id: str) -> str:
     return model_id
 
 
+def _normalize_deepai_models(raw_models: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """Transform DeepAI's API response to the standard format _parse_models expects.
+
+    DeepAI returns: contextWindow, maxTokens, reasoning, input (list),
+    premier (bool), theosPerRequest (string). This maps them to:
+    context_length, max_completion_tokens, supports_reasoning, modalities, etc.
+    """
+    normalized: list[dict[str, Any]] = []
+    for m in raw_models:
+        if not isinstance(m, dict):
+            continue
+        entry = dict(m)
+        # Map contextWindow -> context_length
+        if "contextWindow" in entry and "context_length" not in entry:
+            entry["context_length"] = entry.pop("contextWindow")
+        # Map maxTokens -> max_completion_tokens
+        if "maxTokens" in entry and "max_completion_tokens" not in entry:
+            entry["max_completion_tokens"] = entry.pop("maxTokens")
+        # Map reasoning -> supports_reasoning
+        if "reasoning" in entry and "supports_reasoning" not in entry:
+            entry["supports_reasoning"] = entry.pop("reasoning")
+        # Map input list -> modalities
+        if "input" in entry and isinstance(entry["input"], list):
+            entry["modalities"] = {"input": entry.pop("input")}
+        # Mark free models (premier=False and theosPerRequest=="0")
+        premier = bool(entry.get("premier", False))
+        theos = str(entry.get("theosPerRequest", "1"))
+        if not premier and theos == "0":
+            entry["is_free"] = True
+        normalized.append(entry)
+    return normalized
+
+
 def _is_free_model(
     name: str, prompt_cost: float, completion_cost: float, pricing_known: bool
 ) -> bool:
@@ -774,6 +807,13 @@ def _parse_models(
         if supports_images is None:
             supports_images = _supports_images(raw)
 
+        # If the provider already set is_free (e.g. DeepAI's premier field),
+        # respect it; otherwise fall back to the pricing/name heuristic.
+        if raw.get("is_free") is True:
+            is_free = True
+        else:
+            is_free = _is_free_model(name, prompt_cost, completion_cost, pricing_known)
+
         entry = DynamicModelEntry(
             id=model_id,
             name=name,
@@ -782,7 +822,7 @@ def _parse_models(
             supports_images=supports_images,
             supports_thinking=supports_thinking,
             thinking_level_map=thinking_level_map,
-            is_free=_is_free_model(name, prompt_cost, completion_cost, pricing_known),
+            is_free=is_free,
             pricing_known=pricing_known,
             hidden=raw.get("visibility") == "hide",
             raw=raw,
@@ -819,7 +859,20 @@ async def _async_fetch_catalog(
 
     headers = {"Accept": "application/json", **config.headers}
     if api_key:
-        headers["Authorization"] = f"Bearer {api_key}"
+        # DeepAI uses "Api-Key" instead of "Authorization: Bearer" and requires
+        # custom X-DeepAI-Code-* headers — build them here to keep the credential
+        # module as the single source of truth for the lane protocol.
+        if config.name == "deepai":
+            try:
+                from ctx.ai.oauth.deepai import DeepAICredentials, build_headers, get_machine_id
+
+                creds = DeepAICredentials(api_key=api_key, machine_id=get_machine_id())
+                headers = build_headers(creds)
+            except Exception:
+                # Fallback: use Api-Key header at minimum
+                headers["Api-Key"] = api_key
+        else:
+            headers["Authorization"] = f"Bearer {api_key}"
 
     base = config.base_url.rstrip("/")
     endpoint = config.models_endpoint or "/models"
@@ -916,12 +969,28 @@ async def _async_fetch_catalog(
             return cached
         raise RuntimeError(f"No models returned by {config.name} /models")
 
+    # DeepAI returns a non-standard format: contextWindow, maxTokens, reasoning,
+    # input (list), premier (bool), theosPerRequest (string). Normalize to the
+    # standard shape _parse_models expects.
+    if config.name == "deepai":
+        raw_models = _normalize_deepai_models(raw_models)
+
     if models_dev is None:
         models_dev = await _fetch_models_dev(client)
 
     catalog = CachedCatalog(
-        provider=config.name, fetched_at=time.time(), models=_parse_models(raw_models, models_dev)
+        provider=config.name,
+        fetched_at=time.time(),
+        models=_parse_models(raw_models, models_dev, provider=config.name),
     )
+    # Register DeepAI context limits so they override the generic models.dev catalog
+    if config.name == "deepai":
+        try:
+            from ctx.ai.oauth.deepai import register_deepai_model_limits
+
+            register_deepai_model_limits()
+        except Exception as exc:
+            logger.debug("Error registering deepai model limits: %s", exc)
     _write_cache(catalog)
     return catalog
 

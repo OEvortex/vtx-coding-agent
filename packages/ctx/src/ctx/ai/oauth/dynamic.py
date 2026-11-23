@@ -283,6 +283,19 @@ def get_dynamic_api_key(provider: str) -> str | None:
         except Exception:
             pass
 
+    if provider == "deepai":
+        try:
+            from ctx.ai.oauth.deepai import get_valid_deepai_token_sync, load_deepai_credentials
+
+            token = get_valid_deepai_token_sync()
+            if token:
+                return token
+            creds = load_deepai_credentials()
+            if creds is not None and creds.api_key:
+                return creds.api_key
+        except Exception:
+            pass
+
     return None
 
 
@@ -327,6 +340,13 @@ def _check_oauth_stored(provider: str) -> bool:
             from ctx.ai.oauth.junie import is_junie_logged_in
 
             return is_junie_logged_in()
+        except Exception:
+            return False
+    if provider == "deepai":
+        try:
+            from ctx.ai.oauth.deepai import is_deepai_logged_in
+
+            return is_deepai_logged_in()
         except Exception:
             return False
     return False

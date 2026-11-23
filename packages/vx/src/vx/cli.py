@@ -6,17 +6,30 @@ import argparse
 import os
 import sys
 
-from vx.brand import PROGRAM_NAME
+from vx.brand import PROGRAM_NAME, VERSION
+
+
+def validate_provider(parser: argparse.ArgumentParser, value: str) -> None:
+    """Check ``--provider`` post-parse, in argparse's own wording.
+
+    ``choices=`` cannot be used: argparse joins the whole choice list into the
+    help text (``_expand_help``), which pulled in the provider catalog (a ~330ms
+    YAML + aiohttp import) for ``--version`` and ``--help`` too. Validating here
+    means the catalog only loads when a provider is actually named.
+    """
+    from ctx.ai.provider_catalog import list_providers
+
+    slugs = sorted({p.slug for p in list_providers()})
+    if value not in slugs:
+        choices = "".join(f"'{s}', " for s in slugs).rstrip(", ")
+        parser.error(f"argument --provider: invalid choice: {value!r} (choose from {choices})")
 
 
 def build_parser() -> argparse.ArgumentParser:
-    # Deferred: provider catalog pulls the ai provider graph.
-    from ctx.ai.provider_catalog import list_providers
-
     parser = argparse.ArgumentParser(prog=PROGRAM_NAME, description="vx")
     parser.add_argument("--model", "-m", help="Model to use")
     parser.add_argument(
-        "--provider", choices=sorted(p.slug for p in list_providers()), help="Provider to use"
+        "--provider", metavar="PROVIDER", help="Provider to use (see `ctx providers list`)"
     )
     parser.add_argument(
         "--prompt",
@@ -105,20 +118,40 @@ def build_parser() -> argparse.ArgumentParser:
         metavar="PATH",
         help="Apply a plugin patch layer after the profile's own layer (repeatable)",
     )
-    parser.add_argument("--version", action="version", version=f"{PROGRAM_NAME} 0.1.0")
+    parser.add_argument("--version", action="version", version=f"{PROGRAM_NAME} {VERSION}")
     return parser
 
 
 def main() -> None:
+    argv = sys.argv[1:]
+    # argparse's version action needs the parser; printing the bundled string
+    # first keeps `vx --version` free of every ctx import.
+    if argv and all(arg in ("--version", "-V") for arg in argv):
+        print(f"{PROGRAM_NAME} {VERSION}")
+        return
+
     parser = build_parser()
-    args = parser.parse_args()
+    args = parser.parse_args(argv)
+    if args.provider:
+        validate_provider(parser, args.provider)
 
     if args.prompt is not None and (args.continue_recent or args.resume_session):
         parser.error("-c/--continue and -r/--resume are not supported with -p/--prompt")
 
+    if args.prompt is not None:
+        raise SystemExit(_run_headless(args))
+    raise SystemExit(_run_tui(args))
+
+
+class BootError(RuntimeError):
+    """Startup failed before the UI took over; the caller prints it."""
+
+
+def _boot(argv_args: argparse.Namespace, *, cwd: str) -> None:
+    """Load the ctx plugin graph. Everything here costs a few hundred ms."""
     from ctx.core.config import config
 
-    if args.insecure_skip_verify:
+    if argv_args.insecure_skip_verify:
         config.llm.tls.insecure_skip_verify = True
 
     # Importing ctx.code registers the coding tool rows and the base prompt.
@@ -127,67 +160,97 @@ def main() -> None:
 
     try:
         boot_plugins(
-            args.profile,
-            args.plugin_patches,
-            cwd=os.getcwd(),
+            argv_args.profile,
+            argv_args.plugin_patches,
+            cwd=cwd,
             extension_paths=[
                 *config.extensions,
-                *list(getattr(args, "extension_paths", None) or []),
+                *list(getattr(argv_args, "extension_paths", None) or []),
             ],
-            auto_discover_extensions=not getattr(args, "no_extensions", False),
+            auto_discover_extensions=not getattr(argv_args, "no_extensions", False),
         )
     except Exception as exc:
-        print(f"{PROGRAM_NAME}: plugin composition failed: {exc}", file=sys.stderr)
-        raise SystemExit(1) from exc
+        raise BootError(f"plugin composition failed: {exc}") from exc
 
-    if args.prompt is not None:
-        from ctx.code.headless import run_headless
-        from ctx.plugins.extensions import load_for_runtime
 
-        loaded = load_for_runtime(
-            cwd=os.getcwd(),
-            extra_paths=[*config.extensions, *args.extension_paths],
-            auto_discover=not args.no_extensions,
-        )
-        for err in loaded.errors:
-            print(f"extension error: {err}", file=sys.stderr)
-
-        import asyncio
-
-        raise SystemExit(
-            asyncio.run(
-                run_headless(
-                    prompt_arg=args.prompt,
-                    model=args.model,
-                    provider=args.provider,
-                    api_key=args.api_key,
-                    base_url=args.base_url,
-                    openai_compat_auth_mode=args.openai_compat_auth,
-                    anthropic_compat_auth_mode=args.anthropic_compat_auth,
-                    loaded_extensions=loaded,
-                    active_agent_name=args.agent,
-                    agent_files=args.agent_files,
-                    auto_discover_agents=not args.no_agents,
-                )
-            )
-        )
-
+def _run_headless(args: argparse.Namespace) -> int:
     import asyncio
 
-    from vx.app import VxApp
+    cwd = os.getcwd()
+    try:
+        _boot(args, cwd=cwd)
+    except BootError as exc:
+        print(f"{PROGRAM_NAME}: {exc}", file=sys.stderr)
+        return 1
 
-    app = VxApp(
-        cwd=os.getcwd(),
-        model=args.model,
-        provider=args.provider,
-        api_key=args.api_key,
-        base_url=args.base_url,
-        resume_session=args.resume_session,
-        continue_recent=args.continue_recent,
-        openai_compat_auth_mode=args.openai_compat_auth,
-        anthropic_compat_auth_mode=args.anthropic_compat_auth,
+    from ctx.code.headless import run_headless
+    from ctx.core.config import config
+    from ctx.plugins.extensions import load_for_runtime
+
+    loaded = load_for_runtime(
+        cwd=cwd,
+        extra_paths=[*config.extensions, *args.extension_paths],
+        auto_discover=not args.no_extensions,
     )
-    raise SystemExit(asyncio.run(app.run()))
+    for err in loaded.errors:
+        print(f"extension error: {err}", file=sys.stderr)
+
+    return asyncio.run(
+        run_headless(
+            prompt_arg=args.prompt,
+            model=args.model,
+            provider=args.provider,
+            api_key=args.api_key,
+            base_url=args.base_url,
+            openai_compat_auth_mode=args.openai_compat_auth,
+            anthropic_compat_auth_mode=args.anthropic_compat_auth,
+            loaded_extensions=loaded,
+            active_agent_name=args.agent,
+            agent_files=args.agent_files,
+            auto_discover_agents=not args.no_agents,
+        )
+    )
+
+
+def _run_tui(args: argparse.Namespace) -> int:
+    import asyncio
+
+    cwd = os.getcwd()
+
+    # Paint the shell before ctx loads, so the terminal is never blank.
+    from vx.tui import splash
+    from vx.tui.terminal import Terminal
+
+    term = Terminal()
+    term.enter()
+    try:
+        painter = splash.paint(term, cwd=cwd)
+        _boot(args, cwd=cwd)
+
+        from vx.app import VxApp
+
+        app = VxApp(
+            cwd=cwd,
+            model=args.model,
+            provider=args.provider,
+            api_key=args.api_key,
+            base_url=args.base_url,
+            resume_session=args.resume_session,
+            continue_recent=args.continue_recent,
+            openai_compat_auth_mode=args.openai_compat_auth,
+            anthropic_compat_auth_mode=args.anthropic_compat_auth,
+            terminal=term,
+            painter=painter,
+        )
+    except BootError as exc:
+        # The message belongs on the normal screen, not the alternate one.
+        term.exit()
+        print(f"{PROGRAM_NAME}: {exc}", file=sys.stderr)
+        return 1
+    except BaseException:
+        term.exit()
+        raise
+    return asyncio.run(app.run())
 
 
 if __name__ == "__main__":

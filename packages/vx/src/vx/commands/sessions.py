@@ -1,0 +1,559 @@
+"""Session lifecycle: /new, /clear, /resume, /tree, /session, /handoff,
+/compact, /export, /copy, /undo, /redo, /usage and /recap."""
+
+from __future__ import annotations
+
+import asyncio
+import contextlib
+from datetime import UTC, datetime
+from pathlib import Path
+from typing import Any
+
+from ctx.agent.session import Session, SessionInfo
+
+from vx.commands.base import CommandSupport
+from vx.tui import blocks, footer
+
+#: How many tree nodes the picker offers; a long session is a deep list.
+TREE_ROWS = 200
+
+
+class SessionCommands(CommandSupport):
+    # -- /clear and /new -------------------------------------------------
+
+    def _reset_codemode_store(self) -> None:
+        """Drop codemode's per-conversation store so stale values cannot leak."""
+        for tool in getattr(self.runtime, "tools", []) or []:
+            clear = getattr(tool, "clear_store", None)
+            if callable(clear):
+                with contextlib.suppress(Exception):
+                    clear()
+
+    def _handle_clear_command(self) -> None:
+        rt = self.runtime
+        if rt is not None and rt.session is not None:
+            rt.new_session()
+            self._reset_codemode_store()
+        self.viewport.clear()
+        self._welcome()
+        self._ok("conversation cleared")
+
+    def _handle_new_command(self) -> None:
+        rt = self.runtime
+        if rt is None:
+            self._warn("the runtime is still starting")
+            return
+        rt.new_session()
+        self._reset_codemode_store()
+        with contextlib.suppress(Exception):
+            rt.reload_context()
+        self.viewport.clear()
+        self._welcome()
+        self._ok("started a new conversation")
+
+    # -- /resume ---------------------------------------------------------
+
+    def _session_age(self, modified: datetime) -> str:
+        now = datetime.now(UTC)
+        seconds = max(0, int((now - modified).total_seconds()))
+        minutes, hours, days = seconds // 60, seconds // 3600, seconds // 86400
+        if minutes < 60:
+            value, unit = minutes, "m"
+        elif hours < 24:
+            value, unit = hours, "h"
+        elif days < 7:
+            value, unit = days, "d"
+        elif days < 365:
+            value, unit = days // 7, "w"
+        else:
+            value, unit = days // 365, "y"
+        return f"{value:>2}{unit}"
+
+    def _resume_items(self) -> list[footer.MenuItem]:
+        sessions = Session.list(self.cwd)
+        by_id: dict[str, SessionInfo] = {s.id: s for s in sessions}
+        children: dict[str, list[SessionInfo]] = {}
+        roots: list[SessionInfo] = []
+        for session in sessions:
+            parent = session.parent_session_id
+            if parent and parent in by_id:
+                children.setdefault(parent, []).append(session)
+            else:
+                roots.append(session)
+        for kids in children.values():
+            kids.sort(key=lambda s: s.modified, reverse=True)
+
+        items: list[footer.MenuItem] = []
+
+        def walk(node: SessionInfo, depth: int) -> None:
+            indent = "   " * (depth - 1) + "└ [handoff] " if depth else ""
+            label = " ".join((node.first_message or "(empty session)").split())
+            items.append(
+                footer.MenuItem(
+                    label=f"{indent}{label}",
+                    detail=f"{node.message_count} messages",
+                    metadata=self._session_age(node.modified),
+                    value=node.id,
+                )
+            )
+            for child in children.get(node.id, []):
+                walk(child, depth + 1)
+
+        for root in roots:
+            walk(root, 0)
+        return items
+
+    def _handle_resume_command(self) -> None:
+        if not self._require_idle("switch sessions"):
+            return
+        items = self._resume_items()
+        if not items:
+            self._warn("no saved sessions found")
+            return
+        self._open_menu(items, noun="Sessions", on_select=self._on_resume_pick, filterable=True)
+
+    def _on_resume_pick(self, item: footer.MenuItem) -> None:
+        self._spawn(self._load_session_by_id(item.value or ""))
+
+    async def _load_session_by_id(self, session_id: str) -> None:
+        rt = self.runtime
+        if rt is None or not session_id:
+            return
+        try:
+            session = Session.continue_by_id(self.cwd, session_id)
+        except Exception as exc:
+            self._fail(f"failed to load session: {exc}")
+            return
+        if session.session_file is None:
+            self._fail("failed to load session: missing session file")
+            return
+        await self._load_session(session.session_file)
+
+    async def _load_session(self, session_path: Path | str) -> None:
+        rt = self.runtime
+        if rt is None:
+            return
+        try:
+            session = rt.load_session(session_path)
+        except Exception as exc:
+            self._fail(f"failed to load session: {exc}")
+            return
+        self.viewport.clear()
+        self._welcome()
+        self._render_session_history()
+        self._refresh_stats(force=True)
+        self._ok(f"resumed {session.id[:8]}")
+
+    # -- /tree -----------------------------------------------------------
+
+    def _tree_items(self) -> list[footer.MenuItem]:
+        rt = self.runtime
+        if rt is None or rt.session is None:
+            return []
+        items: list[footer.MenuItem] = []
+        for node in rt.session.get_tree():
+            entry = node.entry
+            text = ""
+            message = getattr(entry, "message", None)
+            content = getattr(message, "content", None)
+            if isinstance(content, str):
+                text = content
+            elif message is not None:
+                text = "".join(
+                    getattr(part, "text", "") for part in (content or []) if hasattr(part, "text")
+                )
+            if not text:
+                text = getattr(entry, "content", "") or getattr(entry, "summary", "") or ""
+            label = " ".join(str(text).split())[:80] or f"({type(entry).__name__})"
+            items.append(
+                footer.MenuItem(
+                    label=label,
+                    metadata=type(entry).__name__.replace("Entry", "").lower(),
+                    value=entry.id,
+                )
+            )
+        return items[:TREE_ROWS]
+
+    def _handle_tree_command(self) -> None:
+        if not self._require_idle("open the tree"):
+            return
+        rt = self.runtime
+        if rt is None or rt.session is None or not rt.session.all_entries:
+            self._warn("this session has no entries yet")
+            return
+        items = self._tree_items()
+        if not items:
+            self._warn("no entries in this session")
+            return
+        index = next(
+            (i for i, item in enumerate(items) if item.value == rt.session.leaf_id), len(items) - 1
+        )
+        self._open_menu(
+            items,
+            noun="Conversation tree",
+            on_select=self._on_tree_pick,
+            selected=max(0, index),
+            filterable=True,
+        )
+
+    def _on_tree_pick(self, item: footer.MenuItem) -> None:
+        rt = self.runtime
+        if rt is None or not item.value:
+            return
+        try:
+            result = rt.navigate_tree(item.value)
+        except Exception as exc:
+            self._fail(f"tree navigation failed: {exc}")
+            return
+        self.viewport.clear()
+        self._welcome()
+        self._render_session_history()
+        self._refresh_stats(force=True)
+        if result.editor_text:
+            self._input = result.editor_text
+            self._cursor = len(self._input)
+        self._ok("moved to that point in the conversation")
+
+    # -- /session --------------------------------------------------------
+
+    def _handle_session_command(self) -> None:
+        rt = self.runtime
+        session = rt.session if rt else None
+        if session is None:
+            self._warn("no active session")
+            return
+        path = session.session_file
+        counts = session.message_counts()
+        totals = session.token_totals()
+        model = " · ".join(part for part in (session.model or ()) if part) or "-"
+        rows = [
+            ("id", session.id),
+            ("file", path.name if path else "(in-memory session)"),
+            ("dir", str(path.parent) if path else "-"),
+            ("model", model),
+            ("messages", f"{counts.total_messages} total"),
+            ("user", str(counts.user_messages)),
+            ("assistant", str(counts.assistant_messages)),
+            ("tool calls", str(counts.tool_calls)),
+            ("tool results", str(counts.tool_results)),
+            ("input", f"{totals.input_tokens:,} tokens"),
+            ("output", f"{totals.output_tokens:,} tokens"),
+            ("cache", f"{totals.cache_read_tokens:,} read · {totals.cache_write_tokens:,} write"),
+            ("context", f"{totals.context_tokens:,} tokens"),
+        ]
+        self._report("Session", [("details", rows)])
+
+    # -- /usage ----------------------------------------------------------
+
+    def _handle_usage_command(self) -> None:
+        self._spawn(self._show_usage())
+
+    async def _show_usage(self) -> None:
+        from ctx.term.usage_stats import aggregate_usage
+
+        self._notice("reading session history…", topic="usage")
+        try:
+            report = await asyncio.to_thread(aggregate_usage)
+        except Exception as exc:
+            self._fail(f"could not read usage: {exc}", topic="usage")
+            return
+
+        session_rows: list[tuple[str, str]] = []
+        rt = self.runtime
+        if rt is not None and rt.session is not None:
+            totals = rt.session.token_totals()
+            counts = rt.session.message_counts()
+            session_rows = [
+                ("turns", str(counts.assistant_messages)),
+                ("input", f"{totals.input_tokens:,}"),
+                ("output", f"{totals.output_tokens:,}"),
+                (
+                    "cache",
+                    f"{totals.cache_read_tokens:,} read · {totals.cache_write_tokens:,} write",
+                ),
+                ("context", f"{totals.context_tokens:,}"),
+            ]
+
+        sections: list[tuple[str, list[tuple[str, str]]]] = []
+        if session_rows:
+            sections.append(("this session", session_rows))
+        today = _today_rows(report)
+        if today:
+            sections.append(("today", today))
+        last_30 = _usage_rows(getattr(report, "last_30_days", None))
+        if last_30:
+            sections.append(("last 30 days", last_30))
+        lifetime = _usage_rows(getattr(report, "lifetime", None))
+        if lifetime:
+            sections.append(("all time", lifetime))
+        if not sections:
+            self._warn("no usage recorded yet", topic="usage")
+            return
+        scanned = getattr(report, "sessions_scanned", 0)
+        self._report(
+            "Token usage",
+            sections,
+            detail=f"aggregated from {scanned} session log(s) in this workspace",
+        )
+
+    # -- /compact --------------------------------------------------------
+
+    def _handle_compact_command(self, args: str) -> None:
+        rt = self.runtime
+        if rt is None or rt.session is None or not rt.session.all_messages:
+            self._warn("no conversation to compact")
+            return
+        if not self._require_idle("compact"):
+            return
+        self._notice("compacting the context window…", topic="compact")
+        self._spawn(self._do_compact(args.strip()))
+
+    async def _do_compact(self, instructions: str) -> None:
+        rt = self.runtime
+        if rt is None or rt.session is None:
+            return
+        try:
+            result = await rt.compact_now(instructions or None)
+        except Exception as exc:
+            self._fail(f"compaction failed: {exc}", topic="compact")
+            return
+        self._ok(
+            f"compacted {result.tokens_before:,} → {result.tokens_after:,} tokens", topic="compact"
+        )
+        if result.summary:
+            self._notice(result.summary, topic="summary")
+        self._refresh_stats(force=True)
+
+    # -- /export and /copy -----------------------------------------------
+
+    def _handle_export_command(self) -> None:
+        rt = self.runtime
+        session = rt.session if rt else None
+        if session is None:
+            self._warn("no active session to export")
+            return
+        if not session.entries:
+            self._warn("this session has no messages to export")
+            return
+        try:
+            from ctx.term.export import export_session_html
+
+            from vx.brand import VERSION
+
+            path = export_session_html(
+                cwd=self.cwd, session_id=session.id, output_dir=self.cwd, version=VERSION
+            )
+        except Exception as exc:
+            self._fail(f"export failed: {exc}")
+            return
+        self._ok(f"session exported to {path.name}", topic="export")
+
+    def _handle_copy_command(self) -> None:
+        rt = self.runtime
+        session = rt.session if rt else None
+        text = session.get_last_assistant_text() if session is not None else None
+        if not text:
+            self._fail("no agent messages to copy yet")
+            return
+        try:
+            from ctx.term.clipboard import copy_to_clipboard
+
+            copy_to_clipboard(text)
+        except Exception as exc:
+            self._fail(f"could not copy: {exc}")
+            return
+        self._ok(f"copied the last answer ({len(text):,} chars) to the clipboard")
+
+    # -- /undo and /redo -------------------------------------------------
+
+    def _handle_undo_command(self) -> None:
+        from ctx.agent import revert as rv
+
+        rt = self.runtime
+        if rt is None or rt.session is None:
+            self._fail("no active session")
+            return
+        if not self._require_idle("undo"):
+            return
+        target = rv.previous_boundary(rt.session)
+        if target is None:
+            self._warn("nothing left to undo")
+            return
+        try:
+            state = rv.stage(rt.session, target, cwd=self.cwd)
+        except rv.RevertError as exc:
+            self._fail(str(exc))
+            return
+        self._render_revert_state(state)
+        self.viewport.clear()
+        self._welcome()
+        self._render_session_history()
+        self._refresh_stats(force=True)
+
+    def _handle_redo_command(self) -> None:
+        from ctx.agent import revert as rv
+
+        rt = self.runtime
+        if rt is None or rt.session is None:
+            self._fail("no active session")
+            return
+        if not self._require_idle("redo"):
+            return
+        if rv.current_state(rt.session) is None:
+            self._warn("nothing to redo — no revert is in effect")
+            return
+        target = rv.next_boundary(rt.session)
+        if target is None:
+            changed = rv.unrevert(rt.session, cwd=self.cwd)
+            detail = f", {changed} files restored" if changed else ""
+            self._ok(f"redone — back at the newest turn{detail}")
+            return
+        try:
+            state = rv.stage(rt.session, target, cwd=self.cwd)
+        except rv.RevertError as exc:
+            self._fail(str(exc))
+            return
+        self._render_revert_state(state)
+        self.viewport.clear()
+        self._welcome()
+        self._render_session_history()
+        self._refresh_stats(force=True)
+
+    def _render_revert_state(self, state: Any) -> None:
+        from ctx.agent import revert
+
+        self._notice(revert.describe(state), topic="rewound", tone="information")
+        files = getattr(state, "files", []) or []
+        if files:
+            rows = []
+            for diff in files[:8]:
+                mark = {"added": "A", "deleted": "D"}.get(diff.status, "M")
+                delta = (
+                    f"+{diff.additions} -{diff.deletions}"
+                    if (diff.additions or diff.deletions)
+                    else ""
+                )
+                rows.append((diff.path, f"{mark} {delta}".strip()))
+            self._report(
+                "Files restored",
+                [("changed", rows)],
+                detail="/redo to step forward again"
+                if len(files) <= 8
+                else f"… {len(files) - 8} more; /redo to step forward",
+            )
+        else:
+            self._notice("/redo to step forward again", topic="rewound")
+
+    # -- /handoff --------------------------------------------------------
+
+    def _handle_handoff_command(self, args: str) -> None:
+        rt = self.runtime
+        query = args.strip()
+        if rt is None:
+            self._warn("the runtime is still starting")
+            return
+        if not self._require_idle("hand off"):
+            return
+        if not query:
+            self._fail("usage: /handoff <query>. example: /handoff implement phase two")
+            return
+        if rt.session is None or not rt.session.all_messages:
+            self._fail("no conversation to hand off")
+            return
+        self._notice("creating handoff…", topic="handoff")
+        self._spawn(self._do_handoff(query))
+
+    async def _do_handoff(self, query: str) -> None:
+        rt = self.runtime
+        if rt is None:
+            return
+        try:
+            result = await rt.create_handoff(query)
+        except Exception as exc:
+            self._fail(f"handoff failed: {exc}", topic="handoff")
+            return
+        self.viewport.clear()
+        self._welcome()
+        self._render_session_history()
+        self._input = result.prompt
+        self._cursor = len(self._input)
+        self._ok("handoff ready — press enter to send", topic="handoff")
+
+    # -- /recap ----------------------------------------------------------
+
+    def _handle_recap_command(self) -> None:
+        rt = self.runtime
+        if rt is None or rt.session is None or not rt.session.all_messages:
+            self._warn("nothing to recap yet")
+            return
+        if not self._require_idle("draft a recap"):
+            return
+        self._spawn(self._do_recap())
+
+    async def _do_recap(self) -> None:
+        rt = self.runtime
+        if rt is None:
+            return
+        try:
+            recap = getattr(rt, "generate_recap", None)
+            if callable(recap):
+                text = await recap()
+            else:
+                text = _local_recap(rt.session)
+        except Exception as exc:
+            self._fail(f"recap failed: {exc}", topic="recap")
+            return
+        if not text:
+            self._warn("could not draft a recap", topic="recap")
+            return
+        self.viewport.add(blocks.Assistant(text=text))
+
+
+def _local_recap(session: Session | None) -> str:
+    """A recap without another model call: what was asked and what was done."""
+    if session is None:
+        return ""
+    counts = session.message_counts()
+    lines = [
+        f"This session has {counts.user_messages} prompts, "
+        f"{counts.assistant_messages} replies and {counts.tool_calls} tool calls."
+    ]
+    prompts: list[str] = []
+    for message in session.messages:
+        content = getattr(message, "content", None)
+        if isinstance(content, str) and getattr(message, "role", "") == "user":
+            prompts.append(" ".join(content.split())[:120])
+    for prompt in prompts[-4:]:
+        lines.append(f"- {prompt}")
+    return "\n\n".join(lines)
+
+
+def _usage_rows(usage: Any) -> list[tuple[str, str]]:
+    """One period's token counts, formatted for the report block."""
+    if usage is None:
+        return []
+    total = getattr(usage, "total_tokens", 0) or 0
+    return [
+        ("turns", f"{getattr(usage, 'turns', 0):,}"),
+        ("input", f"{getattr(usage, 'input_tokens', 0):,}"),
+        ("output", f"{getattr(usage, 'output_tokens', 0):,}"),
+        (
+            "cache",
+            f"{getattr(usage, 'cache_read_tokens', 0):,} read · "
+            f"{getattr(usage, 'cache_write_tokens', 0):,} write",
+        ),
+        ("total", f"{total:,}"),
+    ]
+
+
+def _today_rows(report: Any) -> list[tuple[str, str]]:
+    """Today's bucket out of the per-day map ctx's report carries."""
+    days = getattr(report, "days", None)
+    as_of = getattr(report, "as_of", None)
+    if not isinstance(days, dict):
+        return []
+    if as_of is not None and as_of in days:
+        return _usage_rows(days[as_of])
+    if not days:
+        return []
+    return _usage_rows(days[max(days)])

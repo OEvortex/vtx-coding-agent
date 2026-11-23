@@ -9,6 +9,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 
+from vx.brand import ITALIC_BRAND
 from vx.tui import ansi, markdown
 from vx.tui import theme as _theme
 
@@ -86,10 +87,9 @@ class Welcome(Block):
 
     def rows(self, width: int) -> list[str]:
         t = _theme.current()
-        brand = "vx"
         label = f"v{self.version}" if self.version else ""
         rows = ansi.wrap(
-            f"{t.subtitle_style}{brand}{ansi.RESET}"
+            f"{t.subtitle_style}{ITALIC_BRAND}{ansi.RESET}"
             f"{t.dim_style} {label} · Run /help for commands{ansi.RESET}",
             width,
         )
@@ -283,6 +283,48 @@ class DiffSummary(Block):
         noun = "file" if self.files == 1 else "files"
         text = f"± {self.files} {noun} +{self.added} -{self.removed}"
         return [f"{t.dim_style}{ansi.clip(text, width)}{ansi.RESET}"]
+
+
+@dataclass
+class Sections(Block):
+    """A titled report: sections of ``label / detail`` rows, as fx prints them."""
+
+    title: str = ""
+    sections: list[tuple[str, list[tuple[str, str]]]] = field(default_factory=list)
+    detail: str = ""
+    kind: str = "notice"
+
+    def rows(self, width: int) -> list[str]:
+        t = _theme.current()
+        out: list[str] = []
+        if self.title:
+            out.append(
+                f"{t.system_notice_label_style}"
+                f"{ansi.clip_ellipsis(self.title, max(1, width - 2))}{ansi.RESET}"
+            )
+        for name, rows in self.sections:
+            if out:
+                out.append("")
+            out.append(f"{t.dim_style}  {ansi.clip_ellipsis(name, max(1, width - 2))}{ansi.RESET}")
+            label_width = max((ansi.width(label) for label, _ in rows), default=0)
+            label_col = min(label_width + 2, max(12, width // 2))
+            for label, row_detail in rows:
+                row = f"    {ansi.clip_ellipsis(label, max(1, label_col - 2))}"
+                if row_detail:
+                    row = ansi.pad(row, 4 + label_col)
+                    row += (
+                        f"{t.dim_style}"
+                        f"{ansi.clip_ellipsis(row_detail, max(1, width - 4 - label_col))}"
+                        f"{ansi.RESET}"
+                    )
+                out.append(row)
+        if self.detail:
+            if out:
+                out.append("")
+            out.append(
+                f"{t.dim_style}  {ansi.clip_ellipsis(self.detail, max(1, width - 2))}{ansi.RESET}"
+            )
+        return out
 
 
 def spacing(previous: str | None, kind: str) -> int:

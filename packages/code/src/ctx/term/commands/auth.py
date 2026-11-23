@@ -27,6 +27,7 @@ from ctx.ai import (
     clear_cline_credentials,
     clear_codex_credentials,
     clear_copilot_credentials,
+    clear_deepai_credentials,
     clear_junie_credentials,
     cline_login,
     codex_login,
@@ -37,13 +38,16 @@ from ctx.ai import (
     get_provider_status,
     get_valid_cline_credentials,
     get_valid_codex_credentials,
+    get_valid_deepai_token_sync,
     junie_login,
     list_providers,
     save_api_key,
+    save_deepai_credentials,
 )
 from ctx.ai import is_cline_logged_in as has_saved_cline_credentials
 from ctx.ai import is_codex_logged_in as has_saved_codex_credentials
 from ctx.ai import is_copilot_logged_in as has_saved_copilot_credentials
+from ctx.ai import is_deepai_logged_in as has_saved_deepai_credentials
 from ctx.ai import is_devin_logged_in as has_saved_devin_credentials
 from ctx.ai import is_junie_logged_in as has_saved_junie_credentials
 from ctx.term.chat import ChatLog
@@ -74,6 +78,7 @@ def _oauth_login_providers() -> list[tuple[str, str, bool]]:
         ("codex", "OpenAI Codex", has_saved_codex_credentials()),
         ("cline", "Cline (WorkOS)", has_saved_cline_credentials()),
         ("devin", "Devin", has_saved_devin_credentials()),
+        ("deepai", "DeepAI", has_saved_deepai_credentials()),
         ("junie", "Junie (JetBrains)", has_saved_junie_credentials()),
     ]
 
@@ -156,6 +161,10 @@ class AuthCommands(CommandSupport):
 
         if provider_id == "junie":
             self.run_worker(self._junie_login_flow(), exclusive=False)
+            return
+
+        if provider_id == "deepai":
+            self.run_worker(self._deepai_login_flow(), exclusive=False)
             return
 
     def _select_apikey_provider(self, provider_id: str) -> None:
@@ -263,7 +272,13 @@ class AuthCommands(CommandSupport):
             return
 
         try:
-            save_api_key(provider_id, key)
+            if provider_id == "deepai":
+                from ctx.ai.oauth.deepai import DeepAICredentials, get_machine_id
+
+                creds = DeepAICredentials(api_key=key, machine_id=get_machine_id())
+                save_deepai_credentials(creds)
+            else:
+                save_api_key(provider_id, key)
         except ValueError as exc:
             chat.add_info_message(str(exc), error=True)
             return
@@ -499,6 +514,36 @@ class AuthCommands(CommandSupport):
         except Exception as e:
             chat.add_info_message(f"Login failed: {e}", error=True)
 
+    async def _deepai_login_flow(self) -> None:
+        from ctx.ai.oauth.deepai import DeepAICredentials, load_deepai_credentials
+
+        chat = self.query_one("#chat-log", ChatLog)
+        try:
+            if has_saved_deepai_credentials():
+                chat.add_info_message("Already logged in to DeepAI")
+                return
+
+            # Check for native DeepAI desktop app credentials
+            native = load_deepai_credentials()
+            if native:
+                chat.add_info_message(
+                    "Found existing DeepAI credentials, importing them. Use /logout to clear."
+                )
+                return
+
+            chat.add_info_message(
+                "DeepAI uses API key authentication.\n"
+                "Enter your DeepAI API key below (or set DEEPAI_API_KEY env var)."
+            )
+
+            input_box = self.query_one("#input-box", InputBox)
+            input_box.set_placeholder("Paste DeepAI API key (or /cancel)")
+            self._selection_mode = SelectionMode.API_KEY
+            self._pending_api_key_provider = "deepai"
+            input_box.focus()
+        except Exception as e:
+            chat.add_info_message(f"Login failed: {e}", error=True)
+
     def _handle_logout_command(self, args: str) -> None:
         items: list[ListItem] = []
 
@@ -510,6 +555,8 @@ class AuthCommands(CommandSupport):
             items.append(ListItem(value="cline", label="Cline (WorkOS)", description=""))
         if has_saved_devin_credentials():
             items.append(ListItem(value="devin", label="Devin", description=""))
+        if has_saved_deepai_credentials():
+            items.append(ListItem(value="deepai", label="DeepAI", description=""))
         if has_saved_junie_credentials():
             items.append(ListItem(value="junie", label="Junie (JetBrains)", description=""))
 
@@ -548,6 +595,11 @@ class AuthCommands(CommandSupport):
         if provider_id == "junie":
             clear_junie_credentials()
             chat.add_info_message("Logged out of Junie")
+            return
+
+        if provider_id == "deepai":
+            clear_deepai_credentials()
+            chat.add_info_message("Logged out of DeepAI")
             return
 
         if get_provider_info(provider_id) is not None:

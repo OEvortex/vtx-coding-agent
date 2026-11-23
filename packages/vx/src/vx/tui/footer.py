@@ -64,8 +64,13 @@ def cursor_visual(text: str, cursor: int, cols: int) -> tuple[int, int]:
     return len(rows) - 1, 2 + ansi.width(text[last_start:cursor])
 
 
-def composer_rows(text: str, cursor: int, cols: int, max_rows: int) -> tuple[list[str], int, int]:
+def composer_rows(
+    text: str, cursor: int, cols: int, max_rows: int, *, secret: bool = False
+) -> tuple[list[str], int, int]:
     """Styled composer rows plus the caret's (row, column) inside them."""
+    if secret:
+        # A pasted API key must not echo; the caret still sits after the mask.
+        text = "•" * len(text)
     rows = wrap_input(text, cols)
     cur_row, cur_col = cursor_visual(text, cursor, cols)
     visible = max(1, max_rows)
@@ -118,7 +123,9 @@ def hint_row(
     right: str = "",
 ) -> str:
     t = _theme.current()
-    segments: list[str] = [permission_label(permission)]
+    segments: list[str] = []
+    if permission:
+        segments.append(permission_label(permission))
     if model:
         segments.append(compact_model(model))
     if effort and effort != "auto":
@@ -139,7 +146,7 @@ def hint_row(
         room = left_budget - ansi.width(left) - len(SEPARATOR)
         if room >= 4:
             identity = _fit_identity(workspace, branch, room)
-            left = f"{left}{SEPARATOR}{identity}"
+            left = f"{left}{SEPARATOR}{identity}" if left else identity
     left_text = ansi.clip_ellipsis(left, max(0, left_budget))
     row = f"{t.statusline_style}{left_text}{ansi.RESET}"
     if right:
@@ -193,56 +200,150 @@ def activity_note(label: str, started: float, now: float, queued: int = 0) -> st
 
 @dataclass
 class MenuItem:
+    """One picker row: label, description, and the metadata column label."""
+
     label: str
     detail: str = ""
-    annotation: str = ""
+    metadata: str = ""
+    #: What a picker callback sees; defaults to the label when unset.
+    value: str = ""
+
+
+#: fx shows at most six inline picker rows (``list_window.default_max_picker_rows``).
+MENU_MAX_ROWS = 6
+MENU_LABEL_GAP = 3
+MENU_MIN_DESCRIPTION = 24
+
+
+def menu_window(count: int, selected: int, max_rows: int) -> tuple[int, int]:
+    """(start, end) of the visible window, scrolled in fx's edge style."""
+    rows = max(1, min(max_rows, count))
+    start = max(0, min(selected - rows + 1, count - rows))
+    return start, start + rows
+
+
+def menu_header(
+    *, noun: str, count: int, start: int, end: int, cols: int, type_hint: bool = False
+) -> str:
+    """fx's ``Results N`` header with the window range pushed right."""
+    t = _theme.current()
+    content_width = max(1, cols - 1)
+    left = f"{noun} {count}"
+    if type_hint:
+        left += " · type to filter"
+    right = f"{start + 1}\u2013{end}" if end - start < count else ""
+    right_width = ansi.width(right)
+    if right_width and content_width > right_width + 2:
+        left_budget = content_width - right_width - 2
+        row = ansi.pad(
+            f"{t.dim_style}{ansi.clip_ellipsis(left, left_budget)}{ansi.RESET}",
+            content_width - right_width,
+        )
+        return row + f"{t.dim_style}{right}{ansi.RESET}"
+    return f"{t.dim_style}{ansi.clip_ellipsis(left, content_width)}{ansi.RESET}"
 
 
 def menu_rows(
-    *, cols: int, items: list[MenuItem], selected: int, header: str = "", window: int = 10
+    *,
+    cols: int,
+    items: list[MenuItem],
+    selected: int,
+    noun: str = "Commands",
+    type_hint: bool = False,
+    max_rows: int = MENU_MAX_ROWS,
 ) -> list[str]:
-    """fx picker rows: the selection glyph, a label, then a detail column."""
-    t = _theme.current()
-    rows: list[str] = []
-    if header:
-        rows.append(f"{t.dim_style}{ansi.clip_ellipsis(header, cols)}{ansi.RESET}")
-    if not items:
-        return rows
-    selected = max(0, min(selected, len(items) - 1))
-    start = 0
-    if len(items) > window:
-        # fx keeps the selection near the middle of the visible window.
-        start = max(0, min(selected - window // 2, len(items) - window))
-    shown = items[start : start + window]
+    """fx's three-column picker: label, description, metadata at the right edge.
 
-    label_width = max((ansi.width(i.label) for i in items), default=0)
-    detail_col = 0
-    if any(i.detail for i in items):
-        detail_col = min(cols, max(label_width + 4, 28))
+    The selection is brightness only (no caret), the label column is as wide as
+    its widest row plus three, and the metadata column is left-aligned at
+    ``width - 1 - metadata_width`` so every row lines up.
+    """
+    t = _theme.current()
+    if not items or cols <= 0:
+        return []
+    selected = max(0, min(selected, len(items) - 1))
+    start, end = menu_window(len(items), selected, max_rows)
+    shown = items[start:end]
+
+    content_width = max(1, cols - 1)
+    indent = 2
+    label_col = max((ansi.width(item.label) for item in shown), default=0)
+    metadata_col = max((ansi.width(item.metadata) for item in shown), default=0)
+    description_start = min(content_width, indent + label_col + MENU_LABEL_GAP)
+    metadata_start = content_width - metadata_col
+
+    rows = [
+        menu_header(
+            noun=noun, count=len(items), start=start, end=end, cols=cols, type_hint=type_hint
+        ),
+        "",
+    ]
     for index, item in enumerate(shown):
         is_selected = start + index == selected
         style = t.selected_completion_style if is_selected else t.dim_style
-        marker = "› " if is_selected else "  "
-        label = ansi.clip_ellipsis(item.label, max(1, (detail_col or cols) - 2))
-        row = f"{style}{marker}{label}{ansi.RESET}"
-        if item.detail and detail_col:
-            row = ansi.pad(row, detail_col)
-            row += f"{t.dim_style}{ansi.clip_ellipsis(item.detail, cols - detail_col)}{ansi.RESET}"
-        elif item.annotation:
-            row = ansi.pad(row, max(0, cols - ansi.width(item.annotation) - 3))
-            row += f"{t.dim_style}{item.annotation}{ansi.RESET}"
-        rows.append(ansi.clip(row, cols))
-    if len(items) > window:
-        span = f"{start + 1}–{start + len(shown)}/{len(items)}"
-        if header:
-            left = ansi.clip_ellipsis(header, max(1, cols - ansi.width(span) - 2))
-            rows[0] = (
-                ansi.pad(f"{t.dim_style}{left}{ansi.RESET}", cols - ansi.width(span))
-                + f"{t.dim_style}{span}{ansi.RESET}"
-            )
-        else:
-            rows[0] = rows[0] + f"{t.dim_style}{span}{ansi.RESET}"
-    return rows
+        row = f"{style}{' ' * indent}"
+        row += ansi.clip_ellipsis(item.label, max(1, content_width - indent))
+        label_width = ansi.width(item.label)
+        gap = max(description_start, indent + max(label_col, label_width) + MENU_LABEL_GAP)
+
+        metadata_fits = metadata_col > 0 and item.metadata != "" and metadata_col <= content_width
+        show_metadata = metadata_fits and (
+            metadata_start >= gap + MENU_MIN_DESCRIPTION + MENU_LABEL_GAP
+            if item.detail
+            else metadata_start >= gap + MENU_LABEL_GAP
+        )
+        description_width = (
+            metadata_start - gap - MENU_LABEL_GAP if show_metadata else content_width - gap
+        )
+        row = ansi.pad(row, min(content_width, description_start))
+        if item.detail and description_width > 0:
+            row += f"{t.dim_style}{ansi.clip_ellipsis(item.detail, description_width)}{ansi.RESET}"
+        if show_metadata:
+            row = ansi.pad(row, metadata_start)
+            row += f"{t.dim_style}{item.metadata}{ansi.RESET}"
+        rows.append(row)
+    return [ansi.clip(row, cols) if row else "" for row in rows]
+
+
+PROMPT_HINT_VARIANTS: tuple[str, ...] = (
+    "enter submit     esc cancel",
+    "enter submit  esc cancel",
+    "enter  esc",
+)
+
+
+def prompt_row(label: str, cols: int) -> str:
+    """The question above a one-line text prompt, as fx prints it."""
+    t = _theme.current()
+    return f"  {t.dim_style}{ansi.clip_ellipsis(label, max(1, cols - 2))}{ansi.RESET}"
+
+
+MENU_HINT_VARIANTS: tuple[str, ...] = (
+    "\u2191\u2193 navigate     enter use     esc close",
+    "\u2191\u2193 navigate  enter use  esc close",
+    "\u2191\u2193 move  enter  esc",
+    "enter use  esc close",
+    "enter esc",
+)
+
+CATALOG_HINT_VARIANTS: tuple[str, ...] = (
+    "\u2191\u2193 navigate     tab provider     enter use     esc close",
+    "\u2191\u2193 navigate  tab provider  enter use  esc close",
+    "\u2191\u2193 move  tab provider  enter  esc",
+    "enter use  esc close",
+    "enter esc",
+)
+
+
+def menu_hint(*, cols: int, variants: tuple[str, ...] = MENU_HINT_VARIANTS) -> str:
+    """fx's picker hint line: the widest variant that fits, else the shortest."""
+    t = _theme.current()
+    hint = variants[-1]
+    for candidate in variants:
+        if ansi.width(candidate) <= cols:
+            hint = candidate
+            break
+    return f"{t.dim_style}{ansi.clip(hint, cols)}{ansi.RESET}"
 
 
 # -- approval panel ----------------------------------------------------------

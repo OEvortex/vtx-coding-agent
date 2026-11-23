@@ -329,12 +329,45 @@ def _fetch_junie_models(provider) -> list[FetchedModel]:
     return models
 
 
+def _fetch_deepai_models(provider) -> list[FetchedModel]:
+    """Fetch DeepAI Code models using the proper lane protocol headers."""
+    try:
+        from ctx.ai.oauth.deepai import list_deepai_models_sync, register_deepai_model_limits
+
+        raw = list_deepai_models_sync()
+    except Exception as exc:
+        logger.debug("Error fetching deepai models: %s", exc)
+        return []
+    models = [
+        FetchedModel(
+            id=m["id"],
+            name=m.get("name") or m["id"],
+            max_output_tokens=int(m.get("max_tokens") or 0),
+            context_length=int(m.get("context_length") or 0),
+            supports_images=bool(m.get("supports_images", False)),
+            supports_thinking=bool(m.get("supports_thinking", False)),
+            is_free=bool(m.get("is_free", False)),
+        )
+        for m in raw
+        if m.get("id")
+    ]
+    _write_cache(provider.slug, models, provider.model_parser.cooldown_minutes)
+    # Register context limits so they override the generic models.dev catalog
+    try:
+        register_deepai_model_limits()
+    except Exception as exc:
+        logger.debug("Error registering deepai model limits: %s", exc)
+    return models
+
+
 def _fetch_models_sync(provider) -> list[FetchedModel]:
     """Fetch models from a provider's /models endpoint (sync, with network)."""
     if provider.slug == "devin":
         return _fetch_devin_models(provider)
     if provider.slug == "junie":
         return _fetch_junie_models(provider)
+    if provider.slug == "deepai":
+        return _fetch_deepai_models(provider)
     if not provider.fetch_models or not provider.base_url:
         return []
 

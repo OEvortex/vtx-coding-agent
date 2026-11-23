@@ -59,6 +59,7 @@ from ctx.protocol.types import (
 )
 
 from vx.brand import VERSION
+from vx.commands import SLASH_COMMANDS, CommandsMixin
 from vx.tui import ansi, blocks, footer, theme
 from vx.tui.canvas import Painter
 from vx.tui.keys import KeyDecoder
@@ -67,29 +68,13 @@ from vx.tui.viewport import Viewport
 
 HISTORY_LIMIT = 200
 MAX_INPUT_LINES = 8
-MENU_WINDOW = 10
-
-SLASH_COMMANDS: list[tuple[str, str]] = [
-    ("/help", "show commands and key bindings"),
-    ("/model", "switch model, or list the catalog"),
-    ("/think", "set the reasoning effort level"),
-    ("/permissions", "ask, auto or full access"),
-    ("/new", "start a fresh session"),
-    ("/clear", "clear the transcript"),
-    ("/compact", "compact the context window"),
-    ("/usage", "session token usage"),
-    ("/tools", "list the registered tools"),
-    ("/session", "show the session id"),
-    ("/agents", "list handoff agents"),
-    ("/quit", "exit vx"),
-]
 
 
 class _RunDone:
     pass
 
 
-class VxApp:
+class VxApp(CommandsMixin):
     def __init__(
         self,
         *,
@@ -102,6 +87,8 @@ class VxApp:
         continue_recent: bool = False,
         openai_compat_auth_mode: str | None = None,
         anthropic_compat_auth_mode: str | None = None,
+        terminal: Terminal | None = None,
+        painter: Painter | None = None,
     ) -> None:
         self.cwd = cwd
         self._init_kwargs: dict[str, Any] = dict(
@@ -115,9 +102,12 @@ class VxApp:
             anthropic_compat_auth_mode=anthropic_compat_auth_mode,
         )
         theme.apply_theme()
-        self.term = Terminal()
+        # A caller can hand over a terminal it already put in raw mode and
+        # painted (vx.tui.splash), so the shell is on screen before ctx loads.
+        self.term = terminal or Terminal()
+        self._term_ready = terminal is not None
         self.viewport = Viewport()
-        self.painter = Painter()
+        self.painter = painter or Painter()
         self.decoder = KeyDecoder()
 
         # Composer
@@ -150,22 +140,28 @@ class VxApp:
         self._approval: dict[str, Any] | None = None
         self._ask: dict[str, Any] | None = None
         self._menu: dict[str, Any] | None = None
+        self._prompt: dict[str, Any] | None = None
 
         self._exiting = False
         self._ticker_task: asyncio.Task | None = None
+        self._boot_task: asyncio.Task | None = None
+        self._ready = asyncio.Event()
 
     # ==================================================================
     # lifecycle
     # ==================================================================
 
     async def run(self) -> int:
-        self._ticker_task = asyncio.get_running_loop().create_task(self._ticker())
+        loop = asyncio.get_running_loop()
+        self._ticker_task = loop.create_task(self._ticker())
         try:
             await self._startup()
             await self._main_loop()
         finally:
             if self._ticker_task:
                 self._ticker_task.cancel()
+            if self._boot_task is not None:
+                self._boot_task.cancel()
             if self.runtime is not None:
                 with suppress(Exception):
                     await self.runtime.close()
@@ -173,14 +169,30 @@ class VxApp:
         return 0
 
     async def _startup(self) -> None:
-        self.term.enter()
+        if not self._term_ready:
+            self.term.enter()
         self.painter.reset()
         loop = asyncio.get_running_loop()
         loop.add_reader(self.term._fd, self._on_stdin)
         signal.signal(signal.SIGWINCH, lambda *_: self._on_resize())
         self._welcome()
-        await self._init_runtime()
+        # Paint and start reading keys before the runtime loads: ctx's context
+        # load (skills, MCP, model limits) costs over a second.
         self._draw(force=True)
+        self._boot_task = loop.create_task(self._boot())
+
+    async def _boot(self) -> None:
+        try:
+            await self._init_runtime()
+        except asyncio.CancelledError:
+            raise
+        except Exception as exc:
+            self._notice(f"startup failed: {exc}", tone="error")
+        finally:
+            self._ready.set()
+            self.viewport.touch()
+            if self._pending_queue and not self._is_running:
+                self._enqueue_or_run(self._pending_queue.popleft())
 
     def _welcome(self) -> None:
         self.viewport.add(blocks.Welcome(version=VERSION))
@@ -228,6 +240,10 @@ class VxApp:
         result = self.runtime.initialize(
             resume_session=k["resume_session"], continue_recent=k["continue_recent"]
         )
+        with suppress(Exception):
+            # ctx's config carries the theme the user last chose; the splash
+            # painted with the default before ctx was importable.
+            theme.apply_named(config.ui.theme)
         with suppress(Exception):
             from ctx.ai.models import get_model
 
@@ -337,6 +353,11 @@ class VxApp:
             self._ask_key(key)
             return
 
+        if key == "esc" and self._prompt is not None:
+            self._prompt = None
+            self._input = ""
+            self._cursor = 0
+            return
         if key == "esc":
             if self._is_running:
                 self._interrupt()
@@ -469,12 +490,9 @@ class VxApp:
             if self._menu is not None and self._menu["kind"] == "slash":
                 self._menu = None
             return
-        query = text[1:].lower()
-        items = [
-            footer.MenuItem(label=name, detail=desc)
-            for name, desc in SLASH_COMMANDS
-            if name[1:].startswith(query)
-        ]
+        prefix = text[1:].lower()
+        commands, skills = self._slash_matches(prefix)
+        items = commands + skills
         if not items:
             self._menu = None
             return
@@ -483,8 +501,51 @@ class VxApp:
             "kind": "slash",
             "items": items,
             "selected": min(current, len(items) - 1),
-            "header": f"Commands {len(items)} · type to filter",
+            "noun": "Commands" if len(commands) == len(items) else "Results",
+            "type_hint": text == "/",
+            "variants": footer.MENU_HINT_VARIANTS,
         }
+
+    def _slash_matches(self, prefix: str) -> tuple[list[footer.MenuItem], list[footer.MenuItem]]:
+        """Commands and skills that match ``prefix``, ranked like fx.
+
+        fx puts name matches above prose matches: prefix, then substring, then
+        subsequence, and only then anything found in a skill's description,
+        source or path. Commands and skills share the one ranked list.
+        """
+        ranked: list[tuple[int, int, int, footer.MenuItem]] = []
+        for order, (name, description, category) in enumerate(SLASH_COMMANDS):
+            stem = name[1:].lower()
+            rank = _name_rank(prefix, stem)
+            if rank is None:
+                rank = 5 if prefix in description.lower() else None
+            if rank is None:
+                continue
+            ranked.append((rank, 0, order, footer.MenuItem(name, description, category)))
+
+        context = getattr(self.runtime, "context", None) if self.runtime else None
+        skills = sorted(
+            getattr(context, "skills", None) or [], key=lambda sk: getattr(sk, "name", "").lower()
+        )
+        for order, skill in enumerate(skills):
+            name = getattr(skill, "name", "")
+            if not name:
+                continue
+            description = getattr(skill, "description", "") or ""
+            path = getattr(skill, "path", "") or ""
+            source = _skill_source(path, self.cwd)
+            rank = _name_rank(prefix, name.lower())
+            if rank is None:
+                prose = f"{description}\n{source}\n{path}".lower()
+                rank = 4 if prefix in prose else None
+            if rank is None:
+                continue
+            ranked.append((rank, 1, order, footer.MenuItem(name, description, source)))
+
+        ranked.sort(key=lambda row: (row[0], row[1], row[2]))
+        items = [row[3] for row in ranked]
+        command_count = sum(1 for row in ranked if row[1] == 0)
+        return items[:command_count], items[command_count:]
 
     def _complete(self) -> None:
         if self._menu is None:
@@ -495,41 +556,65 @@ class VxApp:
             self._cursor = len(self._input)
             self._menu = None
 
+    def _menu_view(self) -> list[footer.MenuItem]:
+        """The rows the picker currently shows: filtered when it is filterable."""
+        menu = self._menu
+        if menu is None:
+            return []
+        items: list[footer.MenuItem] = menu["items"]
+        query = str(menu.get("query") or "").strip().lower()
+        if not query or not menu.get("filterable"):
+            return items
+        return [
+            item
+            for item in items
+            if query in f"{item.label} {item.detail} {item.metadata}".lower()
+        ]
+
     def _menu_key(self, key: str) -> None:
         menu = self._menu
         if menu is None:
             return
         if key in ("esc", "ctrl+c"):
-            if menu["kind"] == "slash":
+            if menu.get("kind") == "slash":
                 self._input = ""
                 self._cursor = 0
             self._menu = None
             return
         if key == "up":
-            menu["selected"] = (menu["selected"] - 1) % len(menu["items"])
+            menu["selected"] = (menu["selected"] - 1) % max(1, len(self._menu_view()))
             return
-        if key == "down" or key == "tab":
-            if key == "tab" and menu["kind"] == "slash":
-                self._complete()
-                return
-            menu["selected"] = (menu["selected"] + 1) % len(menu["items"])
+        if key == "down":
+            menu["selected"] = (menu["selected"] + 1) % max(1, len(self._menu_view()))
+            return
+        if key == "tab" and menu.get("kind") == "slash":
+            self._complete()
             return
         if key in ("enter", "right"):
             self._menu_choose()
             return
         if key == "backspace":
-            self._backspace()
-            if menu["kind"] == "slash":
+            if menu.get("kind") == "slash":
+                self._backspace()
                 self._refresh_slash_menu()
+                return
+            if menu.get("filterable"):
+                menu["query"] = str(menu.get("query") or "")[:-1]
+                menu["selected"] = 0
+                return
             return
-        if menu["kind"] == "slash":
+        if menu.get("kind") == "slash":
             if key.startswith("paste:"):
                 self._insert(key[6:])
             elif len(key) == 1 and ord(key) >= 32:
                 self._insert(key)
             self._refresh_slash_menu()
             return
-        # Non-slash menus close once the user types.
+        if menu.get("filterable") and (len(key) == 1 and ord(key) >= 32):
+            menu["query"] = str(menu.get("query") or "") + key
+            menu["selected"] = 0
+            return
+        # Anything else closes a non-filterable picker and types as usual.
         self._menu = None
         self._handle_key(key)
 
@@ -537,21 +622,41 @@ class VxApp:
         menu = self._menu
         if menu is None:
             return
-        item = menu["items"][menu["selected"]]
-        kind = menu["kind"]
+        view = self._menu_view()
+        if not view:
+            self._menu = None
+            return
+        item = view[max(0, min(int(menu["selected"]), len(view) - 1))]
+        on_select = menu.get("on_select")
+        kind = menu.get("kind")
         self._menu = None
+        if on_select is not None:
+            on_select(item)
+            return
         if kind in ("slash", "help"):
-            self._input = item.label
-            self._cursor = len(self._input)
-            self._submit()
-        elif kind == "model":
-            self._switch_model(item.label)
-        elif kind == "agents":
-            self._notice(f"agent: {item.label}")
+            if item.label.startswith("/"):
+                self._input = item.label
+                self._cursor = len(self._input)
+                self._submit()
+            else:
+                # A skill completes as a plain name, as fx inserts it.
+                self._input = ""
+                self._cursor = 0
+                self._insert(item.label + " ")
 
     # -- submit ----------------------------------------------------------
 
     def _submit(self) -> None:
+        if self._prompt is not None:
+            prompt = self._prompt
+            self._prompt = None
+            raw = self._input
+            self._input = ""
+            self._cursor = 0
+            callback = prompt.get("callback")
+            if callback is not None:
+                callback(raw)
+            return
         text = self._input.strip()
         self._input = ""
         self._cursor = 0
@@ -577,143 +682,8 @@ class VxApp:
     # ==================================================================
 
     def _handle_slash(self, text: str) -> bool:
-        parts = text[1:].split(None, 1)
-        cmd = parts[0].lower() if parts else ""
-        arg = parts[1].strip() if len(parts) > 1 else ""
-        rt = self.runtime
-
-        if cmd in ("quit", "exit", "q"):
-            self._exiting = True
-            return True
-        if cmd == "help":
-            self._menu = {
-                "kind": "help",
-                "items": [
-                    footer.MenuItem(label=name, detail=desc) for name, desc in SLASH_COMMANDS
-                ],
-                "selected": 0,
-                "header": "Commands · enter to run, esc to close",
-            }
-            return True
-        if cmd == "new":
-            if rt is not None:
-                rt.new_session()
-                self.viewport.clear()
-                self._welcome()
-                self._notice("new session started")
-            return True
-        if cmd == "clear":
-            self.viewport.clear()
-            self._welcome()
-            return True
-        if cmd == "model":
-            if not arg:
-                self._open_model_menu()
-                return True
-            self._switch_model(arg)
-            return True
-        if cmd in ("think", "thinking"):
-            if rt is not None and arg:
-                rt.set_thinking_level(arg)
-                self._notice(f"thinking level: {rt.thinking_level}")
-            elif rt is not None:
-                self._notice(f"thinking level: {rt.thinking_level}")
-            return True
-        if cmd in ("permissions", "perm"):
-            if arg:
-                try:
-                    config.permissions.mode = arg
-                    self._notice(f"permission mode: {arg}")
-                except Exception as e:
-                    self._notice(f"bad mode: {e}", tone="error")
-            else:
-                self._notice(f"permission mode: {config.permissions.mode}")
-            return True
-        if cmd == "compact":
-            if rt is not None:
-                self._notice("compacting context…")
-                asyncio.get_running_loop().create_task(self._compact())
-            return True
-        if cmd == "usage":
-            self._refresh_stats(force=True)
-            total = self._context_total or 0
-            pct = f" · {self._context_used / total * 100:.0f}% used" if total else ""
-            self._notice(
-                f"{self._usage['in']} in · {self._usage['out']} out · "
-                f"{self._context_used} context{pct}",
-                topic="usage",
-            )
-            return True
-        if cmd == "tools":
-            names = sorted(t.name for t in (rt.tools if rt else []))
-            self._notice(", ".join(names) or "none", topic="tools")
-            return True
-        if cmd == "session":
-            self._notice(str(rt.session.id if rt and rt.session else "?"), topic="session")
-            return True
-        if cmd == "agents":
-            names = [a.definition.name for a in (rt.agent_registry.agents if rt else [])]
-            active = (
-                rt.agent_registry.active.definition.name
-                if rt and rt.agent_registry.active
-                else "-"
-            )
-            self._notice(f"{', '.join(names) or 'none'} (active: {active})", topic="agents")
-            return True
-        self._notice(f"unknown command: /{cmd}", tone="warning")
-        return True
-
-    def _open_model_menu(self) -> None:
-        try:
-            from ctx.ai.models import get_all_models
-        except Exception as e:
-            self._notice(f"model catalog unavailable: {e}", tone="error")
-            return
-        try:
-            models = [m for m in get_all_models() if not m.hidden]
-        except Exception as e:
-            self._notice(f"model catalog unavailable: {e}", tone="error")
-            return
-        current = getattr(self.runtime, "model", "") or ""
-        items = [
-            footer.MenuItem(
-                label=m.id,
-                detail=f"{m.provider}"
-                + (f" · {m.context_window // 1000}k" if m.context_window else ""),
-            )
-            for m in models[:400]
-        ]
-        if not items:
-            self._notice("no models in the catalog", tone="warning")
-            return
-        selected = next((i for i, m in enumerate(items) if m.label == current), 0)
-        self._menu = {
-            "kind": "model",
-            "items": items,
-            "selected": selected,
-            "header": f"Models {len(items)} · enter to switch",
-        }
-        self.viewport.scroll = 0
-
-    def _switch_model(self, query: str) -> None:
-        try:
-            from ctx.ai.dynamic_models import find_dynamic_model
-            from ctx.ai.models import get_model
-        except Exception as e:
-            self._notice(f"model catalog unavailable: {e}", tone="error")
-            return
-        prov = self.runtime.model_provider if self.runtime else None
-        info = get_model(query, prov) or find_dynamic_model(query, prov)
-        if info is None:
-            self._notice(f"model not found: {query}", tone="error")
-            return
-        try:
-            assert self.runtime is not None
-            self.runtime.switch_model(info)
-            self._context_total = info.context_window
-            self._notice(f"model: {info.id}")
-        except Exception as e:
-            self._notice(f"model switch failed: {e}", tone="error")
+        """Slash commands live in ``vx.commands``; this is the entry point."""
+        return self.handle_slash(text)
 
     async def _compact(self) -> None:
         rt = self.runtime
@@ -1179,7 +1149,7 @@ class VxApp:
         while not self._exiting:
             await asyncio.sleep(0.1)
 
-    def _footer(self, cols: int) -> tuple[list[str], tuple[int, int] | None]:
+    def _footer(self, cols: int, height: int = 24) -> tuple[list[str], tuple[int, int] | None]:
         """Footer rows and the caret position inside them (if any)."""
         if self._approval is not None:
             ap = self._approval
@@ -1190,41 +1160,72 @@ class VxApp:
                 choices=["1. Yes", "2. Yes, and don't ask again", "3. No"],
                 selected=ap["selected"],
             )
-            rows = [footer.rule(cols), *view.panel(cols)[:7], view.hint(cols)]
-            return rows, None
+            return [footer.rule(cols), *view.panel(cols)[:7], view.hint(cols)], None
 
         if self._ask is not None:
             view = self._ask_view()
             panel = view.panel(cols)
-            rows = [footer.rule(cols), "", *panel, footer.rule(cols), view.hint(cols)]
-            return rows, None
+            return [footer.rule(cols), "", *panel, footer.rule(cols), view.hint(cols)], None
 
-        input_rows = max(1, min(MAX_INPUT_LINES, len(footer.wrap_input(self._input, cols))))
+        prompt = self._prompt
+        shown_input = "" if prompt is not None else self._input
+        shown_cursor = 0 if prompt is not None else self._cursor
+        input_rows = max(1, min(MAX_INPUT_LINES, len(footer.wrap_input(shown_input, cols))))
         composer, caret_row, caret_col = footer.composer_rows(
-            self._input, self._cursor, cols, input_rows
+            shown_input, shown_cursor, cols, input_rows, secret=prompt is not None
         )
-        rows = [footer.rule(cols), *composer]
+        rows: list[str] = []
+        if prompt is not None:
+            rows.append(footer.rule(cols))
+            rows.append(footer.prompt_row(str(prompt.get("label") or ""), cols))
+        else:
+            rows.append(footer.rule(cols))
+        composer_at = len(rows)
+        rows.extend(composer)
+        caret: tuple[int, int] | None = (composer_at + caret_row, caret_col)
+
+        if prompt is not None:
+            rows.append(footer.rule(cols))
+            rows.append(footer.menu_hint(cols=cols, variants=footer.PROMPT_HINT_VARIANTS))
+            return rows, caret
+
         menu = self._menu
         if menu is not None:
+            view = self._menu_view()
+            # fx's budget: 5 fixed footer rows plus the composer, then leave
+            # five transcript rows on screen, capped at six picker rows.
+            menu_window = max(1, min(footer.MENU_MAX_ROWS, height - 10 - input_rows))
             rows.append(footer.rule(cols))
+            query = str(menu.get("query") or "")
             rows.extend(
                 footer.menu_rows(
                     cols=cols,
-                    items=menu["items"],
+                    items=view,
                     selected=menu["selected"],
-                    header=menu.get("header", ""),
-                    window=MENU_WINDOW,
+                    noun=menu.get("noun", "Commands")
+                    + (f" · {query}" if query and menu.get("filterable") else ""),
+                    type_hint=menu.get("type_hint", False) and not query,
+                    max_rows=menu_window,
                 )
             )
+            rows.append(footer.rule(cols))
+            # fx replaces the statusline with the picker's own key hints.
+            rows.append(
+                footer.menu_hint(
+                    cols=cols, variants=menu.get("variants", footer.MENU_HINT_VARIANTS)
+                )
+            )
+            return rows, caret
         rows.append(footer.rule(cols))
         rows.append(self._hint(cols))
-        caret = (len(rows) - 2 - len(composer) + caret_row, caret_col)
         return rows, caret
 
     def _hint(self, cols: int) -> str:
         rt = self.runtime
         right = ""
-        if self._is_running:
+        if not self._ready.is_set():
+            right = "starting" if self.runtime is None else "loading session"
+        elif self._is_running:
             right = footer.activity_note(
                 self._run_label, self._run_started, time.monotonic(), len(self._pending_queue)
             )
@@ -1245,7 +1246,7 @@ class VxApp:
 
     def _draw(self, *, force: bool = False) -> None:
         rows, cols = self.term.size()
-        foot, caret = self._footer(cols)
+        foot, caret = self._footer(cols, rows)
         foot = foot[-max(1, rows - 1) :]
         area = max(1, rows - len(foot))
         transcript = self.viewport.visible(cols, area)
@@ -1319,6 +1320,34 @@ def _tool_target(name: str, args: Any) -> str:
         if isinstance(value, str) and value.strip():
             return _short(value.strip(), 70)
     return ""
+
+
+def _name_rank(prefix: str, name: str) -> int | None:
+    """0 prefix, 1 substring, 2 subsequence, ``None`` no name match."""
+    if not prefix:
+        return 0
+    if name.startswith(prefix):
+        return 0
+    if prefix in name:
+        return 1
+    position = 0
+    for char in name:
+        if position < len(prefix) and char == prefix[position]:
+            position += 1
+    return 2 if position == len(prefix) else None
+
+
+def _skill_source(path: str, cwd: str) -> str:
+    """fx labels a skill by where it was found (``global .agents``...)."""
+    if not path:
+        return ""
+    absolute = os.path.abspath(path)
+    parts = absolute.split(os.sep)
+    scope = "workspace" if absolute.startswith(os.path.abspath(cwd)) else "global"
+    for marker in (".agents", ".fx", ".claude", ".codex", ".opencode", ".ctx"):
+        if marker in parts:
+            return f"{scope} {marker}"
+    return f"{scope} skills/"
 
 
 def _git_branch(cwd: str) -> str | None:
