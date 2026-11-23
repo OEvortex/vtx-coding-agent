@@ -348,11 +348,14 @@ class SessionCommands(CommandSupport):
         rt = self.runtime
         if rt is None or rt.session is None:
             return
+        self._activity = "compacting…"
         try:
             result = await rt.compact_now(instructions or None)
         except Exception as exc:
             self._fail(f"compaction failed: {exc}", topic="compact")
             return
+        finally:
+            self._activity = ""
         self._ok(
             f"compacted {result.tokens_before:,} → {result.tokens_after:,} tokens", topic="compact"
         )
@@ -452,13 +455,18 @@ class SessionCommands(CommandSupport):
         self.viewport.clear()
         self._welcome()
         self._render_session_history()
-        self._render_revert_state(state)
+        self._render_revert_state(state, direction="forward")
         self._refresh_stats(force=True)
 
-    def _render_revert_state(self, state: Any) -> None:
+    def _render_revert_state(self, state: Any, *, direction: str = "back") -> None:
         from ctx.agent import revert
 
-        self._notice(revert.describe(state), topic="rewound", tone="information")
+        summary = revert.describe(state)
+        for prefix in ("Rewound", "Reverted"):
+            if summary.startswith(prefix):
+                summary = ("Moved" if direction == "forward" else prefix) + summary[len(prefix) :]
+                break
+        self._notice(summary, tone="information")
         files = getattr(state, "files", []) or []
         if files:
             rows = []
@@ -478,7 +486,7 @@ class SessionCommands(CommandSupport):
                 else f"… {len(files) - 8} more; /redo to step forward",
             )
         else:
-            self._notice("/redo to step forward again", topic="rewound")
+            self._notice("/redo to step forward again")
 
     # -- /handoff --------------------------------------------------------
 
@@ -545,6 +553,20 @@ class SessionCommands(CommandSupport):
         self.viewport.add(blocks.Assistant(text=text))
 
 
+def _prompt_preview(text: str, limit: int = 120) -> str:
+    """Shorten a prompt for a recap, naming the skill when one was triggered."""
+    flat = " ".join(text.split())
+    if flat.startswith("<skill"):
+        end = flat.find(">")
+        name = ""
+        for chunk in flat[: end if end > 0 else 200].split():
+            if chunk.startswith('name="'):
+                name = chunk[6:].rstrip('">')
+                break
+        flat = f"/{name}" if name else "skill"
+    return flat[: limit - 1] + "…" if len(flat) > limit else flat
+
+
 def _local_recap(session: Session | None) -> str:
     """A recap without another model call: what was asked and what was done."""
     if session is None:
@@ -558,7 +580,7 @@ def _local_recap(session: Session | None) -> str:
     for message in session.messages:
         content = getattr(message, "content", None)
         if isinstance(content, str) and getattr(message, "role", "") == "user":
-            prompts.append(" ".join(content.split())[:120])
+            prompts.append(_prompt_preview(content))
     for prompt in prompts[-4:]:
         lines.append(f"- {prompt}")
     return "\n\n".join(lines)

@@ -39,8 +39,6 @@ _TOOL_VERBS = {
     "ls": "Listed",
     "web_search": "Searched the web",
     "web_fetch": "Fetched",
-    "todo": "Planned",
-    "ask_user": "Asked",
     "subagent": "Ran subagent",
     "task": "Ran subagent",
     "skill": "Loaded skill",
@@ -325,6 +323,176 @@ class Sections(Block):
                 f"{t.dim_style}  {ansi.clip_ellipsis(self.detail, max(1, width - 2))}{ansi.RESET}"
             )
         return out
+
+
+@dataclass
+class ReadToolStatus(Block):
+    """Read tool: `F path:12-30` with line count."""
+
+    path: str = ""
+    start_line: int = 0
+    end_line: int = 0
+    total_lines: int = 0
+    is_dir: bool = False
+    status: str = "running"
+    kind: str = "tool"
+
+    def rows(self, width: int) -> list[str]:
+        t = _theme.current()
+        if self.status == "running":
+            line = f"{t.dim_style}●{ansi.RESET} {t.dim_style}Reading{ansi.RESET}"
+            if self.path:
+                line += f" {t.tag_style}{self.path}{ansi.RESET}"
+        else:
+            glyph = "F" if not self.is_dir else "D"
+            line = f"{t.dim_style}{glyph}{ansi.RESET} {t.tag_style}{self.path}{ansi.RESET}"
+            if self.start_line and self.end_line:
+                if self.start_line == self.end_line:
+                    line += f" {t.dim_style}:L{self.start_line}{ansi.RESET}"
+                else:
+                    line += f" {t.dim_style}:L{self.start_line}-{self.end_line}{ansi.RESET}"
+            if self.total_lines and not self.is_dir:
+                line += f"{t.dim_style} · {self.total_lines}L{ansi.RESET}"
+            if self.status == "ok":
+                line += f" {t.task_completed_open}✓{ansi.RESET}"
+            elif self.status == "error":
+                line += f"{t.dim_style} ✗{ansi.RESET}"
+        return [ansi.clip_ellipsis(line, width)]
+
+
+@dataclass
+class BashToolStatus(Block):
+    """Bash tool: ``$ command`` with exit code."""
+
+    command: str = ""
+    exit_code: int | None = None
+    status: str = "running"
+    kind: str = "tool"
+
+    def rows(self, width: int) -> list[str]:
+        t = _theme.current()
+        if self.status == "running":
+            line = f"{t.dim_style}$ {ansi.RESET}{ansi.BOLD}"
+            if self.command:
+                line += f"{self.command}{ansi.RESET}"
+        else:
+            line = f"{t.dim_style}$ {ansi.RESET}{ansi.BOLD}{self.command}{ansi.RESET}"
+            if self.exit_code is not None:
+                if self.exit_code == 0:
+                    line += f" {t.task_completed_open}✓{ansi.RESET}"
+                else:
+                    line += f"{t.dim_style} (exit {self.exit_code}){ansi.RESET}"
+            elif self.status == "ok":
+                line += f" {t.task_completed_open}✓{ansi.RESET}"
+            elif self.status == "error":
+                line += f"{t.dim_style} ✗{ansi.RESET}"
+        return [ansi.clip_ellipsis(line, width)]
+
+
+@dataclass
+class ApplyPatchToolStatus(Block):
+    """apply_patch tool: ``± path +3 -1`` with diff summary."""
+
+    path: str = ""
+    added: int = 0
+    removed: int = 0
+    ops_count: int = 0
+    status: str = "running"
+    kind: str = "tool"
+
+    def rows(self, width: int) -> list[str]:
+        t = _theme.current()
+        if self.status == "running":
+            line = f"{t.dim_style}●{ansi.RESET} {t.dim_style}Editing{ansi.RESET}"
+            if self.path:
+                line += f" {t.tag_style}{self.path}{ansi.RESET}"
+        else:
+            line = f"{t.dim_style}±{ansi.RESET} {t.tag_style}{self.path}{ansi.RESET}"
+            parts = []
+            if self.added:
+                parts.append(f"+{self.added}")
+            if self.removed:
+                parts.append(f"-{self.removed}")
+            if parts:
+                line += f" {t.dim_style}{' '.join(parts)}{ansi.RESET}"
+            if self.ops_count > 1:
+                line += f"{t.dim_style} · {self.ops_count} ops{ansi.RESET}"
+            if self.status == "ok":
+                line += f" {t.task_completed_open}✓{ansi.RESET}"
+            elif self.status == "error":
+                line += f"{t.dim_style} ✗{ansi.RESET}"
+        return [ansi.clip_ellipsis(line, width)]
+
+
+@dataclass
+class GrepToolStatus(Block):
+    """grep tool: `? pattern in path` with match count."""
+
+    pattern: str = ""
+    path: str = ""
+    match_count: int = 0
+    status: str = "running"
+    kind: str = "tool"
+
+    def rows(self, width: int) -> list[str]:
+        t = _theme.current()
+        if self.status == "running":
+            line = f"{t.dim_style}●{ansi.RESET} {t.dim_style}Searching{ansi.RESET}"
+            if self.pattern:
+                line += f" {t.tag_style}{self.pattern}{ansi.RESET}"
+        else:
+            line = f"{t.dim_style}?{ansi.RESET} {t.tag_style}{self.pattern}{ansi.RESET}"
+            if self.path:
+                line += f" {t.dim_style}in{ansi.RESET} {t.tag_style}{self.path}{ansi.RESET}"
+            if self.match_count:
+                noun = "match" if self.match_count == 1 else "matches"
+                line += f" {t.dim_style}· {self.match_count} {noun}{ansi.RESET}"
+            if self.status == "ok":
+                line += f" {t.task_completed_open}✓{ansi.RESET}"
+            elif self.status == "error":
+                line += f"{t.dim_style} ✗{ansi.RESET}"
+        return [ansi.clip_ellipsis(line, width)]
+
+
+@dataclass
+class WebToolStatus(Block):
+    """web/web_search tool: `W query` or `L url`."""
+
+    query: str = ""
+    url: str = ""
+    tool_name: str = "web"
+    result_count: int = 0
+    status: str = "running"
+    kind: str = "tool"
+
+    def rows(self, width: int) -> list[str]:
+        t = _theme.current()
+        is_search = self.tool_name == "web_search"
+        if self.status == "running":
+            verb = "Searching" if is_search else "Fetching"
+            line = f"{t.dim_style}●{ansi.RESET} {t.dim_style}{verb}{ansi.RESET}"
+            target = self.query or self.url
+            if target:
+                line += f" {t.tag_style}{_short(target, 50)}{ansi.RESET}"
+        else:
+            line = f"{t.dim_style}W{ansi.RESET}"
+            target = self.query or self.url
+            if target:
+                line += f" {t.tag_style}{_short(target, 50)}{ansi.RESET}"
+            if self.result_count:
+                noun = "result" if self.result_count == 1 else "results"
+                line += f" {t.dim_style}· {self.result_count} {noun}{ansi.RESET}"
+            if self.status == "ok":
+                line += f" {t.task_completed_open}✓{ansi.RESET}"
+            elif self.status == "error":
+                line += f"{t.dim_style} ✗{ansi.RESET}"
+        return [ansi.clip_ellipsis(line, width)]
+
+
+def _short(text: str, limit: int = 70) -> str:
+    """Truncate text to *limit* chars, adding ellipsis if needed."""
+    flat = " ".join(str(text).split())
+    return flat[: limit - 1] + "…" if len(flat) > limit else flat
 
 
 def spacing(previous: str | None, kind: str) -> int:

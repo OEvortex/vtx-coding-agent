@@ -17,7 +17,7 @@ from typing import Any
 
 from ctx.agent.agents import AgentRegistry, load_all_agents
 from ctx.agent.runtime import ConversationRuntime
-from ctx.agent.tools import get_tool, get_tools_with_extensions
+from ctx.agent.tools import get_tool
 from ctx.core import (
     AgentEndEvent,
     ApprovalResponse,
@@ -58,6 +58,8 @@ from ctx.protocol.types import (
     UserMessage,
 )
 
+import vx.tools
+from vx.atpath import expand_paths, list_candidates, parse_at
 from vx.brand import VERSION
 from vx.commands import SLASH_COMMANDS, CommandsMixin
 from vx.tui import ansi, blocks, footer, theme
@@ -141,6 +143,7 @@ class VxApp(CommandsMixin):
         self._ask: dict[str, Any] | None = None
         self._menu: dict[str, Any] | None = None
         self._prompt: dict[str, Any] | None = None
+        self._activity: str = ""
 
         self._exiting = False
         self._ticker_task: asyncio.Task | None = None
@@ -199,7 +202,7 @@ class VxApp(CommandsMixin):
 
     async def _init_runtime(self) -> None:
         k = self._init_kwargs
-        tools = get_tools_with_extensions()
+        tools = vx.tools.register_all()
         try:
             self._loaded = load_for_runtime(cwd=self.cwd)
             for err in self._loaded.errors:
@@ -415,8 +418,34 @@ class VxApp(CommandsMixin):
         if key == "right":
             self._cursor = min(len(self._input), self._cursor + 1)
             return
-        if key == "home":
+        if key == "home" or key == "ctrl+a":
             self._cursor = 0
+            return
+        if key == "ctrl+e":
+            self._cursor = len(self._input)
+            return
+        if key == "ctrl+u":
+            # Kill to the start of the line, like readline.
+            self._input = self._input[self._cursor :]
+            self._cursor = 0
+            self._refresh_slash_menu()
+            self._refresh_atpath_menu()
+            return
+        if key == "ctrl+k":
+            self._input = self._input[: self._cursor]
+            self._refresh_slash_menu()
+            self._refresh_atpath_menu()
+            return
+        if key == "ctrl+w":
+            start = self._cursor
+            while start > 0 and self._input[start - 1].isspace():
+                start -= 1
+            while start > 0 and not self._input[start - 1].isspace():
+                start -= 1
+            self._input = self._input[:start] + self._input[self._cursor :]
+            self._cursor = start
+            self._refresh_slash_menu()
+            self._refresh_atpath_menu()
             return
         if key == "up":
             if self._input:
@@ -442,6 +471,7 @@ class VxApp(CommandsMixin):
         if len(key) == 1 and ord(key) >= 32:
             self._insert(key)
             self._refresh_slash_menu()
+            self._refresh_atpath_menu()
 
     def _size(self) -> tuple[int, int]:
         rows, cols = self.term.size()
@@ -509,6 +539,44 @@ class VxApp(CommandsMixin):
             "variants": footer.MENU_HINT_VARIANTS,
         }
 
+    def _refresh_atpath_menu(self) -> None:
+        # Don't clobber an active slash menu.
+        if self._menu is not None and self._menu.get("kind") == "slash":
+            return
+        parsed = parse_at(self._input, self._cursor)
+        if parsed is None:
+            if self._menu is not None and self._menu.get("kind") == "atpath":
+                self._menu = None
+            return
+        _at_offset, _replace_end, query = parsed
+        items = [
+            footer.MenuItem(
+                label=candidate,
+                metadata="dir" if os.path.isdir(os.path.join(self.cwd, candidate)) else "file",
+            )
+            for candidate in list_candidates(self.cwd, query)
+        ]
+        if not items:
+            if self._menu is not None and self._menu.get("kind") == "atpath":
+                self._menu = None
+            return
+        current = (
+            self._menu.get("selected", 0)
+            if (self._menu and self._menu.get("kind") == "atpath")
+            else 0
+        )
+        self._menu = {
+            "kind": "atpath",
+            "items": items,
+            "selected": min(current, len(items) - 1),
+            "noun": "Files",
+            "type_hint": False,
+            "variants": footer.MENU_HINT_VARIANTS,
+            "at_offset": _at_offset,
+            "replace_end": _replace_end,
+            "query": query,
+        }
+
     def _slash_matches(self, prefix: str) -> tuple[list[footer.MenuItem], list[footer.MenuItem]]:
         """Commands and skills that match ``prefix``, ranked like fx.
 
@@ -543,7 +611,8 @@ class VxApp(CommandsMixin):
                 rank = 4 if prefix in prose else None
             if rank is None:
                 continue
-            ranked.append((rank, 1, order, footer.MenuItem(name, description, source)))
+            label = f"/{name}" if getattr(skill, "register_cmd", False) else name
+            ranked.append((rank, 1, order, footer.MenuItem(label, description, source)))
 
         ranked.sort(key=lambda row: (row[0], row[1], row[2]))
         items = [row[3] for row in ranked]
@@ -557,6 +626,14 @@ class VxApp(CommandsMixin):
         if self._menu["kind"] == "slash":
             self._input = item.label + " "
             self._cursor = len(self._input)
+            self._menu = None
+        elif self._menu["kind"] == "atpath":
+            m = self._menu
+            at_offset = m["at_offset"]
+            replace_end = m["replace_end"]
+            chosen = item.label
+            self._input = self._input[:at_offset] + "@" + chosen + " " + self._input[replace_end:]
+            self._cursor = at_offset + 1 + len(chosen) + 1
             self._menu = None
 
     def _menu_view(self) -> list[footer.MenuItem]:
@@ -578,8 +655,9 @@ class VxApp(CommandsMixin):
         menu = self._menu
         if menu is None:
             return
+        kind = menu.get("kind")
         if key in ("esc", "ctrl+c"):
-            if menu.get("kind") == "slash":
+            if kind == "slash":
                 self._input = ""
                 self._cursor = 0
             self._menu = None
@@ -590,28 +668,47 @@ class VxApp(CommandsMixin):
         if key == "down":
             menu["selected"] = (menu["selected"] + 1) % max(1, len(self._menu_view()))
             return
-        if key == "tab" and menu.get("kind") == "slash":
+        if kind == "slash" and key == "tab":
             self._complete()
             return
         if key in ("enter", "right"):
             self._menu_choose()
             return
+        if kind == "atpath":
+            # The @ token lives in the composer, so typing keeps editing it and
+            # the file picker follows the text.
+            if key.startswith("paste:"):
+                self._insert(key[6:])
+            elif key == "backspace":
+                self._backspace()
+            elif key == "left" or key == "right":
+                key = "right"
+            elif len(key) == 1 and ord(key) >= 32:
+                self._insert(key)
+            else:
+                self._menu = None
+                self._handle_key(key)
+                return
+            self._refresh_atpath_menu()
+            return
         if key == "backspace":
-            if menu.get("kind") == "slash":
+            if kind == "slash":
                 self._backspace()
                 self._refresh_slash_menu()
+                self._refresh_atpath_menu()
                 return
             if menu.get("filterable"):
                 menu["query"] = str(menu.get("query") or "")[:-1]
                 menu["selected"] = 0
                 return
             return
-        if menu.get("kind") == "slash":
+        if kind == "slash":
             if key.startswith("paste:"):
                 self._insert(key[6:])
             elif len(key) == 1 and ord(key) >= 32:
                 self._insert(key)
             self._refresh_slash_menu()
+            self._refresh_atpath_menu()
             return
         if menu.get("filterable") and (len(key) == 1 and ord(key) >= 32):
             menu["query"] = str(menu.get("query") or "") + key
@@ -646,6 +743,16 @@ class VxApp(CommandsMixin):
                 self._input = ""
                 self._cursor = 0
                 self._insert(item.label + " ")
+            return
+        if kind == "atpath":
+            at_offset = int(menu.get("at_offset") or 0)
+            replace_end = int(menu.get("replace_end") or 0)
+            chosen = item.label
+            token = f'@"{chosen}"' if " " in chosen else f"@{chosen}"
+            before = self._input[:at_offset]
+            after = self._input[replace_end:].lstrip()
+            self._input = f"{before}{token} {after}"
+            self._cursor = len(before) + len(token) + 1
 
     # -- submit ----------------------------------------------------------
 
@@ -678,7 +785,7 @@ class VxApp(CommandsMixin):
             self._handle_shell(text)
             return
         self.viewport.add(blocks.UserTurn(text=text))
-        self._enqueue_or_run(text)
+        self._enqueue_or_run(expand_paths(text, self.cwd))
 
     # ==================================================================
     # slash commands & shell
@@ -861,25 +968,24 @@ class VxApp(CommandsMixin):
             self._live_assistant = None
             return
         if isinstance(ev, ToolStartEvent):
-            target = ""
-            with suppress(Exception):
-                target = _tool_target(ev.tool_name, "")
-            block = blocks.ToolStatus(name=ev.tool_name, target=target, status="running")
+            block = _make_tool_status_block(ev.tool_name)
             self._tool_blocks[ev.tool_call_id] = block
             self.viewport.add(block)
             self._run_label = f"running {ev.tool_name}"
             return
         if isinstance(ev, ToolArgsDeltaEvent):
             block = self._tool_blocks.get(ev.tool_call_id)
-            if block is not None and not block.target:
+            if block is not None:
                 snapshot = getattr(ev, "snapshot", None) or getattr(ev, "arguments", None)
                 if snapshot:
-                    block.target = _tool_target(ev.tool_name, snapshot)
+                    _populate_tool_block_args(block, ev.tool_name, snapshot)
             return
         if isinstance(ev, ToolEndEvent):
             block = self._tool_blocks.get(ev.tool_call_id)
-            if block is not None and not block.target and getattr(ev, "display", ""):
-                block.target = _short(_strip_markup(ev.display), 70)
+            if block is not None:
+                display = getattr(ev, "display", "")
+                if display:
+                    _populate_tool_block_display(block, _short(_strip_markup(display), 70))
             return
         if isinstance(ev, ToolOutputDeltaEvent):
             block = self._tool_blocks.get(ev.tool_call_id)
@@ -903,17 +1009,12 @@ class VxApp(CommandsMixin):
             ok = True
             if result is not None:
                 ok = not result.is_error
-                summary = result.ui_summary
-                details = result.ui_details_full or result.ui_details
-                # fx keeps the call's own target in the status line; the
-                # result summary only fills in when the call had none.
-                if block is not None and not block.target:
-                    if summary:
-                        block.target = _short(_strip_markup(summary), 70)
-                    elif details:
-                        block.target = _short(_strip_markup(details), 70)
             if block is not None:
                 block.status = "ok" if ok else "error"
+                # For apply_patch, populate diff stats from file_changes
+                if ev.file_changes and hasattr(block, "added"):
+                    block.added = sum(f.added for f in ev.file_changes)
+                    block.removed = sum(f.removed for f in ev.file_changes)
             output = self._tool_outputs.get(ev.tool_call_id)
             if output is not None and not output.lines:
                 with suppress(Exception):
@@ -1230,6 +1331,8 @@ class VxApp(CommandsMixin):
             right = footer.activity_note(
                 self._run_label, self._run_started, time.monotonic(), len(self._pending_queue)
             )
+        elif self._activity:
+            right = self._activity
         elif self._last_ctrl_c and time.monotonic() - self._last_ctrl_c < 2.0:
             right = "press ctrl+c again to exit"
         workspace = os.path.abspath(self.cwd)
@@ -1277,6 +1380,95 @@ class VxApp(CommandsMixin):
 
 
 # -- helpers -----------------------------------------------------------------
+
+
+def _make_tool_status_block(tool_name: str) -> blocks.Block:
+    """Create a specialized status block for the given tool name."""
+    if tool_name == "read":
+        return blocks.ReadToolStatus(status="running")
+    if tool_name == "bash":
+        return blocks.BashToolStatus(status="running")
+    if tool_name == "apply_patch":
+        return blocks.ApplyPatchToolStatus(status="running")
+    if tool_name == "grep":
+        return blocks.GrepToolStatus(status="running")
+    if tool_name in ("web", "web_search", "web_fetch"):
+        return blocks.WebToolStatus(tool_name=tool_name, status="running")
+    # Fallback to generic block for unknown tools
+    return blocks.ToolStatus(name=tool_name, status="running")
+
+
+def _parse_args(args: Any) -> dict:
+    """Parse tool args from string or dict."""
+    if isinstance(args, dict):
+        return args
+    if isinstance(args, str):
+        try:
+            import json
+
+            return json.loads(args) if args.strip().startswith("{") else {"value": args}
+        except Exception:
+            return {"value": args}
+    return {}
+
+
+def _populate_tool_block_args(block: blocks.Block, tool_name: str, args: Any) -> None:
+    """Populate specialized block fields from tool arguments."""
+    a = _parse_args(args)
+    if isinstance(block, blocks.ReadToolStatus):
+        path = a.get("path", a.get("file_path", a.get("filename", "")))
+        if path:
+            block.path = str(path)
+        block.start_line = int(a.get("start_line", a.get("line", a.get("offset", 0))))
+        block.end_line = int(a.get("end_line", a.get("limit", 0)))
+        block.total_lines = int(a.get("total_lines", 0))
+        block.is_dir = bool(a.get("is_dir", False))
+    elif isinstance(block, blocks.BashToolStatus):
+        cmd = a.get("command", a.get("cmd", a.get("value", "")))
+        if cmd:
+            block.command = str(cmd)
+    elif isinstance(block, blocks.ApplyPatchToolStatus):
+        path = a.get("path", a.get("file_path", ""))
+        if path:
+            block.path = str(path)
+        ops = a.get("ops", a.get("edits", []))
+        if isinstance(ops, list):
+            block.ops_count = len(ops)
+    elif isinstance(block, blocks.GrepToolStatus):
+        pattern = a.get("pattern", a.get("query", a.get("regex", a.get("search", ""))))
+        if pattern:
+            block.pattern = str(pattern)
+        path = a.get("path", a.get("directory", a.get("root_dir", "")))
+        if path:
+            block.path = str(path)
+    elif isinstance(block, blocks.WebToolStatus):
+        query = a.get("query", a.get("search", ""))
+        if query:
+            block.query = str(query)
+        url = a.get("url", a.get("link", ""))
+        if url:
+            block.url = str(url)
+    elif isinstance(block, blocks.ToolStatus):
+        # Generic fallback
+        target = _tool_target(tool_name, args)
+        if target and not block.target:
+            block.target = target
+
+
+def _populate_tool_block_display(block: blocks.Block, display: str) -> None:
+    """Fill in display text on specialized blocks if their main field is empty."""
+    if isinstance(block, blocks.ReadToolStatus) and not block.path:
+        block.path = display
+    elif isinstance(block, blocks.BashToolStatus) and not block.command:
+        block.command = display
+    elif isinstance(block, blocks.ApplyPatchToolStatus) and not block.path:
+        block.path = display
+    elif isinstance(block, blocks.GrepToolStatus) and not block.pattern:
+        block.pattern = display
+    elif isinstance(block, blocks.WebToolStatus) and not block.query and not block.url:
+        block.query = display
+    elif isinstance(block, blocks.ToolStatus) and not block.target:
+        block.target = display
 
 
 def _short(text: str, limit: int = 70) -> str:

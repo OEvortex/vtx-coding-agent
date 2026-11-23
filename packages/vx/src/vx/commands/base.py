@@ -29,6 +29,7 @@ class CommandSupport:
     _input: str
     _cursor: int
     _is_running: bool
+    _activity: str
     _exiting: bool
     _history: list[str]
 
@@ -44,6 +45,10 @@ class CommandSupport:
 
     def _welcome(self) -> None:
         """Re-add the pinned welcome banner after the transcript is cleared."""
+        ...
+
+    def _enqueue_or_run(self, prompt: str) -> None:
+        """Run a prompt as a normal turn, or queue it behind the live one."""
         ...
 
     def _render_session_history(self) -> None:

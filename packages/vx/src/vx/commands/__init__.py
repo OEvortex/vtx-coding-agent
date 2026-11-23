@@ -26,7 +26,7 @@ from vx.commands.models import ModelCommands
 from vx.commands.sessions import SessionCommands
 from vx.commands.settings import SettingsCommands
 from vx.commands.system import SystemCommands
-from vx.tui import footer
+from vx.tui import blocks, footer
 
 #: name, description, presentation category. fx groups commands this way and
 #: vx shows the category in the picker's metadata column.
@@ -177,6 +177,8 @@ class CommandsMixin(
             extension = self._extension_command(cmd, args)
             if extension:
                 return True
+            if self._skill_command(cmd, args):
+                return True
             self._warn(f"unknown command: /{cmd}")
             return True
         try:
@@ -190,6 +192,29 @@ class CommandsMixin(
             return True
         self._warn(f"/{cmd}: still starting — the runtime is not ready yet")
         return False
+
+    def _skill_command(self, name: str, args: str) -> bool:
+        """A skill with ``register_cmd: true`` is reachable as ``/<skill>``."""
+        skill = next(
+            (s for s in self._context_skills() if s.register_cmd and s.name == name), None
+        )
+        if skill is None:
+            return False
+        from ctx.agent.skills import render_skill_prompt
+
+        try:
+            prompt = render_skill_prompt(skill, args)
+        except Exception as exc:
+            self._fail(f"skill /{name} failed: {exc}")
+            return True
+        self.viewport.add(blocks.UserTurn(text=f"/{name} {args}".strip()))
+        self._enqueue_or_run(prompt)
+        return True
+
+    def _context_skills(self) -> list[Any]:
+        rt = self.runtime
+        context = getattr(rt, "context", None) if rt is not None else None
+        return list(getattr(context, "skills", None) or [])
 
     def _extension_command(self, name: str, args: str) -> bool:
         """Let extensions claim commands the built-ins did not handle."""
@@ -220,7 +245,7 @@ class CommandsMixin(
         )
 
     def _run_help_choice(self, name: str) -> None:
-        self._input = name
+        self._input = "/" + name.lstrip("/") + " "
         self._cursor = len(self._input)
 
 
