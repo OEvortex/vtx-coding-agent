@@ -4,6 +4,37 @@ The SDK is the programmatic interface to the Vtx agent runtime. This page covers
 
 The SDK drives the same engine the TUI and headless modes use  --  the native turn runner's event stream  --  and layers guardrails, handoffs, approvals, and session persistence on top of it (`src/vtx/agent/sdk/runner.py:377-433`). Nothing here needs the TUI, and none of it requires an extensions graph. If you want the composition of subsystems the CLI boots, read [plugins.md](plugins.md); if you are looking for the built-in tools, they are in [tools.md](tools.md).
 
+## `vtx.sdk` — the unified surface
+
+`import vtx.sdk` (or `from vtx.sdk import ...`) re-exports the whole public surface in one namespace: the agent SDK (`Agent`, `Runner`, `tool`, `define_tool`, sessions, guardrails, handoffs, permissions, tracing), the wire protocol (`Message`, `ToolResult`, `ToolDefinition`, stream parts), the plugin kernel (`plugin`, `PluginHost`, `load_profile`, `Context`, `EventHub`), the extension API (`ExtensionAPI`, `ExtensionTool`, event constants via `vtx.sdk.events`), and lazy provider/headless helpers (`BaseProvider`, `get_model`, `run_headless`, ...).
+
+The point is that the three historical surfaces — SDK, extension `register(api)`, and plugin rows — now speak one language:
+
+* **One tool type.** `define_tool(name, description, parameters, execute=fn)` builds a `SchemaTool`, a plain `BaseTool` whose `execute` receives `(args_dict, ctx_dict)` — the same contract `ExtensionAPI.register_tool` always used. `ExtensionTool` is now a `SchemaTool` subclass, and `api.register_tool(...)` accepts *any* `BaseTool` (a `@tool` `FunctionTool`, a `define_tool` result, or a hand-written subclass), not just the `(name, description, schema, execute=)` spelling.
+* **One hook path.** `vtx.sdk.on(event, handler)` subscribes with the exact extension contract — typed event objects, `(event, payload)` or `(event, payload, ctx)` handlers, blocking returns — against the *running* composition. `vtx.sdk.emit(name, payload)` / `emit_nowait` dispatch on its event hub.
+* **One live handle.** `vtx.sdk.context()` returns the running composition's `Context` (the object a plugin row gets: `ctx.tools`, `ctx.llm`, `ctx.sessions`, `ctx.permissions`, `ctx.agent_loop`, `ctx.hub`, `ctx.effect`, ...). `vtx.sdk.api()` returns an `ExtensionAPI` bound to that context (the object `register(api)` gets: `register_tool`, `register_command`, `register_provider`, `send_message`, `set_model`, `ui`, `exec`, ...). `register_tool` / `register_command` / `register_provider` / `unregister_provider` are thin wrappers over `api()`.
+
+```python
+import vtx.sdk as sdk
+
+# Inside a running vtx (extension, plugin apply, REPL, embedder):
+sdk.register_tool(name="greet", description="Greet",
+                  parameters={"type": "object",
+                              "properties": {"name": {"type": "string"}}},
+                  execute=lambda args, ctx: f"hi {args['name']}")
+
+@sdk.on(sdk.events.TOOL_CALL)
+def watch(event, payload):
+    print("tool call:", payload)
+
+# Standalone, no composition needed:
+agent = sdk.Agent(name="bot", model="gpt-4o-mini",
+                  tools=[sdk.define_tool("greet", "Greet", SCHEMA, execute=fn)])
+result = sdk.Runner.run_sync(agent, "hi")
+```
+
+Both modes raise a clear `RuntimeError` from `context()`/`api()`/`on()`/`register_*` when no composition is running; use `boot()`/`PluginHost` to mount one yourself.
+
 ## Minimal program
 
 This is the SDK's own quick start, and it runs as written against a configured provider (`src/vtx/agent/sdk/__init__.py:8-25`):

@@ -144,8 +144,9 @@ def test_diff_rows_are_syntax_highlighted_and_keep_the_marker():
 
     highlighted = boxed.highlight_diff(text, "src/x.py")
 
-    assert "+ 1 │" in highlighted.plain
-    assert "- 1 │" in highlighted.plain
+    assert "1 │" in highlighted.plain
+    assert "+ 1 │" not in highlighted.plain
+    assert "- 1 │" not in highlighted.plain
     assert DIFF_BG_PAD_MARKER in highlighted.plain
     # A plain single-hue diff carries one foreground style per row; the
     # highlighted version paints several syntax tokens.
@@ -156,6 +157,17 @@ def test_diff_without_a_known_lexer_is_left_alone():
     diff, _, _ = generate_diff("a\n", "b\n")
     text = Text.from_markup(format_diff_display(diff))
     assert boxed.highlight_diff(text, "notes.unknownext") is text
+
+
+def test_diff_empty_lines_retain_gutter_and_separator():
+    diff, _, _ = generate_diff("", "line1\n\nline3\n")
+    text = Text.from_markup(format_diff_display(diff))
+    highlighted = boxed.highlight_diff(text, "src/x.py")
+    lines = highlighted.plain.split("\n")
+    assert any(line.startswith("1 │ line1") for line in lines)
+    assert any(line.startswith("2 │ ") for line in lines)
+    assert any(line.startswith("3 │ line3") for line in lines)
+    assert not any("+" in line for line in lines)
 
 
 def test_wrap_boxed_soft_wraps_long_lines_within_the_box():
@@ -194,7 +206,7 @@ def test_box_width_uses_the_full_widget_width():
 
 def test_wrap_boxed_aligns_guttered_continuation_under_the_code_column():
     # A read/diff line that soft-wraps must keep its code aligned under the
-    # code column (after the ``282 │ `` / ``+ 2 │ `` gutter), not jump back to
+    # code column (after the ``282 │ `` / ``  2 │ `` gutter), not jump back to
     # the box's left padding like a plain paragraph wrap.
     long_code = (
         "    resp = await self.client.call_endpoint(first, second, third, fourth, fifth, sixth)"

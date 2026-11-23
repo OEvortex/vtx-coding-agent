@@ -261,7 +261,7 @@ def _soft_wrap_segments(line: Text, width: int) -> list[Text]:
 
 
 #: Editor gutter prefixes emitted by ``highlighted_numbered_lines``
-#: (``282 │ ``) and ``highlight_diff`` (``+ 1 │ ``, ``  2 │ ``).
+#: (``282 │ ``) and ``highlight_diff`` (``  1 │ ``, ``  2 │ ``).
 _GUTTER_RE = re.compile(r"^[+\- ]*\d+\s*│\s")
 
 
@@ -499,16 +499,14 @@ def highlight_diff(text: Text, path: str | None) -> Text:
 
     ``format_diff_display`` paints a whole added/removed line one hue, which
     throws away the syntax the reader is looking at. This restores token
-    colours per line while the ``+``/``-`` gutter keeps the add/remove cue,
-    so a diff reads like an editor's instead of a coloured transcript.
+    colours per line while line backgrounds keep the add/remove cue without
+    cluttering the gutter with ``+``/``-`` markers.
     """
     lexer = lexer_for_path(path)
     if lexer is None or len(text.plain) > MAX_HIGHLIGHT_CHARS:
         return text
 
     colors = _colors()
-    added = str(colors.diff_added).lower()
-    removed = str(colors.diff_removed).lower()
     border = str(colors.border)
 
     lines = text.split("\n")
@@ -517,7 +515,7 @@ def highlight_diff(text: Text, path: str | None) -> Text:
         bg, fg = _line_paint(line)
         plain = line.plain.replace(DIFF_BG_PAD_MARKER, "")
         match = _DIFF_LINE_RE.match(plain)
-        if bg is None or match is None or not match.group("code").strip():
+        if bg is None or match is None:
             parsed.append(None)
             continue
         code = match.group("code")
@@ -530,6 +528,8 @@ def highlight_diff(text: Text, path: str | None) -> Text:
     while len(highlighted_lines) < len(parsed):
         highlighted_lines.append(Text())
 
+    gutter_len = max((len(entry[0].strip()) for entry in parsed if entry), default=1)
+
     out = Text()
     for index, (line, entry) in enumerate(zip(lines, parsed, strict=False)):
         if index:
@@ -538,16 +538,10 @@ def highlight_diff(text: Text, path: str | None) -> Text:
             out.append_text(line)
             continue
         num, _code, bg, fg = entry
-        fg_hex = (fg or "").lower()
-        if fg_hex == added:
-            sign = "+"
-        elif fg_hex == removed:
-            sign = "-"
-        else:
-            sign = " "
+        gutter_num = num.strip().rjust(gutter_len)
         gutter_style = Style(color=fg or str(colors.dim), bold=True)
         row = Text(style=Style(bgcolor=bg))
-        row.append(f"{sign}{num} ", style=gutter_style)
+        row.append(f"{gutter_num} ", style=gutter_style)
         row.append(f"{BOX_V} ", style=Style(color=border))
         row.append_text(highlighted_lines[index])
         out.append_text(row)

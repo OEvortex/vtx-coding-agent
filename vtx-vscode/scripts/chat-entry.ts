@@ -8,3 +8,4 @@
 export { ChatController } from "../src/chat/chatViewProvider";
 export { SessionStore } from "../src/session/sessionStore";
 export { ChangeTracker } from "../src/diff/changeTracker";
+export { invalidateModelFamilies } from "../src/cli/models";

@@ -17,6 +17,7 @@ from vtx.protocol.types import ToolDefinition
 
 from .ask_user import AskUserParams, AskUserTool
 from .base import BaseTool
+from .schema_tool import SchemaTool, define_tool
 from .task import SubagentSpec, TaskParams, TaskTool
 from .web import SearchParams, WebSearchTool, WebTool
 
@@ -33,12 +34,14 @@ __all__ = [
     "AskUserParams",
     "AskUserTool",
     "BaseTool",
+    "SchemaTool",
     "SearchParams",
     "SubagentSpec",
     "TaskParams",
     "TaskTool",
     "WebSearchTool",
     "WebTool",
+    "define_tool",
     "get_all_tools",
     "get_default_tools",
     "get_parent_only_tools",

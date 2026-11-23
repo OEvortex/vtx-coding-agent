@@ -33,6 +33,7 @@ import { diagnosticItems } from "../acp/diagnostics";
 import { TerminalManager } from "../acp/terminal";
 import { VsCodeTerminalRunner } from "../acp/vscodeTerminal";
 import { userConfigDir } from "../settings/configService";
+import { configSet } from "../settings/vtxConfigCli";
 import { VtxSession, ListResult, fromAcpRows, listSessions } from "../session/sessionList";
 import { SessionStore } from "../session/sessionStore";
 import { ChangeTracker } from "../diff/changeTracker";
@@ -401,6 +402,7 @@ export class ChatController implements AcpHost {
   private idleTimer?: NodeJS.Timeout;
 
   private health?: CliHealth;
+  private healthPending?: Promise<void>;
   private resolvedCli = "vtx";
   private env?: NodeJS.ProcessEnv;
   private currentMode?: string;
@@ -1615,6 +1617,9 @@ export class ChatController implements AcpHost {
           }
           await this.setSessionConfig(String(msg.configId || ""), msg.value);
           return;
+        case "setProviderFilter":
+          await this.setProviderFilter(typeof msg.slug === "string" ? msg.slug : "");
+          return;
         case "permission":
           this.resolvePermission(String(msg.requestId), msg.optionId);
           return;
@@ -1920,6 +1925,17 @@ export class ChatController implements AcpHost {
     this.statusBar?.setInfo({ version: this.health.version, account: this.health.account });
     this.statusBar?.set({ connected: this.isReady(), mode: this.currentMode, model: this.currentModel });
     this.log(`[perf] health-check ${Date.now() - startedAt}ms`);
+  }
+
+  // The catalog and the pickers need the configured binary, which is only known
+  // after the health check. An early picker must not fall back to whichever `vtx`
+  // happens to be on PATH, and two callers must not pay for two checks.
+  private async ensureCli(): Promise<void> {
+    if (this.health) return;
+    if (!this.healthPending) {
+      this.healthPending = this.runHealthCheck().finally(() => { this.healthPending = undefined; });
+    }
+    await this.healthPending;
   }
 
   private async browseCli(): Promise<void> {
@@ -3135,6 +3151,7 @@ export class ChatController implements AcpHost {
       currentMode: this.currentMode || DEFAULT_MODE,
       models: families,
       providers: cachedProviders(),
+      providerFilter: cachedProviderFilter(),
       currentModel,
       modelChoices: groupedModelChoices(options),
       thoughtLevels: configChoices(thought),
@@ -3185,6 +3202,7 @@ export class ChatController implements AcpHost {
   // Models come from `vtx models list` (no session needed, and the uids match
   // what the ACP model option accepts).
   private async publishInitialOptions(): Promise<void> {
+    await this.ensureCli();
     let families: ModelFamily[] = [];
     try {
       families = await listModelFamilies(this.resolvedCli || "vtx", this.env);
@@ -3212,6 +3230,8 @@ export class ChatController implements AcpHost {
       modes: this.modes,
       currentMode: mode || DEFAULT_MODE,
       models: this.visibleModelFamilies(families),
+      providers: cachedProviders(),
+      providerFilter: cachedProviderFilter(),
       currentModel: model || "",
       modelChoices: groupedModelChoices(options),
       thoughtLevels: configChoices(thought),
@@ -4196,6 +4216,7 @@ export class ChatController implements AcpHost {
   // "All providers" row that clears the filter, mirroring the TUI. Returns the
   // slug to send, "" for all providers, or null when the picker was dismissed.
   private async pickProviderFilter(): Promise<string | null> {
+    await this.ensureCli();
     if (!cachedFamilies().length && !cachedProviders().length) {
       await listModelFamilies(this.resolvedCli || "vtx", this.env);
     }
@@ -4232,6 +4253,24 @@ export class ChatController implements AcpHost {
     if (!families.length) {
       return;
     }
+    this.postModelOptions(this.active()?.model || this.currentModel || "");
+  }
+
+  // The picker switches providers directly. The filter belongs to the CLI, so
+  // write it there and refetch the catalog. Sending /provider as a chat prompt
+  // would make a picker change wait for a whole agent turn and clutter the chat.
+  private async setProviderFilter(slug: string): Promise<void> {
+    await this.ensureCli();
+    if (slug === cachedProviderFilter()) return;
+    const ctx = { cliPath: this.resolvedCli || "vtx", env: this.env };
+    const result = await configSet(ctx, "ui.model_provider_filter", slug);
+    if (!result.ok) {
+      void vscode.window.showErrorMessage(`Could not change provider: ${result.err || "unknown error"}`);
+      this.postModelOptions(this.active()?.model || this.currentModel || "");
+      return;
+    }
+    invalidateModelFamilies();
+    await listModelFamilies(ctx.cliPath, ctx.env);
     this.postModelOptions(this.active()?.model || this.currentModel || "");
   }
 

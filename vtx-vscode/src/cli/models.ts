@@ -145,6 +145,31 @@ function setCache(result: ModelsResult): void {
   }
 }
 
+// `vtx models list` reports raw ids ("anthropic/claude-sonnet-latest",
+// "openai:gpt-4o"). A picker built from those reads like a config file rather
+// than a model list, so turn them into the kind of label Copilot shows. The raw
+// id stays on `id`/`value` for the wire; only the display name is changed.
+const MODEL_WORDS: Record<string, string> = {
+  gpt: "GPT", claude: "Claude", sonnet: "Sonnet", opus: "Opus", haiku: "Haiku",
+  gemini: "Gemini", deepseek: "DeepSeek", qwen: "Qwen", llama: "Llama",
+  mistral: "Mistral", grok: "Grok", openai: "OpenAI", anthropic: "Anthropic",
+  hy4: "HY4", flash: "Flash", pro: "Pro", max: "Max", mini: "Mini",
+  preview: "Preview", thinking: "Thinking", reasoning: "Reasoning",
+  flashlite: "Flash Lite", turbo: "Turbo", free: "Free"
+};
+function friendlyModelName(raw: string): string {
+  let s = String(raw || "").trim();
+  s = s.replace(/^~?[A-Za-z0-9._-]+\//, "").replace(/^[A-Za-z0-9._-]+:/, "");
+  s = s.replace(/[_-]+/g, " ").replace(/\s*\b(latest)\b\s*$/i, "");
+  const words = s.split(/\s+/).filter(Boolean).map((word) => {
+    const key = word.toLowerCase();
+    if (MODEL_WORDS[key]) return MODEL_WORDS[key];
+    if (/^\d/.test(word)) return word;
+    return word.charAt(0).toUpperCase() + word.slice(1);
+  });
+  return words.join(" ") || String(raw || "Model");
+}
+
 // "Claude Sonnet 5 Medium" + family "Claude Sonnet 5" -> "Medium".
 // When the variant label is exactly the family name (the base, no-thinking
 // variant), there is nothing left after stripping, so call it "Base".
@@ -184,13 +209,13 @@ function run(cliPath: string, env?: NodeJS.ProcessEnv): Promise<ModelsResult> {
           const parsed = JSON.parse(stdout) as ModelsJson;
           const out: ModelFamily[] = [];
           for (const fam of parsed.families || []) {
-            const label = fam.family_label || fam.slug || "";
+            const label = friendlyModelName(fam.family_label || fam.slug || "");
             const variants: ModelVariant[] = [];
             for (const v of fam.variants || []) {
               if (v.model_uid) {
                 variants.push({
                   value: v.model_uid,
-                  name: effortLabel(label, v.label || v.model_uid),
+                  name: effortLabel(label, friendlyModelName(v.label || v.model_uid)),
                   costTier: v.cost_tier,
                   costSummary: v.cost_summary,
                   longContextCostSummary: v.long_context_cost_summary,

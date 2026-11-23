@@ -101,6 +101,36 @@ test("model listing exposes providers, the provider filter, and family providers
   ]);
 });
 
+test("model names are readable in the picker instead of raw cli ids", async () => {
+  const { listModelFamilies: list } = loadModels("models-friendly");
+  const cli = fakeCli(JSON.stringify({
+    families: [
+      {
+        family_label: "~anthropic/claude-sonnet-latest",
+        family_uid: "anthropic:claude-sonnet-latest",
+        slug: "anthropic",
+        provider: "anthropic",
+        variants: [{ model_uid: "anthropic:claude-sonnet-latest", label: "~anthropic/claude-sonnet-latest" }]
+      },
+      {
+        family_label: "google/gemini-4-hydrogen",
+        family_uid: "openrouter:google/gemini-4-hydrogen",
+        slug: "openrouter",
+        provider: "openrouter",
+        variants: [{ model_uid: "openrouter:google/gemini-4-hydrogen", label: "google/gemini-4-hydrogen" }]
+      }
+    ],
+    providers: [],
+    provider_filter: ""
+  }));
+  const families = await list(cli);
+  assert.strictEqual(families[0].name, "Claude Sonnet");
+  assert.strictEqual(families[0].variants[0].name, "Base");
+  assert.strictEqual(families[1].name, "Gemini 4 Hydrogen");
+  // The wire value is untouched, so the ACP model option still accepts it.
+  assert.strictEqual(families[0].default, "anthropic:claude-sonnet-latest");
+});
+
 test("invalidating the model cache forces a refetch", { skip: process.platform === "win32" }, async () => {
   const { listModelFamilies: list, invalidateModelFamilies } = loadModels("models-invalidate");
   const log = path.join(TMP, "models-invalidate.log");

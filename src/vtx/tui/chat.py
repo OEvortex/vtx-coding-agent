@@ -1,3 +1,4 @@
+import contextlib
 import time
 from collections.abc import Sequence
 from pathlib import Path
@@ -936,34 +937,60 @@ class ChatLog(VerticalScroll):
             block.hide_approval()
             self._scroll_if_anchored(animate=False)
 
-    def show_ask_user(self, tool_id: str, dialog) -> None:
+    def _ask_user_block(self, tool_id: str) -> ToolBlock | None:
+        """Resolve the block hosting the ask_user dialog.
+
+        Falls back to the most recent ``ask_user`` block when the id lookup
+        misses: the id the ``AskUserEvent`` carries can differ from the id the
+        block was mounted under (providers that send identity late), and the
+        block can also be gone entirely after ``_prune_if_needed``. Without the
+        fallback ``show_ask_user`` silently did nothing and the turn hung.
+        """
         block = self._tool_blocks.get(tool_id)
-        if block:
-            block.show_ask_user(dialog=dialog)
-            self._scroll_if_anchored(animate=False)
+        if block is not None:
+            return block
+        for candidate in reversed(list(self._tool_blocks.values())):
+            if getattr(candidate, "name", None) == "ask_user":
+                return candidate
+        return None
+
+    def show_ask_user(self, tool_id: str, dialog) -> None:
+        block = self._ask_user_block(tool_id)
+        if block is None:
+            # The tool block was pruned or never mounted under this id —
+            # mount a fresh one so the questionnaire always has a home.
+            block = self.start_tool("ask_user", tool_id)
+        block.show_ask_user(dialog=dialog)
+        self._scroll_if_anchored(animate=False)
+        # A just-mounted block has no height yet, and its dialog body is
+        # painted by ``_refresh_box`` only once Textual mounts its children.
+        # Scroll again after that frame or the questionnaire opens below the
+        # fold while the status line says it is waiting.
+        with contextlib.suppress(Exception):
+            self.call_after_refresh(lambda: self._scroll_if_anchored(animate=False))
 
     def rerender_ask_user(self, tool_id: str) -> None:
-        block = self._tool_blocks.get(tool_id)
+        block = self._ask_user_block(tool_id)
         if block:
             block.rerender_ask_user()
             self._scroll_if_anchored(animate=False)
 
     def hide_ask_user(self, tool_id: str) -> None:
-        block = self._tool_blocks.get(tool_id)
+        block = self._ask_user_block(tool_id)
         if block:
             block.hide_ask_user()
             self._scroll_if_anchored(animate=False)
 
     def ask_user_custom_value(self, tool_id: str) -> str:
         """Return the current value of the inline custom-answer input."""
-        block = self._tool_blocks.get(tool_id)
+        block = self._ask_user_block(tool_id)
         if not block:
             return ""
         return block.ask_user_custom_value()
 
     def set_ask_user_custom_value(self, tool_id: str, value: str) -> None:
         """Overwrite the inline custom-answer input (e.g. Ctrl+U clearing)."""
-        block = self._tool_blocks.get(tool_id)
+        block = self._ask_user_block(tool_id)
         if block:
             block.set_ask_user_custom_value(value)
 

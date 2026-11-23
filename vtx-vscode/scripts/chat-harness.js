@@ -67,6 +67,7 @@ case "$1" in
   # setModelsFixture() drops a file here for a test that needs real providers
   # and families; the default empty catalog keeps every other test unchanged.
   models) f='${TMP}/models.json'; if [ -f "$f" ]; then cat "$f"; else echo '{"families":[]}'; fi; exit 0 ;;
+  config) echo "config $3 $4" >> ${JSON.stringify(path.join(TMP, "config.log"))}; echo "set $3"; exit 0 ;;
 esac
 exec ${JSON.stringify(process.execPath)} ${JSON.stringify(js)}
 `
@@ -392,6 +393,16 @@ function setModelsFixture(json) {
   } else {
     fs.writeFileSync(file, typeof json === "string" ? json : JSON.stringify(json));
   }
+  // A new fixture is a new catalog: drop any answer cached from the old one, or
+  // the next read serves it for five minutes and a test asserts against stale data.
+  if (loaded) loaded.invalidateModelFamilies();
+}
+
+// What `vtx config set ...` the host issued, in order, as [command, key, value].
+function configCalls() {
+  const file = path.join(TMP, "config.log");
+  if (!fs.existsSync(file)) return [];
+  return fs.readFileSync(file, "utf8").trim().split("\n").filter(Boolean).map((line) => line.split(" "));
 }
 
 async function cleanup() {
@@ -400,4 +411,4 @@ async function cleanup() {
   fs.rmSync(TMP, { recursive: true, force: true });
 }
 
-module.exports = { createChat, cleanup, setModelsFixture };
+module.exports = { createChat, cleanup, setModelsFixture, configCalls };

@@ -5080,6 +5080,59 @@ test("the mode picker offers whatever modes the agent reports", async () => {
   assert.strictEqual(h.errors().length, 0);
 });
 
+test("model picker provider tabs switch the provider and always offer a way back", async () => {
+  const models = [
+    { id: "gpt", name: "GPT-4o", default: "openai:gpt-4o", provider: "openai", variants: [{ value: "openai:gpt-4o", name: "GPT-4o" }] },
+    { id: "claude", name: "Claude", default: "anthropic:claude", provider: "anthropic", variants: [{ value: "anthropic:claude", name: "Claude" }] }
+  ];
+  const h = createHarness();
+  h.post({ type: "ready" });
+  h.post({ type: "body", body: "thread" });
+  h.post({
+    type: "options",
+    currentMode: "default",
+    currentModel: "openai:gpt-4o",
+    modes: [],
+    models,
+    providers: [{ slug: "openai", name: "OpenAI" }, { slug: "anthropic", name: "Anthropic" }],
+    providerFilter: ""
+  });
+  await h.settle(20);
+
+  const dd = h.document.querySelector("#model-dd");
+  dd.querySelector(".dd-btn").click();
+  const tabNames = () => [...dd.querySelectorAll(".mp-tabstrip .mp-tab")].filter((b) => !b.classList.contains("mp-search-btn")).map((b) => b.textContent.trim());
+  const activeTab = () => [...dd.querySelectorAll(".mp-tab.active")].map((b) => b.title);
+  assert.deepStrictEqual(tabNames(), ["All", "Anthropic", "OpenAI"], "every provider is named, plus a way back");
+  assert.deepStrictEqual(activeTab(), ["All providers"], "the unfiltered view is marked as the current tab");
+
+  const anthropic = [...dd.querySelectorAll(".mp-tab")].find((b) => b.textContent.includes("Anthropic"));
+  anthropic.click();
+  assert.ok(h.posted.some((m) => m.type === "setProviderFilter" && m.slug === "anthropic"), "the tab switches the provider in one click");
+  assert.deepStrictEqual([...dd.querySelectorAll(".dd-item .dd-item-name")].map((r) => r.textContent.trim()), ["Claude"], "rows narrow immediately");
+
+  // The host applies the filter and posts a catalog reduced to one provider. The
+  // other tabs must survive, or the user is stuck until they type /provider reset.
+  h.post({
+    type: "options",
+    currentMode: "default",
+    currentModel: "anthropic:claude",
+    modes: [],
+    models: models.filter((f) => f.provider === "anthropic"),
+    providers: [{ slug: "openai", name: "OpenAI" }, { slug: "anthropic", name: "Anthropic" }],
+    providerFilter: "anthropic"
+  });
+  await h.settle(20);
+  dd.querySelector(".dd-btn").click();
+  assert.deepStrictEqual(tabNames(), ["All", "Anthropic", "OpenAI"], "the full provider list survives a filter");
+  assert.deepStrictEqual(activeTab(), ["Anthropic"], "the tab follows the host filter");
+
+  const all = [...dd.querySelectorAll(".mp-tab")].find((b) => b.title === "All providers");
+  all.click();
+  assert.ok(h.posted.some((m) => m.type === "setProviderFilter" && m.slug === ""), "All providers clears the filter");
+  assert.strictEqual(h.errors().length, 0);
+});
+
 test("model picker follows the adaptive pinned and models layout", async () => {
   const h = createHarness();
   h.post({ type: "ready" });
@@ -5191,7 +5244,7 @@ test("model picker follows the adaptive pinned and models layout", async () => {
   assert.match(css, /\.dv-floater\.model-hover-floater\s*\{[\s\S]*width: min\(300px, calc\(100vw - 8px\)\);/, "the hover card uses the compact target width");
   assert.match(css, /\.dv-floater\.model-hover-floater\s*\{[\s\S]*max-width: min\(300px, calc\(100vw - 8px\)\);/, "the hover card fits the viewport width");
   assert.match(css, /\.dv-floater\.model-hover-floater\s*\{[\s\S]*max-height: calc\(100vh - 8px\);/, "the hover card fits the viewport height");
-  assert.match(css, /#model-dd \.dd-menu\s*\{[\s\S]*width: min\(300px, calc\(100vw - 16px\)\);/, "the model picker uses the Copilot widget width");
+  assert.match(css, /#model-dd \.dd-menu\s*\{[\s\S]*width: min\(320px, calc\(100vw - 16px\)\);/, "the model picker uses the Copilot widget width");
   assert.match(css, /\.model-hover-configurable-controls\s*\{/, "configurable items use a right aligned control group");
   assert.match(css, /\.model-hover-configurable-button\s*\{[\s\S]*border: 1px solid var\(--vscode-widget-border/, "configurable items use the Copilot badge border");
   assert.match(css, /\.model-hover\.compact\s*\{/, "metadata only hovers use compact spacing");

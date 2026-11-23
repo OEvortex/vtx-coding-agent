@@ -7,6 +7,7 @@ plus the public show/rerender/hide API that the agent runner calls.
 
 import pytest
 from textual.app import App, ComposeResult
+from textual.widgets import Label
 
 from vtx.core import AskUserOption, AskUserQuestion
 from vtx.tui.ask_user import (
@@ -240,3 +241,27 @@ async def test_custom_input_focuses_when_input_mode_starts():
 
         assert custom_input.display is False
         assert chat_textarea.has_focus
+
+
+@pytest.mark.asyncio
+async def test_dialog_paints_when_attached_before_the_block_is_mounted():
+    """The questionnaire must survive the mount race.
+
+    The runner delivers ``ToolStartEvent`` and ``AskUserEvent`` back to back,
+    so ``show_ask_user`` runs before Textual has mounted the block's children.
+    The immediate render misses every ``query_one`` and is dropped, and without
+    the ``_refresh_box`` retry the block kept its running footer and no
+    questionnaire: the turn then waited forever for an answer the user could
+    not give.
+    """
+    async with _AskUserFocusApp().run_test() as pilot:
+        chat = pilot.app.query_one("#chat-log", ChatLog)
+        block = chat.start_tool("ask_user", "tool-race")
+        # No pause: the block is still queued for mounting here.
+        chat.show_ask_user("tool-race", dialog=AskUserDialog([_q()]))
+        await pilot.pause()
+
+        output = block.query_one("#tool-output", Label)
+        assert not output.has_class("-hidden")
+        assert "option-0" in str(output.content)
+        assert block.size.height > 5

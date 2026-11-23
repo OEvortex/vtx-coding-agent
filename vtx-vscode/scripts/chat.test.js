@@ -15,7 +15,7 @@
 const test = require("node:test");
 const assert = require("node:assert");
 const path = require("node:path");
-const { createChat, cleanup, setModelsFixture } = require("./chat-harness");
+const { createChat, cleanup, setModelsFixture, configCalls } = require("./chat-harness");
 
 // The fake agent is a `/bin/sh` wrapper, so the CLI resolver cannot run it on Windows:
 // the health check fails, no chat starts, and every test here would fail for that one
@@ -1789,6 +1789,50 @@ test("/provider picks a provider and the model list follows the new filter", pos
       }),
       "after the filter changed the model list shows only that provider"
     );
+  } finally {
+    setModelsFixture(null);
+    await h.dispose();
+  }
+});
+
+test("the picker switches providers without spending a chat turn", posixOnly, async () => {
+  const catalog = (providerFilter) => ({
+    provider_filter: providerFilter,
+    providers: [{ slug: "openai", name: "OpenAI" }, { slug: "anthropic", name: "Anthropic" }],
+    families: [
+      {
+        family_label: "gpt-4o",
+        family_uid: "openai:gpt-4o",
+        slug: "openai",
+        provider: "openai",
+        variants: [{ model_uid: "openai:gpt-4o", label: "gpt-4o" }]
+      },
+      {
+        family_label: "claude",
+        family_uid: "anthropic:claude",
+        slug: "anthropic",
+        provider: "anthropic",
+        variants: [{ model_uid: "anthropic:claude", label: "claude" }]
+      }
+    ]
+  });
+  setModelsFixture(catalog(""));
+  const h = createChat({ config: { defaultMode: "", defaultModel: "" } });
+  try {
+    await h.ready();
+    assert.ok(await h.until(() => h.last("options")?.models?.length === 2), "both providers are listed first");
+    const promptsBefore = h.agentSaw("session/prompt").length;
+
+    // The CLI config is now filtered, so the refetch sees the narrower list.
+    setModelsFixture(catalog("anthropic"));
+    h.send({ type: "setProviderFilter", slug: "anthropic" });
+    assert.ok(await h.until(() => {
+      const options = h.last("options");
+      return options?.models?.length === 1 && options.models[0].provider === "anthropic";
+    }), "the model list follows the new provider");
+    assert.deepStrictEqual(configCalls().at(-1), ["config", "ui.model_provider_filter", "anthropic"], "the filter is written to the CLI");
+    assert.strictEqual(h.agentSaw("session/prompt").length, promptsBefore, "no agent turn is spent on the switch");
+    assert.strictEqual(h.postsOf("userMessage").length, 0, "the chat stays clean");
   } finally {
     setModelsFixture(null);
     await h.dispose();

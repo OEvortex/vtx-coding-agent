@@ -965,8 +965,8 @@ body {
 }
 
 #model-dd .dd-menu {
-  /* .action-widget.chat-model-picker-widget: 8px padding, ~300px wide. */
-  width: min(300px, calc(100vw - 16px));
+  /* VS Code's .chat-model-picker-tabbed widget: 8px padding, 320px wide. */
+  width: min(320px, calc(100vw - 16px));
   min-width: 0;
   max-width: calc(100vw - 16px);
   box-sizing: border-box;
@@ -1112,19 +1112,24 @@ body {
 .mp-tabstrip {
   display: flex;
   align-items: center;
-  gap: 2px;
+  flex: 1 1 auto;
+  gap: 1px;
   min-width: 0;
+  max-width: 100%;
+  overflow-x: auto;
+  scrollbar-width: thin;
 }
 
 .mp-tab {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  gap: 4px;
+  flex: 0 0 auto;
+  gap: 3px;
   box-sizing: border-box;
   height: 28px;
   min-width: 28px;
-  padding: 0 6px;
+  padding: 0 4px;
   border: none;
   border-radius: 4px;
   background: transparent;
@@ -1135,7 +1140,7 @@ body {
 }
 
 .mp-tab .mp-tab-label {
-  display: none;
+  display: inline;
   max-width: 120px;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -1146,10 +1151,6 @@ body {
   color: var(--vscode-modernTab-activeForeground, var(--vscode-foreground));
   background: var(--vscode-modernTab-activeBackground, var(--vscode-list-activeSelectionBackground));
   font-weight: 600;
-}
-
-.mp-tab.active .mp-tab-label {
-  display: inline;
 }
 
 .mp-tab:not(.active):hover {
@@ -1218,6 +1219,41 @@ body {
 
 .dd-filter:focus {
   border-color: var(--vscode-focusBorder);
+}
+
+/* Copilot-style model rows: the model name leads and the provider sits under
+   it, so a long id read at a glance instead of truncating into noise. */
+#model-dd .dd-item.model-row {
+  min-height: 44px;
+  align-items: flex-start;
+  padding: 6px 8px;
+}
+
+#model-dd .model-row .dd-item-content {
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 1px;
+}
+
+#model-dd .model-row .dd-item-name {
+  font-size: var(--vscode-fontSize-body1, 13px);
+  font-weight: 500;
+  max-width: 100%;
+}
+
+#model-dd .model-row .dd-item-detail {
+  max-width: 100%;
+  font-size: var(--vscode-fontSize-label2, 11px);
+  color: var(--vscode-descriptionForeground);
+}
+
+.dd-group-toggle {
+  cursor: pointer;
+  border-radius: var(--vscode-cornerRadius-small, 4px);
+}
+
+.dd-group-toggle:hover {
+  background: var(--vscode-list-hoverBackground);
 }
 
 /* Section headers read like upstream's .group-header: label2 semibold, no

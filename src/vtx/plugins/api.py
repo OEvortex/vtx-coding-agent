@@ -14,8 +14,6 @@ the composition owns, so a plugin row and an extension file are peers.
 
 from __future__ import annotations
 
-import asyncio
-import inspect
 import logging
 import subprocess
 from collections.abc import Callable
@@ -24,6 +22,7 @@ from pathlib import Path
 from typing import Any, Literal
 
 from vtx.agent.tools.base import BaseTool
+from vtx.agent.tools.schema_tool import SchemaTool
 from vtx.core.paths import get_config_dir
 from vtx.plugins.builtins.tools._register import mount_tool
 from vtx.plugins.event_contract import (
@@ -50,7 +49,6 @@ from vtx.plugins.event_contract import (
     USER_BASH,
     build_event_object,
 )
-from vtx.protocol.types import ToolResult
 
 log = logging.getLogger("vtx.plugins.api")
 
@@ -233,18 +231,35 @@ class ExtensionAPI:
 
     def register_tool(
         self,
-        name: str,
-        description: str,
-        parameters: dict[str, Any],
+        name: str | BaseTool | type[BaseTool],
+        description: str | None = None,
+        parameters: dict[str, Any] | None = None,
         *,
-        execute: Callable[[dict[str, Any], dict[str, Any] | None], Any],
+        execute: Callable[[dict[str, Any], dict[str, Any] | None], Any] | None = None,
         mutating: bool = True,
         label: str | None = None,
         ui_block: type | None = None,
         tool_icon: str | None = None,
     ) -> Any:
-        """Register an LLM-callable tool. Overriding a built-in replaces it."""
-        if not name:
+        """Register an LLM-callable tool. Overriding a built-in replaces it.
+
+        Two spellings are accepted::
+
+            api.register_tool("name", "desc", {...schema...}, execute=fn)
+            api.register_tool(tool)   # any BaseTool: @tool, define_tool, subclass
+        """
+        if isinstance(name, BaseTool) or (isinstance(name, type) and issubclass(name, BaseTool)):
+            tool = name() if isinstance(name, type) else name
+            if not getattr(tool, "name", ""):
+                raise ValueError("Tool name must be a non-empty string")
+            self._record.tools[tool.name] = tool
+            return mount_tool(self._ctx, tool)
+        if description is None or parameters is None or execute is None:
+            raise ValueError(
+                "register_tool needs (name, description, parameters, execute=...) "
+                "or a single BaseTool instance"
+            )
+        if not isinstance(name, str) or not name:
             raise ValueError("Tool name must be a non-empty string")
         from vtx.agent.tools.schema import json_schema_to_pydantic
 
@@ -267,11 +282,11 @@ class ExtensionAPI:
     def register_local_tool(
         self,
         agent: str,
-        name: str,
-        description: str,
-        parameters: dict[str, Any],
+        name: str | BaseTool | type[BaseTool],
+        description: str | None = None,
+        parameters: dict[str, Any] | None = None,
         *,
-        execute: Callable[[dict[str, Any], dict[str, Any] | None], Any],
+        execute: Callable[[dict[str, Any], dict[str, Any] | None], Any] | None = None,
         mutating: bool = True,
         label: str | None = None,
         ui_block: type | None = None,
@@ -286,7 +301,7 @@ class ExtensionAPI:
             label=label,
             ui_block=ui_block,
         )
-        self._record.local_tools.setdefault(agent, {})[name] = tool
+        self._record.local_tools.setdefault(agent, {})[tool.name] = tool
         return tool
 
     def register_command(
@@ -625,7 +640,7 @@ class _NoOpUIContext(ExtensionUIContext):
 NO_OP_UI_CONTEXT = _NoOpUIContext()
 
 
-class ExtensionTool(BaseTool):
+class ExtensionTool(SchemaTool):
     """The tool implementation an extension's ``execute`` callable is wrapped in."""
 
     def __init__(
@@ -641,62 +656,18 @@ class ExtensionTool(BaseTool):
         label: str | None = None,
         ui_block: type | None = None,
     ) -> None:
-        self.name = name
-        self.description = description
-        self.parameters = parameters
-        self.params = params_model
-        self._execute = execute_fn
+        super().__init__(
+            name=name,
+            description=description,
+            parameters=parameters,
+            execute=execute_fn,
+            mutating=mutating,
+            tool_icon="↪",
+            label=label,
+            ui_block=ui_block,
+            params_model=params_model,
+        )
         self.owner = owner
-        self.mutating = mutating
-        self.label = label or name
-        self._ui_block = ui_block
-        self.tool_icon = "↪"
-
-    async def execute(self, params: Any, cancel_event: Any | None = None) -> ToolResult:
-        args = (
-            params.model_dump(exclude_none=True) if hasattr(params, "model_dump") else dict(params)
-        )
-        ctx = {"cancel_event": cancel_event, "cwd": Path.cwd().as_posix()}
-        result = self._execute(args, ctx)
-        if inspect.isawaitable(result):
-            if cancel_event is not None:
-                # Race the call against cancellation, so an interrupted tool
-                # reports that rather than vanishing.
-                task = asyncio.ensure_future(result)
-                cancel_task = asyncio.ensure_future(cancel_event.wait())
-                try:
-                    done, _ = await asyncio.wait(
-                        {task, cancel_task}, return_when=asyncio.FIRST_COMPLETED
-                    )
-                    if task in done:
-                        result = task.result()
-                    else:
-                        task.cancel()
-                        return ToolResult(
-                            success=False, result="Extension tool execution was interrupted."
-                        )
-                finally:
-                    if not cancel_task.done():
-                        cancel_task.cancel()
-            else:
-                result = await result
-
-        if result is None:
-            return ToolResult(success=True, result="(no output)")
-        if isinstance(result, ToolResult):
-            return result
-        if isinstance(result, dict):
-            return ToolResult(**result)
-        return ToolResult(success=True, result=str(result))
-
-    def format_call(self, params: Any) -> str:
-        data = (
-            params.model_dump(exclude_none=True) if hasattr(params, "model_dump") else dict(params)
-        )
-        return " / ".join(f"{k}={v}" for k, v in data.items())
-
-    def format_preview(self, params: Any) -> str | None:
-        return None
 
 
 def blocking_result(results: list[Any]) -> dict[str, Any]:

@@ -35,6 +35,7 @@ from vtx.agent.sdk.permissions import (
     PromptApprove,
 )
 from vtx.agent.sdk.tools import FunctionTool, tool
+from vtx.agent.tools.schema_tool import SchemaTool, define_tool
 from vtx.telemetry import (
     Span,
     Trace,
@@ -111,6 +112,7 @@ __all__ = [
     "RunState",
     "RunStreamed",
     "Runner",
+    "SchemaTool",
     "Session",
     "SessionSettings",
     "Span",
@@ -126,6 +128,7 @@ __all__ = [
     "_ToolApprovalItem",
     "__version__",
     "add_trace_processor",
+    "define_tool",
     "disable_tracing",
     "enable_tracing",
     "handoff",

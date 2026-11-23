@@ -562,11 +562,26 @@ class ToolBlock(Static):
         return path or None
 
     def _refresh_box(self) -> None:
-        """Re-render every box surface at the current width (post-layout/resize)."""
+        """Re-render every box surface at the current width (post-layout/resize).
+
+        This is also the retry that makes an interactive body appear. The
+        stream delivers a tool call and its follow-up event (the ``ask_user``
+        questionnaire, a permission prompt) back-to-back, so the body can be
+        attached to a block Textual has not mounted yet: ``query_one`` misses
+        on every surface, the best-effort writes are dropped, and the block
+        sits there looking like a running tool while the turn waits for an
+        answer the user cannot give. ``on_mount`` lands here with the children
+        in place, so repaint whatever interactive state was set meanwhile.
+        """
         self._safe_update(
             lambda: self.query_one("#tool-header", Label).update(self._format_header())
         )
         self._render_result_output()
+        if self._ask_dialog is not None:
+            self._safe_update(self._render_ask_user_output)
+            self._sync_ask_user_widgets()
+        elif self._awaiting_approval:
+            self._safe_update(self._render_approval_output)
         self._render_footer()
 
     def on_mount(self) -> None:
@@ -718,8 +733,12 @@ class ToolBlock(Static):
         if selected is not None:
             self._approval_selection = selected
         self._set_state(None)
-        self.query_one("#tool-header", Label).update(self._format_header())
-        self._render_approval_output()
+        # Best effort: the block may not be mounted yet, in which case
+        # ``_refresh_box`` paints the prompt once its children exist.
+        self._safe_update(
+            lambda: self.query_one("#tool-header", Label).update(self._format_header())
+        )
+        self._safe_update(self._render_approval_output)
 
     def update_approval_selection(self, selected: ApprovalResponse) -> None:
         if not self._awaiting_approval:
@@ -745,7 +764,12 @@ class ToolBlock(Static):
         self._approval_preview = None
         self._approval_selection = ApprovalResponse.APPROVE
         self._set_state(None)
-        self.query_one("#tool-header", Label).update(self._format_header())
+        self._safe_update(
+            lambda: self.query_one("#tool-header", Label).update(self._format_header())
+        )
+        self._safe_update(self._hide_approval_output)
+
+    def _hide_approval_output(self) -> None:
         output = self.query_one("#tool-output", Label)
         self.remove_class("-with-details")
         output.remove_class("-details")
@@ -793,6 +817,8 @@ class ToolBlock(Static):
         self._ask_dialog = dialog
         self.add_class("-ask-user")
         self._set_state(None)
+        # Best effort now; ``_refresh_box`` repaints after mount when the
+        # block's children did not exist yet (see its docstring).
         self._safe_update(
             lambda: self.query_one("#tool-header", Label).update(self._format_header())
         )

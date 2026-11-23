@@ -111,6 +111,7 @@ import { renderMarkdown, renderShell, renderCode } from "./markdown.js";
   // variants of the selected family (Copilot-style).
   let modelFamilies = [];
   let modelProviders = [];
+  let providerFilter = "";
   let modelChoices = {};
   // thought_level is reported for the active model only, so each family's
   // effort list is filed under that family rather than applied to whichever
@@ -183,6 +184,13 @@ import { renderMarkdown, renderShell, renderCode } from "./markdown.js";
     return b ? `img:${b.key} ${b.url}` : "codicon-chip";
   }
 
+  function providerDisplayName(slug) {
+    if (!slug) return "Models";
+    const found = modelProviders.find((p) => p.slug === slug);
+    if (found?.name) return found.name;
+    if (slug === "vtx") return "Vtx";
+    return slug.charAt(0).toUpperCase() + slug.slice(1);
+  }
   function familyById(id) { return modelFamilies.find((f) => f.id === id); }
   function familyOfUid(uid) {
     return modelFamilies.find((f) => (f.variants || []).some((v) => v.value === uid))
@@ -636,6 +644,8 @@ import { renderMarkdown, renderShell, renderCode } from "./markdown.js";
         value: family.id,
         name: family.name,
         provider: family.provider || "",
+        detail: providerDisplayName(family.provider || ""),
+        className: "model-row",
         badges: variantBadges(variant),
         pinned: pinnedModelIds.has(family.id),
         hover: { ...variant, name: family.name, thinkingLevels: (family.variants || []).length > 1, fusion: isFusion(family) },
@@ -654,8 +664,15 @@ import { renderMarkdown, renderShell, renderCode } from "./markdown.js";
       items.push(...pinned.map((f) => item(f, "Pinned")));
       if (models.length) items.push({ sep: true });
     }
-    items.push(...models.map((f) => item(f, "Models")));
-    modelDropdown.set(items, fam ? fam.id : "");
+    const isOther = (f) => /free|batch|preview|experimental|deprecated/i.test(f.name || "");
+    const common = models.filter((f) => !isOther(f));
+    const other = models.filter(isOther);
+    items.push(...common.map((f) => item(f, "Models")));
+    if (other.length) {
+      if (common.length) items.push({ sep: true });
+      items.push(...other.map((f) => item(f, "Other Models")));
+    }
+    modelDropdown.set(items, fam ? fam.id : "", providerFilter);
     updateModelConfig(fam, currentModelUid);
   }
   function selectModelUid(uid) {
@@ -1961,6 +1978,8 @@ import { renderMarkdown, renderShell, renderCode } from "./markdown.js";
     let items = [];
     let current = "";
     let filterText = "";
+    // "Other Models" starts folded the way Copilot folds its less common models.
+    const collapsedGroups = new Set(["Other Models"]);
     // The provider tab the model picker is showing, upstream's
     // .chat-model-picker-tabbar selection. Sticky across re-opens.
     let activeProvider = null;
@@ -1980,7 +1999,7 @@ import { renderMarkdown, renderShell, renderCode } from "./markdown.js";
     }
     function makeRow(it) {
       const row = document.createElement("div");
-      row.className = "dd-item" + (it.value === current ? " selected" : "");
+      row.className = "dd-item" + (it.value === current ? " selected" : "") + (it.className ? " " + it.className : "");
       const check = document.createElement("span");
       check.className = "dd-check";
       if (it.value === current) check.innerHTML = '<i class="codicon codicon-check"></i>';
@@ -2051,27 +2070,34 @@ import { renderMarkdown, renderShell, renderCode } from "./markdown.js";
       });
       return row;
     }
-    // Provider tabs, upstream's TabbedModelPicker: one tab per provider slug,
-    // an icon-only 28px button that expands to icon + name when active.
+    // Provider tabs, upstream's TabbedModelPicker: one labelled tab per provider
+    // slug, with the whole strip scrolling when there are too many to fit.
     function providerOf(it) { return it.provider || "vtx"; }
     function providerName(slug) {
-      const p = modelProviders.find((x) => x.slug === slug);
-      if (p && p.name) return p.name;
-      if (slug === "vtx") return "Vtx";
-      return slug.charAt(0).toUpperCase() + slug.slice(1);
+      return slug ? providerDisplayName(slug) : "All providers";
     }
     function providerTabs() {
+      // Offer every configured provider plus "All providers", not just those in
+      // the current family list. Once a filter is set that list holds one
+      // provider only, and the other tabs, including the way back, would vanish.
       const first = new Map();
       items.forEach((it) => {
         if (it.sep) return;
         const slug = providerOf(it);
         if (!first.has(slug)) first.set(slug, it);
       });
-      return [...first.entries()].map(([slug, it]) => ({
-        slug,
-        name: providerName(slug),
-        icon: opts.buttonIcon ? opts.buttonIcon(it.value) : (it.icon || "")
-      }));
+      const slugs = new Set(first.keys());
+      for (const p of modelProviders) if (p.slug) slugs.add(p.slug);
+      return ["", ...[...slugs].sort()].map((slug) => {
+        const it = first.get(slug);
+        const name = providerName(slug);
+        return {
+          slug,
+          name,
+          label: slug ? name : "All",
+          icon: it && opts.buttonIcon ? opts.buttonIcon(it.value) : (it?.icon || "")
+        };
+      });
     }
     function tabIcon(ic) {
       const span = document.createElement("span");
@@ -2090,8 +2116,9 @@ import { renderMarkdown, renderShell, renderCode } from "./markdown.js";
     function renderMenu() {
       menu.innerHTML = "";
       const tabs = opts.providerTabs ? providerTabs() : [];
-      if (tabs.length && !tabs.some((t) => t.slug === activeProvider)) {
-        activeProvider = tabs.length > 1 ? tabs[0].slug : null;
+      const wantedProvider = activeProvider || "";
+      if (tabs.length && !tabs.some((t) => t.slug === wantedProvider)) {
+        activeProvider = null;
       }
       if (opts.providerTabs) {
         const bar = document.createElement("div");
@@ -2101,17 +2128,20 @@ import { renderMarkdown, renderShell, renderCode } from "./markdown.js";
         tabs.forEach((t) => {
           const b = document.createElement("button");
           b.type = "button";
-          b.className = "mp-tab" + (t.slug === activeProvider ? " active" : "");
+          b.className = "mp-tab" + (t.slug === wantedProvider ? " active" : "");
           b.title = t.name;
           b.appendChild(tabIcon(t.icon));
           const lb = document.createElement("span");
           lb.className = "mp-tab-label";
-          lb.textContent = t.name;
+          lb.textContent = t.label || t.name;
           b.appendChild(lb);
           b.addEventListener("click", (ev) => {
             ev.stopPropagation();
-            activeProvider = t.slug;
+            const next = t.slug || null;
+            if (activeProvider === next) return;
+            activeProvider = next;
             renderMenu();
+            vscode.postMessage({ type: "setProviderFilter", slug: t.slug });
           });
           strip.appendChild(b);
         });
@@ -2127,8 +2157,10 @@ import { renderMarkdown, renderShell, renderCode } from "./markdown.js";
           searchMode = true;
           renderMenu();
         });
-        strip.appendChild(sbtn);
+        // Pinned beside the strip, not inside it: a long provider list scrolls
+        // the tabs, and a search button that scrolls away with them is lost.
         bar.appendChild(strip);
+        bar.appendChild(sbtn);
         if (searchMode) {
           const srow = document.createElement("div");
           srow.className = "mp-search";
@@ -2185,12 +2217,29 @@ import { renderMarkdown, renderShell, renderCode } from "./markdown.js";
           if (tab && providerOf(it) !== tab) return;
           if (q && !it.name.toLowerCase().includes(q) && !(it.group || "").toLowerCase().includes(q)) return;
           if (it.group && it.group !== lastGroup) {
+            const foldable = it.group === "Other Models";
             const h = document.createElement("div");
-            h.className = "dd-group";
-            h.textContent = it.group;
+            h.className = "dd-group" + (foldable ? " dd-group-toggle" : "");
+            h.textContent = (foldable ? (collapsedGroups.has(it.group) && !q ? "› " : "⌄ ") : "") + it.group;
+            if (foldable) {
+              h.setAttribute("role", "button");
+              h.tabIndex = 0;
+              const toggle = (event) => {
+                event.stopPropagation();
+                if (collapsedGroups.has(it.group)) collapsedGroups.delete(it.group);
+                else collapsedGroups.add(it.group);
+                renderRows();
+              };
+              h.addEventListener("click", toggle);
+              h.addEventListener("keydown", (event) => {
+                if (event.key === "Enter" || event.key === " ") { event.preventDefault(); toggle(event); }
+              });
+            }
             rows.appendChild(h);
           }
+          const folded = !q && it.group && collapsedGroups.has(it.group) && it.group === "Other Models";
           lastGroup = it.group || null;
+          if (folded) return;
           rows.appendChild(makeRow(it));
           shown++;
         });
@@ -2232,9 +2281,10 @@ import { renderMarkdown, renderShell, renderCode } from "./markdown.js";
     });
 
     return {
-      set(newItems, newCurrent) {
+      set(newItems, newCurrent, newProviderFilter) {
         items = newItems || [];
         current = newCurrent || (items[0] && items[0].value) || "";
+        if (typeof newProviderFilter === "string") activeProvider = newProviderFilter || null;
         label.textContent = labelFor(current);
         updateBtnIcon();
         container.classList.toggle("hidden", items.length === 0);
@@ -7805,6 +7855,7 @@ import { renderMarkdown, renderShell, renderCode } from "./markdown.js";
         // Families come from this response, because modelFamilies is still
         // empty on the first one.
         if (Array.isArray(m.providers)) modelProviders = m.providers;
+        if (typeof m.providerFilter === "string") providerFilter = m.providerFilter;
         const famOf = (uid) => (m.models || []).find((f) => (f.variants || []).some((v) => v.value === uid))
           || (String(uid || "").startsWith("fusion-") ? (m.models || []).find(isFusion) : undefined);
         const responseFamily = famOf(m.currentModel);
