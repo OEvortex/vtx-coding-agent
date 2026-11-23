@@ -13,6 +13,8 @@ from __future__ import annotations
 from dataclasses import dataclass
 from enum import Enum
 
+from ctx.agent.hooks.agent_hook import AgentHook
+
 
 class PermissionMode(Enum):
     ask = "ask"
@@ -263,7 +265,7 @@ def mode_description(mode_id: str) -> str:
 # -- ctx agent hook integration --------------------------------------------
 
 
-class VxPermissionHook:
+class VxPermissionHook(AgentHook):
     """Bridges vx's PermissionRuntime into ctx's AgentHook system.
 
     Implements ``before_execute_tools`` to check each tool call against the
@@ -277,6 +279,7 @@ class VxPermissionHook:
     """
 
     def __init__(self, perm_runtime: PermissionRuntime) -> None:
+        super().__init__()
         self.perm_runtime = perm_runtime
 
     async def before_execute_tools(self, context) -> None:
