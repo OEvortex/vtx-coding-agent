@@ -335,14 +335,21 @@ class Agent[TContext]:
         if guidelines:
             parts.append("# Tool usage\n" + "\n".join(guidelines))
 
-        if self.output_type is not None:
-            parts.append(
-                "# Output format\n"
-                f"Reply with a JSON object matching the {self.output_type.__name__} schema:\n"
-                f"```json\n{self.output_type.model_json_schema()}\n```"
-            )
+        output_block = self.output_format_block()
+        if output_block:
+            parts.append(output_block)
 
         return "\n\n".join(parts)
+
+    def output_format_block(self) -> str:
+        """The ``# Output format`` section for ``output_type``, or ``""``."""
+        if self.output_type is None:
+            return ""
+        return (
+            "# Output format\n"
+            f"Reply with a JSON object matching the {self.output_type.__name__} schema:\n"
+            f"```json\n{self.output_type.model_json_schema()}\n```"
+        )
 
     # ------------------------------------------------------------------
     # Provider resolution

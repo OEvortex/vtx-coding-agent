@@ -43,5 +43,25 @@ class RunConfig:
     nest_handoff_history: bool = False
     """Opt-in: collapse prior transcript into a single summary block on handoff."""
 
+    plugins: Any = None
+    """A mounted plugin composition for this run: a ``PluginHost`` or its base
+    ``Context``. When set, the composition's services supply the tool pool
+    (``ctx.tools``) and the system-prompt assembly (``ctx.prompts``), so
+    plugin-contributed tools, prompt sections, and modes appear in SDK runs
+    exactly as they do in the product. ``Agent``-level tools still merge in
+    and win name conflicts.
+    """
+
+    profile: str | None = None
+    """Boot this plugin profile (``ctx.plugins.bootstrap.boot``) for the run.
+    Ignored when ``plugins`` is set. The booted host becomes the active
+    composition, matching what the CLI does.
+    """
+
+    cwd: str | None = None
+    """Working directory used for prompt/context assembly. Defaults to the
+    process cwd.
+    """
+
     custom: dict[str, Any] = field(default_factory=dict)
     """Free-form custom data attached to the run."""

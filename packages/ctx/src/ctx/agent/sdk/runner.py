@@ -17,6 +17,7 @@ from __future__ import annotations
 import asyncio
 import contextlib
 import json
+import os
 import uuid
 from collections.abc import AsyncIterator
 from dataclasses import dataclass, field
@@ -56,6 +57,68 @@ from ctx.protocol.types import (
     Usage,
 )
 from ctx.telemetry import Trace, current_trace, is_tracing_disabled, span
+
+
+def _composition_for(cfg: RunConfig) -> Any | None:
+    """Resolve the plugin composition for a run, or ``None``.
+
+    Accepts a ``PluginHost`` (uses its ``base`` context) or a bare ``Context``.
+    ``cfg.profile`` boots a named profile through the plugin kernel, matching
+    what the CLI does; the booted host also becomes the active composition.
+    """
+    plugins = getattr(cfg, "plugins", None)
+    if plugins is not None:
+        return getattr(plugins, "base", plugins)
+    profile = getattr(cfg, "profile", None)
+    if profile:
+        from ctx.plugins.bootstrap import boot
+
+        return boot(profile).base
+    return None
+
+
+def _merge_composition_tools(agent_tools: list[Any], comp: Any | None) -> list[Any]:
+    """Union of the agent's tools and the composition's ``ctx.tools`` pool.
+
+    Agent tools come first and win name conflicts; composition tools the
+    agent didn't name are appended. No composition (or no tools service)
+    means the agent's list passes through unchanged.
+    """
+    if comp is None or not hasattr(comp, "get"):
+        return agent_tools
+    service = comp.get("tools")
+    assemble = getattr(service, "assemble", None)
+    if assemble is None:
+        return agent_tools
+    pool = list(assemble())
+    if not pool:
+        return agent_tools
+    names = {getattr(t, "name", None) for t in agent_tools}
+    return list(agent_tools) + [t for t in pool if getattr(t, "name", None) not in names]
+
+
+def _composition_prompt(
+    comp: Any | None, agent: Agent, context: Any, tools: list[Any], cwd: str
+) -> str | None:
+    """Build the system prompt through the composition's ``ctx.prompts``.
+
+    The agent's instructions become the base identity and its output-schema
+    block rides as extra instructions; registered prompt sections (product
+    persona is *not* used — the agent's instructions win) come from the
+    composition. Returns ``None`` when no prompts service is mounted, so the
+    caller falls back to :meth:`Agent.build_system_prompt`.
+    """
+    if comp is None or not hasattr(comp, "get"):
+        return None
+    service = comp.get("prompts")
+    build = getattr(service, "build", None)
+    if build is None:
+        return None
+    instructions = agent.resolve_instructions(context)
+    output_block = agent.output_format_block()
+    return build(
+        cwd, tools, base_content=instructions or None, extra_instructions=output_block or None
+    )
 
 
 def _new_session_if_missing(session: Session | None) -> Session:
@@ -411,9 +474,17 @@ class Runner:
 
         # 3. Resolve the active agent, its tools, and its system prompt.
         active_agent: Agent = starting_agent
-        # Build per-agent system prompt and tools cache.
-        system_prompt = active_agent.build_system_prompt(context=context)
-        all_tools, handoff_targets, handoff_tools_by_name = active_agent.all_tools()
+        comp = _composition_for(cfg)
+        run_cwd = cfg.cwd or os.getcwd()
+        # Build per-agent system prompt and tools cache. When a plugin
+        # composition is supplied, its services supply the tool pool and the
+        # prompt assembly; the agent still owns persona instructions, output
+        # schema, provider, and handoffs.
+        agent_tools, handoff_targets, handoff_tools_by_name = active_agent.all_tools()
+        all_tools = _merge_composition_tools(agent_tools, comp)
+        system_prompt = _composition_prompt(
+            comp, active_agent, context, all_tools, run_cwd
+        ) or active_agent.build_system_prompt(context=context)
         provider = active_agent.resolve_provider()
 
         messages: list[Message] = _from_input_items(full_input)
@@ -464,7 +535,14 @@ class Runner:
             # 5. Handle handoff: if any tool call in the last assistant
             #    message was a handoff, switch the active agent.
             switched = await Runner._maybe_handoff(
-                outcome, current_active_agent, messages, context, streamed_events, sdk_items
+                outcome,
+                current_active_agent,
+                messages,
+                context,
+                streamed_events,
+                sdk_items,
+                comp=comp,
+                cwd=run_cwd,
             )
             if switched is not None:
                 (
@@ -679,6 +757,8 @@ class Runner:
         context: Any,
         streamed_events: list[Any],
         sdk_items: list[RunItem],
+        comp: Any | None = None,
+        cwd: str | None = None,
     ) -> tuple[Agent, str, Any, list[BaseTool], dict[str, Agent], dict[str, BaseTool]] | None:  # type: ignore[name-defined]
         """If the last assistant turn called a handoff, switch active agent."""
         from ctx.protocol.types import ToolCall
@@ -727,8 +807,11 @@ class Runner:
 
         # Build the new system prompt / provider / tools for the target.
 
-        new_tools, new_targets, new_by_name = target_agent.all_tools()
-        new_system_prompt = target_agent.build_system_prompt(context=context)
+        agent_tools, new_targets, new_by_name = target_agent.all_tools()
+        new_all_tools = _merge_composition_tools(agent_tools, comp)
+        new_system_prompt = _composition_prompt(
+            comp, target_agent, context, new_all_tools, cwd or os.getcwd()
+        ) or target_agent.build_system_prompt(context=context)
         new_provider = target_agent.resolve_provider()
 
         sdk_items.append(
@@ -740,7 +823,14 @@ class Runner:
             )
         )
 
-        return (target_agent, new_system_prompt, new_provider, new_tools, new_targets, new_by_name)
+        return (
+            target_agent,
+            new_system_prompt,
+            new_provider,
+            new_all_tools,
+            new_targets,
+            new_by_name,
+        )
 
 
 def _accumulate_usage(total: Usage, assistant: AssistantMessage | None) -> Usage:
